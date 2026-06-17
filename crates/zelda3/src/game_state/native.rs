@@ -247,6 +247,56 @@ impl GameState {
         }
     }
 
+    /// Compare every native sub-state to a fresh `load_from_ram(ram)` and return the
+    /// names of those that differ. A non-empty result means the native model has drifted
+    /// out of sync with RAM — the dominant bug class in this migration (a stale native
+    /// field that will re-project over RAM, or RAM written directly without updating the
+    /// native model, e.g. the cached-sprite uncache / clear_room_parser_words family).
+    ///
+    /// Some sub-states legitimately differ mid-frame (gated/mode-reuse projections that
+    /// only mirror RAM in one game mode), so a few names form a stable baseline; a real
+    /// coherence bug shows up as a state going incoherent at the step that introduced it.
+    /// Driven by `replay_trace_ram_watch` under `ZELDA3_ASSERT_NATIVE_COHERENT`.
+    pub(crate) fn report_incoherent_with_ram(&self, ram: &[u8]) -> Vec<&'static str> {
+        let fresh = Self::load_from_ram(ram);
+        let mut out = Vec::new();
+        macro_rules! check {
+            ($field:ident) => {
+                if self.$field != fresh.$field {
+                    out.push(stringify!($field));
+                }
+            };
+        }
+        check!(frame);
+        check!(system_signals);
+        check!(enhanced_features);
+        check!(scratch_counter);
+        check!(minigame);
+        check!(intro_sword);
+        check!(archery_game);
+        check!(sprite_battle);
+        check!(memorized_tiles);
+        check!(dungeon_secret);
+        check!(save_load_transfer);
+        check!(dungeon_map_display);
+        check!(dungeon);
+        // sprites is the most composite/bug-prone state — drill to the leaf so a faithful
+        // leaf (e.g. sprite_slots) flagging stands out from intentionally-noisy ones.
+        if self.sprites != fresh.sprites {
+            out.extend(self.sprites.report_incoherent_with_ram(ram));
+        }
+        check!(player);
+        check!(inventory);
+        check!(world);
+        check!(poly);
+        check!(display);
+        check!(effects);
+        check!(ending);
+        check!(messaging);
+        check!(oam);
+        out
+    }
+
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.frame.write_to_ram(ram);
         self.system_signals.write_to_ram(ram);

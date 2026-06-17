@@ -2314,12 +2314,18 @@ impl ZeldaState {
         let mut bak = [0u8; 24];
         self.cached_sprite_slot_mut(k)
             .load_cached_into_live(&mut bak);
+        // load_cached_into_live copied the cached slot into the live sprite arrays in
+        // RAM only; resync the native live sprite slots so sprite_execute_single reads
+        // the uncached sprite, not the stale live one it replaced.
+        self.sprite_system_mut().reload_live_slots_from_ram();
         self.sprite_execute_single(k);
         if self.sprite_slot(k).pause() != 0 {
             self.cached_sprite_slot_mut(k).clear_state();
         }
         self.cached_sprite_slot_mut(k)
             .restore_live_from_backup(&bak);
+        // restore_live_from_backup also writes only RAM; resync the native slots.
+        self.sprite_system_mut().reload_live_slots_from_ram();
     }
 
     // void Dungeon_CacheTransSprites() {  // 89c176

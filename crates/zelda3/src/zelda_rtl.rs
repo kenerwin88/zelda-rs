@@ -1481,7 +1481,46 @@ impl ZeldaState {
         );
     }
 
+    /// Native↔RAM coherence guard. With `ZELDA3_ASSERT_NATIVE_COHERENT` set, report (or
+    /// `=panic` to abort on) any native sub-state that has drifted out of sync with RAM
+    /// at this labeled step — the signature of a stale-native-field or RAM-written-
+    /// without-native-sync bug. Optionally scope to one frame with
+    /// `ZELDA3_ASSERT_COHERENT_FRAME=<n>` to keep the (heavy) check cheap.
+    fn replay_assert_native_coherent(&self, label: &str) {
+        let Ok(mode) = std::env::var("ZELDA3_ASSERT_NATIVE_COHERENT") else {
+            return;
+        };
+        if let Some(frame) = Self::parse_trace_env_u32("ZELDA3_ASSERT_COHERENT_FRAME") {
+            if self.frame_ctr_dbg != frame {
+                return;
+            }
+        }
+        let mut bad = self.game_state.report_incoherent_with_ram(&self.ram);
+        // Some states legitimately diverge mid-frame (gated/mode-reuse projections, the
+        // cached-sprite shadow). Pass a comma-separated allow-list in
+        // ZELDA3_ASSERT_COHERENT_IGNORE to suppress that baseline so `=panic` aborts only
+        // on a genuinely-unexpected drift.
+        if let Ok(ignore) = std::env::var("ZELDA3_ASSERT_COHERENT_IGNORE") {
+            let ignore: Vec<&str> = ignore.split(',').map(|s| s.trim()).collect();
+            bad.retain(|name| !ignore.contains(name));
+        }
+        if bad.is_empty() {
+            return;
+        }
+        let f = &self.game_state.frame;
+        let msg = format!(
+            "native-incoherent frame={} m=0x{:02x} sm=0x{:02x} ssm=0x{:02x} after '{label}': {:?}",
+            self.frame_ctr_dbg, f.main_module, f.submodule, f.subsubmodule, bad
+        );
+        if mode == "panic" {
+            panic!("{msg}");
+        } else {
+            eprintln!("{msg}");
+        }
+    }
+
     fn replay_trace_ram_watch(&self, label: &str) {
+        self.replay_assert_native_coherent(label);
         let Some(target) = Self::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_FRAME") else {
             return;
         };

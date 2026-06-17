@@ -223,6 +223,42 @@ impl SpriteState {
         self.garnish_runtime.write_to_ram(ram);
         self.follower_runtime.write_to_ram(ram);
     }
+
+    /// Leaf-level coherence drill-down (see GameState::report_incoherent_with_ram):
+    /// returns "sprites.<leaf>" for each sub-state that has drifted out of sync with RAM.
+    pub(crate) fn report_incoherent_with_ram(&self, ram: &[u8]) -> Vec<&'static str> {
+        let fresh = Self::load_from_ram(ram);
+        let mut out = Vec::new();
+        macro_rules! check {
+            ($field:ident) => {
+                if self.$field != fresh.$field {
+                    out.push(concat!("sprites.", stringify!($field)));
+                }
+            };
+        }
+        check!(system);
+        check!(workspace);
+        check!(sprite_slots);
+        check!(ancilla_slots);
+        check!(overlord_slots);
+        check!(garnish_slots);
+        check!(maze_game_timer);
+        check!(prize_drop_cycle);
+        check!(dual_layer_tile_cache);
+        check!(draw_hitbox_work);
+        check!(enemy_damage_subclasses);
+        check!(tagalong_trail);
+        check!(chain_chomp_history);
+        check!(ether_orbit);
+        check!(overworld_sprite_presence);
+        check!(overworld_sprite_loaded);
+        check!(failed_spin_sparkle_spawn);
+        check!(garnish_runtime);
+        check!(follower_runtime);
+        check!(cached_sprites);
+        check!(boss_home_positions);
+        out
+    }
 }
 
 const SPRITE_SLOTS_FIELD_RANGES: &[(usize, usize)] = &[
@@ -4155,6 +4191,14 @@ impl<'a> NativeSpriteSystemBridgeMut<'a> {
 
     pub(crate) fn fill_live_states(&mut self, value: u8) {
         self.ram[SPRITE_STATE..SPRITE_STATE + SPRITE_SLOT_COUNT].fill(value);
+        *self.sprite_slots = SpriteSlotsState::load_from_ram(self.ram);
+    }
+
+    /// Resync the native live sprite slots from RAM. Needed after code that writes
+    /// the live sprite arrays directly in RAM (e.g. the cached-sprite uncache /
+    /// restore, which copies ALT_SPRITE_* <-> SPRITE_*), so subsequent native
+    /// sprite_slot(k) reads see the just-written values instead of stale state.
+    pub(crate) fn reload_live_slots_from_ram(&mut self) {
         *self.sprite_slots = SpriteSlotsState::load_from_ram(self.ram);
     }
 
