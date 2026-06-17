@@ -94,18 +94,18 @@ impl MemorizedTileState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         // memorized_tile_value (0xfa00..0xfa3f) is an OVERWORLD-only transient; while
         // INDOORS those same bytes are movable_block_datas records 48..63 (0xf940 +
-        // index*4, a SNES byte-reuse). Only mirror/project the value table outdoors so
-        // it never clobbers the dungeon movable-block records. (memorized_tile_addr
-        // 0xf800..0xf83f and the count 0x4ac sit below movable_block_datas@0xf940 and
-        // never overlap, so they are always owned here.)
-        let outdoors = ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) == 0;
+        // index*4, a SNES byte-reuse). We must NOT *project* the value table indoors
+        // (it would clobber the dungeon movable-block records — see write_to_ram), but
+        // we still LOAD it every frame so the movable-block leftover carries through a
+        // dungeon→overworld transition until the overworld redraw repopulates it
+        // (matches the C oracle, which leaves those bytes untouched on exit).
+        // (memorized_tile_addr 0xf800..0xf83f and count 0x4ac sit below
+        // movable_block_datas@0xf940 and never overlap, so they are always owned here.)
         let mut addresses = vec![0; MEMORIZED_TILE_ENTRY_SLOTS];
         let mut values = vec![0; MEMORIZED_TILE_ENTRY_SLOTS];
         for slot in 0..MEMORIZED_TILE_ENTRY_SLOTS {
             addresses[slot] = read_le_u16(ram, MEMORIZED_TILE_ADDR + slot * 2);
-            if outdoors {
-                values[slot] = read_le_u16(ram, MEMORIZED_TILE_VALUE + slot * 2);
-            }
+            values[slot] = read_le_u16(ram, MEMORIZED_TILE_VALUE + slot * 2);
         }
         Self {
             count: read_le_u16(ram, NUM_MEMORIZED_TILES),
