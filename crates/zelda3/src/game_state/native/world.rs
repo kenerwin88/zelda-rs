@@ -285,8 +285,9 @@ pub(crate) struct WorldScrollState {
     // BG scroll copy2 (0xe0/0xe2/0xe6/0xe8) now lives solely in PpuScrollCopyState.
     pub(crate) bg1_x_offset: u16,
     pub(crate) bg1_y_offset: u16,
-    pub(crate) camera_x: u16,
-    pub(crate) camera_y: u16,
+    // camera_x/camera_y (0x61c/0x618) now live solely in WorldCameraBoundariesState
+    // (camera_x_coord_scroll_low/camera_y_coord_scroll_low), the authoritative
+    // owner written by the dungeon/overworld camera logic.
     pub(crate) overworld_offset_base_x: u16,
     pub(crate) overworld_offset_base_y: u16,
     pub(crate) overworld_offset_mask_x: u16,
@@ -301,8 +302,6 @@ impl WorldScrollState {
         Self {
             bg1_x_offset: read_le_u16(ram, BG1_X_OFFSET),
             bg1_y_offset: read_le_u16(ram, BG1_Y_OFFSET),
-            camera_x: read_le_u16(ram, CAMERA_X),
-            camera_y: read_le_u16(ram, CAMERA_Y),
             overworld_offset_base_x: read_le_u16(ram, OVERWORLD_OFFSET_BASE_X),
             overworld_offset_base_y: read_le_u16(ram, OVERWORLD_OFFSET_BASE_Y),
             overworld_offset_mask_x: read_le_u16(ram, OVERWORLD_OFFSET_MASK_X),
@@ -316,8 +315,6 @@ impl WorldScrollState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         write_le_u16(ram, BG1_X_OFFSET, self.bg1_x_offset);
         write_le_u16(ram, BG1_Y_OFFSET, self.bg1_y_offset);
-        write_le_u16(ram, CAMERA_X, self.camera_x);
-        write_le_u16(ram, CAMERA_Y, self.camera_y);
         write_le_u16(ram, OVERWORLD_OFFSET_BASE_X, self.overworld_offset_base_x);
         write_le_u16(ram, OVERWORLD_OFFSET_BASE_Y, self.overworld_offset_base_y);
         write_le_u16(ram, OVERWORLD_OFFSET_MASK_X, self.overworld_offset_mask_x);
@@ -338,14 +335,6 @@ impl WorldScrollState {
 
     pub(crate) fn bg1_offset_mask(&self) -> u16 {
         self.bg1_x_offset | self.bg1_y_offset
-    }
-
-    pub(crate) fn camera_x(&self) -> u16 {
-        self.camera_x
-    }
-
-    pub(crate) fn camera_y(&self) -> u16 {
-        self.camera_y
     }
 
     pub(crate) fn overworld_offset_base_x(&self) -> u16 {
@@ -391,14 +380,6 @@ impl WorldScrollState {
 
     pub(crate) fn clear_bg1_offsets(&mut self) {
         self.set_bg1_offsets(0, 0);
-    }
-
-    pub(crate) fn set_camera_x(&mut self, value: u16) {
-        self.camera_x = value;
-    }
-
-    pub(crate) fn set_camera_y(&mut self, value: u16) {
-        self.camera_y = value;
     }
 
     pub(crate) fn set_overworld_offset_base_y(&mut self, value: u16) {

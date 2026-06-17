@@ -1305,8 +1305,8 @@ fn semantic_snapshot_from_parts(ram: &[u8], ppu_regs: &[u8]) -> SemanticSnapshot
             bg1_y: read_le_u16(ram, crate::game_state::constants::BG1_Y_SCROLL),
             bg2_x: read_le_u16(ram, crate::game_state::constants::BG2_X_SCROLL),
             bg2_y: read_le_u16(ram, crate::game_state::constants::BG2_Y_SCROLL),
-            camera_x: world.scroll.camera_x(),
-            camera_y: world.scroll.camera_y(),
+            camera_x: world.camera_boundaries.camera_x_coord_scroll_low(),
+            camera_y: world.camera_boundaries.camera_y_coord_scroll_low(),
             rng_seed: world.region.rng_seed(),
         },
         ppu: SemanticPpu {
@@ -1351,7 +1351,6 @@ fn semantic_frame_from_native_game(game: &ZeldaState) -> SemanticFrame {
 fn semantic_world_from_native_game(game: &ZeldaState) -> SemanticWorld {
     let location = &game.game_state.world.location;
     let region = &game.game_state.world.region;
-    let scroll = &game.game_state.world.scroll;
     let map16 = game.game_state.world.overworld.map16.active_load;
     SemanticWorld {
         dungeon_room: location.dungeon_room(),
@@ -1366,8 +1365,16 @@ fn semantic_world_from_native_game(game: &ZeldaState) -> SemanticWorld {
         bg1_y: game.game_state.display.ppu_scroll_copy.bg1_v_copy2(),
         bg2_x: game.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
         bg2_y: game.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
-        camera_x: scroll.camera_x(),
-        camera_y: scroll.camera_y(),
+        camera_x: game
+            .game_state
+            .world
+            .camera_boundaries
+            .camera_x_coord_scroll_low(),
+        camera_y: game
+            .game_state
+            .world
+            .camera_boundaries
+            .camera_y_coord_scroll_low(),
         rng_seed: region.rng_seed(),
     }
 }

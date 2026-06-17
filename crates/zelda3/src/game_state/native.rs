@@ -5501,8 +5501,6 @@ mod tests {
         // BG scroll copy2 (0xe0-0xe9) moved to PpuScrollCopyState; tested there.
         write_le_u16(&mut ram, BG1_X_OFFSET, 0x0505);
         write_le_u16(&mut ram, BG1_Y_OFFSET, 0x0606);
-        write_le_u16(&mut ram, CAMERA_X, 0x0707);
-        write_le_u16(&mut ram, CAMERA_Y, 0x0808);
         write_le_u16(&mut ram, OVERWORLD_OFFSET_BASE_X, 0x0909);
         write_le_u16(&mut ram, OVERWORLD_OFFSET_BASE_Y, 0x0a0a);
         write_le_u16(&mut ram, OVERWORLD_OFFSET_MASK_X, 0x0b0b);
@@ -5514,8 +5512,6 @@ mod tests {
         let mut scroll = WorldScrollState::load_from_ram(&ram);
         assert_eq!(scroll.bg1_x_offset(), 0x0505);
         assert_eq!(scroll.bg1_y_offset(), 0x0606);
-        assert_eq!(scroll.camera_x(), 0x0707);
-        assert_eq!(scroll.camera_y(), 0x0808);
         assert_eq!(scroll.overworld_offset_base_x(), 0x0909);
         assert_eq!(scroll.overworld_offset_base_y(), 0x0a0a);
         assert_eq!(scroll.overworld_offset_mask_x(), 0x0b0b);
@@ -5526,8 +5522,6 @@ mod tests {
 
         scroll.set_bg1_x_offset(0x5555);
         scroll.set_bg1_y_offset(0x6666);
-        scroll.set_camera_x(0x7777);
-        scroll.set_camera_y(0x8888);
         scroll.set_overworld_offset_base_x(0x9999);
         scroll.set_overworld_offset_base_y(0xaaaa);
         scroll.set_overworld_offset_mask_x(0xbbbb);
@@ -5539,8 +5533,6 @@ mod tests {
 
         assert_eq!(read_le_u16(&ram, BG1_X_OFFSET), 0x5555);
         assert_eq!(read_le_u16(&ram, BG1_Y_OFFSET), 0x6666);
-        assert_eq!(read_le_u16(&ram, CAMERA_X), 0x7777);
-        assert_eq!(read_le_u16(&ram, CAMERA_Y), 0x8888);
         assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_BASE_X), 0x9999);
         assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_BASE_Y), 0xaaaa);
         assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_MASK_X), 0xbbbb);
@@ -5582,8 +5574,6 @@ mod tests {
         let mut scroll = WorldScrollState {
             bg1_x_offset: 0x0505,
             bg1_y_offset: 0x0606,
-            camera_x: 0x0707,
-            camera_y: 0x0808,
             overworld_offset_base_x: 0x0909,
             overworld_offset_base_y: 0x0a0a,
             overworld_offset_mask_x: 0x0b0b,
