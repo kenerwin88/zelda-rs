@@ -255,6 +255,42 @@ def c_array_spans():
     return arrays
 
 
+def report_clear_coherence(byte_owners, consts):
+    """Audit `clear_room_parser_words(&[ADDRS])`-style bulk RAM clears.
+
+    That bridge zeroes RAM and reloads ONLY DungeonRoomParserState. Any cleared
+    address actually owned (in write_to_ram) by a DIFFERENT native state keeps a
+    STALE native field, which then re-projects over the just-cleared RAM at frame
+    end — the misc_object_index(0x42c) / cur_door_idx(0x460) class of bug that the
+    write_to_ram-overlap scan can't see (the clear is a direct ram[] write, not a
+    write_to_ram). Reports each cleared address's real owner.
+    """
+    src = (CRATE_SRC / "dungeon.rs").read_text(errors="replace")
+    print("\n################  ROOM-LOAD CLEAR COHERENCE  ################")
+    print("(addresses cleared via clear_room_parser_words but owned by another "
+          "native state → stale field re-projects)\n")
+    # find the literal address array(s) feeding clear_room_parser_words
+    flagged = False
+    for m in re.finditer(r"for\s+&offset\s+in\s+&\[([^\]]*)\]", src):
+        if "clear_room_parser_words" not in src[m.end():m.end() + 200]:
+            continue
+        addrs = [parse_int(t) for t in m.group(1).split(",")]
+        addrs = [a for a in addrs if a is not None]
+        for a in addrs:
+            owners = byte_owners.get(a, {})
+            non_parser = {s: v for s, v in owners.items()
+                          if "RoomParser" not in s}
+            if non_parser:
+                flagged = True
+                for s, (label, fname) in non_parser.items():
+                    print(f"  0x{a:05x} cleared via clear_room_parser_words but "
+                          f"owned by {s} ({label}) [{fname}]")
+    if not flagged:
+        print("  none (all cleared addresses owned by the room parser)\n")
+    else:
+        print()
+
+
 def report_undersized_tables(owner_intervals):
     arrays = c_array_spans()
     if not arrays:
@@ -367,6 +403,7 @@ def main():
               "verify if unsure)\n")
         show(reuse)
 
+    report_clear_coherence(byte_owners, consts)
     report_undersized_tables(owner_intervals)
 
     if args.verbose and unresolved_all:

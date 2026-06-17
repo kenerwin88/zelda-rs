@@ -1261,6 +1261,18 @@ impl ZeldaState {
             .clear_replacement_tile_states();
         self.dungeon_object_tracking_mut()
             .clear_object_data_positions();
+        // dung_misc_objs_index (0x42c) is owned by DungeonObjectTrackingState, but
+        // the clear_room_parser_words loop above only zeroes RAM + reloads the room
+        // parser — it leaves this native field stale, so RoomDraw_SinglePot would
+        // keep counting pots from the previous room. Clear it here (C: dungeon.c
+        // dung_misc_objs_index = 0 at room load).
+        self.dungeon_object_tracking_mut().clear_misc_object_index();
+        // dung_cur_door_idx (0x460) — same stale-native-field hazard as
+        // misc_object_index: the clear_room_parser_words loop only zeroes RAM, so
+        // DungeonDoorState.current_door_index would keep last room's value and the
+        // door draw would write door tables to the wrong slots (C: dung_cur_door_idx
+        // = 0 at room load).
+        self.dungeon_doors_mut().set_current_door_index(0);
         self.dungeon_torch_mut().refresh_object_data_positions();
         for i in 0..16 {
             self.dungeon_object_tracking_mut()
