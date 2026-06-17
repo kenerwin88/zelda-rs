@@ -321,20 +321,34 @@ impl DungeonRoomTilemapState {
     }
 
     pub(crate) fn room_tilemap_word(&self, base: usize, dsto: u16) -> u16 {
-        let index = dsto as usize;
-        match base {
-            DUNG_BG1 => self.bg1_tile(index),
-            DUNG_BG2 => self.bg2_tile(index),
-            _ => 0,
-        }
+        self.tile_at_abs(base + dsto as usize * 2)
     }
 
     pub(crate) fn room_tilemap_word_by_byte_offset(&self, base: usize, byte_offset: usize) -> u16 {
-        let index = byte_offset >> 1;
-        match base {
-            DUNG_BG1 => self.bg1_tile(index),
-            DUNG_BG2 => self.bg2_tile(index),
-            _ => 0,
+        self.tile_at_abs(base + byte_offset)
+    }
+
+    /// Read a tilemap word by absolute WRAM byte offset, mirroring the raw-RAM
+    /// semantics: a BG2 access whose offset overruns the BG2 span (the `0x1000`
+    /// lower-level bit on a door position) spills into the contiguous BG1 span,
+    /// exactly as `base + dsto*2` does against flat RAM.
+    fn tile_at_abs(&self, abs: usize) -> u16 {
+        let span = DUNGEON_ROOM_TILEMAP_WORDS * 2;
+        if abs >= DUNG_BG2 && abs < DUNG_BG2 + span {
+            self.bg2_tile((abs - DUNG_BG2) / 2)
+        } else if abs >= DUNG_BG1 && abs < DUNG_BG1 + span {
+            self.bg1_tile((abs - DUNG_BG1) / 2)
+        } else {
+            0
+        }
+    }
+
+    fn set_tile_at_abs(&mut self, abs: usize, value: u16) {
+        let span = DUNGEON_ROOM_TILEMAP_WORDS * 2;
+        if abs >= DUNG_BG2 && abs < DUNG_BG2 + span {
+            self.set_bg2_tile((abs - DUNG_BG2) / 2, value);
+        } else if abs >= DUNG_BG1 && abs < DUNG_BG1 + span {
+            self.set_bg1_tile((abs - DUNG_BG1) / 2, value);
         }
     }
 
@@ -373,11 +387,7 @@ impl DungeonRoomTilemapState {
     }
 
     fn set_room_tilemap_word(&mut self, base: usize, dsto: u16, value: u16) {
-        match base {
-            DUNG_BG1 => self.set_bg1_tile(dsto as usize, value),
-            DUNG_BG2 => self.set_bg2_tile(dsto as usize, value),
-            _ => {}
-        }
+        self.set_tile_at_abs(base + dsto as usize * 2, value);
     }
 
     fn set_room_tilemap_word_by_byte_offset(
@@ -386,7 +396,7 @@ impl DungeonRoomTilemapState {
         byte_offset: usize,
         value: u16,
     ) {
-        self.set_room_tilemap_word(base, (byte_offset >> 1) as u16, value);
+        self.set_tile_at_abs(base + byte_offset, value);
     }
 
     fn set_line_pointer_row0(&mut self, index: usize, value: u16) {

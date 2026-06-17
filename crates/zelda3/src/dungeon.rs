@@ -5196,14 +5196,14 @@ impl ZeldaState {
         self.game_state
             .dungeon
             .room_tilemaps
-            .bg1_tile(dsto as usize)
+            .room_tilemap_word(ROOM_BG1_TILEMAP_BASE, dsto)
     }
 
     pub(super) fn room_read_bg2(&self, dsto: u16) -> u16 {
         self.game_state
             .dungeon
             .room_tilemaps
-            .bg2_tile(dsto as usize)
+            .room_tilemap_word(ROOM_BG2_TILEMAP_BASE, dsto)
     }
 
     #[track_caller]
