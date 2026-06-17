@@ -844,19 +844,20 @@ impl ZeldaState {
                 0x31 => 10,
                 _ => 1,
             };
+            // All targets here are owned by PlayerResourcesState, not inventory_items —
+            // a raw inventory_items write to RAM is re-projected away by
+            // PlayerResourcesState at frame end (same class as the 0x25/0x32/0x33
+            // compass/map fix above). 0x24 -> LINK_NUM_KEYS (0xf36f); 0x27/0x28/0x31 ->
+            // LINK_BOMB_FILLER (0xf375). Route both through PlayerResourcesState so the
+            // native field updates (missing small-key @~31258 / missing bombs @~51000).
             if item == 0x24 {
-                // LINK_NUM_KEYS (value_addr) is owned by PlayerResourcesState, not
-                // inventory_items — route the small-key add through it so the native
-                // `keys` field updates. A raw inventory_items write to 0xf36f is
-                // re-projected away by PlayerResourcesState at frame end (the cause of
-                // the missing small-key @frame ~31258, same class as the 0x25/0x32/0x33
-                // compass/map fix above).
                 let keys = self.game_state.inventory.player_resources.keys();
                 self.player_resources_mut()
                     .set_keys(keys.saturating_add(add).min(99));
             } else {
-                self.inventory_items_mut()
-                    .add_item_memory_value_capped(value_addr, add, 99);
+                let filler = self.game_state.inventory.player_resources.bomb_filler();
+                self.player_resources_mut()
+                    .set_bomb_filler(filler.saturating_add(add).min(99));
             }
             self.hud_refresh_icon();
         } else if item == 0x17 {
