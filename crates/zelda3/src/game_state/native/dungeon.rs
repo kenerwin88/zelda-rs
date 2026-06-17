@@ -78,7 +78,13 @@ const DUNGEON_BG1_ATTR_BUFFER_OFFSET: usize = DUNGEON_BG1_ATTR_TABLE - DUNGEON_B
 const DUNGEON_STAIR_LIST_COUNT: usize = 21;
 const DUNGEON_INTER_STAIRCASE_TABLE_WORDS: usize =
     (DUNG_STAIRS_TABLE_1 - DUNG_INTER_STAIRCASES) / 2;
-const DUNGEON_STAIR_TABLE_1_WORDS: usize = (DUNG_STAIRS_TABLE_2 - DUNG_STAIRS_TABLE_1) / 2;
+// dung_stairs_table_1 (0x6b8) is physically followed by dung_chest_locations
+// (0x6e0) and then dung_stairs_table_2 (0x6ec) — a SNES byte-reuse: the nominal
+// gap to stairs_table_2 spans OVER chest_locations. Sizing this table to that full
+// gap made DungeonStairListsState project a stale 0x6e0..0x6eb over chest_locations
+// on every stair sync (clobbering DungeonRoomItemState.chest_locations). Cap it at
+// the chest_locations boundary so chest_locations stays the sole owner of 0x6e0+.
+const DUNGEON_STAIR_TABLE_1_WORDS: usize = (DUNG_CHEST_LOCATIONS - DUNG_STAIRS_TABLE_1) / 2;
 const DUNGEON_STAIR_TABLE_2_WORDS: usize = (DUNGEON_DOOR_DEBRIS_X - DUNG_STAIRS_TABLE_2) / 2;
 
 pub(crate) fn loaded_room_data_word(ram: &[u8], offset: usize, index: usize) -> u16 {
