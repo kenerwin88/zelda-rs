@@ -2,7 +2,11 @@ use super::ram_byte;
 use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 
-const MEMORIZED_TILE_ENTRY_SLOTS: usize = 0x80;
+// C memorized_tile_value is 0x40 bytes wide (0xfa00..0xfa40) = 0x20 u16 slots, and
+// num_memorized_tiles is bounded by it. Modeling 0x80 slots made write_to_ram project
+// 0x00 over 0xfa40..0xfb00 (word_7EFA40, dung_torch_data 0xfb40, ...), clobbering real
+// data on every frame. Match the C value-table size so those bytes keep their owners.
+const MEMORIZED_TILE_ENTRY_SLOTS: usize = 0x20;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ScratchCounterState {

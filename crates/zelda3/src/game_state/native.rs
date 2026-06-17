@@ -1072,7 +1072,8 @@ mod tests {
         write_le_u16(&mut ram, NUM_MEMORIZED_TILES, 2);
         write_le_u16(&mut ram, MEMORIZED_TILE_ADDR, 0x1111);
         write_le_u16(&mut ram, MEMORIZED_TILE_VALUE, 0x2222);
-        write_le_u16(&mut ram, MEMORIZED_TILE_ADDR + 0xfe, 0xffff);
+        // last slot of the C-sized 0x20-entry table (offset 0x3e = slot 31)
+        write_le_u16(&mut ram, MEMORIZED_TILE_ADDR + 0x3e, 0xffff);
 
         let mut memorized_tiles = MemorizedTileState::load_from_ram(&ram);
         {
@@ -1092,7 +1093,7 @@ mod tests {
         assert_eq!(memorized_tiles.entry_value(2), 0x6666);
         assert_eq!(read_le_u16(&ram, NUM_MEMORIZED_TILES), 6);
         assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_ADDR), 0);
-        assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_ADDR + 0xfe), 0);
+        assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_ADDR + 0x3e), 0);
         assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE + 2), 0x4444);
         assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE + 4), 0x6666);
     }
