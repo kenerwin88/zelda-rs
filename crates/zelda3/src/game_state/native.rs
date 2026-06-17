@@ -5008,7 +5008,15 @@ mod tests {
 
         let mut projected = vec![0; WRAM_SIZE];
         theme.write_to_ram(&mut projected);
-        assert_eq!(WorldPaletteThemeState::load_from_ram(&projected), theme);
+        // The exit_* tile-theme indices (0xc164-0xc166) are owned and projected by
+        // DungeonEntranceBackupState (the Dungeon_LoadEntrance save). This struct
+        // loads them only to feed restore_exit_tile_themes, so they intentionally
+        // do NOT round-trip through WorldPaletteThemeState::write_to_ram.
+        let mut expected = theme;
+        expected.exit_overworld_tile_theme_index = 0;
+        expected.exit_main_tile_theme_index = 0;
+        expected.exit_aux_tile_theme_index = 0;
+        assert_eq!(WorldPaletteThemeState::load_from_ram(&projected), expected);
     }
 
     #[test]
@@ -9624,7 +9632,6 @@ mod tests {
         {
             let mut bridge = NativePpuScrollCopyBridgeMut::new(&mut scroll, &mut ram);
             bridge.cache_bg2_live_scroll();
-            bridge.cache_camera_scroll();
             bridge.copy_bg2_live_to_bg1_live();
             bridge.copy_mapbak_palette_from(&[5, 6, 7]);
         }
@@ -9635,8 +9642,6 @@ mod tests {
         assert_eq!(read_le_u16(&ram, BG1_Y_SCROLL), 0x0070);
         assert_eq!(read_le_u16(&ram, BG2_H_SCROLL_COPY2_CACHED), 0x0060);
         assert_eq!(read_le_u16(&ram, BG2_V_SCROLL_COPY2_CACHED), 0x0070);
-        assert_eq!(read_le_u16(&ram, CAMERA_Y_COORD_SCROLL_LOW_CACHED), 0x1001);
-        assert_eq!(read_le_u16(&ram, CAMERA_X_COORD_SCROLL_LOW_CACHED), 0x2002);
         assert_eq!(&scroll.mapbak_palette_slice()[..4], &[5, 6, 7, 4]);
         assert_eq!(&ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4], &[5, 6, 7, 4]);
     }

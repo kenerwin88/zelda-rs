@@ -3209,6 +3209,14 @@ fn run_replay_save(args: &[String]) {
         );
     }
 
+    // Stable byte-level WRAM dump for deterministic old-vs-new diffing (no
+    // bisection): `ZELDA3_REPLAY_WRAM_DUMP=<path>` writes the full 128KB WRAM.
+    if let Some(path) = std::env::var_os("ZELDA3_REPLAY_WRAM_DUMP") {
+        if let Err(e) = std::fs::write(&path, &game.ram[..]) {
+            eprintln!("failed to write WRAM dump to {path:?}: {e}");
+        }
+    }
+
     println!(
         "replay-save completed frames={frames} active={} ending={} fc=0x{:02x} rng=0x{:02x} ramhash=0x{:08x} ram0=0x{:08x} ram1=0x{:08x} ram2=0x{:08x} ram3=0x{:08x} ram4=0x{:08x} ram5=0x{:08x} ram6=0x{:08x} ram7=0x{:08x} sramhash=0x{:08x} roommask=0x{:04x} hist={:04x},{:04x},{:04x},{:04x} histmask={:04x},{:04x},{:04x},{:04x} main={} sub={} subsub={} adc=0x{:04x} saved={} map={} msgmod={} indoors={} room=0x{:04x} ow=0x{:04x} msg=0x{:04x} msgpos=0x{:04x} msgb=0x{:02x}/0x{:02x} textrs=0x{:02x} wait=0x{:04x}/0x{:02x} immob=0x{:02x} x=0x{:04x} y=0x{:04x} subpix=0x{:02x}/0x{:02x} hp=0x{:02x} item=0x{:02x} cur_y=0x{:02x} active_item=0x{:02x} hand=0x{:02x} bow=0x{:02x} boom=0x{:02x} big=0x{:04x} keys=0x{:02x} sram3=0x{:02x} joyh=0x{:02x} joyl=0x{:02x} fh=0x{:02x} fl=0x{:02x} dir=0x{:02x} face=0x{:02x} state=0x{:02x} inwater=0x{:02x} aux=0x{:02x} ph_timer=0x{:02x} incap=0x{:02x} lflag=0x{:02x} recoil=0x{:02x} drag=0x{:02x} grab=0x{:02x} abtn=0x{:02x} by=0x{:02x} anim={}/{} var30d=0x{:02x} follower=0x{:02x} foltimer=0x{:04x} folvar={}/{}/{}/{} folevt=0x{:02x} trans={} dirbits=0x{:02x} dirbits2=0x{:02x} tctr={} owcnt={} b69c=0x{:02x} vx=0x{:02x} vy=0x{:02x} bg3v=0x{:04x} yvel=0x{:02x} door=0x{:02x} speed=0x{:02x}/0x{:02x} lspeed=0x{:02x}/0x{:02x} dash=0x{:02x} cdf=0x{:02x} last=0x{:02x} dlast=0x{:02x} orth=0x{:02x} force=0x{:04x} prevent=0x{:02x} dragxy=0x{:04x}/0x{:04x} rtrans=0x{:02x} tcoll=0x{:02x} col=0x{:02x},0x{:02x} bugs=0x{:02x} feat=0x{:08x} wanted=0x{:08x} z=0x{:02x} vz=0x{:02x} vzcopy=0x{:02x} below=0x{:02x} tile=0x{:04x} action=0x{:02x} interact=0x{:02x},{:02x},{:02x} read=0x{:04x} a0=0x{:02x} a1=0x{:02x} chest=0x{:04x} keylock=0x{:02x} srm=0x{:02x} mark0=0x{:04x} chk0={} bak0=0x{:04x} bchk0={} r16=0x{:02x} arr1={},{},{} sel3=0x{:02x} sel4=0x{:02x} sel5=0x{:02x} sel9=0x{:02x} sel11=0x{:02x} ptimer=0x{:02x} bframes=0x{:02x} r14=0x{:04x} r12=0x{:04x} misc=0x{:04x} pit=0x{:02x} spike=0x{:02x} vledge=0x{:02x} stair=0x{:02x} deep=0x{:04x} normal=0x{:04x} debirando={}",
         game.state_recorder.replay_mode,

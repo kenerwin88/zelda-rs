@@ -3910,7 +3910,11 @@ impl SpriteSystemState {
         ram[SPRITE_ALERT_FLAG] = self.alert_flag;
         ram[SPRITE_GRAPHICS_INDEX] = self.graphics_index;
         ram[SPRITE_GRAPHICS_INDEX_SPEXIT] = self.saved_special_exit_graphics_index;
-        ram[SPRITE_GRAPHICS_INDEX_EXIT] = self.saved_exit_graphics_index;
+        // NOTE: SPRITE_GRAPHICS_INDEX_EXIT (0xc167) is owned and projected by
+        // DungeonEntranceBackupState (the `Dungeon_LoadEntrance` save, C
+        // dungeon.c:8477). `saved_exit_graphics_index` is a load-only mirror read
+        // by the restore (`graphics_index = saved_exit_graphics_index`); projecting
+        // it here would clobber the authoritative save.
         ram[ALT_SPRITE_SPAWNED_FLAG] = self.alt_sprite_spawned_flag;
         ram[CUR_OBJECT_INDEX] = self.cur_object_index;
         ram[ANCILLA_ALLOC_ROTATE] = self.ancilla_alloc_rotate;

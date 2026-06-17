@@ -1586,8 +1586,6 @@ pub(crate) struct PpuScrollCopyState {
     mode7_center_y: u16,
     bg1_h_subpixel: u16,
     bg1_v_subpixel: u16,
-    camera_y_scroll_cached: u16,
-    camera_x_scroll_cached: u16,
     mapbak_tm: u16,
     mapbak_ts: u8,
     mapbak_main_tile_theme_index: u8,
@@ -1629,8 +1627,6 @@ impl Default for PpuScrollCopyState {
             mode7_center_y: 0,
             bg1_h_subpixel: 0,
             bg1_v_subpixel: 0,
-            camera_y_scroll_cached: 0,
-            camera_x_scroll_cached: 0,
             mapbak_tm: 0,
             mapbak_ts: 0,
             mapbak_main_tile_theme_index: 0,
@@ -1673,8 +1669,6 @@ impl PpuScrollCopyState {
             mode7_center_y: read_le_u16(ram, MODE7_CENTER_Y_COPY),
             bg1_h_subpixel: read_le_u16(ram, BG1_H_SCROLL_SUBPIXEL),
             bg1_v_subpixel: read_le_u16(ram, BG1_V_SCROLL_SUBPIXEL),
-            camera_y_scroll_cached: read_le_u16(ram, CAMERA_Y_COORD_SCROLL_LOW_CACHED),
-            camera_x_scroll_cached: read_le_u16(ram, CAMERA_X_COORD_SCROLL_LOW_CACHED),
             mapbak_tm: read_le_u16(ram, MAPBAK_TM),
             mapbak_ts: ram_byte(ram, MAPBAK_TS),
             mapbak_main_tile_theme_index: ram_byte(ram, MAPBAK_MAIN_TILE_THEME_INDEX),
@@ -1737,16 +1731,6 @@ impl PpuScrollCopyState {
         write_le_u16(ram, MODE7_CENTER_Y_COPY, self.mode7_center_y);
         write_le_u16(ram, BG1_H_SCROLL_SUBPIXEL, self.bg1_h_subpixel);
         write_le_u16(ram, BG1_V_SCROLL_SUBPIXEL, self.bg1_v_subpixel);
-        write_le_u16(
-            ram,
-            CAMERA_Y_COORD_SCROLL_LOW_CACHED,
-            self.camera_y_scroll_cached,
-        );
-        write_le_u16(
-            ram,
-            CAMERA_X_COORD_SCROLL_LOW_CACHED,
-            self.camera_x_scroll_cached,
-        );
         write_le_u16(ram, MAPBAK_TM, self.mapbak_tm);
         ram[MAPBAK_TS] = self.mapbak_ts;
         ram[MAPBAK_MAIN_TILE_THEME_INDEX] = self.mapbak_main_tile_theme_index;
@@ -2153,11 +2137,6 @@ impl PpuScrollCopyState {
     pub(crate) fn cache_bg2_live_scroll_from(&mut self, bg2_h: u16, bg2_v: u16) {
         self.bg2_h_copy2_cached = bg2_h;
         self.bg2_v_copy2_cached = bg2_v;
-    }
-
-    pub(crate) fn cache_camera_scroll(&mut self, camera_y: u16, camera_x: u16) {
-        self.camera_y_scroll_cached = camera_y;
-        self.camera_x_scroll_cached = camera_x;
     }
 
     pub(crate) fn save_special_exit_bg2_live_scroll(&mut self) {
@@ -4451,13 +4430,6 @@ impl<'a> NativePpuScrollCopyBridgeMut<'a> {
         fn set_mapbak_cgwsel_word(value: u16);
         fn set_mapbak_hdmaen(value: u8);
         fn copy_mapbak_palette_from(palette: &[u8]);
-    }
-
-    pub(crate) fn cache_camera_scroll(&mut self) {
-        let camera_y = read_le_u16(self.ram, CAMERA_Y_COORD_SCROLL_LOW);
-        let camera_x = read_le_u16(self.ram, CAMERA_X_COORD_SCROLL_LOW);
-        self.state.cache_camera_scroll(camera_y, camera_x);
-        self.sync();
     }
 }
 

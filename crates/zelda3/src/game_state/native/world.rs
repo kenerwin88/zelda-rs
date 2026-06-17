@@ -989,9 +989,11 @@ impl WorldPaletteThemeState {
         ram[OVERWORLD_SPECIAL_TILE_THEME_INDEX] = self.special_exit_overworld_tile_theme_index;
         ram[MAIN_TILE_THEME_INDEX_SPEXIT] = self.special_exit_main_tile_theme_index;
         ram[AUX_TILE_THEME_INDEX_SPEXIT] = self.special_exit_aux_tile_theme_index;
-        ram[OVERWORLD_TILE_THEME_INDEX_EXIT] = self.exit_overworld_tile_theme_index;
-        ram[MAIN_TILE_THEME_INDEX_EXIT] = self.exit_main_tile_theme_index;
-        ram[AUX_TILE_THEME_INDEX_EXIT] = self.exit_aux_tile_theme_index;
+        // NOTE: OVERWORLD/MAIN/AUX_TILE_THEME_INDEX_EXIT (0xc164-0xc166) are owned
+        // and projected by DungeonEntranceBackupState (the `Dungeon_LoadEntrance`
+        // save, matching C dungeon.c:8475). These fields are a load-only mirror
+        // read by `restore_exit_tile_themes`; projecting them here would clobber
+        // the authoritative save (and cascade into the sprite byte 0xc167).
     }
 
     pub(crate) fn aux_bg_subset(&self, index: usize) -> u8 {
