@@ -4596,7 +4596,7 @@ mod tests {
         ram[LINK_LOWLIFE_COUNTDOWN_TIMER_BEEP] = 0x33;
 
         let resources = PlayerResourcesState::load_from_ram(&ram);
-        assert_eq!(resources.magic_power(), 0x40);
+        // magic_power is now owned by FollowerLinkState, not PlayerResourcesState.
         assert_eq!(resources.magic_consumption_level(), 2);
         assert_eq!(resources.bombs(), 7);
         assert_eq!(resources.equipped_bottle_index(), 3);

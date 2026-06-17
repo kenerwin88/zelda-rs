@@ -22605,12 +22605,12 @@ impl ZeldaState {
         if self.sprite_check_damage_to_link(k) && self.sprite_slot(k).delay_main() == 0 {
             let value = 16;
             self.sprite_slot_mut(k).set_delay_main(value);
-            let t = i16::from(self.game_state.inventory.player_resources.magic_power()) - 8;
+            let t = i16::from(self.game_state.player.follower_link.magic_power()) - 8;
             if t < 0 {
-                self.player_resources_mut().set_magic_power(0);
+                self.follower_link_state_mut().set_magic_power(0);
             } else {
                 self.set_sound_effect_2(0x1d);
-                self.player_resources_mut().set_magic_power(t as u8);
+                self.follower_link_state_mut().set_magic_power(t as u8);
             }
         }
         self.sprite_move_xy(k);

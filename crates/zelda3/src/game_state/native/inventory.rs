@@ -1232,7 +1232,9 @@ impl<'a> NativeDungeonKeySlotsBridgeMut<'a> {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PlayerResourcesState {
-    magic_power: u8,
+    // link_magic_power (0xf36e) is owned solely by FollowerLinkState; PlayerResources-
+    // State must not mirror it (it projects after FollowerLinkState and would clobber
+    // item magic-consumption with a stale value). magic_filler stays here.
     magic_consumption_level: u8,
     bombs: u8,
     equipped_bottle_index: u8,
@@ -1262,7 +1264,6 @@ pub(crate) struct PlayerResourcesState {
 impl PlayerResourcesState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            magic_power: ram_byte(ram, LINK_MAGIC_POWER),
             magic_consumption_level: ram_byte(ram, LINK_MAGIC_CONSUMPTION),
             bombs: ram_byte(ram, LINK_ITEM_BOMBS),
             equipped_bottle_index: ram_byte(ram, LINK_ITEM_BOTTLE_INDEX),
@@ -1291,7 +1292,6 @@ impl PlayerResourcesState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[LINK_MAGIC_POWER] = self.magic_power;
         ram[LINK_MAGIC_CONSUMPTION] = self.magic_consumption_level;
         ram[LINK_ITEM_BOMBS] = self.bombs;
         ram[LINK_ITEM_BOTTLE_INDEX] = self.equipped_bottle_index;
@@ -1316,10 +1316,6 @@ impl PlayerResourcesState {
         ram[LINK_ABILITY_FLAGS] = self.ability_flags;
         ram[LINK_HAS_CRYSTALS] = self.crystal_flags;
         ram[LINK_LOWLIFE_COUNTDOWN_TIMER_BEEP] = self.low_health_beep_timer;
-    }
-
-    pub(crate) fn magic_power(&self) -> u8 {
-        self.magic_power
     }
 
     pub(crate) fn magic_filler(&self) -> u8 {
@@ -1477,18 +1473,8 @@ impl<'a> NativePlayerResourcesBridgeMut<'a> {
         );
     }
 
-    pub(crate) fn set_magic_power(&mut self, value: u8) {
-        self.resources.magic_power = value;
-        self.sync();
-    }
-
     pub(crate) fn set_magic_consumption_level(&mut self, value: u8) {
         self.resources.magic_consumption_level = value;
-        self.sync();
-    }
-
-    pub(crate) fn increment_magic_power(&mut self) {
-        self.resources.magic_power = self.resources.magic_power.wrapping_add(1);
         self.sync();
     }
 

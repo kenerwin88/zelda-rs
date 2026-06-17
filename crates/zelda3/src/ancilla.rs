@@ -3185,7 +3185,7 @@ impl ZeldaState {
                         .ancilla_slots
                         .slot_mut(&mut self.ram, k)
                         .set_g(value);
-                    self.player_resources_mut().set_magic_power(r0);
+                    self.follower_link_state_mut().set_magic_power(r0);
                 }
                 if self.game_state.player.follower_link.filtered_joypad_h() & 0x40 != 0 {
                     self.kill_byrna_spark(k);

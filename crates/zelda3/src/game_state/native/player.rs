@@ -3303,6 +3303,14 @@ impl FollowerLinkState {
         self.magic_power
     }
 
+    fn set_magic_power(&mut self, value: u8) {
+        self.magic_power = value;
+    }
+
+    fn increment_magic_power(&mut self) {
+        self.magic_power = self.magic_power.wrapping_add(1);
+    }
+
     fn clear_action_scratch_state(&mut self) {
         self.item_action_debug_value_2 = 0;
         self.item_action_step = 0;
@@ -6367,6 +6375,18 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.ram[LINK_MAGIC_POWER] = value;
         self.debug_assert_matches_ram();
         value
+    }
+
+    pub(crate) fn set_magic_power(&mut self, value: u8) {
+        self.state.set_magic_power(value);
+        self.ram[LINK_MAGIC_POWER] = self.state.magic_power();
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn increment_magic_power(&mut self) {
+        self.state.increment_magic_power();
+        self.ram[LINK_MAGIC_POWER] = self.state.magic_power();
+        self.debug_assert_matches_ram();
     }
 
     pub(crate) fn clear_action_scratch_state(&mut self) {

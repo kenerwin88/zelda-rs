@@ -404,16 +404,14 @@ impl ZeldaState {
             return;
         }
         if self.game_state.inventory.player_resources.magic_filler() != 0 {
-            if self.game_state.inventory.player_resources.magic_power() >= 128 {
-                let mut resources = self.player_resources_mut();
-                resources.set_magic_power(128);
-                resources.clear_magic_filler();
+            // link_magic_power (0xf36e) is owned solely by FollowerLinkState; only
+            // magic_filler stays in PlayerResourcesState.
+            if self.game_state.player.follower_link.magic_power() >= 128 {
+                self.follower_link_state_mut().set_magic_power(128);
+                self.player_resources_mut().clear_magic_filler();
             } else {
-                {
-                    let mut resources = self.player_resources_mut();
-                    resources.decrement_magic_filler();
-                    resources.increment_magic_power();
-                }
+                self.player_resources_mut().decrement_magic_filler();
+                self.follower_link_state_mut().increment_magic_power();
                 if self.game_state.frame.frame_counter & 3 == 0
                     && !self.game_state.system_signals.has_sound_effect_1()
                 {
@@ -1543,7 +1541,7 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_refill_magic_power(&mut self) -> bool {
-        if self.game_state.inventory.player_resources.magic_power() >= 0x80 {
+        if self.game_state.player.follower_link.magic_power() >= 0x80 {
             return true;
         }
         self.player_resources_mut().set_magic_filler(0x80);
@@ -1710,7 +1708,7 @@ impl ZeldaState {
             self.hud_buffer_set(dst + hudxy(2, 0), 0x28fa);
         }
         let src = MAGIC_METER_TILEMAP_BY_LEVEL
-            [(usize::from(self.game_state.inventory.player_resources.magic_power()) + 7) >> 3];
+            [(usize::from(self.game_state.player.follower_link.magic_power()) + 7) >> 3];
         for (y, tile) in src.iter().enumerate() {
             self.hud_buffer_set(dst + hudxy(1, y + 1), *tile);
         }
