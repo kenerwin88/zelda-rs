@@ -228,6 +228,62 @@ def enclosing_struct(text: str, pos: int) -> str:
     return last or "<unknown>"
 
 
+# ----------------------------------------------------------------------------
+# C array layout (../zelda3/src/variables.h) for the undersized-table lint.
+# Array defines look like `((uint8*)(g_ram+0xADDR))`; scalars have a leading
+# deref `(*(uint16*)(g_ram+0xADDR))`. A native range-write whose span is smaller
+# than the C array's span (distance to the next #define) is likely truncated —
+# exactly the class of the presence-table bug (0x200 Vec for a 0x1000 C array).
+# ----------------------------------------------------------------------------
+C_VARS_H = ROOT.parent / "zelda3" / "src" / "variables.h"
+C_ARRAY_RE = re.compile(
+    r"#define\s+(\w+)\s+\(\s*\(\s*u?int\d+\s*\*\s*\)\s*\(\s*g_ram\s*\+\s*(0x[0-9A-Fa-f]+)")
+C_ANY_RE = re.compile(r"g_ram\s*\+\s*(0x[0-9A-Fa-f]+)")
+
+
+def c_array_spans():
+    """Return {base_addr: (name, span)} for C array (pointer) defines."""
+    if not C_VARS_H.exists():
+        return {}
+    text = C_VARS_H.read_text(errors="replace")
+    all_addrs = sorted({int(m.group(1), 16) for m in C_ANY_RE.finditer(text)})
+    arrays = {}
+    for m in C_ARRAY_RE.finditer(text):
+        base = int(m.group(2), 16)
+        nxt = next((a for a in all_addrs if a > base), base + 0x10000)
+        arrays[base] = (m.group(1), nxt - base)
+    return arrays
+
+
+def report_undersized_tables(owner_intervals):
+    arrays = c_array_spans()
+    if not arrays:
+        print("\n(no variables.h found — skipping undersized-table lint)\n")
+        return
+    findings = []
+    for struct, ivs in owner_intervals.items():
+        for (s, e, label, fname) in ivs:
+            # Only genuine table projections (slice / helper range-writers) can be
+            # "truncated"; a single write_le_u16/byte to an array base is just a
+            # member access and is expected to be < the array span.
+            if not (label.startswith("slice") or label.startswith("write_scroll")):
+                continue
+            if s in arrays:
+                cname, cspan = arrays[s]
+                span = e - s
+                if span < cspan:
+                    findings.append((s, struct, fname, label, span, cname, cspan))
+    print("\n################  UNDERSIZED NATIVE TABLES  ################")
+    print("(native range-write narrower than the C array at the same base)\n")
+    if not findings:
+        print("  none\n")
+        return
+    for (s, struct, fname, label, span, cname, cspan) in sorted(findings):
+        print(f"  0x{s:05x} {struct} [{fname}]: writes 0x{span:x} bytes but C array "
+              f"`{cname}` spans 0x{cspan:x}  (via {label})")
+    print()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--verbose", action="store_true",
@@ -310,6 +366,8 @@ def main():
         print("(owners live in mutually exclusive modes — by-design byte reuse, "
               "verify if unsure)\n")
         show(reuse)
+
+    report_undersized_tables(owner_intervals)
 
     if args.verbose and unresolved_all:
         print("\nUnresolved writes (address could not be computed statically):")

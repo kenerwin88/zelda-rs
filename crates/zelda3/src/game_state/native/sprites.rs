@@ -27,6 +27,7 @@ use crate::game_state::constants::{
     OVERLORD_GEN2, OVERLORD_GEN3, OVERLORD_OFFSET_SPRITE_POS, OVERLORD_SPAWNED_AREA, OVERLORD_TYPE,
     OVERLORD_X_HI, OVERLORD_X_LO, OVERLORD_Y_HI, OVERLORD_Y_LO, OVERWORLD_BOULDER_TRAP_COUNT,
     OVERWORLD_BOULDER_TRAP_TIMER, OVERWORLD_SPRITE_PRESENCE, OVERWORLD_SPRITE_WAS_LOADED,
+    PLAYER_IS_INDOORS,
     PRIZE_DROP_CYCLE, REPULSESPARK_ANIM_DELAY, REPULSESPARK_FLOOR_STATUS, REPULSESPARK_TIMER,
     REPULSESPARK_X_LO, REPULSESPARK_Y_LO, SPRCOLL_X_BASE, SPRCOLL_X_SIZE, SPRCOLL_Y_BASE,
     SPRCOLL_Y_SIZE, SPRITE_A, SPRITE_AI_STATE, SPRITE_ALERT_FLAG, SPRITE_ANIM_CLOCK, SPRITE_B,
@@ -63,6 +64,12 @@ const CHAIN_CHOMP_HISTORY_LEN: usize = 0x80;
 const ETHER_ANGLE_COUNT: usize = 8;
 const ENEMY_DAMAGE_SUBCLASS_COUNT: usize = 0x1000;
 pub(crate) const OVERWORLD_SPRITE_FLAG_COUNT: usize = 0x200;
+// `sprite_where_in_overworld` (presence markers, 0x1df80) is indexed by `blk`
+// DIRECTLY (C: `sprite_where_in_overworld[blk]`), and blk spans 0..0xfff, so the
+// table is 0x1000 bytes (0x1df80..0x1ef80, ending exactly at the was-loaded
+// bitmask). The 0x200 FLAG_COUNT above is only correct for the was-loaded table,
+// which is indexed by `blk >> 3`.
+pub(crate) const OVERWORLD_SPRITE_PRESENCE_COUNT: usize = 0x1000;
 const SPRITE_GRAPHICS_SUBSET_COUNT: usize = 4;
 const SPRITE_ZERO_PAGE_WORK_COUNT: usize = 16;
 const SPRITE_WHERE_IN_ROOM_BYTES: usize = 0x1000;
@@ -4260,9 +4267,17 @@ impl SpriteWorkspaceState {
             current_sprite_x: read_le_u16(ram, CUR_SPRITE_X),
             current_sprite_y: read_le_u16(ram, CUR_SPRITE_Y),
             low_scratch,
-            where_in_room: ram
-                [SPRITE_WHERE_IN_ROOM..SPRITE_WHERE_IN_ROOM + SPRITE_WHERE_IN_ROOM_BYTES]
-                .to_vec(),
+            // SPRITE_WHERE_IN_ROOM (0x1df80) is the dungeon per-room sprite-kill
+            // bitmask; in the OVERWORLD the same WRAM is `sprite_where_in_overworld`
+            // (the proximity-spawn presence table, owned by OverworldSpritePresence-
+            // State). Only mirror/project it indoors so the overworld presence table
+            // is never clobbered by this workspace's frame-end projection.
+            where_in_room: if ram[PLAYER_IS_INDOORS] != 0 {
+                ram[SPRITE_WHERE_IN_ROOM..SPRITE_WHERE_IN_ROOM + SPRITE_WHERE_IN_ROOM_BYTES]
+                    .to_vec()
+            } else {
+                vec![0; SPRITE_WHERE_IN_ROOM_BYTES]
+            },
         }
     }
 
@@ -4284,8 +4299,14 @@ impl SpriteWorkspaceState {
         write_le_u16(ram, CUR_SPRITE_X, self.current_sprite_x);
         write_le_u16(ram, CUR_SPRITE_Y, self.current_sprite_y);
         ram[..SPRITE_ZERO_PAGE_WORK_COUNT].copy_from_slice(&self.low_scratch);
-        ram[SPRITE_WHERE_IN_ROOM..SPRITE_WHERE_IN_ROOM + self.where_in_room.len()]
-            .copy_from_slice(&self.where_in_room);
+        // Only project the dungeon per-room kill bitmask while indoors; in the
+        // overworld this WRAM is the proximity-spawn presence table (see
+        // load_from_ram), and projecting stale all-zero room data would wipe the
+        // markers OverworldSpritePresenceState just filled.
+        if ram[PLAYER_IS_INDOORS] != 0 {
+            ram[SPRITE_WHERE_IN_ROOM..SPRITE_WHERE_IN_ROOM + self.where_in_room.len()]
+                .copy_from_slice(&self.where_in_room);
+        }
     }
 
     pub(crate) fn room_origin_x_high(&self) -> u8 {
@@ -5534,7 +5555,7 @@ pub(crate) struct OverworldSpritePresenceState {
 impl Default for OverworldSpritePresenceState {
     fn default() -> Self {
         Self {
-            markers: vec![0; OVERWORLD_SPRITE_FLAG_COUNT],
+            markers: vec![0; OVERWORLD_SPRITE_PRESENCE_COUNT],
         }
     }
 }
@@ -5543,15 +5564,15 @@ impl OverworldSpritePresenceState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             markers: ram[OVERWORLD_SPRITE_PRESENCE
-                ..OVERWORLD_SPRITE_PRESENCE + OVERWORLD_SPRITE_FLAG_COUNT]
+                ..OVERWORLD_SPRITE_PRESENCE + OVERWORLD_SPRITE_PRESENCE_COUNT]
                 .to_vec(),
         }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[OVERWORLD_SPRITE_PRESENCE..OVERWORLD_SPRITE_PRESENCE + OVERWORLD_SPRITE_FLAG_COUNT]
+        ram[OVERWORLD_SPRITE_PRESENCE..OVERWORLD_SPRITE_PRESENCE + OVERWORLD_SPRITE_PRESENCE_COUNT]
             .fill(0);
-        let len = self.markers.len().min(OVERWORLD_SPRITE_FLAG_COUNT);
+        let len = self.markers.len().min(OVERWORLD_SPRITE_PRESENCE_COUNT);
         ram[OVERWORLD_SPRITE_PRESENCE..OVERWORLD_SPRITE_PRESENCE + len]
             .copy_from_slice(&self.markers[..len]);
     }
