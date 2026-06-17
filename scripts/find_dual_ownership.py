@@ -288,6 +288,131 @@ def report_clear_coherence(byte_owners, consts):
         print()
 
 
+def collect_tuple_array_ranges(consts: dict[str, int]) -> dict[str, list[tuple[int, int]]]:
+    """Resolve `const NAME: ... = [(BASE, COUNT), ...];` to [(base_addr, count)] ranges.
+    Captures the per-slot field-range tables (e.g. SPRITE_SLOTS_FIELD_RANGES) that a
+    state's write_to_ram iterates via a helper — opaque to the per-write parser, so the
+    owner map would otherwise not know that state owns those bytes."""
+    out: dict[str, list[tuple[int, int]]] = {}
+    decl_re = re.compile(
+        r"const\s+([A-Z][A-Z0-9_]*)\s*:[^=]*=\s*&?\s*\[(.*?)\]\s*;", re.DOTALL)
+    pair_re = re.compile(r"\(\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*\)")
+    for path in CRATE_SRC.rglob("*.rs"):
+        for m in decl_re.finditer(path.read_text(errors="replace")):
+            pairs = []
+            for pm in pair_re.finditer(m.group(2)):
+                base = addr_of(pm.group(1), consts)
+                count = addr_of(pm.group(2), consts)
+                if base is not None and count is not None:
+                    pairs.append((base, count))
+            if pairs:
+                out.setdefault(m.group(1), pairs)
+    return out
+
+
+def collect_array_constants(consts: dict[str, int]) -> dict[str, list[int]]:
+    """Resolve `const NAME: [usize; N] = [A, B, ...];` element addresses (for the
+    field-array RAM copies like CACHED_SPRITE_LIVE_FIELDS / CACHED_SPRITE_ALT_FIELDS)."""
+    arrays: dict[str, list[int]] = {}
+    arr_re = re.compile(
+        r"const\s+([A-Z][A-Z0-9_]*)\s*:\s*\[\s*usize\s*;[^\]]*\]\s*=\s*\[([^\]]*)\]")
+    for path in CRATE_SRC.rglob("*.rs"):
+        for m in arr_re.finditer(path.read_text(errors="replace")):
+            elems = [e.strip() for e in m.group(2).split(",") if e.strip()]
+            addrs = [addr_of(e, consts) for e in elems]
+            arrays.setdefault(m.group(1), [a for a in addrs if a is not None])
+    return arrays
+
+
+BRIDGE_STRUCT_RE = re.compile(
+    r"struct\s+(Native\w*BridgeMut)\s*<[^>]*>\s*\{([^}]*)\}")
+# fields like `state: &'a mut FooState,` / `sprite_slots: &'a mut SpriteSlotsState,`
+STATE_FIELD_RE = re.compile(r"&\s*'?\w*\s*mut\s+([A-Za-z0-9_]+State)\b")
+
+
+def collect_containment() -> dict[str, set]:
+    """Map each composite `*State` struct to the `*State` sub-states it owns by value,
+    so a bridge holding a parent (e.g. DisplayState) counts as holding its leaves
+    (PaletteBufferState, ...). Lets the foreign-write lint avoid flagging a bridge that
+    writes a leaf it transitively models."""
+    cont: dict[str, set] = defaultdict(set)
+    struct_re = re.compile(r"struct\s+([A-Za-z0-9_]+State)\s*\{([^}]*)\}")
+    field_re = re.compile(r":\s*\[?\s*([A-Za-z0-9_]+State)\b")
+    for path in NATIVE_DIR.glob("*.rs"):
+        text = path.read_text(errors="replace")
+        for m in struct_re.finditer(text):
+            for ft in field_re.findall(m.group(2)):
+                if ft != m.group(1):
+                    cont[m.group(1)].add(ft)
+    return cont
+
+
+def expand_held(held: set, cont: dict[str, set]) -> set:
+    """Transitively add every sub-state contained in the held composite states."""
+    out, stack = set(held), list(held)
+    while stack:
+        cur = stack.pop()
+        for child in cont.get(cur, ()):
+            if child not in out:
+                out.add(child)
+                stack.append(child)
+    return out
+
+
+def report_bridge_foreign_writes(byte_owners, consts, arrays):
+    """Flag a *Bridge* method that writes a WRAM address owned (in write_to_ram) by a
+    native state the bridge does NOT hold. Such a write updates RAM but leaves that
+    other state's native model stale, so a later native read sees the wrong value —
+    the cached-sprite-uncache / native↔RAM coherence bug class. The fix is to resync
+    the foreign owner from RAM after the write (or route through its own bridge)."""
+    print("\n################  BRIDGE WRITES IT DOESN'T MODEL  ################")
+    print("(a bridge writes RAM owned by a native state it doesn't hold → that state's "
+          "native model goes stale unless resynced)\n")
+    findings = []
+    seen = set()
+    cont = collect_containment()
+    lhs_array_re = re.compile(r"\bram\s*\[\s*([A-Z][A-Z0-9_]*)\s*\[[^=]*=")
+    for path in sorted(NATIVE_DIR.glob("*.rs")):
+        text = path.read_text(errors="replace")
+        bridges = {}
+        for m in BRIDGE_STRUCT_RE.finditer(text):
+            bridges[m.group(1)] = expand_held(
+                set(STATE_FIELD_RE.findall(m.group(2))), cont)
+        for im in re.finditer(r"impl(?:<[^>]*>)?\s+(Native\w*BridgeMut)\b", text):
+            bname = im.group(1)
+            if bname not in bridges:
+                continue
+            held = bridges[bname]
+            impl_body = brace_body(text, text.index("{", im.end()))
+            for fm in re.finditer(r"fn\s+(\w+)\s*\(", impl_body):
+                mopen = impl_body.find("{", fm.end())
+                if mopen < 0:
+                    continue
+                mbody = brace_body(impl_body, mopen)
+                written = []
+                for (s, _e, label) in extract_writes(mbody, consts, []):
+                    written.append((s, label))
+                for am in lhs_array_re.finditer(mbody):  # ram[ARRAY[..]..] = ...
+                    for a in arrays.get(am.group(1), []):
+                        written.append((a, f"array {am.group(1)}[]"))
+                for addr, label in written:
+                    owners = set(byte_owners.get(addr, {}))
+                    if owners and not (owners & held):
+                        for owner in sorted(owners):
+                            key = (bname, fm.group(1), owner)
+                            if key not in seen:
+                                seen.add(key)
+                                findings.append(
+                                    (bname, fm.group(1), addr, owner, label, path.name))
+    if not findings:
+        print("  none\n")
+        return
+    for (bname, method, addr, owner, label, fname) in sorted(findings, key=lambda x: x[0]):
+        print(f"  {bname}::{method} writes 0x{addr:05x} (via {label}) owned by {owner}; "
+              f"bridge does not hold {owner}  [{fname}]")
+    print()
+
+
 def report_undersized_tables(owner_intervals):
     arrays = ref_array_spans()
     if not arrays:
@@ -329,6 +454,7 @@ def main():
     # struct -> list of (start, end, label, file)
     owner_intervals: dict[str, list] = defaultdict(list)
     unresolved_all = []
+    structs_with_write_to_ram: set[str] = set()
 
     files = sorted(NATIVE_DIR.glob("*.rs")) + [CRATE_SRC / "game_state" / "native.rs"]
     for path in files:
@@ -337,11 +463,32 @@ def main():
             open_idx = text.index("{", fnm.start())
             body = brace_body(text, open_idx)
             struct = enclosing_struct(text, fnm.start())
+            structs_with_write_to_ram.add(struct)
             unresolved = []
             for (s, e, label) in extract_writes(body, consts, unresolved):
                 owner_intervals[struct].append((s, e, label, path.name))
             for u in unresolved:
                 unresolved_all.append((struct, path.name, u))
+
+    # Second pass: attribute per-slot field-range tables (tuple arrays) to any struct
+    # whose impl references one — covers write_to_ram that iterates ranges via a helper
+    # (e.g. SpriteSlotsState::field_offsets -> SPRITE_SLOTS_FIELD_RANGES), which the
+    # per-write parser above can't see.
+    tuple_arrays = collect_tuple_array_ranges(consts)
+    if tuple_arrays:
+        projected = structs_with_write_to_ram
+        for path in files:
+            text = path.read_text(errors="replace")
+            for im in re.finditer(r"\bimpl(?:<[^>]*>)?\s+([A-Za-z0-9_]+)", text):
+                struct = im.group(1)
+                if struct not in projected:
+                    continue
+                impl_body = brace_body(text, text.index("{", im.end()))
+                for name, ranges in tuple_arrays.items():
+                    if re.search(rf"\b{name}\b", impl_body):
+                        for (base, count) in ranges:
+                            owner_intervals[struct].append(
+                                (base, base + count, f"field-range {name}", path.name))
 
     # Build byte -> set of structs (and remember a representative interval).
     byte_owners: dict[int, dict[str, tuple]] = defaultdict(dict)
@@ -402,6 +549,7 @@ def main():
         show(reuse)
 
     report_clear_coherence(byte_owners, consts)
+    report_bridge_foreign_writes(byte_owners, consts, collect_array_constants(consts))
     report_undersized_tables(owner_intervals)
 
     if args.verbose and unresolved_all:
