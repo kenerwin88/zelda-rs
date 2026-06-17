@@ -62,6 +62,11 @@ const DUNGEON_TORCH_DATA_SCAN_WORDS: usize = DUNGEON_TORCH_DATA_SCAN_BYTES / 2;
 const DUNGEON_ROOM_HISTORY_COUNT: usize = 4;
 const DUNGEON_OBJECT_SLOT_COUNT: usize = 16;
 const DUNGEON_ROOM_ITEM_SLOT_COUNT: usize = 16;
+// dung_chest_locations (0x6e0) is bounded by dung_stairs_table_2 (0x6ec) = 6 words; the
+// game caps chests at 6 (CHEST_OPEN_MASKS). Sizing the native array to the shared
+// SLOT_COUNT (16) made its write_to_ram project 0x6e0..0x700, clobbering stairs_table_2
+// + toggle_floor on every chest sync (RoomDraw_Chest). Cap it to the C span.
+const DUNGEON_CHEST_LOCATION_COUNT: usize = (DUNG_STAIRS_TABLE_2 - DUNG_CHEST_LOCATIONS) / 2;
 const MOVING_WALL_REPLACEMENT_WORDS: usize = 64;
 // star_shaped_switches_tile (0x6a0) is bounded by dung_inter_staircases (0x6b0): only
 // 8 u16 slots (0x6a0..0x6b0). Modeling 16 made the parser's write_to_ram project
@@ -2532,16 +2537,18 @@ pub(crate) struct DungeonRoomItemState {
     chest_reveal_cursor_x2: u16,
     replacement_tile_destination_x2: u16,
     replacement_tile_source_x2: u16,
-    chest_locations: [u16; DUNGEON_ROOM_ITEM_SLOT_COUNT],
+    chest_locations: [u16; DUNGEON_CHEST_LOCATION_COUNT],
     replacement_tilemap_quads: [[u16; 4]; DUNGEON_ROOM_ITEM_SLOT_COUNT],
 }
 
 impl DungeonRoomItemState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
-        let mut chest_locations = [0; DUNGEON_ROOM_ITEM_SLOT_COUNT];
+        let mut chest_locations = [0; DUNGEON_CHEST_LOCATION_COUNT];
+        for (index, slot) in chest_locations.iter_mut().enumerate() {
+            *slot = read_le_u16(ram, DUNG_CHEST_LOCATIONS + index * 2);
+        }
         let mut replacement_tilemap_quads = [[0; 4]; DUNGEON_ROOM_ITEM_SLOT_COUNT];
         for index in 0..DUNGEON_ROOM_ITEM_SLOT_COUNT {
-            chest_locations[index] = read_le_u16(ram, DUNG_CHEST_LOCATIONS + index * 2);
             replacement_tilemap_quads[index] = [
                 read_le_u16(ram, REPLACEMENT_TILEMAP_UL + index * 2),
                 read_le_u16(ram, REPLACEMENT_TILEMAP_LL + index * 2),
