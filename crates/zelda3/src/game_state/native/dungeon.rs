@@ -63,7 +63,13 @@ const DUNGEON_ROOM_HISTORY_COUNT: usize = 4;
 const DUNGEON_OBJECT_SLOT_COUNT: usize = 16;
 const DUNGEON_ROOM_ITEM_SLOT_COUNT: usize = 16;
 const MOVING_WALL_REPLACEMENT_WORDS: usize = 64;
-const DUNGEON_ROOM_PARSER_SMALL_TABLE_COUNT: usize = 16;
+// star_shaped_switches_tile (0x6a0) is bounded by dung_inter_staircases (0x6b0): only
+// 8 u16 slots (0x6a0..0x6b0). Modeling 16 made the parser's write_to_ram project
+// 0x6a0..0x6bf, clobbering DungeonStairListsState's inter_staircases (0x6b0) and
+// stairs_table_1 (0x6b8) every room-load sync (e.g. wiping a room's stair positions
+// recorded the same frame — frame 7804 room 0x61).
+const DUNGEON_ROOM_PARSER_SMALL_TABLE_COUNT: usize =
+    (DUNG_INTER_STAIRCASES - STAR_SHAPED_SWITCHES_TILE_LOCAL) / 2;
 const DUNGEON_ROOM_TOGGLE_SLOT_COUNT: usize = 8;
 const DUNGEON_POT_REVEAL_ROOM_COUNT: usize = 0x140;
 const DUNGEON_ADJACENT_DOOR_COUNT: usize = 8;
