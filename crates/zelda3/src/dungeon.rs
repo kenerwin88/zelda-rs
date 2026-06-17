@@ -1267,6 +1267,10 @@ impl ZeldaState {
         // keep counting pots from the previous room. Clear it here (C: dungeon.c
         // dung_misc_objs_index = 0 at room load).
         self.dungeon_object_tracking_mut().clear_misc_object_index();
+        // dung_num_chests_x2 (0x496) / dung_num_bigkey_locks_x2 (0x498) — same
+        // stale-native-counter hazard; the room's chest/big-key attribute writes
+        // would otherwise miscount and skip object-attribute slots.
+        self.dungeon_room_items_mut().clear_item_counts();
         // dung_cur_door_idx (0x460) — same stale-native-field hazard as
         // misc_object_index: the clear_room_parser_words loop only zeroes RAM, so
         // DungeonDoorState.current_door_index would keep last room's value and the

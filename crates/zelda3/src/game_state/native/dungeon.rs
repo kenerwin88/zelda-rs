@@ -4749,6 +4749,15 @@ impl<'a> NativeDungeonRoomItemBridgeMut<'a> {
         debug_assert_eq!(*self.state, DungeonRoomItemState::load_from_ram(self.ram));
     }
 
+    /// Reset the chest / big-key-lock counters at room load (C: dung_num_chests_x2
+    /// = dung_num_bigkey_locks_x2 = 0). The clear_room_parser_words loop only
+    /// zeroes RAM; these native fields would otherwise stay stale and miscount.
+    pub(crate) fn clear_item_counts(&mut self) {
+        self.state.set_num_chests_x2(0);
+        self.state.set_num_big_key_locks_x2(0);
+        self.sync();
+    }
+
     pub(crate) fn append_chest_location_and_sync_big_key_count(&mut self, value: u16) -> usize {
         let index = self
             .state
