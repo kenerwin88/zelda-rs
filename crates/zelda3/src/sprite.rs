@@ -2350,6 +2350,15 @@ impl ZeldaState {
             }
             self.cached_sprite_slot_mut(k).cache_live_fields();
         }
+        // cache_live_fields copies sprite_ai_state[0] into alt_sprite_spawned_flag[0]
+        // (0x1de0) directly in RAM, but SpriteSystemState.alt_sprite_spawned_flag (a
+        // native field modeling that same byte for the damage-tracker use,
+        // sprite_main.c:25815) would otherwise re-project its stale value at frame end
+        // and clobber the cached ai_state. Keep the native field coherent with the
+        // value the cache just wrote so it owns the same byte.
+        let cached_spawned_flag = self.ram[ALT_SPRITE_SPAWNED_FLAG_SPRITE];
+        self.sprite_system_mut()
+            .set_alt_sprite_spawned_flag(cached_spawned_flag);
     }
 
     pub(super) fn oam_allocate_from_region_a(&mut self, num: u8) -> u16 {
