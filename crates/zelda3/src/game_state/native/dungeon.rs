@@ -279,6 +279,19 @@ impl DungeonRoomTilemapState {
         self.bg2_tiles.get(index).copied().unwrap_or(0)
     }
 
+    /// Tile source for the basic-attribute fill, which scans 0x2000 words. C
+    /// reads `dung_bg2[index]`; dung_bg2 (0x2000) and dung_bg1 (0x4000) are
+    /// contiguous in WRAM, so for index >= the BG2 tilemap length it actually
+    /// reads the BG1 tilemap — that is how the BG1 attribute table's half is
+    /// generated (the Rust buffers are separate, so fall through explicitly).
+    pub(crate) fn attr_source_tile(&self, index: usize) -> u16 {
+        if index < DUNGEON_ROOM_TILEMAP_WORDS {
+            self.bg2_tile(index)
+        } else {
+            self.bg1_tile(index - DUNGEON_ROOM_TILEMAP_WORDS)
+        }
+    }
+
     pub(crate) fn bg1_tile_by_byte_pos(&self, pos: u16) -> u16 {
         self.bg1_tile((pos >> 1) as usize)
     }

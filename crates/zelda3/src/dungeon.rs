@@ -8556,8 +8556,8 @@ impl ZeldaState {
                 .room_load
                 .draw_width_indicator_word() as usize
                 / 2;
-            let tile0 = self.game_state.dungeon.room_tilemaps.bg2_tile(i);
-            let tile1 = self.game_state.dungeon.room_tilemaps.bg2_tile(i + 1);
+            let tile0 = self.game_state.dungeon.room_tilemaps.attr_source_tile(i);
+            let tile1 = self.game_state.dungeon.room_tilemaps.attr_source_tile(i + 1);
             let a0 = self.attribute_for_bg_tile(tile0);
             let a1 = self.attribute_for_bg_tile(tile1);
             let j = self
