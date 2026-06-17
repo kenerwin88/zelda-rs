@@ -7029,7 +7029,10 @@ impl TileDetectionState {
             interaction_scratch_x: read_le_u16(ram, SCRATCH_1),
             location_calc_mask: read_le_u16(ram, TILEMAP_LOCATION_CALC_MASK),
             interacting_tile: read_le_u16(ram, INDEX_OF_INTERACTING_TILE),
-            pit_tile: read_le_u16(ram, TILEDETECT_PIT_TILE),
+            // tiledetect_pit_tile is a uint8 at 0x59 (C); 0x5a is
+            // link_this_controls_sprite_oam (the overworld pit-fall counter). Read
+            // and project only the byte so the u16 field never clobbers 0x5a.
+            pit_tile: u16::from(ram[TILEDETECT_PIT_TILE]),
             deepwater: read_le_u16(ram, TILEDETECT_DEEPWATER),
             normal_tiles: read_le_u16(ram, TILEDETECT_NORMAL_TILES),
             misc_tiles: read_le_u16(ram, TILEDETECT_MISC_TILES),
@@ -7076,7 +7079,7 @@ impl TileDetectionState {
         write_le_u16(ram, SCRATCH_1, self.interaction_scratch_x);
         write_le_u16(ram, TILEMAP_LOCATION_CALC_MASK, self.location_calc_mask);
         write_le_u16(ram, INDEX_OF_INTERACTING_TILE, self.interacting_tile);
-        write_le_u16(ram, TILEDETECT_PIT_TILE, self.pit_tile);
+        ram[TILEDETECT_PIT_TILE] = self.pit_tile as u8;
         write_le_u16(ram, TILEDETECT_DEEPWATER, self.deepwater);
         write_le_u16(ram, TILEDETECT_NORMAL_TILES, self.normal_tiles);
         write_le_u16(ram, TILEDETECT_MISC_TILES, self.misc_tiles);
