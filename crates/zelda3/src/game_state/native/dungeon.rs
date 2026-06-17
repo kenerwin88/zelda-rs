@@ -1854,7 +1854,9 @@ impl DungeonRoomRuntimeState {
     }
 
     pub(crate) fn landing_class_is_pit(&self) -> bool {
-        self.landing_class & 2 != 0
+        // C (Dungeon_IntraRoomTrans_State5): `byte_7E004E == 2 || == 4`, NOT a
+        // bitmask — `& 2 != 0` wrongly matches 3/6/7 and misses 4.
+        self.landing_class == 2 || self.landing_class == 4
     }
 
     pub(crate) fn should_run_room_tags(&self) -> bool {
