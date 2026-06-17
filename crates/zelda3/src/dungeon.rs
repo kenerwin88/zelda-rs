@@ -1282,6 +1282,11 @@ impl ZeldaState {
         // State's native counters would otherwise stay stale and re-project a prior
         // room's stair count (mis-placing stair objects in the new room).
         self.dungeon_stair_lists_mut().clear_all_counts();
+        // dung_cur_quadrant_upload (0x45c) is in the clear_room_parser_words list above,
+        // but that only zeroes RAM; DungeonRoomLoadState.quadrant_upload_index would stay
+        // at its prior value (0x10 = "upload complete") and re-project it, so the new
+        // room's quadrant VRAM upload would never run (C: clears the byte at room load).
+        self.dungeon_room_load_mut().clear_quadrant_upload_index();
         self.dungeon_torch_mut().refresh_object_data_positions();
         for i in 0..16 {
             self.dungeon_object_tracking_mut()
