@@ -19,13 +19,39 @@ never bulk-project a range it shares with another system.
 
 ## Parity-debugging tools (`scripts/`) — prefer these, in this order
 
+0. **`ZELDA3_ASSERT_NATIVE_COHERENT` — the native↔RAM coherence checker (RUN THIS
+   FIRST for any "inputs match but the action diverges" bug).** The dominant remaining
+   bug class is a native sub-state model drifting out of sync with RAM mid-frame — a
+   stale native field that re-projects over RAM, OR RAM written directly (a bridge that
+   writes bytes it doesn't model, `clear_room_parser_words`, the cached-sprite uncache)
+   leaving the native model stale so a later native *read* sees the wrong value. A WRAM
+   dump diff CANNOT see this (both sides' RAM match at frame end; the divergence is a
+   transient native≠RAM mismatch driving a different branch). `GameState::report_
+   incoherent_with_ram` compares every sub-state to `load_from_ram(ram)`; it runs at the
+   `replay_trace_ram_watch` step boundaries when `ZELDA3_ASSERT_NATIVE_COHERENT=1` (set
+   `=panic` to abort on first drift; `ZELDA3_ASSERT_COHERENT_FRAME=<n>` to scope to one
+   frame; `ZELDA3_ASSERT_COHERENT_IGNORE=a,b` to mute the gated-state baseline). Some
+   states differ legitimately mid-frame (gated/mode-reuse projections) → baseline noise;
+   a real bug is a *faithful* state (e.g. `sprites.sprite_slots`) going incoherent at the
+   step that introduced it. Compare the suspect frame's list against an adjacent clean
+   frame; the delta is the bug. **Diagnostic heuristic:** when every persisted input
+   matches at the frame boundary but the action diverges, STOP tracing inputs — it's a
+   coherence gap; run this, then trace the native read vs `ram[ADDR]` at the decision
+   point. (`sprites` has leaf-level drill-down via `SpriteState::report_incoherent_with_
+   ram`; add the same to other composites when needed.)
+
 1. **`find_dual_ownership.py`** — STATIC finder for overlap bugs. The master
    `GameState::write_to_ram` projects every native state unconditionally in a fixed
    order (last-writer-wins), so two states writing the same byte mutually clobber.
    Lists all overlaps, mode-classified (CORE-vs-CORE = HIGH RISK; cross-mode =
-   legitimate SNES reuse), plus an UNDERSIZED-TABLE lint (slice-write span vs the C
-   array span). Run after any migration edit; exit 1 = overlaps found (CI gate).
-   *Gap:* its parser misses runtime-length range writes `ram[BASE..BASE+self.vec.len()]`.
+   legitimate SNES reuse), an UNDERSIZED-TABLE lint (slice-write span vs the OLD-clone
+   array span), a ROOM-LOAD CLEAR COHERENCE audit, and a **BRIDGE WRITES IT DOESN'T
+   MODEL** lint (a `*BridgeMut` method that writes a WRAM address owned by a native
+   state it doesn't hold → that state's model goes stale unless resynced; the static
+   form of the coherence bug above — it flags the cached-sprite uncache directly). Run
+   after any migration edit; exit 1 = overlaps found (CI gate).
+   *Gap:* its per-write parser misses runtime-length range writes
+   `ram[BASE..BASE+self.vec.len()]` (tuple-array field-range tables ARE now resolved).
 
 2. **`first_diverging_frame.py <addr> [--width N] [--max F] [--linear]`** — binary-
    searches the first frame a specific WRAM address diverges old-vs-new, comparing
