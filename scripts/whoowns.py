@@ -1,34 +1,28 @@
 #!/usr/bin/env python3
 """Given a WRAM address, print everything you need to root-cause a divergence:
-  * the C variable (#define in ../zelda3/src/variables.h) covering it, + offset
-  * C read/write sites for that variable
-  * the Rust constant(s) at that address (game_state/constants.rs)
-  * the native *State struct(s) that load/write it, with file:line
+  * the OLD-clone (zelda3-rs-old) constant covering it, + offset + next-def span
+  * OLD-clone read/write sites for that variable (the parity-correct reference)
+  * the Rust constant(s) at that address in THIS repo (game_state/constants.rs)
+  * the native *State struct(s) here that load/write it, with file:line
 
-Collapses the address -> C-semantics -> native-owner grep chain that every fix
-in this migration repeats.
+The old Rust clone (commit 1183dee) has perfect parity with the C oracle, so it —
+not the C source — is the reference for "what is this address" and "who touches it".
+Collapses the address -> semantics -> native-owner chain that every fix repeats.
 
     python3 scripts/whoowns.py 0x1ea10
     python3 scripts/whoowns.py 0xc198
+
+Override the clone with ZELDA3_OLD_REPO (default: ~/Documents/zelda3-rs-old).
 """
 from __future__ import annotations
 import pathlib, re, subprocess, sys
 
+# allow `import old_rust_ref` regardless of cwd
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import old_rust_ref as oldref
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CRATE = ROOT / "crates" / "zelda3" / "src"
-CSRC = ROOT.parent / "zelda3"
-VARS_H = CSRC / "src" / "variables.h"
-
-DEF_RE = re.compile(
-    r"#define\s+(\w+)\s+\(?\(*\s*(?:\*\s*)?\(\s*u?int\d+\s*\*\s*\)\s*\(\s*g_ram\s*\+\s*(0x[0-9A-Fa-f]+)")
-
-
-def c_defines():
-    out = []
-    if VARS_H.exists():
-        for m in DEF_RE.finditer(VARS_H.read_text(errors="replace")):
-            out.append((m.group(1), int(m.group(2), 16)))
-    return sorted(out, key=lambda x: x[1])
 
 
 def grep(pattern, paths, flags="-rn"):
@@ -46,43 +40,53 @@ def main():
     addr = int(sys.argv[1], 0)
     print(f"=== 0x{addr:05x} ===\n")
 
-    # 1. C variable covering this address
-    defs = c_defines()
-    cover = [(n, a) for (n, a) in defs if a <= addr]
-    cname = None
-    if cover:
-        cname, cbase = cover[-1]
-        off = addr - cbase
-        nxt = next((a for (_, a) in defs if a > cbase), None)
-        span = f", next def at 0x{nxt:05x} (=0x{nxt-cbase:x} wide)" if nxt else ""
-        exact = "" if off == 0 else f" + 0x{off:x}"
-        print(f"C variable:  {cname}{exact}  (base 0x{cbase:05x}{span})")
+    # 1. OLD-clone constant covering this address (the reference semantics)
+    if not oldref.available():
+        print(f"OLD clone not found at {oldref.old_repo()} (set ZELDA3_OLD_REPO)")
+        cover = None
     else:
-        print("C variable:  (none found in variables.h)")
+        cover = oldref.covering(addr)
+        if cover:
+            name, base, nxt = cover
+            span = (f", next def at 0x{nxt:05x} (=0x{nxt-base:x} wide)"
+                    if nxt else "")
+            off = "" if addr == base else f" + 0x{addr-base:x}"
+            print(f"OLD const:   {name}{off}  (base 0x{base:05x}{span})")
+            ds = oldref.def_site(name)
+            if ds:
+                print(f"  defined:   {ds[0]}:{ds[1]}")
+            exact = oldref.names_at(addr)
+            extra = [n for n in exact if n != name]
+            if extra:
+                print(f"  aliases @0x{addr:05x}: {', '.join(extra)}  (SNES byte-reuse)")
+        else:
+            print("OLD const:   (none found in zelda3-rs-old)")
 
-    # 2. C read/write sites
-    if cname:
-        sites = grep(rf"\b{re.escape(cname)}\b", sorted(CSRC.glob("src/*.c")))
-        if sites:
-            print("\nC sites:")
-            for s in sites[:25]:
-                rel = s.split("/zelda3/", 1)[-1]
-                print(f"  {rel}")
-            if len(sites) > 25:
-                print(f"  ... +{len(sites)-25} more")
+    # 2. OLD-clone read/write sites for the covering var(s) — parity-correct behavior
+    if cover:
+        for name in dict.fromkeys([cover[0], *oldref.names_at(addr)]):
+            sites = oldref.grep_sites(name, limit=25)
+            if sites:
+                print(f"\nOLD sites for {name}:")
+                for s in sites:
+                    print(f"  {s}")
+                total = len(oldref.grep_sites(name, limit=10_000))
+                if total > len(sites):
+                    print(f"  ... +{total-len(sites)} more")
 
-    # 3. Rust constants at this exact address
+    # 3. Rust constants at this exact address in THIS repo
     consts_rs = CRATE / "game_state" / "constants.rs"
     rust_consts = []
     if consts_rs.exists():
-        for m in re.finditer(r"const\s+([A-Z][A-Z0-9_]*)\s*:\s*usize\s*=\s*(0x[0-9a-fA-F]+)\s*;",
-                             consts_rs.read_text()):
+        for m in re.finditer(
+                r"const\s+([A-Z][A-Z0-9_]*)\s*:\s*usize\s*=\s*(0x[0-9a-fA-F]+)\s*;",
+                consts_rs.read_text()):
             if int(m.group(2), 16) == addr:
                 rust_consts.append(m.group(1))
-    print(f"\nRust constant(s) at 0x{addr:05x}: "
+    print(f"\nThis-repo constant(s) at 0x{addr:05x}: "
           + (", ".join(rust_consts) if rust_consts else "(none exact)"))
 
-    # 4. Native states that load/write any constant at this address
+    # 4. Native states (this repo) that load/write any constant at this address
     if rust_consts:
         native = CRATE / "game_state" / "native"
         files = sorted(native.glob("*.rs")) + [CRATE / "game_state" / "native.rs"]

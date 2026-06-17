@@ -33,9 +33,14 @@ never bulk-project a range it shares with another system.
    the non-monotonic raw-hash flicker that makes `old_new_parity.py`'s full-hash
    bisection land on arbitrary/wrong frames. Needs both binaries' `ZELDA3_REPLAY_WRAM_DUMP`.
 
-3. **`whoowns.py <addr>`** — address → C `#define` (+offset) + C read/write sites +
-   Rust constant + native owner struct (file:line). Collapses the root-cause grep
-   chain; the fastest way to learn what an address *is* and who should own it.
+3. **`whoowns.py <addr>`** — address → OLD-clone (`zelda3-rs-old`) const (+offset,
+   span, mode-reuse aliases) + the OLD clone's parity-correct read/write sites +
+   this-repo Rust constant + native owner struct (file:line). Collapses the
+   root-cause grep chain; the fastest way to learn what an address *is*, who should
+   own it, and how the known-good code uses it. References the OLD Rust clone, NOT
+   the C source (the clone has perfect C parity). Shared map in `old_rust_ref.py`
+   (override clone path with `ZELDA3_OLD_REPO`); `find_dual_ownership.py`'s
+   undersized-table lint uses the same OLD-clone layout.
 
 4. **`stable_page_diff.py <frames...>`** — deterministic per-1KB-page old-vs-new diff
    at fixed frames. The regression metric: a correct fix turns mismatching pages →
@@ -61,7 +66,7 @@ never bulk-project a range it shares with another system.
 1. `old_new_parity.py --semantic-only` → first BEHAVIORAL divergence frame.
 2. Pick a diverging semantic field's address → `first_diverging_frame.py <addr>` →
    exact first frame + old/new values.
-3. `whoowns.py <addr>` → C variable, C read/write sites, native owner.
+3. `whoowns.py <addr>` → OLD-clone const, OLD-clone read/write sites, native owner.
 4. Classify: overlap/clobber (`find_dual_ownership.py`), undersized/oversized table
    (C span vs native span), mode-reuse (same address, two `#define`s / two states), or
    logic divergence (compare the Rust port line-by-line against the C site).

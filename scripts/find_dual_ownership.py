@@ -29,6 +29,9 @@ import re
 import sys
 from collections import defaultdict
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import old_rust_ref as oldref
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 NATIVE_DIR = ROOT / "crates" / "zelda3" / "src" / "game_state" / "native"
 CRATE_SRC = ROOT / "crates" / "zelda3" / "src"
@@ -229,30 +232,24 @@ def enclosing_struct(text: str, pos: int) -> str:
 
 
 # ----------------------------------------------------------------------------
-# C array layout (../zelda3/src/variables.h) for the undersized-table lint.
-# Array defines look like `((uint8*)(g_ram+0xADDR))`; scalars have a leading
-# deref `(*(uint16*)(g_ram+0xADDR))`. A native range-write whose span is smaller
-# than the C array's span (distance to the next #define) is likely truncated —
-# exactly the class of the presence-table bug (0x200 Vec for a 0x1000 C array).
+# Reference array layout from the known-good OLD Rust clone (zelda3-rs-old) for
+# the undersized-table lint. The old clone predates the native migration and
+# accesses WRAM as `ram[NAME]`, so its `const NAME: usize = 0xADDR;` map is the
+# parity-correct address layout. A variable's span = distance to the next
+# constant; a native range-write narrower than that span is likely truncated —
+# exactly the class of the presence-table bug (0x200 Vec for a 0x1000 array).
 # ----------------------------------------------------------------------------
-C_VARS_H = ROOT.parent / "zelda3" / "src" / "variables.h"
-C_ARRAY_RE = re.compile(
-    r"#define\s+(\w+)\s+\(\s*\(\s*u?int\d+\s*\*\s*\)\s*\(\s*g_ram\s*\+\s*(0x[0-9A-Fa-f]+)")
-C_ANY_RE = re.compile(r"g_ram\s*\+\s*(0x[0-9A-Fa-f]+)")
-
-
-def c_array_spans():
-    """Return {base_addr: (name, span)} for C array (pointer) defines."""
-    if not C_VARS_H.exists():
+def ref_array_spans():
+    """Return {base_addr: (name, span)} from the OLD-clone address map."""
+    defs = oldref.address_defs()
+    if not defs:
         return {}
-    text = C_VARS_H.read_text(errors="replace")
-    all_addrs = sorted({int(m.group(1), 16) for m in C_ANY_RE.finditer(text)})
-    arrays = {}
-    for m in C_ARRAY_RE.finditer(text):
-        base = int(m.group(2), 16)
-        nxt = next((a for a in all_addrs if a > base), base + 0x10000)
-        arrays[base] = (m.group(1), nxt - base)
-    return arrays
+    spans = {}
+    for i, (name, base) in enumerate(defs):
+        nxt = defs[i + 1][1] if i + 1 < len(defs) else base + 0x10000
+        # keep the first name seen at a base (mode-reuse aliases share an addr)
+        spans.setdefault(base, (name, nxt - base))
+    return spans
 
 
 def report_clear_coherence(byte_owners, consts):
@@ -292,9 +289,10 @@ def report_clear_coherence(byte_owners, consts):
 
 
 def report_undersized_tables(owner_intervals):
-    arrays = c_array_spans()
+    arrays = ref_array_spans()
     if not arrays:
-        print("\n(no variables.h found — skipping undersized-table lint)\n")
+        print(f"\n(OLD clone not found at {oldref.old_repo()} — skipping "
+              "undersized-table lint; set ZELDA3_OLD_REPO)\n")
         return
     findings = []
     for struct, ivs in owner_intervals.items():
@@ -310,12 +308,12 @@ def report_undersized_tables(owner_intervals):
                 if span < cspan:
                     findings.append((s, struct, fname, label, span, cname, cspan))
     print("\n################  UNDERSIZED NATIVE TABLES  ################")
-    print("(native range-write narrower than the C array at the same base)\n")
+    print("(native range-write narrower than the OLD-clone array at the same base)\n")
     if not findings:
         print("  none\n")
         return
     for (s, struct, fname, label, span, cname, cspan) in sorted(findings):
-        print(f"  0x{s:05x} {struct} [{fname}]: writes 0x{span:x} bytes but C array "
+        print(f"  0x{s:05x} {struct} [{fname}]: writes 0x{span:x} bytes but OLD array "
               f"`{cname}` spans 0x{cspan:x}  (via {label})")
     print()
 
