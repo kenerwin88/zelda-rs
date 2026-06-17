@@ -2769,6 +2769,10 @@ impl DungeonStairListsState {
         self.counters[stair_list_index(list)] = value;
     }
 
+    fn clear_all_counts(&mut self) {
+        self.counters.fill(0);
+    }
+
     fn sync_stair_list_counts(&mut self, lists: &[DungeonStairList], value: u16) {
         for &list in lists {
             self.set_stair_list_count(list, value);
@@ -3831,6 +3835,11 @@ impl<'a> NativeDungeonStairListsBridgeMut<'a> {
 
     pub(crate) fn set_stair_list_count(&mut self, list: DungeonStairList, value: u16) {
         self.state.set_stair_list_count(list, value);
+        self.sync();
+    }
+
+    pub(crate) fn clear_all_counts(&mut self) {
+        self.state.clear_all_counts();
         self.sync();
     }
 

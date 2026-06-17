@@ -1277,6 +1277,11 @@ impl ZeldaState {
         // door draw would write door tables to the wrong slots (C: dung_cur_door_idx
         // = 0 at room load).
         self.dungeon_doors_mut().set_current_door_index(0);
+        // dung_num_stairs_* (stair-list counters, e.g. dung_num_stairs_wet 0x49e) are
+        // cleared via the clear_room_parser_words RAM loop above, but DungeonStairLists-
+        // State's native counters would otherwise stay stale and re-project a prior
+        // room's stair count (mis-placing stair objects in the new room).
+        self.dungeon_stair_lists_mut().clear_all_counts();
         self.dungeon_torch_mut().refresh_object_data_positions();
         for i in 0..16 {
             self.dungeon_object_tracking_mut()
