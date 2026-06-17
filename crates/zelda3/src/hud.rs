@@ -1551,12 +1551,12 @@ impl ZeldaState {
     pub(super) fn hud_restore_torch_background(&mut self) {
         if self.game_state.inventory.items.torch() == 0
             || self.game_state.dungeon.torch.wants_lights_out() == 0
-            || self.hud_state().dungeon_dark_with_lantern()
+            || self.game_state.dungeon.torch.dungeon_dark_with_lantern()
             || self.game_state.dungeon.torch.lit_torches() != 0
         {
             return;
         }
-        self.set_dungeon_dark_with_lantern();
+        self.dungeon_torch_mut().set_dungeon_dark_with_lantern();
         if self.game_state.dungeon.room_load.bg2_properties() != 2 {
             self.set_sub_screen_layers(1);
         }

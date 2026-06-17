@@ -377,7 +377,6 @@ pub(crate) struct HudRuntimeState {
     previous_menu_joypad_h: u8,
     equipment_menu_exit_state: u8,
     bottle_menu_row: u8,
-    dungeon_dark_with_lantern: u8,
     module_tick_counter: u8,
 }
 
@@ -394,7 +393,6 @@ impl HudRuntimeState {
             previous_menu_joypad_h: ram_byte(ram, MENU_PREV_JOYPAD_H),
             equipment_menu_exit_state: ram_byte(ram, EQUIPMENT_MENU_EXIT_STATE),
             bottle_menu_row: ram_byte(ram, BOTTLE_MENU_ROW),
-            dungeon_dark_with_lantern: ram_byte(ram, HDR_DUNGEON_DARK_WITH_LANTERN),
             module_tick_counter: ram_byte(ram, HUD_MODULE_TICK_COUNTER),
         }
     }
@@ -410,7 +408,6 @@ impl HudRuntimeState {
         ram[MENU_PREV_JOYPAD_H] = self.previous_menu_joypad_h;
         ram[EQUIPMENT_MENU_EXIT_STATE] = self.equipment_menu_exit_state;
         ram[BOTTLE_MENU_ROW] = self.bottle_menu_row;
-        ram[HDR_DUNGEON_DARK_WITH_LANTERN] = self.dungeon_dark_with_lantern;
         ram[HUD_MODULE_TICK_COUNTER] = self.module_tick_counter;
     }
 
@@ -456,10 +453,6 @@ impl HudRuntimeState {
 
     pub(crate) fn bottle_menu_row(&self) -> u8 {
         self.bottle_menu_row
-    }
-
-    pub(crate) fn dungeon_dark_with_lantern(&self) -> bool {
-        self.dungeon_dark_with_lantern != 0
     }
 
     pub(crate) fn tick_counter(&self) -> u8 {
@@ -517,10 +510,6 @@ impl HudRuntimeState {
     pub(crate) fn decrement_bottle_menu_row(&mut self) -> u8 {
         self.bottle_menu_row = self.bottle_menu_row.wrapping_sub(1);
         self.bottle_menu_row
-    }
-
-    pub(crate) fn set_dungeon_dark_with_lantern(&mut self) {
-        self.dungeon_dark_with_lantern = 1;
     }
 
     pub(crate) fn set_tick_counter(&mut self, value: u8) {
@@ -649,10 +638,6 @@ impl<'a> HudStateRead<'a> {
 
     pub(crate) fn bottle_menu_row(&self) -> u8 {
         self.runtime.bottle_menu_row()
-    }
-
-    pub(crate) fn dungeon_dark_with_lantern(&self) -> bool {
-        self.runtime.dungeon_dark_with_lantern()
     }
 
     pub(crate) fn tick_counter(&self) -> u8 {
@@ -3836,11 +3821,6 @@ impl<'a> NativeHudStateBridgeMut<'a> {
         let row = self.display.hud_runtime.decrement_bottle_menu_row();
         self.sync_runtime();
         row
-    }
-
-    pub(crate) fn set_dungeon_dark_with_lantern(&mut self) {
-        self.display.hud_runtime.set_dungeon_dark_with_lantern();
-        self.sync_runtime();
     }
 
     pub(crate) fn set_tick_counter(&mut self, value: u8) {

@@ -8609,7 +8609,6 @@ mod tests {
         ram[MENU_PREV_JOYPAD_H] = 0x40;
         ram[EQUIPMENT_MENU_EXIT_STATE] = 3;
         ram[BOTTLE_MENU_ROW] = 9;
-        ram[HDR_DUNGEON_DARK_WITH_LANTERN] = 1;
         ram[HUD_MODULE_TICK_COUNTER] = 0x33;
 
         let runtime = HudRuntimeState::load_from_ram(&ram);
@@ -8624,7 +8623,6 @@ mod tests {
         assert_eq!(runtime.prev_joypad_h(), 0x40);
         assert_eq!(runtime.equipment_menu_exit_state(), 3);
         assert_eq!(runtime.bottle_menu_row(), 9);
-        assert!(runtime.dungeon_dark_with_lantern());
         assert_eq!(runtime.tick_counter(), 0x33);
 
         let mut projected = vec![0; WRAM_SIZE];
@@ -8639,7 +8637,6 @@ mod tests {
         assert_eq!(projected[MENU_PREV_JOYPAD_H], 0x40);
         assert_eq!(projected[EQUIPMENT_MENU_EXIT_STATE], 3);
         assert_eq!(projected[BOTTLE_MENU_ROW], 9);
-        assert_eq!(projected[HDR_DUNGEON_DARK_WITH_LANTERN], 1);
         assert_eq!(projected[HUD_MODULE_TICK_COUNTER], 0x33);
     }
 
@@ -8658,7 +8655,6 @@ mod tests {
         runtime.set_equipment_menu_exit_state(2);
         runtime.set_bottle_menu_row(5);
         assert_eq!(runtime.decrement_bottle_menu_row(), 4);
-        runtime.set_dungeon_dark_with_lantern();
         runtime.set_tick_counter(0x44);
         runtime.clear_heart_animation_active();
         runtime.clear_previous_menu_joypad_h();
@@ -8673,7 +8669,6 @@ mod tests {
         assert_eq!(runtime.prev_joypad_h(), 0);
         assert_eq!(runtime.equipment_menu_exit_state(), 2);
         assert_eq!(runtime.bottle_menu_row(), 4);
-        assert!(runtime.dungeon_dark_with_lantern());
         assert_eq!(runtime.tick_counter(), 0x44);
     }
 
@@ -8721,7 +8716,6 @@ mod tests {
             bridge.set_prev_joypad_h(0x80);
             bridge.set_equipment_menu_exit_state(2);
             assert_eq!(bridge.decrement_bottle_menu_row(), 4);
-            bridge.set_dungeon_dark_with_lantern();
             bridge.set_tick_counter(0x44);
             bridge.set_floor_changed_timer(0x1234);
             bridge.clear_floor_changed_timer_low();
@@ -8740,7 +8734,6 @@ mod tests {
         assert_eq!(display.hud_runtime.prev_joypad_h(), 0);
         assert_eq!(display.hud_runtime.equipment_menu_exit_state(), 2);
         assert_eq!(display.hud_runtime.bottle_menu_row(), 4);
-        assert!(display.hud_runtime.dungeon_dark_with_lantern());
         assert_eq!(display.hud_runtime.tick_counter(), 0x44);
         assert_eq!(display.hud_tilemap.floor_changed_timer_low(), 0);
         assert_eq!(display.hud_tilemap.tile_word(2), 0xbeef);

@@ -4751,10 +4751,6 @@ impl ZeldaState {
         self.mutate_hud_runtime(|hud| hud.decrement_bottle_menu_row())
     }
 
-    pub(crate) fn set_dungeon_dark_with_lantern(&mut self) {
-        self.mutate_hud_runtime(|hud| hud.set_dungeon_dark_with_lantern());
-    }
-
     pub(crate) fn set_tick_counter(&mut self, value: u8) {
         self.mutate_hud_runtime(|hud| hud.set_tick_counter(value));
     }
