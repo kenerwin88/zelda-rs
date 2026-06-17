@@ -645,7 +645,8 @@ pub(crate) struct DungeonRoomLoadState {
     header_collision_2_mirror: u16,
     bg2_properties: u8,
     bg2_properties_backup: u8,
-    layout_and_starting_quadrant: u8,
+    // NOTE: dung_layout_and_starting_quadrant (0x40e) is NOT owned here — it is a
+    // uint16 owned solely by DungeonRoomParserState.room_layout_and_starting_quadrant.
     layout_quadrant_key: u8,
     quadrants_visited: u16,
     quadrant_upload_index: u8,
@@ -667,10 +668,6 @@ impl DungeonRoomLoadState {
             bg2_properties: ram.get(DUNG_HDR_BG2_PROPERTIES).copied().unwrap_or(0),
             bg2_properties_backup: ram
                 .get(DUNG_HDR_BG2_PROPERTIES_BACKUP)
-                .copied()
-                .unwrap_or(0),
-            layout_and_starting_quadrant: ram
-                .get(DUNG_LAYOUT_AND_STARTING_QUADRANT)
                 .copied()
                 .unwrap_or(0),
             layout_quadrant_key: ram
@@ -699,7 +696,6 @@ impl DungeonRoomLoadState {
         );
         ram[DUNG_HDR_BG2_PROPERTIES] = self.bg2_properties;
         ram[DUNG_HDR_BG2_PROPERTIES_BACKUP] = self.bg2_properties_backup;
-        ram[DUNG_LAYOUT_AND_STARTING_QUADRANT] = self.layout_and_starting_quadrant;
         ram[COMPOSITE_OF_LAYOUT_AND_QUADRANT] = self.layout_quadrant_key;
         write_le_u16(ram, DUNG_QUADRANTS_VISITED, self.quadrants_visited);
         ram[DUNG_CUR_QUADRANT_UPLOAD] = self.quadrant_upload_index;
@@ -824,16 +820,12 @@ impl DungeonRoomLoadState {
         self.bg2_properties_backup = value;
     }
 
-    fn set_layout_and_starting_quadrant(&mut self, value: u8) {
-        self.layout_and_starting_quadrant = value;
-    }
-
     fn set_layout_quadrant_key(&mut self, value: u8) {
         self.layout_quadrant_key = value;
     }
 
-    fn update_layout_quadrant_key(&mut self, quadrant_y: u8, quadrant_x: u8) -> u8 {
-        let key = self.layout_and_starting_quadrant | quadrant_y | quadrant_x;
+    fn update_layout_quadrant_key(&mut self, layout: u8, quadrant_y: u8, quadrant_x: u8) -> u8 {
+        let key = layout | quadrant_y | quadrant_x;
         self.set_layout_quadrant_key(key);
         key
     }
@@ -2275,6 +2267,10 @@ impl DungeonRoomParserState {
 
     fn set_room_layout_and_starting_quadrant(&mut self, value: u16) {
         self.room_layout_and_starting_quadrant = value;
+    }
+
+    pub(crate) fn room_layout_and_starting_quadrant(&self) -> u16 {
+        self.room_layout_and_starting_quadrant
     }
 }
 
@@ -4372,20 +4368,20 @@ impl<'a> NativeDungeonRoomLoadBridgeMut<'a> {
         self.sync();
     }
 
-    pub(crate) fn set_layout_and_starting_quadrant(&mut self, value: u8) {
-        self.state.set_layout_and_starting_quadrant(value);
-        self.sync();
-    }
-
     pub(crate) fn set_layout_quadrant_key(&mut self, value: u8) {
         self.state.set_layout_quadrant_key(value);
         self.sync();
     }
 
-    pub(crate) fn update_layout_quadrant_key(&mut self, quadrant_y: u8, quadrant_x: u8) -> u8 {
+    pub(crate) fn update_layout_quadrant_key(
+        &mut self,
+        layout: u8,
+        quadrant_y: u8,
+        quadrant_x: u8,
+    ) -> u8 {
         let key = self
             .state
-            .update_layout_quadrant_key(quadrant_y, quadrant_x);
+            .update_layout_quadrant_key(layout, quadrant_y, quadrant_x);
         self.sync();
         key
     }

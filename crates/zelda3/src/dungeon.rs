@@ -5731,8 +5731,16 @@ impl ZeldaState {
     pub(super) fn Dungeon_AdjustQuadrant(&mut self) {
         let quadrant_y = self.game_state.player.follower_link.quadrant_y();
         let quadrant_x = self.game_state.player.follower_link.quadrant_x();
+        // dung_layout_and_starting_quadrant is owned solely by DungeonRoomParserState
+        // (it is a uint16 set by the room-object parser, C dungeon.c:2661); the low
+        // byte feeds the composite key (C dungeon.c:8239).
+        let layout = self
+            .game_state
+            .dungeon
+            .room_parser
+            .room_layout_and_starting_quadrant() as u8;
         self.dungeon_room_load_mut()
-            .update_layout_quadrant_key(quadrant_y, quadrant_x);
+            .update_layout_quadrant_key(layout, quadrant_y, quadrant_x);
     }
 
     pub(super) fn Dungeon_AdjustForRoomLayout(&mut self) {

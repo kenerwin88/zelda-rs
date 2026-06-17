@@ -10637,8 +10637,8 @@ mod tests {
         let mut state = ZeldaState::new();
         state.set_indoor_flag(1);
         state
-            .dungeon_room_load_mut()
-            .set_layout_and_starting_quadrant(0x20);
+            .dungeon_room_parser_mut()
+            .set_room_layout_and_starting_quadrant(0x20);
         state.set_dungeon_room(2);
         state.room_bounds_mut().set_x_bound(0, 0x0100);
         state.room_bounds_mut().set_x_bound(2, 0x0120);
