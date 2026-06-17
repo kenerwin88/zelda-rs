@@ -4896,6 +4896,15 @@ impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
         self.sync();
     }
 
+    /// Set only fixed_color_plusminus and its single owned byte (0xc017), without a full
+    /// state sync. Used by the overworld fixed-color setter, which must not re-project the
+    /// rest of room_effects (blast-wall/messaging bytes the messaging system owns in that
+    /// mode) over their current RAM values.
+    pub(crate) fn set_fixed_color_plusminus_value_only(&mut self, value: u8) {
+        self.state.set_fixed_color_plusminus(value);
+        self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = value;
+    }
+
     pub(crate) fn toggle_moving_wall_torch_blink_phase(&mut self) {
         self.state.toggle_moving_wall_torch_blink_phase();
         self.sync();

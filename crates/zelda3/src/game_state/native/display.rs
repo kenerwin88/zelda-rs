@@ -2564,7 +2564,11 @@ impl DisplayState {
             MESSAGE_DMA_TILE_SENTINEL,
             self.message_dma_tile_sentinel,
         );
-        ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = self.overworld_fixed_color_adjustment;
+        // OVERWORLD_FIXED_COLOR_PLUSMINUS (0xc017) is owned by
+        // dungeon.room_effects.fixed_color_plusminus (the field with readers and active
+        // setters). This state kept only a passive copy; projecting it here let a stale
+        // frame-start read clobber the owner's mid-frame value, so leave the byte to the
+        // owner (now the sole projector).
         ram[FLAG_TRAVEL_BIRD] = self.travel_bird_tile_offset;
         ram[STAR_TILE_RESTORE_PHASE] = self.star_tile_restore_phase;
         write_le_u16(

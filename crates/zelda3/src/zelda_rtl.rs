@@ -3870,6 +3870,11 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_overworld_fixed_color_adjustment(&mut self, value: u8) {
+        // OVERWORLD_FIXED_COLOR_PLUSMINUS (0xc017) is owned/projected by
+        // dungeon.room_effects.fixed_color_plusminus. Keep that field in sync so the
+        // owner re-projects the value we just wrote; the display copy no longer projects.
+        self.dungeon_room_effects_mut()
+            .set_fixed_color_plusminus_value_only(value);
         self.mutate_display_core(|display| display.set_overworld_fixed_color_adjustment(value));
     }
 
