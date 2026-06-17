@@ -754,8 +754,16 @@ impl ZeldaState {
         let value_addr = memory_location_to_give_item_to_misc(item);
         let value = value_to_give_item_to_misc(item);
         if (value as i8) >= 0 {
-            self.inventory_items_mut()
-                .set_item_memory_value(value_addr, value);
+            if value_addr == LINK_ARROW_REFILL_COUNTER {
+                // Arrows (item 0x43/0x44): LINK_ARROW_REFILL_COUNTER (0xf376) is owned by
+                // PlayerResourcesState.arrow_filler, not inventory_items — route through it
+                // (a raw inventory_items write is re-projected away at frame end; same
+                // class as the small-key/bomb/heart-piece fixes).
+                self.player_resources_mut().set_arrow_filler(value);
+            } else {
+                self.inventory_items_mut()
+                    .set_item_memory_value(value_addr, value);
+            }
         }
 
         if item == 0x1f {
@@ -773,9 +781,11 @@ impl ZeldaState {
                 0x38 => 1,
                 _ => 2,
             };
-            let value = self
-                .inventory_items_mut()
-                .or_item_memory_value(value_addr, bit);
+            // Pendant: value_addr is LINK_WHICH_PENDANTS (0xf374), owned by
+            // PlayerResourcesState — OR the bit through it (a raw inventory_items write
+            // is re-projected away at frame end; same class as the small-key/bomb fixes).
+            let value = self.game_state.inventory.player_resources.pendant_flags() | bit;
+            self.player_resources_mut().set_pendant_flags(value);
             if value & 7 == 7 {
                 self.save_progress_mut().set_map_icons_indicator(4);
             }
@@ -861,8 +871,11 @@ impl ZeldaState {
             }
             self.hud_refresh_icon();
         } else if item == 0x17 {
-            self.inventory_items_mut()
-                .increment_item_memory_value_mod4(value_addr);
+            // Piece of Heart: value_addr is LINK_HEART_PIECES (0xf36b), owned by
+            // PlayerResourcesState — route the mod-4 increment through it so the native
+            // heart_pieces field updates (a raw inventory_items write is re-projected
+            // away at frame end; same class as the small-key/bomb fixes).
+            self.player_resources_mut().advance_heart_piece_count();
             let sfx = 0x2d | self.link_calculate_sfx_pan();
             self.set_sound_effect_2(sfx);
         } else if item == 1 {
