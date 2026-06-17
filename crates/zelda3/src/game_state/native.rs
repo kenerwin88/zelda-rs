@@ -9713,6 +9713,9 @@ mod tests {
         native_ram[OVERWORLD_SPRITE_WAS_LOADED + 4] = 0b1010_0000;
 
         let mut ram = vec![0xff; WRAM_SIZE];
+        // sprite_where_in_overworld presence projects only OUTDOORS (indoors the same
+        // WRAM is the dungeon where_in_room bitmask), so exercise the outdoors path.
+        ram[PLAYER_IS_INDOORS] = 0;
         let mut presence = OverworldSpritePresenceState::load_from_ram(&native_ram);
         {
             let mut bridge = NativeOverworldSpritePresenceBridgeMut::new(&mut presence, &mut ram);

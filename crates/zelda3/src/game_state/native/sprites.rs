@@ -4609,6 +4609,13 @@ impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
 
     pub(crate) fn clear_where_in_room(&mut self) {
         self.state.clear_where_in_room();
+        // The C oracle's sprite reset (sprite_reset_all_no_disable) memsets the full
+        // 0x1000 region in RAM unconditionally. Our mirror's projection is gated on
+        // indoors (see write_to_ram), so an OUTDOORS reset would otherwise leave RAM
+        // untouched and the overworld presence table (sprite_where_in_overworld, the
+        // same WRAM) would keep stale markers across an area reload. Clear RAM directly
+        // so both modes match the oracle.
+        self.ram[SPRITE_WHERE_IN_ROOM..SPRITE_WHERE_IN_ROOM + SPRITE_WHERE_IN_ROOM_BYTES].fill(0);
         self.sync();
     }
 
@@ -5571,6 +5578,14 @@ impl OverworldSpritePresenceState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        // sprite_where_in_overworld (0x1df80) shares WRAM with the dungeon
+        // sprite_where_in_room bitmask (SpriteWorkspaceState.where_in_room). It is an
+        // OVERWORLD-only table, so only project it outdoors; indoors where_in_room owns
+        // the region (projecting these markers there would clobber the dungeon kill
+        // bitmask).
+        if ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) != 0 {
+            return;
+        }
         ram[OVERWORLD_SPRITE_PRESENCE..OVERWORLD_SPRITE_PRESENCE + OVERWORLD_SPRITE_PRESENCE_COUNT]
             .fill(0);
         let len = self.markers.len().min(OVERWORLD_SPRITE_PRESENCE_COUNT);
@@ -5586,6 +5601,10 @@ impl OverworldSpritePresenceState {
         if let Some(marker) = self.markers.get_mut(index) {
             *marker = value;
         }
+    }
+
+    pub(crate) fn clear_all(&mut self) {
+        self.markers.fill(0);
     }
 }
 

@@ -1619,6 +1619,11 @@ impl ZeldaState {
             self.set_super_bomb_indicator_timer(0xfe);
         }
         self.sprite_workspace_mut().clear_where_in_room();
+        // sprite_where_in_overworld (presence markers) shares the 0x1df80 region the
+        // memset above (clear_where_in_room) just zeroed in RAM. Its native mirror is a
+        // separate Vec, so clear it too or it would re-project the stale markers (only
+        // outdoors, where presence projects) and miss the C memset's area-reload reset.
+        self.game_state.sprites.overworld_sprite_presence.clear_all();
         self.clear_all_overworld_sprite_loaded_masks();
         self.dungeon_room_tracking_mut().reset_room_history();
     }
