@@ -1473,6 +1473,24 @@ impl<'a> NativePlayerResourcesBridgeMut<'a> {
         );
     }
 
+    /// OR a bit into one of the dungeon save-flag words (compass / big-key / dungeon-map)
+    /// that this state owns. Used by item receipt (compass 0x32 / map 0x33 / big-key
+    /// 0x25): updating the native field — not just RAM — is required or write_to_ram would
+    /// re-project the stale value and clobber the just-acquired flag.
+    pub(crate) fn or_resource_flag_word(&mut self, addr: usize, mask: u16) {
+        match addr {
+            LINK_COMPASS => self.resources.compass_flags |= mask,
+            LINK_BIGKEY => self.resources.big_key_flags |= mask,
+            LINK_DUNGEON_MAP => self.resources.dungeon_map_flags |= mask,
+            _ => {
+                let next = read_le_u16(self.ram, addr) | mask;
+                write_le_u16(self.ram, addr, next);
+                return;
+            }
+        }
+        self.sync();
+    }
+
     pub(crate) fn set_magic_consumption_level(&mut self, value: u8) {
         self.resources.magic_consumption_level = value;
         self.sync();

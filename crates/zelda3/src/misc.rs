@@ -784,10 +784,15 @@ impl ZeldaState {
             self.inventory_items_mut()
                 .set_item_memory_value_if_empty(value_addr, 1);
         } else if matches!(item, 0x25 | 0x32 | 0x33) {
+            // compass (0x32) / dungeon map (0x33) / big key (0x25): set the current
+            // dungeon's bit. value_addr is LINK_COMPASS/LINK_DUNGEON_MAP/LINK_BIGKEY, all
+            // owned by PlayerResourcesState — route through it so the native field updates
+            // (inventory_items's absorb doesn't model these, so a raw OR would be
+            // re-projected away — the cause of the missing dungeon-map flag @frame 13250).
             let mask = 0x8000u16
                 >> ((self.game_state.inventory.save_progress.palace_index_x2() >> 1) as u16);
-            self.inventory_items_mut()
-                .or_item_memory_word(value_addr, mask);
+            self.player_resources_mut()
+                .or_resource_flag_word(value_addr, mask);
         } else if item == 0x3e {
             if self
                 .game_state
