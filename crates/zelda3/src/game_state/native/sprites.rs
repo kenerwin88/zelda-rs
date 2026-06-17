@@ -4270,14 +4270,15 @@ impl SpriteWorkspaceState {
             // SPRITE_WHERE_IN_ROOM (0x1df80) is the dungeon per-room sprite-kill
             // bitmask; in the OVERWORLD the same WRAM is `sprite_where_in_overworld`
             // (the proximity-spawn presence table, owned by OverworldSpritePresence-
-            // State). Only mirror/project it indoors so the overworld presence table
-            // is never clobbered by this workspace's frame-end projection.
-            where_in_room: if ram[PLAYER_IS_INDOORS] != 0 {
-                ram[SPRITE_WHERE_IN_ROOM..SPRITE_WHERE_IN_ROOM + SPRITE_WHERE_IN_ROOM_BYTES]
-                    .to_vec()
-            } else {
-                vec![0; SPRITE_WHERE_IN_ROOM_BYTES]
-            },
+            // State). ALWAYS load the real region so the mirror holds the true bytes
+            // (incl. overworld-presence leftover that persists into a dungeon); the
+            // *projection* is what's gated on indoors (see write_to_ram). Loading an
+            // all-zero buffer outdoors was wrong on the overworld->dungeon transition
+            // frame, where player_is_indoors flips 0->1 mid-frame: the empty buffer
+            // then got projected and wiped the presence leftover.
+            where_in_room: ram
+                [SPRITE_WHERE_IN_ROOM..SPRITE_WHERE_IN_ROOM + SPRITE_WHERE_IN_ROOM_BYTES]
+                .to_vec(),
         }
     }
 
