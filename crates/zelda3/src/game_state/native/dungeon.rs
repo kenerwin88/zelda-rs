@@ -4637,6 +4637,11 @@ impl<'a> NativeDungeonEnvironmentBridgeMut<'a> {
     pub(crate) fn clear_orange_blue_barrier_state(&mut self) {
         self.state.clear_orange_blue_barrier_state();
         self.sync();
+        // C clears ORANGE_BLUE_BARRIER_STATE with a 16-bit store (Dungeon_LoadEntrance),
+        // zeroing the adjacent high byte 0xc173 too. That byte is unmodeled here and is
+        // mode-reused as the overworld map16 src-offset backup, so leaving it stale leaks
+        // into the overworld decode after a dungeon visit (divergence @rf 46000 → cascade).
+        self.ram[ORANGE_BLUE_BARRIER_STATE + 1] = 0;
     }
 
     pub(crate) fn toggle_orange_blue_barrier_state(&mut self) {
