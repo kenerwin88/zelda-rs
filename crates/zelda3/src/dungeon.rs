@@ -10583,7 +10583,11 @@ impl ZeldaState {
         self.world_palette_theme_mut()
             .set_misc_sprites_graphics_index(10);
         self.initialize_tilesets();
-        self.world_palette_theme_mut().set_palette_sp6r_indoors(10);
+        // PALETTE_SP6R_INDOORS (0xab1) is read by palette_load_sprite_environment_dungeon
+        // off display.palette_buffer, not world.palette_theme. Set the display owner so
+        // the immediately-following dungeon_load_palettes() loads the selector-10 sprite
+        // environment palette instead of a stale selector (matches raw-RAM single-byte).
+        self.set_sp6r_indoors(10);
         self.dungeon_load_palettes();
         self.hud_restore_torch_background();
         self.follower_link_state_mut().set_button_mask_b_y(0);
@@ -12199,7 +12203,11 @@ impl ZeldaState {
         self.world_palette_theme_mut()
             .set_misc_sprites_graphics_index(10);
         self.initialize_tilesets();
-        self.world_palette_theme_mut().set_palette_sp6r_indoors(10);
+        // PALETTE_SP6R_INDOORS (0xab1) is read by palette_load_sprite_environment_dungeon
+        // off display.palette_buffer, not world.palette_theme. Set the display owner so
+        // the immediately-following dungeon_load_palettes() loads the selector-10 sprite
+        // environment palette instead of a stale selector (matches raw-RAM single-byte).
+        self.set_sp6r_indoors(10);
         self.dungeon_load_palettes();
 
         let room = self.game_state.world.location.dungeon_room();
