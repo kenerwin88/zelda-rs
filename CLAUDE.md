@@ -6,16 +6,25 @@ reference emulator. Hard constraint: SNES WRAM reuses the same bytes for differe
 systems by game mode, so a semantic write must touch only the byte/word it owns —
 never bulk-project a range it shares with another system.
 
-## Reference builds & ROM
+## Reference builds & ROM — Rust-vs-Rust ONLY, never touch the C repo
 
-- C oracle: `../zelda3` (ROM `../zelda3/zelda3.sfc`). `variables.h` maps every
-  `#define name (g_ram+0xADDR)` — the ground truth for who owns an address.
-- Known-good Rust clone at commit `1183dee`: `~/Documents/zelda3-rs-old`
-  (build: `ZELDA3_ROM=.../zelda3.sfc cargo build --release -p zelda3-bin`).
-- This repo: `cargo build --profile parity -p zelda3-bin` (deterministic like
-  release, faster). Binary: `target/parity/zelda3 --replay-save <rom> <save> <frames>`.
-- Replay save: `saves/zelda3-combined-route.sav`. All replay runs need the timing
-  hacks: `ZELDA3_SMV_{SELECT_FILE,LOADFILE,DUNGEON,OVERWORLD,MESSAGING,DEATH_INTRO,DEATH_RELOAD}_TIMING_HACKS=1`.
+**The reference is `~/Documents/zelda3-rs-old` (Rust clone @`1183dee`), which has perfect
+parity with the original game. Do NOT read, build, run, or reference `../zelda3` (the C
+source/ROM) for parity work — it is confusing and unnecessary. Compare this repo against
+the old Rust clone only.**
+
+- ROM: `saves/zelda3.sfc` in THIS repo (gitignored via `*.sfc`). All scripts default to
+  it and accept a `ZELDA3_ROM` override. Never use `../zelda3/zelda3.sfc`. (If the ROM is
+  missing, copy it into `saves/zelda3.sfc` from wherever you keep it — not from `../zelda3`
+  in commands/docs.)
+- Known-good Rust clone (the parity reference): `~/Documents/zelda3-rs-old` (override path
+  with `ZELDA3_OLD_REPO`). Already built; binary `target/release/zelda3`.
+- This repo: `cargo build --profile parity -p zelda3-bin` (deterministic like release,
+  faster). Binary: `target/parity/zelda3 --replay-save saves/zelda3.sfc <save> <frames>`.
+- Replay save: `saves/zelda3-combined-route.sav`. All replay runs need the timing hacks:
+  `ZELDA3_SMV_{SELECT_FILE,LOADFILE,DUNGEON,OVERWORLD,MESSAGING,DEATH_INTRO,DEATH_RELOAD}_TIMING_HACKS=1`.
+- Address semantics come from the old clone, not `variables.h`: use `whoowns.py` (backed
+  by `old_rust_ref.py`, which reads the old clone's `const NAME: usize = 0xADDR;` map).
 
 ## Parity-debugging tools (`scripts/`) — prefer these, in this order
 

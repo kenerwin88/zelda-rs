@@ -22,8 +22,12 @@ import argparse, os, pathlib, subprocess, sys, tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 NEW = ROOT / "target" / "parity" / "zelda3"
-OLD = ROOT.parent / "zelda3-rs-old" / "target" / "release" / "zelda3"
-ROM = ROOT.parent / "zelda3" / "zelda3.sfc"
+OLD = pathlib.Path(
+    os.environ.get("ZELDA3_OLD_REPO", str(ROOT.parent / "zelda3-rs-old"))
+) / "target" / "release" / "zelda3"
+# Reference only zelda3-rs (this repo) and zelda3-rs-old (perfect parity). The ROM lives
+# in this repo (saves/, gitignored); never reach into the C repo. Override with ZELDA3_ROM.
+ROM = pathlib.Path(os.environ.get("ZELDA3_ROM", str(ROOT / "saves" / "zelda3.sfc")))
 SAVE = ROOT / "saves" / "zelda3-combined-route.sav"
 HACKS = {f"ZELDA3_SMV_{k}_TIMING_HACKS": "1" for k in
          ["SELECT_FILE", "LOADFILE", "DUNGEON", "OVERWORLD", "MESSAGING",

@@ -41,7 +41,8 @@ DEFAULT_NEW_BIN = ROOT / "target" / "parity" / "zelda3"
 DEFAULT_OLD_BIN = ROOT.parent / "zelda3-rs-old" / "target" / "release" / "zelda3"
 # Commit the good reference clone is built at; used to pickaxe culprit commits.
 DEFAULT_GOOD_REF = "1183dee4b6f0ba9bc1db39b035a587cbcee861e7"
-DEFAULT_ROM = ROOT.parent / "zelda3" / "zelda3.sfc"
+# Rust-vs-Rust only: ROM lives in this repo (saves/, gitignored), never ../zelda3.
+DEFAULT_ROM = pathlib.Path(os.environ.get("ZELDA3_ROM", str(ROOT / "saves" / "zelda3.sfc")))
 DEFAULT_SAVE = ROOT / "saves" / "zelda3-combined-route.sav"
 DEFAULT_OUT = ROOT / ".cache" / "old-new-parity"
 CONSTANTS_RS = ROOT / "crates" / "zelda3" / "src" / "game_state" / "constants.rs"
