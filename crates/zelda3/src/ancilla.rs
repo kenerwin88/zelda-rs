@@ -10093,20 +10093,12 @@ impl ZeldaState {
                 return;
             }
 
-            if self
-                .game_state
-                .world
-                .transient
-                .milestone_item_gfx_swap_countdown()
-                != 0
-            {
-                if self
-                    .game_state
-                    .world
-                    .transient
-                    .milestone_item_gfx_swap_countdown()
-                    == 1
-                {
+            // 0x4c2 is SNES byte-reuse: MILESTONE_ITEM_GFX_SWAP_COUNTDOWN here, but also
+            // MOVING_WALL_TORCH_UPDATE_FLAG in dungeons (set to 0x80 during room tags). C
+            // reads/decrements the raw byte, so read/write RAM directly rather than the
+            // world_transient native copy, which goes stale when the dungeon side owns 0x4c2.
+            if self.ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN] != 0 {
+                if self.ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN] == 1 {
                     if self.game_state.sprites.ancilla_slots.slot(k).item_to_link() == 0x20 {
                         self.set_ambient_sound_effect(0x0f);
                         self.DecodeAnimatedSpriteTile_variable(0x28);
@@ -10114,7 +10106,8 @@ impl ZeldaState {
                         self.DecodeAnimatedSpriteTile_variable(0x23);
                     }
                 }
-                self.decrement_milestone_item_gfx_swap_countdown();
+                self.ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN] =
+                    self.ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN].wrapping_sub(1);
                 return;
             }
             if self.game_state.sprites.ancilla_slots.slot(k).work_byte_3() == 0
