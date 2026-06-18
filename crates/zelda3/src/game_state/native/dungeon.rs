@@ -1381,6 +1381,10 @@ impl DungeonDoorState {
         self.current_door_pos = 0;
     }
 
+    fn clear_current_door_pos_low_byte(&mut self) {
+        self.current_door_pos &= 0xff00;
+    }
+
     fn clear_door_animation_step(&mut self) {
         self.animation_step = 0;
     }
@@ -4326,6 +4330,14 @@ impl<'a> NativeDungeonDoorBridgeMut<'a> {
 
     pub(crate) fn clear_current_door_pos(&mut self) {
         self.state.clear_current_door_pos();
+        self.sync_preserving_animation_step();
+    }
+
+    /// Clears only the LOW byte of DUNG_CUR_DOOR_POS (0x68e), preserving the high byte (0x68f).
+    /// C's InterRoomTrans_State15 writes `ram[DUNG_CUR_DOOR_POS_DUNGEON] = 0` as a BYTE, leaving
+    /// the high byte (a stale leftover) intact; a full word-clear here diverges scratch (0x68f).
+    pub(crate) fn clear_current_door_pos_low_byte(&mut self) {
+        self.state.clear_current_door_pos_low_byte();
         self.sync_preserving_animation_step();
     }
 

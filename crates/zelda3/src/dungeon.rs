@@ -10848,7 +10848,9 @@ impl ZeldaState {
                 || self.game_state.dungeon.savegame_state.savegame_state_bits() & 0x3000 != 0)
         {
             self.dungeon_environment_mut().set_trapdoors_down_low(1);
-            self.dungeon_doors_mut().clear_current_door_pos();
+            // C writes `ram[DUNG_CUR_DOOR_POS_DUNGEON] = 0` as a byte here (0x68e only),
+            // leaving the high byte 0x68f intact (a stale leftover).
+            self.dungeon_doors_mut().clear_current_door_pos_low_byte();
             self.dungeon_doors_mut().clear_door_animation_step();
             self.set_submodule(5);
         }
