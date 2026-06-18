@@ -2151,7 +2151,7 @@ impl Default for DungeonRoomParserState {
             floor_2_filler_tiles: 0,
             room_layout_and_starting_quadrant: 0,
             pot_reveal_masks: vec![0; DUNGEON_POT_REVEAL_ROOM_COUNT],
-            tile_attributes: vec![0; 0x400],
+            tile_attributes: vec![0; 0x200],
         }
     }
 }
@@ -2175,7 +2175,10 @@ impl DungeonRoomParserState {
             *mask = read_le_u16(ram, POTS_REVEALED_IN_ROOM_DUNGEON_LOCAL + room * 2);
         }
 
-        let mut tile_attributes = vec![0; 0x400];
+        // ATTRIBUTES_FOR_TILE owns exactly 0x200 bytes (0xfe00..0x10000). A 0x400 array
+        // overran the load/projection into 0x10000-0x101ff (BG_CHAR_BUFFER), re-stamping a
+        // stale copy over the star-tile graphics written by Dungeon_RestoreStarTileChr.
+        let mut tile_attributes = vec![0; 0x200];
         let available = ram.len().saturating_sub(ATTRIBUTES_FOR_TILE_PLAYER);
         let len = tile_attributes.len().min(available);
         tile_attributes[..len]
