@@ -5032,6 +5032,7 @@ impl ZeldaState {
         }
     }
 
+    #[track_caller]
     pub(crate) fn write_expanded_graphics_tile_row(
         &mut self,
         dst: usize,
@@ -5040,6 +5041,8 @@ impl ZeldaState {
         upper_plane: u8,
         composite_plane: u8,
     ) {
+        crate::types::ww_check(dst, 2, "expand_gfx_tile_row[lo/hi]", low_plane as u32);
+        crate::types::ww_check(dst + 0x10, 2, "expand_gfx_tile_row[up/comp]", upper_plane as u32);
         self.ram[dst] = low_plane;
         self.ram[dst + 1] = high_plane;
         self.ram[dst + 0x10] = upper_plane;
@@ -8102,6 +8105,7 @@ impl ZeldaState {
             || self.game_state.enhanced_features.bits() != 0
             || self.dialogue_flags != 0
         {
+            crate::types::ww_set_cur_frame(self.frame_ctr_dbg);
             self.replay_trace_ram_watch("before-run-frame-internal");
             self.zelda_run_frame_internal(input_state, run_what as u8);
             self.replay_trace_ram_watch("after-run-frame-internal");

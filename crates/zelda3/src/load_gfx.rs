@@ -1556,6 +1556,7 @@ impl ZeldaState {
         }
     }
 
+    #[track_caller]
     pub(super) fn do3_to_4_high_16bit_from_slice(
         &mut self,
         mut dst: usize,

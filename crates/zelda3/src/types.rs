@@ -155,7 +155,71 @@ pub fn read_le_u16(bytes: &[u8], offset: usize) -> u16 {
     u16::from_le_bytes([bytes[offset], bytes[offset + 1]])
 }
 
+// --- Write-watchpoint debug tool (env-driven) -------------------------------
+// ZELDA3_WW_ADDR=0x<addr> [ZELDA3_WW_FRAME=<n>] logs every write that touches the
+// address (via write_le_u16 / ww_check), with the calling site and current frame.
+// Set the current frame each frame via ww_set_cur_frame(); 0xFFFFFFFF frame = all frames.
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+pub static WW_ADDR: AtomicUsize = AtomicUsize::new(usize::MAX);
+pub static WW_FRAME: AtomicU32 = AtomicU32::new(u32::MAX);
+pub static WW_CUR_FRAME: AtomicU32 = AtomicU32::new(0);
+
+pub fn ww_set_cur_frame(frame: u32) {
+    if WW_ADDR.load(Ordering::Relaxed) == usize::MAX {
+        // lazy one-time env init (usize::MAX sentinel also means "not yet checked")
+        let a = std::env::var("ZELDA3_WW_ADDR")
+            .ok()
+            .and_then(|s| usize::from_str_radix(s.trim().trim_start_matches("0x"), 16).ok());
+        if let Some(a) = a {
+            WW_ADDR.store(a, Ordering::Relaxed);
+            if let Some(f) = std::env::var("ZELDA3_WW_FRAME").ok().and_then(|s| s.trim().parse().ok()) {
+                WW_FRAME.store(f, Ordering::Relaxed);
+            }
+        } else {
+            WW_ADDR.store(usize::MAX - 1, Ordering::Relaxed); // mark "checked, disabled"
+        }
+    }
+    WW_CUR_FRAME.store(frame, Ordering::Relaxed);
+}
+
+#[inline]
+fn ww_enabled_hit(offset: usize, len: usize) -> bool {
+    let a = WW_ADDR.load(Ordering::Relaxed);
+    if a >= usize::MAX - 1 || !(offset <= a && a < offset + len) {
+        return false;
+    }
+    let wf = WW_FRAME.load(Ordering::Relaxed);
+    wf == u32::MAX || wf == WW_CUR_FRAME.load(Ordering::Relaxed)
+}
+
+/// Call from any non-write_le_u16 write path (slice copies, byte writes) to report
+/// hits on the watched address.
+#[track_caller]
+pub fn ww_check(offset: usize, len: usize, descr: &str, value: u32) {
+    if ww_enabled_hit(offset, len) {
+        eprintln!(
+            "[WW] f={} {} off=0x{:05x} len={} val=0x{:x} caller={}",
+            WW_CUR_FRAME.load(Ordering::Relaxed),
+            descr,
+            offset,
+            len,
+            value,
+            std::panic::Location::caller()
+        );
+    }
+}
+
+#[track_caller]
 pub fn write_le_u16(bytes: &mut [u8], offset: usize, value: u16) {
+    if ww_enabled_hit(offset, 2) {
+        eprintln!(
+            "[WW] f={} write_le_u16 off=0x{:05x} val=0x{:04x} caller={}",
+            WW_CUR_FRAME.load(Ordering::Relaxed),
+            offset,
+            value,
+            std::panic::Location::caller()
+        );
+    }
     let [lo, hi] = value.to_le_bytes();
     bytes[offset] = lo;
     bytes[offset + 1] = hi;
