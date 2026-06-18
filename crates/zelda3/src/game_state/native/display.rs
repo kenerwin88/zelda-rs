@@ -1522,7 +1522,14 @@ impl SpotlightHdmaState {
         Self::set_low_byte(&mut self.window_radius, next);
     }
 
+    #[track_caller]
     pub(crate) fn set_hdma_table_dynamic_entry(&mut self, index: usize, value: u16) {
+        crate::types::ww_check(
+            crate::game_state::constants::HDMA_TABLE_DYNAMIC + index * 2,
+            2,
+            "set_hdma_table_dynamic_entry",
+            value as u32,
+        );
         if let Some(entry) = self.dynamic_table.get_mut(index) {
             *entry = value;
         }
@@ -1532,8 +1539,15 @@ impl SpotlightHdmaState {
         self.clear_hdma_table_dynamic_range(0, count);
     }
 
+    #[track_caller]
     pub(crate) fn clear_hdma_table_dynamic_range(&mut self, start: usize, count: usize) {
         let end = start.saturating_add(count).min(self.dynamic_table.len());
+        crate::types::ww_check(
+            crate::game_state::constants::HDMA_TABLE_DYNAMIC + start * 2,
+            count * 2,
+            "clear_hdma_table_dynamic_range",
+            0,
+        );
         for entry in &mut self.dynamic_table[start.min(end)..end] {
             *entry = 0;
         }
