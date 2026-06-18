@@ -2391,14 +2391,21 @@ impl DungeonRoomEffectsState {
         ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = self.fixed_color_plusminus;
         ram[DUNGEON_TRAP_TRIGGER_LATCH] = self.trap_trigger_latch;
         ram[ACTIVATE_BOMB_TRAP_OVERLORD] = self.bomb_trap_activation;
-        ram[MESSAGING_BUF_DUNGEON] = self.blast_wall_message_state;
-        write_le_u16(ram, MESSAGING_BUF_DUNGEON + 0x1a, self.blast_wall_message_x);
-        write_le_u16(ram, MESSAGING_BUF_DUNGEON + 0x18, self.blast_wall_message_y);
-        write_le_u16(
-            ram,
-            MESSAGING_BUF_DUNGEON + 0x1c,
-            self.blast_wall_message_direction,
-        );
+        // MESSAGING_BUF_DUNGEON (0x10000) is SNES byte-reused: it is the BG-char / message
+        // gfx-staging buffer normally, and only holds the blast-wall message (state/x/y/dir)
+        // while a blast wall is open. Projecting these fields unconditionally clobbered the
+        // regenerated gfx buffer with stale values (page 0x10000 transient). Only project them
+        // when a blast wall is actually open, matching C (which writes 0x10000 raw, only then).
+        if self.blast_wall_x_open != 0 || self.blast_wall_y_open != 0 {
+            ram[MESSAGING_BUF_DUNGEON] = self.blast_wall_message_state;
+            write_le_u16(ram, MESSAGING_BUF_DUNGEON + 0x1a, self.blast_wall_message_x);
+            write_le_u16(ram, MESSAGING_BUF_DUNGEON + 0x18, self.blast_wall_message_y);
+            write_le_u16(
+                ram,
+                MESSAGING_BUF_DUNGEON + 0x1c,
+                self.blast_wall_message_direction,
+            );
+        }
         for (index, &value) in self.moving_wall_replacement_buffer.iter().enumerate() {
             write_le_u16(ram, MOVING_WALL_REPLACEMENT_BUFFER + index * 2, value);
         }
