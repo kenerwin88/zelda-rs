@@ -3172,6 +3172,14 @@ impl ZeldaState {
     }
 
     pub(super) fn Text_Initialize_initModuleStateLoop(&mut self) {
+        // C copies all 32 bytes of TEXT_INITIALIZATION_DATA into the message-state struct at
+        // TEXT_MSGBOX_TOPLEFT_COPY (0x1cd0..0x1cf0). init_msgbox_state_from only models a
+        // subset, leaving unmodeled bytes (notably DIALOGUE_MSG_SRC_OFFS 0x1cdd-0x1cde, a dead
+        // message-DMA-pointer scratch) stale. Mirror C's raw copy so those bytes match too;
+        // the native fields re-project their (identical) values afterward.
+        self.ram[crate::game_state::constants::TEXT_MSGBOX_TOPLEFT_COPY
+            ..crate::game_state::constants::TEXT_MSGBOX_TOPLEFT_COPY + TEXT_INITIALIZATION_DATA.len()]
+            .copy_from_slice(&TEXT_INITIALIZATION_DATA);
         self.messaging_state_mut()
             .init_msgbox_state_from(&TEXT_INITIALIZATION_DATA);
         self.Text_InitVwfState();
