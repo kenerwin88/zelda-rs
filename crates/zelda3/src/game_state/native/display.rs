@@ -1984,6 +1984,10 @@ impl PpuScrollCopyState {
 
     pub(crate) fn set_mapbak_tm_word(&mut self, value: u16) {
         self.mapbak_tm = value;
+        // mapbak_tm (u16) projects MAPBAK_TM:MAPBAK_TS as a word, but the separate
+        // mapbak_ts (u8) projects MAPBAK_TS (0xc212) LAST and would clobber the word's high
+        // byte with a stale value. Keep mapbak_ts in sync so the word write actually sticks.
+        self.mapbak_ts = (value >> 8) as u8;
     }
 
     pub(crate) fn set_bg1_h_high(&mut self, value: u8) {

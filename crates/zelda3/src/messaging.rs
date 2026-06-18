@@ -1445,7 +1445,11 @@ impl ZeldaState {
         self.EnableForceBlank();
         self.set_mosaic_copy(3);
         self.increment_overworld_map_state();
-        let tm_ts = self.game_state.display.layer_masks_word();
+        // C backs up MAPBAK_TM:MAPBAK_TS from the RAM word TM_COPY:TS_COPY (the last-projected
+        // values), not the live native layer masks. The native sub_screen_layers can be
+        // transiently ahead of RAM TS_COPY this frame (dark-room sub-screen path), so reading
+        // layer_masks_word() backed up a stale 1 into MAPBAK_TS (0xc212) vs old-rust's 0.
+        let tm_ts = read_le_u16(&self.ram, crate::game_state::constants::TM_COPY);
         self.set_mapbak_tm_word(tm_ts);
         let bg1hofs = self.game_state.display.ppu_scroll_copy.bg1_h_copy2();
         let bg2hofs = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
