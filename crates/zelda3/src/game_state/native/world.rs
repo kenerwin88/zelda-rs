@@ -2402,7 +2402,10 @@ impl WorldTransientState {
             room_transitioning_flags: ram_byte(ram, ROOM_TRANSITIONING_FLAGS),
             travel_bird_flag: ram_byte(ram, FLAG_TRAVEL_BIRD),
             tile_interaction_shared_flag: ram_byte(ram, TILE_INTERACTION_SHARED_FLAG),
-            hud_floor_changed_timer: ram_byte(ram, HUD_FLOOR_CHANGED_TIMER),
+            // Not loaded from RAM: display.hud_tilemap owns HUD_FLOOR_CHANGED_TIMER (0x4a0).
+            // This vestigial field is never projected or read; keep it a stable 0 so the
+            // native-coherence checker doesn't flag world_transient against the live value.
+            hud_floor_changed_timer: 0,
             quadrant_fullsize_x: ram_byte(ram, QUADRANT_FULLSIZE_X),
             quadrant_fullsize_y: ram_byte(ram, QUADRANT_FULLSIZE_Y),
             cached_quadrant_fullsize_x: ram_byte(ram, QUADRANT_FULLSIZE_X_CACHED),
@@ -2474,7 +2477,11 @@ impl WorldTransientState {
         ram[ROOM_TRANSITIONING_FLAGS] = self.room_transitioning_flags;
         ram[FLAG_TRAVEL_BIRD] = self.travel_bird_flag;
         ram[TILE_INTERACTION_SHARED_FLAG] = self.tile_interaction_shared_flag;
-        ram[HUD_FLOOR_CHANGED_TIMER] = self.hud_floor_changed_timer;
+        // HUD_FLOOR_CHANGED_TIMER (0x4a0) is owned by display.hud_tilemap, which both the
+        // floor-change blip (set_hud_floor_changed_timer) and hud_floor_indicator read/write.
+        // Projecting our stale copy here re-stamped 0 over the blip's 1 on every
+        // world_transient bridge sync, blanking the dungeon floor indicator. Do NOT project it
+        // — display.hud_tilemap is the sole owner; clear_hud_floor_changed_timer routes there.
         ram[QUADRANT_FULLSIZE_X] = self.quadrant_fullsize_x;
         ram[QUADRANT_FULLSIZE_Y] = self.quadrant_fullsize_y;
         ram[QUADRANT_FULLSIZE_X_CACHED] = self.cached_quadrant_fullsize_x;

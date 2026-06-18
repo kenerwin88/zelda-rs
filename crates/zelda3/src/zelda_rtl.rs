@@ -2702,9 +2702,10 @@ impl ZeldaState {
     }
 
     pub(crate) fn clear_hud_floor_changed_timer(&mut self) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.clear_hud_floor_changed_timer()
-        });
+        // HUD_FLOOR_CHANGED_TIMER (0x4a0) is owned by display.hud_tilemap (see
+        // set_hud_floor_changed_timer / hud_floor_indicator), not world_transient. Clear the
+        // low byte there so the write reaches RAM and is not re-clobbered by a stale projection.
+        self.clear_floor_changed_timer_low();
     }
 
     pub(crate) fn cache_quadrant_fullsize_state(&mut self) {
