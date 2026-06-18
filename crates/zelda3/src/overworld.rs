@@ -4152,8 +4152,12 @@ impl ZeldaState {
         self.set_transition_direction_enum(dir_enum);
         self.set_screen_transition(dir_enum);
         self.set_ow_entrance_value(0);
+        // C clears only the LOW byte here (`dung_savegame_info[BIG_ROCK] = 0`, a u8 write),
+        // leaving the high byte intact (e.g. 0x0100 stays 0x0100). Clearing the whole u16
+        // would blank a live big-rock starting address and then re-project 0 over RAM.
+        let big_rock = self.game_state.dungeon.object_tracking.big_rock_starting_address();
         self.dungeon_object_tracking_mut()
-            .set_big_rock_starting_address(0);
+            .set_big_rock_starting_address(big_rock & 0xff00);
         self.set_transition_counter(0);
 
         if old_screen & 0x3f == 0
