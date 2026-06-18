@@ -4203,10 +4203,6 @@ mod tests {
         ram[LINK_ITEM_BOW + 2] = 1;
         ram[LINK_ITEM_MOON_PEARL] = 1;
         ram[LINK_BOTTLE_INFO + 2] = 5;
-        ram[HUD_CUR_ITEM] = 7;
-        ram[HUD_CUR_ITEM_X] = 8;
-        ram[HUD_CUR_ITEM_L] = 9;
-        ram[HUD_CUR_ITEM_R] = 10;
 
         let items = InventoryItemsState::load_from_ram(&ram);
         assert_eq!(items.bow(), 7);
@@ -4214,9 +4210,6 @@ mod tests {
         assert_eq!(items.hookshot(), 1);
         assert!(items.has_moon_pearl());
         assert_eq!(items.bottle(2), 5);
-        assert_eq!(items.equipped_button_item(0), 7);
-        assert_eq!(items.equipped_button_item(3), 10);
-        assert_eq!(items.equipped_button_item(4), 10);
 
         let mut projected = vec![0; WRAM_SIZE];
         items.write_to_ram(&mut projected);
@@ -4229,7 +4222,6 @@ mod tests {
         ram[LINK_ITEM_MOON_PEARL] = 1;
         ram[LINK_BOTTLE_INFO] = 2;
         ram[LINK_BOTTLE_INFO + 2] = 2;
-        ram[HUD_CUR_ITEM_R] = 4;
 
         let mut items = InventoryItemsState::load_from_ram(&ram);
         {
@@ -4237,7 +4229,6 @@ mod tests {
             bridge.set_inventory_item(0, 3);
             bridge.set_inventory_item(2, 1);
             bridge.set_bottle(0, 5);
-            bridge.set_equipped_button_item(3, 7);
             assert!(bridge.fill_first_empty_bottle_with(6));
             assert!(bridge.replace_first_empty_bottle_with(8));
         }
@@ -4248,14 +4239,12 @@ mod tests {
         assert_eq!(items.bottle(0), 5);
         assert_eq!(items.bottle(1), 6);
         assert_eq!(items.bottle(2), 8);
-        assert_eq!(items.equipped_button_item(3), 7);
         assert_eq!(ram[LINK_ITEM_BOW], 3);
         assert_eq!(ram[LINK_ITEM_BOW + 2], 1);
         assert_eq!(ram[LINK_ITEM_MOON_PEARL], 1);
         assert_eq!(ram[LINK_BOTTLE_INFO], 5);
         assert_eq!(ram[LINK_BOTTLE_INFO + 1], 6);
         assert_eq!(ram[LINK_BOTTLE_INFO + 2], 8);
-        assert_eq!(ram[HUD_CUR_ITEM_R], 7);
     }
 
     #[test]
@@ -4264,25 +4253,21 @@ mod tests {
         let mut native_ram = vec![0; WRAM_SIZE];
         native_ram[LINK_ITEM_MOON_PEARL] = 1;
         native_ram[LINK_BOTTLE_INFO] = 2;
-        native_ram[HUD_CUR_ITEM] = 4;
         let mut items = InventoryItemsState::load_from_ram(&native_ram);
 
         {
             let mut bridge = NativeInventoryItemsBridgeMut::new(&mut items, &mut ram);
             bridge.set_inventory_item(2, 1);
             bridge.set_bottle(0, 5);
-            bridge.set_equipped_button_item(0, 7);
         }
 
         assert_eq!(items.hookshot(), 1);
         assert!(items.has_moon_pearl());
         assert_eq!(items.bottle(0), 5);
-        assert_eq!(items.equipped_button_item(0), 7);
         assert_eq!(ram[LINK_ITEM_BOW], 0);
         assert_eq!(ram[LINK_ITEM_BOW + 2], 1);
         assert_eq!(ram[LINK_ITEM_MOON_PEARL], 1);
         assert_eq!(ram[LINK_BOTTLE_INFO], 5);
-        assert_eq!(ram[HUD_CUR_ITEM], 7);
     }
 
     #[test]

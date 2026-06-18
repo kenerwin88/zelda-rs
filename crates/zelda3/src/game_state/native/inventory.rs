@@ -7,7 +7,6 @@ const DEATH_COUNT_PALACE_SLOTS: usize = 14;
 const SAVE_DUNGEON_INFO_LEN: usize = 0x500;
 const INVENTORY_ITEM_SLOT_COUNT: usize = 28;
 const BOTTLE_SLOT_COUNT: usize = 4;
-const EQUIPPED_BUTTON_SLOT_COUNT: usize = 4;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct InventoryState {
@@ -42,7 +41,6 @@ impl InventoryState {
 pub(crate) struct InventoryItemsState {
     item_slots: [u8; INVENTORY_ITEM_SLOT_COUNT],
     bottles: [u8; BOTTLE_SLOT_COUNT],
-    equipped_button_items: [u8; EQUIPPED_BUTTON_SLOT_COUNT],
 }
 
 impl InventoryItemsState {
@@ -57,16 +55,7 @@ impl InventoryItemsState {
             *bottle = ram_byte(ram, LINK_BOTTLE_INFO + index);
         }
 
-        Self {
-            item_slots,
-            bottles,
-            equipped_button_items: [
-                ram_byte(ram, HUD_CUR_ITEM),
-                ram_byte(ram, HUD_CUR_ITEM_X),
-                ram_byte(ram, HUD_CUR_ITEM_L),
-                ram_byte(ram, HUD_CUR_ITEM_R),
-            ],
-        }
+        Self { item_slots, bottles }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
@@ -86,10 +75,10 @@ impl InventoryItemsState {
             ram[LINK_ITEM_BOW + index] = value;
         }
         ram[LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT].copy_from_slice(&self.bottles);
-        ram[HUD_CUR_ITEM] = self.equipped_button_items[0];
-        ram[HUD_CUR_ITEM_X] = self.equipped_button_items[1];
-        ram[HUD_CUR_ITEM_L] = self.equipped_button_items[2];
-        ram[HUD_CUR_ITEM_R] = self.equipped_button_items[3];
+        // HUD_CUR_ITEM/X/L/R (0x202, 0x656-0x658) are solely owned by SaveProgressState's
+        // hud_current_items — the menu navigation reads/writes that model. Projecting a second
+        // copy here re-stamped a stale value over it (the legacy bottle-menu 4->7 transition
+        // read the stale native field even though RAM matched).
     }
 
     pub(crate) fn inventory_item(&self, index: usize) -> u8 {
@@ -104,13 +93,8 @@ impl InventoryItemsState {
         {
             self.bottle(item_memory_addr - LINK_BOTTLE_INFO)
         } else {
-            match item_memory_addr {
-                HUD_CUR_ITEM => self.equipped_button_item(0),
-                HUD_CUR_ITEM_X => self.equipped_button_item(1),
-                HUD_CUR_ITEM_L => self.equipped_button_item(2),
-                HUD_CUR_ITEM_R => self.equipped_button_item(3),
-                _ => ram.get(item_memory_addr).copied().unwrap_or(0),
-            }
+            // HUD_CUR_ITEM/X/L/R are owned by SaveProgressState; read them straight from RAM.
+            ram.get(item_memory_addr).copied().unwrap_or(0)
         }
     }
 
@@ -253,13 +237,6 @@ impl InventoryItemsState {
         self.bottles.iter().any(|bottle| *bottle >= value)
     }
 
-    pub(crate) fn equipped_button_item(&self, button_index: usize) -> u8 {
-        self.equipped_button_items
-            .get(button_index)
-            .copied()
-            .unwrap_or_else(|| self.equipped_button_items[EQUIPPED_BUTTON_SLOT_COUNT - 1])
-    }
-
     fn set_inventory_item(&mut self, index: usize, value: u8) {
         if let Some(item) = self.item_slots.get_mut(index) {
             *item = value;
@@ -272,10 +249,6 @@ impl InventoryItemsState {
         }
     }
 
-    fn set_equipped_button_item(&mut self, button_index: usize, value: u8) {
-        let index = button_index.min(EQUIPPED_BUTTON_SLOT_COUNT - 1);
-        self.equipped_button_items[index] = value;
-    }
 
     fn fill_first_empty_bottle_with(&mut self, value: u8) -> bool {
         if let Some(bottle) = self.bottles.iter_mut().find(|bottle| **bottle < 2) {
@@ -317,15 +290,9 @@ impl<'a> NativeInventoryItemsBridgeMut<'a> {
         } else if (LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT).contains(&address) {
             self.items
                 .set_bottle(address - LINK_BOTTLE_INFO, self.ram[address]);
-        } else {
-            match address {
-                HUD_CUR_ITEM => self.items.set_equipped_button_item(0, self.ram[address]),
-                HUD_CUR_ITEM_X => self.items.set_equipped_button_item(1, self.ram[address]),
-                HUD_CUR_ITEM_L => self.items.set_equipped_button_item(2, self.ram[address]),
-                HUD_CUR_ITEM_R => self.items.set_equipped_button_item(3, self.ram[address]),
-                _ => {}
-            }
         }
+        // HUD_CUR_ITEM/X/L/R are owned by SaveProgressState, not InventoryItemsState — the
+        // caller already wrote RAM; nothing to absorb here.
     }
 
     fn absorb_item_memory_word(&mut self, address: usize) {
@@ -424,11 +391,6 @@ impl<'a> NativeInventoryItemsBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn set_equipped_button_item(&mut self, button_index: usize, value: u8) {
-        self.items.set_equipped_button_item(button_index, value);
-        self.items.write_to_ram(self.ram);
-        self.debug_assert_matches_ram();
-    }
 
     pub(crate) fn fill_first_empty_bottle_with(&mut self, value: u8) -> bool {
         let filled = self.items.fill_first_empty_bottle_with(value);

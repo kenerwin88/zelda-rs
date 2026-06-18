@@ -803,8 +803,8 @@ impl ZeldaState {
             let mut item = self
                 .game_state
                 .inventory
-                .items
-                .equipped_button_item(btn_index);
+                .save_progress
+                .hud_current_item_slot(btn_index);
             let old_item = item;
             if self.game_state.player.follower_link.filtered_joypad_h() & JOYPAD_HIGH_UP != 0 {
                 self.hud_equip_item_above(&mut item);
@@ -821,8 +821,8 @@ impl ZeldaState {
             {
                 self.hud_equip_next_item(&mut item, btn_index == 0);
             }
-            self.inventory_items_mut()
-                .set_equipped_button_item(btn_index, item);
+            self.save_progress_mut()
+                .set_hud_current_item_slot(btn_index, item);
             let jh = self.game_state.player.follower_link.filtered_joypad_h();
             self.set_prev_joypad_h(jh);
             if item != old_item {
@@ -1324,8 +1324,8 @@ impl ZeldaState {
         let item = self
             .game_state
             .inventory
-            .items
-            .equipped_button_item(btn_index);
+            .save_progress
+            .hud_current_item_slot(btn_index);
         self.hud_draw_box(
             0x1000,
             21 + dst_box,
