@@ -70,8 +70,21 @@ impl InventoryItemsState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[LINK_ITEM_BOW..LINK_ITEM_BOW + INVENTORY_ITEM_SLOT_COUNT]
-            .copy_from_slice(&self.item_slots);
+        // The inventory slot slice (LINK_ITEM_BOW..) overlaps two PlayerResourcesState-owned
+        // bytes: LINK_ITEM_BOMBS (0xf343, index 3) and LINK_ITEM_BOTTLE_INDEX (0xf34f, idx 15).
+        // bombs/bottle-index flow through PlayerResourcesState, so this slice carries a stale
+        // copy — projecting it would re-clobber the owner (e.g. a bomb_filler drain's
+        // increment_bombs was reverted every frame, bombs stuck @rf 147897). Skip those two
+        // indices; PlayerResourcesState is the sole projector. (We still LOAD them so the
+        // slice accessors read the owner's value, which is correct in RAM by then.)
+        const BOMBS_IDX: usize = LINK_ITEM_BOMBS - LINK_ITEM_BOW;
+        const BOTTLE_IDX: usize = LINK_ITEM_BOTTLE_INDEX - LINK_ITEM_BOW;
+        for (index, &value) in self.item_slots.iter().enumerate() {
+            if index == BOMBS_IDX || index == BOTTLE_IDX {
+                continue;
+            }
+            ram[LINK_ITEM_BOW + index] = value;
+        }
         ram[LINK_BOTTLE_INFO..LINK_BOTTLE_INFO + BOTTLE_SLOT_COUNT].copy_from_slice(&self.bottles);
         ram[HUD_CUR_ITEM] = self.equipped_button_items[0];
         ram[HUD_CUR_ITEM_X] = self.equipped_button_items[1];
