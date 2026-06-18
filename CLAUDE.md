@@ -117,6 +117,18 @@ the old Rust clone only.**
    `whoowns` → `step_diff` for the step. `--first` shows only first-frame per page;
    `--reuse` skips re-running (reuses /tmp dumps).
 
+9. **`ZELDA3_WW_ADDR=0x<addr> [ZELDA3_WW_FRAME=<n>]` — RAM write-watchpoint (function-level
+   "who wrote this byte").** step_diff pins the STEP; this pins the CALL SITE. Logs every
+   write touching `<addr>` (optionally only on frame `<n>`, matched against `frame_ctr_dbg`)
+   as `[WW] f=<frame> <descr> off=0x.. val=0x.. caller=<file:line>`. Centralized in
+   `write_le_u16` (types.rs) via `#[track_caller]`; for direct `ram[x]=` / slice writers call
+   `crate::types::ww_check(offset, len, descr, val)` (already wired into
+   `write_expanded_graphics_tile_row`; add to other hot writers as needed, and mark the
+   writer chain `#[track_caller]` so the caller propagates to the real trigger). NEW-only
+   (the old clone's prebuilt binary lacks it). Disabled = one atomic load + compare per
+   write (negligible). Used to prove the 0x10000 gfx cluster is a graphics-load *timing*
+   divergence, not a byte-ownership bug.
+
 ### Tracing env vars
 
 - `ZELDA3_REPLAY_WRAM_DUMP=<path>` — dump full 128KB WRAM at the final frame (both
