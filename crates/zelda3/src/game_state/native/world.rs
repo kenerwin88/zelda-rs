@@ -2387,7 +2387,10 @@ impl WorldTransientState {
             milestone_item_graphics_countdown: ram_byte(ram, MILESTONE_ITEM_GFX_SWAP_COUNTDOWN),
             big_key_door_message_triggered: read_le_u16(ram, BIG_KEY_DOOR_MESSAGE_TRIGGERED),
             savegame_master_sword_flags: read_le_u16(ram, SAVEGAME_HAS_MASTER_SWORD_FLAGS),
-            super_bomb_indicator_timer: ram_byte(ram, SUPER_BOMB_INDICATOR_TIMER),
+            // Not loaded: display.hud_tilemap runtime owns SUPER_BOMB_INDICATOR_TIMER (0x4b4),
+            // which hud_super_bomb_indicator reads/sets. Vestigial field kept 0 so the
+            // coherence checker doesn't flag world_transient against the live display value.
+            super_bomb_indicator_timer: 0,
             standing_in_doorway_cached: ram_byte(ram, IS_STANDING_IN_DOORWAY_CACHED),
             cached_room_bounds_y_start: read_le_u16(ram, CACHED_ROOM_BOUNDS_Y_START),
             cached_room_bounds_y_end: read_le_u16(ram, CACHED_ROOM_BOUNDS_Y_END),
@@ -2442,7 +2445,9 @@ impl WorldTransientState {
             SAVEGAME_HAS_MASTER_SWORD_FLAGS,
             self.savegame_master_sword_flags,
         );
-        ram[SUPER_BOMB_INDICATOR_TIMER] = self.super_bomb_indicator_timer;
+        // SUPER_BOMB_INDICATOR_TIMER (0x4b4) is owned by display.hud_tilemap runtime; do NOT
+        // project our stale copy here (it re-stamped 0 over the live value on every
+        // world_transient bridge sync, like the floor-changed timer did at 0x4a0).
         ram[IS_STANDING_IN_DOORWAY_CACHED] = self.standing_in_doorway_cached;
         write_le_u16(
             ram,

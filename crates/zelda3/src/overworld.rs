@@ -1113,7 +1113,7 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module09-player-before-link-main");
         self.link_main();
         self.replay_trace_ram_watch("module09-player-after-link-main");
-        if self.game_state.world.transient.super_bomb_indicator_timer() != 0xff {
+        if self.hud_state().super_bomb_indicator_timer() != 0xff {
             self.hud_super_bomb_indicator();
         }
         self.replay_trace_ram_watch("module09-player-after-super-bomb");

@@ -5367,7 +5367,6 @@ mod tests {
         ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN] = 0x03;
         write_le_u16(&mut ram, BIG_KEY_DOOR_MESSAGE_TRIGGERED, 0x0405);
         write_le_u16(&mut ram, SAVEGAME_HAS_MASTER_SWORD_FLAGS, 0x0607);
-        ram[SUPER_BOMB_INDICATOR_TIMER] = 0x08;
         ram[IS_STANDING_IN_DOORWAY_CACHED] = 0x09;
         write_le_u16(&mut ram, CACHED_ROOM_BOUNDS_Y_START, 0x0a0b);
         write_le_u16(&mut ram, CACHED_ROOM_BOUNDS_X_END, 0x0c0d);
@@ -5389,7 +5388,8 @@ mod tests {
         assert_eq!(transient.milestone_item_gfx_swap_countdown(), 0x03);
         assert_eq!(transient.big_key_door_message_triggered(), 0x0405);
         assert_eq!(transient.savegame_has_master_sword_flags(), 0x0607);
-        assert_eq!(transient.super_bomb_indicator_timer(), 0x08);
+        // super_bomb_indicator_timer (0x4b4) is no longer owned by world_transient — it
+        // belongs to display.hud_tilemap runtime (see overworld super-bomb indicator fix).
         assert_eq!(transient.is_standing_in_doorway_cached(), 0x09);
         assert_eq!(transient.overworld_peg_puzzle_progress(), 0x0e0f);
         assert_eq!(transient.overworld_hole_tilemap_pos(), 0x10);
