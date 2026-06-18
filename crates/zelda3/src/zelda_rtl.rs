@@ -1522,6 +1522,7 @@ impl ZeldaState {
     fn replay_trace_ram_watch(&self, label: &str) {
         self.replay_assert_native_coherent(label);
         self.replay_step_dump(label);
+        self.replay_frame_page_dump(label);
         let Some(target) = Self::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_FRAME") else {
             return;
         };
@@ -1593,6 +1594,53 @@ impl ZeldaState {
         let _ = file.write_all(lbl);
         let _ = file.write_all(&(self.ram.len() as u32).to_le_bytes());
         let _ = file.write_all(&self.ram);
+    }
+
+    // Whole-replay per-frame divergence map. `ZELDA3_REPLAY_FRAME_PAGE_DUMP=<path>` makes
+    // every frame append one fixed-size record `[frame:u32 LE][128 × page_fnv32 LE]` (one
+    // 32-bit FNV-1a checksum per 1KB WRAM page) at the end-of-frame `after-run-frame-internal`
+    // checkpoint. Run both this repo and zelda3-rs-old to the same end frame, then
+    // scripts/full_divergence_scan.py diffs the two streams and lists EVERY (frame, page)
+    // that ever diverges — a complete map in two replay runs instead of re-replaying per
+    // probe frame. The file is truncated once per process (single open, buffered).
+    fn replay_frame_page_dump(&self, label: &str) {
+        if label != "after-run-frame-internal" {
+            return;
+        }
+        use std::io::Write;
+        use std::sync::{Mutex, OnceLock};
+        static DUMP: OnceLock<Option<Mutex<std::io::BufWriter<std::fs::File>>>> = OnceLock::new();
+        let slot = DUMP.get_or_init(|| {
+            let path = std::env::var_os("ZELDA3_REPLAY_FRAME_PAGE_DUMP")?;
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(path)
+                .ok()?;
+            Some(Mutex::new(std::io::BufWriter::new(file)))
+        });
+        let Some(mutex) = slot else {
+            return;
+        };
+        let Ok(mut writer) = mutex.lock() else {
+            return;
+        };
+        const PAGE: usize = 0x400;
+        let mut buf = [0u8; 4 + 128 * 4];
+        buf[0..4].copy_from_slice(&self.state_recorder.replay_frame_counter.to_le_bytes());
+        let pages = (self.ram.len() / PAGE).min(128);
+        for p in 0..pages {
+            let start = p * PAGE;
+            let mut h: u32 = 2166136261;
+            for &b in &self.ram[start..start + PAGE] {
+                h ^= u32::from(b);
+                h = h.wrapping_mul(16777619);
+            }
+            let off = 4 + p * 4;
+            buf[off..off + 4].copy_from_slice(&h.to_le_bytes());
+        }
+        let _ = writer.write_all(&buf);
     }
 
     #[track_caller]

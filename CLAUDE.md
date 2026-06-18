@@ -104,6 +104,19 @@ the old Rust clone only.**
    into the shape of the wrong object (e.g. "2×2 objects, tile index +0x1a in new").
    Default base is DUNG_BG1 (0x4000); use 0x2000 for DUNG_BG2.
 
+8. **`full_divergence_scan.py <end_frame> [--page 0x..] [--first] [--reuse]`** — the
+   WHOLE-REPLAY divergence MAP. The per-frame probes above re-replay from the start for
+   each frame, so finding EVERY remaining divergence across ~170k frames is otherwise
+   prohibitive. This runs each binary ONCE with `ZELDA3_REPLAY_FRAME_PAGE_DUMP=<path>`
+   (both repos stream `[frame:u32][128 × page_fnv32]` per frame at the end-of-frame
+   `after-run-frame-internal` checkpoint), then diffs the two streams and lists every
+   (frame,page) that ever diverges — compressed into frame-runs per page. Two replays =
+   the complete worklist. Use it to find roots, fix, then re-run to watch cascades
+   collapse. Workflow: scan → pick the EARLIEST diverging frame (roots cascade forward;
+   diff frame N-1 vs N to confirm N is the first) → `stable_page_diff`/manual byte diff →
+   `whoowns` → `step_diff` for the step. `--first` shows only first-frame per page;
+   `--reuse` skips re-running (reuses /tmp dumps).
+
 ### Tracing env vars
 
 - `ZELDA3_REPLAY_WRAM_DUMP=<path>` — dump full 128KB WRAM at the final frame (both
