@@ -253,14 +253,40 @@ impl DungeonRoomTilemapState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        self.write_tilemaps_to_ram(ram);
+        self.write_line_pointers_to_ram(ram);
+    }
+
+    /// Project only the BG1/BG2 tilemaps. The line-pointer buffer
+    /// (`DUNG_LINE_PTRS_ROW0` = 0xbf, 33 bytes → 0xbf-0xdf) overlaps the dungeon
+    /// work registers R16/R18 (0xc8-0xcb) and the intro-sword bytes by SNES byte
+    /// reuse, so it must NOT be re-stamped on every tile write — that would
+    /// clobber the live scratch a lifted-tile/probe just set.
+    pub(crate) fn write_tilemaps_to_ram(&self, ram: &mut [u8]) {
         for (index, tile) in self.bg1_tiles.iter().enumerate() {
             write_le_u16(ram, DUNG_BG1 + index * 2, *tile);
         }
         for (index, tile) in self.bg2_tiles.iter().enumerate() {
             write_le_u16(ram, DUNG_BG2 + index * 2, *tile);
         }
+    }
+
+    /// Project the line-pointer buffer (0xbf-0xdf). C writes these bytes only
+    /// when room draw actually computes line pointers, so only the dedicated
+    /// line-pointer setters call this — matching the C site that overwrites the
+    /// overlapping work registers at exactly that moment.
+    pub(crate) fn write_line_pointers_to_ram(&self, ram: &mut [u8]) {
         for (index, byte) in self.line_pointer_bytes.iter().enumerate() {
             ram[DUNG_LINE_PTRS_ROW0 + index] = *byte;
+        }
+    }
+
+    /// Re-read the line-pointer cache from RAM so it tracks whatever currently
+    /// occupies the overlapping scratch bytes. Used after a tilemap-only sync to
+    /// keep the native cache coherent with RAM without writing the bytes back.
+    pub(crate) fn reload_line_pointers_from_ram(&mut self, ram: &[u8]) {
+        for (index, byte) in self.line_pointer_bytes.iter_mut().enumerate() {
+            *byte = ram.get(DUNG_LINE_PTRS_ROW0 + index).copied().unwrap_or(0);
         }
     }
 
@@ -4693,7 +4719,20 @@ impl<'a> NativeDungeonRoomTilemapBridgeMut<'a> {
         Self { state, ram }
     }
 
+    /// Tile-only sync: project the BG1/BG2 tilemaps and re-read the line-pointer
+    /// cache from RAM. The line-pointer buffer overlaps the R16/R18 work
+    /// registers (0xc8-0xcb), so re-stamping it here would clobber the live
+    /// scratch a lift/probe set this frame.
     fn sync(&mut self) {
+        self.state.write_tilemaps_to_ram(self.ram);
+        self.state.reload_line_pointers_from_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
+    /// Sync for the dedicated line-pointer setters: project tilemaps AND the
+    /// line-pointer bytes (0xbf-0xdf), matching the C room-draw site that writes
+    /// those bytes over the overlapping work registers at draw time.
+    fn sync_with_line_pointers(&mut self) {
         self.state.write_to_ram(self.ram);
         self.debug_assert_matches_ram();
     }
@@ -4759,22 +4798,22 @@ impl<'a> NativeDungeonRoomTilemapBridgeMut<'a> {
 
     pub(crate) fn set_line_pointer_row0(&mut self, index: usize, value: u16) {
         self.state.set_line_pointer_row0(index, value);
-        self.sync();
+        self.sync_with_line_pointers();
     }
 
     pub(crate) fn copy_line_pointer_bytes(&mut self, offsets: &[u8]) {
         self.state.copy_line_pointer_bytes(offsets);
-        self.sync();
+        self.sync_with_line_pointers();
     }
 
     pub(crate) fn copy_bg2_draw_line_offsets(&mut self) {
         self.state.copy_bg2_draw_line_offsets();
-        self.sync();
+        self.sync_with_line_pointers();
     }
 
     pub(crate) fn copy_bg1_draw_line_offsets(&mut self) {
         self.state.copy_bg1_draw_line_offsets();
-        self.sync();
+        self.sync_with_line_pointers();
     }
 }
 

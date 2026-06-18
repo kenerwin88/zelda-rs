@@ -6074,8 +6074,17 @@ impl ZeldaState {
         let tiles = [t0, t1, t2, t3];
         let positions = [pos, pos + 64, pos + 1, pos + 65];
         for (&tile_pos, &tile) in positions.iter().zip(tiles.iter()) {
-            self.dungeon_room_tilemaps_mut()
-                .set_bg2_tile(tile_pos as usize, tile);
+            // C writes `dung_bg2[tile_pos]` flat; dung_bg2 (0x2000) and dung_bg1
+            // (0x4000) are contiguous in WRAM, so a `tile_pos >= 0x1000` (the
+            // lower-level 0x1000 bit baked into object_tilemap_pos) spills into
+            // the BG1 span. `set_room_tilemap_word` routes through the
+            // spill-aware `set_tile_at_abs`; `set_bg2_tile` would silently drop
+            // the OOB index and leave the BG1 tile unwritten.
+            self.dungeon_room_tilemaps_mut().set_room_tilemap_word(
+                crate::game_state::constants::DUNG_BG2,
+                tile_pos,
+                tile,
+            );
             self.dungeon_bg2_attributes_mut()
                 .set_bg2_attr(tile_pos as usize, attr);
         }
@@ -11426,10 +11435,23 @@ impl ZeldaState {
         let mask = if high { 0x2000 } else { 0xdfff };
         for i in 0..5usize {
             for y in 0..4usize {
-                let index = pos as usize + i + y * 64;
-                let value = self.game_state.dungeon.room_tilemaps.bg2_tile(index);
+                let index = (pos as usize + i + y * 64) as u16;
+                // C reads/writes `dung_bg2[index]` flat; for `index >= 0x1000`
+                // (a lower-level staircase wall) that spills into the contiguous
+                // BG1 span. `bg2_tile`/`set_bg2_tile` would read 0 and drop the
+                // OOB write, so the priority clear became a no-op and the wall
+                // stayed high-priority. Route through the spill-aware path.
+                let value = self
+                    .game_state
+                    .dungeon
+                    .room_tilemaps
+                    .room_tilemap_word(crate::game_state::constants::DUNG_BG2, index);
                 let value = if high { value | mask } else { value & mask };
-                self.dungeon_room_tilemaps_mut().set_bg2_tile(index, value);
+                self.dungeon_room_tilemaps_mut().set_room_tilemap_word(
+                    crate::game_state::constants::DUNG_BG2,
+                    index,
+                    value,
+                );
             }
         }
     }
