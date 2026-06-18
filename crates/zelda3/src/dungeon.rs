@@ -6624,10 +6624,11 @@ impl ZeldaState {
         const PUSH_BLOCK_F: [u16; 4] = [15, 0, 15, 0];
 
         let i = i as usize;
-        let link_x = self.game_state.player.follower_link.x();
-        let link_y = self.game_state.player.follower_link.y();
+        // C writes ONLY the safe-return HIGH bytes here (LINK_*_COORD_SAFE_RETURN_HI = coord >> 8);
+        // it leaves the LOW bytes (0x3e/0x3c) untouched. Using store_safe_return_position would
+        // also stamp the low bytes, diverging RAW scratch (0x3e off by Link's sub-tile Y).
         self.follower_link_state_mut()
-            .store_safe_return_position(link_x, link_y);
+            .cache_safe_return_high_from_current();
 
         let mut dir = 3i32;
         let mut m = self.game_state.player.follower_link.direction() & 0x0f;
