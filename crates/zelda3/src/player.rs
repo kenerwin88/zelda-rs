@@ -1404,6 +1404,14 @@ impl ZeldaState {
         rv
     }
 
+    /// Ledge-hop sound. C writes SOUND_EFFECT_1 directly (`0x20 | pan`) and, unlike
+    /// `ancilla_sfx2_near`, does NOT stamp RAW_SFX_PAN_VALUE (0xcf8). Using the ancilla
+    /// helper here would leave a spurious cf8 scratch value, diverging from the reference.
+    fn link_ledge_hop_sfx(&mut self) {
+        let pan = self.link_calculate_sfx_pan();
+        self.set_sound_effect_1(0x20 | pan);
+    }
+
     pub(super) fn flag_moving_into_slopes_y(&mut self) {
         const AVOID_JUDDER: [i8; 32] = [
             0, 1, 2, 3, 4, 5, 6, 7, 7, 6, 5, 4, 3, 2, 1, 0, 7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4,
@@ -3007,7 +3015,7 @@ impl ZeldaState {
                     self.follower_link_state_mut().set_handler_state(4);
                 }
             } else {
-                self.ancilla_sfx2_near(0x20);
+                self.link_ledge_hop_sfx();
                 self.restore_link_safe_return_position();
                 self.follower_link_state_mut()
                     .set_sprite_damage_disable_timer(1);
@@ -3079,7 +3087,7 @@ impl ZeldaState {
         if self.game_state.player.tile_detection.vertical_ledge() & 7 != 0
             && self.run_ledge_hop_timer()
         {
-            self.ancilla_sfx2_near(0x20);
+            self.link_ledge_hop_sfx();
             self.follower_link_state_mut()
                 .set_sprite_damage_disable_timer(1);
             self.link_cancel_dash();
@@ -3138,7 +3146,7 @@ impl ZeldaState {
                 && self.run_ledge_hop_timer()
             {
                 self.link_cancel_dash();
-                self.ancilla_sfx2_near(0x20);
+                self.link_ledge_hop_sfx();
                 let last_direction_moved_towards =
                     if self.game_state.player.tile_detection.horizontal_ledge() & 0x40 != 0 {
                         3
@@ -3334,7 +3342,7 @@ impl ZeldaState {
                 self.follower_link_state_mut()
                     .set_sprite_damage_disable_timer(1);
                 self.link_hop_in_or_out_of_water_x();
-                self.ancilla_sfx2_near(0x20);
+                self.link_ledge_hop_sfx();
             }
         }
 
@@ -3367,7 +3375,7 @@ impl ZeldaState {
         if self.game_state.player.tile_detection.horizontal_ledge() & 7 != 0
             && self.run_ledge_hop_timer()
         {
-            self.ancilla_sfx2_near(0x20);
+            self.link_ledge_hop_sfx();
             let actual_x_velocity = if self
                 .game_state
                 .player
@@ -3411,7 +3419,7 @@ impl ZeldaState {
         if self.game_state.player.tile_detection.diagonal_ledge_tiles() & 0x77 != 0
             && self.run_ledge_hop_timer()
         {
-            self.ancilla_sfx2_near(0x20);
+            self.link_ledge_hop_sfx();
             let handler_state = if self.game_state.system_signals.sound_effect_1() & 7 == 0 {
                 16
             } else {
@@ -3453,7 +3461,7 @@ impl ZeldaState {
             && self.game_state.player.follower_link.handler_state() != 13
             && self.run_ledge_hop_timer()
         {
-            self.ancilla_sfx2_near(0x20);
+            self.link_ledge_hop_sfx();
             self.link_cancel_dash();
             self.follower_link_state_mut()
                 .set_sprite_damage_disable_timer(1);
@@ -3821,7 +3829,7 @@ impl ZeldaState {
             self.follower_link_state_mut()
                 .set_sprite_damage_disable_timer(1);
             self.link_hop_in_or_out_of_water_x();
-            self.ancilla_sfx2_near(0x20);
+            self.link_ledge_hop_sfx();
             return;
         }
 
