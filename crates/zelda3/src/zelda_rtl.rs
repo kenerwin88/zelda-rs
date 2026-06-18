@@ -2835,6 +2835,7 @@ impl ZeldaState {
             &mut self.ram,
         )
         .set_map_state(value);
+        self.sync_dungeon_chest_cursor_with_map_state();
     }
 
     pub(crate) fn set_overworld_map_state_word(&mut self, value: u16) {
@@ -2843,6 +2844,7 @@ impl ZeldaState {
             &mut self.ram,
         )
         .set_map_state_word(value);
+        self.sync_dungeon_chest_cursor_with_map_state();
     }
 
     pub(crate) fn increment_overworld_map_state(&mut self) {
@@ -2851,6 +2853,20 @@ impl ZeldaState {
             &mut self.ram,
         )
         .increment_map_state();
+        self.sync_dungeon_chest_cursor_with_map_state();
+    }
+
+    // OVERWORLD_MAP_STATE (0x200) is SNES byte-reused: OverworldMapUiState.map_state (the HUD
+    // redraw counter) and DungeonRoomItemState.chest_reveal_cursor_x2 both model/project it.
+    // Both native states persist and sync independently, so a HUD-counter change made via
+    // map_ui is clobbered when the (stale) dungeon chest-cursor bridge syncs the same byte
+    // afterward — leaving OVERWORLD_MAP_STATE stuck (e.g. =5) across a dungeon room transition,
+    // which kept hud_refill_logic gated off and skewed rupee/heart-drain timing (~rf 126k-132k).
+    // Keep the dungeon model in sync with the HUD counter so neither clobbers the other.
+    fn sync_dungeon_chest_cursor_with_map_state(&mut self) {
+        let value = self.game_state.world.overworld.map_ui.map_state;
+        self.dungeon_room_items_mut()
+            .set_chest_reveal_cursor_x2(value);
     }
 
     pub(crate) fn overworld_map_flags(&self) -> u8 {
