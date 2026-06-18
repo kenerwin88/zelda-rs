@@ -7079,10 +7079,7 @@ impl TileDetectionState {
             dashable_tiles: ram_byte(ram, BITMASK_FOR_DASHABLE_TILES),
             staircase_cache: ram_byte(ram, TILEDETECT_STAIRCASE_CACHE),
             slope_collision_bits: read_le_u16(ram, TILEDETECT_SLOPE_COLLISION_BITS),
-            // collision_bits is the byte work-register R14 (0x0e). The high byte 0x0f is R15
-            // (SPRITE_LAST_GARNISH_INDEX), owned by the sprites state — load/project only the
-            // low byte so set_collision_bits never clobbers R15 (C writes `ram[R14] = x`).
-            collision_bits: u16::from(ram_byte(ram, TILEDETECT_COLLISION_BITS)),
+            collision_bits: read_le_u16(ram, TILEDETECT_COLLISION_BITS),
             layer_collision_flags: ram_byte(ram, PLAYER_LAYER_COLLISION_FLAGS),
             palette_bits_high: ram_byte(ram, LINK_PALETTE_BITS_OF_OAM + 1),
             inroom_staircase: read_le_u16(ram, TILEDETECT_INROOM_STAIRCASE),
@@ -7145,7 +7142,7 @@ impl TileDetectionState {
             TILEDETECT_SLOPE_COLLISION_BITS,
             self.slope_collision_bits,
         );
-        ram[TILEDETECT_COLLISION_BITS] = self.collision_bits as u8;
+        write_le_u16(ram, TILEDETECT_COLLISION_BITS, self.collision_bits);
         ram[PLAYER_LAYER_COLLISION_FLAGS] = self.layer_collision_flags;
         ram[LINK_PALETTE_BITS_OF_OAM + 1] = self.palette_bits_high;
         write_le_u16(ram, TILEDETECT_INROOM_STAIRCASE, self.inroom_staircase);
