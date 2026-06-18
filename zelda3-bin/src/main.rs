@@ -2016,6 +2016,41 @@ fn run_replay_save(args: &[String]) {
                     "render-hash frame={frames} hash=0x{:08x}",
                     render_frame_rgb_hash_bgra(frame)
                 );
+                if std::env::var_os("ZELDA3_PPU_STATE_HASH").is_some() {
+                    let fnv16 = |s: &[u16]| {
+                        let mut h = 2166136261u32;
+                        for &w in s {
+                            let [lo, hi] = w.to_le_bytes();
+                            h = h.wrapping_mul(16777619) ^ u32::from(lo);
+                            h = h.wrapping_mul(16777619) ^ u32::from(hi);
+                        }
+                        h
+                    };
+                    let mut dh = 2166136261u32;
+                    for ch in &game.dma.channel {
+                        for b in [
+                            ch.b_adr, ch.a_bank, ch.ind_bank, ch.rep_count, ch.unused_byte,
+                            ch.off_index, ch.mode, ch.hdma_active as u8, ch.indirect as u8,
+                            ch.do_transfer as u8, ch.terminated as u8, ch.from_b as u8,
+                            (ch.a_adr & 0xff) as u8, (ch.a_adr >> 8) as u8,
+                            (ch.size & 0xff) as u8, (ch.size >> 8) as u8,
+                            (ch.table_adr & 0xff) as u8, (ch.table_adr >> 8) as u8,
+                        ] {
+                            dh = dh.wrapping_mul(16777619) ^ u32::from(b);
+                        }
+                    }
+                    println!(
+                        "ppu-state frame={frames} vram=0x{:08x} cgram=0x{:08x} oam=0x{:08x} dma=0x{:08x} fblank={} bright={} math={:02x} winsel={:08x}",
+                        fnv16(&game.ppu.vram),
+                        fnv16(&game.ppu.cgram),
+                        fnv16(&game.ppu.oam),
+                        dh,
+                        game.ppu.forced_blank,
+                        game.ppu.brightness,
+                        game.ppu.math_enabled,
+                        game.ppu.windowsel,
+                    );
+                }
                 // GPU tile renderer path — parallel log line for comparison.
                 // Does not affect the parity gate (different prefix).
                 if frames == 1000 {
@@ -3214,6 +3249,12 @@ fn run_replay_save(args: &[String]) {
     if let Some(path) = std::env::var_os("ZELDA3_REPLAY_WRAM_DUMP") {
         if let Err(e) = std::fs::write(&path, &game.ram[..]) {
             eprintln!("failed to write WRAM dump to {path:?}: {e}");
+        }
+    }
+    if let Some(path) = std::env::var_os("ZELDA3_VRAM_DUMP") {
+        let bytes: Vec<u8> = game.ppu.vram.iter().flat_map(|w| w.to_le_bytes()).collect();
+        if let Err(e) = std::fs::write(&path, &bytes) {
+            eprintln!("failed to write VRAM dump to {path:?}: {e}");
         }
     }
 

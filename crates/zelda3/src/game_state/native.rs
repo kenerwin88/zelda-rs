@@ -7077,6 +7077,11 @@ mod tests {
         display.mosaic_direction = 0;
         display.nmi_load_target_address = 0x0080;
         display.vram_upload_cursor = 0x0042;
+        // VRAM_UPLOAD_OFFSET (0x1000) is mode-reused as word 0 of the tilemap upload buffer
+        // during room draw. write_to_ram must NOT project the cursor over it (the cursor is kept
+        // RAM-coherent by its setters instead). Seed a tilemap-data sentinel and assert below
+        // that write_to_ram leaves it intact — regression for the VRAM word-0 clobber.
+        write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x3c15);
         display.message_dma_destination_address = 0x6080;
         display.message_dma_tile_base = 0x4842;
         display.message_dma_tile_limit = 0x0080;
@@ -7145,7 +7150,8 @@ mod tests {
         assert_eq!(ram[MOSAIC_TARGET_LEVEL], 0);
         assert_eq!(ram[MOSAIC_INC_OR_DEC], 0);
         assert_eq!(read_le_u16(&ram, NMI_LOAD_TARGET_ADDR), 0x0080);
-        assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x0042);
+        // write_to_ram left the seeded tilemap-data word at 0x1000 untouched (cursor not projected).
+        assert_eq!(read_le_u16(&ram, VRAM_UPLOAD_OFFSET), 0x3c15);
         assert_eq!(ram[STAR_TILE_RESTORE_PHASE], 0);
         assert_eq!(read_le_u16(&ram, ANIMATED_TILE_DATA_SRC), 0xac80);
         assert_eq!(read_le_u16(&ram, ANIMATED_TILE_VRAM_ADDR), 0x3c00);

@@ -2547,7 +2547,13 @@ impl DisplayState {
         ram[MOSAIC_TARGET_LEVEL] = self.mosaic_target_level;
         ram[MOSAIC_INC_OR_DEC] = self.mosaic_direction;
         write_le_u16(ram, NMI_LOAD_TARGET_ADDR, self.nmi_load_target_address);
-        write_le_u16(ram, VRAM_UPLOAD_OFFSET, self.vram_upload_cursor);
+        // NOTE: VRAM_UPLOAD_OFFSET (0x1000) is intentionally NOT projected here.
+        // The cursor field is kept RAM-coherent at every mutation (set_vram_upload_cursor /
+        // advance_vram_upload_cursor_by all write ram[0x1000] directly), so this bulk
+        // projection is redundant. It is also harmful: 0x1000 is mode-reused as word 0 of the
+        // tilemap upload buffer during room draw (write_vram_upload_tilemap_word), and
+        // re-stamping the stale cursor (0) here clobbered that data before upload_tilemap_now
+        // read it — diverging VRAM word 0 of every tilemap quadrant vs the reference clone.
         ram[INCREMENTAL_COUNTER_FOR_VRAM] = self.incremental_vram_upload_counter;
         self.link_dma_sources.write_to_ram(ram);
         write_le_u16(
