@@ -6073,10 +6073,18 @@ impl ZeldaState {
     }
 
     pub(crate) fn armos_knight_home_position(&self, slot: usize) -> BossHomePositionRead {
-        self.game_state
-            .sprites
-            .boss_home_positions
-            .armos_knight_home_position(slot)
+        // The armos coordinator overlord stores each knight's formation/home position in
+        // the OVERLORD slot array (0xb10+: x_high, y_high, gen2, floor) by SNES byte reuse,
+        // and that is where C reads it from. Read it from there — NOT from the persisted
+        // `boss_home_positions` native state, which nothing populates for armos (the
+        // coordinator writes the overlord slots), so it would return stale garbage.
+        let slot_view = self.game_state.sprites.overlord_slots.slot(slot);
+        BossHomePositionRead::from_xy_bytes(
+            slot_view.x_high(),
+            slot_view.y_high(),
+            slot_view.gen2(),
+            slot_view.floor(),
+        )
     }
 
     pub(crate) fn arrghus_puff_home_position_mut(

@@ -3600,6 +3600,21 @@ pub(crate) struct BossHomePositionRead {
 }
 
 impl BossHomePositionRead {
+    /// Build a home from four raw bytes (x_low, x_high, y_low, y_high). Used to read the
+    /// armos-knight home out of the overlord slot array, where the armos coordinator
+    /// stores it by SNES byte reuse (C reads `dung_overlord_x_hi[k] | dung_overlord_y_hi[k]<<8`
+    /// for x, `gen2[k] | floor[k]<<8` for y).
+    pub(crate) fn from_xy_bytes(x_low: u8, x_high: u8, y_low: u8, y_high: u8) -> Self {
+        Self {
+            position: BossHomePosition {
+                x_low,
+                x_high,
+                y_low,
+                y_high,
+            },
+        }
+    }
+
     pub(crate) fn x(&self) -> u16 {
         self.position.x()
     }
