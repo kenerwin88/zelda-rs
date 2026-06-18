@@ -1832,8 +1832,15 @@ impl OverworldEntranceState {
         // (R16 / intro-sword / menu-timer / overworld-entrance / select-file cursor). Bulk-
         // projecting our persisted copy every frame re-stamped a stale value over whatever
         // the active mode (e.g. the dungeon R16 scratch during an overworld load) had
-        // written, blanking it. The entrance setters write through to RAM at each mutation,
-        // so this re-stamp is unnecessary and harmful — do not project it here.
+        // written, blanking it. It is written through by the bridge instead (see
+        // write_sequence_counter_to_ram), so it reaches RAM exactly when entrance code
+        // changes it — matching C — without the every-frame stale re-stamp.
+    }
+
+    /// Write the (reused) 0xc8 entrance-sequence byte. Called only from the entrance bridge's
+    /// write-through sync, never from the bulk write_to_ram, so it lands exactly when C does.
+    pub(crate) fn write_sequence_counter_to_ram(&self, ram: &mut [u8]) {
+        ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER] = self.sequence_counter;
     }
 
     pub(crate) fn set_special_entrance_trigger(&mut self, value: u8) {
@@ -4359,7 +4366,10 @@ impl<'a> NativeOverworldEntranceBridgeMut<'a> {
     }
 
     fn sync(&mut self) {
+        // Write-through BOTH fields: write_to_ram skips the reused 0xc8 byte, so the bridge
+        // writes it here (matching C, which writes 0xc8 exactly when entrance code runs).
         self.entrance.write_to_ram(self.ram);
+        self.entrance.write_sequence_counter_to_ram(self.ram);
         self.debug_assert_matches_ram();
     }
 

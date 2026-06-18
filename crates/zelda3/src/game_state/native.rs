@@ -5794,6 +5794,13 @@ mod tests {
             .dialogue_number
             .set_packed_digits(0x56, 0x78);
         state.write_to_ram(&mut ram);
+        // entrance sequence_counter (0xc8) is reused scratch — written through, not by the
+        // master projection — so flush it explicitly (as the entrance bridge does).
+        state
+            .world
+            .overworld
+            .entrance
+            .write_sequence_counter_to_ram(&mut ram);
 
         assert_eq!(read_le_u16(&ram, DUNGEON_ROOM), 0x0181);
         assert_eq!(read_le_u16(&ram, OVERWORLD_SCREEN_INDEX), 0x005b);
@@ -6603,6 +6610,9 @@ mod tests {
         entrance.special_entrance_trigger = 2;
         entrance.sequence_counter = 7;
         entrance.write_to_ram(&mut ram);
+        // sequence_counter (0xc8) is reused scratch — not bulk-projected by write_to_ram; it
+        // is written through separately (as the bridge sync does).
+        entrance.write_sequence_counter_to_ram(&mut ram);
 
         assert_eq!(ram[TRIGGER_SPECIAL_ENTRANCE], 2);
         assert_eq!(ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER], 7);

@@ -639,9 +639,12 @@ impl MessagingRuntimeState {
         ram[MESSAGING_MODULE] = self.module;
         ram[TEXT_RENDER_STATE] = self.text_render_state;
         ram[TEXT_WAIT_COUNTDOWN2] = self.text_wait_countdown2;
-        // MENU_ANIMATION_TIMER (0xc8) is reused scratch (see OverworldEntranceState note);
-        // bulk-projecting our copy re-stamped a stale value over the active mode's. The
-        // menu setters write through, so do not project it here.
+        // MENU_ANIMATION_TIMER (0xc8) is five-way mode-reused scratch (R16 / intro-sword /
+        // menu-timer / overworld-entrance / select-file). Bulk-projecting our persisted copy
+        // every frame re-stamped a stale value over whatever the active mode wrote (blanked
+        // the dungeon R16 scratch during overworld loads). It is written through by
+        // set_menu_animation_timer instead, so it reaches RAM exactly when menu code changes
+        // it (matching C) without the stale re-stamp.
         ram[GAME_OVER_LETTER_CURSOR] = self.game_over_letter_cursor;
         ram[FLAG_WHICH_MUSIC_TYPE_MESSAGING] = self.flag_which_music_type_messaging;
         ram[DIALOGUE_TEXT_COLOR] = self.dialogue_text_color;
@@ -1483,10 +1486,12 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
     }
 
     fn debug_assert_runtime_matches_ram(&self) {
-        debug_assert_eq!(
-            self.messaging.runtime,
-            MessagingRuntimeState::load_from_ram(self.ram)
-        );
+        // menu_animation_timer (0xc8) is write-through reused scratch: in non-menu contexts
+        // another system legitimately owns 0xc8, so the persisted copy may differ from RAM.
+        // Exclude it from the coherence comparison.
+        let mut from_ram = MessagingRuntimeState::load_from_ram(self.ram);
+        from_ram.menu_animation_timer = self.messaging.runtime.menu_animation_timer;
+        debug_assert_eq!(self.messaging.runtime, from_ram);
         debug_assert_eq!(
             self.messaging.multiselect_choice,
             MultiselectChoiceState::load_from_ram(self.ram)
@@ -1539,6 +1544,9 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
 
     pub(crate) fn set_menu_animation_timer(&mut self, value: u8) {
         self.messaging.runtime.menu_animation_timer = value;
+        // Write through the reused 0xc8 byte here (it is intentionally not bulk-projected by
+        // write_to_ram); this lands it exactly when menu code changes it, matching C.
+        self.ram[MENU_ANIMATION_TIMER] = value;
         self.sync();
     }
 
