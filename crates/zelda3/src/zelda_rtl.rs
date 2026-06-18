@@ -8822,8 +8822,15 @@ impl ZeldaState {
         let attr = if loc < 0x8000 { 0x27 } else { 0x00 };
         let positions = [pos, pos + 64, pos + 1, pos + 65];
         for (i, &tile_pos) in positions.iter().enumerate() {
-            self.dungeon_room_tilemaps_mut()
-                .set_bg2_tile(tile_pos as usize, src[i]);
+            // C writes `dung_bg2[tile_pos]` flat; a chest at tile_pos >= 0x1000 spills into
+            // the contiguous BG1 span. set_bg2_tile drops that OOB index, leaving the opened
+            // chest's spilled tile undrawn — route through the spill-aware path (as
+            // Dungeon_Store2x2 / set_spiral_stair_wall_priority do).
+            self.dungeon_room_tilemaps_mut().set_room_tilemap_word(
+                crate::game_state::constants::DUNG_BG2,
+                tile_pos,
+                src[i],
+            );
             self.dungeon_bg2_attributes_mut()
                 .set_bg2_attr(tile_pos as usize, attr);
         }
