@@ -319,7 +319,16 @@ impl DungeonRoomTilemapState {
     }
 
     pub(crate) fn bg2_tile(&self, index: usize) -> u16 {
-        self.bg2_tiles.get(index).copied().unwrap_or(0)
+        // Mirror set_bg2_tile's spill: an index past the BG2 word count reads the contiguous
+        // BG1 span (C reads dung_bg2[index] flat).
+        if index < DUNGEON_ROOM_TILEMAP_WORDS {
+            self.bg2_tiles.get(index).copied().unwrap_or(0)
+        } else {
+            self.bg1_tiles
+                .get(index - DUNGEON_ROOM_TILEMAP_WORDS)
+                .copied()
+                .unwrap_or(0)
+        }
     }
 
     /// Tile source for the basic-attribute fill, which scans 0x2000 words. C
@@ -404,7 +413,16 @@ impl DungeonRoomTilemapState {
     }
 
     fn set_bg2_tile(&mut self, index: usize, value: u16) {
-        if let Some(tile) = self.bg2_tiles.get_mut(index) {
+        // dung_bg2 (0x2000) and dung_bg1 (0x4000) are contiguous in WRAM; C writes
+        // `dung_bg2[index]` flat, so an index past the BG2 word count addresses the BG1 span
+        // (e.g. a lifted/opened 2x2 object beyond the lower-level boundary). Spill into BG1
+        // instead of dropping the OOB write. (set_tile_at_abs only calls this with index <
+        // the word count, so this never recurses.)
+        if index < DUNGEON_ROOM_TILEMAP_WORDS {
+            if let Some(tile) = self.bg2_tiles.get_mut(index) {
+                *tile = value;
+            }
+        } else if let Some(tile) = self.bg1_tiles.get_mut(index - DUNGEON_ROOM_TILEMAP_WORDS) {
             *tile = value;
         }
     }
