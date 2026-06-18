@@ -678,6 +678,15 @@ impl ZeldaState {
                 .bottle((item - HUD_ITEM_BOTTLE_FIRST) as usize)
                 != 0;
         }
+        // Inventory index 3 (LINK_ITEM_BOMBS, 0xf343) is owned by PlayerResourcesState,
+        // not InventoryItemsState. InventoryItems' slice copy goes stale when a bomb is
+        // used (PlayerResourcesState.decrement_bombs updates the owner + RAM but not the
+        // InventoryItems model), so reading it here would wrongly report bombs still owned
+        // and fail to switch the Y-button away from the emptied bomb slot (HUD_CUR_ITEM
+        // stuck at 4 vs old-rust's 5 @rf 60277). Read the authoritative owner.
+        if item as usize - 1 == LINK_ITEM_BOMBS - LINK_ITEM_BOW {
+            return self.game_state.inventory.player_resources.bombs() != 0;
+        }
         self.game_state
             .inventory
             .items
