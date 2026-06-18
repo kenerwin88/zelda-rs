@@ -12457,7 +12457,7 @@ impl ZeldaState {
                 self.replay_trace_ram_watch("module07-after-camera");
             }
             if self.game_state.frame.submodule == 0 {
-                self.dungeon_handle_room_tags();
+                    self.dungeon_handle_room_tags();
                 self.replay_trace_ram_watch("module07-after-room-tags");
             }
             if self.game_state.frame.submodule == 0 {
