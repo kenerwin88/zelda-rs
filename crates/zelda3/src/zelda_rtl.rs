@@ -6471,7 +6471,15 @@ impl ZeldaState {
     }
 
     fn restore_spotlight_hdma_from_saveload_buffer(&mut self) {
-        self.sync_spotlight_dynamic_hdma_table_words_from_ram(SAVELOAD_HDMA_TABLE, 224);
+        // C copies SAVELOAD_HDMA_TABLE[0..224] -> HDMA_TABLE_DYNAMIC[0..224] as a raw ram copy,
+        // leaving the off-screen entries 224-239 at their loaded-snapshot value. Routing through
+        // the native spotlight table instead re-projects ITS stale 224-239 (0xff00) over the
+        // snapshot's zeros -> a 1390-frame parity divergence in the off-screen HDMA scanlines
+        // (page 0x1dc00). Do the raw ram copy; load_snes_state's following
+        // sync_native_game_state_from_ram reloads the native table from this ram.
+        const BYTES: usize = 224 * 2;
+        self.ram
+            .copy_within(SAVELOAD_HDMA_TABLE..SAVELOAD_HDMA_TABLE + BYTES, HDMA_TABLE_DYNAMIC);
     }
 
     fn backup_spotlight_hdma_to_saveload_buffer(&mut self) {
