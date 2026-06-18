@@ -639,7 +639,9 @@ impl MessagingRuntimeState {
         ram[MESSAGING_MODULE] = self.module;
         ram[TEXT_RENDER_STATE] = self.text_render_state;
         ram[TEXT_WAIT_COUNTDOWN2] = self.text_wait_countdown2;
-        ram[MENU_ANIMATION_TIMER] = self.menu_animation_timer;
+        // MENU_ANIMATION_TIMER (0xc8) is reused scratch (see OverworldEntranceState note);
+        // bulk-projecting our copy re-stamped a stale value over the active mode's. The
+        // menu setters write through, so do not project it here.
         ram[GAME_OVER_LETTER_CURSOR] = self.game_over_letter_cursor;
         ram[FLAG_WHICH_MUSIC_TYPE_MESSAGING] = self.flag_which_music_type_messaging;
         ram[DIALOGUE_TEXT_COLOR] = self.dialogue_text_color;

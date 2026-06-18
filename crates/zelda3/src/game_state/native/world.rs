@@ -1828,7 +1828,12 @@ impl OverworldEntranceState {
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         ram[TRIGGER_SPECIAL_ENTRANCE] = self.special_entrance_trigger;
-        ram[OVERWORLD_ENTRANCE_SEQUENCE_COUNTER] = self.sequence_counter;
+        // OVERWORLD_ENTRANCE_SEQUENCE_COUNTER (0xc8) is a five-way mode-reused scratch byte
+        // (R16 / intro-sword / menu-timer / overworld-entrance / select-file cursor). Bulk-
+        // projecting our persisted copy every frame re-stamped a stale value over whatever
+        // the active mode (e.g. the dungeon R16 scratch during an overworld load) had
+        // written, blanking it. The entrance setters write through to RAM at each mutation,
+        // so this re-stamp is unnecessary and harmful — do not project it here.
     }
 
     pub(crate) fn set_special_entrance_trigger(&mut self, value: u8) {
