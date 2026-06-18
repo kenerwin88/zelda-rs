@@ -7749,6 +7749,10 @@ impl TileDetectionState {
         self.collision_bits = 0;
     }
 
+    pub(crate) fn set_collision_bits_low_byte(&mut self, value: u8) {
+        self.collision_bits = (self.collision_bits & 0xff00) | u16::from(value);
+    }
+
     pub(crate) fn or_collision_bits(&mut self, value: u16) -> u16 {
         self.collision_bits |= value;
         self.collision_bits
@@ -8269,6 +8273,15 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
 
     pub(crate) fn clear_collision_bits(&mut self) {
         self.state.clear_collision_bits();
+        self.sync();
+    }
+
+    /// Sets only the LOW byte of collision_bits (R14 @ 0x0e), preserving the high byte (0x0f =
+    /// R15 / SPRITE_LAST_GARNISH_INDEX, a stale leftover). C's room-tag dispatcher writes
+    /// `ram[R14] = k` as a BYTE; the full-u16 setter clobbers 0x0f. The u16 projection re-stamps
+    /// 0x0f from the live native high byte (coherent with RAM), so it is preserved.
+    pub(crate) fn set_collision_bits_low_byte(&mut self, value: u8) {
+        self.state.set_collision_bits_low_byte(value);
         self.sync();
     }
 

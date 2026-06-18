@@ -13048,9 +13048,12 @@ impl ZeldaState {
                 return;
             }
 
-            self.tile_detect_position_mut().clear_collision_bits();
+            // C writes the tag-routine index via `ram[R14] = k` as a BYTE (0x0e only); the
+            // high byte 0x0f (R15) is left intact. Use the low-byte setter so we don't clobber
+            // R15's stale leftover (collision_bits stays a u16 everywhere else).
+            self.tile_detect_position_mut().set_collision_bits_low_byte(0);
             self.dungeon_run_tag_routine(0);
-            self.tile_detect_position_mut().set_collision_bits(1);
+            self.tile_detect_position_mut().set_collision_bits_low_byte(1);
             self.dungeon_run_tag_routine(1);
         }
         self.dungeon_room_runtime_mut().clear_room_tag_skip();
