@@ -1521,6 +1521,7 @@ impl ZeldaState {
 
     fn replay_trace_ram_watch(&self, label: &str) {
         self.replay_assert_native_coherent(label);
+        self.replay_step_dump(label);
         let Some(target) = Self::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_FRAME") else {
             return;
         };
@@ -1555,6 +1556,43 @@ impl ZeldaState {
             self.game_state.player.follower_link.y(),
             self.game_state.player.follower_link.handler_state(),
         );
+    }
+
+    // Per-step WRAM movie for cross-binary divergence localization.
+    // `ZELDA3_REPLAY_STEP_DUMP=<frame>:<path>` appends one `(label, full WRAM)` record at
+    // every labeled checkpoint during the replay frame whose replay_frame_counter == <frame>
+    // (the same frame number used with scripts/replay.sh / stable_page_diff.py). Run both
+    // this repo and zelda3-rs-old with it, then scripts/step_diff.py reports the first
+    // checkpoint after which a target address/page diverges old-vs-new. Resolution = density
+    // of replay_trace_ram_watch() checkpoints; add more inside a hot function to bisect within.
+    // Record format (repeated): [u16 label_len LE][label][u32 wram_len LE][wram bytes].
+    fn replay_step_dump(&self, label: &str) {
+        let Some(spec) = std::env::var_os("ZELDA3_REPLAY_STEP_DUMP") else {
+            return;
+        };
+        let spec = spec.to_string_lossy();
+        let Some((frame_s, path)) = spec.split_once(':') else {
+            return;
+        };
+        let Ok(target) = frame_s.trim().parse::<u32>() else {
+            return;
+        };
+        if self.state_recorder.replay_frame_counter != target {
+            return;
+        }
+        use std::io::Write;
+        let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        else {
+            return;
+        };
+        let lbl = label.as_bytes();
+        let _ = file.write_all(&(lbl.len() as u16).to_le_bytes());
+        let _ = file.write_all(lbl);
+        let _ = file.write_all(&(self.ram.len() as u32).to_le_bytes());
+        let _ = file.write_all(&self.ram);
     }
 
     #[track_caller]

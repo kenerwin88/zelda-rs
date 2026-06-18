@@ -86,6 +86,24 @@ the old Rust clone only.**
    raw-hash bisection is UNRELIABLE (flicker) — don't trust its "first divergence"
    frame; confirm with `first_diverging_frame.py`.
 
+6. **`step_diff.py <frame> <addr...>` / `step_diff.py <frame> --page 0x4000`** — the
+   WITHIN-FRAME localizer for the "identical input, one byte diverges" class. Both
+   binaries dump full WRAM at every labeled checkpoint (`replay_trace_ram_watch(...)`,
+   backed by env `ZELDA3_REPLAY_STEP_DUMP=<frame>:<path>`); the script diffs the two
+   "movies" and reports the FIRST checkpoint after which the target diverges (old/new
+   values). That pins the bug to one step == one function — read it, then add more
+   `replay_trace_ram_watch("label")` calls inside to bisect to the exact write. Keys
+   on the SAME frame number as replay.sh/stable_page_diff (no frame_ctr_dbg offset).
+   Workflow: `first_diverging_frame.py`/manual bisect → the FRAME; `step_diff.py` →
+   the STEP. (zelda3-rs-old has the matching hook as a local debug aid, like its WRAM
+   dump hook.)
+
+7. **`tilemap_diff.py <frame> [--base 0x4000] [--cols 64 --rows 64]`** — renders a BG
+   tilemap divergence as an ASCII grid (match=`.`, differ=`#`) + per-tile decode
+   (index/palette/priority/h,v-flip) for OLD vs NEW. Turns scattered tilemap addresses
+   into the shape of the wrong object (e.g. "2×2 objects, tile index +0x1a in new").
+   Default base is DUNG_BG1 (0x4000); use 0x2000 for DUNG_BG2.
+
 ### Tracing env vars
 
 - `ZELDA3_REPLAY_WRAM_DUMP=<path>` — dump full 128KB WRAM at the final frame (both
