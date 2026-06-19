@@ -3687,15 +3687,13 @@ impl ZeldaState {
                 self.multiselect_choice_mut().set_value(0);
                 x = 0;
             }
+            // C reads raw inventory bytes ram[LINK_ITEM_BOW + x] for x up to 32. The native
+            // item_slots model only covers 28 slots, so inventory_item(x) returns 0 for x>=28 —
+            // which made this scan skip owned items 28-31 and wrap to 0 (NEW landed on item 0, OLD
+            // on item 28), cascading the menu/text-render divergence. Read raw RAM to match C.
             if x != 15
-                && (self.game_state.inventory.items.inventory_item(x as usize) != 0
-                    || (x == 32
-                        && self
-                            .game_state
-                            .inventory
-                            .items
-                            .inventory_item(x as usize + 1)
-                            != 0))
+                && (self.ram[LINK_ITEM_BOW + x as usize] != 0
+                    || (x == 32 && self.ram[LINK_ITEM_BOW + x as usize + 1] != 0))
             {
                 break;
             }
@@ -3706,13 +3704,12 @@ impl ZeldaState {
 
     pub(super) fn RenderText_DrawSelectedYItem(&mut self) {
         let item = self.multiselect_choice().value();
+        // Raw RAM (not inventory_item, which is bounded to 28 slots) — matches C and covers the
+        // multiselect index range 0..=32 (see RenderText_FindYItem_Next).
         let variant = if item == 3 || item == 32 {
             1
         } else {
-            self.game_state
-                .inventory
-                .items
-                .inventory_item(item as usize) as usize
+            self.ram[LINK_ITEM_BOW + item as usize] as usize
         };
         let p = self.hud_get_item_box_table(item)[variant];
         self.set_vwf_tile_word_at_byte_offset(0x0c2, p[0]);
