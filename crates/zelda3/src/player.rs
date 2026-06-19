@@ -9943,7 +9943,10 @@ impl ZeldaState {
         self.follower_link_state_mut().clear_given_damage();
         self.follower_link_state_mut().clear_actual_velocity_xy();
         self.follower_link_state_mut().set_actual_z_velocity(0);
-        self.follower_link_state_mut().set_z(0);
+        // C writes `link_z_coord = 0` as a single byte (LINK_Z_COORD low only); the
+        // high byte 0x25 is left stale. Use set_z_low, not the 16-bit set_z, so we
+        // don't clobber 0x25 (mode-reused; e.g. carries Link-Z high into the intro).
+        self.follower_link_state_mut().set_z_low(0);
         self.follower_link_state_mut()
             .clear_water_ripple_or_grass_state();
         self.tile_detect_position_mut()
