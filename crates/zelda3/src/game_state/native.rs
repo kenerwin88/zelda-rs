@@ -3432,9 +3432,12 @@ mod tests {
         assert_eq!(effects.sprite_histories.swamola_target(2).x(), 0x23ef);
         assert_eq!(effects.sprite_histories.beamos_laser_history(9).x(), 0x5567);
         assert_eq!(ram[MOLDORM_HISTORY_X_LO + 7], 0xaa);
-        assert_eq!(ram[MOLDORM_HISTORY_X_HI + 7], 0x12);
+        // set_low_position writes ONLY the low byte to RAM (like C's single-byte trail write);
+        // the X_HI/Y_HI bytes alias a different flat trail slot for the lanmola, so syncing them
+        // would clobber a neighbor (f220638). They stay at their prior RAM value (0 here).
+        assert_eq!(ram[MOLDORM_HISTORY_X_HI + 7], 0);
         assert_eq!(ram[MOLDORM_HISTORY_Y_LO + 7], 0xbb);
-        assert_eq!(ram[MOLDORM_HISTORY_Y_HI + 7], 0x56);
+        assert_eq!(ram[MOLDORM_HISTORY_Y_HI + 7], 0);
         assert_eq!(ram[SWAMOLA_TARGET_X_LO + 2], 0xef);
         assert_eq!(ram[SWAMOLA_TARGET_X_HI + 2], 0x23);
         assert_eq!(ram[BEAMOS_LASER_HISTORY_X_HI + 9], 0x55);

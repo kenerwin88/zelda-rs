@@ -1771,7 +1771,18 @@ impl<'a> NativeMoldormHistoryBridgeMut<'a> {
 
     pub(crate) fn set_low_position(&mut self, x_low: u8, y_low: u8) {
         self.state.set_moldorm_low_position(self.slot, x_low, y_low);
-        self.sync();
+        // C writes ONLY the low byte of a trail entry (ram[MOLDORM_HISTORY_X_LO + slot]). The
+        // full-u16 sync would also write ram[MOLDORM_HISTORY_X_HI + slot], but the lanmola packs
+        // 192 flat single-byte slots over the moldorm 128-slot lo/hi split, so X_HI[slot] aliases
+        // a DIFFERENT trail slot's low byte (slot 0's hi == slot 128's lo). Syncing the high byte
+        // here clobbered a neighboring head's recorded position (f220638: k=0's sync re-stamped
+        // slot 0's stale high over k=2's slot-128 low). Write low bytes only, like C.
+        if let Some(b) = self.ram.get_mut(MOLDORM_HISTORY_X_LO + self.slot) {
+            *b = x_low;
+        }
+        if let Some(b) = self.ram.get_mut(MOLDORM_HISTORY_Y_LO + self.slot) {
+            *b = y_low;
+        }
     }
 }
 
