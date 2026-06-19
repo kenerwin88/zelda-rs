@@ -2334,7 +2334,7 @@ pub(crate) struct WorldTransientState {
     pub(crate) cached_room_bounds_x_start: u16,
     pub(crate) cached_room_bounds_x_end: u16,
     pub(crate) overworld_peg_puzzle_progress: u16,
-    pub(crate) overworld_hole_tilemap_position: u8,
+    pub(crate) overworld_hole_tilemap_position: u16,
     pub(crate) overworld_bomb_tile_sweep_x: u16,
     pub(crate) overworld_bomb_tile_sweep_y_end: u16,
     pub(crate) hud_current_item_x: u8,
@@ -2419,7 +2419,7 @@ impl WorldTransientState {
             cached_room_bounds_x_start: read_le_u16(ram, CACHED_ROOM_BOUNDS_X_START),
             cached_room_bounds_x_end: read_le_u16(ram, CACHED_ROOM_BOUNDS_X_END),
             overworld_peg_puzzle_progress: read_le_u16(ram, OVERWORLD_PEG_PUZZLE_PROGRESS),
-            overworld_hole_tilemap_position: ram_byte(ram, OVERWORLD_HOLE_TILEMAP_POS),
+            overworld_hole_tilemap_position: read_le_u16(ram, OVERWORLD_HOLE_TILEMAP_POS),
             overworld_bomb_tile_sweep_x: read_le_u16(ram, OVERWORLD_BOMB_TILE_SWEEP_X),
             overworld_bomb_tile_sweep_y_end: read_le_u16(ram, OVERWORLD_BOMB_TILE_SWEEP_Y_END),
             hud_current_item_x: ram_byte(ram, HUD_CUR_ITEM_X),
@@ -2488,7 +2488,7 @@ impl WorldTransientState {
             OVERWORLD_PEG_PUZZLE_PROGRESS,
             self.overworld_peg_puzzle_progress,
         );
-        ram[OVERWORLD_HOLE_TILEMAP_POS] = self.overworld_hole_tilemap_position;
+        write_le_u16(ram, OVERWORLD_HOLE_TILEMAP_POS, self.overworld_hole_tilemap_position);
         write_le_u16(
             ram,
             OVERWORLD_BOMB_TILE_SWEEP_X,
@@ -2574,7 +2574,7 @@ impl WorldTransientState {
         self.overworld_peg_puzzle_progress
     }
 
-    pub(crate) fn overworld_hole_tilemap_pos(&self) -> u8 {
+    pub(crate) fn overworld_hole_tilemap_pos(&self) -> u16 {
         self.overworld_hole_tilemap_position
     }
 
@@ -2803,7 +2803,7 @@ impl WorldTransientState {
     }
 
     pub(crate) fn set_overworld_hole_tilemap_pos(&mut self, value: u16) {
-        self.overworld_hole_tilemap_position = value as u8;
+        self.overworld_hole_tilemap_position = value;
     }
 
     pub(crate) fn set_overworld_bomb_tile_sweep_x(&mut self, value: u16) {
