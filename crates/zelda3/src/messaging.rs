@@ -663,19 +663,26 @@ impl ZeldaState {
 
     pub(super) fn SaveGameFile(&mut self) {
         let offs = self.selected_save_slot_offset();
-        let dung_info = self
-            .game_state
-            .inventory
-            .save_progress
-            .dungeon_info_slice()
-            .to_vec();
+        // C copies the LIVE save block from WRAM (ram[SAVE_DUNG_INFO..+0x500]) and
+        // checksums it from WRAM. The SaveProgress native model keeps a `dungeon_info`
+        // shadow of this block, but that shadow goes stale for bytes owned by OTHER
+        // native states (e.g. LINK_HEALTH_CURRENT 0xf36d, owned by player_resources,
+        // whose set_current_health write-throughs ram but not this shadow). Reading the
+        // shadow saved a stale health to SRAM (and a checksum over the stale block),
+        // surfacing on the next LoadFile. Mirror C: copy + checksum from live ram.
+        let dung_info = self.ram[SAVE_DUNG_INFO..SAVE_DUNG_INFO + 0x500].to_vec();
         if offs + 0x500 <= self.sram.len() {
             self.sram[offs..offs + 0x500].copy_from_slice(&dung_info);
         }
         if offs + 0xf00 + 0x500 <= self.sram.len() {
             self.sram[offs + 0xf00..offs + 0xf00 + 0x500].copy_from_slice(&dung_info);
         }
-        let checksum = self.save_progress_mut().compute_dungeon_info_checksum();
+        let mut checksum = 0x5a5au16;
+        for i in (0..0x4fe).step_by(2) {
+            checksum = checksum.wrapping_sub(read_le_u16(&self.ram, SAVE_DUNG_INFO + i));
+        }
+        // Keep the shadow + ram[SAVE_DUNG_INFO+0x4fe] coherent so the frame-end bulk
+        // projection of dungeon_info doesn't re-stamp a stale checksum over ram.
         self.save_progress_mut().set_dungeon_info_checksum(checksum);
         if offs + 0x500 <= self.sram.len() {
             write_le_u16(&mut self.sram, offs + 0x4fe, checksum);
