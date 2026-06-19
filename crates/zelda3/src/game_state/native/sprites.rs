@@ -2556,20 +2556,34 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
 }
 
 const OVERLORD_WORK_BASE: usize = OVERLORD_TYPE;
-const OVERLORD_WORK_END: usize = OVERLORD_OFFSET_SPRITE_POS + OVERLORD_SLOT_COUNT * 2;
+// There are 8 overlord slots, not OVERLORD_SLOT_COUNT (16): the C overlord arrays are
+// 8-slot (type@0xb00, x_lo@0xb08, ... floor@0xb40, offset_sprite_pos is uint16×8 @0xb48),
+// and the block ends exactly where sprite_stunned (0xb58) begins. Using OVERLORD_SLOT_COUNT
+// here projected offset_sprite_pos for 16 slots, spilling stale bytes over sprite_stunned
+// (f462000). Cap the work block at the real overlord field extent.
+const OVERLORD_REAL_SLOT_COUNT: usize = 8;
+const OVERLORD_WORK_END: usize = OVERLORD_OFFSET_SPRITE_POS + OVERLORD_REAL_SLOT_COUNT * 2;
 const OVERLORD_WORK_LEN: usize = OVERLORD_WORK_END - OVERLORD_WORK_BASE;
+
+// overlord_spawned_in_area (0xcca) is a one-byte-per-overlord-slot array that ends exactly
+// where SPRITE_BUMP_DAMAGE (0xcd2) begins — i.e. only 8 slots (0xcca..0xcd2). The overlord
+// arrays are otherwise 8-slot (C: type@0xb00, x_lo@0xb08, ...; only ~8 overlords exist and
+// the spawned-area loop reads slots 0..8). Projecting OVERLORD_SLOT_COUNT (16) slots here
+// would spill 8 stale spawned-area bytes over the SPRITE_BUMP_DAMAGE array, re-stamping a
+// frame-start value over a sprite's mid-frame bump damage (f460431, Helmasaur King boss).
+const OVERLORD_SPAWNED_AREA_COUNT: usize = SPRITE_BUMP_DAMAGE - OVERLORD_SPAWNED_AREA;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct OverlordSlotsState {
     work: Vec<u8>,
-    spawned_area: [u8; OVERLORD_SLOT_COUNT],
+    spawned_area: [u8; OVERLORD_SPAWNED_AREA_COUNT],
 }
 
 impl Default for OverlordSlotsState {
     fn default() -> Self {
         Self {
             work: vec![0; OVERLORD_WORK_LEN],
-            spawned_area: [0; OVERLORD_SLOT_COUNT],
+            spawned_area: [0; OVERLORD_SPAWNED_AREA_COUNT],
         }
     }
 }
@@ -2577,7 +2591,7 @@ impl Default for OverlordSlotsState {
 impl OverlordSlotsState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut state = Self::default();
-        for slot in 0..OVERLORD_SLOT_COUNT {
+        for slot in 0..OVERLORD_SPAWNED_AREA_COUNT {
             state.spawned_area[slot] = ram.get(OVERLORD_SPAWNED_AREA + slot).copied().unwrap_or(0);
         }
         for (index, value) in state.work.iter_mut().enumerate() {
@@ -2590,7 +2604,7 @@ impl OverlordSlotsState {
         for (index, value) in self.work.iter().copied().enumerate() {
             ram[OVERLORD_WORK_BASE + index] = value;
         }
-        for slot in 0..OVERLORD_SLOT_COUNT {
+        for slot in 0..OVERLORD_SPAWNED_AREA_COUNT {
             ram[OVERLORD_SPAWNED_AREA + slot] = self.spawned_area[slot];
         }
     }
