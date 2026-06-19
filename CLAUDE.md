@@ -6,6 +6,62 @@ reference emulator. Hard constraint: SNES WRAM reuses the same bytes for differe
 systems by game mode, so a semantic write must touch only the byte/word it owns —
 never bulk-project a range it shares with another system.
 
+## Compare against `zelda3-rs-old` (Rust), NOT the C source, when fixing logic
+
+Both references are byte-exact, but **`~/Documents/zelda3-rs-old` is the easier diff**: it is
+Rust, same function names, same structure as this repo — so a logic divergence is a near
+line-for-line comparison (`code crates/zelda3/src/<file>.rs` here vs the same file there).
+Reach for the C source (`../zelda3/src`) only when the old clone's port is itself unclear or
+you need the original intent. `whoowns.py` already points at the old clone's read/write sites.
+Use the C oracle for the final all-layer *gate* (`validate_all_parity.py`), not for figuring
+out the fix.
+
+## Common bug classes (almost every root is one of these) + fix recipes
+
+The migration's dominant failure mode: **a native state projects bytes it doesn't exclusively
+own, re-stamping a stale frame-start value over another system's live mid-frame write.** The
+`GameState::write_to_ram` master projection runs every state unconditionally, last-writer-wins;
+bridge `sync()` calls re-run a state's `write_to_ram` mid-frame on every setter. Four shapes:
+
+1. **Stale bulk-projection clobber (mode-reuse / dual-ownership)** — THE most common. Two
+   native states project the same SNES-reused byte; whichever projects last clobbers. Fixes,
+   in order of preference:
+   a. **Mode-gate the projection** on the active mode: `if ram[PLAYER_IS_INDOORS] == 0 {...}`
+      (overworld-only) / `if ram[MAIN_MODULE] != 0x0b {...}`. (0x4bc star-tile vs dungeon torch,
+      f314953.)
+   b. **Write-through, don't bulk-project**: delete the byte from `write_to_ram`; write it to
+      RAM directly in the setter; exclude it from the coherence check (add a
+      `matches_ram_ignoring_X` / `from_ram.field = self.field` shim). The active subsystem
+      writes through; nothing re-stamps it. (0x6a0 scroll-delta→mirror-warp f296375; 0x1dd80
+      mapbak palette via PpuScrollCopy scroll-sync f335672; 0xc8 menu-animation-timer.)
+   c. **Make ONE struct the sole owner; exclude the shared byte from the other's projection.**
+      (0x39d ancilla `g[9]` == hookshot effect index f358784.)
+2. **Oversized-table projection** — a native array models MORE slots than the real hardware
+   array, so its bulk `for slot in 0..COUNT { ram[BASE+slot]=... }` spills past the array end
+   into adjacent FOREIGN bytes. Detect: array span `BASE + count*stride` vs the next const's
+   address (`whoowns.py` prints "next def at 0x.."). Fix: size the array to the REAL slot count
+   (match the old-clone/C array stride). Overlords are **8** slots not 16 → spawned_area
+   (0xcca) spilled over SPRITE_BUMP_DAMAGE (0xcd2) and the work block over sprite_stunned
+   (0xb58), f460431. (Earlier: star-switch table oversize.)
+3. **Bounded native read where C reads raw RAM** — a fixed-size native model read where the
+   old clone indexes past its slots (mode-reuse beyond the model's range). Fix: read raw
+   `ram[ADDR + i]` like the old clone, not the bounded accessor. (Y-item multiselect scanned
+   `inventory_item()` f255360; wishing-pond bottle clear f255446.)
+4. **Missing/divergent write or branch** — the port omitted a write the old clone performs, or
+   a native-state-driven branch diverged. Fix: diff the fn against zelda3-rs-old; add the
+   missing write. (Special-switch set both 0x410 AND 0x416, f241475.)
+
+**Symptom → class cheat-sheet:**
+- A byte is set CORRECTLY then reverts to its frame-start value later in the same frame →
+  **class 1**. Find the re-stamper: `find_dual_ownership.py <addr>` for the co-owner; if its
+  projection is a slice/loop (the finder's blind spot), read that state's `write_to_ram`
+  directly. The re-stamp often fires from an unrelated setter's bridge `sync()` (e.g. a
+  scroll-register write re-projecting a bundled palette/array field).
+- Divergence at `BASE + k` where BASE is one array and the byte belongs to the NEXT
+  system/const → **class 2** (oversized array; check the count vs the real stride).
+- "Every persisted input matches at the frame boundary but the action diverges" → coherence
+  gap (class 1/3). Run `ZELDA3_ASSERT_NATIVE_COHERENT` and trace the native read vs `ram[ADDR]`.
+
 ## Reference builds & ROM
 
 **Two references, both byte-exact:**
@@ -35,6 +91,30 @@ never bulk-project a range it shares with another system.
   `ZELDA3_SMV_{SELECT_FILE,LOADFILE,DUNGEON,OVERWORLD,MESSAGING,DEATH_INTRO,DEATH_RELOAD}_TIMING_HACKS=1`.
 - Address semantics come from the old clone, not `variables.h`: use `whoowns.py` (backed
   by `old_rust_ref.py`, which reads the old clone's `const NAME: usize = 0xADDR;` map).
+
+## Checkpoint resume — the ~250× per-probe speedup (USE THIS for any deep frame)
+
+Every per-frame probe below re-replays from frame 0. For a divergence at frame ~460k that is
+~90s per probe; with a checkpoint it is ~0.3s. Both binaries support `--save-state`/
+`--load-state`, and the snapshot includes the replay position (`replay_pos`,
+`replay_next_cmd_at`), so you resume mid-replay exactly.
+
+```bash
+HACKS=(ZELDA3_SMV_SELECT_FILE_TIMING_HACKS=1 ... all 7 ...)   # see below
+# Save once, a few thousand frames BEFORE the suspect frame, for BOTH binaries:
+env "${HACKS[@]}" target/parity/zelda3 --replay-save saves/zelda3.sfc saves/zelda3-combined-route.sav 460000 --save-state /tmp/ck_new_460000.sav
+env "${HACKS[@]}" ~/Documents/zelda3-rs-old/target/release/zelda3 --replay-save saves/zelda3.sfc saves/zelda3-combined-route.sav 460000 --save-state /tmp/ck_old_460000.sav
+# Resume + dump/trace: pass the ABSOLUTE target frame and --load-state:
+env "${HACKS[@]}" ZELDA3_REPLAY_WRAM_DUMP=/tmp/n.bin target/parity/zelda3 --replay-save ... 460431 --load-state /tmp/ck_new_460000.sav
+```
+
+Gotchas: (a) trace gates are checkpoint-aware via `trace_frame_matches` (RAM-watch, coherence,
+step-dump match on `replay_frame_counter` too) — but `ZELDA3_WW_FRAME` still keys on
+`frame_ctr_dbg` (RELATIVE on resume: target − checkpoint, e.g. 460431−460000 = 431). New
+frame-gated `eprintln`s should use `self.trace_frame_matches(N)`, not `== frame_ctr_dbg`.
+(b) snapshot restore has a tiny artifact (byte 0x654, HDMA scratch) — filter it, and confirm
+a candidate fix with ONE from-scratch run before committing. (c) delete checkpoints after any
+serde struct layout change. See memory [[checkpoint-resume-debugging]].
 
 ## Parity-debugging tools (`scripts/`) — prefer these, in this order
 
@@ -155,13 +235,14 @@ never bulk-project a range it shares with another system.
 2. Pick a diverging semantic field's address → `first_diverging_frame.py <addr>` →
    exact first frame + old/new values.
 3. `whoowns.py <addr>` → OLD-clone const, OLD-clone read/write sites, native owner.
-4. Classify: overlap/clobber (`find_dual_ownership.py`), undersized/oversized table
-   (C span vs native span), mode-reuse (same address, two `#define`s / two states), or
-   logic divergence (compare the Rust port line-by-line against the C site).
-5. Fix so the semantic write owns ONLY its byte (or gate mode-reused projections on
-   the active mode, e.g. `PLAYER_IS_INDOORS`). Make ONE struct the sole owner and
-   redirect all readers/setters — do NOT just delete a duplicate field (the owners
-   leapfrog across frames; verify).
+4. Classify into one of the four **Common bug classes** above: overlap/clobber
+   (`find_dual_ownership.py`), oversized table (array span vs the next const), mode-reuse
+   (same address, two states), bounded-read-vs-raw, or missing write/branch — by comparing
+   the fn **against `zelda3-rs-old`** (Rust, easy diff), C only if the old clone is unclear.
+5. Apply the matching **fix recipe** above (mode-gate / write-through / sole-owner / size to
+   real slot count / read raw RAM). Make ONE struct the sole owner and redirect all
+   readers/setters — do NOT just delete a duplicate field (the owners leapfrog across
+   frames; verify).
 6. Verify: `stable_page_diff.py` (no regression), the specific bytes now match,
    `cargo test --profile parity -p zelda3 game_state` (280 pass), and re-run
    `--semantic-only` to confirm the behavioral high-water moved.
