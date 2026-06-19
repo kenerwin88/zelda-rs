@@ -1688,10 +1688,21 @@ impl Default for AncillaSlotsState {
     }
 }
 
+/// ANCILLA_G slot 9 (0x394 + 9 = 0x39d) is the same byte as GAME_OVER_LETTER_CURSOR / the
+/// hookshot effect index — a deliberate C memory overlap (ancilla_arr_g has 10 entries and the
+/// last one doubles as the effect index). That byte is owned by messaging here (set via
+/// set_effect_index, read raw at ancilla.rs during a boomerang/hookshot throw), so the ancilla
+/// bulk projection must not touch it or it re-stamps a stale frame-start value over messaging's
+/// mid-frame write (f358784).
+const ANCILLA_G_SLOT9_HOOKSHOT_EFFECT: usize = ANCILLA_G + (ANCILLA_SLOT_COUNT - 1);
+
 impl AncillaSlotsState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut state = Self::default();
         for offset in Self::field_offsets() {
+            if offset == ANCILLA_G_SLOT9_HOOKSHOT_EFFECT {
+                continue;
+            }
             let index = Self::work_index(offset);
             state.work[index] = ram.get(offset).copied().unwrap_or(0);
         }
@@ -1700,6 +1711,9 @@ impl AncillaSlotsState {
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         for offset in Self::field_offsets() {
+            if offset == ANCILLA_G_SLOT9_HOOKSHOT_EFFECT {
+                continue;
+            }
             ram[offset] = self.byte_at(offset);
         }
     }
@@ -2042,6 +2056,11 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
     fn sync(&mut self) {
         for base in ANCILLA_FIELD_BASES.iter().copied() {
             let offset = base + self.slot;
+            // ANCILLA_G slot 9 (0x39d) overlaps GAME_OVER_LETTER_CURSOR / the hookshot effect
+            // index, owned by messaging — projecting our stale g[9] re-stamps it (f358784).
+            if offset == ANCILLA_G_SLOT9_HOOKSHOT_EFFECT {
+                continue;
+            }
             self.ram[offset] = self.state.byte_at(offset);
         }
         self.debug_assert_matches_ram();
@@ -2050,6 +2069,9 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
     fn debug_assert_matches_ram(&self) {
         for base in ANCILLA_FIELD_BASES.iter().copied() {
             let offset = base + self.slot;
+            if offset == ANCILLA_G_SLOT9_HOOKSHOT_EFFECT {
+                continue;
+            }
             debug_assert_eq!(self.state.byte_at(offset), self.ram[offset]);
         }
     }
