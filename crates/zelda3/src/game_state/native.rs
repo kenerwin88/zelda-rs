@@ -9671,7 +9671,11 @@ mod tests {
         assert_eq!(read_le_u16(&ram, BG2_X_SCROLL), 0x0110);
         assert_eq!(read_le_u16(&ram, BG2_Y_SCROLL), 0x01ff);
         assert_eq!(read_le_u16(&ram, MAPBAK_CGWSEL), 0xab55);
-        assert_eq!(&ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4], &[9, 8, 7, 4]);
+        // copy_mapbak_palette_from updates the native field, but write_to_ram does NOT
+        // project mapbak_palette (it is write-through via the bridge to avoid scroll-sync
+        // clobbering a palette backup — f335672), so RAM[MAPBAK_PALETTE] is left untouched.
+        assert_eq!(&scroll.mapbak_palette_slice()[..4], &[9, 8, 7, 4]);
+        assert_eq!(&ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4], &[1, 2, 3, 4]);
     }
 
     #[test]
@@ -9688,7 +9692,6 @@ mod tests {
             let mut bridge = NativePpuScrollCopyBridgeMut::new(&mut scroll, &mut ram);
             bridge.cache_bg2_live_scroll();
             bridge.copy_bg2_live_to_bg1_live();
-            bridge.copy_mapbak_palette_from(&[5, 6, 7]);
         }
 
         assert_eq!(scroll.bg1_h_copy2(), 0x0060);
@@ -9697,8 +9700,10 @@ mod tests {
         assert_eq!(read_le_u16(&ram, BG1_Y_SCROLL), 0x0070);
         assert_eq!(read_le_u16(&ram, BG2_H_SCROLL_COPY2_CACHED), 0x0060);
         assert_eq!(read_le_u16(&ram, BG2_V_SCROLL_COPY2_CACHED), 0x0070);
-        assert_eq!(&scroll.mapbak_palette_slice()[..4], &[5, 6, 7, 4]);
-        assert_eq!(&ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4], &[5, 6, 7, 4]);
+        // mapbak_palette is no longer projected by the scroll-copy sync (write-through via
+        // the main bridge to avoid scroll-sync clobbering a palette backup — f335672), so a
+        // bridge scroll sync leaves RAM[MAPBAK_PALETTE] untouched.
+        assert_eq!(&ram[MAPBAK_PALETTE..MAPBAK_PALETTE + 4], &[1, 2, 3, 4]);
     }
 
     #[test]

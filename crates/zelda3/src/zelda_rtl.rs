@@ -2081,10 +2081,13 @@ impl ZeldaState {
             .display
             .ppu_scroll_copy
             .write_to_ram(&mut self.ram);
-        debug_assert_eq!(
-            self.game_state.display.ppu_scroll_copy,
-            PpuScrollCopyState::load_from_ram(&self.ram)
-        );
+        // mapbak_palette is write-through (not projected by write_to_ram), so RAM[MAPBAK_
+        // PALETTE] may legitimately differ from this state's stale copy — ignore it here.
+        debug_assert!(self
+            .game_state
+            .display
+            .ppu_scroll_copy
+            .matches_ram_ignoring_mapbak(&self.ram));
     }
 
     fn mutate_ppu_scroll_copy<T>(
@@ -2174,7 +2177,25 @@ impl ZeldaState {
         fn set_mapbak_cgwsel(value: u8);
         fn set_mapbak_cgwsel_word(value: u16);
         fn set_mapbak_hdmaen(value: u8);
-        fn copy_mapbak_palette_from(palette: &[u8]);
+    }
+
+    /// Write-through backup of the map/death palette into MAPBAK_PALETTE. This is NOT done
+    /// via the scroll-copy sync (PpuScrollCopyState::write_to_ram no longer projects
+    /// mapbak_palette): a scroll-register sync would otherwise re-run that projection every
+    /// frame and clobber a freshly-written overworld palette backup (f335672). Mirrors the
+    /// old projection's RAM effect (the native field is fill-padded to MAPBAK_PALETTE_BYTES).
+    pub(crate) fn copy_mapbak_palette_from(&mut self, palette: &[u8]) {
+        self.game_state
+            .display
+            .ppu_scroll_copy
+            .copy_mapbak_palette_from(palette);
+        let bak = self
+            .game_state
+            .display
+            .ppu_scroll_copy
+            .mapbak_palette_slice()
+            .to_vec();
+        self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + bak.len()].copy_from_slice(&bak);
     }
 
     pub(crate) fn attract_scene_mut(&mut self) -> NativeAttractSceneBridgeMut<'_> {

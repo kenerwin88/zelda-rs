@@ -1739,9 +1739,20 @@ impl PpuScrollCopyState {
         write_le_u16(ram, MAPBAK_BG1_Y_OFFSET, self.mapbak_bg1_y_offset);
         write_le_u16(ram, MAPBAK_CGWSEL, self.mapbak_cgwsel);
         ram[MAPBAK_HDMAEN] = self.mapbak_hdmaen;
-        ram[MAPBAK_PALETTE..MAPBAK_PALETTE + MAPBAK_PALETTE_BYTES].fill(0);
-        let len = self.mapbak_palette.len().min(MAPBAK_PALETTE_BYTES);
-        ram[MAPBAK_PALETTE..MAPBAK_PALETTE + len].copy_from_slice(&self.mapbak_palette[..len]);
+        // MAPBAK_PALETTE (0x1dd80) is mode-reused scratch (the overworld/death palette
+        // backup), NOT scroll-copy state. It is written THROUGH by the bridge's
+        // copy_mapbak_palette_from (and the overworld backup_overworld_palette_from), never
+        // re-projected here: a scroll-register sync runs this write_to_ram constantly, and a
+        // fill(0)+copy would wipe a palette backup another subsystem just wrote (f335672).
+    }
+
+    /// Coherence comparison that ignores `mapbak_palette` — it is written through, not
+    /// projected by `write_to_ram`, so RAM[MAPBAK_PALETTE] may legitimately differ from this
+    /// state's stale copy (another subsystem owns the buffer in its mode).
+    pub(crate) fn matches_ram_ignoring_mapbak(&self, ram: &[u8]) -> bool {
+        let mut live = Self::load_from_ram(ram);
+        live.mapbak_palette.clone_from(&self.mapbak_palette);
+        *self == live
     }
 
     pub(crate) fn bg2_h_copy2_offset() -> usize {
@@ -4362,7 +4373,9 @@ impl<'a> NativePpuScrollCopyBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, PpuScrollCopyState::load_from_ram(self.ram));
+        // mapbak_palette is write-through (not projected by write_to_ram), so RAM may
+        // legitimately differ from this state's stale copy — ignore it in the check.
+        debug_assert!(self.state.matches_ram_ignoring_mapbak(self.ram));
     }
 
     ppu_scroll_bridge_methods! {
@@ -4443,7 +4456,6 @@ impl<'a> NativePpuScrollCopyBridgeMut<'a> {
         fn set_mapbak_cgwsel(value: u8);
         fn set_mapbak_cgwsel_word(value: u16);
         fn set_mapbak_hdmaen(value: u8);
-        fn copy_mapbak_palette_from(palette: &[u8]);
     }
 }
 
