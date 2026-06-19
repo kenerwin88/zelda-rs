@@ -1531,6 +1531,7 @@ impl ZeldaState {
         self.replay_assert_native_coherent(label);
         self.replay_step_dump(label);
         self.replay_frame_page_dump(label);
+        self.replay_frame_byte_dump(label);
         let Some(target) = Self::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_FRAME") else {
             return;
         };
@@ -1647,6 +1648,53 @@ impl ZeldaState {
             }
             let off = 4 + p * 4;
             buf[off..off + 4].copy_from_slice(&h.to_le_bytes());
+        }
+        let _ = writer.write_all(&buf);
+    }
+
+    // Per-frame byte tracer for timing/sequence divergences. `ZELDA3_REPLAY_FRAME_BYTE_DUMP=
+    // <a0,a1,...>:<path>` (comma-separated hex addrs, then ':' then path) appends
+    // `[frame:u32 LE][one byte per addr]` at the end-of-frame `after-run-frame-internal`
+    // checkpoint. Run this repo + zelda3-rs-old to the same end frame, then
+    // scripts/frame_byte_trace.py diffs the two streams and reports, per addr, the FIRST frame
+    // it diverges and the old/new values — turning a "which frame did this counter desync"
+    // question into one pair of replays instead of N per-frame re-replays.
+    fn replay_frame_byte_dump(&self, label: &str) {
+        if label != "after-run-frame-internal" {
+            return;
+        }
+        use std::io::Write;
+        use std::sync::{Mutex, OnceLock};
+        type ByteDump = (Vec<usize>, Mutex<std::io::BufWriter<std::fs::File>>);
+        static DUMP: OnceLock<Option<ByteDump>> = OnceLock::new();
+        let slot = DUMP.get_or_init(|| {
+            let spec = std::env::var("ZELDA3_REPLAY_FRAME_BYTE_DUMP").ok()?;
+            let (addrs_s, path) = spec.rsplit_once(':')?;
+            let addrs: Vec<usize> = addrs_s
+                .split(',')
+                .filter_map(|s| usize::from_str_radix(s.trim().trim_start_matches("0x"), 16).ok())
+                .collect();
+            if addrs.is_empty() {
+                return None;
+            }
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(path)
+                .ok()?;
+            Some((addrs, Mutex::new(std::io::BufWriter::new(file))))
+        });
+        let Some((addrs, mutex)) = slot else {
+            return;
+        };
+        let Ok(mut writer) = mutex.lock() else {
+            return;
+        };
+        let mut buf = Vec::with_capacity(4 + addrs.len());
+        buf.extend_from_slice(&self.state_recorder.replay_frame_counter.to_le_bytes());
+        for &a in addrs {
+            buf.push(self.ram.get(a).copied().unwrap_or(0));
         }
         let _ = writer.write_all(&buf);
     }
@@ -2713,7 +2761,13 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_flag_travel_bird(&mut self, value: u8) {
-        self.mutate_world_transient_preserving_door_step(|state| state.set_flag_travel_bird(value));
+        // FLAG_TRAVEL_BIRD (0xaf4) is one byte but was modeled by TWO native fields:
+        // world.travel_bird_flag (set here, no readers) and display.travel_bird_tile_offset
+        // (read for the DMA tile source in misc.rs / has_travel_bird_tile_upload, and projected
+        // LAST in GameState::write_to_ram). Writing world.travel_bird_flag let display's stale
+        // copy re-project over the duck's per-frame cycling value (f533517, travel-bird duck).
+        // Target the display field that actually owns the byte so the write survives.
+        self.set_travel_bird_tile_offset(value);
     }
 
     pub(crate) fn clear_tile_interaction_shared_flag(&mut self) {
