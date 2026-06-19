@@ -24,7 +24,7 @@ WRAM/VRAM dump env vars). Rebuild the oracle with `make -C ../zelda3 zelda3`.
 Usage:
   scripts/validate_all_parity.py                 # fast smoke test (3000 frames)
   scripts/validate_all_parity.py --frames 12000
-  scripts/validate_all_parity.py --full          # 170000 frames (exhaustive)
+  scripts/validate_all_parity.py --full          # full route ~1,073,092 frames (exhaustive)
   scripts/validate_all_parity.py --build         # cargo build the parity binary first
   scripts/validate_all_parity.py --no-audio      # skip the audio layer
 """
@@ -64,6 +64,8 @@ TIMING_HACKS = {
 }
 SDL_DUMMY = {"SDL_VIDEODRIVER": "dummy", "SDL_AUDIODRIVER": "dummy", "SDL_RENDER_DRIVER": "software"}
 HASH_FIELDS = ["ramhash", "ram0", "ram1", "ram2", "ram3", "ram4", "ram5", "ram6", "ram7", "sramhash"]
+# Canonical final frame of the combined replay route (test_standard_replay_parity.py).
+FULL_ROUTE_FRAMES = 1_073_092
 
 
 def parse_fields(line: str) -> dict[str, str]:
@@ -104,13 +106,14 @@ def first_byte_diff(a: Path, b: Path):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--frames", type=int, default=3000)
-    ap.add_argument("--full", action="store_true", help="frames=170000 (exhaustive)")
+    # Canonical end of the combined replay route (matches test_standard_replay_parity.py).
+    ap.add_argument("--full", action="store_true", help="full route (~1,073,092 frames)")
     ap.add_argument("--render-stride", type=int, default=1)
     ap.add_argument("--audio-stride", type=int, default=1)
     ap.add_argument("--no-audio", action="store_true")
     ap.add_argument("--build", action="store_true")
     args = ap.parse_args()
-    frames = 170000 if args.full else args.frames
+    frames = FULL_ROUTE_FRAMES if args.full else args.frames
 
     if args.build:
         subprocess.run(["cargo", "build", "--profile", "parity", "-p", "zelda3-bin"], cwd=REPO, check=True)
