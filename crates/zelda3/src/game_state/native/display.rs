@@ -2579,7 +2579,13 @@ impl DisplayState {
         // frame-start read clobber the owner's mid-frame value, so leave the byte to the
         // owner (now the sole projector).
         ram[FLAG_TRAVEL_BIRD] = self.travel_bird_tile_offset;
-        ram[STAR_TILE_RESTORE_PHASE] = self.star_tile_restore_phase;
+        // 0x4bc is mode-reused: STAR_TILE_RESTORE_PHASE (overworld) here vs the dungeon
+        // MOVING_WALL_TORCH_BLINK_PHASE (dungeon.room_effects). Only project it in the
+        // overworld so a stale frame-start copy can't re-stamp over the dungeon owner's
+        // mid-frame torch toggle (f314953).
+        if ram[PLAYER_IS_INDOORS] == 0 {
+            ram[STAR_TILE_RESTORE_PHASE] = self.star_tile_restore_phase;
+        }
         write_le_u16(
             ram,
             ANIMATED_TILE_DATA_SRC,

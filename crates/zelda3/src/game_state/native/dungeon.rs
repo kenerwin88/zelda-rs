@@ -2473,7 +2473,12 @@ impl DungeonRoomEffectsState {
         write_le_u16(ram, CRUSH_WALL_DOOR_INDEX_X2, self.blast_wall_door_index_x2);
         ram[MOVING_WALL_DOT_POINTER] = self.moving_wall_dot_pointer;
         write_le_u16(ram, MOVING_WALL_WRITE_POINT, self.moving_wall_write_point);
-        ram[MOVING_WALL_TORCH_BLINK_PHASE] = self.moving_wall_torch_blink_phase;
+        // 0x4bc is mode-reused with the overworld STAR_TILE_RESTORE_PHASE (owned by
+        // display); only project the dungeon torch phase indoors so a stale copy doesn't
+        // clobber the overworld owner.
+        if ram[crate::game_state::constants::PLAYER_IS_INDOORS] != 0 {
+            ram[MOVING_WALL_TORCH_BLINK_PHASE] = self.moving_wall_torch_blink_phase;
+        }
         ram[MOVING_WALL_TORCH_UPDATE_FLAG] = self.moving_wall_torch_update_flag;
         ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = self.fixed_color_plusminus;
         ram[DUNGEON_TRAP_TRIGGER_LATCH] = self.trap_trigger_latch;
