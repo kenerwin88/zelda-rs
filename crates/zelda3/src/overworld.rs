@@ -5024,8 +5024,13 @@ impl ZeldaState {
                     == u16::from(self.game_state.world.location.overworld_screen_index())
             {
                 self.set_dungeon_room(SPECIAL_SWITCH_AREA_EXITS[i]);
-                self.set_screen_transition_direction_bits(SPECIAL_SWITCH_AREA_DIRECTIONS[i]);
                 let direction = SPECIAL_SWITCH_AREA_DIRECTIONS[i];
+                // C sets BOTH ow_screen_transition_dir_bits (0x410) and ..._2 (0x416). The port was
+                // missing the 0x410 write (it only called set_screen_transition_direction_bits =
+                // 0x416), so a special-switch overworld exit left 0x410 stale (0 instead of the
+                // transition direction) — cascading into the entire post-frame-241475 divergence.
+                self.set_edge_transition_direction_bits(direction);
+                self.set_screen_transition_direction_bits(direction);
                 self.follower_link_state_mut().set_direction(direction);
                 let trans = self.DirToEnum(direction as i32) as u16;
                 self.set_screen_transition_word(trans);
