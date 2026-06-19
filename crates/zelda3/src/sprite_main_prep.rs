@@ -2615,12 +2615,23 @@ impl ZeldaState {
                 self.sprite_slot_mut(k).set_ai_state(3);
                 let j = self.multiselect_choice().value() as usize;
                 self.sprite_slot_mut(k).set_c(j as u8);
-                let item = self.game_state.inventory.items.inventory_item(j);
-                let value = 0;
+                // C reads/clears raw ram[LINK_ITEM_BOW + j]. j (multiselect choice) can be 28-32,
+                // beyond the 28-slot native item model, where inventory_item(j)/set_inventory_item(j)
+                // silently return 0 / no-op. Use raw RAM for the read and the >=28 clear (the
+                // wish-pond grant `t` is derived from this item value, so it diverged).
+                let item = self.ram[crate::game_state::constants::LINK_ITEM_BOW + j];
+                // Route the clear to the right native owner so its projection doesn't undo it:
+                // bombs (idx 3) -> PlayerResources; items 0..28 -> item_slots; bottles 28..32
+                // (LINK_BOTTLE_INFO = LINK_ITEM_BOW+28) -> bottles model; beyond -> raw RAM.
+                let value = 0u8;
                 if j == 3 {
                     self.player_resources_mut().set_bombs(value);
-                } else {
+                } else if j < 28 {
                     self.inventory_items_mut().set_inventory_item(j, value);
+                } else if j < 32 {
+                    self.inventory_items_mut().set_bottle(j - 28, value);
+                } else {
+                    self.ram[crate::game_state::constants::LINK_ITEM_BOW + j] = value;
                 }
                 let item_idx = if j == 3 || j == 32 { 1 } else { item };
                 let data_idx = WISH_POND_ITEM_DATA_OFFSETS[j]
