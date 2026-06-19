@@ -8393,6 +8393,15 @@ impl ZeldaState {
                 .set_floor(value);
         }
         self.sprite_workspace_mut().set_last_garnish_index(j);
+        // 0x0f (R15 / SPRITE_LAST_GARNISH_INDEX) is the SAME scratch byte as the HIGH byte of
+        // collision_bits (R14 u16 @ 0x0e-0x0f). C writes `ram[R15] = j` as raw scratch here;
+        // TileDetectionState bulk-projects collision_bits as a u16 every frame, so without this
+        // its stale high byte re-stamps over the garnish index at frame end (e.g. 0x0f reverts
+        // 0x1d->0x00 at f191098). Keep the native model coherent with the scratch write so the
+        // projection writes this garnish index, matching C's last-writer-wins on the shared byte.
+        let collision_low = self.game_state.player.tile_detection.collision_bits() as u8;
+        self.tile_detect_position_mut()
+            .set_collision_bits(u16::from(collision_low) | (u16::from(j as u8) << 8));
         j
     }
 
