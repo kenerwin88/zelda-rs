@@ -8,7 +8,7 @@ use crate::types::{read_le_u16, write_le_u16};
 const MESSAGING_RENDER_BUFFER_LEN: usize = 0x1000;
 const DECODED_MESSAGE_TEXT_CAPACITY: usize = 0x400;
 const DIALOGUE_POINTER_COUNT: usize = 398;
-const VWF_GLYPH_ADVANCE_BUFFER_LEN: usize = 0x100;
+pub(crate) const VWF_GLYPH_ADVANCE_BUFFER_LEN: usize = 0x100;
 const VWF_TILE_BUFFER_LEN: usize = 6 * 21 * 2;
 const SELECT_FILE_CHOICE_WORK_LEN: usize = 4;
 const SELECT_FILE_SAVE_SLOT_COUNT: usize = 3;
@@ -951,6 +951,10 @@ impl VwfRenderState {
             .unwrap_or(0)
     }
 
+    pub(crate) fn glyph_advance_buffer_len(&self) -> usize {
+        self.glyph_advance_prefix_sums.len()
+    }
+
     pub(crate) fn glyph_cursor(&self) -> u16 {
         self.glyph_cursor
     }
@@ -980,7 +984,13 @@ impl VwfRenderState {
     }
 
     pub(crate) fn set_next_glyph_advance_prefix_sum(&mut self, index: usize, value: u8) {
-        self.glyph_advance_prefix_sums[index + 1] = value;
+        // C's `vwf_arr` is raw g_ram; the credits render lines long enough that the glyph
+        // cursor runs one past the modeled buffer. In-bounds writes go to the Vec (projected
+        // to RAM); the overflow byte is written directly to RAM by the bridge. Guard so the
+        // out-of-range index does not panic.
+        if let Some(slot) = self.glyph_advance_prefix_sums.get_mut(index + 1) {
+            *slot = value;
+        }
     }
 
     pub(crate) fn set_glyph_cursor(&mut self, value: u16) {

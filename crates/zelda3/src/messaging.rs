@@ -3569,11 +3569,8 @@ impl ZeldaState {
         assert!(width <= 8);
         let i = self.game_state.messaging.vwf_render.glyph_cursor_usize();
         self.increment_vwf_glyph_cursor();
-        let arrval = self
-            .game_state
-            .messaging
-            .vwf_render
-            .glyph_advance_prefix_sum(i);
+        // C: arrval = vwf_arr[i]; vwf_arr[i + 1] = arrval + width (vwf_arr = raw g_ram).
+        let arrval = self.vwf_glyph_advance_prefix_sum(i);
         self.set_vwf_next_glyph_advance_prefix_sum(i, arrval.wrapping_add(width));
         let r10 = ((c as usize & 0x70) * 2) + (c as usize & 0x0f);
         let r0 = arrval as usize * 2;

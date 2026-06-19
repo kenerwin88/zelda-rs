@@ -28,7 +28,7 @@ use crate::game_state::constants::{
     OVERWORLD_PALETTE_AUX_OR_MAIN, OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START,
     OVERWORLD_SCROLL_Y_END, PRIMARY_DECOMP_BUFFER_LOAD_GFX, RESERVED_HDMA_TABLE,
     SAVELOAD_HDMA_TABLE, SPRITE_DECOMP_BUFFER_LOAD_GFX, UVRAM_DATA, VRAM_UPLOAD_DATA,
-    VRAM_UPLOAD_OFFSET,
+    VRAM_UPLOAD_OFFSET, VWF_ARR,
 };
 #[cfg(test)]
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
@@ -5903,6 +5903,25 @@ impl ZeldaState {
 
     pub(crate) fn set_vwf_next_glyph_advance_prefix_sum(&mut self, index: usize, value: u8) {
         self.mutate_vwf_render(|vwf| vwf.set_next_glyph_advance_prefix_sum(index, value));
+        // C writes `vwf_arr[index + 1] = value` as raw g_ram, even past the modeled buffer
+        // (the credits render lines whose glyph cursor runs beyond it). For those overflow
+        // bytes the native Vec projection above does not reach RAM, so write them directly.
+        let buf_len = self.game_state.messaging.vwf_render.glyph_advance_buffer_len();
+        let addr = VWF_ARR + index + 1;
+        if index + 1 >= buf_len && addr < self.ram.len() {
+            self.ram[addr] = value;
+        }
+    }
+
+    /// C: `arrval = vwf_arr[index]` — raw g_ram. In-bounds indices read the modeled buffer
+    /// (kept RAM-coherent); indices past it read RAM directly, matching C's unbounded access.
+    pub(crate) fn vwf_glyph_advance_prefix_sum(&self, index: usize) -> u8 {
+        let vwf = &self.game_state.messaging.vwf_render;
+        if index < vwf.glyph_advance_buffer_len() {
+            vwf.glyph_advance_prefix_sum(index)
+        } else {
+            self.ram.get(VWF_ARR + index).copied().unwrap_or(0)
+        }
     }
 
     pub(crate) fn set_vwf_glyph_cursor(&mut self, value: u16) {
