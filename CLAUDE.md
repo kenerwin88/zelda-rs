@@ -6,19 +6,29 @@ reference emulator. Hard constraint: SNES WRAM reuses the same bytes for differe
 systems by game mode, so a semantic write must touch only the byte/word it owns —
 never bulk-project a range it shares with another system.
 
-## Reference builds & ROM — Rust-vs-Rust ONLY, never touch the C repo
+## Reference builds & ROM
 
-**The reference is `~/Documents/zelda3-rs-old` (Rust clone @`1183dee`), which has perfect
-parity with the original game. Do NOT read, build, run, or reference `../zelda3` (the C
-source/ROM) for parity work — it is confusing and unnecessary. Compare this repo against
-the old Rust clone only.**
+**Two references, both byte-exact:**
+1. **C oracle `../zelda3`** (ground truth; override `ZELDA3_C_REPO`) — now the AUTHORITATIVE
+   all-layer validation reference. The C source build is byte-identical to the Rust port on
+   WRAM, VRAM, SRAM, render-hash, and the audio DSP trace (the old "cycle-accuracy" caveat was
+   BSNES-only; the C *source* build matches exactly). Use `scripts/validate_all_parity.py` to
+   gate every layer against it. Editing the C repo to add parity-oracle hooks IS permitted
+   (audio-trace default freq + `ZELDA3_REPLAY_WRAM_DUMP`/`ZELDA3_VRAM_DUMP` dumps are committed
+   there). Build: `make -C ../zelda3 zelda3`. Invoke headless: `SDL_VIDEODRIVER=dummy
+   SDL_AUDIODRIVER=dummy SDL_RENDER_DRIVER=software ../zelda3/zelda3 --config
+   ../zelda3/other/headless_replay.ini --replay-save <save> --smv-test-frames <N>`.
+2. **Old Rust clone `~/Documents/zelda3-rs-old` @`1183dee`** (override `ZELDA3_OLD_REPO`;
+   binary `target/release/zelda3`) — retained for byte-level *debugging* (it has matching
+   step_diff/WRAM-dump/VRAM-dump aids that the per-frame `scripts/` tools key on). The
+   address-semantics tools (`whoowns.py`/`old_rust_ref.py`) read its const map. Equivalent to
+   the C oracle for parity; prefer the C oracle for the final gate.
 
-- ROM: `saves/zelda3.sfc` in THIS repo (gitignored via `*.sfc`). All scripts default to
-  it and accept a `ZELDA3_ROM` override. Never use `../zelda3/zelda3.sfc`. (If the ROM is
-  missing, copy it into `saves/zelda3.sfc` from wherever you keep it — not from `../zelda3`
-  in commands/docs.)
-- Known-good Rust clone (the parity reference): `~/Documents/zelda3-rs-old` (override path
-  with `ZELDA3_OLD_REPO`). Already built; binary `target/release/zelda3`.
+- ROM: `saves/zelda3.sfc` in THIS repo (gitignored via `*.sfc`); scripts default to it and
+  accept `ZELDA3_ROM`. The C oracle uses its own `../zelda3/zelda3.sfc` via its config.
+- **The all-layer gate:** `scripts/validate_all_parity.py [--frames N | --full]` compares
+  WRAM (byte + hashes) / VRAM (byte) / SRAM / RENDER (per-frame) / AUDIO (DSP trace) vs the C
+  oracle. Wired into `.githooks/pre-commit` (smoke budget; `--full` = exhaustive 170k).
 - This repo: `cargo build --profile parity -p zelda3-bin` (deterministic like release,
   faster). Binary: `target/parity/zelda3 --replay-save saves/zelda3.sfc <save> <frames>`.
 - Replay save: `saves/zelda3-combined-route.sav`. All replay runs need the timing hacks:
@@ -165,10 +175,12 @@ the old Rust clone only.**
 - Raw RAM hashes flag BENIGN scratch divergence (matches behavior, fails the gate).
   The gate (`test_standard_replay_parity.py`) compares raw `ramhash`/`ram0..7`/`sramhash`
   vs the C oracle, so even benign shadow divergence must eventually be eliminated.
-- A pre-existing guardrail flags `messaging.rs:8` (a `0x1000` length const the
-  `check_ram_readability.py` pre-commit hook mistakes for an address); commits use
-  `--no-verify` until that's addressed separately. macOS has no `timeout`/`gtimeout`
-  — use a background pid + watchdog kill.
+- `check_ram_readability.py` no longer false-positives on length constants
+  (`_LEN/_LENGTH/_CAPACITY/_SIZE`) or C-style names in `//` comments, so the pre-commit
+  hook passes clean — `--no-verify` is no longer required for that reason. (The full hook
+  now also runs `validate_all_parity.py`, which builds + replays, so it is slow; use
+  `--no-verify` only to skip the heavy gate during rapid iteration.) macOS has no
+  `timeout`/`gtimeout` — use a background pid + watchdog kill.
 
 See `~/.claude/projects/.../memory/` for the running log of fixes and the current
 front (the persistent memory index is loaded each session).
