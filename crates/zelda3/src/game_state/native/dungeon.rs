@@ -212,6 +212,42 @@ impl DungeonState {
         }
     }
 
+    /// Leaf-level coherence drill-down (see GameState::report_incoherent_with_ram):
+    /// returns "dungeon.<leaf>" for each sub-state that has drifted out of sync with RAM.
+    pub(crate) fn report_incoherent_with_ram(&self, ram: &[u8]) -> Vec<&'static str> {
+        let fresh = Self::load_from_ram(ram);
+        let mut out = Vec::new();
+        macro_rules! check {
+            ($field:ident) => {
+                if self.$field != fresh.$field {
+                    out.push(concat!("dungeon.", stringify!($field)));
+                }
+            };
+        }
+        check!(header);
+        check!(scratch_word);
+        check!(entrance_backup);
+        check!(torch);
+        check!(savegame_state);
+        check!(bg2_attributes);
+        check!(stair_lists);
+        check!(stair_movement);
+        check!(moving_floor);
+        check!(room_tracking);
+        check!(object_tracking);
+        check!(doors);
+        check!(room_load);
+        check!(environment);
+        check!(room_tilemaps);
+        check!(room_items);
+        check!(room_effects);
+        check!(room_parser);
+        check!(door_setup);
+        check!(room_runtime);
+        check!(movable_blocks);
+        out
+    }
+
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.header.write_to_ram(ram);
         self.scratch_word.write_to_ram(ram);

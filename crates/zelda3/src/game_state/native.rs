@@ -279,15 +279,20 @@ impl GameState {
         check!(dungeon_secret);
         check!(save_load_transfer);
         check!(dungeon_map_display);
-        check!(dungeon);
-        // sprites is the most composite/bug-prone state — drill to the leaf so a faithful
-        // leaf (e.g. sprite_slots) flagging stands out from intentionally-noisy ones.
+        // sprites/dungeon/world are the most composite/bug-prone states — drill to the leaf so a
+        // faithful leaf (e.g. sprite_slots, world.location) flagging stands out from intentionally
+        // noisy gated/mode-reuse composites.
+        if self.dungeon != fresh.dungeon {
+            out.extend(self.dungeon.report_incoherent_with_ram(ram));
+        }
         if self.sprites != fresh.sprites {
             out.extend(self.sprites.report_incoherent_with_ram(ram));
         }
         check!(player);
         check!(inventory);
-        check!(world);
+        if self.world != fresh.world {
+            out.extend(self.world.report_incoherent_with_ram(ram));
+        }
         check!(poly);
         check!(display);
         check!(effects);

@@ -2954,6 +2954,29 @@ impl WorldState {
         }
     }
 
+    /// Leaf-level coherence drill-down (see GameState::report_incoherent_with_ram):
+    /// returns "world.<leaf>" for each sub-state that has drifted out of sync with RAM.
+    pub(crate) fn report_incoherent_with_ram(&self, ram: &[u8]) -> Vec<&'static str> {
+        let fresh = Self::load_from_ram(ram);
+        let mut out = Vec::new();
+        macro_rules! check {
+            ($field:ident) => {
+                if self.$field != fresh.$field {
+                    out.push(concat!("world.", stringify!($field)));
+                }
+            };
+        }
+        check!(location);
+        check!(scroll);
+        check!(camera_boundaries);
+        check!(palette_theme);
+        check!(region);
+        check!(transient);
+        check!(overworld);
+        check!(room_bounds);
+        out
+    }
+
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.location.write_to_ram(ram);
         self.scroll.write_to_ram(ram);
