@@ -5578,9 +5578,13 @@ mod tests {
         assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_BASE_Y), 0xaaaa);
         assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_MASK_X), 0xbbbb);
         assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_MASK_Y), 0xcccc);
-        assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_X_START), 0xdddd);
-        assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_X_END), 0xeeee);
-        assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_Y_END), 0xffff);
+        // scroll_x_start/x_end/y_end (0x604/0x606/0x602) are C's ow_scroll_vars0, owned by
+        // RoomBoundsState. WorldScrollState only mirrors them on load; write_to_ram must NOT
+        // project them (doing so clobbered RoomBoundsState's camera boundary). They retain the
+        // seeded value.
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_X_START), 0x0d0d);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_X_END), 0x0e0e);
+        assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_Y_END), 0x0f0f);
     }
 
     #[test]
@@ -5624,6 +5628,12 @@ mod tests {
             scroll_y_end: 0x0f0f,
         };
         scroll.write_to_ram(&mut ram);
+        // scroll_x_start/x_end/y_end are RoomBoundsState-owned (ow_scroll_vars0); WorldScrollState
+        // only mirrors them on load and no longer projects them, so seed them in RAM for the
+        // load round-trip below to stay consistent.
+        write_le_u16(&mut ram, OVERWORLD_SCROLL_X_START, 0x0d0d);
+        write_le_u16(&mut ram, OVERWORLD_SCROLL_X_END, 0x0e0e);
+        write_le_u16(&mut ram, OVERWORLD_SCROLL_Y_END, 0x0f0f);
 
         write_le_u16(&mut ram, OVERWORLD_OFFSET_BASE_X, 0xcccc);
         write_le_u16(&mut ram, BG1_X_OFFSET, 0xaaaa);
