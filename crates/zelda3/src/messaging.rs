@@ -3663,15 +3663,10 @@ impl ZeldaState {
                 self.multiselect_choice_mut().set_value(31);
                 x = 31;
             }
+            // Raw RAM (not bounded inventory_item) — same fix as RenderText_FindYItem_Next.
             if x != 15
-                && (self.game_state.inventory.items.inventory_item(x as usize) != 0
-                    || (x == 32
-                        && self
-                            .game_state
-                            .inventory
-                            .items
-                            .inventory_item(x as usize + 1)
-                            != 0))
+                && (self.ram[LINK_ITEM_BOW + x as usize] != 0
+                    || (x == 32 && self.ram[LINK_ITEM_BOW + x as usize + 1] != 0))
             {
                 break;
             }
