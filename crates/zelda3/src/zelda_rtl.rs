@@ -1486,12 +1486,20 @@ impl ZeldaState {
     /// at this labeled step — the signature of a stale-native-field or RAM-written-
     /// without-native-sync bug. Optionally scope to one frame with
     /// `ZELDA3_ASSERT_COHERENT_FRAME=<n>` to keep the (heavy) check cheap.
+    /// True at the labeled checkpoint of the target frame, whether the run started from
+    /// frame 0 (`frame_ctr_dbg`) or resumed from a `--load-state` checkpoint
+    /// (`replay_frame_counter`, which IS restored while `frame_ctr_dbg` counts from load).
+    /// Use for every trace-frame gate so the diagnostics work with checkpoint resume.
+    fn trace_frame_matches(&self, target: u32) -> bool {
+        self.frame_ctr_dbg == target || self.state_recorder.replay_frame_counter == target
+    }
+
     fn replay_assert_native_coherent(&self, label: &str) {
         let Ok(mode) = std::env::var("ZELDA3_ASSERT_NATIVE_COHERENT") else {
             return;
         };
         if let Some(frame) = Self::parse_trace_env_u32("ZELDA3_ASSERT_COHERENT_FRAME") {
-            if self.frame_ctr_dbg != frame {
+            if !self.trace_frame_matches(frame) {
                 return;
             }
         }
@@ -1526,7 +1534,7 @@ impl ZeldaState {
         let Some(target) = Self::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_FRAME") else {
             return;
         };
-        if self.frame_ctr_dbg != target {
+        if !self.trace_frame_matches(target) {
             return;
         }
         let watched_addr = Self::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_ADDR")
@@ -3162,9 +3170,12 @@ impl ZeldaState {
             .overworld
             .scroll_delta
             .write_to_ram(&mut self.ram);
+        // write_to_ram owns only 0x69e/0x69f; 0x6a0 is foreign mode-reused scratch written
+        // through by the horizontal-word setter, so compare only the owned region.
         debug_assert_eq!(
-            self.game_state.world.overworld.scroll_delta,
+            self.game_state.world.overworld.scroll_delta.vertical_delta_word(),
             crate::game_state::OverworldScrollDeltaState::load_from_ram(&self.ram)
+                .vertical_delta_word()
         );
     }
 
@@ -3201,6 +3212,10 @@ impl ZeldaState {
             .overworld
             .scroll_delta
             .set_horizontal_delta_word(value);
+        // C's write_le_u16(OVERWORLD_SCROLL_DELTA + 1, value) lands the high byte in 0x6a0
+        // (mode-reused MIRROR_VARS scratch); write it through before the coherence-checked
+        // sync, since write_to_ram no longer owns it.
+        self.ram[OVERWORLD_SCROLL_DELTA + 2] = (value >> 8) as u8;
         self.sync_overworld_scroll_delta_to_ram();
     }
 

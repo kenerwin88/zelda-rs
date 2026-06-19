@@ -1661,9 +1661,15 @@ impl OverworldScrollDeltaState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
+        // Owns only the two scroll-delta bytes at 0x69e/0x69f. The horizontal delta's high
+        // byte lands in 0x6a0 = MIRROR_VARS (mode-reused scratch); C writes it ONLY
+        // transiently inside Overworld_ScrollMap (write_le_u16(OVERWORLD_SCROLL_DELTA + 1)),
+        // never as a frame-end projection. Re-projecting bytes[2] here would clobber the
+        // mirror-warp target index (f296375). The horizontal-word setters write 0x6a0
+        // through explicitly instead — same write-through pattern as the 0xc8 sequence
+        // counter.
         ram[OVERWORLD_SCROLL_DELTA] = self.bytes[0];
         ram[OVERWORLD_SCROLL_DELTA + 1] = self.bytes[1];
-        ram[OVERWORLD_SCROLL_DELTA + 2] = self.bytes[2];
     }
 
     pub(crate) fn vertical_delta_low_byte(&self) -> u8 {
@@ -4288,9 +4294,12 @@ impl<'a> NativeOverworldScrollDeltaBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
+        // Only the two owned bytes (0x69e/0x69f) are projected; 0x6a0 is foreign
+        // mode-reused scratch (MIRROR_VARS) and is written through separately, so compare
+        // only the owned region.
         debug_assert_eq!(
-            *self.scroll_delta,
-            OverworldScrollDeltaState::load_from_ram(self.ram)
+            self.scroll_delta.vertical_delta_word(),
+            OverworldScrollDeltaState::load_from_ram(self.ram).vertical_delta_word()
         );
     }
 
@@ -4316,6 +4325,10 @@ impl<'a> NativeOverworldScrollDeltaBridgeMut<'a> {
 
     pub(crate) fn set_horizontal_delta_word(&mut self, value: u16) {
         self.scroll_delta.set_horizontal_delta_word(value);
+        // C's write_le_u16(OVERWORLD_SCROLL_DELTA + 1, value) lands the high byte in 0x6a0
+        // (mode-reused MIRROR_VARS scratch). write_to_ram no longer owns it, so write it
+        // through here before the sync's coherence check.
+        self.ram[OVERWORLD_SCROLL_DELTA + 2] = (value >> 8) as u8;
         self.sync();
     }
 

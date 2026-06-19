@@ -5816,7 +5816,10 @@ mod tests {
         );
         assert_eq!(ram[OVERWORLD_SCROLL_DELTA], 0x33);
         assert_eq!(ram[OVERWORLD_SCROLL_DELTA + 1], 0x44);
-        assert_eq!(ram[OVERWORLD_SCROLL_DELTA + 2], 0x55);
+        // 0x6a0 (horizontal-delta high byte) is mode-reused MIRROR_VARS scratch: the master
+        // projection does NOT own it (it would clobber the mirror-warp target index), so it
+        // keeps its prior value. The horizontal-word setter writes it through instead.
+        assert_eq!(ram[OVERWORLD_SCROLL_DELTA + 2], 0x33);
         assert_eq!(ram[BIRD_TRAVEL_X_LO + 3], 0x45);
         assert_eq!(ram[BIRD_TRAVEL_X_HI + 3], 0x23);
         assert_eq!(ram[BIRD_TRAVEL_Y_LO + 3], 0x89);
@@ -6411,7 +6414,9 @@ mod tests {
 
         assert_eq!(ram[OVERWORLD_SCROLL_DELTA], 0x33);
         assert_eq!(ram[OVERWORLD_SCROLL_DELTA + 1], 0x44);
-        assert_eq!(ram[OVERWORLD_SCROLL_DELTA + 2], 0x55);
+        // write_to_ram owns only 0x69e/0x69f; 0x6a0 (foreign MIRROR_VARS scratch) is left
+        // untouched here and written through by the horizontal-word setters instead.
+        assert_eq!(ram[OVERWORLD_SCROLL_DELTA + 2], 0x33);
     }
 
     #[test]
