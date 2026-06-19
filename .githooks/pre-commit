@@ -38,5 +38,17 @@ python3 scripts/test_standard_replay_parity.py --skip-final-frame
 restore_sram
 trap - EXIT HUP INT TERM
 
-echo "pre-commit: skipping full-route render-hash sweep"
-echo "pre-commit: run scripts/test_standard_replay_parity.py --render-hash-chunked manually for release-grade render parity"
+# All-layer regression gate vs the C oracle: WRAM (byte + hashes), VRAM (byte),
+# SRAM, RENDER (every frame), AUDIO (DSP trace). Catches any memory/graphics/
+# color-math/audio drift the checkpoint gate above doesn't cover per-frame.
+# Smoke budget keeps it commit-fast; run --full for the exhaustive 170k sweep.
+PARITY_FRAMES="${ZELDA3_PRECOMMIT_PARITY_FRAMES:-5000}"
+echo "pre-commit: all-layer parity gate vs C oracle (${PARITY_FRAMES} frames)"
+if [ -x ../zelda3/zelda3 ]; then
+  python3 scripts/validate_all_parity.py --frames "$PARITY_FRAMES" --audio-stride 5
+else
+  echo "pre-commit: WARNING — C oracle (../zelda3/zelda3) not built; skipping all-layer gate."
+  echo "pre-commit: build it with 'make -C ../zelda3 zelda3' to enable the full parity gate."
+fi
+
+echo "pre-commit: for the exhaustive sweep run: scripts/validate_all_parity.py --full"

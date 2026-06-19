@@ -257,11 +257,27 @@ def is_display_projection_source(path: Path) -> bool:
 
 
 def is_non_address_sized_constant(name: str) -> bool:
-    return name.endswith("_BYTES") or name.endswith("_COUNT") or name.endswith("_COUNT_LIMIT")
+    # Length/size/count constants are byte spans, not RAM addresses, even when the
+    # value coincides with a known WRAM offset (e.g. MESSAGING_RENDER_BUFFER_LEN = 0x1000).
+    return name.endswith(
+        ("_BYTES", "_COUNT", "_COUNT_LIMIT", "_LEN", "_LENGTH", "_CAPACITY", "_SIZE")
+    )
 
 
 def line_for_offset(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
+
+
+def is_inside_line_comment(text: str, offset: int) -> bool:
+    """True if `offset` falls after a `//` line comment on its source line.
+
+    C-style address names (`byte_7E004E`, `word_7EFA40`) frequently appear in
+    comments documenting the C origin of a port — those are documentation, not
+    address-derived Rust identifiers, and must not be flagged.
+    """
+    line_start = text.rfind("\n", 0, offset) + 1
+    comment = text.find("//", line_start, offset)
+    return comment != -1
 
 
 def is_inside_simple_string_literal(text: str, offset: int) -> bool:
@@ -302,6 +318,10 @@ def check_file(path: Path) -> list[Finding]:
         checks.append((DIRECT_RAM_RE, "direct hex RAM access; use a named constant"))
     for pattern, message in checks:
         for match in pattern.finditer(text):
+            # C-style address names in explanatory comments document the port origin;
+            # they are not address-derived Rust identifiers.
+            if is_inside_line_comment(text, match.start()) or is_inside_simple_string_literal(text, match.start()):
+                continue
             findings.append(Finding(path, line_for_offset(text, match.start()), message))
     for match in NATIVE_TRANSITION_MUT_RE.finditer(text):
         name = match.group(0)
