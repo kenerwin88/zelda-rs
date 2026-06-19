@@ -1287,6 +1287,15 @@ impl ZeldaState {
         // at its prior value (0x10 = "upload complete") and re-project it, so the new
         // room's quadrant VRAM upload would never run (C: clears the byte at room load).
         self.dungeon_room_load_mut().clear_quadrant_upload_index();
+        // 0x41a/0x422/0x424 (DungeonMovingFloorState move_flags/x_offset/y_offset) and 0x424
+        // (DungeonEnvironmentState water_transition_counter) are zeroed by the
+        // clear_room_parser_words loop above, but that only touches RAM + the room parser —
+        // these native fields would keep last room's value and re-project it (a stale moving-
+        // floor offset / water-animation counter re-stamping the cleared byte; f473650, a
+        // dungeon water room kept TURN_ON_OFF_WATER_CTR=0x20). Reset them to match the clear.
+        self.dungeon_moving_floor_mut().clear_floor_move_flags();
+        self.dungeon_moving_floor_mut().clear_floor_offsets();
+        self.dungeon_environment_mut().set_water_transition_counter(0);
         self.dungeon_torch_mut().refresh_object_data_positions();
         for i in 0..16 {
             self.dungeon_object_tracking_mut()
