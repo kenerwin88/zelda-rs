@@ -6,7 +6,13 @@ use crate::types::{read_le_u16, write_le_u16};
 // and addresses this region with a `& 0xfff` byte mask, so the buffer spans the full
 // 0x1000 WRAM bytes at MESSAGING_RENDER_BUFFER, not the smaller text-box extent.
 const MESSAGING_RENDER_BUFFER_LEN: usize = 0x1000;
-const DECODED_MESSAGE_TEXT_CAPACITY: usize = 0x400;
+// The decoded-message buffer spans the full MESSAGING_TEXT_BUFFER WRAM region
+// (0x11200-0x11fff, 0xe00 bytes; the next const is at 0x12000). The ending credits
+// message (0x173) decodes to ~0x750 bytes — far past the old 0x400 cap, which
+// truncated the projection at 0x115ff and left 0x11600.. stale (an 845-byte
+// divergence through the credits, first at frame 1025036). C writes the full
+// decoded message up to RAM end, so the native model must cover the whole region.
+const DECODED_MESSAGE_TEXT_CAPACITY: usize = 0xe00;
 const DIALOGUE_POINTER_COUNT: usize = 398;
 pub(crate) const VWF_GLYPH_ADVANCE_BUFFER_LEN: usize = 0x100;
 const VWF_TILE_BUFFER_LEN: usize = 6 * 21 * 2;
