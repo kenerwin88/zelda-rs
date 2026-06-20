@@ -2199,10 +2199,19 @@ impl DungeonRoomParserState {
             *pos = read_le_u16(ram, STAR_SHAPED_SWITCHES_TILE_LOCAL + index * 2);
         }
 
+        // DUNG_TOGGLE_FLOOR_POS (0x6c0) / DUNG_TOGGLE_PALACE_POS (0x6d0) are mode-reused with the
+        // dungeon stair tables (DUNG_STAIRS_TABLE_1/2, owned by DungeonStairListsState). Only the
+        // first `count` slots are live toggle positions; the rest are stair-table bytes. Load only
+        // the live slots so projecting them back can't re-stamp a stale toggle position over the
+        // stair table (f633081).
+        let toggle_floor_count_x2 = read_le_u16(ram, DUNG_NUM_TOGGLE_FLOOR);
+        let toggle_palace_count_x2 = read_le_u16(ram, DUNG_NUM_TOGGLE_PALACE);
         let mut toggle_floor_positions = [0; DUNGEON_ROOM_TOGGLE_SLOT_COUNT];
         let mut toggle_palace_positions = [0; DUNGEON_ROOM_TOGGLE_SLOT_COUNT];
-        for index in 0..DUNGEON_ROOM_TOGGLE_SLOT_COUNT {
+        for index in 0..usize::from(toggle_floor_count_x2 / 2).min(DUNGEON_ROOM_TOGGLE_SLOT_COUNT) {
             toggle_floor_positions[index] = read_le_u16(ram, DUNG_TOGGLE_FLOOR_POS + index * 2);
+        }
+        for index in 0..usize::from(toggle_palace_count_x2 / 2).min(DUNGEON_ROOM_TOGGLE_SLOT_COUNT) {
             toggle_palace_positions[index] = read_le_u16(ram, DUNG_TOGGLE_PALACE_POS + index * 2);
         }
 
@@ -2223,8 +2232,8 @@ impl DungeonRoomParserState {
         Self {
             star_switch_count_x2: read_le_u16(ram, DUNG_NUM_STAR_SHAPED_SWITCHES_LOCAL),
             star_switch_tilemap_positions,
-            toggle_floor_count_x2: read_le_u16(ram, DUNG_NUM_TOGGLE_FLOOR),
-            toggle_palace_count_x2: read_le_u16(ram, DUNG_NUM_TOGGLE_PALACE),
+            toggle_floor_count_x2,
+            toggle_palace_count_x2,
             toggle_floor_positions,
             toggle_palace_positions,
             floor_1_filler_tiles: read_le_u16(ram, FLOOR_1_FILLER_TILES),
@@ -2246,11 +2255,25 @@ impl DungeonRoomParserState {
         }
         write_le_u16(ram, DUNG_NUM_TOGGLE_FLOOR, self.toggle_floor_count_x2);
         write_le_u16(ram, DUNG_NUM_TOGGLE_PALACE, self.toggle_palace_count_x2);
-        for (index, &pos) in self.toggle_floor_positions.iter().enumerate() {
-            write_le_u16(ram, DUNG_TOGGLE_FLOOR_POS + index * 2, pos);
+        // Project only the live toggle slots — the rest of 0x6c0/0x6d0 is the mode-reused stair
+        // table owned by DungeonStairListsState; re-stamping stale toggle positions there clobbered
+        // a fresh stair-table entry (f633081).
+        for index in 0..usize::from(self.toggle_floor_count_x2 / 2).min(DUNGEON_ROOM_TOGGLE_SLOT_COUNT)
+        {
+            write_le_u16(
+                ram,
+                DUNG_TOGGLE_FLOOR_POS + index * 2,
+                self.toggle_floor_positions[index],
+            );
         }
-        for (index, &pos) in self.toggle_palace_positions.iter().enumerate() {
-            write_le_u16(ram, DUNG_TOGGLE_PALACE_POS + index * 2, pos);
+        for index in
+            0..usize::from(self.toggle_palace_count_x2 / 2).min(DUNGEON_ROOM_TOGGLE_SLOT_COUNT)
+        {
+            write_le_u16(
+                ram,
+                DUNG_TOGGLE_PALACE_POS + index * 2,
+                self.toggle_palace_positions[index],
+            );
         }
         write_le_u16(ram, FLOOR_1_FILLER_TILES, self.floor_1_filler_tiles);
         write_le_u16(ram, FLOOR_2_FILLER_TILES, self.floor_2_filler_tiles);
