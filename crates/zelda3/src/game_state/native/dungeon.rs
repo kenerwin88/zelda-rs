@@ -719,6 +719,10 @@ impl DungeonEnvironmentState {
         self.somaria_block_bg_check_flag = self.somaria_block_bg_check_flag.wrapping_add(1);
     }
 
+    fn clear_somaria_block_bg_check_flag(&mut self) {
+        self.somaria_block_bg_check_flag = 0;
+    }
+
     fn clear_orange_blue_barrier_state(&mut self) {
         self.orange_blue_barrier_state = 0;
     }
@@ -4777,6 +4781,11 @@ impl<'a> NativeDungeonEnvironmentBridgeMut<'a> {
 
     pub(crate) fn increment_somaria_block_bg_check_flag(&mut self) {
         self.state.increment_somaria_block_bg_check_flag();
+        self.sync();
+    }
+
+    pub(crate) fn clear_somaria_block_bg_check_flag(&mut self) {
+        self.state.clear_somaria_block_bg_check_flag();
         self.sync();
     }
 

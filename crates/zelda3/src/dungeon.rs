@@ -1237,6 +1237,12 @@ impl ZeldaState {
     pub(super) fn Dungeon_LoadRoom(&mut self) {
         self.Dungeon_LoadHeader();
         self.dungeon_load_room_reset_floor_velocity();
+        // C clears SOMARIA_BLOCK_BG_CHECK_FLAG (0x3f4) here at room load (dungeon.c). It is
+        // incremented per somaria-block tile during room draw, so without this reset the count
+        // accumulates across rooms (stuck high) instead of recounting. The increment is owned by
+        // DungeonEnvironmentState, so reset it on the same native.
+        self.dungeon_environment_mut()
+            .clear_somaria_block_bg_check_flag();
         self.dungeon_environment_mut()
             .clear_somaria_block_switch_counter();
         self.dungeon_room_load_mut()
