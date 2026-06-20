@@ -1428,7 +1428,6 @@ fn run_replay_save(args: &[String]) {
         || gpu_render_compare != 0
         || render_hash_dump_frame.is_some()
         || dump_frame_path.is_some()
-        || fingerprint_log.is_some()
     {
         Some(pollster::block_on(OffscreenRenderer::new(256, 224)))
     } else {
