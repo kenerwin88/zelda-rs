@@ -1504,37 +1504,48 @@ mod tests {
     }
 
     #[test]
-    fn native_dungeon_scratch_word_bridge_projects_native_state_over_stale_ram() {
-        let mut native_ram = vec![0; WRAM_SIZE];
-        write_le_u16(&mut native_ram, DUNGEON_WORK_R16, 0x0201);
-        let mut scratch = DungeonScratchWordState::load_from_ram(&native_ram);
+    fn native_dungeon_scratch_word_bridge_is_write_through_over_live_ram() {
+        // R16/R18 (0xc8-0xcb) are shared SNES bytes that other code writes directly
+        // (the 3bpp->4bpp gfx converter's DUNG_LINE_PTRS_ROW0 scratch, select-file R17).
+        // The scratch-word native is NOT bulk-projected each frame; the bridge re-reads
+        // RAM before mutating (every production access is a fresh ending_scratch_mut()),
+        // so byte/half-word setters preserve the live RAM half instead of re-stamping a
+        // stale frame-start word.
+        let mut scratch = DungeonScratchWordState::default();
+        let mut ram = vec![0; WRAM_SIZE];
+        // A direct RAM write to the shared bytes (e.g. the gfx converter), with the
+        // native left stale (default 0) to model a frame-start/persisted value.
+        write_le_u16(&mut ram, DUNGEON_WORK_R16, 0x0201);
+        write_le_u16(&mut ram, DUNGEON_WORK_R18, 0x0403);
 
-        let mut ram = vec![0xff; WRAM_SIZE];
-        {
-            let mut bridge = NativeDungeonScratchWordBridgeMut::new(&mut scratch, &mut ram);
-            assert_eq!(bridge.decrement_high(), 1);
-            bridge.set_ganon_door_bounce_countdown(0x0002);
-            assert_eq!(bridge.decrement_ganon_door_bounce_low(), 1);
-            bridge.clear_module_transition_counter();
-            bridge.set_minigame_previous_chest_choice(7);
-            bridge.set_liftable_tile_probe_position(0x1234, 0x5678);
-            bridge.clear_word();
-            bridge.set_word(0xabcd);
-            bridge.set_primary_word(0x1234);
-            bridge.set_secondary_word(0x5678);
-            bridge.clear_primary_word();
-            bridge.set_primary_low(2);
-            assert_eq!(bridge.decrement_primary_low(), 1);
-            assert_eq!(bridge.increment_secondary_low(), 0x79);
-        }
+        // Byte setter preserves the live RAM high byte (like C's `ram[R16] = v`) and
+        // leaves R18 untouched — it does NOT re-stamp the stale native (which is 0).
+        NativeDungeonScratchWordBridgeMut::new(&mut scratch, &mut ram).set_primary_low(0x80);
+        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R16), 0x0280);
+        assert_eq!(read_le_u16(&ram, ENDING_WORK_PRIMARY), 0x0280);
+        assert_eq!(scratch.primary_word(), 0x0280);
+        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R18), 0x0403);
 
-        assert_eq!(scratch.word(), 1);
-        assert_eq!(scratch.primary_word(), 1);
-        assert_eq!(scratch.secondary_word(), 0x5679);
-        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R16), 1);
-        assert_eq!(read_le_u16(&ram, ENDING_WORK_PRIMARY), 1);
-        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R18), 0x5679);
-        assert_eq!(read_le_u16(&ram, ENDING_WORK_SECONDARY), 0x5679);
+        // decrement_primary_low preserves the high byte.
+        let next =
+            NativeDungeonScratchWordBridgeMut::new(&mut scratch, &mut ram).decrement_primary_low();
+        assert_eq!(next, 0x7f);
+        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R16), 0x027f);
+
+        // increment_secondary_low preserves R18's high byte and leaves R16 alone.
+        let next =
+            NativeDungeonScratchWordBridgeMut::new(&mut scratch, &mut ram).increment_secondary_low();
+        assert_eq!(next, 0x04);
+        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R18), 0x0404);
+        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R16), 0x027f);
+
+        // Full-word setters overwrite the whole word.
+        NativeDungeonScratchWordBridgeMut::new(&mut scratch, &mut ram).set_primary_word(0x1234);
+        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R16), 0x1234);
+        assert_eq!(scratch.primary_word(), 0x1234);
+        NativeDungeonScratchWordBridgeMut::new(&mut scratch, &mut ram).set_secondary_word(0x5678);
+        assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R18), 0x5678);
+        assert_eq!(read_le_u16(&ram, ENDING_WORK_SECONDARY), 0x5678);
     }
 
     #[test]

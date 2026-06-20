@@ -225,7 +225,9 @@ impl DungeonState {
             };
         }
         check!(header);
-        check!(scratch_word);
+        // scratch_word (R16/R18) is write-through and shares its SNES bytes with code
+        // that writes RAM directly (gfx converter, select-file), so the persisted native
+        // legitimately lags RAM between bridge setters — not a coherence bug.
         check!(entrance_backup);
         check!(torch);
         check!(savegame_state);
@@ -250,7 +252,13 @@ impl DungeonState {
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.header.write_to_ram(ram);
-        self.scratch_word.write_to_ram(ram);
+        // NOTE: scratch_word (R16/R18, 0xc8-0xcb) is intentionally NOT bulk-projected
+        // here. Those bytes are written directly by code that shares them (the gfx
+        // converter's DUNG_LINE_PTRS_ROW0 scratch, select-file R17), so re-stamping the
+        // native every frame would clobber that live value (e.g. the ending credits at
+        // frame 1025036 and select-file at frame 1003). The scratch-word bridge is
+        // write-through: each setter re-reads RAM, mutates, and writes only its own
+        // bytes back (see NativeDungeonScratchWordBridgeMut).
         self.entrance_backup.write_to_ram(ram);
         self.torch.write_to_ram(ram);
         self.savegame_state.write_to_ram(ram);
@@ -3780,6 +3788,13 @@ pub(crate) struct NativeDungeonScratchWordBridgeMut<'a> {
 
 impl<'a> NativeDungeonScratchWordBridgeMut<'a> {
     pub(crate) fn new(scratch: &'a mut DungeonScratchWordState, ram: &'a mut [u8]) -> Self {
+        // R16/R18 (0xc8-0xcb) are shared SNES bytes that other code writes directly —
+        // notably the 3bpp->4bpp gfx converter, whose DUNG_LINE_PTRS_ROW0 (0xbf) scratch
+        // buffer overlaps them, and the select-file R17 clear. This native is NOT
+        // bulk-projected every frame (see DungeonState::write_to_ram), so re-read it from
+        // RAM before any mutation: byte/half-word setters then preserve the live RAM half
+        // (like C's `ram[R16]=v` byte store) instead of re-stamping a stale frame-start word.
+        *scratch = DungeonScratchWordState::load_from_ram(ram);
         Self { scratch, ram }
     }
 
