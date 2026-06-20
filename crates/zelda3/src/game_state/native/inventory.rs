@@ -167,7 +167,9 @@ impl InventoryItemsState {
     }
 
     pub(crate) fn cane_somaria(&self) -> u8 {
-        self.inventory_item(15)
+        // LINK_ITEM_CANE_SOMARIA = LINK_ITEM_BOW + 16 (0xf350). Index 15 (0xf34f) is
+        // LINK_ITEM_BOTTLE_INDEX, not an item — cane_byrna/cape/... already use 17/18/...
+        self.inventory_item(16)
     }
 
     pub(crate) fn cane_byrna(&self) -> u8 {
