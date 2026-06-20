@@ -11175,7 +11175,7 @@ impl ZeldaState {
         self.set_submodule(0);
         self.clear_bg_vram_load_mode();
         self.save_current_music_as_last();
-        if self.game_state.world.palette_theme.palette_swap_flag() != 0 {
+        if self.ram[crate::game_state::constants::PALETTE_SWAP_FLAG] != 0 {
             self.Palette_RevertTranslucencySwap();
         }
     }

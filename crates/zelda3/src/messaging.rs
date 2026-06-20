@@ -2624,7 +2624,7 @@ impl ZeldaState {
             }
         }
         let y = DUNGEON_MAP_FLOOR_Y_POSITIONS[usize::from(r3)].wrapping_sub(4);
-        let flags = if self.game_state.world.palette_theme.palette_swap_flag() != 0 {
+        let flags = if self.ram[crate::game_state::constants::PALETTE_SWAP_FLAG] != 0 {
             0x30
         } else {
             0x3e
