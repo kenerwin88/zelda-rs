@@ -556,7 +556,11 @@ impl DungeonEnvironmentState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[TURN_ON_OFF_WATER_CTR] = self.water_transition_counter;
+        // TURN_ON_OFF_WATER_CTR (0x424) is SNES byte-reused as DUNG_FLOOR_Y_OFFS (the moving
+        // floor's 16-bit y offset, owned by DungeonMovingFloorState). Projecting the stale
+        // water counter here re-stamped 0 over the accumulating floor offset in moving-floor
+        // rooms. Write it through in the setters instead and keep it out of the bulk
+        // projection (same write-through pattern as OamState's mode-reused fields).
         write_le_u16(ram, WATER_HDMA_WINDOW_Y_RADIUS, self.water_hdma_y_radius);
         write_le_u16(ram, WATER_HDMA_WINDOW_X_RADIUS, self.water_hdma_x_radius);
         write_le_u16(ram, WATER_HDMA_WINDOW_Y_TARGET, self.water_hdma_y_target);
@@ -4680,17 +4684,22 @@ impl<'a> NativeDungeonEnvironmentBridgeMut<'a> {
     pub(crate) fn set_water_transition_counter(&mut self, value: u8) {
         self.state.set_water_transition_counter(value);
         self.sync();
+        // Write-through: TURN_ON_OFF_WATER_CTR (0x424) is excluded from write_to_ram
+        // because it aliases the moving floor's y-offset. Write the owned byte directly.
+        self.ram[TURN_ON_OFF_WATER_CTR] = value;
     }
 
     pub(crate) fn increment_water_transition_counter(&mut self) -> u8 {
         let value = self.state.increment_water_transition_counter();
         self.sync();
+        self.ram[TURN_ON_OFF_WATER_CTR] = value;
         value
     }
 
     pub(crate) fn decrement_water_transition_counter(&mut self) -> u8 {
         let value = self.state.decrement_water_transition_counter();
         self.sync();
+        self.ram[TURN_ON_OFF_WATER_CTR] = value;
         value
     }
 
