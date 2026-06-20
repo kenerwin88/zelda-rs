@@ -570,7 +570,12 @@ impl ZeldaState {
             self.set_camera_x_coord_scroll_low(camera_x);
             self.set_camera_x_coord_scroll_hi(camera_x.wrapping_sub(2));
 
+            // C does `write_le_u16(LINK_DIRECTION_FACING, 2)` — a 16-bit store to 0x2f that also
+            // zeroes the high byte at 0x30 (= LINK_Y_VELOCITY, mode-reused). set_facing only writes
+            // the 0x2f byte, so clear LINK_Y_VELOCITY too to match (else a stale Link Y-velocity
+            // lingers through the special-area exit, f241475).
             self.follower_link_state_mut().set_facing(2);
+            self.follower_link_state_mut().set_y_velocity(0);
             let entrance_value = read_word_from_slice(&exit_normal_door, k * 2);
             let big_rock_starting_address = read_word_from_slice(&exit_fancy_door, k * 2);
             self.set_ow_entrance_value(entrance_value);
