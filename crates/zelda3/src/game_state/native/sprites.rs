@@ -6045,6 +6045,15 @@ impl<'a> NativeEtherOrbitBridgeMut<'a> {
     }
 
     pub(crate) fn set_swordbeam_temp(&mut self, x: u16, y: u16) {
+        // SWORDBEAM_TEMP aliases ETHER_ORBIT_X/Y, but the rest of EtherOrbitState — the
+        // angles at ETHER_ANGLE (0x15800) and radius at ETHER_RADIUS (0x15808) — is
+        // mode-reused with the sword-beam EFFECT_ANGLE_WORK (0x15800-0x15808) the caller
+        // (add_sword_beam) just wrote via the effect-angle-scratch bridge. A plain sync
+        // would re-stamp this state's stale frame-start ether angles/radius over that fresh
+        // sword-beam write. Reload from RAM first so the sync writes those overlapping bytes
+        // back unchanged and only the orbit x/y move (f372737; matches the old clone's raw
+        // SWORDBEAM_TEMP_X/Y store).
+        *self.orbit = EtherOrbitState::load_from_ram(self.ram);
         self.orbit.set_swordbeam_temp(x, y);
         self.sync();
     }
