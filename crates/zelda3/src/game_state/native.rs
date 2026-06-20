@@ -5080,6 +5080,9 @@ mod tests {
         expected.exit_overworld_tile_theme_index = 0;
         expected.exit_main_tile_theme_index = 0;
         expected.exit_aux_tile_theme_index = 0;
+        // PALETTE_SWAP_FLAG (0xabd) is a load-only mirror owned/projected by the
+        // follower; it intentionally does NOT round-trip through write_to_ram.
+        expected.palette_swap_flag = 0;
         assert_eq!(WorldPaletteThemeState::load_from_ram(&projected), expected);
     }
 

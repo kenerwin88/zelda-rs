@@ -959,7 +959,14 @@ impl WorldPaletteThemeState {
         ram[OVERWORLD_PALETTE_MODE] = self.overworld_palette_mode;
         ram[PALETTE_MAIN_INDOORS] = self.palette_main_indoors;
         ram[PALETTE_MAIN_INDOORS_COPY] = self.palette_main_indoors_copy;
-        ram[PALETTE_SWAP_FLAG] = self.palette_swap_flag;
+        // NOTE: PALETTE_SWAP_FLAG (0xabd) is the same SNES byte as
+        // FOLLOWER_PALETTE_SWAP_FLAG / PALETTE_SWAP_FLAG_TAGALONG and is owned and
+        // projected by the follower (`SpriteFollowerRuntimeState.palette_swap_flag`),
+        // which carries every setter (`set/clear_palette_swap_flag`) and reader
+        // (tagalong / player_oam / sprite draw). This struct keeps a load-only mirror
+        // (read-redirected callers go straight to RAM); projecting it here would
+        // re-stamp the stale frame-start value over the follower's mid-frame clear
+        // (e.g. the ending-sequence gfx reload at frame 1024969 clears 0xabd → 0).
         ram[PALETTE_SP0L] = self.palette_sp0l;
         ram[PALETTE_SP5L] = self.palette_sp5l;
         ram[PALETTE_SP6L] = self.palette_sp6l;
@@ -1095,6 +1102,9 @@ impl WorldPaletteThemeState {
     ) {
         self.overworld_palette_mode = ram_byte(ram, OVERWORLD_PALETTE_MODE);
         self.palette_main_indoors = ram_byte(ram, PALETTE_MAIN_INDOORS);
+        // Load-only mirror of the follower-owned PALETTE_SWAP_FLAG (see write_to_ram);
+        // re-read so the mirror tracks the follower's live value at world sync points.
+        self.palette_swap_flag = ram_byte(ram, PALETTE_SWAP_FLAG);
         self.palette_sp0l = ram_byte(ram, PALETTE_SP0L);
         self.palette_sp5l = ram_byte(ram, PALETTE_SP5L);
         self.palette_sp6l = ram_byte(ram, PALETTE_SP6L);
