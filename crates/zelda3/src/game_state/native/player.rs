@@ -3569,7 +3569,10 @@ impl FollowerLinkState {
         self.transforming = 0;
         self.bunny_state = 0;
         self.bunny_mirror = 0;
-        self.temp_bunny_timer = 0;
+        // C clears only the LOW byte here (ram[LINK_TIMER_TEMPBUNNY] = 0, a u8 store),
+        // leaving the high byte intact — so a 0x0100 temp-bunny timer stays 0x0100 and the
+        // curse continues. Zeroing the full u16 ended the bunny transformation a frame early.
+        self.temp_bunny_timer &= 0xff00;
         self.transform_poof_needed = 0;
         self.clear_pull_for_rupees_sprite_need();
         self.hookshot_grave_latch = 0;
@@ -6821,7 +6824,9 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.ram[PLAYER_RESET_ANCILLA_WORK_BYTE_24] = 0;
         self.ram[LINK_IS_BUNNY] = 0;
         self.ram[LINK_IS_BUNNY_MIRROR] = 0;
-        write_le_u16(self.ram, LINK_TIMER_TEMPBUNNY, 0);
+        // Single-byte store (low byte only), matching C — the high byte of the temp-bunny
+        // timer is preserved (see reset_properties_a_fields on the state).
+        self.ram[LINK_TIMER_TEMPBUNNY] = 0;
         self.ram[LINK_NEED_FOR_POOF_FOR_TRANSFORM] = 0;
         self.ram[IS_ARCHER_OR_SHOVEL_GAME] = 0;
         self.ram[LINK_NEED_FOR_PULLFORRUPEES_SPRITE] = 0;
