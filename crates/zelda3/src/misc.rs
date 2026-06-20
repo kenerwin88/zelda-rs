@@ -641,6 +641,9 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_close_victory_spin(&mut self) {
+        if self.trace_frame_matches(241475) {
+            eprintln!("[VSPIN-NEW] ssm_before={}", self.game_state.frame.subsubmodule);
+        }
         self.decrement_subsubmodule();
         if self.game_state.frame.subsubmodule != 0 {
             return;
