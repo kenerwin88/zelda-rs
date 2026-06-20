@@ -4884,6 +4884,14 @@ impl ZeldaState {
             let ty = (sprite_y + cos_val - 0x10) as u16;
             self.armos_knight_home_position_mut(i).set_position(tx, ty);
         }
+        // The puff homes are written into the overlord slot array via the armos-knight
+        // home bridge (raw RAM), which leaves the overlord native model stale. A later
+        // overlord setter's sync() projects the WHOLE overlord block (write_to_ram) and
+        // would re-stamp the stale home bytes over the fresh ones. Resync the native from
+        // RAM now so it re-projects the homes we just wrote, not last frame's.
+        self.game_state
+            .sprites
+            .reload_overlord_slots_from_ram(&self.ram);
         self.temp_counter_mut().set(13);
     }
 

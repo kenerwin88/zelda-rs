@@ -185,6 +185,10 @@ impl SpriteState {
         self.ancilla_slots = AncillaSlotsState::load_from_ram(ram);
     }
 
+    pub(crate) fn reload_overlord_slots_from_ram(&mut self, ram: &[u8]) {
+        self.overlord_slots = OverlordSlotsState::load_from_ram(ram);
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             system: SpriteSystemState::load_from_ram(ram),
