@@ -6,6 +6,7 @@ members = [
     "crates/platform",
     "crates/assets",
     "crates/renderer",
+    "crates/parity",
     "zelda3-bin",
 ]
 
