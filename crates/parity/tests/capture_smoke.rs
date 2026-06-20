@@ -21,4 +21,12 @@ fn capture_smoke() {
         serde_json::from_slice(&std::fs::read(gd.join("manifest.json")).unwrap()).unwrap();
     assert_eq!(man["frames"], 500);
     assert_eq!(man["block_size"], 8192);
+    assert!(
+        man["rom_sha256"].as_str().is_some_and(|s| !s.is_empty()),
+        "rom_sha256 must be a non-empty string"
+    );
+    assert!(
+        man["save_sha256"].as_str().is_some_and(|s| !s.is_empty()),
+        "save_sha256 must be a non-empty string"
+    );
 }

@@ -26,7 +26,11 @@ fn parse_frames(args: &[String]) -> u32 {
         return FULL_ROUTE_FRAMES;
     }
     if let Some(i) = args.iter().position(|a| a == "--frames") {
-        return args[i + 1].parse().expect("--frames N");
+        let Some(v) = args.get(i + 1) else {
+            eprintln!("--frames requires a value");
+            exit(2);
+        };
+        return v.parse().expect("--frames N");
     }
     3000
 }
@@ -39,7 +43,7 @@ fn cmd_capture(args: &[String]) {
         eprintln!("C oracle binary missing: {:?} (build: make -C {:?} zelda3)", p.c_root.join("zelda3"), p.c_root);
         exit(1);
     }
-    let tmp = p.cache_dir.join("capture.fp");
+    let tmp = p.cache_dir.join(format!("capture-{}.fp", std::process::id()));
     std::fs::create_dir_all(&p.cache_dir).unwrap();
     eprintln!("zparity capture: running C oracle over {frames} frames");
     let status = runner::c_capture_cmd(&p, frames, &tmp).status().expect("spawn C oracle");
