@@ -2893,7 +2893,17 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_RestoreStarTileChr(&mut self) {
-        let (xx, yy) = self.game_state.display.star_tile_restore_source_offsets();
+        // C reads raw ram[STAR_TILE_RESTORE_PHASE] (0x4bc). The native
+        // `star_tile_restore_source_offsets` reads the DisplayState star_tile_restore_phase
+        // model, which only tracks the overworld interpretation of 0x4bc — but this is a
+        // dungeon function and 0x4bc is mode-reused there (MOVING_WALL_TORCH_BLINK_PHASE), so
+        // the native field is stale (the projection is gated to overworld). Reading it picked
+        // the wrong star-tile gfx source half (f314953). Read raw ram like C.
+        let (xx, yy) = if self.ram[crate::game_state::constants::STAR_TILE_RESTORE_PHASE] != 0 {
+            (32usize, 0usize)
+        } else {
+            (0usize, 32usize)
+        };
         let src0 = 0xbdc0 + xx;
         let src1 = 0xbdc0 + yy;
         self.copy_graphics_message_rows(0, src0, src1, 32);
