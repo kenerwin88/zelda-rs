@@ -379,6 +379,14 @@ impl ZeldaState {
         self.set_overworld_tile_attribute_word(x + 64, ptr[1]);
         self.set_overworld_tile_attribute_word(x + 1, ptr[2]);
         self.set_overworld_tile_attribute_word(x + 65, ptr[3]);
+        // These writes hit the BG2 tilemap RAM directly (OVERWORLD_TILE_ATTR_BUFFER aliases
+        // DUNG_BG2) but bypass the live dungeon bg2 cache. Mirror the 2x2 block back so the
+        // frame-end bg2_tiles projection doesn't re-stamp the stale pre-change tiles (f309018).
+        let dst = crate::game_state::constants::nmi::OVERWORLD_TILE_ATTR_BUFFER + x * 2;
+        self.game_state
+            .dungeon
+            .room_tilemaps
+            .mirror_decoded_map32_from_ram(&self.ram, dst);
         self.dungeon_prep_overlay_dma_next_prep(0, r8);
     }
 
