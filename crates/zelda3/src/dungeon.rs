@@ -7109,6 +7109,11 @@ impl ZeldaState {
             self.set_submodule(12);
             self.set_subsubmodule(0);
             self.dungeon_moving_floor_mut().set_floor_y_offset_low(1);
+            // 0x424 is mode-reused: DUNG_FLOOR_Y_OFFS (written just above) AND TURN_ON_OFF_WATER_CTR.
+            // In RoomTag_WaterOn the byte is the water transition counter (C writes the single byte
+            // =1). Keep the water-counter native coherent too, or its DungeonEnvironmentState
+            // projection re-stamps the stale frame-start 0 over the floor-offset write (f606590).
+            self.dungeon_environment_mut().set_water_transition_counter(1);
             self.dungeon_header_mut().clear_header_tag(1);
             let save_bits = self.game_state.dungeon.savegame_state.savegame_state_bits() | 0x0800;
             self.dungeon_savegame_state_mut()
