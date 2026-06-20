@@ -6397,13 +6397,26 @@ impl ZeldaState {
     ) {
         let address = (OVERWORLD_SPRITE_WAS_LOADED + usize::from(block >> 3)) & 0x1ffff;
         self.ram[address] &= !loaded_mask;
-        if let Some(index) = address.checked_sub(OVERWORLD_SPRITE_WAS_LOADED) {
-            if index < crate::game_state::OVERWORLD_SPRITE_FLAG_COUNT {
+        let in_table = match address.checked_sub(OVERWORLD_SPRITE_WAS_LOADED) {
+            Some(index) if index < crate::game_state::OVERWORLD_SPRITE_FLAG_COUNT => {
                 self.game_state
                     .sprites
                     .overworld_sprite_loaded
                     .clear_loaded_mask(block, loaded_mask);
+                true
             }
+            _ => false,
+        };
+        // C parity quirk: for a large `block` (e.g. a killed dungeon sprite whose
+        // load block is near 0xffff) the wrapped address can spill OUT of the
+        // overworld-sprite-loaded table and land deep in low WRAM modeled by the
+        // live sprite slots (SPRITE_FLAGS4 at 0xf60 == OVERWORLD_SPRITE_WAS_LOADED +
+        // 0x1fe0 wrapped). The raw `&=` above already wrote that byte, but the
+        // sprite-slot native model didn't see it, so its bulk projection would
+        // re-stamp the stale value on a later slot's sync. Resync the live slots
+        // from RAM so the direct write sticks (matches the old clone's raw RAM).
+        if !in_table {
+            self.sprite_system_mut().reload_live_slots_from_ram();
         }
     }
 
