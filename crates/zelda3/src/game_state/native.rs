@@ -62,8 +62,8 @@ pub(crate) use effects::{
 #[cfg(test)]
 use effects::{BlastWallState, SkullWoodsFireState};
 pub(crate) use ending::{
-    EndingState, IntroActorRead, NativeAttractSceneBridgeMut, NativeEndingCreditBridgeMut,
-    NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut,
+    EndingState, IntroActorRead, IntroActorState, NativeAttractSceneBridgeMut,
+    NativeEndingCreditBridgeMut, NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut,
 };
 pub(crate) use frame::FrameState;
 pub(crate) use inventory::{

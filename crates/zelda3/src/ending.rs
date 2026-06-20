@@ -3102,6 +3102,13 @@ impl ZeldaState {
                 configured_intro_sprite_animation_start_delay();
         }
         self.attract_scene_mut().clear_intro_step_state_block();
+        // clear_intro_step_state_block fills ram[INTRO_STEP_INDEX..+0x70] (0x1e00-0x1e6f) to 0,
+        // which includes the intro actor slots (IS_INITED/SUBTYPE/STATE/X/Y at 0x1e10-0x1e4d), but
+        // only resyncs the attract-scene native (step index/timer/frame counter). The IntroActorState
+        // native still holds the previous scene's actors and would re-stamp the just-cleared slots,
+        // leaving NEW a scene out of phase with the old clone at the intro reset (f585167). Resync it.
+        self.game_state.ending.intro_actors =
+            crate::game_state::IntroActorState::load_from_ram(&self.ram);
         if self.rom_startup_timing() {
             for _ in 0..configured_intro_poly_bootstrap_steps() {
                 self.intro_run_step();
