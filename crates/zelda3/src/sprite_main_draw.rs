@@ -25673,18 +25673,20 @@ impl ZeldaState {
                                 .wrapping_mul(8),
                         ) & 0x3f,
                     ) + k * 0x40;
-                    let history = self.game_state.effects.sprite_histories.moldorm_history(i);
-                    let xlo = history
-                        .x_low()
+                    // C reads the lanmola trail from RAW ram; the native moldorm_history/
+                    // lanmola_segment_motion models only 128 slots but i = ... + k*0x40 reaches
+                    // 128..191 for k>=2, so native reads return 0. Read ram directly (f226254,
+                    // same class as the lanmola_draw trail reads at f220638).
+                    use crate::game_state::constants::{
+                        BEAMOS_LASER_HISTORY_X_HI, MOLDORM_HISTORY_X_LO, MOLDORM_HISTORY_Y_LO,
+                    };
+                    let hist_x_low = self.ram[MOLDORM_HISTORY_X_LO + i];
+                    let hist_y_low = self.ram[MOLDORM_HISTORY_Y_LO + i];
+                    let seg_z_offset = self.ram[BEAMOS_LASER_HISTORY_X_HI + i];
+                    let xlo = hist_x_low
                         .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low());
-                    let segment = self
-                        .game_state
-                        .effects
-                        .sprite_histories
-                        .lanmola_segment_motion(i);
-                    let ylo = history
-                        .y_low()
-                        .wrapping_sub(segment.z_offset())
+                    let ylo = hist_y_low
+                        .wrapping_sub(seg_z_offset)
                         .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low());
                     let mut info = SpriteSpawnInfo::default();
                     let j = self.sprite_spawn_dynamically(k, 0x00, &mut info);
