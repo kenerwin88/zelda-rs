@@ -2888,7 +2888,15 @@ impl ZeldaState {
     }
 
     pub(super) fn ResetStarTileGraphics(&mut self) {
+        // C does a single `ram[STAR_TILE_RESTORE_PHASE] = 0` (0x4bc). 0x4bc is mode-reused:
+        // DisplayState owns it as star_tile_restore_phase (projection gated to overworld) and
+        // dungeon room_effects owns it as moving_wall_torch_blink_phase (projection gated to
+        // indoors). clear_star_tile_restore_phase alone leaves ram[0x4bc] stale in a dungeon
+        // (its projection is gated off) — the residual then drove a wrong star-tile gfx restore
+        // (f317704). Clear BOTH owners so whichever projection is active writes 0, matching C.
         self.clear_star_tile_restore_phase();
+        self.dungeon_room_effects_mut()
+            .clear_moving_wall_torch_blink_phase();
         self.Dungeon_RestoreStarTileChr();
     }
 
