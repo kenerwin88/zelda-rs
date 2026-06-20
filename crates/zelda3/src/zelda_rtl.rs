@@ -6179,10 +6179,20 @@ impl ZeldaState {
     }
 
     pub(crate) fn arrghus_puff_home_position(&self, puff_slot: usize) -> BossHomePositionRead {
-        self.game_state
-            .sprites
-            .boss_home_positions
-            .arrghus_puff_home_position(puff_slot)
+        // arrghus_handle_puffs writes each puff's home into the overlord slot array
+        // (OVERLORD_X_LO+slot+7 .. by SNES byte reuse — the same bytes as the armos
+        // x_hi/y_hi/gen2/floor home array), and that is where C reads it from. Read it
+        // from RAM directly — NOT from the persisted `boss_home_positions` native, which
+        // production never repopulates mid-frame (only tests drive the `_mut` bridge), so
+        // it would return a stale value. Mirrors armos_knight_home_position.
+        use crate::game_state::constants::{OVERLORD_GEN1, OVERLORD_GEN3, OVERLORD_X_LO, OVERLORD_Y_LO};
+        let s = puff_slot + 7;
+        BossHomePositionRead::from_xy_bytes(
+            self.ram[OVERLORD_X_LO + s],
+            self.ram[OVERLORD_Y_LO + s],
+            self.ram[OVERLORD_GEN1 + s],
+            self.ram[OVERLORD_GEN3 + s],
+        )
     }
 
     pub(crate) fn armos_knight_home_position(&self, slot: usize) -> BossHomePositionRead {

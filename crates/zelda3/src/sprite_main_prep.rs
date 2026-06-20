@@ -4832,18 +4832,22 @@ impl ZeldaState {
             -5, -6, -6, -5, -4, -3, -2, -1,
         ];
 
+        // The orbit-phase accumulator is a 16-bit value at OVERLORD_X_LO that the C
+        // reads/writes raw, spanning overlord slots 0 and 1's x_low bytes (NOT slot 0's
+        // packed x_low|x_high). Use the adjacent-x-low-word accessor, exactly like
+        // armos_coordinator_rotate, so we read/write the same bytes the C does.
         let base = self
             .game_state
             .sprites
             .overlord_slots
             .slot(0)
-            .x()
+            .adjacent_x_low_word()
             .wrapping_add(self.game_state.sprites.overlord_slots.slot(4).x_low() as u16);
         self.game_state
             .sprites
             .overlord_slots
             .slot_mut(&mut self.ram, 0)
-            .set_x(base);
+            .set_adjacent_x_low_word(base);
 
         if self.game_state.frame.frame_counter & 3 == 0 {
             self.sprite_slot_mut(k).increment_a();
