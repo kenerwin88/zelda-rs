@@ -2759,7 +2759,14 @@ impl ZeldaState {
             .water_hdma_window
             .window_y()
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
-        let y_radius = self.game_state.display.water_hdma_window.window_y_radius();
+        // WATER_HDMA_WINDOW_Y_RADIUS (0x684) is dual-modeled (DisplayState.water_hdma_window vs
+        // DungeonEnvironmentState.water_hdma_y_radius written by the swamp/flood scene); the
+        // DisplayState model is stale during the swamp scene, leaving the spotlight a scanline off
+        // (f606748). Read the live RAM byte both scenes write, like the old clone.
+        let y_radius = crate::types::read_le_u16(
+            &self.ram,
+            crate::game_state::constants::WATER_HDMA_WINDOW_Y_RADIUS,
+        );
         self.set_spotlight_y_lower(r10.wrapping_sub(y_radius));
         self.set_spotlight_y_upper(r10.wrapping_add(y_radius));
         self.AdjustWaterHDMAWindow_X(r10);
