@@ -192,19 +192,42 @@ fn ww_enabled_hit(offset: usize, len: usize) -> bool {
     wf == u32::MAX || wf == WW_CUR_FRAME.load(Ordering::Relaxed)
 }
 
+/// When `ZELDA3_WW_BACKTRACE=1`, return a full call-stack suffix to append to the
+/// `[WW]` line — the ENTIRE caller chain in one run, so you never have to mark
+/// `#[track_caller]` and rebuild per stack level. (Build with `RUSTFLAGS="-C
+/// debuginfo=2"` for file:line + inlined frames; plain release shows function names.)
+#[cold]
+fn ww_backtrace_suffix() -> String {
+    static BT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+    let mut s = BT.load(Ordering::Relaxed);
+    if s == 0 {
+        s = if std::env::var("ZELDA3_WW_BACKTRACE").is_ok() { 2 } else { 1 };
+        BT.store(s, Ordering::Relaxed);
+    }
+    if s == 2 {
+        format!(
+            "\n--- WW backtrace ---\n{}--- end WW backtrace ---",
+            std::backtrace::Backtrace::force_capture()
+        )
+    } else {
+        String::new()
+    }
+}
+
 /// Call from any non-write_le_u16 write path (slice copies, byte writes) to report
 /// hits on the watched address.
 #[track_caller]
 pub fn ww_check(offset: usize, len: usize, descr: &str, value: u32) {
     if ww_enabled_hit(offset, len) {
         eprintln!(
-            "[WW] f={} {} off=0x{:05x} len={} val=0x{:x} caller={}",
+            "[WW] f={} {} off=0x{:05x} len={} val=0x{:x} caller={}{}",
             WW_CUR_FRAME.load(Ordering::Relaxed),
             descr,
             offset,
             len,
             value,
-            std::panic::Location::caller()
+            std::panic::Location::caller(),
+            ww_backtrace_suffix(),
         );
     }
 }
@@ -213,11 +236,12 @@ pub fn ww_check(offset: usize, len: usize, descr: &str, value: u32) {
 pub fn write_le_u16(bytes: &mut [u8], offset: usize, value: u16) {
     if ww_enabled_hit(offset, 2) {
         eprintln!(
-            "[WW] f={} write_le_u16 off=0x{:05x} val=0x{:04x} caller={}",
+            "[WW] f={} write_le_u16 off=0x{:05x} val=0x{:04x} caller={}{}",
             WW_CUR_FRAME.load(Ordering::Relaxed),
             offset,
             value,
-            std::panic::Location::caller()
+            std::panic::Location::caller(),
+            ww_backtrace_suffix(),
         );
     }
     let [lo, hi] = value.to_le_bytes();
