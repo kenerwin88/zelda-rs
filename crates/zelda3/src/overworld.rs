@@ -2977,6 +2977,15 @@ impl ZeldaState {
         self.memorized_tile_mut().clear_count();
         self.restore_spexit_area_index();
         self.restore_spexit_layer_masks();
+        // TM_COPY(0x1c)/TS_COPY(0x1d) are dual-owned: world_transient models them as the
+        // `tilemap_layer_copy` u16 (restored above), but DisplayState ALSO models TS_COPY as
+        // `sub_screen_layers` (and TM_COPY as `main_screen_layers`) and re-stamps them via its
+        // master projection. Without syncing DisplayState here, its stale sub_screen_layers
+        // clobbers the restored TS_COPY at frame end (0x1d 0x00->0x01 at f273590). Keep both
+        // owners coherent, matching C's single ram[TM_COPY] copy.
+        let restored_layers = self.game_state.world.transient.tilemap_layer_copy;
+        self.set_main_screen_layers(restored_layers as u8);
+        self.set_sub_screen_layers((restored_layers >> 8) as u8);
 
         self.restore_special_exit_bg2_scroll_to_all_layers();
 
