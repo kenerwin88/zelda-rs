@@ -2564,11 +2564,15 @@ impl ZeldaState {
                 self.write_vram_upload_absolute_word(dst, r16.wrapping_add(0x19).swap_bytes());
                 self.write_vram_upload_absolute_word(dst + 2, 0x0500);
                 let palace = ATTRIBUTION_PALACE_ORDER[which_idx];
-                let mut deaths = self
-                    .game_state
-                    .inventory
-                    .save_progress
-                    .death_count_for_palace(palace);
+                // C reads the death count from RAM directly (DEATHS_PER_PALACE). The
+                // native save_progress.dungeon_info is a 0x500-byte snapshot of the save
+                // region that is NOT bulk-projected each frame, so it can lag a death
+                // increment — reading it here showed a digit one off (frame 1070894+,
+                // final credits). Read RAM live to match C.
+                let mut deaths = crate::types::read_le_u16(
+                    &self.ram,
+                    crate::game_state::constants::DEATHS_PER_PALACE + palace * 2,
+                );
                 if deaths >= 1000 {
                     deaths = 999;
                 }
