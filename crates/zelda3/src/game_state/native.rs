@@ -875,6 +875,14 @@ mod tests {
 
         let mut projected = vec![0; WRAM_SIZE];
         oam.write_to_ram(&mut projected);
+        // OAM_PRIORITY_VALUE is write-through (excluded from write_to_ram, mode-reused with the
+        // attract-scene flag), so the priority setters own its RAM byte. Project it explicitly the
+        // way they do before round-tripping.
+        crate::types::write_le_u16(
+            &mut projected,
+            crate::game_state::constants::OAM_PRIORITY_VALUE,
+            oam.priority_word(),
+        );
         assert_eq!(OamState::load_from_ram(&projected), oam);
     }
 

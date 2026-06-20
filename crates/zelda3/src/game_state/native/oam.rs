@@ -82,7 +82,10 @@ impl OamState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, OAM_PRIORITY_VALUE, self.priority_value);
+        // OAM_PRIORITY_VALUE (0x64) is NOT bulk-projected here: it is mode-reused (gameplay OAM
+        // priority vs an attract-scene flag in the credits/attract demo) and is written through by
+        // the priority setters instead. Bulk-projecting it re-stamped the stale gameplay 0x2000
+        // over the attract code's cleared flag on every unrelated OAM setter sync (f586119).
         write_le_u16(ram, OAM_CUR_PTR, self.current_pointer);
         write_le_u16(ram, OAM_EXT_CUR_PTR, self.current_extended_pointer);
         ram[SORT_SPRITES_SETTING] = self.sprite_sorting_setting;
@@ -318,7 +321,11 @@ impl<'a> NativeOamStateBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, OamState::load_from_ram(self.ram));
+        let mut from_ram = OamState::load_from_ram(self.ram);
+        // OAM_PRIORITY_VALUE is write-through (see write_to_ram) and mode-reused, so the model may
+        // legitimately differ from RAM after a raw attract-scene clear; ignore it in the assert.
+        from_ram.priority_value = self.state.priority_value;
+        debug_assert_eq!(*self.state, from_ram);
     }
 
     fn sync(&mut self) {
@@ -326,18 +333,27 @@ impl<'a> NativeOamStateBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
+    /// Write the mode-reused OAM_PRIORITY_VALUE through to RAM (it is excluded from the bulk
+    /// projection, so the setters own its RAM byte directly).
+    fn write_priority_through(&mut self) {
+        write_le_u16(self.ram, OAM_PRIORITY_VALUE, self.state.priority_word());
+    }
+
     pub(crate) fn set_priority_word(&mut self, value: u16) {
         self.state.set_priority_word(value);
+        self.write_priority_through();
         self.sync();
     }
 
     pub(crate) fn subtract_priority_word(&mut self, value: u16) {
         self.state.subtract_priority_word(value);
+        self.write_priority_through();
         self.sync();
     }
 
     pub(crate) fn set_priority_high(&mut self, value: u8) {
         self.state.set_priority_high(value);
+        self.write_priority_through();
         self.sync();
     }
 
