@@ -7093,6 +7093,23 @@ impl ZeldaState {
         self.set_sound_effect_2(27);
         self.dungeon_room_effects_mut()
             .set_crush_wall_progress_low(1);
+        // C writes the blast-wall direction/center into the MESSAGING_BUF_DUNGEON region
+        // (0x1c/0x1a/0x18 = BLAST_WALL_DIRECTION/CENTER_X/CENTER_Y) raw at trigger time, and
+        // ancilla_add_blast_wall reads them back via the entrance-effects native the same
+        // frame. The dungeon room-effects native gates its projection of those bytes on the
+        // wall being open (it is not yet), so the direction/center never reached RAM and the
+        // read picked up the stale gfx-staging-buffer leftover. Write them through to RAM here
+        // and resync the entrance-effects native that owns the read path.
+        crate::types::write_le_u16(&mut self.ram, MESSAGING_BUF_DUNGEON + 0x18, y);
+        crate::types::write_le_u16(&mut self.ram, MESSAGING_BUF_DUNGEON + 0x1a, x);
+        crate::types::write_le_u16(
+            &mut self.ram,
+            MESSAGING_BUF_DUNGEON + 0x1c,
+            u16::from(BLAST_WALL_MESSAGE_DIRECTION_BY_QUADRANT[i as usize]),
+        );
+        self.game_state
+            .effects
+            .reload_entrance_effects_from_ram(&self.ram);
         self.ancilla_add_blast_wall();
     }
 

@@ -3696,6 +3696,10 @@ impl ZeldaState {
 
     pub(crate) fn set_core_update_disable_flag_word(&mut self, value: u16) {
         self.mutate_display_core(|display| display.set_core_update_disable_flag_word(value));
+        // C writes NMI_DISABLE_CORE_UPDATES as a 16-bit word here (the blast-wall clear sets
+        // it to 0xffff). The display native models only the low byte, so write the high byte
+        // (0x711) through to RAM directly; no native owns it, so nothing re-stamps it.
+        self.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES + 1] = (value >> 8) as u8;
     }
 
     pub(crate) fn clear_core_update_disable_flag(&mut self) {

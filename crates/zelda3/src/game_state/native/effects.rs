@@ -96,6 +96,10 @@ impl EffectState {
         self.entrance_effects.write_to_ram(ram);
         self.digging_game_prize.write_to_ram(ram);
     }
+
+    pub(crate) fn reload_entrance_effects_from_ram(&mut self, ram: &[u8]) {
+        self.entrance_effects = EntranceEffectState::load_from_ram(ram);
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
