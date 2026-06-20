@@ -97,14 +97,10 @@ impl OamState {
         );
         ram[VALUE_COMPUTED_FOR_PLAYER_OAM] = self.player_oam_computed_value;
         ram[TURTLE_ROCK_OAM_PRIORITY_FLAG] = self.turtle_rock_priority_flag;
-        for region in 0..OAM_REGION_COUNT {
-            write_le_u16(ram, OAM_REGION_BASE + region * 2, self.region_base[region]);
-            write_le_u16(
-                ram,
-                OAM_REGION_ALLOC + region * 2,
-                self.region_alloc[region],
-            );
-        }
+        // OAM_REGION_BASE/OAM_REGION_ALLOC (0xfe0/0xfec) are NOT bulk-projected: like
+        // OAM_PRIORITY_VALUE they are mode-reused (sprite-OAM region table vs cleared in the
+        // attract/credits/file-select scene) and written through by their setters. Bulk-projecting
+        // them re-stamped the stale frame-start region table over the file-select clear (f586121).
         ram[OAM_BUF..OAM_BUF + self.shadow_entries.len()].copy_from_slice(&self.shadow_entries);
         ram[EXTENDED_OAM..EXTENDED_OAM + self.packed_extended.len()]
             .copy_from_slice(&self.packed_extended);
@@ -322,9 +318,12 @@ impl<'a> NativeOamStateBridgeMut<'a> {
 
     fn debug_assert_matches_ram(&self) {
         let mut from_ram = OamState::load_from_ram(self.ram);
-        // OAM_PRIORITY_VALUE is write-through (see write_to_ram) and mode-reused, so the model may
-        // legitimately differ from RAM after a raw attract-scene clear; ignore it in the assert.
+        // OAM_PRIORITY_VALUE / OAM_REGION_BASE / OAM_REGION_ALLOC are write-through (see
+        // write_to_ram) and mode-reused, so the model may legitimately differ from RAM after a raw
+        // attract-scene clear; ignore them in the assert.
         from_ram.priority_value = self.state.priority_value;
+        from_ram.region_base = self.state.region_base;
+        from_ram.region_alloc = self.state.region_alloc;
         debug_assert_eq!(*self.state, from_ram);
     }
 
@@ -593,6 +592,7 @@ impl<'a> NativeOamStateBridgeMut<'a> {
             return;
         };
         *entry = value;
+        write_le_u16(self.ram, OAM_REGION_BASE + region * 2, value);
         self.sync();
     }
 
@@ -601,6 +601,7 @@ impl<'a> NativeOamStateBridgeMut<'a> {
             return;
         };
         *entry = value;
+        write_le_u16(self.ram, OAM_REGION_ALLOC + region * 2, value);
         self.sync();
     }
 }
