@@ -2618,6 +2618,13 @@ impl DungeonRoomEffectsState {
         self.blast_wall_y_open = 1;
     }
 
+    fn clear_blast_wall_state(&mut self) {
+        self.blast_wall_x_open = 0;
+        self.blast_wall_y_open = 0;
+        self.crush_wall_progress = 0;
+        self.blast_wall_door_index_x2 = 0;
+    }
+
     fn set_crush_wall_progress(&mut self, value: u16) {
         self.crush_wall_progress = value;
     }
@@ -5092,6 +5099,11 @@ impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
 
     pub(crate) fn mark_blast_wall_y_open(&mut self) {
         self.state.mark_blast_wall_y_open();
+        self.sync();
+    }
+
+    pub(crate) fn clear_blast_wall_state(&mut self) {
+        self.state.clear_blast_wall_state();
         self.sync();
     }
 

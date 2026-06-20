@@ -1255,6 +1255,14 @@ impl ZeldaState {
             self.dungeon_room_parser_mut()
                 .clear_room_parser_words(&[offset]);
         }
+        // The clear loop zeroes the blast-wall flag/progress RAM bytes (0x452 FLAG_X,
+        // 0x453 FLAG_Y, 0x454 CRUSH_WALL_PROGRESS, 0x456 CRUSH_WALL_DOOR_INDEX_X2) but
+        // clear_room_parser_words only touches RAM + the room parser, leaving the
+        // DungeonRoomEffectsState native (blast_wall_x/y_open, crush_wall_progress,
+        // door_index) stale from a just-opened blast wall — it would re-stamp FLAG_Y=1
+        // back over the cleared RAM. Reset the native too (same stale-native-field hazard
+        // as misc_object_index / cur_door_idx below).
+        self.dungeon_room_effects_mut().clear_blast_wall_state();
         self.dungeon_room_doors_mut().clear_invisible_door_marker();
         self.dungeon_torch_mut().clear_timers();
         self.dungeon_object_tracking_mut()
