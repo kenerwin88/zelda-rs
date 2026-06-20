@@ -9174,6 +9174,12 @@ impl ZeldaState {
 
     fn clear_poly_thread_work_area(&mut self) {
         SystemWorkArea::clear_poly_thread_work_area(&mut self.ram);
+        // The clear zeros the poly thread work area (0x1f00-0x1fff) directly in RAM, but the
+        // PolyState native model (num_vertices at 0x1f3f, projected vertices, face coords, raster
+        // edges) still holds the previous polyhedron's values. Without resyncing, a stale poly
+        // field re-stamps RAM (e.g. num_vertices reverts the just-cleared 0x1f3f), leaving the
+        // poly scratch a frame out of phase with the old clone (f465536).
+        self.game_state.poly = crate::game_state::PolyState::load_from_ram(&self.ram);
     }
 
     fn write_poly_thread_init_bytes(&mut self) {
