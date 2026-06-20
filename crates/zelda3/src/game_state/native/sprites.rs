@@ -1709,11 +1709,23 @@ impl Default for AncillaSlotsState {
 /// mid-frame write (f358784).
 const ANCILLA_G_SLOT9_HOOKSHOT_EFFECT: usize = ANCILLA_G + (ANCILLA_SLOT_COUNT - 1);
 
+/// ANCILLA_R (0x3ea) is only a 5-slot array in the C (ancilla_arr_r[5], bounded below by
+/// LINK_SOMETHING_WITH_HOOKSHOT 0x3e9 and above by LINK_FORCE_HOLD_SWORD_UP 0x3ef). Slots 5-9
+/// (0x3ef-0x3f3) are FOREIGN Link/game vars — LINK_FORCE_HOLD_SWORD_UP, FLUTE_COUNTDOWN,
+/// MOVING_FLOOR_BG_CHECK_FLAGS, and LINK_ON_CONVEYOR_BELT (0x3f3 == ANCILLA_R+9). Projecting our
+/// stale R[5..9] over them re-stamps mid-frame writes (f843633: the spin-charge ancilla in slot 9
+/// re-stamped 0x3f3 with the stale conveyor value after link-main cleared it). Same overlap class
+/// as ANCILLA_G[9] (f358784).
+const ANCILLA_R_REAL_SLOT_COUNT: usize = 5;
+fn is_ancilla_r_overflow(offset: usize) -> bool {
+    (ANCILLA_R + ANCILLA_R_REAL_SLOT_COUNT..ANCILLA_R + ANCILLA_SLOT_COUNT).contains(&offset)
+}
+
 impl AncillaSlotsState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut state = Self::default();
         for offset in Self::field_offsets() {
-            if offset == ANCILLA_G_SLOT9_HOOKSHOT_EFFECT {
+            if offset == ANCILLA_G_SLOT9_HOOKSHOT_EFFECT || is_ancilla_r_overflow(offset) {
                 continue;
             }
             let index = Self::work_index(offset);
@@ -1724,7 +1736,7 @@ impl AncillaSlotsState {
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         for offset in Self::field_offsets() {
-            if offset == ANCILLA_G_SLOT9_HOOKSHOT_EFFECT {
+            if offset == ANCILLA_G_SLOT9_HOOKSHOT_EFFECT || is_ancilla_r_overflow(offset) {
                 continue;
             }
             ram[offset] = self.byte_at(offset);
@@ -2071,7 +2083,7 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
             let offset = base + self.slot;
             // ANCILLA_G slot 9 (0x39d) overlaps GAME_OVER_LETTER_CURSOR / the hookshot effect
             // index, owned by messaging — projecting our stale g[9] re-stamps it (f358784).
-            if offset == ANCILLA_G_SLOT9_HOOKSHOT_EFFECT {
+            if offset == ANCILLA_G_SLOT9_HOOKSHOT_EFFECT || is_ancilla_r_overflow(offset) {
                 continue;
             }
             self.ram[offset] = self.state.byte_at(offset);
@@ -2082,7 +2094,7 @@ impl<'a> NativeAncillaSlotBridgeMut<'a> {
     fn debug_assert_matches_ram(&self) {
         for base in ANCILLA_FIELD_BASES.iter().copied() {
             let offset = base + self.slot;
-            if offset == ANCILLA_G_SLOT9_HOOKSHOT_EFFECT {
+            if offset == ANCILLA_G_SLOT9_HOOKSHOT_EFFECT || is_ancilla_r_overflow(offset) {
                 continue;
             }
             debug_assert_eq!(self.state.byte_at(offset), self.ram[offset]);
