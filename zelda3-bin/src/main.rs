@@ -1238,7 +1238,7 @@ fn run_replay_save(args: &[String]) {
         (Some(rom), Some(replay)) => (rom, replay),
         _ => {
             eprintln!(
-                "usage: zelda3 --replay-save <path-to-rom.sfc> <replay.sav> [frames] [--dump-frame <out.png>] [--render-hash-log <stride>] [--audio-trace-log <stride>] [--gpu-render-compare <stride>] [--gpu-render-compare-quiet] [--render-hash-dump-frame <frame> <out.png>] [--input-script <path>] [--stop-replay-after-load] [--save-state <checkpoint.sav>] [--load-state <checkpoint.sav>]"
+                "usage: zelda3 --replay-save <path-to-rom.sfc> <replay.sav> [frames] [--dump-frame <out.png>] [--render-hash-log <stride>] [--audio-trace-log <stride>] [--gpu-render-compare <stride>] [--gpu-render-compare-quiet] [--render-hash-dump-frame <frame> <out.png>] [--input-script <path>] [--stop-replay-after-load] [--save-state <checkpoint.sav>] [--load-state <checkpoint.sav>] [--fingerprint-log <path>]"
             );
             process::exit(2);
         }
@@ -1247,6 +1247,7 @@ fn run_replay_save(args: &[String]) {
     let mut dump_frame_path = None::<PathBuf>;
     let mut render_hash_log = 0u32;
     let mut audio_trace_log = 0u32;
+    let mut fingerprint_log: Option<PathBuf> = None;
     let mut gpu_render_compare = 0u32;
     let mut gpu_render_compare_quiet = false;
     let mut gpu_render_compare_count = 0u32;
@@ -1372,6 +1373,14 @@ fn run_replay_save(args: &[String]) {
                 stop_replay_after_load = true;
                 i += 1;
             }
+            "--fingerprint-log" => {
+                let Some(path) = args.get(i + 1) else {
+                    eprintln!("--fingerprint-log requires a path");
+                    process::exit(2);
+                };
+                fingerprint_log = Some(PathBuf::from(path));
+                i += 2;
+            }
             flag => {
                 eprintln!("unknown --replay-save option: {flag}");
                 process::exit(2);
@@ -1401,13 +1410,13 @@ fn run_replay_save(args: &[String]) {
 
     let mut frames = game.state_recorder.replay_frame_counter;
     let scripted_playback = stop_replay_after_load || !input_script.rules.is_empty();
-    let mut audio_trace_buffer = if audio_trace_log != 0 {
+    let mut audio_trace_buffer = if audio_trace_log != 0 || fingerprint_log.is_some() {
         Some(vec![0i16; 735 * 2])
     } else {
         None
     };
     let mut render_hash_frame =
-        if render_hash_log != 0 || gpu_render_compare != 0 || render_hash_dump_frame.is_some() {
+        if render_hash_log != 0 || gpu_render_compare != 0 || render_hash_dump_frame.is_some() || fingerprint_log.is_some() {
             Some(vec![0u8; 256 * 224 * 4])
         } else {
             None
@@ -1419,10 +1428,21 @@ fn run_replay_save(args: &[String]) {
         || gpu_render_compare != 0
         || render_hash_dump_frame.is_some()
         || dump_frame_path.is_some()
+        || fingerprint_log.is_some()
     {
         Some(pollster::block_on(OffscreenRenderer::new(256, 224)))
     } else {
         None
+    };
+    let mut fingerprint_writer = match fingerprint_log.as_deref() {
+        Some(p) => {
+            let f = std::fs::File::create(p).unwrap_or_else(|e| {
+                eprintln!("failed to create fingerprint log {p:?}: {e}");
+                process::exit(2);
+            });
+            Some(std::io::BufWriter::new(f))
+        }
+        None => None,
     };
     while frames < max_frames && (scripted_playback || game.state_recorder.replay_mode) {
         let pre_frame_game = game.clone();
@@ -1436,12 +1456,24 @@ fn run_replay_save(args: &[String]) {
             process::exit(101);
         }
         frames = frames.wrapping_add(1);
+        let mut fp_audio_leaf: u32 = 0;
         if let Some(audio) = audio_trace_buffer.as_mut() {
-            let dsp_pre_hash = game.zelda_audio_dsp_hash();
-            let dsp_writes = game.zelda_render_audio_trace_dsp(audio, 735, 2);
+            let dsp_pre = game.zelda_audio_dsp_hash();
+            let writes = game.zelda_render_audio_trace_dsp(audio, 735, 2);
             game.zelda_discard_unused_audio_frames();
-            if frames % audio_trace_log == 0 {
-                print_replay_audio_trace(frames, &game, audio, 735, 2, dsp_pre_hash, &dsp_writes);
+            if fingerprint_log.is_some() {
+                let dsp_post = game.zelda_audio_dsp_hash();
+                fp_audio_leaf = fingerprint_audio_hash(
+                    replay_checksum_samples(audio),
+                    dsp_pre,
+                    dsp_post,
+                    writes.len() as u32,
+                    replay_checksum_dsp_writes(&writes),
+                    replay_checksum_dsp_write_values(&writes),
+                );
+            }
+            if audio_trace_log != 0 && frames % audio_trace_log == 0 {
+                print_replay_audio_trace(frames, &game, audio, 735, 2, dsp_pre, &writes);
             }
         }
         let should_log_render_hash = render_hash_log != 0 && frames % render_hash_log == 0;
@@ -3136,6 +3168,24 @@ fn run_replay_save(args: &[String]) {
                 );
             }
         }
+        if let Some(w) = fingerprint_writer.as_mut() {
+            use std::io::Write;
+            let render = {
+                let frame = render_hash_frame.as_mut().expect("render frame allocated");
+                draw_play_ppu_frame(&mut game, frame, 256 * 4, PpuRenderFlags::empty());
+                render_frame_rgb_hash_bgra(frame)
+            };
+            let vram_bytes: Vec<u8> = game.ppu.vram.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let fp = parity::FrameFingerprint::compute(
+                frames, &game.ram, &vram_bytes, &game.sram, render, fp_audio_leaf,
+            );
+            let _ = w.write_all(&fp.to_bytes());
+        }
+    }
+
+    if let Some(mut w) = fingerprint_writer.take() {
+        use std::io::Write;
+        let _ = w.flush();
     }
 
     if let Some(path) = save_state_path.as_deref() {
@@ -6881,6 +6931,26 @@ fn render_frame_rgb_hash_rgba(frame: &[u8]) -> u32 {
         hash = (hash ^ u32::from(pixel[2])).wrapping_mul(16777619); // B
     }
     hash
+}
+
+/// Per-frame audio leaf hash: folds the same DSP/sample quantities the audio
+/// trace prints, into one u32. Mirrored exactly in C (FingerprintAudioHash).
+fn fingerprint_audio_hash(
+    sample_checksum: u32,
+    dsp_pre: u32,
+    dsp_post: u32,
+    dsp_write_count: u32,
+    dsp_write_hash: u32,
+    dsp_write_values_hash: u32,
+) -> u32 {
+    parity::fnv1a_u32s(&[
+        sample_checksum,
+        dsp_pre,
+        dsp_post,
+        dsp_write_count,
+        dsp_write_hash,
+        dsp_write_values_hash,
+    ])
 }
 
 fn render_frame_rgb_hash_bgra(frame: &[u8]) -> u32 {
