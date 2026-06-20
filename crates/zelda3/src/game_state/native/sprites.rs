@@ -176,6 +176,15 @@ pub(crate) struct SpriteState {
 }
 
 impl SpriteState {
+    /// Resync the ancilla slot models from RAM. Used after code writes WRAM that the
+    /// ancilla model also covers but doesn't go through the ancilla bridge — e.g. the
+    /// boomerang temp coords (BOOMERANG_TEMP_X/Y at 0x399-0x39c) alias ANCILLA_G[5..9],
+    /// so writing them leaves the ancilla model stale and its bulk projection would
+    /// re-stamp the frame-start value over the fresh temp write (f370034).
+    pub(crate) fn reload_ancilla_slots_from_ram(&mut self, ram: &[u8]) {
+        self.ancilla_slots = AncillaSlotsState::load_from_ram(ram);
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             system: SpriteSystemState::load_from_ram(ram),

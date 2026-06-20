@@ -2898,6 +2898,12 @@ impl ZeldaState {
         let temp_y = self.ancilla_get_y(k);
         self.minigame_state_mut().set_boomerang_temp_x(temp_x);
         self.minigame_state_mut().set_boomerang_temp_y(temp_y);
+        // BOOMERANG_TEMP_X/Y (0x399-0x39c) alias ANCILLA_G[5..9]; the writes above bypassed
+        // the ancilla model, so resync it or a later ancilla slot's sync re-stamps the stale
+        // frame-start value over the temp coords (f370034).
+        self.game_state
+            .sprites
+            .reload_ancilla_slots_from_ram(&self.ram);
         if let Some(k) = self.ancilla_add_ancilla(6, 1) {
             {
                 let mut wall_clink = self
