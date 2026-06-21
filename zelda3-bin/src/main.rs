@@ -1415,6 +1415,12 @@ fn run_replay_save(args: &[String]) {
             );
             process::exit(1);
         }
+        if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
+            eprintln!(
+                "[AUDIO_FP] post-load dsp_hash=0x{:08x}",
+                game.zelda_audio_dsp_hash()
+            );
+        }
     } else if let Err(e) = game.replay_save_file(Path::new(replay_path)) {
         eprintln!("failed to replay {}: {e}", replay_path);
         process::exit(1);
@@ -1472,10 +1478,6 @@ fn run_replay_save(args: &[String]) {
             process::exit(101);
         }
         frames = frames.wrapping_add(1);
-        if let Some(idx) = save_state_at.iter().position(|(f, _)| *f == frames) {
-            let (_, path) = &save_state_at[idx];
-            write_checkpoint(&mut game, frames, path);
-        }
         let mut fp_audio_leaf: u32 = 0;
         if let Some(audio) = audio_trace_buffer.as_mut() {
             let dsp_pre = game.zelda_audio_dsp_hash();
@@ -1483,18 +1485,36 @@ fn run_replay_save(args: &[String]) {
             game.zelda_discard_unused_audio_frames();
             if fingerprint_log.is_some() {
                 let dsp_post = game.zelda_audio_dsp_hash();
+                let s_samples = replay_checksum_samples(audio);
+                let s_writes = replay_checksum_dsp_writes(&writes);
+                let s_wvals = replay_checksum_dsp_write_values(&writes);
+                if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
+                    eprintln!(
+                        "[AUDIO_FP] f={frames} samp=0x{s_samples:08x} pre=0x{dsp_pre:08x} post=0x{dsp_post:08x} wc={} wh=0x{s_writes:08x} wvh=0x{s_wvals:08x}",
+                        writes.len()
+                    );
+                }
                 fp_audio_leaf = fingerprint_audio_hash(
-                    replay_checksum_samples(audio),
+                    s_samples,
                     dsp_pre,
                     dsp_post,
                     writes.len() as u32,
-                    replay_checksum_dsp_writes(&writes),
-                    replay_checksum_dsp_write_values(&writes),
+                    s_writes,
+                    s_wvals,
                 );
             }
             if audio_trace_log != 0 && frames % audio_trace_log == 0 {
                 print_replay_audio_trace(frames, &game, audio, 735, 2, dsp_pre, &writes);
             }
+        }
+        // Write --save-state-at checkpoints AFTER the audio trace has advanced the
+        // DSP for this frame, so a shard resuming here sees the same post-trace
+        // audio state a continuous run would when it begins the next frame. (The
+        // trace is a stateful side effect; checkpointing before it would skip this
+        // frame's DSP advance and diverge the resumed shard's audio leaf.)
+        if let Some(idx) = save_state_at.iter().position(|(f, _)| *f == frames) {
+            let (_, path) = &save_state_at[idx];
+            write_checkpoint(&mut game, frames, path);
         }
         let should_log_render_hash = render_hash_log != 0 && frames % render_hash_log == 0;
         let should_compare_gpu = gpu_render_compare != 0 && frames % gpu_render_compare == 0;
@@ -3209,6 +3229,12 @@ fn run_replay_save(args: &[String]) {
     }
 
     if let Some(path) = save_state_path.as_deref() {
+        if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
+            eprintln!(
+                "[AUDIO_FP] pre-save dsp_hash=0x{:08x} (frame={frames})",
+                game.zelda_audio_dsp_hash()
+            );
+        }
         write_checkpoint(&mut game, frames, path);
     }
 
@@ -3531,19 +3557,69 @@ fn run_replay_save(args: &[String]) {
     }
 }
 
+// Trailer appended after the C-style state-recorder checkpoint to make resume
+// byte-identical to a from-scratch run. The state-recorder save only round-trips
+// the audio *sequencer variables* (lossily, resetting timer_cycles + the APU
+// queue) and re-derives the rest, so the first resumed frame's audio diverges.
+// This trailer carries the exact live audio runtime state.
+const AUDIO_TRAILER_MAGIC: [u8; 8] = *b"Z3FAITH3";
+
+fn read_trailer_blob<R: std::io::Read>(file: &mut R) -> std::io::Result<Vec<u8>> {
+    let mut len_bytes = [0u8; 8];
+    file.read_exact(&mut len_bytes)?;
+    let len = u64::from_le_bytes(len_bytes) as usize;
+    let mut buf = vec![0u8; len];
+    file.read_exact(&mut buf)?;
+    Ok(buf)
+}
+
+fn write_trailer_blob<W: std::io::Write>(file: &mut W, blob: &[u8]) -> std::io::Result<()> {
+    file.write_all(&(blob.len() as u64).to_le_bytes())?;
+    file.write_all(blob)?;
+    Ok(())
+}
+
 fn load_replay_save_checkpoint(game: &mut ZeldaState, path: &Path) -> std::io::Result<()> {
+    use std::io::Read;
     let mut file = fs::File::open(path)?;
     let mut state_recorder = std::mem::take(&mut game.state_recorder);
     game.state_recorder_load(&mut state_recorder, &mut file, false);
     game.state_recorder = state_recorder;
+    // Optional faithfulness trailer (older checkpoints won't have it):
+    //   [audio snapshot blob][SAVELOAD_HDMA scratch blob]
+    let mut magic = [0u8; 8];
+    if file.read_exact(&mut magic).is_ok() && magic == AUDIO_TRAILER_MAGIC {
+        let audio = read_trailer_blob(&mut file)?;
+        if let Err(e) = game.zelda_audio_restore_from_bytes(&audio) {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e));
+        }
+        // Restore the live spotlight HDMA dynamic table + re-sync the native model,
+        // overriding the lossy reconstruction done inside state_recorder_load.
+        let hdma_dyn = read_trailer_blob(&mut file)?;
+        game.restore_hdma_dynamic_table_bytes(&hdma_dyn);
+        // Restore the pristine SAVELOAD scratch (0x1b00 + 0x654) for WRAM fidelity.
+        let hdma_scratch = read_trailer_blob(&mut file)?;
+        game.restore_saveload_hdma_scratch_bytes(&hdma_scratch);
+    }
     Ok(())
 }
 
 fn save_replay_save_checkpoint(game: &mut ZeldaState, path: &Path) -> std::io::Result<()> {
+    use std::io::Write;
+    // Capture snapshots BEFORE state_recorder_save mutates them: the C-style music
+    // save rewrites SPC RAM, and the spotlight backup projects into the SAVELOAD
+    // HDMA scratch region. We want the live frame-boundary values.
+    let audio_bytes = game.zelda_audio_snapshot_bytes();
+    let hdma_dyn_bytes = game.hdma_dynamic_table_bytes();
+    let hdma_scratch_bytes = game.saveload_hdma_scratch_bytes();
     let mut file = fs::File::create(path)?;
     let mut state_recorder = std::mem::take(&mut game.state_recorder);
     game.state_recorder_save(&mut state_recorder, &mut file);
     game.state_recorder = state_recorder;
+    file.write_all(&AUDIO_TRAILER_MAGIC)?;
+    write_trailer_blob(&mut file, &audio_bytes)?;
+    write_trailer_blob(&mut file, &hdma_dyn_bytes)?;
+    write_trailer_blob(&mut file, &hdma_scratch_bytes)?;
     Ok(())
 }
 

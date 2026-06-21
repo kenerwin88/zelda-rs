@@ -10,6 +10,7 @@ autobins = false
 bincode = "1"
 opus = "0.3.1"
 serde = { version = "1", features = ["derive"] }
+serde-big-array = "0.5"
 snes = { path = "../snes" }
 
 [lints]

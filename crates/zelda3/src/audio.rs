@@ -128,7 +128,7 @@ enum OpuzPacketStatus {
     ReadError,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct ApuWriteEnt {
     ports: [u8; 4],
 }
@@ -204,6 +204,80 @@ impl Drop for AudioState {
     fn drop(&mut self) {
         crate::spc_player::spc_player_destroy(self.spc_player);
         self.spc_player = std::ptr::null_mut();
+    }
+}
+
+/// Serializable mirror of `AudioState`. The `spc_player` raw pointer is replaced
+/// by a deep, pointer-free snapshot (see `spc_player::SpcPlayerSnapshot`). The
+/// `msu_player` is intentionally NOT round-tripped: MSU (external music
+/// streaming) is disabled in headless replay, it owns non-serde state
+/// (`OpusDecoder`), and on restore it is reconstructed as `MsuPlayer::default()`.
+/// Every other field is byte-faithful.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct AudioStateSnapshot {
+    spc_player: crate::spc_player::SpcPlayerSnapshot,
+    apu_write_ents: [ApuWriteEnt; 16],
+    apu_write: ApuWriteEnt,
+    apu_write_ent_pos: u8,
+    apu_write_count: u8,
+    apu_total_write: u8,
+    input_ports: [u8; 4],
+    port_to_snes: [u8; 4],
+    #[serde(with = "serde_big_array::BigArray")]
+    spc_ram: [u8; 0x10000],
+    volume_transition_step_float: [f32; 4],
+    volume_transition_target_float: [f32; 4],
+    config_audio_freq: u32,
+    config_msuvolume: u8,
+    config_resume_msu: bool,
+    config_msu_path: Option<String>,
+}
+
+impl serde::Serialize for AudioState {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let snapshot = AudioStateSnapshot {
+            spc_player: crate::spc_player::spc_player_snapshot(self.spc_player),
+            apu_write_ents: self.apu_write_ents,
+            apu_write: self.apu_write,
+            apu_write_ent_pos: self.apu_write_ent_pos,
+            apu_write_count: self.apu_write_count,
+            apu_total_write: self.apu_total_write,
+            input_ports: self.input_ports,
+            port_to_snes: self.port_to_snes,
+            spc_ram: self.spc_ram,
+            volume_transition_step_float: self.volume_transition_step_float,
+            volume_transition_target_float: self.volume_transition_target_float,
+            config_audio_freq: self.config_audio_freq,
+            config_msuvolume: self.config_msuvolume,
+            config_resume_msu: self.config_resume_msu,
+            config_msu_path: self.config_msu_path.clone(),
+        };
+        snapshot.serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for AudioState {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let snapshot = AudioStateSnapshot::deserialize(deserializer)?;
+        let spc_player = crate::spc_player::spc_player_from_snapshot(snapshot.spc_player);
+        Ok(Self {
+            spc_player,
+            msu_player: MsuPlayer::default(),
+            apu_write_ents: snapshot.apu_write_ents,
+            apu_write: snapshot.apu_write,
+            apu_write_ent_pos: snapshot.apu_write_ent_pos,
+            apu_write_count: snapshot.apu_write_count,
+            apu_total_write: snapshot.apu_total_write,
+            input_ports: snapshot.input_ports,
+            port_to_snes: snapshot.port_to_snes,
+            spc_ram: snapshot.spc_ram,
+            volume_transition_step_float: snapshot.volume_transition_step_float,
+            volume_transition_target_float: snapshot.volume_transition_target_float,
+            config_audio_freq: snapshot.config_audio_freq,
+            config_msuvolume: snapshot.config_msuvolume,
+            config_resume_msu: snapshot.config_resume_msu,
+            config_msu_path: snapshot.config_msu_path,
+        })
     }
 }
 
@@ -782,6 +856,59 @@ impl ZeldaState {
         }
         out.push('}');
         out
+    }
+
+    /// Bincode-serialize the full live audio state (SPC player POD + DSP value +
+    /// SPC RAM + APU queue + volume floats + config). Used to make checkpoint
+    /// resume byte-identical to a from-scratch run: the C-style music saveload
+    /// (`zelda_save_music_state_to_ram_locked`) only round-trips the sequencer
+    /// *variables* packed through SPC RAM and resets `timer_cycles`/the APU queue,
+    /// so the next frame's audio render diverges. This snapshot captures the exact
+    /// runtime state instead.
+    pub fn zelda_audio_snapshot_bytes(&self) -> Vec<u8> {
+        let bytes = bincode::serialize(&self.audio).expect("audio snapshot serialize failed");
+        if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
+            let tc = unsafe { self.audio.spc_player.as_ref() }
+                .map(|p| p.timer_cycles)
+                .unwrap_or(255);
+            let so = unsafe { self.audio.spc_player.as_ref() }
+                .and_then(|p| unsafe { p.dsp.as_ref() })
+                .map(|d| d.sampleOffset)
+                .unwrap_or(-1);
+            eprintln!(
+                "[AUDIO_FP] snapshot: bytes={} timer_cycles={tc} dsp.sampleOffset={so} apu_total_write={} input_ports={:?}",
+                bytes.len(),
+                self.audio.apu_total_write,
+                self.audio.input_ports
+            );
+        }
+        bytes
+    }
+
+    /// Restore the full live audio state previously captured by
+    /// `zelda_audio_snapshot_bytes`. Replaces `self.audio` wholesale (its `Drop`
+    /// frees the prior SPC player); the deserialized `AudioState` re-creates the
+    /// SPC player + DSP with all raw pointers correctly re-linked.
+    pub fn zelda_audio_restore_from_bytes(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let restored: AudioState =
+            bincode::deserialize(bytes).map_err(|e| format!("audio snapshot decode: {e}"))?;
+        if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
+            let tc = unsafe { restored.spc_player.as_ref() }
+                .map(|p| p.timer_cycles)
+                .unwrap_or(255);
+            let so = unsafe { restored.spc_player.as_ref() }
+                .and_then(|p| unsafe { p.dsp.as_ref() })
+                .map(|d| d.sampleOffset)
+                .unwrap_or(-1);
+            eprintln!(
+                "[AUDIO_FP] restore: bytes={} timer_cycles={tc} dsp.sampleOffset={so} apu_total_write={} input_ports={:?}",
+                bytes.len(),
+                restored.apu_total_write,
+                restored.input_ports
+            );
+        }
+        self.audio = restored;
+        Ok(())
     }
 
     pub fn zelda_audio_dsp_hash(&self) -> u32 {

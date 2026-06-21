@@ -56,10 +56,11 @@ impl Default for DspRegWriteHistory {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[repr(C)]
 pub struct Dsp {
     pub sampleOffset: i32,
+    #[serde(skip)]
     ram: *mut uint8,
     core: DspState,
 }
@@ -89,7 +90,7 @@ impl Default for Apu {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 #[repr(C)]
 pub struct Channel {
     pub pattern_order_ptr_for_chan: uint16,
@@ -147,11 +148,13 @@ pub struct Channel {
     pub index: uint8,
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[repr(C)]
 pub struct SpcPlayer {
+    #[serde(skip)]
     pub reg_write_history: *mut DspRegWriteHistory,
     pub timer_cycles: uint8,
+    #[serde(skip)]
     pub dsp: *mut Dsp,
     pub new_value_from_snes: [uint8; 4],
     pub port_to_snes: [uint8; 4],
@@ -226,6 +229,7 @@ pub struct SpcPlayer {
     pub last_written_edl: uint8,
     pub input_ports: [uint8; 4],
     pub channel: [Channel; 8],
+    #[serde(with = "serde_big_array::BigArray")]
     pub ram: [uint8; 65536],
 }
 
@@ -2185,6 +2189,59 @@ pub fn spc_player_clone(p: *const SpcPlayer) -> *mut SpcPlayer {
     } else {
         player.dsp = ptr::null_mut();
     }
+    Box::into_raw(player)
+}
+
+/// Byte-faithful snapshot of an SPC player's runtime state for checkpoint
+/// serialization. Captures the `SpcPlayer` POD (its raw pointers are
+/// `#[serde(skip)]`-ed and re-linked on restore) plus the deref'd `Dsp` value
+/// (its `ram` pointer is likewise skipped and re-linked). The `reg_write_history`
+/// trace buffer is intentionally dropped (trace-only, non-essential — mirrors
+/// `spc_player_clone`).
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SpcPlayerSnapshot {
+    player: SpcPlayer,
+    dsp: Option<Dsp>,
+}
+
+/// Capture a deep, serializable snapshot of `*p` (the SpcPlayer + its Dsp value).
+pub fn spc_player_snapshot(p: *const SpcPlayer) -> SpcPlayerSnapshot {
+    if p.is_null() {
+        return SpcPlayerSnapshot {
+            player: SpcPlayer::default(),
+            dsp: None,
+        };
+    }
+    let src = unsafe { &*p };
+    let player = src.clone();
+    let dsp = if src.dsp.is_null() {
+        None
+    } else {
+        Some(unsafe { (*src.dsp).clone() })
+    };
+    SpcPlayerSnapshot { player, dsp }
+}
+
+/// Build a live `*mut SpcPlayer` from a snapshot, re-linking all raw pointers
+/// exactly as `spc_player_clone`/`spc_player_create` do (player.ram backs
+/// dsp.ram; reg_write_history is null; a fresh Dsp is allocated when the
+/// snapshot lacks one).
+pub fn spc_player_from_snapshot(snapshot: SpcPlayerSnapshot) -> *mut SpcPlayer {
+    let SpcPlayerSnapshot { player, dsp } = snapshot;
+    let mut player = Box::new(player);
+    player.reg_write_history = ptr::null_mut();
+    let dsp_box = match dsp {
+        Some(mut dsp) => {
+            dsp.ram = player.ram.as_mut_ptr();
+            Box::new(dsp)
+        }
+        None => {
+            // No saved DSP: initialize a fresh one backed by player.ram.
+            let raw = dsp_init_impl(player.ram.as_mut_ptr());
+            unsafe { Box::from_raw(raw) }
+        }
+    };
+    player.dsp = Box::into_raw(dsp_box);
     Box::into_raw(player)
 }
 

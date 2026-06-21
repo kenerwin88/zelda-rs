@@ -1381,7 +1381,6 @@ pub struct ZeldaState {
     intro_poly_vram_history: Vec<(u8, Vec<u16>, Vec<u16>)>,
     #[serde(skip)]
     intro_poly_presented_vram: Option<(u8, Vec<u16>)>,
-    #[serde(skip)]
     audio: audio::AudioState,
     #[serde(skip)]
     emu_memory_ptr: Option<Vec<u8>>,
@@ -6486,6 +6485,62 @@ impl ZeldaState {
 
     fn backup_spotlight_hdma_to_saveload_buffer(&mut self) {
         self.project_spotlight_dynamic_hdma_table_words_to_ram(SAVELOAD_HDMA_TABLE, 224);
+    }
+
+    /// Byte extent of the SAVELOAD_HDMA_TABLE scratch region (0x1b00..0x1cd0).
+    /// This is a save-time scratch buffer: `save_snes_state` projects the live
+    /// spotlight dynamic table into it so the loader can rebuild HDMA_TABLE_DYNAMIC.
+    /// Outside a save it has no behavioral meaning, but the checkpoint stores
+    /// whatever the projection wrote, so a resumed run's WRAM at 0x1b00 differs
+    /// from a from-scratch run. Capturing/restoring the pristine bytes makes resume
+    /// byte-faithful without affecting the dynamic-table reconstruction (which has
+    /// already happened via restore_spotlight_hdma_from_saveload_buffer +
+    /// sync_native_game_state_from_ram by the time we overwrite this region back).
+    pub const SAVELOAD_HDMA_SCRATCH_LEN: usize = 0x1cd0 - SAVELOAD_HDMA_TABLE;
+
+    /// Single-byte HDMA scratch (0x654) that the C-style snapshot save/restore
+    /// also leaves divergent on resume (a known tiny artifact). Restoring it keeps
+    /// resume byte-faithful; it is otherwise transient HDMA scratch.
+    const SAVELOAD_HDMA_SCRATCH_EXTRA: usize = 0x654;
+
+    /// Returns the pristine scratch bytes: the contiguous 0x1b00 region followed by
+    /// one trailing byte for 0x654.
+    pub fn saveload_hdma_scratch_bytes(&self) -> Vec<u8> {
+        let mut out = self.ram
+            [SAVELOAD_HDMA_TABLE..SAVELOAD_HDMA_TABLE + Self::SAVELOAD_HDMA_SCRATCH_LEN]
+            .to_vec();
+        out.push(self.ram[Self::SAVELOAD_HDMA_SCRATCH_EXTRA]);
+        out
+    }
+
+    pub fn restore_saveload_hdma_scratch_bytes(&mut self, bytes: &[u8]) {
+        let n = bytes.len().min(Self::SAVELOAD_HDMA_SCRATCH_LEN);
+        self.ram[SAVELOAD_HDMA_TABLE..SAVELOAD_HDMA_TABLE + n].copy_from_slice(&bytes[..n]);
+        if bytes.len() > Self::SAVELOAD_HDMA_SCRATCH_LEN {
+            self.ram[Self::SAVELOAD_HDMA_SCRATCH_EXTRA] = bytes[Self::SAVELOAD_HDMA_SCRATCH_LEN];
+        }
+    }
+
+    /// Byte extent of the live spotlight HDMA dynamic table (0x1dba0, 240 words).
+    /// The C-style saveload reconstructs the native spotlight dynamic table from
+    /// the LOSSY SAVELOAD_HDMA_TABLE projection (only 224 words round-trip, and the
+    /// native sync re-derives entries), so a resumed run's native spotlight backing
+    /// can differ from a continuous run. We capture the live table bytes and, on
+    /// load, both restore them to RAM and re-sync the native model directly from
+    /// them, making the spotlight backing byte-faithful.
+    pub const HDMA_DYNAMIC_TABLE_LEN: usize = SPOTLIGHT_HDMA_WORD_COUNT * 2;
+
+    pub fn hdma_dynamic_table_bytes(&self) -> Vec<u8> {
+        self.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + Self::HDMA_DYNAMIC_TABLE_LEN].to_vec()
+    }
+
+    pub fn restore_hdma_dynamic_table_bytes(&mut self, bytes: &[u8]) {
+        let n = bytes.len().min(Self::HDMA_DYNAMIC_TABLE_LEN);
+        self.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + n].copy_from_slice(&bytes[..n]);
+        // Repopulate the native spotlight dynamic table from the faithful RAM bytes
+        // (overrides the lossy reconstruction done during state_recorder_load).
+        let words = n / 2;
+        self.sync_spotlight_dynamic_hdma_table_words_from_ram(HDMA_TABLE_DYNAMIC, words);
     }
 
     pub(crate) fn project_spotlight_dynamic_hdma_table_to_reserved(&mut self, count: usize) {
