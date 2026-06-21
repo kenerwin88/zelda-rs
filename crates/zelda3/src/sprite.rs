@@ -7111,22 +7111,28 @@ impl ZeldaState {
     //   See sprite.c:900.
     // Mirrors C: if `info` is None we use a local buffer; otherwise the
     // caller's out-pointer is populated.
+    //
+    // C always populates info->x / info->y before the out-of-bounds return,
+    // because Sprite_PrepOamCoordOrDoubleRet writes the coords then returns a
+    // bool.  We mirror that by calling the raw variant and always writing info
+    // before the early-return check.
     pub(super) fn sprite_draw_multiple(
         &mut self,
         k: usize,
         src: &[DrawMultipleData],
         info: Option<&mut PrepOamCoordsRet>,
     ) {
-        let Some(prepped) = self.sprite_prep_oam_coord_or_double_ret(k) else {
-            return;
-        };
+        let (prepped, out_of_bounds) = self.sprite_prep_oam_coord_or_double_ret_raw(k);
         if let Some(out) = info {
-            out.x = prepped.0;
-            out.y = prepped.1;
+            out.x = prepped.x;
+            out.y = prepped.y;
             out.r4 = 0;
-            out.flags = prepped.2;
+            out.flags = prepped.flags;
         }
-        self.sprite_draw_multiple_with_info(k, src, prepped);
+        if out_of_bounds {
+            return;
+        }
+        self.sprite_draw_multiple_with_info(k, src, (prepped.x, prepped.y, prepped.flags));
     }
 
     // Variant that takes a precomputed PrepOamCoord triple (x, y, flags). The
