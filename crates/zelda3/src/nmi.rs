@@ -75,8 +75,13 @@ impl ZeldaState {
         }
 
         if self.game_state.system_signals.should_update_cgram() {
+            // C: memcpy(g_zenv.ppu->cgram, main_palette_buffer, 0x200)
+            // Read directly from WRAM so that set_aux_color() calls that overflow the
+            // aux buffer into main_palette_buffer (when overworld_palette_aux_or_main=0x200)
+            // are visible here.  The native palette_buffer.main is bounded to 0x100 entries
+            // and silently drops out-of-bounds writes, leaving it stale in that case.
             for i in 0..0x100 {
-                self.ppu.cgram[i] = self.game_state.display.palette_buffer.main_color(i);
+                self.ppu.cgram[i] = read_le_u16(&self.ram, MAIN_PALETTE_BUFFER + i * 2);
             }
         }
 
