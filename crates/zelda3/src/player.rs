@@ -1404,12 +1404,11 @@ impl ZeldaState {
         rv
     }
 
-    /// Ledge-hop sound. C writes SOUND_EFFECT_1 directly (`0x20 | pan`) and, unlike
-    /// `ancilla_sfx2_near`, does NOT stamp RAW_SFX_PAN_VALUE (0xcf8). Using the ancilla
-    /// helper here would leave a spurious cf8 scratch value, diverging from the reference.
+    /// Ledge-hop sound. C plays this via `Ancilla_Sfx2_Near(0x20)`, which routes through
+    /// `PlaySfx_SetPanFrom`: it stamps RAW_SFX_PAN_VALUE (0xcf8) = 0x20 AND sets
+    /// SOUND_EFFECT_1 = `0x20 | pan`. `ancilla_sfx2_near` mirrors that exactly.
     fn link_ledge_hop_sfx(&mut self) {
-        let pan = self.link_calculate_sfx_pan();
-        self.set_sound_effect_1(0x20 | pan);
+        self.ancilla_sfx2_near(0x20);
     }
 
     pub(super) fn flag_moving_into_slopes_y(&mut self) {
