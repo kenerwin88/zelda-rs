@@ -3155,6 +3155,7 @@ impl GarnishSlotState {
         ram[GARNISH_X_SUBPIXEL + slot] = self.x_subpixel;
         ram[GARNISH_Y_SUBPIXEL + slot] = self.y_subpixel;
         ram[GARNISH_COUNTDOWN + slot] = self.countdown;
+        crate::types::ww_check(GARNISH_SPRITE + slot, 1, "GarnishSlotState::write_to_ram.sprite", self.sprite as u32);
         ram[GARNISH_SPRITE + slot] = self.sprite;
         ram[GARNISH_FLOOR + slot] = self.floor;
         ram[GARNISH_OAM_FLAGS + slot] = self.oam_flags;

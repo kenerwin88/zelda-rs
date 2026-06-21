@@ -9549,16 +9549,14 @@ impl ZeldaState {
             .garnish_slots
             .slot_mut(&mut self.ram, k)
             .set_y_high(value);
+        // C's Sprite_SpawnPoofGarnish writes sprite_floor[j] to garnish_sprite[k] (0x1f92c + k),
+        // which maps to the `sprite` field. Match that here.
         let value = self.sprite_slot(j).floor();
-        // C stores the spawning sprite's floor in the garnish X_VELOCITY slot (0x1f8b4 =
-        // GARNISH_SPRITE_ANCILLA, byte-reused: poof garnish don't move), NOT the GARNISH_SPRITE
-        // field (0x1f92c). Writing set_sprite here put it in the wrong garnish array,
-        // diverging GARNISH_SPRITE and cascading into the sprite OAM.
         self.game_state
             .sprites
             .garnish_slots
             .slot_mut(&mut self.ram, k)
-            .set_x_velocity(value);
+            .set_sprite(value);
         let value = 15;
         self.game_state
             .sprites

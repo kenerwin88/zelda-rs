@@ -1701,7 +1701,8 @@ impl ZeldaState {
             .garnish_slots
             .slot_mut(&mut self.ram, k)
             .set_y_high(value);
-        let value = self.sprite_slot(j).floor();
+        let native_floor = self.sprite_slot(j).floor();
+        let value = native_floor;
         self.game_state
             .sprites
             .garnish_slots
