@@ -219,6 +219,17 @@ serde struct layout change. See memory [[checkpoint-resume-debugging]].
    write (negligible). Used to prove the 0x10000 gfx cluster is a graphics-load *timing*
    divergence, not a byte-ownership bug.
 
+10. **`zparity` (`crates/parity`) — per-frame C-oracle parity checker (worklist tool, not a gate).**
+    Three subcommands: `capture --full` (needs C oracle) builds `parity-golden/` once and commits
+    Tier A (`rollup.bin`/`merkle.bin`/`manifest.json`, ~4.3 MB); `check [--frames N]` is **C-free**,
+    shards the full route across cores via checkpoints, and finds the **earliest per-frame divergence
+    vs C** — STRICTER than `validate_all_parity.py` (which is end-state only); `drill <frame>`
+    localizes per page/layer (needs `capture --full --detail` for Tier B). Currently **RED by design**
+    (first divergence: frame 3739, WRAM page 3, `RAW_SFX_PAN_VALUE`); use as a worklist:
+    `check` → `drill <frame>` → fix Rust side → repeat. **Not wired as a blocking pre-commit gate.**
+    Measured speed: ~30k frames / ~69s across 4 shards. See `crates/parity/README.md` for full
+    docs; spec at `.git/sdd/spec.md`, plan at `.git/sdd/plan.md`.
+
 ### Tracing env vars
 
 - `ZELDA3_REPLAY_WRAM_DUMP=<path>` — dump full 128KB WRAM at the final frame (both

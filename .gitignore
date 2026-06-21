@@ -24,3 +24,5 @@ external/.DS_Store
 external/bsnes-source/
 external/mesen2-oracle/local/
 external/bsnes-libretro/local/
+
+.cache/parity-golden/

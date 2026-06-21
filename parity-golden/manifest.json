@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "frames": 1073092,
+  "rom_sha256": "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb",
+  "save_sha256": "7987efef3451f6dfc382350d3b98972fac483cc0aa2d3e958a95030c4490c9ea",
+  "c_oracle_rev": "5f73253e40b8b9595edc2936c0d5c32210f15479",
+  "timing_hacks": [
+    "SELECT_FILE",
+    "LOADFILE",
+    "DUNGEON",
+    "OVERWORLD",
+    "MESSAGING",
+    "DEATH_INTRO",
+    "DEATH_RELOAD"
+  ],
+  "mask": [
+    1620
+  ],
+  "block_size": 8192,
+  "page_kb": 1
+}
