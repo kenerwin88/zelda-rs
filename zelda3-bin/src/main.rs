@@ -1255,6 +1255,7 @@ fn run_replay_save(args: &[String]) {
     let mut gpu_render_compare_last_hash = 0u32;
     let mut render_hash_dump_frame = None::<(u32, PathBuf)>;
     let mut save_state_path = None::<PathBuf>;
+    let mut save_state_at: Vec<(u32, PathBuf)> = Vec::new();
     let mut load_state_path = None::<PathBuf>;
     let mut input_script = InputScript::default();
     let mut stop_replay_after_load = false;
@@ -1345,6 +1346,18 @@ fn run_replay_save(args: &[String]) {
                     process::exit(2);
                 });
                 save_state_path = Some(PathBuf::from(path));
+                i += 2;
+            }
+            "--save-state-at" => {
+                let Some(spec) = args.get(i + 1) else {
+                    eprintln!("--save-state-at <frame>:<path>");
+                    process::exit(2);
+                };
+                let (f, path) = spec.split_once(':').unwrap_or_else(|| {
+                    eprintln!("--save-state-at <frame>:<path>");
+                    process::exit(2);
+                });
+                save_state_at.push((f.parse().unwrap(), PathBuf::from(path)));
                 i += 2;
             }
             "--load-state" => {
@@ -1455,6 +1468,10 @@ fn run_replay_save(args: &[String]) {
             process::exit(101);
         }
         frames = frames.wrapping_add(1);
+        if let Some(idx) = save_state_at.iter().position(|(f, _)| *f == frames) {
+            let (_, path) = &save_state_at[idx];
+            write_checkpoint(&mut game, frames, path);
+        }
         let mut fp_audio_leaf: u32 = 0;
         if let Some(audio) = audio_trace_buffer.as_mut() {
             let dsp_pre = game.zelda_audio_dsp_hash();
@@ -3188,18 +3205,7 @@ fn run_replay_save(args: &[String]) {
     }
 
     if let Some(path) = save_state_path.as_deref() {
-        if let Err(e) = save_replay_save_checkpoint(&mut game, path) {
-            eprintln!(
-                "failed to save replay-save checkpoint {}: {e}",
-                path.display()
-            );
-            process::exit(1);
-        }
-        println!(
-            "saved replay-save checkpoint frame={} to {}",
-            frames,
-            path.display()
-        );
+        write_checkpoint(&mut game, frames, path);
     }
 
     if let Some(path) = dump_frame_path.as_deref() {
@@ -3535,6 +3541,21 @@ fn save_replay_save_checkpoint(game: &mut ZeldaState, path: &Path) -> std::io::R
     game.state_recorder_save(&mut state_recorder, &mut file);
     game.state_recorder = state_recorder;
     Ok(())
+}
+
+fn write_checkpoint(game: &mut ZeldaState, frames: u32, path: &Path) {
+    if let Err(e) = save_replay_save_checkpoint(game, path) {
+        eprintln!(
+            "failed to save replay-save checkpoint {}: {e}",
+            path.display()
+        );
+        process::exit(1);
+    }
+    println!(
+        "saved replay-save checkpoint frame={} to {}",
+        frames,
+        path.display()
+    );
 }
 
 fn replay_save_ancilla_dump(game: &ZeldaState) -> String {

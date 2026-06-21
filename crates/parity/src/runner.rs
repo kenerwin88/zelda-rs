@@ -38,6 +38,7 @@ pub fn sha256_file(path: &Path) -> std::io::Result<String> {
     Ok(hash)
 }
 
+#[derive(Clone)]
 pub struct Paths {
     pub repo: PathBuf,
     pub c_root: PathBuf,
