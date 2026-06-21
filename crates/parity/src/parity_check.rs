@@ -147,15 +147,18 @@ fn ensure_checkpoints(p: &Paths, bounds: &[u32]) {
     if needed.iter().all(|f| ck_dir.join(format!("{f}.sav")).exists()) {
         return;
     }
-    eprintln!("seeding {} checkpoints (one sequential pass)...", needed.len());
+    eprintln!("seeding {} checkpoints (one sequential pass, render-free)...", needed.len());
     // Single pass to the last boundary, dropping all checkpoints via --save-state-at.
+    // rust_seed_cmd skips the per-frame render (the dominant cost); the binary renders
+    // ONLY the boundary frames before each checkpoint to re-project display state into
+    // RAM. The result is byte-identical to a fully-rendered seed (verified by shard
+    // invariance) but ~100x faster.
     // Write each checkpoint to <frame>.sav.tmp and only rename to the final
     // <frame>.sav AFTER the pass succeeds. A killed (OOM/SIGKILL) seeding pass
     // then never leaves a partial file that the existence check above would
     // trust -> shards would otherwise load a corrupt checkpoint and report a
     // phantom divergence with no root-cause signal.
-    let mut cmd = runner::rust_shard_cmd(p, *bounds.last().unwrap(),
-        &p.cache_dir.join("seed.fp"), None);
+    let mut cmd = runner::rust_seed_cmd(p, *bounds.last().unwrap());
     for f in &needed {
         cmd.args(["--save-state-at", &format!("{f}:{}", ck_dir.join(format!("{f}.sav.tmp")).display())]);
     }

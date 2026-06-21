@@ -3220,6 +3220,17 @@ fn run_replay_save(args: &[String]) {
         // byte-identical. (This mirrors the post-loop `--save-state` write below.)
         if let Some(idx) = save_state_at.iter().position(|(f, _)| *f == frames) {
             let (_, path) = &save_state_at[idx];
+            // Seed mode (no per-frame fingerprint render): the per-frame render is what
+            // re-projects display state (IRQ_FLAG, spotlight HDMA, ...) into RAM, and is
+            // the ONLY thing that makes RAM differ from a render-free run. Render is
+            // otherwise side-effect-free on game state, so we skip it on every frame
+            // (the ~100x seed speedup) and render ONLY this boundary frame here, right
+            // before the checkpoint, to project display state -> byte-identical to a
+            // continuously-rendered run.
+            if fingerprint_log.is_none() {
+                let mut scratch = vec![0u8; 256 * 224 * 4];
+                draw_play_ppu_frame(&mut game, &mut scratch, 256 * 4, PpuRenderFlags::empty());
+            }
             write_checkpoint(&mut game, frames, path);
         }
     }

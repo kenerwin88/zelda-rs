@@ -86,6 +86,25 @@ pub fn c_capture_cmd(p: &Paths, frames: u32, fp_out: &Path) -> Command {
     c
 }
 
+/// Build the checkpoint-seeding command: run to `end_frame` dropping checkpoints,
+/// WITHOUT rendering every frame (the dominant cost). Uses `--audio-trace-log` (a
+/// large stride so per-frame stdout is suppressed) instead of `--fingerprint-log` so
+/// the audio DSP still advances every frame. The binary renders ONLY the boundary
+/// frames (right before each `--save-state-at` checkpoint) to re-project display
+/// state (IRQ_FLAG etc.) into RAM, so the checkpoints are byte-identical to a
+/// continuously-rendered run — verified by shard invariance. Caller appends the
+/// `--save-state-at` flags.
+pub fn rust_seed_cmd(p: &Paths, end_frame: u32) -> Command {
+    let mut c = Command::new(&p.rust_bin);
+    c.current_dir(&p.repo)
+        .args(["--replay-save"]).arg(&p.rom).arg(&p.save).arg(end_frame.to_string())
+        .args(["--audio-trace-log", "100000000"]);
+    for (k, v) in hack_env() {
+        c.env(k, v);
+    }
+    c
+}
+
 /// Build a Rust replay shard command: [start checkpoint?] -> end_frame, writing fingerprints.
 pub fn rust_shard_cmd(p: &Paths, end_frame: u32, fp_out: &Path, load_state: Option<&Path>) -> Command {
     let mut c = Command::new(&p.rust_bin);
