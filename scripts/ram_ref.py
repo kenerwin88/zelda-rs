@@ -1,33 +1,27 @@
 #!/usr/bin/env python3
-"""Shared reference data from the known-good OLD Rust clone (`zelda3-rs-old`).
+"""Shared WRAM address-map reference, scanned from THIS repo's Rust sources.
 
-The old clone at commit 1183dee has perfect parity with the C oracle, so it — not
-the C source — is the authoritative reference for "what is this WRAM address" and
-"who reads/writes it". The old clone predates the native-state migration, so every
-WRAM variable is a `const NAME: usize = 0xADDR;` accessed as `ram[NAME]`; that gives
-a clean address->name map plus parity-correct read/write sites.
-
-Override the clone location with ZELDA3_OLD_REPO (default: ~/Documents/zelda3-rs-old).
+`crates/zelda3/src/*.rs` defines every WRAM variable as `const NAME: usize =
+0xADDR;` (1200+ of them), so a scan of this repo yields a clean address->name map
+plus the read/write sites for each variable. This is the authoritative
+"what is this WRAM address / who touches it" reference now that parity is driven
+by `zparity` against the C oracle (no external clone required).
 
 Used by whoowns.py and find_dual_ownership.py. Run directly to dump the map:
-    python3 scripts/old_rust_ref.py 0x45c
+    python3 scripts/ram_ref.py 0x45c
 """
 from __future__ import annotations
-import functools, os, pathlib, re, subprocess, sys
+import functools, pathlib, re, subprocess, sys
 
-DEFAULT_OLD = pathlib.Path.home() / "Documents" / "zelda3-rs-old"
-
-
-def old_repo() -> pathlib.Path:
-    return pathlib.Path(os.environ.get("ZELDA3_OLD_REPO", str(DEFAULT_OLD)))
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
-def old_src() -> pathlib.Path:
-    return old_repo() / "crates" / "zelda3" / "src"
+def src() -> pathlib.Path:
+    return ROOT / "crates" / "zelda3" / "src"
 
 
 def available() -> bool:
-    return old_src().is_dir()
+    return src().is_dir()
 
 
 CONST_RE = re.compile(
@@ -52,12 +46,12 @@ def _scan():
     """
     defs = []
     ram_names: set[str] = set()
-    src = old_src()
-    if not src.is_dir():
+    s = src()
+    if not s.is_dir():
         return defs, ram_names
-    for f in sorted(src.glob("*.rs")):
+    for f in sorted(s.rglob("*.rs")):
         text = f.read_text(errors="replace")
-        rel = str(f.relative_to(old_repo()))
+        rel = str(f.relative_to(ROOT))
         for i, line in enumerate(text.splitlines(), 1):
             m = CONST_RE.search(line)
             if m:
@@ -106,7 +100,7 @@ def covering(addr: int):
 
 
 def def_site(name: str):
-    """(relpath, line) where OLD defines `const name`."""
+    """(relpath, line) where this repo defines `const name`."""
     defs, _ = _scan()
     for n, _a, rel, line in defs:
         if n == name:
@@ -115,14 +109,13 @@ def def_site(name: str):
 
 
 def grep_sites(name: str, limit: int = 40):
-    """OLD-clone source lines referencing `name` (the parity-correct read/write sites)."""
-    src = old_src()
-    if not src.is_dir():
+    """This repo's source lines referencing `name` (its read/write sites)."""
+    s = src()
+    if not s.is_dir():
         return []
     try:
         r = subprocess.run(
-            ["grep", "-rn", "-E", rf"\b{re.escape(name)}\b",
-             *[str(p) for p in sorted(src.glob("*.rs"))]],
+            ["grep", "-rn", "-E", rf"\b{re.escape(name)}\b", str(s)],
             capture_output=True, text=True)
     except Exception:
         return []
@@ -133,22 +126,20 @@ def grep_sites(name: str, limit: int = 40):
         # strip the const definition line itself (kept separately as def_site)
         if re.search(rf"const\s+{re.escape(name)}\s*:", line):
             continue
-        rel.append(line.replace(str(old_repo()) + "/", ""))
+        rel.append(line.replace(str(ROOT) + "/", ""))
     return rel[:limit]
 
 
 def main():
     if len(sys.argv) < 2:
-        sys.exit("usage: old_rust_ref.py <addr>")
-    if not available():
-        sys.exit(f"OLD clone not found at {old_repo()} (set ZELDA3_OLD_REPO)")
+        sys.exit("usage: ram_ref.py <addr>")
     addr = int(sys.argv[1], 0)
     cov = covering(addr)
     if cov:
         name, base, nxt = cov
         span = f", next def 0x{nxt:05x} (=0x{nxt-base:x} wide)" if nxt else ""
         off = "" if addr == base else f" + 0x{addr-base:x}"
-        print(f"OLD const: {name}{off}  (base 0x{base:05x}{span})")
+        print(f"const: {name}{off}  (base 0x{base:05x}{span})")
     exact = names_at(addr)
     if exact:
         print("exact:", ", ".join(exact))

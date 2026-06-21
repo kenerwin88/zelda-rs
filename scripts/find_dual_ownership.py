@@ -30,7 +30,7 @@ import sys
 from collections import defaultdict
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import old_rust_ref as oldref
+import ram_ref as ref
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 NATIVE_DIR = ROOT / "crates" / "zelda3" / "src" / "game_state" / "native"
@@ -232,16 +232,15 @@ def enclosing_struct(text: str, pos: int) -> str:
 
 
 # ----------------------------------------------------------------------------
-# Reference array layout from the known-good OLD Rust clone (zelda3-rs-old) for
-# the undersized-table lint. The old clone predates the native migration and
-# accesses WRAM as `ram[NAME]`, so its `const NAME: usize = 0xADDR;` map is the
-# parity-correct address layout. A variable's span = distance to the next
-# constant; a native range-write narrower than that span is likely truncated —
-# exactly the class of the presence-table bug (0x200 Vec for a 0x1000 array).
+# Reference array layout from this repo's WRAM constant map for the
+# undersized-table lint. Each `const NAME: usize = 0xADDR;` marks a variable's
+# base; a variable's span = distance to the next constant. A native range-write
+# narrower than that span is likely truncated — exactly the class of the
+# presence-table bug (0x200 Vec for a 0x1000 array).
 # ----------------------------------------------------------------------------
 def ref_array_spans():
-    """Return {base_addr: (name, span)} from the OLD-clone address map."""
-    defs = oldref.address_defs()
+    """Return {base_addr: (name, span)} from this repo's address map."""
+    defs = ref.address_defs()
     if not defs:
         return {}
     spans = {}
@@ -416,8 +415,7 @@ def report_bridge_foreign_writes(byte_owners, consts, arrays):
 def report_undersized_tables(owner_intervals):
     arrays = ref_array_spans()
     if not arrays:
-        print(f"\n(OLD clone not found at {oldref.old_repo()} — skipping "
-              "undersized-table lint; set ZELDA3_OLD_REPO)\n")
+        print("\n(no WRAM constant map found — skipping undersized-table lint)\n")
         return
     findings = []
     for struct, ivs in owner_intervals.items():
@@ -433,12 +431,12 @@ def report_undersized_tables(owner_intervals):
                 if span < cspan:
                     findings.append((s, struct, fname, label, span, cname, cspan))
     print("\n################  UNDERSIZED NATIVE TABLES  ################")
-    print("(native range-write narrower than the OLD-clone array at the same base)\n")
+    print("(native range-write narrower than the const-map array span at the same base)\n")
     if not findings:
         print("  none\n")
         return
     for (s, struct, fname, label, span, cname, cspan) in sorted(findings):
-        print(f"  0x{s:05x} {struct} [{fname}]: writes 0x{span:x} bytes but OLD array "
+        print(f"  0x{s:05x} {struct} [{fname}]: writes 0x{span:x} bytes but array "
               f"`{cname}` spans 0x{cspan:x}  (via {label})")
     print()
 
