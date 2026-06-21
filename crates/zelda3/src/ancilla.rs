@@ -2401,12 +2401,15 @@ impl ZeldaState {
                 .slot_mut(&mut self.ram, k)
                 .tick_work_byte_3(),
         ) {
+            // C: uint8 t = ancilla_item_to_link[k] + 1; if (t == 5) { free; return; }
+            // The early return means item_to_link is NOT written when t==5. Peek first.
             let t = self
                 .game_state
                 .sprites
                 .ancilla_slots
-                .slot_mut(&mut self.ram, k)
-                .advance_item_to_link();
+                .slot(k)
+                .item_to_link()
+                .wrapping_add(1);
             if t == 5 {
                 self.game_state
                     .sprites
@@ -2415,6 +2418,11 @@ impl ZeldaState {
                     .clear();
                 return;
             }
+            self.game_state
+                .sprites
+                .ancilla_slots
+                .slot_mut(&mut self.ram, k)
+                .advance_item_to_link();
             self.game_state
                 .sprites
                 .ancilla_slots
