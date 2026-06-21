@@ -17,12 +17,12 @@ Runs the C oracle over the full replay route and writes the two-tier golden:
 
 - **Tier A** (`parity-golden/rollup.bin`, `merkle.bin`, `manifest.json`) — per-block
   rollup fingerprints committed to the repo. Small (~4.3 MB for the full route).
-- **Tier B** (`parity-golden/detail/`) — per-frame per-region fingerprints, written
-  only with `--detail`. Large (several GB). Cached locally, not committed.
+- **Tier B** (`.cache/parity-golden/detail/`) — per-frame per-region fingerprints,
+  written only with `--detail`. Large (several GB). Cached locally, not committed.
   Needed by `drill`.
 
 `--full` runs the full ~1,073,092-frame route (default: 30,000 frames).
-`--detail` also writes Tier B to `parity-golden/detail/` (cached in `.cache/parity-golden/`).
+`--detail` also writes Tier B to `.cache/parity-golden/detail/` (gitignored).
 
 Re-capture when: the replay route changes, a C-oracle hook is updated, or the
 fingerprint mask changes.
