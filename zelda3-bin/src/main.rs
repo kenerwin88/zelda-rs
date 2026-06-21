@@ -1507,15 +1507,6 @@ fn run_replay_save(args: &[String]) {
                 print_replay_audio_trace(frames, &game, audio, 735, 2, dsp_pre, &writes);
             }
         }
-        // Write --save-state-at checkpoints AFTER the audio trace has advanced the
-        // DSP for this frame, so a shard resuming here sees the same post-trace
-        // audio state a continuous run would when it begins the next frame. (The
-        // trace is a stateful side effect; checkpointing before it would skip this
-        // frame's DSP advance and diverge the resumed shard's audio leaf.)
-        if let Some(idx) = save_state_at.iter().position(|(f, _)| *f == frames) {
-            let (_, path) = &save_state_at[idx];
-            write_checkpoint(&mut game, frames, path);
-        }
         let should_log_render_hash = render_hash_log != 0 && frames % render_hash_log == 0;
         let should_compare_gpu = gpu_render_compare != 0 && frames % gpu_render_compare == 0;
         let should_dump_render_hash = render_hash_dump_frame
@@ -3220,6 +3211,16 @@ fn run_replay_save(args: &[String]) {
                 frames, &game.ram, &vram_bytes, &game.sram, render, fp_audio_leaf,
             );
             let _ = w.write_all(&fp.to_bytes());
+        }
+        // Write --save-state-at checkpoints at the very END of the loop body, AFTER
+        // the per-frame audio trace (which advances the DSP) AND the fingerprint
+        // render (draw_play_ppu_frame, which re-projects native state -- e.g. the
+        // spotlight HDMA table -- into RAM). This is the exact same game state a
+        // continuous run captures here, so a shard resuming from this checkpoint is
+        // byte-identical. (This mirrors the post-loop `--save-state` write below.)
+        if let Some(idx) = save_state_at.iter().position(|(f, _)| *f == frames) {
+            let (_, path) = &save_state_at[idx];
+            write_checkpoint(&mut game, frames, path);
         }
     }
 
