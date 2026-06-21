@@ -3275,6 +3275,13 @@ impl ZeldaState {
 
         let mut src = 0usize;
         let mut decoded = Vec::new();
+        // C's Text_WritePlayerName writes all 6 name chars (including trailing 0x59 blanks)
+        // to the buffer, then returns a pointer advanced by only the *effective* length
+        // (trimming trailing blanks). Subsequent text overwrites from effective_len onward,
+        // leaving any blanks beyond that position in the buffer. We track (name_start,
+        // name_end_6) for each NAME command so we can re-inject those trailing blanks
+        // after the loop exactly as C leaves them.
+        let mut name_ranges: Vec<(usize, usize)> = Vec::new(); // (effective_end, full_end)
         while src < text_str.len() {
             let c = text_str[src];
             src += 1;
@@ -3288,7 +3295,17 @@ impl ZeldaState {
             }
             let (param, cmd, multibyte) = self.text_decode_cmd(c, text_str.get(src).copied());
             match cmd {
-                TEXT_CMD_NAME => self.text_write_player_name_vec(&mut decoded),
+                TEXT_CMD_NAME => {
+                    // C writes all 6 name chars then advances dst by effective_len only.
+                    // We write all 6 to decoded, truncate to effective_len, and record the
+                    // range [effective_end, full_end=effective_end+(6-effective_len)] so we
+                    // can re-inject the trailing blanks after the loop (matching C).
+                    let effective_len = self.text_write_player_name_vec_full(&mut decoded);
+                    let full_end = decoded.len(); // effective_len + 6
+                    let effective_end = full_end - (6 - effective_len);
+                    decoded.truncate(effective_end);
+                    name_ranges.push((effective_end, full_end));
+                }
                 TEXT_CMD_WINDOW => self.messaging_state_mut().set_text_render_state(param),
                 TEXT_CMD_NUMBER => {
                     let v = self
@@ -3320,6 +3337,16 @@ impl ZeldaState {
             }
         }
         decoded.push(0x7f);
+        // Re-inject trailing 0x59 blanks from player-name writes that were not overwritten
+        // by subsequent text. In C, Text_WritePlayerName writes all 6 chars at p[0..6] and
+        // returns p+effective_len; positions [effective_len..6] remain as 0x59 unless later
+        // text overwrites them. We reproduce that by appending the "orphaned" blanks now.
+        for (_effective_end, full_end) in name_ranges {
+            let leftover = full_end.saturating_sub(decoded.len());
+            for _ in 0..leftover {
+                decoded.push(0x59);
+            }
+        }
         self.messaging_text_mut().load_decoded_dialogue(&decoded);
         self.messaging_state_mut().clear_dialogue_msg_read_pos();
     }
@@ -3331,6 +3358,34 @@ impl ZeldaState {
             .messaging_text_mut()
             .write_decoded_text_at(dst, &decoded);
         dst + len
+    }
+
+    /// Build the 6-char player name buffer from SRAM (all 6 entries, including trailing 0x59
+    /// blanks). Returns the *effective* length (trailing blanks trimmed) so the caller can
+    /// replicate C's behaviour: C writes all 6 chars at p[0..6] then returns p+effective_len.
+    fn text_write_player_name_vec_full(&self, decoded: &mut Vec<u8>) -> usize {
+        let slot = self.selected_save_slot_byte();
+        let offs = (((slot >> 1) as isize) - 1) * 0x500;
+        let start = 0x3d9isize + offs;
+        let mut name = [0u8; 6];
+        for (i, ch) in name.iter_mut().enumerate() {
+            let p = start + (i as isize) * 2;
+            let a = if p >= 0 && (p as usize) + 1 < self.sram.len() {
+                read_le_u16(&self.sram, p as usize)
+            } else {
+                0
+            };
+            *ch = self.Text_FilterPlayerNameCharacters((a & 0x0f | (a >> 1) & 0xf0) as u8);
+        }
+        // Write all 6 chars (C writes p[0..6] unconditionally)
+        decoded.extend_from_slice(&name);
+        // Compute effective length (trailing 0x59 blanks trimmed) so caller knows where to
+        // truncate decoded and where subsequent text should continue from.
+        let mut effective_len = name.len();
+        while effective_len != 0 && name[effective_len - 1] == 0x59 {
+            effective_len -= 1;
+        }
+        effective_len
     }
 
     fn text_write_player_name_vec(&self, decoded: &mut Vec<u8>) {
