@@ -3621,6 +3621,18 @@ fn save_replay_save_checkpoint(game: &mut ZeldaState, path: &Path) -> std::io::R
     write_trailer_blob(&mut file, &audio_bytes)?;
     write_trailer_blob(&mut file, &hdma_dyn_bytes)?;
     write_trailer_blob(&mut file, &hdma_scratch_bytes)?;
+    // CRITICAL: state_recorder_save (save_snes_state) MUTATES the live game --
+    // zelda_save_music_state_to_ram_locked rewrites SPC RAM, and
+    // backup_spotlight_hdma_to_saveload_buffer projects 0xff-padded entries into
+    // the SAVELOAD scratch. With --save-state-at, the seeding pass CONTINUES from
+    // this game after the write, so an unrestored mutation corrupts every later
+    // frame (and thus every later checkpoint). Restore the pristine pre-save state
+    // captured above so the checkpoint write is non-destructive.
+    if let Err(e) = game.zelda_audio_restore_from_bytes(&audio_bytes) {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e));
+    }
+    game.restore_hdma_dynamic_table_bytes(&hdma_dyn_bytes);
+    game.restore_saveload_hdma_scratch_bytes(&hdma_scratch_bytes);
     Ok(())
 }
 
