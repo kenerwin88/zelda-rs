@@ -98,6 +98,8 @@ fn run_shard(
     // Shard 0 starts at 0 with no --load-state and produces records for (0, end].
     let n = data.len() / RECORD_LEN;
     for k in 0..n {
+        // golden index 0 = fingerprint for frame 1 (first emitted); record k of a
+        // shard resumed at `start` is frame start+k+1, golden index start+k.
         let frame_idx = start as usize + k;
         if frame_idx >= golden.len() {
             break;
@@ -114,7 +116,14 @@ fn run_shard(
 
 fn shard_count(args: &[String], frames: u32) -> usize {
     if let Some(i) = args.iter().position(|a| a == "--shards") {
-        return args[i + 1].parse().expect("--shards K");
+        let Some(v) = args.get(i + 1) else {
+            eprintln!("--shards requires a value");
+            exit(2);
+        };
+        return v.parse().unwrap_or_else(|_| {
+            eprintln!("--shards K: invalid shard count");
+            exit(2);
+        });
     }
     if frames < SHARD_THRESHOLD {
         return 1;
@@ -140,13 +149,22 @@ fn ensure_checkpoints(p: &Paths, bounds: &[u32]) {
     }
     eprintln!("seeding {} checkpoints (one sequential pass)...", needed.len());
     // Single pass to the last boundary, dropping all checkpoints via --save-state-at.
+    // Write each checkpoint to <frame>.sav.tmp and only rename to the final
+    // <frame>.sav AFTER the pass succeeds. A killed (OOM/SIGKILL) seeding pass
+    // then never leaves a partial file that the existence check above would
+    // trust -> shards would otherwise load a corrupt checkpoint and report a
+    // phantom divergence with no root-cause signal.
     let mut cmd = runner::rust_shard_cmd(p, *bounds.last().unwrap(),
         &p.cache_dir.join("seed.fp"), None);
     for f in &needed {
-        cmd.args(["--save-state-at", &format!("{f}:{}", ck_dir.join(format!("{f}.sav")).display())]);
+        cmd.args(["--save-state-at", &format!("{f}:{}", ck_dir.join(format!("{f}.sav.tmp")).display())]);
     }
     let st = cmd.status().expect("spawn checkpoint seed");
     assert!(st.success(), "checkpoint seeding failed");
+    for f in &needed {
+        std::fs::rename(ck_dir.join(format!("{f}.sav.tmp")), ck_dir.join(format!("{f}.sav")))
+            .expect("rename seeded checkpoint into place");
+    }
     let _ = std::fs::remove_file(p.cache_dir.join("seed.fp"));
 }
 

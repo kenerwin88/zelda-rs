@@ -1357,7 +1357,11 @@ fn run_replay_save(args: &[String]) {
                     eprintln!("--save-state-at <frame>:<path>");
                     process::exit(2);
                 });
-                save_state_at.push((f.parse().unwrap(), PathBuf::from(path)));
+                let frame = f.parse().unwrap_or_else(|_| {
+                    eprintln!("--save-state-at <frame>:<path>: invalid frame number");
+                    process::exit(2);
+                });
+                save_state_at.push((frame, PathBuf::from(path)));
                 i += 2;
             }
             "--load-state" => {
