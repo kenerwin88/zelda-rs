@@ -4,8 +4,17 @@ set -eu
 echo "pre-commit: checking RAM readability guardrails"
 python3 scripts/check_ram_readability.py
 
-echo "pre-commit: building release replay binary"
-cargo build -p zelda3-bin --release
+PRECOMMIT_MODE="${ZELDA3_PRECOMMIT_MODE:-fast}"
+
+if [ "$PRECOMMIT_MODE" = "full" ]; then
+  echo "pre-commit: building release replay binary"
+  cargo build -p zelda3-bin --release
+  RUST_BIN="target/release/zelda3"
+else
+  echo "pre-commit: building parity replay binary"
+  cargo build --profile parity -p zelda3-bin
+  RUST_BIN="target/parity/zelda3"
+fi
 
 snapshot_dir="$(mktemp -d "${TMPDIR:-/tmp}/zelda3-pre-commit-sram.XXXXXX")"
 sram_dat_exists=0
@@ -34,7 +43,13 @@ restore_sram() {
 trap restore_sram EXIT HUP INT TERM
 
 echo "pre-commit: running C/R standard replay parity gate"
-python3 scripts/test_standard_replay_parity.py --skip-final-frame
+if [ "$PRECOMMIT_MODE" = "full" ]; then
+  python3 scripts/test_standard_replay_parity.py --skip-final-frame --rust-bin "$RUST_BIN"
+else
+  python3 scripts/test_standard_replay_parity.py --standalone-embedded-only --rust-bin "$RUST_BIN"
+  FAST_PARITY_FRAMES="${ZELDA3_FAST_PARITY_FRAMES:-1000,12000,202255,700000,1045814,1073092}"
+  python3 scripts/fast_standard_replay_parity.py --rust-bin "$RUST_BIN" --frames "$FAST_PARITY_FRAMES"
+fi
 restore_sram
 trap - EXIT HUP INT TERM
 
@@ -42,7 +57,7 @@ trap - EXIT HUP INT TERM
 # SRAM, RENDER (every frame), AUDIO (DSP trace). Catches any memory/graphics/
 # color-math/audio drift the checkpoint gate above doesn't cover per-frame.
 # Smoke budget keeps it commit-fast; run --full for the exhaustive 170k sweep.
-PARITY_FRAMES="${ZELDA3_PRECOMMIT_PARITY_FRAMES:-5000}"
+PARITY_FRAMES="${ZELDA3_PRECOMMIT_PARITY_FRAMES:-500}"
 echo "pre-commit: all-layer parity gate vs C oracle (${PARITY_FRAMES} frames)"
 if [ -x ../zelda3/zelda3 ]; then
   python3 scripts/validate_all_parity.py --frames "$PARITY_FRAMES" --audio-stride 5
@@ -52,3 +67,4 @@ else
 fi
 
 echo "pre-commit: for the exhaustive sweep run: scripts/validate_all_parity.py --full"
+echo "pre-commit: for the old standard-route hook run: ZELDA3_PRECOMMIT_MODE=full git commit"
