@@ -312,7 +312,9 @@ impl GameState {
         self.archery_game.write_to_ram(ram);
         self.sprite_battle.write_to_ram(ram);
         self.memorized_tiles.write_to_ram(ram);
-        self.dungeon_secret.write_to_ram(ram);
+        // DUNGEON_SECRET_PENDING_KIND / OVERWORLD_SECRET_SUBST_CTR are mode-reused
+        // scratch. The explicit dungeon-secret bridge owns write-through updates, but
+        // the frame-wide projection must preserve C's stale scratch bytes.
         self.save_load_transfer.write_to_ram(ram);
         self.dungeon_map_display.write_to_ram(ram);
         self.dungeon.write_to_ram(ram);
@@ -834,6 +836,24 @@ mod tests {
     }
 
     #[test]
+    fn native_dungeon_room_door_setup_projects_adjacent_door_sentinel_slot() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let mut setup = DungeonRoomDoorSetupState::default();
+        let door_info = [
+            0x82, 0x1c, 0x62, 0x38, 0x61, 0x00, 0x63, 0x00, 0x20, 0x00, 0x81, 0x00, 0x60, 0x69,
+            0xce, 0x0c, 0xff, 0xff,
+        ];
+
+        {
+            let mut bridge = NativeDungeonRoomDoorSetupBridgeMut::new(&mut setup, &mut ram);
+            bridge.load_adjacent_doors_from_room_info(&door_info);
+        }
+
+        assert_eq!(setup.adjacent_door(7), 0x0cce);
+        assert_eq!(read_le_u16(&ram, ADJACENT_DOORS + 16), 0xffff);
+    }
+
+    #[test]
     fn oam_state_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, OAM_PRIORITY_VALUE, 0x2100);
@@ -1268,6 +1288,23 @@ mod tests {
     }
 
     #[test]
+    fn native_game_state_bulk_projection_preserves_dungeon_secret_scratch() {
+        let mut ram = vec![0; WRAM_SIZE];
+        ram[DUNGEON_SECRET_PENDING_KIND] = 0x0b;
+        ram[DUNGEON_SECRET_PENDING_KIND + 1] = 0xaa;
+        ram[OVERWORLD_SECRET_SUBST_CTR] = 0x05;
+
+        let mut state = GameState::load_from_ram(&ram);
+        state.dungeon_secret.clear_pending_kind();
+        state.dungeon_secret.increment_overworld_subst_counter();
+        state.write_to_ram(&mut ram);
+
+        assert_eq!(ram[DUNGEON_SECRET_PENDING_KIND], 0x0b);
+        assert_eq!(ram[DUNGEON_SECRET_PENDING_KIND + 1], 0xaa);
+        assert_eq!(ram[OVERWORLD_SECRET_SUBST_CTR], 0x05);
+    }
+
+    #[test]
     fn save_load_transfer_state_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         write_le_u16(&mut ram, SAVE_LOAD_SOURCE_OFFSET, 0x1234);
@@ -1533,8 +1570,8 @@ mod tests {
         assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R16), 0x027f);
 
         // increment_secondary_low preserves R18's high byte and leaves R16 alone.
-        let next =
-            NativeDungeonScratchWordBridgeMut::new(&mut scratch, &mut ram).increment_secondary_low();
+        let next = NativeDungeonScratchWordBridgeMut::new(&mut scratch, &mut ram)
+            .increment_secondary_low();
         assert_eq!(next, 0x04);
         assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R18), 0x0404);
         assert_eq!(read_le_u16(&ram, DUNGEON_WORK_R16), 0x027f);

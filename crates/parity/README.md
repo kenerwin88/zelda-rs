@@ -7,6 +7,7 @@ divergences between the Rust port and the C oracle. The workflow is:
 capture (C oracle, once)  →  golden committed to parity-golden/
 check   (C-free, sharded) →  DIVERGE at frame N  or  MATCH
 drill   (C-free)          →  per-page/layer localization for frame N
+coverage (Rust route)     →  route surface hit/miss report
 ```
 
 ## Subcommands
@@ -27,27 +28,39 @@ Runs the C oracle over the full replay route and writes the two-tier golden:
 Re-capture when: the replay route changes, a C-oracle hook is updated, or the
 fingerprint mask changes.
 
-### `zparity check [--full] [--frames N]`
+### `zparity check [--full] [--frames N] [--frame N]`
 
 **C-free.** Shards the route across CPU cores using checkpoints seeded from the
 Rust binary. Compares per-block fingerprints against the committed Tier A golden
-(`parity-golden/rollup.bin`).
+(`parity-golden/rollup.bin`). Checkpoint seeds are cache-managed under
+`.cache/parity-golden/ck/`: `check` reuses checkpoints whose `manifest.json`
+matches the current Rust binary, ROM, replay save, timing-hack set, checkpoint
+format, and seed command version. It regenerates only missing or manifest-
+incompatible boundaries; do not delete the cache manually as routine cleanup.
 
 Output:
 - `DIVERGE at frame N, page P (WRAM/VRAM/SRAM/RENDER)  rust=0x...  golden=0x...` — first
   per-frame divergence found.
 - `MATCH  K frames, S shards, Ts  root=0x...` — all frames match the golden.
 
-**`check` is a STRICT per-frame-vs-C bug-finder and is currently RED by design.**
-The Rust port has known per-frame divergences that are real bugs to fix
-(first one: frame 3739, WRAM page 3, `RAW_SFX_PAN_VALUE`, rust=0x0f vs C=0x20).
-`check` is a *worklist tool*: run `check` to find the earliest divergence, run
-`drill <frame>` to localize it, fix the Rust side, repeat. It is intentionally
-**NOT** wired as a blocking pre-commit gate (that would block all commits until
-every divergence is fixed).
+**`check` is a STRICT per-frame-vs-C route parity gate.** A green full-route
+check means the Rust port matches the C oracle for every fingerprinted frame in
+the current replay route. A failure remains the worklist loop: run `check` to
+find the earliest divergence, run `drill <frame>` to localize it, fix the Rust
+side, repeat.
 
 Measured speed: ~30,000 frames in ~69 seconds across 4 shards (incl. checkpoint seeding).
 Full-route check time is proportionally longer.
+
+Use `--frame N` to compare one golden record index against Tier A without
+replaying the full route. It uses the nearest compatible checkpoint already in
+`.cache/parity-golden/ck/` when available; otherwise it runs from frame 0. This
+is the fastest loop for confirming a suspected miss after `check` or `drill`
+has identified a frame.
+
+```bash
+./target/debug/zparity check --frame 460431
+```
 
 ### `zparity drill <frame>`
 
@@ -55,6 +68,142 @@ Full-route check time is proportionally longer.
 (WRAM/VRAM/SRAM/RENDER). Requires Tier B detail (`capture --full --detail`).
 
 Output: table of diverging pages with golden vs rust fingerprints.
+
+### `zparity coverage [--full] [--frames N] [--json PATH] [--input-script PATH] [--input-script-overlay PATH] [--load-state PATH] [--load-sram PATH] [--stop-replay-after-load] [--from-json PATH...] [--seed-from-c-assets] [--route-probes-from-worklist PATH] [--report-json PATH] [--route-report-json PATH] [--route-worklist-json PATH] [--diff-from-json PATH] [--delta-report-json PATH] [--require-full] [--require-route-full]`
+
+Runs the Rust replay route and records which broad gameplay surfaces the route
+actually touches: main modules, sprite types, ancilla types, indoor rooms,
+overworld screens, and active items. The terminal report is intentionally
+compact; `--report-json` keeps the complete covered/missed lists for planning
+new route segments. Repeated `--from-json` paths are unioned into one report so
+supplemental route logs can be measured together; add `--json` to that merged
+mode when you also want to write the union as a new raw coverage log for later
+`--diff-from-json` scoring. `--require-full` exits
+non-zero if any source-backed expected category still has misses, making it the
+CI gate for the merged route suite once supplemental routes exist.
+`--diff-from-json` scores the current run or merged `--from-json` set against a
+base coverage log and prints which previously missed surfaces became covered;
+`--delta-report-json` writes that same delta in machine-readable form.
+`--seed-from-c-assets` adds a provenance-tagged supplement for frame-sampled
+indoor rooms and overworld screens discovered from the C asset filenames. When
+used without `--from-json`, it writes only that source-seeded supplement and
+does not run replay; when used with `--from-json`, it merges the supplement into
+the provided route logs.
+`--route-report-json` writes a route-evidence report where source-seeded values
+without a `first_seen` replay frame still count as missed. `--require-route-full`
+applies the full-coverage gate to that route-evidence report.
+`--route-worklist-json` writes a source-guided JSON worklist for the remaining
+route-evidence misses. It classifies missed rooms/screens with direct entrances,
+stair/hole source rooms, overworld entrances, travel/whirlpool source screens,
+or `unclassified` when the C asset metadata does not expose an obvious route.
+`--route-probes-from-worklist` consumes that worklist and writes a targeted
+route-surface coverage log. Direct-entrance misses are loaded through the
+normal dungeon entrance loader, overworld misses are loaded through the
+overworld screen property loader, and indoor misses without a direct entrance
+are marked through a focused dungeon-room probe. This is much faster than
+joystick sweeps and keeps source-seeded-only entries out of the route-evidence
+gate because every probed surface gets a normal `first_seen` frame.
+
+Use this to answer “what does the current parity route prove?” before treating a
+green `check --full` as broad parity proof. A green organic replay route still
+only proves the surfaces hit by that route; missed surfaces need either new
+route coverage or targeted probes. A green source-seeded coverage gate proves
+that every source-backed room/screen asset is represented in the coverage
+inventory, but it does not prove route observation for those seeded surfaces.
+Use `--require-route-full` when the question is whether replay or targeted probe
+logs actually observed every required surface.
+The expected universe excludes explicit no-route dispatch slots: main-module
+assert paths, `NULL`/assert-only sprite slots, and empty/unused ancilla slots.
+
+```bash
+# Generate raw route coverage and a complete miss report.
+./target/debug/zparity coverage --full \
+  --json .cache/parity-golden/coverage.json \
+  --report-json .cache/parity-golden/coverage-report.json
+
+# Re-render a report from an existing raw coverage log without rerunning replay.
+./target/debug/zparity coverage \
+  --from-json .cache/parity-golden/coverage.json \
+  --report-json .cache/parity-golden/coverage-report.json
+
+# Generate a supplemental coverage log for a recorded input window. Use
+# `--load-state` when extending from a replay checkpoint, or `--load-sram` when
+# starting from an SRAM sidecar. They are mutually exclusive. Add
+# `--stop-replay-after-load` when a checkpoint tail should follow the provided
+# input script instead of the embedded replay stream. Use `--input-script-overlay`
+# when the checkpoint should keep consuming replay input and only explicit
+# script frames should replace that replay input.
+./target/debug/zparity coverage --frames 122000 \
+  --input-script scripts/inputs/file-select-enter-game-message-dismiss-and-wander.txt \
+  --load-state target/lockstep-checkpoints/file-select-enter-game-107000-message.bin \
+  --stop-replay-after-load \
+  --json .cache/parity-golden/coverage-file-select-message-dismiss-wander.json
+
+./target/debug/zparity coverage --frames 9000 \
+  --input-script-overlay .cache/parity-probes/entrance-routes/hc-east-overlay.txt \
+  --load-state .cache/parity-probes/entrance-routes/route-004000-ow001b-stable.sav \
+  --json .cache/parity-golden/coverage-hc-east-overlay.json
+
+# Score a supplemental log against the current merged baseline before keeping it.
+./target/debug/zparity coverage \
+  --diff-from-json .cache/parity-golden/coverage-merged-current.json \
+  --from-json .cache/parity-golden/coverage-file-select-message-dismiss-wander.json \
+  --delta-report-json .cache/parity-golden/coverage-file-select-message-dismiss-wander-delta.json
+
+# Generate a provenance-tagged room/screen supplement from C assets. This is
+# fast and does not run replay.
+./target/debug/zparity coverage \
+  --seed-from-c-assets \
+  --json .cache/parity-golden/coverage-source-seeded-c-assets.json \
+  --report-json .cache/parity-golden/coverage-source-seeded-c-assets-report.json \
+  --diff-from-json .cache/parity-golden/coverage-merged-current.json \
+  --delta-report-json .cache/parity-golden/coverage-source-seeded-c-assets-delta.json
+
+# Merge the full-route log with supplemental route logs into one miss report.
+./target/debug/zparity coverage \
+  --from-json .cache/parity-golden/coverage.json \
+  --from-json .cache/parity-golden/coverage-branch-357697-main-menu-modules.json \
+  --from-json .cache/parity-golden/coverage-stop-after-load-no-input-30000.json \
+  --from-json .cache/parity-golden/coverage-branch-89424-bush-poof-ancilla.json \
+  --from-json .cache/parity-golden/coverage-branch-916218-somaria-fission-ancilla.json \
+  --from-json .cache/parity-golden/coverage-branch-511196-archery-game.json \
+  --from-json .cache/parity-golden/coverage-branch-496311-pikit-shield-drop.json \
+  --from-json .cache/parity-golden/coverage-branch-872500-flute-stop4-ow2f.json \
+  --from-json .cache/parity-golden/coverage-branch-591900-wilted-terrace-ow7c.json \
+  --from-json .cache/parity-golden/coverage-source-seeded-c-assets.json \
+  --json .cache/parity-golden/coverage-merged-current.json \
+  --report-json .cache/parity-golden/coverage-report.json \
+  --require-full
+
+# Generate a strict route-evidence worklist from the source-seeded baseline,
+# consume it with targeted probes, then merge the probe supplement back into the
+# route report.
+./target/debug/zparity coverage \
+  --from-json .cache/parity-golden/coverage-merged-source-seeded.json \
+  --route-report-json .cache/parity-golden/coverage-route-evidence-source-seeded-report.json \
+  --route-worklist-json .cache/parity-golden/coverage-route-worklist-source-seeded.json
+
+./target/debug/zparity coverage \
+  --route-probes-from-worklist .cache/parity-golden/coverage-route-worklist-source-seeded.json \
+  --json .cache/parity-golden/coverage-route-probes-worklist-all.json \
+  --report-json .cache/parity-golden/coverage-route-probes-worklist-all-report.json
+
+./target/debug/zparity coverage \
+  --from-json .cache/parity-golden/coverage-merged-source-seeded.json \
+  --from-json .cache/parity-golden/coverage-route-probes-worklist-all.json \
+  --json .cache/parity-golden/coverage-merged-route-probed.json \
+  --report-json .cache/parity-golden/coverage-report-route-probed.json \
+  --route-report-json .cache/parity-golden/coverage-route-evidence-report.json \
+  --route-worklist-json .cache/parity-golden/coverage-route-worklist.json \
+  --require-route-full
+
+# Re-run the route-only gate from the merged probed log without rerunning probes.
+./target/debug/zparity coverage \
+  --from-json .cache/parity-golden/coverage-merged-route-probed.json \
+  --route-report-json .cache/parity-golden/coverage-route-evidence-report.json \
+  --route-worklist-json .cache/parity-golden/coverage-route-worklist.json \
+  --require-route-full
+```
 
 ## Two-tier golden layout
 
@@ -67,6 +216,9 @@ parity-golden/
 
 .cache/parity-golden/
   detail/            # Tier B: per-frame per-region fingerprints (large; local only)
+  coverage*.json     # Route coverage logs and hit/miss reports (local only)
+  ck/                # Rust checkpoint cache for sharded check runs (local only)
+    manifest.json    # seed identity; incompatible inputs trigger automatic reseeding
 ```
 
 Tier A is committed. Tier B is local-only (`.cache/parity-golden/` is gitignored).

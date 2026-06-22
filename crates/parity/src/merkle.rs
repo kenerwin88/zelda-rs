@@ -12,7 +12,11 @@ impl MerkleIndex {
         let bs = block_size as usize;
         let block_hashes: Vec<u32> = rollups.chunks(bs).map(fnv1a_u32s).collect();
         let root = fnv1a_u32s(&block_hashes);
-        MerkleIndex { block_size, block_hashes, root }
+        MerkleIndex {
+            block_size,
+            block_hashes,
+            root,
+        }
     }
 
     /// First block index whose hash differs (and thus contains the first
@@ -51,7 +55,11 @@ impl MerkleIndex {
             o += 4;
         }
         let root = u32::from_le_bytes(b[o..o + 4].try_into().unwrap());
-        MerkleIndex { block_size, block_hashes, root }
+        MerkleIndex {
+            block_size,
+            block_hashes,
+            root,
+        }
     }
 }
 

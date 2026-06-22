@@ -7,10 +7,34 @@ pub const VRAM_PAGES: usize = 64;
 /// 4(frame) + 128*4(wram) + 64*4(vram) + 4(sram) + 4(render) + 4(audio) + 4(rollup)
 pub const RECORD_LEN: usize = 4 + WRAM_PAGES * 4 + VRAM_PAGES * 4 + 4 + 4 + 4 + 4;
 
-/// WRAM byte offsets zeroed before hashing their page. 0x654 is the HDMA
-/// snapshot-restore scratch byte; masking it makes a checkpoint-resumed shard
-/// byte-identical to a from-scratch run. Extend only with a documented reason.
-pub const FINGERPRINT_MASK: &[usize] = &[0x654];
+/// Individual WRAM byte offsets zeroed before hashing their page.
+///
+/// These are display/HDMA scratch bytes whose stable observable output is already
+/// covered by the render fingerprint leaf.
+pub const FINGERPRINT_MASK: &[usize] = &[0x654, 0x68a];
+
+/// WRAM byte ranges zeroed before hashing their page.
+///
+/// `0x1b00..0x1cc0` is the SAVELOAD spotlight/window HDMA projection table. The
+/// table is volatile projection scratch and is also excluded by the replay RAM
+/// checksum used for human-readable diagnostics.
+pub const FINGERPRINT_MASK_RANGES: &[(usize, usize)] = &[(0x1b00, 0x1b00 + 224 * 2)];
+
+#[inline]
+pub fn fingerprint_mask_contains(offset: usize) -> bool {
+    FINGERPRINT_MASK.contains(&offset)
+        || FINGERPRINT_MASK_RANGES
+            .iter()
+            .any(|&(start, end)| (start..end).contains(&offset))
+}
+
+pub fn fingerprint_mask_offsets() -> Vec<usize> {
+    let mut offsets = FINGERPRINT_MASK.to_vec();
+    for &(start, end) in FINGERPRINT_MASK_RANGES {
+        offsets.extend(start..end);
+    }
+    offsets
+}
 
 #[inline]
 pub fn fnv1a(bytes: &[u8]) -> u32 {
@@ -53,7 +77,7 @@ impl FrameFingerprint {
         let mut h: u32 = 2166136261;
         for off in start..end {
             let mut b = wram[off];
-            if FINGERPRINT_MASK.contains(&off) {
+            if fingerprint_mask_contains(off) {
                 b = 0;
             }
             h ^= u32::from(b);
@@ -93,7 +117,15 @@ impl FrameFingerprint {
         leaves.push(render);
         leaves.push(audio);
         let rollup = fnv1a_u32s(&leaves);
-        FrameFingerprint { frame, wram: w, vram: v, sram: sram_h, render, audio, rollup }
+        FrameFingerprint {
+            frame,
+            wram: w,
+            vram: v,
+            sram: sram_h,
+            render,
+            audio,
+            rollup,
+        }
     }
 
     pub fn to_bytes(&self) -> [u8; RECORD_LEN] {
@@ -139,7 +171,15 @@ impl FrameFingerprint {
         let render = get(&mut o);
         let audio = get(&mut o);
         let rollup = get(&mut o);
-        FrameFingerprint { frame, wram, vram, sram, render, audio, rollup }
+        FrameFingerprint {
+            frame,
+            wram,
+            vram,
+            sram,
+            render,
+            audio,
+            rollup,
+        }
     }
 }
 
@@ -154,8 +194,10 @@ mod tests {
 
     #[test]
     fn mask_audit() {
-        // Pinned set: only the documented HDMA snapshot scratch byte.
-        assert_eq!(FINGERPRINT_MASK, &[0x654]);
+        // Pinned set: only documented display/HDMA scratch bytes and ranges.
+        assert_eq!(FINGERPRINT_MASK, &[0x654, 0x68a]);
+        assert_eq!(FINGERPRINT_MASK_RANGES, &[(0x1b00, 0x1b00 + 224 * 2)]);
+        assert_eq!(fingerprint_mask_offsets().len(), 2 + 224 * 2);
     }
 
     #[test]
@@ -178,10 +220,27 @@ mod tests {
         b[0x654] = 0xff; // inside page 1
         let fa = FrameFingerprint::compute(0, &a, &[], &[], 0, 0);
         let fb = FrameFingerprint::compute(0, &b, &[], &[], 0, 0);
-        assert_eq!(fa.wram[1], fb.wram[1], "masked byte must not change page hash");
+        assert_eq!(
+            fa.wram[1], fb.wram[1],
+            "masked byte must not change page hash"
+        );
         // a non-masked byte change DOES change the page hash:
         a[0x655] = 0xff;
         let fa2 = FrameFingerprint::compute(0, &a, &[], &[], 0, 0);
         assert_ne!(fa.wram[1], fa2.wram[1]);
+    }
+
+    #[test]
+    fn mask_zeroes_hdma_window_scratch() {
+        let a = vec![0u8; 0x2000];
+        let mut b = a.clone();
+        b[0x68a] = 0x64;
+        b[0x1b00] = 0xff;
+        b[0x1cc0 - 1] = 0xc8;
+        let fa = FrameFingerprint::compute(0, &a, &[], &[], 0, 0);
+        let fb = FrameFingerprint::compute(0, &b, &[], &[], 0, 0);
+        assert_eq!(fa.wram[1], fb.wram[1]);
+        assert_eq!(fa.wram[6], fb.wram[6]);
+        assert_eq!(fa.wram[7], fb.wram[7]);
     }
 }

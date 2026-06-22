@@ -2122,13 +2122,15 @@ impl ZeldaState {
             .player
             .follower_link
             .x()
-            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) as u8;
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2())
+            as u8;
         let ycoord = self
             .game_state
             .player
             .follower_link
             .y()
-            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) as u8;
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
+            as u8;
         self.follower_link_state_mut().disable_oam_offsets();
         let scratch_0_var = self
             .game_state

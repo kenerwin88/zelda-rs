@@ -28,7 +28,7 @@ use std::process::exit;
 
 use parity::golden::{self, Manifest};
 use parity::runner::{self, Paths};
-use parity::{FrameFingerprint, PAGE, RECORD_LEN, WRAM_PAGES, VRAM_PAGES};
+use parity::{FrameFingerprint, PAGE, RECORD_LEN, VRAM_PAGES, WRAM_PAGES};
 
 const BLOCK_SIZE: usize = 8192;
 
@@ -136,24 +136,35 @@ pub fn run(args: &[String]) {
             let addr = pidx * PAGE;
             println!(
                 "  VRAM page {pidx:3} @0x{addr:05x}  golden=0x{:08x} rust=0x{:08x}",
-                want.vram[pidx],
-                got.vram[pidx]
+                want.vram[pidx], got.vram[pidx]
             );
         }
     }
     if got.sram != want.sram {
-        println!("  SRAM   golden=0x{:08x} rust=0x{:08x}", want.sram, got.sram);
+        println!(
+            "  SRAM   golden=0x{:08x} rust=0x{:08x}",
+            want.sram, got.sram
+        );
     }
     if got.render != want.render {
-        println!("  RENDER golden=0x{:08x} rust=0x{:08x}", want.render, got.render);
+        println!(
+            "  RENDER golden=0x{:08x} rust=0x{:08x}",
+            want.render, got.render
+        );
     }
     if got.audio != want.audio {
-        println!("  AUDIO  golden=0x{:08x} rust=0x{:08x}", want.audio, got.audio);
+        println!(
+            "  AUDIO  golden=0x{:08x} rust=0x{:08x}",
+            want.audio, got.audio
+        );
     }
     exit(1);
 }
 
-fn nearest_checkpoint(ck_dir: &std::path::Path, end_frame: u32) -> Option<(u32, std::path::PathBuf)> {
+fn nearest_checkpoint(
+    ck_dir: &std::path::Path,
+    end_frame: u32,
+) -> Option<(u32, std::path::PathBuf)> {
     let mut best: Option<(u32, std::path::PathBuf)> = None;
     let entries = std::fs::read_dir(ck_dir).ok()?;
     for e in entries.flatten() {

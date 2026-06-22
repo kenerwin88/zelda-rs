@@ -1,0 +1,18 @@
+# Branch from .cache/parity-probes/pikit-alt/route-496311-ow73.sav.
+# This reaches a land-based Pikit shield steal and kills that Pikit while
+# sprite_E remains 0x04, covering the stolen-shield drop sprite type 0xe6.
+#
+# Inspect with:
+#   ZELDA3_REPLAY_SPRITE_DUMP=1 ./target/parity/zelda3 \
+#     --replay-save saves/zelda3.sfc saves/zelda3-combined-route.sav 498030 \
+#     --load-state .cache/parity-probes/pikit-alt/route-496311-ow73.sav \
+#     --stop-replay-after-load \
+#     --input-script scripts/inputs/coverage-branch-496311-pikit-shield-drop.txt \
+#     --audio-trace-log 100000000
+496351..496770 DOWN
+496812..496860 DOWN+B
+496930..497004 B
+497050..497124 B
+497170..497244 B
+497290..497364 B
+497410..497484 B

@@ -3185,7 +3185,8 @@ impl ZeldaState {
         // message-DMA-pointer scratch) stale. Mirror C's raw copy so those bytes match too;
         // the native fields re-project their (identical) values afterward.
         self.ram[crate::game_state::constants::TEXT_MSGBOX_TOPLEFT_COPY
-            ..crate::game_state::constants::TEXT_MSGBOX_TOPLEFT_COPY + TEXT_INITIALIZATION_DATA.len()]
+            ..crate::game_state::constants::TEXT_MSGBOX_TOPLEFT_COPY
+                + TEXT_INITIALIZATION_DATA.len()]
             .copy_from_slice(&TEXT_INITIALIZATION_DATA);
         self.messaging_state_mut()
             .init_msgbox_state_from(&TEXT_INITIALIZATION_DATA);
@@ -3553,14 +3554,6 @@ impl ZeldaState {
                 TEXT_CMD_CHOOSE3 => self.RenderText_Draw_Choose3(),
                 TEXT_CMD_CHOOSE2 => self.RenderText_Draw_Choose1Or2(),
                 TEXT_CMD_WAITKEY | TEXT_CMD_END_MESSAGE => {
-                    if cmd == TEXT_CMD_END_MESSAGE
-                        && std::env::var_os("ZELDA3_SMV_MESSAGING_TIMING_HACKS").is_some()
-                        && self.game_state.messaging.dialogue_message_index.value() == 0x0070
-                        && self.game_state.messaging.runtime.dialogue_msg_read_pos() == 0x0115
-                        && self.game_state.messaging.runtime.text_wait_countdown2() <= 3
-                    {
-                        self.messaging_state_mut().clear_text_wait_countdown2();
-                    }
                     if self.game_state.messaging.runtime.text_wait_countdown2() != 0 {
                         self.messaging_state_mut().decrement_text_wait_countdown2();
                         if self.game_state.messaging.runtime.text_wait_countdown2() == 1 {
@@ -4039,14 +4032,16 @@ impl ZeldaState {
             .follower_link
             .y()
             .wrapping_add(16)
-            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())) as u8;
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()))
+            as u8;
         let x = (self
             .game_state
             .player
             .follower_link
             .x()
             .wrapping_add(7)
-            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2())) as u8;
+            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()))
+            as u8;
         let flags = DEATH_SPR_FLAGS
             [self.game_state.player.follower_link.lower_level_state() as usize & 1]
             | 2;

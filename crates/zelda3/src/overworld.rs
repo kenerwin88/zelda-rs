@@ -336,6 +336,14 @@ const OVERWORLD_ADJACENT_AREA_DELTAS: [i16; 4] = [-8, 8, -1, 1];
 const OVERWORLD_ENTRY_SETTLE_COORDINATES: [u8; 4] = [0xe0, 8, 0xe0, 0x10];
 
 impl ZeldaState {
+    pub fn parity_probe_overworld_screen(&mut self, screen: u16) -> u16 {
+        self.set_indoor_flag(0);
+        self.set_overworld_area_index_word(screen);
+        self.set_overworld_screen_word(screen);
+        self.Overworld_LoadNewScreenProperties();
+        u16::from(self.game_state.world.location.overworld_screen_index())
+    }
+
     fn replay_trace_door_overlay(&self, label: &str, pos: u16) {
         if std::env::var_os("ZELDA3_REPLAY_TRACE_DOOR").is_none() {
             return;
@@ -1975,7 +1983,8 @@ impl ZeldaState {
             .room_tilemaps
             .bg2_tile_by_byte_pos(pos);
         let mut yv = 0u16;
-        let mut reveal = false;
+        let mut check_secret = false;
+        let mut memoize = false;
 
         let item_in_hand = self.game_state.player.follower_link.item_in_hand();
         let position_mode = self.game_state.player.follower_link.position_mode();
@@ -1994,7 +2003,8 @@ impl ZeldaState {
                         self.set_overworld_hole_tilemap_pos(pos);
                     }
                     yv = 0x0dc9;
-                    reveal = true;
+                    check_secret = true;
+                    memoize = true;
                 } else if attr == 0x037e {
                     if position_mode == 1 {
                         return attr;
@@ -2005,11 +2015,12 @@ impl ZeldaState {
                         .set_interaction_scratch_x(y.wrapping_sub(8) & !7);
                     self.tile_detect_position_mut().set_interacting_tile(3);
                     yv = 0x0dc5;
-                    reveal = true;
+                    check_secret = true;
+                    memoize = true;
                 }
             }
 
-            if !reveal {
+            if !memoize {
                 if attr == 0x036 || attr == 0x072a {
                     if position_mode != 1 {
                         self.tile_detect_position_mut()
@@ -2020,7 +2031,8 @@ impl ZeldaState {
                         self.tile_detect_position_mut()
                             .set_interacting_tile(terrain);
                         yv = if attr == 0x072a { 0x0dc8 } else { 0x0dc7 };
-                        reveal = true;
+                        check_secret = true;
+                        memoize = true;
                     }
                 } else {
                     return attr;
@@ -2030,16 +2042,18 @@ impl ZeldaState {
             self.set_sound_effect_1(17);
             self.HandlePegPuzzles(pos);
             yv = 0x0dcb;
-            reveal = true;
+            memoize = true;
         } else {
             self.Overworld_PickHammerSfx(attr);
             return attr;
         }
 
-        if reveal {
-            let secret = self.Overworld_RevealSecret(pos);
-            if secret != 0 {
-                yv = secret;
+        if memoize {
+            if check_secret {
+                let secret = self.Overworld_RevealSecret(pos);
+                if secret != 0 {
+                    yv = secret;
+                }
             }
             self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile_by_byte_pos(pos, yv);
@@ -4002,7 +4016,12 @@ impl ZeldaState {
 
     pub(super) fn Module09_LoadNewSprites(&mut self) {
         if self.screen_transition() == 1 {
-            let bg2v = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_add(2);
+            let bg2v = self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_v_copy2()
+                .wrapping_add(2);
             self.set_bg2_y(bg2v);
             let link_y = self.game_state.player.follower_link.y().wrapping_add(2);
             self.follower_link_state_mut().set_y(link_y);
@@ -4169,7 +4188,11 @@ impl ZeldaState {
         // C clears only the LOW byte here (`dung_savegame_info[BIG_ROCK] = 0`, a u8 write),
         // leaving the high byte intact (e.g. 0x0100 stays 0x0100). Clearing the whole u16
         // would blank a live big-rock starting address and then re-project 0 over RAM.
-        let big_rock = self.game_state.dungeon.object_tracking.big_rock_starting_address();
+        let big_rock = self
+            .game_state
+            .dungeon
+            .object_tracking
+            .big_rock_starting_address();
         self.dungeon_object_tracking_mut()
             .set_big_rock_starting_address(big_rock & 0xff00);
         self.set_transition_counter(0);
@@ -4399,7 +4422,12 @@ impl ZeldaState {
         let rv;
         if y < 2 {
             self.set_overworld_vertical_scroll_delta_low(d as u8);
-            rv = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_add_signed(d);
+            rv = self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_v_copy2()
+                .wrapping_add_signed(d);
             self.set_bg2_y(rv);
             if self.game_state.world.location.overworld_screen_index() != 0x1b
                 && self.game_state.world.location.overworld_screen_index() != 0x5b
@@ -4425,7 +4453,12 @@ impl ZeldaState {
                 return rv as i32;
             }
             if y == 0 {
-                let bg2 = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_sub(2);
+                let bg2 = self
+                    .game_state
+                    .display
+                    .ppu_scroll_copy
+                    .bg2_v_copy2()
+                    .wrapping_sub(2);
                 self.set_bg2_y(bg2);
             }
             let link_y = self.game_state.player.follower_link.y() & !7;
@@ -4437,7 +4470,12 @@ impl ZeldaState {
             self.clear_opposed_scroll_counters(0);
         } else {
             self.set_overworld_horizontal_scroll_delta_low(d as u8);
-            rv = self.game_state.display.ppu_scroll_copy.bg2_h_copy2().wrapping_add_signed(d);
+            rv = self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_h_copy2()
+                .wrapping_add_signed(d);
             self.set_bg2_x(rv);
             if self.game_state.world.location.overworld_screen_index() != 0x1b
                 && self.game_state.world.location.overworld_screen_index() != 0x5b

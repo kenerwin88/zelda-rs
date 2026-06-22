@@ -2785,8 +2785,11 @@ impl ZeldaState {
         // written by Module07_0C). This reader only consulted the DisplayState model, which is
         // stale during the swamp scene, so the HDMA window was a pixel off (f606612). Read the live
         // RAM byte both scenes write, like the old clone.
-        let r12 = crate::types::read_le_u16(&self.ram, crate::game_state::constants::WATER_HDMA_WINDOW_X_RADIUS)
-            .saturating_sub(1);
+        let r12 = crate::types::read_le_u16(
+            &self.ram,
+            crate::game_state::constants::WATER_HDMA_WINDOW_X_RADIUS,
+        )
+        .saturating_sub(1);
         let r2 = window_x_center.wrapping_add(r12).min(255);
         let r0 = window_x_center.wrapping_sub(r12).min(255);
         let r12_pair = r0 | (r2 << 8);

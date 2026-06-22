@@ -55,7 +55,10 @@ impl InventoryItemsState {
             *bottle = ram_byte(ram, LINK_BOTTLE_INFO + index);
         }
 
-        Self { item_slots, bottles }
+        Self {
+            item_slots,
+            bottles,
+        }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
@@ -251,7 +254,6 @@ impl InventoryItemsState {
         }
     }
 
-
     fn fill_first_empty_bottle_with(&mut self, value: u8) -> bool {
         if let Some(bottle) = self.bottles.iter_mut().find(|bottle| **bottle < 2) {
             *bottle = value;
@@ -392,7 +394,6 @@ impl<'a> NativeInventoryItemsBridgeMut<'a> {
         self.items.write_to_ram(self.ram);
         self.debug_assert_matches_ram();
     }
-
 
     pub(crate) fn fill_first_empty_bottle_with(&mut self, value: u8) -> bool {
         let filled = self.items.fill_first_empty_bottle_with(value);

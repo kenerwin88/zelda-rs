@@ -1,0 +1,11 @@
+# Branch from .cache/parity-probes/ow-neighbor/route-591900-ow007b-stable.sav.
+# Steers southeast from DW 123 / Swamp Palace Grounds into DW 124 / Wilted
+# Terrace, covering overworld screen 0x007c.
+#
+# Regenerate with:
+#   ./target/debug/zparity coverage --frames 596100 \
+#     --load-state .cache/parity-probes/ow-neighbor/route-591900-ow007b-stable.sav \
+#     --stop-replay-after-load \
+#     --input-script scripts/inputs/coverage-branch-591900-wilted-terrace-ow7c.txt \
+#     --json .cache/parity-golden/coverage-branch-591900-wilted-terrace-ow7c.json
+591901..596100 DOWN+RIGHT

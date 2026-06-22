@@ -3113,7 +3113,11 @@ impl ZeldaState {
         // write_to_ram owns only 0x69e/0x69f; 0x6a0 is foreign mode-reused scratch written
         // through by the horizontal-word setter, so compare only the owned region.
         debug_assert_eq!(
-            self.game_state.world.overworld.scroll_delta.vertical_delta_word(),
+            self.game_state
+                .world
+                .overworld
+                .scroll_delta
+                .vertical_delta_word(),
             crate::game_state::OverworldScrollDeltaState::load_from_ram(&self.ram)
                 .vertical_delta_word()
         );
@@ -5001,7 +5005,12 @@ impl ZeldaState {
         composite_plane: u8,
     ) {
         crate::types::ww_check(dst, 2, "expand_gfx_tile_row[lo/hi]", low_plane as u32);
-        crate::types::ww_check(dst + 0x10, 2, "expand_gfx_tile_row[up/comp]", upper_plane as u32);
+        crate::types::ww_check(
+            dst + 0x10,
+            2,
+            "expand_gfx_tile_row[up/comp]",
+            upper_plane as u32,
+        );
         self.ram[dst] = low_plane;
         self.ram[dst + 1] = high_plane;
         self.ram[dst + 0x10] = upper_plane;
@@ -5865,7 +5874,11 @@ impl ZeldaState {
         // C writes `vwf_arr[index + 1] = value` as raw g_ram, even past the modeled buffer
         // (the credits render lines whose glyph cursor runs beyond it). For those overflow
         // bytes the native Vec projection above does not reach RAM, so write them directly.
-        let buf_len = self.game_state.messaging.vwf_render.glyph_advance_buffer_len();
+        let buf_len = self
+            .game_state
+            .messaging
+            .vwf_render
+            .glyph_advance_buffer_len();
         let addr = VWF_ARR + index + 1;
         if index + 1 >= buf_len && addr < self.ram.len() {
             self.ram[addr] = value;
@@ -6054,7 +6067,9 @@ impl ZeldaState {
         // from RAM directly — NOT from the persisted `boss_home_positions` native, which
         // production never repopulates mid-frame (only tests drive the `_mut` bridge), so
         // it would return a stale value. Mirrors armos_knight_home_position.
-        use crate::game_state::constants::{OVERLORD_GEN1, OVERLORD_GEN3, OVERLORD_X_LO, OVERLORD_Y_LO};
+        use crate::game_state::constants::{
+            OVERLORD_GEN1, OVERLORD_GEN3, OVERLORD_X_LO, OVERLORD_Y_LO,
+        };
         let s = puff_slot + 7;
         BossHomePositionRead::from_xy_bytes(
             self.ram[OVERLORD_X_LO + s],
@@ -6486,8 +6501,10 @@ impl ZeldaState {
         // (page 0x1dc00). Do the raw ram copy; load_snes_state's following
         // sync_native_game_state_from_ram reloads the native table from this ram.
         const BYTES: usize = 224 * 2;
-        self.ram
-            .copy_within(SAVELOAD_HDMA_TABLE..SAVELOAD_HDMA_TABLE + BYTES, HDMA_TABLE_DYNAMIC);
+        self.ram.copy_within(
+            SAVELOAD_HDMA_TABLE..SAVELOAD_HDMA_TABLE + BYTES,
+            HDMA_TABLE_DYNAMIC,
+        );
     }
 
     fn backup_spotlight_hdma_to_saveload_buffer(&mut self) {
@@ -8056,25 +8073,51 @@ impl ZeldaState {
         0
     }
 
-    pub fn zelda_run_frame(&mut self, mut inputs: i32) -> bool {
+    fn sanitize_frame_inputs(mut inputs: i32) -> u16 {
         if inputs & 0x30 == 0x30 {
             inputs ^= 0x30;
         }
         if inputs & 0xc0 == 0xc0 {
             inputs ^= 0xc0;
         }
+        inputs as u16
+    }
 
+    pub fn state_recorder_read_next_replay_state_with_input_override(
+        &mut self,
+        sr: &mut StateRecorder,
+        input_override: Option<u16>,
+    ) -> u16 {
+        let replay_input = self.state_recorder_read_next_replay_state(sr);
+        input_override.unwrap_or(replay_input)
+    }
+
+    pub fn zelda_run_frame(&mut self, inputs: i32) -> bool {
+        self.zelda_run_frame_with_replay_input_override(inputs, None)
+    }
+
+    pub fn zelda_run_frame_with_replay_input_override(
+        &mut self,
+        inputs: i32,
+        replay_input_override: Option<u16>,
+    ) -> bool {
+        let inputs = Self::sanitize_frame_inputs(inputs);
+        let replay_input_override =
+            replay_input_override.map(|input| Self::sanitize_frame_inputs(input as i32));
         self.frame_ctr_dbg = self.frame_ctr_dbg.wrapping_add(1);
         self.replay_trace_ram_watch("frame-entry");
         let mut state_recorder = std::mem::take(&mut self.state_recorder);
         let is_replay = state_recorder.replay_mode;
         let input_state = if is_replay {
-            let input_state = self.state_recorder_read_next_replay_state(&mut state_recorder);
+            let input_state = self.state_recorder_read_next_replay_state_with_input_override(
+                &mut state_recorder,
+                replay_input_override,
+            );
             self.replay_trace_col("after-replay-command");
             self.replay_trace_ram_watch("after-replay-command");
             input_state
         } else {
-            Self::state_recorder_record(&mut state_recorder, inputs as u16);
+            Self::state_recorder_record(&mut state_recorder, inputs);
             let apui00 = self.zelda_is_music_playing() as u8;
             if apui00 != self.game_state.system_signals.apui00() {
                 self.set_apui00(apui00);
@@ -8113,7 +8156,7 @@ impl ZeldaState {
                     );
                 }
             }
-            inputs as u16
+            inputs
         };
         self.state_recorder = state_recorder;
 
@@ -8781,7 +8824,8 @@ impl ZeldaState {
                 .player
                 .follower_link
                 .y()
-                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) as u8;
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
+                as u8;
             self.follower_link_state_mut()
                 .clear_state_item_and_grab_flags();
             self.follower_link_state_mut().set_y_button_action_timer(0);
@@ -9455,6 +9499,49 @@ mod tests {
         write_le_u16(&mut state.ram, addr, value);
     }
 
+    fn put_test_asset(
+        data: &mut Vec<u8>,
+        ranges: &mut [(usize, usize)],
+        index: usize,
+        bytes: Vec<u8>,
+    ) {
+        let start = data.len();
+        data.extend(bytes);
+        ranges[index] = (start, data.len());
+    }
+
+    fn probe_entrance_asset_pack(entrance_index: usize, room: u16) -> AssetPack {
+        let mut data = Vec::new();
+        let mut ranges = vec![(0, 0); 56];
+        let byte_len = entrance_index + 1;
+        let word_len = (entrance_index + 1) * 2;
+
+        let mut rooms = vec![0; word_len];
+        write_le_u16(&mut rooms, entrance_index * 2, room);
+        put_test_asset(&mut data, &mut ranges, 11, rooms);
+
+        put_test_asset(&mut data, &mut ranges, 12, vec![0; byte_len * 8]);
+        for asset in [13, 14, 15, 16, 17, 18, 26] {
+            put_test_asset(&mut data, &mut ranges, asset, vec![0; word_len]);
+        }
+        for asset in [19, 20, 21, 22, 23, 24, 25, 27] {
+            put_test_asset(&mut data, &mut ranges, asset, vec![0; byte_len]);
+        }
+        put_test_asset(&mut data, &mut ranges, 53, Vec::new());
+        put_test_asset(&mut data, &mut ranges, 54, vec![0; 116]);
+        put_test_asset(&mut data, &mut ranges, 55, Vec::new());
+
+        AssetPack { data, ranges }
+    }
+
+    fn probe_overworld_asset_pack(screen: usize) -> AssetPack {
+        let mut data = Vec::new();
+        let mut ranges = vec![(0, 0); 109];
+        put_test_asset(&mut data, &mut ranges, 107, vec![1; screen + 1]);
+        put_test_asset(&mut data, &mut ranges, 108, vec![0; screen + 1]);
+        AssetPack { data, ranges }
+    }
+
     #[test]
     fn owns_oracle_compared_memory_regions() {
         let state = ZeldaState::new();
@@ -9553,6 +9640,43 @@ mod tests {
             assert_eq!(state.rom_or_asset_word_snes(base), Some(value));
             assert_eq!(state.rom_or_asset_word_snes(base + 2), Some(value ^ 0xffff));
         }
+    }
+
+    #[test]
+    fn parity_probe_direct_entrance_loads_room_from_entrance_assets() {
+        let mut state = ZeldaState::new();
+        state.assets = Some(probe_entrance_asset_pack(0x2a, 0x0122));
+
+        let room = state.parity_probe_direct_entrance(0x2a);
+
+        assert_eq!(room, 0x0122);
+        assert_eq!(read_le_u16(&state.ram, 0x048e), 0x0122);
+        assert_eq!(state.ram[0x001b], 1);
+    }
+
+    #[test]
+    fn parity_probe_overworld_screen_loads_screen_properties() {
+        let mut state = ZeldaState::new();
+        state.assets = Some(probe_overworld_asset_pack(0x005a));
+        state.set_indoor_flag(1);
+
+        let screen = state.parity_probe_overworld_screen(0x005a);
+
+        assert_eq!(screen, 0x005a);
+        assert_eq!(read_le_u16(&state.ram, 0x008a), 0x005a);
+        assert_eq!(state.ram[0x001b], 0);
+    }
+
+    #[test]
+    fn parity_probe_dungeon_room_marks_room_as_indoor_surface() {
+        let mut state = ZeldaState::new();
+
+        let room = state.parity_probe_dungeon_room(0x002d);
+
+        assert_eq!(room, 0x002d);
+        assert_eq!(read_le_u16(&state.ram, 0x048e), 0x002d);
+        assert_eq!(read_le_u16(&state.ram, 0x00a0), 0x002d);
+        assert_eq!(state.ram[0x001b], 1);
     }
 
     #[test]
@@ -10060,6 +10184,35 @@ mod tests {
         assert_eq!(state.state_recorder_read_next_replay_state(&mut sr), 0x0001);
         assert!(sr.replay_mode);
         assert_eq!(state.state_recorder_read_next_replay_state(&mut sr), 0x0003);
+        assert!(!sr.replay_mode);
+    }
+
+    #[test]
+    fn state_recorder_replay_input_override_advances_replay_but_substitutes_input() {
+        let mut state = ZeldaState::new();
+        let mut sr = StateRecorder {
+            replay_mode: true,
+            total_frames: 3,
+            log: ByteArray {
+                data: vec![0x00, 0x12],
+            },
+            ..StateRecorder::default()
+        };
+
+        assert_eq!(
+            state.state_recorder_read_next_replay_state_with_input_override(&mut sr, None),
+            0x0001
+        );
+        assert!(sr.replay_mode);
+        assert_eq!(
+            state.state_recorder_read_next_replay_state_with_input_override(&mut sr, Some(0x0080)),
+            0x0080
+        );
+        assert!(sr.replay_mode);
+        assert_eq!(
+            state.state_recorder_read_next_replay_state_with_input_override(&mut sr, None),
+            0x0003
+        );
         assert!(!sr.replay_mode);
     }
 

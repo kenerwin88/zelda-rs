@@ -112,8 +112,11 @@ step-dump match on `replay_frame_counter` too) — but `ZELDA3_WW_FRAME` still k
 `frame_ctr_dbg` (RELATIVE on resume: target − checkpoint, e.g. 460431−460000 = 431). New
 frame-gated `eprintln`s should use `self.trace_frame_matches(N)`, not `== frame_ctr_dbg`.
 (b) snapshot restore has a tiny artifact (byte 0x654, HDMA scratch) — filter it, and confirm
-a candidate fix with ONE from-scratch run before committing. (c) delete checkpoints after any
-serde struct layout change. See memory [[checkpoint-resume-debugging]].
+a candidate fix with ONE from-scratch run before committing. (c) do not manually delete
+checkpoint seeds as cleanup; `zparity check` owns `.cache/parity-golden/ck/manifest.json` and
+regenerates needed checkpoints when the cache identity changes. If you change checkpoint
+serialization, bump `CHECKPOINT_FORMAT_VERSION` in `crates/parity/src/checkpoint_cache.rs`.
+See memory [[checkpoint-resume-debugging]].
 
 ## Parity-debugging tools (`scripts/`) — prefer these, in this order
 
@@ -178,7 +181,9 @@ serde struct layout change. See memory [[checkpoint-resume-debugging]].
    localizes per page/layer (needs `capture --full --detail` for Tier B). Currently **RED by design**
    (first divergence: frame 3739, WRAM page 3, `RAW_SFX_PAN_VALUE`); use as a worklist:
    `check` → `drill <frame>` → `whoowns <addr>` → fix Rust side vs the C source → repeat. **Not wired
-   as a blocking pre-commit gate.** Measured: ~30k frames / ~69s across 4 shards. Full docs in
+   as a blocking pre-commit gate.** Checkpoint seeds are cache-managed: `check` writes
+   `.cache/parity-golden/ck/manifest.json` and reuses matching checkpoints; it reseeds only missing
+   or manifest-incompatible boundaries. Measured: ~30k frames / ~69s across 4 shards. Full docs in
    `crates/parity/README.md`; spec/plan in `docs/superpowers/{specs,plans}/2026-06-20-zparity-*`.
 
 ### Tracing env vars
@@ -217,9 +222,15 @@ serde struct layout change. See memory [[checkpoint-resume-debugging]].
 ## Gotchas
 
 - Never `git checkout <file>` — it nukes unstaged WIP. Surgically revert your own edits.
-- After changing any serde-serialized native struct's field layout, DELETE
-  `.cache/parity-golden/ck` — old `--load-state` checkpoints become incompatible and
-  silently corrupt `zparity` shard runs (and re-capture the golden if the layout affects it).
+- Do not delete or recapture parity seeds as routine cleanup. `parity-golden/` is the committed
+  C-oracle golden; re-capture it only when the replay route, C oracle hooks, fingerprint
+  format/mask, ROM/save, or timing-hack contract changes. `.cache/parity-golden/detail/` is
+  local drill detail and should stay unless the golden was recaptured. `.cache/parity-golden/ck/`
+  is Rust checkpoint cache; `zparity check` invalidates it by manifest and regenerates the needed
+  boundaries. If checkpoint serialization/layout changes, bump `CHECKPOINT_FORMAT_VERSION` in
+  `crates/parity/src/checkpoint_cache.rs` instead of telling agents to delete the cache by hand.
+  If cache corruption is suspected, run `scripts/verify_seeded_boundaries.sh` or remove only the
+  affected checkpoint files with a concrete reason.
 - Raw RAM hashes flag BENIGN scratch divergence (matches behavior, fails the gate).
   The gate (`test_standard_replay_parity.py`) compares raw `ramhash`/`ram0..7`/`sramhash`
   vs the C oracle, so even benign shadow divergence must eventually be eliminated.

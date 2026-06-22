@@ -328,7 +328,6 @@ impl WorldScrollState {
         // 249648), cascading the whole post-249650 divergence. Last-writer-wins now matches C.
     }
 
-
     pub(crate) fn bg1_x_offset(&self) -> u16 {
         self.bg1_x_offset
     }
@@ -2498,7 +2497,11 @@ impl WorldTransientState {
             OVERWORLD_PEG_PUZZLE_PROGRESS,
             self.overworld_peg_puzzle_progress,
         );
-        write_le_u16(ram, OVERWORLD_HOLE_TILEMAP_POS, self.overworld_hole_tilemap_position);
+        write_le_u16(
+            ram,
+            OVERWORLD_HOLE_TILEMAP_POS,
+            self.overworld_hole_tilemap_position,
+        );
         write_le_u16(
             ram,
             OVERWORLD_BOMB_TILE_SWEEP_X,

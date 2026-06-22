@@ -117,7 +117,12 @@ impl ZeldaState {
                 .bg2_h_copy2()
                 .wrapping_add((self.get_random_number() & 127) as u16)
                 .wrapping_add(64);
-            let y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_sub(0x30);
+            let y = self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_v_copy2()
+                .wrapping_sub(0x30);
             self.Sprite_SetX(j, x);
             self.Sprite_SetY(j, y);
             let mut sprite = self.sprite_slot_mut(j);

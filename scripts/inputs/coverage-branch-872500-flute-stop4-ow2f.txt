@@ -1,0 +1,16 @@
+# Branch from .cache/parity-probes/flute/route-872500-ow05.sav.
+# Uses the activated flute from a stable light-world overworld state, selects
+# bird-travel stop 4, and covers LW screen 0x2f.
+#
+# Regenerate with:
+#   ./target/debug/zparity coverage --frames 878500 \
+#     --load-state .cache/parity-probes/flute/route-872500-ow05.sav \
+#     --stop-replay-after-load \
+#     --input-script scripts/inputs/coverage-branch-872500-flute-stop4-ow2f.txt \
+#     --json .cache/parity-golden/coverage-branch-872500-flute-stop4-ow2f.json
+872510..872540 Y
+876510..876514 RIGHT
+876550..876554 RIGHT
+876590..876594 RIGHT
+876630..876634 RIGHT
+876700..876710 A

@@ -1,0 +1,15 @@
+# Probe from .cache/parity-probes/pikit/rust-frame-477463-pikit.sav.
+# Reaches Pikit AI state 2 with sprite_E=0x04 around frame 477850, proving
+# the shield-drop source path is routeable up to the stolen-shield state.
+# This is intentionally not a golden coverage branch yet: it does not cover
+# sprite type 0xe6 until the Pikit is killed while sprite_E remains 0x04.
+#
+# Inspect with:
+#   ZELDA3_REPLAY_SPRITE_DUMP=1 ./target/parity/zelda3 \
+#     --replay-save saves/zelda3.sfc saves/zelda3-combined-route.sav 477850 \
+#     --load-state .cache/parity-probes/pikit/rust-frame-477463-pikit.sav \
+#     --stop-replay-after-load \
+#     --input-script scripts/inputs/coverage-probe-477463-pikit-shield-steal.txt \
+#     --audio-trace-log 100000000
+477483..477602 DOWN
+477603..477722 DOWN+LEFT

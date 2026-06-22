@@ -2313,7 +2313,7 @@ impl ZeldaState {
     // void SpriteDraw_TrinexxRockHead(int k, PrepOamCoordsRet *info) {  // 9db560
     //   sprite_main.c:16348 — 36-entry head OAM block.
     // -----------------------------------------------------------------------
-    pub(super) fn sprite_draw_trinexx_rock_head(&mut self, k: usize, info: &PrepOamCoordsRet) {
+    pub(super) fn sprite_draw_trinexx_rock_head(&mut self, k: usize, info: &mut PrepOamCoordsRet) {
         const TRINEXX_DRAW1_DRAW_FRAMES: [DrawMultipleData; 36] = [
             DrawMultipleData {
                 x: -8,
@@ -2537,24 +2537,17 @@ impl ZeldaState {
         }
         let base = (self.sprite_slot(k).graphics() as usize) * 4;
         let base = base.min(TRINEXX_DRAW1_DRAW_FRAMES.len() - 4);
-        // Sprite_DrawMultiple(... info) — the canonical helper takes
-        // Option<&mut PrepOamCoordsRet>; mirror the same effect by recomputing
-        // from prep, then copy into our local struct.
-        let prepped = match self.sprite_prep_oam_coord_or_double_ret(k) {
-            Some(p) => p,
-            None => return,
-        };
+        // Sprite_DrawMultiple(... info) writes the out-pointer before returning
+        // early for offscreen sprites. Trinexx body drawing still consumes those
+        // flags, so preserve the populated tuple even when no head OAM is drawn.
+        let (prepped, out_of_bounds) = self.sprite_prep_oam_coord_or_double_ret_with_out_flag(k);
+        *info = PrepOamCoordsRet::from_tuple(prepped);
+        if out_of_bounds {
+            return;
+        }
         // Manually emit the four DrawMultipleData entries so we don't have to thread
         // a mutable canonical-struct reference here.
         self.sprite_draw_multiple_with_info(k, &TRINEXX_DRAW1_DRAW_FRAMES[base..base + 4], prepped);
-        // info is an out-pointer in C; update fields the caller cares about.
-        let info_ptr = info as *const PrepOamCoordsRet as *mut PrepOamCoordsRet;
-        unsafe {
-            (*info_ptr).x = prepped.0;
-            (*info_ptr).y = prepped.1;
-            (*info_ptr).flags = prepped.2;
-            (*info_ptr).r4 = 0;
-        }
     }
 
     // -----------------------------------------------------------------------
@@ -2582,13 +2575,7 @@ impl ZeldaState {
         }
 
         let mut info = PrepOamCoordsRet::default();
-        self.sprite_draw_trinexx_rock_head(k, &info);
-        // Pick up the freshly written info from the helper above. Because the
-        // helper mutates the by-shared-ref-as-out-ptr, the C semantics work; in
-        // Rust we re-prep here to keep `info` in sync.
-        if let Some(p) = self.sprite_prep_oam_coord_or_double_ret(k) {
-            info = PrepOamCoordsRet::from_tuple(p);
-        }
+        self.sprite_draw_trinexx_rock_head(k, &mut info);
         info.flags &= !0x10;
 
         if self.sprite_slot(k).ai_state() == 3 {
@@ -25821,7 +25808,8 @@ impl ZeldaState {
             };
             let history_x_low = self.ram[MOLDORM_HISTORY_X_LO + hist];
             let history_y_low = self.ram[MOLDORM_HISTORY_Y_LO + hist];
-            let entry_x = history_x_low.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low());
+            let entry_x = history_x_low
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low());
             self.oam_state_mut().set_entry_x(oam, entry_x);
             let z_offset = self.ram[BEAMOS_LASER_HISTORY_X_HI + hist];
             let dir = usize::from(self.ram[BEAMOS_LASER_HISTORY_Y_HI + hist]);
@@ -25859,10 +25847,13 @@ impl ZeldaState {
             r5 = r5.wrapping_sub(8) & 63;
             // Raw-ram trail read, as in the first segment loop (native models only 128 of the
             // lanmola's 192 flat slots). f220638.
-            use crate::game_state::constants::{BEAMOS_LASER_HISTORY_X_HI, MOLDORM_HISTORY_X_LO, MOLDORM_HISTORY_Y_LO};
+            use crate::game_state::constants::{
+                BEAMOS_LASER_HISTORY_X_HI, MOLDORM_HISTORY_X_LO, MOLDORM_HISTORY_Y_LO,
+            };
             let history_x_low = self.ram[MOLDORM_HISTORY_X_LO + hist];
             let history_y_low = self.ram[MOLDORM_HISTORY_Y_LO + hist];
-            let entry_x = history_x_low.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low());
+            let entry_x = history_x_low
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low());
             self.oam_state_mut().set_entry_x(oam, entry_x);
             let segment_z_offset = self.ram[BEAMOS_LASER_HISTORY_X_HI + hist];
             if !sign8(segment_z_offset) {
@@ -27323,6 +27314,55 @@ mod tests {
         assert_eq!(s.sprite_slot(k).graphics(), 0);
         assert_eq!(s.game_state.oam.current_pointer(), 0x810);
         assert_eq!(s.game_state.oam.current_extended_pointer(), 0xa24);
+    }
+
+    #[test]
+    fn trinexx_body_uses_head_outparam_flags_for_body_oam() {
+        let mut s = fresh_state();
+        let k = 0;
+        s.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        s.oam_state_mut()
+            .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
+        s.sprite_slot_mut(k).set_x_low(0x78);
+        s.sprite_slot_mut(k).set_x_high(0x08);
+        s.sprite_slot_mut(k).set_y_low(0x10);
+        s.sprite_slot_mut(k).set_y_high(0x16);
+        s.sprite_slot_mut(k).set_a(0x78);
+        s.sprite_slot_mut(k).set_c(0x10);
+        s.sprite_slot_mut(k).set_ai_state(0);
+        s.sprite_slot_mut(k).set_oam_flags(1);
+        s.sprite_slot_mut(k).set_graphics(0);
+        s.sprite_slot_mut(k).set_head_direction(0);
+
+        s.sprite_draw_trinexx_rock_head_and_body(k);
+
+        assert_eq!(s.ram[OAM_BUF + 91 * 4 + 3], 0x21);
+    }
+
+    #[test]
+    fn trinexx_body_keeps_head_outparam_flags_when_head_is_offscreen() {
+        let mut s = fresh_state();
+        let k = 0;
+        s.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        s.oam_state_mut()
+            .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
+        s.sprite_workspace_mut().set_current_sprite_x(0x0878);
+        s.sprite_workspace_mut().set_current_sprite_y(0x156c);
+        s.sprite_slot_mut(k).set_x_low(0x78);
+        s.sprite_slot_mut(k).set_x_high(0x08);
+        s.sprite_slot_mut(k).set_y_low(0x6c);
+        s.sprite_slot_mut(k).set_y_high(0x15);
+        s.sprite_slot_mut(k).set_a(0x78);
+        s.sprite_slot_mut(k).set_c(0x08);
+        s.sprite_slot_mut(k).set_ai_state(0);
+        s.sprite_slot_mut(k).set_oam_flags(1);
+        s.sprite_slot_mut(k).set_object_priority(0x30);
+        s.sprite_slot_mut(k).set_graphics(0);
+        s.sprite_slot_mut(k).set_head_direction(0);
+
+        s.sprite_draw_trinexx_rock_head_and_body(k);
+
+        assert_eq!(s.ram[OAM_BUF + 91 * 4 + 3], 0x21);
     }
 
     #[test]

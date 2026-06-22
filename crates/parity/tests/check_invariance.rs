@@ -9,7 +9,11 @@ use std::path::Path;
 use std::process::Command;
 
 fn zparity(root: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_zparity")).current_dir(root).args(args).output().unwrap()
+    Command::new(env!("CARGO_BIN_EXE_zparity"))
+        .current_dir(root)
+        .args(args)
+        .output()
+        .unwrap()
 }
 
 /// Extract the shard-count-independent verdict from `check` stdout: for a
@@ -32,7 +36,11 @@ fn verdict(stdout: &str) -> String {
 #[test]
 #[ignore]
 fn shard_invariant() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
     // Requires a golden already captured for >= 30000 frames.
     let a = zparity(root, &["check", "--frames", "30000", "--shards", "1"]);
     let b = zparity(root, &["check", "--frames", "30000", "--shards", "4"]);
@@ -41,9 +49,20 @@ fn shard_invariant() {
     let sb = String::from_utf8_lossy(&b.stdout);
     let va = verdict(&sa);
     let vb = verdict(&sb);
-    assert!(!va.is_empty(), "1-shard produced no verdict\nstdout: {sa}\nstderr: {}", String::from_utf8_lossy(&a.stderr));
-    assert!(!vb.is_empty(), "4-shard produced no verdict\nstdout: {sb}\nstderr: {}", String::from_utf8_lossy(&b.stderr));
+    assert!(
+        !va.is_empty(),
+        "1-shard produced no verdict\nstdout: {sa}\nstderr: {}",
+        String::from_utf8_lossy(&a.stderr)
+    );
+    assert!(
+        !vb.is_empty(),
+        "4-shard produced no verdict\nstdout: {sb}\nstderr: {}",
+        String::from_utf8_lossy(&b.stderr)
+    );
     // Core correctness guarantee: the verdict is independent of how the frame
     // range is sharded (checkpoint-resume == from-scratch, byte-for-byte).
-    assert_eq!(va, vb, "shard-invariance violated:\n  1-shard: {va}\n  4-shard: {vb}");
+    assert_eq!(
+        va, vb,
+        "shard-invariance violated:\n  1-shard: {va}\n  4-shard: {vb}"
+    );
 }

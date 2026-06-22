@@ -1,0 +1,11 @@
+# Branch from .cache/parity-probes/archery/rust-frame-511196-ow-0069.sav.
+# Covers the Archery Game entrance on DW screen 0x69 and room 0x0111.
+# Regenerate with:
+#   ./target/debug/zparity coverage --frames 512500 \
+#     --load-state .cache/parity-probes/archery/rust-frame-511196-ow-0069.sav \
+#     --stop-replay-after-load \
+#     --input-script scripts/inputs/coverage-branch-511196-archery-game.txt \
+#     --json .cache/parity-golden/coverage-branch-511196-archery-game.json
+511260..511479 UP+LEFT
+511500..511579 DOWN+LEFT
+511600..511679 UP+LEFT

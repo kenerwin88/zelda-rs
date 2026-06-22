@@ -55,7 +55,11 @@ impl RollupMap {
         let mmap = unsafe { Mmap::map(&f)? };
         let len = mmap.len() / 4;
         let ptr = mmap.as_ptr();
-        Ok(RollupMap { _mmap: mmap, len, ptr })
+        Ok(RollupMap {
+            _mmap: mmap,
+            len,
+            ptr,
+        })
     }
     pub fn len(&self) -> usize {
         self.len
@@ -117,9 +121,15 @@ mod tests {
         let dir = tempdir();
         let p = dir.join("manifest.json");
         let man = Manifest {
-            schema: SCHEMA, frames: 100, rom_sha256: "a".into(), save_sha256: "b".into(),
-            c_oracle_rev: "c".into(), timing_hacks: vec!["X".into()], mask: vec![0x654],
-            block_size: 8192, page_kb: 1,
+            schema: SCHEMA,
+            frames: 100,
+            rom_sha256: "a".into(),
+            save_sha256: "b".into(),
+            c_oracle_rev: "c".into(),
+            timing_hacks: vec!["X".into()],
+            mask: vec![0x654],
+            block_size: 8192,
+            page_kb: 1,
         };
         man.save(&p).unwrap();
         assert_eq!(Manifest::load(&p).unwrap(), man);
@@ -135,7 +145,8 @@ mod tests {
     }
 
     fn tempdir() -> PathBuf {
-        let p = std::env::temp_dir().join(format!("parity-test-{}", std::process::id()))
+        let p = std::env::temp_dir()
+            .join(format!("parity-test-{}", std::process::id()))
             .join(format!("{:?}", std::time::SystemTime::now()));
         fs::create_dir_all(&p).unwrap();
         p

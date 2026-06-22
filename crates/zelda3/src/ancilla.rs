@@ -2445,8 +2445,9 @@ impl ZeldaState {
                 .game_state
                 .sprites
                 .ancilla_slots
-                .slot_mut(&mut self.ram, k)
-                .advance_item_to_link();
+                .slot(k)
+                .item_to_link()
+                .wrapping_add(1);
             if t == 8 {
                 self.game_state
                     .sprites
@@ -2455,6 +2456,11 @@ impl ZeldaState {
                     .clear();
                 return;
             }
+            self.game_state
+                .sprites
+                .ancilla_slots
+                .slot_mut(&mut self.ram, k)
+                .advance_item_to_link();
             self.game_state
                 .sprites
                 .ancilla_slots
@@ -3700,13 +3706,15 @@ impl ZeldaState {
                 .player
                 .follower_link
                 .y()
-                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) as u8;
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
+                as u8;
             let x = self
                 .game_state
                 .player
                 .follower_link
                 .x()
-                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) as u8;
+                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2())
+                as u8;
             let coord = if j != 0 { y } else { x };
             self.ancilla_set_y(
                 k,
@@ -3800,7 +3808,12 @@ impl ZeldaState {
             let ether_y = self.game_state.player.follower_link.y();
             let ether_x = self.game_state.player.follower_link.x();
             self.ether_orbit_mut().set_orb_position(ether_x, ether_y);
-            let y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_sub(16);
+            let y = self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_v_copy2()
+                .wrapping_sub(16);
             self.ether_orbit_mut()
                 .initialize_beam_adjusted_y(y & 0x00f0);
             let ether_y2 = ether_y.wrapping_sub(16);
@@ -6465,7 +6478,8 @@ impl ZeldaState {
                         if inner_y < 200 && !self.skull_woods_fire_has_started_entrance_opening() {
                             self.skull_woods_fire_scratch_mut()
                                 .set_entrance_opening_started();
-                            let pan = (0x98u16.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2())
+                            let pan = (0x98u16
+                                .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2())
                                 as u8)
                                 >> 5;
                             self.set_sound_effect_1(BOMBOS_PANNED_SFX_BITS[pan as usize] | 0x0c);
@@ -10876,8 +10890,10 @@ impl ZeldaState {
         let j = (self.game_state.sprites.ancilla_slots.slot(k).timer() >> 1) as usize;
         let ancilla_x = self.ancilla_get_x(k);
         let ancilla_y = self.ancilla_get_y(k);
-        let r7 = ancilla_x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) as u8;
-        let r6 = ancilla_y.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) as u8;
+        let r7 =
+            ancilla_x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) as u8;
+        let r6 =
+            ancilla_y.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) as u8;
         for i in (0..=3).rev() {
             let m = j * 4 + i;
             let x = info.x.wrapping_add(BEAM_HIT_X[m] as u8);
@@ -15412,7 +15428,8 @@ impl ZeldaState {
                         let (x, _y) = self
                             .blast_wall_fragment_mut(j)
                             .offset(arr[1] as i16, arr[0] as i16);
-                        let x = x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
+                        let x =
+                            x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
                         if x < 256 {
                             self.set_sound_effect_1(
                                 BOMBOS_PANNED_SFX_BITS[(x >> 5) as usize] | 0x0c,
@@ -15741,5 +15758,35 @@ mod tests {
                 .ancilla_type(),
             0
         );
+    }
+
+    #[test]
+    fn sword_wall_hit_does_not_write_terminal_animation_counter() {
+        let mut state = ZeldaState::new();
+        state
+            .game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut state.ram, 4)
+            .set_ancilla_type(0x1b);
+        state
+            .game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut state.ram, 4)
+            .set_item_to_link(7);
+        state
+            .game_state
+            .sprites
+            .ancilla_slots
+            .slot_mut(&mut state.ram, 4)
+            .set_aux_timer(0);
+
+        state.ancilla_sword_wall_hit(4);
+
+        let slot = state.game_state.sprites.ancilla_slots.slot(4);
+        assert_eq!(slot.ancilla_type(), 0);
+        assert_eq!(slot.item_to_link(), 7);
+        assert_eq!(slot.aux_timer(), 0xff);
     }
 }

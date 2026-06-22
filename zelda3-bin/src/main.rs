@@ -158,6 +158,10 @@ fn main() {
         run_replay_save(&args[2..]);
         return;
     }
+    if args.get(1).map(String::as_str) == Some("--coverage-probe") {
+        run_coverage_probe(&args[2..]);
+        return;
+    }
     if let Some(rom_path) = args.get(1) {
         run_play(rom_path);
     } else {
@@ -195,10 +199,174 @@ fn replay_checksum_samples(samples: &[i16]) -> u32 {
     hash
 }
 
+fn should_write_fingerprint(fingerprint_frame: Option<u32>, frame: u32) -> bool {
+    fingerprint_frame.is_none_or(|target| frame == target)
+}
+
+fn route_coverage_frame_from_game(
+    frame: u32,
+    game: &ZeldaState,
+) -> parity::coverage::CoverageFrame {
+    let indoors = game.ram[0x1b] != 0;
+    let sprite_types = (0..16)
+        .filter(|&k| game.ram[0x0dd0 + k] != 0)
+        .map(|k| game.ram[0x0e20 + k])
+        .collect();
+    let ancilla_types = (0..10)
+        .map(|k| game.ram[0x0c4a + k])
+        .filter(|&ty| ty != 0)
+        .collect();
+    parity::coverage::CoverageFrame {
+        frame,
+        main_module: game.ram[TRACE_MAIN_MODULE_INDEX],
+        submodule: game.ram[TRACE_SUBMODULE_INDEX],
+        subsubmodule: game.ram[TRACE_SUBSUBMODULE_INDEX],
+        indoor_room: indoors.then(|| read_le_u16(&game.ram, 0x48e)),
+        overworld_screen: (!indoors).then(|| read_le_u16(&game.ram, 0x8a)),
+        sprite_types,
+        ancilla_types,
+        active_item: (game.ram[0x0202] != 0).then_some(game.ram[0x0202]),
+    }
+}
+
+fn write_route_coverage_log_or_exit(
+    path: &Path,
+    coverage: &parity::coverage::RouteCoverage,
+    label: &str,
+) {
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!(
+                "failed to create {label} directory {}: {e}",
+                parent.display()
+            );
+            process::exit(1);
+        }
+    }
+    let json = serde_json::to_vec_pretty(coverage).unwrap_or_else(|e| {
+        eprintln!("failed to encode {label}: {e}");
+        process::exit(1);
+    });
+    if let Err(e) = std::fs::write(path, json) {
+        eprintln!("failed to write {label} {}: {e}", path.display());
+        process::exit(1);
+    }
+}
+
+fn run_coverage_probe(args: &[String]) {
+    let Some(rom_path) = args.first() else {
+        eprintln!(
+            "usage: zelda3 --coverage-probe <path-to-rom.sfc> --coverage-log <path> [--direct-entrance <index>]..."
+        );
+        process::exit(2);
+    };
+    let mut coverage_log = None::<PathBuf>;
+    let mut direct_entrances = Vec::<u16>::new();
+    let mut dungeon_rooms = Vec::<u16>::new();
+    let mut overworld_screens = Vec::<u16>::new();
+    let mut i = 1usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--coverage-log" => {
+                let Some(path) = args.get(i + 1) else {
+                    eprintln!("--coverage-log requires a path");
+                    process::exit(2);
+                };
+                coverage_log = Some(PathBuf::from(path));
+                i += 2;
+            }
+            "--direct-entrance" => {
+                let Some(index) = args.get(i + 1) else {
+                    eprintln!("--direct-entrance requires an index");
+                    process::exit(2);
+                };
+                let entrance = parse_u16_auto(index).unwrap_or_else(|| {
+                    eprintln!("invalid --direct-entrance index: {index}");
+                    process::exit(2);
+                });
+                direct_entrances.push(entrance);
+                i += 2;
+            }
+            "--dungeon-room" => {
+                let Some(index) = args.get(i + 1) else {
+                    eprintln!("--dungeon-room requires an index");
+                    process::exit(2);
+                };
+                let room = parse_u16_auto(index).unwrap_or_else(|| {
+                    eprintln!("invalid --dungeon-room index: {index}");
+                    process::exit(2);
+                });
+                dungeon_rooms.push(room);
+                i += 2;
+            }
+            "--overworld-screen" => {
+                let Some(index) = args.get(i + 1) else {
+                    eprintln!("--overworld-screen requires an index");
+                    process::exit(2);
+                };
+                let screen = parse_u16_auto(index).unwrap_or_else(|| {
+                    eprintln!("invalid --overworld-screen index: {index}");
+                    process::exit(2);
+                });
+                overworld_screens.push(screen);
+                i += 2;
+            }
+            flag => {
+                eprintln!("unknown --coverage-probe option: {flag}");
+                process::exit(2);
+            }
+        }
+    }
+    let Some(coverage_log) = coverage_log else {
+        eprintln!("--coverage-log is required");
+        process::exit(2);
+    };
+
+    let base = load_translated_replay_state(rom_path);
+    let mut coverage = parity::coverage::RouteCoverage::default();
+    for (index, entrance) in direct_entrances.iter().copied().enumerate() {
+        let mut game = base.clone();
+        let room = game.parity_probe_direct_entrance(entrance);
+        coverage.record(route_coverage_frame_from_game(index as u32 + 1, &game));
+        println!("coverage-probe direct-entrance entrance=0x{entrance:04x} room=0x{room:04x}");
+    }
+    let dungeon_frame_base = direct_entrances.len() as u32 + 1;
+    for (index, room) in dungeon_rooms.iter().copied().enumerate() {
+        let mut game = base.clone();
+        let loaded_room = game.parity_probe_dungeon_room(room);
+        coverage.record(route_coverage_frame_from_game(
+            dungeon_frame_base + index as u32,
+            &game,
+        ));
+        println!("coverage-probe dungeon-room requested=0x{room:04x} room=0x{loaded_room:04x}");
+    }
+    let frame_base = direct_entrances.len() as u32 + dungeon_rooms.len() as u32 + 1;
+    for (index, screen) in overworld_screens.iter().copied().enumerate() {
+        let mut game = base.clone();
+        let loaded_screen = game.parity_probe_overworld_screen(screen);
+        coverage.record(route_coverage_frame_from_game(
+            frame_base + index as u32,
+            &game,
+        ));
+        println!(
+            "coverage-probe overworld-screen requested=0x{screen:04x} screen=0x{loaded_screen:04x}"
+        );
+    }
+    write_route_coverage_log_or_exit(&coverage_log, &coverage, "coverage probe log");
+}
+
+fn parse_u16_auto(value: &str) -> Option<u16> {
+    value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .map(|hex| u16::from_str_radix(hex, 16).ok())
+        .unwrap_or_else(|| value.parse::<u16>().ok())
+}
+
 fn replay_checksum_ram_range(ram: &[u8], start: usize, size: usize) -> u32 {
     let mut hash = 2166136261u32;
     for index in start..start + size {
-        let byte = if (0x1b00..0x1b00 + 224 * 2).contains(&index) || index == 0x654 {
+        let byte = if parity::fingerprint_mask_contains(index) {
             0
         } else {
             ram[index]
@@ -1238,7 +1406,7 @@ fn run_replay_save(args: &[String]) {
         (Some(rom), Some(replay)) => (rom, replay),
         _ => {
             eprintln!(
-                "usage: zelda3 --replay-save <path-to-rom.sfc> <replay.sav> [frames] [--dump-frame <out.png>] [--render-hash-log <stride>] [--audio-trace-log <stride>] [--gpu-render-compare <stride>] [--gpu-render-compare-quiet] [--render-hash-dump-frame <frame> <out.png>] [--input-script <path>] [--stop-replay-after-load] [--save-state <checkpoint.sav>] [--load-state <checkpoint.sav>] [--fingerprint-log <path>]"
+                "usage: zelda3 --replay-save <path-to-rom.sfc> <replay.sav> [frames] [--dump-frame <out.png>] [--render-hash-log <stride>] [--audio-trace-log <stride>] [--gpu-render-compare <stride>] [--gpu-render-compare-quiet] [--render-hash-dump-frame <frame> <out.png>] [--input-script <path>] [--input-script-overlay <path>] [--stop-replay-after-load] [--save-state <checkpoint.sav>] [--load-state <checkpoint.sav>] [--load-sram <path>] [--fingerprint-log <path>] [--fingerprint-frame <frame>] [--coverage-log <path>]"
             );
             process::exit(2);
         }
@@ -1248,6 +1416,8 @@ fn run_replay_save(args: &[String]) {
     let mut render_hash_log = 0u32;
     let mut audio_trace_log = 0u32;
     let mut fingerprint_log: Option<PathBuf> = None;
+    let mut fingerprint_frame = None::<u32>;
+    let mut coverage_log: Option<PathBuf> = None;
     let mut gpu_render_compare = 0u32;
     let mut gpu_render_compare_quiet = false;
     let mut gpu_render_compare_count = 0u32;
@@ -1257,7 +1427,9 @@ fn run_replay_save(args: &[String]) {
     let mut save_state_path = None::<PathBuf>;
     let mut save_state_at: Vec<(u32, PathBuf)> = Vec::new();
     let mut load_state_path = None::<PathBuf>;
+    let mut load_sram_path = None::<PathBuf>;
     let mut input_script = InputScript::default();
+    let mut input_script_overlay = None::<InputScript>;
     let mut stop_replay_after_load = false;
     let mut i = 2usize;
     if let Some(candidate) = args.get(i) {
@@ -1372,6 +1544,14 @@ fn run_replay_save(args: &[String]) {
                 load_state_path = Some(PathBuf::from(path));
                 i += 2;
             }
+            "--load-sram" => {
+                let path = args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--load-sram requires a path");
+                    process::exit(2);
+                });
+                load_sram_path = Some(PathBuf::from(path));
+                i += 2;
+            }
             "--input-script" => {
                 let path = args.get(i + 1).unwrap_or_else(|| {
                     eprintln!("--input-script requires a path");
@@ -1386,6 +1566,20 @@ fn run_replay_save(args: &[String]) {
                 };
                 i += 2;
             }
+            "--input-script-overlay" => {
+                let path = args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--input-script-overlay requires a path");
+                    process::exit(2);
+                });
+                input_script_overlay = Some(match InputScript::from_path(Path::new(path)) {
+                    Ok(script) => script,
+                    Err(e) => {
+                        eprintln!("failed to parse input script overlay {}: {e}", path);
+                        process::exit(2);
+                    }
+                });
+                i += 2;
+            }
             "--stop-replay-after-load" => {
                 stop_replay_after_load = true;
                 i += 1;
@@ -1398,11 +1592,37 @@ fn run_replay_save(args: &[String]) {
                 fingerprint_log = Some(PathBuf::from(path));
                 i += 2;
             }
+            "--fingerprint-frame" => {
+                let Some(frame) = args.get(i + 1) else {
+                    eprintln!("--fingerprint-frame requires a frame");
+                    process::exit(2);
+                };
+                fingerprint_frame = Some(frame.parse::<u32>().unwrap_or_else(|_| {
+                    eprintln!("invalid --fingerprint-frame frame: {frame}");
+                    process::exit(2);
+                }));
+                i += 2;
+            }
+            "--coverage-log" => {
+                let Some(path) = args.get(i + 1) else {
+                    eprintln!("--coverage-log requires a path");
+                    process::exit(2);
+                };
+                coverage_log = Some(PathBuf::from(path));
+                i += 2;
+            }
             flag => {
                 eprintln!("unknown --replay-save option: {flag}");
                 process::exit(2);
             }
         }
+    }
+
+    if load_state_path.is_some() && load_sram_path.is_some() {
+        eprintln!(
+            "--load-sram cannot be combined with --load-state; checkpoints already include SRAM"
+        );
+        process::exit(2);
     }
 
     let last_panic = install_crash_panic_hook();
@@ -1421,9 +1641,15 @@ fn run_replay_save(args: &[String]) {
                 game.zelda_audio_dsp_hash()
             );
         }
-    } else if let Err(e) = game.replay_save_file(Path::new(replay_path)) {
-        eprintln!("failed to replay {}: {e}", replay_path);
-        process::exit(1);
+    } else {
+        if let Err(e) = game.replay_save_file(Path::new(replay_path)) {
+            eprintln!("failed to replay {}: {e}", replay_path);
+            process::exit(1);
+        }
+        if let Some(path) = load_sram_path.as_deref() {
+            let sram = read_file_or_exit(path, "SRAM");
+            apply_sram_to_game_or_exit(&mut game, path, &sram);
+        }
     }
     if stop_replay_after_load {
         let mut state_recorder = std::mem::take(&mut game.state_recorder);
@@ -1432,18 +1658,25 @@ fn run_replay_save(args: &[String]) {
     }
 
     let mut frames = game.state_recorder.replay_frame_counter;
-    let scripted_playback = stop_replay_after_load || !input_script.rules.is_empty();
+    let scripted_playback = stop_replay_after_load
+        || !input_script.rules.is_empty()
+        || input_script_overlay
+            .as_ref()
+            .is_some_and(|script| !script.rules.is_empty());
     let mut audio_trace_buffer = if audio_trace_log != 0 || fingerprint_log.is_some() {
         Some(vec![0i16; 735 * 2])
     } else {
         None
     };
-    let mut render_hash_frame =
-        if render_hash_log != 0 || gpu_render_compare != 0 || render_hash_dump_frame.is_some() || fingerprint_log.is_some() {
-            Some(vec![0u8; 256 * 224 * 4])
-        } else {
-            None
-        };
+    let mut render_hash_frame = if render_hash_log != 0
+        || gpu_render_compare != 0
+        || render_hash_dump_frame.is_some()
+        || fingerprint_log.is_some()
+    {
+        Some(vec![0u8; 256 * 224 * 4])
+    } else {
+        None
+    };
     // OffscreenRenderer is the GPU readback path for dump-frame and the
     // diagnostic gpu-render-hash line. The parity-facing render-hash line hashes
     // the raw CPU BGRA display buffer, matching C PrintRenderHash exactly.
@@ -1466,24 +1699,37 @@ fn run_replay_save(args: &[String]) {
         }
         None => None,
     };
+    let mut route_coverage = coverage_log
+        .as_ref()
+        .map(|_| parity::coverage::RouteCoverage::default());
+    let capture_panic_pre_frame =
+        std::env::var_os("ZELDA3_REPLAY_CAPTURE_PANIC_PRE_FRAME").is_some();
+    let mut last_frame_had_fingerprint_render = false;
     while frames < max_frames && (scripted_playback || game.state_recorder.replay_mode) {
-        let pre_frame_game = game.clone();
-        let input = input_script.input_for_frame(frames);
+        let pre_frame_game = capture_panic_pre_frame.then(|| game.clone());
+        let input_override = input_script_overlay
+            .as_ref()
+            .and_then(|script| script.input_override_for_frame(frames));
+        let input = input_override.unwrap_or_else(|| input_script.input_for_frame(frames));
         let result = panic::catch_unwind(AssertUnwindSafe(|| {
-            game.zelda_run_frame(input as i32);
+            game.zelda_run_frame_with_replay_input_override(input as i32, input_override);
         }));
         if let Err(payload) = result {
             let panic_info = captured_panic_from(last_panic.clone(), payload);
-            print_replay_save_panic_report(&pre_frame_game, frames, &panic_info);
+            let report_game = pre_frame_game.as_ref().unwrap_or(&game);
+            print_replay_save_panic_report(report_game, frames, &panic_info);
             process::exit(101);
         }
         frames = frames.wrapping_add(1);
+        last_frame_had_fingerprint_render = false;
         let mut fp_audio_leaf: u32 = 0;
+        let should_fingerprint_frame =
+            fingerprint_log.is_some() && should_write_fingerprint(fingerprint_frame, frames);
         if let Some(audio) = audio_trace_buffer.as_mut() {
             let dsp_pre = game.zelda_audio_dsp_hash();
             let writes = game.zelda_render_audio_trace_dsp(audio, 735, 2);
             game.zelda_discard_unused_audio_frames();
-            if fingerprint_log.is_some() {
+            if should_fingerprint_frame {
                 let dsp_post = game.zelda_audio_dsp_hash();
                 let s_samples = replay_checksum_samples(audio);
                 let s_writes = replay_checksum_dsp_writes(&writes);
@@ -2092,12 +2338,24 @@ fn run_replay_save(args: &[String]) {
                     let mut dh = 2166136261u32;
                     for ch in &game.dma.channel {
                         for b in [
-                            ch.b_adr, ch.a_bank, ch.ind_bank, ch.rep_count, ch.unused_byte,
-                            ch.off_index, ch.mode, ch.hdma_active as u8, ch.indirect as u8,
-                            ch.do_transfer as u8, ch.terminated as u8, ch.from_b as u8,
-                            (ch.a_adr & 0xff) as u8, (ch.a_adr >> 8) as u8,
-                            (ch.size & 0xff) as u8, (ch.size >> 8) as u8,
-                            (ch.table_adr & 0xff) as u8, (ch.table_adr >> 8) as u8,
+                            ch.b_adr,
+                            ch.a_bank,
+                            ch.ind_bank,
+                            ch.rep_count,
+                            ch.unused_byte,
+                            ch.off_index,
+                            ch.mode,
+                            ch.hdma_active as u8,
+                            ch.indirect as u8,
+                            ch.do_transfer as u8,
+                            ch.terminated as u8,
+                            ch.from_b as u8,
+                            (ch.a_adr & 0xff) as u8,
+                            (ch.a_adr >> 8) as u8,
+                            (ch.size & 0xff) as u8,
+                            (ch.size >> 8) as u8,
+                            (ch.table_adr & 0xff) as u8,
+                            (ch.table_adr >> 8) as u8,
                         ] {
                             dh = dh.wrapping_mul(16777619) ^ u32::from(b);
                         }
@@ -3199,18 +3457,31 @@ fn run_replay_save(args: &[String]) {
                 );
             }
         }
-        if let Some(w) = fingerprint_writer.as_mut() {
+        let mut fp_render_leaf: u32 = 0;
+        if should_fingerprint_frame {
+            let frame = render_hash_frame.as_mut().expect("render frame allocated");
+            draw_play_ppu_frame(&mut game, frame, 256 * 4, PpuRenderFlags::empty());
+            last_frame_had_fingerprint_render = true;
+            fp_render_leaf = render_frame_rgb_hash_bgra(frame);
+        }
+        if let Some(w) = fingerprint_writer
+            .as_mut()
+            .filter(|_| should_fingerprint_frame)
+        {
             use std::io::Write;
-            let render = {
-                let frame = render_hash_frame.as_mut().expect("render frame allocated");
-                draw_play_ppu_frame(&mut game, frame, 256 * 4, PpuRenderFlags::empty());
-                render_frame_rgb_hash_bgra(frame)
-            };
             let vram_bytes: Vec<u8> = game.ppu.vram.iter().flat_map(|w| w.to_le_bytes()).collect();
             let fp = parity::FrameFingerprint::compute(
-                frames, &game.ram, &vram_bytes, &game.sram, render, fp_audio_leaf,
+                frames,
+                &game.ram,
+                &vram_bytes,
+                &game.sram,
+                fp_render_leaf,
+                fp_audio_leaf,
             );
             let _ = w.write_all(&fp.to_bytes());
+        }
+        if let Some(coverage) = route_coverage.as_mut() {
+            coverage.record(route_coverage_frame_from_game(frames, &game));
         }
         // Write --save-state-at checkpoints at the very END of the loop body, AFTER
         // the per-frame audio trace (which advances the DSP) AND the fingerprint
@@ -3227,9 +3498,10 @@ fn run_replay_save(args: &[String]) {
             // (the ~100x seed speedup) and render ONLY this boundary frame here, right
             // before the checkpoint, to project display state -> byte-identical to a
             // continuously-rendered run.
-            if fingerprint_log.is_none() {
+            if !last_frame_had_fingerprint_render {
                 let mut scratch = vec![0u8; 256 * 224 * 4];
                 draw_play_ppu_frame(&mut game, &mut scratch, 256 * 4, PpuRenderFlags::empty());
+                last_frame_had_fingerprint_render = true;
             }
             write_checkpoint(&mut game, frames, path);
         }
@@ -3239,8 +3511,31 @@ fn run_replay_save(args: &[String]) {
         use std::io::Write;
         let _ = w.flush();
     }
+    if let (Some(path), Some(coverage)) = (coverage_log.as_deref(), route_coverage.as_ref()) {
+        if let Some(parent) = path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                eprintln!(
+                    "failed to create coverage log directory {}: {e}",
+                    parent.display()
+                );
+                process::exit(1);
+            }
+        }
+        let json = serde_json::to_vec_pretty(coverage).unwrap_or_else(|e| {
+            eprintln!("failed to encode coverage log: {e}");
+            process::exit(1);
+        });
+        if let Err(e) = std::fs::write(path, json) {
+            eprintln!("failed to write coverage log {}: {e}", path.display());
+            process::exit(1);
+        }
+    }
 
     if let Some(path) = save_state_path.as_deref() {
+        if !last_frame_had_fingerprint_render {
+            let mut scratch = vec![0u8; 256 * 224 * 4];
+            draw_play_ppu_frame(&mut game, &mut scratch, 256 * 4, PpuRenderFlags::empty());
+        }
         if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
             eprintln!(
                 "[AUDIO_FP] pre-save dsp_hash=0x{:08x} (frame={frames})",
@@ -3849,7 +4144,7 @@ fn replay_save_sprite_dump(game: &ZeldaState) -> String {
             continue;
         }
         out.push_str(&format!(
-            " [{k}:t=0x{:02x} st=0x{:02x} ai=0x{:02x} head=0x{:02x} sub=0x{:02x} x=0x{:04x} y=0x{:04x} d=0x{:02x} c=0x{:02x} e=0x{:02x} f=0x{:02x} n=0x{:04x} delay=0x{:02x} bump=0x{:02x}]",
+            " [{k}:t=0x{:02x} st=0x{:02x} ai=0x{:02x} head=0x{:02x} sub=0x{:02x} x=0x{:04x} y=0x{:04x} d=0x{:02x} c=0x{:02x} e=0x{:02x} f=0x{:02x} n=0x{:04x} delay=0x{:02x} bump=0x{:02x} hp=0x{:02x} hit=0x{:02x} give=0x{:02x}]",
             game.ram[0x0e20 + k],
             game.ram[0x0dd0 + k],
             game.ram[0x0d80 + k],
@@ -3864,6 +4159,9 @@ fn replay_save_sprite_dump(game: &ZeldaState) -> String {
             u16::from_le_bytes([game.ram[0x0bc0 + k * 2], game.ram[0x0bc0 + k * 2 + 1]]),
             game.ram[0x0df0 + k],
             game.ram[0x0cd2 + k],
+            game.ram[0x0e50 + k],
+            game.ram[0x0ef0 + k],
+            game.ram[0x0ce2 + k],
         ));
     }
     out
@@ -8487,12 +8785,15 @@ impl InputScript {
     }
 
     fn input_for_frame(&self, frame: u32) -> u16 {
+        self.input_override_for_frame(frame).unwrap_or(0)
+    }
+
+    fn input_override_for_frame(&self, frame: u32) -> Option<u16> {
         self.rules
             .iter()
             .filter(|rule| rule.start <= frame && frame <= rule.end)
             .map(|rule| rule.input)
             .last()
-            .unwrap_or(0)
     }
 
     #[cfg(test)]
@@ -8785,6 +9086,21 @@ mod tests {
     }
 
     #[test]
+    fn input_script_distinguishes_missing_frame_from_explicit_none_override() {
+        let script = InputScript::parse(
+            "
+            10 NONE
+            20 A+RIGHT
+            ",
+        )
+        .unwrap();
+
+        assert_eq!(script.input_override_for_frame(9), None);
+        assert_eq!(script.input_override_for_frame(10), Some(0));
+        assert_eq!(script.input_override_for_frame(20), Some(0x0180));
+    }
+
+    #[test]
     fn parses_input_script_includes_relative_to_parent_file() {
         let dir = env::temp_dir().join(format!("z3rs-input-test-{}", process::id()));
         fs::create_dir_all(&dir).unwrap();
@@ -8831,5 +9147,55 @@ mod tests {
         assert_eq!(config.frames, 42);
         assert!(config.trace_semantic_state);
         assert!(!config.trace_state);
+    }
+
+    #[test]
+    fn fingerprint_frame_filter_preserves_default_all_frames_behavior() {
+        assert!(should_write_fingerprint(None, 41));
+        assert!(should_write_fingerprint(Some(42), 42));
+        assert!(!should_write_fingerprint(Some(42), 41));
+    }
+
+    #[test]
+    fn route_coverage_frame_reads_route_surface_ids_from_ram() {
+        let mut game = ZeldaState::default();
+        game.ram[TRACE_MAIN_MODULE_INDEX] = 0x07;
+        game.ram[TRACE_SUBMODULE_INDEX] = 0x02;
+        game.ram[TRACE_SUBSUBMODULE_INDEX] = 0x03;
+        game.ram[0x1b] = 1;
+        game.ram[0x48e] = 0xa4;
+        game.ram[0x48f] = 0x00;
+        game.ram[0x8a] = 0x40;
+        game.ram[0x8b] = 0x00;
+        game.ram[0x0dd0] = 9;
+        game.ram[0x0e20] = 0xcb;
+        game.ram[0x0dd1] = 0;
+        game.ram[0x0e21] = 0xcc;
+        game.ram[0x0c4a] = 0x05;
+        game.ram[0x0c5e] = 0x12;
+        game.ram[0x0202] = 0x11;
+
+        let frame = route_coverage_frame_from_game(42, &game);
+
+        assert_eq!(frame.frame, 42);
+        assert_eq!(frame.main_module, 0x07);
+        assert_eq!(frame.submodule, 0x02);
+        assert_eq!(frame.subsubmodule, 0x03);
+        assert_eq!(frame.indoor_room, Some(0x00a4));
+        assert_eq!(frame.overworld_screen, None);
+        assert_eq!(frame.sprite_types, vec![0xcb]);
+        assert_eq!(frame.ancilla_types, vec![0x05]);
+        assert_eq!(frame.active_item, Some(0x11));
+    }
+
+    #[test]
+    fn route_coverage_frame_preserves_active_sprite_type_zero() {
+        let mut game = ZeldaState::default();
+        game.ram[0x0dd0] = 9;
+        game.ram[0x0e20] = 0x00;
+
+        let frame = route_coverage_frame_from_game(1, &game);
+
+        assert_eq!(frame.sprite_types, vec![0x00]);
     }
 }

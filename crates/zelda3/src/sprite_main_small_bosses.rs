@@ -322,8 +322,8 @@ impl ZeldaState {
     // void Sprite_TrinexxD_Draw(int k) {  // 9daf84
     pub(super) fn sprite_trinexx_d_draw(&mut self, k: usize) {
         self.sprite_slot_mut(k).or_object_priority_bits(0x30);
-        let info = DrawPrepOamCoordsRet::default();
-        self.sprite_draw_trinexx_rock_head(k, &info);
+        let mut info = DrawPrepOamCoordsRet::default();
+        self.sprite_draw_trinexx_rock_head(k, &mut info);
 
         for i in 0..usize::from(self.sprite_slot(k).anim_clock()) {
             let j = (self
@@ -385,7 +385,7 @@ impl ZeldaState {
                 self.sprite_draw_single_large(k);
             } else {
                 self.sprite_slot_mut(k).set_graphics(8);
-                self.sprite_draw_trinexx_rock_head(k, &info);
+                self.sprite_draw_trinexx_rock_head(k, &mut info);
             }
         }
         let anim_clock = self.sprite_slot(k).anim_clock();

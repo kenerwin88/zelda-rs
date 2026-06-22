@@ -1231,8 +1231,10 @@ impl ZeldaState {
         let mut extp = self.game_state.oam.current_extended_pointer_usize();
         let spr_x = self.sprite_get_x(k);
         let spr_y = self.sprite_get_y(k);
-        let scrollx = spr_x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) as u8;
-        let scrolly = spr_y.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) as u8;
+        let scrollx =
+            spr_x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) as u8;
+        let scrolly =
+            spr_y.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2()) as u8;
         for _ in 0..=n {
             let x = spr_x.wrapping_add(
                 self.game_state.oam.entry_x(oam).wrapping_sub(scrollx) as i8 as i16 as u16,
@@ -1245,8 +1247,10 @@ impl ZeldaState {
             } else {
                 islarge
             };
-            let value =
-                ext + u8::from(x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) >= 0x100);
+            let value = ext
+                + u8::from(
+                    x.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2()) >= 0x100,
+                );
             self.oam_state_mut().set_extended_byte_at(extp, value);
             if y.wrapping_add(0x10)
                 .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
@@ -1345,6 +1349,14 @@ impl ZeldaState {
         } else {
             Some((ret.x, ret.y, ret.flags))
         }
+    }
+
+    pub(super) fn sprite_prep_oam_coord_or_double_ret_with_out_flag(
+        &mut self,
+        k: usize,
+    ) -> ((u16, u16, u8), bool) {
+        let (ret, out) = self.sprite_prep_oam_coord_or_double_ret_raw(k);
+        ((ret.x, ret.y, ret.flags), out)
     }
 
     // void Sprite_PrepOamCoord(int k, PrepOamCoordsRet *ret) {  // 86e416
@@ -1623,7 +1635,10 @@ impl ZeldaState {
         // memset above (clear_where_in_room) just zeroed in RAM. Its native mirror is a
         // separate Vec, so clear it too or it would re-project the stale markers (only
         // outdoors, where presence projects) and miss the C memset's area-reload reset.
-        self.game_state.sprites.overworld_sprite_presence.clear_all();
+        self.game_state
+            .sprites
+            .overworld_sprite_presence
+            .clear_all();
         self.clear_all_overworld_sprite_loaded_masks();
         self.dungeon_room_tracking_mut().reset_room_history();
     }
@@ -1702,7 +1717,12 @@ impl ZeldaState {
         self.set_bg2_x(bak0.wrapping_sub(xt));
         for _ in (0..=(21 + (xt >> 3))).rev() {
             self.sprite_activate_when_proximal();
-            let bg = self.game_state.display.ppu_scroll_copy.bg2_h_copy2().wrapping_add(16);
+            let bg = self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_h_copy2()
+                .wrapping_add(16);
             self.set_bg2_x(bg);
         }
         self.set_overworld_horizontal_scroll_delta_low(bak1);
@@ -1737,14 +1757,22 @@ impl ZeldaState {
         } else {
             0
         };
-        let x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2().wrapping_add(
-            if sign8(self.overworld_horizontal_scroll_delta_low()) {
+        let x = self
+            .game_state
+            .display
+            .ppu_scroll_copy
+            .bg2_h_copy2()
+            .wrapping_add(if sign8(self.overworld_horizontal_scroll_delta_low()) {
                 0u16.wrapping_sub(0x10).wrapping_sub(xt)
             } else {
                 0x110u16.wrapping_add(xt)
-            },
-        );
-        let mut y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_sub(0x30);
+            });
+        let mut y = self
+            .game_state
+            .display
+            .ppu_scroll_copy
+            .bg2_v_copy2()
+            .wrapping_sub(0x30);
         for _ in (0..=21).rev() {
             self.sprite_overworld_proximity_motivated_load(x, y);
             y = y.wrapping_add(16);
@@ -1771,13 +1799,16 @@ impl ZeldaState {
             .bg2_h_copy2()
             .wrapping_sub(0x30)
             .wrapping_sub(xt);
-        let y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_add(
-            if sign8(self.overworld_vertical_scroll_delta_low()) {
+        let y = self
+            .game_state
+            .display
+            .ppu_scroll_copy
+            .bg2_v_copy2()
+            .wrapping_add(if sign8(self.overworld_vertical_scroll_delta_low()) {
                 0u16.wrapping_sub(0x10)
             } else {
                 0x110
-            },
-        );
+            });
         for _ in (0..=(21 + (xt >> 3))).rev() {
             self.sprite_overworld_proximity_motivated_load(x, y);
             x = x.wrapping_add(16);

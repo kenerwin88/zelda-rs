@@ -650,7 +650,10 @@ impl ZeldaState {
 
     pub(super) fn dungeon_close_victory_spin(&mut self) {
         if self.trace_frame_matches(241475) {
-            eprintln!("[VSPIN-NEW] ssm_before={}", self.game_state.frame.subsubmodule);
+            eprintln!(
+                "[VSPIN-NEW] ssm_before={}",
+                self.game_state.frame.subsubmodule
+            );
         }
         self.decrement_subsubmodule();
         if self.game_state.frame.subsubmodule != 0 {
@@ -1070,8 +1073,10 @@ impl ZeldaState {
             .ambient_sound_effect_is_clear()
         {
             let x = self.sprite_slot(k).x();
-            let sfx =
-                a | Self::calculate_sfx_pan_with_scroll(x, self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
+            let sfx = a | Self::calculate_sfx_pan_with_scroll(
+                x,
+                self.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
+            );
             self.set_ambient_sound_effect(sfx);
         }
     }
@@ -1159,12 +1164,17 @@ impl ZeldaState {
 
     pub(super) fn calculate_sfx_pan_arbitrary(&self, a: u8) -> u8 {
         const TORCH_PANS: [u8; 8] = [0x80, 0x80, 0x80, 0, 0, 0x40, 0x40, 0x40];
-        TORCH_PANS[((a.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low()) >> 5) & 7) as usize]
+        TORCH_PANS[((a.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low())
+            >> 5)
+            & 7) as usize]
     }
 
     pub(super) fn sprite_calculate_sfx_pan(&self, k: usize) -> u8 {
         let x = self.sprite_slot(k).x();
-        Self::calculate_sfx_pan_with_scroll(x, self.game_state.display.ppu_scroll_copy.bg2_h_copy2())
+        Self::calculate_sfx_pan_with_scroll(
+            x,
+            self.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
+        )
     }
 
     pub(super) fn sprite_sfx_queue_sfx2_with_pan(&mut self, k: usize, a: u8) {

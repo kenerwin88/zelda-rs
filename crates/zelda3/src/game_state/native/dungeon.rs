@@ -77,7 +77,7 @@ const DUNGEON_ROOM_PARSER_SMALL_TABLE_COUNT: usize =
     (DUNG_INTER_STAIRCASES - STAR_SHAPED_SWITCHES_TILE_LOCAL) / 2;
 const DUNGEON_ROOM_TOGGLE_SLOT_COUNT: usize = 8;
 const DUNGEON_POT_REVEAL_ROOM_COUNT: usize = 0x140;
-const DUNGEON_ADJACENT_DOOR_COUNT: usize = 8;
+const DUNGEON_ADJACENT_DOOR_COUNT: usize = 9;
 const DUNGEON_EXIT_DOOR_COUNT: usize = 4;
 const DUNGEON_MOVABLE_BLOCK_RECORD_COUNT: usize = 0x018c / 4;
 const CHANGEABLE_DUNGEON_OBJECT_SLOT_COUNT: usize = 2;
@@ -2227,7 +2227,8 @@ impl DungeonRoomParserState {
         for index in 0..usize::from(toggle_floor_count_x2 / 2).min(DUNGEON_ROOM_TOGGLE_SLOT_COUNT) {
             toggle_floor_positions[index] = read_le_u16(ram, DUNG_TOGGLE_FLOOR_POS + index * 2);
         }
-        for index in 0..usize::from(toggle_palace_count_x2 / 2).min(DUNGEON_ROOM_TOGGLE_SLOT_COUNT) {
+        for index in 0..usize::from(toggle_palace_count_x2 / 2).min(DUNGEON_ROOM_TOGGLE_SLOT_COUNT)
+        {
             toggle_palace_positions[index] = read_le_u16(ram, DUNG_TOGGLE_PALACE_POS + index * 2);
         }
 
@@ -2274,7 +2275,8 @@ impl DungeonRoomParserState {
         // Project only the live toggle slots — the rest of 0x6c0/0x6d0 is the mode-reused stair
         // table owned by DungeonStairListsState; re-stamping stale toggle positions there clobbered
         // a fresh stair-table entry (f633081).
-        for index in 0..usize::from(self.toggle_floor_count_x2 / 2).min(DUNGEON_ROOM_TOGGLE_SLOT_COUNT)
+        for index in
+            0..usize::from(self.toggle_floor_count_x2 / 2).min(DUNGEON_ROOM_TOGGLE_SLOT_COUNT)
         {
             write_le_u16(
                 ram,

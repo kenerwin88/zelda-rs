@@ -310,6 +310,19 @@ const DUNG_PAL_INFOS: [DungPalInfo; 41] = [
 ];
 
 impl ZeldaState {
+    pub fn parity_probe_direct_entrance(&mut self, entrance_index: u16) -> u16 {
+        self.set_which_entrance(entrance_index);
+        self.Dungeon_LoadEntrance();
+        self.game_state.dungeon.room_tracking.room_index2_word()
+    }
+
+    pub fn parity_probe_dungeon_room(&mut self, room: u16) -> u16 {
+        self.set_indoor_flag(1);
+        self.set_dungeon_room(room);
+        self.dungeon_room_tracking_mut().set_room_index2_word(room);
+        self.game_state.dungeon.room_tracking.room_index2_word()
+    }
+
     pub(super) fn Dungeon_LoadAndDrawEntranceRoom(&mut self, room: u8) {
         self.set_which_entrance_byte(room);
         self.Dungeon_LoadEntrance();
@@ -1309,7 +1322,8 @@ impl ZeldaState {
         // dungeon water room kept TURN_ON_OFF_WATER_CTR=0x20). Reset them to match the clear.
         self.dungeon_moving_floor_mut().clear_floor_move_flags();
         self.dungeon_moving_floor_mut().clear_floor_offsets();
-        self.dungeon_environment_mut().set_water_transition_counter(0);
+        self.dungeon_environment_mut()
+            .set_water_transition_counter(0);
         self.dungeon_torch_mut().refresh_object_data_positions();
         for i in 0..16 {
             self.dungeon_object_tracking_mut()
@@ -7144,7 +7158,8 @@ impl ZeldaState {
             // In RoomTag_WaterOn the byte is the water transition counter (C writes the single byte
             // =1). Keep the water-counter native coherent too, or its DungeonEnvironmentState
             // projection re-stamps the stale frame-start 0 over the floor-offset write (f606590).
-            self.dungeon_environment_mut().set_water_transition_counter(1);
+            self.dungeon_environment_mut()
+                .set_water_transition_counter(1);
             self.dungeon_header_mut().clear_header_tag(1);
             let save_bits = self.game_state.dungeon.savegame_state.savegame_state_bits() | 0x0800;
             self.dungeon_savegame_state_mut()
@@ -8634,7 +8649,11 @@ impl ZeldaState {
                 .draw_width_indicator_word() as usize
                 / 2;
             let tile0 = self.game_state.dungeon.room_tilemaps.attr_source_tile(i);
-            let tile1 = self.game_state.dungeon.room_tilemaps.attr_source_tile(i + 1);
+            let tile1 = self
+                .game_state
+                .dungeon
+                .room_tilemaps
+                .attr_source_tile(i + 1);
             let a0 = self.attribute_for_bg_tile(tile0);
             let a1 = self.attribute_for_bg_tile(tile1);
             let j = self
@@ -9812,7 +9831,12 @@ impl ZeldaState {
         let offs = self
             .dungeon_moving_floor_mut()
             .sub_floor_x_offset(floor_x_velocity);
-        let bg1 = self.game_state.display.ppu_scroll_copy.bg2_h_copy2().wrapping_add(offs);
+        let bg1 = self
+            .game_state
+            .display
+            .ppu_scroll_copy
+            .bg2_h_copy2()
+            .wrapping_add(offs);
         self.set_bg1_x(bg1);
 
         if self.game_state.dungeon.moving_floor.floor_x_velocity() != 0 {
@@ -9870,7 +9894,12 @@ impl ZeldaState {
         let offs = self
             .dungeon_moving_floor_mut()
             .add_floor_x_offset(floor_x_velocity);
-        let bg1 = self.game_state.display.ppu_scroll_copy.bg2_h_copy2().wrapping_add(offs);
+        let bg1 = self
+            .game_state
+            .display
+            .ppu_scroll_copy
+            .bg2_h_copy2()
+            .wrapping_add(offs);
         self.set_bg1_x(bg1);
 
         if self.game_state.dungeon.moving_floor.floor_x_velocity() != 0 {
@@ -11258,7 +11287,13 @@ impl ZeldaState {
         let delta = DUNGEON_TRANSITION_SCROLL_DELTAS[i] as i16 as u16;
 
         let t = if i >= 2 {
-            let t = self.game_state.display.ppu_scroll_copy.bg2_h_copy2().wrapping_add(delta) & !1;
+            let t = self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_h_copy2()
+                .wrapping_add(delta)
+                & !1;
             self.set_bg2_x(t);
             self.set_bg1_x(t);
             if self.transition_counter() >= DUNGEON_TRANSITION_PLAYER_MOVE_FRAMES[i] {
@@ -11267,7 +11302,13 @@ impl ZeldaState {
             }
             t
         } else {
-            let t = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_add(delta) & !1;
+            let t = self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_v_copy2()
+                .wrapping_add(delta)
+                & !1;
             self.set_bg2_y(t);
             self.set_bg1_y(t);
             if self.transition_counter() >= DUNGEON_TRANSITION_PLAYER_MOVE_FRAMES[i] {
@@ -12420,7 +12461,8 @@ impl ZeldaState {
             .bg2_h_copy2()
             .wrapping_sub(self.game_state.player.follower_link.x())
             .wrapping_add(0x79);
-        let floor_y = 0x30u16.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg1_v_copy2_low() as u16);
+        let floor_y =
+            0x30u16.wrapping_sub(self.game_state.display.ppu_scroll_copy.bg1_v_copy2_low() as u16);
         self.dungeon_moving_floor_mut()
             .set_floor_offsets(floor_x, floor_y);
         self.dungeon_room_load_mut()
@@ -12504,7 +12546,7 @@ impl ZeldaState {
                 self.replay_trace_ram_watch("module07-after-camera");
             }
             if self.game_state.frame.submodule == 0 {
-                    self.dungeon_handle_room_tags();
+                self.dungeon_handle_room_tags();
                 self.replay_trace_ram_watch("module07-after-room-tags");
             }
             if self.game_state.frame.submodule == 0 {
@@ -12670,7 +12712,12 @@ impl ZeldaState {
                 .floor_x_offset()
                 .wrapping_sub(t as u16);
             self.dungeon_moving_floor_mut().set_floor_x_offset(x_offs);
-            let bg1 = self.game_state.display.ppu_scroll_copy.bg2_h_copy2().wrapping_add(x_offs);
+            let bg1 = self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_h_copy2()
+                .wrapping_add(x_offs);
             self.set_bg1_x(bg1);
         } else {
             self.dungeon_moving_floor_mut()
@@ -12682,7 +12729,12 @@ impl ZeldaState {
                 .floor_y_offset()
                 .wrapping_sub(t as u16);
             self.dungeon_moving_floor_mut().set_floor_y_offset(y_offs);
-            let bg1 = self.game_state.display.ppu_scroll_copy.bg2_v_copy2().wrapping_add(y_offs);
+            let bg1 = self
+                .game_state
+                .display
+                .ppu_scroll_copy
+                .bg2_v_copy2()
+                .wrapping_add(y_offs);
             self.set_bg1_y(bg1);
         }
     }
@@ -13096,9 +13148,11 @@ impl ZeldaState {
             // C writes the tag-routine index via `ram[R14] = k` as a BYTE (0x0e only); the
             // high byte 0x0f (R15) is left intact. Use the low-byte setter so we don't clobber
             // R15's stale leftover (collision_bits stays a u16 everywhere else).
-            self.tile_detect_position_mut().set_collision_bits_low_byte(0);
+            self.tile_detect_position_mut()
+                .set_collision_bits_low_byte(0);
             self.dungeon_run_tag_routine(0);
-            self.tile_detect_position_mut().set_collision_bits_low_byte(1);
+            self.tile_detect_position_mut()
+                .set_collision_bits_low_byte(1);
             self.dungeon_run_tag_routine(1);
         }
         self.dungeon_room_runtime_mut().clear_room_tag_skip();

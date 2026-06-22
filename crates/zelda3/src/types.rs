@@ -172,7 +172,10 @@ pub fn ww_set_cur_frame(frame: u32) {
             .and_then(|s| usize::from_str_radix(s.trim().trim_start_matches("0x"), 16).ok());
         if let Some(a) = a {
             WW_ADDR.store(a, Ordering::Relaxed);
-            if let Some(f) = std::env::var("ZELDA3_WW_FRAME").ok().and_then(|s| s.trim().parse().ok()) {
+            if let Some(f) = std::env::var("ZELDA3_WW_FRAME")
+                .ok()
+                .and_then(|s| s.trim().parse().ok())
+            {
                 WW_FRAME.store(f, Ordering::Relaxed);
             }
         } else {
@@ -201,7 +204,11 @@ fn ww_backtrace_suffix() -> String {
     static BT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
     let mut s = BT.load(Ordering::Relaxed);
     if s == 0 {
-        s = if std::env::var("ZELDA3_WW_BACKTRACE").is_ok() { 2 } else { 1 };
+        s = if std::env::var("ZELDA3_WW_BACKTRACE").is_ok() {
+            2
+        } else {
+            1
+        };
         BT.store(s, Ordering::Relaxed);
     }
     if s == 2 {
