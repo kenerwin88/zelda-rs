@@ -25660,20 +25660,13 @@ impl ZeldaState {
                                 .wrapping_mul(8),
                         ) & 0x3f,
                     ) + k * 0x40;
-                    // C reads the lanmola trail from RAW ram; the native moldorm_history/
-                    // lanmola_segment_motion models only 128 slots but i = ... + k*0x40 reaches
-                    // 128..191 for k>=2, so native reads return 0. Read ram directly (f226254,
-                    // same class as the lanmola_draw trail reads at f220638).
-                    use crate::game_state::constants::{
-                        BEAMOS_LASER_HISTORY_X_HI, MOLDORM_HISTORY_X_LO, MOLDORM_HISTORY_Y_LO,
-                    };
-                    let hist_x_low = self.ram[MOLDORM_HISTORY_X_LO + i];
-                    let hist_y_low = self.ram[MOLDORM_HISTORY_Y_LO + i];
-                    let seg_z_offset = self.ram[BEAMOS_LASER_HISTORY_X_HI + i];
-                    let xlo = hist_x_low
+                    let trail = self.lanmola_flat_trail_entry(i);
+                    let xlo = trail
+                        .x_low()
                         .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low());
-                    let ylo = hist_y_low
-                        .wrapping_sub(seg_z_offset)
+                    let ylo = trail
+                        .y_low()
+                        .wrapping_sub(trail.z_offset())
                         .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low());
                     let mut info = SpriteSpawnInfo::default();
                     let j = self.sprite_spawn_dynamically(k, 0x00, &mut info);
@@ -25798,27 +25791,19 @@ impl ZeldaState {
         loop {
             let hist = usize::from(r2) + k * 64;
             r2 = r2.wrapping_sub(8) & 63;
-            // C reads the lanmola trail from RAW ram (MOLDORM_HISTORY_*_LO / BEAMOS_LASER_*_HI +
-            // hist). The native moldorm_history/lanmola_segment_motion models only 128 slots, but
-            // the lanmola packs 192 flat slots (k*64 + r2), so native reads of hist>=128 return 0.
-            // Read ram directly like C (these are write-through, so ram is authoritative). f220638.
-            use crate::game_state::constants::{
-                BEAMOS_LASER_HISTORY_X_HI, BEAMOS_LASER_HISTORY_Y_HI, MOLDORM_HISTORY_X_LO,
-                MOLDORM_HISTORY_Y_LO,
-            };
-            let history_x_low = self.ram[MOLDORM_HISTORY_X_LO + hist];
-            let history_y_low = self.ram[MOLDORM_HISTORY_Y_LO + hist];
-            let entry_x = history_x_low
+            let trail = self.lanmola_flat_trail_entry(hist);
+            let entry_x = trail
+                .x_low()
                 .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low());
             self.oam_state_mut().set_entry_x(oam, entry_x);
-            let z_offset = self.ram[BEAMOS_LASER_HISTORY_X_HI + hist];
-            let dir = usize::from(self.ram[BEAMOS_LASER_HISTORY_Y_HI + hist]);
-            if !sign8(z_offset) {
-                let entry_y = history_y_low
-                    .wrapping_sub(z_offset)
+            if !sign8(trail.z_offset()) {
+                let entry_y = trail
+                    .y_low()
+                    .wrapping_sub(trail.z_offset())
                     .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low());
                 self.oam_state_mut().set_entry_y(oam, entry_y);
             }
+            let dir = usize::from(trail.direction());
             let charnum = if n != 7 || i != 0 {
                 if n == i {
                     CHAR1[dir]
@@ -25845,19 +25830,14 @@ impl ZeldaState {
         loop {
             let hist = usize::from(r5) + k * 64;
             r5 = r5.wrapping_sub(8) & 63;
-            // Raw-ram trail read, as in the first segment loop (native models only 128 of the
-            // lanmola's 192 flat slots). f220638.
-            use crate::game_state::constants::{
-                BEAMOS_LASER_HISTORY_X_HI, MOLDORM_HISTORY_X_LO, MOLDORM_HISTORY_Y_LO,
-            };
-            let history_x_low = self.ram[MOLDORM_HISTORY_X_LO + hist];
-            let history_y_low = self.ram[MOLDORM_HISTORY_Y_LO + hist];
-            let entry_x = history_x_low
+            let trail = self.lanmola_flat_trail_entry(hist);
+            let entry_x = trail
+                .x_low()
                 .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low());
             self.oam_state_mut().set_entry_x(oam, entry_x);
-            let segment_z_offset = self.ram[BEAMOS_LASER_HISTORY_X_HI + hist];
-            if !sign8(segment_z_offset) {
-                let entry_y = history_y_low
+            if !sign8(trail.z_offset()) {
+                let entry_y = trail
+                    .y_low()
                     .wrapping_add(10)
                     .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low());
                 self.oam_state_mut().set_entry_y(oam, entry_y);

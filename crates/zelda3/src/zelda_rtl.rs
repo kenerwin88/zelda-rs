@@ -33,13 +33,14 @@ use crate::game_state::constants::{
 #[cfg(test)]
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
 use crate::game_state::{
-    loaded_room_data_word, Bg1MovementAccumulatorState, BirdTravelDestinationState,
-    BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
-    BombosBlastState, BombosFireColumnState, BossHomePositionRead, CachedSpriteRead,
-    CompatibilityBytesView, CompatibilityBytesViewMut, DisplayState, DungeonMapDisplayState,
-    DungeonStairList, FollowerLinkState, FrameState, GameState, GraphicsDecompressionScratch,
-    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, HistoryPositionState, HudRuntimeState,
-    HudStateRead, HudTilemapState, IntroActorRead, LanmolaSegmentMotionState, LinkDmaSourceSlot,
+    lanmola_flat_trail_entry_from_ram, loaded_room_data_word, Bg1MovementAccumulatorState,
+    BirdTravelDestinationState, BlastWallExplosionSlotState, BlastWallFireballSlotState,
+    BlastWallFragmentSlotState, BombosBlastState, BombosFireColumnState, BossHomePositionRead,
+    CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut, DisplayState,
+    DungeonMapDisplayState, DungeonStairList, FollowerLinkState, FrameState, GameState,
+    GraphicsDecompressionScratch, HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot,
+    HistoryPositionState, HudRuntimeState, HudStateRead, HudTilemapState, IntroActorRead,
+    LanmolaFlatTrailEntry, LanmolaSegmentMotionState, LinkDmaSourceSlot,
     MessagingRenderBufferState, MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead,
     NativeArcheryGameBridgeMut, NativeArmosKnightHomePositionBridgeMut,
     NativeArrghusPuffHomePositionBridgeMut, NativeAttractSceneBridgeMut,
@@ -5757,6 +5758,10 @@ impl ZeldaState {
         )
     }
 
+    pub(crate) fn lanmola_flat_trail_entry(&self, slot: usize) -> LanmolaFlatTrailEntry {
+        lanmola_flat_trail_entry_from_ram(&self.ram, slot)
+    }
+
     pub(crate) fn door_debris_mut(&mut self) -> NativeDoorDebrisBridgeMut<'_> {
         NativeDoorDebrisBridgeMut::new(&mut self.game_state.effects.door_debris, &mut self.ram)
     }
@@ -9969,6 +9974,26 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn lanmola_draw_uses_named_flat_trail_reader() {
+        let source = include_str!("sprite_main_draw.rs");
+        for needle in [
+            "self.ram[MOLDORM_HISTORY_X_LO +",
+            "self.ram[MOLDORM_HISTORY_Y_LO +",
+            "self.ram[BEAMOS_LASER_HISTORY_X_HI +",
+            "self.ram[BEAMOS_LASER_HISTORY_Y_HI +",
+        ] {
+            assert!(
+                !source.contains(needle),
+                "sprite_main_draw.rs should use lanmola_flat_trail_entry instead of {needle}"
+            );
+        }
+        assert!(
+            source.contains("lanmola_flat_trail_entry("),
+            "sprite_main_draw.rs should route Lanmola trail reads through the named API"
+        );
     }
 
     #[test]
