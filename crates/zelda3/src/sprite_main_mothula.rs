@@ -17,20 +17,7 @@ use super::*;
 use crate::types::{sign8, PointU8, SpriteHitBox};
 use crate::zelda_rtl::sprite::SpriteSpawnInfo;
 
-// SPRITE_DELAY_AUX3 = 0x0ee0 (sprite_delay_aux3 in variables.h).
-const SPRITE_DELAY_AUX3_MOTHULA: usize = 0x0ee0;
-const SPRITE_Y_RECOIL_MOTHULA: usize = 0x0f30;
-const SPRITE_TILETYPE_MOTHULA: usize = 0x0fa5;
-// tmp_counter is g_ram+0xFB5 (variables.h:767). Shared with other modules.
 const ARMOS_KNIGHT_REMAINING_COUNT: usize = 0x0ff8;
-const GARNISH_ACTIVE_MOTHULA: usize = 0x0fb4;
-const GARNISH_Y_LO_MOTHULA: usize = 0x1f81e;
-const GARNISH_X_LO_MOTHULA: usize = 0x1f83c;
-const GARNISH_Y_HI_MOTHULA: usize = 0x1f85a;
-const GARNISH_X_HI_MOTHULA: usize = 0x1f878;
-const GARNISH_COUNTDOWN_MOTHULA: usize = 0x1f90e;
-const GARNISH_SPRITE_MOTHULA: usize = 0x1f92c;
-const GARNISH_FLOOR_MOTHULA: usize = 0x1f968;
 const FEATURE_MISC_BUG_FIXES_MOTHULA: u32 = 4096;
 
 // kMothula_Dmd from sprite_main.c:13776 — packed as (x:i8, y:i8, char:u16, big:u8).
