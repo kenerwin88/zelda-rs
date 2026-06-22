@@ -9473,15 +9473,18 @@ mod tests {
         assert_eq!(outdoor.ram[OVERWORLD_SPRITE_WAS_LOADED + 2], 0xdf);
         assert_eq!(outdoor.sprite_slot(k).n_word(), 0xffff);
 
+        // C parity: the SNES address `0xEF80 + (blk>>3)` is computed in 16-bit
+        // (wraps mod 0x10000) BEFORE the 0x10000 bank is added, so blk=0xff00
+        // (blk>>3 = 0x1fe0) yields addr16 = (0xEF80+0x1FE0)&0xFFFF = 0x0F60 and a
+        // final byte at 0x0F60 + 0x10000 = 0x10F60 (inside the BG char buffer).
         let mut wrapped = fresh_state();
         wrapped.sprite_slot_mut(k).set_state(9);
         wrapped.sprite_slot_mut(k).set_n_word(0xff00);
-        wrapped.ram[(OVERWORLD_SPRITE_WAS_LOADED + (0xff00 >> 3)) & 0x1ffff] = 0xff;
+        let wrapped_addr = 0x10000 + usize::from(0xEF80u16.wrapping_add(0xff00 >> 3));
+        assert_eq!(wrapped_addr, 0x10f60);
+        wrapped.ram[wrapped_addr] = 0xff;
         wrapped.sprite_kill_self(k);
-        assert_eq!(
-            wrapped.ram[(OVERWORLD_SPRITE_WAS_LOADED + (0xff00 >> 3)) & 0x1ffff],
-            0x7f
-        );
+        assert_eq!(wrapped.ram[wrapped_addr], 0x7f);
     }
 
     #[test]

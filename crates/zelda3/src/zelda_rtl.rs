@@ -6274,7 +6274,14 @@ impl ZeldaState {
         block: u16,
         loaded_mask: u8,
     ) {
-        let address = (OVERWORLD_SPRITE_WAS_LOADED + usize::from(block >> 3)) & 0x1ffff;
+        // C computes the SNES address `addr = 0xEF80 + (blk >> 3)` in 16-bit
+        // (so it wraps mod 0x10000), THEN dereferences `&g_ram[addr + 0x10000]`.
+        // The bank add happens AFTER the 16-bit wrap, so a large `blk` whose
+        // 16-bit address wraps below 0xEF80 lands in 0x10000..=0x10F7F (the BG
+        // char buffer), not in low WRAM. Replicate that exact two-step math:
+        // mask the 16-bit address first, then add the 0x10000 bank.
+        let addr16 = 0xEF80u16.wrapping_add(block >> 3);
+        let address = 0x10000 + usize::from(addr16);
         self.ram[address] &= !loaded_mask;
         let in_table = match address.checked_sub(OVERWORLD_SPRITE_WAS_LOADED) {
             Some(index) if index < crate::game_state::OVERWORLD_SPRITE_FLAG_COUNT => {

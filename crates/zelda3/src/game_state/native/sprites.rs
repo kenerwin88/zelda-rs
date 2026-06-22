@@ -5838,7 +5838,11 @@ impl<'a> NativeOverworldSpriteLoadedBridgeMut<'a> {
     }
 
     pub(crate) fn clear_loaded_mask_wrapped(&mut self, block: u16, loaded_mask: u8) {
-        let address = (OVERWORLD_SPRITE_WAS_LOADED + usize::from(block >> 3)) & 0x1ffff;
+        // C computes the 16-bit SNES address (mod-0x10000 wrap) before adding the
+        // 0x10000 bank, so a wrapping `block` lands in 0x10000..=0x10F7F. See
+        // `RtlState::clear_overworld_sprite_loaded_mask_wrapped`.
+        let addr16 = 0xEF80u16.wrapping_add(block >> 3);
+        let address = 0x10000 + usize::from(addr16);
         self.ram[address] &= !loaded_mask;
         if let Some(index) = address.checked_sub(OVERWORLD_SPRITE_WAS_LOADED) {
             if index < OVERWORLD_SPRITE_FLAG_COUNT {
