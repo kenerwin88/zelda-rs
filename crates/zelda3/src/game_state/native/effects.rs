@@ -1694,6 +1694,41 @@ impl LanmolaSegmentMotionState {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct LanmolaFlatTrailEntry {
+    x_low: u8,
+    y_low: u8,
+    z_offset: u8,
+    direction: u8,
+}
+
+impl LanmolaFlatTrailEntry {
+    pub(crate) fn x_low(&self) -> u8 {
+        self.x_low
+    }
+
+    pub(crate) fn y_low(&self) -> u8 {
+        self.y_low
+    }
+
+    pub(crate) fn z_offset(&self) -> u8 {
+        self.z_offset
+    }
+
+    pub(crate) fn direction(&self) -> u8 {
+        self.direction
+    }
+}
+
+pub(crate) fn lanmola_flat_trail_entry_from_ram(ram: &[u8], slot: usize) -> LanmolaFlatTrailEntry {
+    LanmolaFlatTrailEntry {
+        x_low: ram[MOLDORM_HISTORY_X_LO + slot],
+        y_low: ram[MOLDORM_HISTORY_Y_LO + slot],
+        z_offset: ram[BEAMOS_LASER_HISTORY_X_HI + slot],
+        direction: ram[BEAMOS_LASER_HISTORY_Y_HI + slot],
+    }
+}
+
 fn history_position(xs: &[u16], ys: &[u16], slot: usize) -> HistoryPositionState {
     HistoryPositionState {
         x: xs.get(slot).copied().unwrap_or(0),

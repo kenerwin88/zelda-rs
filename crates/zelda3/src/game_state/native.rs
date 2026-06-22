@@ -44,16 +44,16 @@ pub(crate) use dungeon::{
     NativeDungeonStairMovementBridgeMut, NativeDungeonTorchBridgeMut,
 };
 pub(crate) use effects::{
-    BlastWallExplosionSlotState, BlastWallFireballSlotState, BlastWallFragmentSlotState,
-    BombosBlastState, BombosFireColumnState, EffectState, HappinessPondRupeeSlotState,
-    HappinessPondRupeeSnapshot, HistoryPositionState, LanmolaSegmentMotionState,
-    NativeBeamosLaserHistoryBridgeMut, NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut,
-    NativeBlastWallFireballBridgeMut, NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut,
-    NativeBombosFireColumnBridgeMut, NativeBombosSpellBridgeMut, NativeDiggingGamePrizeBridgeMut,
-    NativeDoorDebrisBridgeMut, NativeEffectAngleScratchBridgeMut,
-    NativeHappinessPondRupeeBridgeMut, NativeLanmolaSegmentMotionBridgeMut,
-    NativeMoldormHistoryBridgeMut, NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut,
-    NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
+    lanmola_flat_trail_entry_from_ram, BlastWallExplosionSlotState, BlastWallFireballSlotState,
+    BlastWallFragmentSlotState, BombosBlastState, BombosFireColumnState, EffectState,
+    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, HistoryPositionState,
+    LanmolaFlatTrailEntry, LanmolaSegmentMotionState, NativeBeamosLaserHistoryBridgeMut,
+    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
+    NativeBombosSpellBridgeMut, NativeDiggingGamePrizeBridgeMut, NativeDoorDebrisBridgeMut,
+    NativeEffectAngleScratchBridgeMut, NativeHappinessPondRupeeBridgeMut,
+    NativeLanmolaSegmentMotionBridgeMut, NativeMoldormHistoryBridgeMut, NativeQuakeBoltBridgeMut,
+    NativeQuakeSpellBridgeMut, NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
     NativeSwamolaHistoryBridgeMut, NativeSwamolaTargetBridgeMut, NativeTowerSealBridgeMut,
     NativeTowerSealOrbitBridgeMut, NativeTowerSealSparkleBridgeMut,
     NativeWeatherVaneDebrisBridgeMut, QuakeBoltSlotState, SkullWoodsFireSlotState,
@@ -3451,6 +3451,47 @@ mod tests {
         assert_eq!(ram[BEAMOS_LASER_HISTORY_Y_HI + 9], 0xaa);
         assert_eq!(effects.sprite_histories.beamos_laser_history(9).x(), 0x5567);
         assert_eq!(effects.sprite_histories.beamos_laser_history(9).y(), 0xaaab);
+    }
+
+    #[test]
+    fn lanmola_flat_trail_entry_reads_raw_192_slot_alias_region() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let slot = 0x82;
+        ram[MOLDORM_HISTORY_X_LO + slot] = 0x34;
+        ram[MOLDORM_HISTORY_Y_LO + slot] = 0x56;
+        ram[BEAMOS_LASER_HISTORY_X_HI + slot] = 0x78;
+        ram[BEAMOS_LASER_HISTORY_Y_HI + slot] = 0x09;
+
+        let entry = lanmola_flat_trail_entry_from_ram(&ram, slot);
+
+        assert_eq!(entry.x_low(), 0x34);
+        assert_eq!(entry.y_low(), 0x56);
+        assert_eq!(entry.z_offset(), 0x78);
+        assert_eq!(entry.direction(), 0x09);
+    }
+
+    #[test]
+    fn lanmola_flat_trail_entry_prefers_raw_ram_over_native_128_slot_history() {
+        let mut ram = vec![0; WRAM_SIZE];
+        let slot = 0x82;
+        ram[MOLDORM_HISTORY_X_LO + slot] = 0xaa;
+        ram[MOLDORM_HISTORY_Y_LO + slot] = 0xbb;
+        ram[BEAMOS_LASER_HISTORY_X_HI + slot] = 0xcc;
+        ram[BEAMOS_LASER_HISTORY_Y_HI + slot] = 0xdd;
+
+        let native = EffectState::load_from_ram(&ram);
+        let native_moldorm = native.sprite_histories.moldorm_history(slot);
+        let native_motion = native.sprite_histories.lanmola_segment_motion(slot);
+        assert_eq!(native_moldorm.x(), 0);
+        assert_eq!(native_moldorm.y(), 0);
+        assert_eq!(native_motion.z_offset(), 0xcc);
+        assert_eq!(native_motion.direction(), 0xdd);
+
+        let entry = lanmola_flat_trail_entry_from_ram(&ram, slot);
+        assert_eq!(entry.x_low(), 0xaa);
+        assert_eq!(entry.y_low(), 0xbb);
+        assert_eq!(entry.z_offset(), 0xcc);
+        assert_eq!(entry.direction(), 0xdd);
     }
 
     #[test]
