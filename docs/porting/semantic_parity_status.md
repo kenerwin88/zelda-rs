@@ -32,6 +32,10 @@ This file records the current implementation status for
   latching and local attract/ending
   coordinate helpers now delegate through those paths, so new call sites can
   migrate without reintroducing raw lo/hi/subpixel byte packing.
+- Lanmola flat trail reads now route through a named byte-backed reader. This
+  remains a compatibility surface, not graduated owned state: the Lanmola trail
+  uses 192 flat raw slots across Moldorm and Beamos history pages, while the
+  native Moldorm/Beamos history models intentionally cover 128-slot banks.
 
 ## Graduated Subsystems
 
