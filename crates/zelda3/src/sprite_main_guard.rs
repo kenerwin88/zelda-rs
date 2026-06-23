@@ -93,6 +93,25 @@ const JAVELIN_TROOPER_ARM_GFX_BY_FRAME: [u8; 64] = [
     22, 4, 4, 4, 3, 3, 3, 23, 23, 15, 15, 15, 11, 11, 11,
 ];
 const RECRUIT_MOVING_HEAD_DIRECTIONS: [u8; 8] = [2, 3, 2, 3, 0, 1, 0, 1];
+const BOMB_TROOPER_BOMB_X_OFFSETS: [i8; 4] = [0, 1, 9, -8];
+const BOMB_TROOPER_BOMB_Y_OFFSETS: [i8; 4] = [-12, -12, -15, -13];
+const BOMB_TROOPER_BOMB_Z_VELOCITIES: [u8; 16] = [
+    32, 40, 48, 56, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+];
+const BOMB_TROOPER_ARM_X_OFFSETS: [i8; 8] = [-1, 1, 2, 0, 9, 9, -8, -8];
+const BOMB_TROOPER_ARM_Y_OFFSETS: [i8; 8] = [-12, -12, -12, -12, -16, -14, -12, -14];
+const JAVELIN_PROJECTILE_X_OFFSETS: [i8; 8] = [16, -8, 3, 11, 12, -4, 12, -4];
+const JAVELIN_PROJECTILE_Y_OFFSETS: [i8; 8] = [2, 2, 16, -8, -2, -2, 2, -8];
+const JAVELIN_PROJECTILE_X_VELOCITIES: [i8; 8] = [48, -48, 0, 0, 32, -32, 0, 0];
+const JAVELIN_PROJECTILE_Y_VELOCITIES: [i8; 8] = [0, 0, 48, -48, 0, 0, 32, -32];
+const JAVELIN_PROJECTILE_FLAGS4_BY_DIRECTION: [u8; 4] = [5, 5, 6, 6];
+const BUSH_SOLDIER_RISE_GRAPHICS: [u8; 32] = [
+    4, 4, 4, 4, 4, 4, 4, 4, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
+];
+const BUSH_SOLDIER_ALERT_GRAPHICS: [u8; 16] = [0, 1, 0, 1, 0, 1, 0, 1, 0, 2, 3, 4, 4, 4, 4, 4];
+const SOLDIER_THROWING_ATTACK_DIRECTION_FLAGS: [u8; 4] = [3, 3, 12, 12];
+const SOLDIER_THROWING_ATTACK_X_VELOCITIES: [i8; 8] = [-80, 80, 0, -8, -80, 80, -8, 8];
+const SOLDIER_THROWING_ATTACK_Y_VELOCITIES: [i8; 8] = [8, 8, -80, 80, 8, 8, -80, 80];
 const SPRITE_TILETYPE_GUARD: usize = 0x0fa5;
 const SPRITE_DELAY_AUX3_GUARD: usize = 0x0ee0;
 const SPRITE_Y_RECOIL_GUARD: usize = 0x0f30;
@@ -471,11 +490,6 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn bomb_guard_create_bomb(&mut self, k: usize) {
-        const BOMB_TROOPER_BOMB_X_OFFSETS: [i8; 4] = [0, 1, 9, -8];
-        const BOMB_TROOPER_BOMB_Y_OFFSETS: [i8; 4] = [-12, -12, -15, -13];
-        const BOMB_TROOPER_BOMB_Z_VELOCITIES: [u8; 16] = [
-            32, 40, 48, 56, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-        ];
         let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_guard(k, 0x4a) else {
             return;
         };
@@ -561,8 +575,6 @@ impl ZeldaState {
     //                 info->y + kBombTrooper_DrawArm_Y[j], 0x6e, info->flags & 0x30 | 0x8, 2);
     // }
     pub(super) fn sprite_draw_bomb_guard_arm(&mut self, k: usize, info: &PrepOamCoordsRet) {
-        const BOMB_TROOPER_ARM_X_OFFSETS: [i8; 8] = [-1, 1, 2, 0, 9, 9, -8, -8];
-        const BOMB_TROOPER_ARM_Y_OFFSETS: [i8; 8] = [-12, -12, -12, -12, -16, -14, -12, -14];
         let sprite = self.sprite_slot_view(k);
         let j = ((sprite.direction() as usize) * 2) | (sprite.subtype2() as usize);
         let j = j & 7;
@@ -987,12 +999,6 @@ impl ZeldaState {
     //     sprite_flags5[j] &= ~0x20;
     // }
     pub(super) fn guard_launch_projectile(&mut self, k: usize) {
-        const JAVELIN_PROJECTILE_X_OFFSETS: [i8; 8] = [16, -8, 3, 11, 12, -4, 12, -4];
-        const JAVELIN_PROJECTILE_Y_OFFSETS: [i8; 8] = [2, 2, 16, -8, -2, -2, 2, -8];
-        const JAVELIN_PROJECTILE_X_VELOCITIES: [i8; 8] = [48, -48, 0, 0, 32, -32, 0, 0];
-        const JAVELIN_PROJECTILE_Y_VELOCITIES: [i8; 8] = [0, 0, 48, -48, 0, 0, 32, -32];
-        const JAVELIN_PROJECTILE_FLAGS4_BY_DIRECTION: [u8; 4] = [5, 5, 6, 6];
-
         let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_guard(k, 0x1b) else {
             return;
         };
@@ -1042,12 +1048,6 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_bush_guard_main(&mut self, k: usize) {
-        const BUSH_SOLDIER_RISE_GRAPHICS: [u8; 32] = [
-            4, 4, 4, 4, 4, 4, 4, 4, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0,
-            1, 0, 1,
-        ];
-        const BUSH_SOLDIER_ALERT_GRAPHICS: [u8; 16] =
-            [0, 1, 0, 1, 0, 1, 0, 1, 0, 2, 3, 4, 4, 4, 4, 4];
         if self.sprite_return_if_inactive_for_guard(k) {
             return;
         }
@@ -1255,10 +1255,6 @@ impl ZeldaState {
     // ------------------------------------------------------------------
     // void SoldierThrowing_Common(int k) {  // 85ce23
     pub(super) fn soldier_throwing_common(&mut self, k: usize) {
-        const DIR_FLAGS: [u8; 4] = [3, 3, 12, 12];
-        const XD: [i8; 8] = [-80, 80, 0, -8, -80, 80, -8, 8];
-        const YD: [i8; 8] = [8, 8, -80, 80, 8, 8, -80, 80];
-
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -1346,7 +1342,9 @@ impl ZeldaState {
             }
             4 => {
                 let mut j = usize::from(self.sprite_slot_view(k).direction() & 3);
-                if (self.sprite_slot_view(k).wall_collision() & DIR_FLAGS[j]) != 0
+                if (self.sprite_slot_view(k).wall_collision()
+                    & SOLDIER_THROWING_ATTACK_DIRECTION_FLAGS[j])
+                    != 0
                     || self.sprite_slot_view(k).delay_main() == 0
                 {
                     let mut sprite = self.sprite_slot_view_mut(k);
@@ -1370,13 +1368,13 @@ impl ZeldaState {
                         .player
                         .follower_link
                         .x()
-                        .wrapping_add(XD[j] as i16 as u16);
+                        .wrapping_add(SOLDIER_THROWING_ATTACK_X_VELOCITIES[j] as i16 as u16);
                     let y = self
                         .game_state
                         .player
                         .follower_link
                         .y()
-                        .wrapping_add(YD[j] as i16 as u16);
+                        .wrapping_add(SOLDIER_THROWING_ATTACK_Y_VELOCITIES[j] as i16 as u16);
                     let pt = self.sprite_project_speed_towards_location(k, x, y, 24);
                     {
                         let mut sprite = self.sprite_slot_view_mut(k);
