@@ -62,7 +62,7 @@ pub(crate) use ending::{
     EndingState, IntroActorRead, IntroActorState, NativeAttractSceneBridgeMut,
     NativeEndingCreditBridgeMut, NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut,
 };
-pub(crate) use frame::FrameState;
+pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
 pub(crate) use inventory::{
     InventoryState, NativeDungeonKeySlotsBridgeMut, NativeInventoryItemsBridgeMut,
     NativeMirrorWarpBridgeMut, NativePlayerResourcesBridgeMut, NativeSaveProgressBridgeMut,
@@ -152,8 +152,6 @@ use effects::{
 };
 #[cfg(test)]
 use ending::{AttractSceneState, EndingCreditState, IntroSceneState};
-#[cfg(test)]
-use frame::NativeFrameStateBridgeMut;
 #[cfg(test)]
 use inventory::{DungeonKeySlotsState, InventoryItemsState, MirrorWarpState, PlayerResourcesState};
 #[cfg(test)]

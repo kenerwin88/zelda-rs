@@ -33,7 +33,7 @@ use crate::game_state::{
     BirdTravelDestinationState, BlastWallExplosionSlotState, BlastWallFireballSlotState,
     BlastWallFragmentSlotState, BombosBlastState, BombosFireColumnState, BossHomePositionRead,
     CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut, DisplayState,
-    DungeonMapDisplayState, DungeonStairList, FollowerLinkState, FrameState, GameState,
+    DungeonMapDisplayState, DungeonStairList, FollowerLinkState, GameState,
     GraphicsDecompressionScratch, HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot,
     HistoryPositionState, HudRuntimeState, HudStateRead, HudTilemapState, IntroActorRead,
     LanmolaFlatTrailEntry, LanmolaSegmentMotionState, LinkDmaSourceSlot, MsuResumeInfoState,
@@ -62,10 +62,10 @@ use crate::game_state::{
     NativeDungeonTorchBridgeMut, NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerLinkBridgeMut,
-    NativeFollowerRuntimeBridgeMut, NativeGarnishRuntimeBridgeMut, NativeGarnishSlotBridgeMut,
-    NativeGarnishSlotView, NativeHappinessPondRupeeBridgeMut, NativeHudInventoryOrderBridgeMut,
-    NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut,
-    NativeInventoryItemsBridgeMut, NativeLanmolaSegmentMotionBridgeMut,
+    NativeFollowerRuntimeBridgeMut, NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut,
+    NativeGarnishSlotBridgeMut, NativeGarnishSlotView, NativeHappinessPondRupeeBridgeMut,
+    NativeHudInventoryOrderBridgeMut, NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut,
+    NativeIntroSwordBridgeMut, NativeInventoryItemsBridgeMut, NativeLanmolaSegmentMotionBridgeMut,
     NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
     NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
     NativeMirrorWarpBridgeMut, NativeMoldormHistoryBridgeMut, NativeMultiselectChoiceBridgeMut,
@@ -1750,160 +1750,138 @@ impl ZeldaState {
         NativeSystemSignalsBridgeMut::new(&mut self.game_state.system_signals, &mut self.ram)
     }
 
-    fn sync_system_signals_to_ram(&mut self) {
-        self.game_state.system_signals.write_to_ram(&mut self.ram);
-        debug_assert_eq!(
-            self.game_state.system_signals,
-            SystemSignalsState::load_from_ram(&self.ram)
-        );
-    }
-
-    fn mutate_system_signals<T>(&mut self, mutate: impl FnOnce(&mut SystemSignalsState) -> T) -> T {
-        let result = mutate(&mut self.game_state.system_signals);
-        self.sync_system_signals_to_ram();
-        result
-    }
-
     pub(crate) fn set_music_control(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_music_control(value));
+        self.system_signals_mut().set_music_control(value);
     }
 
     pub(crate) fn set_current_music_control(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_current_music_control(value));
+        self.system_signals_mut().set_current_music_control(value);
     }
 
     pub(crate) fn set_last_music_control(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_last_music_control(value));
+        self.system_signals_mut().set_last_music_control(value);
     }
 
     pub(crate) fn set_queued_music_control(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_queued_music_control(value));
+        self.system_signals_mut().set_queued_music_control(value);
     }
 
     pub(crate) fn set_ambient_sound_effect(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_ambient_sound_effect(value));
+        self.system_signals_mut().set_ambient_sound_effect(value);
     }
 
     pub(crate) fn set_sound_effect_1(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_sound_effect_1(value));
+        self.system_signals_mut().set_sound_effect_1(value);
     }
 
     pub(crate) fn set_sound_effect_2(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_sound_effect_2(value));
+        self.system_signals_mut().set_sound_effect_2(value);
     }
 
     pub(crate) fn set_apui00(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_apui00(value));
+        self.system_signals_mut().set_apui00(value);
     }
 
     pub(crate) fn set_msu_volume(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_msu_volume(value));
+        self.system_signals_mut().set_msu_volume(value);
     }
 
     pub(crate) fn set_msu_resume_info(&mut self, slot: MsuResumeSlot, info: MsuResumeInfoState) {
-        self.mutate_system_signals(|signals| signals.set_msu_resume_info(slot, info));
+        self.system_signals_mut().set_msu_resume_info(slot, info);
     }
 
     pub(crate) fn set_sound_effect_1_word(&mut self, value: u16) {
-        self.mutate_system_signals(|signals| signals.set_sound_effect_1_word(value));
+        self.system_signals_mut().set_sound_effect_1_word(value);
     }
 
     pub(crate) fn set_ambient_sound_effect_word(&mut self, value: u16) {
-        self.mutate_system_signals(|signals| signals.set_ambient_sound_effect_word(value));
+        self.system_signals_mut()
+            .set_ambient_sound_effect_word(value);
     }
 
     pub(crate) fn clear_sound_effect_1(&mut self) {
-        self.mutate_system_signals(|signals| signals.clear_sound_effect_1());
+        self.system_signals_mut().clear_sound_effect_1();
     }
 
     pub(crate) fn clear_sound_effect_2(&mut self) {
-        self.mutate_system_signals(|signals| signals.clear_sound_effect_2());
+        self.system_signals_mut().clear_sound_effect_2();
     }
 
     pub(crate) fn clear_ambient_sound_effect(&mut self) {
-        self.mutate_system_signals(|signals| signals.clear_ambient_sound_effect());
+        self.system_signals_mut().clear_ambient_sound_effect();
     }
 
     pub(crate) fn queue_sound_effect_1_if_empty(&mut self, value: u8) -> bool {
-        let queued = self
-            .game_state
-            .system_signals
-            .queue_sound_effect_1_if_empty(value);
-        if queued {
-            self.sync_system_signals_to_ram();
-        }
-        queued
+        self.system_signals_mut()
+            .queue_sound_effect_1_if_empty(value)
     }
 
     pub(crate) fn queue_sound_effect_2_if_empty(&mut self, value: u8) -> bool {
-        let queued = self
-            .game_state
-            .system_signals
-            .queue_sound_effect_2_if_empty(value);
-        if queued {
-            self.sync_system_signals_to_ram();
-        }
-        queued
+        self.system_signals_mut()
+            .queue_sound_effect_2_if_empty(value)
     }
 
     pub(crate) fn increment_hud_update_flag(&mut self) -> u8 {
-        self.mutate_system_signals(|signals| signals.increment_hud_update_flag())
+        self.system_signals_mut().increment_hud_update_flag()
     }
 
     pub(crate) fn clear_hud_update_flag(&mut self) {
-        self.mutate_system_signals(|signals| signals.clear_hud_update_flag());
+        self.system_signals_mut().clear_hud_update_flag();
     }
 
     pub(crate) fn increment_cgram_update_flag(&mut self) -> u8 {
-        self.mutate_system_signals(|signals| signals.increment_cgram_update_flag())
+        self.system_signals_mut().increment_cgram_update_flag()
     }
 
     pub(crate) fn clear_cgram_update_flag(&mut self) {
-        self.mutate_system_signals(|signals| signals.clear_cgram_update_flag());
+        self.system_signals_mut().clear_cgram_update_flag();
     }
 
     pub(crate) fn set_bugs_fixed(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_bugs_fixed(value));
+        self.system_signals_mut().set_bugs_fixed(value);
     }
 
     pub(crate) fn save_current_music_as_last(&mut self) {
-        self.mutate_system_signals(|signals| signals.save_current_music_as_last());
+        self.system_signals_mut().save_current_music_as_last();
     }
 
     pub(crate) fn save_ambient_sound_effect_as_last(&mut self) {
-        self.mutate_system_signals(|signals| signals.save_ambient_sound_effect_as_last());
+        self.system_signals_mut()
+            .save_ambient_sound_effect_as_last();
     }
 
     pub(crate) fn clear_game_over_check_flag(&mut self) {
-        self.mutate_system_signals(|signals| signals.clear_game_over_check_flag());
+        self.system_signals_mut().clear_game_over_check_flag();
     }
 
     pub(crate) fn clear_restart_check_flag(&mut self) {
-        self.mutate_system_signals(|signals| signals.clear_restart_check_flag());
+        self.system_signals_mut().clear_restart_check_flag();
     }
 
     pub(crate) fn set_restart_check_flag(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_restart_check_flag(value));
+        self.system_signals_mut().set_restart_check_flag(value);
     }
 
     pub(crate) fn set_raw_sfx_pan_value(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_raw_sfx_pan_value(value));
+        self.system_signals_mut().set_raw_sfx_pan_value(value);
     }
 
     pub(crate) fn set_game_over_check_flag(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_game_over_check_flag(value));
+        self.system_signals_mut().set_game_over_check_flag(value);
     }
 
     pub(crate) fn increment_game_over_check_flag(&mut self) {
-        self.mutate_system_signals(|signals| signals.increment_game_over_check_flag());
+        self.system_signals_mut().increment_game_over_check_flag();
     }
 
     pub(crate) fn set_death_backup_current_music(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_death_backup_current_music(value));
+        self.system_signals_mut()
+            .set_death_backup_current_music(value);
     }
 
     pub(crate) fn set_death_backup_ambient_sound(&mut self, value: u8) {
-        self.mutate_system_signals(|signals| signals.set_death_backup_ambient_sound(value));
+        self.system_signals_mut()
+            .set_death_backup_ambient_sound(value);
     }
 
     fn compatibility_ram_range(&self, offset: usize, len: usize) -> &[u8] {
@@ -2139,83 +2117,76 @@ impl ZeldaState {
         )
     }
 
-    fn sync_frame_state_to_ram(&mut self) {
-        self.game_state.frame.write_to_ram(&mut self.ram);
-        self.assert_native_frame_state_matches_ram();
-    }
-
-    fn mutate_frame_state<T>(&mut self, mutate: impl FnOnce(&mut FrameState) -> T) -> T {
-        let result = mutate(&mut self.game_state.frame);
-        self.sync_frame_state_to_ram();
-        result
+    pub(crate) fn frame_state_mut(&mut self) -> NativeFrameStateBridgeMut<'_> {
+        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
     }
 
     pub(crate) fn set_main_module(&mut self, value: u8) {
-        self.mutate_frame_state(|frame| frame.set_main_module(value));
+        self.frame_state_mut().set_main_module(value);
     }
 
     pub(crate) fn set_main_module_word(&mut self, value: u16) {
-        self.mutate_frame_state(|frame| frame.set_main_module_word(value));
+        self.frame_state_mut().set_main_module_word(value);
     }
 
     pub(crate) fn set_submodule(&mut self, value: u8) {
-        self.mutate_frame_state(|frame| frame.set_submodule(value));
+        self.frame_state_mut().set_submodule(value);
     }
 
     pub(crate) fn increment_submodule(&mut self) {
-        self.mutate_frame_state(FrameState::increment_submodule);
+        self.frame_state_mut().increment_submodule();
     }
 
     pub(crate) fn decrement_submodule(&mut self) {
-        self.mutate_frame_state(FrameState::decrement_submodule);
+        self.frame_state_mut().decrement_submodule();
     }
 
     pub(crate) fn set_subsubmodule(&mut self, value: u8) {
-        self.mutate_frame_state(|frame| frame.set_subsubmodule(value));
+        self.frame_state_mut().set_subsubmodule(value);
     }
 
     pub(crate) fn increment_subsubmodule(&mut self) {
-        self.mutate_frame_state(FrameState::increment_subsubmodule);
+        self.frame_state_mut().increment_subsubmodule();
     }
 
     pub(crate) fn decrement_subsubmodule(&mut self) {
-        self.mutate_frame_state(FrameState::decrement_subsubmodule);
+        self.frame_state_mut().decrement_subsubmodule();
     }
 
     pub(crate) fn set_frame_counter(&mut self, value: u8) {
-        self.mutate_frame_state(|frame| frame.set_frame_counter(value));
+        self.frame_state_mut().set_frame_counter(value);
     }
 
     pub(crate) fn increment_frame_counter(&mut self) {
-        self.mutate_frame_state(FrameState::increment_frame_counter);
+        self.frame_state_mut().increment_frame_counter();
     }
 
     pub(crate) fn set_saved_module_for_menu(&mut self, value: u8) {
-        self.mutate_frame_state(|frame| frame.set_saved_module_for_menu(value));
+        self.frame_state_mut().set_saved_module_for_menu(value);
     }
 
     pub(crate) fn clear_saved_module_for_menu(&mut self) {
-        self.mutate_frame_state(FrameState::clear_saved_module_for_menu);
+        self.frame_state_mut().clear_saved_module_for_menu();
     }
 
     pub(crate) fn save_main_module_for_menu(&mut self) {
-        self.mutate_frame_state(FrameState::save_main_module_for_menu);
+        self.frame_state_mut().save_main_module_for_menu();
     }
 
     pub(crate) fn save_submodule_for_menu(&mut self) {
-        self.mutate_frame_state(FrameState::save_submodule_for_menu);
+        self.frame_state_mut().save_submodule_for_menu();
     }
 
     pub(crate) fn clear_modal_pause_flag(&mut self) {
-        self.mutate_frame_state(FrameState::clear_modal_pause_flag);
+        self.frame_state_mut().clear_modal_pause_flag();
     }
 
     pub(crate) fn set_modal_pause_flag(&mut self, value: u8) {
-        self.mutate_frame_state(|frame| frame.set_modal_pause_flag(value));
+        self.frame_state_mut().set_modal_pause_flag(value);
     }
 
     pub(crate) fn increment_modal_pause_flag(&mut self) -> u8 {
-        self.mutate_frame_state(FrameState::increment_modal_pause_flag)
+        self.frame_state_mut().increment_modal_pause_flag()
     }
 
     fn sync_world_location_to_ram(&mut self) {
