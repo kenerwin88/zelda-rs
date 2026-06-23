@@ -125,9 +125,9 @@ pub(crate) use world::{
     NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
     NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldCameraBoundariesBridgeMut,
     NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
-    OverworldConfigTableRead, OverworldConfigTableState, OverworldEventInfoState,
-    OverworldMap16Decode, OverworldMap16DecodeScratch, OverworldMap16SourcePage,
-    WorldLocationState, WorldState, WorldTransientState,
+    OverworldConfigTableRead, OverworldConfigTableState, OverworldMap16Decode,
+    OverworldMap16DecodeScratch, OverworldMap16SourcePage, WorldLocationState, WorldState,
+    WorldTransientState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 
@@ -178,10 +178,10 @@ use system::NativeSystemWorkAreaBridgeMut;
 #[cfg(test)]
 use world::{
     BirdTravelDestinationsState, NativeOverworldConfigTableBridgeMut, NativeWorldLocationBridgeMut,
-    NativeWorldTransientBridgeMut, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
-    OverworldMapZoomState, OverworldScreenSizeState, OverworldScrollDeltaState,
-    OverworldTransitionState, RoomBoundsState, WeatherVaneState, WorldCameraBoundariesState,
-    WorldPaletteThemeState, WorldRegionState, WorldScrollState,
+    NativeWorldTransientBridgeMut, OverworldEntranceState, OverworldEventInfoState,
+    OverworldExitState, OverworldMapUiState, OverworldMapZoomState, OverworldScreenSizeState,
+    OverworldScrollDeltaState, OverworldTransitionState, RoomBoundsState, WeatherVaneState,
+    WorldCameraBoundariesState, WorldPaletteThemeState, WorldRegionState, WorldScrollState,
 };
 
 fn ram_byte(ram: &[u8], offset: usize) -> u8 {

@@ -94,9 +94,9 @@ use crate::game_state::{
     NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
     NativeWorldCameraBoundariesBridgeMut, NativeWorldPaletteThemeBridgeMut,
     NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut, OverworldConfigTableRead,
-    OverworldEventInfoState, OverworldMap16Decode, OverworldMap16DecodeScratch,
-    OverworldMap16LoadState, OverworldMap16SourcePage, PaletteFilterState, PpuScrollCopyState,
-    QuakeBoltSlotState, RamPlayerStateView, RamPlayerStateViewMut, SkullWoodsFireSlotState,
+    OverworldMap16Decode, OverworldMap16DecodeScratch, OverworldMap16LoadState,
+    OverworldMap16SourcePage, PaletteFilterState, PpuScrollCopyState, QuakeBoltSlotState,
+    RamPlayerStateView, RamPlayerStateViewMut, SkullWoodsFireSlotState,
     SmallOverworldMap16ScrollBackupState, SpotlightHdmaState, SystemSignalsState, SystemWorkArea,
     TagalongSlotRead, TowerSealOrbitState, TowerSealSparkleState, WeatherVaneDebrisSlotState,
     WorldTransientState,
@@ -4152,43 +4152,18 @@ impl ZeldaState {
         )
     }
 
-    fn sync_overworld_event_info_to_ram(&mut self) {
-        self.game_state
-            .world
-            .overworld
-            .event_info
-            .write_to_ram(&mut self.ram);
-        debug_assert_eq!(
-            self.game_state.world.overworld.event_info,
-            OverworldEventInfoState::load_from_ram(&self.ram)
-        );
-    }
-
     pub(crate) fn set_overworld_event_bits(&mut self, screen: usize, mask: u8) {
-        self.game_state
-            .world
-            .overworld
-            .event_info
-            .set_event_bits(screen, mask);
-        self.sync_overworld_event_info_to_ram();
+        self.overworld_event_info_mut().set_event_bits(screen, mask);
     }
 
     pub(crate) fn set_overworld_event_info(&mut self, screen: usize, value: u8) {
-        self.game_state
-            .world
-            .overworld
-            .event_info
+        self.overworld_event_info_mut()
             .set_event_info(screen, value);
-        self.sync_overworld_event_info_to_ram();
     }
 
     pub(crate) fn clear_overworld_event_bits(&mut self, screen: usize, mask: u8) {
-        self.game_state
-            .world
-            .overworld
-            .event_info
+        self.overworld_event_info_mut()
             .clear_event_bits(screen, mask);
-        self.sync_overworld_event_info_to_ram();
     }
 
     pub(crate) fn overworld_config_table(&self) -> OverworldConfigTableRead<'_> {
