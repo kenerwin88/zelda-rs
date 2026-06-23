@@ -2124,7 +2124,7 @@ impl ZeldaState {
                             .sprites
                             .garnish_runtime
                             .active_overlord_index() as usize;
-                        let overlord = self.game_state.sprites.overlord_slots.slot(j);
+                        let overlord = self.overlord_slot_view(j);
                         let x = overlord.x();
                         let y = overlord.y();
                         if y >= self.sprite_get_y(k) {
@@ -4405,36 +4405,12 @@ impl ZeldaState {
                 self.sprite_slot_mut(k).add_x_low(8);
                 self.sprite_slot_mut(k).add_y_low(16);
                 self.trinexx_cache_position(k);
-                self.game_state
-                    .sprites
-                    .overlord_slots
-                    .slot_mut(&mut self.ram, 2)
-                    .set_x_low(0);
-                self.game_state
-                    .sprites
-                    .overlord_slots
-                    .slot_mut(&mut self.ram, 3)
-                    .set_x_low(0);
-                self.game_state
-                    .sprites
-                    .overlord_slots
-                    .slot_mut(&mut self.ram, 5)
-                    .set_x_low(0);
-                self.game_state
-                    .sprites
-                    .overlord_slots
-                    .slot_mut(&mut self.ram, 7)
-                    .set_x_low(0);
-                self.game_state
-                    .sprites
-                    .overlord_slots
-                    .slot_mut(&mut self.ram, 0)
-                    .set_x_high(0);
-                self.game_state
-                    .sprites
-                    .overlord_slots
-                    .slot_mut(&mut self.ram, 6)
-                    .set_x_low(255);
+                self.overlord_slot_view_mut(2).set_x_low(0);
+                self.overlord_slot_view_mut(3).set_x_low(0);
+                self.overlord_slot_view_mut(5).set_x_low(0);
+                self.overlord_slot_view_mut(7).set_x_low(0);
+                self.overlord_slot_view_mut(0).set_x_high(0);
+                self.overlord_slot_view_mut(6).set_x_low(255);
                 self.trinexx_restore_xy(k);
             }
             0xcc => {
@@ -4533,16 +4509,8 @@ impl ZeldaState {
         let subtype2 = self.get_random_number();
         self.sprite_slot_mut(k).set_subtype2(subtype2);
         if k == 13 {
-            self.game_state
-                .sprites
-                .overlord_slots
-                .slot_mut(&mut self.ram, 2)
-                .set_x_low(0);
-            self.game_state
-                .sprites
-                .overlord_slots
-                .slot_mut(&mut self.ram, 3)
-                .set_x_low(0);
+            self.overlord_slot_view_mut(2).set_x_low(0);
+            self.overlord_slot_view_mut(3).set_x_low(0);
             self.arrghus_handle_puffs(0);
         }
         let puff_home = self.arrghus_puff_home_position(k);
@@ -4581,12 +4549,8 @@ impl ZeldaState {
             .overlord_slots
             .slot(0)
             .adjacent_x_low_word()
-            .wrapping_add(self.game_state.sprites.overlord_slots.slot(4).x_low() as u16);
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, 0)
-            .set_adjacent_x_low_word(base);
+            .wrapping_add(self.overlord_slot_view(4).x_low() as u16);
+        self.overlord_slot_view_mut(0).set_adjacent_x_low_word(base);
 
         if self.game_state.frame.frame_counter & 3 == 0 {
             self.sprite_slot_mut(k).increment_a();
@@ -5118,24 +5082,9 @@ mod tests {
         trinexx_body.sprite_slot_mut(k).set_x_high(1);
         trinexx_body.sprite_slot_mut(k).set_y_low(0x30);
         trinexx_body.sprite_slot_mut(k).set_y_high(2);
-        trinexx_body
-            .game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut trinexx_body.ram, 0)
-            .set_y_high(0x0c);
-        trinexx_body
-            .game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut trinexx_body.ram, 0)
-            .set_gen2(0x97);
-        trinexx_body
-            .game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut trinexx_body.ram, 0)
-            .set_floor(0x01);
+        trinexx_body.overlord_slot_view_mut(0).set_y_high(0x0c);
+        trinexx_body.overlord_slot_view_mut(0).set_gen2(0x97);
+        trinexx_body.overlord_slot_view_mut(0).set_floor(0x01);
         trinexx_body.ram[ALT_SPRITE_STATE_PREP + 3] = 0xaa;
         trinexx_body.sprite_prep_trinexx(k);
         assert_eq!(trinexx_body.sprite_slot(k).a(), 0x28);

@@ -34,41 +34,13 @@ impl ZeldaState {
     //   HelmasaurKing_Reinitialize(k);
     // }
     pub(super) fn helmasaur_king_initialize(&mut self, k: usize) {
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, 7)
-            .set_gen1(0x30);
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, 5)
-            .set_gen1(0x80);
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, 6)
-            .set_gen1(0);
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, 0)
-            .set_gen2(0);
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, 3)
-            .set_gen2(0);
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, 1)
-            .set_gen2(0);
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, 2)
-            .set_gen2(0);
+        self.overlord_slot_view_mut(7).set_gen1(0x30);
+        self.overlord_slot_view_mut(5).set_gen1(0x80);
+        self.overlord_slot_view_mut(6).set_gen1(0);
+        self.overlord_slot_view_mut(0).set_gen2(0);
+        self.overlord_slot_view_mut(3).set_gen2(0);
+        self.overlord_slot_view_mut(1).set_gen2(0);
+        self.overlord_slot_view_mut(2).set_gen2(0);
         self.helmasaur_king_reinitialize(k);
     }
 
@@ -82,10 +54,7 @@ impl ZeldaState {
         let t = self.sprite_slot(k).subtype2() as usize;
         for i in (0..=3usize).rev() {
             let idx = (t.wrapping_add(i.wrapping_mul(8))) & 0x1f;
-            self.game_state
-                .sprites
-                .overlord_slots
-                .slot_mut(&mut self.ram, i)
+            self.overlord_slot_view_mut(i)
                 .set_x_low(HELMASAUR_MASK_X_OFFSETS[idx]);
         }
     }
@@ -139,22 +108,16 @@ impl ZeldaState {
                 return;
             }
             self.sprite_slot_mut(k).set_hit_timer(t | 0xf0);
-            let j = self.game_state.sprites.overlord_slots.slot(3).gen2();
+            let j = self.overlord_slot_view(3).gen2();
             if t < 128 && (t & 7) == 0 && j != 0x10 {
-                self.game_state
-                    .sprites
-                    .overlord_slots
-                    .slot_mut(&mut self.ram, 3)
-                    .add_gen2(1);
+                self.overlord_slot_view_mut(3).add_gen2(1);
                 let j = j as usize;
-                let x =
-                    self.sprite_get_x(k)
-                        .wrapping_add(self.game_state.sprites.overlord_slots.slot(5 + j).x_low()
-                            as i8 as i16 as u16);
-                let y =
-                    self.sprite_get_y(k)
-                        .wrapping_add(self.game_state.sprites.overlord_slots.slot(5 + j).y_low()
-                            as i8 as i16 as u16);
+                let x = self
+                    .sprite_get_x(k)
+                    .wrapping_add(self.overlord_slot_view(5 + j).x_low() as i8 as i16 as u16);
+                let y = self
+                    .sprite_get_y(k)
+                    .wrapping_add(self.overlord_slot_view(5 + j).y_low() as i8 as i16 as u16);
                 self.sprite_workspace_mut().set_current_sprite_x(x);
                 self.sprite_workspace_mut().set_current_sprite_y(y);
                 self.sprite_make_boss_explosion(k);
@@ -450,11 +413,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn helmasaur_king_swing_tail(&mut self, k: usize) {
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, 4)
-            .add_x_low(1);
+        self.overlord_slot_view_mut(4).add_x_low(1);
         self.helmasaur_king_reinitialize(k);
         let mask: u8 = if self.sprite_slot(k).anim_clock() != 0 {
             0
@@ -465,71 +424,42 @@ impl ZeldaState {
             let j = (self.sprite_slot(k).direction() & 1) as usize;
             // overlord_gen2[0] += j ? -1 : 1
             let delta: u8 = if j != 0 { 0xffu8 } else { 1u8 };
-            self.game_state
-                .sprites
-                .overlord_slots
-                .slot_mut(&mut self.ram, 0)
-                .add_gen2(delta);
-            if self.game_state.sprites.overlord_slots.slot(0).gen2()
-                == HELMASAUR_TAIL_SWING_X_VELOCITY_TARGETS[j] as u8
+            self.overlord_slot_view_mut(0).add_gen2(delta);
+            if self.overlord_slot_view(0).gen2() == HELMASAUR_TAIL_SWING_X_VELOCITY_TARGETS[j] as u8
             {
                 self.sprite_slot_mut(k).increment_direction();
             }
             // WORD(overlord_gen1[5]) += (int8)overlord_gen2[0]
-            let delta_w =
-                (self.game_state.sprites.overlord_slots.slot(0).gen2() as i8) as i16 as u16;
-            self.game_state
-                .sprites
-                .overlord_slots
-                .slot_mut(&mut self.ram, 5)
-                .add_gen1_word(delta_w);
+            let delta_w = (self.overlord_slot_view(0).gen2() as i8) as i16 as u16;
+            self.overlord_slot_view_mut(5).add_gen1_word(delta_w);
         }
         if self.sprite_slot(k).anim_clock() == 0 {
             return;
         }
-        if self.game_state.sprites.overlord_slots.slot(0).gen2() == 0 {
+        if self.overlord_slot_view(0).gen2() == 0 {
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x6);
         }
 
         if self.sprite_slot(k).anim_clock() == 2 {
             let j = self.sprite_slot(k).head_direction();
             let dw: u16 = if j != 0 { (-4i16) as u16 } else { 4u16 };
-            self.game_state
-                .sprites
-                .overlord_slots
-                .slot_mut(&mut self.ram, 1)
-                .add_gen2_word(dw);
+            self.overlord_slot_view_mut(1).add_gen2_word(dw);
             let cmp = if j != 0 { (-124i8) as u8 } else { 124u8 };
-            if self.game_state.sprites.overlord_slots.slot(1).gen2() == cmp {
+            if self.overlord_slot_view(1).gen2() == cmp {
                 self.sprite_slot_mut(k).set_anim_clock(3);
             }
-            self.game_state
-                .sprites
-                .overlord_slots
-                .slot_mut(&mut self.ram, 7)
-                .add_gen1(3);
+            self.overlord_slot_view_mut(7).add_gen1(3);
         } else if self.sprite_slot(k).anim_clock() == 3 {
             let j = self.sprite_slot(k).head_direction() ^ 1;
             let dw: u16 = if j != 0 { (-4i16) as u16 } else { 4u16 };
-            self.game_state
-                .sprites
-                .overlord_slots
-                .slot_mut(&mut self.ram, 1)
-                .add_gen2_word(dw);
-            if self.game_state.sprites.overlord_slots.slot(1).gen2() == 0 {
+            self.overlord_slot_view_mut(1).add_gen2_word(dw);
+            if self.overlord_slot_view(1).gen2() == 0 {
                 self.sprite_slot_mut(k).set_anim_clock(0);
             }
-            self.game_state
-                .sprites
-                .overlord_slots
-                .slot_mut(&mut self.ram, 7)
-                .subtract_gen1(3);
+            self.overlord_slot_view_mut(7).subtract_gen1(3);
         } else {
-            if (self.game_state.sprites.overlord_slots.slot(0).gen2()
-                | self.sprite_slot(k).delay_aux3())
-                == 0
-            {
-                let head_direction = self.game_state.sprites.overlord_slots.slot(6).gen1() & 1;
+            if (self.overlord_slot_view(0).gen2() | self.sprite_slot(k).delay_aux3()) == 0 {
+                let head_direction = self.overlord_slot_view(6).gen1() & 1;
                 self.sprite_slot_mut(k).set_head_direction(head_direction);
                 let dir = self.sprite_is_right_of_link(k).a ^ 1;
                 if dir == self.sprite_slot(k).head_direction() {
@@ -935,10 +865,10 @@ mod tests {
         assert_eq!(s.ram[OVERLORD_GEN2 + 3], 0);
         // Reinitialize with t=1: overlord_x_lo[i] = kHelmasaur_Tab0[1 + i*8 & 0x1f].
         // i=0 -> idx=1 -> 1; i=1 -> idx=9 -> 8; i=2 -> idx=17 -> 8; i=3 -> idx=25 -> 7.
-        assert_eq!(s.game_state.sprites.overlord_slots.slot(0).x_low(), 1);
-        assert_eq!(s.game_state.sprites.overlord_slots.slot(1).x_low(), 8);
-        assert_eq!(s.game_state.sprites.overlord_slots.slot(2).x_low(), 8);
-        assert_eq!(s.game_state.sprites.overlord_slots.slot(3).x_low(), 7);
+        assert_eq!(s.overlord_slot_view(0).x_low(), 1);
+        assert_eq!(s.overlord_slot_view(1).x_low(), 8);
+        assert_eq!(s.overlord_slot_view(2).x_low(), 8);
+        assert_eq!(s.overlord_slot_view(3).x_low(), 7);
     }
 
     #[test]

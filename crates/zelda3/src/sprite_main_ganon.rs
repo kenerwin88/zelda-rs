@@ -747,11 +747,7 @@ impl ZeldaState {
                 if self.sprite_slot(k).health() < 161 {
                     self.sprite_slot_mut(k).set_health(160);
                 }
-                self.game_state
-                    .sprites
-                    .overlord_slots
-                    .slot_mut(&mut self.ram, 2)
-                    .set_x_low(40);
+                self.overlord_slot_view_mut(2).set_x_low(40);
                 if self.sprite_slot(k).delay_main() == 0 {
                     self.sprite_slot_mut(k).set_ai_state(8);
                     self.sprite_slot_mut(k).set_delay_main(255);
@@ -782,10 +778,7 @@ impl ZeldaState {
                     }
                 } else {
                     let idx = ((self.sprite_slot(k).delay_main() >> 4) & 15) as usize;
-                    self.game_state
-                        .sprites
-                        .overlord_slots
-                        .slot_mut(&mut self.ram, 2)
+                    self.overlord_slot_view_mut(2)
                         .add_x_low(BAT_ORBIT_RADIUS_DELTAS[idx] as u8);
                     self.ganon_phase1_animate_trident_spin(k);
                     self.ganon_handle_fire_bat_circle(k);
@@ -1104,13 +1097,10 @@ impl ZeldaState {
     // }
     pub(super) fn ganon_handle_fire_bat_circle(&mut self, _k: usize) {
         // WORD(overlord_x_lo[0]) -= 4 — 16-bit wrap.
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, 0)
+        self.overlord_slot_view_mut(0)
             .subtract_adjacent_x_low_word(4);
 
-        let scale = self.game_state.sprites.overlord_slots.slot(2).x_low();
+        let scale = self.overlord_slot_view(2).x_low();
         let sprite0_x = self.sprite_get_x(0);
         let sprite0_y = self.sprite_get_y(0);
 
@@ -1134,19 +1124,11 @@ impl ZeldaState {
             // i32 to allow the negative-extend before re-casting to 16-bit / 8-bit.
             let xs = ganon_sin(t, scale) as i16;
             let x = (sprite0_x as i32).wrapping_add(xs as i32);
-            self.game_state
-                .sprites
-                .overlord_slots
-                .slot_mut(&mut self.ram, i + 1)
-                .set_circle_x(x as u16);
+            self.overlord_slot_view_mut(i + 1).set_circle_x(x as u16);
 
             let ys = ganon_sin(t.wrapping_add(0x80), scale) as i16;
             let y = (sprite0_y as i32).wrapping_add(ys as i32);
-            self.game_state
-                .sprites
-                .overlord_slots
-                .slot_mut(&mut self.ram, i + 1)
-                .set_circle_y(y as u16);
+            self.overlord_slot_view_mut(i + 1).set_circle_y(y as u16);
         }
         self.temp_counter_mut().set(8);
     }
@@ -1244,45 +1226,20 @@ impl ZeldaState {
 
         let j = j_i32 as usize;
         let ti = t as usize;
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, j)
+        self.overlord_slot_view_mut(j)
             .set_overlord_type(GANON_FALLING_TILE_OVERLORD_TYPES[ti]);
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, j)
+        self.overlord_slot_view_mut(j)
             .set_x_low(GANON_FALLING_TILE_OVERLORD_X_LOW[ti]);
         // overlord_x_hi[j] = link_x_coord >> 8  — read the high byte of the 16-bit link_x_coord.
         let x_high = self.game_state.player.follower_link.x_high();
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, j)
-            .set_x_high(x_high);
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, j)
+        self.overlord_slot_view_mut(j).set_x_high(x_high);
+        self.overlord_slot_view_mut(j)
             .set_y_low(GANON_FALLING_TILE_OVERLORD_Y_LOW[ti]);
         let y_high = self.game_state.player.follower_link.y_high();
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, j)
-            .set_y_high(y_high);
+        self.overlord_slot_view_mut(j).set_y_high(y_high);
         // overlord_gen1 / overlord_gen2 — clear both.
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, j)
-            .set_gen1(0);
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, j)
-            .set_gen2(0);
+        self.overlord_slot_view_mut(j).set_gen1(0);
+        self.overlord_slot_view_mut(j).set_gen2(0);
     }
 
     // void Ganon_Func1(int k, int t) {  // sprite_main.c:15010
@@ -1825,11 +1782,7 @@ mod tests {
         let mut s = fresh_state();
         let k = 0;
         // Pre-clear overlord slot 7 so the search succeeds.
-        s.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut s.ram, 7)
-            .clear();
+        s.overlord_slot_view_mut(7).clear();
         s.sprite_slot_mut(k).set_anim_clock(0);
         // Seed link coords so we can verify the high-byte copy.
         s.follower_link_state_mut().set_x(0x0234);
@@ -1837,24 +1790,21 @@ mod tests {
         s.ganon_spawn_falling_tiles_overlord(k);
         assert_eq!(s.sprite_slot(k).anim_clock(), 1);
         assert_eq!(
-            s.game_state.sprites.overlord_slots.slot(7).overlord_type(),
+            s.overlord_slot_view(7).overlord_type(),
             GANON_FALLING_TILE_OVERLORD_TYPES[0]
         );
         assert_eq!(
-            s.game_state.sprites.overlord_slots.slot(7).x_low(),
+            s.overlord_slot_view(7).x_low(),
             GANON_FALLING_TILE_OVERLORD_X_LOW[0]
         );
-        assert_eq!(s.game_state.sprites.overlord_slots.slot(7).x_high(), 0x02);
-        assert_eq!(s.game_state.sprites.overlord_slots.slot(7).y_high(), 0x05);
+        assert_eq!(s.overlord_slot_view(7).x_high(), 0x02);
+        assert_eq!(s.overlord_slot_view(7).y_high(), 0x05);
 
         // Advance the anim clock past 3 and ensure no further write happens.
         s.sprite_slot_mut(k).set_anim_clock(4);
-        let bak = s.game_state.sprites.overlord_slots.slot(7).overlord_type();
+        let bak = s.overlord_slot_view(7).overlord_type();
         s.ganon_spawn_falling_tiles_overlord(k);
-        assert_eq!(
-            s.game_state.sprites.overlord_slots.slot(7).overlord_type(),
-            bak
-        );
+        assert_eq!(s.overlord_slot_view(7).overlord_type(), bak);
         assert_eq!(s.sprite_slot(k).anim_clock(), 4);
     }
 
@@ -1862,17 +1812,9 @@ mod tests {
     fn handle_fire_bat_circle_writes_eight_overlords_and_seeds_counter() {
         let mut s = fresh_state();
         // Seed overlord_x_lo word to a known value so we can predict t for each i.
-        s.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut s.ram, 0)
-            .set_adjacent_x_low_word(0x10);
-        s.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut s.ram, 2)
-            .set_x_low(0); // scale = 0 -> GanonSin returns 0.
-                           // Sprite 0 at (0x80, 0x80) for predictable add.
+        s.overlord_slot_view_mut(0).set_adjacent_x_low_word(0x10);
+        s.overlord_slot_view_mut(2).set_x_low(0); // scale = 0 -> GanonSin returns 0.
+                                                  // Sprite 0 at (0x80, 0x80) for predictable add.
         s.sprite_set_x(0, 0x80);
         s.sprite_set_y(0, 0x80);
         // sprite_ai_state for indices 1..=8: leave them at 0 so the velocity
@@ -1896,11 +1838,8 @@ mod tests {
         assert_eq!(s.game_state.scratch_counter.value(), 8);
         // With scale = 0, GanonSin -> 0, so every overlord_x_hi[i+1] == sprite_x_lo(0) == 0x80.
         for i in 0..8 {
-            assert_eq!(
-                s.game_state.sprites.overlord_slots.slot(i + 1).x_high(),
-                0x80
-            );
-            assert_eq!(s.game_state.sprites.overlord_slots.slot(i + 1).gen2(), 0x80);
+            assert_eq!(s.overlord_slot_view(i + 1).x_high(), 0x80);
+            assert_eq!(s.overlord_slot_view(i + 1).gen2(), 0x80);
         }
     }
 

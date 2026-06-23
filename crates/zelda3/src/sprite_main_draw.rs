@@ -2605,9 +2605,9 @@ impl ZeldaState {
 
         // oam = (OamEnt *)&g_ram[0x800] + 91;
         let mut oam = OAM_BUF + 91 * 4;
-        let g = self.game_state.sprites.overlord_slots.slot(2).x_low() as usize;
-        let ov7 = u16::from(self.game_state.sprites.overlord_slots.slot(7).x_low())
-            | (u16::from(self.game_state.sprites.overlord_slots.slot(8).x_low()) << 8);
+        let g = self.overlord_slot_view(2).x_low() as usize;
+        let ov7 = u16::from(self.overlord_slot_view(7).x_low())
+            | (u16::from(self.overlord_slot_view(8).x_low()) << 8);
         for i in 0..5 {
             let j = g * 5 + i;
             let jc = j.min(TRINEXX_DRAW_X_OFFSETS.len() - 1);
@@ -4611,7 +4611,7 @@ impl ZeldaState {
         let mut oam = self.game_state.oam.current_pointer_usize();
         let mut i: i32 = 1;
         loop {
-            let j = ((self.game_state.sprites.overlord_slots.slot(4).x_low() >> 2) & 7) as usize;
+            let j = ((self.overlord_slot_view(4).x_low() >> 2) & 7) as usize;
             let x = info
                 .x
                 .wrapping_add(HELMASAUR_KING_MASK_X_OFFSETS[i as usize] as i16 as u16);
@@ -5125,7 +5125,7 @@ impl ZeldaState {
                 .overlord_slots
                 .slot(5)
                 .gen1_word()
-                .wrapping_add(self.game_state.sprites.overlord_slots.slot(1).gen2_word());
+                .wrapping_add(self.overlord_slot_view(1).gen2_word());
             let f = ((rs >> 8) as u8).wrapping_sub(1);
             let abs_rs = if sign8(f) { 0u16.wrapping_sub(rs) } else { rs };
             let r6 = ((u16::from(abs_rs as u8) * u16::from(MULT[j])) >> 8) as u8;
@@ -5135,23 +5135,18 @@ impl ZeldaState {
                 } else {
                     u16::from(r6)
                 };
-            let r15 = ((u16::from(self.game_state.sprites.overlord_slots.slot(7).gen1())
-                * u16::from(MULT_B[i]))
-                >> 8) as u8;
-            let mut orbit = self
-                .game_state
-                .sprites
-                .overlord_slots
-                .slot_mut(&mut self.ram, i + 5);
+            let r15 =
+                ((u16::from(self.overlord_slot_view(7).gen1()) * u16::from(MULT_B[i])) >> 8) as u8;
+            let mut orbit = self.overlord_slot_view_mut(i + 5);
             orbit.set_x_low(helmasaur_sin(angle, r15) as u8);
             orbit.set_y_low(helmasaur_sin(angle.wrapping_add(0x80), r15).wrapping_sub(40) as u8);
         }
 
         let mut oam = self.game_state.oam.current_pointer_usize();
-        let start = self.game_state.sprites.overlord_slots.slot(3).gen2() as usize;
+        let start = self.overlord_slot_view(3).gen2() as usize;
         let mut is_hit = false;
         for i in start..16usize {
-            let orbit = self.game_state.sprites.overlord_slots.slot(i + 5);
+            let orbit = self.overlord_slot_view(i + 5);
             let x = orbit.x_low().wrapping_add(info.x as u8);
             let y = orbit.y_low().wrapping_add(info.y as u8);
             self.oam_state_mut().write_entry(
@@ -14425,7 +14420,7 @@ impl ZeldaState {
                         .garnish_runtime
                         .active_overlord_index(),
                 );
-                let overlord = self.game_state.sprites.overlord_slots.slot(idx);
+                let overlord = self.overlord_slot_view(idx);
                 let ovx = overlord.x();
                 let ovy = overlord.y();
                 if ovy >= self.sprite_get_y(k) {
@@ -14469,7 +14464,7 @@ impl ZeldaState {
                             .garnish_runtime
                             .active_overlord_index(),
                     );
-                    let overlord = self.game_state.sprites.overlord_slots.slot(idx);
+                    let overlord = self.overlord_slot_view(idx);
                     let ovx = overlord.x();
                     let ovy = overlord.y();
                     self.sprite_set_x(k, ovx);

@@ -105,12 +105,12 @@ pub(crate) use sprites::{
     NativeEnemyDamageSubclassTableBridgeMut, NativeEtherOrbitBridgeMut,
     NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerRuntimeBridgeMut,
     NativeGarnishRuntimeBridgeMut, NativeGarnishSlotBridgeMut, NativeGarnishSlotView,
-    NativeMazeGameTimerBridgeMut, NativePrizeDropCycleBridgeMut,
-    NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
-    NativeSpriteSlotBridgeMut, NativeSpriteSlotView, NativeSpriteSystemBridgeMut,
-    NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut, OverworldSpriteLoadedState,
-    OverworldSpritePresenceState, SpriteSlotSnapshot, SpriteState, TagalongSlotRead,
-    OVERWORLD_SPRITE_FLAG_COUNT,
+    NativeMazeGameTimerBridgeMut, NativeOverlordSlotBridgeMut, NativeOverlordSlotView,
+    NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
+    NativeSpriteHitboxWorkOffsetBridgeMut, NativeSpriteSlotBridgeMut, NativeSpriteSlotView,
+    NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut,
+    OverworldSpriteLoadedState, OverworldSpritePresenceState, SpriteSlotSnapshot, SpriteState,
+    TagalongSlotRead, OVERWORLD_SPRITE_FLAG_COUNT,
 };
 pub(crate) use system::{
     MsuResumeInfoState, MsuResumeSlot, NativeSystemSignalsBridgeMut, SystemSignalsState,

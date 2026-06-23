@@ -2944,11 +2944,7 @@ impl ZeldaState {
         }
 
         self.arrghus_handle_puffs(k);
-        self.game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut self.ram, 4)
-            .set_x_low(1);
+        self.overlord_slot_view_mut(4).set_x_low(1);
         if (self.sprite_slot_view(k).hit_timer() & 127) == 2 {
             self.sprite_slot_view_mut(k).set_ai_state(3);
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x32);
@@ -3002,17 +2998,9 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.sprite_slot_view_mut(k).set_ai_state(0);
                     if !self.sprite_check_if_screen_is_clear() {
-                        self.game_state
-                            .sprites
-                            .overlord_slots
-                            .slot_mut(&mut self.ram, 3)
-                            .add_x_low(1);
-                        if self.game_state.sprites.overlord_slots.slot(3).x_low() == 4 {
-                            self.game_state
-                                .sprites
-                                .overlord_slots
-                                .slot_mut(&mut self.ram, 3)
-                                .set_x_low(0);
+                        self.overlord_slot_view_mut(3).add_x_low(1);
+                        if self.overlord_slot_view(3).x_low() == 4 {
+                            self.overlord_slot_view_mut(3).set_x_low(0);
                             self.sprite_slot_view_mut(k).set_ai_state(2);
                             self.sprite_slot_view_mut(k).set_delay_main(176);
                         } else {
@@ -3035,32 +3023,16 @@ impl ZeldaState {
                 }
             }
             2 => {
-                self.game_state
-                    .sprites
-                    .overlord_slots
-                    .slot_mut(&mut self.ram, 4)
-                    .set_x_low(8);
+                self.overlord_slot_view_mut(4).set_x_low(8);
                 if self.sprite_slot_view(k).delay_main() < 32 {
-                    self.game_state
-                        .sprites
-                        .overlord_slots
-                        .slot_mut(&mut self.ram, 2)
-                        .subtract_x_low(1);
-                    if sign8(self.game_state.sprites.overlord_slots.slot(2).x_low()) {
-                        self.game_state
-                            .sprites
-                            .overlord_slots
-                            .slot_mut(&mut self.ram, 2)
-                            .set_x_low(0);
+                    self.overlord_slot_view_mut(2).subtract_x_low(1);
+                    if sign8(self.overlord_slot_view(2).x_low()) {
+                        self.overlord_slot_view_mut(2).set_x_low(0);
                         self.sprite_slot_view_mut(k).set_ai_state(1);
                         self.sprite_slot_view_mut(k).set_delay_main(112);
                     }
                 } else if self.sprite_slot_view(k).delay_main() < 96 {
-                    self.game_state
-                        .sprites
-                        .overlord_slots
-                        .slot_mut(&mut self.ram, 2)
-                        .add_x_low(1);
+                    self.overlord_slot_view_mut(2).add_x_low(1);
                 } else if self.sprite_slot_view(k).delay_main() == 96 {
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x26);
                 } else if (self.sprite_slot_view(k).delay_main() & 0x0f) == 0 {
