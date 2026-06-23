@@ -74,15 +74,15 @@ use crate::game_state::{
     NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
-    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
-    NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut,
-    NativePlayerResourcesBridgeMut, NativePolyFaceCoordsBridgeMut,
-    NativePolyProjectedVerticesBridgeMut, NativePolyRasterEdgeBridgeMut,
-    NativePolyRuntimeBridgeMut, NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut,
-    NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut,
-    NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut,
-    NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
+    NativeOverworldPaletteBackupBridgeMut, NativeOverworldScreenSizeBridgeMut,
+    NativeOverworldScrollDeltaBridgeMut, NativeOverworldSpriteLoadedBridgeMut,
+    NativeOverworldSpritePresenceBridgeMut, NativeOverworldTransitionBridgeMut,
+    NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
+    NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
+    NativePolyRasterEdgeBridgeMut, NativePolyRuntimeBridgeMut, NativePpuScrollCopyBridgeMut,
+    NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut,
+    NativeQuakeSpellBridgeMut, NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut,
+    NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
     NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
     NativeSkullWoodsFireSlotBridgeMut, NativeSpecialExitPositionBridgeMut,
     NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
@@ -1415,7 +1415,7 @@ macro_rules! zelda_ppu_scroll_copy_methods {
     ) => {
         $(
             pub(crate) fn $name(&mut self, $($arg: $ty),*) {
-                self.mutate_ppu_scroll_copy(|scroll| scroll.$name($($arg),*));
+                self.ppu_scroll_copy_mut().$name($($arg),*);
             }
         )*
     };
@@ -1960,29 +1960,6 @@ impl ZeldaState {
             &mut self.game_state.display.ppu_scroll_copy,
             &mut self.ram,
         )
-    }
-
-    fn sync_ppu_scroll_copy_to_ram(&mut self) {
-        self.game_state
-            .display
-            .ppu_scroll_copy
-            .write_to_ram(&mut self.ram);
-        // mapbak_palette is write-through (not projected by write_to_ram), so RAM[MAPBAK_
-        // PALETTE] may legitimately differ from this state's stale copy — ignore it here.
-        debug_assert!(self
-            .game_state
-            .display
-            .ppu_scroll_copy
-            .matches_ram_ignoring_mapbak(&self.ram));
-    }
-
-    fn mutate_ppu_scroll_copy<T>(
-        &mut self,
-        mutate: impl FnOnce(&mut PpuScrollCopyState) -> T,
-    ) -> T {
-        let result = mutate(&mut self.game_state.display.ppu_scroll_copy);
-        self.sync_ppu_scroll_copy_to_ram();
-        result
     }
 
     zelda_ppu_scroll_copy_methods! {
@@ -6170,39 +6147,28 @@ impl ZeldaState {
         NativeWaterHdmaWindowBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
-    fn sync_overworld_palette_backup_to_ram(&mut self) {
-        self.game_state
-            .display
-            .overworld_palette_backup
-            .write_to_ram(&mut self.ram);
-        debug_assert_eq!(
-            self.game_state.display.overworld_palette_backup,
-            crate::game_state::OverworldPaletteBackupState::load_from_ram(&self.ram)
-        );
+    pub(crate) fn overworld_palette_backup_mut(
+        &mut self,
+    ) -> NativeOverworldPaletteBackupBridgeMut<'_> {
+        NativeOverworldPaletteBackupBridgeMut::new(
+            &mut self.game_state.display.overworld_palette_backup,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn set_overworld_main_indoors_palette_backup(&mut self, value: u8) {
-        self.game_state
-            .display
-            .overworld_palette_backup
-            .set_main_indoors(value);
-        self.sync_overworld_palette_backup_to_ram();
+        self.overworld_palette_backup_mut()
+            .set_main_indoors_backup(value);
     }
 
     pub(crate) fn set_overworld_aux3_bg_palette_7_backup(&mut self, value: u8) {
-        self.game_state
-            .display
-            .overworld_palette_backup
-            .set_aux3_bg_palette_7(value);
-        self.sync_overworld_palette_backup_to_ram();
+        self.overworld_palette_backup_mut()
+            .set_aux3_bg_palette_7_backup(value);
     }
 
     pub(crate) fn set_overworld_main_indoors_copy_palette_backup(&mut self, value: u8) {
-        self.game_state
-            .display
-            .overworld_palette_backup
-            .set_main_indoors_copy(value);
-        self.sync_overworld_palette_backup_to_ram();
+        self.overworld_palette_backup_mut()
+            .set_main_indoors_copy_backup(value);
     }
 
     pub fn set_overworld_map16_load_state(&mut self, state: OverworldMap16LoadState) {
