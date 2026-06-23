@@ -9,6 +9,14 @@ const TILE_DETECT_CARDINAL_HIGH_SIDE_OFFSETS: [u8; 4] = [15, 15, 23, 23];
 const TILE_DETECT_SLOPE_AXIS_OFFSETS: [i8; 4] = [7, 24, -1, 16];
 const TILE_DETECT_SLOPE_LOW_SIDE_OFFSETS: [u8; 4] = [0, 0, 8, 8];
 const TILE_DETECT_SLOPE_HIGH_SIDE_OFFSETS: [u8; 4] = [15, 15, 23, 23];
+const HOOKSHOT_SINGLE_LAYER_CHECK_X_OFFSETS: [u8; 8] = [0, 15, 0, 15, 0, 0, 8, 8];
+const HOOKSHOT_SINGLE_LAYER_CHECK_Y_OFFSETS: [u8; 8] = [0, 0, 7, 7, 0, 15, 0, 15];
+const DOOR_NUDGE_DETECT_Y_OFFSETS: [i8; 4] = [8, 23, 16, 16];
+const DOOR_NUDGE_DETECT_X_OFFSETS: [i8; 4] = [8, 8, 0, 15];
+const SWORD_DOORWAY_DETECT_X_OFFSETS: [i8; 4] = [8, 8, -1, 16];
+const SWORD_DOORWAY_DETECT_Y_OFFSETS: [i8; 4] = [-1, 24, 16, 16];
+const TILE_DETECT_DIAG_STATES: [u16; 4] = [4, 0, 6, 2];
+const TILE_DETECT_READABLE_TILE50_DATA: [u8; 7] = [0x54, 0x52, 0x50, 0x51, 0x53, 0x55, 0x56];
 
 impl ZeldaState {
     pub fn overworld_get_tile_attribute_at_location(&self, x: u16, y: u16) -> u8 {
@@ -191,14 +199,13 @@ impl ZeldaState {
     }
 
     pub(super) fn hookshot_check_single_layer_tile_collision(&mut self, x: u16, y: u16, dir: i32) {
-        const CHECK_X: [u8; 8] = [0, 15, 0, 15, 0, 0, 8, 8];
-        const CHECK_Y: [u8; 8] = [0, 0, 7, 7, 0, 15, 0, 15];
         let base = dir as usize * 2;
         let mask = self.game_state.player.tile_detection.location_calc_mask();
-        let y0 = y.wrapping_add(CHECK_Y[base] as u16) & mask;
-        let y1 = y.wrapping_add(CHECK_Y[base + 1] as u16) & mask;
-        let x0 = (x.wrapping_add(CHECK_X[base] as u16) & mask) >> 3;
-        let x1 = (x.wrapping_add(CHECK_X[base + 1] as u16) & mask) >> 3;
+        let y0 = y.wrapping_add(HOOKSHOT_SINGLE_LAYER_CHECK_Y_OFFSETS[base] as u16) & mask;
+        let y1 = y.wrapping_add(HOOKSHOT_SINGLE_LAYER_CHECK_Y_OFFSETS[base + 1] as u16) & mask;
+        let x0 = (x.wrapping_add(HOOKSHOT_SINGLE_LAYER_CHECK_X_OFFSETS[base] as u16) & mask) >> 3;
+        let x1 =
+            (x.wrapping_add(HOOKSHOT_SINGLE_LAYER_CHECK_X_OFFSETS[base + 1] as u16) & mask) >> 3;
         self.tile_detection_execute(x0, y0, 1);
         self.tile_detection_execute(x1, y1, 2);
     }
@@ -224,13 +231,11 @@ impl ZeldaState {
         };
         self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
-        const DETECT_Y: [i8; 4] = [8, 23, 16, 16];
-        const DETECT_X: [i8; 4] = [8, 8, 0, 15];
         let mask = self.game_state.player.tile_detection.location_calc_mask();
         let link_y = self.game_state.player.follower_link.y();
         let link_x = self.game_state.player.follower_link.x();
-        let x0 = (link_x.wrapping_add(DETECT_X[y] as i16 as u16) & mask) >> 3;
-        let y0 = link_y.wrapping_add(DETECT_Y[y] as i16 as u16) & mask;
+        let x0 = (link_x.wrapping_add(DOOR_NUDGE_DETECT_X_OFFSETS[y] as i16 as u16) & mask) >> 3;
+        let y0 = link_y.wrapping_add(DOOR_NUDGE_DETECT_Y_OFFSETS[y] as i16 as u16) & mask;
         self.tile_detection_execute(x0, y0, 1);
         if ((self.game_state.player.tile_detection.collision_bits()
             | self.game_state.player.tile_detection.horizontal_ledge() as u16)
@@ -281,16 +286,15 @@ impl ZeldaState {
     pub(super) fn tile_detect_sword_swing_deep_in_door(&mut self, dw: u8) {
         self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
-        const DOORWAY_DETECT_X: [i8; 4] = [8, 8, -1, 16];
-        const DOORWAY_DETECT_Y: [i8; 4] = [-1, 24, 16, 16];
         let o = dw.wrapping_sub(1) as usize * 2;
         let mask = self.game_state.player.tile_detection.location_calc_mask();
         let link_y = self.game_state.player.follower_link.y();
         let link_x = self.game_state.player.follower_link.x();
-        let x0 = (link_x.wrapping_add(DOORWAY_DETECT_X[o] as i16 as u16) & mask) >> 3;
-        let x1 = (link_x.wrapping_add(DOORWAY_DETECT_X[o + 1] as i16 as u16) & mask) >> 3;
-        let y0 = link_y.wrapping_add(DOORWAY_DETECT_Y[o] as i16 as u16) & mask;
-        let y1 = link_y.wrapping_add(DOORWAY_DETECT_Y[o + 1] as i16 as u16) & mask;
+        let x0 = (link_x.wrapping_add(SWORD_DOORWAY_DETECT_X_OFFSETS[o] as i16 as u16) & mask) >> 3;
+        let x1 =
+            (link_x.wrapping_add(SWORD_DOORWAY_DETECT_X_OFFSETS[o + 1] as i16 as u16) & mask) >> 3;
+        let y0 = link_y.wrapping_add(SWORD_DOORWAY_DETECT_Y_OFFSETS[o] as i16 as u16) & mask;
+        let y1 = link_y.wrapping_add(SWORD_DOORWAY_DETECT_Y_OFFSETS[o + 1] as i16 as u16) & mask;
         self.tile_detection_execute(x0, y0, 1);
         self.tile_detection_execute(x1, y1, 2);
     }
@@ -504,18 +508,16 @@ impl ZeldaState {
                 self.tile_detect_position_mut().set_normal_tiles(normal);
             }
             0x10..=0x13 => {
-                const DIAG_STATE: [u16; 4] = [4, 0, 6, 2];
                 self.tile_detect_position_mut().or_slope_collision_bits(bits);
                 self.tile_detect_position_mut()
-                    .set_diag_state(DIAG_STATE[(tile & 3) as usize]);
+                    .set_diag_state(TILE_DETECT_DIAG_STATES[(tile & 3) as usize]);
             }
             0x18..=0x1b => {
-                const DIAG_STATE: [u16; 4] = [4, 0, 6, 2];
                 let diagonal = self.game_state.player.tile_detection.diagonal_tile() | bits;
                 self.tile_detect_position_mut().set_diagonal_tile(diagonal);
                 self.tile_detect_position_mut().or_slope_collision_bits(bits);
                 self.tile_detect_position_mut()
-                    .set_diag_state(DIAG_STATE[(tile & 3) as usize]);
+                    .set_diag_state(TILE_DETECT_DIAG_STATES[(tile & 3) as usize]);
             }
             0x1c => {
                 let water_stair = self.game_state.player.tile_detection.water_staircase() | bits;
@@ -605,8 +607,10 @@ impl ZeldaState {
                 }
             }
             0x50..=0x56 => {
-                const TILE50_DATA: [u8; 7] = [0x54, 0x52, 0x50, 0x51, 0x53, 0x55, 0x56];
-                if let Some(i) = TILE50_DATA.iter().rposition(|&value| value == tile) {
+                if let Some(i) = TILE_DETECT_READABLE_TILE50_DATA
+                    .iter()
+                    .rposition(|&value| value == tile)
+                {
                     if tile == 0x50 || tile == 0x51 {
                         self.tile_detect_position_mut().or_dashable_tiles((bits << 4) as u8);
                     }
