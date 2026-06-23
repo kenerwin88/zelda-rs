@@ -1595,11 +1595,7 @@ impl ZeldaState {
         }
         for k in (0..30).rev() {
             let value = 0;
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, k)
-                .set_garnish_type(value);
+            self.garnish_slot_view_mut(k).set_garnish_type(value);
         }
     }
 
@@ -7456,18 +7452,12 @@ impl ZeldaState {
         ];
         const FLAGS: [u8; 12] = [0, 0, 0, 0, 0x80, 0x40, 0, 0x80, 0x40, 0, 0, 0];
 
-        if self.game_state.sprites.garnish_slots.slot(k).countdown() == 16 {
+        if self.garnish_slot_view(k).countdown() == 16 {
             let value = 0;
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, k)
-                .set_garnish_type(value);
+            self.garnish_slot_view_mut(k).set_garnish_type(value);
         }
         let mut oam = self.game_state.oam.current_pointer_usize();
-        let base = usize::from(
-            ((self.game_state.sprites.garnish_slots.slot(k).countdown() & 0x0f) >> 2) * 3,
-        );
+        let base = usize::from(((self.garnish_slot_view(k).countdown() & 0x0f) >> 2) * 3);
         for i in (0..=2usize).rev() {
             let j = base + i;
             self.set_oam_helper1_at(
@@ -7512,17 +7502,17 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let r5 = self.game_state.sprites.garnish_slots.slot(k).oam_flags();
+        let r5 = self.garnish_slot_view(k).oam_flags();
         if self.game_state.sprites.system.chr_halfslot_state() >= 3 {
             return;
         }
-        if self.game_state.sprites.garnish_slots.slot(k).sprite() == 3 {
+        if self.garnish_slot_view(k).sprite() == 3 {
             self.scatter_debris_draw(k, pt);
             return;
         }
-        let garnish_sprite = self.game_state.sprites.garnish_slots.slot(k).sprite();
+        let garnish_sprite = self.garnish_slot_view(k).sprite();
         self.temp_counter_mut().set(garnish_sprite);
-        let mut base = ((self.game_state.sprites.garnish_slots.slot(k).countdown() >> 2) ^ 7) << 2;
+        let mut base = ((self.garnish_slot_view(k).countdown() >> 2) ^ 7) << 2;
         if self.game_state.scratch_counter.value() == 4
             || (self.game_state.scratch_counter.value() == 2
                 && self.game_state.world.location.is_outdoors())
@@ -8315,11 +8305,7 @@ impl ZeldaState {
         if j >= 0 {
             let j = j as usize;
             let value = 5;
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, j)
-                .set_garnish_type(value);
+            self.garnish_slot_view_mut(j).set_garnish_type(value);
             self.garnish_state_mut().set_active_type(5);
             self.garnish_set_x(j, self.sprite_get_x(k).wrapping_add(x));
             self.garnish_set_y(
@@ -8330,23 +8316,11 @@ impl ZeldaState {
                     .wrapping_add(16),
             );
             let value = 31;
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, j)
-                .set_countdown(value);
+            self.garnish_slot_view_mut(j).set_countdown(value);
             let value = k as u8;
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, j)
-                .set_sprite(value);
+            self.garnish_slot_view_mut(j).set_sprite(value);
             let value = self.sprite_slot(k).floor();
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, j)
-                .set_floor(value);
+            self.garnish_slot_view_mut(j).set_floor(value);
         }
         self.sprite_workspace_mut().set_last_garnish_index(j);
         // 0x0f (R15 / SPRITE_LAST_GARNISH_INDEX) is the SAME scratch byte as the HIGH byte of
