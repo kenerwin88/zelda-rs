@@ -1741,6 +1741,258 @@ impl ZeldaState {
         RamPlayerStateViewMut::new(&mut self.ram)
     }
 
+    zelda_bridge_accessors! {
+        pub(crate) fn follower_link_state_mut() -> NativeFollowerLinkBridgeMut {
+            game_state.player.follower_link
+        }
+        pub(crate) fn enhanced_features_mut() -> NativeEnhancedFeaturesBridgeMut {
+            game_state.enhanced_features
+        }
+        pub(crate) fn system_signals_mut() -> NativeSystemSignalsBridgeMut {
+            game_state.system_signals
+        }
+        pub(crate) fn special_exit_position_mut() -> NativeSpecialExitPositionBridgeMut {
+            game_state.player.special_exit_position
+        }
+        pub(crate) fn swim_acceleration_mut() -> NativeSwimAccelerationBridgeMut {
+            game_state.player.swim_acceleration
+        }
+        pub(crate) fn bg1_move_calc_mut() -> NativeBg1MovementAccumulatorBridgeMut {
+            game_state.player.bg1_movement_accumulator
+        }
+        pub(crate) fn tile_detect_position_mut() -> NativeTileDetectionBridgeMut {
+            game_state.player.tile_detection
+        }
+        pub(crate) fn ppu_scroll_copy_mut() -> NativePpuScrollCopyBridgeMut {
+            game_state.display.ppu_scroll_copy
+        }
+        pub(crate) fn attract_scene_mut() -> NativeAttractSceneBridgeMut {
+            game_state.ending.attract_scene
+        }
+        pub(crate) fn dialogue_message_index_mut() -> NativeDialogueMessageIndexBridgeMut {
+            game_state.messaging.dialogue_message_index
+        }
+        pub(crate) fn multiselect_choice_mut() -> NativeMultiselectChoiceBridgeMut {
+            game_state.messaging.multiselect_choice
+        }
+        pub(crate) fn pushed_block_mut() -> NativePushedBlockBridgeMut {
+            game_state.player.pushed_block
+        }
+        pub(crate) fn inventory_items_mut() -> NativeInventoryItemsBridgeMut {
+            game_state.inventory.items
+        }
+        pub(crate) fn player_resources_mut() -> NativePlayerResourcesBridgeMut {
+            game_state.inventory.player_resources
+        }
+        pub(crate) fn frame_state_mut() -> NativeFrameStateBridgeMut {
+            game_state.frame
+        }
+        fn world_location_mut() -> NativeWorldLocationBridgeMut {
+            game_state.world.location
+        }
+        pub(crate) fn world_scroll_mut() -> NativeWorldScrollBridgeMut {
+            game_state.world.scroll
+        }
+        pub(crate) fn world_palette_theme_mut() -> NativeWorldPaletteThemeBridgeMut {
+            game_state.world.palette_theme
+        }
+        pub(crate) fn world_region_mut() -> NativeWorldRegionBridgeMut {
+            game_state.world.region
+        }
+        pub(crate) fn world_transient_mut() -> NativeWorldTransientBridgeMut {
+            game_state.world.transient
+        }
+        pub(crate) fn overworld_map_ui_mut() -> NativeOverworldMapUiBridgeMut {
+            game_state.world.overworld.map_ui
+        }
+        pub(crate) fn overworld_map_zoom_mut() -> NativeOverworldMapZoomBridgeMut {
+            game_state.world.overworld.map_zoom
+        }
+        pub(crate) fn overworld_screen_size_mut() -> NativeOverworldScreenSizeBridgeMut {
+            game_state.world.overworld.screen_size
+        }
+        pub(crate) fn overworld_scroll_delta_mut() -> NativeOverworldScrollDeltaBridgeMut {
+            game_state.world.overworld.scroll_delta
+        }
+        pub(crate) fn overworld_entrance_mut() -> NativeOverworldEntranceBridgeMut {
+            game_state.world.overworld.entrance
+        }
+        pub(crate) fn overworld_exit_mut() -> NativeOverworldExitBridgeMut {
+            game_state.world.overworld.exit
+        }
+        pub(crate) fn overworld_transition_mut() -> NativeOverworldTransitionBridgeMut {
+            game_state.world.overworld.transition
+        }
+        fn attract_vram_destination_bridge_mut() -> NativeAttractVramDestinationBridgeMut {
+            game_state.display
+        }
+        pub(crate) fn display_core_mut() -> NativeDisplayStateBridgeMut {
+            game_state.display
+        }
+        pub(crate) fn dungeon_secret_scratch_mut() -> NativeDungeonSecretBridgeMut {
+            game_state.dungeon_secret
+        }
+        pub(crate) fn temp_counter_mut() -> NativeScratchCounterBridgeMut {
+            game_state.scratch_counter
+        }
+        pub(crate) fn overworld_event_info_mut() -> NativeOverworldEventInfoBridgeMut {
+            game_state.world.overworld.event_info
+        }
+        fn overworld_config_table_mut() -> NativeOverworldConfigTableBridgeMut {
+            game_state.world.overworld.config_table
+        }
+        pub(crate) fn palette_buffer_mut() -> NativePaletteBufferBridgeMut {
+            game_state.display
+        }
+        pub(crate) fn palette_filter_mut() -> NativePaletteFilterBridgeMut {
+            game_state.display
+        }
+        pub(crate) fn hud_mut() -> NativeHudStateBridgeMut {
+            game_state.display
+        }
+        fn hud_inventory_order_bridge_mut() -> NativeHudInventoryOrderBridgeMut {
+            game_state.display
+        }
+        pub(crate) fn archery_game_mut() -> NativeArcheryGameBridgeMut {
+            game_state.archery_game
+        }
+        pub(crate) fn minigame_state_mut() -> NativeMinigameBridgeMut {
+            game_state.minigame
+        }
+        pub(crate) fn sprite_battle_mut() -> NativeSpriteBattleBridgeMut {
+            game_state.sprite_battle
+        }
+        fn shared_message_timer_bridge_mut() -> NativeSharedMessageTimerBridgeMut {
+            game_state.messaging.shared_message_timer
+        }
+        fn intro_scene_bridge_mut() -> NativeIntroSceneBridgeMut {
+            game_state.ending.intro_scene
+        }
+        fn ending_credit_bridge_mut() -> NativeEndingCreditBridgeMut {
+            game_state.ending.credits
+        }
+        pub(crate) fn intro_sword_mut() -> NativeIntroSwordBridgeMut {
+            game_state.intro_sword
+        }
+        pub(crate) fn room_bounds_mut() -> NativeRoomBoundsBridgeMut {
+            game_state.world.room_bounds
+        }
+        fn vram_upload_mut() -> NativeVramUploadBufferBridgeMut {
+            game_state.display
+        }
+        pub(crate) fn poly_runtime_mut() -> NativePolyRuntimeBridgeMut {
+            game_state.poly.runtime
+        }
+        pub(crate) fn poly_projected_vertex_mut() -> NativePolyProjectedVerticesBridgeMut {
+            game_state.poly.projected_vertices
+        }
+        pub(crate) fn poly_face_coords_mut() -> NativePolyFaceCoordsBridgeMut {
+            game_state.poly.face_coords
+        }
+        pub(crate) fn poly_raster_edge_mut() -> NativePolyRasterEdgeBridgeMut {
+            game_state.poly.raster_edge
+        }
+        pub(crate) fn effect_angle_scratch_mut() -> NativeEffectAngleScratchBridgeMut {
+            game_state.effects.angle_scratch
+        }
+        pub(crate) fn quake_spell_scratch_mut() -> NativeQuakeSpellBridgeMut {
+            game_state.effects.quake_spell
+        }
+        pub(crate) fn bombos_spell_scratch_mut() -> NativeBombosSpellBridgeMut {
+            game_state.effects.bombos_spell
+        }
+        pub(crate) fn tower_seal_scratch_mut() -> NativeTowerSealBridgeMut {
+            game_state.effects.tower_seal
+        }
+        pub(crate) fn blast_wall_scratch_mut() -> NativeBlastWallBridgeMut {
+            game_state.effects.entrance_effects
+        }
+        pub(crate) fn skull_woods_fire_scratch_mut() -> NativeSkullWoodsFireBridgeMut {
+            game_state.effects.entrance_effects
+        }
+        fn weather_vane_bridge_mut() -> NativeWeatherVaneBridgeMut {
+            game_state.world.overworld.weather_vane
+        }
+        fn bird_travel_destination_bridge_mut() -> NativeBirdTravelDestinationBridgeMut {
+            game_state.world.overworld.bird_travel_destinations
+        }
+        pub(crate) fn door_debris_mut() -> NativeDoorDebrisBridgeMut {
+            game_state.effects.door_debris
+        }
+        pub(crate) fn digging_game_prize_mut() -> NativeDiggingGamePrizeBridgeMut {
+            game_state.effects.digging_game_prize
+        }
+        pub(crate) fn dialogue_number_mut() -> NativeDialogueNumberBridgeMut {
+            game_state.messaging.dialogue_number
+        }
+        pub(crate) fn messaging_state_mut() -> NativeMessagingRuntimeBridgeMut {
+            game_state.messaging
+        }
+        pub(crate) fn messaging_text_mut() -> NativeDecodedMessageTextBridgeMut {
+            game_state.messaging
+        }
+        fn messaging_render_buffer_mut() -> NativeMessagingRenderBufferBridgeMut {
+            game_state.messaging.render_buffer
+        }
+        fn vwf_render_mut() -> NativeVwfRenderBridgeMut {
+            game_state.messaging.vwf_render
+        }
+        pub(crate) fn dialogue_source_offset_mut() -> NativeDialogueSourceOffsetBridgeMut {
+            game_state.messaging.dialogue_source_offset
+        }
+        fn select_file_menu_mut() -> NativeSelectFileMenuBridgeMut {
+            game_state.messaging.select_file_menu
+        }
+        pub(crate) fn follower_state_mut() -> NativeFollowerRuntimeBridgeMut {
+            game_state.sprites.follower_runtime
+        }
+        pub(crate) fn chain_chomp_history_mut() -> NativeChainChompHistoryBridgeMut {
+            game_state.sprites.chain_chomp_history
+        }
+        pub(crate) fn maze_game_timer_mut() -> NativeMazeGameTimerBridgeMut {
+            game_state.sprites.maze_game_timer
+        }
+        pub(crate) fn ether_orbit_mut() -> NativeEtherOrbitBridgeMut {
+            game_state.sprites.ether_orbit
+        }
+        pub(crate) fn prize_drop_cycle_mut() -> NativePrizeDropCycleBridgeMut {
+            game_state.sprites.prize_drop_cycle
+        }
+        pub(crate) fn dual_layer_tile_cache_mut() -> NativeDualLayerTileCacheBridgeMut {
+            game_state.sprites.dual_layer_tile_cache
+        }
+        pub(crate) fn sprite_workspace_mut() -> NativeSpriteWorkspaceBridgeMut {
+            game_state.sprites.workspace
+        }
+        pub(crate) fn garnish_state_mut() -> NativeGarnishRuntimeBridgeMut {
+            game_state.sprites.garnish_runtime
+        }
+        pub(crate) fn oam_state_mut() -> NativeOamStateBridgeMut {
+            game_state.oam
+        }
+        fn overworld_sprite_presence_mut() -> NativeOverworldSpritePresenceBridgeMut {
+            game_state.sprites.overworld_sprite_presence
+        }
+        pub(crate) fn memorized_tile_mut() -> NativeMemorizedTileBridgeMut {
+            game_state.memorized_tiles
+        }
+        fn overworld_sprite_loaded_mut() -> NativeOverworldSpriteLoadedBridgeMut {
+            game_state.sprites.overworld_sprite_loaded
+        }
+        fn trinexx_palette_bridge_mut() -> NativeTrinexxPaletteBridgeMut {
+            game_state.display
+        }
+        pub(crate) fn spotlight_hdma_mut() -> NativeSpotlightHdmaBridgeMut {
+            game_state.display.spotlight_hdma
+        }
+        pub(crate) fn water_hdma_window_mut() -> NativeWaterHdmaWindowBridgeMut {
+            game_state.display
+        }
+        pub(crate) fn overworld_map16_mut() -> NativeOverworldMap16BridgeMut {
+            game_state.world.overworld.map16
+        }
+    }
+
     pub(crate) fn sync_follower_link_state_from_ram(&mut self) {
         self.game_state
             .player
@@ -1751,20 +2003,8 @@ impl ZeldaState {
         &self.game_state.player.follower_link
     }
 
-    pub(crate) fn follower_link_state_mut(&mut self) -> NativeFollowerLinkBridgeMut<'_> {
-        NativeFollowerLinkBridgeMut::new(&mut self.game_state.player.follower_link, &mut self.ram)
-    }
-
     pub(crate) fn palette_swap_enabled(&self) -> bool {
         self.game_state.sprites.follower_runtime.palette_swap_flag() != 0
-    }
-
-    pub(crate) fn enhanced_features_mut(&mut self) -> NativeEnhancedFeaturesBridgeMut<'_> {
-        NativeEnhancedFeaturesBridgeMut::new(&mut self.game_state.enhanced_features, &mut self.ram)
-    }
-
-    pub(crate) fn system_signals_mut(&mut self) -> NativeSystemSignalsBridgeMut<'_> {
-        NativeSystemSignalsBridgeMut::new(&mut self.game_state.system_signals, &mut self.ram)
     }
 
     pub(crate) fn set_music_control(&mut self, value: u8) {
@@ -1939,40 +2179,8 @@ impl ZeldaState {
         self.set_sound_effect_2(sound_effect);
     }
 
-    pub(crate) fn special_exit_position_mut(&mut self) -> NativeSpecialExitPositionBridgeMut<'_> {
-        NativeSpecialExitPositionBridgeMut::new(
-            &mut self.game_state.player.special_exit_position,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn swim_acceleration_mut(&mut self) -> NativeSwimAccelerationBridgeMut<'_> {
-        NativeSwimAccelerationBridgeMut::new(
-            &mut self.game_state.player.swim_acceleration,
-            &mut self.ram,
-        )
-    }
-
     pub(crate) fn bg1_move_calc(&self) -> &Bg1MovementAccumulatorState {
         &self.game_state.player.bg1_movement_accumulator
-    }
-
-    pub(crate) fn bg1_move_calc_mut(&mut self) -> NativeBg1MovementAccumulatorBridgeMut<'_> {
-        NativeBg1MovementAccumulatorBridgeMut::new(
-            &mut self.game_state.player.bg1_movement_accumulator,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn tile_detect_position_mut(&mut self) -> NativeTileDetectionBridgeMut<'_> {
-        NativeTileDetectionBridgeMut::new(&mut self.game_state.player.tile_detection, &mut self.ram)
-    }
-
-    pub(crate) fn ppu_scroll_copy_mut(&mut self) -> NativePpuScrollCopyBridgeMut<'_> {
-        NativePpuScrollCopyBridgeMut::new(
-            &mut self.game_state.display.ppu_scroll_copy,
-            &mut self.ram,
-        )
     }
 
     zelda_ppu_scroll_copy_methods! {
@@ -2064,17 +2272,6 @@ impl ZeldaState {
         self.ppu_scroll_copy_mut().copy_mapbak_palette_from(palette);
     }
 
-    pub(crate) fn attract_scene_mut(&mut self) -> NativeAttractSceneBridgeMut<'_> {
-        NativeAttractSceneBridgeMut::new(&mut self.game_state.ending.attract_scene, &mut self.ram)
-    }
-
-    pub(crate) fn dialogue_message_index_mut(&mut self) -> NativeDialogueMessageIndexBridgeMut<'_> {
-        NativeDialogueMessageIndexBridgeMut::new(
-            &mut self.game_state.messaging.dialogue_message_index,
-            &mut self.ram,
-        )
-    }
-
     pub(crate) fn multiselect_choice(&self) -> MultiselectChoiceRead<'_> {
         MultiselectChoiceRead::new(
             &self.game_state.messaging.multiselect_choice,
@@ -2082,37 +2279,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn multiselect_choice_mut(&mut self) -> NativeMultiselectChoiceBridgeMut<'_> {
-        NativeMultiselectChoiceBridgeMut::new(
-            &mut self.game_state.messaging.multiselect_choice,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn pushed_block_mut(&mut self) -> NativePushedBlockBridgeMut<'_> {
-        NativePushedBlockBridgeMut::new(&mut self.game_state.player.pushed_block, &mut self.ram)
-    }
-
     pub(crate) fn item_memory_value(&self, item_memory_addr: usize) -> u8 {
         self.game_state
             .inventory
             .items
             .item_memory_value(&self.ram, item_memory_addr)
-    }
-
-    pub(crate) fn inventory_items_mut(&mut self) -> NativeInventoryItemsBridgeMut<'_> {
-        NativeInventoryItemsBridgeMut::new(&mut self.game_state.inventory.items, &mut self.ram)
-    }
-
-    pub(crate) fn player_resources_mut(&mut self) -> NativePlayerResourcesBridgeMut<'_> {
-        NativePlayerResourcesBridgeMut::new(
-            &mut self.game_state.inventory.player_resources,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn frame_state_mut(&mut self) -> NativeFrameStateBridgeMut<'_> {
-        NativeFrameStateBridgeMut::new(&mut self.game_state.frame, &mut self.ram)
     }
 
     pub(crate) fn set_main_module(&mut self, value: u8) {
@@ -2183,10 +2354,6 @@ impl ZeldaState {
         self.frame_state_mut().increment_modal_pause_flag()
     }
 
-    fn world_location_mut(&mut self) -> NativeWorldLocationBridgeMut<'_> {
-        NativeWorldLocationBridgeMut::new(&mut self.game_state.world.location, &mut self.ram)
-    }
-
     pub(crate) fn set_dungeon_room(&mut self, value: u16) {
         self.world_location_mut().set_dungeon_room(value);
     }
@@ -2215,10 +2382,6 @@ impl ZeldaState {
 
     pub(crate) fn set_indoor_flag(&mut self, value: u8) {
         self.world_location_mut().set_indoor_flag(value);
-    }
-
-    pub(crate) fn world_scroll_mut(&mut self) -> NativeWorldScrollBridgeMut<'_> {
-        NativeWorldScrollBridgeMut::new(&mut self.game_state.world.scroll, &mut self.ram)
     }
 
     // BG scroll copy2 (0xe0/0xe2/0xe6/0xe8) is owned solely by PpuScrollCopyState; these
@@ -2322,17 +2485,6 @@ impl ZeldaState {
         fn update_camera_hi_outdoor();
     }
 
-    pub(crate) fn world_palette_theme_mut(&mut self) -> NativeWorldPaletteThemeBridgeMut<'_> {
-        NativeWorldPaletteThemeBridgeMut::new(
-            &mut self.game_state.world.palette_theme,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn world_region_mut(&mut self) -> NativeWorldRegionBridgeMut<'_> {
-        NativeWorldRegionBridgeMut::new(&mut self.game_state.world.region, &mut self.ram)
-    }
-
     pub(crate) fn set_rng_seed(&mut self, value: u8) {
         self.world_region_mut().set_rng_seed(value);
     }
@@ -2409,10 +2561,6 @@ impl ZeldaState {
 
     pub(crate) fn ow_entrance_value(&self) -> u16 {
         self.game_state.world.region.ow_entrance_value()
-    }
-
-    pub(crate) fn world_transient_mut(&mut self) -> NativeWorldTransientBridgeMut<'_> {
-        NativeWorldTransientBridgeMut::new(&mut self.game_state.world.transient, &mut self.ram)
     }
 
     pub(crate) fn set_room_transitioning_flags(&mut self, value: u8) {
@@ -2655,13 +2803,6 @@ impl ZeldaState {
         self.game_state.world.overworld.map_ui.map_state_word()
     }
 
-    pub(crate) fn overworld_map_ui_mut(&mut self) -> NativeOverworldMapUiBridgeMut<'_> {
-        NativeOverworldMapUiBridgeMut::new(
-            &mut self.game_state.world.overworld.map_ui,
-            &mut self.ram,
-        )
-    }
-
     pub(crate) fn set_overworld_map_state(&mut self, value: u8) {
         self.overworld_map_ui_mut().set_map_state(value);
         self.sync_dungeon_chest_cursor_with_map_state();
@@ -2749,13 +2890,6 @@ impl ZeldaState {
             .increment_bird_travel_stop_status(slot);
     }
 
-    pub(crate) fn overworld_map_zoom_mut(&mut self) -> NativeOverworldMapZoomBridgeMut<'_> {
-        NativeOverworldMapZoomBridgeMut::new(
-            &mut self.game_state.world.overworld.map_zoom,
-            &mut self.ram,
-        )
-    }
-
     pub(crate) fn set_mode7_zoom_step_counter(&mut self, value: u8) {
         self.overworld_map_zoom_mut().set_step_counter(value);
     }
@@ -2786,13 +2920,6 @@ impl ZeldaState {
             .overworld
             .screen_size
             .right_bottom_bound_word()
-    }
-
-    pub(crate) fn overworld_screen_size_mut(&mut self) -> NativeOverworldScreenSizeBridgeMut<'_> {
-        NativeOverworldScreenSizeBridgeMut::new(
-            &mut self.game_state.world.overworld.screen_size,
-            &mut self.ram,
-        )
     }
 
     pub(crate) fn clear_overworld_big_area_high(&mut self) {
@@ -2841,13 +2968,6 @@ impl ZeldaState {
             .vertical_delta_word()
     }
 
-    pub(crate) fn overworld_scroll_delta_mut(&mut self) -> NativeOverworldScrollDeltaBridgeMut<'_> {
-        NativeOverworldScrollDeltaBridgeMut::new(
-            &mut self.game_state.world.overworld.scroll_delta,
-            &mut self.ram,
-        )
-    }
-
     pub(crate) fn set_overworld_vertical_scroll_delta_low(&mut self, value: u8) {
         self.overworld_scroll_delta_mut()
             .set_vertical_delta_low_byte(value);
@@ -2879,13 +2999,6 @@ impl ZeldaState {
             .overworld
             .entrance
             .special_entrance_trigger
-    }
-
-    pub(crate) fn overworld_entrance_mut(&mut self) -> NativeOverworldEntranceBridgeMut<'_> {
-        NativeOverworldEntranceBridgeMut::new(
-            &mut self.game_state.world.overworld.entrance,
-            &mut self.ram,
-        )
     }
 
     pub(crate) fn set_special_entrance_trigger(&mut self, value: u8) {
@@ -2920,10 +3033,6 @@ impl ZeldaState {
 
     pub(crate) fn exit_screen_index(&self) -> u16 {
         self.game_state.world.overworld.exit.exit_screen
-    }
-
-    pub(crate) fn overworld_exit_mut(&mut self) -> NativeOverworldExitBridgeMut<'_> {
-        NativeOverworldExitBridgeMut::new(&mut self.game_state.world.overworld.exit, &mut self.ram)
     }
 
     pub(crate) fn set_exit_screen_index(&mut self, value: u16) {
@@ -2964,13 +3073,6 @@ impl ZeldaState {
             .overworld
             .transition
             .edge_direction_bits()
-    }
-
-    pub(crate) fn overworld_transition_mut(&mut self) -> NativeOverworldTransitionBridgeMut<'_> {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
     }
 
     pub(crate) fn set_edge_transition_direction_bits(&mut self, value: u8) {
@@ -3118,10 +3220,6 @@ impl ZeldaState {
         self.game_state.display.attract_vram_destination_address
     }
 
-    fn attract_vram_destination_bridge_mut(&mut self) -> NativeAttractVramDestinationBridgeMut<'_> {
-        NativeAttractVramDestinationBridgeMut::new(&mut self.game_state.display, &mut self.ram)
-    }
-
     pub(crate) fn set_attract_vram_destination_address(&mut self, value: u16) {
         self.attract_vram_destination_bridge_mut()
             .set_address(value);
@@ -3148,10 +3246,6 @@ impl ZeldaState {
 
     pub(crate) fn loaded_room_data_word(&self, offset: usize, index: usize) -> u16 {
         loaded_room_data_word(&self.ram, offset, index)
-    }
-
-    pub(crate) fn display_core_mut(&mut self) -> NativeDisplayStateBridgeMut<'_> {
-        NativeDisplayStateBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
     pub(crate) fn set_screen_brightness(&mut self, value: u8) {
@@ -3804,21 +3898,6 @@ impl ZeldaState {
         self.dungeon_map_mut().add_marker_y_offset_signed(value)
     }
 
-    pub(crate) fn dungeon_secret_scratch_mut(&mut self) -> NativeDungeonSecretBridgeMut<'_> {
-        NativeDungeonSecretBridgeMut::new(&mut self.game_state.dungeon_secret, &mut self.ram)
-    }
-
-    pub(crate) fn temp_counter_mut(&mut self) -> NativeScratchCounterBridgeMut<'_> {
-        NativeScratchCounterBridgeMut::new(&mut self.game_state.scratch_counter, &mut self.ram)
-    }
-
-    pub(crate) fn overworld_event_info_mut(&mut self) -> NativeOverworldEventInfoBridgeMut<'_> {
-        NativeOverworldEventInfoBridgeMut::new(
-            &mut self.game_state.world.overworld.event_info,
-            &mut self.ram,
-        )
-    }
-
     pub(crate) fn set_overworld_event_bits(&mut self, screen: usize, mask: u8) {
         self.overworld_event_info_mut().set_event_bits(screen, mask);
     }
@@ -3837,13 +3916,6 @@ impl ZeldaState {
         OverworldConfigTableRead::new(
             &self.game_state.world.overworld.config_table,
             usize::from(self.game_state.world.location.overworld_screen_index()),
-        )
-    }
-
-    fn overworld_config_table_mut(&mut self) -> NativeOverworldConfigTableBridgeMut<'_> {
-        NativeOverworldConfigTableBridgeMut::new(
-            &mut self.game_state.world.overworld.config_table,
-            &mut self.ram,
         )
     }
 
@@ -3879,10 +3951,6 @@ impl ZeldaState {
     ) {
         self.overworld_config_table_mut()
             .copy_sprite_palette_range(dst, data, src, len);
-    }
-
-    pub(crate) fn palette_buffer_mut(&mut self) -> NativePaletteBufferBridgeMut<'_> {
-        NativePaletteBufferBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
     pub(crate) fn clear_aux_visible_subpalettes(&mut self) {
@@ -3988,10 +4056,6 @@ impl ZeldaState {
         self.palette_buffer_mut().set_overworld_palette_mode(value);
     }
 
-    pub(crate) fn palette_filter_mut(&mut self) -> NativePaletteFilterBridgeMut<'_> {
-        NativePaletteFilterBridgeMut::new(&mut self.game_state.display, &mut self.ram)
-    }
-
     pub(crate) fn set_countdown(&mut self, value: u8) {
         self.palette_filter_mut().set_countdown(value);
     }
@@ -4089,10 +4153,6 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn hud_mut(&mut self) -> NativeHudStateBridgeMut<'_> {
-        NativeHudStateBridgeMut::new(&mut self.game_state.display, &mut self.ram)
-    }
-
     fn debug_assert_hud_tilemap_matches_ram(&self) {
         debug_assert_eq!(
             self.game_state.display.hud_tilemap,
@@ -4186,10 +4246,6 @@ impl ZeldaState {
         }
     }
 
-    fn hud_inventory_order_bridge_mut(&mut self) -> NativeHudInventoryOrderBridgeMut<'_> {
-        NativeHudInventoryOrderBridgeMut::new(&mut self.game_state.display, &mut self.ram)
-    }
-
     pub(crate) fn initialize_default_hud_inventory_order(&mut self, count: usize) {
         self.hud_inventory_order_bridge_mut()
             .initialize_default_order(count);
@@ -4198,25 +4254,6 @@ impl ZeldaState {
     pub(crate) fn swap_hud_inventory_order_items(&mut self, old_pos: usize, new_pos: usize) {
         self.hud_inventory_order_bridge_mut()
             .swap_items(old_pos, new_pos);
-    }
-
-    pub(crate) fn archery_game_mut(&mut self) -> NativeArcheryGameBridgeMut<'_> {
-        NativeArcheryGameBridgeMut::new(&mut self.game_state.archery_game, &mut self.ram)
-    }
-
-    pub(crate) fn minigame_state_mut(&mut self) -> NativeMinigameBridgeMut<'_> {
-        NativeMinigameBridgeMut::new(&mut self.game_state.minigame, &mut self.ram)
-    }
-
-    pub(crate) fn sprite_battle_mut(&mut self) -> NativeSpriteBattleBridgeMut<'_> {
-        NativeSpriteBattleBridgeMut::new(&mut self.game_state.sprite_battle, &mut self.ram)
-    }
-
-    fn shared_message_timer_bridge_mut(&mut self) -> NativeSharedMessageTimerBridgeMut<'_> {
-        NativeSharedMessageTimerBridgeMut::new(
-            &mut self.game_state.messaging.shared_message_timer,
-            &mut self.ram,
-        )
     }
 
     pub(crate) fn start_shared_message_timer(&mut self, value: u16) {
@@ -4229,10 +4266,6 @@ impl ZeldaState {
 
     pub(crate) fn tick_shared_message_timer(&mut self) -> u16 {
         self.shared_message_timer_bridge_mut().tick()
-    }
-
-    fn intro_scene_bridge_mut(&mut self) -> NativeIntroSceneBridgeMut<'_> {
-        NativeIntroSceneBridgeMut::new(&mut self.game_state.ending.intro_scene, &mut self.ram)
     }
 
     pub(crate) fn pause_intro_triangle_motion(&mut self) {
@@ -4260,10 +4293,6 @@ impl ZeldaState {
         self.intro_scene_bridge_mut().decrement_triforce_countdown();
     }
 
-    fn ending_credit_bridge_mut(&mut self) -> NativeEndingCreditBridgeMut<'_> {
-        NativeEndingCreditBridgeMut::new(&mut self.game_state.ending.credits, &mut self.ram)
-    }
-
     pub(crate) fn clear_ending_palace_death_count_digit_step(&mut self) {
         self.ending_credit_bridge_mut()
             .clear_palace_death_count_digit_step();
@@ -4282,10 +4311,6 @@ impl ZeldaState {
     pub(crate) fn set_ending_death_count_digit_tile_base(&mut self, value: u16) {
         self.ending_credit_bridge_mut()
             .set_death_count_digit_tile_base(value);
-    }
-
-    pub(crate) fn intro_sword_mut(&mut self) -> NativeIntroSwordBridgeMut<'_> {
-        NativeIntroSwordBridgeMut::new(&mut self.game_state.intro_sword, &mut self.ram)
     }
 
     pub(crate) fn set_aux_bg_subset_pack(&mut self, index: usize, value: u8) {
@@ -4442,10 +4467,6 @@ impl ZeldaState {
             .mirror_decoded_map32_from_ram(&self.ram, dst);
     }
 
-    pub(crate) fn room_bounds_mut(&mut self) -> NativeRoomBoundsBridgeMut<'_> {
-        NativeRoomBoundsBridgeMut::new(&mut self.game_state.world.room_bounds, &mut self.ram)
-    }
-
     pub(crate) fn vram_upload_buffer_word(&self, offset: usize) -> u16 {
         self.game_state
             .display
@@ -4582,10 +4603,6 @@ impl ZeldaState {
             .vram_dma_source_bytes(&self.ram, source_addr, len)
     }
 
-    fn vram_upload_mut(&mut self) -> NativeVramUploadBufferBridgeMut<'_> {
-        NativeVramUploadBufferBridgeMut::new(&mut self.game_state.display, &mut self.ram)
-    }
-
     pub(crate) fn write_vram_upload_buffer_byte(&mut self, offset: usize, value: u8) {
         self.vram_upload_mut().write_buffer_byte(offset, value);
     }
@@ -4663,25 +4680,6 @@ impl ZeldaState {
         self.vram_upload_mut().advance_offset_by(value)
     }
 
-    pub(crate) fn poly_runtime_mut(&mut self) -> NativePolyRuntimeBridgeMut<'_> {
-        NativePolyRuntimeBridgeMut::new(&mut self.game_state.poly.runtime, &mut self.ram)
-    }
-
-    pub(crate) fn poly_projected_vertex_mut(&mut self) -> NativePolyProjectedVerticesBridgeMut<'_> {
-        NativePolyProjectedVerticesBridgeMut::new(
-            &mut self.game_state.poly.projected_vertices,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn poly_face_coords_mut(&mut self) -> NativePolyFaceCoordsBridgeMut<'_> {
-        NativePolyFaceCoordsBridgeMut::new(&mut self.game_state.poly.face_coords, &mut self.ram)
-    }
-
-    pub(crate) fn poly_raster_edge_mut(&mut self) -> NativePolyRasterEdgeBridgeMut<'_> {
-        NativePolyRasterEdgeBridgeMut::new(&mut self.game_state.poly.raster_edge, &mut self.ram)
-    }
-
     pub(crate) fn intro_actor(&self, slot: usize) -> IntroActorRead<'_> {
         IntroActorRead::new(&self.game_state.ending.intro_actors, slot)
     }
@@ -4691,13 +4689,6 @@ impl ZeldaState {
             &mut self.game_state.ending.intro_actors,
             &mut self.ram,
             slot,
-        )
-    }
-
-    pub(crate) fn effect_angle_scratch_mut(&mut self) -> NativeEffectAngleScratchBridgeMut<'_> {
-        NativeEffectAngleScratchBridgeMut::new(
-            &mut self.game_state.effects.angle_scratch,
-            &mut self.ram,
         )
     }
 
@@ -4711,10 +4702,6 @@ impl ZeldaState {
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn quake_spell_scratch_mut(&mut self) -> NativeQuakeSpellBridgeMut<'_> {
-        NativeQuakeSpellBridgeMut::new(&mut self.game_state.effects.quake_spell, &mut self.ram)
     }
 
     pub(crate) fn bombos_fire_column(&self, slot: usize) -> BombosFireColumnState {
@@ -4742,10 +4729,6 @@ impl ZeldaState {
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn bombos_spell_scratch_mut(&mut self) -> NativeBombosSpellBridgeMut<'_> {
-        NativeBombosSpellBridgeMut::new(&mut self.game_state.effects.bombos_spell, &mut self.ram)
     }
 
     pub(crate) fn tower_seal_orbit(&self, slot: usize) -> TowerSealOrbitState {
@@ -4776,10 +4759,6 @@ impl ZeldaState {
             &mut self.ram,
             slot,
         )
-    }
-
-    pub(crate) fn tower_seal_scratch_mut(&mut self) -> NativeTowerSealBridgeMut<'_> {
-        NativeTowerSealBridgeMut::new(&mut self.game_state.effects.tower_seal, &mut self.ram)
     }
 
     pub(crate) fn blast_wall_explosion(&self, slot: usize) -> BlastWallExplosionSlotState {
@@ -4843,10 +4822,6 @@ impl ZeldaState {
             .blast_wall_direction()
     }
 
-    pub(crate) fn blast_wall_scratch_mut(&mut self) -> NativeBlastWallBridgeMut<'_> {
-        NativeBlastWallBridgeMut::new(&mut self.game_state.effects.entrance_effects, &mut self.ram)
-    }
-
     pub(crate) fn skull_woods_fire(&self, slot: usize) -> SkullWoodsFireSlotState {
         self.game_state
             .effects
@@ -4879,13 +4854,6 @@ impl ZeldaState {
             .skull_woods_fire_inner_x()
     }
 
-    pub(crate) fn skull_woods_fire_scratch_mut(&mut self) -> NativeSkullWoodsFireBridgeMut<'_> {
-        NativeSkullWoodsFireBridgeMut::new(
-            &mut self.game_state.effects.entrance_effects,
-            &mut self.ram,
-        )
-    }
-
     pub(crate) fn happiness_pond_rupee(&self, slot: usize) -> HappinessPondRupeeSlotState {
         self.game_state.effects.happiness_pond_rupees.rupee(slot)
     }
@@ -4898,13 +4866,6 @@ impl ZeldaState {
             &mut self.game_state.effects.happiness_pond_rupees,
             &mut self.ram,
             slot,
-        )
-    }
-
-    fn weather_vane_bridge_mut(&mut self) -> NativeWeatherVaneBridgeMut<'_> {
-        NativeWeatherVaneBridgeMut::new(
-            &mut self.game_state.world.overworld.weather_vane,
-            &mut self.ram,
         )
     }
 
@@ -4957,13 +4918,6 @@ impl ZeldaState {
             .overworld
             .bird_travel_destinations
             .destination(slot)
-    }
-
-    fn bird_travel_destination_bridge_mut(&mut self) -> NativeBirdTravelDestinationBridgeMut<'_> {
-        NativeBirdTravelDestinationBridgeMut::new(
-            &mut self.game_state.world.overworld.bird_travel_destinations,
-            &mut self.ram,
-        )
     }
 
     pub(crate) fn set_bird_travel_destination(&mut self, slot: usize, x: u16, y: u16) {
@@ -5061,17 +5015,6 @@ impl ZeldaState {
         lanmola_flat_trail_entry_from_ram(&self.ram, slot)
     }
 
-    pub(crate) fn door_debris_mut(&mut self) -> NativeDoorDebrisBridgeMut<'_> {
-        NativeDoorDebrisBridgeMut::new(&mut self.game_state.effects.door_debris, &mut self.ram)
-    }
-
-    pub(crate) fn digging_game_prize_mut(&mut self) -> NativeDiggingGamePrizeBridgeMut<'_> {
-        NativeDiggingGamePrizeBridgeMut::new(
-            &mut self.game_state.effects.digging_game_prize,
-            &mut self.ram,
-        )
-    }
-
     pub(crate) fn draw_scratch_position_mut(
         &mut self,
     ) -> NativeSpriteDrawWorkPositionBridgeMut<'_> {
@@ -5086,28 +5029,6 @@ impl ZeldaState {
     ) -> NativeSpriteHitboxWorkOffsetBridgeMut<'_> {
         NativeSpriteHitboxWorkOffsetBridgeMut::new(
             &mut self.game_state.sprites.draw_hitbox_work,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dialogue_number_mut(&mut self) -> NativeDialogueNumberBridgeMut<'_> {
-        NativeDialogueNumberBridgeMut::new(
-            &mut self.game_state.messaging.dialogue_number,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn messaging_state_mut(&mut self) -> NativeMessagingRuntimeBridgeMut<'_> {
-        NativeMessagingRuntimeBridgeMut::new(&mut self.game_state.messaging, &mut self.ram)
-    }
-
-    pub(crate) fn messaging_text_mut(&mut self) -> NativeDecodedMessageTextBridgeMut<'_> {
-        NativeDecodedMessageTextBridgeMut::new(&mut self.game_state.messaging, &mut self.ram)
-    }
-
-    fn messaging_render_buffer_mut(&mut self) -> NativeMessagingRenderBufferBridgeMut<'_> {
-        NativeMessagingRenderBufferBridgeMut::new(
-            &mut self.game_state.messaging.render_buffer,
             &mut self.ram,
         )
     }
@@ -5145,10 +5066,6 @@ impl ZeldaState {
     ) {
         self.messaging_render_buffer_mut()
             .fill_word_range(start_index, count, value);
-    }
-
-    fn vwf_render_mut(&mut self) -> NativeVwfRenderBridgeMut<'_> {
-        NativeVwfRenderBridgeMut::new(&mut self.game_state.messaging.vwf_render, &mut self.ram)
     }
 
     pub(crate) fn set_vwf_next_glyph_advance_prefix_sum(&mut self, index: usize, value: u8) {
@@ -5210,20 +5127,6 @@ impl ZeldaState {
     pub(crate) fn set_vwf_tile_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
         self.vwf_render_mut()
             .set_tile_word_at_byte_offset(byte_offset, value);
-    }
-
-    pub(crate) fn dialogue_source_offset_mut(&mut self) -> NativeDialogueSourceOffsetBridgeMut<'_> {
-        NativeDialogueSourceOffsetBridgeMut::new(
-            &mut self.game_state.messaging.dialogue_source_offset,
-            &mut self.ram,
-        )
-    }
-
-    fn select_file_menu_mut(&mut self) -> NativeSelectFileMenuBridgeMut<'_> {
-        NativeSelectFileMenuBridgeMut::new(
-            &mut self.game_state.messaging.select_file_menu,
-            &mut self.ram,
-        )
     }
 
     pub(crate) fn set_select_file_choice(&mut self, index: usize, value: u8) {
@@ -5428,20 +5331,6 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn follower_state_mut(&mut self) -> NativeFollowerRuntimeBridgeMut<'_> {
-        NativeFollowerRuntimeBridgeMut::new(
-            &mut self.game_state.sprites.follower_runtime,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn chain_chomp_history_mut(&mut self) -> NativeChainChompHistoryBridgeMut<'_> {
-        NativeChainChompHistoryBridgeMut::new(
-            &mut self.game_state.sprites.chain_chomp_history,
-            &mut self.ram,
-        )
-    }
-
     pub(crate) fn ancilla_spawn_scratch_mut(
         &mut self,
     ) -> NativeFailedSpinSparkleSpawnBridgeMut<'_> {
@@ -5451,36 +5340,11 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn maze_game_timer_mut(&mut self) -> NativeMazeGameTimerBridgeMut<'_> {
-        NativeMazeGameTimerBridgeMut::new(
-            &mut self.game_state.sprites.maze_game_timer,
-            &mut self.ram,
-        )
-    }
-
     pub(crate) fn enemy_damage_subclass_table_mut(
         &mut self,
     ) -> NativeEnemyDamageSubclassTableBridgeMut<'_> {
         NativeEnemyDamageSubclassTableBridgeMut::new(
             &mut self.game_state.sprites.enemy_damage_subclasses,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn ether_orbit_mut(&mut self) -> NativeEtherOrbitBridgeMut<'_> {
-        NativeEtherOrbitBridgeMut::new(&mut self.game_state.sprites.ether_orbit, &mut self.ram)
-    }
-
-    pub(crate) fn prize_drop_cycle_mut(&mut self) -> NativePrizeDropCycleBridgeMut<'_> {
-        NativePrizeDropCycleBridgeMut::new(
-            &mut self.game_state.sprites.prize_drop_cycle,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dual_layer_tile_cache_mut(&mut self) -> NativeDualLayerTileCacheBridgeMut<'_> {
-        NativeDualLayerTileCacheBridgeMut::new(
-            &mut self.game_state.sprites.dual_layer_tile_cache,
             &mut self.ram,
         )
     }
@@ -5540,42 +5404,9 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn sprite_workspace_mut(&mut self) -> NativeSpriteWorkspaceBridgeMut<'_> {
-        NativeSpriteWorkspaceBridgeMut::new(&mut self.game_state.sprites.workspace, &mut self.ram)
-    }
-
-    pub(crate) fn garnish_state_mut(&mut self) -> NativeGarnishRuntimeBridgeMut<'_> {
-        NativeGarnishRuntimeBridgeMut::new(
-            &mut self.game_state.sprites.garnish_runtime,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn oam_state_mut(&mut self) -> NativeOamStateBridgeMut<'_> {
-        NativeOamStateBridgeMut::new(&mut self.game_state.oam, &mut self.ram)
-    }
-
-    fn overworld_sprite_presence_mut(&mut self) -> NativeOverworldSpritePresenceBridgeMut<'_> {
-        NativeOverworldSpritePresenceBridgeMut::new(
-            &mut self.game_state.sprites.overworld_sprite_presence,
-            &mut self.ram,
-        )
-    }
-
     pub(crate) fn set_overworld_sprite_presence_marker(&mut self, index: usize, value: u8) {
         self.overworld_sprite_presence_mut()
             .set_marker(index, value);
-    }
-
-    pub(crate) fn memorized_tile_mut(&mut self) -> NativeMemorizedTileBridgeMut<'_> {
-        NativeMemorizedTileBridgeMut::new(&mut self.game_state.memorized_tiles, &mut self.ram)
-    }
-
-    fn overworld_sprite_loaded_mut(&mut self) -> NativeOverworldSpriteLoadedBridgeMut<'_> {
-        NativeOverworldSpriteLoadedBridgeMut::new(
-            &mut self.game_state.sprites.overworld_sprite_loaded,
-            &mut self.ram,
-        )
     }
 
     pub(crate) fn clear_overworld_sprite_loaded_mask(&mut self, block: u16, loaded_mask: u8) {
@@ -5629,10 +5460,6 @@ impl ZeldaState {
         self.overworld_sprite_loaded_mut().clear_all();
     }
 
-    fn trinexx_palette_bridge_mut(&mut self) -> NativeTrinexxPaletteBridgeMut<'_> {
-        NativeTrinexxPaletteBridgeMut::new(&mut self.game_state.display, &mut self.ram)
-    }
-
     pub(crate) fn set_trinexx_red_shell_palette_delay(&mut self, value: u8) {
         self.trinexx_palette_bridge_mut().set_red_shell_delay(value);
     }
@@ -5667,13 +5494,6 @@ impl ZeldaState {
     pub(crate) fn increment_trinexx_blue_shell_palette_step(&mut self) -> u8 {
         self.trinexx_palette_bridge_mut()
             .increment_blue_shell_step()
-    }
-
-    pub(crate) fn spotlight_hdma_mut(&mut self) -> NativeSpotlightHdmaBridgeMut<'_> {
-        NativeSpotlightHdmaBridgeMut::new(
-            &mut self.game_state.display.spotlight_hdma,
-            &mut self.ram,
-        )
     }
 
     pub(crate) fn set_spotlight_y_lower(&mut self, value: u16) {
@@ -5811,10 +5631,6 @@ impl ZeldaState {
             .project_dynamic_table_to_reserved_hdma_table(count);
     }
 
-    pub(crate) fn water_hdma_window_mut(&mut self) -> NativeWaterHdmaWindowBridgeMut<'_> {
-        NativeWaterHdmaWindowBridgeMut::new(&mut self.game_state.display, &mut self.ram)
-    }
-
     pub(crate) fn overworld_palette_backup_mut(
         &mut self,
     ) -> NativeOverworldPaletteBackupBridgeMut<'_> {
@@ -5837,13 +5653,6 @@ impl ZeldaState {
     pub(crate) fn set_overworld_main_indoors_copy_palette_backup(&mut self, value: u8) {
         self.overworld_palette_backup_mut()
             .set_main_indoors_copy_backup(value);
-    }
-
-    pub(crate) fn overworld_map16_mut(&mut self) -> NativeOverworldMap16BridgeMut<'_> {
-        NativeOverworldMap16BridgeMut::new(
-            &mut self.game_state.world.overworld.map16,
-            &mut self.ram,
-        )
     }
 
     pub fn set_overworld_map16_load_state(&mut self, state: OverworldMap16LoadState) {
