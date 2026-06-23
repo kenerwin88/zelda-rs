@@ -75,6 +75,7 @@ use crate::game_state::{
     NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
+    NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
     NativeOverworldTransitionBridgeMut, NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut,
     NativePlayerResourcesBridgeMut, NativePolyFaceCoordsBridgeMut,
     NativePolyProjectedVerticesBridgeMut, NativePolyRasterEdgeBridgeMut,
@@ -5931,46 +5932,32 @@ impl ZeldaState {
         NativeOamStateBridgeMut::new(&mut self.game_state.oam, &mut self.ram)
     }
 
-    fn sync_overworld_sprite_presence_to_ram(&mut self) {
-        self.game_state
-            .sprites
-            .overworld_sprite_presence
-            .write_to_ram(&mut self.ram);
-        debug_assert_eq!(
-            self.game_state.sprites.overworld_sprite_presence,
-            crate::game_state::OverworldSpritePresenceState::load_from_ram(&self.ram)
-        );
+    fn overworld_sprite_presence_mut(&mut self) -> NativeOverworldSpritePresenceBridgeMut<'_> {
+        NativeOverworldSpritePresenceBridgeMut::new(
+            &mut self.game_state.sprites.overworld_sprite_presence,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn set_overworld_sprite_presence_marker(&mut self, index: usize, value: u8) {
-        self.game_state
-            .sprites
-            .overworld_sprite_presence
+        self.overworld_sprite_presence_mut()
             .set_marker(index, value);
-        self.sync_overworld_sprite_presence_to_ram();
     }
 
     pub(crate) fn memorized_tile_mut(&mut self) -> NativeMemorizedTileBridgeMut<'_> {
         NativeMemorizedTileBridgeMut::new(&mut self.game_state.memorized_tiles, &mut self.ram)
     }
 
-    fn sync_overworld_sprite_loaded_to_ram(&mut self) {
-        self.game_state
-            .sprites
-            .overworld_sprite_loaded
-            .write_to_ram(&mut self.ram);
-        debug_assert_eq!(
-            self.game_state.sprites.overworld_sprite_loaded,
-            crate::game_state::OverworldSpriteLoadedState::load_from_ram(&self.ram)
-        );
+    fn overworld_sprite_loaded_mut(&mut self) -> NativeOverworldSpriteLoadedBridgeMut<'_> {
+        NativeOverworldSpriteLoadedBridgeMut::new(
+            &mut self.game_state.sprites.overworld_sprite_loaded,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn clear_overworld_sprite_loaded_mask(&mut self, block: u16, loaded_mask: u8) {
-        self.game_state
-            .sprites
-            .overworld_sprite_loaded
+        self.overworld_sprite_loaded_mut()
             .clear_loaded_mask(block, loaded_mask);
-        self.sync_overworld_sprite_loaded_to_ram();
     }
 
     pub(crate) fn clear_overworld_sprite_loaded_mask_wrapped(
@@ -6011,16 +5998,12 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_overworld_sprite_loaded_mask(&mut self, block: u16, loaded_mask: u8) {
-        self.game_state
-            .sprites
-            .overworld_sprite_loaded
+        self.overworld_sprite_loaded_mut()
             .set_loaded_mask(block, loaded_mask);
-        self.sync_overworld_sprite_loaded_to_ram();
     }
 
     pub(crate) fn clear_all_overworld_sprite_loaded_masks(&mut self) {
-        self.game_state.sprites.overworld_sprite_loaded.clear_all();
-        self.sync_overworld_sprite_loaded_to_ram();
+        self.overworld_sprite_loaded_mut().clear_all();
     }
 
     fn trinexx_palette_bridge_mut(&mut self) -> NativeTrinexxPaletteBridgeMut<'_> {

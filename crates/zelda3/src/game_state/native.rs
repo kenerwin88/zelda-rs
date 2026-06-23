@@ -105,11 +105,11 @@ pub(crate) use sprites::{
     NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerRuntimeBridgeMut,
     NativeGarnishRuntimeBridgeMut, NativeGarnishSlotBridgeMut, NativeGarnishSlotView,
     NativeMazeGameTimerBridgeMut, NativeOverlordSlotBridgeMut, NativeOverlordSlotView,
+    NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
     NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
     NativeSpriteHitboxWorkOffsetBridgeMut, NativeSpriteSlotBridgeMut, NativeSpriteSlotView,
     NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut,
-    OverworldSpriteLoadedState, OverworldSpritePresenceState, SpriteSlotSnapshot, SpriteState,
-    TagalongSlotRead, OVERWORLD_SPRITE_FLAG_COUNT,
+    SpriteSlotSnapshot, SpriteState, TagalongSlotRead, OVERWORLD_SPRITE_FLAG_COUNT,
 };
 pub(crate) use system::{
     MsuResumeInfoState, MsuResumeSlot, NativeSystemSignalsBridgeMut, SystemSignalsState,
@@ -169,9 +169,9 @@ use poly::{
 #[cfg(test)]
 use sprites::{
     ChainChompHistoryState, DualLayerTileCacheState, EnemyDamageSubclassTableState,
-    EtherOrbitState, FailedSpinSparkleSpawnState, MazeGameTimerState,
-    NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
-    PrizeDropCycleState, SpriteDrawHitboxWorkState, SpriteSlotsState, TagalongTrailState,
+    EtherOrbitState, FailedSpinSparkleSpawnState, MazeGameTimerState, OverworldSpriteLoadedState,
+    OverworldSpritePresenceState, PrizeDropCycleState, SpriteDrawHitboxWorkState, SpriteSlotsState,
+    TagalongTrailState,
 };
 #[cfg(test)]
 use system::NativeSystemWorkAreaBridgeMut;
