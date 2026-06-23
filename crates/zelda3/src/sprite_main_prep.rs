@@ -933,8 +933,7 @@ impl ZeldaState {
             i -= 1;
         }
 
-        let ancillas_active =
-            (0..=4).any(|i| self.game_state.sprites.ancilla_slots.slot(i).is_active());
+        let ancillas_active = (0..=4).any(|i| self.ancilla_slot_view(i).is_active());
         if self.game_state.archery_game.arrows_left()
             | self.sprite_slot(k).delay_aux4()
             | u8::from(ancillas_active)
@@ -1788,13 +1787,9 @@ impl ZeldaState {
 
     pub(super) fn ancilla_terminate_sparkle_objects(&mut self) {
         for i in (0..=4).rev() {
-            let t = self.game_state.sprites.ancilla_slots.slot(i).ancilla_type();
+            let t = self.ancilla_slot_view(i).ancilla_type();
             if matches!(t, 0x2a | 0x2b | 0x30 | 0x31 | 0x18 | 0x19 | 0x0c) {
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, i)
-                    .clear();
+                self.ancilla_slot_view_mut(i).clear();
             }
         }
     }
@@ -2465,7 +2460,7 @@ impl ZeldaState {
                     return;
                 }
                 for i in (0..=4).rev() {
-                    if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x1a {
+                    if self.ancilla_slot_view(i).ancilla_type() == 0x1a {
                         self.sprite_spawn_superficial_bomb_blast(k);
                         self.sprite_sfx_queue_sfx1_with_pan(k, 0x0d);
                         self.sprite_slot_mut(k).increment_ai_state();
@@ -3359,14 +3354,10 @@ impl ZeldaState {
 
     pub(super) fn pipe_validate_entry(&mut self) -> bool {
         for k in (0..=4).rev() {
-            if self.game_state.sprites.ancilla_slots.slot(k).ancilla_type() == 0x31 {
+            if self.ancilla_slot_view(k).ancilla_type() == 0x31 {
                 self.follower_link_state_mut().clear_position_mode();
                 self.follower_link_state_mut().clear_direction_lock();
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, k)
-                    .clear();
+                self.ancilla_slot_view_mut(k).clear();
                 break;
             }
         }
@@ -3811,20 +3802,11 @@ impl ZeldaState {
         self.minigame_state_mut().set_is_archer_or_shovel_game(what);
         self.link_reset_properties_c();
         for k in (0..=4).rev() {
-            match self.game_state.sprites.ancilla_slots.slot(k).ancilla_type() {
-                0x30 | 0x31 => self
-                    .game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, k)
-                    .clear(),
+            match self.ancilla_slot_view(k).ancilla_type() {
+                0x30 | 0x31 => self.ancilla_slot_view_mut(k).clear(),
                 5 => {
                     self.minigame_state_mut().clear_flag_boomerang_in_place();
-                    self.game_state
-                        .sprites
-                        .ancilla_slots
-                        .slot_mut(&mut self.ram, k)
-                        .clear();
+                    self.ancilla_slot_view_mut(k).clear();
                 }
                 _ => {}
             }
@@ -3911,13 +3893,9 @@ impl ZeldaState {
 
     pub(super) fn shop_keeper_rapid_terminate_receive_item(&mut self) {
         for i in (0..=4).rev() {
-            if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x22 {
+            if self.ancilla_slot_view(i).ancilla_type() == 0x22 {
                 let value = 1;
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, i)
-                    .set_aux_timer(value);
+                self.ancilla_slot_view_mut(i).set_aux_timer(value);
             }
         }
     }
@@ -7871,10 +7849,7 @@ mod tests {
         assert!(!pipe.pipe_validate_entry());
         assert_eq!(pipe.game_state.player.follower_link.position_mode(), 0);
         assert_eq!(pipe.game_state.player.follower_link.direction_lock(), 0);
-        assert_eq!(
-            pipe.game_state.sprites.ancilla_slots.slot(3).ancilla_type(),
-            0
-        );
+        assert_eq!(pipe.ancilla_slot_view(3).ancilla_type(), 0);
         pipe.follower_link_state_mut().set_state_bits(0x80);
         assert!(pipe.pipe_validate_entry());
         pipe.follower_link_state_mut().clear_state_bits();
