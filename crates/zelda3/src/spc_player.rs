@@ -33,6 +33,13 @@ const DIR: uint8 = 0x5d;
 const ESA: uint8 = 0x6d;
 const EDL: uint8 = 0x7d;
 const FIR0: uint8 = 0x0f;
+const SPC_EFFECT_ARGUMENT_BYTE_LENGTHS: [uint8; 27] = [
+    1, 1, 2, 3, 0, 1, 2, 1, 2, 1, 1, 3, 0, 1, 2, 3, 1, 3, 3, 0, 1, 3, 0, 3, 3, 3, 1,
+];
+const MUSIC_NOTE_VOLUME_LEVELS: [uint8; 16] = [
+    25, 50, 76, 101, 114, 127, 140, 152, 165, 178, 191, 203, 216, 229, 242, 252,
+];
+const MUSIC_NOTE_GATE_OFF_PERCENTAGES: [uint8; 8] = [50, 101, 127, 152, 178, 203, 229, 252];
 
 #[derive(Clone)]
 #[repr(C)]
@@ -964,9 +971,6 @@ fn pitch_slide_to_note_check(p: *mut SpcPlayer, c: *mut Channel) {
 }
 
 fn handle_effect(p: *mut SpcPlayer, c: *mut Channel, effect: uint8) {
-    const SPC_EFFECT_ARGUMENT_BYTE_LENGTHS: [uint8; 27] = [
-        1, 1, 2, 3, 0, 1, 2, 1, 2, 1, 1, 3, 0, 1, 2, 3, 1, 3, 3, 0, 1, 3, 0, 3, 3, 3, 1,
-    ];
     let p_ref = unsafe { &mut *p };
     let c_ref = unsafe { &mut *c };
     let arg = if SPC_EFFECT_ARGUMENT_BYTE_LENGTHS[(effect - 0xe0) as usize] != 0 {
@@ -1135,9 +1139,6 @@ fn handle_effect(p: *mut SpcPlayer, c: *mut Channel, effect: uint8) {
 }
 
 fn want_write_kof(p: *mut SpcPlayer, c: *mut Channel) -> bool {
-    const SPC_EFFECT_ARGUMENT_BYTE_LENGTHS: [uint8; 27] = [
-        1, 1, 2, 3, 0, 1, 2, 1, 2, 1, 1, 3, 0, 1, 2, 3, 1, 3, 3, 0, 1, 3, 0, 3, 3, 3, 1,
-    ];
     let p_ref = unsafe { &mut *p };
     let c_ref = unsafe { &mut *c };
     let mut loops = c_ref.subroutine_num_loops;
@@ -1359,11 +1360,6 @@ fn chan_handle_tick(p: *mut SpcPlayer, c: *mut Channel) {
 }
 
 fn port0_handle_music(p: *mut SpcPlayer) {
-    const NOTE_VOL: [uint8; 16] = [
-        25, 50, 76, 101, 114, 127, 140, 152, 165, 178, 191, 203, 216, 229, 242, 252,
-    ];
-    const NOTE_GATE_OFF_PCT: [uint8; 8] = [50, 101, 127, 152, 178, 203, 229, 252];
-
     let a = unsafe { (*p).new_value_from_snes[0] };
 
     if a == 0xff {
@@ -1536,8 +1532,9 @@ fn port0_handle_music(p: *mut SpcPlayer) {
                                 (*c).pattern_order_ptr_for_chan.wrapping_add(1);
                             if cmd & 0x80 == 0 {
                                 (*c).note_gate_off_fixedpt =
-                                    NOTE_GATE_OFF_PCT[((cmd >> 4) & 7) as usize];
-                                (*c).channel_volume_master = NOTE_VOL[(cmd & 0xf) as usize];
+                                    MUSIC_NOTE_GATE_OFF_PERCENTAGES[((cmd >> 4) & 7) as usize];
+                                (*c).channel_volume_master =
+                                    MUSIC_NOTE_VOLUME_LEVELS[(cmd & 0xf) as usize];
                                 cmd = (*p).ram[(*c).pattern_order_ptr_for_chan as usize];
                                 (*c).pattern_order_ptr_for_chan =
                                     (*c).pattern_order_ptr_for_chan.wrapping_add(1);
