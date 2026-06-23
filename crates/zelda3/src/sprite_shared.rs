@@ -1,3 +1,5 @@
+use super::sprite::DrawMultipleData;
+
 pub(super) const SPRITE_C_SPRITE: usize = 0x0db0;
 pub(super) const SPRITE_DELAY_AUX1_SPRITE: usize = 0x0e00;
 pub(super) const SPRITE_HEALTH_SPRITE: usize = 0x0e50;
@@ -230,3 +232,828 @@ pub(super) const ALT_SPRITE_HEIGHT_ABOVE_SHADOW_SPRITE: usize = 0x1fa9c;
 pub(super) const ALT_SPRITE_DELAY_MAIN_SPRITE: usize = 0x1faac;
 pub(super) const ALT_SPRITE_I_SPRITE: usize = 0x1facc;
 pub(super) const ALT_SPRITE_IGNORE_PROJECTILE_SPRITE: usize = 0x1fadc;
+
+// ---------------------------------------------------------------------------
+// Promoted sprite method-local tables. Names retain the owning helper so
+// generic C table names stay readable at callsites.
+// ---------------------------------------------------------------------------
+
+pub(super) const PREPARE_APPLY_RUMBLE_TO_SPRITES_APPLY_RUMBLE_X: [i8; 4] = [-32, -32, -32, 16];
+
+pub(super) const PREPARE_APPLY_RUMBLE_TO_SPRITES_APPLY_RUMBLE_Y: [i8; 4] = [-32, 32, -24, -24];
+
+pub(super) const PREPARE_APPLY_RUMBLE_TO_SPRITES_APPLY_RUMBLE_WH: [u8; 6] =
+    [0x50, 0x50, 0x20, 0x20, 0x50, 0x50];
+
+pub(super) const OAM_RESET_REGION_BASES_OAM_RESET_REGION_BASES: [u16; 6] =
+    [0x0030, 0x01d0, 0x0000, 0x0030, 0x0120, 0x0140];
+
+pub(super) const SPRITE_SPAWN_THROWABLE_TERRAIN_SILENTLY_THROWABLE_SCENERY_OAM_FLAGS: [u8; 9] =
+    [0x0c, 0x0c, 0x0c, 0, 0, 0, 0xb0, 0x08, 0xb4];
+
+pub(super) const OVERWORLD_SUBSTITUTE_ALTERNATE_SECRET_SECRET_SUBSTITUTION_ITEMS: [u8; 64] = [
+    0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 6, 4, 4, 6, 0, 0, 15, 15, 4, 5, 5, 4, 6,
+    6, 15, 15, 4, 5, 5, 7, 6, 6, 31, 31, 4, 7, 7, 4, 6, 6, 6, 7, 2, 0, 0, 0, 0, 0, 6, 6, 2, 0, 0,
+    0, 0, 0,
+];
+
+pub(super) const OVERWORLD_SUBSTITUTE_ALTERNATE_SECRET_SECRET_SUBSTITUTION_HORIZONTAL_OFFSETS:
+    [u8; 16] = [1, 1, 1, 1, 15, 1, 1, 18, 16, 1, 1, 1, 17, 1, 1, 3];
+
+pub(super) const OVERWORLD_SUBSTITUTE_ALTERNATE_SECRET_SECRET_SUBSTITUTION_VERTICAL_OFFSETS: [u8;
+    16] = [0, 0, 0, 0, 2, 0, 0, 8, 16, 0, 0, 0, 1, 0, 0, 0];
+
+pub(super) const SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_XLO: [i8; 32] = [
+    2, 3, 0, -3, -6, 0, 2, -8, 0, -4, -8, 0, -8, -16, 2, 2, 2, 2, 2, -8, 2, 2, -16, -8, -12, 4, -4,
+    -12, 5, -32, -2, 4,
+];
+
+pub(super) const SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_XHI: [i8; 32] = [
+    0, 0, 0, -1, -1, 0, 0, -1, 0, -1, -1, 0, -1, -1, 0, 0, 0, 0, 0, -1, 0, 0, -1, -1, -1, 0, -1,
+    -1, 0, -1, -1, 0,
+];
+
+pub(super) const SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_XSIZE: [u8; 32] = [
+    12, 1, 16, 20, 20, 8, 4, 32, 48, 24, 32, 32, 32, 48, 12, 12, 60, 124, 12, 32, 4, 12, 48, 32,
+    40, 8, 24, 24, 5, 80, 4, 8,
+];
+
+pub(super) const SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_YLO: [i8; 32] = [
+    0, 3, 4, -4, -8, 2, 0, -16, 12, -4, -8, 0, -10, -16, 2, 2, 2, 2, -3, -12, 2, 10, 0, -12, 16, 4,
+    -4, -12, 3, -16, -8, 10,
+];
+
+pub(super) const SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_YHI: [i8; 32] = [
+    0, 0, 0, -1, -1, 0, 0, -1, 0, -1, -1, 0, -1, -1, 0, 0, 0, 0, -1, -1, 0, 0, 0, -1, 0, 0, -1, -1,
+    0, -1, -1, 0,
+];
+
+pub(super) const SPRITE_SETUP_HIT_BOX_SPRITE_HITBOX_YSIZE: [u8; 32] = [
+    14, 1, 16, 21, 24, 4, 8, 40, 20, 24, 40, 29, 36, 48, 60, 124, 12, 12, 17, 28, 4, 2, 28, 20, 10,
+    4, 24, 16, 5, 48, 8, 12,
+];
+
+pub(super) const PLAYER_ACTION_HIT_BOX_FROM_TABLE_X_OFFSETS: [i8; 65] = [
+    0, 2, 0, 0, -8, 0, 2, 0, 2, 2, 1, 1, 0, 0, 0, 0, 0, 2, 4, 4, 0, 0, -4, -4, -6, 2, 1, 1, 0, 0,
+    0, 0, 0, 0, 0, 0, 2, 2, 4, 4, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, -4, -4, -10, 0, 2, 2, 0, 0,
+    0, 0, 0, 0, 0,
+];
+
+pub(super) const PLAYER_ACTION_HIT_BOX_FROM_TABLE_WIDTHS: [u8; 65] = [
+    15, 4, 8, 8, 8, 8, 12, 8, 4, 4, 6, 6, 0, 0, 0, 0, 0, 4, 16, 12, 8, 8, 12, 11, 12, 4, 6, 6, 0,
+    0, 0, 0, 0, 8, 8, 8, 10, 14, 15, 4, 4, 4, 6, 6, 0, 0, 0, 0, 0, 8, 8, 8, 10, 14, 15, 4, 4, 4, 6,
+    6, 0, 0, 0, 0, 0,
+];
+
+pub(super) const PLAYER_ACTION_HIT_BOX_FROM_TABLE_Y_OFFSETS: [i8; 65] = [
+    0, 2, 0, 2, 4, 4, 4, 7, 2, 2, 1, 1, 0, 0, 0, 0, 0, 2, 0, 2, -4, -3, -8, 0, 0, 2, 1, 1, 0, 0, 0,
+    0, 0, 0, 0, 0, -2, 0, -4, 1, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, -2, 0, -4, 1, 2, 2, 1, 1, 0,
+    0, 0, 0, 0,
+];
+
+pub(super) const PLAYER_ACTION_HIT_BOX_FROM_TABLE_HEIGHTS: [u8; 65] = [
+    15, 4, 8, 2, 12, 8, 12, 8, 4, 4, 6, 6, 0, 0, 0, 0, 0, 4, 8, 4, 12, 12, 12, 4, 8, 4, 6, 4, 0, 0,
+    0, 0, 0, 8, 8, 8, 8, 8, 12, 4, 4, 4, 6, 6, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 12, 4, 4, 4, 6, 6, 0,
+    0, 0, 0, 0,
+];
+
+pub(super) const PLAYER_SETUP_ACTION_HIT_BOX_RUN_Y_HI: [u8; 4] = [0xff, 0, 0, 0];
+
+pub(super) const PLAYER_SETUP_ACTION_HIT_BOX_RUN_Y_LO: [u8; 4] = [0xf8, 16, 8, 8];
+
+pub(super) const PLAYER_SETUP_ACTION_HIT_BOX_RUN_X_HI: [u8; 4] = [0, 0, 0xff, 0];
+
+pub(super) const PLAYER_SETUP_ACTION_HIT_BOX_RUN_X_LO: [u8; 4] = [0, 0, 0xf8, 8];
+
+pub(super) const PLAYER_SETUP_ACTION_HIT_BOX_SWORD_ACTION_INACTIVE_FRAMES: [u8; 13] =
+    [1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1];
+
+pub(super) const LINK_UPDATE_HIT_BOX_WITH_SWORD_SWORD_ACTION_INACTIVE_FRAMES: [u8; 13] =
+    [1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1];
+
+pub(super) const SPRITE_TIMERS_AND_OAM_SPRITE_PRIOS: [u8; 4] = [0x20, 0x10, 0x30, 0x30];
+
+pub(super) const OAM_GET_BUFFER_POSITION_LIMITS: [u16; 6] =
+    [0x0171, 0x0201, 0x0031, 0x00c1, 0x0141, 0x01d1];
+
+pub(super) const OAM_GET_BUFFER_POSITION_FALLBACKS: [u16; 48] = [
+    0x0030, 0x0050, 0x0080, 0x00b0, 0x00e0, 0x0110, 0x0140, 0x0170, 0x01d0, 0x01d4, 0x01dc, 0x01e0,
+    0x01e4, 0x01ec, 0x01f0, 0x01f8, 0x0000, 0x0004, 0x0008, 0x000c, 0x0010, 0x0014, 0x0018, 0x001c,
+    0x0030, 0x0038, 0x0050, 0x0068, 0x0080, 0x0098, 0x00b0, 0x00c8, 0x0120, 0x0124, 0x0128, 0x012c,
+    0x0130, 0x0134, 0x0138, 0x013c, 0x0140, 0x0150, 0x0160, 0x0170, 0x0180, 0x0190, 0x01a0, 0x01b8,
+];
+
+pub(super) const GARNISH_SPARKLE_COMMON_GARNISH_SPARKLE_CHAR: [u8; 4] = [0x83, 0xc7, 0x80, 0xb7];
+
+pub(super) const GARNISH_DUST_COMMON_RUNNING_MAN_DUST_CHAR: [u8; 3] = [0xdf, 0xcf, 0xa9];
+
+pub(super) const GARNISH04_LASER_TRAIL_LASER_BEAM_TRAIL_CHAR: [u8; 2] = [0xd2, 0xf3];
+
+pub(super) const GARNISH15_ARRGHUS_SPLASH_ARRGHUS_SPLASH_X: [i8; 8] =
+    [-12, 20, -10, 10, -8, 8, -4, 4];
+
+pub(super) const GARNISH15_ARRGHUS_SPLASH_ARRGHUS_SPLASH_Y: [i8; 8] = [-4, -4, -2, -2, 0, 0, 0, 0];
+
+pub(super) const GARNISH15_ARRGHUS_SPLASH_ARRGHUS_SPLASH_CHAR: [u8; 8] =
+    [0xae, 0xae, 0xae, 0xae, 0xae, 0xae, 0xac, 0xac];
+
+pub(super) const GARNISH15_ARRGHUS_SPLASH_ARRGHUS_SPLASH_FLAGS: [u8; 8] =
+    [0x34, 0x74, 0x34, 0x74, 0x34, 0x74, 0x34, 0x74];
+
+pub(super) const GARNISH15_ARRGHUS_SPLASH_ARRGHUS_SPLASH_EXT: [u8; 8] = [0, 0, 2, 2, 2, 2, 2, 2];
+
+pub(super) const GARNISH10_GANON_BAT_FLAME_GANON_BAT_FLAME_IDX: [u8; 32] = [
+    7, 6, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4,
+];
+
+pub(super) const GARNISH10_GANON_BAT_FLAME_GANON_BAT_FLAME_CHAR: [u8; 7] =
+    [0xac, 0xac, 0x66, 0x66, 0x8e, 0xa0, 0xa2];
+
+pub(super) const GARNISH10_GANON_BAT_FLAME_GANON_BAT_FLAME_FLAGS: [u8; 7] =
+    [1, 0x41, 1, 0x41, 0, 0, 0];
+
+pub(super) const GARNISH0_A_CANNON_SMOKE_GARNISH_CANNON_POOF_CHAR: [u8; 2] = [0x8a, 0x86];
+
+pub(super) const GARNISH0_A_CANNON_SMOKE_GARNISH_CANNON_POOF_FLAGS: [u8; 4] =
+    [0x20, 0x10, 0x30, 0x30];
+
+pub(super) const GARNISH0_C_TRINEXX_ICE_BREATH_TRINEXX_ICE_CHAR: [u8; 12] = [
+    0xe8, 0xe8, 0xe6, 0xe6, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4,
+];
+
+pub(super) const GARNISH0_C_TRINEXX_ICE_BREATH_TRINEXX_ICE_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
+
+pub(super) const GARNISH09_LIGHTNING_TRAIL_LIGHTNING_TRAIL_CHAR: [u8; 8] =
+    [0xcc, 0xec, 0xce, 0xee, 0xcc, 0xec, 0xce, 0xee];
+
+pub(super) const GARNISH09_LIGHTNING_TRAIL_LIGHTNING_TRAIL_FLAGS: [u8; 8] =
+    [0x31, 0x31, 0x31, 0x31, 0x71, 0x71, 0x71, 0x71];
+
+pub(super) const GARNISH03_FALLING_TILE_CRUMBLE_TILE_XY: [u8; 5] = [4, 0, 0, 0, 0];
+
+pub(super) const GARNISH03_FALLING_TILE_CRUMBLE_TILE_CHAR: [u8; 5] = [0x80, 0xcc, 0xcc, 0xea, 0xca];
+
+pub(super) const GARNISH03_FALLING_TILE_CRUMBLE_TILE_FLAGS: [u8; 5] =
+    [0x30, 0x31, 0x31, 0x31, 0x31];
+
+pub(super) const GARNISH03_FALLING_TILE_CRUMBLE_TILE_EXT: [u8; 5] = [0, 2, 2, 2, 2];
+
+pub(super) const GARNISH07_BABASU_FLASH_BABUSU_FLASH_CHAR: [u8; 4] = [0xa8, 0x8a, 0x86, 0x86];
+
+pub(super) const GARNISH07_BABASU_FLASH_BABUSU_FLASH_FLAGS: [u8; 4] = [0x2d, 0x2c, 0x2c, 0x2c];
+
+pub(super) const GARNISH08_KHOLDSTARE_TRAIL_GARNISH_NEBULE_XY: [i8; 3] = [-1, -1, 0];
+
+pub(super) const GARNISH08_KHOLDSTARE_TRAIL_GARNISH_NEBULE_CHAR: [u8; 3] = [0x9c, 0x9d, 0x8d];
+
+pub(super) const GARNISH0_E_TRINEXX_FIRE_BREATH_TRINEXX_LAVA_BUBBLE_CHAR: [u8; 4] =
+    [0x83, 0xc7, 0x80, 0x9d];
+
+pub(super) const GARNISH0_F_BLIND_LASER_TRAIL_BLIND_LASER_TRAIL_CHAR: [u8; 4] =
+    [0x61, 0x71, 0x70, 0x60];
+
+pub(super) const GARNISH_EXECUTE_SINGLE_GARNISH_OAM_MEM_SIZE: [u8; 23] = [
+    0, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4, 8, 16,
+];
+
+pub(super) const SPRITE_DRAW_ABSORBABLE_TRANSIENT_ABSORBABLE_OAM_EXT_SIZE_BY_TYPE: [u8; 15] =
+    [0, 1, 1, 1, 2, 2, 2, 0, 1, 1, 2, 2, 1, 2, 2];
+
+pub(super) const SPRITE_DRAW_ABSORBABLE_TRANSIENT_ABSORBABLE_GFX_BY_TYPE: [u8; 19] =
+    [0, 0, 0, 0, 1, 2, 3, 0, 0, 4, 5, 0, 0, 0, 0, 2, 4, 6, 2];
+
+pub(super) const SPRITE_DRAW_NUMBERED_ABSORBABLE_X_OFFSETS: [i16; 18] =
+    [0, 0, 8, 0, 0, 8, 0, 0, 8, 0, 0, 2, 0, 0, 2, 0, 0, 0];
+
+pub(super) const SPRITE_DRAW_NUMBERED_ABSORBABLE_Y_OFFSETS: [i16; 18] =
+    [0, 0, 8, 0, 0, 8, 0, 0, 8, 0, 8, 8, 0, 8, 8, 0, 8, 8];
+
+pub(super) const SPRITE_DRAW_NUMBERED_ABSORBABLE_CHARS: [u8; 18] = [
+    0x6e, 0x6e, 0x68, 0x6e, 0x6e, 0x78, 0x6e, 0x6e, 0x79, 0x63, 0x73, 0x69, 0x63, 0x73, 0x6a, 0x63,
+    0x73, 0x73,
+];
+
+pub(super) const SPRITE_DRAW_NUMBERED_ABSORBABLE_EXT_SIZES: [u8; 18] =
+    [2, 2, 0, 2, 2, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+pub(super) const THROWABLE_SCENERY_TRANSMUTE_TO_DEBRIS_THROWN_SPRITE_IMPACT_SFX: [u8; 9] =
+    [0x1f, 0x1f, 0x1e, 0x1e, 0x1e, 0x1f, 0x1f, 0x1f, 0x1f];
+
+pub(super) const SPRITE_CALCULATE_SWORD_DAMAGE_SPRITE_DAMAGE_BY_PLAYER_WEAPON: [u8; 12] =
+    [1, 2, 3, 4, 2, 3, 4, 5, 1, 1, 2, 3];
+
+pub(super) const SPRITE_APPLY_CALCULATED_DAMAGE_ENEMY_CONTACT_DAMAGE_BY_TYPE: [u8; 128] = [
+    0, 1, 32, 255, 252, 251, 0, 0, 0, 2, 64, 4, 0, 0, 0, 0, 0, 4, 64, 2, 3, 0, 0, 0, 0, 8, 64, 4,
+    0, 0, 0, 0, 0, 16, 64, 8, 0, 0, 0, 0, 0, 16, 64, 8, 0, 0, 0, 0, 0, 4, 64, 16, 0, 0, 0, 0, 0,
+    255, 64, 255, 252, 251, 0, 0, 0, 4, 64, 255, 252, 251, 32, 0, 0, 100, 24, 100, 0, 0, 0, 0, 0,
+    249, 250, 255, 100, 0, 0, 0, 0, 8, 64, 253, 4, 16, 0, 0, 0, 8, 64, 254, 4, 0, 0, 0, 0, 16, 64,
+    253, 0, 0, 0, 0, 0, 254, 64, 16, 0, 0, 0, 0, 0, 32, 64, 255, 0, 0, 0, 250,
+];
+
+pub(super) const SPRITE_DO_THE_DEATH_PIKIT_DROP_ITEMS: [u8; 4] = [0xdc, 0xe1, 0xd9, 0xe6];
+
+pub(super) const SPRITE_DO_THE_DEATH_PRIZE_MASKS: [u8; 7] = [1, 1, 1, 0, 1, 1, 1];
+
+pub(super) const FORCE_PRIZE_DROP_PRIZE_ITEMS: [u8; 56] = [
+    0xd8, 0xd8, 0xd8, 0xd8, 0xd9, 0xd8, 0xd8, 0xd9, 0xda, 0xd9, 0xda, 0xdb, 0xda, 0xd9, 0xda, 0xda,
+    0xe0, 0xdf, 0xdf, 0xda, 0xe0, 0xdf, 0xd8, 0xdf, 0xdc, 0xdc, 0xdc, 0xdd, 0xdc, 0xdc, 0xde, 0xdc,
+    0xe1, 0xd8, 0xe1, 0xe2, 0xe1, 0xd8, 0xe1, 0xe2, 0xdf, 0xd9, 0xd8, 0xe1, 0xdf, 0xdc, 0xd9, 0xd8,
+    0xd8, 0xe3, 0xe0, 0xdb, 0xde, 0xd8, 0xdb, 0xe2,
+];
+
+pub(super) const PREPARE_ENEMY_DROP_PRIZE_Z: [u8; 15] = [
+    0, 0x24, 0x24, 0x24, 0x20, 0x20, 0x20, 0x24, 0x24, 0x24, 0x24, 0, 0x24, 0x20, 0x20,
+];
+
+pub(super) const SPRITE_DEATH_DRAW_POOF_X_OFFSETS: [i8; 32] = [
+    0, 0, 0, 8, 0, 8, 0, 8, 8, 8, 0, 8, 0, 8, 0, 8, 0, 8, 0, 8, 0, 8, 0, 8, -3, 11, -3, 11, -6, 14,
+    -6, 14,
+];
+
+pub(super) const SPRITE_DEATH_DRAW_POOF_Y_OFFSETS: [i8; 32] = [
+    0, 0, 8, 8, 0, 0, 8, 8, 0, 0, 8, 8, 0, 0, 8, 8, 0, 0, 8, 8, 0, 0, 8, 8, -3, -3, 11, 11, -6, -6,
+    14, 14,
+];
+
+pub(super) const SPRITE_DEATH_DRAW_POOF_CHARS: [u8; 32] = [
+    0, 0xb9, 0, 0, 0xb4, 0xb5, 0xb5, 0xb4, 0xb9, 0, 0, 0, 0xb5, 0xb4, 0xb4, 0xb5, 0xa8, 0xa8, 0xb8,
+    0xb8, 0xa8, 0xa8, 0xb8, 0xb8, 0xa9, 0xa9, 0xa9, 0xa9, 0x9b, 0x9b, 0x9b, 0x9b,
+];
+
+pub(super) const SPRITE_DEATH_DRAW_POOF_FLAGS: [u8; 32] = [
+    4, 4, 4, 4, 4, 4, 0xc4, 0xc4, 0x44, 4, 4, 4, 0x44, 0x44, 0x84, 0x84, 4, 0x44, 4, 0x44, 4, 0x44,
+    4, 0x44, 0x44, 4, 0xc4, 0x84, 4, 0x44, 0x84, 0xc4,
+];
+
+pub(super) const SPRITE_MODULE_BURN_FLAME_GFX: [u8; 32] = [
+    5, 4, 3, 1, 2, 0, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0,
+];
+
+pub(super) const SPRITE_MODULE_POOF_X_OFFSETS: [i8; 16] =
+    [-6, 10, 1, 13, -6, 10, 1, 13, -7, 4, -5, 6, -1, 1, -2, 0];
+
+pub(super) const SPRITE_MODULE_POOF_Y_OFFSETS: [i8; 16] =
+    [-6, -4, 10, 9, -6, -4, 10, 9, -8, -10, 4, 3, -1, -2, 0, 1];
+
+pub(super) const SPRITE_MODULE_POOF_CHARS: [u8; 16] = [
+    0x9b, 0x9b, 0x9b, 0x9b, 0xb3, 0xb3, 0xb3, 0xb3, 0x8a, 0x8a, 0x8a, 0x8a, 0x8a, 0x8a, 0x8a, 0x8a,
+];
+
+pub(super) const SPRITE_MODULE_POOF_FLAGS: [u8; 16] = [
+    0x24, 0xa4, 0x24, 0xa4, 0xe4, 0x64, 0xa4, 0x24, 0x24, 0xe4, 0xe4, 0xe4, 0x24, 0xe4, 0xe4, 0xe4,
+];
+
+pub(super) const SPRITE_MODULE_POOF_EXT_SIZES: [u8; 16] =
+    [0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2];
+
+pub(super) const SPRITE_MODULE_DROWN_DROWN_DRAW_FRAMES: [DrawMultipleData; 8] = [
+    DrawMultipleData {
+        x: -7,
+        y: -7,
+        char_flags: 0x0480,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 14,
+        y: -6,
+        char_flags: 0x0483,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -6,
+        y: -6,
+        char_flags: 0x04cf,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 13,
+        y: -5,
+        char_flags: 0x04df,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: -4,
+        char_flags: 0x04ae,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 12,
+        y: -4,
+        char_flags: 0x44af,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x04e7,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x04e7,
+        ext: 2,
+    },
+];
+
+pub(super) const SPRITE_MODULE_DROWN_OAM_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
+
+pub(super) const SPRITE_MODULE_DROWN_OAM_CHARS: [u8; 11] = [
+    0xc0, 0xc0, 0xc0, 0xc0, 0xcd, 0xcd, 0xcd, 0xcb, 0xcb, 0xcb, 0xcb,
+];
+
+pub(super) const SPRITE_MODULE_EXPLODE_SPRITE_EXPLODE_DRAW_FRAMES: [DrawMultipleData; 32] = [
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x0060,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x0060,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x0060,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x0060,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -5,
+        y: -5,
+        char_flags: 0x0062,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 5,
+        y: -5,
+        char_flags: 0x4062,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -5,
+        y: 5,
+        char_flags: 0x8062,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 5,
+        y: 5,
+        char_flags: 0xc062,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0x0062,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x4062,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0x8062,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0xc062,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0x0064,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x4064,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0x8064,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0xc064,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0x0066,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x4066,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0x8066,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0xc066,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0x0068,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x0068,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0x0068,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0x0068,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0x006a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x406a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0x806a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0xc06a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0x004e,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x404e,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0x804e,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0xc04e,
+        ext: 2,
+    },
+];
+
+pub(super) const SPRITE_MODULE_FALL2_FALLING_HUMANOID_GFX_BY_DELAY: [u8; 32] = [
+    13, 13, 13, 13, 13, 13, 13, 12, 12, 12, 12, 12, 3, 3, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0,
+    0, 0, 0, 0,
+];
+
+pub(super) const SPRITE_MODULE_FALL2_FALLING_HELMA_BEETLE_GFX_BY_DELAY: [u8; 32] = [
+    5, 5, 5, 5, 5, 5, 5, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+];
+
+pub(super) const SPRITE_MODULE_FALL2_FALLING_TILE_CHECK_FRAME_MASKS: [u8; 16] = [
+    0xff, 0x3f, 0x1f, 0x0f, 0x0f, 7, 3, 1, 0xff, 0x3f, 0x1f, 0x0f, 7, 3, 1, 0,
+];
+
+pub(super) const SPRITE_MODULE_FALL2_FALLING_DIRECTION_GFX_OFFSETS: [u8; 4] = [0, 4, 8, 0];
+
+pub(super) const SPRITE_MODULE_CARRIED_SPRITE_HELD_Z_FOR_FRAME: [u8; 6] = [3, 2, 1, 3, 2, 1];
+
+pub(super) const SPRITE_MODULE_CARRIED_SPRITE_HELD_X: [i8; 16] =
+    [0, 0, 0, 0, 0, 0, 0, 0, -13, -10, -5, 0, 13, 10, 5, 0];
+
+pub(super) const SPRITE_MODULE_CARRIED_SPRITE_HELD_Z: [u8; 16] =
+    [13, 14, 15, 16, 0, 10, 22, 16, 8, 11, 14, 16, 8, 11, 14, 16];
+
+pub(super) const CARRIED_SPRITE_CHECK_FOR_THROW_SPRITE_HELD_THROW_XVEL: [u8; 4] =
+    [0, 0, (-62i8) as u8, 63];
+
+pub(super) const CARRIED_SPRITE_CHECK_FOR_THROW_SPRITE_HELD_THROW_YVEL: [u8; 4] =
+    [(-62i8) as u8, 63, 0, 0];
+
+pub(super) const CARRIED_SPRITE_CHECK_FOR_THROW_SPRITE_HELD_THROW_ZVEL: [u8; 4] = [4, 4, 4, 4];
+
+pub(super) const SPRITE_STUNNED_MAIN_FUNC1_SPRITE_STUNNED_MAIN_FUNC1_MASKS: [u8; 7] =
+    [0x7f, 0x0f, 3, 1, 0, 0, 0];
+
+pub(super) const SPRITE_STUNNED_MAIN_FUNC1_SPARKLE_GARNISH_XY: [i8; 4] = [-4, 12, 3, 8];
+
+pub(super) const SPRITE_HANDLE_ABSORPTION_BY_PLAYER_ABSORPTION_SFX: [u8; 15] = [
+    0x0b, 0x0a, 0x0a, 0x0a, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x2f, 0x2f, 0x0b,
+];
+
+pub(super) const SPRITE_HANDLE_ABSORPTION_BY_PLAYER_RUPEES_ABSORPTION: [u16; 3] = [1, 5, 20];
+
+pub(super) const SPRITE_HANDLE_ABSORPTION_BY_PLAYER_BOMBS_ABSORPTION: [u8; 3] = [1, 4, 8];
+
+pub(super) const SPRITE_HANDLE_ABSORPTION_BY_PLAYER_ABSORB_BIG_KEY: [u16; 2] = [0x4000, 0x2000];
+
+pub(super) const SPRITE_CHECK_DAMAGE_TO_LINK_IGNORE_LAYER_SHIELD_BLOCK_FACING_TO_DIRECTION: [u8;
+    4] = [6, 4, 0, 0];
+
+pub(super) const SPRITE_CHECK_DAMAGE_TO_LINK_IGNORE_LAYER_SPRITE_DAMAGE_FACING_BY_DIRECTION: [u8;
+    4] = [4, 6, 0, 2];
+
+pub(super) const GUARD_PARRY_SWORD_ATTACKS_GUARD_PARRY_HITBOX_SIZE_BY_DIRECTION: [u8; 8] =
+    [15, 15, 24, 15, 15, 19, 15, 15];
+
+pub(super) const GUARD_PARRY_SWORD_ATTACKS_GUARD_PARRY_SWORD_STEP_BY_DIRECTION: [u8; 8] =
+    [6, 6, 6, 12, 6, 6, 6, 15];
+
+pub(super) const SPRITE_ATTEMPT_DAMAGE_TO_LINK_PLUS_RECOIL_PLAYER_DAMAGES: [u8; 30] = [
+    2, 1, 1, 4, 4, 4, 0, 0, 0, 8, 4, 2, 8, 8, 8, 16, 8, 4, 32, 16, 8, 32, 24, 16, 24, 16, 8, 64,
+    48, 24,
+];
+
+pub(super) const SPRITE_CHECK_TILE_PROPERTY_FUNC5_X: [i8; 54] = [
+    8, 8, 2, 14, 8, 8, -2, 10, 8, 8, 1, 14, 4, 4, 4, 4, 4, 4, -2, 10, 8, 8, -25, 40, 8, 8, 2, 14,
+    8, 8, -8, 23, 8, 8, -20, 36, 8, 8, -1, 16, 8, 8, -1, 16, 8, 8, -8, 24, 8, 8, -8, 24, 8, 3,
+];
+
+pub(super) const SPRITE_CHECK_TILE_PROPERTY_FUNC5_Y: [i8; 54] = [
+    6, 20, 13, 13, 0, 8, 4, 4, 1, 14, 8, 8, 4, 4, 4, 4, -2, 10, 4, 4, -25, 40, 8, 8, 3, 16, 10, 10,
+    -8, 25, 8, 8, -20, 36, 8, 8, -1, 16, 8, 8, 14, 3, 8, 8, -8, 24, 8, 8, -8, 32, 8, 8, 12, 4,
+];
+
+pub(super) const SPRITE_CHECK_TILE_PROPERTY_SIMPLIFIED_TILE_ATTR: [u8; 256] = [
+    0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 3, 3, 3,
+    0, 0, 0, 0, 0, 0, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+];
+
+pub(super) const SPRITE_CHECK_TILE_PROPERTY_SPRITE_TILE_ATTR_SIMPLIFIED: [i8; 256] = [
+    0, 1, 2, 3, 2, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1,
+    1, 1, 1, 0, 0, 0, 1, 2, -1, -1, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1,
+    1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, -1, -1, -1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1,
+];
+
+pub(super) const SPRITE_CHECK_FOR_TILE_IN_DIRECTION_HORIZONTAL_SPRITE_TILE_DIRECTION_BITS: [u8; 4] =
+    [8, 4, 2, 1];
+
+pub(super) const SPRITE_CHECK_FOR_TILE_IN_DIRECTION_VERTICAL_SPRITE_TILE_DIRECTION_BITS: [u8; 4] =
+    [8, 4, 2, 1];
+
+pub(super) const ENTITY_CHECK_SLOPED_TILE_COLLISION_SLOPED_TILE: [u8; 32] = [
+    7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 7, 6, 5, 4, 3, 2, 1, 0,
+];
+
+pub(super) const SPRITE_SPAWN_SECRET_SECRET_SPAWN_ITEMS_BY_TILE: [u8; 22] = [
+    0xd9, 0x3e, 0x79, 0xd9, 0xdc, 0xd8, 0xda, 0xe4, 0xe1, 0xdc, 0xd8, 0xdf, 0xe0, 0x0b, 0x42, 0xd3,
+    0x41, 0xd4, 0xd9, 0xe3, 0xd8, 0,
+];
+
+pub(super) const SPRITE_SPAWN_SECRET_SECRET_ITEM_SPAWN_FLAGS: [u8; 22] = [
+    0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+pub(super) const SPRITE_SPAWN_SECRET_SECRET_ITEM_X_LOW_OFFSETS: [u8; 22] = [
+    4, 0, 4, 4, 0, 4, 4, 4, 4, 0, 4, 4, 4, 0, 0, 0, 0, 0, 4, 0, 4, 4,
+];
+
+pub(super) const SPRITE_SPAWN_SECRET_SECRET_ITEM_IGNORE_PROJECTILE_FLAGS: [u8; 22] = [
+    1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1,
+];
+
+pub(super) const SPRITE_SPAWN_SECRET_SECRET_ITEM_Z_VELOCITIES: [u8; 22] = [
+    16, 0, 0, 16, 0, 0, 16, 16, 16, 16, 0, 16, 10, 16, 0, 0, 0, 0, 16, 0, 0, 0,
+];
+
+pub(super) const SPRITE_RETURN_IF_RECOILING_SPRITE_RECOIL_DIRECTION_MASKS: [u8; 6] =
+    [3, 1, 0, 0, 0xc, 3];
+
+pub(super) const SPRITE_FALL_DRAW_SPRITE_FALL_CHAR: [u8; 8] =
+    [0x83, 0x83, 0x83, 0x80, 0x80, 0x80, 0xb7, 0xb7];
+
+pub(super) const SPRITE_DRAW_DISTRESS_CUSTOM_X_OFFSETS: [i8; 4] = [-3, 2, 7, 11];
+
+pub(super) const SPRITE_DRAW_DISTRESS_CUSTOM_Y_OFFSETS: [i8; 4] = [-5, -7, -7, -5];
+
+pub(super) const SPRITE_DRAW_FALLING_HELMA_BEETLE_FALL0: [DrawMultipleData; 12] = [
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x0146,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x0148,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x014a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 4,
+        char_flags: 0x014c,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 4,
+        char_flags: 0x00b7,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 4,
+        char_flags: 0x0080,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x016c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x016e,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x014e,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 4,
+        char_flags: 0x015c,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 4,
+        char_flags: 0x00b7,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 4,
+        char_flags: 0x0080,
+        ext: 0,
+    },
+];
+
+pub(super) const SPRITE_DRAW_FALLING_HUMANOID_X_OFFSETS: [i8; 56] = [
+    -4, 4, -4, 12, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, -4, 12, -4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0,
+    0, 0, -4, 12, -4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0,
+];
+
+pub(super) const SPRITE_DRAW_FALLING_HUMANOID_Y_OFFSETS: [i8; 56] = [
+    -4, -4, 4, 12, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, -4, -4, 12, 4, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0,
+    0, 0, -4, -4, 12, 4, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0,
+];
+
+pub(super) const SPRITE_DRAW_FALLING_HUMANOID_CHARS: [u8; 56] = [
+    0xae, 0xa8, 0xa6, 0xaf, 0xaa, 0, 0, 0, 0xac, 0, 0, 0, 0xbe, 0, 0, 0, 0xa8, 0xae, 0xaf, 0xa6,
+    0xaa, 0, 0, 0, 0xac, 0, 0, 0, 0xbe, 0, 0, 0, 0xa6, 0xaf, 0xae, 0xa8, 0xaa, 0, 0, 0, 0xac, 0, 0,
+    0, 0xbe, 0, 0, 0, 0xb6, 0, 0, 0, 0x80, 0, 0, 0,
+];
+
+pub(super) const SPRITE_DRAW_FALLING_HUMANOID_FLAGS: [u8; 56] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0, 0, 0, 0x40, 0,
+    0, 0, 0x40, 0, 0, 0, 0x80, 0x80, 0x80, 0x80, 0x80, 0, 0, 0, 0x80, 0, 0, 0, 0x80, 0, 0, 0, 1, 0,
+    0, 0, 1, 0, 0, 0,
+];
+
+pub(super) const SPRITE_DRAW_FALLING_HUMANOID_EXT_SIZES: [u8; 56] = [
+    0, 2, 2, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 2, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0,
+    2, 0, 0, 2, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+pub(super) const SCATTER_DEBRIS_DRAW_X_OFFSETS: [i8; 12] =
+    [-8, 8, 16, -5, 8, 15, -1, 7, 11, 1, 3, 8];
+
+pub(super) const SCATTER_DEBRIS_DRAW_Y_OFFSETS: [i8; 12] = [7, 2, 12, 9, 2, 10, 11, 2, 11, 7, 3, 8];
+
+pub(super) const SCATTER_DEBRIS_DRAW_CHARS: [u8; 12] = [
+    0xe2, 0xe2, 0xe2, 0xe2, 0xf2, 0xf2, 0xf2, 0xe2, 0xe2, 0xf2, 0xe2, 0xe2,
+];
+
+pub(super) const SCATTER_DEBRIS_DRAW_FLAGS: [u8; 12] =
+    [0, 0, 0, 0, 0x80, 0x40, 0, 0x80, 0x40, 0, 0, 0];
+
+pub(super) const GARNISH16_THROWN_ITEM_DEBRIS_X_OFFSETS: [i16; 64] = [
+    0, 8, 0, 8, -2, 9, -1, 9, -4, 9, -1, 10, -6, 9, -1, 12, -7, 9, -2, 13, -9, 9, -3, 14, -4, -4,
+    9, 15, -3, -3, -3, 9, -4, 4, 6, 10, -1, 4, 6, 7, 0, 2, 4, 7, 1, 1, 5, 7, 0, -2, 8, 9, -1, -6,
+    9, 10, -2, -7, 12, 11, -3, -9, 4, 6,
+];
+
+pub(super) const GARNISH16_THROWN_ITEM_DEBRIS_Y_OFFSETS: [i8; 64] = [
+    0, 0, 8, 8, 0, -1, 10, 10, 0, -3, 11, 7, 1, -4, 12, 8, 1, -4, 13, 9, 2, -4, 16, 10, 14, 14, -4,
+    11, 16, 16, 16, -1, 2, -5, 5, 1, 3, -7, 8, 2, 4, -8, 4, 10, -9, 4, 4, 12, -10, 4, 8, 14, -12,
+    4, 8, 15, -15, 3, 8, 17, -17, 1, 18, 15,
+];
+
+pub(super) const GARNISH16_THROWN_ITEM_DEBRIS_CHARS: [u8; 64] = [
+    0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58,
+    0x48, 0x58, 0x58, 0x58, 0x48, 0x58, 0x58, 0x48, 0x48, 0x48, 0x58, 0x48, 0x48, 0x48, 0x48, 0x48,
+    0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59,
+    0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59, 0x59,
+];
+
+pub(super) const GARNISH16_THROWN_ITEM_DEBRIS_FLAGS: [u8; 64] = [
+    0x80, 0, 0x80, 0x40, 0x80, 0x40, 0x80, 0, 0, 0xc0, 0, 0x80, 0x80, 0x40, 0x80, 0, 0x80, 0xc0, 0,
+    0x80, 0, 0, 0x80, 0, 0x80, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0, 0x40, 0x40, 0x40,
+    0, 0x40, 0x40, 0, 0, 0x80, 0, 0x40, 0x40, 0x40, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40,
+    0x40, 0, 0, 0x40, 0, 0, 0,
+];
+
+pub(super) const SPRITE_RETURN_IF_LIFTED_PERMISSIVE_LIFTED_SPRITE_PLAYER_FACING_BY_DIRECTION: [u8;
+    4] = [4, 6, 0, 2];
+
+pub(super) const SPRITE_SHOW_SOLICITED_MESSAGE_MESSAGE_FACING_BY_DIRECTION: [u8; 4] = [4, 6, 0, 2];
+
+pub(super) const SPRITE_SHOW_MESSAGE_UNCONDITIONAL_PLAYER_HANDLER_STATE_RECOIL_WALL_LOCAL: u8 = 13;
+
+pub(super) const SPRITE_SHOW_MESSAGE_UNCONDITIONAL_PLAYER_HANDLER_STATE_GROUND_LOCAL: u8 = 0;
+
+pub(super) const SPRITE_APPLY_CONVEYOR_CONVEYOR_TILE_X_ADJUSTMENTS: [i8; 4] = [0, 0, -1, 1];
+
+pub(super) const SPRITE_APPLY_CONVEYOR_CONVEYOR_TILE_Y_ADJUSTMENTS: [i8; 4] = [-1, 1, 0, 0];
+
+pub(super) const SPRITE_CONVERT_VELOCITY_TO_ANGLE_VELOCITY_TO_ANGLE_X_DOMINANT: [u8; 32] = [
+    0, 0, 1, 1, 1, 2, 2, 2, 0, 0, 15, 15, 15, 14, 14, 14, 8, 8, 7, 7, 7, 6, 6, 6, 8, 8, 9, 9, 9,
+    10, 10, 10,
+];
+
+pub(super) const SPRITE_CONVERT_VELOCITY_TO_ANGLE_VELOCITY_TO_ANGLE_Y_DOMINANT: [u8; 32] = [
+    4, 4, 3, 3, 3, 2, 2, 2, 12, 12, 13, 13, 13, 14, 14, 14, 4, 4, 5, 5, 5, 6, 6, 6, 12, 12, 11, 11,
+    11, 10, 10, 10,
+];
