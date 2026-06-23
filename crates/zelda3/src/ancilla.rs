@@ -11,6 +11,17 @@ use crate::zelda_rtl::sprite::SpriteSpawnInfo;
 mod ancilla_shared;
 use ancilla_shared::*;
 
+const BOOMERANG_TAGALONG_LAYER_PRIORITY_BITS: [u8; 4] = [0x20, 0x10, 0x30, 0x20];
+const CANE_OF_SOMARIA_PLACEMENT_Y_OFFSETS: [i8; 4] = [-8, 31, 17, 17];
+const CANE_OF_SOMARIA_PLACEMENT_X_OFFSETS: [i8; 4] = [8, 8, -8, 23];
+const FIRE_SHOT_DRAW_CHARS: [u8; 3] = [0xa2, 0xa0, 0x8e];
+const SPIN_SPARK_TRAIL_CHARS: [u8; 3] = [0xb7, 0x80, 0x83];
+const ANCILLA_LIFTABLE_THROW_Y_VELOCITIES: [i8; 4] = [-32, 32, 0, 0];
+const ANCILLA_LIFTABLE_THROW_X_VELOCITIES: [i8; 4] = [0, 0, -32, 32];
+const ANCILLA_SPRITE_COLLISION_DEFLECTED_DIRECTIONS: [u8; 4] = [2, 3, 0, 1];
+const ANCILLA_SPRITE_COLLISION_RECOIL_X: [u8; 4] = [0, 0, 0xc0, 0x40];
+const ANCILLA_SPRITE_COLLISION_RECOIL_Y: [u8; 4] = [0xc0, 0x40, 0, 0];
+
 impl ZeldaState {
     fn replay_ancilla_trace_enabled(&self) -> bool {
         if std::env::var_os("ZELDA3_REPLAY_ANCILLA_TRACE").is_none() {
@@ -1630,8 +1641,7 @@ impl ZeldaState {
         if self.ancilla_slot_view(k).item_to_link() != 0 {
             let floor = self.game_state.player.follower_link.lower_level_state();
             self.ancilla_slot_view_mut(k).set_floor(floor);
-            const TAGALONG_LAYER_BITS: [u8; 4] = [0x20, 0x10, 0x30, 0x20];
-            let priority = (TAGALONG_LAYER_BITS
+            let priority = (BOOMERANG_TAGALONG_LAYER_PRIORITY_BITS
                 [self.game_state.player.follower_link.lower_level_state() as usize]
                 as u16)
                 << 8;
@@ -3714,8 +3724,6 @@ impl ZeldaState {
                 self.game_state.player.follower_link.y().wrapping_add(16),
             );
         } else {
-            const CANE_OF_SOMARIA_Y: [i8; 4] = [-8, 31, 17, 17];
-            const CANE_OF_SOMARIA_X: [i8; 4] = [8, 8, -8, 23];
             let j = self.game_state.player.follower_link.facing_index();
             self.ancilla_set_xy(
                 k,
@@ -3723,12 +3731,12 @@ impl ZeldaState {
                     .player
                     .follower_link
                     .x()
-                    .wrapping_add(CANE_OF_SOMARIA_X[j] as i16 as u16),
+                    .wrapping_add(CANE_OF_SOMARIA_PLACEMENT_X_OFFSETS[j] as i16 as u16),
                 self.game_state
                     .player
                     .follower_link
                     .y()
-                    .wrapping_add(CANE_OF_SOMARIA_Y[j] as i16 as u16),
+                    .wrapping_add(CANE_OF_SOMARIA_PLACEMENT_Y_OFFSETS[j] as i16 as u16),
             );
             self.somaria_block_check_for_transit_tile(k);
         }
@@ -3917,12 +3925,11 @@ impl ZeldaState {
             }
             let j = self.ancilla_slot_view(k).timer() >> 3;
             if j != 0 {
-                const FIRE_SHOT_DRAW_CHAR: [u8; 3] = [0xa2, 0xa0, 0x8e];
                 self.ancilla_set_oam_plain(
                     oam,
                     info.x as u16,
                     info.y as u16,
-                    FIRE_SHOT_DRAW_CHAR[j as usize - 1],
+                    FIRE_SHOT_DRAW_CHARS[j as usize - 1],
                     info.flags | 2,
                     2,
                 );
@@ -5083,7 +5090,6 @@ impl ZeldaState {
 
         let t = self.ancilla_slot_view(k).work_byte_1();
         if t != 3 {
-            const SPIN_SPARK_CHAR2: [u8; 3] = [0xb7, 0x80, 0x83];
             let pt = self.sparkle_prep_oam_from_radial(self.ancilla_get_radial_projection(
                 self.game_state.effects.angle_scratch.trailing_angle(),
                 self.game_state.effects.angle_scratch.radial_radius(),
@@ -5092,7 +5098,7 @@ impl ZeldaState {
                 oam,
                 pt.x,
                 pt.y,
-                SPIN_SPARK_CHAR2[t as usize],
+                SPIN_SPARK_TRAIL_CHARS[t as usize],
                 4 | self.game_state.oam.priority_high(),
                 0,
             );
@@ -8283,16 +8289,14 @@ impl ZeldaState {
                         }
                         self.follower_link_state_mut().clear_state_bits();
                     }
-                    const ANCILLA_LIFTABLE_YVEL: [i8; 4] = [-32, 32, 0, 0];
-                    const ANCILLA_LIFTABLE_XVEL: [i8; 4] = [0, 0, -32, 32];
                     let j = self.game_state.player.follower_link.facing_index();
                     let value = j as u8;
                     self.ancilla_slot_view_mut(k).set_direction(value);
                     {
                         let mut liftable = self.ancilla_slot_view_mut(k);
                         liftable.set_z_velocity(24);
-                        liftable.set_y_velocity(ANCILLA_LIFTABLE_YVEL[j] as u8);
-                        liftable.set_x_velocity(ANCILLA_LIFTABLE_XVEL[j] as u8);
+                        liftable.set_y_velocity(ANCILLA_LIFTABLE_THROW_Y_VELOCITIES[j] as u8);
+                        liftable.set_x_velocity(ANCILLA_LIFTABLE_THROW_X_VELOCITIES[j] as u8);
                     }
                     self.follower_link_state_mut().set_picking_throw_state(2);
                     let value = 1;
@@ -10529,10 +10533,10 @@ impl ZeldaState {
 
         let mut return_true_set_alert = false;
         if self.sprite_slot_view(j).deflection_bits() & 0x10 != 0 {
-            const ANCILLA_CHECK_SPRITE_COLL_DIR: [u8; 4] = [2, 3, 0, 1];
             self.ancilla_slot_view_mut(k).and_direction(3);
             if self.ancilla_slot_view(k).direction()
-                == ANCILLA_CHECK_SPRITE_COLL_DIR[self.ancilla_slot_view(k).direction() as usize]
+                == ANCILLA_SPRITE_COLLISION_DEFLECTED_DIRECTIONS
+                    [self.ancilla_slot_view(k).direction() as usize]
             {
                 return_true_set_alert = true;
             }
@@ -10556,15 +10560,13 @@ impl ZeldaState {
         }
 
         if !return_true_set_alert && self.sprite_slot_view(j).ignore_projectile() == 0 {
-            const ANCILLA_CHECK_SPRITE_COLL_RECOIL_X: [u8; 4] = [0, 0, 0xc0, 0x40];
-            const ANCILLA_CHECK_SPRITE_COLL_RECOIL_Y: [u8; 4] = [0xc0, 0x40, 0, 0];
             if self.sprite_slot_view(j).sprite_type() == 0x92 && self.sprite_slot_view(j).c() < 3 {
                 return_true_set_alert = true;
             } else {
                 let i = (self.ancilla_slot_view(k).direction() & 3) as usize;
-                let value = ANCILLA_CHECK_SPRITE_COLL_RECOIL_X[i];
+                let value = ANCILLA_SPRITE_COLLISION_RECOIL_X[i];
                 self.sprite_slot_view_mut(j).set_x_recoil(value);
-                let value = ANCILLA_CHECK_SPRITE_COLL_RECOIL_Y[i];
+                let value = ANCILLA_SPRITE_COLLISION_RECOIL_Y[i];
                 self.sprite_slot_view_mut(j).set_y_recoil(value);
                 self.sprite_workspace_mut().set_shared_scratch_a(k as u8);
                 self.ancilla_check_damage_to_sprite(j, self.ancilla_slot_view(k).ancilla_type());
