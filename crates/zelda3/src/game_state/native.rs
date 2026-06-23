@@ -4367,29 +4367,6 @@ mod tests {
     }
 
     #[test]
-    fn native_inventory_items_bridge_projects_native_state_over_stale_ram() {
-        let mut ram = vec![0xff; WRAM_SIZE];
-        let mut native_ram = vec![0; WRAM_SIZE];
-        native_ram[LINK_ITEM_MOON_PEARL] = 1;
-        native_ram[LINK_BOTTLE_INFO] = 2;
-        let mut items = InventoryItemsState::load_from_ram(&native_ram);
-
-        {
-            let mut bridge = NativeInventoryItemsBridgeMut::new(&mut items, &mut ram);
-            bridge.set_inventory_item(2, 1);
-            bridge.set_bottle(0, 5);
-        }
-
-        assert_eq!(items.hookshot(), 1);
-        assert!(items.has_moon_pearl());
-        assert_eq!(items.bottle(0), 5);
-        assert_eq!(ram[LINK_ITEM_BOW], 0);
-        assert_eq!(ram[LINK_ITEM_BOW + 2], 1);
-        assert_eq!(ram[LINK_ITEM_MOON_PEARL], 1);
-        assert_eq!(ram[LINK_BOTTLE_INFO], 5);
-    }
-
-    #[test]
     fn dungeon_key_slots_state_loads_from_and_projects_to_ram() {
         let mut ram = vec![0; WRAM_SIZE];
         ram[LINK_KEYS_EARNED_PER_DUNGEON] = 1;

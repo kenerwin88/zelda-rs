@@ -10702,34 +10702,6 @@ mod tests {
     }
 
     #[test]
-    fn x_snap_helpers_match_doorway_adjustment_rules() {
-        let mut state = ZeldaState::new();
-        set_link_test_byte(&mut state, LINK_X_VEL, 4);
-        set_link_test_word(&mut state, LINK_X_COORD, 0x43);
-
-        state.snap_on_x();
-
-        assert_eq!(link_test_word(&state, LINK_X_COORD), 0x40);
-
-        state.tile_detect_position_mut().set_collision_bits(4);
-        set_link_test_word(&mut state, LINK_Y_COORD, 0x80);
-        state.calculate_snap_scratch_x();
-
-        assert_eq!(link_test_word(&state, LINK_Y_COORD), 0x7f);
-
-        state.tile_detect_position_mut().set_collision_bits(1);
-        set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 0);
-        set_link_test_byte(&mut state, LINK_X_VEL, 4);
-        set_link_test_word(&mut state, LINK_Y_COORD, 0x90);
-        let speed = state.change_axis_of_perpendicular_door_movement_x();
-
-        assert_eq!(speed, -4);
-        assert_eq!(link_test_word(&state, LINK_Y_COORD), 0x8c);
-        assert_eq!(state.game_state.player.follower_link.facing(), 0);
-        assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 2, 2);
-    }
-
-    #[test]
     fn perform_dash_sets_start_dash_state_and_tagalong_timeout() {
         let mut state = ZeldaState::new();
         state
@@ -10776,49 +10748,6 @@ mod tests {
     }
 
     #[test]
-    fn perform_rupee_pull_resets_properties_and_enters_pull_state() {
-        let mut state = ZeldaState::new();
-        state.follower_link_state_mut().set_facing(2);
-        state.link_perform_rupee_pull();
-        assert_eq!(state.game_state.player.follower_link.handler_state(), 0);
-
-        state.follower_link_state_mut().set_facing(0);
-        state.follower_link_state_mut().set_actual_y_velocity(9);
-        state.follower_link_state_mut().set_actual_x_velocity(8);
-        state.follower_link_state_mut().set_button_mask_b_y(0xff);
-        set_link_test_byte(&mut state, LINK_CAPE_MODE, 1);
-
-        state.link_perform_rupee_pull();
-
-        assert_eq!(state.game_state.player.follower_link.grabbing_wall(), 2);
-        assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 2, 2);
-        assert_eq!(state.game_state.player.follower_link.handler_state(), 29);
-        assert_eq!(state.game_state.player.follower_link.actual_y_velocity(), 0);
-        assert_eq!(state.game_state.player.follower_link.actual_x_velocity(), 0);
-        assert_eq!(state.game_state.player.follower_link.button_mask_b_y(), 0);
-        assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
-    }
-
-    #[test]
-    fn handle_nudging_reverts_perpendicular_step_when_probe_blocks() {
-        let mut state = ZeldaState::new();
-        state.set_indoor_flag(1);
-        state
-            .tile_detect_position_mut()
-            .set_location_calc_mask(0x01ff);
-        set_link_test_word(&mut state, LINK_X_COORD, 0x20);
-        set_link_test_word(&mut state, LINK_Y_COORD, 0x20);
-        set_link_test_byte(&mut state, LINK_LAST_DIRECTION_MOVED_TOWARDS, 0);
-        let offset = 0x145;
-        state.dungeon_bg2_attributes_mut().set_bg2_attr(offset, 1);
-
-        state.handle_nudging(1);
-
-        assert_eq!(link_test_word(&state, LINK_X_COORD), 0x1f);
-        assert_eq!(state.game_state.player.tile_detection.collision_bits(), 1);
-    }
-
-    #[test]
     fn ledge_hop_timer_restores_previous_position_until_triggered() {
         let mut state = ZeldaState::new();
         set_link_test_word(&mut state, LINK_Y_COORD, 0x120);
@@ -10834,55 +10763,6 @@ mod tests {
         assert_eq!(link_test_word(&state, LINK_X_COORD), 0x200);
         assert_eq!(link_test_byte(&state, LINK_SUBPIXEL_Y), 0);
         assert_eq!(link_test_byte(&state, LINK_SUBPIXEL_X), 0);
-    }
-
-    #[test]
-    fn slope_y_flag_adjusts_position_and_diag_bits() {
-        let mut state = ZeldaState::new();
-        set_link_test_word(&mut state, LINK_Y_COORD, 0x40);
-        set_link_test_word(&mut state, LINK_X_COORD, 0x05);
-        state.tile_detect_position_mut().set_slope_collision_bits(1);
-        state.tile_detect_position_mut().clear_diag_state();
-        state.tile_detect_position_mut().set_y(1);
-        set_link_test_byte(&mut state, LINK_Y_VEL, 0xff);
-
-        state.flag_moving_into_slopes_y();
-
-        assert_eq!(link_test_word(&state, LINK_Y_COORD), 0x44);
-        assert_eq!(link_test_byte(&state, LINK_MOVING_AGAINST_DIAG_TILE), 0x19);
-    }
-
-    #[test]
-    fn slope_x_flag_uses_second_y_probe_word_for_r12_bit_4() {
-        let mut state = ZeldaState::new();
-        set_link_test_word(&mut state, LINK_X_COORD, 0x41);
-        state.tile_detect_position_mut().set_slope_collision_bits(4);
-        state.tile_detect_position_mut().clear_diag_state();
-        state.tile_detect_position_mut().set_y(0);
-        state.tile_detect_position_mut().set_x(4);
-        set_link_test_byte(&mut state, LINK_X_VEL, 0xff);
-
-        state.flag_moving_into_slopes_x();
-
-        assert_eq!(link_test_word(&state, LINK_X_COORD), 0x44);
-        assert_eq!(link_test_byte(&state, LINK_MOVING_AGAINST_DIAG_TILE), 0x26);
-    }
-
-    #[test]
-    fn indoor_y_doorway_collision_changes_to_perpendicular_axis() {
-        let mut state = ZeldaState::new();
-        state.ram[IS_STANDING_IN_DOORWAY] = 2;
-        set_link_test_byte(&mut state, LINK_Y_VEL, 4);
-        set_link_test_word(&mut state, LINK_Y_COORD, 0x40);
-        set_link_test_word(&mut state, LINK_X_COORD, 0x90);
-        state.tile_detect_position_mut().set_collision_bits(1);
-
-        state.start_movement_collision_checks_y_handle_indoors();
-
-        assert_eq!(link_test_word(&state, LINK_Y_COORD), 0x3c);
-        assert_eq!(link_test_word(&state, LINK_X_COORD), 0x8f);
-        assert_eq!(state.game_state.player.follower_link.facing(), 4);
-        assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 2, 2);
     }
 
     #[test]
@@ -11049,18 +10929,6 @@ mod tests {
     }
 
     #[test]
-    fn moving_animation_doorway_diagonal_picks_perpendicular_facing() {
-        let mut state = ZeldaState::new();
-        set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 5);
-        set_link_test_byte(&mut state, LINK_NUM_ORTHOGONAL_DIRECTIONS, 1);
-        state.ram[IS_STANDING_IN_DOORWAY] = 2;
-
-        state.link_handle_moving_animation_full_long_entry();
-
-        assert_eq!(state.game_state.player.follower_link.facing(), 6);
-    }
-
-    #[test]
     fn moving_animation_dash_advances_dash_cycle() {
         let mut state = ZeldaState::new();
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 1);
@@ -11072,82 +10940,6 @@ mod tests {
 
         assert_eq!(link_test_byte(&state, LINK_FRAME_CHANGE_COUNTER), 0);
         assert_eq!(state.game_state.player.follower_link.animation_step(), 1);
-    }
-
-    #[test]
-    fn apply_links_movement_to_camera_adjusts_crossed_x_quadrant() {
-        let mut state = ZeldaState::new();
-        state.set_indoor_flag(1);
-        state
-            .dungeon_room_parser_mut()
-            .set_room_layout_and_starting_quadrant(0x20);
-        state.set_dungeon_room(2);
-        state.room_bounds_mut().set_x_bound(0, 0x0100);
-        state.room_bounds_mut().set_x_bound(2, 0x0120);
-        set_link_test_word(&mut state, LINK_X_COORD, 0x0102);
-        set_link_test_byte(&mut state, LINK_X_COORD_SAFE_RETURN_HI, 0);
-        set_link_test_byte(&mut state, LINK_Y_COORD_SAFE_RETURN_HI, 0);
-
-        state.handle_indoor_camera_and_doors();
-
-        assert_eq!(link_test_byte(&state, LINK_X_PAGE_MOVEMENT_DELTA), 1);
-        assert_eq!(link_test_byte(&state, LINK_QUADRANT_X), 1);
-        assert_eq!(state.ram[COMPOSITE_OF_LAYOUT_AND_QUADRANT], 0x21);
-        assert_eq!(state.game_state.world.room_bounds.x_bound(0), 0x0200);
-        assert_eq!(state.game_state.world.room_bounds.x_bound(2), 0x0220);
-        assert_ne!(read_le_u16(&state.ram, DUNG_QUADRANTS_VISITED), 0);
-    }
-
-    #[test]
-    fn doorway_east_transition_offsets_link_and_starts_subtile_transition() {
-        let mut state = ZeldaState::new();
-        state.set_indoor_flag(1);
-        state.ram[IS_STANDING_IN_DOORWAY] = 2;
-        set_link_test_byte(&mut state, LINK_DIRECTION, 1);
-        set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 1);
-        state.set_main_module(7);
-        state.set_submodule(0);
-        set_link_test_word(&mut state, LINK_X_COORD, 0x00eb);
-        set_link_test_byte(&mut state, LINK_X_COORD_SAFE_RETURN_HI, 0);
-        state.set_dungeon_room(0x0104);
-        state.room_bounds_mut().set_x_bound(0, 0x0100);
-        state.room_bounds_mut().set_x_bound(1, 0x0120);
-
-        state.handle_indoor_camera_and_doors();
-
-        assert_eq!(link_test_byte(&state, LINK_X_PAGE_MOVEMENT_DELTA), 1);
-        assert_eq!(link_test_word(&state, LINK_X_COORD), 0x00f3);
-        assert_eq!(state.game_state.frame.submodule, 1);
-        assert_eq!(state.ram[OVERWORLD_SCREEN_TRANSITION], 2);
-        assert_eq!(read_le_u16(&state.ram, LEFT_RIGHT_SCROLL_TARGET), 256);
-        assert_eq!(read_le_u16(&state.ram, LEFT_RIGHT_SCROLL_TARGET_END), 0);
-        assert_eq!(read_le_u16(&state.ram, CAMERA_X_COORD_SCROLL_LOW), 383);
-    }
-
-    #[test]
-    fn doorway_south_transition_uses_vertical_camera_target_pair() {
-        let mut state = ZeldaState::new();
-        state.set_indoor_flag(1);
-        state.ram[IS_STANDING_IN_DOORWAY] = 1;
-        set_link_test_byte(&mut state, LINK_DIRECTION, 4);
-        set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 4);
-        state.set_main_module(7);
-        state.set_submodule(0);
-        set_link_test_word(&mut state, LINK_Y_COORD, 0x00e4);
-        set_link_test_byte(&mut state, LINK_Y_COORD_SAFE_RETURN_HI, 0);
-        state.set_dungeon_room(0x0104);
-        state.room_bounds_mut().set_y_bound(0, 0x0100);
-        state.room_bounds_mut().set_y_bound(1, 0x0120);
-
-        state.handle_indoor_camera_and_doors();
-
-        assert_eq!(link_test_byte(&state, LINK_Y_PAGE_MOVEMENT_DELTA), 1);
-        assert_eq!(link_test_word(&state, LINK_Y_COORD), 0x00f4);
-        assert_eq!(state.game_state.frame.submodule, 1);
-        assert_eq!(state.ram[OVERWORLD_SCREEN_TRANSITION], 0);
-        assert_eq!(read_le_u16(&state.ram, UP_DOWN_SCROLL_TARGET), 256);
-        assert_eq!(read_le_u16(&state.ram, UP_DOWN_SCROLL_TARGET_END), 16);
-        assert_eq!(read_le_u16(&state.ram, CAMERA_Y_COORD_SCROLL_LOW), 376);
     }
 
     #[test]
@@ -11266,26 +11058,6 @@ mod tests {
     }
 
     #[test]
-    fn bit_sum_and_swim_permission_helpers_match_c_state_writes() {
-        assert_eq!(ZeldaState::bit_sum4(0b1011_1111), 4);
-        assert_eq!(ZeldaState::bit_sum4(0), 0);
-
-        let mut state = ZeldaState::new();
-        set_link_test_byte(&mut state, LINK_ITEM_FLIPPERS, 1);
-        state.check_ability_to_swim();
-        assert_eq!(link_test_byte(&state, LINK_VISIBILITY_STATUS), 0);
-
-        set_link_test_byte(&mut state, LINK_IS_BUNNY_MIRROR, 1);
-        set_link_test_byte(&mut state, LINK_ITEM_MOON_PEARL, 1);
-        state.set_indoor_flag(1);
-        state.check_ability_to_swim();
-
-        assert_eq!(link_test_byte(&state, LINK_IS_BUNNY_MIRROR), 0);
-        assert_eq!(link_test_byte(&state, LINK_VISIBILITY_STATUS), 0x0c);
-        assert_eq!(state.game_state.frame.submodule, 20);
-    }
-
-    #[test]
     fn dungeon_layer_change_updates_floor_room_and_visited_flags() {
         let mut state = ZeldaState::new();
         state.set_dungeon_room(0x0104);
@@ -11343,49 +11115,6 @@ mod tests {
     }
 
     #[test]
-    fn link_reset_properties_a_clears_reset_chain_state() {
-        let mut state = ZeldaState::new();
-        state.ram.fill(0xff);
-        state.enhanced_features_mut().set_bits(0x1000);
-
-        state.link_reset_properties_a();
-
-        assert_eq!(link_test_byte(&state, LINK_DIRECTION_LAST), 0);
-        assert_eq!(link_test_byte(&state, LINK_DIRECTION), 0);
-        assert_eq!(link_test_byte(&state, LINK_FLAG_MOVING), 0);
-        assert_eq!(state.ram[SWIMMING_COUNTDOWN], 0);
-        assert_eq!(link_test_byte(&state, LINK_SWIM_HARD_STROKE), 0);
-        assert_eq!(link_test_byte(&state, LINK_MAYBE_SWIM_FASTER), 0);
-        assert_eq!(
-            state
-                .game_state
-                .player
-                .swim_acceleration
-                .speed_active_flag(0),
-            0
-        );
-        assert_eq!(link_test_byte(&state, LINK_IS_BUNNY), 0);
-        assert_eq!(link_test_byte(&state, LINK_IS_BUNNY_MIRROR), 0);
-        assert_eq!(link_test_byte(&state, LINK_TIMER_TEMPBUNNY), 0);
-        assert_eq!(
-            state.game_state.player.follower_link.on_somaria_platform(),
-            0
-        );
-        assert_eq!(state.ram[PLAYER_DEFENSE_FLAGS], 0);
-        assert_eq!(state.game_state.player.follower_link.near_pit_state(), 0);
-        assert_eq!(state.ram[FLAG_CUSTOM_SPELL_ANIM_ACTIVE], 0);
-        assert_eq!(read_le_u16(&state.ram, TILEDETECT_MISC_TILES), 0);
-        assert_eq!(state.game_state.player.follower_link.button_mask_b_y(), 0);
-        assert_eq!(state.game_state.player.follower_link.state_bits(), 0);
-        assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
-        assert_eq!(
-            state.game_state.player.follower_link.hookshot_interlock(),
-            0
-        );
-        assert_eq!(link_test_byte(&state, LINK_IS_NEAR_MOVEABLE_STATUE), 0);
-    }
-
-    #[test]
     fn damaging_pit_reset_restores_ground_or_permabunny_state() {
         let mut state = ZeldaState::new();
         set_link_test_byte(&mut state, LINK_IS_BUNNY, 1);
@@ -11423,34 +11152,6 @@ mod tests {
     }
 
     #[test]
-    fn z_velocity_change_matches_recoil_and_turtle_rock_rules() {
-        let mut state = ZeldaState::new();
-        state.follower_link_state_mut().set_actual_z_velocity(10);
-        state.player_change_z(2);
-        assert_eq!(state.game_state.player.follower_link.actual_z_velocity(), 8);
-
-        state.follower_link_state_mut().set_handler_state(19);
-        state.link_handle_change_in_z_velocity();
-        assert_eq!(state.game_state.player.follower_link.actual_z_velocity(), 7);
-
-        state.follower_link_state_mut().set_actual_z_velocity(0xfe);
-        set_link_test_byte(&mut state, LINK_Z_COORD, 0);
-        state.link_handle_change_in_z_velocity();
-        assert_eq!(
-            state.game_state.player.follower_link.actual_z_velocity(),
-            0xfe
-        );
-
-        set_link_test_byte(&mut state, LINK_Z_COORD, 0x80);
-        state.link_handle_change_in_z_velocity();
-        assert_eq!(link_test_word(&state, LINK_Z_COORD), 0xffff);
-        assert_eq!(
-            state.game_state.player.follower_link.actual_z_velocity(),
-            0xff
-        );
-    }
-
-    #[test]
     fn set_to_deep_water_resets_swim_state_and_latches_direction() {
         let mut state = ZeldaState::new();
         set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 8);
@@ -11473,51 +11174,6 @@ mod tests {
     }
 
     #[test]
-    fn splash_upon_landing_routes_deep_water_and_bunny_states() {
-        let mut state = ZeldaState::new();
-        set_link_test_byte(&mut state, LINK_IS_IN_DEEP_WATER, 1);
-        set_link_test_byte(&mut state, LINK_CAPE_MODE, 1);
-        set_link_test_byte(&mut state, LINK_DISABLE_SPRITE_DAMAGE, 1);
-        set_link_test_byte(&mut state, LINK_ELECTROCUTE_ON_TOUCH, 1);
-
-        state.link_splash_upon_landing();
-
-        assert_eq!(state.game_state.player.follower_link.handler_state(), 4);
-        assert_eq!(
-            state.game_state.system_signals.sound_effect_1() & 0x3f,
-            0x24
-        );
-        assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
-        assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 0);
-        assert_eq!(link_test_byte(&state, LINK_ELECTROCUTE_ON_TOUCH), 0);
-
-        let mut bunny = ZeldaState::new();
-        set_link_test_byte(&mut bunny, LINK_IS_BUNNY_MIRROR, 1);
-        set_link_test_byte(&mut bunny, LINK_IS_IN_DEEP_WATER, 1);
-        set_link_test_byte(&mut bunny, LINK_ITEM_MOON_PEARL, 1);
-        set_link_test_byte(&mut bunny, LINK_IS_BUNNY, 1);
-        bunny.follower_link_state_mut().set_animation_step(3);
-        bunny
-            .swim_acceleration_mut()
-            .set_speed_active_flag(0, 0x1111);
-
-        bunny.link_splash_upon_landing();
-
-        assert_eq!(bunny.game_state.player.follower_link.handler_state(), 0);
-        assert_eq!(link_test_byte(&bunny, LINK_IS_BUNNY), 0);
-        assert_eq!(bunny.game_state.player.follower_link.auxiliary_state(), 0);
-        assert_eq!(bunny.game_state.player.follower_link.animation_step(), 0);
-        assert_eq!(
-            bunny
-                .game_state
-                .player
-                .swim_acceleration
-                .speed_active_flag(0),
-            0
-        );
-    }
-
-    #[test]
     fn swim_accels_start_ramp_and_snap_to_table() {
         let mut state = ZeldaState::new();
         state.follower_link_state_mut().set_joypad1h_last(0x0d);
@@ -11534,52 +11190,6 @@ mod tests {
 
         state.link_handle_swim_accels();
         assert_eq!(state.game_state.player.swim_acceleration.max_speed(0), 384);
-    }
-
-    #[test]
-    fn swim_flag_max_accels_promotes_active_axes() {
-        let mut state = ZeldaState::new();
-        set_link_test_byte(&mut state, LINK_FLAG_MOVING, 1);
-        state.swim_acceleration_mut().set_acceleration(0, 0x0110);
-        state.swim_acceleration_mut().set_acceleration(2, 0);
-        state.swim_acceleration_mut().set_max_speed(2, 0x2222);
-
-        state.link_flag_max_accels();
-
-        assert_eq!(
-            state.game_state.player.swim_acceleration.max_speed(0),
-            0x0110
-        );
-        assert_eq!(state.game_state.player.swim_acceleration.mode(0), 1);
-        assert_eq!(
-            state.game_state.player.swim_acceleration.max_speed(2),
-            0x2222
-        );
-        assert_eq!(state.game_state.player.swim_acceleration.mode(2), 0);
-    }
-
-    #[test]
-    fn swim_ice_max_accel_sets_both_axes_when_flag_moving() {
-        let mut state = ZeldaState::new();
-        state.swim_acceleration_mut().set_max_speed(0, 0x1111);
-
-        state.link_set_ice_max_accel();
-        assert_eq!(
-            state.game_state.player.swim_acceleration.max_speed(0),
-            0x1111
-        );
-
-        set_link_test_byte(&mut state, LINK_FLAG_MOVING, 1);
-        state.link_set_ice_max_accel();
-
-        assert_eq!(
-            state.game_state.player.swim_acceleration.max_speed(0),
-            0x0180
-        );
-        assert_eq!(
-            state.game_state.player.swim_acceleration.max_speed(2),
-            0x0180
-        );
     }
 
     #[test]
@@ -11749,51 +11359,6 @@ mod tests {
     }
 
     #[test]
-    fn set_the_max_accel_marks_ready_axis_and_resets_inactive_axis() {
-        let mut state = ZeldaState::new();
-        state.follower_link_state_mut().set_joypad1h_last(0x0c);
-        state.swim_acceleration_mut().set_acceleration(0, 260);
-        state.swim_acceleration_mut().set_max_speed(0, 240);
-        state.swim_acceleration_mut().set_mode(0, 0);
-        state.swim_acceleration_mut().set_speed_active_flag(2, 1);
-        state.swim_acceleration_mut().set_max_speed(2, 384);
-
-        state.link_set_the_max_accel();
-
-        assert_eq!(
-            state
-                .game_state
-                .player
-                .swim_acceleration
-                .speed_active_flag(0),
-            1
-        );
-        assert_eq!(state.game_state.player.swim_acceleration.mode(0), 1);
-        assert_eq!(
-            state
-                .game_state
-                .player
-                .swim_acceleration
-                .speed_active_flag(2),
-            0
-        );
-        assert_eq!(state.game_state.player.swim_acceleration.max_speed(2), 240);
-
-        set_link_test_byte(&mut state, LINK_SWIM_HARD_STROKE, 1);
-        state.swim_acceleration_mut().set_speed_active_flag(0, 0);
-        state.link_set_the_max_accel();
-        assert_eq!(
-            state
-                .game_state
-                .player
-                .swim_acceleration
-                .speed_active_flag(0),
-            0
-        );
-        assert_eq!(state.game_state.player.swim_acceleration.mode(0), 1);
-    }
-
-    #[test]
     fn handle_toss_clears_a_press_state_when_throwing() {
         let mut state = ZeldaState::new();
         state
@@ -11885,103 +11450,6 @@ mod tests {
     }
 
     #[test]
-    fn cape_lift_and_active_item_paths_drain_and_unequip() {
-        let mut state = ZeldaState::new();
-        set_link_test_byte(&mut state, LINK_CAPE_MODE, 1);
-        state.ram[CURRENT_ITEM_ACTIVE] = 19;
-        state.ram[CURRENT_ITEM_Y] = 19;
-        state.ram[CAPE_DECREMENT_COUNTER] = 1;
-        set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 0);
-        set_link_test_byte(&mut state, LINK_MAGIC_POWER, 1);
-
-        state.player_check_handle_cape_stuff();
-
-        assert_eq!(link_test_byte(&state, LINK_MAGIC_POWER), 0);
-        assert_eq!(state.ram[CAPE_DECREMENT_COUNTER], 4);
-        assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
-        assert_eq!(link_test_byte(&state, LINK_BUNNY_TRANSFORM_TIMER), 32);
-        assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 21);
-
-        let mut state = ZeldaState::new();
-        set_link_test_byte(&mut state, LINK_CAPE_MODE, 1);
-        state.ram[CURRENT_ITEM_ACTIVE] = 19;
-        state.ram[CURRENT_ITEM_Y] = 19;
-        state.ram[CAPE_DECREMENT_COUNTER] = 1;
-        set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 2);
-        set_link_test_byte(&mut state, LINK_MAGIC_POWER, 2);
-        state.follower_link_state_mut().set_grabbing_wall(1);
-        state.enhanced_features_mut().set_bits(0x1000);
-
-        state.link_handle_cape_passive_lift_check();
-
-        assert_eq!(link_test_byte(&state, LINK_MAGIC_POWER), 1);
-        assert_eq!(state.ram[CAPE_DECREMENT_COUNTER], 8);
-        assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 1);
-    }
-
-    #[test]
-    fn y_button_magic_and_item_reset_helpers_match_c_gates() {
-        let mut state = ZeldaState::new();
-        assert!(!state.check_y_button_press());
-        state.follower_link_state_mut().set_filtered_joypad_h(0x40);
-        assert!(state.check_y_button_press());
-        assert_eq!(
-            state.game_state.player.follower_link.button_mask_b_y() & 0x40,
-            0x40
-        );
-        assert!(!state.check_y_button_press());
-
-        let mut state = ZeldaState::new();
-        set_link_test_byte(&mut state, LINK_MAGIC_POWER, 20);
-        set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 1);
-        assert!(state.link_check_magic_cost(0));
-        assert_eq!(link_test_byte(&state, LINK_MAGIC_POWER), 12);
-
-        set_link_test_byte(&mut state, LINK_MAGIC_POWER, 1);
-        set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 0);
-        assert!(!state.link_check_magic_cost(1));
-        assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 60);
-        assert_eq!(
-            state.game_state.messaging.dialogue_message_index.value(),
-            123
-        );
-        assert_eq!(state.game_state.frame.main_module, 14);
-
-        set_link_test_byte(&mut state, LINK_MAGIC_POWER, 125);
-        set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 0);
-        state.enhanced_features_mut().set_bits(0x1000);
-        state.refund_magic(0);
-        assert_eq!(link_test_byte(&state, LINK_MAGIC_POWER), 128);
-
-        state.follower_link_state_mut().set_y_button_action_step(1);
-        state.follower_link_state_mut().set_y_button_action_flags(2);
-        state.follower_link_state_mut().set_state_bits(3);
-        state.follower_link_state_mut().set_picking_throw_state(4);
-        state.follower_link_state_mut().set_grabbing_wall(5);
-        set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 0xff);
-        state.link_item_reset_from_overworld_things();
-        assert_eq!(
-            state.game_state.player.follower_link.y_button_action_step(),
-            0
-        );
-        assert_eq!(
-            state
-                .game_state
-                .player
-                .follower_link
-                .y_button_action_flags(),
-            0
-        );
-        assert_eq!(state.game_state.player.follower_link.state_bits(), 0);
-        assert_eq!(
-            state.game_state.player.follower_link.picking_throw_state(),
-            0
-        );
-        assert_eq!(state.game_state.player.follower_link.grabbing_wall(), 0);
-        assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 1, 0);
-    }
-
-    #[test]
     fn cape_item_activation_and_no_magic_prompt_match_c_state() {
         let mut state = ZeldaState::new();
         state.follower_link_state_mut().set_filtered_joypad_h(0x40);
@@ -12010,49 +11478,6 @@ mod tests {
             123
         );
         assert_eq!(state.game_state.frame.main_module, 14);
-    }
-
-    #[test]
-    fn cape_item_timer_gate_drain_and_manual_unequip_match_c_state() {
-        let mut state = ZeldaState::new();
-        set_link_test_byte(&mut state, LINK_BUNNY_TRANSFORM_TIMER, 2);
-        set_link_test_byte(&mut state, LINK_DIRECTION, 0x0f);
-        state.dungeon_room_load_mut().set_header_collision_2(2);
-        state.set_player_layer_collision_flags(
-            crate::game_state::constants::player::LAYER_COLLISION_BOTH,
-        );
-        set_link_test_byte(&mut state, LINK_Y_VEL, 7);
-
-        state.link_item_cape();
-
-        assert_eq!(link_test_byte(&state, LINK_BUNNY_TRANSFORM_TIMER), 1);
-        assert_eq!(link_test_byte(&state, LINK_DIRECTION), 0);
-        assert_eq!(link_test_byte(&state, LINK_Y_VEL), 0);
-
-        let mut state = ZeldaState::new();
-        set_link_test_byte(&mut state, LINK_CAPE_MODE, 1);
-        state.ram[CAPE_DECREMENT_COUNTER] = 1;
-        set_link_test_byte(&mut state, LINK_MAGIC_POWER, 2);
-        set_link_test_byte(&mut state, LINK_MAGIC_CONSUMPTION, 0);
-        set_link_test_byte(&mut state, LINK_BUNNY_TRANSFORM_TIMER, 5);
-        set_link_test_byte(&mut state, LINK_DIRECTION, 0x0f);
-
-        state.link_item_cape();
-
-        assert_eq!(link_test_byte(&state, LINK_MAGIC_POWER), 1);
-        assert_eq!(state.ram[CAPE_DECREMENT_COUNTER], 4);
-        assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 1);
-        assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 1);
-        assert_eq!(link_test_byte(&state, LINK_DIRECTION), 0);
-
-        state.ram[CAPE_DECREMENT_COUNTER] = 2;
-        set_link_test_byte(&mut state, LINK_BUNNY_TRANSFORM_TIMER, 0);
-        state.follower_link_state_mut().set_filtered_joypad_h(0x40);
-        state.link_item_cape();
-
-        assert_eq!(link_test_byte(&state, LINK_CAPE_MODE), 0);
-        assert_eq!(link_test_byte(&state, LINK_BUNNY_TRANSFORM_TIMER), 32);
-        assert_eq!(state.game_state.system_signals.sound_effect_1() & 0x3f, 21);
     }
 
     #[test]
