@@ -394,7 +394,10 @@ fn credits_scene_fade_holds_scratch_when_fade_completes() {
 
 #[test]
 fn overworld_map16_wram_slots_are_bridge_only() {
-    let source = include_str!("overworld.rs");
+    let source = concat!(
+        include_str!("overworld.rs"),
+        include_str!("overworld_shared.rs")
+    );
     for symbol in [
         "MAP16_LOAD_SRC_OFF_OVERWORLD",
         "MAP16_LOAD_DST_OFF_OVERWORLD",

@@ -2,321 +2,13 @@
 
 use super::*;
 
-const MESSAGING_BUF_LOAD_GFX: usize = 0x10000;
-
-const ANIMATED_SPRITE_TILE_SOURCE_OFFSETS: [usize; 57] = [
-    0x9c0, 0x30, 0x60, 0x90, 0xc0, 0x300, 0x318, 0x330, 0x348, 0x360, 0x378, 0x390, 0x930, 0x3f0,
-    0x420, 0x450, 0x468, 0x600, 0x630, 0x660, 0x690, 0x6c0, 0x6f0, 0x720, 0x750, 0x768, 0x900,
-    0x930, 0x960, 0x990, 0x9f0, 0, 0xf0, 0xa20, 0xa50, 0x660, 0x600, 0x618, 0x630, 0x648, 0x678,
-    0x6d8, 0x6a8, 0x708, 0x738, 0x768, 0x960, 0x900, 0x3c0, 0x990, 0x9a8, 0x9c0, 0x9d8, 0xa08,
-    0xa38, 0x600, 0x630,
-];
-
-const OW_BG_PAL_INFO: [i8; 93] = [
-    0, -1, 7, 0, 1, 7, 0, 2, 7, 0, 3, 7, 0, 4, 7, 0, 5, 7, 0, 6, 7, 7, 6, 5, 0, 8, 7, 0, 9, 7, 0,
-    10, 7, 0, 11, 7, 0, -1, 7, 0, -1, 7, 3, 4, 7, 4, 4, 3, 16, -1, 6, 16, 1, 6, 16, 17, 6, 16, 3,
-    6, 16, 4, 6, 16, 5, 6, 16, 6, 6, 18, 19, 4, 18, 5, 4, 16, 9, 6, 16, 11, 6, 16, 12, 6, 16, 13,
-    6, 16, 14, 6, 16, 15, 6,
-];
-
-const OW_SPR_PAL_INFO: [i8; 40] = [
-    -1, -1, 3, 10, 3, 6, 3, 1, 0, 2, 3, 14, 3, 2, 19, 1, 11, 12, 17, 1, 7, 5, 17, 0, 9, 11, 15, 5,
-    3, 5, 3, 7, 15, 2, 10, 2, 5, 1, 12, 14,
-];
-const GRAPHICS_LOAD_SP6: [i8; 20] = [
-    10, -1, 3, -1, 0, -1, -1, -1, 1, -1, 2, -1, 0, -1, -1, -1, -1, -1, -1, -1,
-];
-
-const MIRROR_WARP_BG_PACK_SEQUENCE: [u8; 16] = [
-    0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x5b, 0x01, 0x5a, 0x42, 0x43, 0x44, 0x45, 0x3f, 0x59, 0x0b, 0x5a,
-];
-
-const MIRROR_WARP_LOAD_NEXT_NMI_LOAD: [u8; 15] =
-    [0, 14, 15, 16, 17, 0, 0, 0, 0, 0, 0, 18, 19, 20, 0];
-
-const MAIN_TILESETS: [[u8; 8]; 37] = [
-    [0, 1, 16, 6, 14, 31, 24, 15],
-    [0, 1, 16, 8, 14, 34, 27, 15],
-    [0, 1, 16, 6, 14, 31, 24, 15],
-    [0, 1, 19, 7, 14, 35, 28, 15],
-    [0, 1, 16, 7, 14, 33, 24, 15],
-    [0, 1, 16, 9, 14, 32, 25, 15],
-    [2, 3, 18, 11, 14, 33, 26, 15],
-    [0, 1, 17, 12, 14, 36, 27, 15],
-    [0, 1, 17, 8, 14, 34, 27, 15],
-    [0, 1, 17, 12, 14, 37, 26, 15],
-    [0, 1, 17, 12, 14, 38, 27, 15],
-    [0, 1, 20, 10, 14, 39, 29, 15],
-    [0, 1, 17, 10, 14, 40, 30, 15],
-    [2, 3, 18, 11, 14, 41, 22, 15],
-    [0, 1, 21, 13, 14, 42, 24, 15],
-    [0, 1, 16, 7, 14, 35, 28, 15],
-    [0, 1, 19, 7, 14, 4, 5, 15],
-    [0, 1, 19, 7, 14, 4, 5, 15],
-    [0, 1, 16, 9, 14, 32, 27, 15],
-    [0, 1, 16, 9, 14, 42, 23, 15],
-    [2, 3, 18, 11, 14, 33, 28, 15],
-    [0, 8, 17, 27, 34, 46, 93, 91],
-    [0, 8, 16, 24, 32, 43, 93, 91],
-    [0, 8, 16, 24, 32, 43, 93, 91],
-    [58, 59, 60, 61, 83, 77, 62, 91],
-    [66, 67, 68, 69, 32, 43, 63, 93],
-    [0, 8, 16, 24, 32, 43, 93, 91],
-    [0, 8, 16, 24, 32, 43, 93, 91],
-    [0, 8, 16, 24, 32, 43, 93, 91],
-    [0, 8, 16, 24, 32, 43, 93, 91],
-    [0, 8, 16, 24, 32, 43, 93, 91],
-    [113, 114, 113, 114, 32, 43, 93, 91],
-    [58, 59, 60, 61, 83, 77, 62, 91],
-    [66, 67, 68, 69, 32, 43, 63, 89],
-    [0, 114, 113, 114, 32, 43, 93, 15],
-    [22, 57, 29, 23, 64, 65, 57, 30],
-    [0, 70, 57, 114, 64, 65, 57, 15],
-];
-
-const AUX_TILESETS: [[u8; 4]; 82] = [
-    [6, 0, 31, 24],
-    [8, 0, 34, 27],
-    [6, 0, 31, 24],
-    [7, 0, 35, 28],
-    [7, 0, 33, 24],
-    [9, 0, 32, 25],
-    [11, 0, 33, 26],
-    [12, 0, 36, 25],
-    [8, 0, 34, 27],
-    [12, 0, 37, 27],
-    [12, 0, 38, 27],
-    [10, 0, 39, 29],
-    [10, 0, 40, 30],
-    [11, 0, 41, 22],
-    [13, 0, 42, 24],
-    [7, 0, 35, 28],
-    [7, 0, 4, 5],
-    [7, 0, 4, 5],
-    [9, 0, 32, 27],
-    [9, 0, 42, 23],
-    [11, 0, 33, 28],
-    [9, 0, 32, 25],
-    [11, 0, 33, 26],
-    [9, 0, 36, 27],
-    [8, 0, 34, 27],
-    [9, 0, 37, 27],
-    [9, 0, 38, 27],
-    [10, 0, 39, 29],
-    [9, 0, 40, 30],
-    [12, 0, 41, 22],
-    [13, 0, 42, 23],
-    [114, 0, 43, 93],
-    [0, 0, 0, 0],
-    [0, 87, 76, 0],
-    [0, 86, 79, 0],
-    [0, 83, 77, 0],
-    [0, 82, 73, 0],
-    [0, 85, 74, 0],
-    [0, 83, 84, 0],
-    [0, 81, 78, 0],
-    [0, 0, 0, 0],
-    [0, 80, 75, 0],
-    [0, 83, 77, 0],
-    [0, 85, 84, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 71, 72, 0],
-    [0, 0, 0, 0],
-    [0, 87, 76, 0],
-    [0, 86, 79, 0],
-    [0, 83, 77, 0],
-    [0, 82, 73, 0],
-    [0, 85, 74, 0],
-    [0, 83, 84, 0],
-    [0, 81, 78, 0],
-    [0, 0, 0, 0],
-    [0, 80, 75, 0],
-    [0, 83, 0, 0],
-    [0, 53, 54, 0],
-    [0, 96, 52, 0],
-    [0, 43, 44, 0],
-    [0, 45, 46, 0],
-    [0, 47, 48, 0],
-    [0, 55, 56, 0],
-    [0, 51, 52, 0],
-    [0, 49, 50, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [114, 113, 114, 113],
-    [23, 64, 65, 57],
-];
-
-const SPRITE_TILESETS: [[u8; 4]; 144] = [
-    [0, 73, 0, 0],
-    [70, 73, 12, 29],
-    [72, 73, 19, 29],
-    [70, 73, 19, 14],
-    [72, 73, 12, 17],
-    [72, 73, 12, 16],
-    [79, 73, 74, 80],
-    [14, 73, 74, 17],
-    [70, 73, 18, 0],
-    [0, 73, 0, 80],
-    [0, 73, 0, 17],
-    [72, 73, 12, 0],
-    [0, 0, 55, 54],
-    [72, 73, 76, 17],
-    [93, 44, 12, 68],
-    [0, 0, 78, 0],
-    [15, 0, 18, 16],
-    [0, 0, 0, 76],
-    [0, 13, 23, 0],
-    [22, 13, 23, 27],
-    [22, 13, 23, 20],
-    [21, 13, 23, 21],
-    [22, 13, 24, 25],
-    [22, 13, 23, 25],
-    [22, 13, 0, 0],
-    [22, 13, 24, 27],
-    [15, 73, 74, 17],
-    [75, 42, 92, 21],
-    [22, 73, 23, 29],
-    [0, 0, 0, 21],
-    [22, 13, 23, 16],
-    [22, 73, 18, 0],
-    [22, 73, 12, 17],
-    [0, 0, 18, 16],
-    [22, 13, 0, 17],
-    [22, 73, 12, 0],
-    [22, 13, 76, 17],
-    [14, 13, 74, 17],
-    [22, 26, 23, 27],
-    [79, 52, 74, 80],
-    [53, 77, 101, 54],
-    [74, 52, 78, 0],
-    [14, 52, 74, 17],
-    [81, 52, 93, 89],
-    [75, 73, 76, 17],
-    [45, 0, 0, 0],
-    [93, 0, 18, 89],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [71, 73, 43, 45],
-    [70, 73, 28, 82],
-    [0, 73, 28, 82],
-    [93, 73, 0, 82],
-    [70, 73, 19, 82],
-    [75, 77, 74, 90],
-    [71, 73, 28, 82],
-    [75, 77, 57, 54],
-    [31, 44, 46, 82],
-    [31, 44, 46, 29],
-    [47, 44, 46, 82],
-    [47, 44, 46, 49],
-    [31, 30, 48, 82],
-    [81, 73, 19, 0],
-    [79, 73, 19, 80],
-    [79, 77, 74, 80],
-    [75, 73, 76, 43],
-    [31, 32, 34, 83],
-    [85, 61, 66, 67],
-    [31, 30, 35, 82],
-    [31, 30, 57, 58],
-    [31, 30, 58, 62],
-    [31, 30, 60, 61],
-    [64, 30, 39, 63],
-    [85, 26, 66, 67],
-    [31, 30, 42, 82],
-    [31, 30, 56, 82],
-    [31, 32, 40, 82],
-    [31, 32, 38, 82],
-    [31, 44, 37, 82],
-    [31, 32, 39, 82],
-    [31, 30, 41, 82],
-    [31, 44, 59, 82],
-    [70, 73, 36, 82],
-    [33, 65, 69, 51],
-    [31, 44, 40, 49],
-    [31, 13, 41, 82],
-    [31, 30, 39, 82],
-    [31, 32, 39, 83],
-    [72, 73, 19, 82],
-    [14, 30, 74, 80],
-    [31, 32, 38, 83],
-    [21, 0, 0, 0],
-    [31, 0, 42, 82],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [0, 0, 0, 0],
-    [50, 0, 0, 8],
-    [93, 73, 0, 82],
-    [85, 73, 66, 67],
-    [97, 98, 99, 80],
-    [97, 98, 99, 80],
-    [97, 98, 99, 80],
-    [97, 98, 99, 80],
-    [97, 98, 99, 80],
-    [97, 98, 99, 80],
-    [97, 86, 87, 80],
-    [97, 98, 99, 80],
-    [97, 98, 99, 80],
-    [97, 86, 87, 80],
-    [97, 86, 99, 80],
-    [97, 86, 87, 80],
-    [97, 86, 51, 80],
-    [97, 86, 87, 80],
-    [97, 98, 99, 80],
-    [97, 98, 99, 80],
-];
-
-fn main_tileset(index: usize) -> [u8; 8] {
-    MAIN_TILESETS.get(index).copied().unwrap_or([0; 8])
-}
-
-fn aux_tileset(index: usize) -> [u8; 4] {
-    AUX_TILESETS.get(index).copied().unwrap_or([0; 4])
-}
-
-fn sprite_tileset(index: usize) -> [u8; 4] {
-    SPRITE_TILESETS.get(index).copied().unwrap_or([0; 4])
-}
+mod load_gfx_shared;
+use load_gfx_shared::*;
+use load_gfx_shared::{
+    aux_tileset as load_gfx_aux_tileset, main_tileset as load_gfx_main_tileset,
+    sprite_tileset as load_gfx_sprite_tileset,
+    MESSAGING_BUF_LOAD_GFX as LOAD_GFX_MESSAGING_BUF_LOAD_GFX,
+};
 
 impl ZeldaState {
     fn sprite_gfx_subset(&self, slot: usize) -> u8 {
@@ -1260,30 +952,32 @@ impl ZeldaState {
     }
 
     pub(super) fn initialize_tilesets(&mut self) {
-        let main_tileset =
-            main_tileset(self.game_state.world.palette_theme.main_tile_theme_index() as usize);
-        let aux_tileset =
-            aux_tileset(self.game_state.world.palette_theme.aux_tile_theme_index() as usize);
-        let sprite_tileset =
-            sprite_tileset(self.game_state.sprites.system.graphics_index() as usize);
+        let main_tile_set = load_gfx_main_tileset(
+            self.game_state.world.palette_theme.main_tile_theme_index() as usize,
+        );
+        let aux_tile_set = load_gfx_aux_tileset(
+            self.game_state.world.palette_theme.aux_tile_theme_index() as usize,
+        );
+        let sprite_tile_set =
+            load_gfx_sprite_tileset(self.game_state.sprites.system.graphics_index() as usize);
 
         self.load_common_sprites();
 
-        if sprite_tileset[0] != 0 {
+        if sprite_tile_set[0] != 0 {
             self.sprite_workspace_mut()
-                .set_graphics_subset(0, sprite_tileset[0]);
+                .set_graphics_subset(0, sprite_tile_set[0]);
         }
-        if sprite_tileset[1] != 0 {
+        if sprite_tile_set[1] != 0 {
             self.sprite_workspace_mut()
-                .set_graphics_subset(1, sprite_tileset[1]);
+                .set_graphics_subset(1, sprite_tile_set[1]);
         }
-        if sprite_tileset[2] != 0 {
+        if sprite_tile_set[2] != 0 {
             self.sprite_workspace_mut()
-                .set_graphics_subset(2, sprite_tileset[2]);
+                .set_graphics_subset(2, sprite_tile_set[2]);
         }
-        if sprite_tileset[3] != 0 {
+        if sprite_tile_set[3] != 0 {
             self.sprite_workspace_mut()
-                .set_graphics_subset(3, sprite_tileset[3]);
+                .set_graphics_subset(3, sprite_tile_set[3]);
         }
 
         self.load_sprite_graphics(
@@ -1309,52 +1003,52 @@ impl ZeldaState {
 
         self.world_palette_theme_mut().set_aux_bg_subset(
             0,
-            if aux_tileset[0] != 0 {
-                aux_tileset[0]
+            if aux_tile_set[0] != 0 {
+                aux_tile_set[0]
             } else {
-                main_tileset[3]
+                main_tile_set[3]
             },
         );
         self.world_palette_theme_mut().set_aux_bg_subset(
             1,
-            if aux_tileset[1] != 0 {
-                aux_tileset[1]
+            if aux_tile_set[1] != 0 {
+                aux_tile_set[1]
             } else {
-                main_tileset[4]
+                main_tile_set[4]
             },
         );
         self.world_palette_theme_mut().set_aux_bg_subset(
             2,
-            if aux_tileset[2] != 0 {
-                aux_tileset[2]
+            if aux_tile_set[2] != 0 {
+                aux_tile_set[2]
             } else {
-                main_tileset[5]
+                main_tile_set[5]
             },
         );
         self.world_palette_theme_mut().set_aux_bg_subset(
             3,
-            if aux_tileset[3] != 0 {
-                aux_tileset[3]
+            if aux_tile_set[3] != 0 {
+                aux_tile_set[3]
             } else {
-                main_tileset[6]
+                main_tile_set[6]
             },
         );
 
         self.load_background_graphics(
             0x2000,
-            main_tileset[0] as usize,
+            main_tile_set[0] as usize,
             7,
             GraphicsDecompressionScratch::primary_buffer_offset(),
         );
         self.load_background_graphics(
             0x2400,
-            main_tileset[1] as usize,
+            main_tile_set[1] as usize,
             6,
             GraphicsDecompressionScratch::primary_buffer_offset(),
         );
         self.load_background_graphics(
             0x2800,
-            main_tileset[2] as usize,
+            main_tile_set[2] as usize,
             5,
             GraphicsDecompressionScratch::primary_buffer_offset(),
         );
@@ -1384,7 +1078,7 @@ impl ZeldaState {
         );
         self.load_background_graphics(
             0x3c00,
-            main_tileset[7] as usize,
+            main_tile_set[7] as usize,
             0,
             GraphicsDecompressionScratch::primary_buffer_offset(),
         );
@@ -1873,7 +1567,9 @@ impl ZeldaState {
     }
 
     pub(super) fn LoadTransAuxGFX(&mut self) {
-        let p = aux_tileset(self.game_state.world.palette_theme.aux_tile_theme_index() as usize);
+        let p = load_gfx_aux_tileset(
+            self.game_state.world.palette_theme.aux_tile_theme_index() as usize
+        );
         for (i, pack) in p.iter().copied().enumerate() {
             if pack != 0 {
                 self.set_aux_bg_subset_pack(i, pack);
@@ -1894,7 +1590,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Gfx_LoadSpritesInner(&mut self, dst: usize) {
-        let p = sprite_tileset(self.game_state.sprites.system.graphics_index() as usize);
+        let p = load_gfx_sprite_tileset(self.game_state.sprites.system.graphics_index() as usize);
         for (i, pack) in p.iter().copied().enumerate() {
             if pack != 0 {
                 self.set_sprite_gfx_subset(i, pack);
@@ -1985,7 +1681,7 @@ impl ZeldaState {
                     MIRROR_WARP_BG_PACK_SEQUENCE[xt + 1] as usize,
                 );
                 let tmp = self.graphics_combined_decompression_buffers();
-                self.do3_to_4_high_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 64);
+                self.do3_to_4_high_16bit_from_slice(LOAD_GFX_MESSAGING_BUF_LOAD_GFX, &tmp, 0, 64);
                 self.do3_to_4_low_16bit_from_slice(NMI_BG_CHAR_BUFFER_1, &tmp, 0x600, 64);
             }
             2 => {
@@ -1998,7 +1694,7 @@ impl ZeldaState {
                     MIRROR_WARP_BG_PACK_SEQUENCE[xt + 3] as usize,
                 );
                 let tmp = self.graphics_combined_decompression_buffers();
-                self.do3_to_4_low_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 64);
+                self.do3_to_4_low_16bit_from_slice(LOAD_GFX_MESSAGING_BUF_LOAD_GFX, &tmp, 0, 64);
                 self.do3_to_4_high_16bit_from_slice(NMI_BG_CHAR_BUFFER_1, &tmp, 0x600, 64);
             }
             3 => {
@@ -2011,7 +1707,7 @@ impl ZeldaState {
                     self.game_state.world.palette_theme.aux_bg_subset(2) as usize,
                 );
                 let tmp = self.graphics_combined_decompression_buffers();
-                self.do3_to_4_high_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 128);
+                self.do3_to_4_high_16bit_from_slice(LOAD_GFX_MESSAGING_BUF_LOAD_GFX, &tmp, 0, 128);
             }
             4 => {
                 self.decompress_background_graphics_to_buffer(
@@ -2023,7 +1719,7 @@ impl ZeldaState {
                     MIRROR_WARP_BG_PACK_SEQUENCE[xt + 5] as usize,
                 );
                 let tmp = self.graphics_combined_decompression_buffers();
-                self.do3_to_4_low_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 128);
+                self.do3_to_4_low_16bit_from_slice(LOAD_GFX_MESSAGING_BUF_LOAD_GFX, &tmp, 0, 128);
             }
             5 => {
                 self.PreOverworld_LoadOverlays();
@@ -2070,7 +1766,7 @@ impl ZeldaState {
                 else {
                     return;
                 };
-                self.do3_to_4_high_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &data, 0, 64);
+                self.do3_to_4_high_16bit_from_slice(LOAD_GFX_MESSAGING_BUF_LOAD_GFX, &data, 0, 64);
             }
             12 => {
                 self.decompress_sprite_graphics_to_buffer(
@@ -2086,9 +1782,19 @@ impl ZeldaState {
                     self.game_state.sprites.workspace.graphics_subset(0),
                     0x52 | 0x53 | 0x5a | 0x5b
                 ) {
-                    self.do3_to_4_high_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 64);
+                    self.do3_to_4_high_16bit_from_slice(
+                        LOAD_GFX_MESSAGING_BUF_LOAD_GFX,
+                        &tmp,
+                        0,
+                        64,
+                    );
                 } else {
-                    self.do3_to_4_low_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 64);
+                    self.do3_to_4_low_16bit_from_slice(
+                        LOAD_GFX_MESSAGING_BUF_LOAD_GFX,
+                        &tmp,
+                        0,
+                        64,
+                    );
                 }
                 self.do3_to_4_low_16bit_from_slice(NMI_BG_CHAR_BUFFER_1, &tmp, 0x600, 64);
             }
@@ -2102,7 +1808,7 @@ impl ZeldaState {
                     self.game_state.sprites.workspace.graphics_subset(3) as usize,
                 );
                 let tmp = self.graphics_combined_decompression_buffers();
-                self.do3_to_4_low_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 128);
+                self.do3_to_4_low_16bit_from_slice(LOAD_GFX_MESSAGING_BUF_LOAD_GFX, &tmp, 0, 128);
                 self.handle_followers_after_mirroring();
             }
             14 => {
@@ -2113,44 +1819,46 @@ impl ZeldaState {
     }
 
     pub(super) fn AnimateMirrorWarp_DecompressNewTileSets(&mut self) {
-        let main_tileset =
-            main_tileset(self.game_state.world.palette_theme.main_tile_theme_index() as usize);
-        let aux_tileset =
-            aux_tileset(self.game_state.world.palette_theme.aux_tile_theme_index() as usize);
+        let main_tile_set = load_gfx_main_tileset(
+            self.game_state.world.palette_theme.main_tile_theme_index() as usize,
+        );
+        let aux_tile_set = load_gfx_aux_tileset(
+            self.game_state.world.palette_theme.aux_tile_theme_index() as usize,
+        );
         self.world_palette_theme_mut().set_aux_bg_subset(
             0,
-            if aux_tileset[0] != 0 {
-                aux_tileset[0]
+            if aux_tile_set[0] != 0 {
+                aux_tile_set[0]
             } else {
-                main_tileset[3]
+                main_tile_set[3]
             },
         );
         self.world_palette_theme_mut().set_aux_bg_subset(
             1,
-            if aux_tileset[1] != 0 {
-                aux_tileset[1]
+            if aux_tile_set[1] != 0 {
+                aux_tile_set[1]
             } else {
-                main_tileset[4]
+                main_tile_set[4]
             },
         );
         self.world_palette_theme_mut().set_aux_bg_subset(
             2,
-            if aux_tileset[2] != 0 {
-                aux_tileset[2]
+            if aux_tile_set[2] != 0 {
+                aux_tile_set[2]
             } else {
-                main_tileset[5]
+                main_tile_set[5]
             },
         );
         self.world_palette_theme_mut().set_aux_bg_subset(
             3,
-            if aux_tileset[3] != 0 {
-                aux_tileset[3]
+            if aux_tile_set[3] != 0 {
+                aux_tile_set[3]
             } else {
-                main_tileset[6]
+                main_tile_set[6]
             },
         );
 
-        let p = sprite_tileset(self.game_state.sprites.system.graphics_index() as usize);
+        let p = load_gfx_sprite_tileset(self.game_state.sprites.system.graphics_index() as usize);
         for (i, pack) in p.iter().copied().enumerate() {
             if pack != 0 {
                 self.set_sprite_gfx_subset(i, pack);
@@ -2181,7 +1889,7 @@ impl ZeldaState {
 
     pub(super) fn PrepTransAuxGfx(&mut self) {
         let tmp = self.staged_bg_and_sprite_decompression_buffers();
-        self.do3_to_4_high_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 0x40);
+        self.do3_to_4_high_16bit_from_slice(LOAD_GFX_MESSAGING_BUF_LOAD_GFX, &tmp, 0, 0x40);
         if self.game_state.world.palette_theme.aux_tile_theme_index() >= 32 {
             self.do3_to_4_high_16bit_from_slice(NMI_BG_CHAR_BUFFER_1, &tmp, 0x600, 0x80);
             self.do3_to_4_low_16bit_from_slice(0x11800, &tmp, 0x1200, 0x40);
@@ -2200,7 +1908,7 @@ impl ZeldaState {
 
     pub(super) fn LoadNewSpriteGFXSet(&mut self) {
         let tmp = self.graphics_sprite_decompression_buffer_tail();
-        self.do3_to_4_low_16bit_from_slice(MESSAGING_BUF_LOAD_GFX, &tmp, 0, 0xc0);
+        self.do3_to_4_low_16bit_from_slice(LOAD_GFX_MESSAGING_BUF_LOAD_GFX, &tmp, 0, 0xc0);
         if matches!(
             self.game_state.sprites.workspace.graphics_subset(3),
             0x52 | 0x53 | 0x5a | 0x5b
