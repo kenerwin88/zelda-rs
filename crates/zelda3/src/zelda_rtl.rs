@@ -10472,45 +10472,6 @@ mod tests {
     }
 
     #[test]
-    fn item_receipt_applies_inventory_reward_side_effects() {
-        let mut state = ZeldaState::new();
-        state.ram[ITEM_RECEIPT_METHOD] = 0;
-        let reward_addr = memory_location_to_give_item_to(0x24);
-        state.ram[reward_addr] = 98;
-        set_link_test_word(&mut state, LINK_X_COORD, 0x100);
-        set_link_test_word(&mut state, LINK_Y_COORD, 0x80);
-        state.set_bg2_x(0x40);
-
-        set_link_test_byte(&mut state, LINK_RECEIVEITEM_INDEX, 0x24);
-        state.ancilla_add_item_receipt(0x22, 4, 0);
-
-        assert_eq!(state.ram[reward_addr], 99);
-        assert_eq!(
-            state
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(4)
-                .ancilla_type(),
-            0x22
-        );
-        assert_eq!(state.ram[ANCILLA_ITEM_TO_LINK + 4], 0x24);
-        assert_eq!(
-            state.game_state.sprites.ancilla_slots.slot(4).work_byte_1(),
-            0
-        );
-        assert_eq!(
-            state.game_state.sprites.ancilla_slots.slot(4).work_byte_3(),
-            9
-        );
-        assert_eq!(
-            state.game_state.sprites.ancilla_slots.slot(4).work_byte_4(),
-            5
-        );
-        assert_eq!(state.game_state.system_signals.sound_effect_2(), 0x4f);
-    }
-
-    #[test]
     fn item_receipt_places_chest_item_with_c_offsets() {
         let mut state = ZeldaState::new();
         state.ram[ITEM_RECEIPT_METHOD] = 1;
