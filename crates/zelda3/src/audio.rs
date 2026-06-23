@@ -40,6 +40,9 @@ const MSU_DELUXE_ENTRANCE_TRACKS: [u8; 133] = [
 
 const MSU_VOLUME_TRANSITION_TARGETS: [u8; 4] = [0, 64, 255, 255];
 const MSU_VOLUME_TRANSITION_STEPS: [u8; 4] = [7, 3, 3, 24];
+const FEATURES0_MISC_BUG_FIXES_AUDIO: u32 = 4096;
+const MSU1_TAG: u32 = (b'1' as u32) << 24 | (b'U' as u32) << 16 | (b'S' as u32) << 8 | b'M' as u32;
+const OPUZ_TAG: u32 = (b'Z' as u32) << 24 | (b'U' as u32) << 16 | (b'P' as u32) << 8 | b'O' as u32;
 
 pub(super) struct MsuPlayer {
     buffer_size: u32,
@@ -321,14 +324,13 @@ impl ZeldaState {
     }
 
     pub fn zelda_is_playing_music_track_with_bug(&self, track: u8) -> bool {
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         let mp = &self.audio.msu_player;
         if mp.state != MSU_STATE_IDLE && mp.enabled & MSU_FEATURE_MSU_DELUXE != 0 {
             self.remap_msu_deluxe_track(mp, track) == mp.resume_info.actual_track
         } else if self
             .game_state
             .enhanced_features
-            .has(FEATURES0_MISC_BUG_FIXES)
+            .has(FEATURES0_MISC_BUG_FIXES_AUDIO)
         {
             track == self.game_state.system_signals.current_music_control()
         } else {
@@ -472,10 +474,6 @@ impl ZeldaState {
         mp.buffer_pos = 0;
         mp.preskip = 0;
 
-        const MSU1_TAG: u32 =
-            (b'1' as u32) << 24 | (b'U' as u32) << 16 | (b'S' as u32) << 8 | b'M' as u32;
-        const OPUZ_TAG: u32 =
-            (b'Z' as u32) << 24 | (b'U' as u32) << 16 | (b'P' as u32) << 8 | b'O' as u32;
         if file_tag == OPUZ_TAG {
             let Ok(decoder) = OpusDecoder::new(48_000, Channels::Stereo) else {
                 Self::msu_player_close_file(mp);
