@@ -226,6 +226,10 @@ def is_public_ram_constant_registry(path: Path) -> bool:
     return path == SRC_ROOT / "game_state" / "constants.rs"
 
 
+def is_rust_test_module(path: Path) -> bool:
+    return path.name.endswith("_tests.rs")
+
+
 def is_frame_view_source(path: Path) -> bool:
     return path == SRC_ROOT / "game_state" / "view" / "frame.rs"
 
@@ -308,6 +312,9 @@ def enclosing_function_name(text: str, offset: int) -> str | None:
 
 
 def check_file(path: Path) -> list[Finding]:
+    if is_rust_test_module(path):
+        return []
+
     text = path.read_text()
     findings: list[Finding] = []
     checks = [

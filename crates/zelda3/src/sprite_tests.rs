@@ -1,4 +1,3 @@
-
 use super::*;
 
 fn fresh_state() -> Box<ZeldaState> {
