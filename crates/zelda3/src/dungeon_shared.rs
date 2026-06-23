@@ -306,3 +306,161 @@ pub(super) const DUNG_PAL_INFOS: [DungPalInfo; 41] = [
     [14, 0, 3, 7],
     [26, 5, 5, 11],
 ];
+
+// ---------------------------------------------------------------------------
+// Promoted dungeon method-local tables. Names retain the owning helper so
+// generic C table names stay readable at callsites.
+// ---------------------------------------------------------------------------
+
+pub(super) const DUNGEON_RESET_TORCH_BACKGROUND_AND_PLAYER_SPIRAL_BG_PROPERTIES: [i8; 8] =
+    [0, 1, 1, -1, 1, 1, 1, 1];
+
+pub(super) const DUNGEON_RESET_TORCH_BACKGROUND_AND_PLAYER_INNER_FEATURES0_TURN_WHILE_DASHING: u32 =
+    4;
+
+pub(super) const MODULE07_0_B_DRAIN_SWAMP_POOL_SWAMP_DRAIN_WINDOW_RADIUS_DELTAS: [i8; 16] =
+    [-1, -1, -1, 1, -1, -1, -1, 1, -1, -1, -1, 1, -1, -1, -1, 1];
+
+pub(super) const MODULE07_0_C_FLOOD_SWAMP_WATER_SWAMP_FILL_FINAL_RADIUS_DELTAS: [i8; 4] =
+    [1, 1, 1, -1];
+
+pub(super) const MODULE07_0_C_FLOOD_SWAMP_WATER_SWAMP_FILL_WINDOW_RIGHT_DELTAS: [i8; 4] =
+    [1, 2, 1, -1];
+
+pub(super) const MODULE07_0_C_FLOOD_SWAMP_WATER_SWAMP_FILL_WINDOW_LEFT_DELTAS: [i8; 4] =
+    [1, -1, 1, -1];
+
+pub(super) const DUNGEON_LOAD_HEADER_ADJUSTMENTS: [i16; 2] = [256, -256];
+
+pub(super) const MOVING_WALL_SIZE_TABLE0: [u16; 4] = [5, 7, 11, 15];
+
+pub(super) const MOVING_WALL_SIZE_TABLE1: [u16; 4] = [8, 16, 24, 32];
+
+pub(super) const DUNGEON_CHEST_OPEN_MASKS: [u16; 6] = [0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000];
+
+pub(super) const DUNGEON_QUADRANT_VISITING_FLAGS: [u16; 16] = [
+    8, 4, 2, 1, 0x0c, 0x0c, 3, 3, 0x0a, 5, 0x0a, 5, 0x0f, 0x0f, 0x0f, 0x0f,
+];
+
+pub(super) const DUNGEON_CHECK_ADJACENT_ROOMS_FOR_OPEN_DOORS_LOOKUP_TABLE: [u16; 24] = [
+    0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x61, 0x71, 0x81, 0x91, 0xa1, 0xb1, 0x02, 0x12, 0x22, 0x32,
+    0x42, 0x52, 0x63, 0x73, 0x83, 0x93, 0xa3, 0xb3,
+];
+
+pub(super) const DUNGEON_CHECK_ADJACENT_ROOMS_FOR_OPEN_DOORS_LOOKUP_TABLE2: [u16; 24] = [
+    0x61, 0x71, 0x81, 0x91, 0xa1, 0xb1, 0x0, 0x10, 0x20, 0x30, 0x40, 0x50, 0x63, 0x73, 0x83, 0x93,
+    0xa3, 0xb3, 0x02, 0x12, 0x22, 0x32, 0x42, 0x52,
+];
+
+pub(super) const FLOOD_DAM_EXPAND_WATERGATE_SRCS1: [usize; 4] = [0x12f8, 0x1348, 0x1398, 0x13e8];
+
+pub(super) const ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_BG1_X_BASE_OFFSETS: [u16; 4] = [0, 256, 0, 256];
+
+pub(super) const ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_BG1_Y_BASE_OFFSETS: [u16; 4] = [0, 0, 256, 256];
+
+pub(super) const ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_ADJUSTMENTS: [i16; 4] = [52, -2, 56, 6];
+
+pub(super) const ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_BASELINES: [i16; 4] = [64, 64, 82, -176];
+
+pub(super) const ORIENT_LAMP_LIGHT_CONE_LAMP_CONE_SCROLL_CLAMPS: [u16; 4] = [128, 384, 160, 160];
+
+pub(super) const DUNGEON_TRANSITION_ADJUST_CAMERA_X_UP_DOWN_SCROLL_VALUES: [u16; 4] =
+    [0, 256, 256, 0];
+
+pub(super) const DUNGEON_TRANSITION_ADJUST_CAMERA_Y_UP_DOWN_SCROLL_VALUES: [u16; 4] =
+    [0, 272, 256, 16];
+
+pub(super) const HANDLE_EDGE_TRANSITION_ADJUST_CAMERA_BOUNDARIES_CAMERA_X_BOUNDS: [u16; 4] =
+    [127, 383, 127, 383];
+
+pub(super) const HANDLE_EDGE_TRANSITION_ADJUST_CAMERA_BOUNDARIES_CAMERA_Y_BOUNDS: [u16; 4] =
+    [120, 376, 136, 392];
+
+pub(super) const DUNGEON_PREP_SPRITE_INDUCED_DMA_PREP_SPRITE_INDUCED_DMA_SRCS: [usize; 10] = [
+    0x0e0, 0xade, 0x5aa, 0x198, 0x210, 0x218, 0x1f3a, 0xeaa, 0xeb2, 0x140,
+];
+
+pub(super) const PUSH_BLOCK_APPLY_VELOCITY_PUSHED_BLOCK_DIR_MASK: [u8; 4] =
+    [0x08, 0x04, 0x02, 0x01];
+
+pub(super) const PUSH_BLOCK_APPLY_VELOCITY_PUSH_BLOCK_X_RECOIL_BY_DIRECTION: [u8; 4] =
+    [0x00, 0x00, 0xe0, 0x20];
+
+pub(super) const PUSH_BLOCK_APPLY_VELOCITY_PUSH_BLOCK_Y_RECOIL_BY_DIRECTION: [u8; 4] =
+    [0xe0, 0x20, 0x00, 0x00];
+
+pub(super) const PUSH_BLOCK_HANDLE_COLLISION_PUSH_BLOCK_A: [u16; 4] = [0, 0, 8, 8];
+
+pub(super) const PUSH_BLOCK_HANDLE_COLLISION_PUSH_BLOCK_B: [u16; 4] = [15, 15, 23, 23];
+
+pub(super) const PUSH_BLOCK_HANDLE_COLLISION_PUSH_BLOCK_C: [u16; 4] = [0, 0, 0, 0];
+
+pub(super) const PUSH_BLOCK_HANDLE_COLLISION_PUSH_BLOCK_D: [u16; 4] = [15, 15, 15, 15];
+
+pub(super) const PUSH_BLOCK_HANDLE_COLLISION_PUSH_BLOCK_E: [u16; 4] = [8, 24, 0, 16];
+
+pub(super) const PUSH_BLOCK_HANDLE_COLLISION_PUSH_BLOCK_F: [u16; 4] = [15, 0, 15, 0];
+
+pub(super) const DUNG_TAG_ROUTINE_BLAST_WALL_STUFF_BLAST_WALL_MESSAGE_DIRECTION_BY_QUADRANT: [u8;
+    5] = [4, 6, 0, 0, 2];
+
+pub(super) const DUNG_TAG_ROUTINE_BLAST_WALL_STUFF_BLAST_WALL_DOOR_TILEMAP_OFFSETS: [u16; 5] =
+    [0, 0x0a, 0, 0, 0x0280];
+
+pub(super) const ROOM_TAG_GET_HEART_FOR_PRIZE_BOSS_FINISHED_FALLING_ITEM: [u8; 13] =
+    [0, 0, 1, 2, 0, 6, 6, 6, 6, 6, 3, 6, 6];
+
+pub(super) const CLEAR_AND_STRIPE_EXPLODING_WALL_BLAST_WALL_STRIPE_ROW_ADVANCES: [u16; 16] = [
+    0x0004, 0x0008, 0x000c, 0x0010, 0x0014, 0x0018, 0x001c, 0x0020, 0x0100, 0x0200, 0x0300, 0x0400,
+    0x0500, 0x0600, 0x0700, 0x0800,
+];
+
+pub(super) const DUNGEON_LOAD_SINGLE_DOOR_ATTRIBUTE_TILE_ATTRS_BY_DOOR: [u16; 40] = [
+    0x8080, 0x8484, 0x0000, 0x0101, 0x8484, 0x8e8e, 0x0000, 0x0000, 0x8888, 0x8e8e, 0x8080, 0x8080,
+    0x8282, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8080, 0x8282, 0x8e8e, 0x8080, 0x8282,
+    0x8080, 0x8080, 0x8080, 0x8282, 0x8282, 0x8080, 0x8080, 0x8080, 0x8484, 0x8484, 0x8686, 0x8888,
+    0x8686, 0x8686, 0x8080, 0x8080,
+];
+
+pub(super) const DUNGEON_DETECT_STAIRCASE_BUGGY_LOOKUP: [i8; 8] = [7, 24, 8, 8, 0, 0, -1, 17];
+
+pub(super) const ROOM_TAG_MOVING_WALL_EAST_MOVING_WALL_EAST_TARGET_OFFSETS: [u16; 8] = [
+    (-63i16) as u16,
+    (-127i16) as u16,
+    (-191i16) as u16,
+    (-255i16) as u16,
+    (-71i16) as u16,
+    (-135i16) as u16,
+    (-199i16) as u16,
+    (-263i16) as u16,
+];
+
+pub(super) const ROOM_TAG_MOVING_WALL_WEST_MOVING_WALL_WEST_TARGET_OFFSETS: [u16; 8] =
+    [0x42, 0x82, 0xc2, 0x102, 0x4a, 0x8a, 0xca, 0x10a];
+
+pub(super) const MODULE07_1_A_ROOM_DRAW_OPEN_TRIFORCE_DOOR_BOUNCE_OPEN_GANON_DOOR_TILE_SOURCES:
+    [u16; 4] = [0x2556, 0x2596, 0x25d6, 0x2616];
+
+pub(super) const DUNGEON_HANDLE_EDGE_TRANSITION_MOVEMENT_LIMIT_DIRECTION_ON_ONE_AXIS: [u8; 4] =
+    [0x03, 0x03, 0x0c, 0x0c];
+
+pub(super) const MODULE_PRE_DUNGEON_LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
+
+pub(super) const CRYSTAL_CUTSCENE_INITIALIZE_CRYSTAL_MAIDEN_PAL: [u16; 8] =
+    [0, 0x3821, 0x4463, 0x54a5, 0x5ce7, 0x6d29, 0x79ad, 0x7e10];
+
+pub(super) const DUNGEON_PUSH_BLOCK_HANDLER_PUSH_BLOCK_MOVE_DISTANCES: [i16; 4] =
+    [-0x100, 0x100, -0x04, 0x04];
+
+pub(super) const DUNGEON_PROCESS_TORCHES_AND_DOORS_LINK_X_OFFSETS: [i32; 4] = [0, 0, -1, 17];
+
+pub(super) const DUNGEON_PROCESS_TORCHES_AND_DOORS_LINK_Y_OFFSETS: [i32; 4] = [7, 24, 8, 8];
+
+pub(super) const DUNGEON_PROCESS_TORCHES_AND_DOORS_LINK_POSITION_OFFSETS: [usize; 4] =
+    [0x0002, 0x0002, 0x0080, 0x0080];
+
+pub(super) const DUNGEON_PROCESS_TORCHES_AND_DOORS_OPEN_DOOR_PANNING: [u8; 4] =
+    [0x00, 0x00, 0x80, 0x40];
+
+pub(super) const DUNGEON_PROCESS_TORCHES_AND_DOORS_SOURCE_TILES1: [u16; 4] =
+    [0x07ea, 0x080a, 0x080a, 0x082a];
