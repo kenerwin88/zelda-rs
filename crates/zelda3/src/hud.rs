@@ -4,6 +4,9 @@
 
 use super::*;
 
+mod hud_shared;
+use hud_shared::*;
+
 const USE_NEW_STYLE_INVENTORY: bool = false;
 const HUD_ITEM_COUNT: usize = if USE_NEW_STYLE_INVENTORY { 24 } else { 20 };
 
@@ -29,8 +32,6 @@ const HUD_ITEM_BOTTLE_FIRST: u8 = 21;
 const HUD_ITEM_BOTTLE_LAST: u8 = HUD_ITEM_BOTTLE_FIRST + 3;
 const HUD_ITEM_FLUTE: u8 = 13;
 const HUD_ITEM_SHOVEL: u8 = 16;
-
-type ItemBoxGfx = [u16; 4];
 
 const MAX_BOMBS_BY_UPGRADE_LEVEL: [u8; 8] = [10, 15, 20, 25, 30, 35, 40, 50];
 const MAX_ARROWS_BY_UPGRADE_LEVEL: [u8; 8] = [30, 35, 40, 45, 50, 55, 60, 70];
@@ -850,9 +851,6 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_lookup_inventory_item(&self, item: u8) -> u8 {
-        const HUD_ITEM_ORDER_TO_INVENTORY_ITEM: [u8; 21] = [
-            0, 3, 2, 14, 1, 10, 5, 6, 15, 16, 17, 9, 4, 8, 7, 12, 11, 18, 13, 19, 20,
-        ];
         HUD_ITEM_ORDER_TO_INVENTORY_ITEM[item as usize]
     }
 
@@ -921,25 +919,28 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_expand_bottle_menu(&mut self) {
-        const BOTTLE_MENU_TOP_ROW_TILES: [u16; 10] = [
-            0x28fb, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x68fb,
-        ];
-        const BOTTLE_MENU_MIDDLE_ROW_TILES: [u16; 10] = [
-            0x28fc, 0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x68fc,
-        ];
-        const BOTTLE_MENU_BOTTOM_ROW_TILES: [u16; 10] = [
-            0xa8fb, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xe8fb,
-        ];
         let r = self.hud_state().bottle_menu_row() as usize;
-        self.hud_draw_nx_n(0x1000, hudxy(21, 11 + r), &BOTTLE_MENU_TOP_ROW_TILES, 10, 1);
         self.hud_draw_nx_n(
             0x1000,
-            hudxy(21, 12 + r),
-            &BOTTLE_MENU_MIDDLE_ROW_TILES,
+            hudxy(21, 11 + r),
+            &HUD_BOTTLE_MENU_TOP_ROW_TILES,
             10,
             1,
         );
-        self.hud_draw_nx_n(0x1000, hudxy(21, 29), &BOTTLE_MENU_BOTTOM_ROW_TILES, 10, 1);
+        self.hud_draw_nx_n(
+            0x1000,
+            hudxy(21, 12 + r),
+            &HUD_BOTTLE_MENU_MIDDLE_ROW_TILES,
+            10,
+            1,
+        );
+        self.hud_draw_nx_n(
+            0x1000,
+            hudxy(21, 29),
+            &HUD_BOTTLE_MENU_BOTTOM_ROW_TILES,
+            10,
+            1,
+        );
         let row = self.hud_state().bottle_menu_row().wrapping_sub(1);
         self.set_bottle_menu_row(row);
         if (row as i8) < 0 {
@@ -1104,16 +1105,10 @@ impl ZeldaState {
         let btn_index = self.get_current_item_button_index();
         self.copy_tiles_for_switch_lr(btn_index);
         self.hud_draw_box(0x1000, x, 5, 20 - x, 19, SWITCH_LR_PALETTES[btn_index]);
-        const EQUIPMENT_BUTTON_LETTER_TILES: [[u16; 2]; 4] = [
-            [0x3cf0, 0x3cf1],
-            [0x2cf0, 0xacf0],
-            [0x300e, 0x300f],
-            [0x300c, 0x300d],
-        ];
 
         if !USE_NEW_STYLE_INVENTORY {
-            self.menu_set(hudxy(2, 6), EQUIPMENT_BUTTON_LETTER_TILES[btn_index][0]);
-            self.menu_set(hudxy(2, 7), EQUIPMENT_BUTTON_LETTER_TILES[btn_index][1]);
+            self.menu_set(hudxy(2, 6), HUD_EQUIPMENT_BUTTON_LETTER_TILES[btn_index][0]);
+            self.menu_set(hudxy(2, 7), HUD_EQUIPMENT_BUTTON_LETTER_TILES[btn_index][1]);
         }
         self.menu_set(hudxy(x + 2, 5), 0x246e);
         self.menu_set(hudxy(x + 3, 5), 0x246f);
@@ -1128,69 +1123,19 @@ impl ZeldaState {
 
     fn copy_tiles_for_switch_lr(&mut self, switch_lr: usize) {
         if switch_lr == 3 {
-            const TOP_OF_R: [u16; 8] = [
-                pv([1, 1, 1, 1, 1, 1, 3, 3]),
-                pv([1, 1, 1, 1, 1, 1, 1, 3]),
-                pv([1, 1, 1, 1, 1, 1, 1, 1]),
-                pv([1, 1, 1, 3, 3, 1, 1, 1]),
-                pv([1, 1, 1, 3, 3, 1, 1, 1]),
-                pv([1, 1, 1, 3, 3, 1, 1, 1]),
-                pv([1, 1, 1, 3, 3, 1, 1, 1]),
-                pv([1, 1, 1, 1, 1, 1, 1, 3]),
-            ];
-            const BOTTOM_OF_R: [u16; 8] = [
-                pv([1, 1, 1, 1, 1, 1, 3, 3]),
-                pv([1, 1, 1, 3, 1, 1, 1, 3]),
-                pv([1, 1, 1, 3, 3, 1, 1, 1]),
-                pv([1, 1, 1, 3, 3, 1, 1, 1]),
-                pv([1, 1, 1, 3, 3, 1, 1, 1]),
-                pv([1, 1, 1, 3, 3, 1, 1, 1]),
-                pv([1, 1, 1, 3, 3, 1, 1, 1]),
-                pv([1, 1, 1, 3, 3, 1, 1, 1]),
-            ];
-            self.ppu.vram[0x7000 + 0xc * 8..0x7000 + 0xd * 8].copy_from_slice(&TOP_OF_R);
-            self.ppu.vram[0x7000 + 0xd * 8..0x7000 + 0xe * 8].copy_from_slice(&BOTTOM_OF_R);
+            self.ppu.vram[0x7000 + 0xc * 8..0x7000 + 0xd * 8]
+                .copy_from_slice(&SWITCH_LR_R_TOP_TILE_ROWS);
+            self.ppu.vram[0x7000 + 0xd * 8..0x7000 + 0xe * 8]
+                .copy_from_slice(&SWITCH_LR_R_BOTTOM_TILE_ROWS);
         } else if switch_lr == 2 {
-            const TOP_OF_L: [u16; 8] = [
-                pv([1, 1, 1, 3, 3, 3, 3, 3]),
-                pv([1, 1, 1, 3, 3, 3, 3, 3]),
-                pv([1, 1, 1, 3, 3, 3, 3, 3]),
-                pv([1, 1, 1, 3, 3, 3, 3, 3]),
-                pv([1, 1, 1, 3, 3, 3, 3, 3]),
-                pv([1, 1, 1, 3, 3, 3, 3, 3]),
-                pv([1, 1, 1, 3, 3, 3, 3, 3]),
-                pv([1, 1, 1, 3, 3, 3, 3, 3]),
-            ];
-            const BOTTOM_OF_L: [u16; 8] = [
-                pv([1, 1, 1, 3, 3, 3, 3, 3]),
-                pv([1, 1, 1, 3, 3, 3, 3, 3]),
-                pv([1, 1, 1, 3, 3, 3, 3, 3]),
-                pv([1, 1, 1, 3, 3, 3, 3, 3]),
-                pv([1, 1, 1, 3, 3, 3, 3, 3]),
-                pv([1, 1, 1, 1, 1, 1, 1, 1]),
-                pv([1, 1, 1, 1, 1, 1, 1, 1]),
-                pv([1, 1, 1, 1, 1, 1, 1, 1]),
-            ];
-            self.ppu.vram[0x7000 + 0xe * 8..0x7000 + 0xf * 8].copy_from_slice(&TOP_OF_L);
-            self.ppu.vram[0x7000 + 0xf * 8..0x7000 + 0x10 * 8].copy_from_slice(&BOTTOM_OF_L);
+            self.ppu.vram[0x7000 + 0xe * 8..0x7000 + 0xf * 8]
+                .copy_from_slice(&SWITCH_LR_L_TOP_TILE_ROWS);
+            self.ppu.vram[0x7000 + 0xf * 8..0x7000 + 0x10 * 8]
+                .copy_from_slice(&SWITCH_LR_L_BOTTOM_TILE_ROWS);
         }
     }
 
     pub(super) fn hud_draw_ability_box(&mut self) {
-        const HUD_ABILITY_TEXT_TILES: [u16; 80] = [
-            0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5, 0x2d5b, 0x2d58, 0x2d55, 0x2d63, 0x2d27, 0x2cf5,
-            0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5, 0x2d61, 0x2d54, 0x2d50, 0x2d53, 0x2cf5, 0x2cf5,
-            0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5, 0x2d63, 0x2d50, 0x2d5b, 0x2d5a, 0x207f, 0x207f, 0x207f,
-            0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x2cf5, 0x2cf5, 0x2c2e, 0x2cf5,
-            0x2cf5, 0x2d5f, 0x2d64, 0x2d5b, 0x2d5b, 0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5,
-            0x2cf5, 0x2d61, 0x2d64, 0x2d5d, 0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5,
-            0x2d62, 0x2d66, 0x2d58, 0x2d5c, 0x2cf5, 0x2cf5, 0x2cf5, 0x207f, 0x207f, 0x2c01, 0x2c18,
-            0x2c28, 0x207f, 0x207f,
-        ];
-        const HUD_GLOVES_TEXT_TILES: [u16; 20] = [
-            0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5, 0x2d5b, 0x2d58, 0x2d55, 0x2d63, 0x2d28, 0x2cf5,
-            0x2cf5, 0x2cf5, 0x2cf5, 0x2cf5, 0x2d5b, 0x2d58, 0x2d55, 0x2d63, 0x2d29,
-        ];
         let x = if USE_NEW_STYLE_INVENTORY { 0 } else { 1 };
         self.hud_draw_box(0x1000, x, 21, 19, 29, 1);
 
@@ -1248,59 +1193,37 @@ impl ZeldaState {
     }
 
     pub(super) fn hud_draw_progress_icons_pendants(&mut self) {
-        const BG: [u16; 90] = [
-            0x28fb, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x68fb, 0x28fc,
-            0x2521, 0x2522, 0x2523, 0x2524, 0x253f, 0x24f5, 0x24f5, 0x24f5, 0x68fc, 0x28fc, 0x24f5,
-            0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x68fc, 0x28fc, 0x24f5, 0x24f5,
-            0x24f5, 0x213b, 0x213c, 0x24f5, 0x24f5, 0x24f5, 0x68fc, 0x28fc, 0x24f5, 0x24f5, 0x24f5,
-            0x213d, 0x213e, 0x24f5, 0x24f5, 0x24f5, 0x68fc, 0x28fc, 0x24f5, 0x24f5, 0x24f5, 0x24f5,
-            0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x68fc, 0x28fc, 0x24f5, 0x213b, 0x213c, 0x24f5, 0x24f5,
-            0x213b, 0x213c, 0x24f5, 0x68fc, 0x28fc, 0x24f5, 0x213d, 0x213e, 0x24f5, 0x24f5, 0x213d,
-            0x213e, 0x24f5, 0x68fc, 0xa8fb, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9,
-            0xa8f9, 0xe8fb,
-        ];
-        const P0: [ItemBoxGfx; 2] = [
-            [0x313b, 0x313c, 0x313d, 0x313e],
-            [0x252b, 0x252c, 0x252d, 0x252e],
-        ];
-        const P1: [ItemBoxGfx; 2] = [
-            [0x313b, 0x313c, 0x313d, 0x313e],
-            [0x2d2b, 0x2d2c, 0x2d2d, 0x2d2e],
-        ];
-        const P2: [ItemBoxGfx; 2] = [
-            [0x313b, 0x313c, 0x313d, 0x313e],
-            [0x3d2b, 0x3d2c, 0x3d2d, 0x3d2e],
-        ];
         let dst = if USE_NEW_STYLE_INVENTORY {
             hudxy(22, 11)
         } else {
             hudxy(21, 11)
         };
-        self.hud_draw_nx_n(0x1000, dst, &BG, 10, 9);
+        self.hud_draw_nx_n(0x1000, dst, &HUD_PROGRESS_CRYSTAL_BACKGROUND_TILES, 10, 9);
         let f = self.game_state.inventory.player_resources.pendant_flags();
-        self.hud_draw_item(0x1000, dst + hudxy(4, 3), &P0[(f & 1) as usize]);
-        self.hud_draw_item(0x1000, dst + hudxy(2, 6), &P1[((f >> 1) & 1) as usize]);
-        self.hud_draw_item(0x1000, dst + hudxy(6, 6), &P2[((f >> 2) & 1) as usize]);
+        self.hud_draw_item(
+            0x1000,
+            dst + hudxy(4, 3),
+            &HUD_PENDANT_TOP_ITEM_GFX[(f & 1) as usize],
+        );
+        self.hud_draw_item(
+            0x1000,
+            dst + hudxy(2, 6),
+            &HUD_PENDANT_LEFT_ITEM_GFX[((f >> 1) & 1) as usize],
+        );
+        self.hud_draw_item(
+            0x1000,
+            dst + hudxy(6, 6),
+            &HUD_PENDANT_RIGHT_ITEM_GFX[((f >> 2) & 1) as usize],
+        );
     }
 
     pub(super) fn hud_draw_progress_icons_crystals(&mut self) {
-        const BG: [u16; 90] = [
-            0x28fb, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x28f9, 0x68fb, 0x28fc,
-            0x252f, 0x2534, 0x2535, 0x2536, 0x2537, 0x24f5, 0x24f5, 0x24f5, 0x68fc, 0x28fc, 0x24f5,
-            0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x68fc, 0x28fc, 0x24f5, 0x24f5,
-            0x3146, 0x3147, 0x3146, 0x3147, 0x24f5, 0x24f5, 0x68fc, 0x28fc, 0x24f5, 0x24f5, 0x24f5,
-            0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x68fc, 0x28fc, 0x24f5, 0x3146, 0x3147, 0x3146,
-            0x3147, 0x3146, 0x3147, 0x24f5, 0x68fc, 0x28fc, 0x24f5, 0x24f5, 0x24f5, 0x24f5, 0x24f5,
-            0x24f5, 0x24f5, 0x24f5, 0x68fc, 0x28fc, 0x24f5, 0x24f5, 0x3146, 0x3147, 0x3146, 0x3147,
-            0x24f5, 0x24f5, 0x68fc, 0xa8fb, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9, 0xa8f9,
-            0xa8f9, 0xe8fb,
-        ];
         let dst = if USE_NEW_STYLE_INVENTORY {
             hudxy(22, 11)
         } else {
             hudxy(21, 11)
         };
-        self.hud_draw_nx_n(0x1000, dst, &BG, 10, 9);
+        self.hud_draw_nx_n(0x1000, dst, &HUD_PROGRESS_PENDANT_BACKGROUND_TILES, 10, 9);
         let f = self.game_state.inventory.player_resources.crystal_flags();
         for (bit, x, y) in [
             (1, 3, 3),
@@ -1404,18 +1327,22 @@ impl ZeldaState {
         for i in 0..8 {
             self.menu_set(hudxy(22 + dst + i, 25), 0x28d7);
         }
-        const TEXT: [u16; 16] = [
-            0x2479, 0x247a, 0x247b, 0x247c, 0x248c, 0x24f5, 0x24f5, 0x24f5, 0x2469, 0x246a, 0x246b,
-            0x246c, 0x246d, 0x246e, 0x246f, 0x24f5,
-        ];
-        self.hud_draw_nx_n(0x1000, hudxy(22 + dst, 22), &TEXT[0..8], 8, 1);
-        self.hud_draw_nx_n(0x1000, hudxy(22 + dst, 26), &TEXT[8..16], 8, 1);
-        const HEART_PIECES: [ItemBoxGfx; 4] = [
-            [0x2484, 0x6484, 0x2485, 0x6485],
-            [0x24ad, 0x6484, 0x2485, 0x6485],
-            [0x24ad, 0x6484, 0x24ae, 0x6485],
-            [0x24ad, 0x64ad, 0x24ae, 0x6485],
-        ];
+
+        self.hud_draw_nx_n(
+            0x1000,
+            hudxy(22 + dst, 22),
+            &HUD_EQUIPMENT_LABEL_TILES[0..8],
+            8,
+            1,
+        );
+        self.hud_draw_nx_n(
+            0x1000,
+            hudxy(22 + dst, 26),
+            &HUD_EQUIPMENT_LABEL_TILES[8..16],
+            8,
+            1,
+        );
+
         if self.game_state.inventory.save_progress.palace_index_x2() == 0xff {
             for i in 0..8 {
                 self.menu_set(hudxy(22 + dst + i, 26), 0x24f5);
@@ -1423,7 +1350,8 @@ impl ZeldaState {
             self.hud_draw_item(
                 0x1000,
                 hudxy(25 + dst, 27),
-                &HEART_PIECES[self.game_state.inventory.player_resources.heart_pieces() as usize],
+                &HUD_HEART_PIECE_ITEM_GFX
+                    [self.game_state.inventory.player_resources.heart_pieces() as usize],
             );
         }
         let sword = if self.game_state.inventory.items.sword_type() == 0xff {
@@ -1442,12 +1370,7 @@ impl ZeldaState {
             hudxy(28 + dst, 23),
             &HUD_ITEM_ARMOR_GRAPHICS[self.game_state.inventory.items.armor() as usize],
         );
-        const PALACE_ITEM: [ItemBoxGfx; 2] = [
-            [0x28d6, 0x68d6, 0x28e6, 0x28e7],
-            [0x354b, 0x354c, 0x354d, 0x354e],
-        ];
-        const DUNGEON_MAP: ItemBoxGfx = [0x28de, 0x28df, 0x28ee, 0x28ef];
-        const DUNGEON_COMPASS: ItemBoxGfx = [0x24bf, 0x64bf, 0x2ccf, 0x6ccf];
+
         let shift = self.game_state.inventory.save_progress.palace_index_x2() >> 1;
         if self.game_state.inventory.save_progress.palace_index_x2() != 0xff
             && self
@@ -1459,7 +1382,7 @@ impl ZeldaState {
             self.hud_draw_item(
                 0x1000,
                 hudxy(28 + dst, 27),
-                &PALACE_ITEM[self.check_palace_item_posession() as usize],
+                &HUD_PALACE_ITEM_GFX[self.check_palace_item_posession() as usize],
             );
         }
         if self.game_state.inventory.save_progress.palace_index_x2() != 0xff
@@ -1469,7 +1392,7 @@ impl ZeldaState {
                 .player_resources
                 .has_dungeon_map_at_shift(shift)
         {
-            self.hud_draw_item(0x1000, hudxy(22 + dst, 27), &DUNGEON_MAP);
+            self.hud_draw_item(0x1000, hudxy(22 + dst, 27), &HUD_DUNGEON_MAP_ITEM_GFX);
         }
         if self.game_state.inventory.save_progress.palace_index_x2() != 0xff
             && self
@@ -1478,7 +1401,7 @@ impl ZeldaState {
                 .player_resources
                 .has_compass_at_shift(shift)
         {
-            self.hud_draw_item(0x1000, hudxy(25 + dst, 27), &DUNGEON_COMPASS);
+            self.hud_draw_item(0x1000, hudxy(25 + dst, 27), &HUD_DUNGEON_COMPASS_ITEM_GFX);
         }
     }
 
@@ -1538,9 +1461,12 @@ impl ZeldaState {
         }
         n &= 0xff;
         self.set_heart_refill_countdown(1);
-        const PARTIAL_HEART_ANIMATION_TILES: [u16; 4] = [0x24a3, 0x24a4, 0x24a3, 0x24a0];
+
         let subpos = self.hud_state().heart_refill_anim_subpos();
-        self.hud_buffer_set(p + (n >> 1), PARTIAL_HEART_ANIMATION_TILES[subpos as usize]);
+        self.hud_buffer_set(
+            p + (n >> 1),
+            HUD_PARTIAL_HEART_ANIMATION_TILES[subpos as usize],
+        );
         let subpos = subpos.wrapping_add(1) & 3;
         self.set_heart_refill_anim_subpos(subpos);
         if subpos == 0 {
@@ -1689,16 +1615,14 @@ impl ZeldaState {
     }
 
     fn hud_update_hearts(&mut self) {
-        const FULL: [u16; 3] = [0x24a2, 0x24a2, 0x24a2];
-        const CURRENT: [u16; 3] = [0x24a2, 0x24a1, 0x24a0];
         self.hud_update_hearts_inner(
             hudxy(20, 1),
-            &FULL,
+            &HUD_FULL_HEART_TILES,
             self.game_state.inventory.player_resources.health_capacity() as i32,
         );
         self.hud_update_hearts_inner(
             hudxy(20, 1),
-            &CURRENT,
+            &HUD_CURRENT_HEART_TILES,
             (i32::from(self.game_state.inventory.player_resources.current_health()) + 3) & !3,
         );
     }
@@ -1724,11 +1648,6 @@ impl ZeldaState {
     }
 
     fn hud_update_inventory(&mut self) {
-        const HUD_INVENTORY_BACKGROUND_TILES: [u16; 26] = [
-            0x207f, 0x207f, 0x3ca8, 0x207f, 0x207f, 0x2c88, 0x2c89, 0x207f, 0x20a7, 0x20a9, 0x207f,
-            0x2871, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f,
-            0x207f, 0x207f, 0x207f, 0x207f,
-        ];
         let d =
             hud_int_to_decimal(self.game_state.inventory.player_resources.rupees_actual() as u32);
         let inv_offs = usize::from(d[0] == 0x90);
@@ -1986,7 +1905,7 @@ const fn hudxyi(x: i32, y: i32) -> i32 {
     y * 32 + x
 }
 
-const fn pv(a: [u16; 8]) -> u16 {
+pub(super) const fn pv(a: [u16; 8]) -> u16 {
     ((a[0] & 1) << 7)
         | (((a[0] >> 1) & 1) << 15)
         | ((a[1] & 1) << 6)
