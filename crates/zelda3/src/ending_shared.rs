@@ -431,3 +431,313 @@ pub(super) const DUNG_PAL_INFOS_ENDING: [(u8, u8, u8, u8); 41] = [
     (14, 0, 3, 7),
     (26, 5, 5, 11),
 ];
+
+// ---------------------------------------------------------------------------
+// Promoted ending method-local tables. Names retain the owning helper so
+// generic C table names stay readable at callsites.
+// ---------------------------------------------------------------------------
+
+pub(super) const INTRO_COPY_SPRITE_TYPE4_TO_OAM_LEFT_ENTRIES: [(i8, i8, u8, u8, u8); 16] = [
+    (0, 0, 0x80, 0x2b, 2),
+    (16, 0, 0x82, 0x2b, 2),
+    (32, 0, 0x84, 0x2b, 2),
+    (48, 0, 0x86, 0x2b, 2),
+    (0, 16, 0xa0, 0x2b, 2),
+    (16, 16, 0xa2, 0x2b, 2),
+    (32, 16, 0xa4, 0x2b, 2),
+    (48, 16, 0xa6, 0x2b, 2),
+    (0, 32, 0x88, 0x2b, 2),
+    (16, 32, 0x8a, 0x2b, 2),
+    (32, 32, 0x8c, 0x2b, 2),
+    (48, 32, 0x8e, 0x2b, 2),
+    (0, 48, 0xa8, 0x2b, 2),
+    (16, 48, 0xaa, 0x2b, 2),
+    (32, 48, 0xac, 0x2b, 2),
+    (48, 48, 0xae, 0x2b, 2),
+];
+
+pub(super) const INTRO_COPY_SPRITE_TYPE4_TO_OAM_RIGHT_ENTRIES: [(i8, i8, u8, u8, u8); 16] = [
+    (48, 0, 0x80, 0x6b, 2),
+    (32, 0, 0x82, 0x6b, 2),
+    (16, 0, 0x84, 0x6b, 2),
+    (0, 0, 0x86, 0x6b, 2),
+    (48, 16, 0xa0, 0x6b, 2),
+    (32, 16, 0xa2, 0x6b, 2),
+    (16, 16, 0xa4, 0x6b, 2),
+    (0, 16, 0xa6, 0x6b, 2),
+    (48, 32, 0x88, 0x6b, 2),
+    (32, 32, 0x8a, 0x6b, 2),
+    (16, 32, 0x8c, 0x6b, 2),
+    (0, 32, 0x8e, 0x6b, 2),
+    (48, 48, 0xa8, 0x6b, 2),
+    (32, 48, 0xaa, 0x6b, 2),
+    (16, 48, 0xac, 0x6b, 2),
+    (0, 48, 0xae, 0x6b, 2),
+];
+
+pub(super) const INITIALIZE_SCENE_SPRITE_TRIFORCE_ROOM_TRIANGLE_X_OFFSETS: [i16; 3] =
+    [0x4e, 0x5f, 0x72];
+
+pub(super) const INITIALIZE_SCENE_SPRITE_TRIFORCE_ROOM_TRIANGLE_Y_OFFSETS: [i16; 3] =
+    [0x9c, 0x9c, 0x9c];
+
+pub(super) const INITIALIZE_SCENE_SPRITE_TRIFORCE_ROOM_TRIANGLE_X_VELOCITIES: [i8; 3] = [-2, 0, 2];
+
+pub(super) const INITIALIZE_SCENE_SPRITE_TRIFORCE_ROOM_TRIANGLE_Y_VELOCITIES: [i8; 3] = [4, -4, 4];
+
+pub(super) const ANIMATE_TRIFORCE_ROOM_TRIANGLE_HANDLE_CONTRACTING_FINAL_X: [u8; 3] =
+    [0x59, 0x5f, 0x67];
+
+pub(super) const ANIMATE_TRIFORCE_ROOM_TRIANGLE_HANDLE_CONTRACTING_FINAL_Y: [u8; 3] =
+    [0x74, 0x68, 0x74];
+
+pub(super) const INITIALIZE_SCENE_SPRITE_CREDITS_TRIANGLE_X_OFFSETS: [u8; 3] = [0x29, 0x5f, 0x97];
+
+pub(super) const INITIALIZE_SCENE_SPRITE_CREDITS_TRIANGLE_Y_OFFSETS: [u8; 3] = [0x70, 0x20, 0x70];
+
+pub(super) const ANIMATE_SCENE_SPRITE_CREDITS_TRIANGLE_X_ACCELERATION: [i8; 3] = [-1, 0, 1];
+
+pub(super) const ANIMATE_SCENE_SPRITE_CREDITS_TRIANGLE_Y_ACCELERATION: [i8; 3] = [1, -1, 1];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_SCENE_FADE_SCROLL_LIMITS: [u16; 16] = [
+    0x300, 0x280, 0x250, 0x2e0, 0x280, 0x250, 0x2c0, 0x2c0, 0x250, 0x250, 0x280, 0x250, 0x480,
+    0x400, 0x250, 0x500,
+];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE0_SPRITE_CHARS: [u8; 12] = [
+    0x1e, 0x20, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x16, 0x16, 0x16, 0x16,
+];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE0_SPRITE_GFX: [u8; 12] =
+    [6, 3, 2, 2, 2, 2, 2, 2, 6, 6, 6, 6];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CASE0_OAM_FLAGS: [u8; 12] = [
+    0x3b, 0x31, 0x3d, 0x3f, 0x39, 0x3b, 0x37, 0x3d, 0x39, 0x37, 0x37, 0x39,
+];
+
+pub(super) const ENDING_FUNC2_DELAYS: [u8; 27] = [
+    10, 10, 10, 10, 20, 8, 8, 0, 255, 12, 12, 12, 12, 12, 12, 30, 8, 4, 4, 4, 0, 0, 255, 255, 144,
+    4, 0,
+];
+
+pub(super) const ENDING_FUNC2_ENDING_SPRITE_ANIMATION_STEPS: [i8; 28] = [
+    0, 0, 1, 0, 1, 0, 2, 3, 0, 2, 0, 1, 0, 1, 0, 1, 2, 3, 4, 5, 6, 3, 0, -1, -1, -1, 2, 3,
+];
+
+pub(super) const CREDITS_SPRITE_DRAW_ADD_SPARKLE_DELAYS: [u8; 6] = [32, 4, 4, 4, 5, 6];
+
+pub(super) const CREDITS_SPRITE_DRAW_WALK_LINK_AWAY_FROM_PEDESTAL_DMA_SOURCES: [u16; 8] =
+    [0x16c, 0x16e, 0x170, 0x172, 0x16c, 0x174, 0x176, 0x178];
+
+pub(super) const CREDITS_SPRITE_DRAW_MOVE_SQUIRREL_X_VELOCITIES: [i8; 4] = [32, 24, -32, -24];
+
+pub(super) const CREDITS_SPRITE_DRAW_MOVE_SQUIRREL_Y_VELOCITIES: [i8; 4] = [8, -8, -8, 8];
+
+pub(super) const CREDITS_SPRITE_DRAW_CIRCLING_BIRDS_TARGET_X_OFFSETS: [i8; 2] = [0x20, -0x20];
+
+pub(super) const CREDITS_SPRITE_DRAW_CIRCLING_BIRDS_TARGET_Y_OFFSETS: [i8; 2] = [0x10, -0x10];
+
+pub(super) const END_SEQUENCE_32_HEALTH_AFTER_DEATH: [u8; 21] = [
+    0x18, 0x18, 0x18, 0x18, 0x18, 0x20, 0x20, 0x28, 0x28, 0x30, 0x30, 0x38, 0x38, 0x38, 0x40, 0x40,
+    0x40, 0x48, 0x48, 0x48, 0x50,
+];
+
+pub(super) const CREDITS_ADD_NEXT_ATTRIBUTION_ATTRIBUTION_PALACE_ORDER: [usize; 14] =
+    [1, 0, 2, 3, 10, 6, 5, 8, 11, 9, 7, 12, 13, 15];
+
+pub(super) const CREDITS_ADD_NEXT_ATTRIBUTION_DIGITS_SCROLL_Y: [u16; 14] = [
+    0x290, 0x298, 0x2a0, 0x2a8, 0x2b0, 0x2ba, 0x2c2, 0x2ca, 0x2d2, 0x2da, 0x2e2, 0x2ea, 0x2f2,
+    0x310,
+];
+
+pub(super) const CREDITS_ADD_NEXT_ATTRIBUTION_DIGIT_CHARS: [u16; 2] = [0x3ce6, 0x3cf6];
+
+pub(super) const INTRO_PERIODIC_SWORD_AND_INTRO_FLASH_CHARS: [u8; 10] =
+    [0, 2, 0x20, 0x22, 4, 6, 8, 0x0a, 0x0c, 0x0e];
+
+pub(super) const INTRO_PERIODIC_SWORD_AND_INTRO_FLASH_X_OFFSETS: [u8; 10] =
+    [0x40, 0x40, 0x30, 0x50, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40];
+
+pub(super) const INTRO_PERIODIC_SWORD_AND_INTRO_FLASH_Y_OFFSETS: [u16; 10] =
+    [0x10, 0x20, 0x28, 0x28, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80];
+
+pub(super) const INTRO_SPRITE_TYPE_A_0_X_OFFSETS: [i16; 3] = [-38, 95, 230];
+
+pub(super) const INTRO_SPRITE_TYPE_A_0_Y_OFFSETS: [i16; 3] = [200, -67, 200];
+
+pub(super) const INTRO_SPRITE_TYPE_A_0_X_VELOCITIES: [i8; 3] = [1, 0, -1];
+
+pub(super) const INTRO_SPRITE_TYPE_A_0_Y_VELOCITIES: [i8; 3] = [-1, 1, -1];
+
+pub(super) const ANIMATE_SCENE_SPRITE_COPYRIGHT_SPRITE_ENTRIES: [(i8, i8, u8, u8, u8); 13] = [
+    (0, 0, 0x40, 0x0a, 0),
+    (8, 0, 0x41, 0x0a, 0),
+    (16, 0, 0x42, 0x0a, 0),
+    (24, 0, 0x68, 0x0a, 0),
+    (32, 0, 0x41, 0x0a, 0),
+    (40, 0, 0x42, 0x0a, 0),
+    (48, 0, 0x43, 0x0a, 0),
+    (56, 0, 0x44, 0x0a, 0),
+    (64, 0, 0x50, 0x0a, 0),
+    (72, 0, 0x51, 0x0a, 0),
+    (80, 0, 0x52, 0x0a, 0),
+    (88, 0, 0x53, 0x0a, 0),
+    (96, 0, 0x54, 0x0a, 0),
+];
+
+pub(super) const INITIALIZE_SCENE_SPRITE_SPARKLE_X_OFFSETS: [u8; 4] = [0xc2, 0x98, 0x6f, 0x34];
+
+pub(super) const INITIALIZE_SCENE_SPRITE_SPARKLE_Y_OFFSETS: [u8; 4] = [0x7c, 0x54, 0x7c, 0x57];
+
+pub(super) const ANIMATE_SCENE_SPRITE_SPARKLE_SPRITE_ENTRIES: [(i8, i8, u8, u8, u8); 4] = [
+    (0, 0, 0x80, 0x34, 0),
+    (0, 0, 0xb7, 0x34, 0),
+    (-4, -3, 0x64, 0x38, 2),
+    (-4, -3, 0x62, 0x34, 2),
+];
+
+pub(super) const ANIMATE_SCENE_SPRITE_SPARKLE_STATES: [u8; 8] = [0, 1, 2, 3, 2, 1, 0xff, 0xff];
+
+pub(super) const ANIMATE_SCENE_SPRITE_DRAW_TRIANGLE_LEFT_ENTRIES: [(i8, i8, u8, u8, u8); 16] = [
+    (0, 0, 0x80, 0x1b, 2),
+    (16, 0, 0x82, 0x1b, 2),
+    (32, 0, 0x84, 0x1b, 2),
+    (48, 0, 0x86, 0x1b, 2),
+    (0, 16, 0xa0, 0x1b, 2),
+    (16, 16, 0xa2, 0x1b, 2),
+    (32, 16, 0xa4, 0x1b, 2),
+    (48, 16, 0xa6, 0x1b, 2),
+    (0, 32, 0x88, 0x1b, 2),
+    (16, 32, 0x8a, 0x1b, 2),
+    (32, 32, 0x8c, 0x1b, 2),
+    (48, 32, 0x8e, 0x1b, 2),
+    (0, 48, 0xa8, 0x1b, 2),
+    (16, 48, 0xaa, 0x1b, 2),
+    (32, 48, 0xac, 0x1b, 2),
+    (48, 48, 0xae, 0x1b, 2),
+];
+
+pub(super) const ANIMATE_SCENE_SPRITE_DRAW_TRIANGLE_RIGHT_ENTRIES: [(i8, i8, u8, u8, u8); 16] = [
+    (48, 0, 0x80, 0x5b, 2),
+    (32, 0, 0x82, 0x5b, 2),
+    (16, 0, 0x84, 0x5b, 2),
+    (0, 0, 0x86, 0x5b, 2),
+    (48, 16, 0xa0, 0x5b, 2),
+    (32, 16, 0xa2, 0x5b, 2),
+    (16, 16, 0xa4, 0x5b, 2),
+    (0, 16, 0xa6, 0x5b, 2),
+    (48, 32, 0x88, 0x5b, 2),
+    (32, 32, 0x8a, 0x5b, 2),
+    (16, 32, 0x8c, 0x5b, 2),
+    (0, 32, 0x8e, 0x5b, 2),
+    (48, 48, 0xa8, 0x5b, 2),
+    (32, 48, 0xaa, 0x5b, 2),
+    (16, 48, 0xac, 0x5b, 2),
+    (0, 48, 0xae, 0x5b, 2),
+];
+
+pub(super) const INTRO_DISPLAY_LOGO_INTRO_LOGO_X: [u8; 4] = [0x60, 0x70, 0x80, 0x88];
+
+pub(super) const INTRO_DISPLAY_LOGO_INTRO_LOGO_TILE: [u8; 4] = [0x69, 0x6b, 0x6d, 0x6e];
+
+// ---------------------------------------------------------------------------
+// Promoted nested ending tables from credits and intro match arms.
+// ---------------------------------------------------------------------------
+
+pub(super) const INTRO_SPRITE_TYPE_B_456_Y_ACCELERATION: [i8; 3] = [-1, -1, -1];
+
+pub(super) const INTRO_SPRITE_TYPE_B_456_FINAL_Y2: [u8; 3] = [0x72, 0x66, 0x72];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE2_BIRD_FLAG_FRAMES: [u8; 2] = [0x20, 0x40];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE2_BIRD_OAM_VELOCITY_OFFSETS: [i8; 2] =
+    [16, -16];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE2_SPRITE_CHARS: [u8; 5] =
+    [0x28, 0x2a, 0x2c, 0x2e, 0x2c];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE2_SPRITE_GFX: [u8; 5] = [3, 3, 3, 3, 3];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CASE2_DELAYS: [u8; 2] = [0x30, 0x10];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CASE3_GRAPHICS: [u8; 4] = [1, 2, 3, 2];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE4_SPRITE_CHARS: [u8; 2] = [0x30, 0x32];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE4_SPRITE_GFX: [u8; 2] = [2, 2];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CASE4_COUNTERS: [u16; 2] = [0x20, 0];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CASE4_XY_VELOCITIES: [i8; 10] =
+    [0, -12, -16, -12, 0, 12, 16, 12, 0, -12];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CASE4_DELAY_VELOCITIES: [u8; 24] = [
+    0x3b, 0x14, 0x1e, 0x1d, 0x2c, 0x2b, 0x42, 0x20, 0x27, 0x28, 0x2e, 0x38, 0x3a, 0x4c, 0x32, 0x44,
+    0x2e, 0x2f, 0x1e, 0x28, 0x47, 0x35, 0x32, 0x30,
+];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE5_SHIELD_DMA_GFX: [u8; 2] = [0, 4];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE5_LINK_DMA_GFX: [u16; 2] = [0x0a, 0x224];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE5_SPRITE_CHARS: [u8; 2] = [10, 14];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_SPRITE_TYPES: [u8; 3] = [0x52, 0x55, 0x55];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_OAM_SIZES: [u8; 3] = [0x20, 8, 8];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_STATES: [u8; 3] = [3, 1, 1];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_GRAPHICS: [u8; 6] = [0, 5, 5, 1, 6, 6];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_GRAPHICS_STEPS: [i8; 2] = [1, -1];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_DELAYS1: [u8; 4] = [16, 14, 16, 18];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_DELAYS2: [u8; 4] = [20, 48, 20, 20];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_DIRECTIONS: [u8; 4] = [0, 1, 0, 1];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_OAM_FLAGS: [u8; 4] = [55, 55, 59, 61];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE8_RUN_SPRITE_CHARS: [u8; 4] = [8, 8, 12, 12];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_WISH_POND_X_OFFSETS: [u8; 8] =
+    [0, 4, 8, 12, 16, 20, 24, 0];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_WISH_POND_Y_OFFSETS: [u8; 8] =
+    [0, 8, 16, 24, 32, 40, 4, 36];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_GRAPHICS_2: [u8; 16] =
+    [1, 1, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 0, 0, 0, 0];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE12_SPRITE_GFX: [u8; 3] = [3, 3, 8];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_Z_OFFSETS: [u8; 15] =
+    [2, 4, 5, 6, 6, 7, 7, 7, 7, 6, 6, 5, 4, 2, 0];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE14_BIRD_GFX_FRAMES: [u8; 4] = [0, 1, 0, 2];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_CREDITS_CASE14_TIMING_THRESHOLDS: [u8; 5] =
+    [2, 8, 32, 32, 8];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_X_OFFSETS: [u8; 4] = [0x76, 0x73, 0x71, 0x78];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_Y_OFFSETS: [u8; 4] = [0x8b, 0x83, 0x8d, 0x85];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_DELAYS: [u8; 8] = [6, 6, 6, 6, 6, 6, 10, 8];
+
+pub(super) const CREDITS_HANDLE_SCENE_FADE_OAM_FLAGS_2: [u8; 4] = [0x61, 0x61, 0x3b, 0x39];
+
+pub(super) const INTRO_PERIODIC_SWORD_AND_INTRO_FLASH_INTRO_SWORD_SPARKLE_TIMERS: [u8; 8] =
+    [4, 4, 6, 6, 6, 4, 4, 0];
+
+pub(super) const INTRO_PERIODIC_SWORD_AND_INTRO_FLASH_SPARKLE_CHARS: [u8; 7] =
+    [0x28, 0x37, 0x27, 0x36, 0x27, 0x37, 0x28];
+
+pub(super) const INTRO_PERIODIC_SWORD_AND_INTRO_FLASH_SPARKLE_CHARS_2: [u8; 8] =
+    [0x26, 0x20, 0x24, 0x34, 0x25, 0x20, 0x35, 0x20];
+
+pub(super) const INTRO_SPRITE_TYPE_B_0_X_LIMITS: [u8; 3] = [75, 95, 117];
+
+pub(super) const INTRO_SPRITE_TYPE_B_0_Y_LIMITS: [u8; 3] = [88, 48, 88];
