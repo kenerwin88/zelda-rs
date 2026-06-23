@@ -397,6 +397,8 @@ const THIEF_DRAW_FLAGS: [u8; 4] = [0x40, 0, 0, 0];
 
 const ZELDA_XVEL: [i8; 4] = [0, 0, -9, 9];
 const ZELDA_YVEL: [i8; 4] = [-9, 9, 0, 0];
+const ZELDA_ENTERING_SANCTUARY_DELAYS: [u8; 4] = [38, 26, 44, 1];
+const ZELDA_ENTERING_SANCTUARY_DIRECTIONS: [u8; 4] = [1, 3, 1, 2];
 const THIEF_SPAWN_YVEL: [i8; 6] = [-32, -16, 16, 32, 16, -16];
 
 // Returning Smithy tables (sprite_main.c:9996..9999).
@@ -488,6 +490,10 @@ const SMITHY_SPARK_DELAY: [i8; 6] = [4, 1, 3, 2, 1, 1];
 
 // UncleAndSage Y-offset (sprite_main.c:10888).
 const UNCLE_AND_SAGE_Y: [i16; 3] = [0, -9, 0];
+const UNCLE_LEAVE_HOUSE_DELAYS: [u8; 2] = [64, 224];
+const UNCLE_LEAVE_HOUSE_DIRECTIONS: [u8; 2] = [2, 1];
+const UNCLE_LEAVE_HOUSE_X_VELOCITIES: [i8; 4] = [0, 0, -12, 12];
+const UNCLE_LEAVE_HOUSE_Y_VELOCITIES: [i8; 4] = [-12, 12, 0, 0];
 
 // CrystalMaiden_RunCutscene message table (sprite_main.c:23297).
 const CRYSTAL_MAIDEN_MSGS: [u16; 9] = [
@@ -748,8 +754,6 @@ impl ZeldaState {
     }
 
     pub(super) fn zelda_entering_sanctuary(&mut self, k: usize) {
-        const DELAY0: [u8; 4] = [38, 26, 44, 1];
-        const DIR0: [u8; 4] = [1, 3, 1, 2];
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
@@ -762,8 +766,9 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).set_y_velocity(0);
                         return;
                     }
-                    self.sprite_slot_view_mut(k).set_delay_main(DELAY0[j]);
-                    let dir = DIR0[j];
+                    self.sprite_slot_view_mut(k)
+                        .set_delay_main(ZELDA_ENTERING_SANCTUARY_DELAYS[j]);
+                    let dir = ZELDA_ENTERING_SANCTUARY_DIRECTIONS[j];
                     self.sprite_slot_view_mut(k).set_direction(dir);
                     self.sprite_slot_view_mut(k).set_head_direction(dir);
                     self.sprite_slot_view_mut(k).increment_a();
@@ -848,11 +853,6 @@ impl ZeldaState {
 
     // void Uncle_AtHouse(int k) {  // 85de3e
     pub(super) fn uncle_at_house(&mut self, k: usize) {
-        const LEAVE_HOUSE_DELAY: [u8; 2] = [64, 224];
-        const LEAVE_HOUSE_DIR: [u8; 2] = [2, 1];
-        const LEAVE_HOUSE_XVEL: [i8; 4] = [0, 0, -12, 12];
-        const LEAVE_HOUSE_YVEL: [i8; 4] = [-12, 12, 0, 0];
-
         self.sprite_move_xy(k);
         match self.sprite_slot_view(k).ai_state() {
             0 => {
@@ -897,13 +897,13 @@ impl ZeldaState {
                             self.sprite_slot_view_mut(k).set_y_low(y_low);
                         }
                         self.sprite_slot_view_mut(k)
-                            .set_delay_main(LEAVE_HOUSE_DELAY[j]);
-                        let dir = usize::from(LEAVE_HOUSE_DIR[j]);
+                            .set_delay_main(UNCLE_LEAVE_HOUSE_DELAYS[j]);
+                        let dir = usize::from(UNCLE_LEAVE_HOUSE_DIRECTIONS[j]);
                         self.sprite_slot_view_mut(k).set_direction(dir as u8);
                         self.sprite_slot_view_mut(k)
-                            .set_x_velocity(LEAVE_HOUSE_XVEL[dir] as u8);
+                            .set_x_velocity(UNCLE_LEAVE_HOUSE_X_VELOCITIES[dir] as u8);
                         self.sprite_slot_view_mut(k)
-                            .set_y_velocity(LEAVE_HOUSE_YVEL[dir] as u8);
+                            .set_y_velocity(UNCLE_LEAVE_HOUSE_Y_VELOCITIES[dir] as u8);
                     }
                 }
             }

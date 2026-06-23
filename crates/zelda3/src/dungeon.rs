@@ -2430,14 +2430,13 @@ impl ZeldaState {
                 self.DrawBigGraySegment(0x1212, src, &mut dst, dsto);
             }
             0x31 => {
-                const CHEST_OPEN_MASKS: [u16; 6] = [0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000];
                 let loc = dsto * 2 | 0x8000 | self.room_plane_tilemap_bit();
                 let chest = self
                     .dungeon_room_items_mut()
                     .append_chest_location_and_sync_big_key_count(loc);
-                if chest < CHEST_OPEN_MASKS.len()
+                if chest < DUNGEON_CHEST_OPEN_MASKS.len()
                     && self.game_state.dungeon.savegame_state.savegame_state_bits()
-                        & CHEST_OPEN_MASKS[chest]
+                        & DUNGEON_CHEST_OPEN_MASKS[chest]
                         != 0
                 {
                     self.dungeon_room_items_mut().clear_chest_location(chest);
@@ -10531,14 +10530,13 @@ impl ZeldaState {
 
     pub(super) fn DungeonTransition_RunFiltering(&mut self) {
         if self.game_state.dungeon.torch.any_lights_out_request() != 0 {
-            const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
             let torch = if self.game_state.dungeon.torch.wants_lights_out() != 0 {
                 self.game_state.dungeon.torch.lit_torches() as usize
             } else {
                 3
             };
             self.dungeon_room_effects_mut()
-                .set_fixed_color_plusminus(LIT_TORCHES_COLOR_PLUS[torch]);
+                .set_fixed_color_plusminus(DUNGEON_LIT_TORCH_COLOR_PLUS[torch]);
             self.Dungeon_ApproachFixedColor_variable(
                 self.game_state.dungeon.room_effects.fixed_color_plusminus(),
             );
@@ -10805,8 +10803,6 @@ impl ZeldaState {
                 self.increment_subsubmodule();
             }
             1 => {
-                const CRYSTAL_CUTSCENE_TILE_BASES: [u16; 7] =
-                    [0x1618, 0x1658, 0x1658, 0x1618, 0x0658, 0x1618, 0x1658];
                 self.PaletteFilter_Crystal();
                 self.set_sub_screen_layers(1);
                 self.follower_link_state_mut().set_immobilized_flag(2);
@@ -10817,7 +10813,7 @@ impl ZeldaState {
                     .expect("rescued maiden room must be a boss room")
                     .checked_sub(4)
                     .expect("rescued maiden boss room index must select a crystal slot");
-                let mut dsto = CRYSTAL_CUTSCENE_TILE_BASES[j] >> 1;
+                let mut dsto = DUNGEON_CRYSTAL_CUTSCENE_TILE_BASES[j] >> 1;
                 let mut tile = 0u16;
                 for _ in 0..4 {
                     for x in 0..8u16 {
@@ -11148,10 +11144,9 @@ impl ZeldaState {
                 if self.game_state.dungeon.torch.lit_torches() == 0 {
                     self.set_sub_screen_layers(1);
                 }
-                const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
                 let torch = self.game_state.dungeon.torch.lit_torches() as usize;
                 self.dungeon_room_effects_mut()
-                    .set_fixed_color_plusminus(LIT_TORCHES_COLOR_PLUS[torch]);
+                    .set_fixed_color_plusminus(DUNGEON_LIT_TORCH_COLOR_PLUS[torch]);
                 self.set_submodule(10);
                 self.set_subsubmodule(0);
             }
