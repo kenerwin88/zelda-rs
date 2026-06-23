@@ -3069,17 +3069,9 @@ impl ZeldaState {
     pub(super) fn Death_InitializeGameOverLetters(&mut self) {
         self.minigame_state_mut().set_flag_boomerang_in_place(0);
         for i in 0..8 {
-            self.game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, i)
-                .set_x(0xb0);
+            self.ancilla_slot_view_mut(i).set_x(0xb0);
         }
-        self.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, 0)
-            .set_ancilla_type(1);
+        self.ancilla_slot_view_mut(0).set_ancilla_type(1);
         self.messaging_state_mut().set_game_over_letter_cursor(6);
     }
 
