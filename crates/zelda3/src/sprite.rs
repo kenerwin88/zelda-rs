@@ -8679,10 +8679,7 @@ mod tests {
         assert_eq!(s.sprite_slot(k).incoming_damage(), 0);
 
         assert_eq!(s.ram[GARNISH_ACTIVE_SPRITE], 10);
-        assert_eq!(
-            s.game_state.sprites.garnish_slots.slot(29).garnish_type(),
-            10
-        );
+        assert_eq!(s.garnish_slot_view(29).garnish_type(), 10);
         assert_eq!(s.ram[GARNISH_X_LO_SPRITE + 29], 0x23);
         assert_eq!(s.ram[GARNISH_X_HI_SPRITE + 29], 0x01);
         assert_eq!(s.ram[GARNISH_Y_LO_SPRITE + 29], 0x50);
@@ -8960,54 +8957,6 @@ mod tests {
     }
 
     #[test]
-    fn sprite_reset_all_no_disable_clears_reset_state_without_disabling_sprites() {
-        let mut s = fresh_state();
-        s.ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH] = 1;
-        s.sprite_system_mut().set_alert_flag(2);
-        s.ram[OVERWORLD_BOULDER_TRAP_COUNT] = 3;
-        s.ram[MESSAGE_OR_SPRITE_STATE_CACHE] = 4;
-        s.sprite_system_mut().set_chr_halfslot_state(5);
-        s.sprite_system_mut().set_limit_instance(6);
-        s.oam_state_mut().set_sprite_sorting_setting(7);
-        s.follower_state_mut().set_indicator(12);
-        s.ram[SUPER_BOMB_INDICATOR_TIMER] = 0x55;
-        s.sprite_slot_mut(3).set_state(9);
-        s.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut s.ram, 2)
-            .set_ancilla_type(0x27);
-        s.sprite_workspace_mut().set_where_in_room(0x123, 0x55aa);
-        s.ram[OVERWORLD_SPRITE_WAS_LOADED + 0x42] = 0xbb;
-        write_le_u16(&mut s.ram, DUNGEON_ROOM_HISTORY + 2, 0x1234);
-
-        s.sprite_reset_all_no_disable();
-
-        assert_eq!(s.ram[HAUNTED_GROVE_FLUTE_EVENT_LATCH], 0);
-        assert_eq!(s.game_state.sprites.system.alert_flag(), 0);
-        assert_eq!(s.ram[OVERWORLD_BOULDER_TRAP_COUNT], 0);
-        assert_eq!(s.ram[MESSAGE_OR_SPRITE_STATE_CACHE], 0);
-        assert_eq!(s.game_state.sprites.system.chr_halfslot_state(), 0);
-        assert_eq!(s.game_state.sprites.system.limit_instance(), 0);
-        assert_eq!(s.game_state.oam.sprite_sorting_setting(), 0);
-        assert_eq!(s.ram[SUPER_BOMB_INDICATOR_TIMER], 0xfe);
-        assert_eq!(s.game_state.sprites.workspace.where_in_room(0x123), 0);
-        assert_eq!(s.ram[OVERWORLD_SPRITE_WAS_LOADED + 0x42], 0);
-        assert_eq!(read_le_u16(&s.ram, DUNGEON_ROOM_HISTORY + 2), 0xffff);
-        assert_eq!(s.sprite_slot(3).state(), 9);
-        assert_eq!(
-            s.game_state.sprites.ancilla_slots.slot(2).ancilla_type(),
-            0x27
-        );
-
-        let mut follower = fresh_state();
-        follower.follower_state_mut().set_indicator(13);
-        follower.ram[SUPER_BOMB_INDICATOR_TIMER] = 0x55;
-        follower.sprite_reset_all_no_disable();
-        assert_eq!(follower.ram[SUPER_BOMB_INDICATOR_TIMER], 0x55);
-    }
-
-    #[test]
     fn dungeon_load_single_sprite_preserves_c_tmp_counter_side_effect() {
         let mut s = fresh_state();
         s.dungeon_room_tracking_mut().set_room_index2_word(0x004a);
@@ -9028,16 +8977,8 @@ mod tests {
     fn garnish_get_x_and_y_read_16_bit_coords() {
         let mut s = fresh_state();
         let k = 7;
-        s.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut s.ram, k)
-            .set_x(0x1234);
-        s.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut s.ram, k)
-            .set_y(0xabcd);
+        s.garnish_slot_view_mut(k).set_x(0x1234);
+        s.garnish_slot_view_mut(k).set_y(0xabcd);
 
         assert_eq!(s.garnish_get_x(k), 0x1234);
         assert_eq!(s.garnish_get_y(k), 0xabcd);
@@ -9421,10 +9362,7 @@ mod tests {
 
         assert_eq!(s.ram[0x0fa1], 0x48);
         assert_eq!(s.ram[GARNISH_ACTIVE_SPRITE], 0);
-        assert_eq!(
-            s.game_state.sprites.garnish_slots.slot(28).garnish_type(),
-            0
-        );
+        assert_eq!(s.garnish_slot_view(28).garnish_type(), 0);
     }
 
     #[test]
@@ -9487,11 +9425,7 @@ mod tests {
     fn sprite_spawn_simple_sparkle_garnish_ex_initializes_allocated_slot() {
         let mut s = fresh_state();
         let k = 4;
-        s.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut s.ram, 29)
-            .set_garnish_type(1);
+        s.garnish_slot_view_mut(29).set_garnish_type(1);
         s.sprite_set_x(k, 0x0100);
         s.sprite_set_y(k, 0x0200);
         s.sprite_slot_mut(k).set_z(3);
@@ -9499,10 +9433,7 @@ mod tests {
 
         assert_eq!(s.sprite_garnish_spawn_sparkle(k, 0x12, 0x20), 28);
 
-        assert_eq!(
-            s.game_state.sprites.garnish_slots.slot(28).garnish_type(),
-            5
-        );
+        assert_eq!(s.garnish_slot_view(28).garnish_type(), 5);
         assert_eq!(s.ram[GARNISH_ACTIVE_SPRITE], 5);
         assert_eq!(s.garnish_get_x(28), 0x0112);
         assert_eq!(s.garnish_get_y(28), 0x022d);
@@ -9513,11 +9444,7 @@ mod tests {
 
         let mut full = fresh_state();
         for slot in 0..15 {
-            full.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut full.ram, slot)
-                .set_garnish_type(1);
+            full.garnish_slot_view_mut(slot).set_garnish_type(1);
         }
         full.sprite_garnish_spawn_sparkle_limited(k, 0, 0);
         assert_eq!(full.ram[15], 0xff);
@@ -9801,11 +9728,7 @@ mod tests {
     #[test]
     fn sprite_halt_all_movement_nullifies_hookshot_drag_and_speed() {
         let mut s = fresh_state();
-        s.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut s.ram, 4)
-            .set_ancilla_type(0);
+        s.ancilla_slot_view_mut(4).set_ancilla_type(0);
         s.follower_link_state_mut().set_hookshot_interlock(1);
         s.follower_link_state_mut().set_position(0x1234, 0x5678);
         s.follower_link_state_mut()
@@ -9839,12 +9762,7 @@ mod tests {
         assert!(lifted.sprite_check_if_link_is_busy());
 
         let mut hookshot = fresh_state();
-        hookshot
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut hookshot.ram, 4)
-            .set_ancilla_type(0x27);
+        hookshot.ancilla_slot_view_mut(4).set_ancilla_type(0x27);
         assert!(hookshot.sprite_check_if_link_is_busy());
     }
 

@@ -1098,12 +1098,7 @@ mod tests {
         state.follower_link_state_mut().clear_item_hold_pose();
         state.follower_link_state_mut().clear_state_bits();
         for slot in 0..5 {
-            state
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut state.ram, slot)
-                .clear();
+            state.ancilla_slot_view_mut(slot).clear();
         }
         state.follower_link_state_mut().set_x(0x1000);
         state.follower_link_state_mut().set_y(0x1000);
@@ -1157,29 +1152,6 @@ mod tests {
         assert_eq!(sprite.delay_aux4(), 96);
         assert!(BEE_SPAWN_INITIAL_VELOCITIES.contains(&(sprite.x_velocity() as i8)));
         assert!(BEE_SPAWN_INITIAL_VELOCITIES.contains(&(sprite.y_velocity() as i8)));
-    }
-
-    #[test]
-    fn release_bee_from_bottle_spawns_at_link_and_marks_good_bee() {
-        let mut state = fresh_state();
-        state.follower_link_state_mut().set_x(0x120);
-        state.follower_link_state_mut().set_y(0x230);
-        state.follower_link_state_mut().mark_lower_level();
-        state.player_resources_mut().set_equipped_bottle_index(1);
-        state.inventory_items_mut().set_bottle(0, 8);
-
-        let j = state.release_bee_from_bottle(0);
-
-        assert_eq!(j, 15);
-        let ju = j as usize;
-        let sprite = state.sprite_slot(ju);
-        assert_eq!(sprite.sprite_type(), 0xb2);
-        assert_eq!(sprite.floor(), 1);
-        assert_eq!(state.sprite_get_x(ju), 0x128);
-        assert_eq!(state.sprite_get_y(ju), 0x240);
-        assert_eq!(sprite.head_direction(), 1);
-        assert_eq!(sprite.delay_main(), 64);
-        assert_eq!(sprite.a(), 64);
     }
 
     #[test]

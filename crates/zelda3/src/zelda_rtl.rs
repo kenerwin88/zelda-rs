@@ -12051,10 +12051,7 @@ mod tests {
         assert!(rod.game_state.player.follower_link.item_in_hand_has(1));
         assert_eq!(link_test_byte(&rod, LINK_DEBUG_VALUE_2), 1);
         assert_eq!(link_test_byte(&rod, LINK_DELAY_TIMER_SPIN_ATTACK), 2);
-        assert_eq!(
-            rod.game_state.sprites.ancilla_slots.slot(4).ancilla_type(),
-            2
-        );
+        assert_eq!(rod.ancilla_slot_view(4).ancilla_type(), 2);
 
         let mut hammer = ZeldaState::new();
         hammer.follower_link_state_mut().set_filtered_joypad_h(0x40);
@@ -12079,10 +12076,7 @@ mod tests {
             0
         );
         assert_eq!(bow.game_state.player.follower_link.button_b_frames(), 9);
-        assert_eq!(
-            bow.game_state.sprites.ancilla_slots.slot(4).ancilla_type(),
-            9
-        );
+        assert_eq!(bow.ancilla_slot_view(4).ancilla_type(), 9);
     }
 
     #[test]
@@ -12114,15 +12108,7 @@ mod tests {
         // C `AncillaAdd_Bomb(7, 1)` allocates via `Ancilla_AllocInit(7, 1)`, which
         // for ancilla types 7/8 walks slots [limit..0], so slot 1 receives the
         // bomb ancilla. See zelda3/src/ancilla.c:5763 and ancilla.c:6990.
-        assert_eq!(
-            bombs
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(1)
-                .ancilla_type(),
-            7
-        );
+        assert_eq!(bombs.ancilla_slot_view(1).ancilla_type(), 7);
         assert_eq!(
             bombs.game_state.player.follower_link.button_mask_b_y() & 0x40,
             0
@@ -12172,14 +12158,8 @@ mod tests {
         assert_eq!(lamp.game_state.player.follower_link.button_mask_b_y(), 0);
         assert_eq!(lamp.game_state.player.follower_link.button_b_frames(), 0);
         assert_eq!(link_test_byte(&lamp, LINK_CANT_CHANGE_DIRECTION), 0);
-        assert_eq!(
-            lamp.game_state.sprites.ancilla_slots.slot(4).ancilla_type(),
-            0x1a
-        );
-        assert_eq!(
-            lamp.game_state.sprites.ancilla_slots.slot(3).ancilla_type(),
-            0x2f
-        );
+        assert_eq!(lamp.ancilla_slot_view(4).ancilla_type(), 0x1a);
+        assert_eq!(lamp.ancilla_slot_view(3).ancilla_type(), 0x2f);
 
         let mut powder = ZeldaState::new();
         powder.follower_link_state_mut().set_filtered_joypad_h(0x40);
@@ -12242,15 +12222,7 @@ mod tests {
         assert_eq!(flute.ram[FLUTE_COUNTDOWN], 128);
         assert_eq!(flute.game_state.system_signals.sound_effect_1(), 0);
         assert_eq!(flute.game_state.frame.submodule, 45);
-        assert_eq!(
-            flute
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(4)
-                .ancilla_type(),
-            55
-        );
+        assert_eq!(flute.ancilla_slot_view(4).ancilla_type(), 55);
 
         let mut shovel_dispatch = ZeldaState::new();
         shovel_dispatch
@@ -12289,15 +12261,7 @@ mod tests {
         ether.link_state_using_ether();
         assert_eq!(ether.ram[STEP_COUNTER_FOR_SPIN_ATTACK], 10);
         assert_eq!(ether.ram[SPIN_ATTACK_SOUND_LATCH], 1);
-        assert_eq!(
-            ether
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(4)
-                .ancilla_type(),
-            24
-        );
+        assert_eq!(ether.ancilla_slot_view(4).ancilla_type(), 24);
 
         let mut quake = ZeldaState::new();
         quake.follower_link_state_mut().set_filtered_joypad_h(0x40);
@@ -12391,15 +12355,7 @@ mod tests {
         assert_eq!(state.game_state.player.follower_link.position_mode(), 4);
         assert_eq!(link_test_byte(&state, LINK_DISABLE_SPRITE_DAMAGE), 1);
         assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 7);
-        assert_eq!(
-            state
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(4)
-                .ancilla_type(),
-            0x1f
-        );
+        assert_eq!(state.ancilla_slot_view(4).ancilla_type(), 0x1f);
         assert_eq!(
             state.game_state.messaging.runtime.game_over_letter_cursor(),
             4
@@ -12407,12 +12363,7 @@ mod tests {
         assert_eq!(state.ram[ANCILLA_X_VEL + 4], 0xc0);
         assert_eq!(read_le_u16(&state.ram, ANCILLA_X_LO + 4), 0x00fc);
 
-        state
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut state.ram, 4)
-            .set_ancilla_type(0);
+        state.ancilla_slot_view_mut(4).set_ancilla_type(0);
         set_link_test_byte(&mut state, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
         state.follower_link_state_mut().set_button_b_frames(12);
         state.link_state_hookshotting();
@@ -12443,15 +12394,7 @@ mod tests {
         assert!(state.game_state.player.follower_link.position_mode_has(8));
         assert_eq!(link_test_byte(&state, LINK_DEBUG_VALUE_2), 1);
         assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 2);
-        assert_eq!(
-            state
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(4)
-                .ancilla_type(),
-            0x2c
-        );
+        assert_eq!(state.ancilla_slot_view(4).ancilla_type(), 0x2c);
     }
 
     #[test]
@@ -12464,25 +12407,12 @@ mod tests {
         state.link_item_cane_of_byrna();
 
         assert_eq!(link_test_byte(&state, LINK_MAGIC_POWER), 24);
-        assert_eq!(
-            state
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(4)
-                .ancilla_type(),
-            0x30
-        );
+        assert_eq!(state.ancilla_slot_view(4).ancilla_type(), 0x30);
         assert_eq!(state.game_state.player.follower_link.position_mode(), 8);
         assert_eq!(link_test_byte(&state, LINK_CANT_CHANGE_DIRECTION) & 1, 1);
         assert_eq!(link_test_byte(&state, LINK_DELAY_TIMER_SPIN_ATTACK), 18);
 
-        state
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut state.ram, 4)
-            .set_ancilla_type(0);
+        state.ancilla_slot_view_mut(4).set_ancilla_type(0);
         state.follower_link_state_mut().set_button_mask_b_y(0x40);
         set_link_test_byte(&mut state, LINK_DELAY_TIMER_SPIN_ATTACK, 0);
         state.ram[PLAYER_HANDLER_TIMER] = 2;
@@ -12629,39 +12559,13 @@ mod tests {
         state.follower_link_state_mut().set_speed_setting(16);
         set_link_test_byte(&mut state, LINK_CANT_CHANGE_DIRECTION, 1);
         state.swim_acceleration_mut().set_mode(0, 0x1234);
-        state
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut state.ram, 0)
-            .set_ancilla_type(0x1e);
-        state
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut state.ram, 4)
-            .set_ancilla_type(0x1e);
+        state.ancilla_slot_view_mut(0).set_ancilla_type(0x1e);
+        state.ancilla_slot_view_mut(4).set_ancilla_type(0x1e);
 
         state.link_cancel_dash();
 
-        assert_eq!(
-            state
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(0)
-                .ancilla_type(),
-            0
-        );
-        assert_eq!(
-            state
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(4)
-                .ancilla_type(),
-            0
-        );
+        assert_eq!(state.ancilla_slot_view(0).ancilla_type(), 0);
+        assert_eq!(state.ancilla_slot_view(4).ancilla_type(), 0);
         assert_eq!(link_test_byte(&state, LINK_COUNTDOWN_FOR_DASH), 0);
         assert_eq!(state.game_state.player.follower_link.speed_setting(), 0);
         assert_eq!(state.game_state.player.follower_link.running_state(), 0);

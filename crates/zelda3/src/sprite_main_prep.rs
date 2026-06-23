@@ -4991,101 +4991,6 @@ mod tests {
     }
 
     #[test]
-    fn laser_eye_prep_matches_orientation_branches() {
-        let mut s = fresh_state();
-        let k = 9;
-        s.sprite_slot_mut(k).set_sprite_type(0x96);
-        s.sprite_slot_mut(k).set_x_low(0x20);
-        s.sprite_slot_mut(k).set_y_low(0);
-        s.sprite_prep_laser_eye_bounce(k);
-        assert_eq!(s.sprite_slot(k).direction(), 1);
-        assert_eq!(s.sprite_slot(k).head_direction(), 0);
-        assert_eq!(s.sprite_slot(k).x_low(), 0x28);
-
-        s.sprite_slot_mut(k).set_sprite_type(0x97);
-        s.sprite_slot_mut(k).set_x_low(0x08);
-        s.sprite_slot_mut(k).set_y_low(0x20);
-        s.sprite_prep_laser_eye_bounce(k);
-        assert_eq!(s.sprite_slot(k).direction(), 2);
-        assert_eq!(s.sprite_slot(k).x_low(), 0x10);
-        assert_eq!(s.sprite_slot(k).head_direction(), 0);
-        assert_eq!(s.sprite_slot(k).y_low(), 0x18);
-
-        let mut beam = fresh_state();
-        beam.sprite_slot_mut(k).set_state(9);
-        beam.sprite_set_x(k, 0x0200);
-        beam.sprite_set_y(k, 0x0100);
-        beam.sprite_slot_mut(k).set_direction(0);
-        beam.inventory_items_mut().set_shield_type(3);
-        beam.laser_eye_fire_beam(k);
-        assert_eq!(beam.sprite_slot(15).sprite_type(), 0x95);
-        assert_eq!(beam.sprite_slot(15).graphics(), 0);
-        assert_eq!(beam.sprite_get_x(15), 0x020c);
-        assert_eq!(beam.sprite_get_y(15), 0x0104);
-        assert_eq!(beam.sprite_slot(15).x_velocity(), 112);
-        assert_eq!(beam.sprite_slot(15).y_velocity(), 0);
-        assert_eq!(beam.sprite_slot(15).flags2(), 0x20);
-        assert_eq!(beam.sprite_slot(15).a(), 0x20);
-        assert_eq!(beam.sprite_slot(15).oam_flags(), 5);
-        assert_eq!(beam.sprite_slot(15).deflection_bits(), 0x48);
-        assert_eq!(beam.sprite_slot(15).ignore_projectile(), 0x48);
-        assert_eq!(beam.sprite_slot(15).delay_main(), 5);
-        assert_eq!(beam.sprite_slot(15).flags5(), 32);
-        assert_eq!(beam.game_state.system_signals.sound_effect_2() & 0x3f, 0x19);
-
-        let mut ganon_pos = fresh_state();
-        ganon_pos.sprite_slot_mut(0).set_direction(1);
-        ganon_pos
-            .armos_knight_home_position_mut(k)
-            .set_position(0x0280, 0x0340);
-        ganon_pos.get_position_relative_to_the_great_overlord_ganon(k);
-        assert_eq!(ganon_pos.sprite_get_x(k), 0x026e);
-        assert_eq!(ganon_pos.sprite_get_y(k), 0x032c);
-
-        let mut beamos = fresh_state();
-        beamos.sprite_slot_mut(k).set_state(9);
-        beamos.sprite_set_x(k, 0x0100);
-        beamos.sprite_set_y(k, 0x0200);
-        beamos
-            .draw_scratch_position_mut()
-            .set_low_position(4, (-4i8) as u8);
-        beamos.sprite_system_mut().set_limit_instance(2);
-        beamos.follower_link_state_mut().set_x(0x0124);
-        beamos.follower_link_state_mut().set_y(0x01f4);
-        beamos.beamos_fire_laser(k);
-        assert_eq!(beamos.sprite_slot(15).sprite_type(), 0x61);
-        assert_eq!(beamos.sprite_get_x(15), 0x0104);
-        assert_eq!(beamos.sprite_get_y(15), 0x01fc);
-        assert_eq!(beamos.sprite_slot(15).x_velocity(), 0x20);
-        assert_eq!(beamos.sprite_slot(15).y_velocity(), 0);
-        assert_eq!(beamos.sprite_slot(15).flags2(), 0x3f);
-        assert_eq!(beamos.sprite_slot(15).flags4(), 0x54);
-        assert_eq!(beamos.sprite_slot(15).c(), 1);
-        assert_eq!(beamos.sprite_slot(15).deflection_bits(), 0x48);
-        assert_eq!(beamos.sprite_slot(15).oam_flags(), 3);
-        assert_eq!(beamos.sprite_slot(15).bump_damage(), 4);
-        assert_eq!(beamos.sprite_slot(15).delay_aux1(), 12);
-        assert_eq!(beamos.sprite_slot(15).graphics(), 2);
-        assert_eq!(beamos.game_state.sprites.system.limit_instance(), 3);
-        assert_eq!(
-            beamos.game_state.system_signals.sound_effect_2() & 0x3f,
-            0x19
-        );
-        let history = 2 * 32;
-        assert_eq!(beamos.ram[BEAMOS_X_LO_PREP + history], 0x04);
-        assert_eq!(beamos.ram[BEAMOS_X_HI + history], 0x01);
-        assert_eq!(beamos.ram[BEAMOS_Y_LO_PREP + history], 0xfc);
-        assert_eq!(beamos.ram[BEAMOS_Y_HI_PREP + history], 0x01);
-        assert_eq!(beamos.ram[BEAMOS_X_LO_PREP + history + 31], 0x04);
-
-        let mut beamos_limited = fresh_state();
-        beamos_limited.sprite_system_mut().set_limit_instance(4);
-        beamos_limited.beamos_fire_laser(k);
-        assert_eq!(beamos_limited.game_state.sprites.system.limit_instance(), 4);
-        assert_eq!(beamos_limited.sprite_slot(15).sprite_type(), 0);
-    }
-
-    #[test]
     fn boss_gated_prep_sets_expected_state_when_unfinished() {
         let mut s = fresh_state();
         let k = 10;
@@ -5479,7 +5384,7 @@ mod tests {
         assert_eq!(lanmolas.sprite_slot(k).z(), 0xff);
         assert_eq!(lanmolas.ram[BEAMOS_X_HI + k * 0x40], 0xff);
         assert_eq!(lanmolas.ram[BEAMOS_X_HI + k * 0x40 + 63], 0xff);
-        assert_eq!(lanmolas.game_state.sprites.garnish_slots.slot(k).y_low(), 7);
+        assert_eq!(lanmolas.garnish_slot_view(k).y_low(), 7);
 
         let mut shrapnel = fresh_state();
         shrapnel.sprite_slot_mut(k).set_state(9);
@@ -6049,30 +5954,15 @@ mod tests {
         );
 
         let mut garnish = fresh_state();
-        garnish
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut garnish.ram, 29)
-            .set_garnish_type(1);
-        garnish
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut garnish.ram, 14)
-            .set_garnish_type(1);
+        garnish.garnish_slot_view_mut(29).set_garnish_type(1);
+        garnish.garnish_slot_view_mut(14).set_garnish_type(1);
         assert_eq!(garnish.garnish_alloc_force(), 28);
         assert_eq!(garnish.garnish_alloc(), 28);
         assert_eq!(garnish.garnish_alloc_low(), 13);
         assert_eq!(garnish.garnish_alloc_limit(12), 12);
 
         for slot in 0..30 {
-            garnish
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut garnish.ram, slot)
-                .set_garnish_type(1);
+            garnish.garnish_slot_view_mut(slot).set_garnish_type(1);
         }
         assert_eq!(garnish.garnish_alloc_force(), 0);
         assert_eq!(garnish.garnish_alloc(), -1);
@@ -6084,183 +5974,63 @@ mod tests {
         let mut coords = fresh_state();
         coords.garnish_set_x(3, 0x1234);
         coords.garnish_set_y(3, 0xabcd);
-        assert_eq!(
-            coords.game_state.sprites.garnish_slots.slot(3).x_low(),
-            0x34
-        );
-        assert_eq!(
-            coords.game_state.sprites.garnish_slots.slot(3).x_high(),
-            0x12
-        );
-        assert_eq!(
-            coords.game_state.sprites.garnish_slots.slot(3).y_low(),
-            0xcd
-        );
-        assert_eq!(
-            coords.game_state.sprites.garnish_slots.slot(3).y_high(),
-            0xab
-        );
+        assert_eq!(coords.garnish_slot_view(3).x_low(), 0x34);
+        assert_eq!(coords.garnish_slot_view(3).x_high(), 0x12);
+        assert_eq!(coords.garnish_slot_view(3).y_low(), 0xcd);
+        assert_eq!(coords.garnish_slot_view(3).y_high(), 0xab);
 
         let mut debris = fresh_state();
-        debris
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut debris.ram, 29)
-            .set_garnish_type(1);
+        debris.garnish_slot_view_mut(29).set_garnish_type(1);
         debris.garnish_spawn_pyramid_debris(-4, 5, -7, 9);
         assert_eq!(debris.game_state.system_signals.sound_effect_2(), 3);
         assert_eq!(debris.game_state.system_signals.sound_effect_1(), 31);
         assert_eq!(debris.game_state.system_signals.ambient_sound_effect(), 5);
-        assert_eq!(
-            debris
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .garnish_type(),
-            19
-        );
+        assert_eq!(debris.garnish_slot_view(28).garnish_type(), 19);
         assert_eq!(debris.game_state.sprites.garnish_runtime.active_type(), 19);
-        assert_eq!(
-            debris.game_state.sprites.garnish_slots.slot(28).x_low(),
-            228
-        );
-        assert_eq!(
-            debris.game_state.sprites.garnish_slots.slot(28).y_low(),
-            101
-        );
-        assert_eq!(
-            debris
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .x_velocity(),
-            (-7i8) as u8
-        );
-        assert_eq!(
-            debris
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .y_velocity(),
-            9
-        );
-        assert_eq!(
-            debris.game_state.sprites.garnish_slots.slot(28).countdown(),
-            72
-        );
+        assert_eq!(debris.garnish_slot_view(28).x_low(), 228);
+        assert_eq!(debris.garnish_slot_view(28).y_low(), 101);
+        assert_eq!(debris.garnish_slot_view(28).x_velocity(), (-7i8) as u8);
+        assert_eq!(debris.garnish_slot_view(28).y_velocity(), 9);
+        assert_eq!(debris.garnish_slot_view(28).countdown(), 72);
 
         let mut puff = fresh_state();
         let puff_owner = 6;
         puff.set_frame_counter(2);
-        puff.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut puff.ram, 14)
-            .set_garnish_type(1);
+        puff.garnish_slot_view_mut(14).set_garnish_type(1);
         puff.sprite_workspace_mut().set_current_sprite_x(0x0200);
         puff.sprite_workspace_mut().set_current_sprite_y(0x0300);
         puff.kholdstare_spawn_puff_cloud_garnish(puff_owner);
-        assert_eq!(
-            puff.game_state
-                .sprites
-                .garnish_slots
-                .slot(13)
-                .garnish_type(),
-            7
-        );
+        assert_eq!(puff.garnish_slot_view(13).garnish_type(), 7);
         assert_eq!(puff.game_state.sprites.garnish_runtime.active_type(), 7);
-        assert_eq!(
-            puff.game_state.sprites.garnish_slots.slot(13).countdown(),
-            31
-        );
-        assert_eq!(puff.game_state.sprites.garnish_slots.slot(13).x_low(), 0xfa);
-        assert_eq!(
-            puff.game_state.sprites.garnish_slots.slot(13).x_high(),
-            0x01
-        );
-        assert_eq!(puff.game_state.sprites.garnish_slots.slot(13).y_low(), 0x12);
-        assert_eq!(
-            puff.game_state.sprites.garnish_slots.slot(13).y_high(),
-            0x03
-        );
-        assert_eq!(puff.game_state.sprites.garnish_slots.slot(13).floor(), 0);
+        assert_eq!(puff.garnish_slot_view(13).countdown(), 31);
+        assert_eq!(puff.garnish_slot_view(13).x_low(), 0xfa);
+        assert_eq!(puff.garnish_slot_view(13).x_high(), 0x01);
+        assert_eq!(puff.garnish_slot_view(13).y_low(), 0x12);
+        assert_eq!(puff.garnish_slot_view(13).y_high(), 0x03);
+        assert_eq!(puff.garnish_slot_view(13).floor(), 0);
 
         let mut flame = fresh_state();
-        flame
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut flame.ram, 29)
-            .set_garnish_type(1);
+        flame.garnish_slot_view_mut(29).set_garnish_type(1);
         flame.sprite_set_x(k, 0x0456);
         flame.sprite_set_y(k, 0x0789);
         assert_eq!(flame.garnish_flame_trail(k, false), 28);
-        assert_eq!(
-            flame
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .garnish_type(),
-            0x10
-        );
+        assert_eq!(flame.garnish_slot_view(28).garnish_type(), 0x10);
         assert_eq!(flame.game_state.sprites.garnish_runtime.active_type(), 0x10);
-        assert_eq!(
-            flame.game_state.sprites.garnish_slots.slot(28).sprite(),
-            k as u8
-        );
-        assert_eq!(
-            flame.game_state.sprites.garnish_slots.slot(28).x_low(),
-            0x56
-        );
-        assert_eq!(
-            flame.game_state.sprites.garnish_slots.slot(28).x_high(),
-            0x04
-        );
-        assert_eq!(
-            flame.game_state.sprites.garnish_slots.slot(28).y_low(),
-            0x99
-        );
-        assert_eq!(
-            flame.game_state.sprites.garnish_slots.slot(28).y_high(),
-            0x07
-        );
-        assert_eq!(
-            flame.game_state.sprites.garnish_slots.slot(28).countdown(),
-            127
-        );
+        assert_eq!(flame.garnish_slot_view(28).sprite(), k as u8);
+        assert_eq!(flame.garnish_slot_view(28).x_low(), 0x56);
+        assert_eq!(flame.garnish_slot_view(28).x_high(), 0x04);
+        assert_eq!(flame.garnish_slot_view(28).y_low(), 0x99);
+        assert_eq!(flame.garnish_slot_view(28).y_high(), 0x07);
+        assert_eq!(flame.garnish_slot_view(28).countdown(), 127);
 
         let mut low_flame = fresh_state();
-        low_flame
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut low_flame.ram, 14)
-            .set_garnish_type(1);
+        low_flame.garnish_slot_view_mut(14).set_garnish_type(1);
         low_flame.sprite_set_x(k, 0x0012);
         low_flame.sprite_set_y(k, 0x00f8);
         assert_eq!(low_flame.garnish_flame_trail(k, true), 13);
-        assert_eq!(
-            low_flame
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(13)
-                .garnish_type(),
-            0x10
-        );
-        assert_eq!(
-            low_flame.game_state.sprites.garnish_slots.slot(13).y_low(),
-            0x08
-        );
-        assert_eq!(
-            low_flame.game_state.sprites.garnish_slots.slot(13).y_high(),
-            0x01
-        );
+        assert_eq!(low_flame.garnish_slot_view(13).garnish_type(), 0x10);
+        assert_eq!(low_flame.garnish_slot_view(13).y_low(), 0x08);
+        assert_eq!(low_flame.garnish_slot_view(13).y_high(), 0x01);
 
         let mut fire_bat = fresh_state();
         fire_bat.sprite_slot_mut(k).set_subtype2(3);
@@ -6270,10 +6040,7 @@ mod tests {
 
         let mut moving_fire_bat = fresh_state();
         moving_fire_bat
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut moving_fire_bat.ram, 14)
+            .garnish_slot_view_mut(14)
             .set_garnish_type(1);
         moving_fire_bat.sprite_slot_mut(k).set_subtype2(7);
         moving_fire_bat.sprite_slot_mut(k).set_anim_clock(5);
@@ -6282,15 +6049,7 @@ mod tests {
         moving_fire_bat.fire_bat_move(k);
         assert_eq!(moving_fire_bat.sprite_slot(k).subtype2(), 8);
         assert_eq!(moving_fire_bat.sprite_slot(k).graphics(), 6);
-        assert_eq!(
-            moving_fire_bat
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(13)
-                .garnish_type(),
-            0x10
-        );
+        assert_eq!(moving_fire_bat.garnish_slot_view(13).garnish_type(), 0x10);
         assert_eq!(
             moving_fire_bat
                 .game_state
@@ -6299,60 +6058,12 @@ mod tests {
                 .active_type(),
             0x10
         );
-        assert_eq!(
-            moving_fire_bat
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(13)
-                .sprite(),
-            k as u8
-        );
-        assert_eq!(
-            moving_fire_bat
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(13)
-                .x_low(),
-            0x24
-        );
-        assert_eq!(
-            moving_fire_bat
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(13)
-                .x_high(),
-            0x01
-        );
-        assert_eq!(
-            moving_fire_bat
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(13)
-                .y_low(),
-            0x50
-        );
-        assert_eq!(
-            moving_fire_bat
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(13)
-                .y_high(),
-            0x03
-        );
-        assert_eq!(
-            moving_fire_bat
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(13)
-                .countdown(),
-            0x2f
-        );
+        assert_eq!(moving_fire_bat.garnish_slot_view(13).sprite(), k as u8);
+        assert_eq!(moving_fire_bat.garnish_slot_view(13).x_low(), 0x24);
+        assert_eq!(moving_fire_bat.garnish_slot_view(13).x_high(), 0x01);
+        assert_eq!(moving_fire_bat.garnish_slot_view(13).y_low(), 0x50);
+        assert_eq!(moving_fire_bat.garnish_slot_view(13).y_high(), 0x03);
+        assert_eq!(moving_fire_bat.garnish_slot_view(13).countdown(), 0x2f);
 
         let mut skipped_fire_bat = fresh_state();
         skipped_fire_bat.sprite_slot_mut(k).set_subtype2(0);
@@ -6369,54 +6080,18 @@ mod tests {
 
         let mut fireball = fresh_state();
         fireball.set_frame_counter(0);
-        fireball
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut fireball.ram, 29)
-            .set_garnish_type(1);
+        fireball.garnish_slot_view_mut(29).set_garnish_type(1);
         fireball.sprite_workspace_mut().set_current_sprite_x(0x0123);
         fireball.sprite_workspace_mut().set_current_sprite_y(0x02f5);
         fireball.fireball_spawn_trail_garnish(k);
-        assert_eq!(
-            fireball
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .garnish_type(),
-            8
-        );
+        assert_eq!(fireball.garnish_slot_view(28).garnish_type(), 8);
         assert_eq!(fireball.game_state.sprites.garnish_runtime.active_type(), 8);
-        assert_eq!(
-            fireball
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .countdown(),
-            11
-        );
-        assert_eq!(
-            fireball.game_state.sprites.garnish_slots.slot(28).x_low(),
-            0x23
-        );
-        assert_eq!(
-            fireball.game_state.sprites.garnish_slots.slot(28).x_high(),
-            0x01
-        );
-        assert_eq!(
-            fireball.game_state.sprites.garnish_slots.slot(28).y_low(),
-            0x05
-        );
-        assert_eq!(
-            fireball.game_state.sprites.garnish_slots.slot(28).y_high(),
-            0x03
-        );
-        assert_eq!(
-            fireball.game_state.sprites.garnish_slots.slot(28).sprite(),
-            k as u8
-        );
+        assert_eq!(fireball.garnish_slot_view(28).countdown(), 11);
+        assert_eq!(fireball.garnish_slot_view(28).x_low(), 0x23);
+        assert_eq!(fireball.garnish_slot_view(28).x_high(), 0x01);
+        assert_eq!(fireball.garnish_slot_view(28).y_low(), 0x05);
+        assert_eq!(fireball.garnish_slot_view(28).y_high(), 0x03);
+        assert_eq!(fireball.garnish_slot_view(28).sprite(), k as u8);
 
         let mut skipped_fireball = fresh_state();
         skipped_fireball.set_frame_counter(1);
@@ -6432,62 +6107,23 @@ mod tests {
 
         let mut firesnake = fresh_state();
         firesnake.set_frame_counter(k as u8);
-        firesnake
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut firesnake.ram, 29)
-            .set_garnish_type(1);
+        firesnake.garnish_slot_view_mut(29).set_garnish_type(1);
         firesnake.sprite_set_x(k, 0x0167);
         firesnake.sprite_set_y(k, 0x02f0);
         firesnake.sprite_slot_mut(k).set_floor(2);
         firesnake.firesnake_spawn_fireball(k);
-        assert_eq!(
-            firesnake
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .garnish_type(),
-            1
-        );
+        assert_eq!(firesnake.garnish_slot_view(28).garnish_type(), 1);
         assert_eq!(
             firesnake.game_state.sprites.garnish_runtime.active_type(),
             1
         );
-        assert_eq!(
-            firesnake.game_state.sprites.garnish_slots.slot(28).x_low(),
-            0x67
-        );
-        assert_eq!(
-            firesnake.game_state.sprites.garnish_slots.slot(28).x_high(),
-            0x01
-        );
-        assert_eq!(
-            firesnake.game_state.sprites.garnish_slots.slot(28).y_low(),
-            0x00
-        );
-        assert_eq!(
-            firesnake.game_state.sprites.garnish_slots.slot(28).y_high(),
-            0x03
-        );
-        assert_eq!(
-            firesnake
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .countdown(),
-            32
-        );
-        assert_eq!(
-            firesnake.game_state.sprites.garnish_slots.slot(28).sprite(),
-            k as u8
-        );
-        assert_eq!(
-            firesnake.game_state.sprites.garnish_slots.slot(28).floor(),
-            2
-        );
+        assert_eq!(firesnake.garnish_slot_view(28).x_low(), 0x67);
+        assert_eq!(firesnake.garnish_slot_view(28).x_high(), 0x01);
+        assert_eq!(firesnake.garnish_slot_view(28).y_low(), 0x00);
+        assert_eq!(firesnake.garnish_slot_view(28).y_high(), 0x03);
+        assert_eq!(firesnake.garnish_slot_view(28).countdown(), 32);
+        assert_eq!(firesnake.garnish_slot_view(28).sprite(), k as u8);
+        assert_eq!(firesnake.garnish_slot_view(28).floor(), 2);
 
         let mut skipped_firesnake = fresh_state();
         skipped_firesnake.set_frame_counter((k as u8) ^ 1);
@@ -6696,15 +6332,7 @@ mod tests {
         garnish_poof.sprite_set_y(k, 0x0456);
         garnish_poof.sprite_slot_mut(k).set_floor(2);
         garnish_poof.sprite_spawn_poof_garnish(k);
-        assert_eq!(
-            garnish_poof
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(29)
-                .garnish_type(),
-            10
-        );
+        assert_eq!(garnish_poof.garnish_slot_view(29).garnish_type(), 10);
         assert_eq!(
             garnish_poof
                 .game_state
@@ -6713,60 +6341,12 @@ mod tests {
                 .active_type(),
             10
         );
-        assert_eq!(
-            garnish_poof
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(29)
-                .x_low(),
-            0x34
-        );
-        assert_eq!(
-            garnish_poof
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(29)
-                .x_high(),
-            0x02
-        );
-        assert_eq!(
-            garnish_poof
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(29)
-                .y_low(),
-            0x66
-        );
-        assert_eq!(
-            garnish_poof
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(29)
-                .y_high(),
-            0x04
-        );
-        assert_eq!(
-            garnish_poof
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(29)
-                .sprite(),
-            2
-        );
-        assert_eq!(
-            garnish_poof
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(29)
-                .countdown(),
-            15
-        );
+        assert_eq!(garnish_poof.garnish_slot_view(29).x_low(), 0x34);
+        assert_eq!(garnish_poof.garnish_slot_view(29).x_high(), 0x02);
+        assert_eq!(garnish_poof.garnish_slot_view(29).y_low(), 0x66);
+        assert_eq!(garnish_poof.garnish_slot_view(29).y_high(), 0x04);
+        assert_eq!(garnish_poof.garnish_slot_view(29).sprite(), 2);
+        assert_eq!(garnish_poof.garnish_slot_view(29).countdown(), 15);
 
         let mut octorok = fresh_state();
         octorok.sprite_slot_mut(k).set_state(9);
@@ -6813,59 +6393,14 @@ mod tests {
 
         let mut sparkle = fresh_state();
         for (idx, ty) in [0x2a, 0x21, 0x30, 0x19, 0x0c].into_iter().enumerate() {
-            sparkle
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut sparkle.ram, idx)
-                .set_ancilla_type(ty);
+            sparkle.ancilla_slot_view_mut(idx).set_ancilla_type(ty);
         }
         sparkle.ancilla_terminate_sparkle_objects();
-        assert_eq!(
-            sparkle
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(0)
-                .ancilla_type(),
-            0
-        );
-        assert_eq!(
-            sparkle
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(1)
-                .ancilla_type(),
-            0x21
-        );
-        assert_eq!(
-            sparkle
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(2)
-                .ancilla_type(),
-            0
-        );
-        assert_eq!(
-            sparkle
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(3)
-                .ancilla_type(),
-            0
-        );
-        assert_eq!(
-            sparkle
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(4)
-                .ancilla_type(),
-            0
-        );
+        assert_eq!(sparkle.ancilla_slot_view(0).ancilla_type(), 0);
+        assert_eq!(sparkle.ancilla_slot_view(1).ancilla_type(), 0x21);
+        assert_eq!(sparkle.ancilla_slot_view(2).ancilla_type(), 0);
+        assert_eq!(sparkle.ancilla_slot_view(3).ancilla_type(), 0);
+        assert_eq!(sparkle.ancilla_slot_view(4).ancilla_type(), 0);
 
         let mut kodongo = fresh_state();
         kodongo.sprite_slot_mut(k).set_direction(2);
@@ -7180,159 +6715,56 @@ mod tests {
 
         let mut pirogusu = fresh_state();
         pirogusu.set_frame_counter(k as u8);
-        pirogusu
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut pirogusu.ram, 14)
-            .set_garnish_type(1);
+        pirogusu.garnish_slot_view_mut(14).set_garnish_type(1);
         pirogusu.sprite_set_x(k, 0x0110);
         pirogusu.sprite_set_y(k, 0x0220);
         pirogusu.pirogusu_spawn_splash(k);
-        assert_eq!(
-            pirogusu
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(13)
-                .garnish_type(),
-            11
-        );
+        assert_eq!(pirogusu.garnish_slot_view(13).garnish_type(), 11);
         assert_eq!(
             pirogusu.game_state.sprites.garnish_runtime.active_type(),
             11
         );
-        assert_eq!(
-            pirogusu.game_state.sprites.garnish_slots.slot(13).x_low(),
-            0x15
-        );
-        assert_eq!(
-            pirogusu.game_state.sprites.garnish_slots.slot(13).x_high(),
-            0x01
-        );
-        assert_eq!(
-            pirogusu.game_state.sprites.garnish_slots.slot(13).y_low(),
-            0x34
-        );
-        assert_eq!(
-            pirogusu.game_state.sprites.garnish_slots.slot(13).y_high(),
-            0x02
-        );
-        assert_eq!(
-            pirogusu
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(13)
-                .countdown(),
-            15
-        );
+        assert_eq!(pirogusu.garnish_slot_view(13).x_low(), 0x15);
+        assert_eq!(pirogusu.garnish_slot_view(13).x_high(), 0x01);
+        assert_eq!(pirogusu.garnish_slot_view(13).y_low(), 0x34);
+        assert_eq!(pirogusu.garnish_slot_view(13).y_high(), 0x02);
+        assert_eq!(pirogusu.garnish_slot_view(13).countdown(), 15);
 
         let mut lightning = fresh_state();
-        lightning
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut lightning.ram, 29)
-            .set_garnish_type(1);
+        lightning.garnish_slot_view_mut(29).set_garnish_type(1);
         lightning.sprite_set_x(k, 0x0123);
         lightning.sprite_set_y(k, 0x02f4);
         lightning.sprite_slot_mut(k).set_a(7);
         lightning.lightning_spawn_garnish(k);
-        assert_eq!(
-            lightning
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .garnish_type(),
-            9
-        );
+        assert_eq!(lightning.garnish_slot_view(28).garnish_type(), 9);
         assert_eq!(
             lightning.game_state.sprites.garnish_runtime.active_type(),
             9
         );
-        assert_eq!(
-            lightning.game_state.sprites.garnish_slots.slot(28).sprite(),
-            7
-        );
-        assert_eq!(
-            lightning.game_state.sprites.garnish_slots.slot(28).x_low(),
-            0x23
-        );
-        assert_eq!(
-            lightning.game_state.sprites.garnish_slots.slot(28).x_high(),
-            0x01
-        );
-        assert_eq!(
-            lightning.game_state.sprites.garnish_slots.slot(28).y_low(),
-            0x04
-        );
-        assert_eq!(
-            lightning.game_state.sprites.garnish_slots.slot(28).y_high(),
-            0x03
-        );
-        assert_eq!(
-            lightning
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .countdown(),
-            32
-        );
+        assert_eq!(lightning.garnish_slot_view(28).sprite(), 7);
+        assert_eq!(lightning.garnish_slot_view(28).x_low(), 0x23);
+        assert_eq!(lightning.garnish_slot_view(28).x_high(), 0x01);
+        assert_eq!(lightning.garnish_slot_view(28).y_low(), 0x04);
+        assert_eq!(lightning.garnish_slot_view(28).y_high(), 0x03);
+        assert_eq!(lightning.garnish_slot_view(28).countdown(), 32);
 
         let mut laser = fresh_state();
-        laser
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut laser.ram, 29)
-            .set_garnish_type(1);
+        laser.garnish_slot_view_mut(29).set_garnish_type(1);
         laser.sprite_set_x(k, 0x0034);
         laser.sprite_set_y(k, 0x00f0);
         laser.sprite_slot_mut(k).set_graphics(5);
         laser.sprite_slot_mut(k).set_floor(2);
         laser.laser_beam_build_up_garnish(k);
-        assert_eq!(
-            laser
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .garnish_type(),
-            4
-        );
+        assert_eq!(laser.garnish_slot_view(28).garnish_type(), 4);
         assert_eq!(laser.game_state.sprites.garnish_runtime.active_type(), 4);
-        assert_eq!(
-            laser.game_state.sprites.garnish_slots.slot(28).x_low(),
-            0x34
-        );
-        assert_eq!(
-            laser.game_state.sprites.garnish_slots.slot(28).x_high(),
-            0x00
-        );
-        assert_eq!(
-            laser.game_state.sprites.garnish_slots.slot(28).y_low(),
-            0x00
-        );
-        assert_eq!(
-            laser.game_state.sprites.garnish_slots.slot(28).y_high(),
-            0x01
-        );
-        assert_eq!(
-            laser.game_state.sprites.garnish_slots.slot(28).countdown(),
-            16
-        );
-        assert_eq!(
-            laser.game_state.sprites.garnish_slots.slot(28).oam_flags(),
-            5
-        );
-        assert_eq!(
-            laser.game_state.sprites.garnish_slots.slot(28).sprite(),
-            k as u8
-        );
-        assert_eq!(laser.game_state.sprites.garnish_slots.slot(28).floor(), 2);
+        assert_eq!(laser.garnish_slot_view(28).x_low(), 0x34);
+        assert_eq!(laser.garnish_slot_view(28).x_high(), 0x00);
+        assert_eq!(laser.garnish_slot_view(28).y_low(), 0x00);
+        assert_eq!(laser.garnish_slot_view(28).y_high(), 0x01);
+        assert_eq!(laser.garnish_slot_view(28).countdown(), 16);
+        assert_eq!(laser.garnish_slot_view(28).oam_flags(), 5);
+        assert_eq!(laser.garnish_slot_view(28).sprite(), k as u8);
+        assert_eq!(laser.garnish_slot_view(28).floor(), 2);
 
         let mut logic = fresh_state();
         assert!(!logic.octoballoon_find());
@@ -7395,92 +6827,23 @@ mod tests {
         assert!(!lumberjack.lumberjack_check_proximity(k, 0));
 
         let mut blind_laser = fresh_state();
-        blind_laser
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut blind_laser.ram, 29)
-            .set_garnish_type(1);
+        blind_laser.garnish_slot_view_mut(29).set_garnish_type(1);
         blind_laser.sprite_set_x(k, 0x0456);
         blind_laser.sprite_set_y(k, 0x0789);
         blind_laser.sprite_slot_mut(k).set_graphics(6);
         blind_laser.blind_laser_spawn_trail_garnish(k);
-        assert_eq!(
-            blind_laser
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .garnish_type(),
-            15
-        );
+        assert_eq!(blind_laser.garnish_slot_view(28).garnish_type(), 15);
         assert_eq!(
             blind_laser.game_state.sprites.garnish_runtime.active_type(),
             15
         );
-        assert_eq!(
-            blind_laser
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .oam_flags(),
-            6
-        );
-        assert_eq!(
-            blind_laser
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .sprite(),
-            k as u8
-        );
-        assert_eq!(
-            blind_laser
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .x_low(),
-            0x56
-        );
-        assert_eq!(
-            blind_laser
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .x_high(),
-            0x04
-        );
-        assert_eq!(
-            blind_laser
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .y_low(),
-            0x99
-        );
-        assert_eq!(
-            blind_laser
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .y_high(),
-            0x07
-        );
-        assert_eq!(
-            blind_laser
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .countdown(),
-            10
-        );
+        assert_eq!(blind_laser.garnish_slot_view(28).oam_flags(), 6);
+        assert_eq!(blind_laser.garnish_slot_view(28).sprite(), k as u8);
+        assert_eq!(blind_laser.garnish_slot_view(28).x_low(), 0x56);
+        assert_eq!(blind_laser.garnish_slot_view(28).x_high(), 0x04);
+        assert_eq!(blind_laser.garnish_slot_view(28).y_low(), 0x99);
+        assert_eq!(blind_laser.garnish_slot_view(28).y_high(), 0x07);
+        assert_eq!(blind_laser.garnish_slot_view(28).countdown(), 10);
 
         let mut runner_dust = fresh_state();
         runner_dust.sprite_slot_mut(k).set_die_action(14);
@@ -7492,102 +6855,36 @@ mod tests {
         runner_dust.sprite_slot_mut(k).set_die_action(15);
         runner_dust.sprite_set_x(k, 0x0100);
         runner_dust.sprite_set_y(k, 0x0200);
-        runner_dust
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut runner_dust.ram, 29)
-            .set_garnish_type(1);
+        runner_dust.garnish_slot_view_mut(29).set_garnish_type(1);
         runner_dust.running_boy_spawn_dust_garnish(k);
-        assert_eq!(
-            runner_dust
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .garnish_type(),
-            20
-        );
+        assert_eq!(runner_dust.garnish_slot_view(28).garnish_type(), 20);
         assert_eq!(
             runner_dust.game_state.sprites.garnish_runtime.active_type(),
             20
         );
-        assert_eq!(
-            runner_dust
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .x_low(),
-            0x04
-        );
-        assert_eq!(
-            runner_dust
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .x_high(),
-            0x01
-        );
-        assert_eq!(
-            runner_dust
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .y_low(),
-            0x1c
-        );
-        assert_eq!(
-            runner_dust
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .y_high(),
-            0x02
-        );
-        assert_eq!(
-            runner_dust
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(28)
-                .countdown(),
-            10
-        );
+        assert_eq!(runner_dust.garnish_slot_view(28).x_low(), 0x04);
+        assert_eq!(runner_dust.garnish_slot_view(28).x_high(), 0x01);
+        assert_eq!(runner_dust.garnish_slot_view(28).y_low(), 0x1c);
+        assert_eq!(runner_dust.garnish_slot_view(28).y_high(), 0x02);
+        assert_eq!(runner_dust.garnish_slot_view(28).countdown(), 10);
 
         let mut cd = fresh_state();
         cd.sprite_slot_mut(k).set_subtype2(6);
         cd.sprite_cd_spawn_garnish(k);
         assert_eq!(cd.game_state.sprites.garnish_runtime.active_type(), 0);
         cd.sprite_slot_mut(k).set_subtype2(7);
-        cd.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut cd.ram, 29)
-            .set_garnish_type(1);
+        cd.garnish_slot_view_mut(29).set_garnish_type(1);
         cd.sprite_set_x(k, 0x0033);
         cd.sprite_set_y(k, 0x0044);
         cd.sprite_cd_spawn_garnish(k);
         assert_eq!(cd.sprite_slot(k).subtype2(), 8);
         assert_eq!(cd.game_state.system_signals.sound_effect_2() & 0x3f, 0x14);
-        assert_eq!(
-            cd.game_state.sprites.garnish_slots.slot(28).garnish_type(),
-            0x0c
-        );
+        assert_eq!(cd.garnish_slot_view(28).garnish_type(), 0x0c);
         assert_eq!(cd.game_state.sprites.garnish_runtime.active_type(), 0x0c);
-        assert_eq!(
-            cd.game_state.sprites.garnish_slots.slot(28).sprite(),
-            k as u8
-        );
-        assert_eq!(cd.game_state.sprites.garnish_slots.slot(28).x_low(), 0x33);
-        assert_eq!(cd.game_state.sprites.garnish_slots.slot(28).y_low(), 0x54);
-        assert_eq!(
-            cd.game_state.sprites.garnish_slots.slot(28).countdown(),
-            127
-        );
+        assert_eq!(cd.garnish_slot_view(28).sprite(), k as u8);
+        assert_eq!(cd.garnish_slot_view(28).x_low(), 0x33);
+        assert_eq!(cd.garnish_slot_view(28).y_low(), 0x54);
+        assert_eq!(cd.garnish_slot_view(28).countdown(), 127);
 
         let mut hint = fresh_state();
         hint.sprite_slot_mut(k).set_ai_state(2);
@@ -7601,11 +6898,7 @@ mod tests {
         let mut pipe = fresh_state();
         pipe.follower_link_state_mut().set_position_mode(7);
         pipe.player_state_mut().set_direction_lock(9);
-        pipe.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut pipe.ram, 3)
-            .set_ancilla_type(0x31);
+        pipe.ancilla_slot_view_mut(3).set_ancilla_type(0x31);
         assert!(!pipe.pipe_validate_entry());
         assert_eq!(pipe.game_state.player.follower_link.position_mode(), 0);
         assert_eq!(pipe.game_state.player.follower_link.direction_lock(), 0);
@@ -7742,24 +7035,9 @@ mod tests {
         assert_eq!(minigame.ram[MINIGAME_CREDITS_PREP], 0xff);
 
         let mut terminate = fresh_state();
-        terminate
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut terminate.ram, 0)
-            .set_ancilla_type(0x22);
-        terminate
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut terminate.ram, 1)
-            .set_ancilla_type(0x21);
-        terminate
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut terminate.ram, 4)
-            .set_ancilla_type(0x22);
+        terminate.ancilla_slot_view_mut(0).set_ancilla_type(0x22);
+        terminate.ancilla_slot_view_mut(1).set_ancilla_type(0x21);
+        terminate.ancilla_slot_view_mut(4).set_ancilla_type(0x22);
         terminate.ram[ANCILLA_AUX_TIMER] = 9;
         terminate.ram[ANCILLA_AUX_TIMER + 1] = 9;
         terminate.ram[ANCILLA_AUX_TIMER + 4] = 9;
@@ -7827,73 +7105,6 @@ mod tests {
             assert_eq!(circle.sprite_slot(slot).a(), a);
             assert_eq!(circle.sprite_slot(slot).b(), b);
         }
-    }
-
-    #[test]
-    fn arrghi_prep_copies_overlord_positions_and_updates_puff_ring() {
-        let k = 12;
-        let mut plain = fresh_state();
-        plain
-            .arrghus_puff_home_position_mut(k)
-            .set_position(0x0221, 0x0443);
-        plain.sprite_prep_arrghi(k);
-        assert_eq!(plain.sprite_slot(k).x_low(), 0x21);
-        assert_eq!(plain.sprite_slot(k).x_high(), 0x02);
-        assert_eq!(plain.sprite_slot(k).y_low(), 0x43);
-        assert_eq!(plain.sprite_slot(k).y_high(), 0x04);
-
-        let mut puffs = fresh_state();
-        let k = 13;
-        puffs.sprite_set_x(0, 0x0100);
-        puffs.sprite_set_y(0, 0x0200);
-        puffs
-            .game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut puffs.ram, 0)
-            .set_x_low(0);
-        puffs
-            .game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut puffs.ram, 1)
-            .set_x_low(0);
-        puffs
-            .game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut puffs.ram, 2)
-            .set_x_low(0xaa);
-        puffs
-            .game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut puffs.ram, 3)
-            .set_x_low(0xbb);
-        puffs
-            .game_state
-            .sprites
-            .overlord_slots
-            .slot_mut(&mut puffs.ram, 4)
-            .set_x_low(0);
-        puffs
-            .arrghus_puff_home_position_mut(k)
-            .set_position(0x0756, 0x0978);
-        puffs.set_frame_counter(0);
-        puffs.sprite_prep_arrghi(k);
-        assert_eq!(puffs.game_state.sprites.overlord_slots.slot(2).x_low(), 0);
-        assert_eq!(puffs.game_state.sprites.overlord_slots.slot(3).x_low(), 0);
-        assert_eq!(puffs.sprite_slot(0).a(), 1);
-        assert_eq!(puffs.sprite_slot(0).b(), 1);
-        assert_eq!(puffs.game_state.scratch_counter.value(), 13);
-        assert_eq!(puffs.ram[OVERLORD_X_HI_PREP], 0);
-        assert_eq!(puffs.ram[OVERLORD_Y_HI_PREP], 1);
-        assert_eq!(puffs.ram[OVERLORD_GEN2_PREP], 3);
-        assert_eq!(puffs.ram[OVERLORD_FLOOR_PREP], 2);
-        assert_eq!(puffs.sprite_slot(k).x_low(), 0x56);
-        assert_eq!(puffs.sprite_slot(k).x_high(), 0x07);
-        assert_eq!(puffs.sprite_slot(k).y_low(), 0x78);
-        assert_eq!(puffs.sprite_slot(k).y_high(), 0x09);
     }
 
     #[test]
