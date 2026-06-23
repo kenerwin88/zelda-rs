@@ -113,6 +113,78 @@ const BSNES_INTRO_SPRITE_ANIMATION_START_DELAY: u8 = 5;
 const BSNES_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER: u8 = 0x42;
 const BSNES_NMI_POLY_UPLOAD_DEFER_FRAMES: u8 = 3;
 
+const ASSET_SIGNATURE_PREFIX: &[u8; 16] = b"Zelda3_v0     \n\0";
+const REFERENCE_SAVE_NAMES: [&str; 13] = [
+    "Chapter 1 - Zelda's Rescue.sav",
+    "Chapter 2 - After Eastern Palace.sav",
+    "Chapter 3 - After Desert Palace.sav",
+    "Chapter 4 - After Tower of Hera.sav",
+    "Chapter 5 - After Hyrule Castle Tower.sav",
+    "Chapter 6 - After Dark Palace.sav",
+    "Chapter 7 - After Swamp Palace.sav",
+    "Chapter 8 - After Skull Woods.sav",
+    "Chapter 9 - After Gargoyle's Domain.sav",
+    "Chapter 10 - After Ice Palace.sav",
+    "Chapter 11 - After Misery Mire.sav",
+    "Chapter 12 - After Turtle Rock.sav",
+    "Chapter 13 - After Ganon's Tower.sav",
+];
+const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
+
+const PALETTE_ASSET_SNES_RANGES: &[(u32, usize)] = &[
+    (PALETTE_MAIN_SPRITE_SNES_ADDR, 80),
+    (PALETTE_ARMOR_AND_GLOVES_SNES_ADDR, 81),
+    (PALETTE_SWORD_SNES_ADDR, 82),
+    (PALETTE_SHIELD_SNES_ADDR, 83),
+    (PALETTE_SPRITE_AUX3_SNES_ADDR, 84),
+    (PALETTE_MISC_SPRITE_INDOORS_SNES_ADDR, 85),
+    (PALETTE_SPRITE_AUX1_SNES_ADDR, 86),
+    (HUD_PALETTE_SNES_ADDR, 92),
+    (PALETTE_DUNGEON_BG_MAIN_SNES_ADDR, 79),
+    (PALETTE_PALACE_MAP_SPRITE_SNES_ADDR, 91),
+    (PALETTE_PALACE_MAP_BG_SNES_ADDR, 90),
+    (PALETTE_OVERWORLD_BG_MAIN_SNES_ADDR, 87),
+    (PALETTE_OVERWORLD_BG_AUX12_SNES_ADDR, 88),
+    (PALETTE_OVERWORLD_BG_AUX3_SNES_ADDR, 89),
+];
+
+const UPPER_BITMASKS: [u16; 16] = [
+    0x8000, 0x4000, 0x2000, 0x1000, 0x0800, 0x0400, 0x0200, 0x0100, 0x0080, 0x0040, 0x0020, 0x0010,
+    0x0008, 0x0004, 0x0002, 0x0001,
+];
+
+const RTL_RECEIVE_ITEM_OAM_EXT_SIZES: [u8; 76] = [
+    0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 0, 2, 0, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    2, 2, 0, 0, 2, 0, 2, 2, 2, 0, 2, 2,
+];
+const RTL_RECEIVE_ITEM_DRAW_Y_OFFSETS: [i8; 76] = [
+    -5, -5, -5, -5, -5, -4, -4, -5, -5, -4, -4, -4, -2, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4,
+    -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -5, -4, -4, -4, -4, -4, -4, -2, -4, -4, -4, -4, -4,
+    -4, -4, -4, -4, -2, -2, -2, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -2, -2, -4, -2, -4, -4,
+    -4, -5, -4, -4,
+];
+const RTL_RECEIVE_ITEM_PALETTE_BITS: [u8; 76] = [
+    4, 4, 4, 4, 4, 0, 0, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0, 0, 0, 4, 0, 4, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 4, 4, 0, 4, 0, 0, 0, 4, 0, 0,
+];
+const GIVE_ITEM_MEMORY_LOCATIONS: [usize; 76] = [
+    0xf359, 0xf359, 0xf359, 0xf359, 0xf35a, 0xf35a, 0xf35a, 0xf345, 0xf346, 0xf34b, 0xf342, 0xf340,
+    0xf341, 0xf344, 0xf35c, 0xf347, 0xf348, 0xf349, 0xf34a, 0xf34c, 0xf34c, 0xf350, 0xf35c, 0xf36b,
+    0xf351, 0xf352, 0xf353, 0xf354, 0xf354, 0xf34e, 0xf356, 0xf357, 0xf37a, 0xf34d, 0xf35b, 0xf35b,
+    0xf36f, 0xf364, 0xf36c, 0xf375, 0xf375, 0xf344, 0xf341, 0xf35c, 0xf35c, 0xf35c, 0xf36d, 0xf36e,
+    0xf36e, 0xf375, 0xf366, 0xf368, 0xf360, 0xf360, 0xf360, 0xf374, 0xf374, 0xf374, 0xf340, 0xf340,
+    0xf35c, 0xf35c, 0xf36c, 0xf36c, 0xf360, 0xf360, 0xf372, 0xf376, 0xf376, 0xf373, 0xf360, 0xf360,
+    0xf35c, 0xf359, 0xf34c, 0xf355,
+];
+const GIVE_ITEM_VALUES: [u8; 76] = [
+    1, 2, 3, 4, 1, 2, 3, 1, 1, 1, 1, 1, 1, 2, 0xff, 1, 1, 1, 1, 1, 2, 1, 0xff, 0xff, 1, 1, 2, 1, 2,
+    1, 1, 1, 0xff, 1, 0xff, 2, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 2, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xfb, 0xec, 0xff, 0xff, 0xff, 1, 3, 0xff, 0xff, 0xff, 0xff, 0x9c,
+    0xce, 0xff, 1, 10, 0xff, 0xff, 0xff, 0xff, 1, 3, 1,
+];
+
 fn configured_rom_reset_frame_delay() -> u8 {
     env::var("ZELDA3_BSNES_ROM_RESET_FRAME_DELAY")
         .ok()
@@ -1257,7 +1329,6 @@ struct AssetPack {
 
 impl AssetPack {
     fn parse(data: &[u8]) -> Result<Self, String> {
-        const ASSET_SIGNATURE_PREFIX: &[u8; 16] = b"Zelda3_v0     \n\0";
         if data.len() < 88 || &data[..16] != ASSET_SIGNATURE_PREFIX {
             return Err("invalid zelda3_assets.dat signature".to_string());
         }
@@ -7311,27 +7382,12 @@ impl ZeldaState {
     }
 
     fn save_slot_path(cmd: SaveLoadCommand, which: i32) -> Option<PathBuf> {
-        const REFERENCE_SAVES: [&str; 13] = [
-            "Chapter 1 - Zelda's Rescue.sav",
-            "Chapter 2 - After Eastern Palace.sav",
-            "Chapter 3 - After Desert Palace.sav",
-            "Chapter 4 - After Tower of Hera.sav",
-            "Chapter 5 - After Hyrule Castle Tower.sav",
-            "Chapter 6 - After Dark Palace.sav",
-            "Chapter 7 - After Swamp Palace.sav",
-            "Chapter 8 - After Skull Woods.sav",
-            "Chapter 9 - After Gargoyle's Domain.sav",
-            "Chapter 10 - After Ice Palace.sav",
-            "Chapter 11 - After Misery Mire.sav",
-            "Chapter 12 - After Turtle Rock.sav",
-            "Chapter 13 - After Ganon's Tower.sav",
-        ];
         if which & 256 != 0 {
             if cmd == SaveLoadCommand::Save {
                 return None;
             }
             let index = (which - 256) as usize;
-            Some(Path::new("saves/ref").join(REFERENCE_SAVES[index]))
+            Some(Path::new("saves/ref").join(REFERENCE_SAVE_NAMES[index]))
         } else {
             Some(PathBuf::from(format!("saves/save{which}.sav")))
         }
@@ -7676,7 +7732,6 @@ impl ZeldaState {
     }
 
     fn link_state_pits_after_aux_state(&mut self) {
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         self.replay_trace_submodule("pits-entry");
         self.replay_trace_player_state("pits-entry");
         self.tile_detect_main_handler(4);
@@ -8099,24 +8154,7 @@ impl ZeldaState {
     }
 
     fn palette_asset_word_snes(&self, addr: u32) -> Option<u16> {
-        const PALETTE_ASSETS: &[(u32, usize)] = &[
-            (PALETTE_MAIN_SPRITE_SNES_ADDR, 80),
-            (PALETTE_ARMOR_AND_GLOVES_SNES_ADDR, 81),
-            (PALETTE_SWORD_SNES_ADDR, 82),
-            (PALETTE_SHIELD_SNES_ADDR, 83),
-            (PALETTE_SPRITE_AUX3_SNES_ADDR, 84),
-            (PALETTE_MISC_SPRITE_INDOORS_SNES_ADDR, 85),
-            (PALETTE_SPRITE_AUX1_SNES_ADDR, 86),
-            (HUD_PALETTE_SNES_ADDR, 92),
-            (PALETTE_DUNGEON_BG_MAIN_SNES_ADDR, 79),
-            (PALETTE_PALACE_MAP_SPRITE_SNES_ADDR, 91),
-            (PALETTE_PALACE_MAP_BG_SNES_ADDR, 90),
-            (PALETTE_OVERWORLD_BG_MAIN_SNES_ADDR, 87),
-            (PALETTE_OVERWORLD_BG_AUX12_SNES_ADDR, 88),
-            (PALETTE_OVERWORLD_BG_AUX3_SNES_ADDR, 89),
-        ];
-
-        for &(base, asset) in PALETTE_ASSETS {
+        for &(base, asset) in PALETTE_ASSET_SNES_RANGES {
             let Some(byte_offset) = addr.checked_sub(base).map(|offset| offset as usize) else {
                 continue;
             };
@@ -8341,71 +8379,39 @@ fn read_word_from_slice(bytes: &[u8], offset: usize) -> u16 {
 }
 
 fn upper_bitmask(index: usize) -> u16 {
-    const UPPER_BITMASKS: [u16; 16] = [
-        0x8000, 0x4000, 0x2000, 0x1000, 0x0800, 0x0400, 0x0200, 0x0100, 0x0080, 0x0040, 0x0020,
-        0x0010, 0x0008, 0x0004, 0x0002, 0x0001,
-    ];
     UPPER_BITMASKS[index & 0x0f]
 }
 
 fn receive_item_tab1(item: u8) -> u8 {
-    const RECEIVE_ITEM_OAM_EXT_SIZES: [u8; 76] = [
-        0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 0, 2, 0, 2, 2, 0, 2, 2, 2, 2, 2,
-        2, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 2, 2, 2, 2, 2,
-        2, 2, 2, 2, 2, 2, 0, 0, 2, 0, 2, 2, 2, 0, 2, 2,
-    ];
-    RECEIVE_ITEM_OAM_EXT_SIZES
+    RTL_RECEIVE_ITEM_OAM_EXT_SIZES
         .get(item as usize)
         .copied()
         .unwrap_or(0)
 }
 
 fn receive_item_tab2(item: u8) -> i8 {
-    const RECEIVE_ITEM_DRAW_Y_OFFSETS: [i8; 76] = [
-        -5, -5, -5, -5, -5, -4, -4, -5, -5, -4, -4, -4, -2, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4,
-        -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -5, -4, -4, -4, -4, -4, -4, -2, -4, -4, -4,
-        -4, -4, -4, -4, -4, -4, -2, -2, -2, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -2, -2, -4,
-        -2, -4, -4, -4, -5, -4, -4,
-    ];
-    RECEIVE_ITEM_DRAW_Y_OFFSETS
+    RTL_RECEIVE_ITEM_DRAW_Y_OFFSETS
         .get(item as usize)
         .copied()
         .unwrap_or(0)
 }
 
 fn receive_item_tab3(item: u8) -> u8 {
-    const RECEIVE_ITEM_PALETTE_BITS: [u8; 76] = [
-        4, 4, 4, 4, 4, 0, 0, 4, 4, 4, 4, 4, 5, 0, 0, 0, 0, 0, 0, 4, 0, 4, 0, 0, 4, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 4, 4, 0, 4, 0, 0, 0, 4, 0, 0,
-    ];
-    RECEIVE_ITEM_PALETTE_BITS
+    RTL_RECEIVE_ITEM_PALETTE_BITS
         .get(item as usize)
         .copied()
         .unwrap_or(0)
 }
 
 fn memory_location_to_give_item_to(item: u8) -> usize {
-    const MEMORY_LOCATIONS: [usize; 76] = [
-        0xf359, 0xf359, 0xf359, 0xf359, 0xf35a, 0xf35a, 0xf35a, 0xf345, 0xf346, 0xf34b, 0xf342,
-        0xf340, 0xf341, 0xf344, 0xf35c, 0xf347, 0xf348, 0xf349, 0xf34a, 0xf34c, 0xf34c, 0xf350,
-        0xf35c, 0xf36b, 0xf351, 0xf352, 0xf353, 0xf354, 0xf354, 0xf34e, 0xf356, 0xf357, 0xf37a,
-        0xf34d, 0xf35b, 0xf35b, 0xf36f, 0xf364, 0xf36c, 0xf375, 0xf375, 0xf344, 0xf341, 0xf35c,
-        0xf35c, 0xf35c, 0xf36d, 0xf36e, 0xf36e, 0xf375, 0xf366, 0xf368, 0xf360, 0xf360, 0xf360,
-        0xf374, 0xf374, 0xf374, 0xf340, 0xf340, 0xf35c, 0xf35c, 0xf36c, 0xf36c, 0xf360, 0xf360,
-        0xf372, 0xf376, 0xf376, 0xf373, 0xf360, 0xf360, 0xf35c, 0xf359, 0xf34c, 0xf355,
-    ];
-    MEMORY_LOCATIONS.get(item as usize).copied().unwrap_or(0)
+    GIVE_ITEM_MEMORY_LOCATIONS
+        .get(item as usize)
+        .copied()
+        .unwrap_or(0)
 }
 
 fn value_to_give_item_to(item: u8) -> u8 {
-    const VALUES: [u8; 76] = [
-        1, 2, 3, 4, 1, 2, 3, 1, 1, 1, 1, 1, 1, 2, 0xff, 1, 1, 1, 1, 1, 2, 1, 0xff, 0xff, 1, 1, 2,
-        1, 2, 1, 1, 1, 0xff, 1, 0xff, 2, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 2, 0xff, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfb, 0xec, 0xff, 0xff, 0xff, 1, 3, 0xff, 0xff,
-        0xff, 0xff, 0x9c, 0xce, 0xff, 1, 10, 0xff, 0xff, 0xff, 0xff, 1, 3, 1,
-    ];
-    VALUES.get(item as usize).copied().unwrap_or(0xff)
+    GIVE_ITEM_VALUES.get(item as usize).copied().unwrap_or(0xff)
 }
 
 fn decompress_asset(src: &[u8]) -> Vec<u8> {
