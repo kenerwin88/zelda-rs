@@ -23,9 +23,9 @@ pub(crate) use display::{
     DisplayState, GraphicsDecompressionScratch, HudRuntimeState, HudStateRead, HudTilemapState,
     LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut, NativeHudInventoryOrderBridgeMut,
     NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePpuScrollCopyBridgeMut,
-    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    OverworldPaletteBackupState, PaletteFilterState, PpuScrollCopyState, SpotlightHdmaState,
-    SPOTLIGHT_HDMA_WORD_COUNT,
+    NativeSpotlightHdmaBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
+    NativeWaterHdmaWindowBridgeMut, OverworldPaletteBackupState, PaletteFilterState,
+    PpuScrollCopyState, SpotlightHdmaState,
 };
 pub(crate) use dungeon::{
     loaded_room_data_word, DungeonStairList, DungeonState, NativeDungeonBg2AttributeBridgeMut,
@@ -121,11 +121,11 @@ pub(crate) use world::{
     NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
     NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut,
-    NativeWorldCameraBoundariesBridgeMut, NativeWorldPaletteThemeBridgeMut,
-    NativeWorldScrollBridgeMut, OverworldConfigTableRead, OverworldConfigTableState,
-    OverworldEventInfoState, OverworldMap16Decode, OverworldMap16DecodeScratch,
-    OverworldMap16SourcePage, OverworldScrollDeltaState, WorldCameraBoundariesState,
+    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
+    NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldCameraBoundariesBridgeMut,
+    NativeWorldPaletteThemeBridgeMut, NativeWorldScrollBridgeMut, OverworldConfigTableRead,
+    OverworldConfigTableState, OverworldEventInfoState, OverworldMap16Decode,
+    OverworldMap16DecodeScratch, OverworldMap16SourcePage, WorldCameraBoundariesState,
     WorldLocationState, WorldRegionState, WorldScrollState, WorldState, WorldTransientState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
@@ -137,8 +137,8 @@ use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
 use display::{
     HudInventoryOrderState, NativeDisplayStateBridgeMut, NativeHudStateBridgeMut,
-    NativeOverworldPaletteBackupBridgeMut, NativeSpotlightHdmaBridgeMut, PaletteBufferState,
-    TrinexxPaletteState, WaterHdmaWindowState,
+    NativeOverworldPaletteBackupBridgeMut, PaletteBufferState, TrinexxPaletteState,
+    WaterHdmaWindowState,
 };
 #[cfg(test)]
 use dungeon::{
@@ -180,11 +180,11 @@ use sprites::{
 use system::NativeSystemWorkAreaBridgeMut;
 #[cfg(test)]
 use world::{
-    BirdTravelDestinationsState, NativeOverworldConfigTableBridgeMut,
-    NativeOverworldScrollDeltaBridgeMut, NativeWorldLocationBridgeMut, NativeWorldRegionBridgeMut,
-    NativeWorldTransientBridgeMut, OverworldEntranceState, OverworldExitState, OverworldMapUiState,
-    OverworldMapZoomState, OverworldScreenSizeState, OverworldTransitionState, RoomBoundsState,
-    WeatherVaneState, WorldPaletteThemeState,
+    BirdTravelDestinationsState, NativeOverworldConfigTableBridgeMut, NativeWorldLocationBridgeMut,
+    NativeWorldRegionBridgeMut, NativeWorldTransientBridgeMut, OverworldEntranceState,
+    OverworldExitState, OverworldMapUiState, OverworldMapZoomState, OverworldScreenSizeState,
+    OverworldScrollDeltaState, OverworldTransitionState, RoomBoundsState, WeatherVaneState,
+    WorldPaletteThemeState,
 };
 
 fn ram_byte(ram: &[u8], offset: usize) -> u8 {

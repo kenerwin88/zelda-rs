@@ -121,6 +121,9 @@ pub(crate) const SPRITE_SUBPALETTE_CLEAR_START: usize = 0x180;
 pub(crate) const SPRITE_SUBPALETTE_CLEAR_LEN: usize = 0x80;
 const HUD_TILEMAP_BYTES: usize = MOVING_WALL_REPLACEMENT_BUFFER - HUD_TILE_INDICES_BUFFER;
 pub(crate) const SPOTLIGHT_HDMA_WORD_COUNT: usize = 0xf0;
+pub(crate) const SAVELOAD_HDMA_SCRATCH_LEN: usize = 0x1cd0 - SAVELOAD_HDMA_TABLE;
+const SAVELOAD_HDMA_SCRATCH_EXTRA: usize = 0x654;
+pub(crate) const HDMA_DYNAMIC_TABLE_LEN: usize = SPOTLIGHT_HDMA_WORD_COUNT * 2;
 
 pub(crate) struct GraphicsDecompressionScratch;
 
@@ -1421,6 +1424,9 @@ impl Default for SpotlightHdmaState {
 }
 
 impl SpotlightHdmaState {
+    pub(crate) const SAVELOAD_SCRATCH_LEN: usize = SAVELOAD_HDMA_SCRATCH_LEN;
+    pub(crate) const DYNAMIC_TABLE_LEN: usize = HDMA_DYNAMIC_TABLE_LEN;
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut dynamic_table = vec![0; SPOTLIGHT_HDMA_WORD_COUNT];
         for (index, value) in dynamic_table.iter_mut().enumerate() {
@@ -1490,6 +1496,25 @@ impl SpotlightHdmaState {
 
     pub(crate) fn hdma_table_dynamic_entry(&self, index: usize) -> u16 {
         self.dynamic_table.get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn saveload_scratch_bytes(ram: &[u8]) -> Vec<u8> {
+        let mut out =
+            ram[SAVELOAD_HDMA_TABLE..SAVELOAD_HDMA_TABLE + SAVELOAD_HDMA_SCRATCH_LEN].to_vec();
+        out.push(ram[SAVELOAD_HDMA_SCRATCH_EXTRA]);
+        out
+    }
+
+    pub(crate) fn restore_saveload_scratch_bytes(ram: &mut [u8], bytes: &[u8]) {
+        let n = bytes.len().min(SAVELOAD_HDMA_SCRATCH_LEN);
+        ram[SAVELOAD_HDMA_TABLE..SAVELOAD_HDMA_TABLE + n].copy_from_slice(&bytes[..n]);
+        if bytes.len() > SAVELOAD_HDMA_SCRATCH_LEN {
+            ram[SAVELOAD_HDMA_SCRATCH_EXTRA] = bytes[SAVELOAD_HDMA_SCRATCH_LEN];
+        }
+    }
+
+    pub(crate) fn dynamic_table_bytes(ram: &[u8]) -> Vec<u8> {
+        ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + HDMA_DYNAMIC_TABLE_LEN].to_vec()
     }
 
     fn set_low_byte(word: &mut u16, value: u8) {
@@ -4371,6 +4396,20 @@ impl<'a> NativeSpotlightHdmaBridgeMut<'a> {
         self.project_dynamic_table_words_to_ram(SAVELOAD_HDMA_TABLE, count);
     }
 
+    pub(crate) fn copy_saveload_buffer_to_dynamic_table_ram(&mut self, count: usize) {
+        let bytes = count.min(SPOTLIGHT_HDMA_WORD_COUNT) * 2;
+        self.ram.copy_within(
+            SAVELOAD_HDMA_TABLE..SAVELOAD_HDMA_TABLE + bytes,
+            HDMA_TABLE_DYNAMIC,
+        );
+    }
+
+    pub(crate) fn restore_dynamic_table_bytes(&mut self, bytes: &[u8]) {
+        let n = bytes.len().min(HDMA_DYNAMIC_TABLE_LEN);
+        self.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + n].copy_from_slice(&bytes[..n]);
+        self.sync_dynamic_table_words_from_ram(HDMA_TABLE_DYNAMIC, n / 2);
+    }
+
     pub(crate) fn project_dynamic_table_to_reserved_hdma_table(&mut self, count: usize) {
         self.project_dynamic_table_words_to_ram(RESERVED_HDMA_TABLE, count);
     }
@@ -4406,6 +4445,13 @@ impl<'a> NativePpuScrollCopyBridgeMut<'a> {
         // mapbak_palette is write-through (not projected by write_to_ram), so RAM may
         // legitimately differ from this state's stale copy — ignore it in the check.
         debug_assert!(self.state.matches_ram_ignoring_mapbak(self.ram));
+    }
+
+    pub(crate) fn copy_mapbak_palette_from(&mut self, palette: &[u8]) {
+        self.state.copy_mapbak_palette_from(palette);
+        let bak = self.state.mapbak_palette_slice();
+        self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + bak.len()].copy_from_slice(bak);
+        self.debug_assert_matches_ram();
     }
 
     ppu_scroll_bridge_methods! {

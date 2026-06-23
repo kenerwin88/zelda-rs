@@ -22,10 +22,9 @@ use crate::game_state::constants::nmi::{
     BG_CHAR_BUFFER_1 as NMI_BG_CHAR_BUFFER_1, BG_CHAR_HALF_BUFFER as NMI_BG_CHAR_HALF_BUFFER,
 };
 use crate::game_state::constants::{
-    CRYSTAL_ROTATION_COUNTER, DOOR_ANIMATION_STEP_INDICATOR, HDMA_TABLE_DYNAMIC, MAPBAK_PALETTE,
+    CRYSTAL_ROTATION_COUNTER, DOOR_ANIMATION_STEP_INDICATOR, HDMA_TABLE_DYNAMIC,
     MESSAGING_BUF_LOAD_GFX, MOVING_WALL_REPLACEMENT_BUFFER, OVERWORLD_SCROLL_X_END,
-    OVERWORLD_SCROLL_X_START, OVERWORLD_SCROLL_Y_END, RESERVED_HDMA_TABLE, SAVELOAD_HDMA_TABLE,
-    VWF_ARR,
+    OVERWORLD_SCROLL_X_START, OVERWORLD_SCROLL_Y_END, VWF_ARR,
 };
 #[cfg(test)]
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
@@ -74,15 +73,15 @@ use crate::game_state::{
     NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
     NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut,
-    NativePlayerResourcesBridgeMut, NativePolyFaceCoordsBridgeMut,
-    NativePolyProjectedVerticesBridgeMut, NativePolyRasterEdgeBridgeMut,
-    NativePolyRuntimeBridgeMut, NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut,
-    NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut,
-    NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut,
-    NativeScratchCounterBridgeMut, NativeSharedMessageTimerBridgeMut,
+    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
+    NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
+    NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
+    NativePolyRasterEdgeBridgeMut, NativePolyRuntimeBridgeMut, NativePpuScrollCopyBridgeMut,
+    NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut,
+    NativeQuakeSpellBridgeMut, NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut,
+    NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut, NativeSharedMessageTimerBridgeMut,
     NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
-    NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
+    NativeSpecialExitPositionBridgeMut, NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSpriteSlotBridgeMut, NativeSpriteSlotView, NativeSpriteSystemBridgeMut,
     NativeSpriteWorkspaceBridgeMut, NativeSwamolaHistoryBridgeMut, NativeSwamolaTargetBridgeMut,
@@ -98,7 +97,7 @@ use crate::game_state::{
     SkullWoodsFireSlotState, SmallOverworldMap16ScrollBackupState, SpotlightHdmaState,
     SystemSignalsState, SystemWorkArea, TagalongSlotRead, TowerSealOrbitState,
     TowerSealSparkleState, VwfRenderState, WeatherVaneDebrisSlotState, WorldCameraBoundariesState,
-    WorldRegionState, WorldScrollState, WorldTransientState, SPOTLIGHT_HDMA_WORD_COUNT,
+    WorldRegionState, WorldScrollState, WorldTransientState,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -2090,17 +2089,7 @@ impl ZeldaState {
     /// frame and clobber a freshly-written overworld palette backup (f335672). Mirrors the
     /// old projection's RAM effect (the native field is fill-padded to MAPBAK_PALETTE_BYTES).
     pub(crate) fn copy_mapbak_palette_from(&mut self, palette: &[u8]) {
-        self.game_state
-            .display
-            .ppu_scroll_copy
-            .copy_mapbak_palette_from(palette);
-        let bak = self
-            .game_state
-            .display
-            .ppu_scroll_copy
-            .mapbak_palette_slice()
-            .to_vec();
-        self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + bak.len()].copy_from_slice(&bak);
+        self.ppu_scroll_copy_mut().copy_mapbak_palette_from(palette);
     }
 
     pub(crate) fn attract_scene_mut(&mut self) -> NativeAttractSceneBridgeMut<'_> {
@@ -3096,72 +3085,36 @@ impl ZeldaState {
             .vertical_delta_word()
     }
 
-    fn sync_overworld_scroll_delta_to_ram(&mut self) {
-        self.game_state
-            .world
-            .overworld
-            .scroll_delta
-            .write_to_ram(&mut self.ram);
-        // write_to_ram owns only 0x69e/0x69f; 0x6a0 is foreign mode-reused scratch written
-        // through by the horizontal-word setter, so compare only the owned region.
-        debug_assert_eq!(
-            self.game_state
-                .world
-                .overworld
-                .scroll_delta
-                .vertical_delta_word(),
-            crate::game_state::OverworldScrollDeltaState::load_from_ram(&self.ram)
-                .vertical_delta_word()
-        );
+    pub(crate) fn overworld_scroll_delta_mut(&mut self) -> NativeOverworldScrollDeltaBridgeMut<'_> {
+        NativeOverworldScrollDeltaBridgeMut::new(
+            &mut self.game_state.world.overworld.scroll_delta,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn set_overworld_vertical_scroll_delta_low(&mut self, value: u8) {
-        self.game_state
-            .world
-            .overworld
-            .scroll_delta
+        self.overworld_scroll_delta_mut()
             .set_vertical_delta_low_byte(value);
-        self.sync_overworld_scroll_delta_to_ram();
     }
 
     pub(crate) fn set_overworld_horizontal_scroll_delta_low(&mut self, value: u8) {
-        self.game_state
-            .world
-            .overworld
-            .scroll_delta
+        self.overworld_scroll_delta_mut()
             .set_horizontal_delta_low_byte(value);
-        self.sync_overworld_scroll_delta_to_ram();
     }
 
     pub(crate) fn set_overworld_vertical_scroll_delta(&mut self, value: u16) {
-        self.game_state
-            .world
-            .overworld
-            .scroll_delta
+        self.overworld_scroll_delta_mut()
             .set_vertical_delta_word(value);
-        self.sync_overworld_scroll_delta_to_ram();
     }
 
     pub(crate) fn set_overworld_horizontal_scroll_delta(&mut self, value: u16) {
-        self.game_state
-            .world
-            .overworld
-            .scroll_delta
+        self.overworld_scroll_delta_mut()
             .set_horizontal_delta_word(value);
-        // C's write_le_u16(OVERWORLD_SCROLL_DELTA + 1, value) lands the high byte in 0x6a0
-        // (mode-reused MIRROR_VARS scratch); write it through before the coherence-checked
-        // sync, since write_to_ram no longer owns it.
-        self.ram[OVERWORLD_SCROLL_DELTA + 2] = (value >> 8) as u8;
-        self.sync_overworld_scroll_delta_to_ram();
     }
 
     pub(crate) fn clear_overworld_vertical_scroll_delta_low(&mut self) {
-        self.game_state
-            .world
-            .overworld
-            .scroll_delta
+        self.overworld_scroll_delta_mut()
             .clear_vertical_delta_low_byte();
-        self.sync_overworld_scroll_delta_to_ram();
     }
 
     pub(crate) fn special_entrance_trigger(&self) -> u8 {
@@ -6268,77 +6221,63 @@ impl ZeldaState {
             .increment_blue_shell_step()
     }
 
-    fn sync_spotlight_hdma_to_ram(&mut self) {
-        self.game_state
-            .display
-            .spotlight_hdma
-            .write_to_ram(&mut self.ram);
-        self.debug_assert_spotlight_hdma_matches_ram();
-    }
-
-    fn debug_assert_spotlight_hdma_matches_ram(&self) {
-        debug_assert_eq!(
-            self.game_state.display.spotlight_hdma,
-            SpotlightHdmaState::load_from_ram(&self.ram)
-        );
-    }
-
-    fn mutate_spotlight_hdma<T>(&mut self, f: impl FnOnce(&mut SpotlightHdmaState) -> T) -> T {
-        let value = f(&mut self.game_state.display.spotlight_hdma);
-        self.sync_spotlight_hdma_to_ram();
-        value
+    pub(crate) fn spotlight_hdma_mut(&mut self) -> NativeSpotlightHdmaBridgeMut<'_> {
+        NativeSpotlightHdmaBridgeMut::new(
+            &mut self.game_state.display.spotlight_hdma,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn set_spotlight_y_lower(&mut self, value: u16) {
-        self.mutate_spotlight_hdma(|spotlight| spotlight.set_y_lower(value));
+        self.spotlight_hdma_mut().set_y_lower(value);
     }
 
     pub(crate) fn set_spotlight_y_upper(&mut self, value: u16) {
-        self.mutate_spotlight_hdma(|spotlight| spotlight.set_y_upper(value));
+        self.spotlight_hdma_mut().set_y_upper(value);
     }
 
     pub(crate) fn set_spotlight_window_x_center(&mut self, value: u16) {
-        self.mutate_spotlight_hdma(|spotlight| spotlight.set_window_x_center(value));
+        self.spotlight_hdma_mut().set_window_x_center(value);
     }
 
     pub(crate) fn set_spotlight_window_state(&mut self, value: u16) {
-        self.mutate_spotlight_hdma(|spotlight| spotlight.set_window_state(value));
+        self.spotlight_hdma_mut().set_window_state(value);
     }
 
     pub(crate) fn set_spotlight_window_radius(&mut self, value: u16) {
-        self.mutate_spotlight_hdma(|spotlight| spotlight.set_window_radius(value));
+        self.spotlight_hdma_mut().set_window_radius(value);
     }
 
     pub(crate) fn set_spotlight_window_y_buffer(&mut self, value: u16) {
-        self.mutate_spotlight_hdma(|spotlight| spotlight.set_window_y_buffer(value));
+        self.spotlight_hdma_mut().set_window_y_buffer(value);
     }
 
     pub(crate) fn decrement_spotlight_window_y_buffer(&mut self) -> u16 {
-        self.mutate_spotlight_hdma(|spotlight| spotlight.decrement_window_y_buffer())
+        self.spotlight_hdma_mut().decrement_window_y_buffer()
     }
 
     pub(crate) fn set_spotlight_window_radius_byte(&mut self, value: u8) {
-        self.mutate_spotlight_hdma(|spotlight| spotlight.set_window_radius_byte(value));
+        self.spotlight_hdma_mut().set_window_radius_byte(value);
     }
 
     pub(crate) fn set_spotlight_window_state_byte(&mut self, value: u8) {
-        self.mutate_spotlight_hdma(|spotlight| spotlight.set_window_state_byte(value));
+        self.spotlight_hdma_mut().set_window_state_byte(value);
     }
 
     pub(crate) fn set_spotlight_window_y_buffer_byte(&mut self, value: u8) {
-        self.mutate_spotlight_hdma(|spotlight| spotlight.set_window_y_buffer_byte(value));
+        self.spotlight_hdma_mut().set_window_y_buffer_byte(value);
     }
 
     pub(crate) fn increment_spotlight_window_y_buffer_byte(&mut self) {
-        self.mutate_spotlight_hdma(|spotlight| spotlight.increment_window_y_buffer_byte());
+        self.spotlight_hdma_mut().increment_window_y_buffer_byte();
     }
 
     pub(crate) fn shr_spotlight_window_radius_byte(&mut self, shift: u8) {
-        self.mutate_spotlight_hdma(|spotlight| spotlight.shr_window_radius_byte(shift));
+        self.spotlight_hdma_mut().shr_window_radius_byte(shift);
     }
 
     pub(crate) fn add_spotlight_window_radius_byte(&mut self, value: u8) {
-        self.mutate_spotlight_hdma(|spotlight| spotlight.add_window_radius_byte(value));
+        self.spotlight_hdma_mut().add_window_radius_byte(value);
     }
 
     pub(crate) fn spotlight_hdma_table_dynamic_entry(&self, index: usize) -> u16 {
@@ -6349,42 +6288,17 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_spotlight_hdma_table_dynamic_entry(&mut self, index: usize, value: u16) {
-        self.mutate_spotlight_hdma(|spotlight| {
-            spotlight.set_hdma_table_dynamic_entry(index, value)
-        });
+        self.spotlight_hdma_mut()
+            .set_hdma_table_dynamic_entry(index, value);
     }
 
     pub(crate) fn clear_spotlight_hdma_table_dynamic(&mut self, count: usize) {
-        self.mutate_spotlight_hdma(|spotlight| spotlight.clear_hdma_table_dynamic(count));
+        self.spotlight_hdma_mut().clear_hdma_table_dynamic(count);
     }
 
     pub(crate) fn clear_spotlight_hdma_table_dynamic_range(&mut self, start: usize, count: usize) {
-        self.mutate_spotlight_hdma(|spotlight| {
-            spotlight.clear_hdma_table_dynamic_range(start, count)
-        });
-    }
-
-    fn sync_spotlight_dynamic_hdma_table_words_from_ram(&mut self, source: usize, count: usize) {
-        let count = count.min(SPOTLIGHT_HDMA_WORD_COUNT);
-        let mut words = vec![0; count];
-        for (index, word) in words.iter_mut().enumerate() {
-            *word = read_le_u16(&self.ram, source + index * 2);
-        }
-        self.mutate_spotlight_hdma(|spotlight| {
-            spotlight.copy_hdma_table_dynamic_from_words(&words);
-        });
-    }
-
-    fn project_spotlight_dynamic_hdma_table_words_to_ram(
-        &mut self,
-        destination: usize,
-        count: usize,
-    ) {
-        let count = count.min(SPOTLIGHT_HDMA_WORD_COUNT);
-        for index in 0..count {
-            let value = self.spotlight_hdma_table_dynamic_entry(index);
-            write_le_u16(&mut self.ram, destination + index * 2, value);
-        }
+        self.spotlight_hdma_mut()
+            .clear_hdma_table_dynamic_range(start, count);
     }
 
     fn restore_spotlight_hdma_from_saveload_buffer(&mut self) {
@@ -6394,15 +6308,13 @@ impl ZeldaState {
         // snapshot's zeros -> a 1390-frame parity divergence in the off-screen HDMA scanlines
         // (page 0x1dc00). Do the raw ram copy; load_snes_state's following
         // sync_native_game_state_from_ram reloads the native table from this ram.
-        const BYTES: usize = 224 * 2;
-        self.ram.copy_within(
-            SAVELOAD_HDMA_TABLE..SAVELOAD_HDMA_TABLE + BYTES,
-            HDMA_TABLE_DYNAMIC,
-        );
+        self.spotlight_hdma_mut()
+            .copy_saveload_buffer_to_dynamic_table_ram(224);
     }
 
     fn backup_spotlight_hdma_to_saveload_buffer(&mut self) {
-        self.project_spotlight_dynamic_hdma_table_words_to_ram(SAVELOAD_HDMA_TABLE, 224);
+        self.spotlight_hdma_mut()
+            .backup_dynamic_table_to_saveload_buffer(224);
     }
 
     /// Byte extent of the SAVELOAD_HDMA_TABLE scratch region (0x1b00..0x1cd0).
@@ -6414,29 +6326,19 @@ impl ZeldaState {
     /// byte-faithful without affecting the dynamic-table reconstruction (which has
     /// already happened via restore_spotlight_hdma_from_saveload_buffer +
     /// sync_native_game_state_from_ram by the time we overwrite this region back).
-    pub const SAVELOAD_HDMA_SCRATCH_LEN: usize = 0x1cd0 - SAVELOAD_HDMA_TABLE;
+    pub const SAVELOAD_HDMA_SCRATCH_LEN: usize = SpotlightHdmaState::SAVELOAD_SCRATCH_LEN;
 
     /// Single-byte HDMA scratch (0x654) that the C-style snapshot save/restore
     /// also leaves divergent on resume (a known tiny artifact). Restoring it keeps
     /// resume byte-faithful; it is otherwise transient HDMA scratch.
-    const SAVELOAD_HDMA_SCRATCH_EXTRA: usize = 0x654;
-
     /// Returns the pristine scratch bytes: the contiguous 0x1b00 region followed by
     /// one trailing byte for 0x654.
     pub fn saveload_hdma_scratch_bytes(&self) -> Vec<u8> {
-        let mut out = self.ram
-            [SAVELOAD_HDMA_TABLE..SAVELOAD_HDMA_TABLE + Self::SAVELOAD_HDMA_SCRATCH_LEN]
-            .to_vec();
-        out.push(self.ram[Self::SAVELOAD_HDMA_SCRATCH_EXTRA]);
-        out
+        SpotlightHdmaState::saveload_scratch_bytes(&self.ram)
     }
 
     pub fn restore_saveload_hdma_scratch_bytes(&mut self, bytes: &[u8]) {
-        let n = bytes.len().min(Self::SAVELOAD_HDMA_SCRATCH_LEN);
-        self.ram[SAVELOAD_HDMA_TABLE..SAVELOAD_HDMA_TABLE + n].copy_from_slice(&bytes[..n]);
-        if bytes.len() > Self::SAVELOAD_HDMA_SCRATCH_LEN {
-            self.ram[Self::SAVELOAD_HDMA_SCRATCH_EXTRA] = bytes[Self::SAVELOAD_HDMA_SCRATCH_LEN];
-        }
+        SpotlightHdmaState::restore_saveload_scratch_bytes(&mut self.ram, bytes);
     }
 
     /// Byte extent of the live spotlight HDMA dynamic table (0x1dba0, 240 words).
@@ -6446,23 +6348,19 @@ impl ZeldaState {
     /// can differ from a continuous run. We capture the live table bytes and, on
     /// load, both restore them to RAM and re-sync the native model directly from
     /// them, making the spotlight backing byte-faithful.
-    pub const HDMA_DYNAMIC_TABLE_LEN: usize = SPOTLIGHT_HDMA_WORD_COUNT * 2;
+    pub const HDMA_DYNAMIC_TABLE_LEN: usize = SpotlightHdmaState::DYNAMIC_TABLE_LEN;
 
     pub fn hdma_dynamic_table_bytes(&self) -> Vec<u8> {
-        self.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + Self::HDMA_DYNAMIC_TABLE_LEN].to_vec()
+        SpotlightHdmaState::dynamic_table_bytes(&self.ram)
     }
 
     pub fn restore_hdma_dynamic_table_bytes(&mut self, bytes: &[u8]) {
-        let n = bytes.len().min(Self::HDMA_DYNAMIC_TABLE_LEN);
-        self.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + n].copy_from_slice(&bytes[..n]);
-        // Repopulate the native spotlight dynamic table from the faithful RAM bytes
-        // (overrides the lossy reconstruction done during state_recorder_load).
-        let words = n / 2;
-        self.sync_spotlight_dynamic_hdma_table_words_from_ram(HDMA_TABLE_DYNAMIC, words);
+        self.spotlight_hdma_mut().restore_dynamic_table_bytes(bytes);
     }
 
     pub(crate) fn project_spotlight_dynamic_hdma_table_to_reserved(&mut self, count: usize) {
-        self.project_spotlight_dynamic_hdma_table_words_to_ram(RESERVED_HDMA_TABLE, count);
+        self.spotlight_hdma_mut()
+            .project_dynamic_table_to_reserved_hdma_table(count);
     }
 
     pub(crate) fn water_hdma_window_mut(&mut self) -> NativeWaterHdmaWindowBridgeMut<'_> {
