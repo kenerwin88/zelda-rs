@@ -2,65 +2,8 @@
 
 use super::*;
 
-pub(super) const SOLDIER_DRAW1_CHAR: [u8; 4] = [0x42, 0x42, 0x40, 0x44];
-pub(super) const SOLDIER_DRAW1_FLAGS: [u8; 4] = [0x40, 0, 0, 0];
-pub(super) const SOLDIER_DRAW1_YD: [i8; 26] = [
-    7, 8, 7, 8, 8, 7, 8, 7, 8, 7, 8, 8, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
-];
-pub(super) const SOLDIER_DRAW2_XD: [i8; 104] = [
-    -4, 4, 10, 10, -4, 4, 10, 10, -4, 4, 10, 10, -4, 4, 10, 10, -4, -4, 0, 0, -4, -4, 0, 0, -3, -3,
-    0, 0, -3, -3, -4, 4, -3, -3, -4, 4, -3, -3, -4, 4, -3, -3, -4, 4, 12, 12, 0, 0, 12, 12, 0, 0,
-    11, 11, 0, 0, -4, 4, 0, 0, -4, 4, 0, 0, -4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -4, 4,
-    0, 0, -4, 4, 0, 0, -4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-];
-pub(super) const SOLDIER_DRAW2_YD: [i8; 104] = [
-    0, 0, 2, 10, 0, 0, 2, 10, 0, 0, 1, 9, 0, 0, 2, 10, -2, 6, 1, 1, -2, 6, 2, 2, -2, 6, 1, 1, -5,
-    3, 0, 0, -4, 4, 0, 0, -4, 4, 0, 0, -5, 3, 0, 0, -2, 6, 1, 1, -2, 6, 2, 2, -2, 6, 1, 1, 0, 0, 8,
-    8, 0, 0, 8, 8, 0, 0, 8, 8, 0, 0, 8, 8, 0, 0, 8, 8, 0, 0, 8, 8, 0, 0, 8, 8, 0, 0, 8, 8, 0, 0, 8,
-    8, 0, 0, 8, 8, 0, 0, 8, 8, 0, 0, 8, 8,
-];
-pub(super) const SOLDIER_DRAW2_CHAR: [u8; 104] = [
-    0x48, 0x49, 0x6d, 0x7d, 0x49, 0x48, 0x6d, 0x7d, 0x46, 0x46, 0x6d, 0x7d, 0x4b, 0x46, 0x6d, 0x7d,
-    0x4d, 0x5d, 0x4e, 0x4e, 0x4d, 0x5d, 0x60, 0x60, 0x4d, 0x5d, 0x62, 0x62, 0x6d, 0x7d, 0x64, 0x64,
-    0x6d, 0x7d, 0x66, 0x67, 0x6d, 0x7d, 0x67, 0x66, 0x6d, 0x7d, 0x64, 0x69, 0x4d, 0x5d, 0x4e, 0x4e,
-    0x4d, 0x5d, 0x60, 0x60, 0x4d, 0x5d, 0x62, 0x62, 2, 3, 0x20, 0x20, 2, 0x0c, 0x20, 0x20, 2, 0x0c,
-    0x20, 0x20, 8, 8, 0x20, 0x20, 0x0e, 0x0e, 0x20, 0x20, 0x0e, 0x0e, 0x20, 0x20, 5, 6, 0x20, 0x20,
-    0x22, 6, 0x20, 0x20, 0x22, 6, 0x20, 0x20, 8, 8, 0x20, 0x20, 0x0e, 0x0e, 0x20, 0x20, 0x0e, 0x0e,
-    0x20, 0x20,
-];
-pub(super) const SOLDIER_DRAW2_FLAGS: [u8; 104] = [
-    0, 0, 0, 0, 0x40, 0x40, 0, 0, 0, 0x40, 0, 0, 0, 0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0x40, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40,
-    0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40,
-    0x40, 0x40, 0x40, 0x40, 0x40,
-];
-pub(super) const SOLDIER_DRAW2_BIG: [u8; 104] = [
-    2, 2, 0, 0, 2, 2, 0, 0, 2, 2, 0, 0, 2, 2, 0, 0, 0, 0, 2, 2, 0, 0, 2, 2, 0, 0, 2, 2, 0, 0, 2, 2,
-    0, 0, 2, 2, 0, 0, 2, 2, 0, 0, 2, 2, 0, 0, 2, 2, 0, 0, 2, 2, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    2, 2, 2, 2, 2, 2, 2, 2,
-];
-pub(super) const SOLDIER_DRAW2_OAM_IDX: [u8; 4] = [12, 12, 12, 4];
-type AttractOamInfo = (i8, i8, u8, u8, u8);
-pub(super) const SOLDIER_DRAW3_XD: [i8; 28] = [
-    -3, -3, -4, -4, -4, -4, -4, -4, -11, -3, -11, -3, -16, -8, 12, 12, 12, 12, 12, 12, 12, 12, 21,
-    13, 21, 13, 24, 16,
-];
-pub(super) const SOLDIER_DRAW3_YD: [i8; 28] = [
-    11, 19, 11, 19, 10, 18, 14, 22, 8, 8, 8, 8, 6, 6, -10, -2, -9, -1, -9, -1, -16, -8, 8, 8, 8, 8,
-    6, 6,
-];
-pub(super) const SOLDIER_DRAW3_CHAR: [u8; 28] = [
-    0x7b, 0x6b, 0x7b, 0x6b, 0x7b, 0x6b, 0x7b, 0x6b, 0x6c, 0x7c, 0x6c, 0x7c, 0x6c, 0x7c, 0x6b, 0x7b,
-    0x6b, 0x7b, 0x6b, 0x7b, 0x6b, 0x7b, 0x6c, 0x7c, 0x6c, 0x7c, 0x6c, 0x7c,
-];
-pub(super) const SOLDIER_DRAW3_FLAGS: [u8; 28] = [
-    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x40,
-    0x40, 0x40, 0x40, 0x40, 0x40,
-];
-pub(super) const SOLDIER_DRAW3_OAM_IDX: [u8; 4] = [4, 4, 4, 20];
-pub(super) const SOLDIER_DRAW_SHADOW: [u8; 4] = [0x0c, 0x0c, 0x0a, 0x0a];
+mod attract_shared;
+pub(super) use attract_shared::*;
 
 impl ZeldaState {
     pub(super) fn module14_attract(&mut self) {
@@ -354,25 +297,8 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_control_map_zoom(&mut self) {
-        const MAP_MODE_ZOOMS1: [u16; 240] = [
-            375, 374, 373, 373, 372, 371, 371, 370, 369, 369, 368, 367, 367, 366, 365, 365, 364,
-            363, 363, 361, 361, 360, 359, 359, 358, 357, 357, 356, 355, 355, 354, 354, 353, 352,
-            352, 351, 351, 350, 349, 349, 348, 348, 347, 346, 346, 345, 345, 344, 343, 343, 342,
-            342, 341, 341, 340, 339, 339, 338, 338, 337, 337, 336, 335, 335, 334, 334, 333, 333,
-            332, 332, 331, 331, 330, 330, 328, 327, 327, 326, 326, 325, 325, 324, 324, 323, 323,
-            322, 322, 321, 321, 320, 320, 319, 319, 318, 318, 317, 317, 316, 316, 315, 315, 314,
-            314, 313, 313, 312, 312, 311, 311, 310, 310, 309, 309, 309, 308, 308, 307, 307, 306,
-            306, 305, 305, 304, 304, 303, 303, 303, 302, 302, 301, 301, 300, 300, 299, 299, 299,
-            298, 298, 297, 297, 295, 295, 294, 294, 294, 293, 293, 292, 292, 292, 291, 291, 290,
-            290, 289, 289, 289, 288, 288, 287, 287, 287, 286, 286, 285, 285, 285, 284, 284, 283,
-            283, 283, 282, 282, 281, 281, 281, 280, 280, 279, 279, 279, 278, 278, 278, 277, 277,
-            276, 276, 276, 275, 275, 275, 274, 274, 273, 273, 273, 272, 272, 272, 271, 271, 271,
-            270, 270, 269, 269, 269, 268, 268, 268, 267, 267, 267, 266, 266, 266, 265, 265, 265,
-            264, 264, 264, 263, 263, 262, 262, 262, 261, 261, 261, 260, 260, 260, 259, 259, 259,
-            258, 258,
-        ];
         let zoom = self.game_state.ending.attract_scene.mode7_zoom_timer() as u16;
-        for (i, value) in MAP_MODE_ZOOMS1.iter().enumerate() {
+        for (i, value) in ATTRACT_MAP_ZOOM_HDMA_BASES.iter().enumerate() {
             self.set_spotlight_hdma_table_dynamic_entry(
                 i,
                 ((*value as u32 * zoom as u32) >> 8) as u16,
@@ -436,22 +362,6 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_throne_room(&mut self) {
-        const THRONE_ROOM_OAMS: [(i8, i8, u8, u8, u8); 10] = [
-            (16, 16, 0x2a, 0x7b, 2),
-            (0, 16, 0x2a, 0x3b, 2),
-            (16, 0, 0x0a, 0x7b, 2),
-            (0, 0, 0x0a, 0x3b, 2),
-            (0, 0, 0x0c, 0x31, 2),
-            (16, 0, 0x0e, 0x31, 2),
-            (32, 0, 0x0c, 0x71, 2),
-            (0, 16, 0x2c, 0x31, 2),
-            (16, 16, 0x2e, 0x31, 2),
-            (32, 16, 0x2c, 0x71, 2),
-        ];
-        const OAM_OFFS: [usize; 3] = [0, 4, 10];
-        const X_BASE: [u8; 2] = [80, 104];
-        const Y_BASE: [i16; 2] = [88, 32];
-
         self.attract_scene_mut().set_oam_index(0);
         if self.game_state.ending.attract_scene.fade_in_complete_flag() == 0 {
             if self.game_state.display.screen_brightness != 15 {
@@ -495,12 +405,14 @@ impl ZeldaState {
 
         let bg2_vofs = self.game_state.display.ppu_scroll_copy.bg2_v_copy();
         for i in (0..=1).rev() {
-            let y = (Y_BASE[i] as u16).wrapping_sub(bg2_vofs);
+            let y = (ATTRACT_THRONE_ROOM_Y_BASES[i] as u16).wrapping_sub(bg2_vofs);
             if (y.wrapping_add(32) as i16) >= 0 {
-                self.attract_scene_mut().set_x_base(X_BASE[i]);
+                self.attract_scene_mut()
+                    .set_x_base(ATTRACT_THRONE_ROOM_X_BASES[i]);
                 self.attract_scene_mut().set_y_base(y as u8);
                 self.attract_draw_sprite_set2_slice(
-                    &THRONE_ROOM_OAMS[OAM_OFFS[i]..OAM_OFFS[i + 1]],
+                    &ATTRACT_THRONE_ROOM_SPRITE_ENTRIES[ATTRACT_THRONE_ROOM_SPRITE_ENTRY_STARTS[i]
+                        ..ATTRACT_THRONE_ROOM_SPRITE_ENTRY_STARTS[i + 1]],
                 );
             }
         }
@@ -551,86 +463,6 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_dramatize_agahnim_altar(&mut self) {
-        const SOLDIER_X: [u16; 6] = [48, 192, 48, 192, 80, 160];
-        const SOLDIER_Y: [u16; 6] = [112, 112, 152, 152, 192, 192];
-        const SOLDIER_DIR: [u8; 6] = [0, 1, 0, 1, 3, 3];
-        const SOLDIER_FLAGS: [u8; 6] = [9, 9, 9, 9, 7, 9];
-        const MAIDEN_WARP0: [(i8, i8, u8, u8, u8); 4] = [
-            (0, 0, 0x03, 0x3d, 2),
-            (8, 0, 0x04, 0x3d, 2),
-            (0, 0, 0x00, 0x3d, 2),
-            (8, 0, 0x01, 0x3d, 2),
-        ];
-        const MAIDEN_WARP_XBASE: [u8; 8] = [4, 4, 3, 3, 2, 2, 1, 0];
-        const MAIDEN_WARP1: [(i8, i8, u8, u8, u8); 16] = [
-            (0, 0, 0x6c, 0x38, 2),
-            (0, 0, 0x6c, 0x38, 2),
-            (0, 0, 0x6c, 0x38, 2),
-            (0, 0, 0x6c, 0x38, 2),
-            (0, 0, 0x6c, 0x38, 2),
-            (2, 0, 0x6c, 0x38, 2),
-            (0, 0, 0x6c, 0x38, 2),
-            (2, 0, 0x6c, 0x38, 2),
-            (0, 0, 0x6c, 0x38, 2),
-            (4, 0, 0x6c, 0x38, 2),
-            (0, 0, 0x6c, 0x38, 2),
-            (4, 0, 0x6c, 0x38, 2),
-            (0, 0, 0x6c, 0x38, 2),
-            (6, 0, 0x6c, 0x38, 2),
-            (0, 0, 0x6c, 0x38, 2),
-            (8, 0, 0x6c, 0x38, 2),
-        ];
-        const MAIDEN_WARP2: [(i8, i8, u8, u8, u8); 48] = [
-            (5, 25, 0x6c, 0x38, 2),
-            (11, 25, 0x6c, 0x38, 2),
-            (0, 0, 0x82, 0x3b, 2),
-            (16, 0, 0x82, 0x7b, 2),
-            (0, 16, 0xa2, 0x3b, 2),
-            (16, 16, 0xa2, 0x7b, 2),
-            (5, 25, 0x6c, 0x38, 2),
-            (11, 25, 0x6c, 0x38, 2),
-            (0, 0, 0x80, 0x3b, 2),
-            (16, 0, 0x82, 0x7b, 2),
-            (0, 16, 0xa0, 0x3b, 2),
-            (16, 16, 0xa2, 0x7b, 2),
-            (5, 25, 0x6c, 0x38, 2),
-            (11, 25, 0x6c, 0x38, 2),
-            (0, 0, 0x82, 0x3b, 2),
-            (16, 0, 0x82, 0x7b, 2),
-            (0, 16, 0xa2, 0x3b, 2),
-            (16, 16, 0xa2, 0x7b, 2),
-            (5, 25, 0x6c, 0x38, 2),
-            (11, 25, 0x6c, 0x38, 2),
-            (0, 0, 0x82, 0x3b, 2),
-            (16, 0, 0x80, 0x7b, 2),
-            (0, 16, 0xa2, 0x3b, 2),
-            (16, 16, 0xa0, 0x7b, 2),
-            (5, 25, 0x6c, 0x38, 2),
-            (11, 25, 0x6c, 0x38, 2),
-            (0, 0, 0x82, 0x3b, 2),
-            (16, 0, 0x82, 0x7b, 2),
-            (0, 16, 0xa2, 0x3b, 2),
-            (16, 16, 0xa2, 0x7b, 2),
-            (5, 25, 0x6c, 0x38, 2),
-            (11, 25, 0x6c, 0x38, 2),
-            (0, 0, 0x80, 0x3b, 2),
-            (16, 0, 0x82, 0x7b, 2),
-            (0, 16, 0xa0, 0x3b, 2),
-            (16, 16, 0xa2, 0x7b, 2),
-            (5, 25, 0x6c, 0x38, 2),
-            (11, 25, 0x6c, 0x38, 2),
-            (0, 0, 0x82, 0x3b, 2),
-            (16, 0, 0x82, 0x7b, 2),
-            (0, 16, 0xa2, 0x3b, 2),
-            (16, 16, 0xa2, 0x7b, 2),
-            (5, 25, 0x6c, 0x38, 2),
-            (11, 25, 0x6c, 0x38, 2),
-            (0, 0, 0x80, 0x3b, 2),
-            (16, 0, 0x80, 0x7b, 2),
-            (0, 16, 0xa0, 0x3b, 2),
-            (16, 16, 0xa0, 0x7b, 2),
-        ];
-
         if self.game_state.ending.attract_scene.scene_done_flag() != 0 {
             self.attract_scene_mut().increment_sequence();
             self.attract_scene_mut().subtract_state(2);
@@ -669,10 +501,10 @@ impl ZeldaState {
             self.sprite_prep_reset_properties(k);
             self.sprite_simulate_soldier(
                 k,
-                SOLDIER_X[k],
-                SOLDIER_Y[k],
-                SOLDIER_DIR[k],
-                SOLDIER_FLAGS[k],
+                ATTRACT_DRAMATIZE_AGAHNIM_ALTAR_SOLDIER_X[k],
+                ATTRACT_DRAMATIZE_AGAHNIM_ALTAR_SOLDIER_Y[k],
+                ATTRACT_DRAMATIZE_AGAHNIM_ALTAR_SOLDIER_DIR[k],
+                ATTRACT_DRAMATIZE_AGAHNIM_ALTAR_SOLDIER_FLAGS[k],
                 0,
             );
         }
@@ -698,7 +530,9 @@ impl ZeldaState {
             } else {
                 2
             };
-            self.attract_draw_sprite_set2_slice(&MAIDEN_WARP0[start..start + 2]);
+            self.attract_draw_sprite_set2_slice(
+                &ATTRACT_AGAHNIM_ALTAR_MAIDEN_CORE_ENTRIES[start..start + 2],
+            );
 
             let mut k = 7usize;
             if self.attract_vram_destination_page_offset() < 0x68 {
@@ -708,15 +542,19 @@ impl ZeldaState {
                     & 7;
             }
             self.attract_scene_mut()
-                .set_x_base(0x74 + MAIDEN_WARP_XBASE[k]);
+                .set_x_base(0x74 + ATTRACT_AGAHNIM_ALTAR_MAIDEN_X_BASE_OFFSETS[k]);
             self.attract_scene_mut().set_y_base(0x76);
-            self.attract_draw_sprite_set2_slice(&MAIDEN_WARP1[k * 2..k * 2 + 2]);
+            self.attract_draw_sprite_set2_slice(
+                &ATTRACT_AGAHNIM_ALTAR_MAIDEN_SHIMMER_ENTRIES[k * 2..k * 2 + 2],
+            );
         }
 
         let k = (self.game_state.ending.attract_scene.scene_frame_counter() >> 5) as usize & 7;
         self.attract_scene_mut().set_x_base(112);
         self.attract_scene_mut().set_y_base(70);
-        self.attract_draw_sprite_set2_slice(&MAIDEN_WARP2[k * 6..k * 6 + 6]);
+        self.attract_draw_sprite_set2_slice(
+            &ATTRACT_AGAHNIM_ALTAR_MAIDEN_WARP_ENTRIES[k * 6..k * 6 + 6],
+        );
     }
 
     pub(super) fn attract_maiden_warp_case0(&mut self) {
@@ -726,43 +564,14 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_maiden_warp_case1(&mut self) {
-        const OAMS: [(i8, i8, u8, u8, u8); 28] = [
-            (0, 0, 0xce, 0x35, 0),
-            (28, 0, 0xce, 0x35, 0),
-            (-2, 3, 0x26, 0x75, 0),
-            (30, 3, 0x26, 0x35, 0),
-            (-2, 11, 0x36, 0x75, 0),
-            (30, 11, 0x36, 0x35, 0),
-            (0, 16, 0x26, 0x75, 0),
-            (28, 16, 0x26, 0x35, 0),
-            (0, 24, 0x36, 0x75, 0),
-            (28, 24, 0x36, 0x35, 0),
-            (2, 16, 0x20, 0x35, 2),
-            (18, 16, 0x20, 0x75, 2),
-            (2, 32, 0x20, 0xb5, 2),
-            (18, 32, 0x20, 0xf5, 2),
-            (0, 0, 0xce, 0x37, 0),
-            (28, 0, 0xce, 0x37, 0),
-            (-2, 3, 0x26, 0x77, 0),
-            (30, 3, 0x26, 0x37, 0),
-            (-2, 11, 0x36, 0x77, 0),
-            (30, 11, 0x36, 0x37, 0),
-            (0, 16, 0x26, 0x77, 0),
-            (28, 16, 0x26, 0x37, 0),
-            (0, 24, 0x36, 0x77, 0),
-            (28, 24, 0x36, 0x37, 0),
-            (2, 16, 0x22, 0x37, 2),
-            (18, 16, 0x22, 0x77, 2),
-            (2, 32, 0x22, 0xb7, 2),
-            (18, 32, 0x22, 0xf7, 2),
-        ];
-        const NUM: [usize; 8] = [2, 2, 2, 6, 6, 10, 10, 14];
-
         let k = (self.game_state.frame.frame_counter >> 2) as usize & 1;
-        let n = NUM[(self.game_state.ending.attract_scene.maiden_warp_step() >> 1) as usize & 7];
+        let n = ATTRACT_MAIDEN_WARP_CASE1_ENTRY_COUNTS
+            [(self.game_state.ending.attract_scene.maiden_warp_step() >> 1) as usize & 7];
         self.attract_scene_mut().set_x_base(110);
         self.attract_scene_mut().set_y_base(72);
-        self.attract_draw_sprite_set2_slice(&OAMS[k * 14..k * 14 + n]);
+        self.attract_draw_sprite_set2_slice(
+            &ATTRACT_MAIDEN_WARP_CASE1_SPRITE_ENTRIES[k * 14..k * 14 + n],
+        );
 
         if self.game_state.ending.attract_scene.maiden_warp_step() == 0
             && self.game_state.ending.attract_scene.maiden_warp_timer_b() == 0x70
@@ -786,43 +595,14 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_maiden_warp_case2(&mut self) {
-        const NUM: [usize; 8] = [4, 4, 8, 8, 12, 12, 14, 14];
-        const OAMS: [(i8, i8, u8, u8, u8); 28] = [
-            (0, 0, 0xce, 0x35, 0),
-            (28, 0, 0xce, 0x35, 0),
-            (-2, 3, 0x26, 0x75, 0),
-            (30, 3, 0x26, 0x35, 0),
-            (-2, 11, 0x36, 0x75, 0),
-            (30, 11, 0x36, 0x35, 0),
-            (0, 16, 0x26, 0x75, 0),
-            (28, 16, 0x26, 0x35, 0),
-            (0, 24, 0x36, 0x75, 0),
-            (28, 24, 0x36, 0x35, 0),
-            (2, 16, 0x20, 0x35, 2),
-            (18, 16, 0x20, 0x75, 2),
-            (2, 32, 0x20, 0xb5, 2),
-            (18, 32, 0x20, 0xf5, 2),
-            (0, 0, 0xce, 0x37, 0),
-            (28, 0, 0xce, 0x37, 0),
-            (-2, 3, 0x26, 0x77, 0),
-            (30, 3, 0x26, 0x37, 0),
-            (-2, 11, 0x36, 0x77, 0),
-            (30, 11, 0x36, 0x37, 0),
-            (0, 16, 0x26, 0x77, 0),
-            (28, 16, 0x26, 0x37, 0),
-            (0, 24, 0x36, 0x77, 0),
-            (28, 24, 0x36, 0x37, 0),
-            (2, 16, 0x22, 0x37, 2),
-            (18, 16, 0x22, 0x77, 2),
-            (2, 32, 0x22, 0xb7, 2),
-            (18, 32, 0x22, 0xf7, 2),
-        ];
-
         self.attract_scene_mut().set_x_base(110);
         self.attract_scene_mut().set_y_base(72);
         let k = (self.game_state.frame.frame_counter >> 2) as usize & 1;
-        let n = NUM[(self.game_state.ending.attract_scene.maiden_warp_step() >> 1) as usize & 7];
-        self.attract_draw_sprite_set2_slice(&OAMS[k * 14 + (14 - n)..k * 14 + 14]);
+        let n = ATTRACT_MAIDEN_WARP_CASE2_ENTRY_COUNTS
+            [(self.game_state.ending.attract_scene.maiden_warp_step() >> 1) as usize & 7];
+        self.attract_draw_sprite_set2_slice(
+            &ATTRACT_MAIDEN_WARP_CASE2_SPRITE_ENTRIES[k * 14 + (14 - n)..k * 14 + 14],
+        );
 
         if self.game_state.ending.attract_scene.maiden_warp_step() == 0 {
             let timer = self.attract_scene_mut().decrement_maiden_warp_timer_a();
@@ -835,13 +615,6 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_maiden_warp_case3(&mut self) {
-        const OAMS: [(i8, i8, u8, u8, u8); 3] = [
-            (0, 0, 0xc6, 0x3d, 2),
-            (0, 0, 0x24, 0x35, 2),
-            (16, 0, 0x24, 0x75, 2),
-        ];
-        const X_BASE: [u8; 2] = [0x78, 0x70];
-
         if self.game_state.ending.attract_scene.maiden_warp_step() == 6 {
             self.attract_scene_mut().increment_fade_in_complete_flag();
             self.set_sound_effect_1(51);
@@ -850,10 +623,13 @@ impl ZeldaState {
             self.attract_scene_mut().increment_scene_substep();
         } else if self.game_state.ending.attract_scene.maiden_warp_step() < 0x0f {
             let k = (self.game_state.ending.attract_scene.maiden_warp_step() >> 3) as usize & 1;
-            self.attract_scene_mut().set_x_base(X_BASE[k]);
+            self.attract_scene_mut()
+                .set_x_base(ATTRACT_MAIDEN_WARP_CASE3_X_BASES[k]);
             self.attract_scene_mut().set_y_base(0x60);
             let n = if k != 0 { 2 } else { 1 };
-            self.attract_draw_sprite_set2_slice(&OAMS[k..k + n]);
+            self.attract_draw_sprite_set2_slice(
+                &ATTRACT_MAIDEN_WARP_CASE3_SPRITE_ENTRIES[k..k + n],
+            );
         }
         self.attract_scene_mut().increment_maiden_warp_step();
     }
@@ -874,13 +650,6 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_dramatize_prison(&mut self) {
-        const PRISON_ZELDA_ANIMATION_FRAMES: [u8; 16] =
-            [0, 1, 2, 3, 4, 5, 5, 5, 4, 4, 3, 3, 2, 2, 1, 1];
-        const SOLDIER_X: [i16; 2] = [32, -12];
-        const SOLDIER_Y: [u16; 2] = [24, 24];
-        const SOLDIER_DIR: [u8; 2] = [1, 1];
-        const SOLDIER_FLAGS: [u8; 2] = [9, 7];
-
         self.attract_scene_mut().set_oam_index(0);
         if self.game_state.ending.attract_scene.fade_in_done_flag() == 0 {
             self.attract_fade_in_step();
@@ -899,9 +668,9 @@ impl ZeldaState {
                 frame_ctr
             };
 
-            let t = self
-                .attract_vram_destination_address()
-                .wrapping_add(PRISON_ZELDA_ANIMATION_FRAMES[frame_ctr as usize] as u16);
+            let t = self.attract_vram_destination_address().wrapping_add(
+                ATTRACT_DRAMATIZE_PRISON_ZELDA_ANIMATION_FRAMES[frame_ctr as usize] as u16,
+            );
             self.attract_scene_mut().set_x_base_high((t >> 8) as u8);
             self.attract_scene_mut().set_x_base(t as u8);
             self.attract_zelda_prison_draw_a();
@@ -911,16 +680,17 @@ impl ZeldaState {
                 self.sprite_prep_reset_properties(sprite);
                 let x = (self.attract_vram_destination_address() as i16)
                     .wrapping_add(0x100)
-                    .wrapping_add(SOLDIER_X[k]) as u16;
+                    .wrapping_add(ATTRACT_DRAMATIZE_PRISON_SOLDIER_X[k])
+                    as u16;
                 self.attract_scene_mut().set_prison_soldier_x_lo(x as u8);
                 let soldier_anim = self.game_state.ending.attract_scene.soldier_anim_step();
                 self.sprite_simulate_soldier(
                     sprite,
                     x,
                     (self.game_state.ending.attract_scene.y_base() as u16)
-                        .wrapping_add(SOLDIER_Y[k]),
-                    SOLDIER_DIR[k],
-                    SOLDIER_FLAGS[k],
+                        .wrapping_add(ATTRACT_DRAMATIZE_PRISON_SOLDIER_Y[k]),
+                    ATTRACT_DRAMATIZE_PRISON_SOLDIER_DIR[k],
+                    ATTRACT_DRAMATIZE_PRISON_SOLDIER_FLAGS[k],
                     soldier_anim,
                 );
             }
@@ -1061,14 +831,6 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_zelda_prison_case0(&mut self) {
-        const OAMS0: [(i8, i8, u8, u8, u8); 6] = [
-            (5, 25, 0x6c, 0x38, 2),
-            (11, 25, 0x6c, 0x38, 2),
-            (0, 0, 0x84, 0x3b, 2),
-            (16, 0, 0x84, 0x7b, 2),
-            (0, 16, 0xa4, 0x3b, 2),
-            (16, 16, 0xa4, 0x7b, 2),
-        ];
         if self.game_state.ending.attract_scene.prison_soldier_x_lo() == 0 {
             self.attract_scene_mut().increment_scene_substep();
         }
@@ -1078,43 +840,11 @@ impl ZeldaState {
         self.attract_scene_mut().set_x_base(0x58);
         let y_base = self.game_state.ending.attract_scene.prison_zelda_y_base();
         self.attract_scene_mut().set_y_base(y_base);
-        self.attract_draw_sprite_set2_slice(&OAMS0);
+        self.attract_draw_sprite_set2_slice(&ATTRACT_ZELDA_PRISON_CASE0_SPRITE_ENTRIES);
         self.attract_scene_mut().set_story_text_pointer(0xf8d9);
     }
 
     pub(super) fn attract_zelda_prison_case1(&mut self) {
-        const OAMS1: [(i8, i8, u8, u8, u8); 30] = [
-            (5, 25, 0x6c, 0x38, 2),
-            (11, 25, 0x6c, 0x38, 2),
-            (0, 0, 0x84, 0x3b, 2),
-            (16, 0, 0x84, 0x7b, 2),
-            (0, 16, 0xa4, 0x3b, 2),
-            (16, 16, 0xa4, 0x7b, 2),
-            (5, 25, 0x6c, 0x38, 2),
-            (11, 25, 0x6c, 0x38, 2),
-            (0, 0, 0xc4, 0x3b, 2),
-            (16, 0, 0xc2, 0x3b, 2),
-            (0, 16, 0xe4, 0x3b, 2),
-            (16, 16, 0xe6, 0x3b, 2),
-            (5, 25, 0x6c, 0x38, 2),
-            (11, 25, 0x6c, 0x38, 2),
-            (0, 0, 0x88, 0x3b, 2),
-            (16, 0, 0x8a, 0x3b, 2),
-            (0, 16, 0xa8, 0x3b, 2),
-            (16, 16, 0xaa, 0x3b, 2),
-            (5, 25, 0x6c, 0x38, 2),
-            (11, 25, 0x6c, 0x38, 2),
-            (0, 0, 0x82, 0x3b, 2),
-            (16, 0, 0x82, 0x7b, 2),
-            (0, 16, 0xa2, 0x3b, 2),
-            (16, 16, 0xa2, 0x7b, 2),
-            (5, 25, 0x6c, 0x38, 2),
-            (11, 25, 0x6c, 0x38, 2),
-            (0, 0, 0x80, 0x3b, 2),
-            (16, 0, 0x80, 0x7b, 2),
-            (0, 16, 0xa0, 0x3b, 2),
-            (16, 16, 0xa0, 0x7b, 2),
-        ];
         let Some(k) = (if self.game_state.ending.attract_scene.scene_timer() < 0x80 {
             self.attract_show_timed_text_message();
             if self.game_state.oam.priority_word() != 0 {
@@ -1134,7 +864,9 @@ impl ZeldaState {
         self.attract_scene_mut().set_x_base(0x58);
         let y_base = self.game_state.ending.attract_scene.prison_zelda_y_base();
         self.attract_scene_mut().set_y_base(y_base);
-        self.attract_draw_sprite_set2_slice(&OAMS1[k * 6..k * 6 + 6]);
+        self.attract_draw_sprite_set2_slice(
+            &ATTRACT_ZELDA_PRISON_CASE1_SPRITE_ENTRIES[k * 6..k * 6 + 6],
+        );
     }
 
     fn attract_zelda_prison_case1_step(&mut self) -> Option<usize> {
@@ -1166,7 +898,7 @@ impl ZeldaState {
 
     #[rustfmt::skip]
     pub(super) fn sprite_simulate_soldier(&mut self, k: usize, x: u16, y: u16, dir: u8, flags: u8, gfx: u8) {
-        const SIMULATE_SOLDIER_GFX: [u8; 4] = [11, 4, 0, 7];
+
         self.sprite_set_x(k, x);
         self.sprite_set_y(k, y);
         self.sprite_slot_view_mut(k).set_z(0);
@@ -1174,7 +906,7 @@ impl ZeldaState {
         let mut soldier = self.sprite_slot_view_mut(k);
         soldier.set_direction(dir);
         soldier.set_head_direction(dir);
-        soldier.set_graphics(SIMULATE_SOLDIER_GFX[dir as usize].wrapping_add(gfx));
+        soldier.set_graphics(SPRITE_SIMULATE_SOLDIER_GRAPHICS_BY_DIRECTION[dir as usize].wrapping_add(gfx));
         soldier.set_flags3(16);
         soldier.set_object_priority(0);
         soldier.set_oam_flags(flags | 0x30);
@@ -1259,12 +991,6 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_build_backgrounds(&mut self) {
-        const BACKGROUND_TILE_PATTERN: [u16; 16] = [
-            0x01a0, 0x09a6, 0x89a5, 0x01a0, 0x09a5, 0x01a0, 0x01a0, 0x89a6, 0x49a5, 0x01a0, 0x01a0,
-            0x49a5, 0x01a0, 0x89a5, 0xc9a5, 0x01a0,
-        ];
-        const BACKGROUND_CORNER_TILES: [u16; 4] = [0x09a1, 0x09a2, 0x09a3, 0x09a4];
-
         self.set_bg_mode(9);
         self.set_main_screen_layers(0x17);
         self.set_sub_screen_layers(0);
@@ -1276,7 +1002,10 @@ impl ZeldaState {
         loop {
             let mut j = k & 3;
             loop {
-                self.write_vram_upload_buffer_word(4 + k * 2, BACKGROUND_TILE_PATTERN[p + j]);
+                self.write_vram_upload_buffer_word(
+                    4 + k * 2,
+                    ATTRACT_BACKGROUND_TILE_PATTERN[p + j],
+                );
                 k += 1;
                 j += 1;
                 if j & 3 == 0 {
@@ -1297,7 +1026,10 @@ impl ZeldaState {
             let mut j = k & 1;
             let p = (k & 0x20) >> 4;
             loop {
-                self.write_vram_upload_buffer_word(4 + k * 2, BACKGROUND_CORNER_TILES[p + j]);
+                self.write_vram_upload_buffer_word(
+                    4 + k * 2,
+                    ATTRACT_BACKGROUND_CORNER_TILES[p + j],
+                );
                 k += 1;
                 j += 1;
                 if j & 1 == 0 {
