@@ -90,15 +90,16 @@ use crate::game_state::{
     NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
     NativeTileDetectionBridgeMut, NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut,
     NativeTowerSealSparkleBridgeMut, NativeTrinexxPaletteBridgeMut,
-    NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
-    NativeWeatherVaneDebrisBridgeMut, NativeWorldCameraBoundariesBridgeMut,
-    NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
-    OverworldConfigTableRead, OverworldEventInfoState, OverworldMap16Decode,
-    OverworldMap16DecodeScratch, OverworldMap16LoadState, OverworldMap16SourcePage,
-    PaletteFilterState, PpuScrollCopyState, QuakeBoltSlotState, RamPlayerStateView,
-    RamPlayerStateViewMut, SkullWoodsFireSlotState, SmallOverworldMap16ScrollBackupState,
-    SpotlightHdmaState, SystemSignalsState, SystemWorkArea, TagalongSlotRead, TowerSealOrbitState,
-    TowerSealSparkleState, VwfRenderState, WeatherVaneDebrisSlotState, WorldTransientState,
+    NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
+    NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
+    NativeWorldCameraBoundariesBridgeMut, NativeWorldPaletteThemeBridgeMut,
+    NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut, OverworldConfigTableRead,
+    OverworldEventInfoState, OverworldMap16Decode, OverworldMap16DecodeScratch,
+    OverworldMap16LoadState, OverworldMap16SourcePage, PaletteFilterState, PpuScrollCopyState,
+    QuakeBoltSlotState, RamPlayerStateView, RamPlayerStateViewMut, SkullWoodsFireSlotState,
+    SmallOverworldMap16ScrollBackupState, SpotlightHdmaState, SystemSignalsState, SystemWorkArea,
+    TagalongSlotRead, TowerSealOrbitState, TowerSealSparkleState, WeatherVaneDebrisSlotState,
+    WorldTransientState,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -5574,22 +5575,13 @@ impl ZeldaState {
             .fill_word_range(start_index, count, value);
     }
 
-    fn sync_vwf_render_to_ram(&mut self) {
-        self.game_state
-            .messaging
-            .vwf_render
-            .write_to_ram(&mut self.ram);
-        self.assert_native_vwf_render_matches_ram();
-    }
-
-    fn mutate_vwf_render<T>(&mut self, mutate: impl FnOnce(&mut VwfRenderState) -> T) -> T {
-        let result = mutate(&mut self.game_state.messaging.vwf_render);
-        self.sync_vwf_render_to_ram();
-        result
+    fn vwf_render_mut(&mut self) -> NativeVwfRenderBridgeMut<'_> {
+        NativeVwfRenderBridgeMut::new(&mut self.game_state.messaging.vwf_render, &mut self.ram)
     }
 
     pub(crate) fn set_vwf_next_glyph_advance_prefix_sum(&mut self, index: usize, value: u8) {
-        self.mutate_vwf_render(|vwf| vwf.set_next_glyph_advance_prefix_sum(index, value));
+        self.vwf_render_mut()
+            .set_next_glyph_advance_prefix_sum(index, value);
         // C writes `vwf_arr[index + 1] = value` as raw g_ram, even past the modeled buffer
         // (the credits render lines whose glyph cursor runs beyond it). For those overflow
         // bytes the native Vec projection above does not reach RAM, so write them directly.
@@ -5616,35 +5608,36 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_vwf_glyph_cursor(&mut self, value: u16) {
-        self.mutate_vwf_render(|vwf| vwf.set_glyph_cursor(value));
+        self.vwf_render_mut().set_glyph_cursor(value);
     }
 
     pub(crate) fn clear_vwf_glyph_cursor(&mut self) {
-        self.mutate_vwf_render(VwfRenderState::clear_glyph_cursor);
+        self.vwf_render_mut().clear_glyph_cursor();
     }
 
     pub(crate) fn increment_vwf_glyph_cursor(&mut self) -> u16 {
-        self.mutate_vwf_render(VwfRenderState::increment_glyph_cursor)
+        self.vwf_render_mut().increment_glyph_cursor()
     }
 
     pub(crate) fn request_vwf_next_line(&mut self, value: u16) {
-        self.mutate_vwf_render(|vwf| vwf.request_next_line(value));
+        self.vwf_render_mut().request_next_line(value);
     }
 
     pub(crate) fn clear_vwf_next_line_request(&mut self) {
-        self.mutate_vwf_render(VwfRenderState::clear_next_line_request);
+        self.vwf_render_mut().clear_next_line_request();
     }
 
     pub(crate) fn set_vwf_current_line(&mut self, value: u16) {
-        self.mutate_vwf_render(|vwf| vwf.set_current_line(value));
+        self.vwf_render_mut().set_current_line(value);
     }
 
     pub(crate) fn set_vwf_line_render_offset(&mut self, value: u16) {
-        self.mutate_vwf_render(|vwf| vwf.set_line_render_offset(value));
+        self.vwf_render_mut().set_line_render_offset(value);
     }
 
     pub(crate) fn set_vwf_tile_word_at_byte_offset(&mut self, byte_offset: usize, value: u16) {
-        self.mutate_vwf_render(|vwf| vwf.set_tile_word_at_byte_offset(byte_offset, value));
+        self.vwf_render_mut()
+            .set_tile_word_at_byte_offset(byte_offset, value);
     }
 
     pub(crate) fn dialogue_source_offset_mut(&mut self) -> NativeDialogueSourceOffsetBridgeMut<'_> {

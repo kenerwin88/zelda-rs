@@ -74,7 +74,8 @@ pub(crate) use messaging::{
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
     NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
     NativeMultiselectChoiceBridgeMut, NativeSelectFileMenuBridgeMut,
-    NativeSharedMessageTimerBridgeMut, SelectFileMenuState, VwfRenderState,
+    NativeSharedMessageTimerBridgeMut, NativeVwfRenderBridgeMut, SelectFileMenuState,
+    VwfRenderState,
 };
 pub(crate) use misc::{
     ArcheryGameState, DungeonMapDisplayState, DungeonSecretState, EnhancedFeaturesState,
@@ -157,7 +158,7 @@ use inventory::{DungeonKeySlotsState, InventoryItemsState, MirrorWarpState, Play
 use messaging::{
     DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState,
     DialoguePointerTableState, DialogueSourceOffsetState, MessagingRuntimeState,
-    MultiselectChoiceState, NativeVwfRenderBridgeMut, SharedMessageTimerState,
+    MultiselectChoiceState, SharedMessageTimerState,
 };
 #[cfg(test)]
 use player::{PushedBlockState, SpecialExitPositionState};
