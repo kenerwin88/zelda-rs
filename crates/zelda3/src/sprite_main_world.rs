@@ -22,6 +22,19 @@ const SOMARIA_PLATFORM_DRAG_Y_OFFSETS: [i8; 8] = [-1, 1, 0, 0, -1, 1, -1, 1];
 const PIPE_EXIT_DIRECTION_BITS: [u8; 4] = [8, 4, 2, 1];
 const ALT_SPRITE_SPAWNED_FLAG_WORLD: usize = 0x1de0;
 
+// SomariaPlatform junction input tables (sprite_main.c:25561-25690).
+const SOMARIA_PLATFORM_TRANSIT_DIRECTION_KEYS: [u8; 4] = [4, 8, 1, 2];
+const SOMARIA_PLATFORM_T_JUNCTION_NO_UP_KEYS: [u8; 4] = [3, 7, 6, 5];
+const SOMARIA_PLATFORM_T_JUNCTION_NO_DOWN_KEYS: [u8; 4] = [11, 3, 10, 9];
+const SOMARIA_PLATFORM_T_JUNCTION_NO_LEFT_KEYS: [u8; 4] = [9, 5, 12, 13];
+const SOMARIA_PLATFORM_T_JUNCTION_NO_RIGHT_KEYS: [u8; 4] = [0xa, 6, 0xe, 0xc];
+const SOMARIA_PLATFORM_TRANSIT_NO_BACK_KEYS: [u8; 4] = [0xb, 7, 0xe, 0xd];
+const SOMARIA_PLATFORM_TRANSIT_QUESTION_KEYS: [u8; 4] = [0xc, 0xc, 3, 3];
+
+// SomariaPlatform movement velocity tables (sprite_main.c:25524).
+const SOMARIA_PLATFORM_X_VELOCITIES: [i8; 8] = [0, 0, -16, 16, -16, 16, 16, -16];
+const SOMARIA_PLATFORM_Y_VELOCITIES: [i8; 8] = [-16, 16, 0, 0, -16, 16, -16, 16];
+
 // SomariaPlatform draw atlas (sprite_main.c:25539-25555).
 const SOMARIA_PLATFORM_DRAW_FRAMES: [DrawMultipleData; 16] = [
     DrawMultipleData {
@@ -148,6 +161,13 @@ const MASTER_SWORD_LIGHT_BEAM_UPPER_OAM_FLAGS: [u8; 2] = [5, 5];
 // MasterSword light-fountain animation tables (sprite_main.c:2143-2144).
 const MASTER_SWORD_FOUNTAIN_GRAPHICS: [u8; 9] = [0, 1, 1, 2, 2, 2, 1, 1, 0];
 const MASTER_SWORD_FOUNTAIN_LIGHT_BEAM_COUNTS: [u8; 9] = [0, 0, 1, 1, 2, 2, 0, 0, 0];
+
+// FluteKid stumpy animation tables (sprite_main.c:9914-9917).
+const FLUTE_AARDVARK_GRAPHICS_SEQUENCE: [i8; 20] =
+    [1, 1, 1, 1, 2, 1, 2, 1, 2, 1, 2, 3, 2, 3, 2, 3, 2, 3, 2, -1];
+const FLUTE_AARDVARK_FRAME_DELAYS: [i8; 19] = [
+    -1, -1, -1, 16, 2, 12, 6, 8, 10, 4, 14, 2, 10, 6, 6, 10, 2, 14, 2,
+];
 
 impl ZeldaState {
     // ============================================================
@@ -313,11 +333,12 @@ impl ZeldaState {
             }
             0xb6 => {
                 // TransitTile
-                const TRANSIT_DIR: [u8; 4] = [4, 8, 1, 2];
                 self.sprite_slot_view_mut(k).set_ai_state(1);
                 let d = self.sprite_slot_view(k).direction() as usize;
                 if !self.game_state.player.follower_link.has_auxiliary_state()
-                    && (self.game_state.player.follower_link.joypad1h_last() & TRANSIT_DIR[d]) != 0
+                    && (self.game_state.player.follower_link.joypad1h_last()
+                        & SOMARIA_PLATFORM_TRANSIT_DIRECTION_KEYS[d])
+                        != 0
                 {
                     self.sprite_slot_view_mut(k).set_ai_state(0);
                     self.sprite_slot_view_mut(k).xor_direction(1);
@@ -329,9 +350,9 @@ impl ZeldaState {
             }
             0xb7 => {
                 // Tjunc_NoUp
-                const KEYS1: [u8; 4] = [3, 7, 6, 5];
                 let d = self.sprite_slot_view(k).direction() as usize;
-                let t = self.game_state.player.follower_link.joypad1h_last() & KEYS1[d];
+                let t = self.game_state.player.follower_link.joypad1h_last()
+                    & SOMARIA_PLATFORM_T_JUNCTION_NO_UP_KEYS[d];
                 if (t & 8) != 0 {
                     self.sprite_slot_view_mut(k).set_direction(0);
                 } else if (t & 4) != 0 {
@@ -347,9 +368,9 @@ impl ZeldaState {
             }
             0xb8 => {
                 // Tjunc_NoDown
-                const KEYS2: [u8; 4] = [11, 3, 10, 9];
                 let d = self.sprite_slot_view(k).direction() as usize;
-                let t = self.game_state.player.follower_link.joypad1h_last() & KEYS2[d];
+                let t = self.game_state.player.follower_link.joypad1h_last()
+                    & SOMARIA_PLATFORM_T_JUNCTION_NO_DOWN_KEYS[d];
                 if (t & 8) != 0 {
                     self.sprite_slot_view_mut(k).set_direction(0);
                 } else if (t & 4) != 0 {
@@ -365,9 +386,9 @@ impl ZeldaState {
             }
             0xb9 => {
                 // Tjunc_NoLeft
-                const KEYS3: [u8; 4] = [9, 5, 12, 13];
                 let d = self.sprite_slot_view(k).direction() as usize;
-                let t = self.game_state.player.follower_link.joypad1h_last() & KEYS3[d];
+                let t = self.game_state.player.follower_link.joypad1h_last()
+                    & SOMARIA_PLATFORM_T_JUNCTION_NO_LEFT_KEYS[d];
                 if (t & 8) != 0 {
                     self.sprite_slot_view_mut(k).set_direction(0);
                 } else if (t & 4) != 0 {
@@ -383,9 +404,9 @@ impl ZeldaState {
             }
             0xba => {
                 // Tjunc_NoRight
-                const KEYS4: [u8; 4] = [0xa, 6, 0xe, 0xc];
                 let d = self.sprite_slot_view(k).direction() as usize;
-                let t = self.game_state.player.follower_link.joypad1h_last() & KEYS4[d];
+                let t = self.game_state.player.follower_link.joypad1h_last()
+                    & SOMARIA_PLATFORM_T_JUNCTION_NO_RIGHT_KEYS[d];
                 if (t & 8) != 0 {
                     self.sprite_slot_view_mut(k).set_direction(0);
                 } else if (t & 4) != 0 {
@@ -401,9 +422,9 @@ impl ZeldaState {
             }
             0xbb => {
                 // TransitTileNoBack
-                const KEYS5: [u8; 4] = [0xb, 7, 0xe, 0xd];
                 let d = self.sprite_slot_view(k).direction() as usize;
-                let t = self.game_state.player.follower_link.joypad1h_last() & KEYS5[d];
+                let t = self.game_state.player.follower_link.joypad1h_last()
+                    & SOMARIA_PLATFORM_TRANSIT_NO_BACK_KEYS[d];
                 if (t & 8) != 0 {
                     self.sprite_slot_view_mut(k).set_direction(0);
                 } else if (t & 4) != 0 {
@@ -416,10 +437,10 @@ impl ZeldaState {
             }
             0xbc => {
                 // TransitTileQuestion
-                const KEYS6: [u8; 4] = [0xc, 0xc, 3, 3];
                 self.sprite_slot_view_mut(k).set_ai_state(1);
                 let d = self.sprite_slot_view(k).direction() as usize;
-                let t = self.game_state.player.follower_link.joypad1h_last() & KEYS6[d];
+                let t = self.game_state.player.follower_link.joypad1h_last()
+                    & SOMARIA_PLATFORM_TRANSIT_QUESTION_KEYS[d];
                 if t != 0 {
                     if (t & 8) != 0 {
                         self.sprite_slot_view_mut(k).set_direction(0);
@@ -1201,11 +1222,6 @@ impl ZeldaState {
     // void Sprite_FluteKid_Stumpy(int k) {  // 86b040
     //   See sprite_main.c:9881..9954 for the conversation / shovel sequence.
     pub(super) fn sprite_flute_kid_stumpy(&mut self, k: usize) {
-        const FLUTE_AARDVARK_GRAPHICS_SEQUENCE: [i8; 20] =
-            [1, 1, 1, 1, 2, 1, 2, 1, 2, 1, 2, 3, 2, 3, 2, 3, 2, 3, 2, -1];
-        const FLUTE_AARDVARK_FRAME_DELAYS: [i8; 19] = [
-            -1, -1, -1, 16, 2, 12, 6, 8, 10, 4, 14, 2, 10, 6, 6, 10, 2, 14, 2,
-        ];
         self.flute_aardvark_draw_for_world(k);
         if self.sprite_return_if_inactive(k) {
             return;
@@ -1354,14 +1370,12 @@ impl ZeldaState {
     //   sprite_y_vel[k] = kSomariaPlatform_Yvel[j];
     // }
     fn somaria_platform_and_pipe_handle_movement(&mut self, k: usize) {
-        const LOCAL_X_VELOCITIES: [i8; 8] = [0, 0, -16, 16, -16, 16, 16, -16];
-        const LOCAL_Y_VELOCITIES: [i8; 8] = [-16, 16, 0, 0, -16, 16, -16, 16];
         self.somaria_platform_handle_junctions(k);
         let j = self.sprite_slot_view(k).direction() as usize;
         self.sprite_slot_view_mut(k)
-            .set_x_velocity(LOCAL_X_VELOCITIES[j] as u8);
+            .set_x_velocity(SOMARIA_PLATFORM_X_VELOCITIES[j] as u8);
         self.sprite_slot_view_mut(k)
-            .set_y_velocity(LOCAL_Y_VELOCITIES[j] as u8);
+            .set_y_velocity(SOMARIA_PLATFORM_Y_VELOCITIES[j] as u8);
     }
 
     // void Pipe_HandlePlayerMovement(uint8 dir) {  // 9efcff
