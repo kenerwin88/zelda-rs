@@ -892,6 +892,20 @@ impl MessagingRenderBufferState {
             self.set_word(start_index + i, value);
         }
     }
+
+    pub(crate) fn copy_rows_from_ram(
+        &mut self,
+        ram: &[u8],
+        dst: usize,
+        src0: usize,
+        src1: usize,
+        len: usize,
+    ) {
+        for i in 0..len {
+            self.bytes[dst + i] = ram[src0 + i];
+            self.bytes[dst + len + i] = ram[src1 + i];
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1758,6 +1772,12 @@ impl<'a> NativeMessagingRenderBufferBridgeMut<'a> {
     pub(crate) fn fill_word_range(&mut self, start_index: usize, count: usize, value: u16) {
         self.render_buffer
             .fill_word_range(start_index, count, value);
+        self.sync();
+    }
+
+    pub(crate) fn copy_rows_from_ram(&mut self, dst: usize, src0: usize, src1: usize, len: usize) {
+        self.render_buffer
+            .copy_rows_from_ram(self.ram, dst, src0, src1, len);
         self.sync();
     }
 }

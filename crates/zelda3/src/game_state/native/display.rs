@@ -132,6 +132,36 @@ impl GraphicsDecompressionScratch {
     pub(crate) fn secondary_buffer_offset() -> usize {
         SECONDARY_DECOMP_BUFFER_LOAD_GFX
     }
+
+    pub(crate) fn primary_buffer(ram: &[u8], len: usize) -> Vec<u8> {
+        ram[PRIMARY_DECOMP_BUFFER_LOAD_GFX..PRIMARY_DECOMP_BUFFER_LOAD_GFX + len].to_vec()
+    }
+
+    pub(crate) fn combined_buffers(ram: &[u8]) -> Vec<u8> {
+        Self::primary_buffer(ram, 0x0c00)
+    }
+
+    pub(crate) fn copy_to_primary_buffer(ram: &mut [u8], data: &[u8]) {
+        let len = data
+            .len()
+            .min(ram.len().saturating_sub(PRIMARY_DECOMP_BUFFER_LOAD_GFX));
+        ram[PRIMARY_DECOMP_BUFFER_LOAD_GFX..PRIMARY_DECOMP_BUFFER_LOAD_GFX + len]
+            .copy_from_slice(&data[..len]);
+    }
+
+    pub(crate) fn copy_to_buffer(ram: &mut [u8], dst: usize, data: &[u8]) -> usize {
+        let len = data.len().min(ram.len().saturating_sub(dst));
+        ram[dst..dst + len].copy_from_slice(&data[..len]);
+        len
+    }
+
+    pub(crate) fn sprite_buffer_tail(ram: &[u8]) -> Vec<u8> {
+        ram[SPRITE_DECOMP_BUFFER_LOAD_GFX..GRAPHICS_DECOMP_BUFFER_END].to_vec()
+    }
+
+    pub(crate) fn staged_bg_and_sprite_buffers(ram: &[u8]) -> Vec<u8> {
+        ram[BG_DECOMP_BUFFER_LOAD_GFX..GRAPHICS_DECOMP_BUFFER_END].to_vec()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

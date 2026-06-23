@@ -19,14 +19,13 @@ mod sprites;
 mod system;
 mod world;
 
-#[cfg(test)]
-use display::NativeVramUploadBufferBridgeMut;
 pub(crate) use display::{
     DisplayState, GraphicsDecompressionScratch, HudRuntimeState, HudStateRead, HudTilemapState,
     LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut, NativeHudInventoryOrderBridgeMut,
     NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePpuScrollCopyBridgeMut,
-    NativeTrinexxPaletteBridgeMut, NativeWaterHdmaWindowBridgeMut, OverworldPaletteBackupState,
-    PaletteFilterState, PpuScrollCopyState, SpotlightHdmaState, SPOTLIGHT_HDMA_WORD_COUNT,
+    NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,
+    OverworldPaletteBackupState, PaletteFilterState, PpuScrollCopyState, SpotlightHdmaState,
+    SPOTLIGHT_HDMA_WORD_COUNT,
 };
 pub(crate) use dungeon::{
     loaded_room_data_word, DungeonStairList, DungeonState, NativeDungeonBg2AttributeBridgeMut,
@@ -73,8 +72,9 @@ pub(crate) use messaging::{
     MessagingRenderBufferState, MessagingState, MultiselectChoiceRead,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
-    NativeMessagingRuntimeBridgeMut, NativeMultiselectChoiceBridgeMut,
-    NativeSharedMessageTimerBridgeMut, SelectFileMenuState, VwfRenderState,
+    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut,
+    NativeMultiselectChoiceBridgeMut, NativeSharedMessageTimerBridgeMut, SelectFileMenuState,
+    VwfRenderState,
 };
 pub(crate) use misc::{
     ArcheryGameState, DungeonMapDisplayState, DungeonSecretState, EnhancedFeaturesState,
@@ -160,8 +160,8 @@ use inventory::{DungeonKeySlotsState, InventoryItemsState, MirrorWarpState, Play
 use messaging::{
     DecodedMessageTextState, DialogueMessageIndexState, DialogueNumberState,
     DialoguePointerTableState, DialogueSourceOffsetState, MessagingRuntimeState,
-    MultiselectChoiceState, NativeMessagingRenderBufferBridgeMut, NativeSelectFileMenuBridgeMut,
-    NativeVwfRenderBridgeMut, SharedMessageTimerState,
+    MultiselectChoiceState, NativeSelectFileMenuBridgeMut, NativeVwfRenderBridgeMut,
+    SharedMessageTimerState,
 };
 #[cfg(test)]
 use player::{PushedBlockState, SpecialExitPositionState};

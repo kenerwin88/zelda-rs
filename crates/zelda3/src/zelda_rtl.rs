@@ -22,12 +22,10 @@ use crate::game_state::constants::nmi::{
     BG_CHAR_BUFFER_1 as NMI_BG_CHAR_BUFFER_1, BG_CHAR_HALF_BUFFER as NMI_BG_CHAR_HALF_BUFFER,
 };
 use crate::game_state::constants::{
-    BG_DECOMP_BUFFER_LOAD_GFX, CRYSTAL_ROTATION_COUNTER, DOOR_ANIMATION_STEP_INDICATOR,
-    GRAPHICS_DECOMP_BUFFER_END, HDMA_TABLE_DYNAMIC, MAPBAK_PALETTE, MESSAGING_BUF_LOAD_GFX,
-    MESSAGING_RENDER_BUFFER, MOVING_WALL_REPLACEMENT_BUFFER, OVERWORLD_SCROLL_X_END,
-    OVERWORLD_SCROLL_X_START, OVERWORLD_SCROLL_Y_END, PRIMARY_DECOMP_BUFFER_LOAD_GFX,
-    RESERVED_HDMA_TABLE, SAVELOAD_HDMA_TABLE, SPRITE_DECOMP_BUFFER_LOAD_GFX, UVRAM_DATA,
-    VRAM_UPLOAD_DATA, VRAM_UPLOAD_OFFSET, VWF_ARR,
+    CRYSTAL_ROTATION_COUNTER, DOOR_ANIMATION_STEP_INDICATOR, HDMA_TABLE_DYNAMIC, MAPBAK_PALETTE,
+    MESSAGING_BUF_LOAD_GFX, MOVING_WALL_REPLACEMENT_BUFFER, OVERWORLD_SCROLL_X_END,
+    OVERWORLD_SCROLL_X_START, OVERWORLD_SCROLL_Y_END, RESERVED_HDMA_TABLE, SAVELOAD_HDMA_TABLE,
+    VWF_ARR,
 };
 #[cfg(test)]
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
@@ -39,14 +37,13 @@ use crate::game_state::{
     DungeonMapDisplayState, DungeonStairList, FollowerLinkState, FrameState, GameState,
     GraphicsDecompressionScratch, HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot,
     HistoryPositionState, HudRuntimeState, HudStateRead, HudTilemapState, IntroActorRead,
-    LanmolaFlatTrailEntry, LanmolaSegmentMotionState, LinkDmaSourceSlot,
-    MessagingRenderBufferState, MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead,
-    NativeAncillaSlotBridgeMut, NativeAncillaSlotView, NativeArcheryGameBridgeMut,
-    NativeArmosKnightHomePositionBridgeMut, NativeArrghusPuffHomePositionBridgeMut,
-    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
-    NativeBeamosLaserHistoryBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
-    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    LanmolaFlatTrailEntry, LanmolaSegmentMotionState, LinkDmaSourceSlot, MsuResumeInfoState,
+    MsuResumeSlot, MultiselectChoiceRead, NativeAncillaSlotBridgeMut, NativeAncillaSlotView,
+    NativeArcheryGameBridgeMut, NativeArmosKnightHomePositionBridgeMut,
+    NativeArrghusPuffHomePositionBridgeMut, NativeAttractSceneBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBeamosLaserHistoryBridgeMut,
+    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
     NativeBombosSpellBridgeMut, NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
@@ -70,10 +67,11 @@ use crate::game_state::{
     NativeGarnishSlotView, NativeHappinessPondRupeeBridgeMut, NativeHudInventoryOrderBridgeMut,
     NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut,
     NativeInventoryItemsBridgeMut, NativeLanmolaSegmentMotionBridgeMut,
-    NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut, NativeMessagingRuntimeBridgeMut,
-    NativeMinigameBridgeMut, NativeMirrorWarpBridgeMut, NativeMoldormHistoryBridgeMut,
-    NativeMultiselectChoiceBridgeMut, NativeOamStateBridgeMut, NativeOverlordSlotBridgeMut,
-    NativeOverlordSlotView, NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
+    NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
+    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
+    NativeMirrorWarpBridgeMut, NativeMoldormHistoryBridgeMut, NativeMultiselectChoiceBridgeMut,
+    NativeOamStateBridgeMut, NativeOverlordSlotBridgeMut, NativeOverlordSlotView,
+    NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
     NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
     NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
     NativeOverworldTransitionBridgeMut, NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut,
@@ -90,17 +88,17 @@ use crate::game_state::{
     NativeSpriteWorkspaceBridgeMut, NativeSwamolaHistoryBridgeMut, NativeSwamolaTargetBridgeMut,
     NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
     NativeTileDetectionBridgeMut, NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut,
-    NativeTowerSealSparkleBridgeMut, NativeTrinexxPaletteBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
-    NativeWorldCameraBoundariesBridgeMut, NativeWorldPaletteThemeBridgeMut,
-    NativeWorldScrollBridgeMut, OverworldConfigTableRead, OverworldEventInfoState,
-    OverworldMap16Decode, OverworldMap16DecodeScratch, OverworldMap16LoadState,
-    OverworldMap16SourcePage, PaletteFilterState, PpuScrollCopyState, QuakeBoltSlotState,
-    RamPlayerStateView, RamPlayerStateViewMut, SelectFileMenuState, SkullWoodsFireSlotState,
-    SmallOverworldMap16ScrollBackupState, SpotlightHdmaState, SystemSignalsState, SystemWorkArea,
-    TagalongSlotRead, TowerSealOrbitState, TowerSealSparkleState, VwfRenderState,
-    WeatherVaneDebrisSlotState, WorldCameraBoundariesState, WorldRegionState, WorldScrollState,
-    WorldTransientState, SPOTLIGHT_HDMA_WORD_COUNT,
+    NativeTowerSealSparkleBridgeMut, NativeTrinexxPaletteBridgeMut,
+    NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
+    NativeWeatherVaneDebrisBridgeMut, NativeWorldCameraBoundariesBridgeMut,
+    NativeWorldPaletteThemeBridgeMut, NativeWorldScrollBridgeMut, OverworldConfigTableRead,
+    OverworldEventInfoState, OverworldMap16Decode, OverworldMap16DecodeScratch,
+    OverworldMap16LoadState, OverworldMap16SourcePage, PaletteFilterState, PpuScrollCopyState,
+    QuakeBoltSlotState, RamPlayerStateView, RamPlayerStateViewMut, SelectFileMenuState,
+    SkullWoodsFireSlotState, SmallOverworldMap16ScrollBackupState, SpotlightHdmaState,
+    SystemSignalsState, SystemWorkArea, TagalongSlotRead, TowerSealOrbitState,
+    TowerSealSparkleState, VwfRenderState, WeatherVaneDebrisSlotState, WorldCameraBoundariesState,
+    WorldRegionState, WorldScrollState, WorldTransientState, SPOTLIGHT_HDMA_WORD_COUNT,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -4861,27 +4859,19 @@ impl ZeldaState {
     }
 
     pub(crate) fn graphics_primary_decompression_buffer(&self, len: usize) -> Vec<u8> {
-        self.ram[PRIMARY_DECOMP_BUFFER_LOAD_GFX..PRIMARY_DECOMP_BUFFER_LOAD_GFX + len].to_vec()
+        GraphicsDecompressionScratch::primary_buffer(&self.ram, len)
     }
 
     pub(crate) fn graphics_combined_decompression_buffers(&self) -> Vec<u8> {
-        self.graphics_primary_decompression_buffer(0x0c00)
+        GraphicsDecompressionScratch::combined_buffers(&self.ram)
     }
 
     pub(crate) fn copy_to_primary_decompression_buffer(&mut self, data: &[u8]) {
-        let len = data.len().min(
-            self.ram
-                .len()
-                .saturating_sub(PRIMARY_DECOMP_BUFFER_LOAD_GFX),
-        );
-        self.ram[PRIMARY_DECOMP_BUFFER_LOAD_GFX..PRIMARY_DECOMP_BUFFER_LOAD_GFX + len]
-            .copy_from_slice(&data[..len]);
+        GraphicsDecompressionScratch::copy_to_primary_buffer(&mut self.ram, data);
     }
 
     pub(crate) fn copy_decompressed_graphics_to(&mut self, dst: usize, data: &[u8]) -> usize {
-        let len = data.len().min(self.ram.len().saturating_sub(dst));
-        self.ram[dst..dst + len].copy_from_slice(&data[..len]);
-        len
+        GraphicsDecompressionScratch::copy_to_buffer(&mut self.ram, dst, data)
     }
 
     pub(crate) fn rotate_animated_dungeon_tile_planes(&mut self) {
@@ -4931,10 +4921,8 @@ impl ZeldaState {
         src1: usize,
         len: usize,
     ) {
-        for i in 0..len {
-            self.ram[MESSAGING_RENDER_BUFFER + dst + i] = self.ram[src0 + i];
-            self.ram[MESSAGING_RENDER_BUFFER + dst + len + i] = self.ram[src1 + i];
-        }
+        self.messaging_render_buffer_mut()
+            .copy_rows_from_ram(dst, src0, src1, len);
     }
 
     pub(crate) fn copy_peg_tile_graphics_to_message_buffer(&mut self, first: usize, second: usize) {
@@ -4961,11 +4949,11 @@ impl ZeldaState {
     }
 
     pub(crate) fn graphics_sprite_decompression_buffer_tail(&self) -> Vec<u8> {
-        self.ram[SPRITE_DECOMP_BUFFER_LOAD_GFX..GRAPHICS_DECOMP_BUFFER_END].to_vec()
+        GraphicsDecompressionScratch::sprite_buffer_tail(&self.ram)
     }
 
     pub(crate) fn staged_bg_and_sprite_decompression_buffers(&self) -> Vec<u8> {
-        self.ram[BG_DECOMP_BUFFER_LOAD_GFX..GRAPHICS_DECOMP_BUFFER_END].to_vec()
+        GraphicsDecompressionScratch::staged_bg_and_sprite_buffers(&self.ram)
     }
 
     pub(crate) fn overworld_map16_decode(&self) -> OverworldMap16Decode<'_> {
@@ -5160,45 +5148,41 @@ impl ZeldaState {
             .vram_dma_source_bytes(&self.ram, source_addr, len)
     }
 
-    fn assert_vram_upload_cursor_matches_ram(&self) {
-        debug_assert_eq!(
-            self.game_state.display.vram_upload_cursor,
-            read_le_u16(&self.ram, VRAM_UPLOAD_OFFSET),
-            "native VRAM upload cursor diverged from compatibility RAM",
-        );
+    fn vram_upload_mut(&mut self) -> NativeVramUploadBufferBridgeMut<'_> {
+        NativeVramUploadBufferBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
     pub(crate) fn write_vram_upload_buffer_byte(&mut self, offset: usize, value: u8) {
-        self.ram[VRAM_UPLOAD_DATA + offset] = value;
+        self.vram_upload_mut().write_buffer_byte(offset, value);
     }
 
     pub(crate) fn write_vram_upload_buffer_word(&mut self, offset: usize, value: u16) {
-        write_le_u16(&mut self.ram, VRAM_UPLOAD_DATA + offset, value);
+        self.vram_upload_mut().write_buffer_word(offset, value);
     }
 
     pub(crate) fn write_vram_upload_tilemap_word(&mut self, offset: usize, value: u16) {
-        write_le_u16(&mut self.ram, VRAM_UPLOAD_OFFSET + offset, value);
+        self.vram_upload_mut().write_tilemap_word(offset, value);
     }
 
     pub(crate) fn write_overworld_vram_word(&mut self, word_index: usize, value: u16) {
-        write_le_u16(&mut self.ram, UVRAM_DATA + word_index * 2, value);
+        self.vram_upload_mut()
+            .write_overworld_vram_word(word_index, value);
     }
 
     pub(crate) fn write_vram_upload_absolute_byte(&mut self, address: usize, value: u8) {
-        self.ram[address] = value;
+        self.vram_upload_mut().write_absolute_byte(address, value);
     }
 
     pub(crate) fn write_vram_upload_absolute_word(&mut self, address: usize, value: u16) {
-        write_le_u16(&mut self.ram, address, value);
+        self.vram_upload_mut().write_absolute_word(address, value);
     }
 
     pub(crate) fn copy_vram_upload_buffer_bytes(&mut self, offset: usize, data: &[u8]) {
-        self.ram[VRAM_UPLOAD_DATA + offset..VRAM_UPLOAD_DATA + offset + data.len()]
-            .copy_from_slice(data);
+        self.vram_upload_mut().copy_buffer_bytes(offset, data);
     }
 
     pub(crate) fn terminate_vram_upload_buffer_at(&mut self, offset: usize) {
-        self.ram[VRAM_UPLOAD_DATA + offset] = 0xff;
+        self.vram_upload_mut().terminate_buffer_at(offset);
     }
 
     pub(crate) fn write_vram_upload_level_label_tiles(
@@ -5206,11 +5190,7 @@ impl ZeldaState {
         left: &[u8; 14],
         right: &[u8; 14],
     ) {
-        self.ram[VRAM_UPLOAD_DATA + 32] = 0xff;
-        for i in (0..14).rev() {
-            self.ram[VRAM_UPLOAD_DATA + i] = left[i];
-            self.ram[VRAM_UPLOAD_DATA + i + 16] = right[i];
-        }
+        self.vram_upload_mut().write_level_label_tiles(left, right);
     }
 
     pub(crate) fn write_vram_upload_map16_update_packet(
@@ -5219,19 +5199,8 @@ impl ZeldaState {
         vram_pos: u16,
         tiles: [u16; 4],
     ) {
-        write_le_u16(&mut self.ram, address, vram_pos.swap_bytes());
-        write_le_u16(&mut self.ram, address + 2, 0x0300);
-        write_le_u16(&mut self.ram, address + 4, tiles[0]);
-        write_le_u16(&mut self.ram, address + 6, tiles[1]);
-        write_le_u16(
-            &mut self.ram,
-            address + 8,
-            vram_pos.wrapping_add(0x20).swap_bytes(),
-        );
-        write_le_u16(&mut self.ram, address + 10, 0x0300);
-        write_le_u16(&mut self.ram, address + 12, tiles[2]);
-        write_le_u16(&mut self.ram, address + 14, tiles[3]);
-        write_le_u16(&mut self.ram, address + 16, 0xffff);
+        self.vram_upload_mut()
+            .write_map16_update_packet(address, vram_pos, tiles);
     }
 
     pub(crate) fn write_vram_upload_single_tile_stripe_packet(
@@ -5240,30 +5209,24 @@ impl ZeldaState {
         stripe: u16,
         tile: u16,
     ) {
-        write_le_u16(&mut self.ram, address, stripe);
-        write_le_u16(&mut self.ram, address + 2, 0x0100);
-        write_le_u16(&mut self.ram, address + 4, tile);
+        self.vram_upload_mut()
+            .write_single_tile_stripe_packet(address, stripe, tile);
     }
 
     pub(crate) fn write_vram_upload_tile_stripe_sentinel(&mut self, address: usize) {
-        write_le_u16(&mut self.ram, address, 0xffff);
+        self.vram_upload_mut().write_tile_stripe_sentinel(address);
     }
 
     pub(crate) fn set_vram_upload_cursor(&mut self, value: u16) {
-        self.game_state.display.set_vram_upload_cursor(value);
-        write_le_u16(&mut self.ram, VRAM_UPLOAD_OFFSET, value);
-        self.assert_vram_upload_cursor_matches_ram();
+        self.vram_upload_mut().set_offset(value);
     }
 
     pub(crate) fn clear_vram_upload_cursor(&mut self) {
-        self.set_vram_upload_cursor(0);
+        self.vram_upload_mut().clear_offset();
     }
 
     pub(crate) fn advance_vram_upload_cursor_by(&mut self, value: u16) -> u16 {
-        let next = self.game_state.display.advance_vram_upload_cursor_by(value);
-        write_le_u16(&mut self.ram, VRAM_UPLOAD_OFFSET, next);
-        self.assert_vram_upload_cursor_matches_ram();
-        next
+        self.vram_upload_mut().advance_offset_by(value)
     }
 
     pub(crate) fn poly_runtime_mut(&mut self) -> NativePolyRuntimeBridgeMut<'_> {
@@ -5708,25 +5671,15 @@ impl ZeldaState {
         NativeDecodedMessageTextBridgeMut::new(&mut self.game_state.messaging, &mut self.ram)
     }
 
-    fn sync_messaging_render_buffer_to_ram(&mut self) {
-        self.game_state
-            .messaging
-            .render_buffer
-            .write_to_ram(&mut self.ram);
-        self.assert_native_messaging_render_buffer_matches_ram();
-    }
-
-    fn mutate_messaging_render_buffer<T>(
-        &mut self,
-        mutate: impl FnOnce(&mut MessagingRenderBufferState) -> T,
-    ) -> T {
-        let result = mutate(&mut self.game_state.messaging.render_buffer);
-        self.sync_messaging_render_buffer_to_ram();
-        result
+    fn messaging_render_buffer_mut(&mut self) -> NativeMessagingRenderBufferBridgeMut<'_> {
+        NativeMessagingRenderBufferBridgeMut::new(
+            &mut self.game_state.messaging.render_buffer,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn set_messaging_render_buffer_word(&mut self, index: usize, value: u16) {
-        self.mutate_messaging_render_buffer(|render_buffer| render_buffer.set_word(index, value));
+        self.messaging_render_buffer_mut().set_word(index, value);
     }
 
     pub(crate) fn set_messaging_render_buffer_word_at_byte_offset(
@@ -5734,21 +5687,20 @@ impl ZeldaState {
         byte_offset: usize,
         value: u16,
     ) {
-        self.mutate_messaging_render_buffer(|render_buffer| {
-            render_buffer.set_word_at_byte_offset(byte_offset, value);
-        });
+        self.messaging_render_buffer_mut()
+            .set_word_at_byte_offset(byte_offset, value);
     }
 
     pub(crate) fn xor_messaging_render_buffer_mask(&mut self, offset: usize, mask: u8) {
-        self.mutate_messaging_render_buffer(|render_buffer| render_buffer.xor_mask(offset, mask));
+        self.messaging_render_buffer_mut().xor_mask(offset, mask);
     }
 
     pub(crate) fn clear_messaging_render_buffer_mask(&mut self, offset: usize, mask: u8) {
-        self.mutate_messaging_render_buffer(|render_buffer| render_buffer.clear_mask(offset, mask));
+        self.messaging_render_buffer_mut().clear_mask(offset, mask);
     }
 
     pub(crate) fn clear_messaging_render_buffer_range(&mut self, byte_count: usize) {
-        self.mutate_messaging_render_buffer(|render_buffer| render_buffer.clear_range(byte_count));
+        self.messaging_render_buffer_mut().clear_range(byte_count);
     }
 
     pub(crate) fn fill_messaging_render_buffer_word_range(
@@ -5757,9 +5709,8 @@ impl ZeldaState {
         count: usize,
         value: u16,
     ) {
-        self.mutate_messaging_render_buffer(|render_buffer| {
-            render_buffer.fill_word_range(start_index, count, value);
-        });
+        self.messaging_render_buffer_mut()
+            .fill_word_range(start_index, count, value);
     }
 
     fn sync_vwf_render_to_ram(&mut self) {
