@@ -537,7 +537,7 @@ impl ZeldaState {
 
     pub(super) fn sprite_nullify_hookshot_drag(&mut self) {
         for i in (0..5).rev() {
-            if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() & 0x1f == 0
+            if self.ancilla_slot_view(i).ancilla_type() & 0x1f == 0
                 && self
                     .game_state
                     .player
@@ -1563,11 +1563,7 @@ impl ZeldaState {
             }
         }
         for k in (0..10).rev() {
-            self.game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k)
-                .clear();
+            self.ancilla_slot_view_mut(k).clear();
         }
 
         self.follower_link_state_mut().clear_ancilla_pickup_flag();
@@ -2223,11 +2219,7 @@ impl ZeldaState {
     pub(super) fn sprite_main(&mut self) {
         if self.game_state.world.location.is_outdoors() {
             for j in 0..5 {
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, j)
-                    .set_floor(0);
+                self.ancilla_slot_view_mut(j).set_floor(0);
             }
             self.sprite_proximity_activation();
         }
@@ -3492,7 +3484,7 @@ impl ZeldaState {
             return true;
         }
         for i in (0..=4usize).rev() {
-            if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x27 {
+            if self.ancilla_slot_view(i).ancilla_type() == 0x27 {
                 return true;
             }
         }
@@ -5414,17 +5406,18 @@ impl ZeldaState {
         }
         j = j.wrapping_sub(1);
         let j = usize::from(j);
-        if self.game_state.sprites.ancilla_slots.slot(j).ancilla_type() == 0 {
+        if self.ancilla_slot_view(j).ancilla_type() == 0 {
             self.sprite_handle_absorption_by_player(k);
         } else {
-            let value = self.game_state.sprites.ancilla_slots.slot(j).x_low();
-            self.sprite_slot_mut(k).set_x_low(value);
-            let value = self.game_state.sprites.ancilla_slots.slot(j).x_high();
-            self.sprite_slot_mut(k).set_x_high(value);
-            let value = self.game_state.sprites.ancilla_slots.slot(j).y_low();
-            self.sprite_slot_mut(k).set_y_low(value);
-            let value = self.game_state.sprites.ancilla_slots.slot(j).y_high();
-            self.sprite_slot_mut(k).set_y_high(value);
+            let ancilla = self.ancilla_slot_view(j);
+            let x_low = ancilla.x_low();
+            let x_high = ancilla.x_high();
+            let y_low = ancilla.y_low();
+            let y_high = ancilla.y_high();
+            self.sprite_slot_mut(k).set_x_low(x_low);
+            self.sprite_slot_mut(k).set_x_high(x_high);
+            self.sprite_slot_mut(k).set_y_low(y_low);
+            self.sprite_slot_mut(k).set_y_high(y_high);
             let value = 0;
             self.sprite_slot_mut(k).set_z(value);
         }
@@ -6680,15 +6673,10 @@ impl ZeldaState {
         }
         self.garnish_state_mut().set_repulsespark_timer(5);
         let j = self.game_state.sprites.workspace.shared_scratch_a() as usize;
-        let x_low = self
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot(j)
-            .x_low()
-            .wrapping_add(4);
+        let ancilla = self.ancilla_slot_view(j);
+        let x_low = ancilla.x_low().wrapping_add(4);
+        let y_low = ancilla.y_low();
         self.garnish_state_mut().set_repulsespark_x_lo(x_low);
-        let y_low = self.game_state.sprites.ancilla_slots.slot(j).y_low();
         self.garnish_state_mut().set_repulsespark_y_lo(y_low);
         let floor = self.game_state.player.follower_link.lower_level_state();
         self.garnish_state_mut()

@@ -829,15 +829,8 @@ impl ZeldaState {
         } else if item == 0x20 {
             self.increment_overworld_map_state();
             for i in (0..=4).rev() {
-                if matches!(
-                    self.game_state.sprites.ancilla_slots.slot(i).ancilla_type(),
-                    7 | 0x2c
-                ) {
-                    self.game_state
-                        .sprites
-                        .ancilla_slots
-                        .slot_mut(&mut self.ram, i)
-                        .clear();
+                if matches!(self.ancilla_slot_view(i).ancilla_type(), 7 | 0x2c) {
+                    self.ancilla_slot_view_mut(i).clear();
                     self.follower_link_state_mut().clear_state_bits();
                     self.follower_link_state_mut().clear_picking_throw_state();
                 }
@@ -911,33 +904,19 @@ impl ZeldaState {
             self.Palette_Load_Sword();
         }
 
-        let mut receipt = self
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, k);
-        receipt.set_item_to_link(item);
-        receipt.set_work_byte_1(0);
+        {
+            let mut receipt = self.ancilla_slot_view_mut(k);
+            receipt.set_item_to_link(item);
+            receipt.set_work_byte_1(0);
+        }
         if item == 1 && self.game_state.player.follower_link.item_receipt_method() != 2 {
-            self.game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k)
-                .set_timer(160);
+            self.ancilla_slot_view_mut(k).set_timer(160);
             self.set_submodule(43);
             self.set_countdown(0);
             self.ancilla_add_ms_cutscene(0x35, 4);
-            self.game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k)
-                .set_work_byte_3(2);
+            self.ancilla_slot_view_mut(k).set_work_byte_3(2);
         } else {
-            self.game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k)
-                .set_work_byte_3(9);
+            self.ancilla_slot_view_mut(k).set_work_byte_3(9);
         }
         let aux_timer = if matches!(item, 0x20 | 0x37 | 0x38 | 0x39) {
             0x68
@@ -949,11 +928,7 @@ impl ZeldaState {
             0x60
         };
         let item_receipt_method = self.game_state.player.follower_link.item_receipt_method();
-        let mut receipt = self
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, k);
+        let mut receipt = self.ancilla_slot_view_mut(k);
         receipt.set_work_byte_4(5);
         receipt.set_step(item_receipt_method);
         receipt.set_aux_timer(aux_timer);
@@ -967,7 +942,7 @@ impl ZeldaState {
                 .wrapping_add(receive_item_tab3_misc(item) as u16);
             (x, y)
         } else {
-            if self.game_state.sprites.ancilla_slots.slot(k).step() == 0 && item == 1 {
+            if self.ancilla_slot_view(k).step() == 0 && item == 1 {
                 let sfx = self.link_calculate_sfx_pan() | 0x2c;
                 self.set_sound_effect_1(sfx);
             } else if matches!(item, 0x20 | 0x37 | 0x38 | 0x39) {
