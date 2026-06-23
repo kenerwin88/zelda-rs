@@ -863,62 +863,16 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_Catfish_SplashOfWater(int k) {  // 9de37d
     pub(super) fn sprite_catfish_splash_of_water(&mut self, k: usize) {
-        const D: [DrawMultipleData; 8] = [
-            DrawMultipleData {
-                x: -8,
-                y: -4,
-                char_flags: 0x0080,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 18,
-                y: -7,
-                char_flags: 0x0080,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -5,
-                y: -2,
-                char_flags: 0x00bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 15,
-                y: -4,
-                char_flags: 0x40af,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -4,
-                char_flags: 0x00e7,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -4,
-                char_flags: 0x00e7,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -4,
-                char_flags: 0x00c0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -4,
-                char_flags: 0x00c0,
-                ext: 2,
-            },
-        ];
         if self.sprite_slot_view(k).delay_main() == 0 {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
         }
         let base = usize::from(self.sprite_slot_view(k).delay_main() >> 3) * 2;
-        self.sprite_draw_multiple(k, &D[base..base + 2], None);
+        self.sprite_draw_multiple(
+            k,
+            &SPRITE_CATFISH_SPLASH_OF_WATER_DRAW_FRAMES[base..base + 2],
+            None,
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -6427,59 +6381,9 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SwamolaRipples_Draw(int k) {  // 9d9f1d
     pub(super) fn swamola_ripples_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 8] = [
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x00d8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 4,
-                char_flags: 0x40d8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x00d9,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 4,
-                char_flags: 0x40d9,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x00da,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 4,
-                char_flags: 0x40da,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x00d9,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 4,
-                char_flags: 0x40d9,
-                ext: 0,
-            },
-        ];
         self.oam_allocate_from_region_b(8);
         let base = usize::from((self.sprite_slot_view(k).delay_main() >> 2) & 3) * 2;
-        self.sprite_draw_multiple(k, &D[base..base + 2], None);
+        self.sprite_draw_multiple(k, &SWAMOLA_RIPPLES_DRAW_FRAMES[base..base + 2], None);
     }
 
     // -----------------------------------------------------------------------
@@ -6566,58 +6470,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void WallMaster_Draw(int k) {  // 9eafe4
     pub(super) fn wall_master_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 8] = [
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x01a6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 0,
-                char_flags: 0x01aa,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 16,
-                char_flags: 0x01ba,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x01a8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x01ab,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 0,
-                char_flags: 0x01af,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 16,
-                char_flags: 0x01bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x01ad,
-                ext: 2,
-            },
-        ];
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple(k, &D[base..base + 4], None);
+        self.sprite_draw_multiple(k, &WALL_MASTER_DRAW_FRAMES[base..base + 4], None);
         self.sprite_draw_large_shadow2(k);
     }
 
@@ -6762,154 +6616,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Wizzrobe_Draw(int k) {  // 8dbe06
     pub(super) fn wizzrobe_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 24] = [
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00b2,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x00b3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0088,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00b2,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x00b3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00b2,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x00b3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x008c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00b2,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x00b3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x008a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00b2,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x00b3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x408c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00b2,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x00b3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x408a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00b2,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x00b3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00a4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00b2,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x00b3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x008e,
-                ext: 2,
-            },
-        ];
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
-        self.sprite_draw_multiple(k, &D[base..base + 3], None);
+        self.sprite_draw_multiple(k, &WIZZROBE_DRAW_FRAMES[base..base + 3], None);
     }
 
     // -----------------------------------------------------------------------
@@ -6966,58 +6674,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void StalfosBone_Draw(int k) {  // 9e9040
     pub(super) fn stalfos_bone_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 8] = [
-            DrawMultipleData {
-                x: -4,
-                y: -2,
-                char_flags: 0x802f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 2,
-                char_flags: 0x402f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 2,
-                char_flags: 0x002f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -2,
-                char_flags: 0xc02f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 2,
-                y: -4,
-                char_flags: 0x403f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: 4,
-                char_flags: 0x803f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: -4,
-                char_flags: 0x003f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 2,
-                y: 4,
-                char_flags: 0xc03f,
-                ext: 0,
-            },
-        ];
         let base = usize::from((self.sprite_slot_view(k).subtype2() >> 2) & 3) * 2;
-        self.sprite_draw_multiple(k, &D[base..base + 2], None);
+        self.sprite_draw_multiple(k, &STALFOS_BONE_DRAW_FRAMES[base..base + 2], None);
     }
 
     // -----------------------------------------------------------------------
@@ -7055,224 +6713,6 @@ impl ZeldaState {
     pub(super) fn stalfos_draw(&mut self, k: usize) {
         const CH: [u8; 4] = [2, 2, 0, 4];
         const FLAGS: [u8; 4] = [0x70, 0x30, 0x30, 0x30];
-        const D: [DrawMultipleData; 36] = [
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x0000,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0006,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0006,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x0000,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x4006,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x4006,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x0004,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0006,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0006,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x0004,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x4006,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x4006,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x0002,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 5,
-                y: 5,
-                char_flags: 0x002e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0024,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x0002,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x000e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x000e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x4002,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 3,
-                y: 5,
-                char_flags: 0x402e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x4024,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x4002,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x400e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x000e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 2,
-                y: -8,
-                char_flags: 0x4002,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x4008,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x4008,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: -8,
-                char_flags: 0x0002,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0008,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0008,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -6,
-                char_flags: 0x0000,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x000a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x000a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x000a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -6,
-                char_flags: 0x0004,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -6,
-                char_flags: 0x0004,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -7284,7 +6724,7 @@ impl ZeldaState {
             return;
         }
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
-        self.sprite_draw_multiple(k, &D[base..base + 3], Some(&mut info));
+        self.sprite_draw_multiple(k, &STALFOS_DRAW_FRAMES[base..base + 3], Some(&mut info));
         if self.sprite_slot_view(k).graphics() < 8 && self.sprite_slot_view(k).pause() == 0 {
             let oam = self.game_state.oam.current_pointer_usize();
             let i = usize::from(self.sprite_slot_view(k).head_direction());
@@ -7297,218 +6737,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void StalfosKnight_Draw(int k) {  // 9eae04
     pub(super) fn stalfos_knight_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 35] = [
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x0064,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x0061,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x0062,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: 16,
-                char_flags: 0x0074,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 11,
-                y: 16,
-                char_flags: 0x4074,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -7,
-                char_flags: 0x0064,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 1,
-                char_flags: 0x0061,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 1,
-                char_flags: 0x0062,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: 16,
-                char_flags: 0x0065,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 11,
-                y: 16,
-                char_flags: 0x4065,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x0048,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x0049,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x004b,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x004c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x004c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x0068,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x0069,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x0069,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x0069,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x0069,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -7,
-                char_flags: 0x4064,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 1,
-                char_flags: 0x4062,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 1,
-                char_flags: 0x4061,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: 16,
-                char_flags: 0x0065,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 11,
-                y: 16,
-                char_flags: 0x4065,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -8,
-                char_flags: 0x4064,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x4062,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x4061,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: 16,
-                char_flags: 0x0074,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 11,
-                y: 16,
-                char_flags: 0x4074,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x4049,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x4048,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x404c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x404b,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x404b,
-                ext: 2,
-            },
-        ];
         let Some(tuple) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
@@ -7521,7 +6749,7 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 5;
-        self.sprite_draw_multiple_with_info(k, &D[base..base + 5], tuple);
+        self.sprite_draw_multiple_with_info(k, &STALFOS_KNIGHT_DRAW_FRAMES[base..base + 5], tuple);
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
             .set_current_pointer(cur.wrapping_sub(4));
@@ -7540,308 +6768,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Trident_Draw(int k) {  // 9d9c1c
     pub(super) fn trident_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 50] = [
-            DrawMultipleData {
-                x: 10,
-                y: -10,
-                char_flags: 0x0864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 5,
-                y: -15,
-                char_flags: 0x0864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -20,
-                char_flags: 0x0864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -5,
-                y: -25,
-                char_flags: 0x0864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -18,
-                y: -38,
-                char_flags: 0x0844,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -4,
-                char_flags: 0x0865,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -11,
-                char_flags: 0x0865,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -18,
-                char_flags: 0x0865,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -25,
-                char_flags: 0x0865,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: -40,
-                char_flags: 0x0862,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: -9,
-                char_flags: 0x4864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: -14,
-                char_flags: 0x4864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 3,
-                y: -20,
-                char_flags: 0x4864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 9,
-                y: -26,
-                char_flags: 0x4864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -37,
-                char_flags: 0x4844,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -10,
-                y: -20,
-                char_flags: 0x4874,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: -20,
-                char_flags: 0x4874,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -20,
-                char_flags: 0x4874,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 11,
-                y: -20,
-                char_flags: 0x4874,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 18,
-                y: -23,
-                char_flags: 0x4860,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -10,
-                y: -30,
-                char_flags: 0xc864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -24,
-                char_flags: 0xc864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 2,
-                y: -18,
-                char_flags: 0xc864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -12,
-                char_flags: 0xc864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -8,
-                char_flags: 0xc844,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -32,
-                char_flags: 0x8865,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -25,
-                char_flags: 0x8865,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -18,
-                char_flags: 0x8865,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -11,
-                char_flags: 0x8865,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: -5,
-                char_flags: 0x8862,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 13,
-                y: -30,
-                char_flags: 0x8864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -25,
-                char_flags: 0x8864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 2,
-                y: -19,
-                char_flags: 0x8864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -13,
-                char_flags: 0x8864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -16,
-                y: -9,
-                char_flags: 0x8844,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 14,
-                y: -20,
-                char_flags: 0x0874,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 7,
-                y: -20,
-                char_flags: 0x0874,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -20,
-                char_flags: 0x0874,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -7,
-                y: -20,
-                char_flags: 0x0874,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -21,
-                y: -23,
-                char_flags: 0x0860,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 13,
-                y: -30,
-                char_flags: 0x8864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -25,
-                char_flags: 0x8864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 2,
-                y: -19,
-                char_flags: 0x8864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -13,
-                char_flags: 0x8864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -16,
-                y: -9,
-                char_flags: 0x8844,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -10,
-                y: -30,
-                char_flags: 0xc864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -24,
-                char_flags: 0xc864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -24,
-                char_flags: 0xc864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -24,
-                char_flags: 0xc864,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -24,
-                char_flags: 0xc864,
-                ext: 0,
-            },
-        ];
         const X: [i8; 5] = [24, -16, 0, 16, -8];
         const Y: [i8; 5] = [4, 4, 16, 21, 19];
 
@@ -7873,7 +6799,7 @@ impl ZeldaState {
         let bak = self.sprite_slot_view(k).object_priority();
         self.sprite_slot_view_mut(k).and_object_priority(!0x0f);
         let base = usize::from(g.wrapping_sub(1)) * 5;
-        self.sprite_draw_multiple(k, &D[base..base + 5], None);
+        self.sprite_draw_multiple(k, &TRIDENT_DRAW_FRAMES[base..base + 5], None);
         let value = bak;
         self.sprite_slot_view_mut(k).set_object_priority(value);
         self.sprite_get16_bit_coords(k);
@@ -9061,252 +7987,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Babusu_Draw(int k) {  // 8dbd20
     pub(super) fn babusu_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 40] = [
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x4380,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x4380,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x43b6,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x43b6,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x43b7,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 4,
-                char_flags: 0x0380,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x4380,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 4,
-                char_flags: 0x03b6,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 4,
-                char_flags: 0x03b7,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 4,
-                char_flags: 0x03b7,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 4,
-                char_flags: 0x0380,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 4,
-                char_flags: 0x0380,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x8380,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x8380,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x83b6,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x83b6,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x83b7,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x0380,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x8380,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x03b6,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x03b7,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x03b7,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x0380,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x0380,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0a4e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0a5e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x4a4e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x4a5e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x0a6c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0a6b,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x8a6c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x8a6b,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x8a4e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x8a5e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0xca4e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0xca5e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x4a6c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x4a6b,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0xca6c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0xca6b,
-                ext: 2,
-            },
-        ];
         let g = self.sprite_slot_view(k).graphics();
         if g != 0xff {
             let base = usize::from(g) * 2;
-            self.sprite_draw_multiple(k, &D[base..base + 2], None);
+            self.sprite_draw_multiple(k, &BABUSU_DRAW_FRAMES[base..base + 2], None);
         } else {
             let mut info = SpritePrepOamCoordsRet {
                 x: 0,
@@ -9321,104 +8005,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Lady_Draw(int k) {  // 9af92c
     pub(super) fn lady_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 16] = [
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00e0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x00e0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x40e8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00c0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00c2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x00c0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x40c2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00e2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x00e2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x00e6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x40e2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40e4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x40e2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x40e6,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -9427,111 +8013,17 @@ impl ZeldaState {
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2
             + usize::from(self.sprite_slot_view(k).direction()) * 4;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &LADY_DRAW_FRAMES[base..base + 2],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
     // void YoungSnitchLady_Draw(int k) {  // 85e37f
     pub(super) fn young_snitch_lady_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 16] = [
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0026,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x0026,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x40e8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0024,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00c2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x0024,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x40c2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0028,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x0028,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x00e6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x4028,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40e4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x4028,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x40e6,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -9540,7 +8032,11 @@ impl ZeldaState {
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2
             + usize::from(self.sprite_slot_view(k).direction()) * 4;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &YOUNG_SNITCH_LADY_DRAW_FRAMES[base..base + 2],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -9711,118 +8207,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Cukeman_Draw(int k) {  // 9afb0e
     pub(super) fn cukeman_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 18] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x01f3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 7,
-                y: 0,
-                char_flags: 0x41f3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 7,
-                char_flags: 0x07e0,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -1,
-                y: 2,
-                char_flags: 0x01f3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 6,
-                y: 1,
-                char_flags: 0x41f3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x07e0,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: 1,
-                char_flags: 0x01f3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 2,
-                char_flags: 0x41f3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x07e0,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: 0,
-                char_flags: 0x01f3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 10,
-                y: 0,
-                char_flags: 0x41f3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 7,
-                char_flags: 0x07e0,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x01f3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x41f3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 6,
-                char_flags: 0x07e0,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -5,
-                y: 0,
-                char_flags: 0x01f3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 16,
-                y: 0,
-                char_flags: 0x41f3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x07e0,
-                ext: 0,
-            },
-        ];
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
-        self.sprite_draw_multiple(k, &D[base..base + 3], None);
+        self.sprite_draw_multiple(k, &CUKEMAN_DRAW_FRAMES[base..base + 3], None);
     }
 
     // -----------------------------------------------------------------------
@@ -9852,200 +8238,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SnapDragon_Draw(int k) {  // 869e02
     pub(super) fn snap_dragon_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 32] = [
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x008f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -8,
-                char_flags: 0x009f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x008c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x008d,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x002b,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -8,
-                char_flags: 0x003b,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x0028,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x0029,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x003c,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x003d,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x00aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x00ab,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x003e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x003f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x00ad,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x00ae,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x409f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x408f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x408d,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x408c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x403b,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x402b,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x4029,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x4028,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x403d,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -8,
-                char_flags: 0x403c,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x40ab,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x40aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x403f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -8,
-                char_flags: 0x403e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x40ae,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x40ad,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -10053,213 +8245,13 @@ impl ZeldaState {
             flags: 0,
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple(k, &D[base..base + 4], Some(&mut info));
+        self.sprite_draw_multiple(k, &SNAP_DRAGON_DRAW_FRAMES[base..base + 4], Some(&mut info));
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
     // void Lynel_Draw(int k) {  // 9d8880
     pub(super) fn lynel_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 33] = [
-            DrawMultipleData {
-                x: -5,
-                y: -11,
-                char_flags: 0x00cc,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x00e4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x00e5,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -5,
-                y: -10,
-                char_flags: 0x00cc,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x00e7,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x00e8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -5,
-                y: -11,
-                char_flags: 0x00c8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x00e4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x00e5,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 5,
-                y: -11,
-                char_flags: 0x40cc,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x40e5,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x40e4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 5,
-                y: -10,
-                char_flags: 0x40cc,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x40e8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x40e7,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 5,
-                y: -11,
-                char_flags: 0x40c8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x40e8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x40e7,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x00ce,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x00ea,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x00eb,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x00ce,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x40eb,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x40ea,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x00ca,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x40eb,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x00eb,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -14,
-                char_flags: 0x00c6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x00ed,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x00ee,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -14,
-                char_flags: 0x00c6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x40ee,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x40ed,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -10267,231 +8259,17 @@ impl ZeldaState {
             flags: 0,
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
-        self.sprite_draw_multiple(k, &D[base..base + 3], Some(&mut info));
+        self.sprite_draw_multiple(k, &LYNEL_DRAW_FRAMES[base..base + 3], Some(&mut info));
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
     // void Goriya_Draw(int k) {  // 9df589
     pub(super) fn goriya_draw(&mut self, k: usize) {
-        const D2: [DrawMultipleData; 3] = [
-            DrawMultipleData {
-                x: 10,
-                y: 4,
-                char_flags: 0x4077,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: 4,
-                char_flags: 0x0077,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 4,
-                char_flags: 0x0076,
-                ext: 0,
-            },
-        ];
-        const D: [DrawMultipleData; 32] = [
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x0044,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -8,
-                char_flags: 0x4044,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x0064,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x4054,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x0044,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -8,
-                char_flags: 0x4044,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x4074,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x4062,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x0044,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x4044,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x0062,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 8,
-                char_flags: 0x4064,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x0046,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -8,
-                char_flags: 0x4046,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x0066,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x4056,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x0046,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -8,
-                char_flags: 0x4046,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x4075,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x406a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x0046,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x4046,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x006a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 8,
-                char_flags: 0x0075,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: -8,
-                char_flags: 0x004e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x006c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: -7,
-                char_flags: 0x004e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x006e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 2,
-                y: -8,
-                char_flags: 0x404e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x406c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 2,
-                y: -7,
-                char_flags: 0x404e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x406e,
-                ext: 2,
-            },
-        ];
         const OFFS: [usize; 11] = [0, 4, 8, 12, 16, 20, 24, 26, 28, 30, 32];
         if self.sprite_slot_view(k).delay_aux1() != 0 && self.sprite_slot_view(k).direction() != 3 {
             let d = usize::from(self.sprite_slot_view(k).direction());
-            self.sprite_draw_multiple(k, &D2[d..d + 1], None);
+            self.sprite_draw_multiple(k, &GORIYA_DRAW_FRAMES_2[d..d + 1], None);
         }
 
         let cur = self.game_state.oam.current_pointer();
@@ -10507,7 +8285,11 @@ impl ZeldaState {
             r4: 0,
             flags: 0,
         };
-        self.sprite_draw_multiple(k, &D[OFFS[g]..OFFS[g + 1]], Some(&mut info));
+        self.sprite_draw_multiple(
+            k,
+            &GORIYA_DRAW_FRAMES[OFFS[g]..OFFS[g + 1]],
+            Some(&mut info),
+        );
         self.sprite_slot_view_mut(k).subtract_flags2(1);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
         self.sprite_slot_view_mut(k).add_flags2(1);
@@ -10517,176 +8299,6 @@ impl ZeldaState {
     // void Kyameron_Draw(int k) {  // 9ea158
     pub(super) fn kyameron_draw(&mut self, k: usize) {
         const FLAGS: [u8; 12] = [0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0xc0, 0x80];
-        const D: [DrawMultipleData; 28] = [
-            DrawMultipleData {
-                x: 1,
-                y: 8,
-                char_flags: 0x00b4,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 7,
-                y: 8,
-                char_flags: 0x00b5,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -3,
-                char_flags: 0x0086,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -13,
-                char_flags: 0x80a2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 2,
-                y: 8,
-                char_flags: 0x00b4,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 6,
-                y: 8,
-                char_flags: 0x00b5,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -6,
-                char_flags: 0x0096,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -20,
-                char_flags: 0x00a2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -1,
-                char_flags: 0x0096,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -27,
-                char_flags: 0x00a2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -27,
-                char_flags: 0x00a2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -27,
-                char_flags: 0x00a2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -6,
-                y: -6,
-                char_flags: 0x01df,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 14,
-                y: -6,
-                char_flags: 0x41df,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -6,
-                y: 14,
-                char_flags: 0x81df,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 14,
-                y: 14,
-                char_flags: 0xc1df,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -6,
-                y: -6,
-                char_flags: 0x0096,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 14,
-                y: -6,
-                char_flags: 0x4096,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -6,
-                y: 14,
-                char_flags: 0x8096,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 14,
-                y: 14,
-                char_flags: 0xc096,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -4,
-                char_flags: 0x018d,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -4,
-                char_flags: 0x418d,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 12,
-                char_flags: 0x818d,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 12,
-                char_flags: 0xc18d,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x018d,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x418d,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x818d,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0xc18d,
-                ext: 0,
-            },
-        ];
         let j = self.sprite_slot_view(k).graphics();
         if j < 12 {
             let bak = self.sprite_slot_view(k).oam_flags();
@@ -10697,7 +8309,7 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_oam_flags(value);
         } else {
             let base = (usize::from(j) - 12) * 4;
-            self.sprite_draw_multiple(k, &D[base..base + 4], None);
+            self.sprite_draw_multiple(k, &KYAMERON_DRAW_FRAMES[base..base + 4], None);
         }
     }
 
@@ -10740,82 +8352,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Hobo_Draw(int k) {  // 84ea60
     pub(super) fn hobo_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 12] = [
-            DrawMultipleData {
-                x: -5,
-                y: 3,
-                char_flags: 0x00a6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 3,
-                y: 3,
-                char_flags: 0x00a7,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -5,
-                y: 3,
-                char_flags: 0x00a6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 3,
-                y: 3,
-                char_flags: 0x00a7,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -5,
-                y: 3,
-                char_flags: 0x00ab,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 3,
-                y: 3,
-                char_flags: 0x00a7,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -5,
-                y: 3,
-                char_flags: 0x00a6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 3,
-                y: 3,
-                char_flags: 0x00a7,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 5,
-                y: -11,
-                char_flags: 0x008a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -5,
-                y: 3,
-                char_flags: 0x00ab,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 3,
-                y: 3,
-                char_flags: 0x0088,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -5,
-                y: 3,
-                char_flags: 0x00a6,
-                ext: 2,
-            },
-        ];
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 4], None);
+        self.sprite_draw_multiple_player_deferred(k, &HOBO_DRAW_FRAMES[base..base + 4], None);
     }
 
     // -----------------------------------------------------------------------
@@ -11085,104 +8623,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void RunningMan_Draw(int k) {  // 85ea4d
     pub(super) fn running_man_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 16] = [
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x002c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x08ee,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x002c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x48ee,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x002a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x08ca,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x002a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x48ca,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x002e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x08cc,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x002e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x08ce,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x402e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x48cc,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x402e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x48ce,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -11192,39 +8632,17 @@ impl ZeldaState {
         let base = (usize::from(self.sprite_slot_view(k).direction()) * 4
             + usize::from(self.sprite_slot_view(k).graphics()) * 2)
             & 0xf;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &RUNNING_MAN_DRAW_FRAMES[base..base + 2],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
     // void Elder_Draw(int k) {  // 85f23a
     pub(super) fn elder_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 4] = [
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x00a0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00a2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00a0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40a4,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -11232,39 +8650,17 @@ impl ZeldaState {
             flags: 0,
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &ELDER_DRAW_FRAMES[base..base + 2],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
     // void Shopkeeper_Draw(int k) {  // 85f91b
     pub(super) fn shopkeeper_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 4] = [
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0c00,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0c10,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0c00,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x4c10,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -11272,51 +8668,17 @@ impl ZeldaState {
             flags: 0,
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &SHOPKEEPER_DRAW_FRAMES[base..base + 2],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
     // void FluteBoyFather_Draw(int k) {  // 8dc3e1
     pub(super) fn flute_boy_father_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 6] = [
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x0086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0088,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -6,
-                char_flags: 0x0086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0088,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0084,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0088,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -11324,111 +8686,17 @@ impl ZeldaState {
             flags: 0,
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &FLUTE_BOY_FATHER_DRAW_FRAMES[base..base + 2],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
     // void FluteBoyOstrich_Draw(int k) {  // 9e9a4b
     pub(super) fn flute_boy_ostrich_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 16] = [
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x0080,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x0081,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x00a3,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x00a4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x0080,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x0081,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x00a0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x00a1,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x0080,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x0081,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x0083,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x0084,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -7,
-                char_flags: 0x0080,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -7,
-                char_flags: 0x0081,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 9,
-                char_flags: 0x00a3,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 9,
-                char_flags: 0x00a4,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -11436,125 +8704,17 @@ impl ZeldaState {
             flags: 0,
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple(k, &D[base..base + 4], Some(&mut info));
+        self.sprite_draw_multiple(
+            k,
+            &FLUTE_BOY_OSTRICH_DRAW_FRAMES[base..base + 4],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 18);
     }
 
     // -----------------------------------------------------------------------
     // void OldMountainMan_Draw(int k) {  // 9dff0e
     pub(super) fn old_mountain_man_draw(&mut self, k: usize) {
-        const D0: [DrawMultipleData; 2] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00ac,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x00ae,
-                ext: 2,
-            },
-        ];
-        const D1: [DrawMultipleData; 16] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x0122,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x0120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 9,
-                char_flags: 0x4122,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x0122,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x0120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 9,
-                char_flags: 0x4122,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: 0,
-                char_flags: 0x0120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x0122,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: 1,
-                char_flags: 0x0120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 9,
-                char_flags: 0x0122,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 2,
-                y: 0,
-                char_flags: 0x4120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x4122,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 2,
-                y: 1,
-                char_flags: 0x4120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 9,
-                char_flags: 0x4122,
-                ext: 2,
-            },
-        ];
         const DMA: [u8; 16] = [
             0x20, 0xc0, 0x20, 0xc0, 0, 0xa0, 0, 0xa0, 0x40, 0x80, 0x40, 0x60, 0x40, 0x80, 0x40,
             0x60,
@@ -11564,36 +8724,26 @@ impl ZeldaState {
                 + usize::from(self.sprite_slot_view(k).graphics()) * 2;
             self.set_sprite_dma_head_pointer(DMA[j]);
             self.set_sprite_dma_body_pointer(DMA[j + 1]);
-            self.sprite_draw_multiple_player_deferred(k, &D1[j..j + 2], None);
+            self.sprite_draw_multiple_player_deferred(
+                k,
+                &OLD_MOUNTAIN_MAN_DRAW_FRAMES_1[j..j + 2],
+                None,
+            );
         } else {
-            self.sprite_draw_multiple_player_deferred(k, &D0, None);
+            self.sprite_draw_multiple_player_deferred(k, &OLD_MOUNTAIN_MAN_DRAW_FRAMES_0, None);
         }
     }
 
     // -----------------------------------------------------------------------
     // void InnKeeper_Draw(int k) {  // 85e3dc
     pub(super) fn inn_keeper_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 2] = [
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00c4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00ca,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
             flags: 0,
         };
-        self.sprite_draw_multiple_player_deferred(k, &D, Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(k, &INN_KEEPER_DRAW_FRAMES, Some(&mut info));
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -11776,34 +8926,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void ElderWife_Draw(int k) {  // 85f505
     pub(super) fn elder_wife_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 4] = [
-            DrawMultipleData {
-                x: 0,
-                y: -5,
-                char_flags: 0x008e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 5,
-                char_flags: 0x0028,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -4,
-                char_flags: 0x008e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 5,
-                char_flags: 0x4028,
-                ext: 2,
-            },
-        ];
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], None);
+        self.sprite_draw_multiple_player_deferred(k, &ELDER_WIFE_DRAW_FRAMES[base..base + 2], None);
     }
 
     // -----------------------------------------------------------------------
@@ -11853,131 +8977,19 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void MiddleAgedMan_Draw(int k) {  // 86bdac
     pub(super) fn middle_aged_man_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 2] = [
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00ea,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00ec,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
             flags: 0,
         };
-        self.sprite_draw_multiple_player_deferred(k, &D, Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(k, &MIDDLE_AGED_MAN_DRAW_FRAMES, Some(&mut info));
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
     // void BlindHideoutGuy_Draw(int k) {  // 8dc481
     pub(super) fn blind_hideout_guy_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 16] = [
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x000c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00ca,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x000c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40ca,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x000c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00ca,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x000c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40ca,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x000e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00ca,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x000e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40ca,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x400e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00ca,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x400e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40ca,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -11986,7 +8998,11 @@ impl ZeldaState {
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2
             + usize::from(self.sprite_slot_view(k).direction()) * 4;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &BLIND_HIDEOUT_GUY_DRAW_FRAMES[base..base + 2],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -12081,32 +9097,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SweepingLady_Draw(int k) {  // 8dc4eb
     pub(super) fn sweeping_lady_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 4] = [
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x008e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 5,
-                char_flags: 0x008a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x008e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x008c,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -12114,7 +9104,11 @@ impl ZeldaState {
             flags: 0,
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &SWEEPING_LADY_DRAW_FRAMES[base..base + 2],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -12349,84 +9343,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void FortuneTeller_Draw(int k) {  // 8dcb01
     pub(super) fn fortune_teller_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 12] = [
-            DrawMultipleData {
-                x: 0,
-                y: -48,
-                char_flags: 0x000c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -32,
-                char_flags: 0x002c,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -32,
-                char_flags: 0x402c,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -48,
-                char_flags: 0x000a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -32,
-                char_flags: 0x002a,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -32,
-                char_flags: 0x402a,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -40,
-                char_flags: 0x0066,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -40,
-                char_flags: 0x4066,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -40,
-                char_flags: 0x0066,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -40,
-                char_flags: 0x0068,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -40,
-                char_flags: 0x4068,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -40,
-                char_flags: 0x0068,
-                ext: 2,
-            },
-        ];
         let j = usize::from((self.game_state.inventory.save_progress.dark_world_state() >> 6) & 1)
             * 2
             + usize::from(self.sprite_slot_view(k).graphics());
-        self.sprite_draw_multiple(k, &D[j * 3..j * 3 + 3], None);
+        self.sprite_draw_multiple(k, &FORTUNE_TELLER_DRAW_FRAMES[j * 3..j * 3 + 3], None);
     }
 
     // -----------------------------------------------------------------------
@@ -12593,104 +9513,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void MazeGameGuy_Draw(int k) {  // 8dcda7
     pub(super) fn maze_game_guy_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 16] = [
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x0000,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0020,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x0000,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0020,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x0000,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0020,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x0000,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0020,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x4002,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0020,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x4002,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0020,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x0002,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0020,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x0002,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0020,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -12699,51 +9521,17 @@ impl ZeldaState {
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2
             + usize::from(self.sprite_slot_view(k).direction()) * 4;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &MAZE_GAME_GUY_DRAW_FRAMES[base..base + 2],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
     // void DrinkingGuy_Draw(int k) {  // 9af88c
     pub(super) fn drinking_guy_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 6] = [
-            DrawMultipleData {
-                x: 8,
-                y: 2,
-                char_flags: 0x00ae,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x0822,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0006,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 7,
-                y: 0,
-                char_flags: 0x00af,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x0822,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0006,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -12751,7 +9539,11 @@ impl ZeldaState {
             flags: 0,
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 3], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &DRINKING_GUY_DRAW_FRAMES[base..base + 3],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -12856,86 +9648,16 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void TalkingTree_Draw(int k) {  // 9dfadb
     pub(super) fn talking_tree_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 12] = [
-            DrawMultipleData {
-                x: 1,
-                y: -1,
-                char_flags: 0x00e8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: 7,
-                char_flags: 0x00f8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 7,
-                y: -1,
-                char_flags: 0x40e8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 7,
-                y: 7,
-                char_flags: 0x40f8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -1,
-                char_flags: 0x00e8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 7,
-                char_flags: 0x00f8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -1,
-                char_flags: 0x40e8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 7,
-                char_flags: 0x40f8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 7,
-                char_flags: 0x00f8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x40e8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 7,
-                char_flags: 0x40f8,
-                ext: 0,
-            },
-        ];
         let g = self.sprite_slot_view(k).graphics().wrapping_sub(1);
         if sign8(g) {
             return;
         }
         let base = usize::from(g) * 4;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 4], None);
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &TALKING_TREE_DRAW_FRAMES[base..base + 4],
+            None,
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -12980,62 +9702,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void DiggingGameGuy_Draw(int k) {  // 9dfe4b
     pub(super) fn digging_game_guy_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 9] = [
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0a40,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 9,
-                char_flags: 0x0c56,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0a42,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0a40,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0a42,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0a42,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -1,
-                y: -7,
-                char_flags: 0x0a40,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -1,
-                y: 0,
-                char_flags: 0x0a44,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -1,
-                y: 0,
-                char_flags: 0x0a44,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -13043,7 +9709,11 @@ impl ZeldaState {
             flags: 0,
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 3;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 3], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &DIGGING_GAME_GUY_DRAW_FRAMES[base..base + 3],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -13063,44 +9733,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void BombShopEntity_Draw(int k) {  // 9ee2c6
     pub(super) fn bomb_shop_entity_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 6] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0a48,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0a4c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x04c2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x04c2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x084e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x084e,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -13109,7 +9741,11 @@ impl ZeldaState {
         };
         let base = usize::from(self.sprite_slot_view(k).subtype2()) * 2
             + usize::from(self.sprite_slot_view(k).graphics());
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 1], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &BOMB_SHOP_ENTITY_DRAW_FRAMES[base..base + 1],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -13926,68 +10562,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void StoryTeller_1_Draw(int k) {  // 86af1a
     pub(super) fn story_teller_1_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 10] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0a4a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x4a6e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0a24,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x4a24,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0804,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x4804,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0a6a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0a6c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0a0e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0a2e,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -13996,26 +10570,24 @@ impl ZeldaState {
         };
         let base = usize::from(self.sprite_slot_view(k).subtype2()) * 2
             + usize::from(self.sprite_slot_view(k).graphics());
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 1], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &STORY_TELLER_1_DRAW_FRAMES[base..base + 1],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
     // void SmithyFrog_Draw(int k) {  // 86b339
     pub(super) fn smithy_frog_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 1] = [DrawMultipleData {
-            x: 0,
-            y: 0,
-            char_flags: 0x00c8,
-            ext: 2,
-        }];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
             flags: 0,
         };
-        self.sprite_draw_multiple_player_deferred(k, &D, Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(k, &SMITHY_FROG_DRAW_FRAMES, Some(&mut info));
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -14023,46 +10595,8 @@ impl ZeldaState {
     // void SmithySpark_Draw(int k) {  // 86b72c
     pub(super) fn smithy_spark_draw(&mut self, k: usize) {
         self.oam_allocate_from_region_b(8);
-        const D: [DrawMultipleData; 6] = [
-            DrawMultipleData {
-                x: 0,
-                y: 3,
-                char_flags: 0x41aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -1,
-                char_flags: 0x41aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x0190,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 0,
-                char_flags: 0x4190,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -5,
-                y: -2,
-                char_flags: 0x0191,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 13,
-                y: -2,
-                char_flags: 0x0191,
-                ext: 0,
-            },
-        ];
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple(k, &D[base..base + 2], None);
+        self.sprite_draw_multiple(k, &SMITHY_SPARK_DRAW_FRAMES[base..base + 2], None);
     }
 
     // -----------------------------------------------------------------------
@@ -14139,104 +10673,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void QuarrelBros_Draw(int k) {  // 85e17f
     pub(super) fn quarrel_bros_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 16] = [
-            DrawMultipleData {
-                x: 0,
-                y: -12,
-                char_flags: 0x0004,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x000a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -11,
-                char_flags: 0x0004,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x400a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -12,
-                char_flags: 0x0004,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x000a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -11,
-                char_flags: 0x0004,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x400a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -12,
-                char_flags: 0x0008,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x000a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -11,
-                char_flags: 0x0008,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x400a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -12,
-                char_flags: 0x4008,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x000a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -11,
-                char_flags: 0x4008,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x400a,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -14245,215 +10681,19 @@ impl ZeldaState {
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2
             + usize::from(self.sprite_slot_view(k).direction()) * 4;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &QUARREL_BROS_DRAW_FRAMES[base..base + 2],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
     // void Lumberjacks_Draw(int k) {  // 8dc6ba
     pub(super) fn lumberjacks_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 33] = [
-            DrawMultipleData {
-                x: -23,
-                y: 5,
-                char_flags: 0x02be,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -15,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -7,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 9,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 17,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 25,
-                y: 5,
-                char_flags: 0x42be,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -32,
-                y: -8,
-                char_flags: 0x40a8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -32,
-                y: 4,
-                char_flags: 0x40a6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 30,
-                y: -8,
-                char_flags: 0x00a8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 31,
-                y: 4,
-                char_flags: 0x00a4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -19,
-                y: 5,
-                char_flags: 0x02be,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -11,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 5,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 13,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 21,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 29,
-                y: 5,
-                char_flags: 0x42be,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -31,
-                y: -8,
-                char_flags: 0x40a8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -32,
-                y: 4,
-                char_flags: 0x40a4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 31,
-                y: -8,
-                char_flags: 0x00a8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 31,
-                y: 4,
-                char_flags: 0x00a6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -19,
-                y: 5,
-                char_flags: 0x02be,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -11,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 5,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 13,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 21,
-                y: 5,
-                char_flags: 0x02bf,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 29,
-                y: 5,
-                char_flags: 0x42be,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -32,
-                y: -8,
-                char_flags: 0x400e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -32,
-                y: 4,
-                char_flags: 0x40a4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 32,
-                y: -8,
-                char_flags: 0x000e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 31,
-                y: 4,
-                char_flags: 0x00a6,
-                ext: 2,
-            },
-        ];
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 11;
-        self.sprite_draw_multiple(k, &D[base..base + 11], None);
+        self.sprite_draw_multiple(k, &LUMBERJACKS_DRAW_FRAMES[base..base + 11], None);
     }
 
     // -----------------------------------------------------------------------
@@ -14486,284 +10726,16 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void GreatCatfish_Draw(int k) {  // 9de320
     pub(super) fn great_catfish_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 28] = [
-            DrawMultipleData {
-                x: -4,
-                y: 4,
-                char_flags: 0x008c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 4,
-                char_flags: 0x008d,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 4,
-                char_flags: 0x008c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 4,
-                char_flags: 0x008d,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -4,
-                char_flags: 0x008c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -4,
-                char_flags: 0x008d,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 4,
-                char_flags: 0x009c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 4,
-                char_flags: 0x009d,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -4,
-                char_flags: 0x408d,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -4,
-                char_flags: 0x408c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 4,
-                char_flags: 0x409d,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 4,
-                char_flags: 0x409c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -4,
-                char_flags: 0xc09d,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -4,
-                char_flags: 0xc09c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 4,
-                char_flags: 0xc08d,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 4,
-                char_flags: 0xc08c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 4,
-                char_flags: 0xc09d,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 4,
-                char_flags: 0xc09c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 4,
-                char_flags: 0xc09d,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 4,
-                char_flags: 0xc09c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x00bd,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0x40bd,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0x40bd,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0x40bd,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x0086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x4086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x4086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x4086,
-                ext: 2,
-            },
-        ];
         let g = self.sprite_slot_view(k).graphics();
         if g != 0 {
             let base = usize::from(g - 1) * 4;
-            self.sprite_draw_multiple(k, &D[base..base + 4], None);
+            self.sprite_draw_multiple(k, &GREAT_CATFISH_DRAW_FRAMES[base..base + 4], None);
         }
     }
 
     // -----------------------------------------------------------------------
     // void BigFaerie_Draw(int k) {  // 9dc5d0
     pub(super) fn big_faerie_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 16] = [
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x008e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x408e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x00ae,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x40ae,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x008c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x408c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x00ac,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x40ac,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x008a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x408a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x00aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x40aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -8,
-                char_flags: 0x008c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -8,
-                char_flags: 0x408c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x00ac,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x40ac,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -14771,7 +10743,7 @@ impl ZeldaState {
             flags: 0,
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple(k, &D[base..base + 4], Some(&mut info));
+        self.sprite_draw_multiple(k, &BIG_FAERIE_DRAW_FRAMES[base..base + 4], Some(&mut info));
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
@@ -15289,33 +11261,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SpikeTrap_Draw(int k) {  // 9ecfff
     pub(super) fn spike_trap_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 4] = [
-            DrawMultipleData {
-                x: -8,
-                y: -8,
-                char_flags: 0x00c4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x40c4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 8,
-                char_flags: 0x80c4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0xc0c4,
-                ext: 2,
-            },
-        ];
-        self.sprite_draw_multiple(k, &D, None);
+        self.sprite_draw_multiple(k, &SPIKE_TRAP_DRAW_FRAMES, None);
     }
 
     // -----------------------------------------------------------------------
@@ -15684,32 +11630,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void DesertBarrier_Draw(int k) {  // 859626
     pub(super) fn desert_barrier_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 4] = [
-            DrawMultipleData {
-                x: -8,
-                y: -8,
-                char_flags: 0x008e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x408e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 8,
-                char_flags: 0x00ae,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0x40ae,
-                ext: 2,
-            },
-        ];
         if self.sprite_slot_view(k).delay_main() == 1 {
             self.set_sound_effect_2(0x1b);
             self.set_ambient_sound_effect(5);
@@ -15721,42 +11641,16 @@ impl ZeldaState {
         if pt.x.wrapping_add(0x20) < 0x40 && pt.y.wrapping_add(0x20) < 0x40 {
             self.oam_allocate_from_region_b(16);
         }
-        self.sprite_draw_multiple(k, &D, None);
+        self.sprite_draw_multiple(k, &DESERT_BARRIER_DRAW_FRAMES, None);
     }
 
     // -----------------------------------------------------------------------
     // void SageMantle_Draw(int k) {  // 85dc8a
     pub(super) fn sage_mantle_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 4] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x162c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 16,
-                y: 0,
-                char_flags: 0x562c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 16,
-                char_flags: 0x062e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 16,
-                y: 16,
-                char_flags: 0x462e,
-                ext: 2,
-            },
-        ];
         if self.sprite_slot_view(k).c() == 0 {
             self.oam_allocate_from_region_b(0x10);
         }
-        self.sprite_draw_multiple(k, &D, None);
+        self.sprite_draw_multiple(k, &SAGE_MANTLE_DRAW_FRAMES, None);
     }
 
     // -----------------------------------------------------------------------
@@ -16095,56 +11989,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void TroughBoy_Draw(int k) {  // 85ffdf
     pub(super) fn trough_boy_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 8] = [
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0882,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0aaa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0882,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0aaa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x4880,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0aaa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0880,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0aaa,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -16152,123 +11996,17 @@ impl ZeldaState {
             flags: 0,
         };
         let base = usize::from(self.sprite_slot_view(k).direction()) * 2;
-        self.sprite_draw_multiple_player_deferred(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &TROUGH_BOY_DRAW_FRAMES[base..base + 2],
+            Some(&mut info),
+        );
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
     // -----------------------------------------------------------------------
     // void RetreatBat_Draw(int k) {  // 9af833
     pub(super) fn retreat_bat_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 18] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x044b,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 5,
-                y: -4,
-                char_flags: 0x045b,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: -4,
-                char_flags: 0x0464,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: -4,
-                char_flags: 0x0449,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: -9,
-                char_flags: 0x046c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -9,
-                char_flags: 0x446c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: -7,
-                char_flags: 0x044c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -7,
-                char_flags: 0x444c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: -9,
-                char_flags: 0x0444,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -9,
-                char_flags: 0x4444,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: -8,
-                char_flags: 0x0462,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x4462,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: -7,
-                char_flags: 0x0460,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -7,
-                char_flags: 0x4460,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x044e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 16,
-                y: 0,
-                char_flags: 0x444e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 16,
-                char_flags: 0x046e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 16,
-                y: 16,
-                char_flags: 0x446e,
-                ext: 2,
-            },
-        ];
         const OFFS: [usize; 20] = [
             0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 6, 6, 8, 10, 12, 10, 14, 14, 14, 14,
         ];
@@ -16277,329 +12015,23 @@ impl ZeldaState {
         self.oam_state_mut().set_current_extended_pointer(0xa78);
         let j = usize::from(self.sprite_slot_view(k).direction()) * 4
             + usize::from(self.sprite_slot_view(k).graphics());
-        self.sprite_draw_multiple(k, &D[OFFS[j]..OFFS[j] + COUNT[j]], None);
+        self.sprite_draw_multiple(
+            k,
+            &RETREAT_BAT_DRAW_FRAMES[OFFS[j]..OFFS[j] + COUNT[j]],
+            None,
+        );
     }
 
     // -----------------------------------------------------------------------
     // void GanonBat_Draw(int k) {  // 9d89eb
     pub(super) fn ganon_bat_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 6] = [
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x0560,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x4560,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x0562,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x4562,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x0544,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x4544,
-                ext: 2,
-            },
-        ];
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple(k, &D[base..base + 2], None);
+        self.sprite_draw_multiple(k, &GANON_BAT_DRAW_FRAMES[base..base + 2], None);
     }
 
     // -----------------------------------------------------------------------
     // void EvilBarrier_Draw(int k) {  // 9df249
     pub(super) fn evil_barrier_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 45] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -29,
-                y: 3,
-                char_flags: 0x00ca,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -29,
-                y: 11,
-                char_flags: 0x00da,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 3,
-                char_flags: 0x40ca,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 11,
-                char_flags: 0x40da,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -24,
-                y: -2,
-                char_flags: 0x00e6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: -2,
-                char_flags: 0x00e6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -2,
-                char_flags: 0x40e6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 24,
-                y: -2,
-                char_flags: 0x40e6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00cc,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -29,
-                y: 3,
-                char_flags: 0x00cb,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -29,
-                y: 11,
-                char_flags: 0x00db,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 3,
-                char_flags: 0x40cb,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 11,
-                char_flags: 0x40db,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00cc,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00cc,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00cc,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00cc,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00cc,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -29,
-                y: 3,
-                char_flags: 0x00cb,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -29,
-                y: 11,
-                char_flags: 0x00db,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 3,
-                char_flags: 0x40cb,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 11,
-                char_flags: 0x40db,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -24,
-                y: -2,
-                char_flags: 0x80e6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: -2,
-                char_flags: 0x80e6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -2,
-                char_flags: 0xc0e6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 24,
-                y: -2,
-                char_flags: 0xc0e6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -29,
-                y: 3,
-                char_flags: 0x00ca,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -29,
-                y: 11,
-                char_flags: 0x00da,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 3,
-                char_flags: 0x40ca,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 11,
-                char_flags: 0x40da,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -29,
-                y: 3,
-                char_flags: 0x00cb,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -29,
-                y: 11,
-                char_flags: 0x00db,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 3,
-                char_flags: 0x40cb,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 11,
-                char_flags: 0x40db,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 11,
-                char_flags: 0x40db,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 11,
-                char_flags: 0x40db,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 11,
-                char_flags: 0x40db,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 11,
-                char_flags: 0x40db,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 37,
-                y: 11,
-                char_flags: 0x40db,
-                ext: 0,
-            },
-        ];
         let y = self
             .game_state
             .sprites
@@ -16608,111 +12040,13 @@ impl ZeldaState {
             .wrapping_add(8);
         self.sprite_workspace_mut().set_current_sprite_y(y);
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 9;
-        self.sprite_draw_multiple(k, &D[base..base + 9], None);
+        self.sprite_draw_multiple(k, &EVIL_BARRIER_DRAW_FRAMES[base..base + 9], None);
         self.sprite_get16_bit_coords(k);
     }
 
     // -----------------------------------------------------------------------
     // void ChattyAgahnim_Draw(int k, PrepOamCoordsRet *info) {  // 9dd451
     pub(super) fn chatty_agahnim_draw(&mut self, k: usize, info: &mut PrepOamCoordsRet) {
-        const D: [DrawMultipleData; 16] = [
-            DrawMultipleData {
-                x: -8,
-                y: -8,
-                char_flags: 0x0b82,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x4b82,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 8,
-                char_flags: 0x0ba2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0x4ba2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: -8,
-                char_flags: 0x0b80,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x4b80,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 8,
-                char_flags: 0x0ba0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0x4ba0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: -8,
-                char_flags: 0x0b80,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x4b82,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 8,
-                char_flags: 0x0ba0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0x4ba2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: -8,
-                char_flags: 0x0b82,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x4b80,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 8,
-                char_flags: 0x0ba2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0x4ba0,
-                ext: 2,
-            },
-        ];
         if self.sprite_slot_view(k).delay_aux4() & 1 != 0 {
             return;
         }
@@ -16727,7 +12061,11 @@ impl ZeldaState {
             r4: 0,
             flags: 0,
         };
-        self.sprite_draw_multiple(k, &D[base..base + 4], Some(&mut shadow_info));
+        self.sprite_draw_multiple(
+            k,
+            &CHATTY_AGAHNIM_DRAW_FRAMES[base..base + 4],
+            Some(&mut shadow_info),
+        );
         self.sprite_draw_shadow_custom(k, &mut shadow_info, 18);
         info.x = shadow_info.x;
         info.y = shadow_info.y;
@@ -16756,128 +12094,6 @@ impl ZeldaState {
         const BIG: [u8; 24] = [
             2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2,
         ];
-        const D: [DrawMultipleData; 20] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e9,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 16,
-                y: 0,
-                char_flags: 0x40e9,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e9,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 16,
-                y: 0,
-                char_flags: 0x40e9,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e9,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 16,
-                y: 0,
-                char_flags: 0x40e9,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 16,
-                char_flags: 0x00eb,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 16,
-                y: 16,
-                char_flags: 0x40eb,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 32,
-                char_flags: 0x00ed,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 16,
-                y: 32,
-                char_flags: 0x40ed,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00ef,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 24,
-                y: 0,
-                char_flags: 0x40ef,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x00ff,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 24,
-                y: 8,
-                char_flags: 0x40ff,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e9,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 16,
-                y: 0,
-                char_flags: 0x40e9,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 16,
-                char_flags: 0x00eb,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 16,
-                y: 16,
-                char_flags: 0x40eb,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 32,
-                char_flags: 0x00ed,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 16,
-                y: 32,
-                char_flags: 0x40ed,
-                ext: 2,
-            },
-        ];
         if self.game_state.inventory.save_progress.dark_world_state() == 0 {
             let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k)
             else {
@@ -16900,7 +12116,7 @@ impl ZeldaState {
             self.sprite_correct_oam_entries_for_draw(k, 11, 0xff);
         } else {
             let base = usize::from(self.sprite_slot_view(k).graphics()) * 10;
-            self.sprite_draw_multiple(k, &D[base..base + 10], None);
+            self.sprite_draw_multiple(k, &FAERIE_QUEEN_DRAW_FRAMES[base..base + 10], None);
         }
     }
 
@@ -16911,109 +12127,15 @@ impl ZeldaState {
             0x20, 0xc0, 0x20, 0xc0, 0, 0xa0, 0, 0xa0, 0x40, 0x80, 0x40, 0x60, 0x40, 0x80, 0x40,
             0x60,
         ];
-        const D: [DrawMultipleData; 16] = [
-            DrawMultipleData {
-                x: 1,
-                y: -7,
-                char_flags: 0x0120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: 3,
-                char_flags: 0x0122,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -7,
-                char_flags: 0x0120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: 3,
-                char_flags: 0x4122,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -7,
-                char_flags: 0x0120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: 3,
-                char_flags: 0x0122,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -7,
-                char_flags: 0x0120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: 3,
-                char_flags: 0x4122,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -7,
-                char_flags: 0x0120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: 3,
-                char_flags: 0x0122,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -7,
-                char_flags: 0x0120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: 3,
-                char_flags: 0x0122,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -7,
-                char_flags: 0x4120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: 3,
-                char_flags: 0x4122,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: -7,
-                char_flags: 0x4120,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: 3,
-                char_flags: 0x4122,
-                ext: 2,
-            },
-        ];
         let j = usize::from(self.sprite_slot_view(k).direction()) * 2
             + usize::from(self.sprite_slot_view(k).graphics());
         self.set_sprite_dma_head_pointer(DMA[j * 2]);
         self.set_sprite_dma_body_pointer(DMA[j * 2 + 1]);
-        self.sprite_draw_multiple_player_deferred(k, &D[j * 2..j * 2 + 2], None);
+        self.sprite_draw_multiple_player_deferred(
+            k,
+            &CRYSTAL_MAIDEN_DRAW_FRAMES[j * 2..j * 2 + 2],
+            None,
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -20419,104 +15541,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Kholdstare_Draw(int k) {  // 8dd98f
     pub(super) fn kholdstare_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 16] = [
-            DrawMultipleData {
-                x: -8,
-                y: -8,
-                char_flags: 0x0080,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x0082,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 8,
-                char_flags: 0x00a0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0x00a2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -7,
-                y: -7,
-                char_flags: 0x0080,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 7,
-                y: -7,
-                char_flags: 0x0082,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -7,
-                y: 7,
-                char_flags: 0x00a0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 7,
-                y: 7,
-                char_flags: 0x00a2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -7,
-                y: -7,
-                char_flags: 0x0084,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 7,
-                y: -7,
-                char_flags: 0x0086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -7,
-                y: 7,
-                char_flags: 0x00a4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 7,
-                y: 7,
-                char_flags: 0x00a6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: -8,
-                char_flags: 0x0084,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x0086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 8,
-                char_flags: 0x00a4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0x00a6,
-                ext: 2,
-            },
-        ];
         const X: [i8; 16] = [8, 7, 4, 2, 0, -2, -4, -7, -8, -7, -4, -2, 0, 2, 4, 7];
         const Y: [i8; 16] = [0, 2, 4, 7, 8, 7, 4, 2, 0, -2, -4, -7, -8, -7, -4, -2];
         const CH: [u8; 16] = [
@@ -20546,7 +15570,11 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(1));
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple_with_info(k, &D[base..base + 4], (info_x, info_y, info_flags));
+        self.sprite_draw_multiple_with_info(
+            k,
+            &KHOLDSTARE_DRAW_FRAMES[base..base + 4],
+            (info_x, info_y, info_flags),
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -21032,297 +16060,6 @@ impl ZeldaState {
     }
 
     pub(super) fn eyegore_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 48] = [
-            DrawMultipleData {
-                x: -4,
-                y: -4,
-                char_flags: 0x00a2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -4,
-                char_flags: 0x40a2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 4,
-                char_flags: 0x009c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 4,
-                char_flags: 0x409c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -4,
-                char_flags: 0x00a4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -4,
-                char_flags: 0x40a4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 4,
-                char_flags: 0x009c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 4,
-                char_flags: 0x409c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -4,
-                char_flags: 0x008c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -4,
-                char_flags: 0x408c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 4,
-                char_flags: 0x009c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 4,
-                char_flags: 0x409c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -3,
-                char_flags: 0x008c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -3,
-                char_flags: 0x408c,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 13,
-                char_flags: 0x00bc,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 5,
-                char_flags: 0x408a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -3,
-                char_flags: 0x008c,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -3,
-                char_flags: 0x408c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 5,
-                char_flags: 0x008a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 13,
-                char_flags: 0x40bc,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -4,
-                char_flags: 0x00aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x00a6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -4,
-                char_flags: 0x00aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x00a6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -3,
-                char_flags: 0x00aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x00a8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -3,
-                char_flags: 0x00aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x00a8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -4,
-                char_flags: 0x40aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x40a6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -4,
-                char_flags: 0x40aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x40a6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -3,
-                char_flags: 0x40aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x40a8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -3,
-                char_flags: 0x40aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x40a8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -4,
-                char_flags: 0x008e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -4,
-                char_flags: 0x408e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 4,
-                char_flags: 0x009e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 4,
-                char_flags: 0x409e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -3,
-                char_flags: 0x008e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -3,
-                char_flags: 0x408e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 13,
-                char_flags: 0x00bd,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 5,
-                char_flags: 0x40a0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -3,
-                char_flags: 0x008e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -3,
-                char_flags: 0x408e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 5,
-                char_flags: 0x00a0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 13,
-                char_flags: 0x40bd,
-                ext: 0,
-            },
-        ];
-
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -21330,7 +16067,7 @@ impl ZeldaState {
             flags: 0,
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 4;
-        self.sprite_draw_multiple(k, &D[base..base + 4], Some(&mut info));
+        self.sprite_draw_multiple(k, &EYEGORE_DRAW_FRAMES[base..base + 4], Some(&mut info));
         if self.sprite_slot_view(k).pause() == 0 {
             self.sprite_draw_shadow_custom(k, &mut info, 14);
         }
@@ -21364,56 +16101,6 @@ impl ZeldaState {
     }
 
     pub(super) fn pikit_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 8] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00c8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00c8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00ca,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00ca,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x00cc,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x40cc,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x00ce,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x40ce,
-                ext: 2,
-            },
-        ];
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
@@ -21432,7 +16119,11 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add(6));
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple(k, &D[base..base + 2], Some(&mut shadow_info));
+        self.sprite_draw_multiple(
+            k,
+            &PIKIT_DRAW_FRAMES[base..base + 2],
+            Some(&mut shadow_info),
+        );
         let bak = self.sprite_slot_view(k).flags2();
         self.sprite_slot_view_mut(k).subtract_flags2(6);
         self.sprite_draw_shadow_custom(k, &mut shadow_info, 10);
@@ -21480,296 +16171,6 @@ impl ZeldaState {
     }
 
     pub(super) fn moblin_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 48] = [
-            DrawMultipleData {
-                x: -2,
-                y: 3,
-                char_flags: 0x8091,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: 11,
-                char_flags: 0x8090,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x0086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x008a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: 7,
-                char_flags: 0x8091,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: 15,
-                char_flags: 0x8090,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x0086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x408a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x0084,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00a0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 11,
-                y: -5,
-                char_flags: 0x0090,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 11,
-                y: 3,
-                char_flags: 0x0091,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x0084,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40a0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 11,
-                y: -8,
-                char_flags: 0x0090,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 11,
-                y: 0,
-                char_flags: 0x0091,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x0080,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x0081,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x0088,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00a6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -9,
-                y: 6,
-                char_flags: 0x0080,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -1,
-                y: 6,
-                char_flags: 0x0081,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0088,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00a4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 8,
-                char_flags: 0x4080,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x4081,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x4088,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40a6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 17,
-                y: 6,
-                char_flags: 0x4080,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 9,
-                y: 6,
-                char_flags: 0x4081,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x4088,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40a4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: -5,
-                char_flags: 0x8091,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: 3,
-                char_flags: 0x8090,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -10,
-                char_flags: 0x0086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00a8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 11,
-                y: -11,
-                char_flags: 0x0090,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 11,
-                y: -3,
-                char_flags: 0x0091,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x0084,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x4082,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: -3,
-                char_flags: 0x0080,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 6,
-                y: -3,
-                char_flags: 0x0081,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x0088,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00a2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 10,
-                y: -3,
-                char_flags: 0x4080,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 2,
-                y: -3,
-                char_flags: 0x4081,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x4088,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40a2,
-                ext: 2,
-            },
-        ];
         const OBJ_OFFS: [u8; 12] = [2, 2, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2];
         const HEAD_CHAR: [u8; 4] = [0x88, 0x88, 0x86, 0x84];
         let mut info = SpritePrepOamCoordsRet {
@@ -21779,7 +16180,11 @@ impl ZeldaState {
             flags: 0,
         };
         let gfx = usize::from(self.sprite_slot_view(k).graphics());
-        self.sprite_draw_multiple(k, &D[gfx * 4..gfx * 4 + 4], Some(&mut info));
+        self.sprite_draw_multiple(
+            k,
+            &MOBLIN_DRAW_FRAMES[gfx * 4..gfx * 4 + 4],
+            Some(&mut info),
+        );
         if self.sprite_slot_view(k).pause() != 0 {
             return;
         }
@@ -21830,44 +16235,6 @@ impl ZeldaState {
     }
 
     pub(super) fn tektite_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 6] = [
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x00c8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x40c8,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x00ca,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x40ca,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x00ea,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x40ea,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -21875,7 +16242,7 @@ impl ZeldaState {
             flags: 0,
         };
         let base = usize::from(self.sprite_slot_view(k).graphics()) * 2;
-        self.sprite_draw_multiple(k, &D[base..base + 2], Some(&mut info));
+        self.sprite_draw_multiple(k, &TEKTITE_DRAW_FRAMES[base..base + 2], Some(&mut info));
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 
