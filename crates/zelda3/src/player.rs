@@ -4,6 +4,9 @@ use super::sprite::SpriteSpawnInfo;
 use super::*;
 use crate::types::Point16U;
 
+mod player_shared;
+use player_shared::*;
+
 const DOOR_ANIMATION_STEP_INDICATOR_PLAYER: usize = 0x0690;
 const PUSH_BLOCK_DIRECTION_PLAYER: usize = 0x0474;
 const SPRITE_C_PLAYER: usize = 0x0db0;
@@ -195,11 +198,10 @@ impl ZeldaState {
         self.link_force_unequip_cape_quietly();
         self.link_reset_sword_and_item_usage();
 
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self
             .game_state
             .enhanced_features
-            .has(FEATURES0_MISC_BUG_FIXES)
+            .has(LINK_INITIALIZE_FEATURES0_MISC_BUG_FIXES)
         {
             self.follower_link_state_mut()
                 .clear_misc_bugfix_movement_state();
@@ -227,11 +229,10 @@ impl ZeldaState {
     }
 
     pub(super) fn link_reset_properties_c(&mut self) {
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self
             .game_state
             .enhanced_features
-            .has(FEATURES0_MISC_BUG_FIXES)
+            .has(LINK_RESET_PROPERTIES_C_FEATURES0_MISC_BUG_FIXES)
         {
             self.clear_custom_spell_animation();
         }
@@ -273,8 +274,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_splash_upon_landing(&mut self) {
-        const PLAYER_HANDLER_STATE_RECOIL_OTHER: u8 = 6;
-
         if self.game_state.player.follower_link.is_bunny_mirror() {
             if self.game_state.player.follower_link.is_in_deep_water() {
                 self.ancilla_add_splash(21, 0);
@@ -284,7 +283,7 @@ impl ZeldaState {
             self.follower_link_state_mut().land_after_splash();
         } else if self.game_state.player.follower_link.is_in_deep_water() {
             if self.game_state.player.follower_link.handler_state()
-                != PLAYER_HANDLER_STATE_RECOIL_OTHER
+                != LINK_SPLASH_UPON_LANDING_PLAYER_HANDLER_STATE_RECOIL_OTHER
             {
                 self.ancilla_add_splash(21, 0);
             }
@@ -296,8 +295,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_handle_swim_accels(&mut self) {
-        const SWIM_ACCELERATION_TARGETS: [u16; 9] = [128, 160, 192, 224, 256, 288, 320, 352, 384];
-
         let mut mask = 0x0c;
         for offset in [0, 2] {
             if self.game_state.player.follower_link.joypad1h_last() & mask != 0 {
@@ -308,7 +305,7 @@ impl ZeldaState {
                     .acceleration(offset);
                 let max_speed = self.game_state.player.swim_acceleration.max_speed(offset);
                 if acceleration != 0 && max_speed >= 384 {
-                    let target = SWIM_ACCELERATION_TARGETS
+                    let target = LINK_HANDLE_SWIM_ACCELS_SWIM_ACCELERATION_TARGETS
                         .iter()
                         .copied()
                         .find(|value| *value >= acceleration)
@@ -354,8 +351,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_set_momentum(&mut self) {
-        const SWIM_STROKE_TIMERS_BY_MOVING_FLAG: [u8; 2] = [32, 8];
-
         let joy = self.game_state.player.follower_link.joypad1h_last() & 0x0f;
         let mut mask = 0x0c;
         let mut bit = 0x08;
@@ -363,7 +358,7 @@ impl ZeldaState {
             if joy & mask != 0 {
                 let flag_moving = self.game_state.player.follower_link.flag_moving();
                 let stroke_timer = if flag_moving != 0 {
-                    SWIM_STROKE_TIMERS_BY_MOVING_FLAG[(flag_moving - 1) as usize]
+                    LINK_SET_MOMENTUM_SWIM_STROKE_TIMERS_BY_MOVING_FLAG[(flag_moving - 1) as usize]
                 } else {
                     32
                 };
@@ -393,8 +388,6 @@ impl ZeldaState {
     }
 
     pub(super) fn player_handler_04_swimming(&mut self) {
-        const ACTIVE_SWIM_ANIMATION_DELAYS: [u8; 4] = [2, 0, 1, 0];
-
         if self.game_state.player.follower_link.auxiliary_state() != 0 {
             self.follower_link_state_mut()
                 .interrupt_swimming_for_auxiliary_state();
@@ -419,7 +412,9 @@ impl ZeldaState {
             self.follower_link_state_mut().advance_idle_swim_animation();
         } else {
             self.follower_link_state_mut()
-                .advance_active_swim_animation(&ACTIVE_SWIM_ANIMATION_DELAYS);
+                .advance_active_swim_animation(
+                    &PLAYER_HANDLER_04_SWIMMING_ACTIVE_SWIM_ANIMATION_DELAYS,
+                );
         }
 
         if self.game_state.player.follower_link.hard_swim_stroke() == 0 {
@@ -613,38 +608,39 @@ impl ZeldaState {
     }
 
     pub(super) fn link_apply_tile_rebound(&mut self) {
-        const DASH_REBOUND_Y_VELOCITY_BY_DIRECTION: [u8; 4] = [24, (-24i8) as u8, 0, 0];
-        const DASH_REBOUND_X_VELOCITY_BY_DIRECTION: [u8; 4] = [0, 0, 24, (-24i8) as u8];
-        const DASH_REBOUND_SWIM_Y_DIRECTIONS: [u8; 4] = [1, 0, 0, 0];
-        const DASH_REBOUND_SWIM_X_DIRECTIONS: [u8; 4] = [0, 0, 1, 0];
-        const DASH_REBOUND_SWIM_Y_ACCELERATIONS: [u16; 8] = [384, 384, 0, 0, 256, 256, 0, 0];
-        const DASH_REBOUND_SWIM_X_ACCELERATIONS: [u16; 8] = [0, 0, 384, 384, 0, 0, 256, 256];
-        const DIRECTION_BITS_BY_FACING: [u8; 4] = [8, 4, 2, 1];
-
         let dir = self
             .game_state
             .player
             .follower_link
             .last_direction_moved_towards() as usize;
         self.follower_link_state_mut().set_actual_velocity_xy(
-            DASH_REBOUND_X_VELOCITY_BY_DIRECTION[dir],
-            DASH_REBOUND_Y_VELOCITY_BY_DIRECTION[dir],
+            LINK_APPLY_TILE_REBOUND_DASH_REBOUND_X_VELOCITY_BY_DIRECTION[dir],
+            LINK_APPLY_TILE_REBOUND_DASH_REBOUND_Y_VELOCITY_BY_DIRECTION[dir],
         );
         self.follower_link_state_mut().set_incapacitated_timer(24);
         self.follower_link_state_mut()
             .set_actual_z_velocity_and_copy(36);
         if self.game_state.player.follower_link.flag_moving() != 0 {
-            self.follower_link_state_mut()
-                .set_direction_and_swim_flags(DIRECTION_BITS_BY_FACING[dir]);
-            self.swim_acceleration_mut()
-                .set_acceleration_direction(0, DASH_REBOUND_SWIM_Y_DIRECTIONS[dir] as u16);
-            self.swim_acceleration_mut()
-                .set_acceleration_direction(2, DASH_REBOUND_SWIM_X_DIRECTIONS[dir] as u16);
+            self.follower_link_state_mut().set_direction_and_swim_flags(
+                LINK_APPLY_TILE_REBOUND_DIRECTION_BITS_BY_FACING[dir],
+            );
+            self.swim_acceleration_mut().set_acceleration_direction(
+                0,
+                LINK_APPLY_TILE_REBOUND_DASH_REBOUND_SWIM_Y_DIRECTIONS[dir] as u16,
+            );
+            self.swim_acceleration_mut().set_acceleration_direction(
+                2,
+                LINK_APPLY_TILE_REBOUND_DASH_REBOUND_SWIM_X_DIRECTIONS[dir] as u16,
+            );
             let i = (self.game_state.player.follower_link.flag_moving() - 1) as usize * 4 + dir;
-            self.swim_acceleration_mut()
-                .set_acceleration(0, DASH_REBOUND_SWIM_Y_ACCELERATIONS[i]);
-            self.swim_acceleration_mut()
-                .set_acceleration(2, DASH_REBOUND_SWIM_X_ACCELERATIONS[i]);
+            self.swim_acceleration_mut().set_acceleration(
+                0,
+                LINK_APPLY_TILE_REBOUND_DASH_REBOUND_SWIM_Y_ACCELERATIONS[i],
+            );
+            self.swim_acceleration_mut().set_acceleration(
+                2,
+                LINK_APPLY_TILE_REBOUND_DASH_REBOUND_SWIM_X_ACCELERATIONS[i],
+            );
         }
         self.follower_link_state_mut().set_auxiliary_state(1);
         self.follower_link_state_mut().set_dash_noise_request();
@@ -675,7 +671,6 @@ impl ZeldaState {
             return;
         }
 
-        const FACING_DIRECTION_BITS: [u8; 4] = [8, 4, 2, 1];
         let mut r0 = self.game_state.player.follower_link.last_direction();
         if r0 == 0 {
             return;
@@ -702,7 +697,8 @@ impl ZeldaState {
                     .wrapping_mul(2)
                     & !3;
             } else if r0
-                & FACING_DIRECTION_BITS[self.game_state.player.follower_link.facing_index()]
+                & LINK_HANDLE_MOVING_ANIMATION_FULL_LONG_ENTRY_FACING_DIRECTION_BITS
+                    [self.game_state.player.follower_link.facing_index()]
                 != 0
             {
                 self.link_handle_moving_animation_start_with_dash();
@@ -736,10 +732,6 @@ impl ZeldaState {
             x = x.wrapping_add(4);
         }
 
-        const POSE_ANIMATION_DELAYS: [u8; 16] = [4, 4, 4, 4, 1, 1, 1, 1, 2, 2, 2, 2, 8, 8, 8, 8];
-        const WALK_ANIMATION_DELAYS: [u8; 24] = [
-            1, 2, 3, 2, 2, 2, 3, 2, 1, 1, 2, 1, 1, 1, 2, 1, 2, 2, 3, 2, 2, 2, 3, 2,
-        ];
         if self.game_state.player.follower_link.handler_state() == 23
             || (self.game_state.enhanced_features.has(4096)
                 && self.game_state.player.follower_link.handler_state() == 28)
@@ -747,7 +739,11 @@ impl ZeldaState {
             if self.game_state.player.follower_link.animation_step() < 4
                 && self.game_state.player.follower_link.on_somaria_platform() != 2
             {
-                self.advance_link_animation_step(POSE_ANIMATION_DELAYS[x as usize], 4, 0);
+                self.advance_link_animation_step(
+                    LINK_HANDLE_MOVING_ANIMATION_START_WITH_DASH_POSE_ANIMATION_DELAYS[x as usize],
+                    4,
+                    0,
+                );
             } else {
                 self.follower_link_state_mut().clear_animation_step();
             }
@@ -781,7 +777,12 @@ impl ZeldaState {
                     idx = idx.wrapping_add(8);
                 }
                 if self.game_state.player.follower_link.on_somaria_platform() != 2 {
-                    self.advance_link_animation_step(WALK_ANIMATION_DELAYS[idx as usize], 9, 1);
+                    self.advance_link_animation_step(
+                        LINK_HANDLE_MOVING_ANIMATION_START_WITH_DASH_WALK_ANIMATION_DELAYS
+                            [idx as usize],
+                        9,
+                        1,
+                    );
                 }
                 return;
             }
@@ -790,14 +791,17 @@ impl ZeldaState {
         if self.game_state.player.follower_link.animation_step() < 6
             && self.game_state.player.follower_link.on_somaria_platform() != 2
         {
-            self.advance_link_animation_step(POSE_ANIMATION_DELAYS[x as usize], 6, 0);
+            self.advance_link_animation_step(
+                LINK_HANDLE_MOVING_ANIMATION_START_WITH_DASH_POSE_ANIMATION_DELAYS[x as usize],
+                6,
+                0,
+            );
         } else {
             self.follower_link_state_mut().clear_animation_step();
         }
     }
 
     pub(super) fn link_handle_moving_animation_swimming(&mut self) {
-        const FACING_DIRECTION_BITS: [u8; 4] = [8, 4, 2, 1];
         let r0 = self.game_state.player.follower_link.swim_direction_flags();
         if r0 == 0 || self.game_state.player.follower_link.direction_lock() != 0 {
             return;
@@ -819,7 +823,8 @@ impl ZeldaState {
                     .wrapping_mul(2)
                     & !3;
             } else if r0
-                & FACING_DIRECTION_BITS[self.game_state.player.follower_link.facing_index()]
+                & LINK_HANDLE_MOVING_ANIMATION_SWIMMING_FACING_DIRECTION_BITS
+                    [self.game_state.player.follower_link.facing_index()]
                 != 0
             {
                 return;
@@ -838,15 +843,9 @@ impl ZeldaState {
     }
 
     pub(super) fn link_handle_moving_animation_dash(&mut self) {
-        const DASH_CHARGE_ANIM_THRESHOLDS: [u8; 7] = [48, 36, 24, 16, 12, 8, 4];
-        const DASH_CHARGE_ANIM_DELAYS: [u8; 56] = [
-            3, 3, 5, 3, 3, 3, 5, 3, 2, 2, 4, 2, 2, 2, 4, 2, 2, 2, 3, 2, 2, 2, 3, 2, 1, 1, 2, 1, 1,
-            1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        ];
-        const DASH_CHARGE_MIN_ANIM_STEPS: [u8; 7] = [1, 2, 2, 2, 2, 2, 2];
         let mut t = 6usize;
         while self.game_state.player.follower_link.dash_countdown()
-            >= DASH_CHARGE_ANIM_THRESHOLDS[t]
+            >= LINK_HANDLE_MOVING_ANIMATION_DASH_DASH_CHARGE_ANIM_THRESHOLDS[t]
             && t != 0
         {
             t -= 1;
@@ -859,9 +858,17 @@ impl ZeldaState {
                 .water_ripple_or_grass_state()
                 == 0
         {
-            self.advance_link_animation_step(DASH_CHARGE_ANIM_DELAYS[t * 8], 9, 1);
+            self.advance_link_animation_step(
+                LINK_HANDLE_MOVING_ANIMATION_DASH_DASH_CHARGE_ANIM_DELAYS[t * 8],
+                9,
+                1,
+            );
         } else {
-            self.advance_link_animation_step_at_least(DASH_CHARGE_MIN_ANIM_STEPS[t], 6, 0);
+            self.advance_link_animation_step_at_least(
+                LINK_HANDLE_MOVING_ANIMATION_DASH_DASH_CHARGE_MIN_ANIM_STEPS[t],
+                6,
+                0,
+            );
         }
     }
 
@@ -885,9 +892,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_apply_conveyor(&mut self) {
-        const MOVE_POS_DIR_FLAG: [u8; 4] = [8, 4, 2, 1];
-        const MOVING_BELT_Y: [i8; 4] = [-8, 8, 0, 0];
-        const MOVING_BELT_X: [i8; 4] = [0, 0, -8, 8];
         if self.game_state.player.follower_link.conveyor_belt_state() == 0 {
             return;
         }
@@ -911,27 +915,29 @@ impl ZeldaState {
             .follower_link
             .conveyor_belt_state()
             .wrapping_sub(1) as usize;
-        if j >= MOVE_POS_DIR_FLAG.len() {
+        if j >= LINK_APPLY_CONVEYOR_MOVE_POS_DIR_FLAG.len() {
             return;
         }
         if self.game_state.player.follower_link.is_running()
             && self.game_state.player.follower_link.dash_counter() == 32
-            && self.game_state.player.follower_link.direction() & MOVE_POS_DIR_FLAG[j] != 0
+            && self.game_state.player.follower_link.direction()
+                & LINK_APPLY_CONVEYOR_MOVE_POS_DIR_FLAG[j]
+                != 0
         {
             return;
         }
         self.follower_link_state_mut()
             .clear_orthogonal_direction_count();
         self.follower_link_state_mut()
-            .add_direction_flags(MOVE_POS_DIR_FLAG[j]);
+            .add_direction_flags(LINK_APPLY_CONVEYOR_MOVE_POS_DIR_FLAG[j]);
         let y = ((self.game_state.player.follower_link.y() as u32) << 8
             | self.game_state.player.bg1_movement_accumulator.y_subpixel() as u32)
-            .wrapping_add(((MOVING_BELT_Y[j] as i32) << 4) as u32);
+            .wrapping_add(((LINK_APPLY_CONVEYOR_MOVING_BELT_Y[j] as i32) << 4) as u32);
         self.bg1_move_calc_mut().set_y_subpixel(y as u8);
         self.follower_link_state_mut().set_y((y >> 8) as u16);
         let x = ((self.game_state.player.follower_link.x() as u32) << 8
             | self.game_state.player.bg1_movement_accumulator.x_subpixel() as u32)
-            .wrapping_add(((MOVING_BELT_X[j] as i32) << 4) as u32);
+            .wrapping_add(((LINK_APPLY_CONVEYOR_MOVING_BELT_X[j] as i32) << 4) as u32);
         self.bg1_move_calc_mut().set_x_subpixel(x as u8);
         self.follower_link_state_mut().set_x((x >> 8) as u16);
     }
@@ -1307,8 +1313,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_hop_in_or_out_of_water_y(&mut self) {
-        const RECOIL_VEL_Y: [u8; 3] = [24, 16, 16];
-        const RECOIL_VEL_Z: [u8; 3] = [36, 24, 24];
         let ts = if self.game_state.world.location.is_outdoors() {
             2
         } else if self
@@ -1323,7 +1327,7 @@ impl ZeldaState {
             self.game_state.display.sub_screen_layers
         };
 
-        let mut vel = RECOIL_VEL_Y[ts as usize];
+        let mut vel = LINK_HOP_IN_OR_OUT_OF_WATER_Y_RECOIL_VEL_Y[ts as usize];
         if self
             .game_state
             .player
@@ -1337,15 +1341,15 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .set_actual_velocity_xy(0, vel);
         self.follower_link_state_mut()
-            .set_actual_z_velocity_and_copy(RECOIL_VEL_Z[ts as usize]);
+            .set_actual_z_velocity_and_copy(
+                LINK_HOP_IN_OR_OUT_OF_WATER_Y_RECOIL_VEL_Z[ts as usize],
+            );
         self.follower_link_state_mut().set_z(0);
         self.follower_link_state_mut().set_incapacitated_timer(16);
         self.follower_link_state_mut().enter_water_hop_state();
     }
 
     pub(super) fn link_hop_in_or_out_of_water_x(&mut self) {
-        const RECOIL_VEL_X: [u8; 3] = [28, 24, 16];
-        const RECOIL_VEL_Z: [u8; 3] = [32, 24, 24];
         let ts = if self.game_state.world.location.is_outdoors() {
             2
         } else if self
@@ -1360,7 +1364,7 @@ impl ZeldaState {
             self.game_state.display.sub_screen_layers
         };
 
-        let mut vel = RECOIL_VEL_X[ts as usize];
+        let mut vel = LINK_HOP_IN_OR_OUT_OF_WATER_X_RECOIL_VEL_X[ts as usize];
         if self
             .game_state
             .player
@@ -1374,7 +1378,9 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .set_actual_velocity_xy(vel, 0);
         self.follower_link_state_mut()
-            .set_actual_z_velocity_and_copy(RECOIL_VEL_Z[ts as usize]);
+            .set_actual_z_velocity_and_copy(
+                LINK_HOP_IN_OR_OUT_OF_WATER_X_RECOIL_VEL_Z[ts as usize],
+            );
         self.follower_link_state_mut().set_incapacitated_timer(16);
         self.follower_link_state_mut().enter_water_hop_state();
     }
@@ -1412,10 +1418,6 @@ impl ZeldaState {
     }
 
     pub(super) fn flag_moving_into_slopes_y(&mut self) {
-        const AVOID_JUDDER: [i8; 32] = [
-            0, 1, 2, 3, 4, 5, 6, 7, 7, 6, 5, 4, 3, 2, 1, 0, 7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4,
-            5, 6, 7,
-        ];
         let diag_state = self.game_state.player.tile_detection.diag_state() as usize;
         let x = self.game_state.player.follower_link.x().wrapping_sub(
             if self.game_state.player.tile_detection.slope_collision_bits() & 4 != 0 {
@@ -1433,7 +1435,7 @@ impl ZeldaState {
                 if diag_state & 2 != 0 {
                     ym = ym.wrapping_neg();
                 } else {
-                    ym = AVOID_JUDDER[o].wrapping_sub(8 - ym);
+                    ym = FLAG_MOVING_INTO_SLOPES_Y_AVOID_JUDDER[o].wrapping_sub(8 - ym);
                 }
             } else {
                 if diag_state & 2 == 0 {
@@ -1441,7 +1443,7 @@ impl ZeldaState {
                 } else {
                     ym += 8;
                 }
-                ym = AVOID_JUDDER[o].wrapping_sub(ym);
+                ym = FLAG_MOVING_INTO_SLOPES_Y_AVOID_JUDDER[o].wrapping_sub(ym);
             }
 
             let y_velocity = self.game_state.player.follower_link.y_velocity_signed();
@@ -1453,7 +1455,7 @@ impl ZeldaState {
             }
             y = ym;
         } else {
-            y = AVOID_JUDDER[o].wrapping_sub(y);
+            y = FLAG_MOVING_INTO_SLOPES_Y_AVOID_JUDDER[o].wrapping_sub(y);
         }
 
         if self
@@ -1500,10 +1502,6 @@ impl ZeldaState {
     }
 
     pub(super) fn flag_moving_into_slopes_x(&mut self) {
-        const AVOID_JUDDER: [i8; 32] = [
-            0, 1, 2, 3, 4, 5, 6, 7, 7, 6, 5, 4, 3, 2, 1, 0, 7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4,
-            5, 6, 7,
-        ];
         let diag_state = self.game_state.player.tile_detection.diag_state();
         let mut x = (self
             .game_state
@@ -1531,7 +1529,7 @@ impl ZeldaState {
             if diag_state != 4 && diag_state != 6 {
                 xm = xm.wrapping_neg();
             } else {
-                xm = AVOID_JUDDER[o].wrapping_sub(8 - xm);
+                xm = FLAG_MOVING_INTO_SLOPES_X_AVOID_JUDDER[o].wrapping_sub(8 - xm);
             }
             let x_velocity = self.game_state.player.follower_link.x_velocity_signed();
             if x_velocity == 0 {
@@ -1542,7 +1540,7 @@ impl ZeldaState {
             }
             x = xm;
         } else {
-            x = AVOID_JUDDER[o].wrapping_sub(x);
+            x = FLAG_MOVING_INTO_SLOPES_X_AVOID_JUDDER[o].wrapping_sub(x);
         }
 
         if self
@@ -1638,8 +1636,6 @@ impl ZeldaState {
     pub(super) fn player_limit_directions_inner(&mut self) {
         self.follower_link_state_mut().reset_direction_limits();
 
-        const MASKS: [u8; 4] = [0x07, 0x0b, 0x0d, 0x0e];
-
         let direction = self.game_state.player.follower_link.direction();
         if direction & 0x0c != 0 {
             self.follower_link_state_mut()
@@ -1656,7 +1652,14 @@ impl ZeldaState {
                     == 0
                 && self.game_state.player.follower_link.direction() & 3 != 0
             {
-                let mask = MASKS[if self.game_state.player.follower_link.direction() & 2 != 0 {
+                let mask = PLAYER_LIMIT_DIRECTIONS_INNER_MASKS[if self
+                    .game_state
+                    .player
+                    .follower_link
+                    .direction()
+                    & 2
+                    != 0
+                {
                     2
                 } else {
                     3
@@ -1688,7 +1691,7 @@ impl ZeldaState {
 
                 if set_thingy {
                     self.follower_link_state_mut().set_pit_correction_active();
-                    let mask = MASKS[self
+                    let mask = PLAYER_LIMIT_DIRECTIONS_INNER_MASKS[self
                         .game_state
                         .player
                         .follower_link
@@ -1715,7 +1718,14 @@ impl ZeldaState {
                     == 0
                 && self.game_state.player.follower_link.direction() & 0x0c != 0
             {
-                let mask = MASKS[if self.game_state.player.follower_link.direction() & 8 != 0 {
+                let mask = PLAYER_LIMIT_DIRECTIONS_INNER_MASKS[if self
+                    .game_state
+                    .player
+                    .follower_link
+                    .direction()
+                    & 8
+                    != 0
+                {
                     0
                 } else {
                     1
@@ -1747,7 +1757,7 @@ impl ZeldaState {
 
                 if set_thingy_b {
                     self.follower_link_state_mut().set_pit_correction_active();
-                    let mask = MASKS[self
+                    let mask = PLAYER_LIMIT_DIRECTIONS_INNER_MASKS[self
                         .game_state
                         .player
                         .follower_link
@@ -1859,16 +1869,12 @@ impl ZeldaState {
             }
         }
 
-        const SPEED_MOD: [u8; 27] = [
-            24, 16, 10, 24, 16, 8, 8, 4, 12, 16, 9, 25, 20, 13, 16, 8, 64, 42, 16, 8, 4, 2, 48, 24,
-            32, 21, 0,
-        ];
         let vel = self
             .game_state
             .player
             .follower_link
             .speed_modifier()
-            .wrapping_add(SPEED_MOD[speed_index as usize]);
+            .wrapping_add(LINK_HANDLE_VELOCITY_SPEED_MOD[speed_index as usize]);
         let direction = self.game_state.player.follower_link.direction();
         self.follower_link_state_mut()
             .set_actual_velocity_from_direction(direction, vel);
@@ -1879,10 +1885,6 @@ impl ZeldaState {
     pub(super) fn handle_swim_stroke_and_subpixels(&mut self) {
         self.follower_link_state_mut().clear_actual_velocity_xy();
 
-        const SWIM_ACCELERATION_DELTAS: [i8; 12] =
-            [8, -12, -8, -16, 4, -6, -12, -6, 10, -16, -12, -6];
-        const SWIM_AXIS_DIRECTION_CLEAR_MASKS: [u8; 2] = [!0x0c, !0x03];
-        const SWIM_DIRECTION_BITS_BY_AXIS: [u8; 4] = [8, 4, 2, 1];
         let mut stroke = [0u16; 2];
 
         for i in (0..=1).rev() {
@@ -1908,7 +1910,8 @@ impl ZeldaState {
                 );
             }
 
-            let delta = SWIM_ACCELERATION_DELTAS[table_index as usize] as i16 as u16;
+            let delta = HANDLE_SWIM_STROKE_AND_SUBPIXELS_SWIM_ACCELERATION_DELTAS
+                [table_index as usize] as i16 as u16;
             let mut sum = self
                 .game_state
                 .player
@@ -1916,8 +1919,9 @@ impl ZeldaState {
                 .acceleration(offset)
                 .wrapping_add(delta);
             if (sum as i16) <= 0 {
-                self.follower_link_state_mut()
-                    .mask_direction(SWIM_AXIS_DIRECTION_CLEAR_MASKS[i]);
+                self.follower_link_state_mut().mask_direction(
+                    HANDLE_SWIM_STROKE_AND_SUBPIXELS_SWIM_AXIS_DIRECTION_CLEAR_MASKS[i],
+                );
                 self.follower_link_state_mut()
                     .set_last_direction_from_current_direction();
                 if self.game_state.player.swim_acceleration.mode(offset) == 2 {
@@ -1936,8 +1940,9 @@ impl ZeldaState {
                     .swim_acceleration
                     .acceleration_direction(offset) as usize
                     + i * 2;
-                self.follower_link_state_mut()
-                    .add_direction_flags(SWIM_DIRECTION_BITS_BY_AXIS[dir_index]);
+                self.follower_link_state_mut().add_direction_flags(
+                    HANDLE_SWIM_STROKE_AND_SUBPIXELS_SWIM_DIRECTION_BITS_BY_AXIS[dir_index],
+                );
                 let max_sum = self.game_state.player.swim_acceleration.max_speed(offset);
                 if sum >= max_sum {
                     sum = max_sum;
@@ -2007,11 +2012,6 @@ impl ZeldaState {
     }
 
     pub(super) fn handle_nudging(&mut self, arg_r0: i8) {
-        const NUDGE_PROBE_Y0_OFFSETS: [u8; 8] = [8, 8, 23, 23, 8, 23, 8, 23];
-        const NUDGE_PROBE_X0_OFFSETS: [u8; 8] = [0, 15, 0, 15, 0, 0, 15, 15];
-        const NUDGE_PROBE_Y1_OFFSETS: [u8; 8] = [23, 23, 8, 8, 8, 23, 8, 23];
-        const NUDGE_PROBE_X1_OFFSETS: [u8; 8] = [0, 15, 0, 15, 15, 15, 0, 0];
-
         let last_direction_moved_towards = self
             .game_state
             .player
@@ -2041,10 +2041,10 @@ impl ZeldaState {
         let mask = self.game_state.player.tile_detection.location_calc_mask();
         let link_y = self.game_state.player.follower_link.y();
         let link_x = self.game_state.player.follower_link.x();
-        let y0 = link_y.wrapping_add(NUDGE_PROBE_Y0_OFFSETS[o] as u16) & mask;
-        let x0 = (link_x.wrapping_add(NUDGE_PROBE_X0_OFFSETS[o] as u16) & mask) >> 3;
-        let y1 = link_y.wrapping_add(NUDGE_PROBE_Y1_OFFSETS[o] as u16) & mask;
-        let x1 = (link_x.wrapping_add(NUDGE_PROBE_X1_OFFSETS[o] as u16) & mask) >> 3;
+        let y0 = link_y.wrapping_add(HANDLE_NUDGING_NUDGE_PROBE_Y0_OFFSETS[o] as u16) & mask;
+        let x0 = (link_x.wrapping_add(HANDLE_NUDGING_NUDGE_PROBE_X0_OFFSETS[o] as u16) & mask) >> 3;
+        let y1 = link_y.wrapping_add(HANDLE_NUDGING_NUDGE_PROBE_Y1_OFFSETS[o] as u16) & mask;
+        let x1 = (link_x.wrapping_add(HANDLE_NUDGING_NUDGE_PROBE_X1_OFFSETS[o] as u16) & mask) >> 3;
 
         self.tile_detection_execute(x0, y0, 1);
         self.tile_detection_execute(x1, y1, 2);
@@ -2319,11 +2319,6 @@ impl ZeldaState {
     }
 
     pub(super) fn push_block_attempt_to_push_the_block(&self, what: u8, x: u16, y: u16) -> bool {
-        const Y0: [i8; 4] = [-4, 20, 4, 4];
-        const Y1: [i8; 4] = [-4, 20, 12, 12];
-        const X0: [i8; 4] = [4, 4, -4, 20];
-        const X1: [i8; 4] = [12, 12, -4, 20];
-
         let idx = what as usize * 4
             + self
                 .game_state
@@ -2332,32 +2327,29 @@ impl ZeldaState {
                 .last_direction_moved_towards() as usize;
         let mask = self.game_state.player.tile_detection.location_calc_mask();
 
-        let x0 = (x.wrapping_add(X0[idx] as i16 as u16) & mask) >> 3;
-        let y0 = y.wrapping_add(Y0[idx] as i16 as u16) & mask;
+        let x0 = (x
+            .wrapping_add(PUSH_BLOCK_ATTEMPT_TO_PUSH_THE_BLOCK_X_OFFSETS_0[idx] as i16 as u16)
+            & mask)
+            >> 3;
+        let y0 = y
+            .wrapping_add(PUSH_BLOCK_ATTEMPT_TO_PUSH_THE_BLOCK_Y_OFFSETS_0[idx] as i16 as u16)
+            & mask;
         let xt = self.push_block_get_target_tile_flag(x0, y0);
         if push_block_target_is_blocked(xt) {
             return true;
         }
 
-        let x1 = (x.wrapping_add(X1[idx] as i16 as u16) & mask) >> 3;
-        let y1 = y.wrapping_add(Y1[idx] as i16 as u16) & mask;
+        let x1 = (x
+            .wrapping_add(PUSH_BLOCK_ATTEMPT_TO_PUSH_THE_BLOCK_X_OFFSETS_1[idx] as i16 as u16)
+            & mask)
+            >> 3;
+        let y1 = y
+            .wrapping_add(PUSH_BLOCK_ATTEMPT_TO_PUSH_THE_BLOCK_Y_OFFSETS_1[idx] as i16 as u16)
+            & mask;
         push_block_target_is_blocked(self.push_block_get_target_tile_flag(x1, y1))
     }
 
     pub(super) fn link_find_valid_landing_tile_north(&mut self) {
-        const DY: [u8; 32] = [
-            16, 16, 20, 20, 24, 24, 28, 28, 32, 32, 36, 36, 40, 40, 44, 44, 48, 48, 48, 48, 48, 48,
-            48, 48, 48, 48, 48, 48, 48, 48, 48, 48,
-        ];
-        const DZ: [u8; 32] = [
-            24, 24, 24, 24, 28, 28, 28, 28, 32, 32, 32, 32, 36, 36, 36, 36, 40, 40, 40, 40, 44, 44,
-            44, 44, 48, 48, 48, 48, 52, 52, 52, 52,
-        ];
-        const TIMER: [u8; 32] = [
-            16, 16, 20, 20, 24, 24, 28, 28, 32, 32, 36, 36, 40, 40, 44, 44, 48, 48, 48, 48, 48, 48,
-            48, 48, 48, 48, 48, 48, 48, 48, 48, 48,
-        ];
-
         let y_coord_bak = self.game_state.player.follower_link.y();
         self.follower_link_state_mut()
             .set_hop_origin_coord(y_coord_bak);
@@ -2401,7 +2393,7 @@ impl ZeldaState {
             .set_hop_origin_delta_from_y(y);
         self.follower_link_state_mut().set_y(y_coord_bak);
         let o = ((diff as u8) >> 3) as usize;
-        let dy = DY[o];
+        let dy = LINK_FIND_VALID_LANDING_TILE_NORTH_Y_DELTAS[o];
         let actual_y_velocity = if self
             .game_state
             .player
@@ -2416,29 +2408,16 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .set_actual_velocity_xy(0, actual_y_velocity);
         self.follower_link_state_mut()
-            .set_actual_z_velocity_and_copy(DZ[o]);
+            .set_actual_z_velocity_and_copy(LINK_FIND_VALID_LANDING_TILE_NORTH_Z_DELTAS[o]);
         self.follower_link_state_mut().set_z(0);
         self.follower_link_state_mut()
-            .set_incapacitated_timer(TIMER[o]);
+            .set_incapacitated_timer(LINK_FIND_VALID_LANDING_TILE_NORTH_TIMERS[o]);
         self.follower_link_state_mut().set_auxiliary_state(2);
         self.follower_link_state_mut().clear_electrocute_on_touch();
         self.follower_link_state_mut().set_handler_state(6);
     }
 
     pub(super) fn link_find_valid_landing_tile_diagonal_north(&mut self) {
-        const DX: [u8; 32] = [
-            8, 8, 8, 8, 16, 16, 16, 16, 24, 24, 24, 24, 16, 16, 16, 16, 8, 20, 20, 20, 24, 24, 24,
-            24, 28, 28, 28, 28, 32, 32, 32, 32,
-        ];
-        const DY: [u8; 32] = [
-            8, 8, 8, 8, 16, 16, 20, 20, 24, 24, 24, 24, 32, 32, 32, 32, 8, 20, 20, 20, 24, 24, 24,
-            24, 28, 28, 28, 28, 32, 32, 32, 32,
-        ];
-        const DZ: [u8; 32] = [
-            32, 32, 32, 32, 32, 32, 32, 32, 36, 36, 36, 36, 40, 40, 40, 40, 32, 40, 40, 40, 44, 44,
-            44, 44, 48, 48, 48, 48, 52, 52, 52, 52,
-        ];
-
         let y_safe = self.game_state.player.follower_link.safe_return_y_low();
         let x_bak = self.game_state.player.follower_link.x();
         let dir = self
@@ -2476,16 +2455,19 @@ impl ZeldaState {
         let o = (diff >> 3) as usize;
         self.follower_link_state_mut().restore_y_from_hop_origin();
 
-        let actual_y_velocity = 0u8.wrapping_sub(DY[o]);
+        let actual_y_velocity =
+            0u8.wrapping_sub(LINK_FIND_VALID_LANDING_TILE_DIAGONAL_NORTH_Y_DELTAS[o]);
         let actual_x_velocity = if dir != 2 {
-            DX[o]
+            LINK_FIND_VALID_LANDING_TILE_DIAGONAL_NORTH_X_DELTAS[o]
         } else {
-            0u8.wrapping_sub(DX[o])
+            0u8.wrapping_sub(LINK_FIND_VALID_LANDING_TILE_DIAGONAL_NORTH_X_DELTAS[o])
         };
         self.follower_link_state_mut()
             .set_actual_velocity_xy(actual_x_velocity, actual_y_velocity);
         self.follower_link_state_mut()
-            .set_actual_z_velocity_and_copy(DZ[o]);
+            .set_actual_z_velocity_and_copy(
+                LINK_FIND_VALID_LANDING_TILE_DIAGONAL_NORTH_Z_DELTAS[o],
+            );
         self.follower_link_state_mut().set_z(0);
         self.follower_link_state_mut().clear_z_mirror_word_low();
         self.follower_link_state_mut().set_auxiliary_state(2);
@@ -2513,19 +2495,17 @@ impl ZeldaState {
             item as u16 * 8 + self.game_state.player.follower_link.facing() as u16
         };
         let offset = probe_base >> 1;
-        const X: [i8; 40] = [
-            8, 8, 8, 8, 6, 8, -1, 22, 19, 19, 0, 19, 6, 8, -1, 22, 8, 8, 8, 8, 8, 8, 0, 15, 6, 8,
-            -10, 29, 6, 8, -6, 22, 6, 8, -4, 22, -4, 22, -4, 22,
-        ];
-        const Y: [i8; 40] = [
-            20, 20, 20, 20, 4, 28, 16, 16, 22, 22, 22, 22, 4, 24, 16, 16, 16, 16, 16, 16, 20, 20,
-            23, 23, -4, 36, 16, 16, 4, 28, 16, 16, 4, 28, 16, 16, 4, 4, 28, 28,
-        ];
+
         let mask = self.game_state.player.tile_detection.location_calc_mask();
         let link_x = self.game_state.player.follower_link.x();
         let link_y = self.game_state.player.follower_link.y();
-        let x = (link_x.wrapping_add(X[offset as usize] as i16 as u16) & mask) >> 3;
-        let y = link_y.wrapping_add(Y[offset as usize] as i16 as u16) & mask;
+        let x = (link_x
+            .wrapping_add(TILE_DETECT_MAIN_HANDLER_X_OFFSETS[offset as usize] as i16 as u16)
+            & mask)
+            >> 3;
+        let y = link_y
+            .wrapping_add(TILE_DETECT_MAIN_HANDLER_Y_OFFSETS[offset as usize] as i16 as u16)
+            & mask;
 
         if matches!(item, 1 | 2 | 3 | 6 | 7 | 8) {
             self.tile_behavior_handle_item_and_execute(x, y);
@@ -4023,11 +4003,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_handle_liftables(&mut self) -> u8 {
-        const ACTION_FOR_GLOVES: [u8; 7] = [0, 1, 0, 0, 2, 1, 2];
-        const ACTION_FOR_TILE: [u8; 7] = [2, 3, 1, 4, 0, 5, 6];
-        const ACTION_X: [i8; 4] = [7, 7, -3, 16];
-        const ACTION_Y: [i8; 4] = [6, 24, 12, 12];
-
         self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
 
@@ -4035,9 +4010,10 @@ impl ZeldaState {
         let mask = self.game_state.player.tile_detection.location_calc_mask();
         let link_y = self.game_state.player.follower_link.y();
         let link_x = self.game_state.player.follower_link.x();
-        let y0 = link_y.wrapping_add(ACTION_Y[facing] as i16 as u16) & mask;
+        let y0 = link_y.wrapping_add(LINK_HANDLE_LIFTABLES_ACTION_Y[facing] as i16 as u16) & mask;
         let y1 = link_y.wrapping_add(20) & mask;
-        let x0 = (link_x.wrapping_add(ACTION_X[facing] as i16 as u16) & mask) >> 3;
+        let x0 =
+            (link_x.wrapping_add(LINK_HANDLE_LIFTABLES_ACTION_X[facing] as i16 as u16) & mask) >> 3;
         let x1 = (link_x.wrapping_add(8) & mask) >> 3;
 
         self.tile_detection_execute(x0, y0, 1);
@@ -4057,7 +4033,9 @@ impl ZeldaState {
             let liftable = self.Dungeon_CheckForAndIDLiftableTile();
             if liftable != 0xffff {
                 self.tile_detect_position_mut()
-                    .set_liftable_action_index_primary(ACTION_FOR_TILE[(liftable & 0x0f) as usize]);
+                    .set_liftable_action_index_primary(
+                        LINK_HANDLE_LIFTABLES_ACTION_FOR_TILE[(liftable & 0x0f) as usize],
+                    );
             } else {
                 if self.game_state.player.tile_detection.read_something() & 1 != 0
                     && self.game_state.player.follower_link.facing() == 0
@@ -4096,7 +4074,9 @@ impl ZeldaState {
             .player
             .tile_detection
             .liftable_action_index_primary() as usize;
-        if self.game_state.inventory.items.gloves() >= ACTION_FOR_GLOVES[liftable_index] {
+        if self.game_state.inventory.items.gloves()
+            >= LINK_HANDLE_LIFTABLES_ACTION_FOR_GLOVES[liftable_index]
+        {
             action = 1;
         }
 
@@ -4113,11 +4093,10 @@ impl ZeldaState {
         {
             return;
         }
-        const LIFTABLE_TILE_ATTR_TO_TERRAIN_TYPE: [u8; 9] =
-            [0x54, 0x52, 0x50, 0xff, 0x51, 0x53, 0x55, 0x56, 0x57];
+
         for i in 0..2 {
             if let Some((j, x, y)) = self.overworld_smash_rock_pile_result(i != 0) {
-                if let Some(k) = LIFTABLE_TILE_ATTR_TO_TERRAIN_TYPE
+                if let Some(k) = LINK_BONK_AND_SMASH_LIFTABLE_TILE_ATTR_TO_TERRAIN_TYPE
                     .iter()
                     .position(|&v| v == j)
                 {
@@ -4160,22 +4139,20 @@ impl ZeldaState {
     }
 
     pub(super) fn overworld_get_link_map16_coords_result(&self) -> (u16, u16, u16) {
-        const X: [i16; 4] = [7, 7, -3, 16];
-        const Y: [i16; 4] = [6, 24, 12, 12];
         let dir = self.game_state.player.follower_link.facing_index();
         let x = self
             .game_state
             .player
             .follower_link
             .x()
-            .wrapping_add(X[dir] as u16)
+            .wrapping_add(OVERWORLD_GET_LINK_MAP16_COORDS_RESULT_X_OFFSETS[dir] as u16)
             & !0x0f;
         let y = self
             .game_state
             .player
             .follower_link
             .y()
-            .wrapping_add(Y[dir] as u16)
+            .wrapping_add(OVERWORLD_GET_LINK_MAP16_COORDS_RESULT_Y_OFFSETS[dir] as u16)
             & !0x0f;
         let pos = ((y.wrapping_sub(self.game_state.world.scroll.overworld_offset_base_y())
             & self.game_state.world.scroll.overworld_offset_mask_y())
@@ -4215,10 +4192,10 @@ impl ZeldaState {
         x: u16,
         y: u16,
     ) -> u8 {
-        const BIG_ROCK_MAP16_QUADRANT_OFFSETS: [i16; 4] = [0, -1, -64, -65];
-        const BIG_ROCK_QUADRANT_Y_OFFSETS: [i16; 4] = [0, 0, -64, -64];
-        const BIG_ROCK_QUADRANT_X_OFFSETS: [i16; 4] = [0, -1, 0, -1];
-        let pos = 2 * ((pos >> 1).wrapping_add(BIG_ROCK_MAP16_QUADRANT_OFFSETS[quadrant] as u16));
+        let pos = 2
+            * ((pos >> 1).wrapping_add(
+                SMASH_ROCK_PILE_FROM_LIFT_IMPL_BIG_ROCK_MAP16_QUADRANT_OFFSETS[quadrant] as u16,
+            ));
         self.dungeon_object_tracking_mut()
             .set_big_rock_starting_address(pos);
         self.dungeon_doors_mut().set_door_open_counter(40);
@@ -4230,8 +4207,12 @@ impl ZeldaState {
             self.set_sound_effect_2(27);
             self.dungeon_doors_mut().set_door_open_counter(80);
         }
-        let x = x.wrapping_add((BIG_ROCK_QUADRANT_X_OFFSETS[quadrant] * 2) as u16);
-        let y = y.wrapping_add((BIG_ROCK_QUADRANT_Y_OFFSETS[quadrant] * 2) as u16);
+        let x = x.wrapping_add(
+            (SMASH_ROCK_PILE_FROM_LIFT_IMPL_BIG_ROCK_QUADRANT_X_OFFSETS[quadrant] * 2) as u16,
+        );
+        let y = y.wrapping_add(
+            (SMASH_ROCK_PILE_FROM_LIFT_IMPL_BIG_ROCK_QUADRANT_Y_OFFSETS[quadrant] * 2) as u16,
+        );
         self.overworld_do_map_update32x32_b_for_smash();
         self.map16_quadrant_attr(a, x, y)
     }
@@ -4297,9 +4278,8 @@ impl ZeldaState {
             self.set_sound_effect_2(0x1b);
         }
 
-        const TILE_BELOW: [u16; 4] = [0x0dcc, 0x0212, 0xffff, 0x0db4];
         self.adjust_secret_for_powder_for_smash();
-        TILE_BELOW[((data & 0x0f) >> 1) as usize]
+        OVERWORLD_REVEAL_SECRET_FOR_SMASH_TILE_BELOW[((data & 0x0f) >> 1) as usize]
     }
 
     fn adjust_secret_for_powder_for_smash(&mut self) {
@@ -4346,14 +4326,6 @@ impl ZeldaState {
     }
 
     fn overworld_do_map_update32x32_for_smash(&mut self) {
-        const DOOR_ANIM_TILES: [u16; 56] = [
-            0x0da8, 0x0da9, 0x0daa, 0x0dab, 0x0dac, 0x0dad, 0x0dae, 0x0daf, 0x0db0, 0x0db1, 0x0db2,
-            0x0db3, 0x0db6, 0x0db7, 0x0db8, 0x0db9, 0x0dba, 0x0dbb, 0x0dbc, 0x0dbd, 0x0dcd, 0x0dce,
-            0x0dcf, 0x0dd0, 0x0dd3, 0x0dd4, 0x0dd5, 0x0dd6, 0x0dd7, 0x0dd8, 0x0dd9, 0x0dda, 0x0dd1,
-            0x0dd2, 0x0dd3, 0x0dd4, 0x0dd1, 0x0dd2, 0x0dd7, 0x0dd8, 0x0918, 0x0919, 0x091a, 0x091b,
-            0x0ddb, 0x0ddc, 0x0ddd, 0x0dde, 0x0dd1, 0x0dd2, 0x0ddb, 0x0ddc, 0x0e21, 0x0e22, 0x0e23,
-            0x0e24,
-        ];
         let i = self.game_state.memorized_tiles.count() as usize;
         let j = (self.game_state.dungeon.doors.door_open_counter() >> 1) as usize;
         let base = self
@@ -4362,10 +4334,22 @@ impl ZeldaState {
             .object_tracking
             .big_rock_starting_address();
         let entries = [
-            (base, DOOR_ANIM_TILES[j]),
-            (base.wrapping_add(2), DOOR_ANIM_TILES[j + 1]),
-            (base.wrapping_add(0x80), DOOR_ANIM_TILES[j + 2]),
-            (base.wrapping_add(0x82), DOOR_ANIM_TILES[j + 3]),
+            (
+                base,
+                OVERWORLD_DO_MAP_UPDATE32X32_FOR_SMASH_DOOR_ANIM_TILES[j],
+            ),
+            (
+                base.wrapping_add(2),
+                OVERWORLD_DO_MAP_UPDATE32X32_FOR_SMASH_DOOR_ANIM_TILES[j + 1],
+            ),
+            (
+                base.wrapping_add(0x80),
+                OVERWORLD_DO_MAP_UPDATE32X32_FOR_SMASH_DOOR_ANIM_TILES[j + 2],
+            ),
+            (
+                base.wrapping_add(0x82),
+                OVERWORLD_DO_MAP_UPDATE32X32_FOR_SMASH_DOOR_ANIM_TILES[j + 3],
+            ),
         ];
         for (n, (pos, tile)) in entries.into_iter().enumerate() {
             self.memorized_tile_mut().set_entry_addr(i + n * 2, pos);
@@ -4528,11 +4512,13 @@ impl ZeldaState {
             .wrapping_sub(self.game_state.player.follower_link.copied_y()) as u8;
         self.follower_link_state_mut().set_y_velocity(yd);
 
-        const X0: [i8; 10] = [0, 1, 1, 1, 2, 2, 2, 3, 3, 3];
-        const X1: [i8; 10] = [0, -1, -1, -1, -2, -2, -2, -3, -3, -3];
         let x_vel = self.game_state.player.follower_link.x_velocity_signed();
         let x_idx = x_vel.unsigned_abs() as usize;
-        let x_delta = if x_vel < 0 { X1[x_idx] } else { X0[x_idx] };
+        let x_delta = if x_vel < 0 {
+            LINK_HANDLE_DIAGONAL_KICKBACK_X_OFFSETS_1[x_idx]
+        } else {
+            LINK_HANDLE_DIAGONAL_KICKBACK_X_OFFSETS_0[x_idx]
+        };
         let x = self
             .game_state
             .player
@@ -4541,11 +4527,13 @@ impl ZeldaState {
             .wrapping_add(x_delta as i16 as u16);
         self.follower_link_state_mut().set_x(x);
 
-        const Y0: [i8; 10] = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3];
-        const Y1: [i8; 16] = [0, 1, 1, 2, 2, 2, 3, 3, 3, 3, -91, 48, -16, 4, -91, 49];
         let y_vel = self.game_state.player.follower_link.y_velocity_signed();
         let y_idx = y_vel.unsigned_abs() as usize;
-        let y_delta = if y_vel < 0 { Y1[y_idx] } else { Y0[y_idx] };
+        let y_delta = if y_vel < 0 {
+            LINK_HANDLE_DIAGONAL_KICKBACK_Y_OFFSETS_1[y_idx]
+        } else {
+            LINK_HANDLE_DIAGONAL_KICKBACK_Y_OFFSETS_0[y_idx]
+        };
         let y = self
             .game_state
             .player
@@ -4929,7 +4917,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_handle_cape_passive_lift_check(&mut self) {
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self
             .game_state
             .player
@@ -4938,7 +4925,7 @@ impl ZeldaState {
             || (self
                 .game_state
                 .enhanced_features
-                .has(FEATURES0_MISC_BUG_FIXES)
+                .has(LINK_HANDLE_CAPE_PASSIVE_LIFT_CHECK_FEATURES0_MISC_BUG_FIXES)
                 && self
                     .game_state
                     .player
@@ -4950,7 +4937,6 @@ impl ZeldaState {
     }
 
     pub(super) fn player_check_handle_cape_stuff(&mut self) {
-        const CAPE_DEPLETION_TIMERS: [u8; 3] = [4, 8, 8];
         if !self.game_state.player.follower_link.is_cape_active()
             || self.game_state.player.follower_link.current_item_active() != 19
         {
@@ -4970,7 +4956,7 @@ impl ZeldaState {
             {
                 return;
             }
-            let cape_timer = CAPE_DEPLETION_TIMERS[self
+            let cape_timer = PLAYER_CHECK_HANDLE_CAPE_STUFF_CAPE_DEPLETION_TIMERS[self
                 .game_state
                 .player
                 .follower_link
@@ -5001,16 +4987,13 @@ impl ZeldaState {
     }
 
     pub(super) fn link_check_magic_cost(&mut self, item: u8) -> bool {
-        const LINK_ITEM_MAGIC_COSTS: [u8; 27] = [
-            16, 8, 4, 32, 16, 8, 8, 4, 2, 8, 4, 2, 8, 4, 2, 16, 8, 4, 4, 2, 2, 8, 4, 2, 16, 8, 4,
-        ];
         let idx = item as usize * 3
             + self
                 .game_state
                 .player
                 .follower_link
                 .magic_consumption_level() as usize;
-        let cost = LINK_ITEM_MAGIC_COSTS[idx];
+        let cost = LINK_CHECK_MAGIC_COST_LINK_ITEM_MAGIC_COSTS[idx];
         if self.follower_link_state_mut().spend_magic(cost) {
             return true;
         }
@@ -5023,21 +5006,18 @@ impl ZeldaState {
     }
 
     pub(super) fn refund_magic(&mut self, item: u8) {
-        const LINK_ITEM_MAGIC_COSTS: [u8; 27] = [
-            16, 8, 4, 32, 16, 8, 8, 4, 2, 8, 4, 2, 8, 4, 2, 16, 8, 4, 4, 2, 2, 8, 4, 2, 16, 8, 4,
-        ];
         let idx = item as usize * 3
             + self
                 .game_state
                 .player
                 .follower_link
                 .magic_consumption_level() as usize;
-        let cost = LINK_ITEM_MAGIC_COSTS[idx];
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
+        let cost = REFUND_MAGIC_LINK_ITEM_MAGIC_COSTS[idx];
+
         let clamp_full = self
             .game_state
             .enhanced_features
-            .has(FEATURES0_MISC_BUG_FIXES);
+            .has(REFUND_MAGIC_FEATURES0_MISC_BUG_FIXES);
         self.follower_link_state_mut()
             .refund_magic(cost, clamp_full);
     }
@@ -5051,9 +5031,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_item_cape(&mut self) {
-        const CAPE_DEPLETION_TIMERS: [u8; 3] = [4, 8, 8];
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
-
         if !self.game_state.player.follower_link.is_cape_active() {
             if (self.follower_link_state_mut().tick_cape_transform_timer() as i8) >= 0 {
                 self.follower_link_state_mut().clear_direction_flags(0x0f);
@@ -5078,7 +5055,7 @@ impl ZeldaState {
 
             self.follower_link_state_mut().clear_action_handler_timer();
             self.follower_link_state_mut().set_cape_mode(1);
-            let cape_timer = CAPE_DEPLETION_TIMERS[self
+            let cape_timer = LINK_ITEM_CAPE_CAPE_DEPLETION_TIMERS[self
                 .game_state
                 .player
                 .follower_link
@@ -5105,7 +5082,7 @@ impl ZeldaState {
             .cape_decrement_counter()
             == 0
         {
-            let cape_timer = CAPE_DEPLETION_TIMERS[self
+            let cape_timer = LINK_ITEM_CAPE_CAPE_DEPLETION_TIMERS[self
                 .game_state
                 .player
                 .follower_link
@@ -5117,7 +5094,7 @@ impl ZeldaState {
                 && self
                     .game_state
                     .enhanced_features
-                    .has(FEATURES0_MISC_BUG_FIXES)
+                    .has(LINK_ITEM_CAPE_FEATURES0_MISC_BUG_FIXES)
             {
                 self.link_force_unequip_cape();
                 return;
@@ -5137,7 +5114,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_item_rod(&mut self) {
-        const ROD_ANIM_DELAYS: [u8; 3] = [3, 3, 5];
         if self.game_state.player.follower_link.button_mask_b_y() & 0x40 == 0 {
             if self.game_state.player.follower_link.doorway_state() != 0
                 || !self.check_y_button_press()
@@ -5157,7 +5133,7 @@ impl ZeldaState {
                 self.ancilla_add_ice_rod_shot(11, 1);
             }
             self.follower_link_state_mut()
-                .set_spin_attack_delay_timer(ROD_ANIM_DELAYS[0]);
+                .set_spin_attack_delay_timer(LINK_ITEM_ROD_ROD_ANIM_DELAYS[0]);
             self.follower_link_state_mut().clear_animation_step();
             self.follower_link_state_mut().clear_action_handler_timer();
             self.follower_link_state_mut().set_item_in_hand(1);
@@ -5174,9 +5150,9 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .increment_action_handler_timer();
         let step = self.game_state.player.follower_link.action_handler_timer() as usize;
-        if step < ROD_ANIM_DELAYS.len() {
+        if step < LINK_ITEM_ROD_ROD_ANIM_DELAYS.len() {
             self.follower_link_state_mut()
-                .set_spin_attack_delay_timer(ROD_ANIM_DELAYS[step]);
+                .set_spin_attack_delay_timer(LINK_ITEM_ROD_ROD_ANIM_DELAYS[step]);
             return;
         }
         self.follower_link_state_mut()
@@ -5191,7 +5167,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_item_hammer(&mut self) {
-        const HAMMER_ANIM_DELAYS: [u8; 3] = [3, 3, 16];
         if self.game_state.player.follower_link.item_in_hand_has(0x10) {
             return;
         }
@@ -5204,7 +5179,7 @@ impl ZeldaState {
             self.follower_link_state_mut()
                 .add_button_mask_b_y_bits(0x40);
             self.follower_link_state_mut()
-                .set_spin_attack_delay_timer(HAMMER_ANIM_DELAYS[0]);
+                .set_spin_attack_delay_timer(LINK_ITEM_HAMMER_HAMMER_ANIM_DELAYS[0]);
             self.follower_link_state_mut().set_direction_lock_bits(1);
             self.follower_link_state_mut().clear_animation_step();
             self.follower_link_state_mut().clear_action_handler_timer();
@@ -5223,7 +5198,8 @@ impl ZeldaState {
             .increment_action_handler_timer();
         let step = self.game_state.player.follower_link.action_handler_timer() as usize;
         self.follower_link_state_mut().set_spin_attack_delay_timer(
-            HAMMER_ANIM_DELAYS[step.min(HAMMER_ANIM_DELAYS.len() - 1)],
+            LINK_ITEM_HAMMER_HAMMER_ANIM_DELAYS
+                [step.min(LINK_ITEM_HAMMER_HAMMER_ANIM_DELAYS.len() - 1)],
         );
         if self.game_state.player.follower_link.action_handler_timer() == 1 {
             self.tile_detect_main_handler(3);
@@ -5244,7 +5220,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_item_bow(&mut self) {
-        const BOW_DELAYS: [u8; 3] = [3, 3, 8];
         if self.game_state.player.follower_link.button_mask_b_y() & 0x40 == 0 {
             if self.game_state.player.follower_link.doorway_state() != 0
                 || !self.check_y_button_press()
@@ -5253,7 +5228,7 @@ impl ZeldaState {
             }
             self.follower_link_state_mut().set_direction_lock_bits(1);
             self.follower_link_state_mut()
-                .set_spin_attack_delay_timer(BOW_DELAYS[0]);
+                .set_spin_attack_delay_timer(LINK_ITEM_BOW_BOW_DELAYS[0]);
             self.follower_link_state_mut().clear_animation_step();
             self.follower_link_state_mut().clear_action_handler_timer();
             self.follower_link_state_mut().set_item_in_hand(16);
@@ -5270,9 +5245,9 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .increment_action_handler_timer();
         let step = self.game_state.player.follower_link.action_handler_timer() as usize;
-        if step < BOW_DELAYS.len() {
+        if step < LINK_ITEM_BOW_BOW_DELAYS.len() {
             self.follower_link_state_mut()
-                .set_spin_attack_delay_timer(BOW_DELAYS[step]);
+                .set_spin_attack_delay_timer(LINK_ITEM_BOW_BOW_DELAYS[step]);
             return;
         }
 
@@ -5594,14 +5569,9 @@ impl ZeldaState {
         };
 
         self.follower_link_state_mut().set_item_receipt_method(1);
-        const RECEIVE_ITEM_ALTERNATES: [u8; 76] = [
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 68, 255, 255, 255, 255,
-            255, 53, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 70, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255,
-        ];
-        if let Some(&alternate) = RECEIVE_ITEM_ALTERNATES.get(item as usize) {
+
+        if let Some(&alternate) = LINK_PERFORM_OPEN_CHEST_RECEIVE_ITEM_ALTERNATES.get(item as usize)
+        {
             if alternate != 0xff {
                 let ram_addr = player_memory_location_to_give_item_to(item);
                 if self.item_memory_value(ram_addr) != 0 {
@@ -5659,12 +5629,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_a_press_lift_carry_throw(&mut self) {
-        const LIFT_THROW_ACTION_TIMERS: [u8; 10] = [8, 24, 8, 24, 8, 32, 6, 8, 13, 13];
-        const LIFT_THROW_ACTION_STEPS: [u8; 10] = [0, 1, 0, 1, 0, 1, 0, 1, 2, 3];
-        const LIFT_THROW_SEQUENCE_TIMERS: [u8; 29] = [
-            6, 7, 7, 5, 10, 0, 23, 0, 18, 0, 18, 0, 8, 0, 8, 0, 254, 255, 17, 0, 0x54, 0x52, 0x50,
-            0xff, 0x51, 0x53, 0x55, 0x56, 0x57,
-        ];
         if !self.game_state.player.follower_link.has_action_state() {
             return;
         }
@@ -5719,10 +5683,12 @@ impl ZeldaState {
                 self.follower_link_state_mut()
                     .increment_action_handler_timer();
                 let timer = self.game_state.player.follower_link.action_handler_timer() as usize;
-                self.follower_link_state_mut()
-                    .set_y_button_action_timer(LIFT_THROW_ACTION_TIMERS[timer]);
-                self.follower_link_state_mut()
-                    .set_y_button_action_step(LIFT_THROW_ACTION_STEPS[timer]);
+                self.follower_link_state_mut().set_y_button_action_timer(
+                    LINK_A_PRESS_LIFT_CARRY_THROW_LIFT_THROW_ACTION_TIMERS[timer],
+                );
+                self.follower_link_state_mut().set_y_button_action_step(
+                    LINK_A_PRESS_LIFT_CARRY_THROW_LIFT_THROW_ACTION_STEPS[timer],
+                );
                 if self.game_state.player.follower_link.action_handler_timer() == 6 {
                     self.dungeon_secret_scratch_mut().clear_pending_kind();
                     let (what, x, y) = if self.game_state.world.location.is_indoors() {
@@ -5744,7 +5710,7 @@ impl ZeldaState {
             }
         } else {
             if self.game_state.player.follower_link.y_button_action_step() as usize
-                >= LIFT_THROW_SEQUENCE_TIMERS.len() - 1
+                >= LINK_A_PRESS_LIFT_CARRY_THROW_LIFT_THROW_SEQUENCE_TIMERS.len() - 1
             {
                 return;
             }
@@ -5757,7 +5723,8 @@ impl ZeldaState {
             self.follower_link_state_mut()
                 .set_y_button_action_step(y_button_action_step);
             self.follower_link_state_mut().set_y_button_action_timer(
-                LIFT_THROW_SEQUENCE_TIMERS[y_button_action_step as usize],
+                LINK_A_PRESS_LIFT_CARRY_THROW_LIFT_THROW_SEQUENCE_TIMERS
+                    [y_button_action_step as usize],
             );
             if self.game_state.player.follower_link.y_button_action_step() != 3 {
                 return;
@@ -5768,18 +5735,18 @@ impl ZeldaState {
     }
 
     pub(super) fn link_a_press_pull_object(&mut self) {
-        const GRAB_WALL_DIRS: [u8; 4] = [4, 8, 1, 2];
-        const GRAB_WALL_ANIM_STEPS: [u8; 7] = [0, 1, 2, 3, 1, 2, 3];
-        const GRAB_WALL_ANIM_TIMER: [u8; 7] = [0, 5, 5, 12, 5, 5, 12];
         self.follower_link_state_mut().clear_direction_flags(0x0f);
         let facing = self.game_state.player.follower_link.facing_index();
-        if GRAB_WALL_DIRS[facing] & self.game_state.player.follower_link.joypad1h_last() == 0 {
+        if LINK_A_PRESS_PULL_OBJECT_GRAB_WALL_DIRS[facing]
+            & self.game_state.player.follower_link.joypad1h_last()
+            == 0
+        {
             self.follower_link_state_mut().clear_item_action_step_var();
             let step = self.game_state.player.follower_link.item_action_step_var() as usize;
             self.follower_link_state_mut()
-                .set_y_button_action_step(GRAB_WALL_ANIM_STEPS[step]);
+                .set_y_button_action_step(LINK_A_PRESS_PULL_OBJECT_GRAB_WALL_ANIM_STEPS[step]);
             self.follower_link_state_mut()
-                .set_y_button_action_timer(GRAB_WALL_ANIM_TIMER[step]);
+                .set_y_button_action_timer(LINK_A_PRESS_PULL_OBJECT_GRAB_WALL_ANIM_TIMER[step]);
         } else {
             self.follower_link_state_mut()
                 .decrement_y_button_action_timer();
@@ -5789,9 +5756,9 @@ impl ZeldaState {
                     .advance_item_action_step_var_wrapping_7_to_1()
                     as usize;
                 self.follower_link_state_mut()
-                    .set_y_button_action_step(GRAB_WALL_ANIM_STEPS[step]);
+                    .set_y_button_action_step(LINK_A_PRESS_PULL_OBJECT_GRAB_WALL_ANIM_STEPS[step]);
                 self.follower_link_state_mut()
-                    .set_y_button_action_timer(GRAB_WALL_ANIM_TIMER[step]);
+                    .set_y_button_action_timer(LINK_A_PRESS_PULL_OBJECT_GRAB_WALL_ANIM_TIMER[step]);
             }
         }
         if self.game_state.player.follower_link.joypad1l_last() & 0x80 == 0 {
@@ -5804,12 +5771,10 @@ impl ZeldaState {
     }
 
     pub(super) fn link_a_press_statue_drag(&mut self) {
-        const GRAB_WALL_DIRS: [u8; 4] = [4, 8, 1, 2];
-        const GRAB_WALL_ANIM_STEPS: [u8; 7] = [0, 1, 2, 3, 1, 2, 3];
-        const GRAB_WALL_ANIM_TIMER: [u8; 7] = [0, 5, 5, 12, 5, 5, 12];
         self.follower_link_state_mut().set_speed_setting(20);
         let j = self.game_state.player.follower_link.joypad1h_last()
-            & GRAB_WALL_DIRS[self.game_state.player.follower_link.facing_index()];
+            & LINK_A_PRESS_STATUE_DRAG_GRAB_WALL_DIRS
+                [self.game_state.player.follower_link.facing_index()];
         if j == 0 {
             self.follower_link_state_mut()
                 .clear_movement_velocity_and_direction();
@@ -5830,9 +5795,9 @@ impl ZeldaState {
         }
         let step = self.game_state.player.follower_link.item_action_step_var() as usize;
         self.follower_link_state_mut()
-            .set_y_button_action_step(GRAB_WALL_ANIM_STEPS[step]);
+            .set_y_button_action_step(LINK_A_PRESS_STATUE_DRAG_GRAB_WALL_ANIM_STEPS[step]);
         self.follower_link_state_mut()
-            .set_y_button_action_timer(GRAB_WALL_ANIM_TIMER[step]);
+            .set_y_button_action_timer(LINK_A_PRESS_STATUE_DRAG_GRAB_WALL_ANIM_TIMER[step]);
         if self.game_state.player.follower_link.joypad1l_last() & 0x80 == 0 {
             self.link_a_press_statue_drag_release();
         }
@@ -5849,7 +5814,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_item_bombs(&mut self) {
-        const FEATURES0_MORE_ACTIVE_BOMBS: u32 = 1 << 2;
         if self.game_state.player.follower_link.doorway_state() != 0
             || self.game_state.sprites.follower_runtime.indicator() == 13
             || !self.check_y_button_press()
@@ -5861,7 +5825,7 @@ impl ZeldaState {
         let limit = if self
             .game_state
             .enhanced_features
-            .has(FEATURES0_MORE_ACTIVE_BOMBS)
+            .has(LINK_ITEM_BOMBS_FEATURES0_MORE_ACTIVE_BOMBS)
         {
             3
         } else {
@@ -6013,8 +5977,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_item_powder(&mut self) {
-        const MUSHROOM_TIMER: [u8; 10] = [2, 1, 1, 3, 2, 2, 2, 2, 6, 0];
-
         if self.game_state.player.follower_link.button_mask_b_y() & 0x40 == 0 {
             if self.game_state.player.follower_link.doorway_state() != 0
                 || !self.check_y_button_press()
@@ -6031,7 +5993,7 @@ impl ZeldaState {
                 return;
             }
             self.follower_link_state_mut()
-                .set_spin_attack_delay_timer(MUSHROOM_TIMER[0]);
+                .set_spin_attack_delay_timer(LINK_ITEM_POWDER_MUSHROOM_TIMER[0]);
             self.follower_link_state_mut().clear_action_handler_timer();
             self.follower_link_state_mut().clear_animation_step();
             self.follower_link_state_mut().clear_direction_flags(0x0f);
@@ -6055,7 +6017,7 @@ impl ZeldaState {
             .increment_action_handler_timer();
         let step = self.game_state.player.follower_link.action_handler_timer() as usize;
         self.follower_link_state_mut()
-            .set_spin_attack_delay_timer(MUSHROOM_TIMER[step]);
+            .set_spin_attack_delay_timer(LINK_ITEM_POWDER_MUSHROOM_TIMER[step]);
         if self.game_state.player.follower_link.action_handler_timer() == 4 {
             self.ancilla_add_magic_powder(26, 0);
         }
@@ -6076,8 +6038,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_item_shovel(&mut self) {
-        const SHOVEL_ANIM_DELAY: [u8; 6] = [7, 18, 16, 7, 18, 16];
-        const SHOVEL_ANIM_DELAY2: [u8; 6] = [0, 1, 2, 0, 1, 2];
         if self.game_state.player.follower_link.button_mask_b_y() & 0x40 == 0 {
             if self.game_state.player.follower_link.doorway_state() != 0
                 || !self.check_y_button_press()
@@ -6085,7 +6045,7 @@ impl ZeldaState {
                 return;
             }
             self.follower_link_state_mut()
-                .set_spin_attack_delay_timer(SHOVEL_ANIM_DELAY[0]);
+                .set_spin_attack_delay_timer(LINK_ITEM_SHOVEL_SHOVEL_ANIM_DELAY[0]);
             self.follower_link_state_mut().clear_item_action_step_var();
             self.follower_link_state_mut().clear_action_handler_timer();
             self.follower_link_state_mut().set_position_mode(1);
@@ -6105,9 +6065,9 @@ impl ZeldaState {
             .follower_link_state_mut()
             .increment_item_action_step_var() as usize;
         self.follower_link_state_mut()
-            .set_spin_attack_delay_timer(SHOVEL_ANIM_DELAY[step]);
+            .set_spin_attack_delay_timer(LINK_ITEM_SHOVEL_SHOVEL_ANIM_DELAY[step]);
         self.follower_link_state_mut()
-            .set_action_handler_timer(SHOVEL_ANIM_DELAY2[step]);
+            .set_action_handler_timer(LINK_ITEM_SHOVEL_SHOVEL_ANIM_DELAY2[step]);
 
         if self.game_state.player.follower_link.action_handler_timer() == 1 {
             self.tile_detect_main_handler(2);
@@ -6309,32 +6269,33 @@ impl ZeldaState {
     }
 
     pub(super) fn link_item_ether(&mut self) {
-        const ETHER_ANIM_DELAYS: [u8; 12] = [5, 5, 5, 5, 5, 5, 5, 5, 7, 7, 3, 3];
-        const ETHER_ANIM_STATES: [u8; 12] = [0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7];
-        self.start_medallion_item(8, ETHER_ANIM_DELAYS[0], ETHER_ANIM_STATES[0], None);
+        self.start_medallion_item(
+            8,
+            LINK_ITEM_ETHER_ETHER_ANIM_DELAYS[0],
+            LINK_ITEM_ETHER_ETHER_ANIM_STATES[0],
+            None,
+        );
     }
 
     pub(super) fn link_item_bombos(&mut self) {
-        const BOMBOS_ANIM_DELAYS: [u8; 20] =
-            [5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 7, 1, 1, 1, 1, 1, 13];
-        const BOMBOS_ANIM_STATES: [u8; 20] = [
-            0, 1, 2, 3, 0, 1, 2, 3, 8, 9, 10, 11, 12, 10, 8, 13, 14, 15, 16, 17,
-        ];
-        self.start_medallion_item(9, BOMBOS_ANIM_DELAYS[0], BOMBOS_ANIM_STATES[0], None);
+        self.start_medallion_item(
+            9,
+            LINK_ITEM_BOMBOS_BOMBOS_ANIM_DELAYS[0],
+            LINK_ITEM_BOMBOS_BOMBOS_ANIM_STATES[0],
+            None,
+        );
     }
 
     pub(super) fn link_item_quake(&mut self) {
-        const QUAKE_ANIM_DELAYS: [u8; 12] = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 19];
-        const QUAKE_ANIM_STATES: [u8; 12] = [0, 1, 2, 3, 0, 1, 2, 3, 18, 19, 20, 22];
-        self.start_medallion_item(10, QUAKE_ANIM_DELAYS[0], QUAKE_ANIM_STATES[0], Some(()));
+        self.start_medallion_item(
+            10,
+            LINK_ITEM_QUAKE_QUAKE_ANIM_DELAYS[0],
+            LINK_ITEM_QUAKE_QUAKE_ANIM_STATES[0],
+            Some(()),
+        );
     }
 
     pub(super) fn link_state_using_ether(&mut self) {
-        const ETHER_ANIM_DELAYS: [u8; 12] = [5, 5, 5, 5, 5, 5, 5, 5, 7, 7, 3, 3];
-        const ETHER_ANIM_DELAYS_NO_FLASH: [u8; 12] = [5, 5, 5, 5, 5, 5, 5, 5, 7, 7, 24, 24];
-        const ETHER_ANIM_STATES: [u8; 12] = [0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7];
-        const FEATURES0_DIM_FLASHES: u32 = 65536;
-
         self.increment_modal_pause_flag();
         if (self
             .follower_link_state_mut()
@@ -6378,15 +6339,19 @@ impl ZeldaState {
             .player
             .follower_link
             .spin_animation_step_counter() as usize;
-        let delays = if self.game_state.enhanced_features.has(FEATURES0_DIM_FLASHES) {
-            ETHER_ANIM_DELAYS_NO_FLASH
+        let delays = if self
+            .game_state
+            .enhanced_features
+            .has(LINK_STATE_USING_ETHER_FEATURES0_DIM_FLASHES)
+        {
+            LINK_STATE_USING_ETHER_ETHER_ANIM_DELAYS_NO_FLASH
         } else {
-            ETHER_ANIM_DELAYS
+            LINK_STATE_USING_ETHER_ETHER_ANIM_DELAYS
         };
         self.follower_link_state_mut()
             .set_spin_attack_delay_timer(delays[step]);
         self.follower_link_state_mut()
-            .set_state_for_spin_attack(ETHER_ANIM_STATES[step]);
+            .set_state_for_spin_attack(LINK_STATE_USING_ETHER_ETHER_ANIM_STATES[step]);
         if self
             .game_state
             .player
@@ -6409,12 +6374,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_state_using_bombos(&mut self) {
-        const BOMBOS_ANIM_DELAYS: [u8; 20] =
-            [5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 7, 1, 1, 1, 1, 1, 13];
-        const BOMBOS_ANIM_STATES: [u8; 20] = [
-            0, 1, 2, 3, 0, 1, 2, 3, 8, 9, 10, 11, 12, 10, 8, 13, 14, 15, 16, 17,
-        ];
-
         self.increment_modal_pause_flag();
         if (self
             .follower_link_state_mut()
@@ -6458,9 +6417,9 @@ impl ZeldaState {
             .follower_link
             .spin_animation_step_counter() as usize;
         self.follower_link_state_mut()
-            .set_spin_attack_delay_timer(BOMBOS_ANIM_DELAYS[step]);
+            .set_spin_attack_delay_timer(LINK_STATE_USING_BOMBOS_BOMBOS_ANIM_DELAYS[step]);
         self.follower_link_state_mut()
-            .set_state_for_spin_attack(BOMBOS_ANIM_STATES[step]);
+            .set_state_for_spin_attack(LINK_STATE_USING_BOMBOS_BOMBOS_ANIM_STATES[step]);
         if self
             .game_state
             .player
@@ -6483,8 +6442,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_state_using_quake(&mut self) {
-        const QUAKE_ANIM_DELAYS: [u8; 12] = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 19];
-        const QUAKE_ANIM_STATES: [u8; 12] = [0, 1, 2, 3, 0, 1, 2, 3, 18, 19, 20, 22];
         self.increment_modal_pause_flag();
         self.follower_link_state_mut().clear_actual_velocity_xy();
 
@@ -6567,9 +6524,9 @@ impl ZeldaState {
             .follower_link
             .spin_animation_step_counter() as usize;
         self.follower_link_state_mut()
-            .set_spin_attack_delay_timer(QUAKE_ANIM_DELAYS[step]);
+            .set_spin_attack_delay_timer(LINK_STATE_USING_QUAKE_QUAKE_ANIM_DELAYS[step]);
         self.follower_link_state_mut()
-            .set_state_for_spin_attack(QUAKE_ANIM_STATES[step]);
+            .set_state_for_spin_attack(LINK_STATE_USING_QUAKE_QUAKE_ANIM_STATES[step]);
         if self
             .game_state
             .player
@@ -6605,7 +6562,6 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .clear_button_mask_b_y_bits(0x40);
 
-        const FEATURES0_MIRROR_TO_DARKWORLD: u32 = 8;
         if self.game_state.player.follower_link.doorway_state() != 0
             || (self
                 .game_state
@@ -6616,7 +6572,7 @@ impl ZeldaState {
                 && !self
                     .game_state
                     .enhanced_features
-                    .has(FEATURES0_MIRROR_TO_DARKWORLD)
+                    .has(LINK_ITEM_MIRROR_FEATURES0_MIRROR_TO_DARKWORLD)
                 && self.game_state.world.location.is_outdoors()
                 && u16::from(self.game_state.world.location.overworld_screen_index()) & 0x40 == 0)
         {
@@ -6781,11 +6737,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_state_hookshotting(&mut self) {
-        const HOOKSHOT_TARGET_Y_OFFSETS: [i8; 4] = [-8, -16, 0, 0];
-        const HOOKSHOT_TARGET_X_OFFSETS: [i8; 4] = [0, 0, 4, -12];
-        const HOOKSHOT_PULL_Y_VELOCITIES: [u8; 4] = [0xc0, 0x40, 0, 0];
-        const HOOKSHOT_PULL_X_VELOCITIES: [u8; 4] = [0, 0, 0xc0, 0x40];
-
         self.follower_link_state_mut().clear_given_damage();
         self.follower_link_state_mut().clear_auxiliary_state();
         self.follower_link_state_mut().set_incapacitated_timer(0);
@@ -6849,17 +6800,19 @@ impl ZeldaState {
             let dir = hookshot.direction() as usize;
             let x = hookshot.x();
             let y = hookshot.y();
-            let target_y = y.wrapping_add(HOOKSHOT_TARGET_Y_OFFSETS[dir] as i16 as u16);
-            let target_x = x.wrapping_add(HOOKSHOT_TARGET_X_OFFSETS[dir] as i16 as u16);
+            let target_y = y
+                .wrapping_add(LINK_STATE_HOOKSHOTTING_HOOKSHOT_TARGET_Y_OFFSETS[dir] as i16 as u16);
+            let target_x = x
+                .wrapping_add(LINK_STATE_HOOKSHOTTING_HOOKSHOT_TARGET_X_OFFSETS[dir] as i16 as u16);
             let yd = target_y.wrapping_sub(self.game_state.player.follower_link.y()) as i16;
             let mut actual_y_velocity = 0;
             if yd.wrapping_abs() >= 2 {
-                actual_y_velocity = HOOKSHOT_PULL_Y_VELOCITIES[dir];
+                actual_y_velocity = LINK_STATE_HOOKSHOTTING_HOOKSHOT_PULL_Y_VELOCITIES[dir];
             }
             let xd = target_x.wrapping_sub(self.game_state.player.follower_link.x()) as i16;
             let mut actual_x_velocity = 0;
             if xd.wrapping_abs() >= 2 {
-                actual_x_velocity = HOOKSHOT_PULL_X_VELOCITIES[dir];
+                actual_x_velocity = LINK_STATE_HOOKSHOTTING_HOOKSHOT_PULL_X_VELOCITIES[dir];
             }
             self.follower_link_state_mut()
                 .set_actual_velocity_xy(actual_x_velocity, actual_y_velocity);
@@ -6993,9 +6946,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_item_cane_of_somaria(&mut self) {
-        const ROD_ANIM_DELAYS: [u8; 3] = [3, 3, 5];
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
-
         if self.game_state.player.follower_link.button_mask_b_y() & 0x40 == 0 {
             if self
                 .game_state
@@ -7014,7 +6964,7 @@ impl ZeldaState {
                     if self
                         .game_state
                         .enhanced_features
-                        .has(FEATURES0_MISC_BUG_FIXES)
+                        .has(LINK_ITEM_CANE_OF_SOMARIA_FEATURES0_MISC_BUG_FIXES)
                     {
                         self.follower_link_state_mut()
                             .clear_button_mask_b_y_bits(0x40);
@@ -7031,13 +6981,13 @@ impl ZeldaState {
                     || !self
                         .game_state
                         .enhanced_features
-                        .has(FEATURES0_MISC_BUG_FIXES)
+                        .has(LINK_ITEM_CANE_OF_SOMARIA_FEATURES0_MISC_BUG_FIXES)
                 {
                     self.refund_magic(4);
                 }
             }
             self.follower_link_state_mut()
-                .set_spin_attack_delay_timer(ROD_ANIM_DELAYS[0]);
+                .set_spin_attack_delay_timer(LINK_ITEM_CANE_OF_SOMARIA_ROD_ANIM_DELAYS[0]);
             self.follower_link_state_mut().clear_animation_step();
             self.follower_link_state_mut().clear_action_handler_timer();
             self.follower_link_state_mut().clear_item_in_hand();
@@ -7057,9 +7007,9 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .increment_action_handler_timer();
         let step = self.game_state.player.follower_link.action_handler_timer() as usize;
-        if step < ROD_ANIM_DELAYS.len() {
+        if step < LINK_ITEM_CANE_OF_SOMARIA_ROD_ANIM_DELAYS.len() {
             self.follower_link_state_mut()
-                .set_spin_attack_delay_timer(ROD_ANIM_DELAYS[step]);
+                .set_spin_attack_delay_timer(LINK_ITEM_CANE_OF_SOMARIA_ROD_ANIM_DELAYS[step]);
             return;
         }
         self.follower_link_state_mut().set_speed_setting(0);
@@ -7074,7 +7024,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_item_cane_of_byrna(&mut self) {
-        const BYRNA_DELAYS: [u8; 4] = [19, 7, 13, 32];
         if self.search_for_byrna_spark() {
             return;
         }
@@ -7092,7 +7041,7 @@ impl ZeldaState {
             self.follower_link_state_mut()
                 .clear_spin_attack_step_counter();
             self.follower_link_state_mut()
-                .set_spin_attack_delay_timer(BYRNA_DELAYS[0]);
+                .set_spin_attack_delay_timer(LINK_ITEM_CANE_OF_BYRNA_BYRNA_DELAYS[0]);
             self.follower_link_state_mut().clear_item_action_step_var();
             self.follower_link_state_mut().clear_action_handler_timer();
             self.follower_link_state_mut().set_position_mode(8);
@@ -7114,7 +7063,7 @@ impl ZeldaState {
             .increment_action_handler_timer();
         let step = self.game_state.player.follower_link.action_handler_timer() as usize;
         self.follower_link_state_mut()
-            .set_spin_attack_delay_timer(BYRNA_DELAYS[step]);
+            .set_spin_attack_delay_timer(LINK_ITEM_CANE_OF_BYRNA_BYRNA_DELAYS[step]);
         if self.game_state.player.follower_link.action_handler_timer() == 1 {
             self.ancilla_sfx3_near(42);
         } else if self.game_state.player.follower_link.action_handler_timer() == 3 {
@@ -7123,10 +7072,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_item_net(&mut self) {
-        const BUG_NET_TIMERS: [u8; 40] = [
-            11, 6, 7, 8, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 9, 4, 5, 6, 7, 8, 1, 2, 3,
-            4, 10, 8, 1, 2, 3, 4, 5, 6, 7, 8,
-        ];
         let base = self.game_state.player.follower_link.facing_index() * 10;
         if self.game_state.player.follower_link.button_mask_b_y() & 0x40 == 0 {
             if self.game_state.player.follower_link.doorway_state() != 0
@@ -7135,7 +7080,7 @@ impl ZeldaState {
                 return;
             }
             self.follower_link_state_mut()
-                .set_action_handler_timer(BUG_NET_TIMERS[base]);
+                .set_action_handler_timer(LINK_ITEM_NET_BUG_NET_TIMERS[base]);
             self.follower_link_state_mut()
                 .set_spin_attack_delay_timer(3);
             self.follower_link_state_mut().clear_item_action_step_var();
@@ -7173,7 +7118,7 @@ impl ZeldaState {
 
         let index = base + self.game_state.player.follower_link.item_action_step_var() as usize;
         self.follower_link_state_mut()
-            .set_action_handler_timer(BUG_NET_TIMERS[index]);
+            .set_action_handler_timer(LINK_ITEM_NET_BUG_NET_TIMERS[index]);
     }
 
     pub(super) fn ancilla_add_dug_up_flute(&mut self, ty: u8, limit: u8) {
@@ -7291,11 +7236,6 @@ impl ZeldaState {
     }
 
     fn ancilla_add_hookshot_inner(&mut self, a: u8, y: u8) -> Option<usize> {
-        const HOOKSHOT_Y_VEL: [u8; 4] = [0xc0, 0x40, 0, 0];
-        const HOOKSHOT_X_VEL: [u8; 4] = [0, 0, 0xc0, 0x40];
-        const HOOKSHOT_Y_DELTA: [i16; 4] = [4, 20, 8, 8];
-        const HOOKSHOT_X_DELTA: [i16; 4] = [0, 0, -4, 11];
-
         let k = self.ancilla_add_simple(a, y)?;
         self.follower_link_state_mut().clear_hookshot_interlock();
         self.messaging_state_mut().set_effect_index(k as u8);
@@ -7311,21 +7251,21 @@ impl ZeldaState {
             hookshot.set_item_to_link(0);
             hookshot.set_timer(0);
             hookshot.set_direction(dir);
-            hookshot.set_x_velocity(HOOKSHOT_X_VEL[dir as usize]);
-            hookshot.set_y_velocity(HOOKSHOT_Y_VEL[dir as usize]);
+            hookshot.set_x_velocity(ANCILLA_ADD_HOOKSHOT_INNER_HOOKSHOT_X_VEL[dir as usize]);
+            hookshot.set_y_velocity(ANCILLA_ADD_HOOKSHOT_INNER_HOOKSHOT_Y_VEL[dir as usize]);
         }
         let x = self
             .game_state
             .player
             .follower_link
             .x()
-            .wrapping_add(HOOKSHOT_X_DELTA[dir as usize] as u16);
+            .wrapping_add(ANCILLA_ADD_HOOKSHOT_INNER_HOOKSHOT_X_DELTA[dir as usize] as u16);
         let y = self
             .game_state
             .player
             .follower_link
             .y()
-            .wrapping_add(HOOKSHOT_Y_DELTA[dir as usize] as u16);
+            .wrapping_add(ANCILLA_ADD_HOOKSHOT_INNER_HOOKSHOT_Y_DELTA[dir as usize] as u16);
         self.ancilla_set_xy(k, x, y);
         Some(k)
     }
@@ -7981,11 +7921,10 @@ impl ZeldaState {
             return;
         }
 
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self
             .game_state
             .enhanced_features
-            .has(FEATURES0_MISC_BUG_FIXES)
+            .has(HANDLE_DUNGEON_LANDING_FROM_PIT_FEATURES0_MISC_BUG_FIXES)
         {
             self.follower_link_state_mut()
                 .clear_about_to_jump_off_ledge();
@@ -8794,15 +8733,13 @@ impl ZeldaState {
             return;
         }
 
-        const DASH_SFX_TRIGGER_MASKS: [u8; 3] = [7, 15, 15];
-        const DASH_DIRECTION_BITS_BY_FACING: [u8; 4] = [8, 4, 2, 1];
         let mut a = self.game_state.player.follower_link.dash_countdown();
         if a == 0 {
             a = self.game_state.player.follower_link.index_of_dashing_sfx();
             self.follower_link_state_mut()
                 .decrement_index_of_dashing_sfx();
         }
-        if DASH_SFX_TRIGGER_MASKS
+        if LINK_STATE_DASHING_DASH_SFX_TRIGGER_MASKS
             [(self.game_state.player.follower_link.dash_countdown() >> 4) as usize]
             & a
             == 0
@@ -8840,7 +8777,7 @@ impl ZeldaState {
                 || self.game_state.player.follower_link.doorway_state() != 0
                 || dir == 0
             {
-                dir = DASH_DIRECTION_BITS_BY_FACING
+                dir = LINK_STATE_DASHING_DASH_DIRECTION_BITS_BY_FACING
                     [self.game_state.player.follower_link.facing_index()];
             }
             self.follower_link_state_mut()
@@ -8890,11 +8827,11 @@ impl ZeldaState {
         self.follower_link_state_mut().set_incapacitated_timer(0);
 
         let mut want_stop_dash = false;
-        const FEATURES0_TURN_WHILE_DASHING: u32 = 4;
+
         if self
             .game_state
             .enhanced_features
-            .has(FEATURES0_TURN_WHILE_DASHING)
+            .has(LINK_STATE_DASHING_FEATURES0_TURN_WHILE_DASHING)
         {
             if self.game_state.player.follower_link.joypad1l_last() & 0x80 == 0 {
                 self.follower_link_state_mut().set_dash_countdown(0x11);
@@ -8916,7 +8853,7 @@ impl ZeldaState {
             let dir = self.game_state.player.follower_link.joypad1h_last() & 0x0f;
             want_stop_dash = dir != 0
                 && dir
-                    != DASH_DIRECTION_BITS_BY_FACING
+                    != LINK_STATE_DASHING_DASH_DIRECTION_BITS_BY_FACING
                         [self.game_state.player.follower_link.facing_index()];
         }
         if want_stop_dash {
@@ -8934,7 +8871,7 @@ impl ZeldaState {
             && self
                 .game_state
                 .enhanced_features
-                .has(FEATURES0_TURN_WHILE_DASHING)
+                .has(LINK_STATE_DASHING_FEATURES0_TURN_WHILE_DASHING)
         {
             self.follower_link_state_mut().set_speed_setting(16);
         }
@@ -8945,8 +8882,8 @@ impl ZeldaState {
             .force_move_any_direction() as u8)
             & 0x0f;
         if dir == 0 {
-            dir =
-                DASH_DIRECTION_BITS_BY_FACING[self.game_state.player.follower_link.facing_index()];
+            dir = LINK_STATE_DASHING_DASH_DIRECTION_BITS_BY_FACING
+                [self.game_state.player.follower_link.facing_index()];
         }
         self.follower_link_state_mut()
             .set_direction_and_last_direction(dir);
@@ -9762,8 +9699,6 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_dungeon_draw_single_push_block(&mut self, mut j: usize) {
-        const PUSH_BLOCK_CHAR_INDEX_BY_MODE: [usize; 9] = [0, 1, 2, 3, 4, 0, 0, 0, 0];
-        const CHAR: [u8; 4] = [0x0c, 0x0c, 0x0c, 0xff];
         j >>= 1;
         self.oam_allocate_from_region_b(4);
         let y = self
@@ -9779,9 +9714,10 @@ impl ZeldaState {
             .pushed_block
             .x(j)
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2());
-        let ch = CHAR[PUSH_BLOCK_CHAR_INDEX_BY_MODE
-            [self.game_state.player.pushed_block.animation_mode() as usize]
-            .min(CHAR.len() - 1)];
+        let ch = SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_CHARS
+            [SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_PUSH_BLOCK_CHAR_INDEX_BY_MODE
+                [self.game_state.player.pushed_block.animation_mode() as usize]
+                .min(SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_CHARS.len() - 1)];
         if ch != 0xff {
             let oam = self.game_state.oam.current_pointer_usize();
             self.oam_state_mut()
@@ -9835,8 +9771,6 @@ impl ZeldaState {
     }
 
     pub(super) fn player_handler_00_ground_3(&mut self) {
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
-
         self.apply_links_movement_to_camera_called = false;
         self.follower_link_state_mut().set_z(0xffff);
         self.follower_link_state_mut().set_actual_z_velocity(0xff);
@@ -9858,7 +9792,7 @@ impl ZeldaState {
                 if self
                     .game_state
                     .enhanced_features
-                    .has(FEATURES0_MISC_BUG_FIXES)
+                    .has(PLAYER_HANDLER_00_GROUND_3_FEATURES0_MISC_BUG_FIXES)
                     && ((self.game_state.frame.main_module == 14
                         && self.game_state.frame.submodule != 2)
                         || matches!(
@@ -9956,8 +9890,6 @@ impl ZeldaState {
     }
 
     pub(super) fn link_perform_throw(&mut self) {
-        const LIFTABLE_TILE_ATTR_TO_TERRAIN_TYPE: [u8; 9] =
-            [0x54, 0x52, 0x50, 0xff, 0x51, 0x53, 0x55, 0x56, 0x57];
         if (self.game_state.player.follower_link.sprite_pickup_flag()
             | self.game_state.player.follower_link.ancilla_pickup_flag())
             == 0
@@ -9990,7 +9922,7 @@ impl ZeldaState {
                     let attr = self.Overworld_HandleLiftableTiles(&mut pt);
                     (attr, pt.x, pt.y)
                 };
-                let Some(idx) = LIFTABLE_TILE_ATTR_TO_TERRAIN_TYPE
+                let Some(idx) = LINK_PERFORM_THROW_LIFTABLE_TILE_ATTR_TO_TERRAIN_TYPE
                     .iter()
                     .rposition(|&value| value == attr)
                 else {
@@ -10017,8 +9949,6 @@ impl ZeldaState {
     }
 
     pub(super) fn spawn_hammer_water_splash(&mut self) {
-        const HAMMER_WATER_X: [i8; 4] = [0, 12, -8, 24];
-        const HAMMER_WATER_Y: [i8; 4] = [8, 32, 24, 24];
         if (self.game_state.frame.submodule
             | self.game_state.player.follower_link.immobilized_flag()
             | self.game_state.frame.modal_pause_flag)
@@ -10032,13 +9962,13 @@ impl ZeldaState {
             .player
             .follower_link
             .x()
-            .wrapping_add(HAMMER_WATER_X[i] as i16 as u16);
+            .wrapping_add(SPAWN_HAMMER_WATER_SPLASH_HAMMER_WATER_X[i] as i16 as u16);
         let y = self
             .game_state
             .player
             .follower_link
             .y()
-            .wrapping_add(HAMMER_WATER_Y[i] as i16 as u16);
+            .wrapping_add(SPAWN_HAMMER_WATER_SPLASH_HAMMER_WATER_Y[i] as i16 as u16);
         let tiletype = if self.game_state.world.location.is_indoors() {
             let mut t = if self.game_state.player.follower_link.lower_level_state() >= 1 {
                 0x1000
@@ -10067,17 +9997,13 @@ impl ZeldaState {
     }
 
     pub(super) fn digging_game_guy_attempt_prize_spawn(&mut self) {
-        const DIGGING_GAME_XVEL: [u8; 2] = [(-16i8) as u8, 16];
-        const DIGGING_GAME_X: [i8; 2] = [0, 19];
-        const DIGGING_GAME_ITEMS: [u8; 4] = [0xdb, 0xda, 0xd9, 0xdf];
-
         self.digging_game_prize_mut().increment_attempts();
         if self.game_state.player.follower_link.y() >= 0x0b18 {
             return;
         }
         let j = self.get_random_number() & 7;
         let item_to_spawn = match j {
-            0..=3 => DIGGING_GAME_ITEMS[j as usize],
+            0..=3 => DIGGING_GAME_GUY_ATTEMPT_PRIZE_SPAWN_DIGGING_GAME_ITEMS[j as usize],
             4 => {
                 if self.game_state.effects.digging_game_prize.attempts() < 25
                     || self.game_state.effects.digging_game_prize.spawned_marker() != 0
@@ -10098,19 +10024,16 @@ impl ZeldaState {
             let i = usize::from(self.game_state.player.follower_link.facing() != 4);
             {
                 let mut sprite = self.sprite_slot_view_mut(j);
-                sprite.set_x_velocity(DIGGING_GAME_XVEL[i]);
+                sprite.set_x_velocity(DIGGING_GAME_GUY_ATTEMPT_PRIZE_SPAWN_DIGGING_GAME_XVEL[i]);
                 sprite.set_y_velocity(0);
                 sprite.set_z_velocity(24);
                 sprite.set_stunned(255);
                 sprite.set_delay_aux4(48);
             }
-            let x = self
-                .game_state
-                .player
-                .follower_link
-                .x()
-                .wrapping_add(DIGGING_GAME_X[i] as i16 as u16)
-                & !0x0f;
+            let x =
+                self.game_state.player.follower_link.x().wrapping_add(
+                    DIGGING_GAME_GUY_ATTEMPT_PRIZE_SPAWN_DIGGING_GAME_X[i] as i16 as u16,
+                ) & !0x0f;
             let y = self.game_state.player.follower_link.y().wrapping_add(22) & !0x0f;
             self.sprite_set_x(j, x);
             self.sprite_set_y(j, y);
@@ -10155,11 +10078,10 @@ impl ZeldaState {
     pub(super) fn handle_door_transitions(&mut self) {
         self.follower_link_state_mut().clear_page_movement_deltas();
 
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self
             .game_state
             .enhanced_features
-            .has(FEATURES0_MISC_BUG_FIXES)
+            .has(HANDLE_DOOR_TRANSITIONS_FEATURES0_MISC_BUG_FIXES)
             && !(self.game_state.frame.main_module == 7 && self.game_state.frame.submodule == 0)
         {
             return;
