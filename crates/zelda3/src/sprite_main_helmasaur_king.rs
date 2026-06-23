@@ -22,6 +22,24 @@ const HELMASAUR_MASK_X_OFFSETS: [u8; 32] = [
 // kFluteBoyAnimal_Xvel from sprite_main.c:16 — used by HelmasaurKing_SwingTail.
 const HELMASAUR_TAIL_SWING_X_VELOCITY_TARGETS: [i8; 4] = [16, -16, 0, 0];
 
+// State-machine and debris tables promoted from C-local statics.
+const HELMASAUR_MASK_DAMAGE_STAGE_BY_HEALTH: [u8; 13] = [3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 1, 1, 0];
+const HELMASAUR_KING_PATROL_X_VELOCITIES: [i8; 8] = [-12, -12, -4, 0, 4, 12, 12, 0];
+const HELMASAUR_KING_PATROL_Y_VELOCITIES: [i8; 8] = [0, 4, 12, 12, 12, 4, 0, 12];
+const HELMASAUR_FIREBALL_TRI_SPLIT_X_VELOCITIES: [i8; 3] = [0, 28, -28];
+const HELMASAUR_FIREBALL_TRI_SPLIT_Y_VELOCITIES: [i8; 3] = [-32, 24, 24];
+const HELMASAUR_FIREBALL_TRI_SPLIT_DELAYS: [u8; 6] = [32, 80, 128, 32, 80, 128];
+const HELMASAUR_FIREBALL_QUAD_SPLIT_X_VELOCITIES: [i8; 4] = [32, 32, -32, -32];
+const HELMASAUR_FIREBALL_QUAD_SPLIT_Y_VELOCITIES: [i8; 4] = [-32, 32, -32, 32];
+const HELMASAUR_MASK_DEBRIS_X_OFFSETS: [i8; 10] = [-16, 0, 16, -16, 0, 16, -8, 8, -16, 16];
+const HELMASAUR_MASK_DEBRIS_Y_OFFSETS: [i8; 10] = [24, 27, 24, 24, 27, 24, 27, 27, 24, 24];
+const HELMASAUR_MASK_DEBRIS_Z_OFFSETS: [i8; 10] = [29, 32, 29, 13, 16, 13, 0, 0, 13, 13];
+const HELMASAUR_MASK_DEBRIS_X_VELOCITIES: [i8; 10] = [-16, -4, 14, -12, 4, 18, -2, 2, -12, 18];
+const HELMASAUR_MASK_DEBRIS_Y_VELOCITIES: [i8; 10] = [-8, -4, -6, 4, 2, 7, 6, 8, 4, 7];
+const HELMASAUR_MASK_DEBRIS_Z_VELOCITIES: [i8; 10] = [32, 40, 36, 37, 39, 34, 30, 33, 37, 34];
+const HELMASAUR_MASK_DEBRIS_OAM_FLAGS: [u8; 10] = [0, 0, 0x40, 0, 0, 0x40, 0, 0x40, 0, 0x40];
+const HELMASAUR_MASK_DEBRIS_GRAPHICS: [u8; 10] = [0, 1, 0, 2, 3, 2, 4, 4, 5, 5];
+
 impl ZeldaState {
     // void HelmasaurKing_Initialize(int k) {  // sprite_main.c:19275
     //   overlord_gen1[7] = 0x30;
@@ -63,11 +81,6 @@ impl ZeldaState {
     //   ...see sprite_main.c...
     // }
     pub(super) fn sprite_92_helmasaur_king(&mut self, k: usize) {
-        const HELMASAUR_MASK_DAMAGE_STAGE_BY_HEALTH: [u8; 13] =
-            [3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 1, 1, 0];
-        const XVEL0: [i8; 8] = [-12, -12, -4, 0, 4, 12, 12, 0];
-        const YVEL0: [i8; 8] = [0, 4, 12, 12, 12, 4, 0, 12];
-
         if sign8(self.sprite_slot_view(k).c()) {
             if self.sprite_slot_view(k).delay_main() == 1 {
                 self.sprite_slot_view_mut(k).clear();
@@ -176,8 +189,8 @@ impl ZeldaState {
                     let j = (self.get_random_number() & 7) as usize;
                     let damaged_mask = self.sprite_slot_view(k).c() >= 3;
                     let mut sprite = self.sprite_slot_view_mut(k);
-                    sprite.set_x_velocity(XVEL0[j] as u8);
-                    sprite.set_y_velocity(YVEL0[j] as u8);
+                    sprite.set_x_velocity(HELMASAUR_KING_PATROL_X_VELOCITIES[j] as u8);
+                    sprite.set_y_velocity(HELMASAUR_KING_PATROL_Y_VELOCITIES[j] as u8);
                     sprite.set_delay_main(64);
                     if damaged_mask {
                         sprite.shift_x_velocity_left(1);
@@ -307,10 +320,6 @@ impl ZeldaState {
     //   tmp_counter = -1;
     // }
     pub(super) fn helmasaur_fireball_tri_split(&mut self, k: usize) {
-        const LOCAL_X_VELOCITIES: [i8; 3] = [0, 28, -28];
-        const LOCAL_Y_VELOCITIES: [i8; 3] = [-32, 24, 24];
-        const DELAY: [u8; 6] = [32, 80, 128, 32, 80, 128];
-
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x36);
         self.sprite_slot_view_mut(k).clear();
         let random = self.get_random_number();
@@ -321,11 +330,11 @@ impl ZeldaState {
             if j >= 0 {
                 let j = j as usize;
                 self.sprite_set_spawned_coordinates(j, &info);
-                let delay = DELAY
+                let delay = HELMASAUR_FIREBALL_TRI_SPLIT_DELAYS
                     [((self.game_state.sprites.workspace.shared_scratch_a() & 3) as usize) + i];
                 let mut sprite = self.sprite_slot_view_mut(j);
-                sprite.set_x_velocity(LOCAL_X_VELOCITIES[i] as u8);
-                sprite.set_y_velocity(LOCAL_Y_VELOCITIES[i] as u8);
+                sprite.set_x_velocity(HELMASAUR_FIREBALL_TRI_SPLIT_X_VELOCITIES[i] as u8);
+                sprite.set_y_velocity(HELMASAUR_FIREBALL_TRI_SPLIT_Y_VELOCITIES[i] as u8);
                 sprite.set_ai_state(3);
                 sprite.set_ignore_projectile(3);
                 sprite.set_delay_main(delay);
@@ -355,9 +364,6 @@ impl ZeldaState {
     //   tmp_counter = -1;
     // }
     pub(super) fn helmasaur_fireball_quad_split(&mut self, k: usize) {
-        const LOCAL_X_VELOCITIES: [i8; 4] = [32, 32, -32, -32];
-        const LOCAL_Y_VELOCITIES: [i8; 4] = [-32, 32, -32, 32];
-
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x36);
         self.sprite_slot_view_mut(k).clear();
         for i in (0..=3usize).rev() {
@@ -367,8 +373,8 @@ impl ZeldaState {
                 let j = j as usize;
                 self.sprite_set_spawned_coordinates(j, &info);
                 let mut sprite = self.sprite_slot_view_mut(j);
-                sprite.set_x_velocity(LOCAL_X_VELOCITIES[i] as u8);
-                sprite.set_y_velocity(LOCAL_Y_VELOCITIES[i] as u8);
+                sprite.set_x_velocity(HELMASAUR_FIREBALL_QUAD_SPLIT_X_VELOCITIES[i] as u8);
+                sprite.set_y_velocity(HELMASAUR_FIREBALL_QUAD_SPLIT_Y_VELOCITIES[i] as u8);
                 sprite.set_ai_state(4);
                 sprite.set_ignore_projectile(4);
             }
@@ -632,27 +638,24 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn helmasaur_king_spawn_mask_debris(&mut self, k: usize) {
-        const MASK_DEBRIS_X_OFFSETS: [i8; 10] = [-16, 0, 16, -16, 0, 16, -8, 8, -16, 16];
-        const MASK_DEBRIS_Y_OFFSETS: [i8; 10] = [24, 27, 24, 24, 27, 24, 27, 27, 24, 24];
-        const MASK_DEBRIS_Z_OFFSETS: [i8; 10] = [29, 32, 29, 13, 16, 13, 0, 0, 13, 13];
-        const MASK_DEBRIS_X_VELOCITIES: [i8; 10] = [-16, -4, 14, -12, 4, 18, -2, 2, -12, 18];
-        const MASK_DEBRIS_Y_VELOCITIES: [i8; 10] = [-8, -4, -6, 4, 2, 7, 6, 8, 4, 7];
-        const MASK_DEBRIS_Z_VELOCITIES: [i8; 10] = [32, 40, 36, 37, 39, 34, 30, 33, 37, 34];
-        const MASK_DEBRIS_OAM_FLAGS: [u8; 10] = [0, 0, 0x40, 0, 0, 0x40, 0, 0x40, 0, 0x40];
-        const MASK_DEBRIS_GRAPHICS: [u8; 10] = [0, 1, 0, 2, 3, 2, 4, 4, 5, 5];
-
         if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_helmasaur_king(k, 0x92) {
             let i = self.game_state.scratch_counter.value() as usize;
-            self.sprite_set_x(j, r0_x.wrapping_add(MASK_DEBRIS_X_OFFSETS[i] as i16 as u16));
-            self.sprite_set_y(j, r2_y.wrapping_add(MASK_DEBRIS_Y_OFFSETS[i] as i16 as u16));
+            self.sprite_set_x(
+                j,
+                r0_x.wrapping_add(HELMASAUR_MASK_DEBRIS_X_OFFSETS[i] as i16 as u16),
+            );
+            self.sprite_set_y(
+                j,
+                r2_y.wrapping_add(HELMASAUR_MASK_DEBRIS_Y_OFFSETS[i] as i16 as u16),
+            );
             let tmp_counter = self.game_state.scratch_counter.value();
             let mut sprite = self.sprite_slot_view_mut(j);
-            sprite.set_z(MASK_DEBRIS_Z_OFFSETS[i] as u8);
-            sprite.set_x_velocity(MASK_DEBRIS_X_VELOCITIES[i] as u8);
-            sprite.set_y_velocity(MASK_DEBRIS_Y_VELOCITIES[i] as u8);
-            sprite.set_z_velocity(MASK_DEBRIS_Z_VELOCITIES[i] as u8);
-            sprite.set_oam_flags(MASK_DEBRIS_OAM_FLAGS[i] | 13);
-            sprite.set_graphics(MASK_DEBRIS_GRAPHICS[i]);
+            sprite.set_z(HELMASAUR_MASK_DEBRIS_Z_OFFSETS[i] as u8);
+            sprite.set_x_velocity(HELMASAUR_MASK_DEBRIS_X_VELOCITIES[i] as u8);
+            sprite.set_y_velocity(HELMASAUR_MASK_DEBRIS_Y_VELOCITIES[i] as u8);
+            sprite.set_z_velocity(HELMASAUR_MASK_DEBRIS_Z_VELOCITIES[i] as u8);
+            sprite.set_oam_flags(HELMASAUR_MASK_DEBRIS_OAM_FLAGS[i] | 13);
+            sprite.set_graphics(HELMASAUR_MASK_DEBRIS_GRAPHICS[i]);
             sprite.set_c(128);
             sprite.set_flags2(0);
             sprite.set_delay_aux1(12);
