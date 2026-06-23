@@ -178,11 +178,19 @@ pub(super) const ARCHERY_GAME_HOST_PROCTOR_GAME_OAM_FLAGS: [u8; 18] = [
 pub(super) const SPRITE_GOOD_OR_BAD_ARCHERY_TARGET_CASH_PRIZE: [u8; 10] =
     [4, 8, 16, 32, 64, 99, 99, 99, 99, 99];
 
+pub(super) const ARCHERY_GAME_HOST_IDLE_GRAPHICS: [u8; 4] = [3, 4, 3, 2];
+
+pub(super) const ARCHERY_TARGET_RESET_X_LOWS: [u8; 2] = [(-24i8) as u8, 8];
+
 pub(super) const SPRITE_SPAWN_SPARKLE_GARNISH_COORD_OFFSETS: [i8; 4] = [-4, 0, 4, 8];
 
 pub(super) const SPRITE_MAGIC_BAT_SPAWN_LIGHTNING_X_VELOCITIES: [i8; 4] = [-8, -4, 4, 8];
 
 pub(super) const SPRITE_MAGIC_BAT_SPAWN_LIGHTNING_STATE2_VALUES: [u8; 4] = [0, 0x11, 0x22, 0x33];
+
+pub(super) const MAGIC_BAT_RISING_UP_X_ACCELERATIONS: [i8; 2] = [-8, 7];
+
+pub(super) const MAGIC_BAT_LIGHTNING_OAM_FLAG_SEQUENCE: [u8; 8] = [0x0a, 4, 2, 4, 2, 0x0a, 4, 2];
 
 pub(super) const KHOLDSTARE_SPAWN_PUFF_CLOUD_GARNISH_XY_OFFSETS: [i8; 8] =
     [-8, -6, -4, -2, 0, 2, 4, 6];
@@ -262,6 +270,18 @@ pub(super) const SPRITE_AD_OLD_MAN_OLD_MOUNTAIN_MAN_MSGS: [u16; 3] = [0x9e, 0x9f
 pub(super) const SPRITE_HAPPINESS_POND_COSTS: [u8; 4] = [5, 20, 25, 50];
 
 pub(super) const SPRITE_HAPPINESS_POND_COST_HEX_VALUES: [u8; 4] = [5, 0x20, 0x25, 0x50];
+
+pub(super) const HAPPINESS_POND_REWARD_MESSAGES: [u16; 5] = [0x8f, 0x90, 0x92, 0x91, 0x93];
+
+pub(super) const HAPPINESS_POND_MAX_BOMBS_HEX: [u8; 8] =
+    [0x10, 0x15, 0x20, 0x25, 0x30, 0x35, 0x40, 0x50];
+
+pub(super) const HAPPINESS_POND_ARROW_REFILL_AMOUNTS: [u8; 8] =
+    [0x30, 0x35, 0x40, 0x45, 0x50, 0x55, 0x60, 0x70];
+
+pub(super) const HAPPINESS_POND_LUCK_MESSAGES: [u16; 4] = [0x150, 0x151, 0x152, 0x153];
+
+pub(super) const HAPPINESS_POND_LUCK_VALUES: [u8; 4] = [1, 0, 0, 2];
 
 pub(super) const WISH_POND2_DRAW_WISH_POND_ITEM_DRAW_FRAMES: [DrawMultipleData; 8] = [
     DrawMultipleData {

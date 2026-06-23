@@ -735,14 +735,13 @@ impl ZeldaState {
             let graphics = (self.sprite_slot_view(k).delay_main() & 4) >> 2;
             self.sprite_slot_view_mut(k).set_graphics(graphics);
         } else {
-            const LOCAL_GRAPHICS: [u8; 4] = [3, 4, 3, 2];
             let idx = if self.sprite_slot_view(k).ai_state() != 0 {
                 ((self.game_state.frame.frame_counter >> 5) & 3) as usize
             } else {
                 0
             };
             self.sprite_slot_view_mut(k)
-                .set_graphics(LOCAL_GRAPHICS[idx]);
+                .set_graphics(ARCHERY_GAME_HOST_IDLE_GRAPHICS[idx]);
         }
 
         match self.sprite_slot_view(k).ai_state() {
@@ -891,10 +890,10 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_delay_aux2(0);
                 }
             } else if self.sprite_slot_view(k).delay_main() == 1 {
-                const TARGET_X: [u8; 2] = [(-24i8) as u8, 8];
                 let graphics = self.sprite_slot_view(k).graphics() as usize;
                 let link_x_high = (self.game_state.player.follower_link.x() >> 8) as u8;
-                self.sprite_slot_view_mut(k).set_x_low(TARGET_X[graphics]);
+                self.sprite_slot_view_mut(k)
+                    .set_x_low(ARCHERY_TARGET_RESET_X_LOWS[graphics]);
                 self.sprite_slot_view_mut(k).set_x_high(link_x_high);
                 self.sprite_slot_view_mut(k).set_delay_aux1(32);
                 self.sprite_slot_view_mut(k).set_g(0);
@@ -2188,12 +2187,11 @@ impl ZeldaState {
                     let delay_main = self.sprite_slot_view(k).a();
                     self.sprite_slot_view_mut(k).set_delay_main(delay_main);
                     if self.sprite_slot_view(k).delay_main() != 1 {
-                        const RISING_UP_X_ACCEL: [i8; 2] = [-8, 7];
                         let z_velocity = self.sprite_slot_view(k).delay_main() >> 2;
                         self.sprite_slot_view_mut(k).set_z_velocity(z_velocity);
                         let idx = (self.sprite_slot_view(k).a() & 1) as usize;
                         self.sprite_slot_view_mut(k)
-                            .add_x_velocity(RISING_UP_X_ACCEL[idx] as u8);
+                            .add_x_velocity(MAGIC_BAT_RISING_UP_X_ACCELERATIONS[idx] as u8);
                         self.sprite_slot_view_mut(k).xor_graphics(1);
                     } else {
                         self.sprite_show_message_unconditional(0x110);
@@ -2210,10 +2208,9 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     self.sprite_slot_view_mut(k).set_delay_aux1(64);
                 }
-                const OAM_FLAGS: [u8; 8] = [0x0a, 4, 2, 4, 2, 0x0a, 4, 2];
                 let idx = ((self.sprite_slot_view(k).delay_main() >> 1) & 7) as usize;
                 self.sprite_slot_view_mut(k)
-                    .masked_or_oam_flags(!0x0e, OAM_FLAGS[idx]);
+                    .masked_or_oam_flags(!0x0e, MAGIC_BAT_LIGHTNING_OAM_FLAG_SEQUENCE[idx]);
                 if self.sprite_slot_view(k).delay_main() == 240 {
                     self.sprite_magic_bat_spawn_lightning(k);
                 }
@@ -2467,10 +2464,11 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_ai_state(10);
             }
             10 => {
-                const MSGS: [u16; 5] = [0x8f, 0x90, 0x92, 0x91, 0x93];
                 let head = self.sprite_slot_view(k).head_direction();
                 if head != 0 {
-                    self.sprite_show_message_unconditional(MSGS[head.wrapping_sub(1) as usize]);
+                    self.sprite_show_message_unconditional(
+                        HAPPINESS_POND_REWARD_MESSAGES[head.wrapping_sub(1) as usize],
+                    );
                 }
                 self.sprite_slot_view_mut(k).set_ai_state(0);
                 self.sprite_slot_view_mut(k).set_delay_main(255);
@@ -2620,14 +2618,13 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_ai_state(ai_state);
             }
             8 => {
-                const MAX_BOMBS_HEX: [u8; 8] = [0x10, 0x15, 0x20, 0x25, 0x30, 0x35, 0x40, 0x50];
                 let i = self
                     .game_state
                     .inventory
                     .player_resources
                     .next_bomb_upgrade_level();
                 if i != 8 {
-                    let filler = MAX_BOMBS_HEX[i as usize];
+                    let filler = HAPPINESS_POND_MAX_BOMBS_HEX[i as usize];
                     {
                         let mut resources = self.player_resources_mut();
                         resources.set_bomb_upgrade_level(i);
@@ -2672,15 +2669,13 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_delay_main(255);
             }
             12 => {
-                const ARROW_UPGRADE_REFILL_AMOUNTS: [u8; 8] =
-                    [0x30, 0x35, 0x40, 0x45, 0x50, 0x55, 0x60, 0x70];
                 let i = self
                     .game_state
                     .inventory
                     .player_resources
                     .next_arrow_upgrade_level();
                 if i != 8 {
-                    let filler = ARROW_UPGRADE_REFILL_AMOUNTS[i as usize];
+                    let filler = HAPPINESS_POND_ARROW_REFILL_AMOUNTS[i as usize];
                     {
                         let mut resources = self.player_resources_mut();
                         resources.set_arrow_upgrade_level(i);
@@ -2705,12 +2700,11 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_ai_state(14);
             }
             14 => {
-                const LUCK_MSG: [u16; 4] = [0x150, 0x151, 0x152, 0x153];
-                const LUCK: [u8; 4] = [1, 0, 0, 2];
                 let i = (self.get_random_number() & 3) as usize;
-                self.sprite_battle_mut().set_item_drop_luck(LUCK[i]);
+                self.sprite_battle_mut()
+                    .set_item_drop_luck(HAPPINESS_POND_LUCK_VALUES[i]);
                 self.sprite_battle_mut().clear_luck_kill_counter();
-                self.sprite_show_message_unconditional(LUCK_MSG[i]);
+                self.sprite_show_message_unconditional(HAPPINESS_POND_LUCK_MESSAGES[i]);
                 self.sprite_slot_view_mut(k).set_ai_state(0);
                 self.sprite_slot_view_mut(k).set_delay_main(255);
             }
