@@ -10989,6 +10989,870 @@ pub(super) const MOBLIN_DRAW_FRAMES: [DrawMultipleData; 48] = [
     },
 ];
 
+// ---------------------------------------------------------------------------
+// Promoted sprite_main_draw method-local tables. Names retain their owning
+// helper to keep generic C table names such as X/Y/FLAGS readable at callsites.
+// ---------------------------------------------------------------------------
+
+pub(super) const ZORA_DRAW_X_OFFSETS: [i8; 26] = [
+    4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -4, 11, 0, 4, -8, 18, -8, 18,
+];
+
+pub(super) const ZORA_DRAW_Y_OFFSETS: [i8; 26] = [
+    4, 4, 0, 0, 0, 0, 0, -3, 0, -3, -3, -3, -3, -3, -3, -3, -6, -6, -8, -9, -3, 5, -10, -11, -10,
+    -11,
+];
+
+pub(super) const ZORA_DRAW_CHARS: [u8; 26] = [
+    0xa8, 0xa8, 0x88, 0x88, 0x88, 0x88, 0x88, 0xa4, 0x88, 0xa4, 0xa4, 0xa4, 0xa6, 0xa6, 0xa4, 0xc0,
+    0x8a, 0x8a, 0xae, 0xaf, 0xa6, 0x8d, 0xcf, 0xcf, 0xdf, 0xdf,
+];
+
+pub(super) const ZORA_DRAW_FLAGS: [u8; 26] = [
+    0x25, 0x25, 0x25, 0x25, 0xe5, 0xe5, 0x25, 0x20, 0xe5, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x24,
+    0x25, 0x25, 0x24, 0x64, 0x20, 0x26, 0x24, 0x64, 0x24, 0x64,
+];
+
+pub(super) const ZORA_DRAW_BIG: [u8; 26] = [
+    0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 2, 0, 0, 0, 0, 0,
+];
+
+pub(super) const SPRITE_FIREBALL_OFFSETS: [u8; 4] = [3, 2, 0, 0];
+
+pub(super) const SPRITE_FIREBALL_X_OFFSETS: [i8; 4] = [4, 4, -4, 16];
+
+pub(super) const SPRITE_FIREBALL_Y_OFFSETS: [i8; 4] = [0, 16, 8, 8];
+
+pub(super) const SPRITE_FIREBALL_WIDTHS: [u8; 4] = [8, 8, 4, 4];
+
+pub(super) const SPRITE_FIREBALL_HEIGHTS: [u8; 4] = [4, 4, 8, 8];
+
+pub(super) const SPRITE_ZORA_MAIN_ATTACK_GFX: [u8; 8] = [5, 5, 6, 10, 6, 5, 5, 5];
+
+pub(super) const SPRITE_ZORA_MAIN_SUBMERGE_GFX: [u8; 12] = [12, 11, 9, 8, 7, 0, 0, 0, 0, 0, 0, 0];
+
+pub(super) const SPRITE_SPAWN_BIG_SPLASH_X_OFFSETS: [i8; 8] = [-8, -5, 4, 13, 16, 13, 4, -5];
+
+pub(super) const SPRITE_SPAWN_BIG_SPLASH_Y_OFFSETS: [i8; 8] = [4, -5, -8, -5, 4, 13, 16, 13];
+
+pub(super) const SPRITE_SPAWN_BIG_SPLASH_LOCAL_X_VELOCITIES: [i8; 8] = [-8, -6, 0, 6, 8, 6, 0, -6];
+
+pub(super) const SPRITE_SPAWN_BIG_SPLASH_LOCAL_Y_VELOCITIES: [i8; 8] = [0, -6, -8, -6, 0, 6, 8, 6];
+
+pub(super) const ZORA_KING_DRAW_X_OFFSETS_1: [i8; 8] = [-23, 23, 23, 23, -20, -15, 13, 18];
+
+pub(super) const ZORA_KING_DRAW_Y_OFFSETS_1: [i8; 8] = [-8, -8, -8, -8, -7, 0, 0, -7];
+
+pub(super) const ZORA_KING_DRAW_CHARS_1: [u8; 8] = [0xae, 0xae, 0xae, 0xae, 0xac, 0xac, 0xac, 0xac];
+
+pub(super) const ZORA_KING_DRAW_FLAGS_1: [u8; 8] = [0, 0x40, 0x40, 0x40, 0, 0, 0x40, 0x40];
+
+pub(super) const WALKING_ZORA_DRAW_CHARS: [u8; 4] = [0xce, 0xce, 0xa4, 0xee];
+
+pub(super) const WALKING_ZORA_DRAW_FLAGS: [u8; 4] = [0x40, 0, 0, 0];
+
+pub(super) const WALKING_ZORA_DRAW_CHARS_2: [u8; 8] =
+    [0xcc, 0xec, 0xcc, 0xec, 0xe8, 0xe8, 0xca, 0xca];
+
+pub(super) const WALKING_ZORA_DRAW_FLAGS_2: [u8; 8] = [0x40, 0x40, 0, 0, 0, 0x40, 0, 0x40];
+
+pub(super) const AGAHNIM_DRAW_X_OFFSETS_0: [i8; 72] = [
+    -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8,
+    8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -6, 6,
+    -6, 6, -8, 8, -8, 8, -6, 6, -6, 6, 0, 8, 0, 8, -8, 8, -8, 8,
+];
+
+pub(super) const AGAHNIM_DRAW_Y_OFFSETS_0: [i8; 72] = [
+    -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8,
+    8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, -6, -6,
+    6, 6, -8, -8, 8, 8, -6, -6, 6, 6, 0, 0, 8, 8, 8, 8, 8, 8,
+];
+
+pub(super) const AGAHNIM_DRAW_CHARS_0: [u8; 72] = [
+    0x82, 0x82, 0xa2, 0xa2, 0x80, 0x80, 0xa0, 0xa0, 0x84, 0x84, 0xa4, 0xa4, 0x86, 0x86, 0xa6, 0xa6,
+    0x88, 0x8a, 0xa8, 0xaa, 0x8c, 0x8e, 0xac, 0xae, 0xc4, 0xc2, 0xe4, 0xe6, 0xc0, 0xc2, 0xe0, 0xe2,
+    0x8a, 0x88, 0xaa, 0xa8, 0x8e, 0x8c, 0xae, 0xac, 0xc2, 0xc4, 0xe6, 0xe4, 0xc2, 0xc0, 0xe2, 0xe0,
+    0xec, 0xec, 0xec, 0xec, 0xec, 0xec, 0xec, 0xec, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee,
+    0xdf, 0xdf, 0xdf, 0xdf, 0x40, 0x42, 0x40, 0x42,
+];
+
+pub(super) const AGAHNIM_DRAW_FLAGS_0: [u8; 72] = [
+    0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40,
+    0x40, 0x40, 0x40, 0x40, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40,
+    0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0, 0, 0,
+];
+
+pub(super) const AGAHNIM_DRAW_X_OFFSETS_1: [i8; 72] = [
+    -7, 15, -11, 11, -11, 11, -8, 8, -4, 4, 0, 0, -10, -1, -14, -5, -14, -5, -12, -7, -10, -7, -10,
+    -10, 16, 8, 12, 4, 12, 4, 10, 6, 9, 7, 8, 8, -6, -6, -10, -10, -10, -10, -10, -10, -10, -10,
+    -10, -10, 14, 14, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, -7, 15, -11, 11, -11, 11, -8, 8, -4,
+    4, 0, 0,
+];
+
+pub(super) const AGAHNIM_DRAW_Y_OFFSETS_1: [i8; 72] = [
+    -5, -5, -9, -9, -9, -9, -9, -9, -9, -9, -9, -9, -3, 9, -7, 5, -7, 5, -5, 3, -3, 3, -2, -2, -3,
+    9, -7, 5, -7, 5, -5, 3, -3, 3, -2, -2, -3, 9, -7, 5, -7, 5, -5, 3, -3, 3, -2, -2, -3, 9, -7, 5,
+    -7, 5, -5, 3, -3, 3, -2, -2, -5, -5, -9, -9, -9, -9, -9, -9, -9, -9, -9, -9,
+];
+
+pub(super) const AGAHNIM_DRAW_CHARS_1: [u8; 36] = [
+    0xce, 0xcc, 0xc6, 0xc6, 0xc6, 0xc6, 0xce, 0xcc, 0xc6, 0xc6, 0xc6, 0xc6, 0xce, 0xcc, 0xc6, 0xc6,
+    0xc6, 0xc6, 0xce, 0xcc, 0xc6, 0xc6, 0xc6, 0xc6, 0xce, 0xcc, 0xc6, 0xc6, 0xc6, 0xc6, 0xce, 0xcc,
+    0xc6, 0xc6, 0xc6, 0xc6,
+];
+
+pub(super) const AGAHNIM_DRAW_BIG_1: [u8; 36] = [
+    0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 0, 2,
+    2, 2, 2, 2,
+];
+
+pub(super) const SPRITE_7_A_AGAHNIM_START_STATE: [u8; 2] = [1, 6];
+
+pub(super) const SPRITE_7_A_AGAHNIM_GRAPHICS_0: [u8; 5] = [12, 13, 14, 15, 16];
+
+pub(super) const SPRITE_7_A_AGAHNIM_DIRECTIONS: [u8; 25] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 0, 1, 1, 4, 4, 0, 2, 2, 4, 4, 3, 2, 2,
+];
+
+pub(super) const SPRITE_7_A_AGAHNIM_GRAPHICS_1: [u8; 6] = [2, 10, 8, 0, 4, 6];
+
+pub(super) const SPRITE_7_A_AGAHNIM_SECONDARY_GRAPHICS: [u8; 5] = [16, 15, 14, 13, 12];
+
+pub(super) const SPRITE_7_A_AGAHNIM_GRAPHICS_3: [u8; 7] = [0, 8, 10, 2, 2, 6, 4];
+
+pub(super) const KING_HELMASAUR_OPERATE_TAIL_MULTIPLIERS: [u8; 32] = [
+    0xff, 0xf0, 0xe0, 0xd0, 0xc0, 0xb0, 0xa0, 0x90, 0x80, 0x70, 0x60, 0x50, 0x40, 0x30, 0x20, 0x10,
+    0xff, 0xf8, 0xf0, 0xe8, 0xe0, 0xd8, 0xd0, 0xc8, 0xbc, 0xb0, 0xa0, 0x90, 0x70, 0x40, 0x20, 0x10,
+];
+
+pub(super) const KING_HELMASAUR_OPERATE_TAIL_MULT_B: [u8; 16] = [
+    0xff, 0xf0, 0xe0, 0xd0, 0xc0, 0xb0, 0xa0, 0x90, 0x80, 0x70, 0x60, 0x50, 0x40, 0x30, 0x20, 0x10,
+];
+
+pub(super) const SPRITE_SPAWN_PROBE_ALWAYS_LOCAL_X_VELOCITIES: [i8; 64] = [
+    -16, -16, -16, -16, -16, -16, -16, -16, -16, -14, -12, -10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10,
+    12, 14, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 14, 12, 10, 8, 6, 4, 2,
+    0, -2, -4, -6, -8, -10, -12, -14, -16, -16, -16, -16, -16, -16, -16, -16, -16,
+];
+
+pub(super) const SPRITE_SPAWN_PROBE_ALWAYS_LOCAL_Y_VELOCITIES: [i8; 64] = [
+    0, 2, 4, 6, 8, 10, 12, 14, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 14,
+    12, 10, 8, 6, 4, 2, 0, -2, -4, -6, -8, -10, -12, -14, -16, -16, -16, -16, -16, -16, -16, -16,
+    -16, -16, -16, -16, -16, -16, -16, -16, -16, -14, -12, -10, -8, -6, -4, -2, 0,
+];
+
+pub(super) const SPRITE_70_KING_HELMASAUR_FIREBALL_CHARS: [u8; 3] = [0xcc, 0xcc, 0xca];
+
+pub(super) const SPRITE_70_KING_HELMASAUR_FIREBALL_FLAGS: [u8; 2] = [0x33, 0x73];
+
+pub(super) const SPRITE_70_KING_HELMASAUR_FIREBALL_LOCAL_GRAPHICS: [u8; 4] = [2, 2, 1, 0];
+
+pub(super) const SPRITE_BEAMOS_LASER_HIT_X_OFFSETS: [i8; 4] = [-4, 4, -4, 4];
+
+pub(super) const SPRITE_BEAMOS_LASER_HIT_Y_OFFSETS: [i8; 4] = [-4, -4, 4, 4];
+
+pub(super) const SPRITE_BEAMOS_LASER_HIT_FLAGS: [u8; 4] = [6, 0x46, 0x86, 0xc6];
+
+pub(super) const BOMBOS_TABLET_MESSAGES: [u16; 2] = [0x10d, 0x10f];
+
+pub(super) const ETHER_TABLET_MESSAGES: [u16; 2] = [0x10d, 0x10e];
+
+pub(super) const PULL_SWITCH_FACING_DOWN_YOFFS: [u8; 12] =
+    [9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14];
+
+pub(super) const BAD_PULL_DOWN_SWITCH_DRAW_BAD_PULL_SWITCH_Y_OFFSET_INDEX_BY_GRAPHICS: [u8; 12] =
+    [0, 0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 5];
+
+pub(super) const BAD_PULL_UP_SWITCH_DRAW_BAD_PULL_SWITCH_Y_OFFSET_INDEX_BY_GRAPHICS: [u8; 12] =
+    [0, 0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 5];
+
+pub(super) const SPRITE_93_BUMPER_VELOCITIES: [i8; 4] = [0, 2, -2, 0];
+
+pub(super) const SPRITE_BAT_CRASH_X_POSITIONS: [u16; 4] = [0x07dc, 0x07f0, 0x0820, 0x0818];
+
+pub(super) const SPRITE_BAT_CRASH_Y_POSITIONS: [u16; 4] = [0x062e, 0x0636, 0x0630, 0x05e0];
+
+pub(super) const SPRITE_BAT_CRASH_DELAY: [u8; 5] = [4, 3, 4, 6, 0];
+
+pub(super) const BAT_CRASH_SPAWN_DEBRIS_X_OFFSETS: [i8; 30] = [
+    -8, 0, 8, 16, 24, 32, -8, 0, 8, 16, 24, 32, -8, 0, 8, 16, 24, 32, -8, 0, 8, 16, 24, 32, -8, 0,
+    8, 16, 24, 32,
+];
+
+pub(super) const BAT_CRASH_SPAWN_DEBRIS_Y_OFFSETS: [i8; 30] = [
+    0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x28, 0x28, 0x28, 0x28, 0x28, 0x28, 0x20, 0x20, 0x20, 0x20,
+    0x20, 0x20, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10,
+];
+
+pub(super) const BAT_CRASH_SPAWN_DEBRIS_LOCAL_X_VELOCITIES: [i8; 30] = [
+    -30, -25, -8, 8, 25, 30, -50, -45, -20, 20, 45, 50, -50, -35, -25, 25, 35, 50, -45, -50, -60,
+    60, 50, 45, -30, -35, -40, 40, 35, 30,
+];
+
+pub(super) const BAT_CRASH_SPAWN_DEBRIS_LOCAL_Y_VELOCITIES: [i8; 30] = [
+    2, 5, 10, 10, 5, 2, 5, 20, 30, 30, 20, 5, 10, 30, 40, 40, 30, 10, -20, -40, -60, -60, -40, -20,
+    -10, -20, -40, -40, -20, -10,
+];
+
+pub(super) const SPRITE_D4_LANDMINE_OAM_FLAGS: [u8; 4] = [4, 2, 8, 2];
+
+pub(super) const SPRITE_CF_SWAMOLA_TARGET_DIR: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+
+pub(super) const SWAMOLA_DRAW_LOCAL_GRAPHICS: [u8; 16] =
+    [7, 6, 5, 4, 3, 4, 5, 6, 7, 6, 5, 4, 3, 4, 5, 6];
+
+pub(super) const SWAMOLA_DRAW_SECONDARY_GRAPHICS: [u8; 4] = [0, 0, 1, 2];
+
+pub(super) const SWAMOLA_DRAW_FLAGS: [u8; 16] = [
+    0xc0, 0xc0, 0xc0, 0xc0, 0x80, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0, 0x40, 0x40, 0x40,
+];
+
+pub(super) const SWAMOLA_DRAW_HIST_OFFS: [u8; 4] = [8, 16, 22, 26];
+
+pub(super) const STALFOS_DRAW_CHARS: [u8; 4] = [2, 2, 0, 4];
+
+pub(super) const STALFOS_DRAW_FLAGS: [u8; 4] = [0x70, 0x30, 0x30, 0x30];
+
+pub(super) const TRIDENT_DRAW_X_OFFSETS: [i8; 5] = [24, -16, 0, 16, -8];
+
+pub(super) const TRIDENT_DRAW_Y_OFFSETS: [i8; 5] = [4, 4, 16, 21, 19];
+
+pub(super) const TUTORIAL_SOLDIER_DRAW_X_OFFSETS: [i16; 20] = [
+    4, 0, -6, -6, 2, 0, 0, -7, -7, -7, 0, 0, 0x0f, 0x0f, 0x0f, 6, 0x0e, -4, 4, 0,
+];
+
+pub(super) const TUTORIAL_SOLDIER_DRAW_Y_OFFSETS: [i16; 20] = [
+    0, -10, -4, 12, 12, 0, -9, -11, -3, 5, 0, -9, -11, -3, 5, -11, 5, 0, 0, -9,
+];
+
+pub(super) const TUTORIAL_SOLDIER_DRAW_CHARS: [u8; 20] = [
+    0x46, 0x40, 0, 0x28, 0x29, 0x4e, 0x42, 0x39, 0x2a, 0x3a, 0x4e, 0x42, 0x39, 0x2a, 0x3a, 0x26,
+    0x38, 0x64, 0x64, 0x44,
+];
+
+pub(super) const TUTORIAL_SOLDIER_DRAW_FLAGS: [u8; 20] = [
+    0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0, 0x40, 0, 0x40, 0,
+];
+
+pub(super) const TUTORIAL_SOLDIER_DRAW_BIG: [u8; 20] =
+    [2, 2, 2, 0, 0, 2, 2, 0, 0, 0, 2, 2, 0, 0, 0, 2, 0, 2, 2, 2];
+
+pub(super) const SPRITE_D3_STAL_STAL_GFX: [u8; 5] = [2, 2, 1, 0, 1];
+
+pub(super) const SPRITE_D0_LYNEL_ATTACK_GFX: [u8; 4] = [5, 2, 8, 10];
+
+pub(super) const SPRITE_D0_LYNEL_LOCAL_GRAPHICS: [u8; 8] = [3, 0, 6, 9, 4, 1, 7, 10];
+
+pub(super) const BUZZ_BLOB_DRAW_X_OFFSETS: [u16; 3] = [0, 8, 0];
+
+pub(super) const BUZZ_BLOB_DRAW_Y_OFFSETS: [i16; 3] = [-8, -8, 0];
+
+pub(super) const BUZZ_BLOB_DRAW_CHARS: [u8; 18] = [
+    0xf0, 0xf0, 0xe1, 0, 0, 0xce, 0, 0, 0xce, 0xe3, 0xe3, 0xca, 0xe4, 0xe5, 0xcc, 0xe5, 0xe4, 0xcc,
+];
+
+pub(super) const BUZZ_BLOB_DRAW_FL: [u8; 18] = [
+    0, 0x40, 0, 0, 0, 0, 0, 0, 0x40, 0, 0x40, 0, 0, 0, 0, 0x40, 0x40, 0x40,
+];
+
+pub(super) const BUZZ_BLOB_DRAW_EXT: [u8; 3] = [0, 0, 2];
+
+pub(super) const SPRITE_OLD_SNITCH_LADY_XD: [i8; 2] = [-32, 32];
+
+pub(super) const SPRITE_OLD_SNITCH_LADY_LOCAL_X_VELOCITIES: [i8; 4] = [0, 0, -9, 9];
+
+pub(super) const SPRITE_OLD_SNITCH_LADY_LOCAL_Y_VELOCITIES: [i8; 4] = [-9, 9, 0, 0];
+
+pub(super) const GORIYA_DRAW_OFFSETS: [usize; 11] = [0, 4, 8, 12, 16, 20, 24, 26, 28, 30, 32];
+
+pub(super) const KYAMERON_DRAW_FLAGS: [u8; 12] = [0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0xc0, 0x80];
+
+pub(super) const PIROGUSU_DRAW_FLAGS: [u8; 28] = [
+    0, 0x80, 0x40, 0, 0, 0, 0, 0x80, 0x80, 0xc0, 0x40, 0x40, 0, 0x40, 0x80, 0xc0, 0x40, 0xc0, 0,
+    0x80, 0, 0x40, 0x80, 0xc0, 0x40, 0xc0, 0, 0x80,
+];
+
+pub(super) const PIROGUSU_DRAW_LOCAL_GRAPHICS: [u8; 28] = [
+    0, 0, 1, 1, 2, 3, 4, 3, 2, 3, 4, 3, 5, 5, 5, 5, 7, 7, 7, 7, 6, 6, 6, 6, 8, 8, 8, 8,
+];
+
+pub(super) const SPRITE_HOBO_SMOKE_OAM_FLAGS: [u8; 4] = [0, 64, 128, 192];
+
+pub(super) const SPRITE_RUNNING_MAN_LOCAL_X_VELOCITIES: [i8; 4] = [0, 0, -54, 54];
+
+pub(super) const SPRITE_RUNNING_MAN_LOCAL_Y_VELOCITIES: [i8; 4] = [-54, 54, 0, 0];
+
+pub(super) const SPRITE_RUNNING_MAN_DIRECTIONS: [i8; 4] = [3, 1, 3, -1];
+
+pub(super) const SPRITE_RUNNING_MAN_A: [u8; 4] = [120, 24, 128, 3];
+
+pub(super) const SPRITE_RUNNING_MAN_PLAYER_STATE_RECOIL_WALL_LOCAL: u8 = 13;
+
+pub(super) const OLD_MOUNTAIN_MAN_DRAW_DMA: [u8; 16] = [
+    0x20, 0xc0, 0x20, 0xc0, 0, 0xa0, 0, 0xa0, 0x40, 0x80, 0x40, 0x60, 0x40, 0x80, 0x40, 0x60,
+];
+
+pub(super) const WITCH_DRAW_DATA_A: [(i8, i8, u8, u8); 16] = [
+    (-3, 8, 0xae, 0x00),
+    (-3, 16, 0xbe, 0x00),
+    (-2, 8, 0xae, 0x00),
+    (-2, 16, 0xbe, 0x00),
+    (-1, 8, 0xaf, 0x00),
+    (-1, 16, 0xbf, 0x00),
+    (0, 9, 0xaf, 0x00),
+    (0, 17, 0xbf, 0x00),
+    (1, 10, 0xaf, 0x00),
+    (1, 18, 0xbf, 0x00),
+    (0, 11, 0xaf, 0x00),
+    (0, 18, 0xbf, 0x00),
+    (-1, 10, 0xae, 0x00),
+    (-1, 18, 0xbe, 0x00),
+    (-3, 9, 0xae, 0x00),
+    (-3, 17, 0xbe, 0x00),
+];
+
+pub(super) const WITCH_DRAW_DATA_B: [(i8, i8, u8, u8); 3] = [
+    (0, -4, 0x80, 0x00),
+    (-11, 15, 0x86, 0x04),
+    (-3, 15, 0x86, 0x44),
+];
+
+pub(super) const WITCH_DRAW_DATA_C: [(i8, i8, u8, u8); 2] =
+    [(0, 4, 0x84, 0x00), (0, 4, 0x82, 0x00)];
+
+pub(super) const FORTUNE_TELLER_LIGHT_OR_DARK_WORLD_PRICES: [u8; 4] = [10, 15, 20, 30];
+
+pub(super) const FORTUNE_TELLER_PERFORM_PSEUDO_SCIENCE_READINGS: [u8; 16] = [
+    0xea, 0xeb, 0xec, 0xed, 0xee, 0xef, 0xf0, 0xf1, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd,
+];
+
+pub(super) const TALKING_TREE_MOUTH_SECONDARY_GRAPHICS: [u8; 4] = [0, 2, 3, 1];
+
+pub(super) const TALKING_TREE_MOUTH_MSGS_2: [u16; 2] = [0x0082, 0x007d];
+
+pub(super) const TALKING_TREE_MOUTH_MSGS: [u16; 4] = [0x007e, 0x007f, 0x0080, 0x0081];
+
+pub(super) const TALKING_TREE_MOUTH_SCREENS: [u8; 4] = [0x58, 0x5d, 0x72, 0x6b];
+
+pub(super) const TALKING_TREE_MOUTH_LOCAL_GRAPHICS: [u8; 8] = [1, 2, 3, 1, 3, 1, 2, 3];
+
+pub(super) const TALKING_TREE_MOUTH_DELAY: [u8; 8] = [13, 13, 13, 11, 11, 6, 16, 8];
+
+pub(super) const TALKING_TREE_EYE_X_OFFSETS_1: [i8; 5] = [-2, -1, 0, 1, 2];
+
+pub(super) const TALKING_TREE_EYE_Y_OFFSETS_1: [i8; 5] = [-1, 0, 0, 0, -1];
+
+pub(super) const BOT_DRAW_LOCAL_GRAPHICS: [u8; 4] = [0, 1, 0, 1];
+
+pub(super) const BOT_DRAW_FLAGS: [u8; 4] = [0, 0, 0x40, 0x40];
+
+pub(super) const SPRITE_BOMB_SHOP_CLERK_LOCAL_GRAPHICS: [u8; 8] = [0, 1, 0, 1, 0, 1, 0, 1];
+
+pub(super) const SPRITE_BOMB_SHOP_CLERK_DELAY: [u8; 8] = [255, 32, 255, 24, 15, 24, 255, 15];
+
+pub(super) const SPRITE_BOMB_SHOP_HUFF_OAM_FLAGS: [u8; 4] = [4, 0x44, 0xc4, 0x84];
+
+pub(super) const SPRITE_HOARDER_COVERED_LOCAL_GRAPHICS: [u8; 4] = [3, 4, 5, 4];
+
+pub(super) const SPRITE_HOARDER_COVERED_LOCAL_X_VELOCITIES: [i8; 4] = [-12, 12, 0, 0];
+
+pub(super) const SPRITE_HOARDER_COVERED_LOCAL_Y_VELOCITIES: [i8; 4] = [0, 0, -12, 12];
+
+pub(super) const SPRITE_HOARDER_FRANTIC_LOCAL_GRAPHICS: [u8; 4] = [0, 1, 0, 1];
+
+pub(super) const SPRITE_HOARDER_FRANTIC_OAM_FLAGS: [u8; 4] = [0, 0, 0x40, 0];
+
+pub(super) const SPRITE_HOARDER_FRANTIC_LOCAL_X_VELOCITIES: [i8; 4] = [-16, 16, -16, 16];
+
+pub(super) const SPRITE_HOARDER_FRANTIC_LOCAL_Y_VELOCITIES: [i8; 4] = [-16, -16, 16, 16];
+
+pub(super) const COVERED_RUPEE_CRAB_DRAW_Y_OFFSETS: [i8; 12] =
+    [0, 0, 0, -3, 0, -5, 0, -6, 0, -6, 0, -6];
+
+pub(super) const COVERED_RUPEE_CRAB_DRAW_CHARS: [u8; 12] = [
+    0x44, 0x44, 0xe8, 0x44, 0xe8, 0x44, 0xe6, 0x44, 0xe8, 0x44, 0xe6, 0x44,
+];
+
+pub(super) const COVERED_RUPEE_CRAB_DRAW_FL: [u8; 12] =
+    [0, 0x0c, 3, 0x0c, 3, 0x0c, 3, 0x0c, 3, 0x0c, 0x43, 0x0c];
+
+pub(super) const GERUDO_MAN_DRAW_X_OFFSETS: [i8; 18] =
+    [4, 4, 4, 4, 4, 4, -8, 8, 8, -8, 8, 8, -16, 0, 16, -16, 0, 16];
+
+pub(super) const GERUDO_MAN_DRAW_Y_OFFSETS: [i8; 18] =
+    [8, 8, 8, 8, 8, 8, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+pub(super) const GERUDO_MAN_DRAW_CHARS: [u8; 18] = [
+    0xb8, 0xb8, 0xb8, 0xb8, 0xb8, 0xb8, 0xa6, 0xa6, 0xa6, 0xa6, 0xa6, 0xa6, 0xa4, 0xa2, 0xa0, 0xa0,
+    0xa2, 0xa4,
+];
+
+pub(super) const GERUDO_MAN_DRAW_FL: [u8; 18] = [
+    0, 0, 0, 0x40, 0x40, 0x40, 0, 0x40, 0x40, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0, 0, 0,
+];
+
+pub(super) const GERUDO_MAN_DRAW_BIG: [u8; 18] =
+    [0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2];
+
+pub(super) const RECRUIT_DRAW_SOLDIER_CH: [u8; 4] = [0x42, 0x42, 0x40, 0x44];
+
+pub(super) const RECRUIT_DRAW_SOLDIER_FL: [u8; 4] = [0x40, 0, 0, 0];
+
+pub(super) const RECRUIT_DRAW_X_OFFSETS: [i16; 8] = [2, 2, -2, -2, 0, 0, 0, 0];
+
+pub(super) const RECRUIT_DRAW_CHARS: [u8; 8] = [0x8a, 0x8c, 0x8a, 0x8c, 0x86, 0x88, 0x8e, 0xa0];
+
+pub(super) const RECRUIT_DRAW_FL: [u8; 8] = [0x40, 0x40, 0, 0, 0, 0, 0, 0];
+
+pub(super) const SPRITE_LUMBERJACKS_MESSAGES: [u16; 4] = [0x012c, 0x012d, 0x012e, 0x012d];
+
+pub(super) const FAERIE_CLOUD_DRAW_XY: [u16; 8] = [0xfff4, 0xfffa, 0, 6, 12, 18, 0, 6];
+
+pub(super) const PSYCHO_TROOPER_DRAW_SHADOW: [u8; 4] = [0x0c, 0x0c, 0x0a, 0x0a];
+
+pub(super) const JAVELIN_TROOPER_DRAW_SHADOW: [u8; 4] = [0x0c, 0x0c, 0x0a, 0x0a];
+
+pub(super) const BUSH_JAVELIN_SOLDIER_DRAW_SHADOW: [u8; 4] = [0x0c, 0x0c, 0x0a, 0x0a];
+
+pub(super) const ARCHER_SOLDIER_DRAW_WEAPON_OAM_OFFS: [u8; 4] = [0, 0, 0, 16];
+
+pub(super) const ARCHER_SOLDIER_DRAW_HEAD_OAM_OFFS: [u8; 4] = [16, 16, 16, 0];
+
+pub(super) const ARCHER_SOLDIER_DRAW_BODY_OAM_OFFS: [u8; 4] = [20, 20, 20, 4];
+
+pub(super) const ARCHER_SOLDIER_DRAW_SHADOW: [u8; 4] = [0x0c, 0x0c, 0x0a, 0x0a];
+
+pub(super) const SPRITE_48_RED_JAVELIN_GUARD_LOCAL_GRAPHICS: [u8; 4] = [12, 0, 18, 8];
+
+pub(super) const SPRITE_48_RED_JAVELIN_GUARD_DIR_LOCK: [u8; 4] = [3, 2, 0, 1];
+
+pub(super) const SPRITE_46_BLUE_ARCHER_LOCAL_GRAPHICS: [u8; 4] = [8, 0, 12, 5];
+
+pub(super) const SPRITE_46_BLUE_ARCHER_DIR_LOCK: [u8; 4] = [3, 2, 0, 1];
+
+pub(super) const CHAIN_BALL_TROOPER_DRAW_SHADOW: [u8; 4] = [0x0c, 0x0c, 0x0a, 0x0a];
+
+pub(super) const SPRITE_63_DEBIRANDO_PIT_OPENING_GFX: [u8; 4] = [5, 4, 3, 3];
+
+pub(super) const SPRITE_63_DEBIRANDO_PIT_CLOSING_GFX: [u8; 4] = [3, 3, 4, 5];
+
+pub(super) const SPRITE_64_DEBIRANDO_EMERGE_GFX: [u8; 2] = [1, 0];
+
+pub(super) const SPRITE_64_DEBIRANDO_SUBMERGE_GFX: [u8; 2] = [0, 1];
+
+pub(super) const DEBIRANDO_PIT_DRAW_X_OFFSETS: [i16; 24] = [
+    -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, -8, 8, 0, 8, 0, 8, 0, 8, 0, 8, -8, 8, -8, 8,
+];
+
+pub(super) const DEBIRANDO_PIT_DRAW_Y_OFFSETS: [i16; 24] = [
+    -8, -8, 8, 8, -8, -8, 8, 8, -8, -8, 8, 8, 0, 0, 8, 8, 0, 0, 8, 8, -8, -8, 8, 8,
+];
+
+pub(super) const DEBIRANDO_PIT_DRAW_CHARS: [u8; 24] = [
+    4, 4, 4, 4, 0x22, 0x22, 0x22, 0x22, 2, 2, 2, 2, 0x29, 0x29, 0x29, 0x29, 0x39, 0x39, 0x39, 0x39,
+    0x2a, 0x2a, 0x2a, 0x2a,
+];
+
+pub(super) const DEBIRANDO_PIT_DRAW_FL: [u8; 24] = [
+    0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40,
+    0x80, 0xc0, 0, 0x40, 0x80, 0xc0,
+];
+
+pub(super) const DEBIRANDO_PIT_DRAW_BIG: [u8; 6] = [2, 2, 2, 0, 0, 2];
+
+pub(super) const DEBIRANDO_DRAW_X_OFFSETS: [i8; 16] =
+    [0, 8, 0, 8, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0];
+
+pub(super) const DEBIRANDO_DRAW_Y_OFFSETS: [i8; 16] =
+    [2, 2, 6, 6, -2, -2, 6, 6, -4, -4, -4, -4, -4, -4, -4, -4];
+
+pub(super) const DEBIRANDO_DRAW_CHARS: [u8; 16] = [
+    0, 0, 0xd8, 0xd8, 0, 0, 0xd9, 0xd9, 0, 0, 0, 0, 0x20, 0x20, 0x20, 0x20,
+];
+
+pub(super) const DEBIRANDO_DRAW_FL: [u8; 16] =
+    [1, 0x41, 0, 0x40, 1, 1, 0, 0x40, 1, 1, 1, 1, 1, 1, 1, 1];
+
+pub(super) const DEBIRANDO_DRAW_BIG: [u8; 16] = [0, 0, 0, 0, 2, 2, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2];
+
+pub(super) const SPRITE_57_DESERT_STATUE_NEXT_D: [u8; 4] = [3, 2, 0, 1];
+
+pub(super) const SPRITE_57_DESERT_STATUE_XV: [i8; 4] = [16, -16, 0, 0];
+
+pub(super) const SPRITE_57_DESERT_STATUE_YV: [i8; 4] = [0, 0, 16, -16];
+
+pub(super) const DASH_TREE_TOP_DRAW_X_OFFSETS: [i8; 16] =
+    [10, 22, 30, 1, 34, 5, 13, 29, 0, 17, 27, 44, 15, 33, 18, 26];
+
+pub(super) const DASH_TREE_TOP_DRAW_Y_OFFSETS: [i8; 16] =
+    [0, 4, 2, 7, 10, 16, 24, 23, 34, 35, 30, 31, 46, 42, 10, 11];
+
+pub(super) const DASH_TREE_TOP_DRAW_CHARS: [u8; 6] = [8, 8, 0x28, 0x28, 0x2a, 0x2a];
+
+pub(super) const DASH_TREE_TOP_DRAW_FL: [u8; 6] = [0x31, 0x71, 0x31, 0x71, 0x31, 0x71];
+
+pub(super) const RETREAT_BAT_DRAW_OFFSETS: [usize; 20] = [
+    0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 6, 6, 8, 10, 12, 10, 14, 14, 14, 14,
+];
+
+pub(super) const RETREAT_BAT_DRAW_COUNT: [usize; 20] =
+    [1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4];
+
+pub(super) const FAERIE_QUEEN_DRAW_X_OFFSETS: [u8; 24] = [
+    0, 16, 0, 8, 16, 24, 0, 8, 16, 24, 0, 16, 0, 16, 0, 8, 16, 24, 0, 8, 16, 24, 0, 16,
+];
+
+pub(super) const FAERIE_QUEEN_DRAW_Y_OFFSETS: [u8; 24] = [
+    0, 0, 16, 16, 16, 16, 24, 24, 24, 24, 32, 32, 0, 0, 16, 16, 16, 16, 24, 24, 24, 24, 32, 32,
+];
+
+pub(super) const FAERIE_QUEEN_DRAW_CHARS: [u8; 24] = [
+    0xc7, 0xc7, 0xcf, 0xca, 0xca, 0xcf, 0xdf, 0xda, 0xda, 0xdf, 0xcb, 0xcb, 0xcd, 0xcd, 0xc9, 0xca,
+    0xca, 0xc9, 0xd9, 0xda, 0xda, 0xd9, 0xcb, 0xcb,
+];
+
+pub(super) const FAERIE_QUEEN_DRAW_FL: [u8; 24] = [
+    0, 0x40, 0, 0, 0x40, 0x40, 0, 0, 0x40, 0x40, 0, 0x40, 0, 0x40, 0, 0, 0x40, 0x40, 0, 0, 0x40,
+    0x40, 0, 0x40,
+];
+
+pub(super) const FAERIE_QUEEN_DRAW_BIG: [u8; 24] = [
+    2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2,
+];
+
+pub(super) const CRYSTAL_MAIDEN_DRAW_DMA: [u8; 16] = [
+    0x20, 0xc0, 0x20, 0xc0, 0, 0xa0, 0, 0xa0, 0x40, 0x80, 0x40, 0x60, 0x40, 0x80, 0x40, 0x60,
+];
+
+pub(super) const SPRITE_0_F_OCTOBALLOON_Z: [u8; 8] = [16, 17, 18, 19, 20, 19, 18, 17];
+
+pub(super) const SPRITE_0_D_BUZZBLOB_LOCAL_GRAPHICS: [u8; 4] = [0, 1, 0, 2];
+
+pub(super) const SPRITE_0_D_BUZZBLOB_OBJ_PRIO: [u8; 4] = [10, 2, 8, 2];
+
+pub(super) const SPRITE_08_OCTOROK_NEXT_DIR: [u8; 4] = [2, 3, 1, 0];
+
+pub(super) const SPRITE_08_OCTOROK_DIRECTIONS: [u8; 4] = [3, 2, 0, 1];
+
+pub(super) const SPRITE_08_OCTOROK_LOCAL_X_VELOCITIES: [i8; 4] = [24, -24, 0, 0];
+
+pub(super) const SPRITE_08_OCTOROK_LOCAL_Y_VELOCITIES: [i8; 4] = [0, 0, 24, -24];
+
+pub(super) const SPRITE_08_OCTOROK_OAM_FLAGS: [u8; 4] = [0x40, 0, 0, 0];
+
+pub(super) const SPRITE_02_STALFOS_HEAD_OAM_FLAGS: [u8; 4] = [0, 0, 0, 0x40];
+
+pub(super) const SPRITE_02_STALFOS_HEAD_LOCAL_GRAPHICS: [u8; 4] = [0, 1, 2, 1];
+
+pub(super) const SPRITE_0_E_SNAPDRAGON_DELAY: [u8; 4] = [0x20, 0x30, 0x40, 0x50];
+
+pub(super) const SPRITE_0_E_SNAPDRAGON_LOCAL_GRAPHICS: [u8; 4] = [4, 0, 6, 2];
+
+pub(super) const SPRITE_0_E_SNAPDRAGON_LOCAL_X_VELOCITIES: [i8; 8] =
+    [8, -8, 8, -8, 16, -16, 16, -16];
+
+pub(super) const SPRITE_0_E_SNAPDRAGON_LOCAL_Y_VELOCITIES: [i8; 8] =
+    [8, 8, -8, -8, 16, 16, -16, -16];
+
+pub(super) const SPRITE_18_MINI_MOLDORM_LOCAL_X_VELOCITIES: [i8; 16] = [
+    24, 22, 17, 9, 0, -9, -17, -22, -24, -22, -17, -9, 0, 9, 17, 22,
+];
+
+pub(super) const SPRITE_18_MINI_MOLDORM_LOCAL_Y_VELOCITIES: [i8; 16] = [
+    0, 9, 17, 22, 24, 22, 17, 9, 0, -9, -17, -22, -24, -22, -17, -9,
+];
+
+pub(super) const SPRITE_18_MINI_MOLDORM_NEXT_DIR: [u8; 16] =
+    [8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7];
+
+pub(super) const SPRITE_11_HINOX_WALK_GFX: [u8; 4] = [6, 4, 0, 2];
+
+pub(super) const SPRITE_11_HINOX_LOCAL_GRAPHICS: [u8; 8] = [11, 10, 8, 9, 7, 5, 1, 3];
+
+pub(super) const SPRITE_13_MINI_HELMASAUR_LOCAL_GRAPHICS: [u8; 8] = [3, 4, 3, 4, 2, 2, 5, 5];
+
+pub(super) const SPRITE_13_MINI_HELMASAUR_OAM_FLAGS: [u8; 8] = [0x40, 0x40, 0, 0, 0, 0x40, 0x40, 0];
+
+pub(super) const SPRITE_82_ANTIFAIRY_CIRCLE_VEL: [i8; 2] = [1, -1];
+
+pub(super) const SPRITE_7_E_FIREBAR_CLOCKWISE_INCR: [i16; 4] = [-2, 2, -1, 1];
+
+pub(super) const SPRITE_20_SLUGGULA_LOCAL_GRAPHICS: [u8; 8] = [0, 1, 0, 1, 2, 3, 4, 5];
+
+pub(super) const SPRITE_20_SLUGGULA_OAM_FLAGS: [u8; 8] = [0x40, 0x40, 0, 0, 0, 0, 0, 0];
+
+pub(super) const SPRITE_20_SLUGGULA_XYVEL: [i8; 6] = [16, -16, 0, 0, 16, -16];
+
+pub(super) const SPRITE_19_POE_ACCEL: [i8; 4] = [1, -1, 2, -2];
+
+pub(super) const SPRITE_19_POE_OAM_FLAGS: [u8; 2] = [0x40, 0];
+
+pub(super) const SPRITE_19_POE_LOCAL_Y_VELOCITIES: [i8; 2] = [8, -8];
+
+pub(super) const SPRITE_1_F_SICK_KID_LOCAL_GRAPHICS: [i8; 8] = [0, 1, 0, 1, 0, 1, 2, -1];
+
+pub(super) const SPRITE_1_F_SICK_KID_DELAY: [u8; 7] = [8, 12, 8, 12, 8, 96, 16];
+
+pub(super) const SPRITE_6_D_RAT_LOCAL_X_VELOCITIES: [i8; 4] = [24, -24, 0, 0];
+
+pub(super) const SPRITE_6_D_RAT_LOCAL_Y_VELOCITIES: [i8; 4] = [0, 0, 24, -24];
+
+pub(super) const SPRITE_BA_WHIRLPOOL_OAM_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
+
+pub(super) const SPRITE_5_D_ROLLER_VERTICAL_DOWN_FIRST_XYVEL: [i8; 6] = [-16, 16, 0, 0, -16, 16];
+
+pub(super) const SPRITE_4_D_TOPPO_X_OFFS: [i8; 4] = [-32, 32, 0, 0];
+
+pub(super) const SPRITE_4_D_TOPPO_Y_OFFS: [i8; 4] = [0, 0, -32, 32];
+
+pub(super) const TOPPO_DRAW_X_OFFSETS: [i8; 15] = [0, 8, 8, 0, 8, 8, 0, 0, 8, 0, 0, 0, 0, 0, 0];
+
+pub(super) const TOPPO_DRAW_Y_OFFSETS: [i8; 15] = [8, 8, 8, 8, 8, 8, 0, 8, 8, 0, 0, 0, 0, 0, 0];
+
+pub(super) const TOPPO_DRAW_CHARS: [u8; 15] = [
+    0xc8, 0xc8, 0xc8, 0xca, 0xca, 0xca, 0xc0, 0xc8, 0xc8, 0xc2, 0xc2, 0xc2, 0xc2, 0xc2, 0xc2,
+];
+
+pub(super) const TOPPO_DRAW_FLAGS: [u8; 15] = [
+    0, 0x40, 0x40, 0, 0x40, 0x40, 0, 0, 0x40, 0, 0, 0, 0x40, 0x40, 0x40,
+];
+
+pub(super) const TOPPO_DRAW_BIG: [u8; 15] = [0, 0, 0, 0, 0, 0, 2, 0, 0, 2, 2, 2, 2, 2, 2];
+
+pub(super) const SPRITE_4_C_GELDMAN_EMERGE_GFX: [u8; 8] = [3, 2, 0, 0, 0, 0, 0, 0];
+
+pub(super) const SPRITE_4_C_GELDMAN_PURSUE_GFX: [u8; 2] = [4, 5];
+
+pub(super) const SPRITE_4_C_GELDMAN_SUBMERGE_GFX: [u8; 5] = [0, 1, 2, 3, 3];
+
+pub(super) const SPRITE_66_WALL_CANNON_VERTICAL_LEFT_LOCAL_X_VELOCITIES: [i8; 4] = [0, 0, -16, 16];
+
+pub(super) const SPRITE_66_WALL_CANNON_VERTICAL_LEFT_LOCAL_Y_VELOCITIES: [i8; 4] = [-16, 16, 0, 0];
+
+pub(super) const SPRITE_66_WALL_CANNON_VERTICAL_LEFT_LOCAL_GRAPHICS: [u8; 4] = [0, 0, 2, 2];
+
+pub(super) const SPRITE_66_WALL_CANNON_VERTICAL_LEFT_OAM_FLAGS: [u8; 4] = [0x40, 0, 0, 0x80];
+
+pub(super) const SPRITE_5_B_SPARK_CLOCKWISE_OAM_FLAGS: [u8; 4] = [0, 0x40, 0x80, 0xc0];
+
+pub(super) const SPRITE_5_B_SPARK_CLOCKWISE_DIRECTIONS: [u8; 8] = [1, 3, 2, 0, 7, 5, 6, 4];
+
+pub(super) const SPRITE_58_CRAB_LOCAL_X_VELOCITIES: [i8; 4] = [28, -28, 0, 0];
+
+pub(super) const SPRITE_58_CRAB_LOCAL_Y_VELOCITIES: [i8; 4] = [0, 0, 12, -12];
+
+pub(super) const SPRITE_80_FIRESNAKE_OAM_FLAGS: [u8; 4] = [0, 0x40, 0x80, 0xc0];
+
+pub(super) const SPRITE_80_FIRESNAKE_LOCAL_X_VELOCITIES: [i8; 4] = [24, -24, 0, 0];
+
+pub(super) const SPRITE_80_FIRESNAKE_LOCAL_Y_VELOCITIES: [i8; 4] = [0, 0, 24, -24];
+
+pub(super) const SPRITE_87_KODONGO_FIRE_OAM_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
+
+pub(super) const SPRITE_87_KODONGO_FIRE_LOCAL_GRAPHICS: [u8; 32] = [
+    5, 4, 3, 1, 2, 0, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0,
+];
+
+pub(super) const SPRITE_7_C_GREEN_STALFOS_DIRECTIONS: [u8; 4] = [4, 6, 0, 2];
+
+pub(super) const SPRITE_7_C_GREEN_STALFOS_OAM_FLAGS: [u8; 4] = [0x40, 0, 0, 0];
+
+pub(super) const SPRITE_7_C_GREEN_STALFOS_LOCAL_GRAPHICS: [u8; 4] = [0, 0, 1, 2];
+
+pub(super) const SPRITE_71_LEEVER_EMERGE_GFX: [u8; 16] =
+    [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 2, 1, 2, 1, 0, 0];
+
+pub(super) const SPRITE_71_LEEVER_ATTACK_GFX: [u8; 4] = [9, 10, 11, 12];
+
+pub(super) const SPRITE_71_LEEVER_ATTACK_SPD: [u8; 2] = [12, 8];
+
+pub(super) const SPRITE_71_LEEVER_SUBMERGE_GFX: [u8; 16] =
+    [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 2, 1, 2, 1, 0, 0];
+
+pub(super) const SPRITE_12_MOBLIN_LOCAL_X_VELOCITIES: [i8; 4] = [16, -16, 0, 0];
+
+pub(super) const SPRITE_12_MOBLIN_LOCAL_Y_VELOCITIES: [i8; 4] = [0, 0, 16, -16];
+
+pub(super) const SPRITE_12_MOBLIN_DELAY: [u8; 4] = [0x10, 0x20, 0x30, 0x40];
+
+pub(super) const SPRITE_12_MOBLIN_SECONDARY_GRAPHICS: [u8; 8] = [11, 10, 8, 9, 7, 5, 0, 2];
+
+pub(super) const SPRITE_12_MOBLIN_DIRS: [u8; 8] = [2, 3, 2, 3, 0, 1, 0, 1];
+
+pub(super) const SPRITE_12_MOBLIN_LOCAL_GRAPHICS: [u8; 4] = [6, 4, 0, 2];
+
+pub(super) const OCTOBALLOON_DRAW_X_OFFSETS: [i8; 12] = [-4, 4, -4, 4, -8, 8, -8, 8, -4, 4, -4, 4];
+
+pub(super) const OCTOBALLOON_DRAW_Y_OFFSETS: [i8; 12] = [-4, -4, 4, 4, -8, -8, 8, 8, -4, -4, 4, 4];
+
+pub(super) const OCTOBALLOON_DRAW_CHARS: [u8; 12] = [
+    0x8c, 0x8c, 0x9c, 0x9c, 0x86, 0x86, 0x86, 0x86, 0x86, 0x86, 0x86, 0x86,
+];
+
+pub(super) const OCTOBALLOON_DRAW_FL: [u8; 12] =
+    [0, 0x40, 0, 0x40, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0];
+
+pub(super) const KHOLDSTARE_DRAW_X_OFFSETS: [i8; 16] =
+    [8, 7, 4, 2, 0, -2, -4, -7, -8, -7, -4, -2, 0, 2, 4, 7];
+
+pub(super) const KHOLDSTARE_DRAW_Y_OFFSETS: [i8; 16] =
+    [0, 2, 4, 7, 8, 7, 4, 2, 0, -2, -4, -7, -8, -7, -4, -2];
+
+pub(super) const KHOLDSTARE_DRAW_CHARS: [u8; 16] = [
+    0xac, 0xac, 0xaa, 0x8c, 0x8c, 0x8c, 0xaa, 0xac, 0xac, 0xaa, 0xaa, 0x8c, 0x8c, 0x8c, 0xaa, 0xac,
+];
+
+pub(super) const KHOLDSTARE_DRAW_FL: [u8; 16] = [
+    0x40, 0x40, 0x40, 0, 0, 0, 0, 0, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0xc0, 0xc0,
+];
+
+pub(super) const BAT_CRASH_DRAW_HARDCODED_GARBAGE_OAMS: [(i8, i8, u8, u8); 8] = [
+    (104, -105, 0x57, 0x01),
+    (120, -105, 0x57, 0x01),
+    (-120, -105, 0x57, 0x01),
+    (104, -89, 0x57, 0x01),
+    (120, -89, 0x57, 0x01),
+    (-120, -89, 0x57, 0x01),
+    (101, -112, 0x57, 0x01),
+    (-117, -112, 0x57, 0x01),
+];
+
+pub(super) const MOLDORM_DRAW_X_OFFSETS: [i8; 16] =
+    [11, 10, 9, 6, 3, 0, -2, -3, -4, -3, -2, 1, 4, 7, 9, 10];
+
+pub(super) const MOLDORM_DRAW_Y_OFFSETS: [i8; 16] =
+    [4, 6, 9, 10, 11, 10, 9, 6, 3, 0, -2, -3, -4, -3, -2, 1];
+
+pub(super) const MOLDORM_DRAW_CHARS: [u8; 3] = [0x5d, 0x62, 0x60];
+
+pub(super) const MOLDORM_DRAW_XY: [i8; 3] = [4, 0, 0];
+
+pub(super) const MOLDORM_DRAW_BIG: [u8; 3] = [0, 2, 2];
+
+pub(super) const MOLDORM_DRAW_GET_OFFS: [u8; 3] = [21, 26, 0];
+
+pub(super) const SPRITE_54_LANMOLAS_RAND_B: [u8; 8] =
+    [0x58, 0x50, 0x60, 0x70, 0x80, 0x90, 0xa0, 0x98];
+
+pub(super) const SPRITE_54_LANMOLAS_RAND_C: [u8; 8] =
+    [0x68, 0x60, 0x70, 0x80, 0x90, 0xa0, 0xa8, 0x80];
+
+pub(super) const SPRITE_54_LANMOLAS_ZVEL: [i8; 2] = [2, -2];
+
+pub(super) const LANMOLA_DRAW_SPR_OFFS: [u8; 4] = [76, 60, 44, 28];
+
+pub(super) const LANMOLA_DRAW_CHARS_1: [u8; 16] = [
+    0xc4, 0xe2, 0xc2, 0xe0, 0xc0, 0xe0, 0xc2, 0xe2, 0xc4, 0xe2, 0xc2, 0xe0, 0xc0, 0xe0, 0xc2, 0xe2,
+];
+
+pub(super) const LANMOLA_DRAW_CHARS_0: [u8; 16] = [
+    0xcc, 0xe4, 0xca, 0xe6, 0xc8, 0xe6, 0xca, 0xe4, 0xcc, 0xe4, 0xca, 0xe6, 0xc8, 0xe6, 0xca, 0xe4,
+];
+
+pub(super) const LANMOLA_DRAW_FLAGS: [u8; 16] = [
+    0xc0, 0xc0, 0xc0, 0xc0, 0x80, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40,
+];
+
+pub(super) const CHAIN_CHOMP_DRAW_LOCAL_GRAPHICS: [u8; 16] =
+    [0, 1, 2, 3, 3, 3, 2, 1, 0, 0, 0, 4, 4, 4, 0, 0];
+
+pub(super) const CHAIN_CHOMP_DRAW_OAM_FLAGS: [u8; 16] = [
+    0x40, 0x40, 0x40, 0x40, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40,
+];
+
+pub(super) const MOBLIN_DRAW_OBJ_OFFS: [u8; 12] = [2, 2, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2];
+
+pub(super) const MOBLIN_DRAW_HEAD_CHAR: [u8; 4] = [0x88, 0x88, 0x86, 0x84];
+
+pub(super) const ALTAR_ZELDA_DRAW_BODY_X_OFFS: [u8; 16] =
+    [4, 4, 3, 3, 2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0];
+
+pub(super) const ARCHERY_GAME_DRAW_PRIZE_X_OFFSETS: [i8; 5] = [-8, -8, 0, 8, 16];
+
+pub(super) const ARCHERY_GAME_DRAW_PRIZE_Y_OFFSETS: [i8; 5] = [-24, -16, -20, -20, -20];
+
+pub(super) const ARCHERY_GAME_DRAW_PRIZE_CHARS: [u8; 3] = [0x0b, 0x1b, 0xb6];
+
+pub(super) const ARCHERY_GAME_DRAW_PRIZE_FLAGS: [u8; 5] = [0x38, 0x38, 0x34, 0x35, 0x35];
+
+pub(super) const ARCHERY_GAME_DRAW_PRIZE_CHARS_3: [u8; 6] = [0x12, 0x32, 0x31, 3, 0x22, 0x33];
+
+pub(super) const ARCHERY_GAME_DRAW_PRIZE_CHARS_4: [u8; 6] = [0x7c, 0x7c, 0x22, 2, 0x12, 0x33];
+
+pub(super) const BUSH_SOLDIER_COMMON_DRAW_Y_OFFSETS: [i8; 14] =
+    [8, 8, 8, 8, 2, 8, 0, 8, -3, 8, -3, 8, -3, 8];
+
+pub(super) const BUSH_SOLDIER_COMMON_DRAW_CHARS: [u8; 14] = [
+    0x20, 0x20, 0x20, 0x20, 0x40, 0x20, 0x40, 0x20, 0x40, 0x20, 0x42, 0x20, 0x42, 0x20,
+];
+
+pub(super) const BUSH_SOLDIER_COMMON_DRAW_FLAGS: [u8; 14] =
+    [9, 3, 0x49, 0x43, 9, 3, 0x49, 0x43, 9, 3, 0x49, 0x43, 9, 3];
+
+pub(super) const ARCHERY_GAME_GUY_DRAW_X_OFFSETS: [i8; 15] =
+    [0, 0, 0, 0, 0, -5, 0, -1, -1, 0, 0, 0, 0, 1, 1];
+
+pub(super) const ARCHERY_GAME_GUY_DRAW_Y_OFFSETS: [i8; 15] = [
+    0, -10, -10, 0, -10, -3, 0, -10, -10, 0, -10, -10, 0, -10, -10,
+];
+
+pub(super) const ARCHERY_GAME_GUY_DRAW_CHARS: [u8; 15] =
+    [0x26, 6, 6, 8, 6, 0x3a, 0x26, 6, 6, 0x26, 6, 6, 0x26, 6, 6];
+
+pub(super) const ARCHERY_GAME_GUY_DRAW_FLAGS: [u8; 15] =
+    [8, 6, 6, 8, 6, 8, 8, 6, 6, 8, 6, 6, 8, 6, 6];
+
+pub(super) const ARCHERY_GAME_GUY_DRAW_BIG: [u8; 15] =
+    [2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2];
+
+pub(super) const PUSH_SWITCH_DRAW_OAM: [(i8, i8, u8, u8); 40] = [
+    (4, 20, 0xdc, 0x20),
+    (4, 12, 0xdd, 0x20),
+    (4, 12, 0xdd, 0x20),
+    (4, 12, 0xdd, 0x20),
+    (0, 0, 0xca, 0x20),
+    (3, 12, 0xdd, 0x20),
+    (3, 20, 0xdc, 0x20),
+    (3, 20, 0xdc, 0x20),
+    (3, 20, 0xdc, 0x20),
+    (0, 0, 0xca, 0x20),
+    (-8, 8, 0xea, 0x20),
+    (0, 8, 0xeb, 0x20),
+    (-8, 16, 0xfa, 0x20),
+    (0, 16, 0xfb, 0x20),
+    (0, 0, 0xca, 0x20),
+    (-12, 4, 0xcc, 0x20),
+    (-4, 4, 0xcd, 0x20),
+    (-4, 4, 0xcd, 0x20),
+    (-4, 4, 0xcd, 0x20),
+    (0, 0, 0xca, 0x20),
+    (-10, 4, 0xcc, 0x20),
+    (-4, 4, 0xcd, 0x20),
+    (-4, 4, 0xcd, 0x20),
+    (-4, 4, 0xcd, 0x20),
+    (0, 0, 0xca, 0x20),
+    (-8, 4, 0xcc, 0x20),
+    (-4, 4, 0xcd, 0x20),
+    (-4, 4, 0xcd, 0x20),
+    (-4, 4, 0xcd, 0x20),
+    (0, 0, 0xca, 0x20),
+    (4, 3, 0xe2, 0x20),
+    (-6, 4, 0xcc, 0x20),
+    (-4, 4, 0xcd, 0x20),
+    (-4, 4, 0xcd, 0x20),
+    (0, 0, 0xca, 0x20),
+    (4, 3, 0xf1, 0x20),
+    (-6, 4, 0xcc, 0x20),
+    (-4, 4, 0xcd, 0x20),
+    (-4, 4, 0xcd, 0x20),
+    (0, 0, 0xca, 0x20),
+];
+
+pub(super) const PUSH_SWITCH_DRAW_WH: [u8; 16] = [
+    8, 6, 0x10, 0x10, 0x10, 8, 0x10, 8, 0x10, 8, 0x10, 8, 0x10, 3, 0x10, 8,
+];
+
 pub(super) const TEKTITE_DRAW_FRAMES: [DrawMultipleData; 6] = [
     DrawMultipleData {
         x: -8,
