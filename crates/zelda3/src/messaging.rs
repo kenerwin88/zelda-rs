@@ -11,11 +11,8 @@ fn text_decode_cmd(a: u8, src: *const u8) -> u32 {
         let param = if a >= 0x80 { 26 } else { a };
         return ((param as u32) << 16) | ((TEXT_CMD_IS_LETTER as u32) << 8);
     }
-    const COMMAND_LENGTHS_US: [u8; 25] = [
-        0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0,
-    ];
     let cmd = a - TEXT_COMMAND_START_US;
-    let param = if COMMAND_LENGTHS_US[cmd as usize] != 0 {
+    let param = if TEXT_DECODE_COMMAND_LENGTHS_US[cmd as usize] != 0 {
         unsafe { src.as_ref().copied().unwrap_or(0) }
     } else {
         0
@@ -396,8 +393,6 @@ impl ZeldaState {
                 return;
             }
         }
-
-        const PRAYING_SCENE_DELAYS: [u8; 5] = [22, 22, 22, 64, 1];
         if (self
             .follower_link_state_mut()
             .decrement_spin_attack_delay_timer() as i8)
@@ -418,27 +413,6 @@ impl ZeldaState {
     }
 
     pub(super) fn DesertHDMA_CalculateIrisShapeLine(&self) -> Pair16U {
-        const PRAYING_IRIS_OPEN_RADIUS_LOOKUP: [u8; 129] = [
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xfe,
-            0xfe, 0xfe, 0xfd, 0xfd, 0xfd, 0xfd, 0xfc, 0xfc, 0xfc, 0xfb, 0xfb, 0xfb, 0xfa, 0xfa,
-            0xf9, 0xf9, 0xf8, 0xf8, 0xf7, 0xf7, 0xf6, 0xf6, 0xf5, 0xf5, 0xf4, 0xf3, 0xf3, 0xf2,
-            0xf1, 0xf1, 0xf0, 0xef, 0xee, 0xee, 0xed, 0xec, 0xeb, 0xea, 0xe9, 0xe9, 0xe8, 0xe7,
-            0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xdf, 0xde, 0xdd, 0xdc, 0xdb, 0xda, 0xd8, 0xd7,
-            0xd6, 0xd5, 0xd3, 0xd2, 0xd0, 0xcf, 0xcd, 0xcc, 0xca, 0xc9, 0xc7, 0xc6, 0xc4, 0xc2,
-            0xc1, 0xbf, 0xbd, 0xbb, 0xb9, 0xb7, 0xb6, 0xb4, 0xb1, 0xaf, 0xad, 0xab, 0xa9, 0xa7,
-            0xa4, 0xa2, 0x9f, 0x9d, 0x9a, 0x97, 0x95, 0x92, 0x8f, 0x8c, 0x89, 0x86, 0x82, 0x7f,
-            0x7b, 0x78, 0x74, 0x70, 0x6c, 0x67, 0x63, 0x5e, 0x59, 0x53, 0x4d, 0x46, 0x3f, 0x37,
-            0x2d, 0x1f, 0,
-        ];
-        const PRAYING_IRIS_CLOSED_RADIUS_LOOKUP: [u8; 129] = [
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xfe, 0xfd, 0xfd, 0xfc, 0xfc, 0xfb, 0xfa,
-            0xf9, 0xf8, 0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf1, 0xf0, 0xee, 0xed, 0xeb, 0xe9, 0xe8,
-            0xe6, 0xe4, 0xe2, 0xdf, 0xdd, 0xdb, 0xd8, 0xd6, 0xd3, 0xd0, 0xcd, 0xca, 0xc7, 0xc4,
-            0xc1, 0xbd, 0xb9, 0xb6, 0xb1, 0xad, 0xa9, 0xa4, 0x9f, 0x9a, 0x95, 0x8f, 0x89, 0x82,
-            0x7b, 0x74, 0x6c, 0x63, 0x59, 0x4d, 0x3f, 0x2d, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        ];
         let y_buffer = self
             .game_state
             .display
@@ -467,8 +441,7 @@ impl ZeldaState {
     }
 
     pub(super) fn OverworldMap_SetupHdma(&mut self) {
-        const HDMA_ADDR: [u32; 2] = [0x0abdcf, 0x0abdd6];
-        let addr = HDMA_ADDR[self.overworld_map_flags() as usize];
+        let addr = PRAYING_IRIS_HDMA_SOURCE_ADDRS[self.overworld_map_flags() as usize];
         self.hdma_setup(addr, addr, 0x42, 0x1b, 0x1e, 10);
     }
 
@@ -519,9 +492,6 @@ impl ZeldaState {
     }
 
     pub(super) fn GameOverText_SweepLeft(&mut self) {
-        const GAME_OVER_SWEEP_LEFT_X_TARGETS: [u8; 8] =
-            [0x40, 0x50, 0x60, 0x70, 0x88, 0x98, 0xa8, 0x40];
-
         let mut k = self.game_state.minigame.flag_boomerang_in_place() as usize;
         self.sprite_system_mut().set_cur_object_index(k as u8);
         self.ancilla_slot_view_mut(k).set_x_velocity(0x80);
@@ -558,9 +528,6 @@ impl ZeldaState {
     }
 
     pub(super) fn GameOverText_UnfurlRight(&mut self) {
-        const GAME_OVER_UNFURL_RIGHT_X_TARGETS: [u8; 8] =
-            [0x58, 0x60, 0x68, 0x70, 0x88, 0x90, 0x98, 0xa0];
-
         let mut k = self.game_state.minigame.flag_boomerang_in_place() as usize;
         self.sprite_system_mut().set_cur_object_index(k as u8);
         self.ancilla_slot_view_mut(k).set_x_velocity(0x60);
@@ -1307,11 +1274,6 @@ impl ZeldaState {
     }
 
     pub(super) fn WorldMap_PlayerControl(&mut self) {
-        const OVERWORLD_MAP_TIMER: [u8; 2] = [33, 12];
-        const OVERWORLD_MAP_SCROLL_DELTAS: [i16; 8] = [0, 0, 1, 2, -1, -2, 1, 2];
-        const OVERWORLD_MAP_SCROLL_TARGETS: [u16; 8] =
-            [0, 0, 224, 480, (-72i16) as u16, (-224i16) as u16, 0, 0];
-
         if self.overworld_map_flags() & 0x80 != 0 {
             self.and_overworld_map_flags(!0x80);
             self.OverworldMap_SetupHdma();
@@ -1338,7 +1300,7 @@ impl ZeldaState {
             self.dungeon_room_load_mut().set_draw_width_indicator(8);
             let t = (self.overworld_map_flags() ^ 1) & 1;
             self.set_overworld_map_flags(t | 0x80);
-            self.set_mode7_zoom_timer(OVERWORLD_MAP_TIMER[t as usize]);
+            self.set_mode7_zoom_timer(OVERWORLD_MAP_ZOOM_TIMERS[t as usize]);
             if self.mode7_zoom_timer() == 12 {
                 let y = self.game_state.player.special_exit_position.map_zoom_y();
                 self.set_bg1_y(y);
@@ -1501,7 +1463,6 @@ impl ZeldaState {
             self.special_exit_position_mut()
                 .set_position(bird_x, bird_y);
             if let Some((x, y)) = self.WorldMap_CalculateCurrentOamCoordinates() {
-                const OVERWORLD_MAP_BIRD_FRAME_CHARS: [u8; 4] = [0x34, 0x74, 0xf4, 0xb4];
                 self.WorldMap_AddSprite(
                     15,
                     2,
@@ -1532,58 +1493,6 @@ impl ZeldaState {
     }
 
     fn WorldMap_HandleCrystalSprites(&mut self) {
-        const OVERWORLD_MAP_CRYSTAL_ICON_FRAMES: [u8; 4] = [0x68, 0x69, 0x78, 0x69];
-        const X: [[u16; 9]; 7] = [
-            [0x7ff, 0x2c0, 0xd00, 0xf31, 0x6d, 0x7e0, 0xf40, 0xf40, 0x8dc],
-            [
-                0xff00, 0xff00, 0xff00, 0x8d0, 0xff00, 0xff00, 0xff00, 0x82, 0xff00,
-            ],
-            [
-                0xff00, 0xff00, 0xff00, 0x108, 0xff00, 0xff00, 0xff00, 0xf11, 0xff00,
-            ],
-            [
-                0xff00, 0xff00, 0xff00, 0x6d, 0xff00, 0xff00, 0xff00, 0x1d0, 0xff00,
-            ],
-            [
-                0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0x100, 0xff00,
-            ],
-            [
-                0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xca0, 0xff00,
-            ],
-            [
-                0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0x759, 0xff00,
-            ],
-        ];
-        const Y: [[u16; 9]; 7] = [
-            [0x730, 0x6a0, 0x710, 0x620, 0x70, 0x640, 0x620, 0x620, 0x30],
-            [
-                0xff00, 0xff00, 0xff00, 0x80, 0xff00, 0xff00, 0xff00, 0xb0, 0xff00,
-            ],
-            [
-                0xff00, 0xff00, 0xff00, 0xd70, 0xff00, 0xff00, 0xff00, 0x103, 0xff00,
-            ],
-            [
-                0xff00, 0xff00, 0xff00, 0x70, 0xff00, 0xff00, 0xff00, 0x780, 0xff00,
-            ],
-            [
-                0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xca0, 0xff00,
-            ],
-            [
-                0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xda0, 0xff00,
-            ],
-            [
-                0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xed0, 0xff00,
-            ],
-        ];
-        const INFO: [[u16; 9]; 7] = [
-            [0, 0, 0, 0x6038, 0x6234, 0x6632, 0x6434, 0x6434, 0x6632],
-            [0, 0, 0, 0x6032, 0, 0, 0, 0x6434, 0],
-            [0, 0, 0, 0x6034, 0, 0, 0, 0x6434, 0],
-            [0, 0, 0, 0x6234, 0, 0, 0, 0x6434, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0x6434, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0x6434, 0],
-            [0, 0, 0, 0, 0, 0, 0, 0x6434, 0],
-        ];
         let k = self
             .game_state
             .inventory
@@ -1599,12 +1508,14 @@ impl ZeldaState {
             } else {
                 self.OverworldMap_CheckForCrystal(crystal)
             };
-            if have_marker || (X[crystal][k] as i16) < 0 {
+            if have_marker || (OVERWORLD_MAP_CRYSTAL_ICON_X_POSITIONS[crystal][k] as i16) < 0 {
                 continue;
             }
-            self.special_exit_position_mut()
-                .set_position(X[crystal][k], Y[crystal][k]);
-            let mut info = INFO[crystal][k];
+            self.special_exit_position_mut().set_position(
+                OVERWORLD_MAP_CRYSTAL_ICON_X_POSITIONS[crystal][k],
+                OVERWORLD_MAP_CRYSTAL_ICON_Y_POSITIONS[crystal][k],
+            );
+            let mut info = OVERWORLD_MAP_CRYSTAL_ICON_INFO_TILES[crystal][k];
             let t = (info >> 8) as u8;
             if t != 0 {
                 if t != 100 && self.game_state.frame.frame_counter & 0x10 != 0 {
@@ -1639,31 +1550,6 @@ impl ZeldaState {
     }
 
     fn WorldMap_CalculateCurrentOamCoordinates(&self) -> Option<(u16, u16)> {
-        const OVERWORLD_MAP_PROJECTION_CURVE: [u8; 333] = [
-            0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0,
-            0xe0, 0xdf, 0xde, 0xdd, 0xdc, 0xdb, 0xda, 0xd8, 0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2,
-            0xd1, 0xd0, 0xcf, 0xce, 0xcd, 0xcc, 0xcb, 0xca, 0xc9, 0xc7, 0xc6, 0xc5, 0xc4, 0xc3,
-            0xc2, 0xc1, 0xc0, 0xbf, 0xbe, 0xbd, 0xbc, 0xbb, 0xba, 0xb9, 0xb8, 0xb7, 0xb6, 0xb5,
-            0xb4, 0xb3, 0xb2, 0xb1, 0xb0, 0xaf, 0xae, 0xad, 0xac, 0xab, 0xaa, 0xa9, 0xa8, 0xa7,
-            0xa6, 0xa5, 0xa4, 0xa3, 0xa2, 0xa1, 0xa0, 0x9f, 0x9e, 0x9d, 0x9c, 0x9b, 0x9b, 0x9a,
-            0x99, 0x98, 0x97, 0x96, 0x95, 0x94, 0x93, 0x92, 0x91, 0x90, 0x8f, 0x8e, 0x8d, 0x8c,
-            0x8b, 0x8b, 0x8a, 0x89, 0x88, 0x87, 0x86, 0x85, 0x84, 0x83, 0x82, 0x81, 0x81, 0x80,
-            0x7f, 0x7e, 0x7d, 0x7c, 0x7b, 0x7a, 0x79, 0x79, 0x78, 0x77, 0x76, 0x75, 0x74, 0x73,
-            0x72, 0x72, 0x71, 0x70, 0x6f, 0x6e, 0x6d, 0x6c, 0x6c, 0x6b, 0x6a, 0x69, 0x68, 0x67,
-            0x67, 0x66, 0x65, 0x64, 0x63, 0x62, 0x62, 0x61, 0x60, 0x5f, 0x5e, 0x5d, 0x5d, 0x5c,
-            0x5b, 0x5a, 0x59, 0x59, 0x58, 0x57, 0x56, 0x55, 0x55, 0x54, 0x53, 0x52, 0x51, 0x51,
-            0x50, 0x4f, 0x4e, 0x4e, 0x4d, 0x4c, 0x4b, 0x4a, 0x4a, 0x49, 0x48, 0x47, 0x47, 0x46,
-            0x45, 0x44, 0x44, 0x43, 0x42, 0x41, 0x41, 0x40, 0x3f, 0x3e, 0x3e, 0x3d, 0x3c, 0x3c,
-            0x3b, 0x3a, 0x39, 0x39, 0x38, 0x37, 0x36, 0x36, 0x35, 0x34, 0x34, 0x33, 0x32, 0x32,
-            0x31, 0x30, 0x2f, 0x2f, 0x2e, 0x2d, 0x2d, 0x2c, 0x2b, 0x2b, 0x2a, 0x29, 0x29, 0x28,
-            0x27, 0x27, 0x26, 0x25, 0x25, 0x24, 0x23, 0x23, 0x22, 0x21, 0x21, 0x20, 0x1f, 0x1f,
-            0x1e, 0x1d, 0x1d, 0x1c, 0x1c, 0x1b, 0x1a, 0x1a, 0x19, 0x18, 0x18, 0x17, 0x17, 0x16,
-            0x15, 0x15, 0x14, 0x14, 0x13, 0x12, 0x12, 0x11, 0x10, 0x10, 0x0f, 0x0f, 0x0e, 0x0e,
-            0x0d, 0x0c, 0x0c, 0x0b, 0x0b, 0x0a, 9, 9, 8, 8, 7, 7, 6, 5, 5, 4, 4, 3, 3, 2, 1, 1, 0,
-            0, 0, 0, 0xff, 0xfe, 0xfe, 0xfd, 0xfc, 0xfc, 0xfb, 0xfb, 0xfa, 0xf9, 0xf9, 0xf8, 0xf7,
-            0xf7, 0xf6, 0xf5, 0xf4, 0xf4, 0xf3, 0xf2, 0xf2, 0xf1, 0xf0, 0xef, 0xee, 0xee, 0xed,
-            0xec, 0xeb, 0xea, 0xe9, 0xe8, 0xe8, 0xe7, 0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xe0,
-        ];
         let spexit = &self.game_state.player.special_exit_position;
         let y_spexit = spexit.y();
         let x_spexit = spexit.x();
@@ -1777,23 +1663,25 @@ impl ZeldaState {
     }
 
     pub(super) fn OverworldMap_CheckForPendant(&self, k: usize) -> bool {
-        const PENDANT_BIT_MASK: [u8; 3] = [4, 1, 2];
         self.game_state
             .inventory
             .save_progress
             .map_icons_indicator()
             == 3
-            && self.game_state.inventory.player_resources.pendant_flags() & PENDANT_BIT_MASK[k] != 0
+            && self.game_state.inventory.player_resources.pendant_flags()
+                & OVERWORLD_MAP_PENDANT_BIT_MASKS[k]
+                != 0
     }
 
     pub(super) fn OverworldMap_CheckForCrystal(&self, k: usize) -> bool {
-        const CRYSTAL_BIT_MASK: [u8; 7] = [2, 0x40, 8, 0x20, 1, 4, 0x10];
         self.game_state
             .inventory
             .save_progress
             .map_icons_indicator()
             == 7
-            && self.game_state.inventory.player_resources.crystal_flags() & CRYSTAL_BIT_MASK[k] != 0
+            && self.game_state.inventory.player_resources.crystal_flags()
+                & OVERWORLD_MAP_CRYSTAL_BIT_MASKS[k]
+                != 0
     }
 
     pub(super) fn Module0E_03_DungeonMap(&mut self) {
@@ -2904,12 +2792,10 @@ impl ZeldaState {
         self.set_message_dma_tile_base(0x4841);
         self.set_message_dma_tile_limit(0x007f);
         self.set_message_dma_tile_sentinel(0xffff);
-
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self
             .game_state
             .enhanced_features
-            .has(FEATURES0_MISC_BUG_FIXES)
+            .has(SAVE_LOAD_MISC_BUG_FIXES_FLAG)
         {
             self.clear_mosaic_level();
         }
@@ -2987,11 +2873,8 @@ impl ZeldaState {
             if a < TEXT_COMMAND_START_US || a >= 0x80 {
                 return (if a >= 0x80 { 26 } else { a }, TEXT_CMD_IS_LETTER, false);
             }
-            const COMMAND_LENGTHS_US: [u8; 25] = [
-                0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0,
-            ];
             let cmd = a - TEXT_COMMAND_START_US;
-            if COMMAND_LENGTHS_US[cmd as usize] != 0 {
+            if TEXT_RENDER_COMMAND_LENGTHS_US[cmd as usize] != 0 {
                 (next.unwrap_or(0), cmd, true)
             } else {
                 (0, cmd, false)
@@ -2999,27 +2882,18 @@ impl ZeldaState {
         } else if a < 0x7f {
             (a, TEXT_CMD_IS_LETTER, false)
         } else if a < 0x87 {
-            const SIMPLE: [(u8, u8, bool); 8] = [
-                (0, TEXT_CMD_END_MESSAGE, false),
-                (0, TEXT_CMD_SCROLL, false),
-                (0, TEXT_CMD_WAITKEY, false),
-                (0, TEXT_CMD_1, false),
-                (0, TEXT_CMD_2, false),
-                (0, TEXT_CMD_3, false),
-                (0, TEXT_CMD_NAME, false),
-                (0, TEXT_CMD_NAME, false),
-            ];
-            SIMPLE[(a - 0x7f) as usize]
+            TEXT_RENDER_SIMPLE_COMMANDS[(a - 0x7f) as usize]
         } else {
             match next.unwrap_or(0) {
                 b @ 0x00..=0x0f => (b & 0x0f, TEXT_CMD_WAIT, true),
                 b @ 0x10..=0x1f => (b & 0x0f, TEXT_CMD_COLOR, true),
                 b @ 0x20..=0x2f => (b & 0x0f, TEXT_CMD_NUMBER, true),
                 b @ 0x30..=0x3f => (b & 0x0f, TEXT_CMD_SPEED, true),
-                b @ 0x40..=0x4f => {
-                    const SOUND_LUT: [u8; 1] = [45];
-                    (SOUND_LUT[(b & 0x0f) as usize], TEXT_CMD_SOUND, true)
-                }
+                b @ 0x40..=0x4f => (
+                    TEXT_RENDER_SOUND_COMMAND_PARAMS[(b & 0x0f) as usize],
+                    TEXT_CMD_SOUND,
+                    true,
+                ),
                 0x80 => (0, TEXT_CMD_CHOOSE, true),
                 0x81 => (0, TEXT_CMD_CHOOSE2, true),
                 0x82 => (0, TEXT_CMD_CHOOSE3, true),
@@ -3848,11 +3722,10 @@ impl ZeldaState {
         if self.game_state.inventory.items.has_moon_pearl() {
             self.follower_link_state_mut().clear_bunny_body_state();
         }
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self
             .game_state
             .enhanced_features
-            .has(FEATURES0_MISC_BUG_FIXES)
+            .has(PLAYER_RESET_MISC_BUG_FIXES_FLAG)
         {
             self.LoadActualGearPalettes();
         }
