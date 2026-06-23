@@ -119,15 +119,15 @@ pub(crate) use system::{
 use world::OverworldMap16State;
 pub(crate) use world::{
     BirdTravelDestinationState, NativeBirdTravelDestinationBridgeMut,
-    NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
-    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
-    NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut, NativeWorldCameraBoundariesBridgeMut,
-    NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
-    OverworldConfigTableRead, OverworldConfigTableState, OverworldMap16Decode,
-    OverworldMap16DecodeScratch, OverworldMap16SourcePage, WorldLocationState, WorldState,
-    WorldTransientState,
+    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
+    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
+    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut,
+    NativeWorldCameraBoundariesBridgeMut, NativeWorldPaletteThemeBridgeMut,
+    NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut, OverworldConfigTableRead,
+    OverworldMap16Decode, OverworldMap16DecodeScratch, OverworldMap16SourcePage,
+    WorldLocationState, WorldState, WorldTransientState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 
@@ -177,9 +177,9 @@ use sprites::{
 use system::NativeSystemWorkAreaBridgeMut;
 #[cfg(test)]
 use world::{
-    BirdTravelDestinationsState, NativeOverworldConfigTableBridgeMut, NativeWorldLocationBridgeMut,
-    NativeWorldTransientBridgeMut, OverworldEntranceState, OverworldEventInfoState,
-    OverworldExitState, OverworldMapUiState, OverworldMapZoomState, OverworldScreenSizeState,
+    BirdTravelDestinationsState, NativeWorldLocationBridgeMut, NativeWorldTransientBridgeMut,
+    OverworldConfigTableState, OverworldEntranceState, OverworldEventInfoState, OverworldExitState,
+    OverworldMapUiState, OverworldMapZoomState, OverworldScreenSizeState,
     OverworldScrollDeltaState, OverworldTransitionState, RoomBoundsState, WeatherVaneState,
     WorldCameraBoundariesState, WorldPaletteThemeState, WorldRegionState, WorldScrollState,
 };

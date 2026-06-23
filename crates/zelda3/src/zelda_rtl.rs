@@ -71,16 +71,17 @@ use crate::game_state::{
     NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
     NativeMirrorWarpBridgeMut, NativeMoldormHistoryBridgeMut, NativeMultiselectChoiceBridgeMut,
     NativeOamStateBridgeMut, NativeOverlordSlotBridgeMut, NativeOverlordSlotView,
-    NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
-    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldScrollDeltaBridgeMut, NativeOverworldTransitionBridgeMut,
-    NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
-    NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
-    NativePolyRasterEdgeBridgeMut, NativePolyRuntimeBridgeMut, NativePpuScrollCopyBridgeMut,
-    NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut,
-    NativeQuakeSpellBridgeMut, NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut,
-    NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
+    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
+    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
+    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut,
+    NativePlayerResourcesBridgeMut, NativePolyFaceCoordsBridgeMut,
+    NativePolyProjectedVerticesBridgeMut, NativePolyRasterEdgeBridgeMut,
+    NativePolyRuntimeBridgeMut, NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut,
+    NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut,
+    NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut,
+    NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
     NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
     NativeSkullWoodsFireSlotBridgeMut, NativeSpecialExitPositionBridgeMut,
     NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
@@ -4173,43 +4174,23 @@ impl ZeldaState {
         )
     }
 
-    fn sync_overworld_config_table_to_ram(&mut self) {
-        self.game_state
-            .world
-            .overworld
-            .config_table
-            .write_to_ram(&mut self.ram);
-        debug_assert_eq!(
-            self.game_state.world.overworld.config_table,
-            crate::game_state::OverworldConfigTableState::load_from_ram(&self.ram)
-        );
+    fn overworld_config_table_mut(&mut self) -> NativeOverworldConfigTableBridgeMut<'_> {
+        NativeOverworldConfigTableBridgeMut::new(
+            &mut self.game_state.world.overworld.config_table,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn copy_overworld_music_primary(&mut self, data: &[u8]) {
-        self.game_state
-            .world
-            .overworld
-            .config_table
-            .copy_music_primary(data);
-        self.sync_overworld_config_table_to_ram();
+        self.overworld_config_table_mut().copy_music_primary(data);
     }
 
     pub(crate) fn copy_overworld_music_secondary(&mut self, data: &[u8]) {
-        self.game_state
-            .world
-            .overworld
-            .config_table
-            .copy_music_secondary(data);
-        self.sync_overworld_config_table_to_ram();
+        self.overworld_config_table_mut().copy_music_secondary(data);
     }
 
     pub(crate) fn set_overworld_music(&mut self, screen: usize, value: u8) {
-        self.game_state
-            .world
-            .overworld
-            .config_table
-            .set_music(screen, value);
-        self.sync_overworld_config_table_to_ram();
+        self.overworld_config_table_mut().set_music(screen, value);
     }
 
     pub(crate) fn copy_overworld_sprite_graphics_range(
@@ -4219,12 +4200,8 @@ impl ZeldaState {
         src: usize,
         len: usize,
     ) {
-        self.game_state
-            .world
-            .overworld
-            .config_table
+        self.overworld_config_table_mut()
             .copy_sprite_graphics_range(dst, data, src, len);
-        self.sync_overworld_config_table_to_ram();
     }
 
     pub(crate) fn copy_overworld_sprite_palette_range(
@@ -4234,12 +4211,8 @@ impl ZeldaState {
         src: usize,
         len: usize,
     ) {
-        self.game_state
-            .world
-            .overworld
-            .config_table
+        self.overworld_config_table_mut()
             .copy_sprite_palette_range(dst, data, src, len);
-        self.sync_overworld_config_table_to_ram();
     }
 
     pub(crate) fn palette_buffer_mut(&mut self) -> NativePaletteBufferBridgeMut<'_> {
