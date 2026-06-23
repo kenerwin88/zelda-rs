@@ -20,6 +20,11 @@ const SPRITE_DISTRESS_X_OFFSETS: [i8; 4] = [-3, 2, 7, 11];
 const SPRITE_DISTRESS_Y_OFFSETS: [i8; 4] = [-5, -7, -7, -5];
 const BEE_SPAWN_INITIAL_DELAYS: [u8; 4] = [64, 64, 255, 255];
 const BEE_SPAWN_INITIAL_VELOCITIES: [i8; 8] = [15, 5, -5, -15, 20, 10, -10, -20];
+const BEE_RELEASE_VELOCITY_CHOICES: [i8; 8] = [8, 2, -2, -8, 10, 5, -5, -10];
+const GOOD_BEE_HEAD_ANIMATION_LIMITS: [u8; 2] = [0x0a, 0x14];
+const BOTTLE_MERCHANT_FISH_REWARD_TYPES: [u8; 5] = [0xdb, 0xe0, 0xde, 0xe2, 0xd9];
+const BOTTLE_MERCHANT_REWARD_X_VELOCITIES: [i8; 5] = [-6, -3, 0, 4, 7];
+const BOTTLE_MERCHANT_REWARD_Y_VELOCITIES: [i8; 5] = [11, 14, 16, 14, 11];
 const DAMAGE_FROM_PLAYER_NONZERO_MASK: u8 = 2;
 const SRAM_PROGRESS_INDICATOR_3_NPCS: usize = 0x0f3c9;
 const BOTTLE_VENDOR_DRAW_FRAMES: [DrawMultipleData; 4] = [
@@ -151,8 +156,6 @@ impl ZeldaState {
     //   return j;
     // }
     pub(super) fn release_bee_from_bottle(&mut self, x_value: usize) -> i32 {
-        const BEE_RELEASE_VELOCITY_CHOICES: [i8; 8] = [8, 2, -2, -8, 10, 5, -5, -10];
-
         let mut info = SpriteSpawnInfo::default();
         let j = self.sprite_spawn_dynamically(x_value, 0xb2, &mut info);
         if j >= 0 {
@@ -471,8 +474,6 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_b2_player_bee(&mut self, k: usize) {
-        const GOOD_BEE_HEAD_ANIM_LIMITS: [u8; 2] = [0x0a, 0x14];
-
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 if self.sprite_slot_view(k).e() == 0 {
@@ -503,7 +504,7 @@ impl ZeldaState {
                 }
                 let sprite = self.sprite_slot_view(k);
                 let head = (sprite.head_direction() & 1) as usize;
-                if sprite.b() >= GOOD_BEE_HEAD_ANIM_LIMITS[head] {
+                if sprite.b() >= GOOD_BEE_HEAD_ANIMATION_LIMITS[head] {
                     self.sprite_slot_view_mut(k).set_deflection_bits(64);
                     return;
                 }
@@ -891,24 +892,21 @@ impl ZeldaState {
     //   } while (!sign8(--tmp_counter));
     // }
     pub(super) fn bottle_merchant_buy_fish(&mut self, k: usize) {
-        const FISH_REWARD_TYPE: [u8; 5] = [0xdb, 0xe0, 0xde, 0xe2, 0xd9];
-        const FISH_REWARD_XV: [i8; 5] = [-6, -3, 0, 4, 7];
-        const FISH_REWARD_YV: [i8; 5] = [11, 14, 16, 14, 11];
-
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x13);
         self.temp_counter_mut().set(4);
         loop {
             let i = self.game_state.scratch_counter.value() as usize;
             let mut info = SpriteSpawnInfo::default();
-            let j = self.sprite_spawn_dynamically(k, FISH_REWARD_TYPE[i], &mut info);
+            let j =
+                self.sprite_spawn_dynamically(k, BOTTLE_MERCHANT_FISH_REWARD_TYPES[i], &mut info);
             if j < 0 {
                 return;
             }
             self.initialize_bottle_merchant_reward(
                 j as usize,
                 &info,
-                FISH_REWARD_XV[i],
-                FISH_REWARD_YV[i],
+                BOTTLE_MERCHANT_REWARD_X_VELOCITIES[i],
+                BOTTLE_MERCHANT_REWARD_Y_VELOCITIES[i],
             );
             self.temp_counter_mut().decrement();
             if (self.game_state.scratch_counter.value() as i8) < 0 {
@@ -937,9 +935,6 @@ impl ZeldaState {
     //   } while (!sign8(--tmp_counter));
     // }
     pub(super) fn bottle_merchant_buy_bee(&mut self, k: usize) {
-        const GOOD_BEE_X: [i8; 5] = [-6, -3, 0, 4, 7];
-        const GOOD_BEE_Y: [i8; 5] = [11, 14, 16, 14, 11];
-
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x13);
         self.temp_counter_mut().set(4);
         loop {
@@ -950,8 +945,8 @@ impl ZeldaState {
                 self.initialize_bottle_merchant_reward(
                     j as usize,
                     &info,
-                    GOOD_BEE_X[i],
-                    GOOD_BEE_Y[i],
+                    BOTTLE_MERCHANT_REWARD_X_VELOCITIES[i],
+                    BOTTLE_MERCHANT_REWARD_Y_VELOCITIES[i],
                 );
             }
             self.temp_counter_mut().decrement();
