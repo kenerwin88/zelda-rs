@@ -22,13 +22,12 @@ use crate::game_state::constants::nmi::{
     BG_CHAR_BUFFER_1 as NMI_BG_CHAR_BUFFER_1, BG_CHAR_HALF_BUFFER as NMI_BG_CHAR_HALF_BUFFER,
 };
 use crate::game_state::constants::{
-    BG_DECOMP_BUFFER_LOAD_GFX, BG_TILE_ANIMATION_COUNTDOWN, CRYSTAL_ROTATION_COUNTER,
-    DOOR_ANIMATION_STEP_INDICATOR, GRAPHICS_DECOMP_BUFFER_END, HDMA_TABLE_DYNAMIC, MAPBAK_PALETTE,
-    MESSAGING_BUF_LOAD_GFX, MESSAGING_RENDER_BUFFER, MOVING_WALL_REPLACEMENT_BUFFER,
-    OVERWORLD_PALETTE_AUX_OR_MAIN, OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START,
-    OVERWORLD_SCROLL_Y_END, PRIMARY_DECOMP_BUFFER_LOAD_GFX, RESERVED_HDMA_TABLE,
-    SAVELOAD_HDMA_TABLE, SPRITE_DECOMP_BUFFER_LOAD_GFX, UVRAM_DATA, VRAM_UPLOAD_DATA,
-    VRAM_UPLOAD_OFFSET, VWF_ARR,
+    BG_DECOMP_BUFFER_LOAD_GFX, CRYSTAL_ROTATION_COUNTER, DOOR_ANIMATION_STEP_INDICATOR,
+    GRAPHICS_DECOMP_BUFFER_END, HDMA_TABLE_DYNAMIC, MAPBAK_PALETTE, MESSAGING_BUF_LOAD_GFX,
+    MESSAGING_RENDER_BUFFER, MOVING_WALL_REPLACEMENT_BUFFER, OVERWORLD_SCROLL_X_END,
+    OVERWORLD_SCROLL_X_START, OVERWORLD_SCROLL_Y_END, PRIMARY_DECOMP_BUFFER_LOAD_GFX,
+    RESERVED_HDMA_TABLE, SAVELOAD_HDMA_TABLE, SPRITE_DECOMP_BUFFER_LOAD_GFX, UVRAM_DATA,
+    VRAM_UPLOAD_DATA, VRAM_UPLOAD_OFFSET, VWF_ARR,
 };
 #[cfg(test)]
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
@@ -101,9 +100,7 @@ use crate::game_state::{
     SmallOverworldMap16ScrollBackupState, SpotlightHdmaState, SystemSignalsState, SystemWorkArea,
     TagalongSlotRead, TowerSealOrbitState, TowerSealSparkleState, VwfRenderState,
     WeatherVaneDebrisSlotState, WorldCameraBoundariesState, WorldRegionState, WorldScrollState,
-    WorldTransientState, PALETTE_BANK_BYTES, PALETTE_VISIBLE_BYTES, SPOTLIGHT_HDMA_WORD_COUNT,
-    SPRITE_SUBPALETTE_CLEAR_LEN, SPRITE_SUBPALETTE_CLEAR_START, VISIBLE_SUBPALETTE_CLEAR_LEN,
-    VISIBLE_SUBPALETTE_CLEAR_START,
+    WorldTransientState, SPOTLIGHT_HDMA_WORD_COUNT,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -680,11 +677,6 @@ const MAIN_TILE_THEME_INDEX: usize = 0x0aa1;
 const AUX_TILE_THEME_INDEX: usize = 0x0aa2;
 const SPRITE_GRAPHICS_INDEX: usize = 0x0aa3;
 const MISC_SPRITES_GRAPHICS_INDEX: usize = 0x0aa4;
-const PALETTE_SP0L: usize = 0x0aac;
-const PALETTE_SP5L: usize = 0x0aad;
-const PALETTE_SP6L: usize = 0x0aae;
-const PALETTE_SP6R_INDOORS: usize = 0x0ab1;
-const HUD_PALETTE: usize = 0x0ab2;
 const HUD_CUR_ITEM: usize = 0x0202;
 const HUD_MODULE_TICK_COUNTER: usize = 0x0206;
 const TIMER_FOR_FLASHING_CIRCLE: usize = 0x0207;
@@ -697,12 +689,8 @@ const BOTTLE_MENU_EXPAND_ROW: usize = 0x0205;
 const ANIMATE_HEART_REFILL_COUNTDOWN_SUBPOS: usize = 0x0209;
 const IS_DOING_HEART_ANIMATION: usize = 0x020a;
 const EQUIPMENT_MENU_EXIT_STATE: usize = 0x034b;
-const OVERWORLD_PALETTE_MODE: usize = 0x0ab3;
 const OVERWORLD_PALETTE_AUX1_BP2TO4_HI: usize = 0x0ab4;
-const OVERWORLD_PALETTE_AUX2_BP5TO7_HI: usize = 0x0ab5;
-const PALETTE_MAIN_INDOORS: usize = 0x0ab6;
 const PALETTE_MAIN_INDOORS_COPY: usize = 0x0ab7;
-const OVERWORLD_PALETTE_AUX3_BP7_LO: usize = 0x0ab8;
 const EXTENDED_OAM: usize = 0x0a00;
 const LINK_ITEM_BOW: usize = 0x0f340;
 const LINK_ITEM_BOOMERANG: usize = 0x0f341;
@@ -3900,6 +3888,18 @@ impl ZeldaState {
         self.mutate_display_core(|display| display.clear_star_tile_restore_phase());
     }
 
+    pub(crate) fn dungeon_star_tile_restore_source_offsets(&self) -> (usize, usize) {
+        // 0x4bc is mode-reused: DisplayState owns the overworld star-tile restore
+        // phase, while dungeon room effects own the dungeon interpretation. Match
+        // C's live byte read here so a stale overworld projection cannot choose
+        // the wrong dungeon graphics source half.
+        if self.ram[crate::game_state::constants::STAR_TILE_RESTORE_PHASE] != 0 {
+            (32, 0)
+        } else {
+            (0, 32)
+        }
+    }
+
     pub(crate) fn set_animated_tile_data_source_address(&mut self, value: u16) {
         self.mutate_display_core(|display| display.set_animated_tile_data_source_address(value));
     }
@@ -4412,209 +4412,106 @@ impl ZeldaState {
     }
 
     pub(crate) fn clear_aux_visible_subpalettes(&mut self) {
-        self.game_state
-            .display
-            .palette_buffer
-            .clear_aux_visible_subpalettes();
-        self.ram[AUX_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START
-            ..AUX_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
-            .fill(0);
+        self.palette_buffer_mut().clear_aux_visible_subpalettes();
     }
 
     pub(crate) fn clear_main_visible_subpalettes(&mut self) {
-        self.game_state
-            .display
-            .palette_buffer
-            .clear_main_visible_subpalettes();
-        self.ram[MAIN_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START
-            ..MAIN_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
-            .fill(0);
+        self.palette_buffer_mut().clear_main_visible_subpalettes();
     }
 
     pub(crate) fn clear_aux_sprite_subpalettes(&mut self) {
-        self.game_state
-            .display
-            .palette_buffer
-            .clear_aux_sprite_subpalettes();
-        self.ram[AUX_PALETTE_BUFFER + SPRITE_SUBPALETTE_CLEAR_START
-            ..AUX_PALETTE_BUFFER + SPRITE_SUBPALETTE_CLEAR_START + SPRITE_SUBPALETTE_CLEAR_LEN]
-            .fill(0);
+        self.palette_buffer_mut().clear_aux_sprite_subpalettes();
     }
 
     pub(crate) fn set_main_color(&mut self, index: usize, value: u16) {
-        self.game_state
-            .display
-            .palette_buffer
-            .set_main_color(index, value);
-        write_le_u16(&mut self.ram, MAIN_PALETTE_BUFFER + index * 2, value);
+        self.palette_buffer_mut().set_main_color(index, value);
     }
 
     pub(crate) fn set_aux_color(&mut self, index: usize, value: u16) {
-        self.game_state
-            .display
-            .palette_buffer
-            .set_aux_color(index, value);
-        write_le_u16(&mut self.ram, AUX_PALETTE_BUFFER + index * 2, value);
+        self.palette_buffer_mut().set_aux_color(index, value);
     }
 
     pub(crate) fn clear_overworld_aux_or_main_offset(&mut self) {
-        self.game_state
-            .display
-            .palette_buffer
+        self.palette_buffer_mut()
             .clear_overworld_aux_or_main_offset();
-        write_le_u16(&mut self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0);
     }
 
     pub(crate) fn select_overworld_aux_palette_offset(&mut self) {
-        self.game_state
-            .display
-            .palette_buffer
+        self.palette_buffer_mut()
             .select_overworld_aux_palette_offset();
-        write_le_u16(&mut self.ram, OVERWORLD_PALETTE_AUX_OR_MAIN, 0x0200);
     }
 
     pub(crate) fn keep_overworld_aux_or_main_low_byte(&mut self) {
-        self.game_state
-            .display
-            .palette_buffer
+        self.palette_buffer_mut()
             .keep_overworld_aux_or_main_low_byte();
-        write_le_u16(
-            &mut self.ram,
-            OVERWORLD_PALETTE_AUX_OR_MAIN,
-            self.game_state
-                .display
-                .palette_buffer
-                .overworld_aux_or_main_offset(),
-        );
     }
 
     pub(crate) fn clear_main_full(&mut self) {
-        self.game_state.display.palette_buffer.clear_main_full();
-        self.ram[MAIN_PALETTE_BUFFER..MAIN_PALETTE_BUFFER + PALETTE_BANK_BYTES].fill(0);
+        self.palette_buffer_mut().clear_main_full();
     }
 
     pub(crate) fn copy_aux_visible_from(&mut self, palette: &[u8]) {
-        self.copy_aux_palette_range_from(0, PALETTE_VISIBLE_BYTES, palette);
+        self.palette_buffer_mut().copy_aux_visible_from(palette);
     }
 
     pub(crate) fn copy_aux_full_from(&mut self, palette: &[u8]) {
-        self.copy_aux_palette_range_from(0, PALETTE_BANK_BYTES, palette);
+        self.palette_buffer_mut().copy_aux_full_from(palette);
     }
 
     pub(crate) fn backup_overworld_palette_from(&mut self, palette: &[u8]) {
-        let len = self
-            .game_state
-            .display
-            .palette_buffer
+        self.palette_buffer_mut()
             .backup_overworld_palette_from(palette);
-        self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + len].copy_from_slice(&palette[..len]);
     }
 
     pub(crate) fn copy_main_full_from(&mut self, palette: &[u8]) {
-        self.copy_main_palette_range_from(0, PALETTE_BANK_BYTES, palette);
+        self.palette_buffer_mut().copy_main_full_from(palette);
     }
 
     pub(crate) fn copy_main_palette_bytes(&mut self, src: &[u8], len: usize) {
-        self.copy_main_palette_range_from(0, len.min(PALETTE_BANK_BYTES), src);
+        self.palette_buffer_mut().copy_main_palette_bytes(src, len);
     }
 
     pub(crate) fn set_sp0l(&mut self, value: u8) {
-        self.game_state
-            .display
-            .palette_buffer
-            .set_sprite_palette_0_left(value);
-        self.ram[PALETTE_SP0L] = value;
+        self.palette_buffer_mut().set_sp0l(value);
     }
 
     pub(crate) fn set_sp5l(&mut self, value: u8) {
-        self.game_state
-            .display
-            .palette_buffer
-            .set_sprite_palette_5_left(value);
-        self.ram[PALETTE_SP5L] = value;
+        self.palette_buffer_mut().set_sp5l(value);
     }
 
     pub(crate) fn set_sp6l(&mut self, value: u8) {
-        self.game_state
-            .display
-            .palette_buffer
-            .set_sprite_palette_6_left(value);
-        self.ram[PALETTE_SP6L] = value;
+        self.palette_buffer_mut().set_sp6l(value);
     }
 
     pub(crate) fn set_palette_main_indoors(&mut self, value: u8) {
-        self.game_state
-            .display
-            .palette_buffer
-            .set_main_palette_indoors(value);
-        self.ram[PALETTE_MAIN_INDOORS] = value;
+        self.palette_buffer_mut().set_palette_main_indoors(value);
     }
 
     pub(crate) fn set_hud_palette(&mut self, value: u8) {
-        self.game_state
-            .display
-            .palette_buffer
-            .set_hud_palette(value);
-        self.ram[HUD_PALETTE] = value;
+        self.palette_buffer_mut().set_hud_palette(value);
     }
 
     pub(crate) fn set_sp6r_indoors(&mut self, value: u8) {
-        self.game_state
-            .display
-            .palette_buffer
-            .set_sprite_palette_6_right_indoors(value);
-        self.ram[PALETTE_SP6R_INDOORS] = value;
+        self.palette_buffer_mut().set_sp6r_indoors(value);
     }
 
     pub(crate) fn set_overworld_palette_aux2_hi(&mut self, value: u8) {
-        self.game_state
-            .display
-            .palette_buffer
+        self.palette_buffer_mut()
             .set_overworld_palette_aux2_hi(value);
-        self.ram[OVERWORLD_PALETTE_AUX2_BP5TO7_HI] = value;
     }
 
     pub(crate) fn set_overworld_palette_aux3_lo(&mut self, value: u8) {
-        self.game_state
-            .display
-            .palette_buffer
+        self.palette_buffer_mut()
             .set_overworld_palette_aux3_lo(value);
-        self.ram[OVERWORLD_PALETTE_AUX3_BP7_LO] = value;
     }
 
     pub(crate) fn set_bg_tile_animation_countdown(&mut self, value: u16) {
-        self.game_state
-            .display
-            .reset_bg_tile_animation_countdown(value);
-        write_le_u16(&mut self.ram, BG_TILE_ANIMATION_COUNTDOWN, value);
+        self.palette_buffer_mut()
+            .set_bg_tile_animation_countdown(value);
     }
 
     pub(crate) fn set_overworld_palette_mode(&mut self, value: u8) {
-        self.game_state
-            .display
-            .palette_buffer
-            .set_overworld_palette_mode(value);
-        self.ram[OVERWORLD_PALETTE_MODE] = value;
-    }
-
-    fn copy_aux_palette_range_from(&mut self, start: usize, len: usize, src: &[u8]) {
-        let len = self
-            .game_state
-            .display
-            .palette_buffer
-            .copy_aux_range_from(start, len, src);
-        self.ram[AUX_PALETTE_BUFFER + start..AUX_PALETTE_BUFFER + start + len]
-            .copy_from_slice(&src[..len]);
-    }
-
-    fn copy_main_palette_range_from(&mut self, start: usize, len: usize, src: &[u8]) {
-        let len = self
-            .game_state
-            .display
-            .palette_buffer
-            .copy_main_range_from(start, len, src);
-        self.ram[MAIN_PALETTE_BUFFER + start..MAIN_PALETTE_BUFFER + start + len]
-            .copy_from_slice(&src[..len]);
+        self.palette_buffer_mut().set_overworld_palette_mode(value);
     }
 
     pub(crate) fn palette_filter_mut(&mut self) -> NativePaletteFilterBridgeMut<'_> {

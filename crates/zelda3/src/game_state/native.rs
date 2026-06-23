@@ -26,9 +26,7 @@ pub(crate) use display::{
     LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut, NativeHudInventoryOrderBridgeMut,
     NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePpuScrollCopyBridgeMut,
     NativeTrinexxPaletteBridgeMut, NativeWaterHdmaWindowBridgeMut, OverworldPaletteBackupState,
-    PaletteFilterState, PpuScrollCopyState, SpotlightHdmaState, PALETTE_BANK_BYTES,
-    PALETTE_VISIBLE_BYTES, SPOTLIGHT_HDMA_WORD_COUNT, SPRITE_SUBPALETTE_CLEAR_LEN,
-    SPRITE_SUBPALETTE_CLEAR_START, VISIBLE_SUBPALETTE_CLEAR_LEN, VISIBLE_SUBPALETTE_CLEAR_START,
+    PaletteFilterState, PpuScrollCopyState, SpotlightHdmaState, SPOTLIGHT_HDMA_WORD_COUNT,
 };
 pub(crate) use dungeon::{
     loaded_room_data_word, DungeonStairList, DungeonState, NativeDungeonBg2AttributeBridgeMut,
