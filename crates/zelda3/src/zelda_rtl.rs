@@ -22,9 +22,9 @@ use crate::game_state::constants::nmi::{
     BG_CHAR_BUFFER_1 as NMI_BG_CHAR_BUFFER_1, BG_CHAR_HALF_BUFFER as NMI_BG_CHAR_HALF_BUFFER,
 };
 use crate::game_state::constants::{
-    CRYSTAL_ROTATION_COUNTER, DOOR_ANIMATION_STEP_INDICATOR, HDMA_TABLE_DYNAMIC,
-    MESSAGING_BUF_LOAD_GFX, MOVING_WALL_REPLACEMENT_BUFFER, OVERWORLD_SCROLL_X_END,
-    OVERWORLD_SCROLL_X_START, OVERWORLD_SCROLL_Y_END, VWF_ARR,
+    CRYSTAL_ROTATION_COUNTER, HDMA_TABLE_DYNAMIC, MESSAGING_BUF_LOAD_GFX,
+    MOVING_WALL_REPLACEMENT_BUFFER, OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START,
+    OVERWORLD_SCROLL_Y_END, VWF_ARR,
 };
 #[cfg(test)]
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
@@ -34,15 +34,14 @@ use crate::game_state::{
     BlastWallFragmentSlotState, BombosBlastState, BombosFireColumnState, BossHomePositionRead,
     CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut, DungeonStairList,
     FollowerLinkState, GameState, GraphicsDecompressionScratch, HappinessPondRupeeSlotState,
-    HappinessPondRupeeSnapshot, HistoryPositionState, HudRuntimeState, HudStateRead,
-    HudTilemapState, IntroActorRead, LanmolaFlatTrailEntry, LanmolaSegmentMotionState,
-    LinkDmaSourceSlot, MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead,
-    NativeAncillaSlotBridgeMut, NativeAncillaSlotView, NativeArcheryGameBridgeMut,
-    NativeArmosKnightHomePositionBridgeMut, NativeArrghusPuffHomePositionBridgeMut,
-    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
-    NativeBeamosLaserHistoryBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
-    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
-    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    HappinessPondRupeeSnapshot, HistoryPositionState, HudStateRead, HudTilemapState,
+    IntroActorRead, LanmolaFlatTrailEntry, LanmolaSegmentMotionState, LinkDmaSourceSlot,
+    MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead, NativeAncillaSlotBridgeMut,
+    NativeAncillaSlotView, NativeArcheryGameBridgeMut, NativeArmosKnightHomePositionBridgeMut,
+    NativeArrghusPuffHomePositionBridgeMut, NativeAttractSceneBridgeMut,
+    NativeAttractVramDestinationBridgeMut, NativeBeamosLaserHistoryBridgeMut,
+    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
+    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
     NativeBombosSpellBridgeMut, NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
@@ -65,24 +64,25 @@ use crate::game_state::{
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerLinkBridgeMut,
     NativeFollowerRuntimeBridgeMut, NativeFrameStateBridgeMut, NativeGarnishRuntimeBridgeMut,
     NativeGarnishSlotBridgeMut, NativeGarnishSlotView, NativeHappinessPondRupeeBridgeMut,
-    NativeHudInventoryOrderBridgeMut, NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut,
-    NativeIntroSwordBridgeMut, NativeInventoryItemsBridgeMut, NativeLanmolaSegmentMotionBridgeMut,
-    NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut,
-    NativeMessagingRenderBufferBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
-    NativeMirrorWarpBridgeMut, NativeMoldormHistoryBridgeMut, NativeMultiselectChoiceBridgeMut,
-    NativeOamStateBridgeMut, NativeOverlordSlotBridgeMut, NativeOverlordSlotView,
-    NativeOverworldConfigTableBridgeMut, NativeOverworldEntranceBridgeMut,
-    NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
-    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
-    NativeOverworldPaletteBackupBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldScrollDeltaBridgeMut, NativeOverworldSpriteLoadedBridgeMut,
-    NativeOverworldSpritePresenceBridgeMut, NativeOverworldTransitionBridgeMut,
-    NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
-    NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
-    NativePolyRasterEdgeBridgeMut, NativePolyRuntimeBridgeMut, NativePpuScrollCopyBridgeMut,
-    NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut,
-    NativeQuakeSpellBridgeMut, NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut,
-    NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
+    NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut, NativeIntroActorBridgeMut,
+    NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut, NativeInventoryItemsBridgeMut,
+    NativeLanmolaSegmentMotionBridgeMut, NativeMazeGameTimerBridgeMut,
+    NativeMemorizedTileBridgeMut, NativeMessagingRenderBufferBridgeMut,
+    NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut, NativeMirrorWarpBridgeMut,
+    NativeMoldormHistoryBridgeMut, NativeMultiselectChoiceBridgeMut, NativeOamStateBridgeMut,
+    NativeOverlordSlotBridgeMut, NativeOverlordSlotView, NativeOverworldConfigTableBridgeMut,
+    NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
+    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
+    NativeOverworldMapZoomBridgeMut, NativeOverworldPaletteBackupBridgeMut,
+    NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
+    NativeOverworldSpriteLoadedBridgeMut, NativeOverworldSpritePresenceBridgeMut,
+    NativeOverworldTransitionBridgeMut, NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut,
+    NativePlayerResourcesBridgeMut, NativePolyFaceCoordsBridgeMut,
+    NativePolyProjectedVerticesBridgeMut, NativePolyRasterEdgeBridgeMut,
+    NativePolyRuntimeBridgeMut, NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut,
+    NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut,
+    NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut,
+    NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
     NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
     NativeSkullWoodsFireSlotBridgeMut, NativeSpecialExitPositionBridgeMut,
     NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
@@ -96,12 +96,12 @@ use crate::game_state::{
     NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
     NativeWorldCameraBoundariesBridgeMut, NativeWorldLocationBridgeMut,
     NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
-    OverworldConfigTableRead, OverworldMap16Decode, OverworldMap16DecodeScratch,
-    OverworldMap16LoadState, OverworldMap16SourcePage, PaletteFilterState, PpuScrollCopyState,
-    QuakeBoltSlotState, RamPlayerStateView, RamPlayerStateViewMut, SkullWoodsFireSlotState,
-    SmallOverworldMap16ScrollBackupState, SpotlightHdmaState, SystemSignalsState, SystemWorkArea,
-    TagalongSlotRead, TowerSealOrbitState, TowerSealSparkleState, WeatherVaneDebrisSlotState,
-    WorldTransientState,
+    NativeWorldTransientBridgeMut, OverworldConfigTableRead, OverworldMap16Decode,
+    OverworldMap16DecodeScratch, OverworldMap16LoadState, OverworldMap16SourcePage,
+    PpuScrollCopyState, QuakeBoltSlotState, RamPlayerStateView, RamPlayerStateViewMut,
+    SkullWoodsFireSlotState, SmallOverworldMap16ScrollBackupState, SpotlightHdmaState,
+    SystemSignalsState, SystemWorkArea, TagalongSlotRead, TowerSealOrbitState,
+    TowerSealSparkleState, WeatherVaneDebrisSlotState,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -664,7 +664,6 @@ const DUNG_NUM_INTER_ROOM_UPNORTH_STRAIGHT_STAIRS: usize = 0x4a2;
 const DUNG_NUM_INTER_ROOM_UPSOUTH_STRAIGHT_STAIRS: usize = 0x4a4;
 const DUNG_NUM_INTER_ROOM_DOWNNORTH_STRAIGHT_STAIRS: usize = 0x4a6;
 const DUNG_NUM_INTER_ROOM_DOWNSOUTH_STRAIGHT_STAIRS: usize = 0x4a8;
-const DUNG_REPLACEMENT_TILE_STATE: usize = 0x500;
 const DUNG_OBJECT_POS_IN_OBJDATA: usize = 0x520;
 const DUNG_OBJECT_TILEMAP_POS: usize = 0x540;
 const REPLACEMENT_TILEMAP_UL: usize = 0x560;
@@ -2398,72 +2397,26 @@ impl ZeldaState {
         self.game_state.world.region.ow_entrance_value()
     }
 
-    fn sync_world_transient_scalars_to_ram(&mut self) {
-        self.game_state
-            .world
-            .transient
-            .write_scalar_fields_to_ram(&mut self.ram);
-        self.debug_assert_world_transient_matches_ram();
-    }
-
-    fn sync_world_transient_preserving_projected_door_animation_step(&mut self) {
-        let projected = read_le_u16(&self.ram, DOOR_ANIMATION_STEP_INDICATOR);
-        self.game_state
-            .world
-            .transient
-            .set_door_animation_step_word(projected);
-        self.sync_world_transient_scalars_to_ram();
-    }
-
-    fn debug_assert_world_transient_matches_ram(&self) {
-        let mut loaded = WorldTransientState::load_from_ram(&self.ram);
-        loaded.dungeon_replacement_tiles = self
-            .game_state
-            .world
-            .transient
-            .dungeon_replacement_tiles
-            .clone();
-        debug_assert_eq!(self.game_state.world.transient, loaded);
-    }
-
-    fn mutate_world_transient_preserving_door_step<T>(
-        &mut self,
-        mutate: impl FnOnce(&mut WorldTransientState) -> T,
-    ) -> T {
-        let result = mutate(&mut self.game_state.world.transient);
-        self.sync_world_transient_preserving_projected_door_animation_step();
-        result
-    }
-
-    fn mutate_world_transient<T>(
-        &mut self,
-        mutate: impl FnOnce(&mut WorldTransientState) -> T,
-    ) -> T {
-        let result = mutate(&mut self.game_state.world.transient);
-        self.sync_world_transient_scalars_to_ram();
-        result
+    pub(crate) fn world_transient_mut(&mut self) -> NativeWorldTransientBridgeMut<'_> {
+        NativeWorldTransientBridgeMut::new(&mut self.game_state.world.transient, &mut self.ram)
     }
 
     pub(crate) fn set_room_transitioning_flags(&mut self, value: u8) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_room_transitioning_flags(value)
-        });
+        self.world_transient_mut()
+            .set_room_transitioning_flags(value);
     }
 
     pub(crate) fn clear_custom_spell_animation(&mut self) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.clear_custom_spell_animation()
-        });
+        self.world_transient_mut().clear_custom_spell_animation();
     }
 
     pub(crate) fn set_custom_spell_animation_active(&mut self) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_custom_spell_animation_active()
-        });
+        self.world_transient_mut()
+            .set_custom_spell_animation_active();
     }
 
     pub(crate) fn set_allow_scroll_z(&mut self, value: u8) {
-        self.mutate_world_transient_preserving_door_step(|state| state.set_allow_scroll_z(value));
+        self.world_transient_mut().set_allow_scroll_z(value);
     }
 
     pub(crate) fn set_cached_room_bounds(
@@ -2473,21 +2426,18 @@ impl ZeldaState {
         x_start: u16,
         x_end: u16,
     ) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_cached_room_bounds(y_start, y_end, x_start, x_end)
-        });
+        self.world_transient_mut()
+            .set_cached_room_bounds(y_start, y_end, x_start, x_end);
     }
 
     pub(crate) fn set_standing_in_doorway_cached(&mut self, value: u8) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_standing_in_doorway_cached(value)
-        });
+        self.world_transient_mut()
+            .set_standing_in_doorway_cached(value);
     }
 
     pub(crate) fn cache_standing_in_doorway(&mut self, doorway_state: u8) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_standing_in_doorway_cached(doorway_state)
-        });
+        self.world_transient_mut()
+            .cache_standing_in_doorway(doorway_state);
     }
 
     pub(crate) fn set_flag_travel_bird(&mut self, value: u8) {
@@ -2501,17 +2451,17 @@ impl ZeldaState {
     }
 
     pub(crate) fn clear_tile_interaction_shared_flag(&mut self) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.clear_tile_interaction_shared_flag()
-        });
+        self.world_transient_mut()
+            .clear_tile_interaction_shared_flag();
     }
 
     pub(crate) fn set_door_animation_step(&mut self, value: u8) {
-        self.mutate_world_transient(|state| state.set_door_animation_step(value));
+        self.world_transient_mut().set_door_animation_step(value);
     }
 
     pub(crate) fn set_door_animation_step_word(&mut self, value: u16) {
-        self.mutate_world_transient(|state| state.set_door_animation_step_word(value));
+        self.world_transient_mut()
+            .set_door_animation_step_word(value);
     }
 
     pub(crate) fn clear_hud_floor_changed_timer(&mut self) {
@@ -2522,45 +2472,35 @@ impl ZeldaState {
     }
 
     pub(crate) fn cache_quadrant_fullsize_state(&mut self) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.cache_quadrant_fullsize_state()
-        });
+        self.world_transient_mut().cache_quadrant_fullsize_state();
     }
 
     pub(crate) fn restore_quadrant_fullsize_from_cached(&mut self) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.restore_quadrant_fullsize_from_cached()
-        });
+        self.world_transient_mut()
+            .restore_quadrant_fullsize_from_cached();
     }
 
     pub(crate) fn set_quadrant_fullsize_x(&mut self, value: u8) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_quadrant_fullsize_x(value)
-        });
+        self.world_transient_mut().set_quadrant_fullsize_x(value);
     }
 
     pub(crate) fn set_quadrant_fullsize_y(&mut self, value: u8) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_quadrant_fullsize_y(value)
-        });
+        self.world_transient_mut().set_quadrant_fullsize_y(value);
     }
 
     pub(crate) fn set_fullsize_overworld_quadrants(&mut self) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_fullsize_overworld_quadrants()
-        });
+        self.world_transient_mut()
+            .set_fullsize_overworld_quadrants();
     }
 
     pub(crate) fn set_horizontal_room_fullsize_state(&mut self, value: u8) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_horizontal_room_fullsize_state(value)
-        });
+        self.world_transient_mut()
+            .set_horizontal_room_fullsize_state(value);
     }
 
     pub(crate) fn set_vertical_room_fullsize_state(&mut self, value: u8) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_vertical_room_fullsize_state(value)
-        });
+        self.world_transient_mut()
+            .set_vertical_room_fullsize_state(value);
     }
 
     pub(crate) fn apply_dungeon_layout_quadrant_fullsize(
@@ -2571,15 +2511,14 @@ impl ZeldaState {
         blast_wall_x_open: bool,
         blast_wall_y_open: bool,
     ) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.apply_dungeon_layout_quadrant_fullsize(
+        self.world_transient_mut()
+            .apply_dungeon_layout_quadrant_fullsize(
                 layout_flags,
                 horizontal_mask,
                 vertical_mask,
                 blast_wall_x_open,
                 blast_wall_y_open,
-            )
-        });
+            );
     }
 
     pub(crate) fn apply_dungeon_layout_horizontal_fullsize(
@@ -2588,13 +2527,12 @@ impl ZeldaState {
         horizontal_mask: u8,
         blast_wall_x_open: bool,
     ) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.apply_dungeon_layout_horizontal_fullsize(
+        self.world_transient_mut()
+            .apply_dungeon_layout_horizontal_fullsize(
                 layout_flags,
                 horizontal_mask,
                 blast_wall_x_open,
-            )
-        });
+            );
     }
 
     pub(crate) fn apply_dungeon_layout_vertical_fullsize(
@@ -2603,122 +2541,96 @@ impl ZeldaState {
         vertical_mask: u8,
         blast_wall_y_open: bool,
     ) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.apply_dungeon_layout_vertical_fullsize(
-                layout_flags,
-                vertical_mask,
-                blast_wall_y_open,
-            )
-        });
+        self.world_transient_mut()
+            .apply_dungeon_layout_vertical_fullsize(layout_flags, vertical_mask, blast_wall_y_open);
     }
 
     pub(crate) fn apply_reset_xy_quadrant_overrides(&mut self, reset_xy_flags: u16) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.apply_reset_xy_quadrant_overrides(reset_xy_flags)
-        });
+        self.world_transient_mut()
+            .apply_reset_xy_quadrant_overrides(reset_xy_flags);
     }
 
     pub(crate) fn force_horizontal_fullsize_for_blast_wall(&mut self) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.force_horizontal_fullsize_for_blast_wall()
-        });
+        self.world_transient_mut()
+            .force_horizontal_fullsize_for_blast_wall();
     }
 
     pub(crate) fn force_vertical_fullsize_for_blast_wall(&mut self) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.force_vertical_fullsize_for_blast_wall()
-        });
+        self.world_transient_mut()
+            .force_vertical_fullsize_for_blast_wall();
     }
 
     pub(crate) fn save_spexit_tm_copy(&mut self) {
-        self.mutate_world_transient_preserving_door_step(|state| state.save_spexit_tm_copy());
+        self.world_transient_mut().save_spexit_tm_copy();
     }
 
     pub(crate) fn restore_spexit_layer_masks(&mut self) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.restore_spexit_layer_masks()
-        });
+        self.world_transient_mut().restore_spexit_layer_masks();
     }
 
     pub(crate) fn save_exit_tm_copy(&mut self) {
-        self.mutate_world_transient_preserving_door_step(|state| state.save_exit_tm_copy());
+        self.world_transient_mut().save_exit_tm_copy();
     }
 
     pub(crate) fn restore_exit_layer_masks(&mut self) {
-        self.mutate_world_transient_preserving_door_step(|state| state.restore_exit_layer_masks());
+        self.world_transient_mut().restore_exit_layer_masks();
     }
 
     pub(crate) fn set_world_transient_map_backup_subscreen_layer(&mut self, value: u8) {
-        self.mutate_world_transient_preserving_door_step(|state| state.set_mapbak_ts(value));
+        self.world_transient_mut().set_mapbak_ts(value);
     }
 
     pub(crate) fn set_world_transient_map_backup_main_layer(&mut self, value: u8) {
-        self.mutate_world_transient_preserving_door_step(|state| state.set_mapbak_tm(value));
+        self.world_transient_mut().set_mapbak_tm(value);
     }
 
     pub(crate) fn increment_move_overlay_ctr(&mut self) -> u8 {
-        self.mutate_world_transient_preserving_door_step(|state| state.increment_move_overlay_ctr())
+        self.world_transient_mut().increment_move_overlay_ctr()
     }
 
     pub(crate) fn set_overworld_hole_scan_step(&mut self, value: u8) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_overworld_hole_scan_step(value)
-        });
+        self.world_transient_mut()
+            .set_overworld_hole_scan_step(value);
     }
 
     pub(crate) fn set_overworld_peg_puzzle_progress(&mut self, value: u16) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_overworld_peg_puzzle_progress(value)
-        });
+        self.world_transient_mut()
+            .set_overworld_peg_puzzle_progress(value);
     }
 
     pub(crate) fn set_overworld_hole_tilemap_pos(&mut self, value: u16) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_overworld_hole_tilemap_pos(value)
-        });
+        self.world_transient_mut()
+            .set_overworld_hole_tilemap_pos(value);
     }
 
     pub(crate) fn set_overworld_bomb_tile_sweep_x(&mut self, value: u16) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_overworld_bomb_tile_sweep_x(value)
-        });
+        self.world_transient_mut()
+            .set_overworld_bomb_tile_sweep_x(value);
     }
 
     pub(crate) fn set_overworld_bomb_tile_sweep_y_end(&mut self, value: u16) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_overworld_bomb_tile_sweep_y_end(value)
-        });
+        self.world_transient_mut()
+            .set_overworld_bomb_tile_sweep_y_end(value);
     }
 
     pub(crate) fn set_big_key_door_message_triggered(&mut self, value: u16) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_big_key_door_message_triggered(value)
-        });
+        self.world_transient_mut()
+            .set_big_key_door_message_triggered(value);
     }
 
     pub(crate) fn set_savegame_has_master_sword_flags(&mut self, value: u16) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.set_savegame_has_master_sword_flags(value)
-        });
+        self.world_transient_mut()
+            .set_savegame_has_master_sword_flags(value);
     }
 
     pub(crate) fn set_dung_replacement_tile_state(&mut self, index: usize, value: u16) {
-        self.game_state
-            .world
-            .transient
+        self.world_transient_mut()
             .set_dung_replacement_tile_state(index, value);
-        write_le_u16(
-            &mut self.ram,
-            DUNG_REPLACEMENT_TILE_STATE + index * 2,
-            value,
-        );
-        self.debug_assert_world_transient_matches_ram();
     }
 
     pub(crate) fn decrement_milestone_item_gfx_swap_countdown(&mut self) {
-        self.mutate_world_transient_preserving_door_step(|state| {
-            state.decrement_milestone_item_gfx_swap_countdown()
-        });
+        self.world_transient_mut()
+            .decrement_milestone_item_gfx_swap_countdown();
     }
 
     pub(crate) fn overworld_map_state(&self) -> u8 {
@@ -4282,119 +4194,94 @@ impl ZeldaState {
         NativePaletteFilterBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
-    fn sync_palette_filter_to_ram(&mut self) {
-        self.game_state
-            .display
-            .palette_filter
-            .write_to_ram(&mut self.ram);
-        debug_assert_eq!(
-            self.game_state.display.palette_filter,
-            PaletteFilterState::load_from_ram(&self.ram)
-        );
-    }
-
-    fn mutate_palette_filter<T>(&mut self, mutate: impl FnOnce(&mut PaletteFilterState) -> T) -> T {
-        let result = mutate(&mut self.game_state.display.palette_filter);
-        self.sync_palette_filter_to_ram();
-        result
-    }
-
     pub(crate) fn set_countdown(&mut self, value: u8) {
-        self.mutate_palette_filter(|filter| filter.set_countdown(value));
+        self.palette_filter_mut().set_countdown(value);
     }
 
     pub(crate) fn increment_countdown(&mut self) {
-        self.mutate_palette_filter(|filter| filter.increment_countdown());
+        self.palette_filter_mut().increment_countdown();
     }
 
     pub(crate) fn decrement_countdown(&mut self) {
-        self.mutate_palette_filter(|filter| filter.decrement_countdown());
+        self.palette_filter_mut().decrement_countdown();
     }
 
     pub(crate) fn set_countdown_word(&mut self, value: u16) {
-        self.mutate_palette_filter(|filter| filter.set_countdown_word(value));
+        self.palette_filter_mut().set_countdown_word(value);
     }
 
     pub(crate) fn set_darkening_or_lightening_screen(&mut self, value: u8) {
-        self.mutate_palette_filter(|filter| filter.set_darkening_or_lightening_screen(value));
+        self.palette_filter_mut()
+            .set_darkening_or_lightening_screen(value);
     }
 
     pub(crate) fn xor_darkening_or_lightening_screen(&mut self, value: u8) {
-        self.mutate_palette_filter(|filter| filter.xor_darkening_or_lightening_screen(value));
+        self.palette_filter_mut()
+            .xor_darkening_or_lightening_screen(value);
     }
 
     pub(crate) fn set_darkening_or_lightening_screen_word(&mut self, value: u16) {
-        self.mutate_palette_filter(|filter| filter.set_darkening_or_lightening_screen_word(value));
+        self.palette_filter_mut()
+            .set_darkening_or_lightening_screen_word(value);
     }
 
     pub(crate) fn set_color_window_selection(&mut self, value: u8) {
-        self.mutate_palette_filter(|filter| filter.set_color_window_selection(value));
+        self.palette_filter_mut().set_color_window_selection(value);
     }
 
     pub(crate) fn set_color_window_and_math_word(&mut self, value: u16) {
-        self.mutate_palette_filter(|filter| filter.set_color_window_and_math_word(value));
+        self.palette_filter_mut()
+            .set_color_window_and_math_word(value);
     }
 
     pub(crate) fn set_color_math_control(&mut self, value: u8) {
-        self.mutate_palette_filter(|filter| filter.set_color_math_control(value));
+        self.palette_filter_mut().set_color_math_control(value);
     }
 
     pub(crate) fn set_fixed_color_red(&mut self, value: u8) {
-        self.mutate_palette_filter(|filter| filter.set_fixed_color_red(value));
+        self.palette_filter_mut().set_fixed_color_red(value);
     }
 
     pub(crate) fn or_fixed_color_red(&mut self, value: u8) {
-        self.mutate_palette_filter(|filter| filter.or_fixed_color_red(value));
+        self.palette_filter_mut().or_fixed_color_red(value);
     }
 
     pub(crate) fn subtract_fixed_color_red(&mut self, value: u8) {
-        self.mutate_palette_filter(|filter| filter.subtract_fixed_color_red(value));
+        self.palette_filter_mut().subtract_fixed_color_red(value);
     }
 
     pub(crate) fn set_fixed_color_green(&mut self, value: u8) {
-        self.mutate_palette_filter(|filter| filter.set_fixed_color_green(value));
+        self.palette_filter_mut().set_fixed_color_green(value);
     }
 
     pub(crate) fn or_fixed_color_green(&mut self, value: u8) {
-        self.mutate_palette_filter(|filter| filter.or_fixed_color_green(value));
+        self.palette_filter_mut().or_fixed_color_green(value);
     }
 
     pub(crate) fn subtract_fixed_color_green(&mut self, value: u8) {
-        self.mutate_palette_filter(|filter| filter.subtract_fixed_color_green(value));
+        self.palette_filter_mut().subtract_fixed_color_green(value);
     }
 
     pub(crate) fn set_fixed_color_blue(&mut self, value: u8) {
-        self.mutate_palette_filter(|filter| filter.set_fixed_color_blue(value));
+        self.palette_filter_mut().set_fixed_color_blue(value);
     }
 
     pub(crate) fn or_fixed_color_blue(&mut self, value: u8) {
-        self.mutate_palette_filter(|filter| filter.or_fixed_color_blue(value));
+        self.palette_filter_mut().or_fixed_color_blue(value);
     }
 
     pub(crate) fn subtract_fixed_color_blue(&mut self, value: u8) {
-        self.mutate_palette_filter(|filter| filter.subtract_fixed_color_blue(value));
+        self.palette_filter_mut().subtract_fixed_color_blue(value);
     }
 
     pub(crate) fn set_fixed_color_component(&mut self, index: usize, value: u8) {
-        if self
-            .game_state
-            .display
-            .palette_filter
-            .set_fixed_color_component(index, value)
-        {
-            self.sync_palette_filter_to_ram();
-        }
+        self.palette_filter_mut()
+            .set_fixed_color_component(index, value);
     }
 
     pub(crate) fn or_fixed_color_component(&mut self, index: usize, value: u8) {
-        if self
-            .game_state
-            .display
-            .palette_filter
-            .or_fixed_color_component(index, value)
-        {
-            self.sync_palette_filter_to_ram();
-        }
+        self.palette_filter_mut()
+            .or_fixed_color_component(index, value);
     }
 
     pub(crate) fn hud_state(&self) -> HudStateRead<'_> {
@@ -4404,19 +4291,8 @@ impl ZeldaState {
         )
     }
 
-    fn sync_hud_runtime_to_ram(&mut self) {
-        self.game_state
-            .display
-            .hud_runtime
-            .write_to_ram(&mut self.ram);
-        self.debug_assert_hud_runtime_matches_ram();
-    }
-
-    fn debug_assert_hud_runtime_matches_ram(&self) {
-        debug_assert_eq!(
-            self.game_state.display.hud_runtime,
-            HudRuntimeState::load_from_ram(&self.ram)
-        );
+    pub(crate) fn hud_mut(&mut self) -> NativeHudStateBridgeMut<'_> {
+        NativeHudStateBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
     fn debug_assert_hud_tilemap_matches_ram(&self) {
@@ -4426,66 +4302,60 @@ impl ZeldaState {
         );
     }
 
-    fn mutate_hud_runtime<T>(&mut self, f: impl FnOnce(&mut HudRuntimeState) -> T) -> T {
-        let value = f(&mut self.game_state.display.hud_runtime);
-        self.sync_hud_runtime_to_ram();
-        value
-    }
-
     pub(crate) fn set_super_bomb_indicator_timer(&mut self, value: u8) {
-        self.mutate_hud_runtime(|hud| hud.set_super_bomb_indicator_timer(value));
+        self.hud_mut().set_super_bomb_indicator_timer(value);
     }
 
     pub(crate) fn set_super_bomb_indicator_counter(&mut self, value: u8) {
-        self.mutate_hud_runtime(|hud| hud.set_super_bomb_indicator_counter(value));
+        self.hud_mut().set_super_bomb_indicator_counter(value);
     }
 
     pub(crate) fn set_rupee_sfx_sound_delay(&mut self, value: u8) {
-        self.mutate_hud_runtime(|hud| hud.set_rupee_sfx_sound_delay(value));
+        self.hud_mut().set_rupee_sfx_sound_delay(value);
     }
 
     pub(crate) fn set_is_doing_heart_animation(&mut self, value: u8) {
-        self.mutate_hud_runtime(|hud| hud.set_heart_animation_active(value));
+        self.hud_mut().set_is_doing_heart_animation(value);
     }
 
     pub(crate) fn clear_is_doing_heart_animation(&mut self) {
-        self.mutate_hud_runtime(|hud| hud.clear_heart_animation_active());
+        self.hud_mut().clear_is_doing_heart_animation();
     }
 
     pub(crate) fn set_heart_refill_countdown(&mut self, value: u8) {
-        self.mutate_hud_runtime(|hud| hud.set_heart_refill_countdown(value));
+        self.hud_mut().set_heart_refill_countdown(value);
     }
 
     pub(crate) fn set_heart_refill_anim_subpos(&mut self, value: u8) {
-        self.mutate_hud_runtime(|hud| hud.set_heart_refill_animation_subpixel(value));
+        self.hud_mut().set_heart_refill_anim_subpos(value);
     }
 
     pub(crate) fn set_flashing_circle_timer(&mut self, value: u8) {
-        self.mutate_hud_runtime(|hud| hud.set_flashing_circle_timer(value));
+        self.hud_mut().set_flashing_circle_timer(value);
     }
 
     pub(crate) fn set_prev_joypad_h(&mut self, value: u8) {
-        self.mutate_hud_runtime(|hud| hud.set_previous_menu_joypad_h(value));
+        self.hud_mut().set_prev_joypad_h(value);
     }
 
     pub(crate) fn clear_prev_joypad_h(&mut self) {
-        self.mutate_hud_runtime(|hud| hud.clear_previous_menu_joypad_h());
+        self.hud_mut().clear_prev_joypad_h();
     }
 
     pub(crate) fn set_equipment_menu_exit_state(&mut self, value: u8) {
-        self.mutate_hud_runtime(|hud| hud.set_equipment_menu_exit_state(value));
+        self.hud_mut().set_equipment_menu_exit_state(value);
     }
 
     pub(crate) fn set_bottle_menu_row(&mut self, value: u8) {
-        self.mutate_hud_runtime(|hud| hud.set_bottle_menu_row(value));
+        self.hud_mut().set_bottle_menu_row(value);
     }
 
     pub(crate) fn decrement_bottle_menu_row(&mut self) -> u8 {
-        self.mutate_hud_runtime(|hud| hud.decrement_bottle_menu_row())
+        self.hud_mut().decrement_bottle_menu_row()
     }
 
     pub(crate) fn set_tick_counter(&mut self, value: u8) {
-        self.mutate_hud_runtime(|hud| hud.set_tick_counter(value));
+        self.hud_mut().set_tick_counter(value);
     }
 
     pub(crate) fn set_hud_floor_changed_timer(&mut self, value: u16) {
