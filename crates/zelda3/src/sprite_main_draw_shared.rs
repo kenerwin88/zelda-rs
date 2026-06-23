@@ -404,3 +404,602 @@ pub(in crate::zelda_rtl) fn trinexx_head_sin(a: u16, b: u8) -> i8 {
         t as i8
     }
 }
+
+// Shared draw tables promoted from sprite_main_draw.rs method bodies.
+pub(super) const MASTER_SWORD_LIGHT_BALL_DRAW_FRAMES: [DrawMultipleData; 12] = [
+    DrawMultipleData {
+        x: -6,
+        y: 4,
+        char_flags: 0x0082,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -6,
+        y: 4,
+        char_flags: 0x4082,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -6,
+        y: 4,
+        char_flags: 0xc082,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -6,
+        y: 4,
+        char_flags: 0x8082,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -6,
+        y: 4,
+        char_flags: 0x00a0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -6,
+        y: 4,
+        char_flags: 0x40a0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -6,
+        y: 4,
+        char_flags: 0xc0a0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -6,
+        y: 4,
+        char_flags: 0x80a0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -6,
+        y: 4,
+        char_flags: 0x0080,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -6,
+        y: 4,
+        char_flags: 0x4080,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -6,
+        y: 4,
+        char_flags: 0xc080,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -6,
+        y: 4,
+        char_flags: 0x8080,
+        ext: 2,
+    },
+];
+
+pub(super) const BEAMOS_EYEBALL_DRAW_X_OFFSETS: [i8; 32] = [
+    -1, 0, 1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 15, 14, 13, 12, 11, 10, 8, 7, 5, 4,
+    3, 2, 1, 0, -2,
+];
+
+pub(super) const BEAMOS_EYEBALL_DRAW_Y_OFFSETS: [i8; 32] = [
+    11, 12, 13, 14, 14, 15, 15, 15, 15, 15, 15, 14, 14, 13, 12, 11, 10, 9, 8, 7, 7, 6, 6, 6, 6, 6,
+    6, 7, 7, 8, 9, 10,
+];
+
+pub(super) const BEAMOS_EYEBALL_DRAW_CHARS: [u8; 32] = [
+    0x5b, 0x5b, 0x5a, 0x5a, 0x4b, 0x4b, 0x4a, 0x4a, 0x4a, 0x4a, 0x4b, 0x4b, 0x5a, 0x5a, 0x5b, 0x5b,
+    0x5b, 0x5b, 0x4c, 0x4c, 0x4c, 0x4c, 0x4c, 0x4c, 0x5b, 0x5b, 0x4c, 0x4c, 0x4c, 0x4c, 0x4c, 0x4c,
+];
+
+pub(super) const BEAMOS_EYEBALL_DRAW_FLAGS: [u8; 32] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40,
+    0x40, 0x40, 0x40, 0x40, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+pub(super) const WATER_RIPPLE_DRAW_FRAMES: [DrawMultipleData; 6] = [
+    DrawMultipleData {
+        x: 0,
+        y: 10,
+        char_flags: 0x01d8,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 10,
+        char_flags: 0x41d8,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 10,
+        char_flags: 0x01d9,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 10,
+        char_flags: 0x41d9,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 10,
+        char_flags: 0x01da,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 10,
+        char_flags: 0x41da,
+        ext: 0,
+    },
+];
+
+pub(super) const WATER_RIPPLE_FRAME_INDICES: [u8; 4] = [0, 1, 2, 1];
+
+pub(super) const METAL_BALL_LARGE_X_OFFSETS: [i8; 4] = [-8, 8, -8, 8];
+
+pub(super) const METAL_BALL_LARGE_Y_OFFSETS: [i8; 4] = [-8, -8, 8, 8];
+
+pub(super) const METAL_BALL_LARGE_CHARS: [u8; 8] = [0x84, 0x88, 0x88, 0x88, 0x86, 0x88, 0x88, 0x88];
+
+pub(super) const METAL_BALL_LARGE_FLAGS: [u8; 4] = [0, 0, 0xc0, 0x80];
+
+pub(super) const ENEMY_BOMB_EXPLOSION_X_OFFSETS: [i8; 16] =
+    [-12, 12, -12, 12, -8, 8, -8, 8, -8, 8, -8, 8, 0, 0, 0, 0];
+
+pub(super) const ENEMY_BOMB_EXPLOSION_Y_OFFSETS: [i8; 16] =
+    [-12, -12, 12, 12, -8, -8, 8, 8, -8, -8, 8, 8, 0, 0, 0, 0];
+
+pub(super) const ENEMY_BOMB_EXPLOSION_CHARS: [u8; 16] = [
+    0x88, 0x88, 0x88, 0x88, 0x8a, 0x8a, 0x8a, 0x8a, 0x84, 0x84, 0x84, 0x84, 0x86, 0x86, 0x86, 0x86,
+];
+
+pub(super) const ENEMY_BOMB_EXPLOSION_FLAGS: [u8; 16] = [
+    0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0, 0, 0,
+];
+
+pub(super) const SOLDIER_THROWING_DRAW_X_OFFSETS: [i8; 16] =
+    [15, 7, 17, 9, -8, 0, -10, -2, 13, 13, 13, 13, -4, -4, -4, -4];
+
+pub(super) const SOLDIER_THROWING_DRAW_Y_OFFSETS: [i8; 16] = [
+    -2, -2, -2, -2, -2, -2, -2, -2, 8, 0, 10, 2, -14, -6, -16, -8,
+];
+
+pub(super) const SOLDIER_THROWING_DRAW_CHARS: [u8; 16] = [
+    0x6f, 0x7f, 0x6f, 0x7f, 0x6f, 0x7f, 0x6f, 0x7f, 0x6e, 0x7e, 0x6e, 0x7e, 0x6e, 0x7e, 0x6e, 0x7e,
+];
+
+pub(super) const SOLDIER_THROWING_DRAW_FLAGS: [u8; 16] = [
+    0x40, 0x40, 0x40, 0x40, 0, 0, 0, 0, 0x80, 0x80, 0x80, 0x80, 0, 0, 0, 0,
+];
+
+pub(super) const ARCHER_WEAPON_BASE_FRAME_BY_DIRECTION: [u8; 4] = [9, 3, 0, 6];
+
+pub(super) const ARCHER_SOLDIER_DRAW_X_OFFSETS: [i8; 48] = [
+    -1, 7, 3, 3, -1, 7, 3, 3, -1, 7, 7, 7, -5, -5, -10, -2, -4, -4, -6, 2, -5, -5, -5, -5, 6, 14,
+    11, 11, 6, 14, 11, 11, 6, 14, 14, 14, 11, 11, 18, 10, 12, 12, 14, 6, 11, 11, 11, 11,
+];
+
+pub(super) const ARCHER_SOLDIER_DRAW_Y_OFFSETS: [i8; 48] = [
+    7, 7, 3, 11, 6, 6, 1, 9, 7, 7, 7, 7, -2, 6, 2, 2, -2, 6, 2, 2, -2, 6, 6, 6, -6, -6, -12, -4,
+    -6, -6, -9, -1, -6, -6, -6, -6, -2, 6, 2, 2, -2, 6, 2, 2, -2, 6, 6, 6,
+];
+
+pub(super) const ARCHER_SOLDIER_DRAW_CHARS: [u8; 48] = [
+    0xa, 0xa, 0x2a, 0x2b, 0x1a, 0x1a, 0x2a, 0x2b, 0xa, 0xa, 0xa, 0xa, 0xb, 0xb, 0x3d, 0x3a, 0x1b,
+    0x1b, 0x3d, 0x3a, 0xb, 0xb, 0xb, 0xb, 0xa, 0xa, 0x2b, 0x2a, 0xa, 0xa, 0x2b, 0x2a, 0xa, 0xa,
+    0xa, 0xa, 0xb, 0xb, 0x3d, 0x3a, 0x1b, 0x1b, 0x3d, 0x3a, 0xb, 0xb, 0xb, 0xb,
+];
+
+pub(super) const ARCHER_SOLDIER_DRAW_FLAGS: [u8; 48] = [
+    0xd, 0x4d, 8, 8, 0xd, 0x4d, 8, 8, 0xd, 0x4d, 0x4d, 0x4d, 0xd, 0x8d, 0x48, 0x48, 0xd, 0x8d,
+    0x48, 0x48, 0xd, 0x8d, 0x8d, 0x8d, 0x8d, 0xcd, 0x88, 0x88, 0x8d, 0xcd, 0x88, 0x88, 0x8d, 0xcd,
+    0xcd, 0xcd, 0x4d, 0xcd, 8, 8, 0x4d, 0xcd, 8, 8, 0x4d, 0xcd, 0xcd, 0xcd,
+];
+
+pub(super) const OCTOSTONE_DRAW_X_OFFSETS: [i8; 16] = [
+    0, 8, 0, 8, -8, 16, -8, 16, -12, 20, -12, 20, -14, 22, -14, 22,
+];
+
+pub(super) const OCTOSTONE_DRAW_Y_OFFSETS: [i8; 16] = [
+    0, 0, 8, 8, -8, -8, 16, 16, -12, -12, 20, 20, -14, -14, 22, 22,
+];
+
+pub(super) const OCTOSTONE_DRAW_FLAGS: [u8; 16] = [
+    0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0, 0, 0x40, 0x80, 0xc0,
+];
+
+pub(super) const BOMBER_PELLET_DRAW_FRAMES: [DrawMultipleData; 15] = [
+    DrawMultipleData {
+        x: -11,
+        y: 0,
+        char_flags: 0x019b,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -8,
+        char_flags: 0xc19b,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 6,
+        y: 6,
+        char_flags: 0x419b,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -15,
+        y: -6,
+        char_flags: 0x018a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: -14,
+        char_flags: 0x018a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 2,
+        y: 0,
+        char_flags: 0x018a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -15,
+        y: -6,
+        char_flags: 0x0186,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: -14,
+        char_flags: 0x0186,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 2,
+        y: 0,
+        char_flags: 0x0186,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: -4,
+        char_flags: 0x0186,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: -4,
+        char_flags: 0x0186,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: -4,
+        char_flags: 0x0186,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: -4,
+        char_flags: 0x01aa,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: -4,
+        char_flags: 0x01aa,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: -4,
+        char_flags: 0x01aa,
+        ext: 2,
+    },
+];
+
+pub(super) const PIKIT_TONGUE_LENGTH_MULTIPLIERS: [u8; 4] = [0x33, 0x66, 0x99, 0xcc];
+
+pub(super) const PIKIT_TONGUE_DRAW_CHARS: [u8; 8] =
+    [0xee, 0xfd, 0xed, 0xfd, 0xee, 0xfd, 0xed, 0xfd];
+
+pub(super) const PIKIT_TONGUE_DRAW_FLAGS: [u8; 8] = [0, 0, 0, 0x40, 0x40, 0xc0, 0x80, 0x80];
+
+pub(super) const PIKIT_GRABBED_ITEM_X_OFFSETS: [i8; 20] = [
+    -4, 4, -4, 4, 0, 8, 0, 8, 0, 8, 0, 8, 0, 8, 0, 8, -4, 4, -4, 4,
+];
+
+pub(super) const PIKIT_GRABBED_ITEM_Y_OFFSETS: [i8; 20] = [
+    -4, -4, 4, 4, -4, -4, 4, 4, -4, -4, 4, 4, -4, -4, 4, 4, -4, -4, 4, 4,
+];
+
+pub(super) const PIKIT_GRABBED_ITEM_CHARS: [u8; 20] = [
+    0x6e, 0x6f, 0x7e, 0x7f, 0x63, 0x7c, 0x73, 0x7c, 0xb, 0x7c, 0x1b, 0x7c, 0xec, 0xf9, 0xfc, 0xf9,
+    0xea, 0xeb, 0xfa, 0xfb,
+];
+
+pub(super) const PIKIT_GRABBED_ITEM_FLAGS: [u8; 5] = [0x24, 0x24, 0x28, 0x29, 0x2f];
+
+pub(super) const TRINEXX_DRAW1_DRAW_FRAMES: [DrawMultipleData; 36] = [
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0x40c0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x00c0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0x40e0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0x00e0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0x0000,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x0002,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0x0020,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0x0022,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0x00c2,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x00c4,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0x80c2,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0x80c4,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0x8020,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x8022,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0x8000,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0x8002,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0xc0e0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x80e0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0xc0c0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0x80c0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0xc022,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0xc020,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0xc002,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0xc000,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0x40c4,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x40c2,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0xc0c4,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0xc0c2,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0x4002,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x4000,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0x4022,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0x4020,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0x0026,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x4026,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0x8026,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0xc026,
+        ext: 2,
+    },
+];
+
+pub(super) const TRINEXX_DRAW_X_OFFSETS: [i8; 35] = [
+    0, 3, 9, 16, 24, 0, 2, 7, 13, 20, 0, 1, 4, 9, 15, 0, 0, 0, 0, 0, 0, -1, -4, -9, -15, 0, -2, -7,
+    -13, -20, 0, -3, -9, -16, -24,
+];
+
+pub(super) const TRINEXX_DRAW_Y_OFFSETS: [u8; 35] = [
+    0x18, 0x20, 0x25, 0x25, 0x21, 0x18, 0x20, 0x27, 0x2a, 0x2c, 0x18, 0x20, 0x28, 0x2f, 0x34, 0x18,
+    0x21, 0x2a, 0x34, 0x3d, 0x18, 0x20, 0x28, 0x2f, 0x34, 0x18, 0x20, 0x27, 0x2a, 0x2c, 0x18, 0x20,
+    0x25, 0x25, 0x21,
+];
+
+pub(super) const TRINEXX_DRAW_CHARS: [u8; 5] = [6, 0x28, 0x28, 0x2c, 0x2c];
+
+pub(super) const TRINEXX_SCALE_MULTIPLIERS: [u8; 8] =
+    [0xfc, 0xe0, 0xc0, 0xa0, 0x80, 0x60, 0x40, 0x20];
+
+pub(super) const TRINEXX_WIGGLE_X_OFFSETS: [i8; 16] =
+    [0, 2, 3, 4, 4, 4, 3, 2, 0, -2, -3, -4, -4, -4, -3, -2];
+
+pub(super) const TRINEXX_WIGGLE_Y_OFFSETS: [i8; 16] =
+    [-4, -4, -3, -2, 0, 2, 3, 4, 4, 4, 3, 2, 0, -2, -3, -4];
+
+pub(super) const CHATTY_AGAHNIM_TELEWARP_DRAW_DATA: [(i8, i8, u8, u8); 28] = [
+    (-10, -16, 0xce, 0x06),
+    (18, -16, 0xce, 0x06),
+    (20, -13, 0x26, 0x06),
+    (20, -5, 0x36, 0x06),
+    (-12, -13, 0x26, 0x46),
+    (-12, -5, 0x36, 0x46),
+    (18, 0, 0x26, 0x06),
+    (18, 8, 0x36, 0x06),
+    (-10, 0, 0x26, 0x46),
+    (-10, 8, 0x36, 0x46),
+    (-8, 0, 0x22, 0x06),
+    (8, 0, 0x22, 0x46),
+    (-8, 16, 0x22, 0x86),
+    (8, 16, 0x22, 0xc6),
+    (-10, -16, 0xce, 0x04),
+    (18, -16, 0xce, 0x04),
+    (20, -13, 0x26, 0x44),
+    (20, -5, 0x36, 0x44),
+    (-12, -13, 0x26, 0x04),
+    (-12, -5, 0x36, 0x04),
+    (18, 0, 0x26, 0x44),
+    (18, 8, 0x36, 0x44),
+    (-10, 0, 0x26, 0x04),
+    (-10, 8, 0x36, 0x04),
+    (-8, 0, 0x20, 0x04),
+    (8, 0, 0x20, 0x44),
+    (-8, 16, 0x20, 0x84),
+    (8, 16, 0x20, 0xc4),
+];
+
+pub(super) const TELEWARP_DRAW_SIZES: [u8; 14] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2];
