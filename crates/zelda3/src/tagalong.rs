@@ -690,23 +690,11 @@ impl ZeldaState {
             let j = self.game_state.sprites.follower_runtime.tail_write_index() as usize;
             let x = self.tagalong_x(j);
             let y = self.tagalong_y(j);
-            self.game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k)
-                .set_x(x);
-            self.game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k)
-                .set_y(y);
+            self.ancilla_slot_view_mut(k).set_x(x);
+            self.ancilla_slot_view_mut(k).set_y(y);
 
             let pt = self.Ancilla_ProjectSpeedTowardsPlayer(k, 24);
-            let mut ancilla = self
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k);
+            let mut ancilla = self.ancilla_slot_view_mut(k);
             ancilla.set_x_velocity(pt.x);
             ancilla.set_y_velocity(pt.y);
             self.Ancilla_MoveY(k);
@@ -1675,37 +1663,25 @@ impl ZeldaState {
     }
 
     fn Ancilla_GetX(&self, k: usize) -> u16 {
-        self.game_state.sprites.ancilla_slots.slot(k).x()
+        self.ancilla_slot_view(k).x()
     }
 
     fn Ancilla_GetY(&self, k: usize) -> u16 {
-        self.game_state.sprites.ancilla_slots.slot(k).y()
+        self.ancilla_slot_view(k).y()
     }
 
     fn Ancilla_SetXY(&mut self, k: usize, x: u16, y: u16) {
-        let mut ancilla = self
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, k);
+        let mut ancilla = self.ancilla_slot_view_mut(k);
         ancilla.set_x(x);
         ancilla.set_y(y);
     }
 
     fn Ancilla_MoveX(&mut self, k: usize) {
-        self.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, k)
-            .move_x();
+        self.ancilla_slot_view_mut(k).move_x();
     }
 
     fn Ancilla_MoveY(&mut self, k: usize) {
-        self.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, k)
-            .move_y();
+        self.ancilla_slot_view_mut(k).move_y();
     }
 
     fn Ancilla_ProjectSpeedTowardsPlayer(&self, k: usize, vel: u8) -> ProjectSpeedRet {
@@ -1775,11 +1751,7 @@ impl ZeldaState {
 
     fn AncillaAdd_SuperBombExplosion(&mut self, a: u8, y: u8) -> Option<usize> {
         let k = self.ancilla_add_simple(a, y)?;
-        let mut explosion = self
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, k);
+        let mut explosion = self.ancilla_slot_view_mut(k);
         explosion.set_r(0);
         explosion.set_step(0);
         explosion.set_work_byte_25(0);

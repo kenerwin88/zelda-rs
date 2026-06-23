@@ -851,47 +851,21 @@ impl ZeldaState {
 
     pub(super) fn spawn_falling_tile(&mut self, k: usize) {
         if let Some(j) = self.GarnishAlloc() {
-            let value = 3;
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, j)
-                .set_garnish_type(value);
-            let value = self.game_state.sprites.overlord_slots.slot(k).x_high();
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, j)
-                .set_x_high(value);
-            let value = self.game_state.sprites.overlord_slots.slot(k).x_low();
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, j)
-                .set_x_low(value);
-            let sfx = self
-                .calculate_sfx_pan_arbitrary(self.game_state.sprites.garnish_slots.slot(j).x_low())
-                | 0x1f;
+            let x_high = self.game_state.sprites.overlord_slots.slot(k).x_high();
+            let x_low = self.game_state.sprites.overlord_slots.slot(k).x_low();
+            {
+                let mut garnish = self.garnish_slot_view_mut(j);
+                garnish.set_garnish_type(3);
+                garnish.set_x_high(x_high);
+                garnish.set_x_low(x_low);
+            }
+            let sfx = self.calculate_sfx_pan_arbitrary(x_low) | 0x1f;
             self.set_sound_effect_1(sfx);
             let y = self.overlord_get_y(k).wrapping_add(16);
-            let value = y as u8;
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, j)
-                .set_y_low(value);
-            let value = (y >> 8) as u8;
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, j)
-                .set_y_high(value);
-            let value = 31;
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, j)
-                .set_countdown(value);
+            let mut garnish = self.garnish_slot_view_mut(j);
+            garnish.set_y_low(y as u8);
+            garnish.set_y_high((y >> 8) as u8);
+            garnish.set_countdown(31);
             self.garnish_state_mut().set_active_type(31);
         }
     }
@@ -1525,7 +1499,7 @@ impl ZeldaState {
     fn GarnishAlloc(&self) -> Option<usize> {
         (0..30)
             .rev()
-            .find(|&j| self.game_state.sprites.garnish_slots.slot(j).is_empty())
+            .find(|&j| self.garnish_slot_view(j).is_empty())
     }
 
     fn Sprite_TransmuteToBomb(&mut self, k: usize) {

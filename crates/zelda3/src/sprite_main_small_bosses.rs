@@ -881,12 +881,8 @@ impl ZeldaState {
                     let sparkle =
                         self.sprite_garnish_spawn_sparkle(k, x as i16 as u16, u16::from(y));
                     if self.sprite_slot(k).sprite_type() == 0xcc && sparkle >= 0 {
-                        let value = 0x0e;
-                        self.game_state
-                            .sprites
-                            .garnish_slots
-                            .slot_mut(&mut self.ram, sparkle as usize)
-                            .set_garnish_type(value);
+                        self.garnish_slot_view_mut(sparkle as usize)
+                            .set_garnish_type(0x0e);
                     }
                 }
             }

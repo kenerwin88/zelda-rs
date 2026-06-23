@@ -766,12 +766,8 @@ impl ZeldaState {
     pub(super) fn Ancilla_TerminateWaterfallSplashes(&mut self) {
         if self.game_state.world.location.overworld_screen_index() == 0x0f {
             for i in (0..=4).rev() {
-                if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x41 {
-                    self.game_state
-                        .sprites
-                        .ancilla_slots
-                        .slot_mut(&mut self.ram, i)
-                        .clear();
+                if self.ancilla_slot_view(i).ancilla_type() == 0x41 {
+                    self.ancilla_slot_view_mut(i).clear();
                 }
             }
         }
