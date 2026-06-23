@@ -15,16 +15,10 @@ const DASH_FOLLOWER_SLOWDOWN_INDICATORS: [u8; 15] =
 const DASH_FOLLOWER_RELEASE_INDICATORS: [u8; 15] = [0xff, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 fn player_memory_location_to_give_item_to(item: u8) -> usize {
-    const MEMORY_LOCATIONS: [usize; 76] = [
-        0xf359, 0xf359, 0xf359, 0xf359, 0xf35a, 0xf35a, 0xf35a, 0xf345, 0xf346, 0xf34b, 0xf342,
-        0xf340, 0xf341, 0xf344, 0xf35c, 0xf347, 0xf348, 0xf349, 0xf34a, 0xf34c, 0xf34c, 0xf350,
-        0xf35c, 0xf36b, 0xf351, 0xf352, 0xf353, 0xf354, 0xf354, 0xf34e, 0xf356, 0xf357, 0xf37a,
-        0xf34d, 0xf35b, 0xf35b, 0xf36f, 0xf364, 0xf36c, 0xf375, 0xf375, 0xf344, 0xf341, 0xf35c,
-        0xf35c, 0xf35c, 0xf36d, 0xf36e, 0xf36e, 0xf375, 0xf366, 0xf368, 0xf360, 0xf360, 0xf360,
-        0xf374, 0xf374, 0xf374, 0xf340, 0xf340, 0xf35c, 0xf35c, 0xf36c, 0xf36c, 0xf360, 0xf360,
-        0xf372, 0xf376, 0xf376, 0xf373, 0xf360, 0xf360, 0xf35c, 0xf359, 0xf34c, 0xf355,
-    ];
-    MEMORY_LOCATIONS.get(item as usize).copied().unwrap_or(0)
+    PLAYER_MEMORY_LOCATION_TO_GIVE_ITEM_TO_MEMORY_LOCATIONS
+        .get(item as usize)
+        .copied()
+        .unwrap_or(0)
 }
 
 fn replay_trace_u16_env(name: &str) -> Option<u16> {
@@ -2489,8 +2483,7 @@ impl ZeldaState {
             if spin >= 8 {
                 return;
             }
-            const SPIN_OFFSETS: [u8; 8] = [10, 6, 14, 2, 12, 4, 8, 0];
-            SPIN_OFFSETS[spin as usize] as u16 + 0x40
+            TILE_DETECT_MAIN_HANDLER_SPIN_OFFSETS[spin as usize] as u16 + 0x40
         } else {
             item as u16 * 8 + self.game_state.player.follower_link.facing() as u16
         };
@@ -3485,12 +3478,11 @@ impl ZeldaState {
         {
             let skip_check = self.game_state.player.follower_link.is_running()
                 && self.game_state.player.follower_link.facing() & 4 == 0;
-            const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
             if !skip_check
                 || self
                     .game_state
                     .enhanced_features
-                    .has(FEATURES0_MISC_BUG_FIXES)
+                    .has(FINISH_INDOOR_COLLISION_COMMON_FEATURES0_MISC_BUG_FIXES)
             {
                 self.flag_moving_into_slopes_x();
                 if self
@@ -3635,8 +3627,6 @@ impl ZeldaState {
         }
 
         if self.game_state.player.tile_detection.misc_tiles() & 0x2200 != 0 {
-            const DX: [u8; 4] = [8, 8, 0, 15];
-            const DY: [u8; 4] = [8, 24, 16, 16];
             let dy = if self.game_state.player.tile_detection.misc_tiles() & 0x2000 != 0 {
                 8
             } else {
@@ -3659,14 +3649,14 @@ impl ZeldaState {
                 .player
                 .follower_link
                 .y()
-                .wrapping_add(DY[dir] as u16)
+                .wrapping_add(FINISH_INDOOR_COLLISION_COMMON_RUPEE_Y_OFFSETS[dir] as u16)
                 .wrapping_sub(dy);
             let x = self
                 .game_state
                 .player
                 .follower_link
                 .x()
-                .wrapping_add(DX[dir] as u16);
+                .wrapping_add(FINISH_INDOOR_COLLISION_COMMON_RUPEE_X_OFFSETS[dir] as u16);
             self.dungeon_delete_rupee_tile_for_player(x, y);
             self.ancilla_sfx3_near(10);
         }
@@ -3769,11 +3759,10 @@ impl ZeldaState {
                 self.set_main_module(7);
                 self.link_cancel_dash();
             } else {
-                const FEATURES0_TURN_WHILE_DASHING: u32 = 4;
                 if self
                     .game_state
                     .enhanced_features
-                    .has(FEATURES0_TURN_WHILE_DASHING)
+                    .has(LINK_STATE_DASHING_FEATURES0_TURN_WHILE_DASHING)
                 {
                     self.link_cancel_dash();
                 }
@@ -5431,9 +5420,8 @@ impl ZeldaState {
                 }
             }
 
-            const ABILITY_BITMASKS: [u8; 8] = [0xe0, 0x40, 4, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0];
-            if action as usize >= ABILITY_BITMASKS.len()
-                || (ABILITY_BITMASKS[action as usize]
+            if action as usize >= LINK_APRESS_BASIC_ABILITY_BITMASKS.len()
+                || (LINK_APRESS_BASIC_ABILITY_BITMASKS[action as usize]
                     & self.game_state.inventory.player_resources.ability_flags())
                     == 0
             {
@@ -6193,9 +6181,8 @@ impl ZeldaState {
                     item = self.hud_lookup_inventory_item(hud_item);
                     self.follower_link_state_mut()
                         .set_joypad1h_last(old_down | 0x40);
-                    const BUTTON_INDEX_KEYS: [u8; 4] = [0, 0x40, 0x20, 0x10];
                     if self.game_state.player.follower_link.filtered_joypad_l()
-                        & BUTTON_INDEX_KEYS[btn_index]
+                        & LINK_ITEM_Y_BUTTON_BUTTON_INDEX_KEYS[btn_index]
                         != 0
                     {
                         self.follower_link_state_mut()
@@ -7862,12 +7849,11 @@ impl ZeldaState {
                 self.link_state_pits_after_aux_state();
                 return;
             }
-            const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
             if self.game_state.player.follower_link.dash_countdown() != 0
                 && (!self
                     .game_state
                     .enhanced_features
-                    .has(FEATURES0_MISC_BUG_FIXES)
+                    .has(LINK_STATE_PITS_FEATURES0_MISC_BUG_FIXES)
                     || self.game_state.player.follower_link.joypad1l_last() & 0x80 != 0)
             {
                 self.link_state_dashing();
@@ -8837,9 +8823,7 @@ impl ZeldaState {
                 self.follower_link_state_mut().set_dash_countdown(0x11);
                 want_stop_dash = true;
             } else {
-                const DASH_CTRLS_TO_DIR: [u8; 16] =
-                    [0, 1, 2, 0, 4, 4, 4, 0, 8, 8, 8, 0, 0, 0, 0, 0];
-                let t = DASH_CTRLS_TO_DIR
+                let t = LINK_STATE_DASHING_DASH_CONTROLS_TO_DIRECTION
                     [(self.game_state.player.follower_link.joypad1h_last() & 0x0f) as usize];
                 if t != 0 && t != self.game_state.player.follower_link.last_direction() {
                     self.follower_link_state_mut()
@@ -9507,8 +9491,6 @@ impl ZeldaState {
                 return;
             }
 
-            const SOMARIA_BLOCK_YVEL: [u8; 4] = [(-40i8) as u8, 40, 0, 0];
-            const SOMARIA_BLOCK_XVEL: [u8; 4] = [0, 0, (-40i8) as u8, 40];
             if self.game_state.player.follower_link.ancilla_pickup_flag() == k as u8 + 1 {
                 self.follower_link_state_mut().clear_ancilla_pickup_flag();
             }
@@ -9518,8 +9500,8 @@ impl ZeldaState {
             {
                 let mut ancilla = self.ancilla_slot_view_mut(k);
                 ancilla.set_direction(j as u8);
-                ancilla.set_y_velocity(SOMARIA_BLOCK_YVEL[j]);
-                ancilla.set_x_velocity(SOMARIA_BLOCK_XVEL[j]);
+                ancilla.set_y_velocity(LINK_ITEM_CANE_OF_SOMARIA_BLOCK_Y_VELOCITIES[j]);
+                ancilla.set_x_velocity(LINK_ITEM_CANE_OF_SOMARIA_BLOCK_X_VELOCITIES[j]);
                 ancilla.set_z_velocity(48);
                 ancilla.set_z(0);
             }
@@ -9544,11 +9526,12 @@ impl ZeldaState {
             ancilla.set_work_byte_4(0);
             ancilla.set_h(0);
         } else {
-            const SOMARIA_BLOCK_ZVEL: [u8; 4] = [48, 24, 16, 8];
             let mut ancilla = self.ancilla_slot_view_mut(k);
             let y_velocity = ((ancilla.y_velocity() as i8) / 2) as u8;
             let x_velocity = ((ancilla.x_velocity() as i8) / 2) as u8;
-            ancilla.set_z_velocity(SOMARIA_BLOCK_ZVEL[j.wrapping_sub(1) as usize]);
+            ancilla.set_z_velocity(
+                LINK_ITEM_CANE_OF_SOMARIA_BLOCK_Z_VELOCITIES[j.wrapping_sub(1) as usize],
+            );
             ancilla.set_y_velocity(y_velocity);
             ancilla.set_x_velocity(x_velocity);
         }

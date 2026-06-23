@@ -142,6 +142,8 @@ pub(super) const LINK_FIND_VALID_LANDING_TILE_DIAGONAL_NORTH_Z_DELTAS: [u8; 32] 
     48, 48, 48, 48, 52, 52, 52, 52,
 ];
 
+pub(super) const TILE_DETECT_MAIN_HANDLER_SPIN_OFFSETS: [u8; 8] = [10, 6, 14, 2, 12, 4, 8, 0];
+
 pub(super) const TILE_DETECT_MAIN_HANDLER_X_OFFSETS: [i8; 40] = [
     8, 8, 8, 8, 6, 8, -1, 22, 19, 19, 0, 19, 6, 8, -1, 22, 8, 8, 8, 8, 8, 8, 0, 15, 6, 8, -10, 29,
     6, 8, -6, 22, 6, 8, -4, 22, -4, 22, -4, 22,
@@ -156,12 +158,21 @@ pub(super) const LINK_HANDLE_LIFTABLES_ACTION_FOR_GLOVES: [u8; 7] = [0, 1, 0, 0,
 
 pub(super) const LINK_HANDLE_LIFTABLES_ACTION_FOR_TILE: [u8; 7] = [2, 3, 1, 4, 0, 5, 6];
 
+pub(super) const LINK_APRESS_BASIC_ABILITY_BITMASKS: [u8; 8] =
+    [0xe0, 0x40, 4, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0];
+
 pub(super) const LINK_HANDLE_LIFTABLES_ACTION_X: [i8; 4] = [7, 7, -3, 16];
 
 pub(super) const LINK_HANDLE_LIFTABLES_ACTION_Y: [i8; 4] = [6, 24, 12, 12];
 
 pub(super) const LINK_BONK_AND_SMASH_LIFTABLE_TILE_ATTR_TO_TERRAIN_TYPE: [u8; 9] =
     [0x54, 0x52, 0x50, 0xff, 0x51, 0x53, 0x55, 0x56, 0x57];
+
+pub(super) const FINISH_INDOOR_COLLISION_COMMON_FEATURES0_MISC_BUG_FIXES: u32 = 4096;
+
+pub(super) const FINISH_INDOOR_COLLISION_COMMON_RUPEE_Y_OFFSETS: [u8; 4] = [8, 24, 16, 16];
+
+pub(super) const FINISH_INDOOR_COLLISION_COMMON_RUPEE_X_OFFSETS: [u8; 4] = [8, 8, 0, 15];
 
 pub(super) const OVERWORLD_GET_LINK_MAP16_COORDS_RESULT_X_OFFSETS: [i16; 4] = [7, 7, -3, 16];
 
@@ -323,6 +334,8 @@ pub(super) const LINK_ITEM_NET_BUG_NET_TIMERS: [u8; 40] = [
     8, 1, 2, 3, 4, 5, 6, 7, 8,
 ];
 
+pub(super) const LINK_ITEM_Y_BUTTON_BUTTON_INDEX_KEYS: [u8; 4] = [0, 0x40, 0x20, 0x10];
+
 pub(super) const ANCILLA_ADD_HOOKSHOT_INNER_HOOKSHOT_Y_VEL: [u8; 4] = [0xc0, 0x40, 0, 0];
 
 pub(super) const ANCILLA_ADD_HOOKSHOT_INNER_HOOKSHOT_X_VEL: [u8; 4] = [0, 0, 0xc0, 0x40];
@@ -339,6 +352,11 @@ pub(super) const LINK_STATE_DASHING_DASH_DIRECTION_BITS_BY_FACING: [u8; 4] = [8,
 
 pub(super) const LINK_STATE_DASHING_FEATURES0_TURN_WHILE_DASHING: u32 = 4;
 
+pub(super) const LINK_STATE_DASHING_DASH_CONTROLS_TO_DIRECTION: [u8; 16] =
+    [0, 1, 2, 0, 4, 4, 4, 0, 8, 8, 8, 0, 0, 0, 0, 0];
+
+pub(super) const LINK_STATE_PITS_FEATURES0_MISC_BUG_FIXES: u32 = 4096;
+
 pub(super) const SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_PUSH_BLOCK_CHAR_INDEX_BY_MODE: [usize; 9] =
     [0, 1, 2, 3, 4, 0, 0, 0, 0];
 
@@ -346,8 +364,24 @@ pub(super) const SPRITE_DUNGEON_DRAW_SINGLE_PUSH_BLOCK_CHARS: [u8; 4] = [0x0c, 0
 
 pub(super) const PLAYER_HANDLER_00_GROUND_3_FEATURES0_MISC_BUG_FIXES: u32 = 4096;
 
+pub(super) const PLAYER_MEMORY_LOCATION_TO_GIVE_ITEM_TO_MEMORY_LOCATIONS: [usize; 76] = [
+    0xf359, 0xf359, 0xf359, 0xf359, 0xf35a, 0xf35a, 0xf35a, 0xf345, 0xf346, 0xf34b, 0xf342, 0xf340,
+    0xf341, 0xf344, 0xf35c, 0xf347, 0xf348, 0xf349, 0xf34a, 0xf34c, 0xf34c, 0xf350, 0xf35c, 0xf36b,
+    0xf351, 0xf352, 0xf353, 0xf354, 0xf354, 0xf34e, 0xf356, 0xf357, 0xf37a, 0xf34d, 0xf35b, 0xf35b,
+    0xf36f, 0xf364, 0xf36c, 0xf375, 0xf375, 0xf344, 0xf341, 0xf35c, 0xf35c, 0xf35c, 0xf36d, 0xf36e,
+    0xf36e, 0xf375, 0xf366, 0xf368, 0xf360, 0xf360, 0xf360, 0xf374, 0xf374, 0xf374, 0xf340, 0xf340,
+    0xf35c, 0xf35c, 0xf36c, 0xf36c, 0xf360, 0xf360, 0xf372, 0xf376, 0xf376, 0xf373, 0xf360, 0xf360,
+    0xf35c, 0xf359, 0xf34c, 0xf355,
+];
+
 pub(super) const LINK_PERFORM_THROW_LIFTABLE_TILE_ATTR_TO_TERRAIN_TYPE: [u8; 9] =
     [0x54, 0x52, 0x50, 0xff, 0x51, 0x53, 0x55, 0x56, 0x57];
+
+pub(super) const LINK_ITEM_CANE_OF_SOMARIA_BLOCK_Y_VELOCITIES: [u8; 4] = [(-40i8) as u8, 40, 0, 0];
+
+pub(super) const LINK_ITEM_CANE_OF_SOMARIA_BLOCK_X_VELOCITIES: [u8; 4] = [0, 0, (-40i8) as u8, 40];
+
+pub(super) const LINK_ITEM_CANE_OF_SOMARIA_BLOCK_Z_VELOCITIES: [u8; 4] = [48, 24, 16, 8];
 
 pub(super) const SPAWN_HAMMER_WATER_SPLASH_HAMMER_WATER_X: [i8; 4] = [0, 12, -8, 24];
 
