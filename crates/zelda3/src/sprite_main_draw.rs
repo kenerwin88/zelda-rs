@@ -280,7 +280,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_Zora_Main(int k) {  // 859725
     pub(super) fn sprite_zora_main(&mut self, k: usize) {
-        const SURFACE_XY: [i8; 8] = [-32, -24, -16, -8, 8, 16, 24, 32];
         const ATTACK_GFX: [u8; 8] = [5, 5, 6, 10, 6, 5, 5, 5];
         const SUBMERGE_GFX: [u8; 12] = [12, 11, 9, 8, 7, 0, 0, 0, 0, 0, 0, 0];
 
@@ -4726,11 +4725,6 @@ impl ZeldaState {
     //   Movable statue collision, Link drag interaction, and switch sensing.
     // }
     pub(super) fn sprite_1_c_statue(&mut self, k: usize) {
-        const MOVABLE_STATUE_DIRECTIONS: [u8; 4] = [4, 6, 0, 2];
-        const MOVABLE_STATUE_JOYPAD_MASKS: [u8; 4] = [1, 2, 4, 8];
-        const MOVABLE_STATUE_X_VELOCITIES: [u8; 4] = [0xf0, 16, 0, 0];
-        const MOVABLE_STATUE_Y_VELOCITIES: [u8; 4] = [0, 0, 0xf0, 16];
-
         if self.sprite_slot_view(k).direction() != 0 {
             let value = 0;
             self.sprite_slot_view_mut(k).set_direction(value);
@@ -4844,8 +4838,6 @@ impl ZeldaState {
     //   Four-corner switch-tile probe.
     // }
     pub(super) fn statue_check_for_switch(&mut self, k: usize) -> bool {
-        const MOVABLE_STATUE_SWITCH_X_OFFSETS: [u8; 4] = [3, 12, 3, 12];
-        const MOVABLE_STATUE_SWITCH_Y_OFFSETS: [u8; 4] = [3, 3, 12, 12];
         for j in (0..4).rev() {
             let mut x = self
                 .sprite_get_x(k)
@@ -4866,26 +4858,6 @@ impl ZeldaState {
     //   Three deferred statue tiles.
     // }
     pub(super) fn movable_statue_draw(&mut self, k: usize) {
-        const MOVABLE_STATUE_DRAW_FRAMES: [DrawMultipleData; 3] = [
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00c2,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x40c2,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00c0,
-                ext: 2,
-            },
-        ];
         self.sprite_draw_multiple_player_deferred(k, &MOVABLE_STATUE_DRAW_FRAMES, None);
     }
 
@@ -4924,10 +4896,6 @@ impl ZeldaState {
     //   Six hand-written OAM tiles; no canonical DrawMultipleData table in C.
     // }
     pub(super) fn movable_mantle_draw(&mut self, k: usize) {
-        const MOVABLE_MANTLE_X_OFFSETS: [u8; 6] = [0, 0x10, 0x20, 0, 0x10, 0x20];
-        const MOVABLE_MANTLE_Y_OFFSETS: [u8; 6] = [0, 0, 0, 0x10, 0x10, 0x10];
-        const MOVABLE_MANTLE_CHARS: [u8; 6] = [0x0c, 0x0e, 0x0c, 0x2c, 0x2e, 0x2c];
-        const MOVABLE_MANTLE_FLAGS: [u8; 6] = [0x31, 0x31, 0x71, 0x31, 0x31, 0x71];
         self.oam_allocate_from_region_b(0x20);
         let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
@@ -4997,160 +4965,6 @@ impl ZeldaState {
     //   Two fish body tiles plus three splash tiles at z-adjusted y.
     // }
     pub(super) fn fish_draw(&mut self, k: usize) {
-        const FISH_DRAW_FRAMES: [DrawMultipleData; 16] = [
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x045e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x045f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x845e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x845f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x445f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x445e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0xc45f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0xc45e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0461,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x0471,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x4461,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x4471,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x8471,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x8461,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0xc471,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0xc461,
-                ext: 0,
-            },
-        ];
-        const FISH_DRAW_FRAMES2: [DrawMultipleData; 9] = [
-            DrawMultipleData {
-                x: -2,
-                y: 11,
-                char_flags: 0x0438,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 11,
-                char_flags: 0x0438,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 2,
-                y: 11,
-                char_flags: 0x0438,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -1,
-                y: 11,
-                char_flags: 0x0438,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 11,
-                char_flags: 0x0438,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: 11,
-                char_flags: 0x0438,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 11,
-                char_flags: 0x0438,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 11,
-                char_flags: 0x0438,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 11,
-                char_flags: 0x0438,
-                ext: 0,
-            },
-        ];
         if self.sprite_slot_view(k).graphics() == 0 {
             let mut info = SpritePrepOamCoordsRet {
                 x: 0,
@@ -5192,56 +5006,6 @@ impl ZeldaState {
     //   Four smoke tiles selected by low sprite_graphics bit.
     // }
     pub(super) fn chimney_smoke_draw(&mut self, k: usize) {
-        const CHIMNEY_SMOKE_DRAW_FRAMES: [DrawMultipleData; 8] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0086,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x0087,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x0096,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0x0097,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: 1,
-                char_flags: 0x0086,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 7,
-                y: 1,
-                char_flags: 0x0087,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 1,
-                y: 7,
-                char_flags: 0x0096,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 7,
-                y: 7,
-                char_flags: 0x0097,
-                ext: 0,
-            },
-        ];
         let base = ((self.sprite_slot_view(k).graphics() & 1) as usize) * 4;
         self.sprite_draw_multiple(k, &CHIMNEY_SMOKE_DRAW_FRAMES[base..base + 4], None);
     }
@@ -5251,56 +5015,6 @@ impl ZeldaState {
     //   Two large wing/body tiles plus common shadow.
     // }
     pub(super) fn vulture_draw(&mut self, k: usize) {
-        const VULTURE_DRAW_FRAMES: [DrawMultipleData; 8] = [
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x0086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x4086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x0080,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x4080,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x0082,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x4082,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x0084,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x4084,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -5317,8 +5031,6 @@ impl ZeldaState {
     //   Raven wait, ascend, attack, and flee state machine.
     // }
     pub(super) fn sprite_raven(&mut self, k: usize) {
-        const RAVEN_ASCEND_TIMERS: [u8; 2] = [16, 248];
-
         self.sprite_slot_view_mut(k).or_object_priority(0x30);
         self.sprite_draw_single_large(k);
         if self.sprite_return_if_inactive(k) {
@@ -5411,20 +5123,6 @@ impl ZeldaState {
     //   Two deferred large tiles.
     // }
     pub(super) fn magic_powder_item_draw(&mut self, k: usize) {
-        const MAGIC_POWDER_DRAW_FRAMES: [DrawMultipleData; 2] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x04e6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x04e6,
-                ext: 2,
-            },
-        ];
         self.sprite_draw_multiple_player_deferred(k, &MAGIC_POWDER_DRAW_FRAMES, None);
     }
 
@@ -5433,26 +5131,6 @@ impl ZeldaState {
     //   Bottle body and green price/label tiles.
     // }
     pub(super) fn green_potion_item_draw(&mut self, k: usize) {
-        const GREEN_POTION_ITEM_DRAW_FRAMES: [DrawMultipleData; 3] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x08c0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 18,
-                char_flags: 0x0a30,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -1,
-                y: 18,
-                char_flags: 0x0a22,
-                ext: 0,
-            },
-        ];
         self.sprite_draw_multiple_player_deferred(k, &GREEN_POTION_ITEM_DRAW_FRAMES, None);
     }
 
@@ -5461,32 +5139,6 @@ impl ZeldaState {
     //   Bottle body and blue price/label tiles.
     // }
     pub(super) fn blue_potion_item_draw(&mut self, k: usize) {
-        const BLUE_POTION_ITEM_DRAW_FRAMES: [DrawMultipleData; 4] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x04c0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 13,
-                y: 18,
-                char_flags: 0x0a30,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 5,
-                y: 18,
-                char_flags: 0x0a22,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: 18,
-                char_flags: 0x0a31,
-                ext: 0,
-            },
-        ];
         self.sprite_draw_multiple_player_deferred(k, &BLUE_POTION_ITEM_DRAW_FRAMES, None);
     }
 
@@ -5495,32 +5147,6 @@ impl ZeldaState {
     //   Bottle body and red price/label tiles.
     // }
     pub(super) fn red_potion_item_draw(&mut self, k: usize) {
-        const RED_POTION_ITEM_DRAW_FRAMES: [DrawMultipleData; 4] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x02c0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 13,
-                y: 18,
-                char_flags: 0x0a30,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 5,
-                y: 18,
-                char_flags: 0x0a02,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: 18,
-                char_flags: 0x0a31,
-                ext: 0,
-            },
-        ];
         self.sprite_draw_multiple_player_deferred(k, &RED_POTION_ITEM_DRAW_FRAMES, None);
     }
 
@@ -5820,9 +5446,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void PullSwitch_FacingUp(int k) {  // 85d6d4
     pub(super) fn pull_switch_facing_up(&mut self, k: usize) {
-        const UP_PULL_ANIMATION_DELAYS: [u8; 10] = [8, 24, 4, 4, 4, 4, 4, 4, 2, 10];
-        const UP_PULL_PLAYER_ACTION_STATES: [u8; 10] = [6, 7, 8, 8, 8, 8, 8, 9, 9, 9];
-
         self.pull_switch_handle_up_pulling(k);
         let mut j = self.sprite_slot_view(k).graphics();
         if j != 0 && j != 11 {
@@ -5901,8 +5524,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void PullSwitch_FacingDown(int k) {  // 85d8b5
     pub(super) fn pull_switch_facing_down(&mut self, k: usize) {
-        const DOWN_PULL_ANIMATION_DELAYS: [u8; 12] = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5];
-        const DOWN_PULL_PLAYER_ACTION_STATES: [u8; 12] = [1, 1, 2, 2, 3, 3, 1, 1, 4, 4, 5, 5];
         const YOFFS: [u8; 12] = [9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14];
 
         self.pull_switch_handle_down_pulling(k);
@@ -5995,12 +5616,6 @@ impl ZeldaState {
     //   Five OAM entries, including the animated center pull segment.
     // }
     pub(super) fn bad_pull_down_switch_draw(&mut self, k: usize) {
-        const BAD_PULL_DOWN_SWITCH_X_OFFSETS: [i8; 5] = [-4, 12, 0, -4, 4];
-        const BAD_PULL_DOWN_SWITCH_Y_OFFSETS: [i8; 5] = [-3, -3, 0, 5, 5];
-        const BAD_PULL_DOWN_SWITCH_DRAW_CHARS: [u8; 5] = [0xd2, 0xd2, 0xc4, 0xe4, 0xe4];
-        const BAD_PULL_DOWN_SWITCH_DRAW_FLAGS: [u8; 5] = [0x40, 0, 0, 0x40, 0];
-        const BAD_PULL_DOWN_SWITCH_DRAW_SIZES: [u8; 5] = [0, 0, 2, 2, 2];
-        const BAD_PULL_SWITCH_CENTER_Y_OFFSETS: [u8; 6] = [0, 1, 2, 3, 4, 5];
         const BAD_PULL_SWITCH_Y_OFFSET_INDEX_BY_GRAPHICS: [u8; 12] =
             [0, 0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 5];
         let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
@@ -6033,8 +5648,6 @@ impl ZeldaState {
     //   Two large switch tiles with animated top offset.
     // }
     pub(super) fn bad_pull_up_switch_draw(&mut self, k: usize) {
-        const BAD_PULL_UP_SWITCH_CHARS: [u8; 2] = [0xa2, 0xa4];
-        const BAD_PULL_SWITCH_TOP_Y_OFFSETS: [u8; 6] = [0, 1, 2, 3, 4, 5];
         const BAD_PULL_SWITCH_Y_OFFSET_INDEX_BY_GRAPHICS: [u8; 12] =
             [0, 0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 5];
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
@@ -6064,8 +5677,6 @@ impl ZeldaState {
     //   Two large switch tiles whose spacing follows sprite_graphics.
     // }
     pub(super) fn good_pull_switch_draw(&mut self, k: usize) {
-        const GOOD_PULL_SWITCH_BOTTOM_Y_OFFSETS: [u8; 14] =
-            [1, 1, 2, 3, 2, 3, 4, 5, 6, 7, 6, 7, 7, 7];
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
@@ -6090,116 +5701,6 @@ impl ZeldaState {
     //   Six deferred tiles selected by sprite_graphics.
     // }
     pub(super) fn bug_net_kid_draw(&mut self, k: usize) {
-        const BUG_NET_KID_DRAW_FRAMES: [DrawMultipleData; 18] = [
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x0027,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -5,
-                char_flags: 0x000e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 6,
-                char_flags: 0x040a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 6,
-                char_flags: 0x440a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 14,
-                char_flags: 0x840a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 14,
-                char_flags: 0xc40a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -5,
-                char_flags: 0x000e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -5,
-                char_flags: 0x000e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 6,
-                char_flags: 0x040a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 6,
-                char_flags: 0x440a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 14,
-                char_flags: 0x840a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 14,
-                char_flags: 0xc40a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -5,
-                char_flags: 0x002e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -5,
-                char_flags: 0x002e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 7,
-                char_flags: 0x040a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 7,
-                char_flags: 0x440a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 14,
-                char_flags: 0x840a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 14,
-                char_flags: 0xc40a,
-                ext: 2,
-            },
-        ];
         let base = (self.sprite_slot_view(k).graphics() as usize) * 6;
         self.sprite_draw_multiple_player_deferred(
             k,
@@ -6213,140 +5714,6 @@ impl ZeldaState {
     //   Two body tiles selected by sprite_graphics plus common shadow.
     // }
     pub(super) fn bomber_draw(&mut self, k: usize) {
-        const BOMBER_DRAW_FRAMES: [DrawMultipleData; 22] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40c6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40c6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40c4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40c4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00c6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00c6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00c4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00c4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x00c0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x40c0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x00c2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x40c2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x00e0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x40e0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x00e2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x40e2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x00e4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x40e4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40e6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40e6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e6,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00e6,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -6437,56 +5804,6 @@ impl ZeldaState {
     //   Four large tiles toggled by delay timer.
     // }
     pub(super) fn bumper_draw(&mut self, k: usize) {
-        const BUMPER_DRAW_FRAMES: [DrawMultipleData; 8] = [
-            DrawMultipleData {
-                x: -8,
-                y: -8,
-                char_flags: 0x00ec,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -8,
-                char_flags: 0x40ec,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 8,
-                char_flags: 0x80ec,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0xc0ec,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -7,
-                y: -7,
-                char_flags: 0x00ec,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 7,
-                y: -7,
-                char_flags: 0x40ec,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -7,
-                y: 7,
-                char_flags: 0x80ec,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 7,
-                y: 7,
-                char_flags: 0xc0ec,
-                ext: 2,
-            },
-        ];
         let base = (((self.sprite_slot_view(k).delay_main() >> 1) & 1) as usize) * 4;
         self.sprite_draw_multiple(k, &BUMPER_DRAW_FRAMES[base..base + 4], None);
     }
@@ -6496,20 +5813,6 @@ impl ZeldaState {
     //   Sprite_DrawMultiplePlayerDeferred(k, kFakeSword_Dmd, 2, NULL);
     // }
     pub(super) fn fake_sword_draw(&mut self, k: usize) {
-        const FAKE_SWORD_DRAW_FRAMES: [DrawMultipleData; 2] = [
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x00f4,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x00f5,
-                ext: 0,
-            },
-        ];
         self.sprite_draw_multiple_player_deferred(k, &FAKE_SWORD_DRAW_FRAMES, None);
     }
 
@@ -6909,8 +6212,6 @@ impl ZeldaState {
     // void Sprite_CF_Swamola(int k) {  // 9d9cb0
     pub(super) fn sprite_cf_swamola(&mut self, k: usize) {
         const TARGET_DIR: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
-        const TARGET_X: [i8; 9] = [0, 0, 32, 32, 32, 0, -32, -32, -32];
-        const TARGET_Y: [i8; 9] = [0, -32, -32, 0, 32, 32, 32, 0, -32];
 
         if self.sprite_slot_view(k).ai_state() != 0 {
             if sign8(self.sprite_slot_view(k).ai_state()) {
@@ -6944,10 +6245,12 @@ impl ZeldaState {
                     }
                     let t = (u16::from(self.sprite_slot_view(k).b()) << 8)
                         | u16::from(self.sprite_slot_view(k).a());
-                    let target_x = t.wrapping_add_signed(i16::from(TARGET_X[usize::from(j)]));
+                    let target_x =
+                        t.wrapping_add_signed(i16::from(SWAMOLA_TARGET_X_OFFSETS[usize::from(j)]));
                     let t = (u16::from(self.sprite_slot_view(k).head_direction()) << 8)
                         | u16::from(self.sprite_slot_view(k).c());
-                    let target_y = t.wrapping_add_signed(i16::from(TARGET_Y[usize::from(j)]));
+                    let target_y =
+                        t.wrapping_add_signed(i16::from(SWAMOLA_TARGET_Y_OFFSETS[usize::from(j)]));
                     self.swamola_target_mut(k).set_position(target_x, target_y);
                     let value = 1;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
@@ -7045,13 +6348,13 @@ impl ZeldaState {
                         | u16::from(self.sprite_slot_view(k).a());
                     self.sprite_set_x(
                         k,
-                        x.wrapping_add_signed(i16::from(TARGET_X[usize::from(j)])),
+                        x.wrapping_add_signed(i16::from(SWAMOLA_TARGET_X_OFFSETS[usize::from(j)])),
                     );
                     let y = (u16::from(self.sprite_slot_view(k).head_direction()) << 8)
                         | u16::from(self.sprite_slot_view(k).c());
                     self.sprite_set_y(
                         k,
-                        y.wrapping_add_signed(i16::from(TARGET_Y[usize::from(j)])),
+                        y.wrapping_add_signed(i16::from(SWAMOLA_TARGET_Y_OFFSETS[usize::from(j)])),
                     );
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
@@ -7411,8 +6714,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Zoro(int k) {  // 9e9bd0
     pub(super) fn zoro(&mut self, k: usize) {
-        const FLUTE_BOY_ANIMAL_XVEL: [i8; 4] = [16, -16, 0, 0];
-
         if self.sprite_slot_view(k).c() == 0 {
             self.sprite_slot_view_mut(k).add_c(1);
             if self.sprite_is_below_link(k).a != 0 {
@@ -7429,8 +6730,8 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).add_subtype2(1);
         let value = (self.sprite_slot_view(k).subtype2() >> 1) & 1;
         self.sprite_slot_view_mut(k).set_graphics(value);
-        let value = FLUTE_BOY_ANIMAL_XVEL
-            [usize::from((self.sprite_slot_view(k).subtype2() >> 2) & 1)] as u8;
+        let value =
+            ZORO_X_VELOCITIES[usize::from((self.sprite_slot_view(k).subtype2() >> 2) & 1)] as u8;
         self.sprite_slot_view_mut(k).set_x_velocity(value);
         self.sprite_move_xy(k);
         if self.sprite_slot_view(k).delay_main() == 0 && self.sprite_check_tile_collision(k) != 0 {
@@ -7614,7 +6915,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Wizzrobe_FireBeam(int k) {  // 9e9e15
     pub(super) fn wizzrobe_fire_beam(&mut self, k: usize) {
-        const BEAM_XYVEL: [i8; 6] = [32, -32, 0, 0, 32, -32];
         let mut info = SpriteSpawnInfo::default();
         let j = self.sprite_spawn_dynamically(k, 0x9b, &mut info);
         if j >= 0 {
@@ -7627,9 +6927,9 @@ impl ZeldaState {
             self.sprite_set_x(j, info.r0_x.wrapping_add(4));
             self.sprite_set_y(j, info.r2_y);
             let i = usize::from(self.sprite_slot_view(k).direction());
-            let value = BEAM_XYVEL[i] as u8;
+            let value = WIZZROBE_BEAM_XY_VELOCITIES[i] as u8;
             self.sprite_slot_view_mut(j).set_x_velocity(value);
-            let value = BEAM_XYVEL[i + 2] as u8;
+            let value = WIZZROBE_BEAM_XY_VELOCITIES[i + 2] as u8;
             self.sprite_slot_view_mut(j).set_y_velocity(value);
             let value = 0x48;
             self.sprite_slot_view_mut(j).set_deflection_bits(value);
@@ -8704,44 +8004,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Stal_Draw(int k) {  // 9d820c
     pub(super) fn stal_draw(&mut self, k: usize) {
-        const STAL_DRAW_FRAMES: [DrawMultipleData; 6] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0044,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 11,
-                char_flags: 0x0070,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0044,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 12,
-                char_flags: 0x0070,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x0044,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 13,
-                char_flags: 0x0070,
-                ext: 0,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -8842,8 +8104,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_BunnyBeam(int k) {  // 9d85e0
     pub(super) fn sprite_bunny_beam(&mut self, k: usize) {
-        const RABBIT_BEAM_GFX: [u8; 6] = [0xd7, 0xd7, 0xd7, 0x91, 0x91, 0x91];
-
         if self.sprite_slot_view(k).ai_state() == 0 {
             let mut info = SpritePrepOamCoordsRet {
                 x: 0,
@@ -9108,7 +8368,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_HeartPiece(int k) {  // 85f020
     pub(super) fn sprite_heart_piece(&mut self, k: usize) {
-        const HEART_PIECE_MESSAGES: [u16; 4] = [0x158, 0x155, 0x156, 0x157];
         if self.sprite_slot_view(k).ai_state() == 0 {
             self.sprite_slot_view_mut(k).add_ai_state(1);
             self.heart_upgrade_check_if_already_obtained(k);
@@ -9385,202 +8644,6 @@ impl ZeldaState {
     //   Optional single-large nucleus plus four segment tiles.
     // }
     pub(super) fn gibo_draw(&mut self, k: usize) {
-        const GIBO_OAM_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
-        const GIBO_ALT_OAM_FLAGS: [u8; 2] = [11, 7];
-        const GIBO_DRAW_FRAMES: [DrawMultipleData; 32] = [
-            DrawMultipleData {
-                x: 4,
-                y: -4,
-                char_flags: 0x408a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -4,
-                char_flags: 0x408f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 12,
-                char_flags: 0x408e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 4,
-                char_flags: 0x408c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: -4,
-                char_flags: 0x40aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: -4,
-                char_flags: 0x409f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 12,
-                char_flags: 0x409e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 4,
-                char_flags: 0x40ac,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 3,
-                y: -3,
-                char_flags: 0x40aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: -3,
-                char_flags: 0x409f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 11,
-                y: 11,
-                char_flags: 0x409e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: 3,
-                char_flags: 0x40ac,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 3,
-                y: -3,
-                char_flags: 0x408a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: -3,
-                char_flags: 0x408f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 11,
-                y: 11,
-                char_flags: 0x408e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: 3,
-                char_flags: 0x408c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: -4,
-                char_flags: 0x008a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 13,
-                y: -4,
-                char_flags: 0x008f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: 12,
-                char_flags: 0x008e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 5,
-                y: 4,
-                char_flags: 0x008c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: -4,
-                char_flags: 0x00aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 13,
-                y: -4,
-                char_flags: 0x009f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -3,
-                y: 12,
-                char_flags: 0x009e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 5,
-                y: 4,
-                char_flags: 0x00ac,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: -3,
-                char_flags: 0x00aa,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -3,
-                char_flags: 0x009f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: 11,
-                char_flags: 0x009e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 3,
-                char_flags: 0x00ac,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: -3,
-                char_flags: 0x008a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: -3,
-                char_flags: 0x008f,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: 11,
-                char_flags: 0x008e,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 3,
-                char_flags: 0x008c,
-                ext: 2,
-            },
-        ];
         if self.sprite_slot_view(k).a() == 0 {
             let bak0 = self.sprite_slot_view(k).flags2();
             let value = 1;
@@ -9612,152 +8675,6 @@ impl ZeldaState {
     //   Three tiles selected by direction and active beam blink state.
     // }
     pub(super) fn laser_eye_draw(&mut self, k: usize) {
-        const LASER_EYE_DRAW_FRAMES: [DrawMultipleData; 24] = [
-            DrawMultipleData {
-                x: 8,
-                y: -4,
-                char_flags: 0x40c8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 4,
-                char_flags: 0x40d8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 12,
-                char_flags: 0xc0c8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -4,
-                char_flags: 0x40c9,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 4,
-                char_flags: 0x40d9,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 12,
-                char_flags: 0xc0c9,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -4,
-                char_flags: 0x00c8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x00d8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 12,
-                char_flags: 0x80c8,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -4,
-                char_flags: 0x00c9,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 4,
-                char_flags: 0x00d9,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 12,
-                char_flags: 0x80c9,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x00d6,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x00d7,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 8,
-                char_flags: 0x40d6,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 8,
-                char_flags: 0x00c6,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 8,
-                char_flags: 0x00c7,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 8,
-                char_flags: 0x40c6,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x80d6,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x80d7,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 0,
-                char_flags: 0xc0d6,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -4,
-                y: 0,
-                char_flags: 0x80c6,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 4,
-                y: 0,
-                char_flags: 0x80c7,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 12,
-                y: 0,
-                char_flags: 0xc0c6,
-                ext: 0,
-            },
-        ];
         if self.sprite_slot_view(k).head_direction() != 0 {
             let value = u8::from(self.sprite_slot_view(k).delay_aux4() == 0);
             self.sprite_slot_view_mut(k).set_graphics(value);
@@ -9776,152 +8693,6 @@ impl ZeldaState {
     //   if (!sprite_pause[k]) SpriteDraw_Shadow(k, &info);
     // }
     pub(super) fn gibdo_draw(&mut self, k: usize) {
-        const GIBDO_DRAW_FRAMES: [DrawMultipleData; 24] = [
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x0080,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x008a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0080,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x408a,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x0082,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x008c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0082,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x008e,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x0084,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00a0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x0084,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x40a0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x0086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00a2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x0088,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00a4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x4088,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40a4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x4082,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x408c,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -9,
-                char_flags: 0x4086,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40a2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x4082,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 1,
-                char_flags: 0x408e,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -9940,11 +8711,6 @@ impl ZeldaState {
     //   Two large tiles sharing one animation char with per-frame flips.
     // }
     pub(super) fn fire_bat_draw(&mut self, k: usize) {
-        const FIREBAT_DRAW_X_OFFSETS: [i8; 2] = [-8, 8];
-        const FIREBAT_DRAW_CHARS: [u8; 7] = [0x88, 0x88, 0x8a, 0x8c, 0x68, 0xaa, 0xa8];
-        const FIREBAT_DRAW_FLAGS: [u8; 14] = [
-            0, 0xc0, 0x80, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40,
-        ];
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
@@ -9969,104 +8735,6 @@ impl ZeldaState {
     //                       sprite_graphics[k] * 2], 2, NULL);
     // }
     pub(super) fn fire_phlegm_draw(&mut self, k: usize) {
-        const FIRE_PHLEGM_DRAW_FRAMES: [DrawMultipleData; 16] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00c3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x00c2,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x80c3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 0,
-                char_flags: 0x80c2,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40c3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x40c2,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0xc0c3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0xc0c2,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00d4,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x00d3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x40d4,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -8,
-                char_flags: 0x40d3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x80d4,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x80d3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0xc0d4,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0xc0d3,
-                ext: 0,
-            },
-        ];
         let base = usize::from(self.sprite_slot_view(k).direction()) * 4
             + usize::from(self.sprite_slot_view(k).graphics()) * 2;
         self.sprite_draw_multiple(k, &FIRE_PHLEGM_DRAW_FRAMES[base..base + 2], None);
@@ -10077,56 +8745,6 @@ impl ZeldaState {
     //   Four-tile tile plus normal sprite shadow.
     // }
     pub(super) fn flying_tile_draw(&mut self, k: usize) {
-        const FLYING_TILE_DRAW_FRAMES: [DrawMultipleData; 8] = [
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00d3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x40d3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x80d3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0xc0d3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x00c3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 0,
-                char_flags: 0x40c3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 8,
-                char_flags: 0x80c3,
-                ext: 0,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 8,
-                char_flags: 0xc0c3,
-                ext: 0,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -10145,56 +8763,6 @@ impl ZeldaState {
     //   SpriteDraw_Shadow(k, &info);
     // }
     pub(super) fn bully_draw(&mut self, k: usize) {
-        const BULLY_DRAW_FRAMES: [DrawMultipleData; 8] = [
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x46e0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x46e2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x46e0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x46c4,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x06e0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x06e2,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: -7,
-                char_flags: 0x06e0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 0,
-                char_flags: 0x06c4,
-                ext: 2,
-            },
-        ];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -12408,7 +10976,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_RunningMan(int k) {  // 85e8b2
     pub(super) fn sprite_running_man(&mut self, k: usize) {
-        const SECONDARY_X_VELOCITIES: [i8; 2] = [-24, 24];
         const LOCAL_X_VELOCITIES: [i8; 4] = [0, 0, -54, 54];
         const LOCAL_Y_VELOCITIES: [i8; 4] = [-54, 54, 0, 0];
         const DIR: [i8; 4] = [3, 1, 3, -1];
@@ -12450,7 +11017,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_head_direction(value);
                     let value = (j & 1) + 1;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
-                    let value = SECONDARY_X_VELOCITIES[usize::from(j & 1)] as u8;
+                    let value = RUNNING_MAN_RECOIL_X_VELOCITIES[usize::from(j & 1)] as u8;
                     self.sprite_slot_view_mut(k).set_x_velocity(value);
                     let value = 32;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
@@ -14374,7 +12941,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void TalkingTree_Eye(int k) {  // 9dfb0a
     pub(super) fn talking_tree_eye(&mut self, k: usize) {
-        const TYPE1_X: [i8; 2] = [9, -9];
         const X1: [i8; 5] = [-2, -1, 0, 1, 2];
         const Y1: [i8; 5] = [-1, 0, 0, 0, -1];
 
@@ -14387,7 +12953,10 @@ impl ZeldaState {
             | (u16::from(self.sprite_slot_view(k).b()) << 8);
         let y = u16::from(self.sprite_slot_view(k).c())
             | (u16::from(self.sprite_slot_view(k).e()) << 8);
-        self.sprite_set_x(k, x.wrapping_add_signed(i16::from(TYPE1_X[j])));
+        self.sprite_set_x(
+            k,
+            x.wrapping_add_signed(i16::from(TALKING_TREE_EYE_BASE_X_OFFSETS[j])),
+        );
         self.sprite_set_y(k, y);
         let pt = self.sprite_project_speed_towards_link(k, 2);
         if !sign8(pt.y) {
@@ -17460,10 +16029,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void DashTreeTop_Draw(int k) {  // 85fe6f
     pub(super) fn dash_tree_top_draw(&mut self, k: usize) {
-        const CHAR_FLAGS: [u16; 16] = [
-            0x3100, 0x3102, 0x7102, 0x7100, 0x3120, 0x3122, 0x7122, 0x7120, 0x3104, 0x3106, 0x7106,
-            0x7104, 0x3124, 0x3126, 0x7126, 0x7124,
-        ];
         const X: [i8; 16] = [10, 22, 30, 1, 34, 5, 13, 29, 0, 17, 27, 44, 15, 33, 18, 26];
         const Y: [i8; 16] = [0, 4, 2, 7, 10, 16, 24, 23, 34, 35, 30, 31, 46, 42, 10, 11];
         const CH: [u8; 6] = [8, 8, 0x28, 0x28, 0x2a, 0x2a];
@@ -17482,7 +16047,7 @@ impl ZeldaState {
                 self.oam_state_mut().set_entry_x(oam + i * 4, entry_x);
                 self.oam_state_mut().set_entry_y(oam + i * 4, entry_y);
                 self.oam_state_mut()
-                    .set_entry_char_flags(oam + i * 4, CHAR_FLAGS[i]);
+                    .set_entry_char_flags(oam + i * 4, DASH_TREE_TOP_GRID_CHAR_FLAGS[i]);
             }
         } else {
             let j = usize::from(self.sprite_slot_view(k).subtype2() - 1);
@@ -18582,9 +17147,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_08_Octorok(int k) {  // 86d377
     pub(super) fn sprite_08_octorok(&mut self, k: usize) {
-        const OCTOROK_SPIT_POSE_BY_DELAY: [u8; 20] =
-            [0, 2, 2, 2, 1, 1, 1, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 1, 1, 0];
-        const FOUR_WAY_OCTOROK_SPIT_POSE_BY_DELAY: [u8; 10] = [2, 2, 2, 2, 2, 2, 2, 2, 1, 0];
         const NEXT_DIR: [u8; 4] = [2, 3, 1, 0];
         const DIR: [u8; 4] = [3, 2, 0, 1];
         const LOCAL_X_VELOCITIES: [i8; 4] = [24, -24, 0, 0];
@@ -18958,12 +17520,7 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_11_Hinox(int k) {  // 869f05
     pub(super) fn sprite_11_hinox(&mut self, k: usize) {
-        const RANDOM_DIRS: [u8; 8] = [2, 3, 3, 2, 0, 1, 1, 0];
         const WALK_GFX: [u8; 4] = [6, 4, 0, 2];
-        const BOMB_X: [i8; 4] = [8, -8, -13, 13];
-        const BOMB_Y: [i8; 4] = [-11, -11, -16, -16];
-        const BOMB_XVEL: [i8; 4] = [24, -24, 0, 0];
-        const BOMB_YVEL: [i8; 4] = [0, 0, 24, -24];
         const LOCAL_GRAPHICS: [u8; 8] = [11, 10, 8, 9, 7, 5, 1, 3];
 
         self.hinox_draw(k);
@@ -19000,7 +17557,7 @@ impl ZeldaState {
                                 self.sprite_slot_view(k).direction() * 2
                                     + (self.get_random_number() & 1),
                             );
-                            self.hinox_set_direction(k, RANDOM_DIRS[idx]);
+                            self.hinox_set_direction(k, HINOX_RANDOM_DIRECTIONS[idx]);
                         }
                     }
                 }
@@ -19046,11 +17603,19 @@ impl ZeldaState {
                         let value = 64;
                         self.sprite_slot_view_mut(j).set_delay_aux1(value);
                         let i = usize::from(self.sprite_slot_view(k).direction());
-                        self.sprite_set_x(j, info.r0_x.wrapping_add_signed(i16::from(BOMB_X[i])));
-                        self.sprite_set_y(j, info.r2_y.wrapping_add_signed(i16::from(BOMB_Y[i])));
-                        let value = BOMB_XVEL[i] as u8;
+                        self.sprite_set_x(
+                            j,
+                            info.r0_x
+                                .wrapping_add_signed(i16::from(HINOX_BOMB_X_OFFSETS[i])),
+                        );
+                        self.sprite_set_y(
+                            j,
+                            info.r2_y
+                                .wrapping_add_signed(i16::from(HINOX_BOMB_Y_OFFSETS[i])),
+                        );
+                        let value = HINOX_BOMB_X_VELOCITIES[i] as u8;
                         self.sprite_slot_view_mut(j).set_x_velocity(value);
-                        let value = BOMB_YVEL[i] as u8;
+                        let value = HINOX_BOMB_Y_VELOCITIES[i] as u8;
                         self.sprite_slot_view_mut(j).set_y_velocity(value);
                         let value = 40;
                         self.sprite_slot_view_mut(j).set_z_velocity(value);
@@ -19195,7 +17760,6 @@ impl ZeldaState {
     // void Sprite_82_AntifairyCircle(int k) {  // 9ecb97
     pub(super) fn sprite_82_antifairy_circle(&mut self, k: usize) {
         const VEL: [i8; 2] = [1, -1];
-        const VEL_TARGET: [u8; 2] = [18, (-18i8) as u8];
 
         self.sprite_draw_antfairy(k);
         if self.sprite_return_if_inactive(k) {
@@ -19204,13 +17768,13 @@ impl ZeldaState {
 
         let j = usize::from(self.sprite_slot_view(k).a() & 1);
         self.sprite_slot_view_mut(k).add_x_velocity(VEL[j] as u8);
-        if self.sprite_slot_view(k).x_velocity() == VEL_TARGET[j] {
+        if self.sprite_slot_view(k).x_velocity() == ANTIFAIRY_CIRCLE_VELOCITY_TARGETS[j] {
             self.sprite_slot_view_mut(k).add_a(1);
         }
 
         let j = usize::from(self.sprite_slot_view(k).b() & 1);
         self.sprite_slot_view_mut(k).add_y_velocity(VEL[j] as u8);
-        if self.sprite_slot_view(k).y_velocity() == VEL_TARGET[j] {
+        if self.sprite_slot_view(k).y_velocity() == ANTIFAIRY_CIRCLE_VELOCITY_TARGETS[j] {
             self.sprite_slot_view_mut(k).add_b(1);
         }
 
@@ -19428,8 +17992,6 @@ impl ZeldaState {
     //   Dormant vulture that begins circling and tracking Link.
     // }
     pub(super) fn sprite_01_vulture_bounce(&mut self, k: usize) {
-        const VULTURE_GRAPHICS: [u8; 4] = [1, 2, 3, 2];
-
         self.sprite_slot_view_mut(k).or_object_priority(0x30);
         self.vulture_draw(k);
         if self.sprite_return_if_inactive(k) {
@@ -19491,11 +18053,6 @@ impl ZeldaState {
     //   Deadrock walking/petrified state machine.
     // }
     pub(super) fn sprite_27_deadrock(&mut self, k: usize) {
-        const DEAD_ROCK_GRAPHICS: [u8; 9] = [0, 1, 0, 1, 2, 2, 3, 3, 4];
-        const DEAD_ROCK_OAM_FLAGS: [u8; 9] = [0x40, 0x40, 0, 0, 0, 0x40, 0, 0x40, 0];
-        const DEAD_ROCK_X_VELOCITIES: [u8; 4] = [32, 0xe0, 0, 0];
-        const DEAD_ROCK_Y_VELOCITIES: [u8; 4] = [0, 0, 32, 0xe0];
-
         let j = if if self.sprite_slot_view(k).delay_aux2() != 0 {
             (self.sprite_slot_view(k).delay_aux2() & 4) != 0
         } else {
@@ -19726,8 +18283,6 @@ impl ZeldaState {
     // void Sprite_19_Poe(int k) {  // 869688
     pub(super) fn sprite_19_poe(&mut self, k: usize) {
         const ACCEL: [i8; 4] = [1, -1, 2, -2];
-        const ZVEL_TARGET: [i8; 2] = [8, -8];
-        const XVEL_TARGET: [i8; 4] = [16, -16, 28, -28];
         const OAM_FLAGS: [u8; 2] = [0x40, 0];
         const LOCAL_Y_VELOCITIES: [i8; 2] = [8, -8];
 
@@ -19769,7 +18324,7 @@ impl ZeldaState {
         if (self.game_state.frame.frame_counter & 1) == 0 {
             j = usize::from(self.sprite_slot_view(k).g() & 1);
             self.sprite_slot_view_mut(k).add_z_velocity(ACCEL[j] as u8);
-            if self.sprite_slot_view(k).z_velocity() == ZVEL_TARGET[j] as u8 {
+            if self.sprite_slot_view(k).z_velocity() == CHOMP_Z_VELOCITY_TARGETS[j] as u8 {
                 self.sprite_slot_view_mut(k).add_g(1);
             }
         }
@@ -19801,7 +18356,7 @@ impl ZeldaState {
                         .x_velocity()
                         .wrapping_add(ACCEL[j] as u8);
                     self.sprite_slot_view_mut(k).set_x_velocity(value);
-                    if self.sprite_slot_view(k).x_velocity() == XVEL_TARGET[j] as u8 {
+                    if self.sprite_slot_view(k).x_velocity() == CHOMP_X_VELOCITY_TARGETS[j] as u8 {
                         let value = self.sprite_slot_view(k).anim_clock().wrapping_add(1);
                         self.sprite_slot_view_mut(k).set_anim_clock(value);
                         let value = 0;
@@ -19836,8 +18391,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_1E_CrystalSwitch(int k) {  // 86b8d0
     pub(super) fn sprite_1_e_crystal_switch(&mut self, k: usize) {
-        const CRYSTAL_SWITCH_PAL: [u8; 2] = [2, 4];
-
         let value = (self.sprite_slot_view(k).oam_flags() & !0x0e)
             | CRYSTAL_SWITCH_PAL[usize::from(
                 self.game_state
@@ -20113,16 +18666,8 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_6D_Rat(int k) {  // 85a8b0
     pub(super) fn sprite_6_d_rat(&mut self, k: usize) {
-        const RAT_GRAPHICS_BY_ANIM_STATE: [u8; 16] =
-            [0, 0, 3, 3, 1, 2, 4, 5, 1, 2, 4, 5, 0, 0, 3, 3];
-        const RAT_OAM_FLIP_BY_ANIM_STATE: [u8; 16] = [
-            0, 0x40, 0, 0x40, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x80, 0xc0, 0x80, 0xc0,
-        ];
-        const RAT_IDLE_ANIM_STATES: [u8; 8] = [10, 11, 6, 7, 2, 3, 14, 15];
-        const RAT_RUN_ANIM_STATES: [u8; 8] = [8, 9, 4, 5, 0, 1, 12, 13];
         const LOCAL_X_VELOCITIES: [i8; 4] = [24, -24, 0, 0];
         const LOCAL_Y_VELOCITIES: [i8; 4] = [0, 0, 24, -24];
-        const RAT_WALL_TURN_DIRECTIONS: [u8; 4] = [2, 3, 1, 0];
 
         let mut j = usize::from(self.sprite_slot_view(k).a());
         let value = RAT_GRAPHICS_BY_ANIM_STATE[j];
@@ -20285,15 +18830,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_6F_Keese(int k) {  // 85aa8b
     pub(super) fn sprite_6_f_keese(&mut self, k: usize) {
-        const KEESE_ORBIT_DIRECTION_STEPS: [i8; 2] = [1, -1];
-        const KEESE_ATTACK_START_PHASES: [i8; 4] = [2, 10, 6, 14];
-        const KEESE_ATTACK_X_VELOCITIES: [i8; 16] = [
-            0, 8, 11, 14, 16, 14, 11, 8, 0, -8, -11, -14, -16, -14, -11, -8,
-        ];
-        const KEESE_ATTACK_Y_VELOCITIES: [i8; 16] = [
-            -16, -14, -11, -8, 0, 8, 11, 14, 16, 14, 11, 8, 0, -9, -11, -14,
-        ];
-
         self.sprite_slot_view_mut(k).or_object_priority(0x30);
         self.sprite_draw_single_large(k);
         if self.sprite_return_if_inactive(k) {
@@ -20393,8 +18929,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_6C_MirrorPortal(int k) {  // 85af75
     pub(super) fn sprite_6_c_mirror_portal(&mut self, k: usize) {
-        const WARP_VORTEX_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
-
         if self.game_state.inventory.save_progress.dark_world_state() != 0 {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
@@ -20788,13 +19322,6 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_4E_Popo(int k) {  // 85b80a
     pub(super) fn sprite_4_e_popo(&mut self, k: usize) {
-        const CUCCO_CALM_CIRCLE_X_VELOCITIES: [i8; 16] = [
-            0, 8, 11, 14, 16, 14, 11, 8, 0, -8, -11, -14, -16, -14, -11, -8,
-        ];
-        const CUCCO_CALM_CIRCLE_Y_VELOCITIES: [i8; 16] = [
-            -16, -14, -11, -8, 0, 8, 11, 14, 16, 14, 11, 8, 0, -9, -11, -14,
-        ];
-
         self.bot_draw(k);
         if self.sprite_return_if_inactive(k) {
             return;
@@ -21195,10 +19722,6 @@ impl ZeldaState {
         const LOCAL_Y_VELOCITIES: [i8; 4] = [-16, 16, 0, 0];
         const LOCAL_GRAPHICS: [u8; 4] = [0, 0, 2, 2];
         const OAM_FLAGS: [u8; 4] = [0x40, 0, 0, 0x80];
-        const SPAWN_X: [i8; 4] = [8, -8, 0, 0];
-        const SPAWN_Y: [i8; 4] = [0, 0, 8, -8];
-        const SPAWN_XVEL: [i8; 4] = [24, -24, 0, 0];
-        const SPAWN_YVEL: [i8; 4] = [0, 0, 24, -24];
 
         let mut j = usize::from(self.sprite_slot_view(k).direction());
         let value = LOCAL_GRAPHICS[j] + u8::from(self.sprite_slot_view(k).delay_aux2() != 0);
@@ -21238,11 +19761,19 @@ impl ZeldaState {
             let value = 1;
             self.sprite_slot_view_mut(j).set_graphics(value);
             let i = usize::from(self.sprite_slot_view(k).direction());
-            self.sprite_set_x(j, info.r0_x.wrapping_add_signed(i16::from(SPAWN_X[i])));
-            self.sprite_set_y(j, info.r2_y.wrapping_add_signed(i16::from(SPAWN_Y[i])));
-            let value = SPAWN_XVEL[i] as u8;
+            self.sprite_set_x(
+                j,
+                info.r0_x
+                    .wrapping_add_signed(i16::from(WALKING_ZORA_SPAWN_X_OFFSETS[i])),
+            );
+            self.sprite_set_y(
+                j,
+                info.r2_y
+                    .wrapping_add_signed(i16::from(WALKING_ZORA_SPAWN_Y_OFFSETS[i])),
+            );
+            let value = WALKING_ZORA_SPAWN_X_VELOCITIES[i] as u8;
             self.sprite_slot_view_mut(j).set_x_velocity(value);
-            let value = SPAWN_YVEL[i] as u8;
+            let value = WALKING_ZORA_SPAWN_Y_VELOCITIES[i] as u8;
             self.sprite_slot_view_mut(j).set_y_velocity(value);
             let value = (self.sprite_slot_view(j).flags2() & 0xf0) | 1;
             self.sprite_slot_view_mut(j).set_flags2(value);
@@ -21258,14 +19789,6 @@ impl ZeldaState {
     pub(super) fn sprite_5_b_spark_clockwise(&mut self, k: usize) {
         const OAM_FLAGS: [u8; 4] = [0, 0x40, 0x80, 0xc0];
         const DIRECTIONS: [u8; 8] = [1, 3, 2, 0, 7, 5, 6, 4];
-        const SOLDIER_B_XVEL: [i8; 8] = [1, 1, -1, -1, -1, -1, 1, 1];
-        const SOLDIER_B_YVEL: [i8; 8] = [-1, 1, 1, -1, -1, 1, 1, -1];
-        const SOLDIER_B_XVEL2: [i8; 8] = [8, 0, -8, 0, -8, 0, 8, 0];
-        const SOLDIER_B_YVEL2: [i8; 8] = [0, 8, 0, -8, 0, 8, 0, -8];
-        const SOLDIER_B_MASK2: [u8; 8] = [1, 4, 2, 8, 2, 4, 1, 8];
-        const SOLDIER_B_MASK: [u8; 8] = [8, 1, 4, 2, 8, 2, 4, 1];
-        const SOLDIER_B_NEXTB2: [u8; 8] = [1, 2, 3, 0, 5, 6, 7, 4];
-        const SOLDIER_B_NEXTB: [u8; 8] = [3, 0, 1, 2, 7, 4, 5, 6];
 
         self.sprite_draw_single_large(k);
         if self.sprite_return_if_inactive(k) {
@@ -21310,29 +19833,29 @@ impl ZeldaState {
         self.sprite_move_xy(k);
         self.sprite_check_damage_to_link(k);
         let mut j = usize::from(self.sprite_slot_view(k).direction());
-        let value = SOLDIER_B_XVEL[j] as u8;
+        let value = SOLDIER_B_STEP_X_VELOCITIES[j] as u8;
         self.sprite_slot_view_mut(k).set_x_velocity(value);
-        let value = SOLDIER_B_YVEL[j] as u8;
+        let value = SOLDIER_B_STEP_Y_VELOCITIES[j] as u8;
         self.sprite_slot_view_mut(k).set_y_velocity(value);
         let _ = self.sprite_check_tile_collision(k);
 
         j = usize::from(self.sprite_slot_view(k).direction());
         if self.sprite_slot_view(k).delay_aux2() != 0 {
             if self.sprite_slot_view(k).delay_aux2() == 6 {
-                j = usize::from(SOLDIER_B_NEXTB[j]);
+                j = usize::from(SOLDIER_B_NEXT_DIRECTIONS[j]);
             }
-        } else if (self.sprite_slot_view(k).wall_collision() & SOLDIER_B_MASK[j]) == 0 {
+        } else if (self.sprite_slot_view(k).wall_collision() & SOLDIER_B_COLLISION_MASKS[j]) == 0 {
             let value = 10;
             self.sprite_slot_view_mut(k).set_delay_aux2(value);
         }
-        if (self.sprite_slot_view(k).wall_collision() & SOLDIER_B_MASK2[j]) != 0 {
-            j = usize::from(SOLDIER_B_NEXTB2[j]);
+        if (self.sprite_slot_view(k).wall_collision() & SOLDIER_B_FAST_COLLISION_MASKS[j]) != 0 {
+            j = usize::from(SOLDIER_B_FAST_NEXT_DIRECTIONS[j]);
         }
         let value = j as u8;
         self.sprite_slot_view_mut(k).set_direction(value);
-        let value = (SOLDIER_B_XVEL2[j] * 2) as u8;
+        let value = (SOLDIER_B_FAST_X_VELOCITIES[j] * 2) as u8;
         self.sprite_slot_view_mut(k).set_x_velocity(value);
-        let value = (SOLDIER_B_YVEL2[j] * 2) as u8;
+        let value = (SOLDIER_B_FAST_Y_VELOCITIES[j] * 2) as u8;
         self.sprite_slot_view_mut(k).set_y_velocity(value);
     }
 
@@ -21448,7 +19971,6 @@ impl ZeldaState {
         const OAM_FLAGS: [u8; 4] = [0, 0x40, 0x80, 0xc0];
         const LOCAL_X_VELOCITIES: [i8; 4] = [24, -24, 0, 0];
         const LOCAL_Y_VELOCITIES: [i8; 4] = [0, 0, 24, -24];
-        const ZAZAK_DIR2: [u8; 8] = [2, 3, 2, 3, 0, 1, 0, 1];
 
         self.sprite_draw_single_large(k);
         if self.sprite_return_if_inactive(k) {
@@ -22128,7 +20650,6 @@ impl ZeldaState {
         const RAND_B: [u8; 8] = [0x58, 0x50, 0x60, 0x70, 0x80, 0x90, 0xa0, 0x98];
         const RAND_C: [u8; 8] = [0x68, 0x60, 0x70, 0x80, 0x90, 0xa0, 0xa8, 0x80];
         const ZVEL: [i8; 2] = [2, -2];
-        const DESERT_BARRIER_XV: [u8; 2] = [16, (-16i8) as u8];
 
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
@@ -22187,7 +20708,8 @@ impl ZeldaState {
                         .z_velocity()
                         .wrapping_add(ZVEL[j] as u8);
                     self.sprite_slot_view_mut(k).set_z_velocity(value);
-                    if self.sprite_slot_view(k).z_velocity() == DESERT_BARRIER_XV[j] {
+                    if self.sprite_slot_view(k).z_velocity() == DESERT_BARRIER_X_VELOCITY_TARGETS[j]
+                    {
                         self.sprite_slot_view_mut(k).add_g(1);
                     }
                 }
@@ -23250,7 +21772,6 @@ impl ZeldaState {
         ];
         const OBJ_OFFS: [u8; 12] = [2, 2, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2];
         const HEAD_CHAR: [u8; 4] = [0x88, 0x88, 0x86, 0x84];
-        const HEAD_FLAGS: [u8; 4] = [0x40, 0, 0, 0];
         let mut info = SpritePrepOamCoordsRet {
             x: 0,
             y: 0,
@@ -23277,7 +21798,7 @@ impl ZeldaState {
         let j = usize::from(self.sprite_slot_view(k).head_direction() & 3);
         self.oam_state_mut().set_entry_char(oam, HEAD_CHAR[j]);
         self.oam_state_mut()
-            .merge_entry_flags(oam, !0x40, HEAD_FLAGS[j]);
+            .merge_entry_flags(oam, !0x40, ALTAR_ZELDA_HEAD_FLAGS[j]);
         self.sprite_draw_shadow_custom(k, &mut info, 10);
     }
 

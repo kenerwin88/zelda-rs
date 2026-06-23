@@ -3638,3 +3638,1597 @@ pub(super) const MEDALLION_TABLET_DRAW_FRAMES: [DrawMultipleData; 20] = [
         ext: 2,
     },
 ];
+
+// Shared world, item, and enemy draw tables promoted from sprite_main_draw.rs method bodies.
+pub(super) const SURFACE_XY: [i8; 8] = [-32, -24, -16, -8, 8, 16, 24, 32];
+
+pub(super) const MOVABLE_STATUE_DIRECTIONS: [u8; 4] = [4, 6, 0, 2];
+
+pub(super) const MOVABLE_STATUE_JOYPAD_MASKS: [u8; 4] = [1, 2, 4, 8];
+
+pub(super) const MOVABLE_STATUE_X_VELOCITIES: [u8; 4] = [0xf0, 16, 0, 0];
+
+pub(super) const MOVABLE_STATUE_Y_VELOCITIES: [u8; 4] = [0, 0, 0xf0, 16];
+
+pub(super) const MOVABLE_STATUE_SWITCH_X_OFFSETS: [u8; 4] = [3, 12, 3, 12];
+
+pub(super) const MOVABLE_STATUE_SWITCH_Y_OFFSETS: [u8; 4] = [3, 3, 12, 12];
+
+pub(super) const MOVABLE_STATUE_DRAW_FRAMES: [DrawMultipleData; 3] = [
+    DrawMultipleData {
+        x: 0,
+        y: -8,
+        char_flags: 0x00c2,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x40c2,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x00c0,
+        ext: 2,
+    },
+];
+
+pub(super) const MOVABLE_MANTLE_X_OFFSETS: [u8; 6] = [0, 0x10, 0x20, 0, 0x10, 0x20];
+
+pub(super) const MOVABLE_MANTLE_Y_OFFSETS: [u8; 6] = [0, 0, 0, 0x10, 0x10, 0x10];
+
+pub(super) const MOVABLE_MANTLE_CHARS: [u8; 6] = [0x0c, 0x0e, 0x0c, 0x2c, 0x2e, 0x2c];
+
+pub(super) const MOVABLE_MANTLE_FLAGS: [u8; 6] = [0x31, 0x31, 0x71, 0x31, 0x31, 0x71];
+
+pub(super) const FISH_DRAW_FRAMES: [DrawMultipleData; 16] = [
+    DrawMultipleData {
+        x: -4,
+        y: 8,
+        char_flags: 0x045e,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 8,
+        char_flags: 0x045f,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: 8,
+        char_flags: 0x845e,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 8,
+        char_flags: 0x845f,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: 8,
+        char_flags: 0x445f,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 8,
+        char_flags: 0x445e,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: 8,
+        char_flags: 0xc45f,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 8,
+        char_flags: 0xc45e,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x0461,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 8,
+        char_flags: 0x0471,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x4461,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 8,
+        char_flags: 0x4471,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x8471,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 8,
+        char_flags: 0x8461,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0xc471,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 8,
+        char_flags: 0xc461,
+        ext: 0,
+    },
+];
+
+pub(super) const FISH_DRAW_FRAMES2: [DrawMultipleData; 9] = [
+    DrawMultipleData {
+        x: -2,
+        y: 11,
+        char_flags: 0x0438,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 11,
+        char_flags: 0x0438,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 2,
+        y: 11,
+        char_flags: 0x0438,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -1,
+        y: 11,
+        char_flags: 0x0438,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 11,
+        char_flags: 0x0438,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 1,
+        y: 11,
+        char_flags: 0x0438,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 11,
+        char_flags: 0x0438,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 11,
+        char_flags: 0x0438,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 11,
+        char_flags: 0x0438,
+        ext: 0,
+    },
+];
+
+pub(super) const CHIMNEY_SMOKE_DRAW_FRAMES: [DrawMultipleData; 8] = [
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x0086,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 0,
+        char_flags: 0x0087,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 8,
+        char_flags: 0x0096,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0x0097,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 1,
+        y: 1,
+        char_flags: 0x0086,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 7,
+        y: 1,
+        char_flags: 0x0087,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 1,
+        y: 7,
+        char_flags: 0x0096,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 7,
+        y: 7,
+        char_flags: 0x0097,
+        ext: 0,
+    },
+];
+
+pub(super) const VULTURE_DRAW_FRAMES: [DrawMultipleData; 8] = [
+    DrawMultipleData {
+        x: -8,
+        y: 0,
+        char_flags: 0x0086,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 0,
+        char_flags: 0x4086,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 0,
+        char_flags: 0x0080,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 0,
+        char_flags: 0x4080,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 0,
+        char_flags: 0x0082,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 0,
+        char_flags: 0x4082,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 0,
+        char_flags: 0x0084,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 0,
+        char_flags: 0x4084,
+        ext: 2,
+    },
+];
+
+pub(super) const RAVEN_ASCEND_TIMERS: [u8; 2] = [16, 248];
+
+pub(super) const MAGIC_POWDER_DRAW_FRAMES: [DrawMultipleData; 2] = [
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x04e6,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x04e6,
+        ext: 2,
+    },
+];
+
+pub(super) const GREEN_POTION_ITEM_DRAW_FRAMES: [DrawMultipleData; 3] = [
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x08c0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 18,
+        char_flags: 0x0a30,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -1,
+        y: 18,
+        char_flags: 0x0a22,
+        ext: 0,
+    },
+];
+
+pub(super) const BLUE_POTION_ITEM_DRAW_FRAMES: [DrawMultipleData; 4] = [
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x04c0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 13,
+        y: 18,
+        char_flags: 0x0a30,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 5,
+        y: 18,
+        char_flags: 0x0a22,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -3,
+        y: 18,
+        char_flags: 0x0a31,
+        ext: 0,
+    },
+];
+
+pub(super) const RED_POTION_ITEM_DRAW_FRAMES: [DrawMultipleData; 4] = [
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x02c0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 13,
+        y: 18,
+        char_flags: 0x0a30,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 5,
+        y: 18,
+        char_flags: 0x0a02,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -3,
+        y: 18,
+        char_flags: 0x0a31,
+        ext: 0,
+    },
+];
+
+pub(super) const UP_PULL_ANIMATION_DELAYS: [u8; 10] = [8, 24, 4, 4, 4, 4, 4, 4, 2, 10];
+
+pub(super) const UP_PULL_PLAYER_ACTION_STATES: [u8; 10] = [6, 7, 8, 8, 8, 8, 8, 9, 9, 9];
+
+pub(super) const DOWN_PULL_ANIMATION_DELAYS: [u8; 12] = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5];
+
+pub(super) const DOWN_PULL_PLAYER_ACTION_STATES: [u8; 12] = [1, 1, 2, 2, 3, 3, 1, 1, 4, 4, 5, 5];
+
+pub(super) const BAD_PULL_DOWN_SWITCH_X_OFFSETS: [i8; 5] = [-4, 12, 0, -4, 4];
+
+pub(super) const BAD_PULL_DOWN_SWITCH_Y_OFFSETS: [i8; 5] = [-3, -3, 0, 5, 5];
+
+pub(super) const BAD_PULL_DOWN_SWITCH_DRAW_CHARS: [u8; 5] = [0xd2, 0xd2, 0xc4, 0xe4, 0xe4];
+
+pub(super) const BAD_PULL_DOWN_SWITCH_DRAW_FLAGS: [u8; 5] = [0x40, 0, 0, 0x40, 0];
+
+pub(super) const BAD_PULL_DOWN_SWITCH_DRAW_SIZES: [u8; 5] = [0, 0, 2, 2, 2];
+
+pub(super) const BAD_PULL_SWITCH_CENTER_Y_OFFSETS: [u8; 6] = [0, 1, 2, 3, 4, 5];
+
+pub(super) const BAD_PULL_UP_SWITCH_CHARS: [u8; 2] = [0xa2, 0xa4];
+
+pub(super) const BAD_PULL_SWITCH_TOP_Y_OFFSETS: [u8; 6] = [0, 1, 2, 3, 4, 5];
+
+pub(super) const GOOD_PULL_SWITCH_BOTTOM_Y_OFFSETS: [u8; 14] =
+    [1, 1, 2, 3, 2, 3, 4, 5, 6, 7, 6, 7, 7, 7];
+
+pub(super) const BUG_NET_KID_DRAW_FRAMES: [DrawMultipleData; 18] = [
+    DrawMultipleData {
+        x: 4,
+        y: 0,
+        char_flags: 0x0027,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -5,
+        char_flags: 0x000e,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 6,
+        char_flags: 0x040a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 6,
+        char_flags: 0x440a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 14,
+        char_flags: 0x840a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 14,
+        char_flags: 0xc40a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -5,
+        char_flags: 0x000e,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -5,
+        char_flags: 0x000e,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 6,
+        char_flags: 0x040a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 6,
+        char_flags: 0x440a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 14,
+        char_flags: 0x840a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 14,
+        char_flags: 0xc40a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -5,
+        char_flags: 0x002e,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -5,
+        char_flags: 0x002e,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 7,
+        char_flags: 0x040a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 7,
+        char_flags: 0x440a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 14,
+        char_flags: 0x840a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 14,
+        char_flags: 0xc40a,
+        ext: 2,
+    },
+];
+
+pub(super) const BOMBER_DRAW_FRAMES: [DrawMultipleData; 22] = [
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x40c6,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x40c6,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x40c4,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x40c4,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x00c6,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x00c6,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x00c4,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x00c4,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 0,
+        char_flags: 0x00c0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 0,
+        char_flags: 0x40c0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 0,
+        char_flags: 0x00c2,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 0,
+        char_flags: 0x40c2,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 0,
+        char_flags: 0x00e0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 0,
+        char_flags: 0x40e0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 0,
+        char_flags: 0x00e2,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 0,
+        char_flags: 0x40e2,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 0,
+        char_flags: 0x00e4,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 0,
+        char_flags: 0x40e4,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x40e6,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x40e6,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x00e6,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x00e6,
+        ext: 2,
+    },
+];
+
+pub(super) const BUMPER_DRAW_FRAMES: [DrawMultipleData; 8] = [
+    DrawMultipleData {
+        x: -8,
+        y: -8,
+        char_flags: 0x00ec,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -8,
+        char_flags: 0x40ec,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 8,
+        char_flags: 0x80ec,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0xc0ec,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -7,
+        y: -7,
+        char_flags: 0x00ec,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 7,
+        y: -7,
+        char_flags: 0x40ec,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -7,
+        y: 7,
+        char_flags: 0x80ec,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 7,
+        y: 7,
+        char_flags: 0xc0ec,
+        ext: 2,
+    },
+];
+
+pub(super) const FAKE_SWORD_DRAW_FRAMES: [DrawMultipleData; 2] = [
+    DrawMultipleData {
+        x: 4,
+        y: 0,
+        char_flags: 0x00f4,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 8,
+        char_flags: 0x00f5,
+        ext: 0,
+    },
+];
+
+pub(super) const SWAMOLA_TARGET_X_OFFSETS: [i8; 9] = [0, 0, 32, 32, 32, 0, -32, -32, -32];
+
+pub(super) const SWAMOLA_TARGET_Y_OFFSETS: [i8; 9] = [0, -32, -32, 0, 32, 32, 32, 0, -32];
+
+pub(super) const ZORO_X_VELOCITIES: [i8; 4] = [16, -16, 0, 0];
+
+pub(super) const WIZZROBE_BEAM_XY_VELOCITIES: [i8; 6] = [32, -32, 0, 0, 32, -32];
+
+pub(super) const STAL_DRAW_FRAMES: [DrawMultipleData; 6] = [
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x0044,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 11,
+        char_flags: 0x0070,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x0044,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 12,
+        char_flags: 0x0070,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x0044,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 13,
+        char_flags: 0x0070,
+        ext: 0,
+    },
+];
+
+pub(super) const RABBIT_BEAM_GFX: [u8; 6] = [0xd7, 0xd7, 0xd7, 0x91, 0x91, 0x91];
+
+pub(super) const HEART_PIECE_MESSAGES: [u16; 4] = [0x158, 0x155, 0x156, 0x157];
+
+pub(super) const GIBO_OAM_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
+
+pub(super) const GIBO_ALT_OAM_FLAGS: [u8; 2] = [11, 7];
+
+pub(super) const GIBO_DRAW_FRAMES: [DrawMultipleData; 32] = [
+    DrawMultipleData {
+        x: 4,
+        y: -4,
+        char_flags: 0x408a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: -4,
+        char_flags: 0x408f,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 12,
+        y: 12,
+        char_flags: 0x408e,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: 4,
+        char_flags: 0x408c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: -4,
+        char_flags: 0x40aa,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: -4,
+        char_flags: 0x409f,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 12,
+        y: 12,
+        char_flags: 0x409e,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: 4,
+        char_flags: 0x40ac,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 3,
+        y: -3,
+        char_flags: 0x40aa,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -3,
+        y: -3,
+        char_flags: 0x409f,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 11,
+        y: 11,
+        char_flags: 0x409e,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -3,
+        y: 3,
+        char_flags: 0x40ac,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 3,
+        y: -3,
+        char_flags: 0x408a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -3,
+        y: -3,
+        char_flags: 0x408f,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 11,
+        y: 11,
+        char_flags: 0x408e,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -3,
+        y: 3,
+        char_flags: 0x408c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -3,
+        y: -4,
+        char_flags: 0x008a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 13,
+        y: -4,
+        char_flags: 0x008f,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -3,
+        y: 12,
+        char_flags: 0x008e,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 5,
+        y: 4,
+        char_flags: 0x008c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -3,
+        y: -4,
+        char_flags: 0x00aa,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 13,
+        y: -4,
+        char_flags: 0x009f,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -3,
+        y: 12,
+        char_flags: 0x009e,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 5,
+        y: 4,
+        char_flags: 0x00ac,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -2,
+        y: -3,
+        char_flags: 0x00aa,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 12,
+        y: -3,
+        char_flags: 0x009f,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -2,
+        y: 11,
+        char_flags: 0x009e,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 3,
+        char_flags: 0x00ac,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -2,
+        y: -3,
+        char_flags: 0x008a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 12,
+        y: -3,
+        char_flags: 0x008f,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -2,
+        y: 11,
+        char_flags: 0x008e,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 3,
+        char_flags: 0x008c,
+        ext: 2,
+    },
+];
+
+pub(super) const LASER_EYE_DRAW_FRAMES: [DrawMultipleData; 24] = [
+    DrawMultipleData {
+        x: 8,
+        y: -4,
+        char_flags: 0x40c8,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 4,
+        char_flags: 0x40d8,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 12,
+        char_flags: 0xc0c8,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -4,
+        char_flags: 0x40c9,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 4,
+        char_flags: 0x40d9,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 12,
+        char_flags: 0xc0c9,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -4,
+        char_flags: 0x00c8,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 4,
+        char_flags: 0x00d8,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 12,
+        char_flags: 0x80c8,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -4,
+        char_flags: 0x00c9,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 4,
+        char_flags: 0x00d9,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 12,
+        char_flags: 0x80c9,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: 8,
+        char_flags: 0x00d6,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 8,
+        char_flags: 0x00d7,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 12,
+        y: 8,
+        char_flags: 0x40d6,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: 8,
+        char_flags: 0x00c6,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 8,
+        char_flags: 0x00c7,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 12,
+        y: 8,
+        char_flags: 0x40c6,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: 0,
+        char_flags: 0x80d6,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 0,
+        char_flags: 0x80d7,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 12,
+        y: 0,
+        char_flags: 0xc0d6,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -4,
+        y: 0,
+        char_flags: 0x80c6,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 4,
+        y: 0,
+        char_flags: 0x80c7,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 12,
+        y: 0,
+        char_flags: 0xc0c6,
+        ext: 0,
+    },
+];
+
+pub(super) const GIBDO_DRAW_FRAMES: [DrawMultipleData; 24] = [
+    DrawMultipleData {
+        x: 0,
+        y: -9,
+        char_flags: 0x0080,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x008a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -8,
+        char_flags: 0x0080,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 1,
+        char_flags: 0x408a,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -9,
+        char_flags: 0x0082,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x008c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -8,
+        char_flags: 0x0082,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x008e,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -9,
+        char_flags: 0x0084,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x00a0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -8,
+        char_flags: 0x0084,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 1,
+        char_flags: 0x40a0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -9,
+        char_flags: 0x0086,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x00a2,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -9,
+        char_flags: 0x0088,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x00a4,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -9,
+        char_flags: 0x4088,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x40a4,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -9,
+        char_flags: 0x4082,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x408c,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -9,
+        char_flags: 0x4086,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x40a2,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -8,
+        char_flags: 0x4082,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 1,
+        char_flags: 0x408e,
+        ext: 2,
+    },
+];
+
+pub(super) const FIREBAT_DRAW_X_OFFSETS: [i8; 2] = [-8, 8];
+
+pub(super) const FIREBAT_DRAW_CHARS: [u8; 7] = [0x88, 0x88, 0x8a, 0x8c, 0x68, 0xaa, 0xa8];
+
+pub(super) const FIREBAT_DRAW_FLAGS: [u8; 14] = [
+    0, 0xc0, 0x80, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0x40,
+];
+
+pub(super) const FIRE_PHLEGM_DRAW_FRAMES: [DrawMultipleData; 16] = [
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x00c3,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 0,
+        char_flags: 0x00c2,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x80c3,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 0,
+        char_flags: 0x80c2,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x40c3,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 0,
+        char_flags: 0x40c2,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0xc0c3,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 0,
+        char_flags: 0xc0c2,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x00d4,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -8,
+        char_flags: 0x00d3,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x40d4,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -8,
+        char_flags: 0x40d3,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x80d4,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 8,
+        char_flags: 0x80d3,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0xc0d4,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 8,
+        char_flags: 0xc0d3,
+        ext: 0,
+    },
+];
+
+pub(super) const FLYING_TILE_DRAW_FRAMES: [DrawMultipleData; 8] = [
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x00d3,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 0,
+        char_flags: 0x40d3,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 8,
+        char_flags: 0x80d3,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0xc0d3,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x00c3,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 0,
+        char_flags: 0x40c3,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 8,
+        char_flags: 0x80c3,
+        ext: 0,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 8,
+        char_flags: 0xc0c3,
+        ext: 0,
+    },
+];
+
+pub(super) const BULLY_DRAW_FRAMES: [DrawMultipleData; 8] = [
+    DrawMultipleData {
+        x: 0,
+        y: -7,
+        char_flags: 0x46e0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x46e2,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -7,
+        char_flags: 0x46e0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x46c4,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -7,
+        char_flags: 0x06e0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x06e2,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: -7,
+        char_flags: 0x06e0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 0,
+        char_flags: 0x06c4,
+        ext: 2,
+    },
+];
+
+pub(super) const RUNNING_MAN_RECOIL_X_VELOCITIES: [i8; 2] = [-24, 24];
+
+pub(super) const TALKING_TREE_EYE_BASE_X_OFFSETS: [i8; 2] = [9, -9];
+
+pub(super) const DASH_TREE_TOP_GRID_CHAR_FLAGS: [u16; 16] = [
+    0x3100, 0x3102, 0x7102, 0x7100, 0x3120, 0x3122, 0x7122, 0x7120, 0x3104, 0x3106, 0x7106, 0x7104,
+    0x3124, 0x3126, 0x7126, 0x7124,
+];
+
+pub(super) const OCTOROK_SPIT_POSE_BY_DELAY: [u8; 20] =
+    [0, 2, 2, 2, 1, 1, 1, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 1, 1, 0];
+
+pub(super) const FOUR_WAY_OCTOROK_SPIT_POSE_BY_DELAY: [u8; 10] = [2, 2, 2, 2, 2, 2, 2, 2, 1, 0];
+
+pub(super) const HINOX_RANDOM_DIRECTIONS: [u8; 8] = [2, 3, 3, 2, 0, 1, 1, 0];
+
+pub(super) const HINOX_BOMB_X_OFFSETS: [i8; 4] = [8, -8, -13, 13];
+
+pub(super) const HINOX_BOMB_Y_OFFSETS: [i8; 4] = [-11, -11, -16, -16];
+
+pub(super) const HINOX_BOMB_X_VELOCITIES: [i8; 4] = [24, -24, 0, 0];
+
+pub(super) const HINOX_BOMB_Y_VELOCITIES: [i8; 4] = [0, 0, 24, -24];
+
+pub(super) const ANTIFAIRY_CIRCLE_VELOCITY_TARGETS: [u8; 2] = [18, (-18i8) as u8];
+
+pub(super) const VULTURE_GRAPHICS: [u8; 4] = [1, 2, 3, 2];
+
+pub(super) const DEAD_ROCK_GRAPHICS: [u8; 9] = [0, 1, 0, 1, 2, 2, 3, 3, 4];
+
+pub(super) const DEAD_ROCK_OAM_FLAGS: [u8; 9] = [0x40, 0x40, 0, 0, 0, 0x40, 0, 0x40, 0];
+
+pub(super) const DEAD_ROCK_X_VELOCITIES: [u8; 4] = [32, 0xe0, 0, 0];
+
+pub(super) const DEAD_ROCK_Y_VELOCITIES: [u8; 4] = [0, 0, 32, 0xe0];
+
+pub(super) const CHOMP_Z_VELOCITY_TARGETS: [i8; 2] = [8, -8];
+
+pub(super) const CHOMP_X_VELOCITY_TARGETS: [i8; 4] = [16, -16, 28, -28];
+
+pub(super) const CRYSTAL_SWITCH_PAL: [u8; 2] = [2, 4];
+
+pub(super) const RAT_GRAPHICS_BY_ANIM_STATE: [u8; 16] =
+    [0, 0, 3, 3, 1, 2, 4, 5, 1, 2, 4, 5, 0, 0, 3, 3];
+
+pub(super) const RAT_IDLE_ANIM_STATES: [u8; 8] = [10, 11, 6, 7, 2, 3, 14, 15];
+
+pub(super) const RAT_RUN_ANIM_STATES: [u8; 8] = [8, 9, 4, 5, 0, 1, 12, 13];
+
+pub(super) const RAT_WALL_TURN_DIRECTIONS: [u8; 4] = [2, 3, 1, 0];
+
+pub(super) const KEESE_ATTACK_START_PHASES: [i8; 4] = [2, 10, 6, 14];
+
+pub(super) const KEESE_ATTACK_X_VELOCITIES: [i8; 16] = [
+    0, 8, 11, 14, 16, 14, 11, 8, 0, -8, -11, -14, -16, -14, -11, -8,
+];
+
+pub(super) const KEESE_ATTACK_Y_VELOCITIES: [i8; 16] = [
+    -16, -14, -11, -8, 0, 8, 11, 14, 16, 14, 11, 8, 0, -9, -11, -14,
+];
+
+pub(super) const WARP_VORTEX_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
+
+pub(super) const CUCCO_CALM_CIRCLE_X_VELOCITIES: [i8; 16] = [
+    0, 8, 11, 14, 16, 14, 11, 8, 0, -8, -11, -14, -16, -14, -11, -8,
+];
+
+pub(super) const CUCCO_CALM_CIRCLE_Y_VELOCITIES: [i8; 16] = [
+    -16, -14, -11, -8, 0, 8, 11, 14, 16, 14, 11, 8, 0, -9, -11, -14,
+];
+
+pub(super) const WALKING_ZORA_SPAWN_X_OFFSETS: [i8; 4] = [8, -8, 0, 0];
+
+pub(super) const WALKING_ZORA_SPAWN_Y_OFFSETS: [i8; 4] = [0, 0, 8, -8];
+
+pub(super) const WALKING_ZORA_SPAWN_X_VELOCITIES: [i8; 4] = [24, -24, 0, 0];
+
+pub(super) const WALKING_ZORA_SPAWN_Y_VELOCITIES: [i8; 4] = [0, 0, 24, -24];
+
+pub(super) const SOLDIER_B_STEP_X_VELOCITIES: [i8; 8] = [1, 1, -1, -1, -1, -1, 1, 1];
+
+pub(super) const SOLDIER_B_STEP_Y_VELOCITIES: [i8; 8] = [-1, 1, 1, -1, -1, 1, 1, -1];
+
+pub(super) const SOLDIER_B_FAST_X_VELOCITIES: [i8; 8] = [8, 0, -8, 0, -8, 0, 8, 0];
+
+pub(super) const SOLDIER_B_FAST_Y_VELOCITIES: [i8; 8] = [0, 8, 0, -8, 0, 8, 0, -8];
+
+pub(super) const ZAZAK_DIR2: [u8; 8] = [2, 3, 2, 3, 0, 1, 0, 1];
+
+pub(super) const DESERT_BARRIER_X_VELOCITY_TARGETS: [u8; 2] = [16, (-16i8) as u8];
+
+pub(super) const ALTAR_ZELDA_HEAD_FLAGS: [u8; 4] = [0x40, 0, 0, 0];
+
+// Remaining Rat, Keese, and Soldier-B behavior tables promoted from sprite_main_draw.rs.
+pub(super) const RAT_OAM_FLIP_BY_ANIM_STATE: [u8; 16] = [
+    0, 0x40, 0, 0x40, 0, 0, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x80, 0xc0, 0x80, 0xc0,
+];
+
+pub(super) const KEESE_ORBIT_DIRECTION_STEPS: [i8; 2] = [1, -1];
+
+pub(super) const SOLDIER_B_FAST_COLLISION_MASKS: [u8; 8] = [1, 4, 2, 8, 2, 4, 1, 8];
+
+pub(super) const SOLDIER_B_COLLISION_MASKS: [u8; 8] = [8, 1, 4, 2, 8, 2, 4, 1];
+
+pub(super) const SOLDIER_B_FAST_NEXT_DIRECTIONS: [u8; 8] = [1, 2, 3, 0, 5, 6, 7, 4];
+
+pub(super) const SOLDIER_B_NEXT_DIRECTIONS: [u8; 8] = [3, 0, 1, 2, 7, 4, 5, 6];
