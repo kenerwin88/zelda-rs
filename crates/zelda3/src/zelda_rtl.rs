@@ -32,12 +32,12 @@ use crate::game_state::{
     lanmola_flat_trail_entry_from_ram, loaded_room_data_word, Bg1MovementAccumulatorState,
     BirdTravelDestinationState, BlastWallExplosionSlotState, BlastWallFireballSlotState,
     BlastWallFragmentSlotState, BombosBlastState, BombosFireColumnState, BossHomePositionRead,
-    CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut, DisplayState,
-    DungeonMapDisplayState, DungeonStairList, FollowerLinkState, GameState,
-    GraphicsDecompressionScratch, HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot,
-    HistoryPositionState, HudRuntimeState, HudStateRead, HudTilemapState, IntroActorRead,
-    LanmolaFlatTrailEntry, LanmolaSegmentMotionState, LinkDmaSourceSlot, MsuResumeInfoState,
-    MsuResumeSlot, MultiselectChoiceRead, NativeAncillaSlotBridgeMut, NativeAncillaSlotView,
+    CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut, DungeonMapDisplayState,
+    DungeonStairList, FollowerLinkState, GameState, GraphicsDecompressionScratch,
+    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, HistoryPositionState, HudRuntimeState,
+    HudStateRead, HudTilemapState, IntroActorRead, LanmolaFlatTrailEntry,
+    LanmolaSegmentMotionState, LinkDmaSourceSlot, MsuResumeInfoState, MsuResumeSlot,
+    MultiselectChoiceRead, NativeAncillaSlotBridgeMut, NativeAncillaSlotView,
     NativeArcheryGameBridgeMut, NativeArmosKnightHomePositionBridgeMut,
     NativeArrghusPuffHomePositionBridgeMut, NativeAttractSceneBridgeMut,
     NativeAttractVramDestinationBridgeMut, NativeBeamosLaserHistoryBridgeMut,
@@ -47,10 +47,11 @@ use crate::game_state::{
     NativeBombosSpellBridgeMut, NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
     NativeDialogueNumberBridgeMut, NativeDialogueSourceOffsetBridgeMut,
-    NativeDiggingGamePrizeBridgeMut, NativeDoorDebrisBridgeMut, NativeDualLayerTileCacheBridgeMut,
-    NativeDungeonBg2AttributeBridgeMut, NativeDungeonDoorBridgeMut,
-    NativeDungeonEntranceBackupBridgeMut, NativeDungeonEnvironmentBridgeMut,
-    NativeDungeonHeaderBridgeMut, NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
+    NativeDiggingGamePrizeBridgeMut, NativeDisplayStateBridgeMut, NativeDoorDebrisBridgeMut,
+    NativeDualLayerTileCacheBridgeMut, NativeDungeonBg2AttributeBridgeMut,
+    NativeDungeonDoorBridgeMut, NativeDungeonEntranceBackupBridgeMut,
+    NativeDungeonEnvironmentBridgeMut, NativeDungeonHeaderBridgeMut,
+    NativeDungeonKeySlotsBridgeMut, NativeDungeonMapDisplayBridgeMut,
     NativeDungeonMovableBlockBridgeMut, NativeDungeonMovingFloorBridgeMut,
     NativeDungeonObjectTrackingBridgeMut, NativeDungeonRoomDoorSetupBridgeMut,
     NativeDungeonRoomEffectsBridgeMut, NativeDungeonRoomItemBridgeMut,
@@ -3396,139 +3397,128 @@ impl ZeldaState {
         loaded_room_data_word(&self.ram, offset, index)
     }
 
-    fn sync_display_core_to_ram(&mut self) {
-        self.game_state.display.write_core_to_ram(&mut self.ram);
-        self.game_state
-            .display
-            .debug_assert_core_matches_ram(&self.ram);
-    }
-
-    fn mutate_display_core<T>(&mut self, mutate: impl FnOnce(&mut DisplayState) -> T) -> T {
-        let result = mutate(&mut self.game_state.display);
-        self.sync_display_core_to_ram();
-        result
+    pub(crate) fn display_core_mut(&mut self) -> NativeDisplayStateBridgeMut<'_> {
+        NativeDisplayStateBridgeMut::new(&mut self.game_state.display, &mut self.ram)
     }
 
     pub(crate) fn set_screen_brightness(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_screen_brightness(value));
+        self.display_core_mut().set_screen_brightness(value);
     }
 
     pub(crate) fn increment_screen_brightness(&mut self) -> u8 {
-        self.mutate_display_core(|display| display.increment_screen_brightness())
+        self.display_core_mut().increment_screen_brightness()
     }
 
     pub(crate) fn decrement_screen_brightness(&mut self) -> u8 {
-        self.mutate_display_core(|display| display.decrement_screen_brightness())
+        self.display_core_mut().decrement_screen_brightness()
     }
 
     pub(crate) fn latch_nmi_update(&mut self) {
-        self.mutate_display_core(|display| display.latch_nmi_update());
+        self.display_core_mut().latch_nmi_update();
     }
 
     pub(crate) fn clear_nmi_update_latch(&mut self) {
-        self.mutate_display_core(|display| display.clear_nmi_update_latch());
+        self.display_core_mut().clear_nmi_update_latch();
     }
 
     pub(crate) fn set_core_update_disable_flag(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_core_update_disable_flag(value));
+        self.display_core_mut().set_core_update_disable_flag(value);
     }
 
     pub(crate) fn set_core_update_disable_flag_word(&mut self, value: u16) {
-        self.mutate_display_core(|display| display.set_core_update_disable_flag_word(value));
-        // C writes NMI_DISABLE_CORE_UPDATES as a 16-bit word here (the blast-wall clear sets
-        // it to 0xffff). The display native models only the low byte, so write the high byte
-        // (0x711) through to RAM directly; no native owns it, so nothing re-stamps it.
-        self.ram[crate::game_state::constants::NMI_DISABLE_CORE_UPDATES + 1] = (value >> 8) as u8;
+        self.display_core_mut()
+            .set_core_update_disable_flag_word(value);
     }
 
     pub(crate) fn clear_core_update_disable_flag(&mut self) {
-        self.mutate_display_core(|display| display.clear_core_update_disable_flag());
+        self.display_core_mut().clear_core_update_disable_flag();
     }
 
     pub(crate) fn increment_core_update_disable_flag(&mut self) -> u8 {
-        self.mutate_display_core(|display| display.increment_core_update_disable_flag())
+        self.display_core_mut().increment_core_update_disable_flag()
     }
 
     pub(crate) fn set_pending_nmi_subroutine(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_pending_nmi_subroutine(value));
+        self.display_core_mut().set_pending_nmi_subroutine(value);
     }
 
     pub(crate) fn clear_pending_nmi_subroutine(&mut self) {
-        self.mutate_display_core(|display| display.clear_pending_nmi_subroutine());
+        self.display_core_mut().clear_pending_nmi_subroutine();
     }
 
     pub(crate) fn take_pending_nmi_subroutine(&mut self) -> u8 {
-        self.mutate_display_core(|display| display.take_pending_nmi_subroutine())
+        self.display_core_mut().take_pending_nmi_subroutine()
     }
 
     pub(crate) fn set_bg_vram_load_mode(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_bg_vram_load_mode(value));
+        self.display_core_mut().set_bg_vram_load_mode(value);
     }
 
     pub(crate) fn queue_tilemap_update(&mut self, destination_page: u8, source_offset: u16) {
-        self.mutate_display_core(|display| {
-            display.queue_tilemap_update(destination_page, source_offset)
-        });
+        self.display_core_mut()
+            .queue_tilemap_update(destination_page, source_offset);
     }
 
     pub(crate) fn clear_pending_tilemap_update_destination(&mut self) {
-        self.mutate_display_core(|display| display.clear_pending_tilemap_update_destination());
+        self.display_core_mut()
+            .clear_pending_tilemap_update_destination();
     }
 
     pub(crate) fn set_bg_mode(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_bg_mode(value));
+        self.display_core_mut().set_bg_mode(value);
     }
 
     pub(crate) fn set_main_screen_layers(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_main_screen_layers(value));
+        self.display_core_mut().set_main_screen_layers(value);
     }
 
     pub(crate) fn and_main_screen_layers(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.and_main_screen_layers(value));
+        self.display_core_mut().and_main_screen_layers(value);
     }
 
     pub(crate) fn or_main_screen_layers(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.or_main_screen_layers(value));
+        self.display_core_mut().or_main_screen_layers(value);
     }
 
     pub(crate) fn set_sub_screen_layers(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_sub_screen_layers(value));
+        self.display_core_mut().set_sub_screen_layers(value);
     }
 
     pub(crate) fn clear_sub_screen_layers_word(&mut self) {
-        self.mutate_display_core(|display| display.clear_sub_screen_layers_word());
+        self.display_core_mut().clear_sub_screen_layers_word();
     }
 
     pub(crate) fn and_sub_screen_layers(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.and_sub_screen_layers(value));
+        self.display_core_mut().and_sub_screen_layers(value);
     }
 
     pub(crate) fn or_sub_screen_layers(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.or_sub_screen_layers(value));
+        self.display_core_mut().or_sub_screen_layers(value);
     }
 
     pub(crate) fn set_layer_masks_word(&mut self, value: u16) {
-        self.mutate_display_core(|display| display.set_layer_masks_word(value));
+        self.display_core_mut().set_layer_masks_word(value);
     }
 
     pub(crate) fn set_bg12_window_selection(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_bg12_window_selection(value));
+        self.display_core_mut().set_bg12_window_selection(value);
     }
 
     pub(crate) fn set_bg34_window_selection(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_bg34_window_selection(value));
+        self.display_core_mut().set_bg34_window_selection(value);
     }
 
     pub(crate) fn set_object_color_window_selection(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_object_color_window_selection(value));
+        self.display_core_mut()
+            .set_object_color_window_selection(value);
     }
 
     pub(crate) fn set_main_screen_window_layers(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_main_screen_window_layers(value));
+        self.display_core_mut().set_main_screen_window_layers(value);
     }
 
     pub(crate) fn set_sub_screen_window_layers(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_sub_screen_window_layers(value));
+        self.display_core_mut().set_sub_screen_window_layers(value);
     }
 
     pub(crate) fn set_window_layer_masks(
@@ -3539,229 +3529,240 @@ impl ZeldaState {
         main_screen_window_layers: u8,
         sub_screen_window_layers: u8,
     ) {
-        self.mutate_display_core(|display| {
-            display.set_window_layer_masks(
-                bg12_window_selection,
-                bg34_window_selection,
-                object_color_window_selection,
-                main_screen_window_layers,
-                sub_screen_window_layers,
-            )
-        });
+        self.display_core_mut().set_window_layer_masks(
+            bg12_window_selection,
+            bg34_window_selection,
+            object_color_window_selection,
+            main_screen_window_layers,
+            sub_screen_window_layers,
+        );
     }
 
     pub(crate) fn clear_window_layer_masks(&mut self) {
-        self.mutate_display_core(|display| display.clear_window_layer_masks());
+        self.display_core_mut().clear_window_layer_masks();
     }
 
     pub(crate) fn clear_window_main_sub_masks(&mut self) {
-        self.mutate_display_core(|display| display.clear_window_main_sub_masks());
+        self.display_core_mut().clear_window_main_sub_masks();
     }
 
     pub(crate) fn clear_bg_vram_load_mode(&mut self) {
-        self.mutate_display_core(|display| display.clear_bg_vram_load_mode());
+        self.display_core_mut().clear_bg_vram_load_mode();
     }
 
     pub(crate) fn set_nmi_copy_packets_request(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_nmi_copy_packets_request(value));
+        self.display_core_mut().set_nmi_copy_packets_request(value);
     }
 
     pub(crate) fn request_nmi_copy_packets(&mut self) {
-        self.mutate_display_core(|display| display.request_nmi_copy_packets());
+        self.display_core_mut().request_nmi_copy_packets();
     }
 
     pub(crate) fn clear_nmi_copy_packets_request(&mut self) {
-        self.mutate_display_core(|display| display.clear_nmi_copy_packets_request());
+        self.display_core_mut().clear_nmi_copy_packets_request();
     }
 
     pub(crate) fn request_polyhedral_nmi_update(&mut self) {
-        self.mutate_display_core(|display| display.request_polyhedral_nmi_update());
+        self.display_core_mut().request_polyhedral_nmi_update();
     }
 
     pub(crate) fn clear_pending_polyhedral_update(&mut self) {
-        self.mutate_display_core(|display| display.clear_pending_polyhedral_update());
+        self.display_core_mut().clear_pending_polyhedral_update();
     }
 
     pub(crate) fn set_chr_halfslot_request(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_chr_halfslot_request(value));
+        self.display_core_mut().set_chr_halfslot_request(value);
     }
 
     pub(crate) fn clear_chr_halfslot_request(&mut self) {
-        self.mutate_display_core(|display| display.clear_chr_halfslot_request());
+        self.display_core_mut().clear_chr_halfslot_request();
     }
 
     pub(crate) fn increment_chr_halfslot_request(&mut self) -> u8 {
-        self.mutate_display_core(|display| display.increment_chr_halfslot_request())
+        self.display_core_mut().increment_chr_halfslot_request()
     }
 
     pub(crate) fn activate_nmi_thread(&mut self) {
-        self.mutate_display_core(|display| display.activate_nmi_thread());
+        self.display_core_mut().activate_nmi_thread();
     }
 
     pub(crate) fn deactivate_nmi_thread(&mut self) {
-        self.mutate_display_core(|display| display.deactivate_nmi_thread());
+        self.display_core_mut().deactivate_nmi_thread();
     }
 
     pub(crate) fn set_nmi_thread_stack_pointer(&mut self, value: u16) {
-        self.mutate_display_core(|display| display.set_nmi_thread_stack_pointer(value));
+        self.display_core_mut().set_nmi_thread_stack_pointer(value);
     }
 
     pub(crate) fn set_irq_control_flag(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_irq_control_flag(value));
+        self.display_core_mut().set_irq_control_flag(value);
     }
 
     pub(crate) fn clear_irq_control_flag(&mut self) {
-        self.mutate_display_core(|display| display.clear_irq_control_flag());
+        self.display_core_mut().clear_irq_control_flag();
     }
 
     pub(crate) fn set_vertical_irq_trigger(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_vertical_irq_trigger(value));
+        self.display_core_mut().set_vertical_irq_trigger(value);
     }
 
     pub(crate) fn advance_crystal_rotation_counter(&mut self, amount: u8) -> bool {
-        self.mutate_display_core(|display| display.advance_crystal_rotation_counter(amount))
+        self.display_core_mut()
+            .advance_crystal_rotation_counter(amount)
     }
 
     pub(crate) fn set_sprite_dma_head_pointer(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_sprite_dma_head_pointer(value));
+        self.display_core_mut().set_sprite_dma_head_pointer(value);
     }
 
     pub(crate) fn set_sprite_dma_body_pointer(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_sprite_dma_body_pointer(value));
+        self.display_core_mut().set_sprite_dma_body_pointer(value);
     }
 
     pub(crate) fn set_hdma_enable_mask(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_hdma_enable_mask(value));
+        self.display_core_mut().set_hdma_enable_mask(value);
     }
 
     pub(crate) fn clear_hdma_enable_mask(&mut self) {
-        self.mutate_display_core(|display| display.clear_hdma_enable_mask());
+        self.display_core_mut().clear_hdma_enable_mask();
     }
 
     pub(crate) fn set_mosaic_copy(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_mosaic_copy(value));
+        self.display_core_mut().set_mosaic_copy(value);
     }
 
     pub(crate) fn set_mosaic_copy_from_level_or(&mut self, mask: u8) {
-        self.mutate_display_core(|display| display.set_mosaic_copy_from_level_or(mask));
+        self.display_core_mut().set_mosaic_copy_from_level_or(mask);
     }
 
     pub(crate) fn set_mosaic_level(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_mosaic_level(value));
+        self.display_core_mut().set_mosaic_level(value);
     }
 
     pub(crate) fn clear_mosaic_level(&mut self) {
-        self.mutate_display_core(|display| display.clear_mosaic_level());
+        self.display_core_mut().clear_mosaic_level();
     }
 
     pub(crate) fn clear_mosaic_level_word(&mut self) {
-        self.mutate_display_core(|display| display.clear_mosaic_level_word());
+        self.display_core_mut().clear_mosaic_level_word();
     }
 
     pub(crate) fn increment_mosaic_level_by(&mut self, value: u8) -> u8 {
-        self.mutate_display_core(|display| display.increment_mosaic_level_by(value))
+        self.display_core_mut().increment_mosaic_level_by(value)
     }
 
     pub(crate) fn decrement_mosaic_level_by(&mut self, value: u8) -> u8 {
-        self.mutate_display_core(|display| display.decrement_mosaic_level_by(value))
+        self.display_core_mut().decrement_mosaic_level_by(value)
     }
 
     pub(crate) fn set_mosaic_target_level(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_mosaic_target_level(value));
+        self.display_core_mut().set_mosaic_target_level(value);
     }
 
     pub(crate) fn set_mosaic_target_level_word(&mut self, value: u16) {
-        self.mutate_display_core(|display| display.set_mosaic_target_level_word(value));
+        self.display_core_mut().set_mosaic_target_level_word(value);
     }
 
     pub(crate) fn clear_mosaic_target_level(&mut self) {
-        self.mutate_display_core(|display| display.clear_mosaic_target_level());
+        self.display_core_mut().clear_mosaic_target_level();
     }
 
     pub(crate) fn clear_mosaic_target_level_word(&mut self) {
-        self.mutate_display_core(|display| display.clear_mosaic_target_level_word());
+        self.display_core_mut().clear_mosaic_target_level_word();
     }
 
     pub(crate) fn set_mosaic_direction(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_mosaic_direction(value));
+        self.display_core_mut().set_mosaic_direction(value);
     }
 
     pub(crate) fn clear_mosaic_direction(&mut self) {
-        self.mutate_display_core(|display| display.clear_mosaic_direction());
+        self.display_core_mut().clear_mosaic_direction();
     }
 
     pub(crate) fn set_nmi_load_target_page(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_nmi_load_target_page(value));
+        self.display_core_mut().set_nmi_load_target_page(value);
     }
 
     pub(crate) fn set_nmi_load_target_address(&mut self, value: u16) {
-        self.mutate_display_core(|display| display.set_nmi_load_target_address(value));
+        self.display_core_mut().set_nmi_load_target_address(value);
     }
 
     pub(crate) fn reset_incremental_vram_upload_counter(&mut self) {
-        self.mutate_display_core(|display| display.reset_incremental_vram_upload_counter());
+        self.display_core_mut()
+            .reset_incremental_vram_upload_counter();
     }
 
     pub(crate) fn increment_vram_upload_counter(&mut self) -> u8 {
-        self.mutate_display_core(|display| display.increment_vram_upload_counter())
+        self.display_core_mut().increment_vram_upload_counter()
     }
 
     pub(crate) fn set_link_body_dma_sources(&mut self, top: u16, bottom: u16) {
-        self.mutate_display_core(|display| display.set_link_body_dma_sources(top, bottom));
+        self.display_core_mut()
+            .set_link_body_dma_sources(top, bottom);
     }
 
     pub(crate) fn set_link_head_dma_sources(&mut self, top: u16, bottom: u16) {
-        self.mutate_display_core(|display| display.set_link_head_dma_sources(top, bottom));
+        self.display_core_mut()
+            .set_link_head_dma_sources(top, bottom);
     }
 
     pub(crate) fn set_link_hand_dma_sources(&mut self, left: u16, right: u16) {
-        self.mutate_display_core(|display| display.set_link_hand_dma_sources(left, right));
+        self.display_core_mut()
+            .set_link_hand_dma_sources(left, right);
     }
 
     pub(crate) fn set_link_sword_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.mutate_display_core(|display| display.set_link_sword_dma_sources(upper, lower));
+        self.display_core_mut()
+            .set_link_sword_dma_sources(upper, lower);
     }
 
     pub(crate) fn set_link_shield_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.mutate_display_core(|display| display.set_link_shield_dma_sources(upper, lower));
+        self.display_core_mut()
+            .set_link_shield_dma_sources(upper, lower);
     }
 
     pub(crate) fn set_link_aux_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.mutate_display_core(|display| display.set_link_aux_dma_sources(upper, lower));
+        self.display_core_mut()
+            .set_link_aux_dma_sources(upper, lower);
     }
 
     pub(crate) fn set_link_push_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.mutate_display_core(|display| display.set_link_push_dma_sources(upper, lower));
+        self.display_core_mut()
+            .set_link_push_dma_sources(upper, lower);
     }
 
     pub(crate) fn set_link_animated_tile_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.mutate_display_core(|display| {
-            display.set_link_animated_tile_dma_sources(upper, lower)
-        });
+        self.display_core_mut()
+            .set_link_animated_tile_dma_sources(upper, lower);
     }
 
     pub(crate) fn set_link_head_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.mutate_display_core(|display| display.set_link_head_pointer_dma_sources(upper, lower));
+        self.display_core_mut()
+            .set_link_head_pointer_dma_sources(upper, lower);
     }
 
     pub(crate) fn set_link_body_pointer_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.mutate_display_core(|display| display.set_link_body_pointer_dma_sources(upper, lower));
+        self.display_core_mut()
+            .set_link_body_pointer_dma_sources(upper, lower);
     }
 
     pub(crate) fn set_travel_bird_dma_sources(&mut self, upper: u16, lower: u16) {
-        self.mutate_display_core(|display| display.set_travel_bird_dma_sources(upper, lower));
+        self.display_core_mut()
+            .set_travel_bird_dma_sources(upper, lower);
     }
 
     pub(crate) fn reset_bg_tile_animation_countdown(&mut self, value: u16) {
-        self.mutate_display_core(|display| display.reset_bg_tile_animation_countdown(value));
+        self.display_core_mut()
+            .reset_bg_tile_animation_countdown(value);
     }
 
     pub(crate) fn decrement_bg_tile_animation_countdown(&mut self) -> u16 {
-        self.mutate_display_core(|display| display.decrement_bg_tile_animation_countdown())
+        self.display_core_mut()
+            .decrement_bg_tile_animation_countdown()
     }
 
     pub(crate) fn clear_star_tile_restore_phase(&mut self) {
-        self.mutate_display_core(|display| display.clear_star_tile_restore_phase());
+        self.display_core_mut().clear_star_tile_restore_phase();
     }
 
     pub(crate) fn dungeon_star_tile_restore_source_offsets(&self) -> (usize, usize) {
@@ -3777,13 +3778,13 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_animated_tile_data_source_address(&mut self, value: u16) {
-        self.mutate_display_core(|display| display.set_animated_tile_data_source_address(value));
+        self.display_core_mut()
+            .set_animated_tile_data_source_address(value);
     }
 
     pub(crate) fn set_animated_tile_vram_destination_address(&mut self, value: u16) {
-        self.mutate_display_core(|display| {
-            display.set_animated_tile_vram_destination_address(value)
-        });
+        self.display_core_mut()
+            .set_animated_tile_vram_destination_address(value);
     }
 
     pub(crate) fn overworld_tile_attribute_word(&self, index: usize) -> u16 {
@@ -3841,19 +3842,20 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_message_dma_destination_address(&mut self, value: u16) {
-        self.mutate_display_core(|display| display.set_message_dma_destination_address(value));
+        self.display_core_mut()
+            .set_message_dma_destination_address(value);
     }
 
     pub(crate) fn set_message_dma_tile_base(&mut self, value: u16) {
-        self.mutate_display_core(|display| display.set_message_dma_tile_base(value));
+        self.display_core_mut().set_message_dma_tile_base(value);
     }
 
     pub(crate) fn set_message_dma_tile_limit(&mut self, value: u16) {
-        self.mutate_display_core(|display| display.set_message_dma_tile_limit(value));
+        self.display_core_mut().set_message_dma_tile_limit(value);
     }
 
     pub(crate) fn set_message_dma_tile_sentinel(&mut self, value: u16) {
-        self.mutate_display_core(|display| display.set_message_dma_tile_sentinel(value));
+        self.display_core_mut().set_message_dma_tile_sentinel(value);
     }
 
     pub(crate) fn set_overworld_fixed_color_adjustment(&mut self, value: u8) {
@@ -3862,11 +3864,12 @@ impl ZeldaState {
         // owner re-projects the value we just wrote; the display copy no longer projects.
         self.dungeon_room_effects_mut()
             .set_fixed_color_plusminus_value_only(value);
-        self.mutate_display_core(|display| display.set_overworld_fixed_color_adjustment(value));
+        self.display_core_mut()
+            .set_overworld_fixed_color_adjustment(value);
     }
 
     pub(crate) fn set_travel_bird_tile_offset(&mut self, value: u8) {
-        self.mutate_display_core(|display| display.set_travel_bird_tile_offset(value));
+        self.display_core_mut().set_travel_bird_tile_offset(value);
     }
 
     pub(crate) fn save_progress_mut(&mut self) -> NativeSaveProgressBridgeMut<'_> {

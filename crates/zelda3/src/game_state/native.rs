@@ -21,11 +21,11 @@ mod world;
 
 pub(crate) use display::{
     DisplayState, GraphicsDecompressionScratch, HudRuntimeState, HudStateRead, HudTilemapState,
-    LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut, NativeHudInventoryOrderBridgeMut,
-    NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePpuScrollCopyBridgeMut,
-    NativeSpotlightHdmaBridgeMut, NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut,
-    NativeWaterHdmaWindowBridgeMut, OverworldPaletteBackupState, PaletteFilterState,
-    PpuScrollCopyState, SpotlightHdmaState,
+    LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut, NativeDisplayStateBridgeMut,
+    NativeHudInventoryOrderBridgeMut, NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut,
+    NativePpuScrollCopyBridgeMut, NativeSpotlightHdmaBridgeMut, NativeTrinexxPaletteBridgeMut,
+    NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut, OverworldPaletteBackupState,
+    PaletteFilterState, PpuScrollCopyState, SpotlightHdmaState,
 };
 pub(crate) use dungeon::{
     loaded_room_data_word, DungeonStairList, DungeonState, NativeDungeonBg2AttributeBridgeMut,
@@ -136,9 +136,8 @@ use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 #[cfg(test)]
 use display::{
-    HudInventoryOrderState, NativeDisplayStateBridgeMut, NativeHudStateBridgeMut,
-    NativeOverworldPaletteBackupBridgeMut, PaletteBufferState, TrinexxPaletteState,
-    WaterHdmaWindowState,
+    HudInventoryOrderState, NativeHudStateBridgeMut, NativeOverworldPaletteBackupBridgeMut,
+    PaletteBufferState, TrinexxPaletteState, WaterHdmaWindowState,
 };
 #[cfg(test)]
 use dungeon::{
