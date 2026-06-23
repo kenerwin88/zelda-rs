@@ -936,9 +936,6 @@ impl ZeldaState {
 
     // void Sprite_MadBatterBolt(int k) {  // 9e8a96
     pub(super) fn sprite_mad_batter_bolt(&mut self, k: usize) {
-        const X: [u16; 8] = [0, 4, 8, 12, 12, 4, 8, 0];
-        const Y: [u16; 8] = [0, 4, 8, 12, 12, 4, 8, 0];
-
         if (self.sprite_slot_view(k).subtype2() & 16) != 0 {
             self.oam_allocate_from_region_b(4);
         }
@@ -967,7 +964,7 @@ impl ZeldaState {
                     .player
                     .follower_link
                     .x()
-                    .wrapping_add(X[usize::from((j >> 2) & 7)]),
+                    .wrapping_add(MAD_BATTER_BOLT_X_OFFSETS[usize::from((j >> 2) & 7)]),
             );
             self.sprite_set_y(
                 k,
@@ -975,7 +972,7 @@ impl ZeldaState {
                     .player
                     .follower_link
                     .y()
-                    .wrapping_add(Y[usize::from((j >> 4) & 7)]),
+                    .wrapping_add(MAD_BATTER_BOLT_Y_OFFSETS[usize::from((j >> 4) & 7)]),
             );
         }
     }
@@ -2172,13 +2169,6 @@ impl ZeldaState {
 
     // void Sprite_D2_FloppingFish(int k) {  // 9d8235
     pub(super) fn sprite_d2_flopping_fish(&mut self, k: usize) {
-        const FLOPPING_FISH_X_VELOCITIES: [i8; 8] = [0, 12, 16, 12, 0, -12, -16, -12];
-        const FLOPPING_FISH_Y_VELOCITIES: [i8; 8] = [-16, -12, 0, 12, 16, 12, 0, -12];
-        const FLOPPING_FISH_A_TARGET_BY_DIRECTION: [u8; 2] = [2, 0];
-        const FLOPPING_FISH_AIR_GRAPHICS: [u8; 3] = [1, 5, 3];
-        const FLOPPING_FISH_GROUND_GRAPHICS: [u8; 17] =
-            [5, 5, 6, 6, 5, 5, 4, 4, 3, 7, 7, 8, 8, 7, 7, 8, 8];
-
         if self.game_state.sprites.system.chr_halfslot_state() < 3 {
             self.fish_draw(k);
         }
@@ -2701,44 +2691,6 @@ impl ZeldaState {
 
     // void Sprite_DrawLargeWaterTurbulence(int k) {  // 84ebe5
     pub(super) fn sprite_draw_large_water_turbulence(&mut self, k: usize) {
-        const D: [DrawMultipleData; 6] = [
-            DrawMultipleData {
-                x: -10,
-                y: 14,
-                char_flags: 0x00c0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -5,
-                y: 16,
-                char_flags: 0x40c0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -2,
-                y: 18,
-                char_flags: 0x00c0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 2,
-                y: 18,
-                char_flags: 0x40c0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 5,
-                y: 16,
-                char_flags: 0x00c0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 10,
-                y: 14,
-                char_flags: 0x40c0,
-                ext: 2,
-            },
-        ];
         let bak = self.sprite_slot_view(k).oam_flags();
         let value = if ((self.sprite_slot_view(k).subtype2() >> 1) & 1) != 0 {
             0x44
@@ -2748,7 +2700,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_oam_flags(value);
         self.sprite_slot_view_mut(k).and_object_priority(!0x0f);
         self.oam_allocate_from_region_c(self.sprite_slot_view(k).object_priority());
-        self.sprite_draw_multiple(k, &D, None);
+        self.sprite_draw_multiple(k, &LARGE_WATER_TURBULENCE_DRAW_DATA, None);
         self.sprite_slot_view_mut(k).set_oam_flags(bak);
     }
 
@@ -2936,39 +2888,7 @@ impl ZeldaState {
 
     // void Arrghus_Draw(int k) {  // 9eb840
     pub(super) fn arrghus_draw(&mut self, k: usize) {
-        const D: [DrawMultipleData; 5] = [
-            DrawMultipleData {
-                x: -8,
-                y: -4,
-                char_flags: 0x0080,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: -4,
-                char_flags: 0x4080,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: -8,
-                y: 12,
-                char_flags: 0x00a0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 8,
-                y: 12,
-                char_flags: 0x40a0,
-                ext: 2,
-            },
-            DrawMultipleData {
-                x: 0,
-                y: 24,
-                char_flags: 0x00a8,
-                ext: 2,
-            },
-        ];
-        self.sprite_draw_multiple(k, &D, None);
+        self.sprite_draw_multiple(k, &ARRGHUS_DRAW_DATA, None);
         let oam = self.game_state.oam.current_pointer_usize();
         let chr = self.sprite_slot_view(k).graphics().wrapping_mul(2);
         for i in 0..4 {
@@ -3139,10 +3059,8 @@ impl ZeldaState {
                     self.sprite_apply_speed_towards_link(k, 16);
                     self.sprite_sfx_queue_sfx3_with_pan(k, 0x30);
                 } else {
-                    const POPPING_OUT_GFX: [u8; 16] =
-                        [0, 1, 7, 7, 6, 6, 5, 5, 6, 6, 5, 5, 4, 4, 4, 4];
-                    let value =
-                        POPPING_OUT_GFX[usize::from(self.sprite_slot_view(k).delay_main() >> 3)];
+                    let value = BLOB_POPPING_OUT_GRAPHICS
+                        [usize::from(self.sprite_slot_view(k).delay_main() >> 3)];
                     self.sprite_slot_view_mut(k).set_graphics(value);
                 }
             }
@@ -3171,12 +3089,10 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).increment_ai_state();
                     self.sprite_slot_view_mut(k).set_graphics(0);
                 } else {
-                    const FALLING_XVEL: [i8; 2] = [-8, 8];
-                    const FALLING_GFX: [u8; 2] = [0, 1];
-                    let value =
-                        FALLING_GFX[usize::from((self.sprite_slot_view(k).delay_main() - 1) >> 4)];
+                    let value = BLOB_FALLING_GRAPHICS
+                        [usize::from((self.sprite_slot_view(k).delay_main() - 1) >> 4)];
                     self.sprite_slot_view_mut(k).set_graphics(value);
-                    let value = FALLING_XVEL
+                    let value = BLOB_FALLING_X_VELOCITIES
                         [usize::from((self.game_state.frame.frame_counter >> 1) & 1)]
                         as u8;
                     self.sprite_slot_view_mut(k).set_x_velocity(value);
@@ -4030,23 +3946,23 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_x_velocity(0);
             }
         } else if self.sprite_slot_view(k).ai_state() == 1 {
-            const X_TARGET: [i8; 4] = [32, -32, 0, 0];
-            const Y_TARGET: [i8; 4] = [0, 0, 32, -32];
-            const X_DELTA: [i8; 4] = [1, -1, 0, 0];
-            const Y_DELTA: [i8; 4] = [0, 0, 1, -1];
             let j = self.sprite_slot_view(k).direction() as usize;
-            if self.sprite_slot_view(k).x_velocity() != X_TARGET[j] as u8 {
+            if self.sprite_slot_view(k).x_velocity()
+                != SPIKE_BLOCK_ATTACK_X_VELOCITY_TARGETS[j] as u8
+            {
                 let value = self
                     .sprite_slot_view(k)
                     .x_velocity()
-                    .wrapping_add(X_DELTA[j] as u8);
+                    .wrapping_add(SPIKE_BLOCK_ATTACK_X_VELOCITY_DELTAS[j] as u8);
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
             }
-            if self.sprite_slot_view(k).y_velocity() != Y_TARGET[j] as u8 {
+            if self.sprite_slot_view(k).y_velocity()
+                != SPIKE_BLOCK_ATTACK_Y_VELOCITY_TARGETS[j] as u8
+            {
                 let value = self
                     .sprite_slot_view(k)
                     .y_velocity()
-                    .wrapping_add(Y_DELTA[j] as u8);
+                    .wrapping_add(SPIKE_BLOCK_ATTACK_Y_VELOCITY_DELTAS[j] as u8);
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
             }
             self.sprite_move_xy(k);
@@ -4058,8 +3974,6 @@ impl ZeldaState {
                 }
             }
         } else if self.sprite_slot_view(k).delay_aux1() == 0 {
-            const SPIKE_BLOCK_RETURN_X_VELOCITIES: [i8; 4] = [-16, 16, 0, 0];
-            const SPIKE_BLOCK_RETURN_Y_VELOCITIES: [i8; 4] = [0, 0, -16, 16];
             let j = self.sprite_slot_view(k).direction() as usize;
             self.sprite_slot_view_mut(k)
                 .set_x_velocity(SPIKE_BLOCK_RETURN_X_VELOCITIES[j] as u8);
@@ -4081,12 +3995,6 @@ impl ZeldaState {
 
     // void Sprite_7D_BigSpike(int k) {  // 9ecf47
     pub(super) fn sprite_7_d_big_spike(&mut self, k: usize) {
-        const BIG_SPIKE_ATTACK_X_VELOCITIES: [i8; 4] = [32, -32, 0, 0];
-        const BIG_SPIKE_RETURN_X_VELOCITIES: [i8; 4] = [-16, 16, 0, 0];
-        const BIG_SPIKE_ATTACK_Y_VELOCITIES: [i8; 4] = [0, 0, 32, -32];
-        const BIG_SPIKE_RETURN_Y_VELOCITIES: [i8; 4] = [0, 0, -16, 16];
-        const BIG_SPIKE_ATTACK_DELAYS: [u8; 4] = [0x40, 0x40, 0x38, 0x38];
-
         self.spike_trap_draw(k);
         if self.sprite_return_if_inactive(k) {
             return;

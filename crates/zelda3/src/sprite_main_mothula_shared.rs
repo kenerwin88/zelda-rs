@@ -1,3 +1,4 @@
+use super::sprite::DrawMultipleData;
 pub(super) const ARMOS_KNIGHT_REMAINING_COUNT: usize = 0x0ff8;
 pub(super) const FEATURE_MISC_BUG_FIXES_MOTHULA: u32 = 4096;
 
@@ -183,3 +184,96 @@ pub(super) const HOKBOK_SEGMENT_STATES: [u8; 8] = [8, 7, 6, 5, 4, 5, 6, 7];
 pub(super) const BOULDER_Z_VELOCITIES: [i8; 2] = [32, 48];
 pub(super) const BOULDER_Y_VELOCITIES: [i8; 2] = [8, 32];
 pub(super) const BOULDER_X_VELOCITIES: [i8; 4] = [24, 16, -24, -16];
+pub(super) const MAD_BATTER_BOLT_X_OFFSETS: [u16; 8] = [0, 4, 8, 12, 12, 4, 8, 0];
+pub(super) const MAD_BATTER_BOLT_Y_OFFSETS: [u16; 8] = [0, 4, 8, 12, 12, 4, 8, 0];
+pub(super) const FLOPPING_FISH_X_VELOCITIES: [i8; 8] = [0, 12, 16, 12, 0, -12, -16, -12];
+pub(super) const FLOPPING_FISH_Y_VELOCITIES: [i8; 8] = [-16, -12, 0, 12, 16, 12, 0, -12];
+pub(super) const FLOPPING_FISH_A_TARGET_BY_DIRECTION: [u8; 2] = [2, 0];
+pub(super) const FLOPPING_FISH_AIR_GRAPHICS: [u8; 3] = [1, 5, 3];
+pub(super) const FLOPPING_FISH_GROUND_GRAPHICS: [u8; 17] =
+    [5, 5, 6, 6, 5, 5, 4, 4, 3, 7, 7, 8, 8, 7, 7, 8, 8];
+pub(super) const LARGE_WATER_TURBULENCE_DRAW_DATA: [DrawMultipleData; 6] = [
+    DrawMultipleData {
+        x: -10,
+        y: 14,
+        char_flags: 0x00c0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -5,
+        y: 16,
+        char_flags: 0x40c0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -2,
+        y: 18,
+        char_flags: 0x00c0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 2,
+        y: 18,
+        char_flags: 0x40c0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 5,
+        y: 16,
+        char_flags: 0x00c0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 10,
+        y: 14,
+        char_flags: 0x40c0,
+        ext: 2,
+    },
+];
+pub(super) const ARRGHUS_DRAW_DATA: [DrawMultipleData; 5] = [
+    DrawMultipleData {
+        x: -8,
+        y: -4,
+        char_flags: 0x0080,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: -4,
+        char_flags: 0x4080,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: -8,
+        y: 12,
+        char_flags: 0x00a0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 8,
+        y: 12,
+        char_flags: 0x40a0,
+        ext: 2,
+    },
+    DrawMultipleData {
+        x: 0,
+        y: 24,
+        char_flags: 0x00a8,
+        ext: 2,
+    },
+];
+pub(super) const BLOB_POPPING_OUT_GRAPHICS: [u8; 16] =
+    [0, 1, 7, 7, 6, 6, 5, 5, 6, 6, 5, 5, 4, 4, 4, 4];
+pub(super) const BLOB_FALLING_X_VELOCITIES: [i8; 2] = [-8, 8];
+pub(super) const BLOB_FALLING_GRAPHICS: [u8; 2] = [0, 1];
+pub(super) const SPIKE_BLOCK_ATTACK_X_VELOCITY_TARGETS: [i8; 4] = [32, -32, 0, 0];
+pub(super) const SPIKE_BLOCK_ATTACK_Y_VELOCITY_TARGETS: [i8; 4] = [0, 0, 32, -32];
+pub(super) const SPIKE_BLOCK_ATTACK_X_VELOCITY_DELTAS: [i8; 4] = [1, -1, 0, 0];
+pub(super) const SPIKE_BLOCK_ATTACK_Y_VELOCITY_DELTAS: [i8; 4] = [0, 0, 1, -1];
+pub(super) const SPIKE_BLOCK_RETURN_X_VELOCITIES: [i8; 4] = [-16, 16, 0, 0];
+pub(super) const SPIKE_BLOCK_RETURN_Y_VELOCITIES: [i8; 4] = [0, 0, -16, 16];
+pub(super) const BIG_SPIKE_ATTACK_X_VELOCITIES: [i8; 4] = [32, -32, 0, 0];
+pub(super) const BIG_SPIKE_RETURN_X_VELOCITIES: [i8; 4] = [-16, 16, 0, 0];
+pub(super) const BIG_SPIKE_ATTACK_Y_VELOCITIES: [i8; 4] = [0, 0, 32, -32];
+pub(super) const BIG_SPIKE_RETURN_Y_VELOCITIES: [i8; 4] = [0, 0, -16, 16];
+pub(super) const BIG_SPIKE_ATTACK_DELAYS: [u8; 4] = [0x40, 0x40, 0x38, 0x38];
