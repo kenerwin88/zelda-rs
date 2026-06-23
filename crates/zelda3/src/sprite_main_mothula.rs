@@ -3120,43 +3120,21 @@ impl ZeldaState {
                         );
                         if j >= 0 {
                             let j = j as usize;
-                            let value = 21;
-                            self.game_state
-                                .sprites
-                                .garnish_slots
-                                .slot_mut(&mut self.ram, j)
-                                .set_garnish_type(value);
+                            let sprite = self.sprite_slot_view(k);
+                            let x_low = sprite.x_low();
+                            let x_high = sprite.x_high();
+                            let y_low = sprite.y_low().wrapping_add(24);
+                            let y_high = sprite.y_high();
+                            {
+                                let mut garnish = self.garnish_slot_view_mut(j);
+                                garnish.set_garnish_type(21);
+                                garnish.set_x_low(x_low);
+                                garnish.set_x_high(x_high);
+                                garnish.set_y_low(y_low);
+                                garnish.set_y_high(y_high);
+                                garnish.set_countdown(15);
+                            }
                             self.garnish_state_mut().set_active_type(21);
-                            let value = self.sprite_slot_view(k).x_low();
-                            self.game_state
-                                .sprites
-                                .garnish_slots
-                                .slot_mut(&mut self.ram, j)
-                                .set_x_low(value);
-                            let value = self.sprite_slot_view(k).x_high();
-                            self.game_state
-                                .sprites
-                                .garnish_slots
-                                .slot_mut(&mut self.ram, j)
-                                .set_x_high(value);
-                            let value = self.sprite_slot_view(k).y_low().wrapping_add(24);
-                            self.game_state
-                                .sprites
-                                .garnish_slots
-                                .slot_mut(&mut self.ram, j)
-                                .set_y_low(value);
-                            let value = self.sprite_slot_view(k).y_high();
-                            self.game_state
-                                .sprites
-                                .garnish_slots
-                                .slot_mut(&mut self.ram, j)
-                                .set_y_high(value);
-                            let value = 15;
-                            self.game_state
-                                .sprites
-                                .garnish_slots
-                                .slot_mut(&mut self.ram, j)
-                                .set_countdown(value);
                         }
                     }
                 }
@@ -3702,56 +3680,25 @@ impl ZeldaState {
             return;
         }
         for i in (0..=14usize).rev() {
-            if self.game_state.sprites.garnish_slots.slot(i).is_empty() {
-                let value = 2;
-                self.game_state
-                    .sprites
-                    .garnish_slots
-                    .slot_mut(&mut self.ram, i)
-                    .set_garnish_type(value);
+            if self.garnish_slot_view(i).is_empty() {
+                let sprite = self.sprite_slot_view(k);
+                let x_low = sprite.x_low();
+                let x_high = sprite.x_high();
+                let y_low = sprite.y_low();
+                let y_high = sprite.y_high();
+                let sprite_floor = sprite.floor();
+                {
+                    let mut garnish = self.garnish_slot_view_mut(i);
+                    garnish.set_garnish_type(2);
+                    garnish.set_x_low(x_low);
+                    garnish.set_x_high(x_high);
+                    garnish.set_y_low(y_low);
+                    garnish.set_y_high(y_high);
+                    garnish.set_countdown(16);
+                    garnish.set_sprite(k as u8);
+                    garnish.set_floor(sprite_floor);
+                }
                 self.garnish_state_mut().set_active_type(2);
-                let value = self.sprite_slot_view(k).x_low();
-                self.game_state
-                    .sprites
-                    .garnish_slots
-                    .slot_mut(&mut self.ram, i)
-                    .set_x_low(value);
-                let value = self.sprite_slot_view(k).x_high();
-                self.game_state
-                    .sprites
-                    .garnish_slots
-                    .slot_mut(&mut self.ram, i)
-                    .set_x_high(value);
-                let value = self.sprite_slot_view(k).y_low();
-                self.game_state
-                    .sprites
-                    .garnish_slots
-                    .slot_mut(&mut self.ram, i)
-                    .set_y_low(value);
-                let value = self.sprite_slot_view(k).y_high();
-                self.game_state
-                    .sprites
-                    .garnish_slots
-                    .slot_mut(&mut self.ram, i)
-                    .set_y_high(value);
-                let value = 16;
-                self.game_state
-                    .sprites
-                    .garnish_slots
-                    .slot_mut(&mut self.ram, i)
-                    .set_countdown(value);
-                let value = k as u8;
-                self.game_state
-                    .sprites
-                    .garnish_slots
-                    .slot_mut(&mut self.ram, i)
-                    .set_sprite(value);
-                let value = self.sprite_slot_view(k).floor();
-                self.game_state
-                    .sprites
-                    .garnish_slots
-                    .slot_mut(&mut self.ram, i)
-                    .set_floor(value);
                 break;
             }
         }
