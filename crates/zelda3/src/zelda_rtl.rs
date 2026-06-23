@@ -2641,30 +2641,25 @@ impl ZeldaState {
         self.game_state.world.overworld.map_ui.map_state_word()
     }
 
-    pub(crate) fn set_overworld_map_state(&mut self, value: u8) {
+    pub(crate) fn overworld_map_ui_mut(&mut self) -> NativeOverworldMapUiBridgeMut<'_> {
         NativeOverworldMapUiBridgeMut::new(
             &mut self.game_state.world.overworld.map_ui,
             &mut self.ram,
         )
-        .set_map_state(value);
+    }
+
+    pub(crate) fn set_overworld_map_state(&mut self, value: u8) {
+        self.overworld_map_ui_mut().set_map_state(value);
         self.sync_dungeon_chest_cursor_with_map_state();
     }
 
     pub(crate) fn set_overworld_map_state_word(&mut self, value: u16) {
-        NativeOverworldMapUiBridgeMut::new(
-            &mut self.game_state.world.overworld.map_ui,
-            &mut self.ram,
-        )
-        .set_map_state_word(value);
+        self.overworld_map_ui_mut().set_map_state_word(value);
         self.sync_dungeon_chest_cursor_with_map_state();
     }
 
     pub(crate) fn increment_overworld_map_state(&mut self) {
-        NativeOverworldMapUiBridgeMut::new(
-            &mut self.game_state.world.overworld.map_ui,
-            &mut self.ram,
-        )
-        .increment_map_state();
+        self.overworld_map_ui_mut().increment_map_state();
         self.sync_dungeon_chest_cursor_with_map_state();
     }
 
@@ -2686,27 +2681,15 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_overworld_map_flags(&mut self, value: u8) {
-        NativeOverworldMapUiBridgeMut::new(
-            &mut self.game_state.world.overworld.map_ui,
-            &mut self.ram,
-        )
-        .set_map_flags(value);
+        self.overworld_map_ui_mut().set_map_flags(value);
     }
 
     pub(crate) fn and_overworld_map_flags(&mut self, value: u8) {
-        NativeOverworldMapUiBridgeMut::new(
-            &mut self.game_state.world.overworld.map_ui,
-            &mut self.ram,
-        )
-        .and_map_flags(value);
+        self.overworld_map_ui_mut().and_map_flags(value);
     }
 
     pub(crate) fn or_overworld_map_flags(&mut self, value: u8) {
-        NativeOverworldMapUiBridgeMut::new(
-            &mut self.game_state.world.overworld.map_ui,
-            &mut self.ram,
-        )
-        .or_map_flags(value);
+        self.overworld_map_ui_mut().or_map_flags(value);
     }
 
     pub(crate) fn birdtravel_status(&self) -> u8 {
@@ -2722,67 +2705,45 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_birdtravel_status(&mut self, value: u8) {
-        NativeOverworldMapUiBridgeMut::new(
-            &mut self.game_state.world.overworld.map_ui,
-            &mut self.ram,
-        )
-        .set_birdtravel_status(value);
+        self.overworld_map_ui_mut().set_birdtravel_status(value);
     }
 
     pub(crate) fn set_birdtravel_status_word(&mut self, value: u16) {
-        NativeOverworldMapUiBridgeMut::new(
-            &mut self.game_state.world.overworld.map_ui,
-            &mut self.ram,
-        )
-        .set_birdtravel_status_word(value);
+        self.overworld_map_ui_mut()
+            .set_birdtravel_status_word(value);
     }
 
     pub(crate) fn and_birdtravel_status(&mut self, value: u8) {
-        NativeOverworldMapUiBridgeMut::new(
-            &mut self.game_state.world.overworld.map_ui,
-            &mut self.ram,
-        )
-        .and_birdtravel_status(value);
+        self.overworld_map_ui_mut().and_birdtravel_status(value);
     }
 
     pub(crate) fn decrement_birdtravel_status(&mut self) {
-        NativeOverworldMapUiBridgeMut::new(
-            &mut self.game_state.world.overworld.map_ui,
-            &mut self.ram,
-        )
-        .decrement_birdtravel_status();
+        self.overworld_map_ui_mut().decrement_birdtravel_status();
     }
 
     pub(crate) fn increment_birdtravel_status(&mut self) {
-        NativeOverworldMapUiBridgeMut::new(
-            &mut self.game_state.world.overworld.map_ui,
-            &mut self.ram,
-        )
-        .increment_birdtravel_status();
+        self.overworld_map_ui_mut().increment_birdtravel_status();
     }
 
     pub(crate) fn clear_bird_travel_stop_status(&mut self, slot: usize) {
-        NativeOverworldMapUiBridgeMut::new(
-            &mut self.game_state.world.overworld.map_ui,
-            &mut self.ram,
-        )
-        .clear_bird_travel_stop_status(slot);
+        self.overworld_map_ui_mut()
+            .clear_bird_travel_stop_status(slot);
     }
 
     pub(crate) fn increment_bird_travel_stop_status(&mut self, slot: usize) {
-        NativeOverworldMapUiBridgeMut::new(
-            &mut self.game_state.world.overworld.map_ui,
-            &mut self.ram,
-        )
-        .increment_bird_travel_stop_status(slot);
+        self.overworld_map_ui_mut()
+            .increment_bird_travel_stop_status(slot);
     }
 
-    pub(crate) fn set_mode7_zoom_step_counter(&mut self, value: u8) {
+    pub(crate) fn overworld_map_zoom_mut(&mut self) -> NativeOverworldMapZoomBridgeMut<'_> {
         NativeOverworldMapZoomBridgeMut::new(
             &mut self.game_state.world.overworld.map_zoom,
             &mut self.ram,
         )
-        .set_step_counter(value);
+    }
+
+    pub(crate) fn set_mode7_zoom_step_counter(&mut self, value: u8) {
+        self.overworld_map_zoom_mut().set_step_counter(value);
     }
 
     pub(crate) fn mode7_zoom_timer(&self) -> u8 {
@@ -2790,11 +2751,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_mode7_zoom_timer(&mut self, value: u8) {
-        NativeOverworldMapZoomBridgeMut::new(
-            &mut self.game_state.world.overworld.map_zoom,
-            &mut self.ram,
-        )
-        .set_timer(value);
+        self.overworld_map_zoom_mut().set_timer(value);
     }
 
     pub(crate) fn overworld_is_big_area_word(&self) -> u16 {
@@ -2817,44 +2774,33 @@ impl ZeldaState {
             .right_bottom_bound_word()
     }
 
-    pub(crate) fn clear_overworld_big_area_high(&mut self) {
+    pub(crate) fn overworld_screen_size_mut(&mut self) -> NativeOverworldScreenSizeBridgeMut<'_> {
         NativeOverworldScreenSizeBridgeMut::new(
             &mut self.game_state.world.overworld.screen_size,
             &mut self.ram,
         )
-        .clear_big_area_high();
+    }
+
+    pub(crate) fn clear_overworld_big_area_high(&mut self) {
+        self.overworld_screen_size_mut().clear_big_area_high();
     }
 
     pub(crate) fn set_overworld_big_area_low(&mut self, value: u8) {
-        NativeOverworldScreenSizeBridgeMut::new(
-            &mut self.game_state.world.overworld.screen_size,
-            &mut self.ram,
-        )
-        .set_big_area_low(value);
+        self.overworld_screen_size_mut().set_big_area_low(value);
     }
 
     pub(crate) fn backup_overworld_big_area_low(&mut self) {
-        NativeOverworldScreenSizeBridgeMut::new(
-            &mut self.game_state.world.overworld.screen_size,
-            &mut self.ram,
-        )
-        .backup_big_area_low();
+        self.overworld_screen_size_mut().backup_big_area_low();
     }
 
     pub(crate) fn set_overworld_right_bottom_bound_low(&mut self, value: u8) {
-        NativeOverworldScreenSizeBridgeMut::new(
-            &mut self.game_state.world.overworld.screen_size,
-            &mut self.ram,
-        )
-        .set_right_bottom_bound_low(value);
+        self.overworld_screen_size_mut()
+            .set_right_bottom_bound_low(value);
     }
 
     pub(crate) fn set_overworld_right_bottom_bound_high(&mut self, value: u8) {
-        NativeOverworldScreenSizeBridgeMut::new(
-            &mut self.game_state.world.overworld.screen_size,
-            &mut self.ram,
-        )
-        .set_right_bottom_bound_high(value);
+        self.overworld_screen_size_mut()
+            .set_right_bottom_bound_high(value);
     }
 
     pub(crate) fn overworld_vertical_scroll_delta_low(&self) -> u8 {
@@ -2921,20 +2867,21 @@ impl ZeldaState {
             .special_entrance_trigger
     }
 
-    pub(crate) fn set_special_entrance_trigger(&mut self, value: u8) {
+    pub(crate) fn overworld_entrance_mut(&mut self) -> NativeOverworldEntranceBridgeMut<'_> {
         NativeOverworldEntranceBridgeMut::new(
             &mut self.game_state.world.overworld.entrance,
             &mut self.ram,
         )
-        .set_special_entrance_trigger(value);
+    }
+
+    pub(crate) fn set_special_entrance_trigger(&mut self, value: u8) {
+        self.overworld_entrance_mut()
+            .set_special_entrance_trigger(value);
     }
 
     pub(crate) fn clear_special_entrance_trigger(&mut self) {
-        NativeOverworldEntranceBridgeMut::new(
-            &mut self.game_state.world.overworld.entrance,
-            &mut self.ram,
-        )
-        .clear_special_entrance_trigger();
+        self.overworld_entrance_mut()
+            .clear_special_entrance_trigger();
     }
 
     pub(crate) fn entrance_sequence_counter(&self) -> u8 {
@@ -2942,44 +2889,31 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_entrance_sequence_counter(&mut self, value: u8) {
-        NativeOverworldEntranceBridgeMut::new(
-            &mut self.game_state.world.overworld.entrance,
-            &mut self.ram,
-        )
-        .set_sequence_counter(value);
+        self.overworld_entrance_mut().set_sequence_counter(value);
     }
 
     pub(crate) fn clear_entrance_sequence_counter(&mut self) {
-        NativeOverworldEntranceBridgeMut::new(
-            &mut self.game_state.world.overworld.entrance,
-            &mut self.ram,
-        )
-        .clear_sequence_counter();
+        self.overworld_entrance_mut().clear_sequence_counter();
     }
 
     pub(crate) fn increment_entrance_sequence_counter(&mut self) -> u8 {
-        NativeOverworldEntranceBridgeMut::new(
-            &mut self.game_state.world.overworld.entrance,
-            &mut self.ram,
-        )
-        .increment_sequence_counter()
+        self.overworld_entrance_mut().increment_sequence_counter()
     }
 
     pub(crate) fn decrement_entrance_sequence_counter(&mut self) -> u8 {
-        NativeOverworldEntranceBridgeMut::new(
-            &mut self.game_state.world.overworld.entrance,
-            &mut self.ram,
-        )
-        .decrement_sequence_counter()
+        self.overworld_entrance_mut().decrement_sequence_counter()
     }
 
     pub(crate) fn exit_screen_index(&self) -> u16 {
         self.game_state.world.overworld.exit.exit_screen
     }
 
-    pub(crate) fn set_exit_screen_index(&mut self, value: u16) {
+    pub(crate) fn overworld_exit_mut(&mut self) -> NativeOverworldExitBridgeMut<'_> {
         NativeOverworldExitBridgeMut::new(&mut self.game_state.world.overworld.exit, &mut self.ram)
-            .set_exit_screen(value);
+    }
+
+    pub(crate) fn set_exit_screen_index(&mut self, value: u16) {
+        self.overworld_exit_mut().set_exit_screen(value);
     }
 
     pub(crate) fn special_exit_screen_index(&self) -> u16 {
@@ -2987,8 +2921,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_special_exit_screen_index(&mut self, value: u16) {
-        NativeOverworldExitBridgeMut::new(&mut self.game_state.world.overworld.exit, &mut self.ram)
-            .set_special_exit_screen(value);
+        self.overworld_exit_mut().set_special_exit_screen(value);
     }
 
     pub(crate) fn screen_transition_direction_bits(&self) -> u8 {
@@ -3019,76 +2952,50 @@ impl ZeldaState {
             .edge_direction_bits()
     }
 
-    pub(crate) fn set_edge_transition_direction_bits(&mut self, value: u8) {
+    pub(crate) fn overworld_transition_mut(&mut self) -> NativeOverworldTransitionBridgeMut<'_> {
         NativeOverworldTransitionBridgeMut::new(
             &mut self.game_state.world.overworld.transition,
             &mut self.ram,
         )
-        .set_edge_direction_bits(value);
+    }
+
+    pub(crate) fn set_edge_transition_direction_bits(&mut self, value: u8) {
+        self.overworld_transition_mut()
+            .set_edge_direction_bits(value);
     }
 
     pub(crate) fn clear_edge_transition_direction_bits(&mut self) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .clear_edge_direction_bits();
+        self.overworld_transition_mut().clear_edge_direction_bits();
     }
 
     pub(crate) fn set_screen_transition_direction_bits(&mut self, value: u8) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .set_direction_bits(value);
+        self.overworld_transition_mut().set_direction_bits(value);
     }
 
     pub(crate) fn set_screen_transition_direction_bits_word(&mut self, value: u16) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .set_direction_bits_word(value);
+        self.overworld_transition_mut()
+            .set_direction_bits_word(value);
     }
 
     pub(crate) fn clear_screen_transition_direction_bits(&mut self) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .clear_direction_bits();
+        self.overworld_transition_mut().clear_direction_bits();
     }
 
     pub(crate) fn clear_screen_transition_direction_bits_word(&mut self) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .clear_direction_bits_word();
+        self.overworld_transition_mut().clear_direction_bits_word();
     }
 
     pub(crate) fn and_screen_transition_direction_bits(&mut self, value: u8) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .and_direction_bits(value);
+        self.overworld_transition_mut().and_direction_bits(value);
     }
 
     pub(crate) fn or_screen_transition_direction_bits(&mut self, value: u8) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .or_direction_bits(value);
+        self.overworld_transition_mut().or_direction_bits(value);
     }
 
     pub(crate) fn or_screen_transition_direction_bits_word(&mut self, value: u16) -> u16 {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .or_direction_bits_word(value)
+        self.overworld_transition_mut()
+            .or_direction_bits_word(value)
     }
 
     pub(crate) fn transition_direction_enum(&self) -> u8 {
@@ -3096,11 +3003,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_transition_direction_enum(&mut self, value: u8) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .set_direction_enum(value);
+        self.overworld_transition_mut().set_direction_enum(value);
     }
 
     pub(crate) fn screen_transition(&self) -> u8 {
@@ -3120,27 +3023,16 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_screen_transition(&mut self, value: u8) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .set_screen_transition(value);
+        self.overworld_transition_mut().set_screen_transition(value);
     }
 
     pub(crate) fn set_screen_transition_word(&mut self, value: u16) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .set_screen_transition_word(value);
+        self.overworld_transition_mut()
+            .set_screen_transition_word(value);
     }
 
     pub(crate) fn clear_screen_transition(&mut self) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .clear_screen_transition();
+        self.overworld_transition_mut().clear_screen_transition();
     }
 
     pub(crate) fn transition_counter(&self) -> u8 {
@@ -3152,19 +3044,13 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_transition_counter(&mut self, value: u8) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .set_transition_counter(value);
+        self.overworld_transition_mut()
+            .set_transition_counter(value);
     }
 
     pub(crate) fn increment_transition_counter(&mut self) -> u8 {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .increment_transition_counter()
+        self.overworld_transition_mut()
+            .increment_transition_counter()
     }
 
     pub(crate) fn overworld_transition_countdown(&self) -> u8 {
@@ -3172,35 +3058,21 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_overworld_transition_countdown(&mut self, value: u8) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .set_countdown(value);
+        self.overworld_transition_mut().set_countdown(value);
     }
 
     pub(crate) fn decrement_overworld_transition_countdown(&mut self) -> u8 {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .decrement_countdown()
+        self.overworld_transition_mut().decrement_countdown()
     }
 
     pub(crate) fn save_previous_screen_transition_direction_bits(&mut self) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .save_previous_direction_bits();
+        self.overworld_transition_mut()
+            .save_previous_direction_bits();
     }
 
     pub(crate) fn restore_previous_screen_transition_direction_bits(&mut self) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .restore_previous_direction_bits();
+        self.overworld_transition_mut()
+            .restore_previous_direction_bits();
     }
 
     pub(crate) fn previous_screen_transition(&self) -> u8 {
@@ -3212,11 +3084,8 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_previous_screen_transition(&mut self, value: u8) {
-        NativeOverworldTransitionBridgeMut::new(
-            &mut self.game_state.world.overworld.transition,
-            &mut self.ram,
-        )
-        .set_previous_screen_transition(value);
+        self.overworld_transition_mut()
+            .set_previous_screen_transition(value);
     }
 
     pub(crate) fn attract_vram_destination_high_is_clear(&self) -> bool {
@@ -6041,12 +5910,15 @@ impl ZeldaState {
             .set_main_indoors_copy_backup(value);
     }
 
-    pub fn set_overworld_map16_load_state(&mut self, state: OverworldMap16LoadState) {
+    pub(crate) fn overworld_map16_mut(&mut self) -> NativeOverworldMap16BridgeMut<'_> {
         NativeOverworldMap16BridgeMut::new(
             &mut self.game_state.world.overworld.map16,
             &mut self.ram,
         )
-        .set_active_load(state);
+    }
+
+    pub fn set_overworld_map16_load_state(&mut self, state: OverworldMap16LoadState) {
+        self.overworld_map16_mut().set_active_load(state);
     }
 
     pub fn overworld_prev_map16_load_state(&self) -> OverworldMap16LoadState {
@@ -6054,11 +5926,7 @@ impl ZeldaState {
     }
 
     pub fn set_overworld_prev_map16_load_state(&mut self, state: OverworldMap16LoadState) {
-        NativeOverworldMap16BridgeMut::new(
-            &mut self.game_state.world.overworld.map16,
-            &mut self.ram,
-        )
-        .set_previous_load(state);
+        self.overworld_map16_mut().set_previous_load(state);
     }
 
     pub fn overworld_spexit_map16_src_off(&self) -> u16 {
@@ -6066,11 +5934,7 @@ impl ZeldaState {
     }
 
     pub fn set_overworld_spexit_map16_src_off(&mut self, src_off: u16) {
-        NativeOverworldMap16BridgeMut::new(
-            &mut self.game_state.world.overworld.map16,
-            &mut self.ram,
-        )
-        .set_special_exit_src_off(src_off);
+        self.overworld_map16_mut().set_special_exit_src_off(src_off);
     }
 
     pub fn overworld_exit_map16_src_off(&self) -> u16 {
@@ -6078,11 +5942,7 @@ impl ZeldaState {
     }
 
     pub fn set_overworld_exit_map16_src_off(&mut self, src_off: u16) {
-        NativeOverworldMap16BridgeMut::new(
-            &mut self.game_state.world.overworld.map16,
-            &mut self.ram,
-        )
-        .set_exit_src_off(src_off);
+        self.overworld_map16_mut().set_exit_src_off(src_off);
     }
 
     pub fn small_overworld_map16_scroll_backup_state(
@@ -6095,11 +5955,7 @@ impl ZeldaState {
         &mut self,
         state: SmallOverworldMap16ScrollBackupState,
     ) {
-        NativeOverworldMap16BridgeMut::new(
-            &mut self.game_state.world.overworld.map16,
-            &mut self.ram,
-        )
-        .set_small_scroll_backup(state);
+        self.overworld_map16_mut().set_small_scroll_backup(state);
     }
 
     pub(crate) fn sync_native_game_state_from_ram(&mut self) {
@@ -6181,11 +6037,7 @@ impl ZeldaState {
     }
 
     pub fn sync_overworld_map16_state_from_ram(&mut self) {
-        NativeOverworldMap16BridgeMut::new(
-            &mut self.game_state.world.overworld.map16,
-            &mut self.ram,
-        )
-        .sync_from_ram();
+        self.overworld_map16_mut().sync_from_ram();
     }
 
     pub fn new() -> Self {
