@@ -582,12 +582,8 @@ impl ZeldaState {
             return;
         }
         for i in (0..=4).rev() {
-            if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x1e {
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, i)
-                    .set_ancilla_type(0);
+            if self.ancilla_slot_view(i).ancilla_type() == 0x1e {
+                self.ancilla_slot_view_mut(i).set_ancilla_type(0);
             }
         }
         self.follower_link_state_mut().cancel_dash_state();
@@ -5300,11 +5296,7 @@ impl ZeldaState {
                     self.hud_refresh_icon();
                 }
             } else {
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, k)
-                    .set_ancilla_type(0);
+                self.ancilla_slot_view_mut(k).set_ancilla_type(0);
                 self.ancilla_sfx2_near(60);
             }
         }
@@ -5456,12 +5448,8 @@ impl ZeldaState {
                         self.follower_link_state_mut().clear_position_mode();
                         self.link_reset_boomerang_y_stuff();
                         self.minigame_state_mut().clear_flag_boomerang_in_place();
-                        if self.game_state.sprites.ancilla_slots.slot(0).ancilla_type() == 5 {
-                            self.game_state
-                                .sprites
-                                .ancilla_slots
-                                .slot_mut(&mut self.ram, 0)
-                                .set_ancilla_type(0);
+                        if self.ancilla_slot_view(0).ancilla_type() == 5 {
+                            self.ancilla_slot_view_mut(0).set_ancilla_type(0);
                         }
                     }
                     action = 1;
@@ -5656,7 +5644,7 @@ impl ZeldaState {
         }
         (0..=4)
             .rev()
-            .any(|i| self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x31)
+            .any(|i| self.ancilla_slot_view(i).ancilla_type() == 0x31)
     }
 
     pub(super) fn link_permission_for_slosh_sounds(&self) -> bool {
@@ -6178,7 +6166,7 @@ impl ZeldaState {
         {
             return;
         }
-        if (0..5).any(|i| self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x27) {
+        if (0..5).any(|i| self.ancilla_slot_view(i).ancilla_type() == 0x27) {
             return;
         }
         if self.game_state.inventory.items.flute() == 2 {
@@ -6803,7 +6791,7 @@ impl ZeldaState {
         self.follower_link_state_mut().set_incapacitated_timer(0);
         let hookshot = (0..=4)
             .rev()
-            .find(|&i| self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x1f);
+            .find(|&i| self.ancilla_slot_view(i).ancilla_type() == 0x1f);
         let Some(_k) = hookshot else {
             if (self
                 .follower_link_state_mut()
@@ -6851,26 +6839,13 @@ impl ZeldaState {
             .clear_somaria_platform_state();
 
         let hei = self.game_state.messaging.runtime.effect_index() as usize;
-        let item_to_link = self
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot(hei)
-            .item_to_link()
-            .wrapping_sub(1);
-        self.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, hei)
+        let item_to_link = self.ancilla_slot_view(hei).item_to_link().wrapping_sub(1);
+        self.ancilla_slot_view_mut(hei)
             .set_item_to_link(item_to_link);
         if (item_to_link as i8) < 0 {
-            self.game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, hei)
-                .set_item_to_link(0);
+            self.ancilla_slot_view_mut(hei).set_item_to_link(0);
         } else {
-            let hookshot = self.game_state.sprites.ancilla_slots.slot(hei);
+            let hookshot = self.ancilla_slot_view(hei);
             let dir = hookshot.direction() as usize;
             let x = hookshot.x();
             let y = hookshot.y();
@@ -6894,23 +6869,12 @@ impl ZeldaState {
             }
         }
 
-        self.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, hei)
-            .set_ancilla_type(0);
+        self.ancilla_slot_view_mut(hei).set_ancilla_type(0);
         self.follower_state_mut()
             .set_hookshot_release_tail_index_from_tail_write_index();
         self.finish_hookshot_state_without_button_clamp();
 
-        if self
-            .game_state
-            .sprites
-            .ancilla_slots
-            .slot(hei)
-            .work_byte_1()
-            != 0
-        {
+        if self.ancilla_slot_view(hei).work_byte_1() != 0 {
             self.follower_link_state_mut()
                 .toggle_lower_level_mirror_state();
             self.dungeon_stair_movement_mut().decrement_current_floor();
@@ -7045,8 +7009,7 @@ impl ZeldaState {
             }
 
             let mut did_charge_magic = false;
-            if !(0..5).any(|i| self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x2c)
-            {
+            if !(0..5).any(|i| self.ancilla_slot_view(i).ancilla_type() == 0x2c) {
                 if !self.link_check_magic_cost(4) {
                     if self
                         .game_state
@@ -7223,11 +7186,7 @@ impl ZeldaState {
             8
         };
         {
-            let mut ancilla = self
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k);
+            let mut ancilla = self.ancilla_slot_view_mut(k);
             ancilla.set_z(0);
             ancilla.set_z_velocity(24);
             ancilla.set_x_velocity(x_velocity);
@@ -7239,20 +7198,12 @@ impl ZeldaState {
 
     pub(super) fn ancilla_add_cane_of_byrna_init_spark(&mut self, ty: u8, limit: u8) {
         for k in (0..5).rev() {
-            if self.game_state.sprites.ancilla_slots.slot(k).ancilla_type() == 0x31 {
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, k)
-                    .set_ancilla_type(0);
+            if self.ancilla_slot_view(k).ancilla_type() == 0x31 {
+                self.ancilla_slot_view_mut(k).set_ancilla_type(0);
             }
         }
         if let Some(k) = self.ancilla_add_simple(ty, limit) {
-            let mut spark = self
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k);
+            let mut spark = self.ancilla_slot_view_mut(k);
             spark.set_item_to_link(0);
             spark.set_aux_timer(9);
             spark.set_work_byte_3(2);
@@ -7263,11 +7214,7 @@ impl ZeldaState {
 
     pub(super) fn ancilla_add_shovel_dirt(&mut self, ty: u8, limit: u8) {
         if let Some(k) = self.ancilla_add_simple(ty, limit) {
-            let mut dirt = self
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k);
+            let mut dirt = self.ancilla_slot_view_mut(k);
             dirt.set_item_to_link(0);
             dirt.set_timer(20);
             self.ancilla_set_xy(
@@ -7303,7 +7250,7 @@ impl ZeldaState {
             return;
         }
 
-        if (0..3).any(|i| self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() != 0) {
+        if (0..3).any(|i| self.ancilla_slot_view(i).ancilla_type() != 0) {
             return;
         }
         if !self.link_check_magic_cost(1) {
@@ -7354,11 +7301,7 @@ impl ZeldaState {
         self.messaging_state_mut().set_effect_index(k as u8);
         let dir = self.game_state.player.follower_link.facing() >> 1;
         {
-            let mut hookshot = self
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k);
+            let mut hookshot = self.ancilla_slot_view_mut(k);
             hookshot.set_aux_timer(3);
             hookshot.set_step(0);
             hookshot.set_l(0);
@@ -7498,7 +7441,7 @@ impl ZeldaState {
             {
                 let dmg = self.game_state.player.follower_link.given_damage();
                 self.follower_link_state_mut().clear_given_damage();
-                if self.game_state.sprites.ancilla_slots.slot(0).ancilla_type() == 5
+                if self.ancilla_slot_view(0).ancilla_type() == 5
                     && self.game_state.player.follower_link.action_handler_timer() == 0
                     && self
                         .game_state
@@ -7507,11 +7450,7 @@ impl ZeldaState {
                         .spin_attack_delay_timer()
                         != 0
                 {
-                    self.game_state
-                        .sprites
-                        .ancilla_slots
-                        .slot_mut(&mut self.ram, 0)
-                        .set_ancilla_type(0);
+                    self.ancilla_slot_view_mut(0).set_ancilla_type(0);
                     self.minigame_state_mut().clear_flag_boomerang_in_place();
                 }
                 if self.game_state.player.follower_link.blink_countdown() == 0 {
@@ -7666,15 +7605,8 @@ impl ZeldaState {
                 .set_state_bits(preserved_lift_bit);
 
             for i in 0..5 {
-                if matches!(
-                    self.game_state.sprites.ancilla_slots.slot(i).ancilla_type(),
-                    0x30 | 0x31
-                ) {
-                    self.game_state
-                        .sprites
-                        .ancilla_slots
-                        .slot_mut(&mut self.ram, i)
-                        .set_ancilla_type(0);
+                if matches!(self.ancilla_slot_view(i).ancilla_type(), 0x30 | 0x31) {
+                    self.ancilla_slot_view_mut(i).set_ancilla_type(0);
                 }
             }
             self.link_cancel_dash();
@@ -7858,13 +7790,13 @@ impl ZeldaState {
             && self.game_state.player.follower_link.hookshot_grave_latch()
         {
             for i in (0..5).rev() {
-                if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x24 {
+                if self.ancilla_slot_view(i).ancilla_type() == 0x24 {
                     self.gravestone_move(i);
                 }
             }
         }
         for i in (0..5).rev() {
-            if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x2c {
+            if self.ancilla_slot_view(i).ancilla_type() == 0x2c {
                 self.somaria_block_handle_player_interaction(i);
                 return;
             }
@@ -8124,15 +8056,8 @@ impl ZeldaState {
         self.cache_camera_properties_if_outdoors();
         if self.game_state.player.follower_link.has_auxiliary_state() {
             for i in (0..5).rev() {
-                if matches!(
-                    self.game_state.sprites.ancilla_slots.slot(i).ancilla_type(),
-                    0x2a | 0x2b
-                ) {
-                    self.game_state
-                        .sprites
-                        .ancilla_slots
-                        .slot_mut(&mut self.ram, i)
-                        .set_ancilla_type(0);
+                if matches!(self.ancilla_slot_view(i).ancilla_type(), 0x2a | 0x2b) {
+                    self.ancilla_slot_view_mut(i).set_ancilla_type(0);
                 }
             }
             self.follower_link_state_mut().clear_z_high();
@@ -9073,7 +8998,7 @@ impl ZeldaState {
             && sword >= 2
             && !(0..5)
                 .rev()
-                .any(|i| self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 0x31)
+                .any(|i| self.ancilla_slot_view(i).ancilla_type() == 0x31)
         {
             self.add_sword_beam(0);
         }
@@ -9180,12 +9105,10 @@ impl ZeldaState {
                     if self.game_state.inventory.items.sword_type().wrapping_add(1) & !1 == 0 {
                         return;
                     }
-                    if (0..5).rev().any(|i| {
-                        matches!(
-                            self.game_state.sprites.ancilla_slots.slot(i).ancilla_type(),
-                            0x30 | 0x31
-                        )
-                    }) {
+                    if (0..5)
+                        .rev()
+                        .any(|i| matches!(self.ancilla_slot_view(i).ancilla_type(), 0x30 | 0x31))
+                    {
                         return;
                     }
                     if self
@@ -9528,25 +9451,17 @@ impl ZeldaState {
         if self.game_state.frame.submodule != 0 {
             return;
         }
-        self.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, k)
-            .set_y_velocity((-8i8) as u8);
+        self.ancilla_slot_view_mut(k).set_y_velocity((-8i8) as u8);
         self.ancilla_move_y(k);
 
         self.gravestone_act_as_barrier(k);
-        let y_target = self.game_state.sprites.ancilla_slots.slot(k).ab_word();
+        let y_target = self.ancilla_slot_view(k).ab_word();
         let y_cur = self.ancilla_get_y(k);
         if y_cur >= y_target {
             return;
         }
 
-        self.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, k)
-            .set_ancilla_type(0);
+        self.ancilla_slot_view_mut(k).set_ancilla_type(0);
         self.follower_link_state_mut().clear_hookshot_grave_latch();
         self.follower_link_state_mut().and_defense_flags(!4);
         let debris_y = self.game_state.effects.door_debris.y(k);
@@ -9571,56 +9486,45 @@ impl ZeldaState {
 
     pub(super) fn somaria_block_handle_player_interaction(&mut self, k: usize) {
         self.sprite_system_mut().set_cur_object_index(k as u8);
-        if self.game_state.sprites.ancilla_slots.slot(k).g() != 0 {
+        if self.ancilla_slot_view(k).g() != 0 {
             return;
         }
 
-        if self.game_state.sprites.ancilla_slots.slot(k).h() == 0 {
+        if self.ancilla_slot_view(k).h() == 0 {
             if self.game_state.player.follower_link.has_auxiliary_state()
                 || self.game_state.player.follower_link.state_bits_has(1)
                 || {
-                    let z = self.game_state.sprites.ancilla_slots.slot(k).z();
+                    let z = self.ancilla_slot_view(k).z();
                     z != 0 && z != 0xff
                 }
-                || self.game_state.sprites.ancilla_slots.slot(k).k() != 0
-                || self.game_state.sprites.ancilla_slots.slot(k).l() != 0
+                || self.ancilla_slot_view(k).k() != 0
+                || self.ancilla_slot_view(k).l() != 0
             {
                 return;
             }
             if self.game_state.player.follower_link.joypad1h_last() & 0x0f == 0 {
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, k)
-                    .set_work_byte_3(0);
+                self.ancilla_slot_view_mut(k).set_work_byte_3(0);
                 self.follower_link_state_mut().clear_defense_flags();
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, k)
-                    .set_a(255);
+                self.ancilla_slot_view_mut(k).set_a(255);
                 if !self.game_state.player.follower_link.is_running() {
                     self.follower_link_state_mut().set_speed_setting(0);
                     return;
                 }
             } else if self.game_state.player.follower_link.joypad1h_last() & 0x0f
-                == self.game_state.sprites.ancilla_slots.slot(k).work_byte_3()
+                == self.ancilla_slot_view(k).work_byte_3()
             {
                 if self.game_state.player.follower_link.speed_setting() == 18 {
                     self.follower_link_state_mut().or_defense_flags(0x81);
                 }
             } else {
                 let last_direction = self.game_state.player.follower_link.joypad1h_last() & 0x0f;
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, k)
+                self.ancilla_slot_view_mut(k)
                     .set_work_byte_3(last_direction);
                 self.follower_link_state_mut().set_speed_setting(0);
             }
 
             if !self.ancilla_check_link_collision(k, 4)
-                || self.game_state.sprites.ancilla_slots.slot(k).floor()
+                || self.ancilla_slot_view(k).floor()
                     != self.game_state.player.follower_link.lower_level_state()
             {
                 return;
@@ -9630,26 +9534,14 @@ impl ZeldaState {
                 || self.game_state.player.follower_link.dash_counter() == 64
             {
                 let t = self.game_state.player.follower_link.joypad1h_last() & 0x0f;
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, k)
-                    .set_work_byte_3(t);
+                self.ancilla_slot_view_mut(k).set_work_byte_3(t);
                 if t & 3 != 0 {
-                    let mut ancilla = self
-                        .game_state
-                        .sprites
-                        .ancilla_slots
-                        .slot_mut(&mut self.ram, k);
+                    let mut ancilla = self.ancilla_slot_view_mut(k);
                     ancilla.set_y_velocity(0);
                     ancilla.set_x_velocity(if t & 1 != 0 { 16 } else { (-16i8) as u8 });
                     ancilla.set_direction(if t & 1 != 0 { 3 } else { 2 });
                 } else {
-                    let mut ancilla = self
-                        .game_state
-                        .sprites
-                        .ancilla_slots
-                        .slot_mut(&mut self.ram, k);
+                    let mut ancilla = self.ancilla_slot_view_mut(k);
                     ancilla.set_x_velocity(0);
                     ancilla.set_y_velocity(if t & 8 != 0 { (-16i8) as u8 } else { 16 });
                     ancilla.set_direction(if t & 8 != 0 { 0 } else { 1 });
@@ -9660,12 +9552,7 @@ impl ZeldaState {
                     if !self.ancilla_check_tile_collision_class2(k) {
                         self.ancilla_move_y(k);
                         self.ancilla_move_x(k);
-                        let movement_ticks = self
-                            .game_state
-                            .sprites
-                            .ancilla_slots
-                            .slot_mut(&mut self.ram, k)
-                            .advance_a();
+                        let movement_ticks = self.ancilla_slot_view_mut(k).advance_a();
                         if !self
                             .game_state
                             .player
@@ -9692,64 +9579,36 @@ impl ZeldaState {
             self.ancilla_sfx3_pan(k, 0x32);
             let j = self.game_state.player.follower_link.facing_index();
             {
-                let mut ancilla = self
-                    .game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, k);
+                let mut ancilla = self.ancilla_slot_view_mut(k);
                 ancilla.set_direction(j as u8);
                 ancilla.set_y_velocity(SOMARIA_BLOCK_YVEL[j]);
                 ancilla.set_x_velocity(SOMARIA_BLOCK_XVEL[j]);
                 ancilla.set_z_velocity(48);
                 ancilla.set_z(0);
             }
-            self.game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k)
-                .set_h(1);
+            self.ancilla_slot_view_mut(k).set_h(1);
         }
 
-        self.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, k)
-            .add_z_velocity((-2i8) as u8);
+        self.ancilla_slot_view_mut(k).add_z_velocity((-2i8) as u8);
         self.ancilla_move_y(k);
         self.ancilla_move_x(k);
         self.ancilla_move_z(k);
-        let z = self.game_state.sprites.ancilla_slots.slot(k).z();
+        let z = self.ancilla_slot_view(k).z();
         if z != 0 && z < 252 {
             return;
         }
 
         self.ancilla_sfx2_pan(k, 0x21);
-        self.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, k)
-            .set_z(0);
-        let j = self.game_state.sprites.ancilla_slots.slot(k).h();
-        self.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, k)
-            .set_h(j.wrapping_add(1));
+        self.ancilla_slot_view_mut(k).set_z(0);
+        let j = self.ancilla_slot_view(k).h();
+        self.ancilla_slot_view_mut(k).set_h(j.wrapping_add(1));
         if j == 3 {
-            let mut ancilla = self
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k);
+            let mut ancilla = self.ancilla_slot_view_mut(k);
             ancilla.set_work_byte_4(0);
             ancilla.set_h(0);
         } else {
             const SOMARIA_BLOCK_ZVEL: [u8; 4] = [48, 24, 16, 8];
-            let mut ancilla = self
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k);
+            let mut ancilla = self.ancilla_slot_view_mut(k);
             let y_velocity = ((ancilla.y_velocity() as i8) / 2) as u8;
             let x_velocity = ((ancilla.x_velocity() as i8) / 2) as u8;
             ancilla.set_z_velocity(SOMARIA_BLOCK_ZVEL[j.wrapping_sub(1) as usize]);
