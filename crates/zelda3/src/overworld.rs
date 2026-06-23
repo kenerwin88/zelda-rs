@@ -5,6 +5,32 @@ use crate::types::{sign16, Point16U};
 
 mod overworld_shared;
 use overworld_shared::*;
+
+const TURTLE_ROCK_ENTRANCE_DRAW_POSITIONS: [u16; 16] = [
+    0x099e, 0x09a0, 0x09a2, 0x09a4, 0x0a1e, 0x0a20, 0x0a22, 0x0a24, 0x0a9e, 0x0aa0, 0x0aa2, 0x0aa4,
+    0x0b1e, 0x0b20, 0x0b22, 0x0b24,
+];
+const MIRE_ENTRANCE_BODY_POSITIONS: [u16; 12] = [
+    0x0622, 0x0624, 0x0626, 0x0628, 0x06a2, 0x06a4, 0x06a6, 0x06a8, 0x0722, 0x0724, 0x0726, 0x0728,
+];
+const MIRE_ENTRANCE_MASK_BITS: [u8; 26] = [
+    0xff, 0xf7, 0xf7, 0xfb, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa,
+    0xaa, 0x88, 0x88, 0x88, 0x88, 0x80, 0x80, 0x80, 0x80, 0x80,
+];
+const OVERWORLD_RAIN_X_OFFSETS: [u8; 4] = [1, 0, 1, 0];
+const OVERWORLD_RAIN_Y_OFFSETS: [u8; 4] = [0, 17, 0, 17];
+const OVERWORLD_SCREEN_TRANSITION_DIRECTION_BITS: [u8; 4] = [8, 4, 2, 1];
+const SECRET_TILE_BELOW_BY_TYPE: [u16; 4] = [0x0dcc, 0x0212, 0xffff, 0x0db4];
+const LW_TURTLE_ROCK_PEG_POSITIONS: [u16; 3] = [0x0826, 0x05a0, 0x081a];
+const PACKED_ENEMY_DAMAGE_SOURCE_BYTES: usize = 0x800;
+const OVERWORLD_DOOR_ANIM_TILES: [u16; 56] = [
+    0x0da8, 0x0da9, 0x0daa, 0x0dab, 0x0dac, 0x0dad, 0x0dae, 0x0daf, 0x0db0, 0x0db1, 0x0db2, 0x0db3,
+    0x0db6, 0x0db7, 0x0db8, 0x0db9, 0x0dba, 0x0dbb, 0x0dbc, 0x0dbd, 0x0dcd, 0x0dce, 0x0dcf, 0x0dd0,
+    0x0dd3, 0x0dd4, 0x0dd5, 0x0dd6, 0x0dd7, 0x0dd8, 0x0dd9, 0x0dda, 0x0dd1, 0x0dd2, 0x0dd3, 0x0dd4,
+    0x0dd1, 0x0dd2, 0x0dd7, 0x0dd8, 0x0918, 0x0919, 0x091a, 0x091b, 0x0ddb, 0x0ddc, 0x0ddd, 0x0dde,
+    0x0dd1, 0x0dd2, 0x0ddb, 0x0ddc, 0x0e21, 0x0e22, 0x0e23, 0x0e24,
+];
+
 impl ZeldaState {
     pub fn parity_probe_overworld_screen(&mut self, screen: u16) -> u16 {
         self.set_indoor_flag(0);
@@ -983,11 +1009,7 @@ impl ZeldaState {
     }
 
     pub(super) fn OverworldEntrance_DrawManyTR(&mut self) {
-        const POS: [u16; 16] = [
-            0x099e, 0x09a0, 0x09a2, 0x09a4, 0x0a1e, 0x0a20, 0x0a22, 0x0a24, 0x0a9e, 0x0aa0, 0x0aa2,
-            0x0aa4, 0x0b1e, 0x0b20, 0x0b22, 0x0b24,
-        ];
-        for (i, pos) in POS.into_iter().enumerate() {
+        for (i, pos) in TURTLE_ROCK_ENTRANCE_DRAW_POSITIONS.into_iter().enumerate() {
             self.overworld_draw_map16_persist(pos, 0x0e78 + i as u16);
         }
         self.set_bg_vram_load_mode(1);
@@ -1115,11 +1137,7 @@ impl ZeldaState {
     }
 
     fn draw_mire_body(&mut self, start: u16) {
-        const POS: [u16; 12] = [
-            0x0622, 0x0624, 0x0626, 0x0628, 0x06a2, 0x06a4, 0x06a6, 0x06a8, 0x0722, 0x0724, 0x0726,
-            0x0728,
-        ];
-        for (i, pos) in POS.into_iter().enumerate() {
+        for (i, pos) in MIRE_ENTRANCE_BODY_POSITIONS.into_iter().enumerate() {
             self.overworld_draw_map16_persist(pos, start + i as u16);
         }
         self.set_bg_vram_load_mode(1);
@@ -1133,11 +1151,6 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_AnimateEntrance_Mire(&mut self) {
-        const BITS: [u8; 26] = [
-            0xff, 0xf7, 0xf7, 0xfb, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xaa, 0xaa, 0xaa, 0xaa,
-            0xaa, 0xaa, 0xaa, 0x88, 0x88, 0x88, 0x88, 0x80, 0x80, 0x80, 0x80, 0x80,
-        ];
-
         if self.game_state.frame.subsubmodule >= 2 {
             let x = if self.game_state.frame.frame_counter & 1 != 0 {
                 (-1i16) as u16
@@ -1161,7 +1174,7 @@ impl ZeldaState {
                     self.clear_entrance_sequence_counter();
                 }
                 self.set_sub_screen_layers(u8::from(
-                    BITS[(j >> 3) as usize] & (0x80 >> (j & 7)) != 0,
+                    MIRE_ENTRANCE_MASK_BITS[(j >> 3) as usize] & (0x80 >> (j & 7)) != 0,
                 ));
             }
             1 | 2 => {
@@ -1828,9 +1841,6 @@ impl ZeldaState {
     }
 
     pub(super) fn OverworldOverlay_HandleRain(&mut self) {
-        const X: [u8; 4] = [1, 0, 1, 0];
-        const Y: [u8; 4] = [0, 17, 0, 17];
-
         if (self.game_state.world.location.overworld_screen_index() != 0x70
             && self.game_state.inventory.save_progress.progress_indicator() >= 2)
             || (self.game_state.world.overworld.event_info.event_info(0x70) & 0x20) != 0
@@ -1856,13 +1866,13 @@ impl ZeldaState {
             .display
             .ppu_scroll_copy
             .bg1_h_copy2()
-            .wrapping_add((X[i as usize] as u16) << 8);
+            .wrapping_add((OVERWORLD_RAIN_X_OFFSETS[i as usize] as u16) << 8);
         let bg1y = self
             .game_state
             .display
             .ppu_scroll_copy
             .bg1_v_copy2()
-            .wrapping_add((Y[i as usize] as u16) << 8);
+            .wrapping_add((OVERWORLD_RAIN_Y_OFFSETS[i as usize] as u16) << 8);
         self.set_bg1_x(bg1x);
         self.set_bg1_y(bg1y);
     }
@@ -2343,8 +2353,6 @@ impl ZeldaState {
     }
 
     pub(super) fn Module0F_SpotlightClose(&mut self) {
-        const SCREEN_TRANSITION_DIRECTION_BITS: [u8; 4] = [8, 4, 2, 1];
-
         self.sprite_main();
         if self.game_state.frame.submodule == 0 {
             self.Dungeon_PrepExitWithSpotlight();
@@ -2371,7 +2379,7 @@ impl ZeldaState {
             };
         }
 
-        let dir = SCREEN_TRANSITION_DIRECTION_BITS[i];
+        let dir = OVERWORLD_SCREEN_TRANSITION_DIRECTION_BITS[i];
         self.follower_link_state_mut()
             .set_direction_and_last_direction(dir);
         self.link_handle_moving_animation_full_long_entry();
@@ -4421,9 +4429,8 @@ impl ZeldaState {
             self.set_sound_effect_2(0x1b);
         }
 
-        const TILE_BELOW: [u16; 4] = [0x0dcc, 0x0212, 0xffff, 0x0db4];
         self.AdjustSecretForPowder();
-        TILE_BELOW[((data & 0x0f) >> 1) as usize]
+        SECRET_TILE_BELOW_BY_TYPE[((data & 0x0f) >> 1) as usize]
     }
 
     pub(super) fn AdjustSecretForPowder(&mut self) {
@@ -4433,8 +4440,6 @@ impl ZeldaState {
     }
 
     pub(super) fn HandlePegPuzzles(&mut self, pos: u16) {
-        const LW_TURTLE_ROCK_PEG_POSITIONS: [u16; 3] = [0x0826, 0x05a0, 0x081a];
-
         if self.game_state.world.location.overworld_screen_index() == 7 {
             if self.game_state.world.overworld.event_info.event_info(7) & 0x20 != 0 {
                 return;
@@ -4927,8 +4932,6 @@ impl ZeldaState {
 
 impl ZeldaState {
     pub(super) fn decompress_enemy_damage_subclasses(&mut self) {
-        const PACKED_ENEMY_DAMAGE_SOURCE_BYTES: usize = 0x800;
-
         let data = self
             .asset_raw(56)
             .expect("decompress_enemy_damage_subclasses missing kEnemyDamageData asset")
@@ -5025,15 +5028,6 @@ impl ZeldaState {
     }
 
     fn overworld_do_map_update32x32(&mut self) {
-        const DOOR_ANIM_TILES: [u16; 56] = [
-            0x0da8, 0x0da9, 0x0daa, 0x0dab, 0x0dac, 0x0dad, 0x0dae, 0x0daf, 0x0db0, 0x0db1, 0x0db2,
-            0x0db3, 0x0db6, 0x0db7, 0x0db8, 0x0db9, 0x0dba, 0x0dbb, 0x0dbc, 0x0dbd, 0x0dcd, 0x0dce,
-            0x0dcf, 0x0dd0, 0x0dd3, 0x0dd4, 0x0dd5, 0x0dd6, 0x0dd7, 0x0dd8, 0x0dd9, 0x0dda, 0x0dd1,
-            0x0dd2, 0x0dd3, 0x0dd4, 0x0dd1, 0x0dd2, 0x0dd7, 0x0dd8, 0x0918, 0x0919, 0x091a, 0x091b,
-            0x0ddb, 0x0ddc, 0x0ddd, 0x0dde, 0x0dd1, 0x0dd2, 0x0ddb, 0x0ddc, 0x0e21, 0x0e22, 0x0e23,
-            0x0e24,
-        ];
-
         let i = self.game_state.memorized_tiles.count() as usize;
         let j = (self.game_state.dungeon.doors.door_open_counter() >> 1) as usize;
         let base = self
@@ -5042,10 +5036,10 @@ impl ZeldaState {
             .object_tracking
             .big_rock_starting_address();
         let entries = [
-            (base, DOOR_ANIM_TILES[j]),
-            (base.wrapping_add(2), DOOR_ANIM_TILES[j + 1]),
-            (base.wrapping_add(0x80), DOOR_ANIM_TILES[j + 2]),
-            (base.wrapping_add(0x82), DOOR_ANIM_TILES[j + 3]),
+            (base, OVERWORLD_DOOR_ANIM_TILES[j]),
+            (base.wrapping_add(2), OVERWORLD_DOOR_ANIM_TILES[j + 1]),
+            (base.wrapping_add(0x80), OVERWORLD_DOOR_ANIM_TILES[j + 2]),
+            (base.wrapping_add(0x82), OVERWORLD_DOOR_ANIM_TILES[j + 3]),
         ];
         for (n, (pos, tile)) in entries.into_iter().enumerate() {
             self.memorized_tile_mut().set_entry_addr(i + n * 2, pos);
