@@ -698,7 +698,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Animate_GAMEOVER_Letters(&mut self) {
-        match self.game_state.sprites.ancilla_slots.slot(0).ancilla_type() {
+        match self.ancilla_slot_view(0).ancilla_type() {
             0 => self.increment_submodule(),
             1 => self.GameOverText_SweepLeft(),
             2 => self.GameOverText_UnfurlRight(),
@@ -713,28 +713,17 @@ impl ZeldaState {
 
         let mut k = self.game_state.minigame.flag_boomerang_in_place() as usize;
         self.sprite_system_mut().set_cur_object_index(k as u8);
-        self.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, k)
-            .set_x_velocity(0x80);
+        self.ancilla_slot_view_mut(k).set_x_velocity(0x80);
         self.ancilla_move_x(k);
         if self.ancilla_get_x(k) < u16::from(GAME_OVER_SWEEP_LEFT_X_TARGETS[k]) {
-            self.game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, k)
+            self.ancilla_slot_view_mut(k)
                 .set_x_low(GAME_OVER_SWEEP_LEFT_X_TARGETS[k]);
             k += 1;
             self.minigame_state_mut()
                 .set_flag_boomerang_in_place(k as u8);
             if k == 8 {
                 self.minigame_state_mut().set_flag_boomerang_in_place(7);
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, 0)
-                    .increment_ancilla_type();
+                self.ancilla_slot_view_mut(0).increment_ancilla_type();
                 self.messaging_state_mut().clear_game_over_letter_cursor();
                 self.set_sound_effect_2(38);
                 self.GameOverText_Draw();
@@ -743,13 +732,9 @@ impl ZeldaState {
         }
         if k == 7 {
             let mut j = 6i32;
-            let x = self.game_state.sprites.ancilla_slots.slot(k).x_low();
+            let x = self.ancilla_slot_view(k).x_low();
             while j != i32::from(self.game_state.messaging.runtime.game_over_letter_cursor()) {
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, j as usize)
-                    .set_x_low(x);
+                self.ancilla_slot_view_mut(j as usize).set_x_low(x);
                 j -= 1;
             }
             let hookshot = self.game_state.messaging.runtime.game_over_letter_cursor() as usize;
@@ -767,30 +752,17 @@ impl ZeldaState {
 
         let mut k = self.game_state.minigame.flag_boomerang_in_place() as usize;
         self.sprite_system_mut().set_cur_object_index(k as u8);
-        self.game_state
-            .sprites
-            .ancilla_slots
-            .slot_mut(&mut self.ram, k)
-            .set_x_velocity(0x60);
+        self.ancilla_slot_view_mut(k).set_x_velocity(0x60);
         self.ancilla_move_x(k);
         let j = self.game_state.messaging.runtime.game_over_letter_cursor() as usize;
-        if self.game_state.sprites.ancilla_slots.slot(k).x()
-            >= u16::from(GAME_OVER_UNFURL_RIGHT_X_TARGETS[j])
-        {
-            self.game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, j)
+        if self.ancilla_slot_view(k).x() >= u16::from(GAME_OVER_UNFURL_RIGHT_X_TARGETS[j]) {
+            self.ancilla_slot_view_mut(j)
                 .set_x_low(GAME_OVER_UNFURL_RIGHT_X_TARGETS[j]);
             self.messaging_state_mut()
                 .increment_game_over_letter_cursor();
             if self.game_state.messaging.runtime.game_over_letter_cursor() == 8 {
                 self.increment_submodule();
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, 0)
-                    .increment_ancilla_type();
+                self.ancilla_slot_view_mut(0).increment_ancilla_type();
                 self.GameOverText_Draw();
                 return;
             }
@@ -799,13 +771,9 @@ impl ZeldaState {
             i32::from(self.game_state.messaging.runtime.game_over_letter_cursor()).wrapping_sub(1);
         k = self.game_state.minigame.flag_boomerang_in_place() as usize;
         let mut j = k as i32;
-        let x = self.game_state.sprites.ancilla_slots.slot(k).x_low();
+        let x = self.ancilla_slot_view(k).x_low();
         loop {
-            self.game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, j as usize)
-                .set_x_low(x);
+            self.ancilla_slot_view_mut(j as usize).set_x_low(x);
             j -= 1;
             if j == end {
                 break;

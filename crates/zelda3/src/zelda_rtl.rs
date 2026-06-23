@@ -9496,12 +9496,13 @@ fn decompress_asset(src: &[u8]) -> Vec<u8> {
 mod tests {
     use super::*;
     use crate::game_state::constants::{
-        ANIMATED_TILE_DATA_SRC, BG_TILE_ANIMATION_COUNTDOWN, DMA_SOURCE_ADDR_0, DMA_SOURCE_ADDR_1,
-        DMA_SOURCE_ADDR_10, DMA_SOURCE_ADDR_11, DMA_SOURCE_ADDR_12, DMA_SOURCE_ADDR_13,
-        DMA_SOURCE_ADDR_14, DMA_SOURCE_ADDR_15, DMA_SOURCE_ADDR_16, DMA_SOURCE_ADDR_17,
-        DMA_SOURCE_ADDR_18, DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_2, DMA_SOURCE_ADDR_20,
-        DMA_SOURCE_ADDR_21, DMA_SOURCE_ADDR_3, DMA_SOURCE_ADDR_4, DMA_SOURCE_ADDR_5,
-        DMA_SOURCE_ADDR_6, DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9,
+        ANCILLA_TYPE, ANCILLA_X_LO, ANCILLA_X_VELOCITY, ANIMATED_TILE_DATA_SRC,
+        BG_TILE_ANIMATION_COUNTDOWN, DMA_SOURCE_ADDR_0, DMA_SOURCE_ADDR_1, DMA_SOURCE_ADDR_10,
+        DMA_SOURCE_ADDR_11, DMA_SOURCE_ADDR_12, DMA_SOURCE_ADDR_13, DMA_SOURCE_ADDR_14,
+        DMA_SOURCE_ADDR_15, DMA_SOURCE_ADDR_16, DMA_SOURCE_ADDR_17, DMA_SOURCE_ADDR_18,
+        DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_2, DMA_SOURCE_ADDR_20, DMA_SOURCE_ADDR_21,
+        DMA_SOURCE_ADDR_3, DMA_SOURCE_ADDR_4, DMA_SOURCE_ADDR_5, DMA_SOURCE_ADDR_6,
+        DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9,
     };
 
     fn test_sync_all(state: &mut ZeldaState) {
@@ -9565,6 +9566,22 @@ mod tests {
         put_test_asset(&mut data, &mut ranges, 107, vec![1; screen + 1]);
         put_test_asset(&mut data, &mut ranges, 108, vec![0; screen + 1]);
         AssetPack { data, ranges }
+    }
+
+    #[test]
+    fn ancilla_slot_accessors_keep_native_state_and_ram_synced() {
+        let mut state = ZeldaState::new();
+
+        state.ancilla_slot_view_mut(3).set_x_velocity(0x80);
+        state.ancilla_slot_view_mut(3).set_x_low(0x44);
+        state.ancilla_slot_view_mut(0).increment_ancilla_type();
+
+        assert_eq!(state.ancilla_slot_view(3).x_velocity(), 0x80);
+        assert_eq!(state.ancilla_slot_view(3).x_low(), 0x44);
+        assert_eq!(state.ancilla_slot_view(0).ancilla_type(), 1);
+        assert_eq!(state.ram[ANCILLA_X_VELOCITY + 3], 0x80);
+        assert_eq!(state.ram[ANCILLA_X_LO + 3], 0x44);
+        assert_eq!(state.ram[ANCILLA_TYPE], 1);
     }
 
     #[test]
