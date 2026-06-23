@@ -294,6 +294,34 @@ const GANON_LARGE_SHADOW_DRAW_FRAMES: [DrawMultipleData; 15] = [
     },
 ];
 
+// Additional Ganon state-machine tables promoted from C-local statics.
+const GANON_FIRE_BAT_SECONDARY_GRAPHICS: [u8; 9] = [4, 4, 4, 3, 3, 3, 2, 2, 2];
+const GANON_DELAY_AUX4_GRAPHICS: [u8; 2] = [16, 10];
+const GANON_PHASE1_WARP_GRAPHICS: [u8; 2] = [2, 10];
+const GANON_PHASE1_TRIDENT_SPAWN_X_OFFSETS: [i8; 2] = [24, -16];
+const GANON_PHASE1_TRIDENT_SPAWN_Y_OFFSETS: [i8; 2] = [4, 4];
+const GANON_PHASE1_TRIDENT_X_VELOCITIES: [i8; 16] = [
+    32, 28, 24, 16, 0, -16, -24, -28, -32, -28, -24, -16, 0, 16, 24, 28,
+];
+const GANON_PHASE1_TRIDENT_Y_VELOCITIES: [i8; 16] = [
+    0, 16, 24, 28, 32, 28, 24, 16, 0, -16, -24, -28, -32, -28, -24, -16,
+];
+const GANON_PHASE2_SECONDARY_GRAPHICS: [u8; 2] = [0, 8];
+const GANON_TRIDENT_CHASE_GRAPHICS: [u8; 2] = [2, 10];
+const GANON_BAT_ORBIT_RADIUS_DELTAS: [i8; 16] =
+    [0, 0, 0, 0, -1, -1, -2, -1, 0, 0, 0, 0, 1, 2, 1, 1];
+const GANON_FIRE_BAT_RELEASE_DELAYS: [u8; 8] = [0x10, 0x30, 0x50, 0x70, 0x90, 0xb0, 0xd0, 0xbd];
+const GANON_PHASE12_GRAPHICS: [u8; 6] = [5, 6, 7, 13, 14, 10];
+const GANON_PHASE15_GRAPHICS: [u8; 2] = [6, 14];
+const GANON_PHASE16_LANDING_GRAPHICS: [u8; 2] = [2, 10];
+const GANON_PHASE17_START_GRAPHICS: [u8; 2] = [6, 14];
+const GANON_PHASE17_ATTACK_GRAPHICS: [u8; 2] = [7, 10];
+const GANON_PHASE19_GRAPHICS: [u8; 2] = [5, 13];
+const PHANTOM_GANON_BAT_GRAPHICS: [u8; 4] = [0, 1, 2, 1];
+const PHANTOM_GANON_BAT_TARGET_X_VELOCITIES: [u8; 2] = [32, (-32i8) as u8];
+const PHANTOM_GANON_BAT_TARGET_Y_VELOCITIES: [u8; 2] = [16, (-16i8) as u8];
+const GANON_LIT_TORCH_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
+
 // ---------------------------------------------------------------------------
 // Inline helpers from sprite_main.c:1570..1580 — GanonMult / GanonSin.
 // ---------------------------------------------------------------------------
@@ -459,9 +487,8 @@ impl ZeldaState {
                     self.fire_bat_animate(k);
                     self.fire_bat_animate(k);
                 } else {
-                    const SECONDARY_GRAPHICS: [u8; 9] = [4, 4, 4, 3, 3, 3, 2, 2, 2];
-                    let graphics =
-                        SECONDARY_GRAPHICS[(self.sprite_slot_view(k).delay_aux1() >> 2) as usize];
+                    let graphics = GANON_FIRE_BAT_SECONDARY_GRAPHICS
+                        [(self.sprite_slot_view(k).delay_aux1() >> 2) as usize];
                     self.sprite_slot_view_mut(k).set_graphics(graphics);
                 }
             }
@@ -503,8 +530,8 @@ impl ZeldaState {
         }
 
         if self.sprite_slot_view(k).delay_aux4() != 0 {
-            const GFXB: [u8; 2] = [16, 10];
-            let graphics = GFXB[(self.sprite_slot_view(k).direction() & 1) as usize];
+            let graphics =
+                GANON_DELAY_AUX4_GRAPHICS[(self.sprite_slot_view(k).direction() & 1) as usize];
             self.sprite_slot_view_mut(k).set_graphics(graphics);
         }
 
@@ -584,21 +611,13 @@ impl ZeldaState {
                     if self.sprite_slot_view(k).delay_main() == 0 {
                         self.ganon_select_warp_location(k, 5);
                     } else {
-                        const GFX1: [u8; 2] = [2, 10];
-                        let graphics = GFX1[(self.sprite_slot_view(k).direction() & 1) as usize];
+                        let graphics = GANON_PHASE1_WARP_GRAPHICS
+                            [(self.sprite_slot_view(k).direction() & 1) as usize];
                         self.sprite_slot_view_mut(k).set_graphics(graphics);
                     }
                 } else if self.sprite_slot_view(k).delay_main() != 64 {
                     self.ganon_phase1_animate_trident_spin(k);
                 } else {
-                    const X1: [i8; 2] = [24, -16];
-                    const Y1: [i8; 2] = [4, 4];
-                    const XVEL1: [i8; 16] = [
-                        32, 28, 24, 16, 0, -16, -24, -28, -32, -28, -24, -16, 0, 16, 24, 28,
-                    ];
-                    const YVEL1: [i8; 16] = [
-                        0, 16, 24, 28, 32, 28, 24, 16, 0, -16, -24, -28, -32, -28, -24, -16,
-                    ];
                     self.sprite_slot_view_mut(k).set_g(0);
                     let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
                     let j = self.sprite_spawn_dynamically(k, 0xc9, &mut info);
@@ -608,16 +627,28 @@ impl ZeldaState {
                     );
                     let j = j as usize;
                     let i = usize::from(self.sprite_slot_view(k).direction() & 1);
-                    self.sprite_set_x(j, info.r0_x.wrapping_add_signed(i16::from(X1[i])));
-                    self.sprite_set_y(j, info.r2_y.wrapping_add_signed(i16::from(Y1[i])));
+                    self.sprite_set_x(
+                        j,
+                        info.r0_x.wrapping_add_signed(i16::from(
+                            GANON_PHASE1_TRIDENT_SPAWN_X_OFFSETS[i],
+                        )),
+                    );
+                    self.sprite_set_y(
+                        j,
+                        info.r2_y.wrapping_add_signed(i16::from(
+                            GANON_PHASE1_TRIDENT_SPAWN_Y_OFFSETS[i],
+                        )),
+                    );
                     self.sprite_apply_speed_towards_link_for_ganon(k, 31);
                     let angle = Self::sprite_convert_velocity_to_angle(
                         self.sprite_slot_view(k).x_velocity(),
                         self.sprite_slot_view(k).y_velocity(),
                     );
                     let vi = usize::from(angle.wrapping_sub(2) & 0x0f);
-                    self.sprite_slot_view_mut(j).set_x_velocity(XVEL1[vi] as u8);
-                    self.sprite_slot_view_mut(j).set_y_velocity(YVEL1[vi] as u8);
+                    self.sprite_slot_view_mut(j)
+                        .set_x_velocity(GANON_PHASE1_TRIDENT_X_VELOCITIES[vi] as u8);
+                    self.sprite_slot_view_mut(j)
+                        .set_y_velocity(GANON_PHASE1_TRIDENT_Y_VELOCITIES[vi] as u8);
                     self.sprite_slot_view_mut(j).set_delay_main(112);
                     self.sprite_slot_view_mut(j).set_anim_clock(2);
                     self.sprite_slot_view_mut(j).set_oam_flags(1);
@@ -632,9 +663,8 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).health() < 209 {
                     self.sprite_slot_view_mut(k).set_health(208);
                 }
-                const SECONDARY_GRAPHICS: [u8; 2] = [0, 8];
-                let graphics =
-                    SECONDARY_GRAPHICS[(self.sprite_slot_view(k).direction() & 1) as usize];
+                let graphics = GANON_PHASE2_SECONDARY_GRAPHICS
+                    [(self.sprite_slot_view(k).direction() & 1) as usize];
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
                 if self.sprite_slot_view(k).delay_main() != 0 {
                     self.sprite_slot_view_mut(k).increment_ignore_projectile();
@@ -712,8 +742,8 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).set_graphics(255);
                         return;
                     }
-                    const GFX5: [u8; 2] = [2, 10];
-                    let graphics = GFX5[(self.sprite_slot_view(k).direction() & 1) as usize];
+                    let graphics = GANON_TRIDENT_CHASE_GRAPHICS
+                        [(self.sprite_slot_view(k).direction() & 1) as usize];
                     self.sprite_slot_view_mut(k).set_graphics(graphics);
                     if (self.game_state.frame.frame_counter & 7) == 0 {
                         let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
@@ -768,9 +798,6 @@ impl ZeldaState {
                 }
             }
             8 => {
-                const BAT_ORBIT_RADIUS_DELTAS: [i8; 16] =
-                    [0, 0, 0, 0, -1, -1, -2, -1, 0, 0, 0, 0, 1, 2, 1, 1];
-                const DELAY8: [u8; 8] = [0x10, 0x30, 0x50, 0x70, 0x90, 0xb0, 0xd0, 0xbd];
                 if self.sprite_slot_view(k).health() < 161 {
                     self.sprite_slot_view_mut(k).set_health(160);
                 }
@@ -780,12 +807,13 @@ impl ZeldaState {
                     self.ganon_handle_animation_idle(k);
                     for j in (1..=8usize).rev() {
                         self.sprite_slot_view_mut(j).set_ai_state(2);
-                        self.sprite_slot_view_mut(j).set_delay_main(DELAY8[j - 1]);
+                        self.sprite_slot_view_mut(j)
+                            .set_delay_main(GANON_FIRE_BAT_RELEASE_DELAYS[j - 1]);
                     }
                 } else {
                     let idx = ((self.sprite_slot_view(k).delay_main() >> 4) & 15) as usize;
                     self.overlord_slot_view_mut(2)
-                        .add_x_low(BAT_ORBIT_RADIUS_DELTAS[idx] as u8);
+                        .add_x_low(GANON_BAT_ORBIT_RADIUS_DELTAS[idx] as u8);
                     self.ganon_phase1_animate_trident_spin(k);
                     self.ganon_handle_fire_bat_circle(k);
                 }
@@ -829,8 +857,8 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).direction() != 0 {
                     t += 3;
                 }
-                const GFX12: [u8; 6] = [5, 6, 7, 13, 14, 10];
-                self.sprite_slot_view_mut(k).set_graphics(GFX12[t]);
+                self.sprite_slot_view_mut(k)
+                    .set_graphics(GANON_PHASE12_GRAPHICS[t]);
                 if (self.sprite_slot_view(k).hit_timer() & 127) == 1 {
                     self.sprite_slot_view_mut(k).set_ai_state(15);
                     self.sprite_slot_view_mut(k).set_z_velocity(24);
@@ -853,7 +881,6 @@ impl ZeldaState {
                 }
             }
             15 => {
-                const GFX15: [u8; 2] = [6, 14];
                 if self.sprite_slot_view(k).delay_main() != 0 {
                     if self.sprite_slot_view(k).delay_main() == 1 {
                         self.sprite_slot_view_mut(k).set_ai_state(16);
@@ -867,7 +894,8 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).set_delay_main(32);
                     }
                 }
-                let graphics = GFX15[(self.sprite_slot_view(k).direction() & 1) as usize];
+                let graphics =
+                    GANON_PHASE15_GRAPHICS[(self.sprite_slot_view(k).direction() & 1) as usize];
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
             }
             16 => {
@@ -895,7 +923,6 @@ impl ZeldaState {
                         self.follower_link_state_mut().immobilize();
                     }
                 } else {
-                    const GFX16: [u8; 2] = [2, 10];
                     self.sprite_move_z(k);
                     if sign8(self.sprite_slot_view(k).z()) {
                         self.sprite_slot_view_mut(k).set_z_velocity(0);
@@ -904,14 +931,14 @@ impl ZeldaState {
                         self.set_ambient_sound_effect(7);
                         self.sprite_sfx_queue_sfx2_with_pan(k, 0x0c);
                     }
-                    let graphics = GFX16[(self.sprite_slot_view(k).direction() & 1) as usize];
+                    let graphics = GANON_PHASE16_LANDING_GRAPHICS
+                        [(self.sprite_slot_view(k).direction() & 1) as usize];
                     self.sprite_slot_view_mut(k).set_graphics(graphics);
                 }
             }
             17 => {
-                const GFX17B: [u8; 2] = [6, 14];
-                const GFX17: [u8; 2] = [7, 10];
-                let graphics = GFX17B[(self.sprite_slot_view(k).direction() & 1) as usize];
+                let graphics = GANON_PHASE17_START_GRAPHICS
+                    [(self.sprite_slot_view(k).direction() & 1) as usize];
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.ganon_select_warp_location(k, 0x12);
@@ -919,7 +946,8 @@ impl ZeldaState {
                 } else if self.sprite_slot_view(k).delay_main() == 52 {
                     self.ganon_func1(k, 5);
                 } else if self.sprite_slot_view(k).delay_main() < 52 {
-                    let graphics = GFX17[(self.sprite_slot_view(k).direction() & 1) as usize];
+                    let graphics = GANON_PHASE17_ATTACK_GRAPHICS
+                        [(self.sprite_slot_view(k).direction() & 1) as usize];
                     self.sprite_slot_view_mut(k).set_graphics(graphics);
                 }
                 if self.sprite_slot_view(k).delay_main() >= 72
@@ -941,8 +969,8 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_sprite_type(0xd6);
                     self.sprite_slot_view_mut(k).set_hit_timer(0);
                 } else {
-                    const GFX19: [u8; 2] = [5, 13];
-                    let graphics = GFX19[(self.sprite_slot_view(k).direction() & 1) as usize];
+                    let graphics =
+                        GANON_PHASE19_GRAPHICS[(self.sprite_slot_view(k).direction() & 1) as usize];
                     self.sprite_slot_view_mut(k).set_graphics(graphics);
                 }
             }
@@ -982,10 +1010,6 @@ impl ZeldaState {
 
     // void Sprite_PhantomGanon(int k) {  // 9d88bc
     pub(super) fn sprite_phantom_ganon(&mut self, k: usize) {
-        const LOCAL_GRAPHICS: [u8; 4] = [0, 1, 2, 1];
-        const TARGET_XVEL: [u8; 2] = [32, (-32i8) as u8];
-        const TARGET_YVEL: [u8; 2] = [16, (-16i8) as u8];
-
         if self.sprite_slot_view(k).ai_state() == 0 {
             self.phantom_ganon_draw(k);
             if self.sprite_return_if_inactive(k) {
@@ -1022,8 +1046,8 @@ impl ZeldaState {
             if self.sprite_return_if_inactive(k) {
                 return;
             }
-            let graphics =
-                LOCAL_GRAPHICS[usize::from((self.game_state.frame.frame_counter >> 2) & 3)];
+            let graphics = PHANTOM_GANON_BAT_GRAPHICS
+                [usize::from((self.game_state.frame.frame_counter >> 2) & 3)];
             self.sprite_slot_view_mut(k).set_graphics(graphics);
             if self.sprite_slot_view(k).delay_main() != 0 {
                 if self.sprite_slot_view(k).delay_main() < 208 {
@@ -1033,7 +1057,9 @@ impl ZeldaState {
                         .y_velocity()
                         .wrapping_add(if j != 0 { 0xff } else { 1 });
                     self.sprite_slot_view_mut(k).set_y_velocity(y_velocity);
-                    if self.sprite_slot_view(k).y_velocity() == TARGET_YVEL[j] {
+                    if self.sprite_slot_view(k).y_velocity()
+                        == PHANTOM_GANON_BAT_TARGET_Y_VELOCITIES[j]
+                    {
                         let head_direction =
                             self.sprite_slot_view(k).head_direction().wrapping_add(1);
                         self.sprite_slot_view_mut(k)
@@ -1045,7 +1071,9 @@ impl ZeldaState {
                         .x_velocity()
                         .wrapping_add(if j != 0 { 0xff } else { 1 });
                     self.sprite_slot_view_mut(k).set_x_velocity(x_velocity);
-                    if self.sprite_slot_view(k).x_velocity() == TARGET_XVEL[j] {
+                    if self.sprite_slot_view(k).x_velocity()
+                        == PHANTOM_GANON_BAT_TARGET_X_VELOCITIES[j]
+                    {
                         self.sprite_slot_view_mut(k).increment_direction();
                     }
                     if self.sprite_slot_view(k).x_velocity() == 0 {
@@ -1543,9 +1571,8 @@ impl ZeldaState {
                 if self.game_state.dungeon.torch.lit_torches() == 0 {
                     self.set_sub_screen_layers(1);
                 }
-                const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
-                let plus =
-                    LIT_TORCHES_COLOR_PLUS[self.game_state.dungeon.torch.lit_torches() as usize];
+                let plus = GANON_LIT_TORCH_COLOR_PLUS
+                    [self.game_state.dungeon.torch.lit_torches() as usize];
                 self.set_overworld_fixed_color_adjustment(plus);
                 self.set_submodule(10);
                 self.set_subsubmodule(0);
