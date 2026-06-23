@@ -52,6 +52,24 @@ const SDL_CONTROLLER_AXIS_TRIGGERRIGHT: i32 = 5;
 const DEFAULT_AUDIO_FREQUENCY: i32 = 44100;
 const DEFAULT_AUDIO_CHANNELS: i32 = 2;
 const FEATURE_DIM_FLASHES: u32 = 65536;
+const WINDOW_RESIZE_BORDER: i32 = 20;
+const KEYBOARD_COMMAND_BUTTON_REMAP: [u8; 13] = [0, 4, 5, 6, 7, 2, 3, 8, 0, 9, 1, 10, 11];
+const GAMEPAD_STICK_SEGMENT_BUTTONS: [i32; 8] = [
+    1 << 4,
+    1 << 4 | 1 << 7,
+    1 << 7,
+    1 << 7 | 1 << 5,
+    1 << 5,
+    1 << 5 | 1 << 6,
+    1 << 6,
+    1 << 6 | 1 << 4,
+];
+const NUMBER_OF_ASSETS: usize = 165;
+const ASSETS_SIGNATURE: [u8; 48] = [
+    90, 101, 108, 100, 97, 51, 95, 118, 48, 32, 32, 32, 32, 32, 10, 0, 27, 174, 233, 45, 74, 174,
+    252, 50, 49, 27, 153, 197, 27, 43, 216, 197, 132, 101, 173, 169, 36, 108, 15, 155, 176, 169,
+    57, 131, 174, 101, 51, 207,
+];
 
 pub enum SDL_Window {}
 
@@ -168,30 +186,29 @@ pub fn hit_test_callback(
     pt: *const SDL_Point,
     _data: *mut std::ffi::c_void,
 ) -> SDL_HitTestResult {
-    const RESIZE_BORDER: i32 = 20;
     let s = state().lock().unwrap();
     let point = unsafe { pt.as_ref().copied().unwrap_or_default() };
     let w = s.snes_width * s.current_window_scale;
     let h = s.snes_height * s.current_window_scale;
-    if point.y < RESIZE_BORDER {
-        if point.x < RESIZE_BORDER {
+    if point.y < WINDOW_RESIZE_BORDER {
+        if point.x < WINDOW_RESIZE_BORDER {
             SDL_HitTestResult::SDL_HITTEST_RESIZE_TOPLEFT
-        } else if point.x >= w - RESIZE_BORDER {
+        } else if point.x >= w - WINDOW_RESIZE_BORDER {
             SDL_HitTestResult::SDL_HITTEST_RESIZE_TOPRIGHT
         } else {
             SDL_HitTestResult::SDL_HITTEST_RESIZE_TOP
         }
-    } else if point.y >= h - RESIZE_BORDER {
-        if point.x < RESIZE_BORDER {
+    } else if point.y >= h - WINDOW_RESIZE_BORDER {
+        if point.x < WINDOW_RESIZE_BORDER {
             SDL_HitTestResult::SDL_HITTEST_RESIZE_BOTTOMLEFT
-        } else if point.x >= w - RESIZE_BORDER {
+        } else if point.x >= w - WINDOW_RESIZE_BORDER {
             SDL_HitTestResult::SDL_HITTEST_RESIZE_BOTTOMRIGHT
         } else {
             SDL_HitTestResult::SDL_HITTEST_RESIZE_BOTTOM
         }
-    } else if point.x < RESIZE_BORDER {
+    } else if point.x < WINDOW_RESIZE_BORDER {
         SDL_HitTestResult::SDL_HITTEST_RESIZE_LEFT
-    } else if point.x >= w - RESIZE_BORDER {
+    } else if point.x >= w - WINDOW_RESIZE_BORDER {
         SDL_HitTestResult::SDL_HITTEST_RESIZE_RIGHT
     } else {
         SDL_HitTestResult::SDL_HITTEST_NORMAL
@@ -510,8 +527,7 @@ fn render_number(dst: *mut u8, pitch: usize, n: i32, big: bool) {
 fn handle_command(j: u32, pressed: bool) {
     let mut s = state().lock().unwrap();
     if j <= KEY_COMMAND_CONTROLS_LAST as u32 {
-        const KBD_REMAP: [u8; 13] = [0, 4, 5, 6, 7, 2, 3, 8, 0, 9, 1, 10, 11];
-        let bit = 1 << KBD_REMAP[j as usize];
+        let bit = 1 << KEYBOARD_COMMAND_BUTTON_REMAP[j as usize];
         if pressed {
             s.input1_state |= bit;
         } else {
@@ -668,19 +684,10 @@ fn handle_gamepad_axis_input(gamepad_id: i32, axis: i32, value: i32) {
         }
         let mut buttons = 0;
         if s.axis_last_x * s.axis_last_x + s.axis_last_y * s.axis_last_y >= 10000 * 10000 {
-            const SEGMENT_TO_BUTTONS: [i32; 8] = [
-                1 << 4,
-                1 << 4 | 1 << 7,
-                1 << 7,
-                1 << 7 | 1 << 5,
-                1 << 5,
-                1 << 5 | 1 << 6,
-                1 << 6,
-                1 << 6 | 1 << 4,
-            ];
             let angle =
                 (approximate_atan2(s.axis_last_y as f32, s.axis_last_x as f32) * 64.0 + 0.5) as u8;
-            buttons = SEGMENT_TO_BUTTONS[((angle.wrapping_add(16).wrapping_add(64)) >> 5) as usize];
+            buttons = GAMEPAD_STICK_SEGMENT_BUTTONS
+                [((angle.wrapping_add(16).wrapping_add(64)) >> 5) as usize];
         }
         s.gamepad_buttons = buttons;
     } else if axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT || axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT {
@@ -854,14 +861,8 @@ fn cstr_to_string(ptr: *const i8) -> Option<String> {
 }
 
 fn parse_assets_file(data: &[u8]) -> Option<Vec<Vec<u8>>> {
-    const NUMBER_OF_ASSETS: usize = 165;
-    const ASSETS_SIG: [u8; 48] = [
-        90, 101, 108, 100, 97, 51, 95, 118, 48, 32, 32, 32, 32, 32, 10, 0, 27, 174, 233, 45, 74,
-        174, 252, 50, 49, 27, 153, 197, 27, 43, 216, 197, 132, 101, 173, 169, 36, 108, 15, 155,
-        176, 169, 57, 131, 174, 101, 51, 207,
-    ];
     if data.len() < 88 + NUMBER_OF_ASSETS * 4
-        || data.get(..ASSETS_SIG.len()) != Some(&ASSETS_SIG)
+        || data.get(..ASSETS_SIGNATURE.len()) != Some(&ASSETS_SIGNATURE)
         || read_u32_c(data, 80) as usize != NUMBER_OF_ASSETS
     {
         return None;
