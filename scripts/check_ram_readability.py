@@ -167,7 +167,7 @@ REVIEWED_WEAK_RAM_NAMES = {
     "SCRATCH_1_ANCILLA": "single-use ancilla coordinate scratch; source CRTNR alias is not behavior-specific here",
 }
 PRIVATE_CONST_RE = re.compile(
-    r"^\s*const\s+([A-Z][A-Z0-9_]*)\s*:\s*usize\s*=\s*(0x[0-9A-Fa-f]+)\s*;",
+    r"^\s*(?:pub\(super\)\s+)?const\s+([A-Z][A-Z0-9_]*)\s*:\s*usize\s*=\s*(0x[0-9A-Fa-f]+)\s*;",
     re.MULTILINE,
 )
 RAM_MODULE_CONST_RE = re.compile(
