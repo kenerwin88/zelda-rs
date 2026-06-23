@@ -9769,12 +9769,8 @@ impl ZeldaState {
 
     pub(super) fn UsedForStraightInterRoomStaircase(&mut self) {
         for i in (0..=9).rev() {
-            if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 13 {
-                self.game_state
-                    .sprites
-                    .ancilla_slots
-                    .slot_mut(&mut self.ram, i)
-                    .clear();
+            if self.ancilla_slot_view(i).ancilla_type() == 13 {
+                self.ancilla_slot_view_mut(i).clear();
             }
         }
         self.follower_link_state_mut()

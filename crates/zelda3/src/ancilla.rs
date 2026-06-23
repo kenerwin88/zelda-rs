@@ -7512,58 +7512,30 @@ impl ZeldaState {
     fn garnish_alloc_force_for_ancilla(&self) -> usize {
         (0..30)
             .rev()
-            .find(|&k| self.game_state.sprites.garnish_slots.slot(k).is_empty())
+            .find(|&k| self.garnish_slot_view(k).is_empty())
             .unwrap_or(0)
     }
 
     fn sprite_spawn_poof_garnish_for_ancilla(&mut self, j: usize) {
         let k = self.garnish_alloc_force_for_ancilla();
         let value = 10;
-        self.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut self.ram, k)
-            .set_garnish_type(value);
+        self.garnish_slot_view_mut(k).set_garnish_type(value);
         self.garnish_state_mut().set_active_type(10);
         let value = self.sprite_slot(j).x_low();
-        self.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut self.ram, k)
-            .set_x_low(value);
+        self.garnish_slot_view_mut(k).set_x_low(value);
         let value = self.sprite_slot(j).x_high();
-        self.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut self.ram, k)
-            .set_x_high(value);
+        self.garnish_slot_view_mut(k).set_x_high(value);
         let y = self.sprite_get_y(j).wrapping_add(16);
         let value = y as u8;
-        self.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut self.ram, k)
-            .set_y_low(value);
+        self.garnish_slot_view_mut(k).set_y_low(value);
         let value = (y >> 8) as u8;
-        self.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut self.ram, k)
-            .set_y_high(value);
+        self.garnish_slot_view_mut(k).set_y_high(value);
         // C's Sprite_SpawnPoofGarnish writes sprite_floor[j] to garnish_sprite[k] (0x1f92c + k),
         // which maps to the `sprite` field. Match that here.
         let value = self.sprite_slot(j).floor();
-        self.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut self.ram, k)
-            .set_sprite(value);
+        self.garnish_slot_view_mut(k).set_sprite(value);
         let value = 15;
-        self.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut self.ram, k)
-            .set_countdown(value);
+        self.garnish_slot_view_mut(k).set_countdown(value);
     }
 
     fn wish_pond_item_draw(&mut self, k: usize) {

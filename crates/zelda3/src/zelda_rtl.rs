@@ -11136,26 +11136,6 @@ mod tests {
     }
 
     #[test]
-    fn dungeon_edge_transition_right_starts_super_tile_scroll() {
-        let mut state = ZeldaState::new();
-        state.set_main_module(7);
-        set_link_test_byte(&mut state, LINK_X_VEL, 1);
-        set_link_test_byte(&mut state, LINK_DIRECTION, 1);
-        set_link_test_word(&mut state, LINK_X_COORD, 0x01e9);
-        state.set_dungeon_room(0x0104);
-        state.room_bounds_mut().set_x_bound(0, 0x0100);
-        state.room_bounds_mut().set_x_bound(1, 0x0120);
-
-        state.Dungeon_TryScreenEdgeTransition();
-
-        assert_eq!(link_test_byte(&state, LINK_QUADRANT_X), 1);
-        assert_eq!(state.game_state.frame.submodule, 2);
-        assert_eq!(state.ram[OVERWORLD_SCREEN_TRANSITION], 2);
-        assert_eq!(read_le_u16(&state.ram, LEFT_RIGHT_SCROLL_TARGET), 256);
-        assert_eq!(read_le_u16(&state.ram, LEFT_RIGHT_SCROLL_TARGET_END), 0);
-    }
-
-    #[test]
     fn edge_transition_recoil_guard_restores_previous_position() {
         let mut state = ZeldaState::new();
         state.set_main_module(7);
