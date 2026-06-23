@@ -167,6 +167,20 @@ const YELLOW_STALFOS_DRAW_FRAMES: [SmallBossDrawFrame; 22] = [
     (0, 0, 0x002a, 2),
 ];
 
+const TRINEXX_DEATH_EXPLOSION_X_OFFSETS: [i8; 8] = [0, 8, 16, 24, -24, -16, -8, 0];
+const TRINEXX_DEATH_EXPLOSION_Y_OFFSETS: [i8; 8] = [0, 8, 16, 24, -24, -16, -8, 0];
+const TRINEXX_FIRE_HEAD_INTRO_X: [u8; 4] = [0x60, 0x78, 0x78, 0x90];
+const TRINEXX_ICE_HEAD_INTRO_X: [u8; 4] = [0x80, 0x70, 0x60, 0x80];
+const VITREOUS_A_BY_RELEASE_COUNT: [u8; 10] =
+    [0x20, 0x20, 0x20, 0x40, 0x60, 0x80, 0xa0, 0xc0, 0xe0, 0];
+const VITREOUS_FINAL_EYE_X_VELOCITIES: [i8; 2] = [8, -8];
+const VITREOUS_EYE_DRAW_X_DELTAS: [i8; 4] = [1, 0, -1, 0];
+const VITREOUS_EYE_DRAW_Y_DELTAS: [i8; 4] = [0, 1, 0, -1];
+const ICE_BALL_SPLIT_X_VELOCITIES: [i8; 8] = [0, 32, 0, -32, 24, 24, -24, -24];
+const ICE_BALL_SPLIT_Y_VELOCITIES: [i8; 8] = [-32, 0, 32, 0, -24, 24, -24, 24];
+const RED_BARI_SPLIT_X_OFFSETS: [i8; 2] = [0, 8];
+const RED_BARI_SPLIT_X_VELOCITIES: [i8; 2] = [-32, 32];
+
 impl ZeldaState {
     // void Trinexx_RestoreXY(int k) {  // 9dad4f
     //   sprite_x_lo[k] = sprite_A[k];
@@ -442,14 +456,14 @@ impl ZeldaState {
                     self.sprite_sfx_queue_sfx2_with_pan(k, 0x0c);
                 }
                 if (self.sprite_slot_view(k).delay_main() & 1) == 0 {
-                    const X0: [i8; 8] = [0, 8, 16, 24, -24, -16, -8, 0];
-                    const Y0: [i8; 8] = [0, 8, 16, 24, -24, -16, -8, 0];
                     let xi = (self.get_random_number() & 7) as usize;
                     let yi = (self.get_random_number() & 7) as usize;
-                    let x = self.sprite_get_x(k).wrapping_add_signed(i16::from(X0[xi]));
+                    let x = self
+                        .sprite_get_x(k)
+                        .wrapping_add_signed(i16::from(TRINEXX_DEATH_EXPLOSION_X_OFFSETS[xi]));
                     let y = self
                         .sprite_get_y(k)
-                        .wrapping_add_signed(i16::from(Y0[yi]))
+                        .wrapping_add_signed(i16::from(TRINEXX_DEATH_EXPLOSION_Y_OFFSETS[yi]))
                         .wrapping_sub(8);
                     self.sprite_workspace_mut().set_current_sprite_x(x);
                     self.sprite_workspace_mut().set_current_sprite_y(y);
@@ -511,8 +525,6 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).set_delay_main(80);
                         return;
                     }
-                    const TRINEXX_FIRE_HEAD_INTRO_X: [u8; 4] = [0x60, 0x78, 0x78, 0x90];
-                    const TRINEXX_ICE_HEAD_INTRO_X: [u8; 4] = [0x80, 0x70, 0x60, 0x80];
                     self.overlord_slot_view_mut(0)
                         .set_x_low(TRINEXX_FIRE_HEAD_INTRO_X[j as usize]);
                     self.overlord_slot_view_mut(1)
@@ -1253,13 +1265,11 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
             }
             1 => {
-                const A_FROM_G: [u8; 10] =
-                    [0x20, 0x20, 0x20, 0x40, 0x60, 0x80, 0xa0, 0xc0, 0xe0, 0];
                 self.sprite_slot_view_mut(k).set_f(0);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.sprite_slot_view_mut(k).set_delay_aux4(16);
                     self.sprite_slot_view_mut(k).set_ai_state(0);
-                    let a = A_FROM_G[self.sprite_slot_view(k).g() as usize];
+                    let a = VITREOUS_A_BY_RELEASE_COUNT[self.sprite_slot_view(k).g() as usize];
                     self.sprite_slot_view_mut(k).set_a(a);
                 } else {
                     self.vitreous_animate(k, self.sprite_slot_view(k).delay_main());
@@ -1271,8 +1281,7 @@ impl ZeldaState {
                     return;
                 }
                 if self.sprite_slot_view(k).delay_main() != 0 {
-                    const LOCAL_X_VELOCITIES: [i8; 2] = [8, -8];
-                    let x_velocity = LOCAL_X_VELOCITIES
+                    let x_velocity = VITREOUS_FINAL_EYE_X_VELOCITIES
                         [((self.sprite_slot_view(k).delay_main() & 2) >> 1) as usize]
                         as u8;
                     self.sprite_slot_view_mut(k).set_x_velocity(x_velocity);
@@ -1321,21 +1330,19 @@ impl ZeldaState {
 
     // void Sprite_BE_VitreousEye(int k) {  // 9de773
     pub(super) fn sprite_be_vitreous_eye(&mut self, k: usize) {
-        const DX: [i8; 4] = [1, 0, -1, 0];
-        const DY: [i8; 4] = [0, 1, 0, -1];
         let j = ((self.sprite_slot_view(k).subtype2() >> 4) & 3) as usize;
         let cur_x = self
             .game_state
             .sprites
             .workspace
             .current_sprite_x()
-            .wrapping_add_signed(i16::from(DX[j]));
+            .wrapping_add_signed(i16::from(VITREOUS_EYE_DRAW_X_DELTAS[j]));
         let cur_y = self
             .game_state
             .sprites
             .workspace
             .current_sprite_y()
-            .wrapping_add_signed(i16::from(DY[j]));
+            .wrapping_add_signed(i16::from(VITREOUS_EYE_DRAW_Y_DELTAS[j]));
         self.sprite_workspace_mut().set_current_sprite_x(cur_x);
         self.sprite_workspace_mut().set_current_sprite_y(cur_y);
         self.sprite_draw_single_large(k);
@@ -1494,9 +1501,6 @@ impl ZeldaState {
     //   tmp_counter = 0xff;
     // }
     pub(super) fn ice_ball_split(&mut self, k: usize) {
-        const LOCAL_X_VELOCITIES: [i8; 8] = [0, 32, 0, -32, 24, 24, -24, -24];
-        const LOCAL_Y_VELOCITIES: [i8; 8] = [-32, 0, 32, 0, -24, 24, -24, 24];
-
         self.sprite_sfx_queue_sfx2_with_pan(k, 0x1f);
         let b = (self.get_random_number() & 4) as usize;
         for i in (0..=3usize).rev() {
@@ -1510,9 +1514,9 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(j).set_c(1);
                 self.sprite_slot_view_mut(j).set_z_velocity(32);
                 self.sprite_slot_view_mut(j)
-                    .set_x_velocity(LOCAL_X_VELOCITIES[i + b] as u8);
+                    .set_x_velocity(ICE_BALL_SPLIT_X_VELOCITIES[i + b] as u8);
                 self.sprite_slot_view_mut(j)
-                    .set_y_velocity(LOCAL_Y_VELOCITIES[i + b] as u8);
+                    .set_y_velocity(ICE_BALL_SPLIT_Y_VELOCITIES[i + b] as u8);
                 self.sprite_slot_view_mut(j).set_flags4(0x1c);
             }
         }
@@ -1542,9 +1546,6 @@ impl ZeldaState {
     //
     // }
     pub(super) fn red_bari_split(&mut self, k: usize) {
-        const X_OFFSET: [i8; 2] = [0, 8];
-        const LOCAL_X_VELOCITIES: [i8; 2] = [-32, 32];
-
         self.temp_counter_mut().set(1);
         loop {
             let idx = self.game_state.scratch_counter.value() as usize;
@@ -1557,9 +1558,13 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(j).set_oam_flags(3);
                 self.sprite_slot_view_mut(j).set_flags4(1);
                 self.sprite_slot_view_mut(j).set_c(1);
-                self.sprite_set_x(j, info.r0_x.wrapping_add_signed(X_OFFSET[idx] as i16));
+                self.sprite_set_x(
+                    j,
+                    info.r0_x
+                        .wrapping_add_signed(RED_BARI_SPLIT_X_OFFSETS[idx] as i16),
+                );
                 self.sprite_slot_view_mut(j)
-                    .set_x_velocity(LOCAL_X_VELOCITIES[idx] as u8);
+                    .set_x_velocity(RED_BARI_SPLIT_X_VELOCITIES[idx] as u8);
                 self.sprite_slot_view_mut(j).set_delay_aux2(8);
                 self.sprite_slot_view_mut(j).set_delay_aux1(64);
             }
