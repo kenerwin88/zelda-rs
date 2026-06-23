@@ -10,6 +10,54 @@ use load_gfx_shared::{
     MESSAGING_BUF_LOAD_GFX as LOAD_GFX_MESSAGING_BUF_LOAD_GFX,
 };
 
+const LOAD_GFX_FEATURES0_MISC_BUG_FIXES: u32 = 4096;
+const LOAD_GFX_FEATURES0_DIM_FLASHES: u32 = 65536;
+
+const PALETTE_FILTERING_BITS: [u16; 64] = [
+    0xffff, 0xffff, 0xfffe, 0xffff, 0x7fff, 0x7fff, 0x7fdf, 0xfbff, 0x7f7f, 0x7f7f, 0x7df7, 0xefbf,
+    0x7bdf, 0x7bdf, 0x77bb, 0xddef, 0x7777, 0x7777, 0x6edd, 0xbb77, 0x6db7, 0x6db7, 0x5b6d, 0xb6db,
+    0x5b5b, 0x5b5b, 0x56b6, 0xad6b, 0x5555, 0xad6b, 0x5555, 0xaaab, 0x5555, 0x5555, 0x2a55, 0x5555,
+    0x2a55, 0x2a55, 0x294a, 0x5295, 0x2525, 0x2525, 0x2492, 0x4925, 0x1249, 0x1249, 0x1122, 0x4489,
+    0x1111, 0x1111, 0x0844, 0x2211, 0x0421, 0x0421, 0x0208, 0x1041, 0x0101, 0x0101, 0x0020, 0x0401,
+    0x0001, 0x0001, 0x0000, 0x0001,
+];
+
+const PALETTE_FILTER_UPPER_BITMASKS: [u16; 16] = [
+    0x8000, 0x4000, 0x2000, 0x1000, 0x0800, 0x0400, 0x0200, 0x0100, 0x0080, 0x0040, 0x0020, 0x0010,
+    0x0008, 0x0004, 0x0002, 0x0001,
+];
+
+const ITEM_ANIMATION_GFX_SOURCE_GROUPS: [usize; 10] = [0, 11, 8, 38, 42, 45, 34, 3, 33, 46];
+const FOLLOWER_GFX_DECOMPRESSION_OFFSETS: [usize; 14] = [
+    0, 0x600, 0x300, 0x300, 0x300, 0, 0, 0x900, 0x600, 0x600, 0x900, 0x900, 0x600, 0x900,
+];
+const SWORD_TYPE_TO_GFX_OFFSETS: [usize; 5] = [0, 0, 0x120, 0x120, 0x120];
+const SHIELD_TYPE_TO_GFX_OFFSETS: [usize; 4] = [0x660, 0x660, 0x6f0, 0x900];
+
+const INCREMENTAL_VRAM_UPLOAD_DESTINATIONS: [u8; 16] = [
+    0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f,
+];
+const INCREMENTAL_VRAM_UPLOAD_SOURCES: [u16; 16] = [
+    0x0000, 0x0200, 0x0400, 0x0600, 0x0800, 0x0a00, 0x0c00, 0x0e00, 0x1000, 0x1200, 0x1400, 0x1600,
+    0x1800, 0x1a00, 0x1c00, 0x1e00,
+];
+
+const AGAHNIM_WARP_SHADOW_PALETTE_OFFSETS: [usize; 3] = [0x160, 0x180, 0x1a0];
+const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
+const SPOTLIGHT_DELTA_SIZE: [i8; 4] = [-7, 7, 7, 7];
+const SPOTLIGHT_GOAL: [u16; 4] = [0, 126, 35, 126];
+const SPOTLIGHT_CIRCLE_X_RADIUS_CURVE: [u8; 129] = [
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xfe, 0xfe, 0xfe,
+    0xfd, 0xfd, 0xfd, 0xfd, 0xfc, 0xfc, 0xfc, 0xfb, 0xfb, 0xfb, 0xfa, 0xfa, 0xf9, 0xf9, 0xf8, 0xf8,
+    0xf7, 0xf7, 0xf6, 0xf6, 0xf5, 0xf5, 0xf4, 0xf3, 0xf3, 0xf2, 0xf1, 0xf1, 0xf0, 0xef, 0xee, 0xee,
+    0xed, 0xec, 0xeb, 0xea, 0xe9, 0xe9, 0xe8, 0xe7, 0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xdf, 0xde,
+    0xdd, 0xdc, 0xdb, 0xda, 0xd8, 0xd7, 0xd6, 0xd5, 0xd3, 0xd2, 0xd0, 0xcf, 0xcd, 0xcc, 0xca, 0xc9,
+    0xc7, 0xc6, 0xc4, 0xc2, 0xc1, 0xbf, 0xbd, 0xbb, 0xb9, 0xb7, 0xb6, 0xb4, 0xb1, 0xaf, 0xad, 0xab,
+    0xa9, 0xa7, 0xa4, 0xa2, 0x9f, 0x9d, 0x9a, 0x97, 0x95, 0x92, 0x8f, 0x8c, 0x89, 0x86, 0x82, 0x7f,
+    0x7b, 0x78, 0x74, 0x70, 0x6c, 0x67, 0x63, 0x5e, 0x59, 0x53, 0x4d, 0x46, 0x3f, 0x37, 0x2d, 0x1f,
+    0,
+];
+
 impl ZeldaState {
     fn sprite_gfx_subset(&self, slot: usize) -> u8 {
         self.game_state.sprites.workspace.graphics_subset(slot)
@@ -86,11 +134,10 @@ impl ZeldaState {
             inventory.shield_type(),
             inventory.armor(),
         );
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         if self
             .game_state
             .enhanced_features
-            .has(FEATURES0_MISC_BUG_FIXES)
+            .has(LOAD_GFX_FEATURES0_MISC_BUG_FIXES)
         {
             self.palette_update_gloves_color();
         }
@@ -249,22 +296,9 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_filter_range(&mut self, from: usize, to: usize) {
-        const PALETTE_FILTERING_BITS: [u16; 64] = [
-            0xffff, 0xffff, 0xfffe, 0xffff, 0x7fff, 0x7fff, 0x7fdf, 0xfbff, 0x7f7f, 0x7f7f, 0x7df7,
-            0xefbf, 0x7bdf, 0x7bdf, 0x77bb, 0xddef, 0x7777, 0x7777, 0x6edd, 0xbb77, 0x6db7, 0x6db7,
-            0x5b6d, 0xb6db, 0x5b5b, 0x5b5b, 0x56b6, 0xad6b, 0x5555, 0xad6b, 0x5555, 0xaaab, 0x5555,
-            0x5555, 0x2a55, 0x5555, 0x2a55, 0x2a55, 0x294a, 0x5295, 0x2525, 0x2525, 0x2492, 0x4925,
-            0x1249, 0x1249, 0x1122, 0x4489, 0x1111, 0x1111, 0x0844, 0x2211, 0x0421, 0x0421, 0x0208,
-            0x1041, 0x0101, 0x0101, 0x0020, 0x0401, 0x0001, 0x0001, 0x0000, 0x0001,
-        ];
-        const UPPER_BITMASKS: [u16; 16] = [
-            0x8000, 0x4000, 0x2000, 0x1000, 0x0800, 0x0400, 0x0200, 0x0100, 0x0080, 0x0040, 0x0020,
-            0x0010, 0x0008, 0x0004, 0x0002, 0x0001,
-        ];
-
         let countdown = self.game_state.display.palette_filter.countdown_word();
         let load_ptr_offset = usize::from(countdown >= 0x10);
-        let mask = UPPER_BITMASKS[(countdown & 0x0f) as usize];
+        let mask = PALETTE_FILTER_UPPER_BITMASKS[(countdown & 0x0f) as usize];
         let dt = if self
             .game_state
             .display
@@ -368,8 +402,11 @@ impl ZeldaState {
     }
 
     fn filter_majorly_whiten_color(&self, color: u16) -> u16 {
-        const FEATURES0_DIM_FLASHES: u32 = 65536;
-        let amt = if self.game_state.enhanced_features.has(FEATURES0_DIM_FLASHES) {
+        let amt = if self
+            .game_state
+            .enhanced_features
+            .has(LOAD_GFX_FEATURES0_DIM_FLASHES)
+        {
             3
         } else {
             14
@@ -799,7 +836,6 @@ impl ZeldaState {
         r12: usize,
         from_temp: bool,
     ) -> usize {
-        const ITEM_ANIMATION_GFX_SOURCE_GROUPS: [usize; 10] = [0, 11, 8, 38, 42, 45, 34, 3, 33, 46];
         let Some(source) = (if from_temp {
             Some(self.graphics_primary_decompression_buffer(0x600))
         } else {
@@ -838,10 +874,6 @@ impl ZeldaState {
     }
 
     pub(super) fn load_follower_graphics(&mut self) {
-        const TAGALONG_WHICH: [usize; 14] = [
-            0, 0x600, 0x300, 0x300, 0x300, 0, 0, 0x900, 0x600, 0x600, 0x900, 0x900, 0x600, 0x900,
-        ];
-
         let follower = self.game_state.sprites.follower_runtime.indicator() as usize;
         let mut yv = 0x64;
         if follower != 1 {
@@ -863,13 +895,15 @@ impl ZeldaState {
             0x65,
         );
         let tmp = self.graphics_combined_decompression_buffers();
-        let offset = TAGALONG_WHICH.get(follower).copied().unwrap_or(0);
+        let offset = FOLLOWER_GFX_DECOMPRESSION_OFFSETS
+            .get(follower)
+            .copied()
+            .unwrap_or(0);
         self.do3_to_4_low_16bit_from_slice(0xb940, &tmp, offset, 0x20);
     }
 
     pub(super) fn decompress_sword_graphics(&mut self) {
         self.replay_trace_ram_watch("loadgfx-before-decompress-sword");
-        const SWORD_TYPE_TO_GFX_OFFS: [usize; 5] = [0, 0, 0x120, 0x120, 0x120];
         self.decompress_sprite_graphics_to_buffer(
             GraphicsDecompressionScratch::secondary_buffer_offset(),
             0x5f,
@@ -880,7 +914,7 @@ impl ZeldaState {
         );
         let tmp = self.graphics_primary_decompression_buffer(0x600);
         let sword = self.game_state.inventory.items.sword_type() as usize;
-        let src = SWORD_TYPE_TO_GFX_OFFS.get(sword).copied().unwrap_or(0);
+        let src = SWORD_TYPE_TO_GFX_OFFSETS.get(sword).copied().unwrap_or(0);
         self.expand3_to_4_high_from_slice(0x9000, &tmp, src, 0, 12);
         self.expand3_to_4_high_from_slice(0x9180, &tmp, src + 0x180, 0, 12);
         self.replay_trace_ram_watch("loadgfx-after-decompress-sword");
@@ -888,7 +922,6 @@ impl ZeldaState {
 
     pub(super) fn decompress_shield_graphics(&mut self) {
         self.replay_trace_ram_watch("loadgfx-before-decompress-shield");
-        const SHIELD_TYPE_TO_GFX_OFFS: [usize; 4] = [0x660, 0x660, 0x6f0, 0x900];
         self.decompress_sprite_graphics_to_buffer(
             GraphicsDecompressionScratch::secondary_buffer_offset(),
             0x5f,
@@ -899,7 +932,7 @@ impl ZeldaState {
         );
         let tmp = self.graphics_combined_decompression_buffers();
         let shield = self.game_state.inventory.items.shield_type() as usize;
-        let src = SHIELD_TYPE_TO_GFX_OFFS
+        let src = SHIELD_TYPE_TO_GFX_OFFSETS
             .get(shield)
             .copied()
             .unwrap_or(0x660);
@@ -1867,15 +1900,6 @@ impl ZeldaState {
     }
 
     pub(super) fn Graphics_IncrementalVRAMUpload(&mut self) {
-        const DST: [u8; 16] = [
-            0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d,
-            0x5e, 0x5f,
-        ];
-        const SRC: [u16; 16] = [
-            0x0000, 0x0200, 0x0400, 0x0600, 0x0800, 0x0a00, 0x0c00, 0x0e00, 0x1000, 0x1200, 0x1400,
-            0x1600, 0x1800, 0x1a00, 0x1c00, 0x1e00,
-        ];
-
         let k = self
             .game_state
             .display
@@ -1883,7 +1907,10 @@ impl ZeldaState {
         if k == 16 {
             return;
         }
-        self.queue_tilemap_update(DST[k], SRC[k]);
+        self.queue_tilemap_update(
+            INCREMENTAL_VRAM_UPLOAD_DESTINATIONS[k],
+            INCREMENTAL_VRAM_UPLOAD_SOURCES[k],
+        );
         self.increment_vram_upload_counter();
     }
 
@@ -2034,11 +2061,10 @@ impl ZeldaState {
     }
 
     pub(super) fn KholdstareShell_PaletteFiltering(&mut self) {
-        const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
         let t = if self
             .game_state
             .enhanced_features
-            .has(FEATURES0_MISC_BUG_FIXES)
+            .has(LOAD_GFX_FEATURES0_MISC_BUG_FIXES)
         {
             0x50
         } else {
@@ -2066,8 +2092,6 @@ impl ZeldaState {
     }
 
     pub(super) fn AgahnimWarpShadowFilter(&mut self, k: usize) {
-        const AGAHNIM_WARP_SHADOW_PALETTE_OFFSETS: [usize; 3] = [0x160, 0x180, 0x1a0];
-
         let pal_countdown = self.agahnim_palette_word(k);
         let darkening_screen = self.agahnim_palette_word(k + 3);
         self.set_countdown_word(pal_countdown);
@@ -2716,7 +2740,6 @@ impl ZeldaState {
             self.set_color_math_control(a);
             torch = 3;
         }
-        const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
         self.set_overworld_fixed_color_adjustment(
             LIT_TORCHES_COLOR_PLUS
                 .get(torch as usize)
@@ -3199,9 +3222,6 @@ impl ZeldaState {
     }
 
     pub(super) fn iris_spotlight_configure_table(&mut self) {
-        const SPOTLIGHT_DELTA_SIZE: [i8; 4] = [-7, 7, 7, 7];
-        const SPOTLIGHT_GOAL: [u16; 4] = [0, 126, 35, 126];
-
         let r14 = self
             .game_state
             .player
@@ -3293,19 +3313,6 @@ impl ZeldaState {
     }
 
     pub(super) fn iris_spotlight_calculate_circle_value(&self, a: u8) -> u16 {
-        const SPOTLIGHT_CIRCLE_X_RADIUS_CURVE: [u8; 129] = [
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xfe,
-            0xfe, 0xfe, 0xfd, 0xfd, 0xfd, 0xfd, 0xfc, 0xfc, 0xfc, 0xfb, 0xfb, 0xfb, 0xfa, 0xfa,
-            0xf9, 0xf9, 0xf8, 0xf8, 0xf7, 0xf7, 0xf6, 0xf6, 0xf5, 0xf5, 0xf4, 0xf3, 0xf3, 0xf2,
-            0xf1, 0xf1, 0xf0, 0xef, 0xee, 0xee, 0xed, 0xec, 0xeb, 0xea, 0xe9, 0xe9, 0xe8, 0xe7,
-            0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xdf, 0xde, 0xdd, 0xdc, 0xdb, 0xda, 0xd8, 0xd7,
-            0xd6, 0xd5, 0xd3, 0xd2, 0xd0, 0xcf, 0xcd, 0xcc, 0xca, 0xc9, 0xc7, 0xc6, 0xc4, 0xc2,
-            0xc1, 0xbf, 0xbd, 0xbb, 0xb9, 0xb7, 0xb6, 0xb4, 0xb1, 0xaf, 0xad, 0xab, 0xa9, 0xa7,
-            0xa4, 0xa2, 0x9f, 0x9d, 0x9a, 0x97, 0x95, 0x92, 0x8f, 0x8c, 0x89, 0x86, 0x82, 0x7f,
-            0x7b, 0x78, 0x74, 0x70, 0x6c, 0x67, 0x63, 0x5e, 0x59, 0x53, 0x4d, 0x46, 0x3f, 0x37,
-            0x2d, 0x1f, 0,
-        ];
-
         let radius = self.game_state.display.spotlight_hdma.window_radius() as u8;
         let div = if radius == 0 {
             0xffff
