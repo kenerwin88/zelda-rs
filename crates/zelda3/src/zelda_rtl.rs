@@ -703,7 +703,6 @@ const OVERWORLD_PALETTE_AUX2_BP5TO7_HI: usize = 0x0ab5;
 const PALETTE_MAIN_INDOORS: usize = 0x0ab6;
 const PALETTE_MAIN_INDOORS_COPY: usize = 0x0ab7;
 const OVERWORLD_PALETTE_AUX3_BP7_LO: usize = 0x0ab8;
-const PALETTE_SWAP_FLAG: usize = 0x0abd;
 const EXTENDED_OAM: usize = 0x0a00;
 const LINK_ITEM_BOW: usize = 0x0f340;
 const LINK_ITEM_BOOMERANG: usize = 0x0f341;
@@ -1752,6 +1751,10 @@ impl ZeldaState {
 
     pub(crate) fn follower_link_state_mut(&mut self) -> NativeFollowerLinkBridgeMut<'_> {
         NativeFollowerLinkBridgeMut::new(&mut self.game_state.player.follower_link, &mut self.ram)
+    }
+
+    pub(crate) fn palette_swap_enabled(&self) -> bool {
+        self.game_state.sprites.follower_runtime.palette_swap_flag() != 0
     }
 
     pub(crate) fn enhanced_features_mut(&mut self) -> NativeEnhancedFeaturesBridgeMut<'_> {

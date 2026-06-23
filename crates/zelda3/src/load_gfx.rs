@@ -800,7 +800,7 @@ impl ZeldaState {
                 .sprite_palette_0_left() as u32
                 * 7
                 * 2;
-        let dst = if self.ram[crate::game_state::constants::PALETTE_SWAP_FLAG] != 0 {
+        let dst = if self.palette_swap_enabled() {
             0x1e2
         } else {
             0x102
@@ -938,7 +938,7 @@ impl ZeldaState {
             7
         };
         let src = PALETTE_MISC_SPRITE_INDOORS_SNES_ADDR + t * 7 * 2;
-        let dst = if self.ram[crate::game_state::constants::PALETTE_SWAP_FLAG] != 0 {
+        let dst = if self.palette_swap_enabled() {
             0x1f2
         } else {
             0x112
@@ -998,7 +998,7 @@ impl ZeldaState {
                 * 90
                 * 2;
         self.palette_load_multiple(src, 0x42, 14, 5);
-        let dst = if self.ram[crate::game_state::constants::PALETTE_SWAP_FLAG] != 0 {
+        let dst = if self.palette_swap_enabled() {
             0x1e2
         } else {
             0x112
@@ -2988,7 +2988,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_HandleTranslucencyAndPalette(&mut self) {
-        if self.ram[crate::game_state::constants::PALETTE_SWAP_FLAG] != 0 {
+        if self.palette_swap_enabled() {
             self.Palette_RevertTranslucencySwap();
         }
 
