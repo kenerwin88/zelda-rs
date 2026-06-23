@@ -124,10 +124,10 @@ pub(crate) use world::{
     NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
     NativeOverworldScreenSizeBridgeMut, NativeOverworldScrollDeltaBridgeMut,
     NativeOverworldTransitionBridgeMut, NativeRoomBoundsBridgeMut, NativeWeatherVaneBridgeMut,
-    NativeWorldCameraBoundariesBridgeMut, NativeWorldPaletteThemeBridgeMut,
-    NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut, OverworldConfigTableRead,
-    OverworldMap16Decode, OverworldMap16DecodeScratch, OverworldMap16SourcePage,
-    WorldLocationState, WorldState, WorldTransientState,
+    NativeWorldCameraBoundariesBridgeMut, NativeWorldLocationBridgeMut,
+    NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
+    OverworldConfigTableRead, OverworldMap16Decode, OverworldMap16DecodeScratch,
+    OverworldMap16SourcePage, WorldLocationState, WorldState, WorldTransientState,
 };
 pub use world::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 
@@ -177,11 +177,11 @@ use sprites::{
 use system::NativeSystemWorkAreaBridgeMut;
 #[cfg(test)]
 use world::{
-    BirdTravelDestinationsState, NativeWorldLocationBridgeMut, NativeWorldTransientBridgeMut,
-    OverworldConfigTableState, OverworldEntranceState, OverworldEventInfoState, OverworldExitState,
-    OverworldMapUiState, OverworldMapZoomState, OverworldScreenSizeState,
-    OverworldScrollDeltaState, OverworldTransitionState, RoomBoundsState, WeatherVaneState,
-    WorldCameraBoundariesState, WorldPaletteThemeState, WorldRegionState, WorldScrollState,
+    BirdTravelDestinationsState, NativeWorldTransientBridgeMut, OverworldConfigTableState,
+    OverworldEntranceState, OverworldEventInfoState, OverworldExitState, OverworldMapUiState,
+    OverworldMapZoomState, OverworldScreenSizeState, OverworldScrollDeltaState,
+    OverworldTransitionState, RoomBoundsState, WeatherVaneState, WorldCameraBoundariesState,
+    WorldPaletteThemeState, WorldRegionState, WorldScrollState,
 };
 
 fn ram_byte(ram: &[u8], offset: usize) -> u8 {

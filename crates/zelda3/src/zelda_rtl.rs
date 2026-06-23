@@ -94,11 +94,11 @@ use crate::game_state::{
     NativeTowerSealSparkleBridgeMut, NativeTrinexxPaletteBridgeMut,
     NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
     NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
-    NativeWorldCameraBoundariesBridgeMut, NativeWorldPaletteThemeBridgeMut,
-    NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut, OverworldConfigTableRead,
-    OverworldMap16Decode, OverworldMap16DecodeScratch, OverworldMap16LoadState,
-    OverworldMap16SourcePage, PaletteFilterState, PpuScrollCopyState, QuakeBoltSlotState,
-    RamPlayerStateView, RamPlayerStateViewMut, SkullWoodsFireSlotState,
+    NativeWorldCameraBoundariesBridgeMut, NativeWorldLocationBridgeMut,
+    NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
+    OverworldConfigTableRead, OverworldMap16Decode, OverworldMap16DecodeScratch,
+    OverworldMap16LoadState, OverworldMap16SourcePage, PaletteFilterState, PpuScrollCopyState,
+    QuakeBoltSlotState, RamPlayerStateView, RamPlayerStateViewMut, SkullWoodsFireSlotState,
     SmallOverworldMap16ScrollBackupState, SpotlightHdmaState, SystemSignalsState, SystemWorkArea,
     TagalongSlotRead, TowerSealOrbitState, TowerSealSparkleState, WeatherVaneDebrisSlotState,
     WorldTransientState,
@@ -2193,60 +2193,38 @@ impl ZeldaState {
         self.frame_state_mut().increment_modal_pause_flag()
     }
 
-    fn sync_world_location_to_ram(&mut self) {
-        self.game_state.world.location.write_to_ram(&mut self.ram);
-        debug_assert_eq!(
-            self.game_state.world.location,
-            crate::game_state::WorldLocationState::load_from_ram(&self.ram)
-        );
+    fn world_location_mut(&mut self) -> NativeWorldLocationBridgeMut<'_> {
+        NativeWorldLocationBridgeMut::new(&mut self.game_state.world.location, &mut self.ram)
     }
 
     pub(crate) fn set_dungeon_room(&mut self, value: u16) {
-        self.game_state.world.location.set_dungeon_room(value);
-        self.sync_world_location_to_ram();
+        self.world_location_mut().set_dungeon_room(value);
     }
 
     pub(crate) fn set_dungeon_room_index(&mut self, value: u8) {
-        self.game_state.world.location.set_dungeon_room_index(value);
-        self.sync_world_location_to_ram();
+        self.world_location_mut().set_dungeon_room_index(value);
     }
 
     pub(crate) fn increment_dungeon_room_index_by(&mut self, value: u8) -> u8 {
-        let next = self
-            .game_state
-            .world
-            .location
-            .increment_dungeon_room_index_by(value);
-        self.sync_world_location_to_ram();
-        next
+        self.world_location_mut()
+            .increment_dungeon_room_index_by(value)
     }
 
     pub(crate) fn decrement_dungeon_room_index_by(&mut self, value: u8) -> u8 {
-        let next = self
-            .game_state
-            .world
-            .location
-            .decrement_dungeon_room_index_by(value);
-        self.sync_world_location_to_ram();
-        next
+        self.world_location_mut()
+            .decrement_dungeon_room_index_by(value)
     }
 
     pub(crate) fn set_overworld_screen(&mut self, value: u8) {
-        self.game_state.world.location.set_overworld_screen(value);
-        self.sync_world_location_to_ram();
+        self.world_location_mut().set_overworld_screen(value);
     }
 
     pub(crate) fn set_overworld_screen_word(&mut self, value: u16) {
-        self.game_state
-            .world
-            .location
-            .set_overworld_screen_word(value);
-        self.sync_world_location_to_ram();
+        self.world_location_mut().set_overworld_screen_word(value);
     }
 
     pub(crate) fn set_indoor_flag(&mut self, value: u8) {
-        self.game_state.world.location.set_indoor_flag(value);
-        self.sync_world_location_to_ram();
+        self.world_location_mut().set_indoor_flag(value);
     }
 
     pub(crate) fn world_scroll_mut(&mut self) -> NativeWorldScrollBridgeMut<'_> {
