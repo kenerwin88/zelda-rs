@@ -2641,16 +2641,14 @@ impl ZeldaState {
     //   return garnish_x_lo[k] | garnish_x_hi[k] << 8;
     // }
     pub(super) fn garnish_get_x(&self, k: usize) -> u16 {
-        u16::from(self.game_state.sprites.garnish_slots.slot(k).x_low())
-            | (u16::from(self.game_state.sprites.garnish_slots.slot(k).x_high()) << 8)
+        self.garnish_slot_view(k).x()
     }
 
     // uint16 Garnish_GetY(int k) {
     //   return garnish_y_lo[k] | garnish_y_hi[k] << 8;
     // }
     pub(super) fn garnish_get_y(&self, k: usize) -> u16 {
-        u16::from(self.game_state.sprites.garnish_slots.slot(k).y_low())
-            | (u16::from(self.game_state.sprites.garnish_slots.slot(k).y_high()) << 8)
+        self.garnish_slot_view(k).y()
     }
 
     // bool Garnish_ReturnIfPrepFails(int k, Point16U *pt) {  // 86e75e
@@ -2673,11 +2671,7 @@ impl ZeldaState {
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         if x >= 256 || y >= 256 {
             let value = 0;
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, k)
-                .set_garnish_type(value);
+            self.garnish_slot_view_mut(k).set_garnish_type(value);
             return true;
         }
         pt.x = x;
@@ -2714,13 +2708,13 @@ impl ZeldaState {
     pub(super) fn garnish_sparkle_common(&mut self, k: usize, shift: u8) {
         const GARNISH_SPARKLE_CHAR: [u8; 4] = [0x83, 0xc7, 0x80, 0xb7];
 
-        let t = usize::from(self.game_state.sprites.garnish_slots.slot(k).countdown() >> shift);
+        let t = usize::from(self.garnish_slot_view(k).countdown() >> shift);
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
         let oam = self.game_state.oam.current_pointer_usize();
-        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
+        let j = usize::from(self.garnish_slot_view(k).sprite());
         let flags =
             (self.sprite_slot(j).oam_flags() | self.sprite_slot(j).object_priority()) & 0xf0 | 4;
         self.set_oam_plain_at_for_sprite(
@@ -2745,7 +2739,7 @@ impl ZeldaState {
     pub(super) fn garnish_dust_common(&mut self, k: usize, shift: u8) {
         const RUNNING_MAN_DUST_CHAR: [u8; 3] = [0xdf, 0xcf, 0xa9];
 
-        let counter = self.game_state.sprites.garnish_slots.slot(k).countdown() >> shift;
+        let counter = self.garnish_slot_view(k).countdown() >> shift;
         self.temp_counter_mut().set(counter);
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
@@ -2801,8 +2795,7 @@ impl ZeldaState {
             oam,
             pt.x as u8,
             pt.y as u8,
-            LASER_BEAM_TRAIL_CHAR
-                [usize::from(self.game_state.sprites.garnish_slots.slot(k).oam_flags())],
+            LASER_BEAM_TRAIL_CHAR[usize::from(self.garnish_slot_view(k).oam_flags())],
             0x25,
             0,
         );
@@ -2821,7 +2814,7 @@ impl ZeldaState {
             return;
         }
         let oam = self.game_state.oam.current_pointer_usize();
-        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
+        let j = usize::from(self.garnish_slot_view(k).sprite());
         self.set_oam_plain_at_for_sprite(
             oam,
             pt.x as u8,
@@ -2845,7 +2838,7 @@ impl ZeldaState {
             return;
         }
         let oam = self.game_state.oam.current_pointer_usize();
-        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
+        let j = usize::from(self.garnish_slot_view(k).sprite());
         self.set_oam_plain_at_for_sprite(
             oam,
             pt.x as u8,
@@ -2863,19 +2856,13 @@ impl ZeldaState {
     // }
     pub(super) fn garnish02_mothula_beam_trail(&mut self, k: usize) {
         let oam = self.game_state.oam.current_pointer_usize();
-        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
+        let j = usize::from(self.garnish_slot_view(k).sprite());
         self.set_oam_plain_at_for_sprite(
             oam,
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot(k)
+            self.garnish_slot_view(k)
                 .x_low()
                 .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low()),
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot(k)
+            self.garnish_slot_view(k)
                 .y_low()
                 .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low()),
             0xaa,
@@ -2947,7 +2934,7 @@ impl ZeldaState {
             return;
         }
         let mut oam = self.game_state.oam.current_pointer_usize();
-        let g = usize::from((self.game_state.sprites.garnish_slots.slot(k).countdown() >> 1) & 6);
+        let g = usize::from((self.garnish_slot_view(k).countdown() >> 1) & 6);
         for i in (0..=1).rev() {
             let j = i + g;
             self.set_oam_plain_at_for_sprite(
@@ -2968,81 +2955,43 @@ impl ZeldaState {
     pub(super) fn garnish13_pyramid_debris(&mut self, k: usize) {
         let oam = self.game_state.oam.current_pointer_usize();
 
-        let y = (i32::from(self.game_state.sprites.garnish_slots.slot(k).y_low()) << 8)
-            + i32::from(self.game_state.sprites.garnish_slots.slot(k).y_subpixel())
-            + ((self.game_state.sprites.garnish_slots.slot(k).y_velocity() as i8 as i32) << 4);
+        let garnish = self.garnish_slot_view(k);
+        let y = (i32::from(garnish.y_low()) << 8)
+            + i32::from(garnish.y_subpixel())
+            + ((garnish.y_velocity() as i8 as i32) << 4);
         let value = y as u8;
-        self.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut self.ram, k)
-            .set_y_subpixel(value);
+        self.garnish_slot_view_mut(k).set_y_subpixel(value);
         let value = (y >> 8) as u8;
-        self.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut self.ram, k)
-            .set_y_low(value);
+        self.garnish_slot_view_mut(k).set_y_low(value);
 
-        let x = (i32::from(self.game_state.sprites.garnish_slots.slot(k).x_low()) << 8)
-            + i32::from(self.game_state.sprites.garnish_slots.slot(k).x_subpixel())
-            + ((self.game_state.sprites.garnish_slots.slot(k).x_velocity() as i8 as i32) << 4);
+        let garnish = self.garnish_slot_view(k);
+        let x = (i32::from(garnish.x_low()) << 8)
+            + i32::from(garnish.x_subpixel())
+            + ((garnish.x_velocity() as i8 as i32) << 4);
         let value = x as u8;
-        self.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut self.ram, k)
-            .set_x_subpixel(value);
+        self.garnish_slot_view_mut(k).set_x_subpixel(value);
         let value = (x >> 8) as u8;
-        self.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut self.ram, k)
-            .set_x_low(value);
+        self.garnish_slot_view_mut(k).set_x_low(value);
 
-        let value = self
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot(k)
-            .y_velocity()
-            .wrapping_add(3);
-        self.game_state
-            .sprites
-            .garnish_slots
-            .slot_mut(&mut self.ram, k)
-            .set_y_velocity(value);
+        let value = self.garnish_slot_view(k).y_velocity().wrapping_add(3);
+        self.garnish_slot_view_mut(k).set_y_velocity(value);
         let t = self
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot(k)
+            .garnish_slot_view(k)
             .x_low()
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2_low());
         if t >= 248 {
             let value = 0;
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, k)
-                .set_garnish_type(value);
+            self.garnish_slot_view_mut(k).set_garnish_type(value);
             return;
         }
         self.oam_state_mut().set_entry_x(oam, t);
         let t = self
-            .game_state
-            .sprites
-            .garnish_slots
-            .slot(k)
+            .garnish_slot_view(k)
             .y_low()
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2_low());
         if t >= 240 {
             let value = 0;
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, k)
-                .set_garnish_type(value);
+            self.garnish_slot_view_mut(k).set_garnish_type(value);
             return;
         }
         self.oam_state_mut().set_entry_y(oam, t);
@@ -3089,21 +3038,16 @@ impl ZeldaState {
         const GANON_BAT_FLAME_CHAR: [u8; 7] = [0xac, 0xac, 0x66, 0x66, 0x8e, 0xa0, 0xa2];
         const GANON_BAT_FLAME_FLAGS: [u8; 7] = [1, 0x41, 1, 0x41, 0, 0, 0];
 
-        if self.game_state.sprites.garnish_slots.slot(k).countdown() == 8 {
+        if self.garnish_slot_view(k).countdown() == 8 {
             let value = 0x11;
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, k)
-                .set_garnish_type(value);
+            self.garnish_slot_view_mut(k).set_garnish_type(value);
         }
         let mut pt = Point16U { x: 0, y: 0 };
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
         let j = usize::from(
-            GANON_BAT_FLAME_IDX
-                [usize::from(self.game_state.sprites.garnish_slots.slot(k).countdown() >> 3)],
+            GANON_BAT_FLAME_IDX[usize::from(self.garnish_slot_view(k).countdown() >> 3)],
         );
         self.set_oam_plain_at_for_sprite(
             self.game_state.oam.current_pointer_usize(),
@@ -3127,13 +3071,12 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
+        let j = usize::from(self.garnish_slot_view(k).sprite());
         self.set_oam_plain_at_for_sprite(
             self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
-            GARNISH_CANNON_POOF_CHAR
-                [usize::from(self.game_state.sprites.garnish_slots.slot(k).countdown() >> 3)],
+            GARNISH_CANNON_POOF_CHAR[usize::from(self.garnish_slot_view(k).countdown() >> 3)],
             GARNISH_CANNON_POOF_FLAGS[j] | 4,
             2,
         );
@@ -3150,7 +3093,7 @@ impl ZeldaState {
         ];
         const TRINEXX_ICE_FLAGS: [u8; 4] = [0, 0x40, 0xc0, 0x80];
 
-        if self.game_state.sprites.garnish_slots.slot(k).countdown() == 0x50
+        if self.garnish_slot_view(k).countdown() == 0x50
             && (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0
         {
             self.dungeon_update_tile_map_with_common_tile_for_garnish(
@@ -3167,11 +3110,8 @@ impl ZeldaState {
             self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
-            TRINEXX_ICE_CHAR
-                [usize::from(self.game_state.sprites.garnish_slots.slot(k).countdown() >> 4)],
-            TRINEXX_ICE_FLAGS
-                [usize::from((self.game_state.sprites.garnish_slots.slot(k).countdown() >> 2) & 3)]
-                | 0x35,
+            TRINEXX_ICE_CHAR[usize::from(self.garnish_slot_view(k).countdown() >> 4)],
+            TRINEXX_ICE_FLAGS[usize::from((self.garnish_slot_view(k).countdown() >> 2) & 3)] | 0x35,
             2,
         );
     }
@@ -3187,7 +3127,7 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
+        let j = usize::from(self.garnish_slot_view(k).sprite());
         let room_offset = if self.game_state.dungeon.room_tracking.room_index2() == 0x20 {
             0x80
         } else {
@@ -3211,7 +3151,7 @@ impl ZeldaState {
         const CRUMBLE_TILE_FLAGS: [u8; 5] = [0x30, 0x31, 0x31, 0x31, 0x31];
         const CRUMBLE_TILE_EXT: [u8; 5] = [0, 2, 2, 2, 2];
 
-        let mut j = self.game_state.sprites.garnish_slots.slot(k).countdown();
+        let mut j = self.garnish_slot_view(k).countdown();
         if j == 0x1e {
             j = self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag;
             if j == 0 {
@@ -3252,7 +3192,7 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).countdown() >> 3);
+        let j = usize::from(self.garnish_slot_view(k).countdown() >> 3);
         self.set_oam_plain_at_for_sprite(
             self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
@@ -3272,8 +3212,8 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let i = usize::from(self.game_state.sprites.garnish_slots.slot(k).countdown() >> 2);
-        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
+        let i = usize::from(self.garnish_slot_view(k).countdown() >> 2);
+        let j = usize::from(self.garnish_slot_view(k).sprite());
         self.set_oam_plain_at_for_sprite(
             self.game_state.oam.current_pointer_usize(),
             pt.x.wrapping_add(GARNISH_NEBULE_XY[i] as i16 as u16) as u8,
@@ -3292,13 +3232,12 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
+        let j = usize::from(self.garnish_slot_view(k).sprite());
         self.set_oam_plain_at_for_sprite(
             self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
-            TRINEXX_LAVA_BUBBLE_CHAR
-                [usize::from(self.game_state.sprites.garnish_slots.slot(k).countdown() >> 3)],
+            TRINEXX_LAVA_BUBBLE_CHAR[usize::from(self.garnish_slot_view(k).countdown() >> 3)],
             (self.sprite_slot(j).oam_flags() | self.sprite_slot(j).object_priority()) & 0xf0 | 0x0e,
             0,
         );
@@ -3312,19 +3251,13 @@ impl ZeldaState {
         if self.garnish_return_if_prep_fails(k, &mut pt) {
             return;
         }
-        let j = usize::from(self.game_state.sprites.garnish_slots.slot(k).sprite());
+        let j = usize::from(self.garnish_slot_view(k).sprite());
         self.set_oam_plain_at_for_sprite(
             self.game_state.oam.current_pointer_usize(),
             pt.x as u8,
             pt.y as u8,
-            BLIND_LASER_TRAIL_CHAR[usize::from(
-                self.game_state
-                    .sprites
-                    .garnish_slots
-                    .slot(k)
-                    .oam_flags()
-                    .wrapping_sub(7),
-            )],
+            BLIND_LASER_TRAIL_CHAR
+                [usize::from(self.garnish_slot_view(k).oam_flags().wrapping_sub(7))],
             self.sprite_slot(j).oam_flags() | self.sprite_slot(j).object_priority(),
             0,
         );
@@ -3371,40 +3304,26 @@ impl ZeldaState {
         ];
 
         self.sprite_system_mut().set_cur_object_index(k as u8);
-        let type_ = self.game_state.sprites.garnish_slots.slot(k).garnish_type();
+        let type_ = self.garnish_slot_view(k).garnish_type();
         if type_ == 0 {
             return;
         }
         if (type_ == 5
             || (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0)
-            && self.game_state.sprites.garnish_slots.slot(k).countdown() != 0
+            && self.garnish_slot_view(k).countdown() != 0
         {
-            let value = self
-                .game_state
-                .sprites
-                .garnish_slots
-                .slot(k)
-                .countdown()
-                .wrapping_sub(1);
-            self.game_state
-                .sprites
-                .garnish_slots
-                .slot_mut(&mut self.ram, k)
-                .set_countdown(value);
-            if self.game_state.sprites.garnish_slots.slot(k).countdown() == 0 {
+            let value = self.garnish_slot_view(k).countdown().wrapping_sub(1);
+            self.garnish_slot_view_mut(k).set_countdown(value);
+            if self.garnish_slot_view(k).countdown() == 0 {
                 let value = 0;
-                self.game_state
-                    .sprites
-                    .garnish_slots
-                    .slot_mut(&mut self.ram, k)
-                    .set_garnish_type(value);
+                self.garnish_slot_view_mut(k).set_garnish_type(value);
                 return;
             }
         }
 
         let sprsize = GARNISH_OAM_MEM_SIZE[usize::from(type_)];
         if self.game_state.oam.has_sprite_sorting() {
-            if self.game_state.sprites.garnish_slots.slot(k).floor() != 0 {
+            if self.garnish_slot_view(k).floor() != 0 {
                 self.oam_allocate_from_region_f(sprsize);
             } else {
                 self.oam_allocate_from_region_d(sprsize);

@@ -67,22 +67,22 @@ use crate::game_state::{
     NativeDungeonTorchBridgeMut, NativeEffectAngleScratchBridgeMut, NativeEndingCreditBridgeMut,
     NativeEnemyDamageSubclassTableBridgeMut, NativeEnhancedFeaturesBridgeMut,
     NativeEtherOrbitBridgeMut, NativeFailedSpinSparkleSpawnBridgeMut, NativeFollowerLinkBridgeMut,
-    NativeFollowerRuntimeBridgeMut, NativeGarnishRuntimeBridgeMut,
-    NativeHappinessPondRupeeBridgeMut, NativeHudInventoryOrderBridgeMut, NativeIntroActorBridgeMut,
-    NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut, NativeInventoryItemsBridgeMut,
-    NativeLanmolaSegmentMotionBridgeMut, NativeMazeGameTimerBridgeMut,
-    NativeMemorizedTileBridgeMut, NativeMessagingRuntimeBridgeMut, NativeMinigameBridgeMut,
-    NativeMirrorWarpBridgeMut, NativeMoldormHistoryBridgeMut, NativeMultiselectChoiceBridgeMut,
-    NativeOamStateBridgeMut, NativeOverworldEntranceBridgeMut, NativeOverworldEventInfoBridgeMut,
-    NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut, NativeOverworldMapUiBridgeMut,
-    NativeOverworldMapZoomBridgeMut, NativeOverworldScreenSizeBridgeMut,
-    NativeOverworldTransitionBridgeMut, NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut,
-    NativePlayerResourcesBridgeMut, NativePolyFaceCoordsBridgeMut,
-    NativePolyProjectedVerticesBridgeMut, NativePolyRasterEdgeBridgeMut,
-    NativePolyRuntimeBridgeMut, NativePpuScrollCopyBridgeMut, NativePrizeDropCycleBridgeMut,
-    NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut, NativeQuakeSpellBridgeMut,
-    NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut, NativeSaveProgressBridgeMut,
-    NativeScratchCounterBridgeMut, NativeSharedMessageTimerBridgeMut,
+    NativeFollowerRuntimeBridgeMut, NativeGarnishRuntimeBridgeMut, NativeGarnishSlotBridgeMut,
+    NativeGarnishSlotView, NativeHappinessPondRupeeBridgeMut, NativeHudInventoryOrderBridgeMut,
+    NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut, NativeIntroSwordBridgeMut,
+    NativeInventoryItemsBridgeMut, NativeLanmolaSegmentMotionBridgeMut,
+    NativeMazeGameTimerBridgeMut, NativeMemorizedTileBridgeMut, NativeMessagingRuntimeBridgeMut,
+    NativeMinigameBridgeMut, NativeMirrorWarpBridgeMut, NativeMoldormHistoryBridgeMut,
+    NativeMultiselectChoiceBridgeMut, NativeOamStateBridgeMut, NativeOverworldEntranceBridgeMut,
+    NativeOverworldEventInfoBridgeMut, NativeOverworldExitBridgeMut, NativeOverworldMap16BridgeMut,
+    NativeOverworldMapUiBridgeMut, NativeOverworldMapZoomBridgeMut,
+    NativeOverworldScreenSizeBridgeMut, NativeOverworldTransitionBridgeMut,
+    NativePaletteBufferBridgeMut, NativePaletteFilterBridgeMut, NativePlayerResourcesBridgeMut,
+    NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
+    NativePolyRasterEdgeBridgeMut, NativePolyRuntimeBridgeMut, NativePpuScrollCopyBridgeMut,
+    NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut,
+    NativeQuakeSpellBridgeMut, NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut,
+    NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut, NativeSharedMessageTimerBridgeMut,
     NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
     NativeSpecialExitPositionBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
@@ -6241,6 +6241,17 @@ impl ZeldaState {
         self.game_state
             .sprites
             .ancilla_slots
+            .slot_mut(&mut self.ram, slot)
+    }
+
+    pub(crate) fn garnish_slot_view(&self, slot: usize) -> NativeGarnishSlotView<'_> {
+        self.game_state.sprites.garnish_slots.slot(slot)
+    }
+
+    pub(crate) fn garnish_slot_view_mut(&mut self, slot: usize) -> NativeGarnishSlotBridgeMut<'_> {
+        self.game_state
+            .sprites
+            .garnish_slots
             .slot_mut(&mut self.ram, slot)
     }
 
