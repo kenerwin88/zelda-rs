@@ -1434,6 +1434,20 @@ macro_rules! zelda_world_camera_boundary_methods {
     };
 }
 
+macro_rules! zelda_bridge_accessors {
+    (
+        $(
+            $vis:vis fn $name:ident() -> $bridge:ident { $($target:tt)+ }
+        )*
+    ) => {
+        $(
+            $vis fn $name(&mut self) -> $bridge<'_> {
+                $bridge::new(&mut self.$($target)+, &mut self.ram)
+            }
+        )*
+    };
+}
+
 impl ZeldaState {
     pub(crate) fn compatibility_state_len(&self) -> usize {
         self.ram.len()
@@ -3611,46 +3625,28 @@ impl ZeldaState {
         self.display_core_mut().set_travel_bird_tile_offset(value);
     }
 
-    pub(crate) fn save_progress_mut(&mut self) -> NativeSaveProgressBridgeMut<'_> {
-        NativeSaveProgressBridgeMut::new(
-            &mut self.game_state.inventory.save_progress,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn mirror_warp_scratch_mut(&mut self) -> NativeMirrorWarpBridgeMut<'_> {
-        NativeMirrorWarpBridgeMut::new(&mut self.game_state.inventory.mirror_warp, &mut self.ram)
-    }
-
-    pub(crate) fn dungeon_entrance_backup_mut(
-        &mut self,
-    ) -> NativeDungeonEntranceBackupBridgeMut<'_> {
-        NativeDungeonEntranceBackupBridgeMut::new(
-            &mut self.game_state.dungeon.entrance_backup,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_header_mut(&mut self) -> NativeDungeonHeaderBridgeMut<'_> {
-        NativeDungeonHeaderBridgeMut::new(&mut self.game_state.dungeon.header, &mut self.ram)
-    }
-
-    pub(crate) fn dungeon_key_slots_mut(&mut self) -> NativeDungeonKeySlotsBridgeMut<'_> {
-        NativeDungeonKeySlotsBridgeMut::new(
-            &mut self.game_state.inventory.dungeon_key_slots,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_torch_mut(&mut self) -> NativeDungeonTorchBridgeMut<'_> {
-        NativeDungeonTorchBridgeMut::new(&mut self.game_state.dungeon.torch, &mut self.ram)
-    }
-
-    pub(crate) fn dungeon_savegame_state_mut(&mut self) -> NativeDungeonSavegameBridgeMut<'_> {
-        NativeDungeonSavegameBridgeMut::new(
-            &mut self.game_state.dungeon.savegame_state,
-            &mut self.ram,
-        )
+    zelda_bridge_accessors! {
+        pub(crate) fn save_progress_mut() -> NativeSaveProgressBridgeMut {
+            game_state.inventory.save_progress
+        }
+        pub(crate) fn mirror_warp_scratch_mut() -> NativeMirrorWarpBridgeMut {
+            game_state.inventory.mirror_warp
+        }
+        pub(crate) fn dungeon_entrance_backup_mut() -> NativeDungeonEntranceBackupBridgeMut {
+            game_state.dungeon.entrance_backup
+        }
+        pub(crate) fn dungeon_header_mut() -> NativeDungeonHeaderBridgeMut {
+            game_state.dungeon.header
+        }
+        pub(crate) fn dungeon_key_slots_mut() -> NativeDungeonKeySlotsBridgeMut {
+            game_state.inventory.dungeon_key_slots
+        }
+        pub(crate) fn dungeon_torch_mut() -> NativeDungeonTorchBridgeMut {
+            game_state.dungeon.torch
+        }
+        pub(crate) fn dungeon_savegame_state_mut() -> NativeDungeonSavegameBridgeMut {
+            game_state.dungeon.savegame_state
+        }
     }
 
     pub(crate) fn dungeon_tile_attribute(&self, tile: usize) -> u8 {
@@ -3660,134 +3656,67 @@ impl ZeldaState {
             .attr_for_tile(&self.ram, tile)
     }
 
-    pub(crate) fn dungeon_bg2_attributes_mut(&mut self) -> NativeDungeonBg2AttributeBridgeMut<'_> {
-        NativeDungeonBg2AttributeBridgeMut::new(
-            &mut self.game_state.dungeon.bg2_attributes,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_stair_lists_mut(&mut self) -> NativeDungeonStairListsBridgeMut<'_> {
-        NativeDungeonStairListsBridgeMut::new(
-            &mut self.game_state.dungeon.stair_lists,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_stair_movement_mut(&mut self) -> NativeDungeonStairMovementBridgeMut<'_> {
-        NativeDungeonStairMovementBridgeMut::new(
-            &mut self.game_state.dungeon.stair_movement,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_moving_floor_mut(&mut self) -> NativeDungeonMovingFloorBridgeMut<'_> {
-        NativeDungeonMovingFloorBridgeMut::new(
-            &mut self.game_state.dungeon.moving_floor,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_room_tracking_mut(&mut self) -> NativeDungeonRoomTrackingBridgeMut<'_> {
-        NativeDungeonRoomTrackingBridgeMut::new(
-            &mut self.game_state.dungeon.room_tracking,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_object_tracking_mut(
-        &mut self,
-    ) -> NativeDungeonObjectTrackingBridgeMut<'_> {
-        NativeDungeonObjectTrackingBridgeMut::new(
-            &mut self.game_state.dungeon.object_tracking,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_doors_mut(&mut self) -> NativeDungeonDoorBridgeMut<'_> {
-        NativeDungeonDoorBridgeMut::new(&mut self.game_state.dungeon.doors, &mut self.ram)
-    }
-
-    pub(crate) fn dungeon_room_load_mut(&mut self) -> NativeDungeonRoomLoadBridgeMut<'_> {
-        NativeDungeonRoomLoadBridgeMut::new(&mut self.game_state.dungeon.room_load, &mut self.ram)
-    }
-
-    pub(crate) fn dungeon_environment_mut(&mut self) -> NativeDungeonEnvironmentBridgeMut<'_> {
-        NativeDungeonEnvironmentBridgeMut::new(
-            &mut self.game_state.dungeon.environment,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_room_tilemaps_mut(&mut self) -> NativeDungeonRoomTilemapBridgeMut<'_> {
-        NativeDungeonRoomTilemapBridgeMut::new(
-            &mut self.game_state.dungeon.room_tilemaps,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_room_items_mut(&mut self) -> NativeDungeonRoomItemBridgeMut<'_> {
-        NativeDungeonRoomItemBridgeMut::new(&mut self.game_state.dungeon.room_items, &mut self.ram)
-    }
-
-    pub(crate) fn dungeon_room_effects_mut(&mut self) -> NativeDungeonRoomEffectsBridgeMut<'_> {
-        NativeDungeonRoomEffectsBridgeMut::new(
-            &mut self.game_state.dungeon.room_effects,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_room_parser_mut(&mut self) -> NativeDungeonRoomParserBridgeMut<'_> {
-        NativeDungeonRoomParserBridgeMut::new(
-            &mut self.game_state.dungeon.room_parser,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_room_doors_mut(&mut self) -> NativeDungeonRoomDoorSetupBridgeMut<'_> {
-        NativeDungeonRoomDoorSetupBridgeMut::new(
-            &mut self.game_state.dungeon.door_setup,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_room_runtime_mut(&mut self) -> NativeDungeonRoomRuntimeBridgeMut<'_> {
-        NativeDungeonRoomRuntimeBridgeMut::new(
-            &mut self.game_state.dungeon.room_runtime,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_movable_blocks_mut(&mut self) -> NativeDungeonMovableBlockBridgeMut<'_> {
-        NativeDungeonMovableBlockBridgeMut::new(
-            &mut self.game_state.dungeon.movable_blocks,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn dungeon_map_mut(&mut self) -> NativeDungeonMapDisplayBridgeMut<'_> {
-        NativeDungeonMapDisplayBridgeMut::new(
-            &mut self.game_state.dungeon_map_display,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn scratch_word_mut(&mut self) -> NativeDungeonScratchWordBridgeMut<'_> {
-        NativeDungeonScratchWordBridgeMut::new(
-            &mut self.game_state.dungeon.scratch_word,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn ending_scratch_mut(&mut self) -> NativeDungeonScratchWordBridgeMut<'_> {
-        NativeDungeonScratchWordBridgeMut::new(
-            &mut self.game_state.dungeon.scratch_word,
-            &mut self.ram,
-        )
-    }
-
-    pub(crate) fn save_load_scratch_mut(&mut self) -> NativeSaveLoadTransferBridgeMut<'_> {
-        NativeSaveLoadTransferBridgeMut::new(&mut self.game_state.save_load_transfer, &mut self.ram)
+    zelda_bridge_accessors! {
+        pub(crate) fn dungeon_bg2_attributes_mut() -> NativeDungeonBg2AttributeBridgeMut {
+            game_state.dungeon.bg2_attributes
+        }
+        pub(crate) fn dungeon_stair_lists_mut() -> NativeDungeonStairListsBridgeMut {
+            game_state.dungeon.stair_lists
+        }
+        pub(crate) fn dungeon_stair_movement_mut() -> NativeDungeonStairMovementBridgeMut {
+            game_state.dungeon.stair_movement
+        }
+        pub(crate) fn dungeon_moving_floor_mut() -> NativeDungeonMovingFloorBridgeMut {
+            game_state.dungeon.moving_floor
+        }
+        pub(crate) fn dungeon_room_tracking_mut() -> NativeDungeonRoomTrackingBridgeMut {
+            game_state.dungeon.room_tracking
+        }
+        pub(crate) fn dungeon_object_tracking_mut() -> NativeDungeonObjectTrackingBridgeMut {
+            game_state.dungeon.object_tracking
+        }
+        pub(crate) fn dungeon_doors_mut() -> NativeDungeonDoorBridgeMut {
+            game_state.dungeon.doors
+        }
+        pub(crate) fn dungeon_room_load_mut() -> NativeDungeonRoomLoadBridgeMut {
+            game_state.dungeon.room_load
+        }
+        pub(crate) fn dungeon_environment_mut() -> NativeDungeonEnvironmentBridgeMut {
+            game_state.dungeon.environment
+        }
+        pub(crate) fn dungeon_room_tilemaps_mut() -> NativeDungeonRoomTilemapBridgeMut {
+            game_state.dungeon.room_tilemaps
+        }
+        pub(crate) fn dungeon_room_items_mut() -> NativeDungeonRoomItemBridgeMut {
+            game_state.dungeon.room_items
+        }
+        pub(crate) fn dungeon_room_effects_mut() -> NativeDungeonRoomEffectsBridgeMut {
+            game_state.dungeon.room_effects
+        }
+        pub(crate) fn dungeon_room_parser_mut() -> NativeDungeonRoomParserBridgeMut {
+            game_state.dungeon.room_parser
+        }
+        pub(crate) fn dungeon_room_doors_mut() -> NativeDungeonRoomDoorSetupBridgeMut {
+            game_state.dungeon.door_setup
+        }
+        pub(crate) fn dungeon_room_runtime_mut() -> NativeDungeonRoomRuntimeBridgeMut {
+            game_state.dungeon.room_runtime
+        }
+        pub(crate) fn dungeon_movable_blocks_mut() -> NativeDungeonMovableBlockBridgeMut {
+            game_state.dungeon.movable_blocks
+        }
+        pub(crate) fn dungeon_map_mut() -> NativeDungeonMapDisplayBridgeMut {
+            game_state.dungeon_map_display
+        }
+        pub(crate) fn scratch_word_mut() -> NativeDungeonScratchWordBridgeMut {
+            game_state.dungeon.scratch_word
+        }
+        pub(crate) fn ending_scratch_mut() -> NativeDungeonScratchWordBridgeMut {
+            game_state.dungeon.scratch_word
+        }
+        pub(crate) fn save_load_scratch_mut() -> NativeSaveLoadTransferBridgeMut {
+            game_state.save_load_transfer
+        }
     }
 
     pub(crate) fn increment_dungeon_map_init_state(&mut self) {
