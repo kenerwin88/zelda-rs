@@ -156,7 +156,7 @@ impl ZeldaState {
         let k = k as usize;
         let bak0 = self.game_state.world.location.dungeon_room_index();
         let bak1 = self.game_state.player.follower_link.lower_level_state();
-        if self.game_state.sprites.ancilla_slots.slot(k).work_byte_1() != 0 {
+        if self.ancilla_slot_view(k).work_byte_1() != 0 {
             if self
                 .game_state
                 .dungeon
@@ -171,7 +171,7 @@ impl ZeldaState {
         }
         let x = self.ancilla_x(k);
         let y = self.ancilla_y(k);
-        let dir = self.game_state.sprites.ancilla_slots.slot(k).direction() as i32;
+        let dir = self.ancilla_slot_view(k).direction() as i32;
         self.tile_detect_position_mut().clear_pit_tile();
         self.tile_detect_reset_state();
         if self.game_state.dungeon.room_load.header_collision() == 2 {

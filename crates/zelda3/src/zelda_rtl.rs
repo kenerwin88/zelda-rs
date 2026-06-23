@@ -9040,11 +9040,11 @@ impl ZeldaState {
     }
 
     fn ancilla_x(&self, k: usize) -> u16 {
-        self.game_state.sprites.ancilla_slots.slot(k).x()
+        self.ancilla_slot_view(k).x()
     }
 
     fn ancilla_y(&self, k: usize) -> u16 {
-        self.game_state.sprites.ancilla_slots.slot(k).y()
+        self.ancilla_slot_view(k).y()
     }
 
     fn sprite_y(&self, k: usize) -> u16 {

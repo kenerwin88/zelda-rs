@@ -3246,15 +3246,20 @@ impl ZeldaState {
 
         if self.sprite_slot_view(k).b() != 0 {
             let j = usize::from(self.sprite_slot_view(k).b() - 1);
-            if self.game_state.sprites.ancilla_slots.slot(j).ancilla_type() != 0 {
-                let value = self.game_state.sprites.ancilla_slots.slot(j).x_low();
-                self.sprite_slot_view_mut(k).set_x_low(value);
-                let value = self.game_state.sprites.ancilla_slots.slot(j).x_high();
-                self.sprite_slot_view_mut(k).set_x_high(value);
-                let value = self.game_state.sprites.ancilla_slots.slot(j).y_low();
-                self.sprite_slot_view_mut(k).set_y_low(value);
-                let value = self.game_state.sprites.ancilla_slots.slot(j).y_high();
-                self.sprite_slot_view_mut(k).set_y_high(value);
+            if self.ancilla_slot_view(j).ancilla_type() != 0 {
+                let (x_low, x_high, y_low, y_high) = {
+                    let ancilla = self.ancilla_slot_view(j);
+                    (
+                        ancilla.x_low(),
+                        ancilla.x_high(),
+                        ancilla.y_low(),
+                        ancilla.y_high(),
+                    )
+                };
+                self.sprite_slot_view_mut(k).set_x_low(x_low);
+                self.sprite_slot_view_mut(k).set_x_high(x_high);
+                self.sprite_slot_view_mut(k).set_y_low(y_low);
+                self.sprite_slot_view_mut(k).set_y_high(y_high);
                 self.sprite_slot_view_mut(k).set_oam_flags(5);
                 self.sprite_slot_view_mut(k).and_flags3(!0x40);
                 return;

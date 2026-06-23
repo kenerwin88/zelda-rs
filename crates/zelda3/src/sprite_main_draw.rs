@@ -5091,11 +5091,8 @@ impl ZeldaState {
             return;
         }
         for i in (0..=1usize).rev() {
-            if self.game_state.sprites.ancilla_slots.slot(i).ancilla_type() == 7
-                && (self.game_state.sprites.ancilla_slots.slot(i).x_velocity()
-                    | self.game_state.sprites.ancilla_slots.slot(i).y_velocity())
-                    != 0
-            {
+            let bomb = self.ancilla_slot_view(i);
+            if bomb.ancilla_type() == 7 && (bomb.x_velocity() | bomb.y_velocity()) != 0 {
                 self.king_helmasaur_check_bomb_damage(k, i);
             }
         }
@@ -5118,12 +5115,9 @@ impl ZeldaState {
             r7_spr_ysize: 0,
         };
         self.sprite_setup_hit_box(k, &mut hb);
-        let x = (((self.game_state.sprites.ancilla_slots.slot(j).x_high() as u16) << 8)
-            | self.game_state.sprites.ancilla_slots.slot(j).x_low() as u16)
-            .wrapping_sub(6);
-        let y = (((self.game_state.sprites.ancilla_slots.slot(j).y_high() as u16) << 8)
-            | self.game_state.sprites.ancilla_slots.slot(j).y_low() as u16)
-            .wrapping_sub(self.game_state.sprites.ancilla_slots.slot(j).z() as u16);
+        let bomb = self.ancilla_slot_view(j);
+        let x = (((bomb.x_high() as u16) << 8) | bomb.x_low() as u16).wrapping_sub(6);
+        let y = (((bomb.y_high() as u16) << 8) | bomb.y_low() as u16).wrapping_sub(bomb.z() as u16);
         hb.r0_xlo = x as u8;
         hb.r8_xhi = (x >> 8) as u8;
         hb.r1_ylo = y as u8;
@@ -5131,34 +5125,20 @@ impl ZeldaState {
         hb.r2 = 2;
         hb.r3 = 15;
         if self.check_if_hit_boxes_overlap(&hb) {
-            let value =
-                0u8.wrapping_sub(self.game_state.sprites.ancilla_slots.slot(j).x_velocity());
-            self.game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, j)
-                .set_x_velocity(value);
-            let value = ((0u8
-                .wrapping_sub(self.game_state.sprites.ancilla_slots.slot(j).y_velocity())
-                as i8)
-                >> 1) as u8;
-            self.game_state
-                .sprites
-                .ancilla_slots
-                .slot_mut(&mut self.ram, j)
-                .set_y_velocity(value);
+            let x_velocity = 0u8.wrapping_sub(self.ancilla_slot_view(j).x_velocity());
+            self.ancilla_slot_view_mut(j).set_x_velocity(x_velocity);
+            let y_velocity =
+                ((0u8.wrapping_sub(self.ancilla_slot_view(j).y_velocity()) as i8) >> 1) as u8;
+            self.ancilla_slot_view_mut(j).set_y_velocity(y_velocity);
             let value = 32;
             self.sprite_slot_mut(k).set_delay_aux4(value);
             self.garnish_state_mut().set_repulsespark_timer(5);
-            let spark_x = self.game_state.sprites.ancilla_slots.slot(j).x_low();
+            let spark_x = self.ancilla_slot_view(j).x_low();
             self.garnish_state_mut().set_repulsespark_x_lo(spark_x);
             let spark_y = self
-                .game_state
-                .sprites
-                .ancilla_slots
-                .slot(j)
+                .ancilla_slot_view(j)
                 .y_low()
-                .wrapping_sub(self.game_state.sprites.ancilla_slots.slot(j).z());
+                .wrapping_sub(self.ancilla_slot_view(j).z());
             self.garnish_state_mut().set_repulsespark_y_lo(spark_y);
             self.set_sound_effect_1(5);
         }
