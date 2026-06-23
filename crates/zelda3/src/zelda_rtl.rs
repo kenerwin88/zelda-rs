@@ -90,14 +90,14 @@ use crate::game_state::{
     NativeTowerSealSparkleBridgeMut, NativeTrinexxPaletteBridgeMut,
     NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut, NativeWeatherVaneBridgeMut,
     NativeWeatherVaneDebrisBridgeMut, NativeWorldCameraBoundariesBridgeMut,
-    NativeWorldPaletteThemeBridgeMut, NativeWorldScrollBridgeMut, OverworldConfigTableRead,
-    OverworldEventInfoState, OverworldMap16Decode, OverworldMap16DecodeScratch,
-    OverworldMap16LoadState, OverworldMap16SourcePage, PaletteFilterState, PpuScrollCopyState,
-    QuakeBoltSlotState, RamPlayerStateView, RamPlayerStateViewMut, SelectFileMenuState,
-    SkullWoodsFireSlotState, SmallOverworldMap16ScrollBackupState, SpotlightHdmaState,
-    SystemSignalsState, SystemWorkArea, TagalongSlotRead, TowerSealOrbitState,
-    TowerSealSparkleState, VwfRenderState, WeatherVaneDebrisSlotState, WorldCameraBoundariesState,
-    WorldRegionState, WorldScrollState, WorldTransientState,
+    NativeWorldPaletteThemeBridgeMut, NativeWorldRegionBridgeMut, NativeWorldScrollBridgeMut,
+    OverworldConfigTableRead, OverworldEventInfoState, OverworldMap16Decode,
+    OverworldMap16DecodeScratch, OverworldMap16LoadState, OverworldMap16SourcePage,
+    PaletteFilterState, PpuScrollCopyState, QuakeBoltSlotState, RamPlayerStateView,
+    RamPlayerStateViewMut, SelectFileMenuState, SkullWoodsFireSlotState,
+    SmallOverworldMap16ScrollBackupState, SpotlightHdmaState, SystemSignalsState, SystemWorkArea,
+    TagalongSlotRead, TowerSealOrbitState, TowerSealSparkleState, VwfRenderState,
+    WeatherVaneDebrisSlotState, WorldTransientState,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1425,7 +1425,7 @@ macro_rules! zelda_world_camera_boundary_methods {
     ) => {
         $(
             pub(crate) fn $name(&mut self, $($arg: $ty),*) $(-> $ret)? {
-                self.mutate_world_camera_boundaries(|camera| camera.$name($($arg),*))
+                self.world_camera_boundaries_mut().$name($($arg),*)
             }
         )*
     };
@@ -2249,20 +2249,6 @@ impl ZeldaState {
         NativeWorldScrollBridgeMut::new(&mut self.game_state.world.scroll, &mut self.ram)
     }
 
-    fn sync_world_scroll_to_ram(&mut self) {
-        self.game_state.world.scroll.write_to_ram(&mut self.ram);
-        debug_assert_eq!(
-            self.game_state.world.scroll,
-            WorldScrollState::load_from_ram(&self.ram)
-        );
-    }
-
-    fn mutate_world_scroll<T>(&mut self, mutate: impl FnOnce(&mut WorldScrollState) -> T) -> T {
-        let result = mutate(&mut self.game_state.world.scroll);
-        self.sync_world_scroll_to_ram();
-        result
-    }
-
     // BG scroll copy2 (0xe0/0xe2/0xe6/0xe8) is owned solely by PpuScrollCopyState; these
     // legacy `set_bgN_{x,y}` names delegate to it so the ~80 callers stay unchanged.
     pub(crate) fn set_bg1_x(&mut self, value: u16) {
@@ -2292,27 +2278,27 @@ impl ZeldaState {
     }
 
     pub(crate) fn set_bg1_x_offset(&mut self, value: u16) {
-        self.mutate_world_scroll(|scroll| scroll.set_bg1_x_offset(value));
+        self.world_scroll_mut().set_bg1_x_offset(value);
     }
 
     pub(crate) fn set_bg1_y_offset(&mut self, value: u16) {
-        self.mutate_world_scroll(|scroll| scroll.set_bg1_y_offset(value));
+        self.world_scroll_mut().set_bg1_y_offset(value);
     }
 
     pub(crate) fn set_overworld_offset_base_y(&mut self, value: u16) {
-        self.mutate_world_scroll(|scroll| scroll.set_overworld_offset_base_y(value));
+        self.world_scroll_mut().set_overworld_offset_base_y(value);
     }
 
     pub(crate) fn set_overworld_offset_base_x(&mut self, value: u16) {
-        self.mutate_world_scroll(|scroll| scroll.set_overworld_offset_base_x(value));
+        self.world_scroll_mut().set_overworld_offset_base_x(value);
     }
 
     pub(crate) fn set_overworld_offset_mask_y(&mut self, value: u16) {
-        self.mutate_world_scroll(|scroll| scroll.set_overworld_offset_mask_y(value));
+        self.world_scroll_mut().set_overworld_offset_mask_y(value);
     }
 
     pub(crate) fn set_overworld_offset_mask_x(&mut self, value: u16) {
-        self.mutate_world_scroll(|scroll| scroll.set_overworld_offset_mask_x(value));
+        self.world_scroll_mut().set_overworld_offset_mask_x(value);
     }
 
     pub(crate) fn world_camera_boundaries_mut(
@@ -2322,26 +2308,6 @@ impl ZeldaState {
             &mut self.game_state.world.camera_boundaries,
             &mut self.ram,
         )
-    }
-
-    fn sync_world_camera_boundaries_to_ram(&mut self) {
-        self.game_state
-            .world
-            .camera_boundaries
-            .write_to_ram(&mut self.ram);
-        debug_assert_eq!(
-            self.game_state.world.camera_boundaries,
-            WorldCameraBoundariesState::load_from_ram(&self.ram)
-        );
-    }
-
-    fn mutate_world_camera_boundaries<T>(
-        &mut self,
-        mutate: impl FnOnce(&mut WorldCameraBoundariesState) -> T,
-    ) -> T {
-        let result = mutate(&mut self.game_state.world.camera_boundaries);
-        self.sync_world_camera_boundaries_to_ram();
-        result
     }
 
     zelda_world_camera_boundary_methods! {
@@ -2391,94 +2357,82 @@ impl ZeldaState {
         )
     }
 
-    fn sync_world_region_to_ram(&mut self) {
-        self.game_state.world.region.write_to_ram(&mut self.ram);
-        self.debug_assert_world_region_matches_ram();
-    }
-
-    fn debug_assert_world_region_matches_ram(&self) {
-        debug_assert_eq!(
-            self.game_state.world.region,
-            WorldRegionState::load_from_ram(&self.ram)
-        );
-    }
-
-    fn mutate_world_region<T>(&mut self, f: impl FnOnce(&mut WorldRegionState) -> T) -> T {
-        let value = f(&mut self.game_state.world.region);
-        self.sync_world_region_to_ram();
-        value
+    pub(crate) fn world_region_mut(&mut self) -> NativeWorldRegionBridgeMut<'_> {
+        NativeWorldRegionBridgeMut::new(&mut self.game_state.world.region, &mut self.ram)
     }
 
     pub(crate) fn set_rng_seed(&mut self, value: u8) {
-        self.mutate_world_region(|region| region.set_rng_seed(value));
+        self.world_region_mut().set_rng_seed(value);
     }
 
     pub(crate) fn set_dark_world_region_index(&mut self, value: u8) {
-        self.mutate_world_region(|region| region.set_dark_world_region_index(value));
+        self.world_region_mut().set_dark_world_region_index(value);
     }
 
     pub(crate) fn set_which_entrance(&mut self, value: u16) {
-        self.mutate_world_region(|region| region.set_which_entrance(value));
+        self.world_region_mut().set_which_entrance(value);
     }
 
     pub(crate) fn set_which_entrance_byte(&mut self, value: u8) {
-        self.mutate_world_region(|region| region.set_which_entrance_byte(value));
+        self.world_region_mut().set_which_entrance_byte(value);
     }
 
     pub(crate) fn set_overworld_area_index(&mut self, value: u8) {
-        self.mutate_world_region(|region| region.set_overworld_area_index(value));
+        self.world_region_mut().set_overworld_area_index(value);
     }
 
     pub(crate) fn set_overworld_area_index_word(&mut self, value: u16) {
-        self.mutate_world_region(|region| region.set_overworld_area_index_word(value));
+        self.world_region_mut().set_overworld_area_index_word(value);
     }
 
     pub(crate) fn set_current_area_of_player_word(&mut self, value: u16) {
-        self.mutate_world_region(|region| region.set_current_area_of_player_word(value));
+        self.world_region_mut()
+            .set_current_area_of_player_word(value);
     }
 
     pub(crate) fn set_flag_overworld_area_changed(&mut self, value: u8) {
-        self.mutate_world_region(|region| region.set_flag_overworld_area_changed(value));
+        self.world_region_mut()
+            .set_flag_overworld_area_changed(value);
     }
 
     pub(crate) fn clear_flag_overworld_area_changed(&mut self) {
-        self.mutate_world_region(|region| region.clear_flag_overworld_area_changed());
+        self.world_region_mut().clear_flag_overworld_area_changed();
     }
 
     pub(crate) fn clear_overlay_index_word(&mut self) {
-        self.mutate_world_region(|region| region.clear_overlay_index_word());
+        self.world_region_mut().clear_overlay_index_word();
     }
 
     pub(crate) fn set_overlay_index_word(&mut self, value: u16) {
-        self.mutate_world_region(|region| region.set_overlay_index_word(value));
+        self.world_region_mut().set_overlay_index_word(value);
     }
 
     pub(crate) fn set_overlay_high(&mut self, value: u8) {
-        self.mutate_world_region(|region| region.set_overlay_high(value));
+        self.world_region_mut().set_overlay_high(value);
     }
 
     pub(crate) fn set_prev_screen_index_word(&mut self, value: u16) {
-        self.mutate_world_region(|region| region.set_prev_screen_index_word(value));
+        self.world_region_mut().set_prev_screen_index_word(value);
     }
 
     pub(crate) fn save_spexit_area_index(&mut self) {
-        self.mutate_world_region(|region| region.save_spexit_area_index());
+        self.world_region_mut().save_spexit_area_index();
     }
 
     pub(crate) fn restore_spexit_area_index(&mut self) {
-        self.mutate_world_region(|region| region.restore_spexit_area_index());
+        self.world_region_mut().restore_spexit_area_index();
     }
 
     pub(crate) fn save_exit_area_index(&mut self) {
-        self.mutate_world_region(|region| region.save_exit_area_index());
+        self.world_region_mut().save_exit_area_index();
     }
 
     pub(crate) fn restore_exit_area_index(&mut self) {
-        self.mutate_world_region(|region| region.restore_exit_area_index());
+        self.world_region_mut().restore_exit_area_index();
     }
 
     pub(crate) fn set_ow_entrance_value(&mut self, value: u16) {
-        self.mutate_world_region(|region| region.set_ow_entrance_value(value));
+        self.world_region_mut().set_ow_entrance_value(value);
     }
 
     pub(crate) fn ow_entrance_value(&self) -> u16 {
