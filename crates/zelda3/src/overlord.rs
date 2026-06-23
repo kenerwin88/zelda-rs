@@ -184,7 +184,7 @@ impl ZeldaState {
         }
         match self.overlord_slot_view(k).gen1() {
             0 => {
-                if self.sprite_slot(0).a() != 0 {
+                if self.sprite_slot_view(0).a() != 0 {
                     let value = 120;
                     self.overlord_slot_view_mut(k).set_x_low(value);
                     let value = 255;
@@ -569,7 +569,7 @@ impl ZeldaState {
         self.overlord_slot_view_mut(k).set_gen2(value);
         let mut n = 0;
         for i in 0..16 {
-            let sprite = self.sprite_slot(i);
+            let sprite = self.sprite_slot_view(i);
             if sprite.state() != 0 && sprite.sprite_type() == 0x10 {
                 n += 1;
             }
@@ -736,7 +736,7 @@ impl ZeldaState {
         self.overlord_slot_view_mut(k).set_gen2(value);
         let mut n = 0;
         for i in 0..16 {
-            let sprite = self.sprite_slot(i);
+            let sprite = self.sprite_slot_view(i);
             if sprite.state() != 0 && sprite.sprite_type() == 0x8f {
                 n += 1;
             }
@@ -777,7 +777,7 @@ impl ZeldaState {
     }
 
     pub(super) fn overlord07_moving_floor(&mut self, k: usize) {
-        if self.sprite_slot(0).state() == 4 {
+        if self.sprite_slot_view(0).state() == 4 {
             let value = 0;
             self.overlord_slot_view_mut(k).set_overlord_type(value);
             self.dungeon_moving_floor_mut().set_floor_move_flags(1);
@@ -1135,7 +1135,7 @@ impl ZeldaState {
 
     pub(super) fn armos_coordinator_check_knights(&self) -> bool {
         for j in (0..=5).rev() {
-            let sprite = self.sprite_slot(j);
+            let sprite = self.sprite_slot_view(j);
             if sprite.state() != 0 && sprite.ai_state() == 0 {
                 return false;
             }
@@ -1181,7 +1181,7 @@ impl ZeldaState {
     }
 
     fn Sprite_GetX(&self, k: usize) -> u16 {
-        self.sprite_slot(k).x()
+        self.sprite_slot_view(k).x()
     }
 
     fn GarnishAlloc(&self) -> Option<usize> {

@@ -1199,14 +1199,14 @@ impl ZeldaState {
         y_offset: u8,
     ) {
         let y = self
-            .sprite_slot(k)
+            .sprite_slot_view(k)
             .y()
             .wrapping_add(y_offset as u16)
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2());
         if y.wrapping_add(0x10) >= 0x100 {
             return;
         }
-        let oam_offs = (self.sprite_slot(k).flags2() & 0x1f) as usize;
+        let oam_offs = (self.sprite_slot_view(k).flags2() & 0x1f) as usize;
         self.set_guard_oam(oam_offs, poc.0, y, 0x6c, (poc.2 & 0x30) | 8, 2);
     }
 

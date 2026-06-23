@@ -66,7 +66,7 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn sprite_79_bee(&mut self, k: usize) {
-        match self.sprite_slot(k).ai_state() {
+        match self.sprite_slot_view(k).ai_state() {
             0 => self.bee_dormant_hive(k),
             1 => self.bee_main(k),
             2 => self.bee_put_in_bottle(k),
@@ -82,7 +82,7 @@ impl ZeldaState {
     //     SpawnBeeFromHive(k);
     // }
     pub(super) fn bee_dormant_hive(&mut self, k: usize) {
-        if self.sprite_slot(k).e() != 0 {
+        if self.sprite_slot_view(k).e() != 0 {
             return;
         }
         self.sprite_slot_mut(k).clear();
@@ -232,14 +232,14 @@ impl ZeldaState {
         if self.sprite_return_if_recoiling(k) {
             return;
         }
-        if self.sprite_slot(k).head_direction() != 0 {
+        if self.sprite_slot_view(k).head_direction() != 0 {
             self.sprite_spawn_sparkle_garnish_for_npcs(k);
         }
         self.bee_bzzt(k);
         self.sprite_move_xy(k);
         let graphics = (((k as u8) ^ self.game_state.frame.frame_counter) >> 1) & 1;
         self.sprite_slot_mut(k).set_graphics(graphics);
-        if self.sprite_slot(k).delay_aux4() == 0 {
+        if self.sprite_slot_view(k).delay_aux4() == 0 {
             self.sprite_check_damage_to_link_for_npcs(k);
             if (self.sprite_check_damage_from_link_for_npcs(k) & DAMAGE_FROM_PLAYER_NONZERO_MASK)
                 != 0
@@ -250,12 +250,12 @@ impl ZeldaState {
             }
         }
 
-        if self.game_state.frame.frame_counter == 0 && self.sprite_slot(k).a() != 16 {
-            let a = self.sprite_slot(k).a().wrapping_sub(8);
+        if self.game_state.frame.frame_counter == 0 && self.sprite_slot_view(k).a() != 16 {
+            let a = self.sprite_slot_view(k).a().wrapping_sub(8);
             self.sprite_slot_mut(k).set_a(a);
         }
 
-        if self.sprite_slot(k).delay_main() == 0 {
+        if self.sprite_slot_view(k).delay_main() == 0 {
             let x = self
                 .game_state
                 .player
@@ -269,8 +269,8 @@ impl ZeldaState {
                 .y()
                 .wrapping_add(u16::from(self.get_random_number() & 3) * 5);
             let pt = self.sprite_project_speed_towards_location(k, x, y, 20);
-            let oam_flags = self.sprite_slot(k).oam_flags();
-            let delay = (k as u8).wrapping_add(self.sprite_slot(k).a());
+            let oam_flags = self.sprite_slot_view(k).oam_flags();
+            let delay = (k as u8).wrapping_add(self.sprite_slot_view(k).a());
             let mut sprite = self.sprite_slot_mut(k);
             sprite.set_y_velocity(pt.y);
             sprite.set_x_velocity(pt.x);
@@ -287,9 +287,9 @@ impl ZeldaState {
     // }
     pub(super) fn bee_handle_z(&mut self, k: usize) {
         self.sprite_slot_mut(k).set_z(16);
-        if self.sprite_slot(k).head_direction() != 0 {
+        if self.sprite_slot_view(k).head_direction() != 0 {
             let palette = (((self.game_state.frame.frame_counter >> 4) & 3).wrapping_add(1)) << 1;
-            let oam_flags = self.sprite_slot(k).oam_flags();
+            let oam_flags = self.sprite_slot_view(k).oam_flags();
             self.sprite_slot_mut(k)
                 .set_oam_flags((oam_flags & 0xf1) | palette);
         }
@@ -314,7 +314,7 @@ impl ZeldaState {
     //   sprite_B[k]++;
     // }
     pub(super) fn player_bee_hone_in_on_target(&mut self, j: usize, k: usize) {
-        let target = self.sprite_slot(j);
+        let target = self.sprite_slot_view(j);
         if target.sprite_type() != 0x88 && (target.flags() & 2) != 0 {
             return;
         }
@@ -327,12 +327,12 @@ impl ZeldaState {
         {
             return;
         }
-        if self.sprite_slot(j).sprite_type() == 0x75 {
+        if self.sprite_slot_view(j).sprite_type() == 0x75 {
             self.sprite_slot_mut(j).set_e((k as u8).wrapping_add(1));
             return;
         }
         self.ancilla_check_damage_to_sprite_preset(j, 1);
-        let source = self.sprite_slot(k);
+        let source = self.sprite_slot_view(k);
         let x_recoil = source.x_velocity().wrapping_shl(1);
         let y_recoil = source.y_velocity().wrapping_shl(1);
         {
@@ -371,8 +371,8 @@ impl ZeldaState {
         let mut j: usize = (k * 4) & 0xf;
         loop {
             // C `continue` body — evaluate filter; if it passes, return.
-            let source = self.sprite_slot(k);
-            let target = self.sprite_slot(j);
+            let source = self.sprite_slot_view(k);
+            let target = self.sprite_slot_view(j);
             let skip = j == k || target.state() < 9 || target.pause() != 0;
             let inner_skip = if !skip {
                 if target.flags2() & 0x80 == 0 {
@@ -472,9 +472,9 @@ impl ZeldaState {
     pub(super) fn sprite_b2_player_bee(&mut self, k: usize) {
         const GOOD_BEE_HEAD_ANIM_LIMITS: [u8; 2] = [0x0a, 0x14];
 
-        match self.sprite_slot(k).ai_state() {
+        match self.sprite_slot_view(k).ai_state() {
             0 => {
-                if self.sprite_slot(k).e() == 0 {
+                if self.sprite_slot_view(k).e() == 0 {
                     self.sprite_slot_mut(k).clear();
                     let or_bottle = self.game_state.inventory.items.bottle(0)
                         | self.game_state.inventory.items.bottle(1)
@@ -497,16 +497,16 @@ impl ZeldaState {
                 self.sprite_move_xy(k);
                 let graphics = (((k as u8) ^ self.game_state.frame.frame_counter) >> 1) & 1;
                 self.sprite_slot_mut(k).set_graphics(graphics);
-                if self.sprite_slot(k).head_direction() != 0 {
+                if self.sprite_slot_view(k).head_direction() != 0 {
                     self.sprite_spawn_sparkle_garnish_for_npcs(k);
                 }
-                let sprite = self.sprite_slot(k);
+                let sprite = self.sprite_slot_view(k);
                 let head = (sprite.head_direction() & 1) as usize;
                 if sprite.b() >= GOOD_BEE_HEAD_ANIM_LIMITS[head] {
                     self.sprite_slot_mut(k).set_deflection_bits(64);
                     return;
                 }
-                if self.sprite_slot(k).delay_aux4() != 0 {
+                if self.sprite_slot_view(k).delay_aux4() != 0 {
                     return;
                 }
                 if (self.sprite_check_damage_from_link_for_npcs(k)
@@ -539,7 +539,7 @@ impl ZeldaState {
                     return;
                 }
                 let pt = self.sprite_project_speed_towards_location(k, pt2.x, pt2.y, 32);
-                let oam_flags = self.sprite_slot(k).oam_flags();
+                let oam_flags = self.sprite_slot_view(k).oam_flags();
                 let mut sprite = self.sprite_slot_mut(k);
                 sprite.set_x_velocity(pt.x);
                 sprite.set_y_velocity(pt.y);
@@ -620,7 +620,7 @@ impl ZeldaState {
         if self.multiselect_choice().value() == 0 {
             let j = self.sprite_find_empty_bottle();
             if j >= 0 {
-                let value = 7u8.wrapping_add(self.sprite_slot(k).head_direction());
+                let value = 7u8.wrapping_add(self.sprite_slot_view(k).head_direction());
                 self.inventory_items_mut().set_bottle(j as usize, value);
                 self.hud_refresh_icon();
                 self.sprite_slot_mut(k).clear();
@@ -725,12 +725,12 @@ impl ZeldaState {
             let mut sprite = self.sprite_slot_mut(k);
             sprite.set_delay_main(20);
             sprite.set_graphics(1);
-        } else if self.sprite_slot(k).delay_main() == 0 {
+        } else if self.sprite_slot_view(k).delay_main() == 0 {
             self.sprite_slot_mut(k).set_graphics(0);
         }
-        match self.sprite_slot(k).ai_state() {
+        match self.sprite_slot_view(k).ai_state() {
             0 => {
-                let sprite = self.sprite_slot(k);
+                let sprite = self.sprite_slot_view(k);
                 if sprite.a() == 0 && sprite.e() != 0 {
                     self.sprite_slot_mut(k).set_ai_state(3);
                 } else if (self
@@ -771,7 +771,7 @@ impl ZeldaState {
                 self.sprite_slot_mut(k).set_ai_state(0);
             }
             3 => {
-                if (self.sprite_slot(k).e() as i8) >= 0 {
+                if (self.sprite_slot_view(k).e() as i8) >= 0 {
                     self.sprite_show_message_unconditional(0xd5);
                 } else {
                     self.sprite_show_message_unconditional(0xd6);
@@ -779,7 +779,7 @@ impl ZeldaState {
                 self.sprite_slot_mut(k).set_ai_state(4);
             }
             4 => {
-                let j = self.sprite_slot(k).e();
+                let j = self.sprite_slot_view(k).e();
                 if (j as i8) >= 0 {
                     self.sprite_slot_mut(j as usize - 1).clear();
                     self.bottle_merchant_buy_bee(k);
@@ -814,7 +814,7 @@ impl ZeldaState {
             r4: 0,
             flags: 0,
         };
-        let base = (self.sprite_slot(k).graphics() as usize) * 2;
+        let base = (self.sprite_slot_view(k).graphics() as usize) * 2;
         self.sprite_draw_multiple_player_deferred(
             k,
             &BOTTLE_VENDOR_DRAW_FRAMES[base..base + 2],
@@ -843,9 +843,9 @@ impl ZeldaState {
     // }
     pub(super) fn bottle_merchant_detect_fish(&mut self, k: usize) {
         for i in (0..=15usize).rev() {
-            let sprite = self.sprite_slot(i);
+            let sprite = self.sprite_slot_view(i);
             if sprite.state() != 0 && sprite.sprite_type() == 0xd2 {
-                let vendor = self.sprite_slot(k);
+                let vendor = self.sprite_slot_view(k);
                 let mut hb = SpriteHitBox {
                     r0_xlo: vendor.x_low(),
                     r8_xhi: vendor.x_high(),
@@ -1117,7 +1117,7 @@ mod tests {
             sprite.set_oam_flags(0xff);
         }
         state.bee_handle_z(k);
-        let sprite = state.sprite_slot(k);
+        let sprite = state.sprite_slot_view(k);
         assert_eq!(sprite.z(), 16);
         assert_eq!(sprite.oam_flags(), (0xff & 0xf1) | 6);
     }
@@ -1133,7 +1133,7 @@ mod tests {
             sprite.set_oam_flags(0xaa);
         }
         state.bee_handle_z(k);
-        let sprite = state.sprite_slot(k);
+        let sprite = state.sprite_slot_view(k);
         assert_eq!(sprite.z(), 16);
         assert_eq!(sprite.oam_flags(), 0xaa);
     }
@@ -1145,7 +1145,7 @@ mod tests {
 
         state.initialize_spawned_bee(k);
 
-        let sprite = state.sprite_slot(k);
+        let sprite = state.sprite_slot_view(k);
         assert_eq!(sprite.ai_state(), 1);
         assert_eq!(sprite.delay_main(), 255);
         assert_eq!(sprite.a(), 255);
@@ -1165,9 +1165,9 @@ mod tests {
         }
         state.sprite_79_bee(k);
 
-        assert_eq!(state.sprite_slot(k).state(), 0);
-        assert_eq!(state.sprite_slot(15).sprite_type(), 0x79);
-        assert_eq!(state.sprite_slot(15).ai_state(), 1);
+        assert_eq!(state.sprite_slot_view(k).state(), 0);
+        assert_eq!(state.sprite_slot_view(15).sprite_type(), 0x79);
+        assert_eq!(state.sprite_slot_view(15).ai_state(), 1);
     }
 
     #[test]
@@ -1188,7 +1188,7 @@ mod tests {
 
         state.bee_main(k);
 
-        let sprite = state.sprite_slot(k);
+        let sprite = state.sprite_slot_view(k);
         assert_eq!(sprite.z(), 16);
         assert_eq!(sprite.graphics(), 0);
         assert_eq!(sprite.delay_main(), 68);
@@ -1210,7 +1210,7 @@ mod tests {
 
         state.sprite_b2_player_bee(k);
 
-        let sprite = state.sprite_slot(k);
+        let sprite = state.sprite_slot_view(k);
         assert_eq!(sprite.ignore_projectile(), 1);
         assert_eq!(sprite.deflection_bits(), 64);
     }
@@ -1232,7 +1232,7 @@ mod tests {
 
         state.bottle_merchant_detect_fish(vendor);
 
-        assert_eq!(state.sprite_slot(vendor).e(), 0x80 | fish as u8);
+        assert_eq!(state.sprite_slot_view(vendor).e(), 0x80 | fish as u8);
     }
 
     #[test]
@@ -1245,7 +1245,7 @@ mod tests {
         state.bottle_merchant_buy_bee(k);
 
         for j in 11..=15 {
-            let sprite = state.sprite_slot(j);
+            let sprite = state.sprite_slot_view(j);
             assert_eq!(sprite.sprite_type(), 0xdb);
             assert_eq!(sprite.stunned(), 0xff);
             assert_eq!(sprite.z_velocity(), 32);
@@ -1263,12 +1263,12 @@ mod tests {
 
         state.bottle_merchant_buy_fish(k);
 
-        assert_eq!(state.sprite_slot(15).sprite_type(), 0xd9);
-        assert_eq!(state.sprite_slot(14).sprite_type(), 0xe2);
-        assert_eq!(state.sprite_slot(13).sprite_type(), 0xde);
-        assert_eq!(state.sprite_slot(12).sprite_type(), 0xe0);
-        assert_eq!(state.sprite_slot(11).sprite_type(), 0xdb);
-        assert_eq!(state.sprite_slot(11).delay_aux4(), 32);
+        assert_eq!(state.sprite_slot_view(15).sprite_type(), 0xd9);
+        assert_eq!(state.sprite_slot_view(14).sprite_type(), 0xe2);
+        assert_eq!(state.sprite_slot_view(13).sprite_type(), 0xde);
+        assert_eq!(state.sprite_slot_view(12).sprite_type(), 0xe0);
+        assert_eq!(state.sprite_slot_view(11).sprite_type(), 0xdb);
+        assert_eq!(state.sprite_slot_view(11).delay_aux4(), 32);
         assert_eq!(state.game_state.scratch_counter.value(), 0xff);
     }
 
@@ -1287,7 +1287,7 @@ mod tests {
 
         state.sprite_bottle_vendor(k);
 
-        assert_eq!(state.sprite_slot(k).ai_state(), 3);
+        assert_eq!(state.sprite_slot_view(k).ai_state(), 3);
     }
 
     #[test]
@@ -1306,7 +1306,7 @@ mod tests {
 
         state.sprite_bottle_vendor(k);
 
-        assert_eq!(state.sprite_slot(k).ai_state(), 2);
+        assert_eq!(state.sprite_slot_view(k).ai_state(), 2);
         assert_eq!(
             state.game_state.messaging.dialogue_message_index.value(),
             0xd2
@@ -1328,7 +1328,7 @@ mod tests {
 
         state.sprite_bottle_vendor(k);
 
-        assert_eq!(state.sprite_slot(k).ai_state(), 0);
+        assert_eq!(state.sprite_slot_view(k).ai_state(), 0);
         assert_eq!(state.ram[SRAM_PROGRESS_INDICATOR_3_NPCS] & 2, 2);
         assert_eq!(
             state.game_state.inventory.player_resources.rupees_goal(),
@@ -1353,10 +1353,10 @@ mod tests {
 
         state.sprite_bottle_vendor(k);
 
-        assert_eq!(state.sprite_slot(fish).state(), 0);
-        assert_eq!(state.sprite_slot(k).e(), 0);
-        assert_eq!(state.sprite_slot(k).ai_state(), 0);
-        assert_eq!(state.sprite_slot(15).sprite_type(), 0xd9);
+        assert_eq!(state.sprite_slot_view(fish).state(), 0);
+        assert_eq!(state.sprite_slot_view(k).e(), 0);
+        assert_eq!(state.sprite_slot_view(k).ai_state(), 0);
+        assert_eq!(state.sprite_slot_view(15).sprite_type(), 0xd9);
     }
 
     #[test]
@@ -1398,7 +1398,7 @@ mod tests {
 
         state.bee_put_in_bottle(k);
         assert_eq!(state.game_state.inventory.items.bottle(1), 7);
-        assert_eq!(state.sprite_slot(k).state(), 0);
+        assert_eq!(state.sprite_slot_view(k).state(), 0);
     }
 
     #[test]
@@ -1420,7 +1420,7 @@ mod tests {
         state.bee_put_in_bottle(k);
         // delay and ai_state are written unconditionally after the bottle
         // check fails.
-        let sprite = state.sprite_slot(k);
+        let sprite = state.sprite_slot_view(k);
         assert_eq!(sprite.delay_aux4(), 64);
         assert_eq!(sprite.ai_state(), 1);
         // Sprite_ShowMessageUnconditional(0xca) wrote dialogue index and
@@ -1460,10 +1460,10 @@ mod tests {
         }
 
         state.player_bee_hone_in_on_target(j, k);
-        let target = state.sprite_slot(j);
+        let target = state.sprite_slot_view(j);
         assert_eq!(target.f(), 15);
         assert_eq!(target.x_recoil(), 6);
         assert_eq!(target.y_recoil(), 4);
-        assert_eq!(state.sprite_slot(k).b(), 8);
+        assert_eq!(state.sprite_slot_view(k).b(), 8);
     }
 }

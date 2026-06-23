@@ -6215,10 +6215,6 @@ impl ZeldaState {
         )
     }
 
-    pub(crate) fn sprite_slot(&self, slot: usize) -> NativeSpriteSlotView<'_> {
-        self.game_state.sprites.sprite_slots.slot(slot)
-    }
-
     pub(crate) fn sprite_slot_view(&self, slot: usize) -> NativeSpriteSlotView<'_> {
         self.game_state.sprites.sprite_slots.slot(slot)
     }
@@ -9074,7 +9070,7 @@ impl ZeldaState {
     }
 
     fn sprite_y(&self, k: usize) -> u16 {
-        self.sprite_slot(k).y()
+        self.sprite_slot_view(k).y()
     }
 
     fn set_oam_helper0_at(&mut self, oam: usize, x: u16, y: u16, charnum: u8, flags: u8, big: u8) {

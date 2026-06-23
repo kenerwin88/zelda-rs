@@ -6635,7 +6635,7 @@ impl ZeldaState {
         let x = self.game_state.player.pushed_block.x(i);
         let y = self.game_state.player.pushed_block.y(i);
         for j in (0..16usize).rev() {
-            let sprite = self.sprite_slot(j);
+            let sprite = self.sprite_slot_view(j);
             if sprite.state() >= 9 {
                 let sx = sprite.x();
                 let sy = sprite.y();
@@ -7359,7 +7359,7 @@ impl ZeldaState {
 
     pub(super) fn RoomTag_GanonDoor(&mut self, _tagidx: usize) {
         for k in (0..16).rev() {
-            let sprite = self.sprite_slot(k);
+            let sprite = self.sprite_slot_view(k);
             if sprite.state() == 4 || (sprite.flags4() & 64 == 0 && sprite.state() != 0) {
                 return;
             }

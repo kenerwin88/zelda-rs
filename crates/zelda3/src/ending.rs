@@ -1465,8 +1465,8 @@ impl ZeldaState {
 
     pub(super) fn credits_scroll_scene_overworld(&mut self) {
         for k in (0..16).rev() {
-            if self.sprite_slot(k).delay_main() != 0 {
-                let delay = self.sprite_slot(k).delay_main().wrapping_sub(1);
+            if self.sprite_slot_view(k).delay_main() != 0 {
+                let delay = self.sprite_slot_view(k).delay_main().wrapping_sub(1);
                 self.sprite_slot_mut(k).set_delay_main(delay);
             }
         }
@@ -1493,8 +1493,8 @@ impl ZeldaState {
 
     pub(super) fn credits_scroll_scene_dungeon(&mut self) {
         for k in (0..16).rev() {
-            if self.sprite_slot(k).delay_main() != 0 {
-                let delay = self.sprite_slot(k).delay_main().wrapping_sub(1);
+            if self.sprite_slot_view(k).delay_main() != 0 {
+                let delay = self.sprite_slot_view(k).delay_main().wrapping_sub(1);
                 self.sprite_slot_mut(k).set_delay_main(delay);
             }
         }
@@ -1577,9 +1577,9 @@ impl ZeldaState {
                 let bird_frame_idx = ((self.game_state.frame.frame_counter >> 2) & 1) as usize;
                 self.set_flag_travel_bird(CREDITS_CASE2_BIRD_FLAG_FRAMES[bird_frame_idx]);
                 let mut k = 6usize;
-                let j = ((self.sprite_slot(k).x_velocity() >> 7) & 1) as usize;
+                let j = ((self.sprite_slot_view(k).x_velocity() >> 7) & 1) as usize;
                 let oam_flags = self
-                    .sprite_slot(k)
+                    .sprite_slot_view(k)
                     .x_velocity()
                     .wrapping_add(CREDITS_CASE2_BIRD_OAM_VELOCITY_OFFSETS[j] as u8)
                     >> 1
@@ -1590,19 +1590,19 @@ impl ZeldaState {
                 self.credits_sprite_draw_circling_birds(k);
                 k -= 1;
                 self.sprite_slot_mut(k).set_oam_flags(0x31);
-                if self.sprite_slot(k).delay_main() == 0 {
-                    let j = self.sprite_slot(k).a() as usize;
-                    let a = self.sprite_slot(k).a() ^ 1;
+                if self.sprite_slot_view(k).delay_main() == 0 {
+                    let j = self.sprite_slot_view(k).a() as usize;
+                    let a = self.sprite_slot_view(k).a() ^ 1;
                     self.sprite_slot_mut(k).set_a(a);
                     self.sprite_slot_mut(k).set_delay_main(CASE2_DELAY[j]);
-                    let graphics = self.sprite_slot(k).graphics().wrapping_add(1) & 3;
+                    let graphics = self.sprite_slot_view(k).graphics().wrapping_add(1) & 3;
                     self.sprite_slot_mut(k).set_graphics(graphics);
                 }
                 self.credits_sprite_draw_single(k, 2, 0x26);
                 k -= 1;
                 loop {
                     if self.game_state.frame.frame_counter & 15 == 0 {
-                        let graphics = self.sprite_slot(k).graphics() ^ 1;
+                        let graphics = self.sprite_slot_view(k).graphics() ^ 1;
                         self.sprite_slot_mut(k).set_graphics(graphics);
                     }
                     self.sprite_slot_mut(k).set_oam_flags(0x31);
@@ -1661,12 +1661,12 @@ impl ZeldaState {
                 k -= 1;
                 loop {
                     let oam_flags =
-                        self.sprite_slot(k).x_velocity().wrapping_sub(1) >> 1 & 0x40 ^ 0x71;
+                        self.sprite_slot_view(k).x_velocity().wrapping_sub(1) >> 1 & 0x40 ^ 0x71;
                     self.sprite_slot_mut(k).set_oam_flags(oam_flags);
                     let graphics = self.game_state.frame.frame_counter >> 3 & 1;
                     self.sprite_slot_mut(k).set_graphics(graphics);
-                    if r16 >= CASE4_CTR[k] && self.sprite_slot(k).delay_main() == 0 {
-                        let a = CASE4_DELAYVEL[self.sprite_slot(k).a() as usize];
+                    if r16 >= CASE4_CTR[k] && self.sprite_slot_view(k).delay_main() == 0 {
+                        let a = CASE4_DELAYVEL[self.sprite_slot_view(k).a() as usize];
                         self.sprite_slot_mut(k).set_delay_main(a & 0xf8);
                         self.sprite_slot_mut(k)
                             .set_y_velocity(CASE4_XYVEL[((a & 7) + 2) as usize] as u8);
@@ -1706,7 +1706,7 @@ impl ZeldaState {
                 self.sprite_slot_mut(k).set_oam_flags(0x31);
                 self.credits_sprite_draw_single(k, 4, 8);
                 self.end_sequence_draw_shadow2(k);
-                let j = self.sprite_slot(k).graphics() as usize;
+                let j = self.sprite_slot_view(k).graphics() as usize;
                 k -= 1;
                 self.sprite_slot_mut(k).set_graphics(j as u8);
                 {
@@ -1751,13 +1751,13 @@ impl ZeldaState {
                 self.sprite_slot_mut(k).set_oam_flags(0x37);
                 self.sprite_get_16_bit_coords_ending(k);
                 if self.game_state.frame.frame_counter & 15 == 0 {
-                    let graphics = self.sprite_slot(k).graphics() ^ 1;
+                    let graphics = self.sprite_slot_view(k).graphics() ^ 1;
                     self.sprite_slot_mut(k).set_graphics(graphics);
                 }
                 self.sprite_active_main_ending(k);
                 if r16 >= 0x180 {
                     self.sprite_slot_mut(k).set_y_velocity(4);
-                    if self.sprite_slot(k).y_low() != 0x7c {
+                    if self.sprite_slot_view(k).y_low() != 0x7c {
                         self.sprite_move_xy(k);
                     }
                 }
@@ -1766,11 +1766,11 @@ impl ZeldaState {
                 self.oam_allocate_from_region_a(0x18);
                 self.sprite_slot_mut(k).set_oam_flags(0x39);
                 self.sprite_get_16_bit_coords_ending(k);
-                if self.sprite_slot(k).delay_main() == 0 {
+                if self.sprite_slot_view(k).delay_main() == 0 {
                     const GFX_STEP: [i8; 2] = [1, -1];
                     self.sprite_slot_mut(k).set_delay_main(4);
                     let graphics = self
-                        .sprite_slot(k)
+                        .sprite_slot_view(k)
                         .graphics()
                         .wrapping_add(GFX_STEP[((r16 >> 9) & 1) as usize] as u8)
                         & 7;
@@ -1795,7 +1795,7 @@ impl ZeldaState {
             9 => {
                 let mut k = 0usize;
                 while k < 5 {
-                    if self.sprite_slot(k).delay_main() == 0 {
+                    if self.sprite_slot_view(k).delay_main() == 0 {
                         self.sprite_slot_mut(k).set_delay_main(96);
                         self.sprite_slot_mut(k).set_state(96);
                         self.sprite_slot_mut(k).set_x_velocity(0);
@@ -1804,7 +1804,7 @@ impl ZeldaState {
                         self.sprite_slot_mut(k).set_y_low(24);
                         self.sprite_slot_mut(k).set_y_high(11);
                     }
-                    if self.sprite_slot(k).state() != 0 {
+                    if self.sprite_slot_view(k).state() != 0 {
                         self.sprite_slot_mut(k).set_y_velocity((-8i8) as u8);
                         self.sprite_move_xy(k);
                         if self.game_state.frame.frame_counter & 1 == 0 {
@@ -1823,15 +1823,15 @@ impl ZeldaState {
                     k += 1;
                 }
                 loop {
-                    if self.sprite_slot(k).delay_main() == 0 {
+                    if self.sprite_slot_view(k).delay_main() == 0 {
                         const DELAY1: [u8; 4] = [16, 14, 16, 18];
                         const DELAY2: [u8; 4] = [20, 48, 20, 20];
-                        let a = self.sprite_slot(k).a() as usize;
+                        let a = self.sprite_slot_view(k).a() as usize;
                         let delay = if k == 5 { DELAY1[a] } else { DELAY2[a] };
                         self.sprite_slot_mut(k).set_delay_main(delay);
-                        let next_a = self.sprite_slot(k).a().wrapping_add(1) & 3;
+                        let next_a = self.sprite_slot_view(k).a().wrapping_add(1) & 3;
                         self.sprite_slot_mut(k).set_a(next_a);
-                        let graphics = self.sprite_slot(k).graphics() ^ 1;
+                        let graphics = self.sprite_slot_view(k).graphics() ^ 1;
                         self.sprite_slot_mut(k).set_graphics(graphics);
                     }
                     if k == 5 {
@@ -1862,7 +1862,7 @@ impl ZeldaState {
                 const WISH_POND_Y: [u8; 8] = [0, 8, 16, 24, 32, 40, 4, 36];
                 let k = 5usize;
                 self.sprite_get_16_bit_coords_ending(k);
-                if self.sprite_slot(k).pause() == 0 {
+                if self.sprite_slot_view(k).pause() == 0 {
                     let xb = WISH_POND_X[(self.get_random_number() & 7) as usize]
                         .wrapping_add(self.game_state.sprites.workspace.current_sprite_x() as u8);
                     let yb = WISH_POND_Y[(self.get_random_number() & 7) as usize]
@@ -1870,8 +1870,8 @@ impl ZeldaState {
                     self.credits_sprite_draw_add_sparkle(3, xb, yb);
                 }
                 for k in 3..5 {
-                    if self.sprite_slot(k).delay_aux1() != 0 {
-                        let delay = self.sprite_slot(k).delay_aux1().wrapping_sub(1);
+                    if self.sprite_slot_view(k).delay_aux1() != 0 {
+                        let delay = self.sprite_slot_view(k).delay_aux1().wrapping_sub(1);
                         self.sprite_slot_mut(k).set_delay_aux1(delay);
                     }
                     self.sprite_slot_mut(k).set_sprite_type(0xe3);
@@ -1893,9 +1893,9 @@ impl ZeldaState {
                     self.sprite_slot_mut(k).set_oam_flags(0x39);
                     if r16 < 0x1c0 {
                         self.sprite_slot_mut(k).set_graphics(2);
-                    } else if self.sprite_slot(k).delay_main() == 0 {
+                    } else if self.sprite_slot_view(k).delay_main() == 0 {
                         self.sprite_slot_mut(k).set_delay_main(0x20);
-                        let graphics = (self.sprite_slot(k).graphics() ^ 1) & 1;
+                        let graphics = (self.sprite_slot_view(k).graphics() ^ 1) & 1;
                         self.sprite_slot_mut(k).set_graphics(graphics);
                     }
                     self.credits_sprite_draw_single(k, 4, 6);
@@ -1909,10 +1909,10 @@ impl ZeldaState {
                         let bak0 = self.game_state.frame.main_module;
                         self.credits_sprite_draw_activate_and_run_sprite(k, 0x0c);
                         self.set_main_module(bak0);
-                        if self.sprite_slot(k).b() == 15 && self.sprite_slot(k).a() == 4 {
+                        if self.sprite_slot_view(k).b() == 15 && self.sprite_slot_view(k).a() == 4 {
                             self.sprite_slot_mut(k + 2).set_delay_main(15);
                         }
-                        let j = self.sprite_slot(k + 2).delay_main();
+                        let j = self.sprite_slot_view(k + 2).delay_main();
                         if j != 0 {
                             self.sprite_slot_mut(k + 2).set_oam_flags(2);
                             self.sprite_slot_mut(k + 2)
@@ -1926,13 +1926,13 @@ impl ZeldaState {
                 let mut k = 6usize;
                 let graphics = self.game_state.frame.frame_counter & 1;
                 self.sprite_slot_mut(k).set_graphics(graphics);
-                if self.sprite_slot(k).graphics() == 0 {
-                    let x_delta = if sign8(self.sprite_slot(k).x_low().wrapping_sub(0x80)) {
+                if self.sprite_slot_view(k).graphics() == 0 {
+                    let x_delta = if sign8(self.sprite_slot_view(k).x_low().wrapping_sub(0x80)) {
                         1
                     } else {
                         0xff
                     };
-                    let y_delta = if sign8(self.sprite_slot(k).y_low().wrapping_sub(0xb0)) {
+                    let y_delta = if sign8(self.sprite_slot_view(k).y_low().wrapping_sub(0xb0)) {
                         1
                     } else {
                         0xff
@@ -1941,7 +1941,7 @@ impl ZeldaState {
                     self.sprite_slot_mut(k).add_y_velocity(y_delta);
                     self.sprite_move_xy(k);
                 }
-                let oam_flags = (self.sprite_slot(k).x_velocity() >> 1 & 0x40) ^ 0x7e;
+                let oam_flags = (self.sprite_slot_view(k).x_velocity() >> 1 & 0x40) ^ 0x7e;
                 self.sprite_slot_mut(k).set_oam_flags(oam_flags);
                 self.sprite_slot_mut(k).set_flags2(1);
                 self.sprite_slot_mut(k).set_flags3(0x30);
@@ -1987,9 +1987,9 @@ impl ZeldaState {
                 }
                 let graphics = self.game_state.frame.frame_counter >> 4 & 1;
                 self.sprite_slot_mut(k).set_graphics(graphics);
-                if self.sprite_slot(k).x_low() == 56 {
+                if self.sprite_slot_view(k).x_low() == 56 {
                     self.sprite_slot_mut(k).set_x_velocity(0);
-                    let graphics = self.sprite_slot(k).graphics().wrapping_add(2);
+                    let graphics = self.sprite_slot_view(k).graphics().wrapping_add(2);
                     self.sprite_slot_mut(k).set_graphics(graphics);
                 }
                 self.credits_sprite_draw_single(k, 3, 0x34);
@@ -2008,7 +2008,7 @@ impl ZeldaState {
                         self.sprite_slot_mut(k).set_graphics(graphics);
                         self.sprite_slot_mut(k).set_z(32);
                         self.credits_sprite_draw_circling_birds(k);
-                        let oam_flags = (self.sprite_slot(k).x_velocity() >> 1 & 0x40) ^ 0x0f;
+                        let oam_flags = (self.sprite_slot_view(k).x_velocity() >> 1 & 0x40) ^ 0x0f;
                         self.sprite_slot_mut(k).set_oam_flags(oam_flags);
                         self.credits_sprite_draw_preexisting_sprite_draw(k, 8);
                     } else {
@@ -2018,7 +2018,7 @@ impl ZeldaState {
                         }
                         self.credits_sprite_draw_set_shadow_prop(k, 3);
                         self.sprite_slot_mut(k).set_oam_flags(0x2b);
-                        let mut a = self.sprite_slot(k).delay_main();
+                        let mut a = self.sprite_slot_view(k).delay_main();
                         if a == 0 {
                             a = 0xc0;
                             self.sprite_slot_mut(k).set_delay_main(a);
@@ -2029,9 +2029,9 @@ impl ZeldaState {
                             self.sprite_slot_mut(k).set_x_velocity(0);
                         } else if a < CREDITS_CASE14_TIMING_THRESHOLDS[k]
                             && self.game_state.frame.frame_counter & 3 == 0
-                            && self.sprite_slot(k).y_velocity() != 0
+                            && self.sprite_slot_view(k).y_velocity() != 0
                         {
-                            let mut v = self.sprite_slot(k).y_velocity().wrapping_sub(1);
+                            let mut v = self.sprite_slot_view(k).y_velocity().wrapping_sub(1);
                             self.sprite_slot_mut(k).set_y_velocity(v);
                             v = v.wrapping_sub(4);
                             if k < 3 {
@@ -2071,30 +2071,30 @@ impl ZeldaState {
                 let mut j = 1u8;
                 loop {
                     k += 1;
-                    if self.sprite_slot(k).delay_aux1() != 0 {
-                        let delay = self.sprite_slot(k).delay_aux1().wrapping_sub(1);
+                    if self.sprite_slot_view(k).delay_aux1() != 0 {
+                        let delay = self.sprite_slot_view(k).delay_aux1().wrapping_sub(1);
                         self.sprite_slot_mut(k).set_delay_aux1(delay);
                     }
                     let oam_flags =
-                        (self.sprite_slot(k).x_velocity() >> 1 & 0x40) ^ OAM_FLAGS[j as usize];
+                        (self.sprite_slot_view(k).x_velocity() >> 1 & 0x40) ^ OAM_FLAGS[j as usize];
                     self.sprite_slot_mut(k).set_oam_flags(oam_flags);
-                    if self.sprite_slot(k).delay_main() == 0 {
+                    if self.sprite_slot_view(k).delay_main() == 0 {
                         self.sprite_slot_mut(k).set_delay_main(128);
                         self.sprite_slot_mut(k).set_a(0);
                     }
-                    if self.sprite_slot(k).a() == 0 {
+                    if self.sprite_slot_view(k).a() == 0 {
                         let graphics = (self.game_state.frame.frame_counter >> 2 & 1) + 2;
                         self.sprite_slot_mut(k).set_graphics(graphics);
                         self.credits_sprite_draw_move_squirrel(k);
-                    } else if self.sprite_slot(k).delay_aux1() == 0 {
-                        if self.sprite_slot(k).b() == 8 {
+                    } else if self.sprite_slot_view(k).delay_aux1() == 0 {
+                        if self.sprite_slot_view(k).b() == 8 {
                             self.sprite_slot_mut(k).set_b(0);
                         }
-                        let b = self.sprite_slot(k).b() & 7;
+                        let b = self.sprite_slot_view(k).b() & 7;
                         self.sprite_slot_mut(k).set_delay_aux1(DELAY[b as usize]);
-                        let graphics = (self.sprite_slot(k).graphics() & 1) ^ 1;
+                        let graphics = (self.sprite_slot_view(k).graphics() & 1) ^ 1;
                         self.sprite_slot_mut(k).set_graphics(graphics);
-                        let b = self.sprite_slot(k).b().wrapping_add(1);
+                        let b = self.sprite_slot_view(k).b().wrapping_add(1);
                         self.sprite_slot_mut(k).set_b(b);
                     }
                     self.credits_sprite_draw_single(k, 1, 20);
@@ -2161,8 +2161,8 @@ impl ZeldaState {
         ];
         self.sprite_slot_mut(k).set_oam_flags(ain);
         self.end_sequence_draw_shadow2(k);
-        let mut j = self.sprite_slot(k).a();
-        if self.sprite_slot(k).delay_main() == 0 {
+        let mut j = self.sprite_slot_view(k).a();
+        if self.sprite_slot_view(k).delay_main() == 0 {
             j = j.wrapping_add(1);
             if j == 8 {
                 j = 6;
@@ -2183,7 +2183,7 @@ impl ZeldaState {
         };
         self.sprite_slot_mut(k).set_graphics(graphics);
         if (j < 5 || (10..15).contains(&j)) && self.game_state.frame.frame_counter & 1 == 0 {
-            let y_low = self.sprite_slot(k).y_low().wrapping_add(1);
+            let y_low = self.sprite_slot_view(k).y_low().wrapping_add(1);
             self.sprite_slot_mut(k).set_y_low(y_low);
         }
     }
@@ -2210,7 +2210,7 @@ impl ZeldaState {
         self.oam_allocate_from_region_a(a.wrapping_mul(4));
         self.sprite_get_16_bit_coords_ending(k);
         let entries = END_SEQUENCE_DRAW_FRAME_SETS[(j >> 1) as usize];
-        let start = a as usize * self.sprite_slot(k).graphics() as usize;
+        let start = a as usize * self.sprite_slot_view(k).graphics() as usize;
         let dmd: Vec<DrawMultipleData> = entries[start..start + a as usize]
             .iter()
             .map(|&(x, y, char_flags, ext)| DrawMultipleData {
@@ -2234,8 +2234,8 @@ impl ZeldaState {
         const DELAY: [u8; 6] = [32, 4, 4, 4, 5, 6];
         self.sprite_slot_mut(0).set_c(j_count as u8);
         for k in 0..j_count {
-            let mut j = self.sprite_slot(k).graphics();
-            if self.sprite_slot(k).delay_main() == 0 {
+            let mut j = self.sprite_slot_view(k).graphics();
+            if self.sprite_slot_view(k).delay_main() == 0 {
                 j = j.wrapping_add(1);
                 if j >= 6 {
                     self.sprite_slot_mut(k).set_x_low(xb);
@@ -2253,12 +2253,12 @@ impl ZeldaState {
 
     pub(super) fn credits_sprite_draw_walk_link_away_from_pedestal(&mut self, k: usize) {
         const DMA: [u16; 8] = [0x16c, 0x16e, 0x170, 0x172, 0x16c, 0x174, 0x176, 0x178];
-        if self.sprite_slot(k).delay_main() == 0 {
-            let graphics = self.sprite_slot(k).graphics().wrapping_add(1) & 7;
+        if self.sprite_slot_view(k).delay_main() == 0 {
+            let graphics = self.sprite_slot_view(k).graphics().wrapping_add(1) & 7;
             self.sprite_slot_mut(k).set_graphics(graphics);
             self.sprite_slot_mut(k).set_delay_main(4);
         }
-        let dma = DMA[self.sprite_slot(k).graphics() as usize];
+        let dma = DMA[self.sprite_slot_view(k).graphics() as usize];
         self.follower_link_state_mut()
             .set_link_dma_graphics_index_word(dma);
         self.sprite_slot_mut(k).set_oam_flags(32);
@@ -2270,12 +2270,12 @@ impl ZeldaState {
     pub(super) fn credits_sprite_draw_move_squirrel(&mut self, k: usize) {
         const LOCAL_X_VELOCITIES: [i8; 4] = [32, 24, -32, -24];
         const LOCAL_Y_VELOCITIES: [i8; 4] = [8, -8, -8, 8];
-        if self.sprite_slot(k).delay_main() < 64 {
-            let c = self.sprite_slot(k).c().wrapping_add(1) & 3;
+        if self.sprite_slot_view(k).delay_main() < 64 {
+            let c = self.sprite_slot_view(k).c().wrapping_add(1) & 3;
             self.sprite_slot_mut(k).set_c(c);
             self.sprite_slot_mut(k).increment_a();
         } else {
-            let j = self.sprite_slot(k).c() as usize;
+            let j = self.sprite_slot_view(k).c() as usize;
             self.sprite_slot_mut(k)
                 .set_x_velocity(LOCAL_X_VELOCITIES[j] as u8);
             self.sprite_slot_mut(k)
@@ -2287,24 +2287,24 @@ impl ZeldaState {
     pub(super) fn credits_sprite_draw_circling_birds(&mut self, k: usize) {
         const TARGET_X: [i8; 2] = [0x20, -0x20];
         const TARGET_Y: [i8; 2] = [0x10, -0x10];
-        let j = self.sprite_slot(k).direction() & 1;
-        let x_velocity =
-            self.sprite_slot(k)
-                .x_velocity()
-                .wrapping_add(if j != 0 { 0xff } else { 1 });
+        let j = self.sprite_slot_view(k).direction() & 1;
+        let x_velocity = self
+            .sprite_slot_view(k)
+            .x_velocity()
+            .wrapping_add(if j != 0 { 0xff } else { 1 });
         self.sprite_slot_mut(k).set_x_velocity(x_velocity);
-        if self.sprite_slot(k).x_velocity() == TARGET_X[j as usize] as u8 {
+        if self.sprite_slot_view(k).x_velocity() == TARGET_X[j as usize] as u8 {
             self.sprite_slot_mut(k).increment_direction();
         }
         if self.game_state.frame.frame_counter & 1 == 0 {
-            let j = self.sprite_slot(k).head_direction() & 1;
-            let y_velocity =
-                self.sprite_slot(k)
-                    .y_velocity()
-                    .wrapping_add(if j != 0 { 0xff } else { 1 });
+            let j = self.sprite_slot_view(k).head_direction() & 1;
+            let y_velocity = self
+                .sprite_slot_view(k)
+                .y_velocity()
+                .wrapping_add(if j != 0 { 0xff } else { 1 });
             self.sprite_slot_mut(k).set_y_velocity(y_velocity);
-            if self.sprite_slot(k).y_velocity() == TARGET_Y[j as usize] as u8 {
-                let head_direction = self.sprite_slot(k).head_direction().wrapping_add(1);
+            if self.sprite_slot_view(k).y_velocity() == TARGET_Y[j as usize] as u8 {
+                let head_direction = self.sprite_slot_view(k).head_direction().wrapping_add(1);
                 self.sprite_slot_mut(k).set_head_direction(head_direction);
             }
         }

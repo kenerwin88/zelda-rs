@@ -1047,7 +1047,7 @@ impl ZeldaState {
             .system_signals
             .ambient_sound_effect_is_clear()
         {
-            let x = self.sprite_slot(k).x();
+            let x = self.sprite_slot_view(k).x();
             let sfx = a | Self::calculate_sfx_pan_with_scroll(
                 x,
                 self.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
@@ -1145,7 +1145,7 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_calculate_sfx_pan(&self, k: usize) -> u8 {
-        let x = self.sprite_slot(k).x();
+        let x = self.sprite_slot_view(k).x();
         Self::calculate_sfx_pan_with_scroll(
             x,
             self.game_state.display.ppu_scroll_copy.bg2_h_copy2(),

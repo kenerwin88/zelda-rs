@@ -470,7 +470,7 @@ impl ZeldaState {
                         != FLUTE_BOY_ANIMAL_X_VELOCITIES[j] as u8
                     {
                         let value = self
-                            .sprite_slot(k)
+                            .sprite_slot_view(k)
                             .x_velocity()
                             .wrapping_add(PENGATOR_AXIS_VELOCITIES[j] as u8);
                         self.sprite_slot_view_mut(k).set_x_velocity(value);
@@ -478,7 +478,7 @@ impl ZeldaState {
                     }
                     if self.sprite_slot_view(k).y_velocity() != ZAZAK_Y_VELOCITIES[j] as u8 {
                         let value = self
-                            .sprite_slot(k)
+                            .sprite_slot_view(k)
                             .y_velocity()
                             .wrapping_add(PENGATOR_AXIS_VELOCITIES[j + 2] as u8);
                         self.sprite_slot_view_mut(k).set_y_velocity(value);
@@ -939,23 +939,23 @@ impl ZeldaState {
                     return;
                 }
                 let x_delta = self
-                    .sprite_slot(k)
+                    .sprite_slot_view(k)
                     .x_velocity()
                     .wrapping_sub(self.sprite_slot_view(k).z_velocity());
                 if x_delta != 0 {
                     let value = self
-                        .sprite_slot(k)
+                        .sprite_slot_view(k)
                         .x_velocity()
                         .wrapping_add(if sign8(x_delta) { 1 } else { 0xff });
                     self.sprite_slot_view_mut(k).set_x_velocity(value);
                 }
                 let y_delta = self
-                    .sprite_slot(k)
+                    .sprite_slot_view(k)
                     .y_velocity()
                     .wrapping_sub(self.sprite_slot_view(k).z_subpixel());
                 if y_delta != 0 {
                     let value = self
-                        .sprite_slot(k)
+                        .sprite_slot_view(k)
                         .y_velocity()
                         .wrapping_add(if sign8(y_delta) { 1 } else { 0xff });
                     self.sprite_slot_view_mut(k).set_y_velocity(value);
@@ -2510,12 +2510,12 @@ impl ZeldaState {
                 let j = usize::from(self.sprite_slot_view(k).direction());
                 if self.sprite_slot_view(k).delay_main() != 0 {
                     let value = self
-                        .sprite_slot(k)
+                        .sprite_slot_view(k)
                         .x_velocity()
                         .wrapping_add(HOVER_PRIMARY_X_ACCELERATIONS[j] as u8);
                     self.sprite_slot_view_mut(k).set_x_velocity(value);
                     let value = self
-                        .sprite_slot(k)
+                        .sprite_slot_view(k)
                         .y_velocity()
                         .wrapping_add(HOVER_PRIMARY_Y_ACCELERATIONS[j] as u8);
                     self.sprite_slot_view_mut(k).set_y_velocity(value);
@@ -2523,12 +2523,12 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_graphics(value);
                 } else {
                     let value = self
-                        .sprite_slot(k)
+                        .sprite_slot_view(k)
                         .x_velocity()
                         .wrapping_add(HOVER_SECONDARY_X_ACCELERATIONS[j] as u8);
                     self.sprite_slot_view_mut(k).set_x_velocity(value);
                     let value = self
-                        .sprite_slot(k)
+                        .sprite_slot_view(k)
                         .y_velocity()
                         .wrapping_add(HOVER_SECONDARY_Y_ACCELERATIONS[j] as u8);
                     self.sprite_slot_view_mut(k).set_y_velocity(value);
@@ -2689,7 +2689,7 @@ impl ZeldaState {
         if self.sprite_slot_view(k).a() != 0 && self.sprite_slot_view(k).f() == 15 {
             self.sprite_slot_view_mut(k).set_f(6);
             let value = self
-                .sprite_slot(k)
+                .sprite_slot_view(k)
                 .z()
                 .wrapping_add(self.sprite_slot_view(k).b());
             self.sprite_slot_view_mut(k).set_z(value);
@@ -2793,7 +2793,7 @@ impl ZeldaState {
             return;
         }
         let value = self
-            .sprite_slot(k)
+            .sprite_slot_view(k)
             .subtype2()
             .wrapping_sub(self.sprite_slot_view(k).direction());
         self.sprite_slot_view_mut(k).set_subtype2(value);
@@ -3247,13 +3247,13 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_y_velocity(pt.y);
             self.sprite_slot_view_mut(k).set_x_velocity(pt.x);
             if self
-                .sprite_slot(k)
+                .sprite_slot_view(k)
                 .x_low()
                 .wrapping_sub(x_low)
                 .wrapping_add(8)
                 < 16
                 && self
-                    .sprite_slot(k)
+                    .sprite_slot_view(k)
                     .y_low()
                     .wrapping_sub(y_low)
                     .wrapping_add(8)
@@ -3583,12 +3583,12 @@ impl ZeldaState {
                 if (self.game_state.frame.frame_counter & 7) == 0 {
                     let j = self.sprite_slot_view(k).a() as usize;
                     let delta = self
-                        .sprite_slot(k)
+                        .sprite_slot_view(k)
                         .direction()
                         .wrapping_sub(GIBDO_DIRECTION_TARGETS[j]);
                     if delta != 0 {
                         let value = self
-                            .sprite_slot(k)
+                            .sprite_slot_view(k)
                             .direction()
                             .wrapping_add(if sign8(delta) { 1 } else { 0xff });
                         self.sprite_slot_view_mut(k).set_direction(value);
@@ -3787,12 +3787,12 @@ impl ZeldaState {
                 self.sprite_move_xy(k);
                 let j = self.sprite_slot_view(k).direction() as usize;
                 let value = self
-                    .sprite_slot(k)
+                    .sprite_slot_view(k)
                     .x_velocity()
                     .wrapping_add(PIROGUSU_COLLISION_AXIS_VELOCITIES[j] as u8);
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
                 let value = self
-                    .sprite_slot(k)
+                    .sprite_slot_view(k)
                     .y_velocity()
                     .wrapping_add(PIROGUSU_COLLISION_AXIS_VELOCITIES[j + 2] as u8);
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
@@ -4218,14 +4218,14 @@ impl ZeldaState {
             let j = self.sprite_slot_view(k).direction() as usize;
             if self.sprite_slot_view(k).x_velocity() != X_TARGET[j] as u8 {
                 let value = self
-                    .sprite_slot(k)
+                    .sprite_slot_view(k)
                     .x_velocity()
                     .wrapping_add(X_DELTA[j] as u8);
                 self.sprite_slot_view_mut(k).set_x_velocity(value);
             }
             if self.sprite_slot_view(k).y_velocity() != Y_TARGET[j] as u8 {
                 let value = self
-                    .sprite_slot(k)
+                    .sprite_slot_view(k)
                     .y_velocity()
                     .wrapping_add(Y_DELTA[j] as u8);
                 self.sprite_slot_view_mut(k).set_y_velocity(value);
@@ -5234,24 +5234,24 @@ mod tests {
         // -> sfx queued, gfx = kMothula_FlapWingsGfx[0] = 0.
         s.sprite_slot_mut(k).set_subtype2(0);
         s.mothula_flap_wings(k);
-        assert_eq!(s.sprite_slot(k).subtype2(), 1);
-        assert_eq!(s.sprite_slot(k).graphics(), 0);
+        assert_eq!(s.sprite_slot_view(k).subtype2(), 1);
+        assert_eq!(s.sprite_slot_view(k).graphics(), 0);
 
         // subtype2 = 3 -> ++ = 4 -> j = 1 -> gfx = 1.
         s.sprite_slot_mut(k).set_subtype2(3);
         s.mothula_flap_wings(k);
-        assert_eq!(s.sprite_slot(k).subtype2(), 4);
-        assert_eq!(s.sprite_slot(k).graphics(), 1);
+        assert_eq!(s.sprite_slot_view(k).subtype2(), 4);
+        assert_eq!(s.sprite_slot_view(k).graphics(), 1);
 
         // subtype2 = 7 -> ++ = 8 -> j = 2 -> gfx = 2.
         s.sprite_slot_mut(k).set_subtype2(7);
         s.mothula_flap_wings(k);
-        assert_eq!(s.sprite_slot(k).graphics(), 2);
+        assert_eq!(s.sprite_slot_view(k).graphics(), 2);
 
         // subtype2 = 11 -> ++ = 12 -> j = 3 -> gfx = 1.
         s.sprite_slot_mut(k).set_subtype2(11);
         s.mothula_flap_wings(k);
-        assert_eq!(s.sprite_slot(k).graphics(), 1);
+        assert_eq!(s.sprite_slot_view(k).graphics(), 1);
     }
 
     #[test]
@@ -5276,18 +5276,18 @@ mod tests {
 
         // The reverse-allocator hands out 15, 14, 13 across the loop.
         // First iter (i = 2): x_vel = 16, y_vel = 24, x_lo = 0x80 + 16.
-        assert_eq!(s.sprite_slot(15).x_velocity() as i8, 16);
-        assert_eq!(s.sprite_slot(15).y_velocity(), 24);
-        assert_eq!(s.sprite_slot(15).x_low(), 0x80u8.wrapping_add(16));
-        assert_eq!(s.sprite_slot(15).delay_main(), 16);
-        assert_eq!(s.sprite_slot(15).ignore_projectile(), 16);
-        assert_eq!(s.sprite_slot(15).z(), 0);
+        assert_eq!(s.sprite_slot_view(15).x_velocity() as i8, 16);
+        assert_eq!(s.sprite_slot_view(15).y_velocity(), 24);
+        assert_eq!(s.sprite_slot_view(15).x_low(), 0x80u8.wrapping_add(16));
+        assert_eq!(s.sprite_slot_view(15).delay_main(), 16);
+        assert_eq!(s.sprite_slot_view(15).ignore_projectile(), 16);
+        assert_eq!(s.sprite_slot_view(15).z(), 0);
         // Second iter (i = 1): x_vel = 0, y_vel = 32.
-        assert_eq!(s.sprite_slot(14).x_velocity(), 0);
-        assert_eq!(s.sprite_slot(14).y_velocity(), 32);
+        assert_eq!(s.sprite_slot_view(14).x_velocity(), 0);
+        assert_eq!(s.sprite_slot_view(14).y_velocity(), 32);
         // Third iter (i = 0): x_vel = -16 (=> 0xf0), y_vel = 24.
-        assert_eq!(s.sprite_slot(13).x_velocity() as i8, -16);
-        assert_eq!(s.sprite_slot(13).y_velocity(), 24);
+        assert_eq!(s.sprite_slot_view(13).x_velocity() as i8, -16);
+        assert_eq!(s.sprite_slot_view(13).y_velocity(), 24);
     }
 
     #[test]
@@ -5300,8 +5300,8 @@ mod tests {
         s.sprite_slot_mut(k).set_delay_main(0);
         s.sprite_slot_mut(k).set_f(0);
         s.mothula_main(k);
-        assert_eq!(s.sprite_slot(k).ai_state(), 1);
-        assert_eq!(s.sprite_slot(k).flags3(), 0);
+        assert_eq!(s.sprite_slot_view(k).ai_state(), 1);
+        assert_eq!(s.sprite_slot_view(k).flags3(), 0);
     }
 
     #[test]
@@ -5319,14 +5319,14 @@ mod tests {
         s.sprite_slot_mut(k).set_delay_main(5);
         s.sprite_slot_mut(k).set_g(0);
         s.mothula_main(k);
-        assert_eq!(s.sprite_slot(k).f(), 0);
-        assert_eq!(s.sprite_slot(k).delay_aux3(), 32);
-        assert_eq!(s.sprite_slot(k).ai_state(), 2);
+        assert_eq!(s.sprite_slot_view(k).f(), 0);
+        assert_eq!(s.sprite_slot_view(k).delay_aux3(), 32);
+        assert_eq!(s.sprite_slot_view(k).ai_state(), 2);
         // case 2 ran: G decremented from 64 to 63.
-        assert_eq!(s.sprite_slot(k).g(), 63);
+        assert_eq!(s.sprite_slot_view(k).g(), 63);
         // sprite_flags3 is evaluated BEFORE the F=6 branch sets
         // delay_aux3, so it stays 0 here.
-        assert_eq!(s.sprite_slot(k).flags3(), 0);
+        assert_eq!(s.sprite_slot_view(k).flags3(), 0);
     }
 
     #[test]
@@ -5338,9 +5338,9 @@ mod tests {
         s.sprite_slot_mut(k).set_state(11);
         s.sprite_slot_mut(k).set_ai_state(3);
         s.mothula_main(k);
-        assert_eq!(s.sprite_slot(k).ai_state(), 0);
+        assert_eq!(s.sprite_slot_view(k).ai_state(), 0);
         // Inactive exit means flags3 wasn't reset.
-        assert_eq!(s.sprite_slot(k).flags3(), 0);
+        assert_eq!(s.sprite_slot_view(k).flags3(), 0);
     }
 
     #[test]
@@ -5355,10 +5355,10 @@ mod tests {
             s.sprite_slot_mut(j).set_state(9);
         }
         s.mothula_handle_spikes(k);
-        assert_eq!(s.sprite_slot(k).head_direction(), 2);
+        assert_eq!(s.sprite_slot_view(k).head_direction(), 2);
         // No slot freed -> SPAWN cannot succeed even if it tried.
         for j in 0..16 {
-            assert_eq!(s.sprite_slot(j).state(), 9);
+            assert_eq!(s.sprite_slot_view(j).state(), 9);
         }
     }
 
@@ -5389,14 +5389,14 @@ mod tests {
         // succeeded and tile-collision found no wall, head_dir is reset
         // to 1; this fixture leaves the spawned spike away from walls, so
         // wallcoll stays 0 and the final branch fires:
-        assert_eq!(s.sprite_slot(k).head_direction(), 1);
+        assert_eq!(s.sprite_slot_view(k).head_direction(), 1);
         // Slot 15 was claimed and then re-zeroed by the wallcoll==0
         // branch. So sprite_state[15] == 0 again.
-        assert_eq!(s.sprite_slot(15).state(), 0);
+        assert_eq!(s.sprite_slot_view(15).state(), 0);
         // x_hi / y_hi reflect the current sprite-room origin plus 1.
-        assert_eq!(s.sprite_slot(15).x_high(), 0x11);
-        assert_eq!(s.sprite_slot(15).y_high(), 0x21);
+        assert_eq!(s.sprite_slot_view(15).x_high(), 0x11);
+        assert_eq!(s.sprite_slot_view(15).y_high(), 0x21);
         // x_vel was zeroed after the collision check.
-        assert_eq!(s.sprite_slot(15).x_velocity(), 0);
+        assert_eq!(s.sprite_slot_view(15).x_velocity(), 0);
     }
 }

@@ -1766,11 +1766,11 @@ impl ZeldaState {
     }
 
     fn Tagalong_Sprite_GetX(&self, k: usize) -> u16 {
-        self.sprite_slot(k).x()
+        self.sprite_slot_view(k).x()
     }
 
     fn Tagalong_Sprite_GetY(&self, k: usize) -> u16 {
-        self.sprite_slot(k).y()
+        self.sprite_slot_view(k).y()
     }
 
     fn Tagalong_Sprite_SetX(&mut self, k: usize, x: u16) {
@@ -1790,7 +1790,9 @@ impl ZeldaState {
         k: usize,
         sprite: u8,
     ) -> Option<(usize, SpriteSpawnInfo)> {
-        let j = (0..16).rev().find(|&j| self.sprite_slot(j).state() == 0)?;
+        let j = (0..16)
+            .rev()
+            .find(|&j| self.sprite_slot_view(j).state() == 0)?;
         {
             let mut spawned = self.sprite_slot_mut(j);
             spawned.set_state(9);
@@ -1802,7 +1804,7 @@ impl ZeldaState {
         } else {
             self.sprite_slot_mut(j).set_n(0xff);
         }
-        let source = self.sprite_slot(k);
+        let source = self.sprite_slot_view(k);
         let floor = source.floor();
         let direction = source.direction();
         let mut spawned = self.sprite_slot_mut(j);

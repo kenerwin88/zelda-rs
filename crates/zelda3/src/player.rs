@@ -9965,7 +9965,7 @@ impl ZeldaState {
             self.link_reset_sword_and_item_usage();
             self.follower_link_state_mut().set_y_button_action_flags(0);
             let mut i = 15i8;
-            while self.sprite_slot(i as usize).state() != 0 {
+            while self.sprite_slot_view(i as usize).state() != 0 {
                 i -= 1;
                 if i < 0 {
                     return;
@@ -10124,7 +10124,9 @@ impl ZeldaState {
     }
 
     fn sprite_spawn_dynamically_for_player(&mut self, _k: u8, what: u8) -> Option<usize> {
-        let j = (0..16).rev().find(|&j| self.sprite_slot(j).state() == 0)?;
+        let j = (0..16)
+            .rev()
+            .find(|&j| self.sprite_slot_view(j).state() == 0)?;
         {
             let mut sprite = self.sprite_slot_mut(j);
             sprite.set_state(9);

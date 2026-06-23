@@ -366,7 +366,7 @@ impl ZeldaState {
     //   SpriteDraw_Shadow(k, &info);
     // }
     pub(super) fn hinox_draw(&mut self, k: usize) {
-        let j = self.sprite_slot(k).graphics() as usize;
+        let j = self.sprite_slot_view(k).graphics() as usize;
         let start = HINOX_DRAW_FRAME_STARTS[j] as usize;
         let count = HINOX_DRAW_FRAME_COUNTS[j] as usize;
         let mut info = PrepOamCoordsRet {
@@ -711,7 +711,7 @@ impl ZeldaState {
     pub(super) fn shop_item_handle_receipt(&mut self, k: usize, item: u8) {
         self.follower_link_state_mut().set_item_receipt_method(0);
         self.link_receive_item(item, 0);
-        let j = self.sprite_slot(k).subtype2() as usize;
+        let j = self.sprite_slot_view(k).subtype2() as usize;
         if j >= 7 {
             let msg = SHOP_KEEPER_GIVE_ITEM_MESSAGES[j - 7];
             self.sprite_show_message_unconditional(msg);
@@ -832,26 +832,26 @@ mod tests {
         // Seed RNG-related state so get_random_number is deterministic.
         s.sprite_slot_mut(3).set_ai_state(0);
         s.hinox_set_direction(3, 0);
-        let sprite = s.sprite_slot(3);
+        let sprite = s.sprite_slot_view(3);
         assert_eq!(sprite.direction(), 0);
         assert_eq!(sprite.x_velocity(), 8);
         assert_eq!(sprite.y_velocity(), 0);
         assert_eq!(sprite.ai_state(), 1);
 
         s.hinox_set_direction(3, 1);
-        let sprite = s.sprite_slot(3);
+        let sprite = s.sprite_slot_view(3);
         assert_eq!(sprite.direction(), 1);
         assert_eq!(sprite.x_velocity(), (-8i8) as u8);
         assert_eq!(sprite.y_velocity(), 0);
         assert_eq!(sprite.ai_state(), 2);
 
         s.hinox_set_direction(3, 2);
-        let sprite = s.sprite_slot(3);
+        let sprite = s.sprite_slot_view(3);
         assert_eq!(sprite.x_velocity(), 0);
         assert_eq!(sprite.y_velocity(), 8);
 
         s.hinox_set_direction(3, 3);
-        let sprite = s.sprite_slot(3);
+        let sprite = s.sprite_slot_view(3);
         assert_eq!(sprite.x_velocity(), 0);
         assert_eq!(sprite.y_velocity(), (-8i8) as u8);
     }
@@ -865,7 +865,7 @@ mod tests {
         s.follower_link_state_mut().set_y(0);
         s.hinox_face_link(5);
         // After hinox_set_direction with dir=0, x_vel=8, then shifted left by 1 -> 16.
-        let sprite = s.sprite_slot(5);
+        let sprite = s.sprite_slot_view(5);
         assert_eq!(sprite.x_velocity(), 16);
         assert_eq!(sprite.y_velocity(), 0);
         assert_eq!(sprite.direction(), 0);
@@ -923,7 +923,7 @@ mod tests {
             sprite.set_flags4(0);
         }
         s.shop_item_make_shields_deflect(4);
-        let sprite = s.sprite_slot(4);
+        let sprite = s.sprite_slot_view(4);
         assert_eq!(sprite.ignore_projectile(), 0);
         assert_eq!(sprite.flags(), 8);
         assert_eq!(sprite.deflection_bits(), 4);
