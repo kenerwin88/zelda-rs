@@ -1575,13 +1575,13 @@ impl ZeldaState {
 
     pub(super) fn blind_spawn_from_maiden(&mut self, x: u16, y: u16) {
         let k = 0;
-        let mut maiden = self.sprite_slot_mut(k);
+        let mut maiden = self.sprite_slot_view_mut(k);
         maiden.set_state(9);
         maiden.set_sprite_type(206);
         self.Tagalong_Sprite_SetX(k, x);
         self.Tagalong_Sprite_SetY(k, y.wrapping_sub(16));
         self.SpritePrep_LoadProperties(k);
-        let mut maiden = self.sprite_slot_mut(k);
+        let mut maiden = self.sprite_slot_view_mut(k);
         maiden.set_delay_aux2(192);
         maiden.set_graphics(21);
         maiden.set_direction(2);
@@ -1593,7 +1593,7 @@ impl ZeldaState {
 
     pub(super) fn kiki_revert_to_sprite(&mut self, k: usize) {
         if let Some(j) = self.kiki_spawn_handler_monke(k) {
-            self.sprite_slot_mut(j).set_subtype2(1);
+            self.sprite_slot_view_mut(j).set_subtype2(1);
         }
         self.follower_state_mut().set_indicator(0);
     }
@@ -1604,7 +1604,7 @@ impl ZeldaState {
             return None;
         };
         let layer = self.tagalong_slot(k).direction();
-        let mut monke = self.sprite_slot_mut(j);
+        let mut monke = self.sprite_slot_view_mut(j);
         monke.set_head_direction(layer);
         monke.set_direction(layer);
         let x = self.tagalong_x(k);
@@ -1612,7 +1612,7 @@ impl ZeldaState {
         self.Tagalong_Sprite_SetX(j, x.wrapping_add(2));
         self.Tagalong_Sprite_SetY(j, y.wrapping_add(2));
         let floor = self.game_state.player.follower_link.floor();
-        let mut monke = self.sprite_slot_mut(j);
+        let mut monke = self.sprite_slot_view_mut(j);
         monke.set_floor(floor);
         monke.set_ignore_projectile(1);
         monke.set_floor(2);
@@ -1622,13 +1622,13 @@ impl ZeldaState {
 
     pub(super) fn kiki_spawn_handler_a(&mut self, k: usize) {
         if let Some(j) = self.kiki_spawn_handler_monke(k) {
-            self.sprite_slot_mut(j).set_subtype2(2);
+            self.sprite_slot_view_mut(j).set_subtype2(2);
         }
     }
 
     pub(super) fn kiki_spawn_handler_b(&mut self, k: usize) {
         if let Some(j) = self.kiki_spawn_handler_monke(k) {
-            let mut monke = self.sprite_slot_mut(j);
+            let mut monke = self.sprite_slot_view_mut(j);
             monke.set_z(1);
             monke.set_z_velocity(16);
             monke.set_subtype2(3);
@@ -1774,11 +1774,11 @@ impl ZeldaState {
     }
 
     fn Tagalong_Sprite_SetX(&mut self, k: usize, x: u16) {
-        self.sprite_slot_mut(k).set_x(x);
+        self.sprite_slot_view_mut(k).set_x(x);
     }
 
     fn Tagalong_Sprite_SetY(&mut self, k: usize, y: u16) {
-        self.sprite_slot_mut(k).set_y(y);
+        self.sprite_slot_view_mut(k).set_y(y);
     }
 
     fn set_sprite_room_marker_word(&mut self, k: usize, value: u16) {
@@ -1794,7 +1794,7 @@ impl ZeldaState {
             .rev()
             .find(|&j| self.sprite_slot_view(j).state() == 0)?;
         {
-            let mut spawned = self.sprite_slot_mut(j);
+            let mut spawned = self.sprite_slot_view_mut(j);
             spawned.set_state(9);
             spawned.set_sprite_type(sprite);
         }
@@ -1802,12 +1802,12 @@ impl ZeldaState {
         if !self.game_state.world.location.is_indoors() {
             self.set_sprite_room_marker_word(j, 0xffff);
         } else {
-            self.sprite_slot_mut(j).set_n(0xff);
+            self.sprite_slot_view_mut(j).set_n(0xff);
         }
         let source = self.sprite_slot_view(k);
         let floor = source.floor();
         let direction = source.direction();
-        let mut spawned = self.sprite_slot_mut(j);
+        let mut spawned = self.sprite_slot_view_mut(j);
         spawned.set_floor(floor);
         spawned.set_direction(direction);
         spawned.set_die_action(0);
@@ -1829,13 +1829,13 @@ impl ZeldaState {
         self.sync_follower_link_state_from_ram();
         if let Some((j, _info)) = self.Tagalong_Sprite_SpawnDynamically(k, 0xad) {
             let layer = self.tagalong_slot(k).direction();
-            let mut old_man = self.sprite_slot_mut(j);
+            let mut old_man = self.sprite_slot_view_mut(j);
             old_man.set_direction(layer);
             old_man.set_head_direction(layer);
             self.Tagalong_Sprite_SetY(j, self.tagalong_y(k).wrapping_add(2));
             self.Tagalong_Sprite_SetX(j, self.tagalong_x(k).wrapping_add(2));
             let floor = self.game_state.player.follower_link.floor();
-            let mut old_man = self.sprite_slot_mut(j);
+            let mut old_man = self.sprite_slot_view_mut(j);
             old_man.set_floor(floor);
             old_man.set_ignore_projectile(1);
             old_man.set_subtype2(1);

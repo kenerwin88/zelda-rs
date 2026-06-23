@@ -6219,15 +6219,11 @@ impl ZeldaState {
         self.game_state.sprites.sprite_slots.slot(slot)
     }
 
-    pub(crate) fn sprite_slot_mut(&mut self, slot: usize) -> NativeSpriteSlotBridgeMut<'_> {
+    pub(crate) fn sprite_slot_view_mut(&mut self, slot: usize) -> NativeSpriteSlotBridgeMut<'_> {
         self.game_state
             .sprites
             .sprite_slots
             .slot_mut(&mut self.ram, slot)
-    }
-
-    pub(crate) fn sprite_slot_view_mut(&mut self, slot: usize) -> NativeSpriteSlotBridgeMut<'_> {
-        self.sprite_slot_mut(slot)
     }
 
     pub(crate) fn overlord_slot_view(&self, slot: usize) -> NativeOverlordSlotView<'_> {

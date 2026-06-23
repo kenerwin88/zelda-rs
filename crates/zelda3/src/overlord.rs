@@ -109,7 +109,7 @@ impl ZeldaState {
                 .wrapping_sub(0x30);
             self.Sprite_SetX(j, x);
             self.Sprite_SetY(j, y);
-            let mut sprite = self.sprite_slot_mut(j);
+            let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_floor(0);
             sprite.set_direction(0);
             sprite.set_z(0);
@@ -348,7 +348,7 @@ impl ZeldaState {
                     .wrapping_add(RED_STALFOS_TRAP_Y[i] as i16 as u16),
             );
             let floor = self.overlord_slot_view(k).floor();
-            let mut sprite = self.sprite_slot_mut(j);
+            let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_delay_main(RED_STALFOS_TRAP_DELAY[i]);
             sprite.set_floor(floor);
             sprite.set_e(1);
@@ -407,7 +407,7 @@ impl ZeldaState {
             let floor = self.overlord_slot_view(k).floor();
             let subtype2 = self.get_random_number();
             let y = (info.r7_overlord_y & 0xff00) | info.r7_overlord_y.wrapping_add(8) & 0x00ff;
-            let mut sprite = self.sprite_slot_mut(j);
+            let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_y(y);
             sprite.set_floor(floor);
             sprite.set_flags4(1);
@@ -460,7 +460,7 @@ impl ZeldaState {
                         .wrapping_add(OVERLORD_WIZZROBE_Y[i] as i16 as u16),
                 );
                 let floor = self.overlord_slot_view(k).floor();
-                let mut sprite = self.sprite_slot_mut(j);
+                let mut sprite = self.sprite_slot_view_mut(j);
                 sprite.set_delay_main(OVERLORD_WIZZROBE_DELAY[i]);
                 sprite.set_floor(floor);
                 sprite.set_b(1);
@@ -529,7 +529,7 @@ impl ZeldaState {
         let y = SPAWN_FLYING_TILE_Y[i].wrapping_sub(8) as u16
             | ((self.overlord_slot_view(k).y_high() as u16) << 8);
         let floor = self.overlord_slot_view(k).floor();
-        let mut sprite = self.sprite_slot_mut(j);
+        let mut sprite = self.sprite_slot_view_mut(j);
         sprite.set_e(1);
         sprite.set_x(x);
         sprite.set_y(y);
@@ -583,7 +583,7 @@ impl ZeldaState {
             let floor = self.overlord_slot_view(k).floor();
             let direction = self.game_state.scratch_counter.value();
             let a = OVERLORD_PIROGUSU_A[direction as usize];
-            let mut sprite = self.sprite_slot_mut(j);
+            let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_floor(floor);
             sprite.set_delay_main(32);
             sprite.set_direction(direction);
@@ -714,10 +714,10 @@ impl ZeldaState {
         };
         self.Sprite_SetX(j, self.game_state.player.follower_link.x());
         self.Sprite_SetY(j, self.game_state.player.follower_link.y());
-        self.sprite_slot_mut(j).set_z(208);
+        self.sprite_slot_view_mut(j).set_z(208);
         self.sprite_sfx_queue_sfx2_with_pan(j, 0x20);
         let floor = self.game_state.player.follower_link.lower_level_state();
-        self.sprite_slot_mut(j).set_floor(floor);
+        self.sprite_slot_view_mut(j).set_floor(floor);
     }
 
     pub(super) fn overlord08_blob_spawner(&mut self, k: usize) {
@@ -766,7 +766,7 @@ impl ZeldaState {
             );
             let floor = self.game_state.player.follower_link.lower_level_state();
             let head_direction = self.get_random_number() & 31 | 16;
-            let mut sprite = self.sprite_slot_mut(j);
+            let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_z(192);
             sprite.set_floor(floor);
             sprite.set_ai_state(2);
@@ -879,7 +879,7 @@ impl ZeldaState {
             self.Sprite_SetX(j, info.r5_overlord_x);
             self.Sprite_SetY(j, info.r7_overlord_y);
             let floor = self.overlord_slot_view(k).floor();
-            let mut sprite = self.sprite_slot_mut(j);
+            let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_z(224);
             sprite.set_floor(floor);
             sprite.set_direction(0);
@@ -915,7 +915,7 @@ impl ZeldaState {
         self.Sprite_SetY(j, info.r7_overlord_y);
         let floor = self.overlord_slot_view(k).floor();
         {
-            let mut sprite = self.sprite_slot_mut(j);
+            let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_z(192);
             sprite.set_e(192);
             sprite.or_flags3(0x10);
@@ -931,9 +931,9 @@ impl ZeldaState {
         let value = 0;
         self.overlord_slot_view_mut(k).set_overlord_type(value);
         if sprite_type == 26 {
-            self.sprite_slot_mut(j).set_sprite_type(74);
+            self.sprite_slot_view_mut(j).set_sprite_type(74);
             self.Sprite_TransmuteToBomb(j);
-            self.sprite_slot_mut(j).set_delay_aux1(112);
+            self.sprite_slot_view_mut(j).set_delay_aux1(112);
         }
     }
 
@@ -1030,19 +1030,19 @@ impl ZeldaState {
         self.Sprite_SetY(j, info.r7_overlord_y.wrapping_sub(1));
         let counter = self.game_state.scratch_counter.value() as usize;
         let floor = self.overlord_slot_view(k).floor();
-        let mut sprite = self.sprite_slot_mut(j);
+        let mut sprite = self.sprite_slot_view_mut(j);
         sprite.set_x_velocity(OVERLORD_SPAWN_BALL_XVEL[counter] as u8);
         sprite.set_y_velocity(OVERLORD_SPAWN_BALL_YVEL[counter] as u8);
         sprite.set_floor(floor);
         if self.game_state.sprites.workspace.shared_scratch_a() != 0 {
             let scratch = self.game_state.sprites.workspace.shared_scratch_a();
-            let mut sprite = self.sprite_slot_mut(j);
+            let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_ai_state(scratch);
             sprite.add_y_low(8);
             sprite.set_flags2(3);
             sprite.set_flags4(9);
         }
-        self.sprite_slot_mut(j).set_delay_aux2(64);
+        self.sprite_slot_view_mut(j).set_delay_aux2(64);
         self.sprite_sfx_queue_sfx3_with_pan(j, 0x07);
     }
 
@@ -1145,7 +1145,7 @@ impl ZeldaState {
 
     pub(super) fn armos_coordinator_disable_coercion(&mut self, _k: usize) {
         for j in (0..=5).rev() {
-            self.sprite_slot_mut(j).set_ai_state(0);
+            self.sprite_slot_view_mut(j).set_ai_state(0);
         }
     }
 
@@ -1173,11 +1173,11 @@ impl ZeldaState {
     }
 
     fn Sprite_SetX(&mut self, k: usize, x: u16) {
-        self.sprite_slot_mut(k).set_x(x);
+        self.sprite_slot_view_mut(k).set_x(x);
     }
 
     fn Sprite_SetY(&mut self, k: usize, y: u16) {
-        self.sprite_slot_mut(k).set_y(y);
+        self.sprite_slot_view_mut(k).set_y(y);
     }
 
     fn Sprite_GetX(&self, k: usize) -> u16 {
@@ -1191,7 +1191,7 @@ impl ZeldaState {
     }
 
     fn Sprite_TransmuteToBomb(&mut self, k: usize) {
-        let mut sprite = self.sprite_slot_mut(k);
+        let mut sprite = self.sprite_slot_view_mut(k);
         sprite.set_sprite_type(0x4a);
         sprite.set_c(1);
         sprite.set_delay_aux1(255);

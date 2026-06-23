@@ -10059,7 +10059,7 @@ impl ZeldaState {
                 self.sprite_set_x(j, x.wrapping_sub(8));
                 self.sprite_set_y(j, y.wrapping_sub(16));
                 let floor = self.game_state.player.follower_link.lower_level_state();
-                let mut sprite = self.sprite_slot_mut(j);
+                let mut sprite = self.sprite_slot_view_mut(j);
                 sprite.set_floor(floor);
                 sprite.set_z(0);
             }
@@ -10097,7 +10097,7 @@ impl ZeldaState {
             let j = j as usize;
             let i = usize::from(self.game_state.player.follower_link.facing() != 4);
             {
-                let mut sprite = self.sprite_slot_mut(j);
+                let mut sprite = self.sprite_slot_view_mut(j);
                 sprite.set_x_velocity(DIGGING_GAME_XVEL[i]);
                 sprite.set_y_velocity(0);
                 sprite.set_z_velocity(24);
@@ -10114,7 +10114,7 @@ impl ZeldaState {
             let y = self.game_state.player.follower_link.y().wrapping_add(22) & !0x0f;
             self.sprite_set_x(j, x);
             self.sprite_set_y(j, y);
-            self.sprite_slot_mut(j).set_floor(0);
+            self.sprite_slot_view_mut(j).set_floor(0);
             self.sprite_sfx_queue_sfx3_with_pan(j, 0x30);
         }
     }
@@ -10128,7 +10128,7 @@ impl ZeldaState {
             .rev()
             .find(|&j| self.sprite_slot_view(j).state() == 0)?;
         {
-            let mut sprite = self.sprite_slot_mut(j);
+            let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_state(9);
             sprite.set_sprite_type(what);
         }

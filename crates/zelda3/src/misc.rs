@@ -550,12 +550,12 @@ impl ZeldaState {
     }
 
     fn load_new_game_room_sprite(&mut self) {
-        self.sprite_slot_mut(0).set_y_low(0x70);
-        self.sprite_slot_mut(0).set_x_low(0xa0);
-        self.sprite_slot_mut(0).set_y_high(0x21);
-        self.sprite_slot_mut(0).set_x_high(0x09);
-        self.sprite_slot_mut(0).set_state(0x08);
-        self.sprite_slot_mut(0).set_sprite_type(0x73);
+        self.sprite_slot_view_mut(0).set_y_low(0x70);
+        self.sprite_slot_view_mut(0).set_x_low(0xa0);
+        self.sprite_slot_view_mut(0).set_y_high(0x21);
+        self.sprite_slot_view_mut(0).set_x_high(0x09);
+        self.sprite_slot_view_mut(0).set_state(0x08);
+        self.sprite_slot_view_mut(0).set_sprite_type(0x73);
         self.sprite_workspace_mut().set_room_origin_x_high(0x08);
         self.sprite_workspace_mut().set_room_origin_y_high(0x20);
         self.sprite_workspace_mut().set_shared_scratch_a(0x1a);

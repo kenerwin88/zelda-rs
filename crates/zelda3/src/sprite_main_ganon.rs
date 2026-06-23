@@ -359,9 +359,9 @@ impl ZeldaState {
         self.sprite_check_damage_to_and_from_link(k);
         self.swish_every16_frames(k);
         self.sprite_move_xy(k);
-        self.sprite_slot_mut(k).decrement_subtype2();
+        self.sprite_slot_view_mut(k).decrement_subtype2();
         let j = ((self.sprite_slot_view(k).subtype2() >> 2) & 7) as usize;
-        self.sprite_slot_mut(k).set_g(GANON_SPIN_G_STATES[j]);
+        self.sprite_slot_view_mut(k).set_g(GANON_SPIN_G_STATES[j]);
         if self.sprite_slot_view(k).delay_main() != 0 {
             if (self.sprite_slot_view(k).delay_main() & 1) != 0 {
                 return;
@@ -378,9 +378,9 @@ impl ZeldaState {
             );
             let y = self.sprite_get_y(0).wrapping_sub(16);
             if self.ganon_attempt_trident_catch(x, y) {
-                self.sprite_slot_mut(k).set_state(0);
-                self.sprite_slot_mut(0).set_ai_state(3);
-                self.sprite_slot_mut(0).set_delay_main(16);
+                self.sprite_slot_view_mut(k).set_state(0);
+                self.sprite_slot_view_mut(0).set_ai_state(3);
+                self.sprite_slot_view_mut(0).set_delay_main(16);
             }
             let pt = self.sprite_project_speed_towards_location(k, x, y, 32);
             self.sprite_approach_target_speed(k, pt.x, pt.y);
@@ -408,9 +408,9 @@ impl ZeldaState {
             | u16::from(self.sprite_slot_view(k).c());
         let pt = self.sprite_project_speed_towards_location(k, x, y, 2);
         let pt2 = self.sprite_project_speed_towards_location(k, x, y, 80);
-        self.sprite_slot_mut(k)
+        self.sprite_slot_view_mut(k)
             .set_x_velocity(pt2.y.wrapping_sub(pt.x));
-        self.sprite_slot_mut(k)
+        self.sprite_slot_view_mut(k)
             .set_y_velocity(0u8.wrapping_sub(pt2.x).wrapping_sub(pt.y));
         self.fire_bat_move(k);
     }
@@ -426,21 +426,21 @@ impl ZeldaState {
             0 => {
                 self.get_position_relative_to_the_great_overlord_ganon(k);
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    self.sprite_slot_mut(k).set_ai_state(1);
+                    self.sprite_slot_view_mut(k).set_ai_state(1);
                 } else {
                     let graphics = (self.sprite_slot_view(k).delay_main() >> 2) & 1;
-                    self.sprite_slot_mut(k).set_graphics(graphics);
+                    self.sprite_slot_view_mut(k).set_graphics(graphics);
                 }
             }
             1 => {
                 self.get_position_relative_to_the_great_overlord_ganon(k);
-                self.sprite_slot_mut(k).increment_subtype2();
+                self.sprite_slot_view_mut(k).increment_subtype2();
                 let graphics = (self.sprite_slot_view(k).subtype2() >> 2) & 1;
-                self.sprite_slot_mut(k).set_graphics(graphics);
+                self.sprite_slot_view_mut(k).set_graphics(graphics);
             }
             2 => {
                 self.sprite_move_xy(k);
-                self.sprite_slot_mut(k).set_deflection_bits(64);
+                self.sprite_slot_view_mut(k).set_deflection_bits(64);
                 if self.sprite_slot_view(k).delay_aux1() == 0 {
                     if self.sprite_slot_view(k).delay_main() == 0 {
                         self.fire_bat_animate(k);
@@ -449,9 +449,9 @@ impl ZeldaState {
                         let mut t = self.sprite_slot_view(k).delay_main().wrapping_sub(1);
                         if t == 0 {
                             t = 35;
-                            self.sprite_slot_mut(k).set_delay_aux1(t);
+                            self.sprite_slot_view_mut(k).set_delay_aux1(t);
                         }
-                        self.sprite_slot_mut(k).set_graphics((t >> 2) & 1);
+                        self.sprite_slot_view_mut(k).set_graphics((t >> 2) & 1);
                     }
                 } else if self.sprite_slot_view(k).delay_aux1() == 1 {
                     self.sprite_apply_speed_towards_link_for_ganon(k, 48);
@@ -462,7 +462,7 @@ impl ZeldaState {
                     const SECONDARY_GRAPHICS: [u8; 9] = [4, 4, 4, 3, 3, 3, 2, 2, 2];
                     let graphics =
                         SECONDARY_GRAPHICS[(self.sprite_slot_view(k).delay_aux1() >> 2) as usize];
-                    self.sprite_slot_mut(k).set_graphics(graphics);
+                    self.sprite_slot_view_mut(k).set_graphics(graphics);
                 }
             }
             _ => {}
@@ -494,7 +494,7 @@ impl ZeldaState {
                 return;
             }
             if self.sprite_slot_view(k).delay_main() == 0 {
-                self.sprite_slot_mut(k).set_state(0);
+                self.sprite_slot_view_mut(k).set_state(0);
             }
             if (self.sprite_slot_view(k).delay_main() & 1) == 0 {
                 self.ganon_draw(k);
@@ -505,20 +505,20 @@ impl ZeldaState {
         if self.sprite_slot_view(k).delay_aux4() != 0 {
             const GFXB: [u8; 2] = [16, 10];
             let graphics = GFXB[(self.sprite_slot_view(k).direction() & 1) as usize];
-            self.sprite_slot_mut(k).set_graphics(graphics);
+            self.sprite_slot_view_mut(k).set_graphics(graphics);
         }
 
         if self.game_state.dungeon.torch.ganon_torch_count() == 2
             && self.game_state.dungeon.torch.ganon_torch_count() != self.sprite_slot_view(k).room()
         {
-            self.sprite_slot_mut(k).set_delay_aux1(64);
+            self.sprite_slot_view_mut(k).set_delay_aux1(64);
         }
         let torch_count = self.game_state.dungeon.torch.ganon_torch_count();
-        self.sprite_slot_mut(k).set_room(torch_count);
+        self.sprite_slot_view_mut(k).set_room(torch_count);
 
         self.ganon_draw(k);
         if self.sprite_slot_view(k).delay_aux1() != 0 {
-            self.sprite_slot_mut(k).set_graphics(15);
+            self.sprite_slot_view_mut(k).set_graphics(15);
             self.ganon_enable_invincibility(k);
             self.sprite_check_damage_to_and_from_link(k);
             return;
@@ -541,15 +541,17 @@ impl ZeldaState {
         } else {
             2
         };
-        self.sprite_slot_mut(k).set_head_direction(head_direction);
+        self.sprite_slot_view_mut(k)
+            .set_head_direction(head_direction);
 
         if self.sprite_slot_view(k).delay_aux4() != 0 {
             let delay_aux4 = self.sprite_slot_view(k).delay_aux4();
-            self.sprite_slot_mut(k).set_ignore_projectile(delay_aux4);
+            self.sprite_slot_view_mut(k)
+                .set_ignore_projectile(delay_aux4);
             if self.sprite_return_if_recoiling(k) {
                 return;
             }
-            self.sprite_slot_mut(k).set_delay_main(0);
+            self.sprite_slot_view_mut(k).set_delay_main(0);
             return;
         }
 
@@ -560,13 +562,13 @@ impl ZeldaState {
         {
             self.sprite_check_damage_to_and_from_link(k);
         }
-        self.sprite_slot_mut(k).set_ignore_projectile(0);
+        self.sprite_slot_view_mut(k).set_ignore_projectile(0);
 
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    self.sprite_slot_mut(k).set_ai_state(1);
-                    self.sprite_slot_mut(k).set_delay_main(128);
+                    self.sprite_slot_view_mut(k).set_ai_state(1);
+                    self.sprite_slot_view_mut(k).set_delay_main(128);
                 } else if self.sprite_slot_view(k).delay_main() == 32 {
                     self.set_music_control(0x1f);
                 } else if self.sprite_slot_view(k).delay_main() == 64 {
@@ -576,7 +578,7 @@ impl ZeldaState {
             }
             1 => {
                 if self.sprite_slot_view(k).health() < 209 {
-                    self.sprite_slot_mut(k).set_health(208);
+                    self.sprite_slot_view_mut(k).set_health(208);
                 }
                 if self.sprite_slot_view(k).delay_main() < 64 {
                     if self.sprite_slot_view(k).delay_main() == 0 {
@@ -584,7 +586,7 @@ impl ZeldaState {
                     } else {
                         const GFX1: [u8; 2] = [2, 10];
                         let graphics = GFX1[(self.sprite_slot_view(k).direction() & 1) as usize];
-                        self.sprite_slot_mut(k).set_graphics(graphics);
+                        self.sprite_slot_view_mut(k).set_graphics(graphics);
                     }
                 } else if self.sprite_slot_view(k).delay_main() != 64 {
                     self.ganon_phase1_animate_trident_spin(k);
@@ -597,7 +599,7 @@ impl ZeldaState {
                     const YVEL1: [i8; 16] = [
                         0, 16, 24, 28, 32, 28, 24, 16, 0, -16, -24, -28, -32, -28, -24, -16,
                     ];
-                    self.sprite_slot_mut(k).set_g(0);
+                    self.sprite_slot_view_mut(k).set_g(0);
                     let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
                     let j = self.sprite_spawn_dynamically(k, 0xc9, &mut info);
                     assert!(
@@ -614,48 +616,48 @@ impl ZeldaState {
                         self.sprite_slot_view(k).y_velocity(),
                     );
                     let vi = usize::from(angle.wrapping_sub(2) & 0x0f);
-                    self.sprite_slot_mut(j).set_x_velocity(XVEL1[vi] as u8);
-                    self.sprite_slot_mut(j).set_y_velocity(YVEL1[vi] as u8);
-                    self.sprite_slot_mut(j).set_delay_main(112);
-                    self.sprite_slot_mut(j).set_anim_clock(2);
-                    self.sprite_slot_mut(j).set_oam_flags(1);
-                    self.sprite_slot_mut(j).set_flags2(4);
-                    self.sprite_slot_mut(j).set_deflection_bits(0x84);
-                    self.sprite_slot_mut(j).set_direction(2);
-                    self.sprite_slot_mut(j).set_bump_damage(7);
-                    self.sprite_slot_mut(j).set_ignore_projectile(7);
+                    self.sprite_slot_view_mut(j).set_x_velocity(XVEL1[vi] as u8);
+                    self.sprite_slot_view_mut(j).set_y_velocity(YVEL1[vi] as u8);
+                    self.sprite_slot_view_mut(j).set_delay_main(112);
+                    self.sprite_slot_view_mut(j).set_anim_clock(2);
+                    self.sprite_slot_view_mut(j).set_oam_flags(1);
+                    self.sprite_slot_view_mut(j).set_flags2(4);
+                    self.sprite_slot_view_mut(j).set_deflection_bits(0x84);
+                    self.sprite_slot_view_mut(j).set_direction(2);
+                    self.sprite_slot_view_mut(j).set_bump_damage(7);
+                    self.sprite_slot_view_mut(j).set_ignore_projectile(7);
                 }
             }
             2 => {
                 if self.sprite_slot_view(k).health() < 209 {
-                    self.sprite_slot_mut(k).set_health(208);
+                    self.sprite_slot_view_mut(k).set_health(208);
                 }
                 const SECONDARY_GRAPHICS: [u8; 2] = [0, 8];
                 let graphics =
                     SECONDARY_GRAPHICS[(self.sprite_slot_view(k).direction() & 1) as usize];
-                self.sprite_slot_mut(k).set_graphics(graphics);
+                self.sprite_slot_view_mut(k).set_graphics(graphics);
                 if self.sprite_slot_view(k).delay_main() != 0 {
-                    self.sprite_slot_mut(k).increment_ignore_projectile();
+                    self.sprite_slot_view_mut(k).increment_ignore_projectile();
                     if (self.sprite_slot_view(k).delay_main() & 1) != 0 {
-                        self.sprite_slot_mut(k).set_graphics(255);
+                        self.sprite_slot_view_mut(k).set_graphics(255);
                     }
                 }
             }
             3 => {
                 if self.sprite_slot_view(k).health() < 209 {
-                    self.sprite_slot_mut(k).set_health(208);
+                    self.sprite_slot_view_mut(k).set_health(208);
                 }
                 if self.sprite_slot_view(k).delay_main() != 0 {
                     self.ganon_phase1_animate_trident_spin(k);
                 } else {
-                    self.sprite_slot_mut(k).set_ai_state(6);
-                    self.sprite_slot_mut(k).set_delay_main(127);
+                    self.sprite_slot_view_mut(k).set_ai_state(6);
+                    self.sprite_slot_view_mut(k).set_delay_main(127);
                     self.ganon_handle_animation_idle(k);
                 }
             }
             4 => {
                 if self.sprite_slot_view(k).health() < 209 {
-                    self.sprite_slot_mut(k).set_health(208);
+                    self.sprite_slot_view_mut(k).set_health(208);
                 }
                 if self.sprite_slot_view(k).delay_main() != 0 {
                     self.ganon_shake_head(k);
@@ -665,9 +667,9 @@ impl ZeldaState {
             }
             5 | 10 | 13 | 18 => {
                 if self.sprite_slot_view(k).ai_state() == 13 {
-                    self.sprite_slot_mut(k).set_health(100);
+                    self.sprite_slot_view_mut(k).set_health(100);
                 }
-                self.sprite_slot_mut(k).increment_ignore_projectile();
+                self.sprite_slot_view_mut(k).increment_ignore_projectile();
                 let x = (u16::from(self.sprite_slot_view(k).x_high()) << 8)
                     | u16::from(
                         self.game_state
@@ -686,19 +688,19 @@ impl ZeldaState {
                     );
                 if self.ganon_attempt_trident_catch(x, y) {
                     let direction = self.sprite_slot_view(k).subtype() >> 2;
-                    self.sprite_slot_mut(k).set_direction(direction);
+                    self.sprite_slot_view_mut(k).set_direction(direction);
                     if self.sprite_slot_view(k).ai_state() == 5 {
-                        self.sprite_slot_mut(k).set_ai_state(2);
-                        self.sprite_slot_mut(k).set_delay_main(32);
+                        self.sprite_slot_view_mut(k).set_ai_state(2);
+                        self.sprite_slot_view_mut(k).set_delay_main(32);
                     } else if self.sprite_slot_view(k).health() >= 161 {
-                        self.sprite_slot_mut(k).set_ai_state(11);
-                        self.sprite_slot_mut(k).set_delay_main(40);
+                        self.sprite_slot_view_mut(k).set_ai_state(11);
+                        self.sprite_slot_view_mut(k).set_delay_main(40);
                     } else if self.sprite_slot_view(k).health() >= 97 {
-                        self.sprite_slot_mut(k).set_ai_state(14);
-                        self.sprite_slot_mut(k).set_delay_main(40);
+                        self.sprite_slot_view_mut(k).set_ai_state(14);
+                        self.sprite_slot_view_mut(k).set_delay_main(40);
                     } else {
-                        self.sprite_slot_mut(k).set_ai_state(17);
-                        self.sprite_slot_mut(k).set_delay_main(104);
+                        self.sprite_slot_view_mut(k).set_ai_state(17);
+                        self.sprite_slot_view_mut(k).set_delay_main(104);
                     }
                 } else {
                     let pt = self.sprite_project_speed_towards_location(k, x, y, 32);
@@ -707,40 +709,41 @@ impl ZeldaState {
                     if self.sprite_slot_view(k).delay_main() == 0
                         || (self.game_state.frame.frame_counter & 1) != 0
                     {
-                        self.sprite_slot_mut(k).set_graphics(255);
+                        self.sprite_slot_view_mut(k).set_graphics(255);
                         return;
                     }
                     const GFX5: [u8; 2] = [2, 10];
                     let graphics = GFX5[(self.sprite_slot_view(k).direction() & 1) as usize];
-                    self.sprite_slot_mut(k).set_graphics(graphics);
+                    self.sprite_slot_view_mut(k).set_graphics(graphics);
                     if (self.game_state.frame.frame_counter & 7) == 0 {
                         let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
                         let j = self.sprite_spawn_dynamically(k, 0xd6, &mut info);
                         if j >= 0 {
                             let j = j as usize;
                             self.sprite_set_spawned_coordinates(j, &info);
-                            self.sprite_slot_mut(j).set_ignore_projectile(24);
-                            self.sprite_slot_mut(j).set_delay_main(24);
-                            self.sprite_slot_mut(j).set_ai_state(255);
+                            self.sprite_slot_view_mut(j).set_ignore_projectile(24);
+                            self.sprite_slot_view_mut(j).set_delay_main(24);
+                            self.sprite_slot_view_mut(j).set_ai_state(255);
                             let graphics = self.sprite_slot_view(k).graphics();
                             let head_direction = self.sprite_slot_view(k).head_direction();
-                            self.sprite_slot_mut(j).set_graphics(graphics);
-                            self.sprite_slot_mut(j).set_head_direction(head_direction);
+                            self.sprite_slot_view_mut(j).set_graphics(graphics);
+                            self.sprite_slot_view_mut(j)
+                                .set_head_direction(head_direction);
                         }
                     }
                 }
             }
             6 => {
                 if self.sprite_slot_view(k).health() < 209 {
-                    self.sprite_slot_mut(k).set_health(208);
+                    self.sprite_slot_view_mut(k).set_health(208);
                 }
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     if self.sprite_slot_view(k).health() >= 209 {
-                        self.sprite_slot_mut(k).set_ai_state(1);
-                        self.sprite_slot_mut(k).set_delay_main(128);
+                        self.sprite_slot_view_mut(k).set_ai_state(1);
+                        self.sprite_slot_view_mut(k).set_delay_main(128);
                     } else {
-                        self.sprite_slot_mut(k).set_delay_main(255);
-                        self.sprite_slot_mut(k).set_ai_state(7);
+                        self.sprite_slot_view_mut(k).set_delay_main(255);
+                        self.sprite_slot_view_mut(k).set_ai_state(7);
                     }
                 } else {
                     self.ganon_shake_head(k);
@@ -748,12 +751,12 @@ impl ZeldaState {
             }
             7 => {
                 if self.sprite_slot_view(k).health() < 161 {
-                    self.sprite_slot_mut(k).set_health(160);
+                    self.sprite_slot_view_mut(k).set_health(160);
                 }
                 self.overlord_slot_view_mut(2).set_x_low(40);
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    self.sprite_slot_mut(k).set_ai_state(8);
-                    self.sprite_slot_mut(k).set_delay_main(255);
+                    self.sprite_slot_view_mut(k).set_ai_state(8);
+                    self.sprite_slot_view_mut(k).set_delay_main(255);
                 } else {
                     if self.sprite_slot_view(k).delay_main() < 0xc0
                         && (self.sprite_slot_view(k).delay_main() & 0x0f) == 0
@@ -769,15 +772,15 @@ impl ZeldaState {
                     [0, 0, 0, 0, -1, -1, -2, -1, 0, 0, 0, 0, 1, 2, 1, 1];
                 const DELAY8: [u8; 8] = [0x10, 0x30, 0x50, 0x70, 0x90, 0xb0, 0xd0, 0xbd];
                 if self.sprite_slot_view(k).health() < 161 {
-                    self.sprite_slot_mut(k).set_health(160);
+                    self.sprite_slot_view_mut(k).set_health(160);
                 }
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    self.sprite_slot_mut(k).set_ai_state(9);
-                    self.sprite_slot_mut(k).set_delay_main(127);
+                    self.sprite_slot_view_mut(k).set_ai_state(9);
+                    self.sprite_slot_view_mut(k).set_delay_main(127);
                     self.ganon_handle_animation_idle(k);
                     for j in (1..=8usize).rev() {
-                        self.sprite_slot_mut(j).set_ai_state(2);
-                        self.sprite_slot_mut(j).set_delay_main(DELAY8[j - 1]);
+                        self.sprite_slot_view_mut(j).set_ai_state(2);
+                        self.sprite_slot_view_mut(j).set_delay_main(DELAY8[j - 1]);
                     }
                 } else {
                     let idx = ((self.sprite_slot_view(k).delay_main() >> 4) & 15) as usize;
@@ -789,7 +792,7 @@ impl ZeldaState {
             }
             9 => {
                 if self.sprite_slot_view(k).health() < 161 {
-                    self.sprite_slot_mut(k).set_health(160);
+                    self.sprite_slot_view_mut(k).set_health(160);
                 }
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.ganon_select_warp_location(k, 10);
@@ -798,13 +801,13 @@ impl ZeldaState {
                 }
             }
             11 => {
-                self.sprite_slot_mut(k).increment_ignore_projectile();
+                self.sprite_slot_view_mut(k).increment_ignore_projectile();
                 self.ganon_handle_animation_idle(k);
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    self.sprite_slot_mut(k).set_delay_main(255);
-                    self.sprite_slot_mut(k).set_ai_state(7);
+                    self.sprite_slot_view_mut(k).set_delay_main(255);
+                    self.sprite_slot_view_mut(k).set_ai_state(7);
                 } else if (self.sprite_slot_view(k).delay_main() & 1) != 0 {
-                    self.sprite_slot_mut(k).set_graphics(255);
+                    self.sprite_slot_view_mut(k).set_graphics(255);
                 }
             }
             12 => {
@@ -827,45 +830,45 @@ impl ZeldaState {
                     t += 3;
                 }
                 const GFX12: [u8; 6] = [5, 6, 7, 13, 14, 10];
-                self.sprite_slot_mut(k).set_graphics(GFX12[t]);
+                self.sprite_slot_view_mut(k).set_graphics(GFX12[t]);
                 if (self.sprite_slot_view(k).hit_timer() & 127) == 1 {
-                    self.sprite_slot_mut(k).set_ai_state(15);
-                    self.sprite_slot_mut(k).set_z_velocity(24);
-                    self.sprite_slot_mut(k).set_delay_main(0);
+                    self.sprite_slot_view_mut(k).set_ai_state(15);
+                    self.sprite_slot_view_mut(k).set_z_velocity(24);
+                    self.sprite_slot_view_mut(k).set_delay_main(0);
                 }
             }
             14 => {
-                self.sprite_slot_mut(k).increment_ignore_projectile();
+                self.sprite_slot_view_mut(k).increment_ignore_projectile();
                 self.ganon_handle_animation_idle(k);
-                self.sprite_slot_mut(k).set_g(0);
+                self.sprite_slot_view_mut(k).set_g(0);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     if (self.get_random_number() & 1) != 0 {
                         self.ganon_select_warp_location(k, 13);
                     } else {
-                        self.sprite_slot_mut(k).set_delay_main(127);
-                        self.sprite_slot_mut(k).set_ai_state(12);
+                        self.sprite_slot_view_mut(k).set_delay_main(127);
+                        self.sprite_slot_view_mut(k).set_ai_state(12);
                     }
                 } else if (self.sprite_slot_view(k).delay_main() & 1) != 0 {
-                    self.sprite_slot_mut(k).set_graphics(255);
+                    self.sprite_slot_view_mut(k).set_graphics(255);
                 }
             }
             15 => {
                 const GFX15: [u8; 2] = [6, 14];
                 if self.sprite_slot_view(k).delay_main() != 0 {
                     if self.sprite_slot_view(k).delay_main() == 1 {
-                        self.sprite_slot_mut(k).set_ai_state(16);
-                        self.sprite_slot_mut(k).set_z_velocity(160);
+                        self.sprite_slot_view_mut(k).set_ai_state(16);
+                        self.sprite_slot_view_mut(k).set_z_velocity(160);
                         return;
                     }
                 } else {
                     self.sprite_move_z(k);
-                    self.sprite_slot_mut(k).subtract_z_velocity(1);
+                    self.sprite_slot_view_mut(k).subtract_z_velocity(1);
                     if self.sprite_slot_view(k).z_velocity() == 0 {
-                        self.sprite_slot_mut(k).set_delay_main(32);
+                        self.sprite_slot_view_mut(k).set_delay_main(32);
                     }
                 }
                 let graphics = GFX15[(self.sprite_slot_view(k).direction() & 1) as usize];
-                self.sprite_slot_mut(k).set_graphics(graphics);
+                self.sprite_slot_view_mut(k).set_graphics(graphics);
             }
             16 => {
                 self.set_bg1_y_offset(0);
@@ -877,8 +880,8 @@ impl ZeldaState {
                         self.ganon_spawn_falling_tiles_overlord(k);
                         if self.sprite_slot_view(k).anim_clock() >= 4 {
                             self.ganon_select_warp_location(k, 10);
-                            self.sprite_slot_mut(k).set_health(96);
-                            self.sprite_slot_mut(k).set_delay_aux2(224);
+                            self.sprite_slot_view_mut(k).set_health(96);
+                            self.sprite_slot_view_mut(k).set_delay_aux2(224);
                             self.dialogue_message_index_mut().set_value(0x170);
                             self.sprite_show_message_minimal_c();
                         }
@@ -895,21 +898,21 @@ impl ZeldaState {
                     const GFX16: [u8; 2] = [2, 10];
                     self.sprite_move_z(k);
                     if sign8(self.sprite_slot_view(k).z()) {
-                        self.sprite_slot_mut(k).set_z_velocity(0);
-                        self.sprite_slot_mut(k).set_z(0);
-                        self.sprite_slot_mut(k).set_delay_main(96);
+                        self.sprite_slot_view_mut(k).set_z_velocity(0);
+                        self.sprite_slot_view_mut(k).set_z(0);
+                        self.sprite_slot_view_mut(k).set_delay_main(96);
                         self.set_ambient_sound_effect(7);
                         self.sprite_sfx_queue_sfx2_with_pan(k, 0x0c);
                     }
                     let graphics = GFX16[(self.sprite_slot_view(k).direction() & 1) as usize];
-                    self.sprite_slot_mut(k).set_graphics(graphics);
+                    self.sprite_slot_view_mut(k).set_graphics(graphics);
                 }
             }
             17 => {
                 const GFX17B: [u8; 2] = [6, 14];
                 const GFX17: [u8; 2] = [7, 10];
                 let graphics = GFX17B[(self.sprite_slot_view(k).direction() & 1) as usize];
-                self.sprite_slot_mut(k).set_graphics(graphics);
+                self.sprite_slot_view_mut(k).set_graphics(graphics);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.ganon_select_warp_location(k, 0x12);
                     return;
@@ -917,30 +920,30 @@ impl ZeldaState {
                     self.ganon_func1(k, 5);
                 } else if self.sprite_slot_view(k).delay_main() < 52 {
                     let graphics = GFX17[(self.sprite_slot_view(k).direction() & 1) as usize];
-                    self.sprite_slot_mut(k).set_graphics(graphics);
+                    self.sprite_slot_view_mut(k).set_graphics(graphics);
                 }
                 if self.sprite_slot_view(k).delay_main() >= 72
                     || self.sprite_slot_view(k).delay_main() < 40
                 {
-                    self.sprite_slot_mut(k).increment_ignore_projectile();
+                    self.sprite_slot_view_mut(k).increment_ignore_projectile();
                     if (self.sprite_slot_view(k).delay_main() & 1) != 0 {
-                        self.sprite_slot_mut(k).set_graphics(255);
+                        self.sprite_slot_view_mut(k).set_graphics(255);
                     }
                 }
                 self.ganon_enable_invincibility(k);
             }
             19 => {
-                self.sprite_slot_mut(k).set_oam_flags(5);
-                self.sprite_slot_mut(k).set_flags(2);
+                self.sprite_slot_view_mut(k).set_oam_flags(5);
+                self.sprite_slot_view_mut(k).set_flags(2);
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    self.sprite_slot_mut(k).set_oam_flags(1);
+                    self.sprite_slot_view_mut(k).set_oam_flags(1);
                     self.ganon_select_warp_location(k, 18);
-                    self.sprite_slot_mut(k).set_sprite_type(0xd6);
-                    self.sprite_slot_mut(k).set_hit_timer(0);
+                    self.sprite_slot_view_mut(k).set_sprite_type(0xd6);
+                    self.sprite_slot_view_mut(k).set_hit_timer(0);
                 } else {
                     const GFX19: [u8; 2] = [5, 13];
                     let graphics = GFX19[(self.sprite_slot_view(k).direction() & 1) as usize];
-                    self.sprite_slot_mut(k).set_graphics(graphics);
+                    self.sprite_slot_view_mut(k).set_graphics(graphics);
                 }
             }
             _ => {}
@@ -971,10 +974,10 @@ impl ZeldaState {
         );
         let j = j as usize;
         self.sprite_set_spawned_coordinates(j, &info);
-        self.sprite_slot_mut(j).set_flags2(2);
-        self.sprite_slot_mut(j).set_ignore_projectile(2);
-        self.sprite_slot_mut(j).set_anim_clock(1);
-        self.sprite_slot_mut(j).set_oam_flags(0);
+        self.sprite_slot_view_mut(j).set_flags2(2);
+        self.sprite_slot_view_mut(j).set_ignore_projectile(2);
+        self.sprite_slot_view_mut(j).set_anim_clock(1);
+        self.sprite_slot_view_mut(j).set_oam_flags(0);
     }
 
     // void Sprite_PhantomGanon(int k) {  // 9d88bc
@@ -989,10 +992,10 @@ impl ZeldaState {
                 return;
             }
             self.sprite_move_y(k);
-            self.sprite_slot_mut(k).increment_subtype2();
+            self.sprite_slot_view_mut(k).increment_subtype2();
             if (self.sprite_slot_view(k).subtype2() & 31) == 0 {
                 let y_velocity = self.sprite_slot_view(k).y_velocity().wrapping_sub(1);
-                self.sprite_slot_mut(k).set_y_velocity(y_velocity);
+                self.sprite_slot_view_mut(k).set_y_velocity(y_velocity);
                 if self.sprite_slot_view(k).y_velocity() == 252 {
                     let j = self.spawn_boss_poof(k);
                     assert!(
@@ -1003,15 +1006,15 @@ impl ZeldaState {
                     let y = self.sprite_get_y(j).wrapping_sub(20);
                     self.sprite_set_y(j, y);
                 } else if self.sprite_slot_view(k).y_velocity() == 251 {
-                    self.sprite_slot_mut(k).increment_ai_state();
-                    self.sprite_slot_mut(k).set_delay_main(255);
-                    self.sprite_slot_mut(k).set_y_velocity((-4i8) as u8);
+                    self.sprite_slot_view_mut(k).increment_ai_state();
+                    self.sprite_slot_view_mut(k).set_delay_main(255);
+                    self.sprite_slot_view_mut(k).set_y_velocity((-4i8) as u8);
                 }
             }
         } else {
             self.ganon_bat_draw(k);
             if self.sprite_slot_view(k).pause() != 0 {
-                self.sprite_slot_mut(k).set_state(0);
+                self.sprite_slot_view_mut(k).set_state(0);
                 let bits = self.game_state.dungeon.savegame_state.savegame_state_bits() | 0x8000;
                 self.dungeon_savegame_state_mut()
                     .set_savegame_state_bits(bits);
@@ -1021,7 +1024,7 @@ impl ZeldaState {
             }
             let graphics =
                 LOCAL_GRAPHICS[usize::from((self.game_state.frame.frame_counter >> 2) & 3)];
-            self.sprite_slot_mut(k).set_graphics(graphics);
+            self.sprite_slot_view_mut(k).set_graphics(graphics);
             if self.sprite_slot_view(k).delay_main() != 0 {
                 if self.sprite_slot_view(k).delay_main() < 208 {
                     let j = usize::from(self.sprite_slot_view(k).head_direction() & 1);
@@ -1029,20 +1032,21 @@ impl ZeldaState {
                         .sprite_slot_view(k)
                         .y_velocity()
                         .wrapping_add(if j != 0 { 0xff } else { 1 });
-                    self.sprite_slot_mut(k).set_y_velocity(y_velocity);
+                    self.sprite_slot_view_mut(k).set_y_velocity(y_velocity);
                     if self.sprite_slot_view(k).y_velocity() == TARGET_YVEL[j] {
                         let head_direction =
                             self.sprite_slot_view(k).head_direction().wrapping_add(1);
-                        self.sprite_slot_mut(k).set_head_direction(head_direction);
+                        self.sprite_slot_view_mut(k)
+                            .set_head_direction(head_direction);
                     }
                     let j = usize::from(self.sprite_slot_view(k).direction() & 1);
                     let x_velocity = self
                         .sprite_slot_view(k)
                         .x_velocity()
                         .wrapping_add(if j != 0 { 0xff } else { 1 });
-                    self.sprite_slot_mut(k).set_x_velocity(x_velocity);
+                    self.sprite_slot_view_mut(k).set_x_velocity(x_velocity);
                     if self.sprite_slot_view(k).x_velocity() == TARGET_XVEL[j] {
-                        self.sprite_slot_mut(k).increment_direction();
+                        self.sprite_slot_view_mut(k).increment_direction();
                     }
                     if self.sprite_slot_view(k).x_velocity() == 0 {
                         self.sprite_sfx_queue_sfx3_with_pan(k, 0x1e);
@@ -1053,18 +1057,18 @@ impl ZeldaState {
                 let pt = self.sprite_project_speed_towards_location(k, x, y, 5);
                 let xvel = self.sprite_slot_view(k).x_velocity();
                 let yvel = self.sprite_slot_view(k).y_velocity();
-                self.sprite_slot_mut(k)
+                self.sprite_slot_view_mut(k)
                     .set_x_velocity(xvel.wrapping_add(pt.x));
-                self.sprite_slot_mut(k)
+                self.sprite_slot_view_mut(k)
                     .set_y_velocity(yvel.wrapping_add(pt.y));
                 self.sprite_move_xy(k);
-                self.sprite_slot_mut(k).set_x_velocity(xvel);
-                self.sprite_slot_mut(k).set_y_velocity(yvel);
+                self.sprite_slot_view_mut(k).set_x_velocity(xvel);
+                self.sprite_slot_view_mut(k).set_y_velocity(yvel);
             } else {
                 self.sprite_move_xy(k);
                 if self.sprite_slot_view(k).x_velocity() != 64 {
-                    self.sprite_slot_mut(k).add_x_velocity(1);
-                    self.sprite_slot_mut(k).add_y_velocity((-1i8) as u8);
+                    self.sprite_slot_view_mut(k).add_x_velocity(1);
+                    self.sprite_slot_view_mut(k).add_y_velocity((-1i8) as u8);
                 }
             }
         }
@@ -1119,9 +1123,9 @@ impl ZeldaState {
             if self.sprite_slot_view(i + 1).ai_state() != 2 {
                 let j = ((t >> 5).wrapping_sub(4) & 0xf) as usize;
                 // (int8)kGanonMath_X[j] >> 2 — arithmetic shift on signed.
-                self.sprite_slot_mut(i + 1)
+                self.sprite_slot_view_mut(i + 1)
                     .set_x_velocity(((GANON_FIRE_BAT_CIRCLE_X_COMPONENTS[j] as i8) >> 2) as u8);
-                self.sprite_slot_mut(i + 1)
+                self.sprite_slot_view_mut(i + 1)
                     .set_y_velocity(((GANON_FIRE_BAT_CIRCLE_Y_COMPONENTS[j] as i8) >> 2) as u8);
             }
             // x = Sprite_GetX(0) + (int8)GanonSin(t, overlord_x_lo[2])
@@ -1156,15 +1160,15 @@ impl ZeldaState {
     pub(super) fn ganon_spawn_spiral_bat(&mut self, k: usize) {
         if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_ex_for_ganon(k, 0xc9, 8) {
             self.sprite_set_spawned_coordinates_for_ganon(j, r0_x, r2_y);
-            self.sprite_slot_mut(j).set_anim_clock(4);
-            self.sprite_slot_mut(j).set_oam_flags(3);
-            self.sprite_slot_mut(j).set_flags3(0x40);
-            self.sprite_slot_mut(j).set_flags2(1);
-            self.sprite_slot_mut(j).set_deflection_bits(0x80);
-            self.sprite_slot_mut(j).set_y_high(128);
-            self.sprite_slot_mut(j).set_delay_main(48);
-            self.sprite_slot_mut(j).set_bump_damage(7);
-            self.sprite_slot_mut(j).set_ignore_projectile(7);
+            self.sprite_slot_view_mut(j).set_anim_clock(4);
+            self.sprite_slot_view_mut(j).set_oam_flags(3);
+            self.sprite_slot_view_mut(j).set_flags3(0x40);
+            self.sprite_slot_view_mut(j).set_flags2(1);
+            self.sprite_slot_view_mut(j).set_deflection_bits(0x80);
+            self.sprite_slot_view_mut(j).set_y_high(128);
+            self.sprite_slot_view_mut(j).set_delay_main(48);
+            self.sprite_slot_view_mut(j).set_bump_damage(7);
+            self.sprite_slot_view_mut(j).set_ignore_projectile(7);
         }
     }
 
@@ -1178,10 +1182,10 @@ impl ZeldaState {
     // }
     pub(super) fn ganon_enable_invincibility(&mut self, k: usize) {
         if (self.sprite_slot_view(k).hit_timer() & 127) == 26 {
-            self.sprite_slot_mut(k).set_hit_timer(0);
-            self.sprite_slot_mut(k).set_ai_state(19);
-            self.sprite_slot_mut(k).set_delay_main(127);
-            self.sprite_slot_mut(k).set_sprite_type(215);
+            self.sprite_slot_view_mut(k).set_hit_timer(0);
+            self.sprite_slot_view_mut(k).set_ai_state(19);
+            self.sprite_slot_view_mut(k).set_delay_main(127);
+            self.sprite_slot_view_mut(k).set_sprite_type(215);
         }
     }
 
@@ -1226,7 +1230,8 @@ impl ZeldaState {
         if t >= 4 {
             return;
         }
-        self.sprite_slot_mut(k).set_anim_clock(t.wrapping_add(1));
+        self.sprite_slot_view_mut(k)
+            .set_anim_clock(t.wrapping_add(1));
 
         let j = j_i32 as usize;
         let ti = t as usize;
@@ -1275,29 +1280,29 @@ impl ZeldaState {
         if let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_ex_for_ganon(k, 0xC9, 8) {
             self.sprite_sfx_queue_sfx2_with_pan(k, 0x2a);
             self.sprite_set_spawned_coordinates_for_ganon(j, r0_x, r2_y);
-            self.sprite_slot_mut(j).set_ignore_projectile(t);
-            self.sprite_slot_mut(j).set_anim_clock(t);
-            self.sprite_slot_mut(j).set_oam_flags(3);
-            self.sprite_slot_mut(j).set_flags3(0x40);
-            self.sprite_slot_mut(j).set_flags2(0x21);
-            self.sprite_slot_mut(j).set_deflection_bits(0x40);
+            self.sprite_slot_view_mut(j).set_ignore_projectile(t);
+            self.sprite_slot_view_mut(j).set_anim_clock(t);
+            self.sprite_slot_view_mut(j).set_oam_flags(3);
+            self.sprite_slot_view_mut(j).set_flags3(0x40);
+            self.sprite_slot_view_mut(j).set_flags2(0x21);
+            self.sprite_slot_view_mut(j).set_deflection_bits(0x40);
             let d = self.sprite_slot_view(k).direction() as usize;
             let y = r2_y.wrapping_add(GANON_FUNC1_16X16_Y_OFFSETS[d] as i16 as u16);
             self.sprite_set_y(j, y);
             self.sprite_apply_speed_towards_link_for_ganon(j, 32);
-            self.sprite_slot_mut(j).set_delay_main(16);
+            self.sprite_slot_view_mut(j).set_delay_main(16);
             let sprite0 = self.sprite_slot_view(0);
             let x_low = sprite0.x_low();
             let x_high = sprite0.x_high();
             let y_low = sprite0.y_low();
             let y_high = sprite0.y_high();
-            let mut sprite = self.sprite_slot_mut(j);
+            let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_a(x_low);
             sprite.set_b(x_high);
             sprite.set_c(y_low);
             sprite.set_e(y_high);
-            self.sprite_slot_mut(j).set_bump_damage(7);
-            self.sprite_slot_mut(j).set_ignore_projectile(7);
+            self.sprite_slot_view_mut(j).set_bump_damage(7);
+            self.sprite_slot_view_mut(j).set_ignore_projectile(7);
         }
     }
 
@@ -1316,8 +1321,8 @@ impl ZeldaState {
             0
         };
         let j = base + bonus;
-        self.sprite_slot_mut(k).set_g(GANON_SPIN_G_STATES[j]);
-        self.sprite_slot_mut(k)
+        self.sprite_slot_view_mut(k).set_g(GANON_SPIN_G_STATES[j]);
+        self.sprite_slot_view_mut(k)
             .set_graphics(GANON_TRIDENT_SPIN_GRAPHICS[j]);
         // SwishEvery16Frames(k) — inline-ported (sprite_main.c:14416).
         // void SwishEvery16Frames(int k) {
@@ -1337,8 +1342,9 @@ impl ZeldaState {
     // }
     pub(super) fn ganon_handle_animation_idle(&mut self, k: usize) {
         let d = self.sprite_slot_view(k).direction() as usize;
-        self.sprite_slot_mut(k).set_g(GANON_IDLE_G_STATES[d]);
-        self.sprite_slot_mut(k).set_graphics(GANON_IDLE_GRAPHICS[d]);
+        self.sprite_slot_view_mut(k).set_g(GANON_IDLE_G_STATES[d]);
+        self.sprite_slot_view_mut(k)
+            .set_graphics(GANON_IDLE_GRAPHICS[d]);
     }
 
     // void Ganon_SelectWarpLocation(int k, int a) {  // sprite_main.c:15051
@@ -1375,16 +1381,16 @@ impl ZeldaState {
         // `&` binds tighter than `|`, so `(rnd & 3) | (subtype << 2)`.
         let idx = ((rnd & 3) | (self.sprite_slot_view(k).subtype() << 2)) as usize;
         let j = GANON_WARP_SUBTYPES[idx & 0x1f];
-        self.sprite_slot_mut(k).set_subtype(j);
+        self.sprite_slot_view_mut(k).set_subtype(j);
         let ju = j as usize;
         self.swamola_target_mut(0)
             .set_x_low(GANON_WARP_TARGET_X_LOW[ju]);
         self.swamola_target_mut(0)
             .set_y_low(GANON_WARP_TARGET_Y_LOW[ju]);
-        self.sprite_slot_mut(k).set_ai_state(a);
-        self.sprite_slot_mut(k).set_x_velocity(0);
-        self.sprite_slot_mut(k).set_y_velocity(0);
-        self.sprite_slot_mut(k).set_delay_main(48);
+        self.sprite_slot_view_mut(k).set_ai_state(a);
+        self.sprite_slot_view_mut(k).set_x_velocity(0);
+        self.sprite_slot_view_mut(k).set_y_velocity(0);
+        self.sprite_slot_view_mut(k).set_delay_main(48);
         self.sprite_sfx_queue_sfx3_with_pan(k, 0x28);
     }
 
@@ -1398,7 +1404,7 @@ impl ZeldaState {
         // boss-fight path is always within bounds (delay <= 127 -> idx <= 15
         // before the death cases). Guard defensively at 18 to mirror C
         // out-of-bounds memory access by clamping (no panic, no UB).
-        self.sprite_slot_mut(k)
+        self.sprite_slot_view_mut(k)
             .set_head_direction(GANON_SHAKE_HEAD_DIRECTIONS[idx % 18]);
     }
 
@@ -1440,10 +1446,10 @@ impl ZeldaState {
         self.oam_state_mut().set_current_pointer(0x9f4);
         self.oam_state_mut().set_current_extended_pointer(0xa9d);
         let bak = self.sprite_slot_view(k).oam_flags();
-        self.sprite_slot_mut(k).set_oam_flags(0);
-        self.sprite_slot_mut(k).set_object_priority(48);
+        self.sprite_slot_view_mut(k).set_oam_flags(0);
+        self.sprite_slot_view_mut(k).set_object_priority(48);
         self.sprite_draw_large_shadow_for_ganon(k, frame as usize);
-        self.sprite_slot_mut(k).set_oam_flags(bak);
+        self.sprite_slot_view_mut(k).set_oam_flags(bak);
         self.sprite_get_16bit_coords_for_ganon(k);
     }
 
@@ -1484,8 +1490,8 @@ impl ZeldaState {
     // result. This matches the C body byte-for-byte.
     fn sprite_apply_speed_towards_link_for_ganon(&mut self, j: usize, speed: u8) {
         let pt = self.sprite_project_speed_towards_link(j, speed);
-        self.sprite_slot_mut(j).set_x_velocity(pt.x);
-        self.sprite_slot_mut(j).set_y_velocity(pt.y);
+        self.sprite_slot_view_mut(j).set_x_velocity(pt.x);
+        self.sprite_slot_view_mut(j).set_y_velocity(pt.y);
     }
 
     // Ganon_ExtinguishTorch_adjust_translucency / Ganon_ExtinguishTorch and
@@ -1677,7 +1683,7 @@ mod tests {
         let mut s = fresh_state();
         let k = 2;
         // Hit timer must be exactly 26 in its low 7 bits.
-        s.sprite_slot_mut(k).set_hit_timer(26);
+        s.sprite_slot_view_mut(k).set_hit_timer(26);
         s.ganon_enable_invincibility(k);
         assert_eq!(s.sprite_slot_view(k).hit_timer(), 0);
         assert_eq!(s.sprite_slot_view(k).ai_state(), 19);
@@ -1685,7 +1691,7 @@ mod tests {
         assert_eq!(s.sprite_slot_view(k).sprite_type(), 215);
 
         let mut s2 = fresh_state();
-        s2.sprite_slot_mut(k).set_hit_timer(27);
+        s2.sprite_slot_view_mut(k).set_hit_timer(27);
         s2.ganon_enable_invincibility(k);
         // Nothing should change.
         assert_eq!(s2.sprite_slot_view(k).hit_timer(), 27);
@@ -1694,7 +1700,7 @@ mod tests {
 
         let mut s3 = fresh_state();
         // Top bit set + low 7 bits == 26 -> still triggers.
-        s3.sprite_slot_mut(k).set_hit_timer(26 | 0x80);
+        s3.sprite_slot_view_mut(k).set_hit_timer(26 | 0x80);
         s3.ganon_enable_invincibility(k);
         assert_eq!(s3.sprite_slot_view(k).hit_timer(), 0);
     }
@@ -1704,8 +1710,8 @@ mod tests {
         let mut s = fresh_state();
         let k = 0;
         // delay_main = 0 -> base = 0; sprite_D = 0 -> bonus = 0 -> j = 0.
-        s.sprite_slot_mut(k).set_delay_main(0);
-        s.sprite_slot_mut(k).set_direction(0);
+        s.sprite_slot_view_mut(k).set_delay_main(0);
+        s.sprite_slot_view_mut(k).set_direction(0);
         s.ganon_phase1_animate_trident_spin(k);
         assert_eq!(s.sprite_slot_view(k).g(), GANON_SPIN_G_STATES[0]); // 8
         assert_eq!(
@@ -1714,8 +1720,8 @@ mod tests {
         ); // 0
 
         // delay_main = 28 (>> 2 == 7, & 7 == 7); D = 1 -> bonus = 8 -> j = 15.
-        s.sprite_slot_mut(k).set_delay_main(28);
-        s.sprite_slot_mut(k).set_direction(1);
+        s.sprite_slot_view_mut(k).set_delay_main(28);
+        s.sprite_slot_view_mut(k).set_direction(1);
         s.ganon_phase1_animate_trident_spin(k);
         assert_eq!(s.sprite_slot_view(k).g(), GANON_SPIN_G_STATES[15]); // 1
         assert_eq!(
@@ -1729,12 +1735,12 @@ mod tests {
     fn handle_animation_idle_writes_g_and_gfx_per_direction() {
         let mut s = fresh_state();
         let k = 3;
-        s.sprite_slot_mut(k).set_direction(0);
+        s.sprite_slot_view_mut(k).set_direction(0);
         s.ganon_handle_animation_idle(k);
         assert_eq!(s.sprite_slot_view(k).g(), 9);
         assert_eq!(s.sprite_slot_view(k).graphics(), 2);
 
-        s.sprite_slot_mut(k).set_direction(1);
+        s.sprite_slot_view_mut(k).set_direction(1);
         s.ganon_handle_animation_idle(k);
         assert_eq!(s.sprite_slot_view(k).g(), 10);
         assert_eq!(s.sprite_slot_view(k).graphics(), 10);
@@ -1745,15 +1751,15 @@ mod tests {
         let mut s = fresh_state();
         let k = 1;
         // delay_main 24 -> idx 3 -> GANON_SHAKE_HEAD_DIRECTIONS[3] = 1.
-        s.sprite_slot_mut(k).set_delay_main(24);
+        s.sprite_slot_view_mut(k).set_delay_main(24);
         s.ganon_shake_head(k);
         assert_eq!(s.sprite_slot_view(k).head_direction(), 1);
         // delay_main 0 -> idx 0 -> 0.
-        s.sprite_slot_mut(k).set_delay_main(0);
+        s.sprite_slot_view_mut(k).set_delay_main(0);
         s.ganon_shake_head(k);
         assert_eq!(s.sprite_slot_view(k).head_direction(), 0);
         // delay_main 32 -> idx 4 -> 2.
-        s.sprite_slot_mut(k).set_delay_main(32);
+        s.sprite_slot_view_mut(k).set_delay_main(32);
         s.ganon_shake_head(k);
         assert_eq!(s.sprite_slot_view(k).head_direction(), 2);
     }
@@ -1766,10 +1772,10 @@ mod tests {
         // deterministic enough for an assertion: with subtype = 0, the
         // resulting index is rnd & 3 only — that picks one of the first
         // four entries of GANON_WARP_SUBTYPES (which are 4,5,6,7).
-        s.sprite_slot_mut(k).set_subtype(0);
+        s.sprite_slot_view_mut(k).set_subtype(0);
         // Pre-clobber vels to ensure they get zeroed.
-        s.sprite_slot_mut(k).set_x_velocity(5);
-        s.sprite_slot_mut(k).set_y_velocity(7);
+        s.sprite_slot_view_mut(k).set_x_velocity(5);
+        s.sprite_slot_view_mut(k).set_y_velocity(7);
         s.ganon_select_warp_location(k, 12);
         let j = s.sprite_slot_view(k).subtype();
         assert!((4..=7).contains(&j));
@@ -1793,7 +1799,7 @@ mod tests {
         let k = 0;
         // Pre-clear overlord slot 7 so the search succeeds.
         s.overlord_slot_view_mut(7).clear();
-        s.sprite_slot_mut(k).set_anim_clock(0);
+        s.sprite_slot_view_mut(k).set_anim_clock(0);
         // Seed link coords so we can verify the high-byte copy.
         s.follower_link_state_mut().set_x(0x0234);
         s.follower_link_state_mut().set_y(0x0588);
@@ -1811,7 +1817,7 @@ mod tests {
         assert_eq!(s.overlord_slot_view(7).y_high(), 0x05);
 
         // Advance the anim clock past 3 and ensure no further write happens.
-        s.sprite_slot_mut(k).set_anim_clock(4);
+        s.sprite_slot_view_mut(k).set_anim_clock(4);
         let bak = s.overlord_slot_view(7).overlord_type();
         s.ganon_spawn_falling_tiles_overlord(k);
         assert_eq!(s.overlord_slot_view(7).overlord_type(), bak);
@@ -1830,7 +1836,7 @@ mod tests {
         // sprite_ai_state for indices 1..=8: leave them at 0 so the velocity
         // assignments fire for every i.
         for i in 1..=8 {
-            s.sprite_slot_mut(i).set_ai_state(0);
+            s.sprite_slot_view_mut(i).set_ai_state(0);
         }
 
         s.ganon_handle_fire_bat_circle(0);
@@ -1860,7 +1866,7 @@ mod tests {
         // Canonical Sprite_SpawnDynamicallyEx walks j_in (8) down to 0; the
         // highest free slot in [0..=8] wins. Ensure slot 8 is free so it
         // gets picked (matching the C entry-point behavior).
-        s.sprite_slot_mut(8).set_state(0);
+        s.sprite_slot_view_mut(8).set_state(0);
         s.sprite_workspace_mut().set_current_sprite_x(0x40);
         s.sprite_workspace_mut().set_current_sprite_y(0x60);
         s.ganon_spawn_spiral_bat(k);

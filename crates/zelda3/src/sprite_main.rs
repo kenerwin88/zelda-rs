@@ -155,8 +155,8 @@ mod tests {
             s.oam_state_mut().set_entry_char(base, 0xee);
         }
         let k = 0;
-        s.sprite_slot_mut(k).set_sprite_type(0x46);
-        s.sprite_slot_mut(k).set_graphics(graphics as u8);
+        s.sprite_slot_view_mut(k).set_sprite_type(0x46);
+        s.sprite_slot_view_mut(k).set_graphics(graphics as u8);
 
         s.guard_animate_body(
             k,

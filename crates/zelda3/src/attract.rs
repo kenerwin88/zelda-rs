@@ -1169,9 +1169,9 @@ impl ZeldaState {
         const SIMULATE_SOLDIER_GFX: [u8; 4] = [11, 4, 0, 7];
         self.sprite_set_x(k, x);
         self.sprite_set_y(k, y);
-        self.sprite_slot_mut(k).set_z(0);
+        self.sprite_slot_view_mut(k).set_z(0);
         self.sprite_get_16_bit_coords(k);
-        let mut soldier = self.sprite_slot_mut(k);
+        let mut soldier = self.sprite_slot_view_mut(k);
         soldier.set_direction(dir);
         soldier.set_head_direction(dir);
         soldier.set_graphics(SIMULATE_SOLDIER_GFX[dir as usize].wrapping_add(gfx));

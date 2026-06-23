@@ -5215,12 +5215,12 @@ mod tests {
     fn make_active(state: &mut ZeldaState, k: usize) {
         // Configure the slot so `sprite_return_if_inactive_for_mothula`
         // returns false: state=9, no flags, no pause via defl bit 0x80.
-        state.sprite_slot_mut(k).set_state(9);
+        state.sprite_slot_view_mut(k).set_state(9);
         state.clear_modal_pause_flag();
         state.set_submodule(0);
-        state.sprite_slot_mut(k).set_deflection_bits(0x80);
-        state.sprite_slot_mut(k).set_pause(0);
-        state.sprite_slot_mut(k).set_hit_timer(0);
+        state.sprite_slot_view_mut(k).set_deflection_bits(0x80);
+        state.sprite_slot_view_mut(k).set_pause(0);
+        state.sprite_slot_view_mut(k).set_hit_timer(0);
     }
 
     #[test]
@@ -5232,24 +5232,24 @@ mod tests {
 
         // subtype2 starts at 0 -> after ++ = 1, j = (1 >> 2) & 3 = 0
         // -> sfx queued, gfx = kMothula_FlapWingsGfx[0] = 0.
-        s.sprite_slot_mut(k).set_subtype2(0);
+        s.sprite_slot_view_mut(k).set_subtype2(0);
         s.mothula_flap_wings(k);
         assert_eq!(s.sprite_slot_view(k).subtype2(), 1);
         assert_eq!(s.sprite_slot_view(k).graphics(), 0);
 
         // subtype2 = 3 -> ++ = 4 -> j = 1 -> gfx = 1.
-        s.sprite_slot_mut(k).set_subtype2(3);
+        s.sprite_slot_view_mut(k).set_subtype2(3);
         s.mothula_flap_wings(k);
         assert_eq!(s.sprite_slot_view(k).subtype2(), 4);
         assert_eq!(s.sprite_slot_view(k).graphics(), 1);
 
         // subtype2 = 7 -> ++ = 8 -> j = 2 -> gfx = 2.
-        s.sprite_slot_mut(k).set_subtype2(7);
+        s.sprite_slot_view_mut(k).set_subtype2(7);
         s.mothula_flap_wings(k);
         assert_eq!(s.sprite_slot_view(k).graphics(), 2);
 
         // subtype2 = 11 -> ++ = 12 -> j = 3 -> gfx = 1.
-        s.sprite_slot_mut(k).set_subtype2(11);
+        s.sprite_slot_view_mut(k).set_subtype2(11);
         s.mothula_flap_wings(k);
         assert_eq!(s.sprite_slot_view(k).graphics(), 1);
     }
@@ -5265,11 +5265,11 @@ mod tests {
         // Canonical Sprite_SpawnDynamically reads info.r0_x from
         // sprite_x_lo[k] | sprite_x_hi[k] << 8 (via Sprite_GetX). Seed the
         // sprite's per-slot position so r0_x / r2_y land at 0x80 / 0x50.
-        s.sprite_slot_mut(k).set_x_low(0x80);
-        s.sprite_slot_mut(k).set_x_high(0x00);
-        s.sprite_slot_mut(k).set_y_low(0x50);
-        s.sprite_slot_mut(k).set_y_high(0x00);
-        s.sprite_slot_mut(k).set_z(0);
+        s.sprite_slot_view_mut(k).set_x_low(0x80);
+        s.sprite_slot_view_mut(k).set_x_high(0x00);
+        s.sprite_slot_view_mut(k).set_y_low(0x50);
+        s.sprite_slot_view_mut(k).set_y_high(0x00);
+        s.sprite_slot_view_mut(k).set_z(0);
 
         s.mothula_spawn_beams(k);
         assert_eq!(s.game_state.scratch_counter.value(), 0xff);
@@ -5296,9 +5296,9 @@ mod tests {
         let mut s = fresh_state();
         let k = 4;
         make_active(&mut s, k);
-        s.sprite_slot_mut(k).set_ai_state(0);
-        s.sprite_slot_mut(k).set_delay_main(0);
-        s.sprite_slot_mut(k).set_f(0);
+        s.sprite_slot_view_mut(k).set_ai_state(0);
+        s.sprite_slot_view_mut(k).set_delay_main(0);
+        s.sprite_slot_view_mut(k).set_f(0);
         s.mothula_main(k);
         assert_eq!(s.sprite_slot_view(k).ai_state(), 1);
         assert_eq!(s.sprite_slot_view(k).flags3(), 0);
@@ -5314,10 +5314,10 @@ mod tests {
         let mut s = fresh_state();
         let k = 2;
         make_active(&mut s, k);
-        s.sprite_slot_mut(k).set_f(6);
-        s.sprite_slot_mut(k).set_ai_state(3);
-        s.sprite_slot_mut(k).set_delay_main(5);
-        s.sprite_slot_mut(k).set_g(0);
+        s.sprite_slot_view_mut(k).set_f(6);
+        s.sprite_slot_view_mut(k).set_ai_state(3);
+        s.sprite_slot_view_mut(k).set_delay_main(5);
+        s.sprite_slot_view_mut(k).set_g(0);
         s.mothula_main(k);
         assert_eq!(s.sprite_slot_view(k).f(), 0);
         assert_eq!(s.sprite_slot_view(k).delay_aux3(), 32);
@@ -5335,8 +5335,8 @@ mod tests {
         // check trips on state != 9 and exits early.
         let mut s = fresh_state();
         let k = 5;
-        s.sprite_slot_mut(k).set_state(11);
-        s.sprite_slot_mut(k).set_ai_state(3);
+        s.sprite_slot_view_mut(k).set_state(11);
+        s.sprite_slot_view_mut(k).set_ai_state(3);
         s.mothula_main(k);
         assert_eq!(s.sprite_slot_view(k).ai_state(), 0);
         // Inactive exit means flags3 wasn't reset.
@@ -5349,10 +5349,10 @@ mod tests {
         // return (no allocation occurs).
         let mut s = fresh_state();
         let k = 1;
-        s.sprite_slot_mut(k).set_head_direction(3);
+        s.sprite_slot_view_mut(k).set_head_direction(3);
         // Pre-fill a slot so we can prove no allocation happened.
         for j in 0..16 {
-            s.sprite_slot_mut(j).set_state(9);
+            s.sprite_slot_view_mut(j).set_state(9);
         }
         s.mothula_handle_spikes(k);
         assert_eq!(s.sprite_slot_view(k).head_direction(), 2);
@@ -5369,12 +5369,12 @@ mod tests {
         // tables populate the target slot.
         let mut s = fresh_state();
         let k = 0;
-        s.sprite_slot_mut(k).set_head_direction(1);
+        s.sprite_slot_view_mut(k).set_head_direction(1);
         // Mark all slots active except 15, so allocator picks 15.
         for j in 0..15 {
-            s.sprite_slot_mut(j).set_state(9);
+            s.sprite_slot_view_mut(j).set_state(9);
         }
-        s.sprite_slot_mut(15).set_state(0);
+        s.sprite_slot_view_mut(15).set_state(0);
         // Force the random number deterministically by seeding RNG via
         // calling get_random_number isn't an option here, but the
         // table lookup with whatever index is produced just needs to be

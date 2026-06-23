@@ -6643,7 +6643,7 @@ impl ZeldaState {
                     && y.wrapping_sub(sy).wrapping_add(0x10) < 0x20
                 {
                     let k = facing as usize;
-                    let mut sprite = self.sprite_slot_mut(j);
+                    let mut sprite = self.sprite_slot_view_mut(j);
                     sprite.set_f(8);
                     sprite.set_x_recoil(PUSH_BLOCK_X_RECOIL_BY_DIRECTION[k]);
                     sprite.set_y_recoil(PUSH_BLOCK_Y_RECOIL_BY_DIRECTION[k]);
@@ -12431,7 +12431,7 @@ impl ZeldaState {
         let player_x = self.game_state.player.follower_link.x();
         let player_y = self.game_state.player.follower_link.y();
         let maiden_a = self.ancilla_terminate_select_interactives(j as u8);
-        let mut maiden = self.sprite_slot_mut(j);
+        let mut maiden = self.sprite_slot_view_mut(j);
         maiden.set_x((player_x & 0xff00) | 0x78);
         maiden.set_y((player_y & 0xff00) | 0x7c);
         maiden.set_direction(1);
@@ -12442,7 +12442,7 @@ impl ZeldaState {
         self.follower_link_state_mut().set_item_receipt_method(0);
 
         if self.game_state.inventory.save_progress.palace_index_x2() == 24 {
-            self.sprite_slot_mut(j).set_oam_flags(9);
+            self.sprite_slot_view_mut(j).set_oam_flags(9);
             self.follower_state_mut().set_indicator(1);
         } else {
             self.follower_state_mut().set_indicator(6);
