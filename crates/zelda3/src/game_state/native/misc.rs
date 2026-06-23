@@ -715,6 +715,12 @@ impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
         self.sync();
     }
 
+    pub(crate) fn reset_marker_x_and_shift_marker_y_low_up(&mut self) {
+        self.display.reset_marker_x_offset();
+        self.display.shift_marker_y_low_up();
+        self.sync();
+    }
+
     pub(crate) fn add_marker_y_offset_signed(&mut self, value: i16) -> u16 {
         let value = self.display.add_marker_y_offset_signed(value);
         self.sync();

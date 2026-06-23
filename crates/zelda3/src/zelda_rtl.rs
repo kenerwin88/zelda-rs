@@ -32,17 +32,17 @@ use crate::game_state::{
     lanmola_flat_trail_entry_from_ram, loaded_room_data_word, Bg1MovementAccumulatorState,
     BirdTravelDestinationState, BlastWallExplosionSlotState, BlastWallFireballSlotState,
     BlastWallFragmentSlotState, BombosBlastState, BombosFireColumnState, BossHomePositionRead,
-    CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut, DungeonMapDisplayState,
-    DungeonStairList, FollowerLinkState, GameState, GraphicsDecompressionScratch,
-    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, HistoryPositionState, HudRuntimeState,
-    HudStateRead, HudTilemapState, IntroActorRead, LanmolaFlatTrailEntry,
-    LanmolaSegmentMotionState, LinkDmaSourceSlot, MsuResumeInfoState, MsuResumeSlot,
-    MultiselectChoiceRead, NativeAncillaSlotBridgeMut, NativeAncillaSlotView,
-    NativeArcheryGameBridgeMut, NativeArmosKnightHomePositionBridgeMut,
-    NativeArrghusPuffHomePositionBridgeMut, NativeAttractSceneBridgeMut,
-    NativeAttractVramDestinationBridgeMut, NativeBeamosLaserHistoryBridgeMut,
-    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut, DungeonStairList,
+    FollowerLinkState, GameState, GraphicsDecompressionScratch, HappinessPondRupeeSlotState,
+    HappinessPondRupeeSnapshot, HistoryPositionState, HudRuntimeState, HudStateRead,
+    HudTilemapState, IntroActorRead, LanmolaFlatTrailEntry, LanmolaSegmentMotionState,
+    LinkDmaSourceSlot, MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead,
+    NativeAncillaSlotBridgeMut, NativeAncillaSlotView, NativeArcheryGameBridgeMut,
+    NativeArmosKnightHomePositionBridgeMut, NativeArrghusPuffHomePositionBridgeMut,
+    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
+    NativeBeamosLaserHistoryBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
+    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
     NativeBombosSpellBridgeMut, NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
@@ -80,9 +80,10 @@ use crate::game_state::{
     NativePolyRasterEdgeBridgeMut, NativePolyRuntimeBridgeMut, NativePpuScrollCopyBridgeMut,
     NativePrizeDropCycleBridgeMut, NativePushedBlockBridgeMut, NativeQuakeBoltBridgeMut,
     NativeQuakeSpellBridgeMut, NativeRoomBoundsBridgeMut, NativeSaveLoadTransferBridgeMut,
-    NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut, NativeSharedMessageTimerBridgeMut,
-    NativeSkullWoodsFireBridgeMut, NativeSkullWoodsFireSlotBridgeMut,
-    NativeSpecialExitPositionBridgeMut, NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
+    NativeSaveProgressBridgeMut, NativeScratchCounterBridgeMut, NativeSelectFileMenuBridgeMut,
+    NativeSharedMessageTimerBridgeMut, NativeSkullWoodsFireBridgeMut,
+    NativeSkullWoodsFireSlotBridgeMut, NativeSpecialExitPositionBridgeMut,
+    NativeSpotlightHdmaBridgeMut, NativeSpriteBattleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSpriteSlotBridgeMut, NativeSpriteSlotView, NativeSpriteSystemBridgeMut,
     NativeSpriteWorkspaceBridgeMut, NativeSwamolaHistoryBridgeMut, NativeSwamolaTargetBridgeMut,
@@ -95,10 +96,9 @@ use crate::game_state::{
     OverworldConfigTableRead, OverworldEventInfoState, OverworldMap16Decode,
     OverworldMap16DecodeScratch, OverworldMap16LoadState, OverworldMap16SourcePage,
     PaletteFilterState, PpuScrollCopyState, QuakeBoltSlotState, RamPlayerStateView,
-    RamPlayerStateViewMut, SelectFileMenuState, SkullWoodsFireSlotState,
-    SmallOverworldMap16ScrollBackupState, SpotlightHdmaState, SystemSignalsState, SystemWorkArea,
-    TagalongSlotRead, TowerSealOrbitState, TowerSealSparkleState, VwfRenderState,
-    WeatherVaneDebrisSlotState, WorldTransientState,
+    RamPlayerStateViewMut, SkullWoodsFireSlotState, SmallOverworldMap16ScrollBackupState,
+    SpotlightHdmaState, SystemSignalsState, SystemWorkArea, TagalongSlotRead, TowerSealOrbitState,
+    TowerSealSparkleState, VwfRenderState, WeatherVaneDebrisSlotState, WorldTransientState,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -4051,109 +4051,89 @@ impl ZeldaState {
         NativeSaveLoadTransferBridgeMut::new(&mut self.game_state.save_load_transfer, &mut self.ram)
     }
 
-    fn sync_dungeon_map_display_to_ram(&mut self) {
-        self.game_state
-            .dungeon_map_display
-            .write_to_ram(&mut self.ram);
-        self.assert_native_dungeon_map_display_matches_ram();
-    }
-
-    fn mutate_dungeon_map_display<T>(
-        &mut self,
-        mutate: impl FnOnce(&mut DungeonMapDisplayState) -> T,
-    ) -> T {
-        let result = mutate(&mut self.game_state.dungeon_map_display);
-        self.sync_dungeon_map_display_to_ram();
-        result
-    }
-
     pub(crate) fn increment_dungeon_map_init_state(&mut self) {
-        self.mutate_dungeon_map_display(DungeonMapDisplayState::increment_dungmap_init_state);
+        self.dungeon_map_mut().increment_dungmap_init_state();
     }
 
     pub(crate) fn clear_dungeon_map_init_state(&mut self) {
-        self.mutate_dungeon_map_display(DungeonMapDisplayState::clear_dungmap_init_state);
+        self.dungeon_map_mut().clear_dungmap_init_state();
     }
 
     pub(crate) fn set_dungeon_map_current_floor(&mut self, value: u16) {
-        self.mutate_dungeon_map_display(|display| display.set_dungmap_cur_floor(value));
+        self.dungeon_map_mut().set_dungmap_cur_floor(value);
     }
 
     pub(crate) fn decrement_dungeon_map_current_floor_byte(&mut self) {
-        self.mutate_dungeon_map_display(DungeonMapDisplayState::decrement_dungmap_cur_floor_byte);
+        self.dungeon_map_mut().decrement_dungmap_cur_floor_byte();
     }
 
     pub(crate) fn increment_dungeon_map_current_floor_byte(&mut self) {
-        self.mutate_dungeon_map_display(DungeonMapDisplayState::increment_dungmap_cur_floor_byte);
+        self.dungeon_map_mut().increment_dungmap_cur_floor_byte();
     }
 
     pub(crate) fn clear_dungeon_map_floor_scroll_step(&mut self) {
-        self.mutate_dungeon_map_display(DungeonMapDisplayState::clear_dungmap_floor_scroll_step);
+        self.dungeon_map_mut().clear_dungmap_floor_scroll_step();
     }
 
     pub(crate) fn increment_dungeon_map_floor_scroll_step(&mut self) {
-        self.mutate_dungeon_map_display(
-            DungeonMapDisplayState::increment_dungmap_floor_scroll_step,
-        );
+        self.dungeon_map_mut().increment_dungmap_floor_scroll_step();
     }
 
     pub(crate) fn set_dungeon_map_scroll_draw_offset(&mut self, value: u16) {
-        self.mutate_dungeon_map_display(|display| display.set_scroll_draw_offset(value));
+        self.dungeon_map_mut().set_scroll_draw_offset(value);
     }
 
     pub(crate) fn set_dungeon_map_scroll_input(&mut self, value: u16) {
-        self.mutate_dungeon_map_display(|display| display.set_scroll_input(value));
+        self.dungeon_map_mut().set_scroll_input(value);
     }
 
     pub(crate) fn set_dungeon_map_scroll_target_y(&mut self, value: u16) {
-        self.mutate_dungeon_map_display(|display| display.set_dungmap_scroll_target_y(value));
+        self.dungeon_map_mut().set_dungmap_scroll_target_y(value);
     }
 
     pub(crate) fn clear_dungeon_map_scroll_state(&mut self) {
-        self.mutate_dungeon_map_display(DungeonMapDisplayState::clear_scroll_state);
+        self.dungeon_map_mut().clear_scroll_state();
     }
 
     pub(crate) fn set_dungeon_map_idx(&mut self, value: u16) {
-        self.mutate_dungeon_map_display(|display| display.set_dungmap_idx(value));
+        self.dungeon_map_mut().set_dungmap_idx(value);
     }
 
     pub(crate) fn clear_dungeon_map_idx(&mut self) {
-        self.mutate_dungeon_map_display(DungeonMapDisplayState::clear_dungmap_idx);
+        self.dungeon_map_mut().clear_dungmap_idx();
     }
 
     pub(crate) fn set_dungeon_map_player_marker_x(&mut self, value: u16) {
-        self.mutate_dungeon_map_display(|display| display.set_dungmap_player_marker_x(value));
+        self.dungeon_map_mut().set_dungmap_player_marker_x(value);
     }
 
     pub(crate) fn set_dungeon_map_player_marker_y(&mut self, value: u16) {
-        self.mutate_dungeon_map_display(|display| display.set_dungmap_player_marker_y(value));
+        self.dungeon_map_mut().set_dungmap_player_marker_y(value);
     }
 
     pub(crate) fn set_dungeon_map_location_marker_base_y(&mut self, value: u8) {
-        self.mutate_dungeon_map_display(|display| display.set_location_marker_base_y(value));
+        self.dungeon_map_mut().set_location_marker_base_y(value);
     }
 
     pub(crate) fn reset_dungeon_map_marker_offsets(&mut self) {
-        self.mutate_dungeon_map_display(DungeonMapDisplayState::reset_marker_offsets);
+        self.dungeon_map_mut().reset_marker_offsets();
     }
 
     pub(crate) fn shift_dungeon_map_marker_x_left(&mut self) -> u16 {
-        self.mutate_dungeon_map_display(DungeonMapDisplayState::shift_marker_x_left)
+        self.dungeon_map_mut().shift_marker_x_left()
     }
 
     pub(crate) fn reset_dungeon_map_marker_x_and_shift_marker_y_low_up(&mut self) {
-        self.mutate_dungeon_map_display(|display| {
-            display.reset_marker_x_offset();
-            display.shift_marker_y_low_up();
-        });
+        self.dungeon_map_mut()
+            .reset_marker_x_and_shift_marker_y_low_up();
     }
 
     pub(crate) fn set_dungeon_map_marker_y_offset(&mut self, value: u16) {
-        self.mutate_dungeon_map_display(|display| display.set_marker_y_offset(value));
+        self.dungeon_map_mut().set_marker_y_offset(value);
     }
 
     pub(crate) fn add_dungeon_map_marker_y_offset_signed(&mut self, value: i16) -> u16 {
-        self.mutate_dungeon_map_display(|display| display.add_marker_y_offset_signed(value))
+        self.dungeon_map_mut().add_marker_y_offset_signed(value)
     }
 
     pub(crate) fn dungeon_secret_scratch_mut(&mut self) -> NativeDungeonSecretBridgeMut<'_> {
@@ -5674,129 +5654,122 @@ impl ZeldaState {
         )
     }
 
-    fn sync_select_file_menu_to_ram(&mut self) {
-        self.game_state
-            .messaging
-            .select_file_menu
-            .write_to_ram(&mut self.ram);
-        self.assert_native_select_file_menu_matches_ram();
-    }
-
-    fn mutate_select_file_menu<T>(
-        &mut self,
-        mutate: impl FnOnce(&mut SelectFileMenuState) -> T,
-    ) -> T {
-        let result = mutate(&mut self.game_state.messaging.select_file_menu);
-        self.sync_select_file_menu_to_ram();
-        result
+    fn select_file_menu_mut(&mut self) -> NativeSelectFileMenuBridgeMut<'_> {
+        NativeSelectFileMenuBridgeMut::new(
+            &mut self.game_state.messaging.select_file_menu,
+            &mut self.ram,
+        )
     }
 
     pub(crate) fn set_select_file_choice(&mut self, index: usize, value: u8) {
-        self.mutate_select_file_menu(|menu| menu.set_choice(index, value));
+        self.select_file_menu_mut().set_choice(index, value);
     }
 
     pub(crate) fn set_select_file_cursor(&mut self, value: u8) {
-        self.mutate_select_file_menu(|menu| menu.set_cursor(value));
+        self.select_file_menu_mut().set_cursor(value);
     }
 
     pub(crate) fn clear_select_file_cursor(&mut self) {
-        self.mutate_select_file_menu(SelectFileMenuState::clear_cursor);
+        self.select_file_menu_mut().clear_cursor();
     }
 
     pub(crate) fn clear_select_file_transition_scratch(&mut self) {
-        self.mutate_select_file_menu(SelectFileMenuState::clear_transition_scratch);
+        self.select_file_menu_mut().clear_transition_scratch();
     }
 
     pub(crate) fn increment_select_file_cursor(&mut self) -> u8 {
-        self.mutate_select_file_menu(SelectFileMenuState::increment_cursor)
+        self.select_file_menu_mut().increment_cursor()
     }
 
     pub(crate) fn decrement_select_file_cursor(&mut self) -> u8 {
-        self.mutate_select_file_menu(SelectFileMenuState::decrement_cursor)
+        self.select_file_menu_mut().decrement_cursor()
     }
 
     pub(crate) fn clear_select_file_remembered_cursor(&mut self) {
-        self.mutate_select_file_menu(SelectFileMenuState::clear_remembered_cursor);
+        self.select_file_menu_mut().clear_remembered_cursor();
     }
 
     pub(crate) fn remember_select_file_cursor(&mut self) {
-        self.mutate_select_file_menu(SelectFileMenuState::remember_current_cursor);
+        self.select_file_menu_mut().remember_current_cursor();
     }
 
     pub(crate) fn restore_select_file_remembered_cursor(&mut self) {
-        self.mutate_select_file_menu(SelectFileMenuState::restore_remembered_cursor);
+        self.select_file_menu_mut().restore_remembered_cursor();
     }
 
     pub(crate) fn set_select_file_target_word(&mut self, value: u16) {
-        self.mutate_select_file_menu(|menu| menu.set_target_word(value));
+        self.select_file_menu_mut().set_target_word(value);
     }
 
     pub(crate) fn set_select_file_copy_source_slot(&mut self, slot: u8) {
-        self.mutate_select_file_menu(|menu| menu.set_copy_source_slot(slot));
+        self.select_file_menu_mut().set_copy_source_slot(slot);
     }
 
     pub(crate) fn set_select_file_name_scroll_x(&mut self, value: u16) {
-        self.mutate_select_file_menu(|menu| menu.set_name_scroll_x(value));
+        self.select_file_menu_mut().set_name_scroll_x(value);
     }
 
     pub(crate) fn clear_select_file_name_entry_state(&mut self) {
-        self.mutate_select_file_menu(SelectFileMenuState::clear_name_entry_state);
+        self.select_file_menu_mut().clear_name_entry_state();
     }
 
     pub(crate) fn set_select_file_name_column(&mut self, value: u8) {
-        self.mutate_select_file_menu(|menu| menu.set_name_column(value));
+        self.select_file_menu_mut().set_name_column(value);
     }
 
     pub(crate) fn set_select_file_name_cursor_y(&mut self, value: u8) {
-        self.mutate_select_file_menu(|menu| menu.set_name_cursor_y(value));
+        self.select_file_menu_mut().set_name_cursor_y(value);
     }
 
     pub(crate) fn step_select_file_name_cursor_y_toward(&mut self, target_y: u8) -> bool {
-        self.mutate_select_file_menu(|menu| menu.step_name_cursor_y_toward(target_y))
+        self.select_file_menu_mut()
+            .step_name_cursor_y_toward(target_y)
     }
 
     pub(crate) fn move_select_file_name_slot_left_wrapped(&mut self) -> u8 {
-        self.mutate_select_file_menu(SelectFileMenuState::move_name_slot_left_wrapped)
+        self.select_file_menu_mut().move_name_slot_left_wrapped()
     }
 
     pub(crate) fn move_select_file_name_slot_right_wrapped(&mut self) -> u8 {
-        self.mutate_select_file_menu(SelectFileMenuState::move_name_slot_right_wrapped)
+        self.select_file_menu_mut().move_name_slot_right_wrapped()
     }
 
     pub(crate) fn set_select_file_name_scroll_x_step(&mut self, value: u8) {
-        self.mutate_select_file_menu(|menu| menu.set_name_scroll_x_step(value));
+        self.select_file_menu_mut().set_name_scroll_x_step(value);
     }
 
     pub(crate) fn advance_select_file_name_scroll_x_step_by(&mut self, value: u8) -> u8 {
-        self.mutate_select_file_menu(|menu| menu.advance_name_scroll_x_step_by(value))
+        self.select_file_menu_mut()
+            .advance_name_scroll_x_step_by(value)
     }
 
     pub(crate) fn clear_select_file_name_scroll_y_step(&mut self) {
-        self.mutate_select_file_menu(SelectFileMenuState::clear_name_scroll_y_step);
+        self.select_file_menu_mut().clear_name_scroll_y_step();
     }
 
     pub(crate) fn increment_select_file_name_scroll_y_step(&mut self) -> u8 {
-        self.mutate_select_file_menu(SelectFileMenuState::increment_name_scroll_y_step)
+        self.select_file_menu_mut().increment_name_scroll_y_step()
     }
 
     pub(crate) fn set_select_file_name_row(&mut self, value: u8) {
-        self.mutate_select_file_menu(|menu| menu.set_name_row(value));
+        self.select_file_menu_mut().set_name_row(value);
     }
 
     pub(crate) fn set_select_file_name_scroll_x_direction(&mut self, value: u8) {
-        self.mutate_select_file_menu(|menu| menu.set_name_scroll_x_direction(value));
+        self.select_file_menu_mut()
+            .set_name_scroll_x_direction(value);
     }
 
     pub(crate) fn mark_select_file_save_slot_present(&mut self, slot: usize) {
-        self.mutate_select_file_menu(|menu| menu.mark_save_slot_present(slot));
+        self.select_file_menu_mut().mark_save_slot_present(slot);
     }
 
     pub(crate) fn clear_select_file_save_slot_flag(&mut self, slot: usize) {
-        self.mutate_select_file_menu(|menu| menu.clear_save_slot_flag(slot));
+        self.select_file_menu_mut().clear_save_slot_flag(slot);
     }
 
     pub(crate) fn clear_select_file_save_slot_flags(&mut self) {
-        self.mutate_select_file_menu(SelectFileMenuState::clear_save_slot_flags);
+        self.select_file_menu_mut().clear_save_slot_flags();
     }
 
     pub(crate) fn arrghus_puff_home_position(&self, puff_slot: usize) -> BossHomePositionRead {
