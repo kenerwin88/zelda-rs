@@ -1,7 +1,9 @@
 # Readable Asset Sources
 
 `assets_src/` contains hand-readable source assets that can be packed back into
-the generated runtime assets under `generated/zelda3_assets/`.
+the generated runtime assets under `generated/zelda3_assets/`. The extractor
+also emits readable migrated assets under
+`generated/zelda3_assets/assets_src/`.
 
 The runtime still consumes byte-exact generated assets so C parity stays
 unchanged. Source assets in this directory should always have a verifier that
@@ -9,8 +11,12 @@ proves they pack back to the canonical generated `.bin` bytes.
 
 ## Tilemaps
 
-`tilemaps/light_overworld_tilemap.json` is the first vertical slice. It uses the
-`zelda3_byte_tilemap_v1` schema:
+`tilemaps/light_overworld_tilemap.json` is the first vertical slice. During ROM
+extraction, `067-kLightOverworldTilemap.bin` is no longer written as a loose
+binary file; the extractor writes
+`generated/zelda3_assets/assets_src/tilemaps/light_overworld_tilemap.json`
+instead, and the build script packs that JSON into the embedded asset table. It
+uses the `zelda3_byte_tilemap_v1` schema:
 
 - `asset` and `asset_index` identify the generated asset it replaces.
 - `width` and `height` describe the rectangular byte grid.

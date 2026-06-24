@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import shutil
 from pathlib import Path
 
@@ -63,8 +65,34 @@ def create_assets(out_dir: Path, asset_size: int) -> None:
     write_key_signature(out_dir, names)
 
     payload = bytes(asset_size)
+    manifest_assets = []
     for index, name in enumerate(names):
         (assets_dir / f"{index:03d}-{name}.bin").write_bytes(payload)
+        manifest_assets.append(
+            {
+                "index": index,
+                "name": name,
+                "file": f"assets/{index:03d}-{name}.bin",
+                "size": len(payload),
+                "sha1": hashlib.sha1(payload).hexdigest(),
+            }
+        )
+
+    (out_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "asset_count": ASSET_COUNT,
+                "asset_key_signature": "asset_key_signature.bin",
+                "asset_signature": "asset_signature.bin",
+                "assets": manifest_assets,
+                "image_previews": [],
+                "source_tool": "scripts/create_ci_assets.py",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
 
 
 def main() -> None:

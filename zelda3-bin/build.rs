@@ -3,6 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+const FORMAT_BYTE_TILEMAP: &str = "zelda3_byte_tilemap_v1";
+
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let repo_root = manifest_dir.parent().unwrap();
@@ -26,6 +28,10 @@ fn main() {
     println!(
         "cargo:rerun-if-changed={}",
         generated_dir.join("asset_key_signature.bin").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        repo_root.join("scripts").join("tilemap_json.py").display()
     );
     println!(
         "cargo:rerun-if-changed={}",
@@ -102,14 +108,30 @@ fn pack_assets(generated_dir: &Path) -> PathBuf {
         .map(|name| String::from_utf8(name.to_vec()).expect("asset name is not utf8"))
         .collect::<Vec<_>>();
 
-    let asset_dir = generated_dir.join("assets");
+    let manifest = read_manifest(generated_dir);
+    let manifest_assets = manifest
+        .get("assets")
+        .and_then(serde_json::Value::as_array)
+        .unwrap_or_else(|| {
+            panic!(
+                "{} assets must be an array",
+                generated_dir.join("manifest.json").display()
+            )
+        });
+    assert_eq!(
+        manifest_assets.len(),
+        names.len(),
+        "manifest asset count must match asset key signature"
+    );
+
     let mut assets = Vec::with_capacity(names.len());
     for (index, name) in names.iter().enumerate() {
-        let path = asset_dir.join(format!("{index:03}-{name}.bin"));
-        println!("cargo:rerun-if-changed={}", path.display());
-        assets.push(fs::read(&path).unwrap_or_else(|err| {
-            panic!("failed to read generated asset {}: {err}", path.display())
-        }));
+        assets.push(read_asset(
+            generated_dir,
+            index,
+            name,
+            &manifest_assets[index],
+        ));
     }
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
@@ -132,4 +154,142 @@ fn pack_assets(generated_dir: &Path) -> PathBuf {
     fs::write(&asset_pack, file_data)
         .unwrap_or_else(|err| panic!("failed to write {}: {err}", asset_pack.display()));
     asset_pack
+}
+
+fn read_manifest(generated_dir: &Path) -> serde_json::Value {
+    let manifest_path = generated_dir.join("manifest.json");
+    let manifest = fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", manifest_path.display()));
+    serde_json::from_str(&manifest)
+        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", manifest_path.display()))
+}
+
+fn read_asset(
+    generated_dir: &Path,
+    index: usize,
+    name: &str,
+    manifest_asset: &serde_json::Value,
+) -> Vec<u8> {
+    if manifest_asset
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        != Some(name)
+    {
+        panic!("manifest asset {index:03} name does not match key signature {name}");
+    }
+    if let (Some(source_format), Some(source_file)) = (
+        manifest_asset
+            .get("source_format")
+            .and_then(serde_json::Value::as_str),
+        manifest_asset
+            .get("source_file")
+            .and_then(serde_json::Value::as_str),
+    ) {
+        return read_source_asset(generated_dir, source_format, source_file);
+    }
+
+    let bin_path = generated_dir
+        .join("assets")
+        .join(format!("{index:03}-{name}.bin"));
+    println!("cargo:rerun-if-changed={}", bin_path.display());
+    match fs::read(&bin_path) {
+        Ok(asset) => asset,
+        Err(bin_err) => {
+            if let Some(source_file) = known_source_file(name) {
+                read_source_asset(generated_dir, FORMAT_BYTE_TILEMAP, source_file)
+            } else {
+                panic!(
+                    "failed to read generated asset {}: {bin_err}",
+                    bin_path.display()
+                );
+            }
+        }
+    }
+}
+
+fn known_source_file(name: &str) -> Option<&'static str> {
+    match name {
+        "kLightOverworldTilemap" => Some("assets_src/tilemaps/light_overworld_tilemap.json"),
+        _ => None,
+    }
+}
+
+fn read_source_asset(generated_dir: &Path, source_format: &str, source_file: &str) -> Vec<u8> {
+    let source_path = generated_dir.join(source_file);
+    println!("cargo:rerun-if-changed={}", source_path.display());
+    match source_format {
+        FORMAT_BYTE_TILEMAP => read_byte_tilemap_json(&source_path),
+        _ => panic!(
+            "unsupported readable asset format {source_format} for {}",
+            source_path.display()
+        ),
+    }
+}
+
+fn read_byte_tilemap_json(source_path: &Path) -> Vec<u8> {
+    let text = fs::read_to_string(source_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", source_path.display()));
+    let json: serde_json::Value = serde_json::from_str(&text)
+        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", source_path.display()));
+    if json.get("format").and_then(serde_json::Value::as_str) != Some(FORMAT_BYTE_TILEMAP) {
+        panic!("{} is not a {FORMAT_BYTE_TILEMAP}", source_path.display());
+    }
+    let width = positive_usize(&json, "width", source_path);
+    let height = positive_usize(&json, "height", source_path);
+    let rows = json
+        .get("rows")
+        .and_then(serde_json::Value::as_array)
+        .unwrap_or_else(|| panic!("{} rows must be an array", source_path.display()));
+    if rows.len() != height {
+        panic!(
+            "{} has {} rows, expected {height}",
+            source_path.display(),
+            rows.len()
+        );
+    }
+
+    let mut data = Vec::with_capacity(width * height);
+    for (y, row) in rows.iter().enumerate() {
+        let row = row
+            .as_array()
+            .unwrap_or_else(|| panic!("{} row {y} must be an array", source_path.display()));
+        if row.len() != width {
+            panic!(
+                "{} row {y} has {} entries, expected {width}",
+                source_path.display(),
+                row.len()
+            );
+        }
+        for (x, value) in row.iter().enumerate() {
+            let value = value.as_u64().unwrap_or_else(|| {
+                panic!(
+                    "{} row {y} column {x} must be 0..255",
+                    source_path.display()
+                )
+            });
+            let value = u8::try_from(value).unwrap_or_else(|_| {
+                panic!(
+                    "{} row {y} column {x} must be 0..255",
+                    source_path.display()
+                )
+            });
+            data.push(value);
+        }
+    }
+    data
+}
+
+fn positive_usize(json: &serde_json::Value, key: &str, source_path: &Path) -> usize {
+    let value = json
+        .get(key)
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or_else(|| panic!("{} {key} must be a positive integer", source_path.display()));
+    let value = usize::try_from(value)
+        .unwrap_or_else(|_| panic!("{} {key} is too large", source_path.display()));
+    assert!(
+        value > 0,
+        "{} {key} must be a positive integer",
+        source_path.display()
+    );
+    value
 }

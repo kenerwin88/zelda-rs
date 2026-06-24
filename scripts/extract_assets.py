@@ -13,9 +13,12 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+import tilemap_json
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +34,14 @@ PREVIEW_ASSETS = {
     "kGeneratedWishPondItem",
     "kGeneratedBombosArr",
     "kGeneratedEndSequence15",
+}
+READABLE_ASSET_SOURCES = {
+    "kLightOverworldTilemap": {
+        "format": tilemap_json.FORMAT_BYTE_TILEMAP,
+        "file": "assets_src/tilemaps/light_overworld_tilemap.json",
+        "width": 64,
+        "height": 64,
+    }
 }
 
 
@@ -96,6 +107,7 @@ def split_asset_pack(asset_pack: Path) -> tuple[bytes, bytes, list[tuple[str, by
 def clean_generated_output(out_dir: Path) -> Path:
     assets_dir = out_dir / "assets"
     images_dir = out_dir / "images"
+    assets_src_dir = out_dir / "assets_src"
     if assets_dir.exists():
         for path in assets_dir.iterdir():
             if path.is_file():
@@ -106,10 +118,44 @@ def clean_generated_output(out_dir: Path) -> Path:
         for path in images_dir.iterdir():
             if path.is_file():
                 path.unlink()
+    if assets_src_dir.exists():
+        shutil.rmtree(assets_src_dir)
     old_pack = out_dir / "zelda3_assets.dat"
     if old_pack.exists():
         old_pack.unlink()
     return assets_dir
+
+
+def write_asset_output(
+    out_dir: Path, *, index: int, name: str, payload: bytes
+) -> dict[str, object]:
+    source = READABLE_ASSET_SOURCES.get(name)
+    manifest_asset: dict[str, object] = {
+        "index": index,
+        "name": name,
+        "size": len(payload),
+        "sha1": hashlib.sha1(payload).hexdigest(),
+    }
+    if source is None:
+        file_name = f"{index:03d}-{name}.bin"
+        file_path = out_dir / "assets" / file_name
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_bytes(payload)
+        manifest_asset["file"] = f"assets/{file_name}"
+        return manifest_asset
+
+    tilemap = tilemap_json.tilemap_from_bytes(
+        payload,
+        asset=name,
+        asset_index=index,
+        width=int(source["width"]),
+        height=int(source["height"]),
+    )
+    source_file = str(source["file"])
+    tilemap_json.write_tilemap_json(out_dir / source_file, tilemap)
+    manifest_asset["source_file"] = source_file
+    manifest_asset["source_format"] = source["format"]
+    return manifest_asset
 
 
 def decomp_asset(data: bytes) -> bytes:
@@ -378,16 +424,8 @@ def main() -> int:
 
     manifest_assets = []
     for index, (name, payload) in enumerate(assets):
-        file_name = f"{index:03d}-{name}.bin"
-        (assets_dir / file_name).write_bytes(payload)
         manifest_assets.append(
-            {
-                "index": index,
-                "name": name,
-                "file": f"assets/{file_name}",
-                "size": len(payload),
-                "sha1": hashlib.sha1(payload).hexdigest(),
-            }
+            write_asset_output(out_dir, index=index, name=name, payload=payload)
         )
     previews = write_preview_images(out_dir, assets)
 
@@ -408,7 +446,11 @@ def main() -> int:
         )
         + "\n"
     )
-    print(f"wrote {len(assets)} asset files to {assets_dir}")
+    bin_count = sum(1 for asset in manifest_assets if "file" in asset)
+    source_count = sum(1 for asset in manifest_assets if "source_file" in asset)
+    print(f"wrote {bin_count} binary asset files to {assets_dir}")
+    if source_count:
+        print(f"wrote {source_count} readable asset sources to {out_dir / 'assets_src'}")
     if previews:
         print(f"wrote {len(previews)} PNG previews to {out_dir / 'images'}")
     print(f"wrote {manifest}")
