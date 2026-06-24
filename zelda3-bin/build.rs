@@ -6,6 +6,401 @@ use std::process::Command;
 const FORMAT_BYTE_TILEMAP: &str = "zelda3_byte_tilemap_v1";
 const FORMAT_BYTE_STREAM_TILEMAP: &str = "zelda3_byte_stream_tilemap_v1";
 const FORMAT_SNES_PALETTE: &str = "zelda3_snes_palette_v1";
+const FORMAT_DUNGEON_ENTRANCES: &str = "zelda3_dungeon_entrances_v1";
+const FORMAT_STARTING_POINTS: &str = "zelda3_starting_points_v1";
+const FORMAT_OVERWORLD_EXITS: &str = "zelda3_overworld_exits_v1";
+const FORMAT_SPECIAL_EXITS: &str = "zelda3_special_exits_v1";
+
+struct NavigationField {
+    asset: &'static str,
+    field: &'static str,
+    value_type: &'static str,
+    values_per_record: usize,
+}
+
+const ENTRANCE_FIELDS: &[NavigationField] = &[
+    NavigationField {
+        asset: "kEntranceData_rooms",
+        field: "room",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_relativeCoords",
+        field: "relative_coords",
+        value_type: "u8",
+        values_per_record: 8,
+    },
+    NavigationField {
+        asset: "kEntranceData_scrollX",
+        field: "scroll_x",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_scrollY",
+        field: "scroll_y",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_playerX",
+        field: "player_x",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_playerY",
+        field: "player_y",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_cameraX",
+        field: "camera_x",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_cameraY",
+        field: "camera_y",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_blockset",
+        field: "blockset",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_floor",
+        field: "floor",
+        value_type: "i8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_palace",
+        field: "palace",
+        value_type: "i8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_doorwayOrientation",
+        field: "doorway_orientation",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_startingBg",
+        field: "starting_bg",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_quadrant1",
+        field: "quadrant1",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_quadrant2",
+        field: "quadrant2",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_doorSettings",
+        field: "door_settings",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kEntranceData_musicTrack",
+        field: "music_track",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+];
+
+const STARTING_POINT_FIELDS: &[NavigationField] = &[
+    NavigationField {
+        asset: "kStartingPoint_rooms",
+        field: "room",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_relativeCoords",
+        field: "relative_coords",
+        value_type: "u8",
+        values_per_record: 8,
+    },
+    NavigationField {
+        asset: "kStartingPoint_scrollX",
+        field: "scroll_x",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_scrollY",
+        field: "scroll_y",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_playerX",
+        field: "player_x",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_playerY",
+        field: "player_y",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_cameraX",
+        field: "camera_x",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_cameraY",
+        field: "camera_y",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_blockset",
+        field: "blockset",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_floor",
+        field: "floor",
+        value_type: "i8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_palace",
+        field: "palace",
+        value_type: "i8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_doorwayOrientation",
+        field: "doorway_orientation",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_startingBg",
+        field: "starting_bg",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_quadrant1",
+        field: "quadrant1",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_quadrant2",
+        field: "quadrant2",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_doorSettings",
+        field: "door_settings",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_entrance",
+        field: "entrance",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kStartingPoint_musicTrack",
+        field: "music_track",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+];
+
+const EXIT_FIELDS: &[NavigationField] = &[
+    NavigationField {
+        asset: "kExitData_ScreenIndex",
+        field: "screen_index",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kExitDataRooms",
+        field: "room",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kExitData_Map16LoadSrcOff",
+        field: "map16_load_src_off",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kExitData_ScrollX",
+        field: "scroll_x",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kExitData_ScrollY",
+        field: "scroll_y",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kExitData_XCoord",
+        field: "x_coord",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kExitData_YCoord",
+        field: "y_coord",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kExitData_CameraXScroll",
+        field: "camera_x_scroll",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kExitData_CameraYScroll",
+        field: "camera_y_scroll",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kExitData_NormalDoor",
+        field: "normal_door",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kExitData_FancyDoor",
+        field: "fancy_door",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kExitData_Unk1",
+        field: "unk1",
+        value_type: "i8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kExitData_Unk3",
+        field: "unk3",
+        value_type: "i8",
+        values_per_record: 1,
+    },
+];
+
+const SPECIAL_EXIT_FIELDS: &[NavigationField] = &[
+    NavigationField {
+        asset: "kSpExit_Top",
+        field: "top",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kSpExit_Bottom",
+        field: "bottom",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kSpExit_Left",
+        field: "left",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kSpExit_Right",
+        field: "right",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kSpExit_Tab4",
+        field: "tab4",
+        value_type: "i16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kSpExit_Tab5",
+        field: "tab5",
+        value_type: "i16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kSpExit_Tab6",
+        field: "tab6",
+        value_type: "i16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kSpExit_Tab7",
+        field: "tab7",
+        value_type: "i16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kSpExit_LeftEdgeOfMap",
+        field: "left_edge_of_map",
+        value_type: "u16",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kSpExit_Dir",
+        field: "dir",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kSpExit_SprGfx",
+        field: "spr_gfx",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kSpExit_AuxGfx",
+        field: "aux_gfx",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kSpExit_PalBg",
+        field: "pal_bg",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+    NavigationField {
+        asset: "kSpExit_PalSpr",
+        field: "pal_spr",
+        value_type: "u8",
+        values_per_record: 1,
+    },
+];
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -34,6 +429,13 @@ fn main() {
     println!(
         "cargo:rerun-if-changed={}",
         repo_root.join("scripts").join("tilemap_json.py").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        repo_root
+            .join("scripts")
+            .join("navigation_json.py")
+            .display()
     );
     println!(
         "cargo:rerun-if-changed={}",
@@ -187,7 +589,7 @@ fn read_asset(
             .get("source_file")
             .and_then(serde_json::Value::as_str),
     ) {
-        return read_source_asset(generated_dir, source_format, source_file);
+        return read_source_asset(generated_dir, source_format, source_file, name);
     }
 
     let bin_path = generated_dir
@@ -198,7 +600,7 @@ fn read_asset(
         Ok(asset) => asset,
         Err(bin_err) => {
             if let Some((source_format, source_file)) = known_source(name) {
-                read_source_asset(generated_dir, source_format, source_file)
+                read_source_asset(generated_dir, source_format, source_file, name)
             } else {
                 panic!(
                     "failed to read generated asset {}: {bin_err}",
@@ -210,6 +612,33 @@ fn read_asset(
 }
 
 fn known_source(name: &str) -> Option<(&'static str, &'static str)> {
+    if ENTRANCE_FIELDS.iter().any(|field| field.asset == name) {
+        return Some((
+            FORMAT_DUNGEON_ENTRANCES,
+            "assets_src/navigation/dungeon_entrances.json",
+        ));
+    }
+    if STARTING_POINT_FIELDS
+        .iter()
+        .any(|field| field.asset == name)
+    {
+        return Some((
+            FORMAT_STARTING_POINTS,
+            "assets_src/navigation/starting_points.json",
+        ));
+    }
+    if EXIT_FIELDS.iter().any(|field| field.asset == name) {
+        return Some((
+            FORMAT_OVERWORLD_EXITS,
+            "assets_src/navigation/overworld_exits.json",
+        ));
+    }
+    if SPECIAL_EXIT_FIELDS.iter().any(|field| field.asset == name) {
+        return Some((
+            FORMAT_SPECIAL_EXITS,
+            "assets_src/navigation/special_exits.json",
+        ));
+    }
     match name {
         "kLightOverworldTilemap" => Some((
             FORMAT_BYTE_TILEMAP,
@@ -312,13 +741,22 @@ fn known_source(name: &str) -> Option<(&'static str, &'static str)> {
     }
 }
 
-fn read_source_asset(generated_dir: &Path, source_format: &str, source_file: &str) -> Vec<u8> {
+fn read_source_asset(
+    generated_dir: &Path,
+    source_format: &str,
+    source_file: &str,
+    asset_name: &str,
+) -> Vec<u8> {
     let source_path = generated_dir.join(source_file);
     println!("cargo:rerun-if-changed={}", source_path.display());
     match source_format {
         FORMAT_BYTE_TILEMAP => read_byte_tilemap_json(&source_path),
         FORMAT_BYTE_STREAM_TILEMAP => read_byte_stream_tilemap_json(&source_path),
         FORMAT_SNES_PALETTE => read_snes_palette_json(&source_path),
+        FORMAT_DUNGEON_ENTRANCES
+        | FORMAT_STARTING_POINTS
+        | FORMAT_OVERWORLD_EXITS
+        | FORMAT_SPECIAL_EXITS => read_navigation_json(&source_path, source_format, asset_name),
         _ => panic!(
             "unsupported readable asset format {source_format} for {}",
             source_path.display()
@@ -438,6 +876,159 @@ fn parse_snes_palette_word(source_path: &Path, index: usize, word: &str) -> u16 
         source_path.display()
     );
     word
+}
+
+fn read_navigation_json(source_path: &Path, expected_format: &str, asset_name: &str) -> Vec<u8> {
+    let text = fs::read_to_string(source_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", source_path.display()));
+    let json: serde_json::Value = serde_json::from_str(&text)
+        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", source_path.display()));
+    if json.get("format").and_then(serde_json::Value::as_str) != Some(expected_format) {
+        panic!("{} is not a {expected_format}", source_path.display());
+    }
+    let field = navigation_field(expected_format, asset_name).unwrap_or_else(|| {
+        panic!(
+            "{} does not contain legacy asset {asset_name}",
+            source_path.display()
+        )
+    });
+    let records = json
+        .get("records")
+        .and_then(serde_json::Value::as_array)
+        .unwrap_or_else(|| panic!("{} records must be an array", source_path.display()));
+    let mut data = Vec::new();
+    for (expected_index, record) in records.iter().enumerate() {
+        let record = record.as_object().unwrap_or_else(|| {
+            panic!(
+                "{} record {expected_index} must be an object",
+                source_path.display()
+            )
+        });
+        let actual_index = record
+            .get("index")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_else(|| {
+                panic!(
+                    "{} record {expected_index} missing index",
+                    source_path.display()
+                )
+            });
+        assert_eq!(
+            actual_index as usize,
+            expected_index,
+            "{} record index mismatch",
+            source_path.display()
+        );
+        let value = record.get(field.field).unwrap_or_else(|| {
+            panic!(
+                "{} record {expected_index} missing {}",
+                source_path.display(),
+                field.field
+            )
+        });
+        if field.values_per_record == 1 {
+            push_navigation_value(&mut data, source_path, field, expected_index, 0, value);
+        } else {
+            let values = value.as_array().unwrap_or_else(|| {
+                panic!(
+                    "{} record {expected_index} {} must be an array",
+                    source_path.display(),
+                    field.field
+                )
+            });
+            if values.len() != field.values_per_record {
+                panic!(
+                    "{} record {expected_index} {} has {} values, expected {}",
+                    source_path.display(),
+                    field.field,
+                    values.len(),
+                    field.values_per_record
+                );
+            }
+            for (value_index, value) in values.iter().enumerate() {
+                push_navigation_value(
+                    &mut data,
+                    source_path,
+                    field,
+                    expected_index,
+                    value_index,
+                    value,
+                );
+            }
+        }
+    }
+    data
+}
+
+fn navigation_field(source_format: &str, asset_name: &str) -> Option<&'static NavigationField> {
+    let fields = match source_format {
+        FORMAT_DUNGEON_ENTRANCES => ENTRANCE_FIELDS,
+        FORMAT_STARTING_POINTS => STARTING_POINT_FIELDS,
+        FORMAT_OVERWORLD_EXITS => EXIT_FIELDS,
+        FORMAT_SPECIAL_EXITS => SPECIAL_EXIT_FIELDS,
+        _ => return None,
+    };
+    fields.iter().find(|field| field.asset == asset_name)
+}
+
+fn push_navigation_value(
+    data: &mut Vec<u8>,
+    source_path: &Path,
+    field: &NavigationField,
+    record_index: usize,
+    value_index: usize,
+    value: &serde_json::Value,
+) {
+    let value = value.as_i64().unwrap_or_else(|| {
+        panic!(
+            "{} record {record_index} {}[{value_index}] must be an integer",
+            source_path.display(),
+            field.field
+        )
+    });
+    match field.value_type {
+        "u8" => {
+            let value = u8::try_from(value).unwrap_or_else(|_| {
+                panic!(
+                    "{} record {record_index} {}[{value_index}] must be 0..255",
+                    source_path.display(),
+                    field.field
+                )
+            });
+            data.push(value);
+        }
+        "i8" => {
+            let value = i8::try_from(value).unwrap_or_else(|_| {
+                panic!(
+                    "{} record {record_index} {}[{value_index}] must be -128..127",
+                    source_path.display(),
+                    field.field
+                )
+            });
+            data.extend_from_slice(&value.to_le_bytes());
+        }
+        "u16" => {
+            let value = u16::try_from(value).unwrap_or_else(|_| {
+                panic!(
+                    "{} record {record_index} {}[{value_index}] must be 0..65535",
+                    source_path.display(),
+                    field.field
+                )
+            });
+            data.extend_from_slice(&value.to_le_bytes());
+        }
+        "i16" => {
+            let value = i16::try_from(value).unwrap_or_else(|_| {
+                panic!(
+                    "{} record {record_index} {}[{value_index}] must be -32768..32767",
+                    source_path.display(),
+                    field.field
+                )
+            });
+            data.extend_from_slice(&value.to_le_bytes());
+        }
+        other => panic!("unsupported navigation value type {other}"),
+    }
 }
 
 fn read_byte_stream_tilemap_json(source_path: &Path) -> Vec<u8> {

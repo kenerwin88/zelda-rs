@@ -8,6 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import extract_assets
+import navigation_json
 import palette_json
 import tilemap_json
 
@@ -120,6 +121,48 @@ class ExtractAssetSourcesTests(unittest.TestCase):
             self.assertEqual(
                 palette_json.bytes_from_palette(palette_json.read_palette_json(source_path)),
                 payload,
+            )
+
+    def test_writes_navigation_tables_as_grouped_json_sources(self) -> None:
+        assets = [
+            ("kEntranceData_rooms", (0x1234).to_bytes(2, "little")),
+            ("kEntranceData_relativeCoords", bytes([1, 2, 3, 4, 5, 6, 7, 8])),
+            ("kEntranceData_scrollX", (0).to_bytes(2, "little")),
+            ("kEntranceData_scrollY", (1).to_bytes(2, "little")),
+            ("kEntranceData_playerX", (2).to_bytes(2, "little")),
+            ("kEntranceData_playerY", (3).to_bytes(2, "little")),
+            ("kEntranceData_cameraX", (4).to_bytes(2, "little")),
+            ("kEntranceData_cameraY", (5).to_bytes(2, "little")),
+            ("kEntranceData_blockset", bytes([6])),
+            ("kEntranceData_floor", (-1).to_bytes(1, "little", signed=True)),
+            ("kEntranceData_palace", (-2).to_bytes(1, "little", signed=True)),
+            ("kEntranceData_doorwayOrientation", bytes([7])),
+            ("kEntranceData_startingBg", bytes([8])),
+            ("kEntranceData_quadrant1", bytes([9])),
+            ("kEntranceData_quadrant2", bytes([10])),
+            ("kEntranceData_doorSettings", (0x8000).to_bytes(2, "little")),
+            ("kEntranceData_musicTrack", bytes([11])),
+        ]
+
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            manifest = extract_assets.write_asset_outputs(out_dir, assets)
+
+            source_path = out_dir / "assets_src/navigation/dungeon_entrances.json"
+
+            self.assertTrue(source_path.is_file())
+            self.assertFalse((out_dir / "assets/000-kEntranceData_rooms.bin").exists())
+            self.assertEqual(
+                manifest[0]["source_format"], navigation_json.FORMAT_DUNGEON_ENTRANCES
+            )
+            self.assertEqual(
+                manifest[0]["source_file"],
+                "assets_src/navigation/dungeon_entrances.json",
+            )
+            source = navigation_json.read_navigation_json(source_path)
+            self.assertEqual(
+                navigation_json.bytes_for_asset(source, "kEntranceData_floor"),
+                (-1).to_bytes(1, "little", signed=True),
             )
 
     def test_keeps_unmigrated_assets_as_bin_files(self) -> None:

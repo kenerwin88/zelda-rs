@@ -76,6 +76,27 @@ class AssetSourceBuildTests(unittest.TestCase):
         self.assertFalse(hud_palette_bin.exists())
         self.assertEqual(len(palette_sources), 17)
 
+    def test_generated_assets_store_navigation_tables_as_grouped_json_sources(self) -> None:
+        if not GENERATED_ASSETS.is_dir():
+            self.skipTest(f"missing generated assets: {GENERATED_ASSETS}")
+
+        navigation_bins = []
+        for start, end in [(11, 45), (130, 156)]:
+            for index in range(start, end + 1):
+                navigation_bins.extend((GENERATED_ASSETS / "assets").glob(f"{index:03d}-*.bin"))
+        navigation_sources = sorted((GENERATED_ASSETS / "assets_src/navigation").glob("*.json"))
+
+        self.assertEqual(navigation_bins, [])
+        self.assertEqual(
+            [path.name for path in navigation_sources],
+            [
+                "dungeon_entrances.json",
+                "overworld_exits.json",
+                "special_exits.json",
+                "starting_points.json",
+            ],
+        )
+
     def test_ci_placeholder_assets_still_build(self) -> None:
         with TemporaryDirectory() as temp_dir:
             asset_dir = Path(temp_dir) / "ci-assets/zelda3_assets"

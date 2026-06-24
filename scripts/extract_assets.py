@@ -18,6 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import navigation_json
 import palette_json
 import tilemap_json
 
@@ -141,6 +142,47 @@ READABLE_ASSET_SOURCES = {
         "format": palette_json.FORMAT_SNES_PALETTE,
         "file": "assets_src/palettes/overworld_sprite_palettes.json",
     },
+}
+
+NAVIGATION_SOURCE_GROUPS = [
+    {
+        "format": navigation_json.FORMAT_DUNGEON_ENTRANCES,
+        "file": "assets_src/navigation/dungeon_entrances.json",
+        "asset_index_range": [11, 27],
+        "asset_names": [field[0] for field in navigation_json.ENTRANCE_FIELDS],
+        "source_from_assets": navigation_json.entrance_source_from_assets,
+        "source_kwargs": {"asset": "kEntranceData"},
+    },
+    {
+        "format": navigation_json.FORMAT_STARTING_POINTS,
+        "file": "assets_src/navigation/starting_points.json",
+        "asset_index_range": [28, 45],
+        "asset_names": [field[0] for field in navigation_json.STARTING_POINT_FIELDS],
+        "source_from_assets": navigation_json.starting_point_source_from_assets,
+        "source_kwargs": {},
+    },
+    {
+        "format": navigation_json.FORMAT_OVERWORLD_EXITS,
+        "file": "assets_src/navigation/overworld_exits.json",
+        "asset_index_range": [130, 142],
+        "asset_names": [field[0] for field in navigation_json.EXIT_FIELDS],
+        "source_from_assets": navigation_json.exit_source_from_assets,
+        "source_kwargs": {},
+    },
+    {
+        "format": navigation_json.FORMAT_SPECIAL_EXITS,
+        "file": "assets_src/navigation/special_exits.json",
+        "asset_index_range": [143, 156],
+        "asset_names": [field[0] for field in navigation_json.SPECIAL_EXIT_FIELDS],
+        "source_from_assets": navigation_json.special_exit_source_from_assets,
+        "source_kwargs": {},
+    },
+]
+
+NAVIGATION_ASSET_SOURCES = {
+    asset_name: group
+    for group in NAVIGATION_SOURCE_GROUPS
+    for asset_name in group["asset_names"]
 }
 
 
@@ -275,6 +317,46 @@ def write_asset_output(
     manifest_asset["source_file"] = source_file
     manifest_asset["source_format"] = source["format"]
     return manifest_asset
+
+
+def write_asset_outputs(out_dir: Path, assets: list[tuple[str, bytes]]) -> list[dict[str, object]]:
+    navigation_groups = {}
+    assets_by_name = dict(assets)
+    for group in NAVIGATION_SOURCE_GROUPS:
+        if all(asset_name in assets_by_name for asset_name in group["asset_names"]):
+            group_assets = {
+                asset_name: assets_by_name[asset_name]
+                for asset_name in group["asset_names"]
+            }
+            source = group["source_from_assets"](
+                group_assets,
+                asset_index_range=group["asset_index_range"],
+                **group["source_kwargs"],
+            )
+            source_file = str(group["file"])
+            navigation_json.write_navigation_json(out_dir / source_file, source)
+            navigation_groups[group["format"]] = source
+
+    manifest_assets = []
+    for index, (name, payload) in enumerate(assets):
+        group = NAVIGATION_ASSET_SOURCES.get(name)
+        if group is not None and group["format"] in navigation_groups:
+            source_file = str(group["file"])
+            manifest_assets.append(
+                {
+                    "index": index,
+                    "name": name,
+                    "size": len(payload),
+                    "sha1": hashlib.sha1(payload).hexdigest(),
+                    "source_file": source_file,
+                    "source_format": group["format"],
+                }
+            )
+            continue
+        manifest_assets.append(
+            write_asset_output(out_dir, index=index, name=name, payload=payload)
+        )
+    return manifest_assets
 
 
 def decomp_asset(data: bytes) -> bytes:
@@ -541,11 +623,7 @@ def main() -> int:
     signature_path.write_bytes(signature)
     key_signature_path.write_bytes(key_signature)
 
-    manifest_assets = []
-    for index, (name, payload) in enumerate(assets):
-        manifest_assets.append(
-            write_asset_output(out_dir, index=index, name=name, payload=payload)
-        )
+    manifest_assets = write_asset_outputs(out_dir, assets)
     previews = write_preview_images(out_dir, assets)
 
     manifest.write_text(
@@ -567,9 +645,15 @@ def main() -> int:
     )
     bin_count = sum(1 for asset in manifest_assets if "file" in asset)
     source_count = sum(1 for asset in manifest_assets if "source_file" in asset)
+    source_file_count = len(
+        {asset["source_file"] for asset in manifest_assets if "source_file" in asset}
+    )
     print(f"wrote {bin_count} binary asset files to {assets_dir}")
     if source_count:
-        print(f"wrote {source_count} readable asset sources to {out_dir / 'assets_src'}")
+        print(
+            f"wrote {source_count} readable asset entries "
+            f"across {source_file_count} source files to {out_dir / 'assets_src'}"
+        )
     if previews:
         print(f"wrote {len(previews)} PNG previews to {out_dir / 'images'}")
     print(f"wrote {manifest}")

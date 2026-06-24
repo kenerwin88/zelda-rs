@@ -36,6 +36,7 @@ Verify the migrated source pipeline with:
 ```sh
 python3 scripts/test_asset_source_build.py
 python3 scripts/test_extract_asset_sources.py
+python3 scripts/test_navigation_json.py
 python3 scripts/test_tilemap_json.py
 python3 scripts/test_palette_json.py
 ```
@@ -54,3 +55,19 @@ Palettes use the `zelda3_snes_palette_v1` schema:
   packing.
 - `colors[].rgb888` stores a readable preview color derived from that word.
 - `canonical_sha1` records the source binary hash from the extraction run.
+
+## Navigation Tables
+
+Entrance, starting point, overworld exit, and special exit tables are grouped by
+record instead of stored as parallel `.bin` arrays. During extraction, these
+assets are written under `generated/zelda3_assets/assets_src/navigation/`:
+
+- `dungeon_entrances.json` uses `zelda3_dungeon_entrances_v1`.
+- `starting_points.json` uses `zelda3_starting_points_v1`.
+- `overworld_exits.json` uses `zelda3_overworld_exits_v1`.
+- `special_exits.json` uses `zelda3_special_exits_v1`.
+
+Each record includes the legacy table fields as named JSON numbers. Signed
+legacy fields, such as dungeon `floor`/`palace`, exit `unk1`/`unk3`, and special
+exit `tab4` through `tab7`, are stored as signed JSON numbers and packed back
+to the original little-endian byte representation by the build script.
