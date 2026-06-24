@@ -18,6 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import palette_json
 import tilemap_json
 
 
@@ -71,6 +72,74 @@ READABLE_ASSET_SOURCES = {
     "kBgTilemap_5": {
         "format": tilemap_json.FORMAT_BYTE_STREAM_TILEMAP,
         "file": "assets_src/tilemaps/bg_tilemap_5.json",
+    },
+    "kPalette_DungBgMain": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/palette_dung_bg_main.json",
+    },
+    "kPalette_MainSpr": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/palette_main_spr.json",
+    },
+    "kPalette_ArmorAndGloves": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/palette_armor_and_gloves.json",
+    },
+    "kPalette_Sword": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/palette_sword.json",
+    },
+    "kPalette_Shield": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/palette_shield.json",
+    },
+    "kPalette_SpriteAux3": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/palette_sprite_aux3.json",
+    },
+    "kPalette_MiscSprite_Indoors": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/palette_misc_sprite_indoors.json",
+    },
+    "kPalette_SpriteAux1": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/palette_sprite_aux1.json",
+    },
+    "kPalette_OverworldBgMain": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/palette_overworld_bg_main.json",
+    },
+    "kPalette_OverworldBgAux12": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/palette_overworld_bg_aux12.json",
+    },
+    "kPalette_OverworldBgAux3": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/palette_overworld_bg_aux3.json",
+    },
+    "kPalette_PalaceMapBg": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/palette_palace_map_bg.json",
+    },
+    "kPalette_PalaceMapSpr": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/palette_palace_map_spr.json",
+    },
+    "kHudPalData": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/hud_pal_data.json",
+    },
+    "kOverworldMapPaletteData": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/overworld_map_palette_data.json",
+    },
+    "kOverworldBgPalettes": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/overworld_bg_palettes.json",
+    },
+    "kOverworldSpritePalettes": {
+        "format": palette_json.FORMAT_SNES_PALETTE,
+        "file": "assets_src/palettes/overworld_sprite_palettes.json",
     },
 }
 
@@ -188,6 +257,17 @@ def write_asset_output(
             asset=name,
             asset_index=index,
         )
+    elif source["format"] == palette_json.FORMAT_SNES_PALETTE:
+        palette = palette_json.palette_from_bytes(
+            payload,
+            asset=name,
+            asset_index=index,
+        )
+        source_file = str(source["file"])
+        palette_json.write_palette_json(out_dir / source_file, palette)
+        manifest_asset["source_file"] = source_file
+        manifest_asset["source_format"] = source["format"]
+        return manifest_asset
     else:
         raise RuntimeError(f"unsupported readable asset source format: {source['format']}")
     source_file = str(source["file"])

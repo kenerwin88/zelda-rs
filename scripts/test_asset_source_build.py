@@ -64,6 +64,18 @@ class AssetSourceBuildTests(unittest.TestCase):
             ],
         )
 
+    def test_generated_assets_store_all_palettes_as_json_sources(self) -> None:
+        if not GENERATED_ASSETS.is_dir():
+            self.skipTest(f"missing generated assets: {GENERATED_ASSETS}")
+
+        palette_bins = sorted((GENERATED_ASSETS / "assets").glob("*Palette*.bin"))
+        hud_palette_bin = GENERATED_ASSETS / "assets/092-kHudPalData.bin"
+        palette_sources = sorted((GENERATED_ASSETS / "assets_src/palettes").glob("*.json"))
+
+        self.assertEqual(palette_bins, [])
+        self.assertFalse(hud_palette_bin.exists())
+        self.assertEqual(len(palette_sources), 17)
+
     def test_ci_placeholder_assets_still_build(self) -> None:
         with TemporaryDirectory() as temp_dir:
             asset_dir = Path(temp_dir) / "ci-assets/zelda3_assets"

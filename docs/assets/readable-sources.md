@@ -37,4 +37,20 @@ Verify the migrated source pipeline with:
 python3 scripts/test_asset_source_build.py
 python3 scripts/test_extract_asset_sources.py
 python3 scripts/test_tilemap_json.py
+python3 scripts/test_palette_json.py
 ```
+
+## Palettes
+
+During ROM extraction, palette-like assets are also written as JSON sources
+under `generated/zelda3_assets/assets_src/palettes/`. This includes all assets
+with `Palette` in the generated name plus `kHudPalData`.
+
+Palettes use the `zelda3_snes_palette_v1` schema:
+
+- `asset` and `asset_index` identify the generated asset.
+- `color_encoding` records the raw encoding as SNES BGR555 little-endian.
+- `colors[].snes_bgr15` stores the exact 15-bit SNES color word used for
+  packing.
+- `colors[].rgb888` stores a readable preview color derived from that word.
+- `canonical_sha1` records the source binary hash from the extraction run.

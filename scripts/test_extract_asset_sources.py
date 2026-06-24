@@ -8,6 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import extract_assets
+import palette_json
 import tilemap_json
 
 
@@ -76,6 +77,48 @@ class ExtractAssetSourcesTests(unittest.TestCase):
             self.assertFalse((out_dir / "assets/099-kBgTilemap_0.bin").exists())
             self.assertEqual(
                 tilemap_json.bytes_from_tilemap(tilemap_json.read_tilemap_json(source_path)),
+                payload,
+            )
+
+    def test_writes_palettes_as_json_sources(self) -> None:
+        payload = bytes([0x00, 0x00, 0xFF, 0x7F])
+
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            manifest = extract_assets.write_asset_output(
+                out_dir,
+                index=80,
+                name="kPalette_MainSpr",
+                payload=payload,
+            )
+
+            source_path = out_dir / "assets_src/palettes/palette_main_spr.json"
+
+            self.assertEqual(manifest["source_format"], "zelda3_snes_palette_v1")
+            self.assertFalse((out_dir / "assets/080-kPalette_MainSpr.bin").exists())
+            self.assertEqual(
+                palette_json.bytes_from_palette(palette_json.read_palette_json(source_path)),
+                payload,
+            )
+
+    def test_writes_hud_palette_data_as_json_source(self) -> None:
+        payload = bytes([0x1F, 0x00, 0xE0, 0x03])
+
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            manifest = extract_assets.write_asset_output(
+                out_dir,
+                index=92,
+                name="kHudPalData",
+                payload=payload,
+            )
+
+            source_path = out_dir / "assets_src/palettes/hud_pal_data.json"
+
+            self.assertEqual(manifest["source_format"], "zelda3_snes_palette_v1")
+            self.assertFalse((out_dir / "assets/092-kHudPalData.bin").exists())
+            self.assertEqual(
+                palette_json.bytes_from_palette(palette_json.read_palette_json(source_path)),
                 payload,
             )
 

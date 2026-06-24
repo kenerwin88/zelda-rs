@@ -5,6 +5,7 @@ use std::process::Command;
 
 const FORMAT_BYTE_TILEMAP: &str = "zelda3_byte_tilemap_v1";
 const FORMAT_BYTE_STREAM_TILEMAP: &str = "zelda3_byte_stream_tilemap_v1";
+const FORMAT_SNES_PALETTE: &str = "zelda3_snes_palette_v1";
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -242,6 +243,71 @@ fn known_source(name: &str) -> Option<(&'static str, &'static str)> {
             FORMAT_BYTE_STREAM_TILEMAP,
             "assets_src/tilemaps/bg_tilemap_5.json",
         )),
+        "kPalette_DungBgMain" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/palette_dung_bg_main.json",
+        )),
+        "kPalette_MainSpr" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/palette_main_spr.json",
+        )),
+        "kPalette_ArmorAndGloves" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/palette_armor_and_gloves.json",
+        )),
+        "kPalette_Sword" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/palette_sword.json",
+        )),
+        "kPalette_Shield" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/palette_shield.json",
+        )),
+        "kPalette_SpriteAux3" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/palette_sprite_aux3.json",
+        )),
+        "kPalette_MiscSprite_Indoors" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/palette_misc_sprite_indoors.json",
+        )),
+        "kPalette_SpriteAux1" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/palette_sprite_aux1.json",
+        )),
+        "kPalette_OverworldBgMain" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/palette_overworld_bg_main.json",
+        )),
+        "kPalette_OverworldBgAux12" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/palette_overworld_bg_aux12.json",
+        )),
+        "kPalette_OverworldBgAux3" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/palette_overworld_bg_aux3.json",
+        )),
+        "kPalette_PalaceMapBg" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/palette_palace_map_bg.json",
+        )),
+        "kPalette_PalaceMapSpr" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/palette_palace_map_spr.json",
+        )),
+        "kHudPalData" => Some((FORMAT_SNES_PALETTE, "assets_src/palettes/hud_pal_data.json")),
+        "kOverworldMapPaletteData" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/overworld_map_palette_data.json",
+        )),
+        "kOverworldBgPalettes" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/overworld_bg_palettes.json",
+        )),
+        "kOverworldSpritePalettes" => Some((
+            FORMAT_SNES_PALETTE,
+            "assets_src/palettes/overworld_sprite_palettes.json",
+        )),
         _ => None,
     }
 }
@@ -252,6 +318,7 @@ fn read_source_asset(generated_dir: &Path, source_format: &str, source_file: &st
     match source_format {
         FORMAT_BYTE_TILEMAP => read_byte_tilemap_json(&source_path),
         FORMAT_BYTE_STREAM_TILEMAP => read_byte_stream_tilemap_json(&source_path),
+        FORMAT_SNES_PALETTE => read_snes_palette_json(&source_path),
         _ => panic!(
             "unsupported readable asset format {source_format} for {}",
             source_path.display()
@@ -310,6 +377,67 @@ fn read_byte_tilemap_json(source_path: &Path) -> Vec<u8> {
         }
     }
     data
+}
+
+fn read_snes_palette_json(source_path: &Path) -> Vec<u8> {
+    let text = fs::read_to_string(source_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", source_path.display()));
+    let json: serde_json::Value = serde_json::from_str(&text)
+        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", source_path.display()));
+    if json.get("format").and_then(serde_json::Value::as_str) != Some(FORMAT_SNES_PALETTE) {
+        panic!("{} is not a {FORMAT_SNES_PALETTE}", source_path.display());
+    }
+    let colors = json
+        .get("colors")
+        .and_then(serde_json::Value::as_array)
+        .unwrap_or_else(|| panic!("{} colors must be an array", source_path.display()));
+    let mut data = Vec::with_capacity(colors.len() * 2);
+    for (expected_index, color) in colors.iter().enumerate() {
+        let color = color.as_object().unwrap_or_else(|| {
+            panic!(
+                "{} color {expected_index} must be an object",
+                source_path.display()
+            )
+        });
+        let actual_index = color
+            .get("index")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_else(|| {
+                panic!(
+                    "{} color {expected_index} missing index",
+                    source_path.display()
+                )
+            });
+        assert_eq!(
+            actual_index as usize,
+            expected_index,
+            "{} color index mismatch",
+            source_path.display()
+        );
+        let word = color
+            .get("snes_bgr15")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_else(|| {
+                panic!(
+                    "{} color {expected_index} missing snes_bgr15",
+                    source_path.display()
+                )
+            });
+        let word = parse_snes_palette_word(source_path, expected_index, word);
+        data.extend_from_slice(&word.to_le_bytes());
+    }
+    data
+}
+
+fn parse_snes_palette_word(source_path: &Path, index: usize, word: &str) -> u16 {
+    let word = u16::from_str_radix(word.strip_prefix("0x").unwrap_or(word), 16)
+        .unwrap_or_else(|_| panic!("{} color {index} must be hex", source_path.display()));
+    assert!(
+        word <= 0x7fff,
+        "{} color {index} must be 0x0000..0x7fff",
+        source_path.display()
+    );
+    word
 }
 
 fn read_byte_stream_tilemap_json(source_path: &Path) -> Vec<u8> {
