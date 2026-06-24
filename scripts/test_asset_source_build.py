@@ -27,7 +27,7 @@ class AssetSourceBuildTests(unittest.TestCase):
             source_dir = asset_dir / "assets_src/tilemaps"
             source_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(
-                REPO / "assets_src/tilemaps/light_overworld_tilemap.json",
+                GENERATED_ASSETS / "assets_src/tilemaps/light_overworld_tilemap.json",
                 source_dir / "light_overworld_tilemap.json",
             )
 
