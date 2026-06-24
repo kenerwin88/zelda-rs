@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const FORMAT_BYTE_TILEMAP: &str = "zelda3_byte_tilemap_v1";
+const FORMAT_BYTE_STREAM_TILEMAP: &str = "zelda3_byte_stream_tilemap_v1";
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
@@ -195,8 +196,8 @@ fn read_asset(
     match fs::read(&bin_path) {
         Ok(asset) => asset,
         Err(bin_err) => {
-            if let Some(source_file) = known_source_file(name) {
-                read_source_asset(generated_dir, FORMAT_BYTE_TILEMAP, source_file)
+            if let Some((source_format, source_file)) = known_source(name) {
+                read_source_asset(generated_dir, source_format, source_file)
             } else {
                 panic!(
                     "failed to read generated asset {}: {bin_err}",
@@ -207,9 +208,40 @@ fn read_asset(
     }
 }
 
-fn known_source_file(name: &str) -> Option<&'static str> {
+fn known_source(name: &str) -> Option<(&'static str, &'static str)> {
     match name {
-        "kLightOverworldTilemap" => Some("assets_src/tilemaps/light_overworld_tilemap.json"),
+        "kLightOverworldTilemap" => Some((
+            FORMAT_BYTE_TILEMAP,
+            "assets_src/tilemaps/light_overworld_tilemap.json",
+        )),
+        "kDarkOverworldTilemap" => Some((
+            FORMAT_BYTE_TILEMAP,
+            "assets_src/tilemaps/dark_overworld_tilemap.json",
+        )),
+        "kBgTilemap_0" => Some((
+            FORMAT_BYTE_STREAM_TILEMAP,
+            "assets_src/tilemaps/bg_tilemap_0.json",
+        )),
+        "kBgTilemap_1" => Some((
+            FORMAT_BYTE_STREAM_TILEMAP,
+            "assets_src/tilemaps/bg_tilemap_1.json",
+        )),
+        "kBgTilemap_2" => Some((
+            FORMAT_BYTE_STREAM_TILEMAP,
+            "assets_src/tilemaps/bg_tilemap_2.json",
+        )),
+        "kBgTilemap_3" => Some((
+            FORMAT_BYTE_STREAM_TILEMAP,
+            "assets_src/tilemaps/bg_tilemap_3.json",
+        )),
+        "kBgTilemap_4" => Some((
+            FORMAT_BYTE_STREAM_TILEMAP,
+            "assets_src/tilemaps/bg_tilemap_4.json",
+        )),
+        "kBgTilemap_5" => Some((
+            FORMAT_BYTE_STREAM_TILEMAP,
+            "assets_src/tilemaps/bg_tilemap_5.json",
+        )),
         _ => None,
     }
 }
@@ -219,6 +251,7 @@ fn read_source_asset(generated_dir: &Path, source_format: &str, source_file: &st
     println!("cargo:rerun-if-changed={}", source_path.display());
     match source_format {
         FORMAT_BYTE_TILEMAP => read_byte_tilemap_json(&source_path),
+        FORMAT_BYTE_STREAM_TILEMAP => read_byte_stream_tilemap_json(&source_path),
         _ => panic!(
             "unsupported readable asset format {source_format} for {}",
             source_path.display()
@@ -277,6 +310,42 @@ fn read_byte_tilemap_json(source_path: &Path) -> Vec<u8> {
         }
     }
     data
+}
+
+fn read_byte_stream_tilemap_json(source_path: &Path) -> Vec<u8> {
+    let text = fs::read_to_string(source_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", source_path.display()));
+    let json: serde_json::Value = serde_json::from_str(&text)
+        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", source_path.display()));
+    if json.get("format").and_then(serde_json::Value::as_str) != Some(FORMAT_BYTE_STREAM_TILEMAP) {
+        panic!(
+            "{} is not a {FORMAT_BYTE_STREAM_TILEMAP}",
+            source_path.display()
+        );
+    }
+    let values = json
+        .get("values")
+        .and_then(serde_json::Value::as_array)
+        .unwrap_or_else(|| panic!("{} values must be an array", source_path.display()));
+    let mut data = Vec::new();
+    for value in values {
+        if let Some(chunk) = value.as_array() {
+            for value in chunk {
+                data.push(byte_stream_value(source_path, data.len(), value));
+            }
+        } else {
+            data.push(byte_stream_value(source_path, data.len(), value));
+        }
+    }
+    data
+}
+
+fn byte_stream_value(source_path: &Path, index: usize, value: &serde_json::Value) -> u8 {
+    let value = value
+        .as_u64()
+        .unwrap_or_else(|| panic!("{} value {index} must be 0..255", source_path.display()));
+    u8::try_from(value)
+        .unwrap_or_else(|_| panic!("{} value {index} must be 0..255", source_path.display()))
 }
 
 fn positive_usize(json: &serde_json::Value, key: &str, source_path: &Path) -> usize {

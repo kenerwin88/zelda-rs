@@ -42,6 +42,28 @@ class AssetSourceBuildTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout)
 
+    def test_generated_assets_store_all_tilemaps_as_json_sources(self) -> None:
+        if not GENERATED_ASSETS.is_dir():
+            self.skipTest(f"missing generated assets: {GENERATED_ASSETS}")
+
+        tilemap_bins = sorted((GENERATED_ASSETS / "assets").glob("*Tilemap*.bin"))
+        tilemap_sources = sorted((GENERATED_ASSETS / "assets_src/tilemaps").glob("*.json"))
+
+        self.assertEqual(tilemap_bins, [])
+        self.assertEqual(
+            [path.name for path in tilemap_sources],
+            [
+                "bg_tilemap_0.json",
+                "bg_tilemap_1.json",
+                "bg_tilemap_2.json",
+                "bg_tilemap_3.json",
+                "bg_tilemap_4.json",
+                "bg_tilemap_5.json",
+                "dark_overworld_tilemap.json",
+                "light_overworld_tilemap.json",
+            ],
+        )
+
     def test_ci_placeholder_assets_still_build(self) -> None:
         with TemporaryDirectory() as temp_dir:
             asset_dir = Path(temp_dir) / "ci-assets/zelda3_assets"

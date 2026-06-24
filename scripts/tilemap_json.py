@@ -11,6 +11,7 @@ from typing import Any
 
 
 FORMAT_BYTE_TILEMAP = "zelda3_byte_tilemap_v1"
+FORMAT_BYTE_STREAM_TILEMAP = "zelda3_byte_stream_tilemap_v1"
 
 
 def tilemap_from_bytes(
@@ -41,7 +42,26 @@ def tilemap_from_bytes(
     }
 
 
+def tilemap_stream_from_bytes(
+    data: bytes,
+    *,
+    asset: str,
+    asset_index: int,
+) -> dict[str, Any]:
+    return {
+        "format": FORMAT_BYTE_STREAM_TILEMAP,
+        "asset": asset,
+        "asset_index": asset_index,
+        "tile_value": "raw variable-length tilemap byte stream",
+        "canonical_sha1": hashlib.sha1(data).hexdigest(),
+        "values": list(data),
+    }
+
+
 def bytes_from_tilemap(tilemap: dict[str, Any]) -> bytes:
+    tilemap_format = tilemap.get("format")
+    if tilemap_format == FORMAT_BYTE_STREAM_TILEMAP:
+        return bytes_from_tilemap_stream(tilemap)
     require_value(tilemap, "format", FORMAT_BYTE_TILEMAP)
     width = require_int(tilemap, "width")
     height = require_int(tilemap, "height")
@@ -66,6 +86,32 @@ def bytes_from_tilemap(tilemap: dict[str, Any]) -> bytes:
     return bytes(data)
 
 
+def bytes_from_tilemap_stream(tilemap: dict[str, Any]) -> bytes:
+    values = require_list(tilemap, "values")
+    data = bytearray()
+    for index, value in enumerate(flatten_stream_values(values)):
+        append_stream_value(data, index, value)
+    return bytes(data)
+
+
+def flatten_stream_values(values: list[Any]) -> list[Any]:
+    flattened = []
+    for value in values:
+        if isinstance(value, list):
+            flattened.extend(value)
+        else:
+            flattened.append(value)
+    return flattened
+
+
+def append_stream_value(data: bytearray, index: int, value: Any) -> None:
+    if not isinstance(value, int):
+        raise ValueError(f"value {index} is {type(value).__name__}, expected int")
+    if value < 0 or value > 0xFF:
+        raise ValueError(f"value {index} is {value}, expected 0..255")
+    data.append(value)
+
+
 def read_tilemap_json(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf8") as f:
         payload = json.load(f)
@@ -80,6 +126,9 @@ def write_tilemap_json(path: Path, tilemap: dict[str, Any]) -> None:
 
 
 def format_tilemap_json(tilemap: dict[str, Any]) -> str:
+    if tilemap.get("format") == FORMAT_BYTE_STREAM_TILEMAP:
+        return format_stream_tilemap_json(tilemap)
+
     rows = require_list(tilemap, "rows")
     header = {key: value for key, value in tilemap.items() if key != "rows"}
     lines = ["{"]
@@ -90,6 +139,23 @@ def format_tilemap_json(tilemap: dict[str, Any]) -> str:
     for index, row in enumerate(rows):
         suffix = "," if index + 1 < len(rows) else ""
         lines.append(f"    {json.dumps(row)}{suffix}")
+    lines.append("  ]")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def format_stream_tilemap_json(tilemap: dict[str, Any]) -> str:
+    values = require_list(tilemap, "values")
+    header = {key: value for key, value in tilemap.items() if key != "values"}
+    lines = ["{"]
+    for key in sorted(header):
+        value = json.dumps(header[key], sort_keys=True)
+        lines.append(f'  "{key}": {value},')
+    lines.append('  "values": [')
+    for start in range(0, len(values), 32):
+        chunk = values[start : start + 32]
+        suffix = "," if start + 32 < len(values) else ""
+        lines.append(f"    {json.dumps(chunk)}{suffix}")
     lines.append("  ]")
     lines.append("}")
     return "\n".join(lines) + "\n"

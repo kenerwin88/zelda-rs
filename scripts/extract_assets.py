@@ -41,7 +41,37 @@ READABLE_ASSET_SOURCES = {
         "file": "assets_src/tilemaps/light_overworld_tilemap.json",
         "width": 64,
         "height": 64,
-    }
+    },
+    "kDarkOverworldTilemap": {
+        "format": tilemap_json.FORMAT_BYTE_TILEMAP,
+        "file": "assets_src/tilemaps/dark_overworld_tilemap.json",
+        "width": 32,
+        "height": 32,
+    },
+    "kBgTilemap_0": {
+        "format": tilemap_json.FORMAT_BYTE_STREAM_TILEMAP,
+        "file": "assets_src/tilemaps/bg_tilemap_0.json",
+    },
+    "kBgTilemap_1": {
+        "format": tilemap_json.FORMAT_BYTE_STREAM_TILEMAP,
+        "file": "assets_src/tilemaps/bg_tilemap_1.json",
+    },
+    "kBgTilemap_2": {
+        "format": tilemap_json.FORMAT_BYTE_STREAM_TILEMAP,
+        "file": "assets_src/tilemaps/bg_tilemap_2.json",
+    },
+    "kBgTilemap_3": {
+        "format": tilemap_json.FORMAT_BYTE_STREAM_TILEMAP,
+        "file": "assets_src/tilemaps/bg_tilemap_3.json",
+    },
+    "kBgTilemap_4": {
+        "format": tilemap_json.FORMAT_BYTE_STREAM_TILEMAP,
+        "file": "assets_src/tilemaps/bg_tilemap_4.json",
+    },
+    "kBgTilemap_5": {
+        "format": tilemap_json.FORMAT_BYTE_STREAM_TILEMAP,
+        "file": "assets_src/tilemaps/bg_tilemap_5.json",
+    },
 }
 
 
@@ -144,13 +174,22 @@ def write_asset_output(
         manifest_asset["file"] = f"assets/{file_name}"
         return manifest_asset
 
-    tilemap = tilemap_json.tilemap_from_bytes(
-        payload,
-        asset=name,
-        asset_index=index,
-        width=int(source["width"]),
-        height=int(source["height"]),
-    )
+    if source["format"] == tilemap_json.FORMAT_BYTE_TILEMAP:
+        tilemap = tilemap_json.tilemap_from_bytes(
+            payload,
+            asset=name,
+            asset_index=index,
+            width=int(source["width"]),
+            height=int(source["height"]),
+        )
+    elif source["format"] == tilemap_json.FORMAT_BYTE_STREAM_TILEMAP:
+        tilemap = tilemap_json.tilemap_stream_from_bytes(
+            payload,
+            asset=name,
+            asset_index=index,
+        )
+    else:
+        raise RuntimeError(f"unsupported readable asset source format: {source['format']}")
     source_file = str(source["file"])
     tilemap_json.write_tilemap_json(out_dir / source_file, tilemap)
     manifest_asset["source_file"] = source_file

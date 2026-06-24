@@ -37,8 +37,8 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 payload,
             )
 
-    def test_keeps_unmigrated_assets_as_bin_files(self) -> None:
-        payload = b"abc"
+    def test_writes_dark_overworld_tilemap_as_json_source(self) -> None:
+        payload = bytes(range(64)) * 16
 
         with TemporaryDirectory() as temp_dir:
             out_dir = Path(temp_dir)
@@ -49,10 +49,52 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 payload=payload,
             )
 
-            self.assertNotIn("source_format", manifest)
-            self.assertEqual(manifest["file"], "assets/068-kDarkOverworldTilemap.bin")
+            source_path = out_dir / "assets_src/tilemaps/dark_overworld_tilemap.json"
+
+            self.assertEqual(manifest["source_format"], "zelda3_byte_tilemap_v1")
+            self.assertFalse((out_dir / "assets/068-kDarkOverworldTilemap.bin").exists())
             self.assertEqual(
-                (out_dir / "assets/068-kDarkOverworldTilemap.bin").read_bytes(),
+                tilemap_json.bytes_from_tilemap(tilemap_json.read_tilemap_json(source_path)),
+                payload,
+            )
+
+    def test_writes_bg_tilemaps_as_json_sources(self) -> None:
+        payload = bytes([0x2A, 0x00, 0xFF, 0x80])
+
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            manifest = extract_assets.write_asset_output(
+                out_dir,
+                index=99,
+                name="kBgTilemap_0",
+                payload=payload,
+            )
+
+            source_path = out_dir / "assets_src/tilemaps/bg_tilemap_0.json"
+
+            self.assertEqual(manifest["source_format"], "zelda3_byte_stream_tilemap_v1")
+            self.assertFalse((out_dir / "assets/099-kBgTilemap_0.bin").exists())
+            self.assertEqual(
+                tilemap_json.bytes_from_tilemap(tilemap_json.read_tilemap_json(source_path)),
+                payload,
+            )
+
+    def test_keeps_unmigrated_assets_as_bin_files(self) -> None:
+        payload = b"abc"
+
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            manifest = extract_assets.write_asset_output(
+                out_dir,
+                index=69,
+                name="kPredefinedTileData",
+                payload=payload,
+            )
+
+            self.assertNotIn("source_format", manifest)
+            self.assertEqual(manifest["file"], "assets/069-kPredefinedTileData.bin")
+            self.assertEqual(
+                (out_dir / "assets/069-kPredefinedTileData.bin").read_bytes(),
                 payload,
             )
 
