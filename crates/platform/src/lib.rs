@@ -425,11 +425,6 @@ impl ApplicationHandler for NativeHandler {
                     if let Some(input) = key_to_host_menu_input(key, event.state) {
                         self.host_menu_inputs.push_back(input);
                     }
-                    if let Some(action) = presentation_hotkey_action(key, event.state) {
-                        if let Some(renderer) = &mut self.renderer {
-                            apply_presentation_hotkey(renderer, action);
-                        }
-                    }
                     handle_key_input_state_with_menu(
                         &mut self.input_state,
                         key,
@@ -464,6 +459,9 @@ fn key_to_host_menu_input(key: KeyCode, state: ElementState) -> Option<HostMenuI
     }
     match key {
         KeyCode::Escape => Some(HostMenuInput::Cancel),
+        KeyCode::F6 => Some(HostMenuInput::CyclePresentation),
+        KeyCode::F7 => Some(HostMenuInput::CycleLighting),
+        KeyCode::F8 => Some(HostMenuInput::CycleShadows),
         KeyCode::ArrowUp => Some(HostMenuInput::Up),
         KeyCode::ArrowDown => Some(HostMenuInput::Down),
         KeyCode::ArrowLeft => Some(HostMenuInput::Left),
@@ -590,36 +588,6 @@ fn key_to_input_bit(key: KeyCode) -> Option<u16> {
         KeyCode::KeyC | KeyCode::KeyQ => Some(1 << 10), // L
         KeyCode::KeyV | KeyCode::KeyW => Some(1 << 11), // R
         _ => None,
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PresentationHotkeyAction {
-    CyclePresentation,
-    CycleLighting,
-    CycleShadows,
-}
-
-fn presentation_hotkey_action(
-    key: KeyCode,
-    state: ElementState,
-) -> Option<PresentationHotkeyAction> {
-    if state != ElementState::Pressed {
-        return None;
-    }
-    match key {
-        KeyCode::F6 => Some(PresentationHotkeyAction::CyclePresentation),
-        KeyCode::F7 => Some(PresentationHotkeyAction::CycleLighting),
-        KeyCode::F8 => Some(PresentationHotkeyAction::CycleShadows),
-        _ => None,
-    }
-}
-
-fn apply_presentation_hotkey(renderer: &mut FrameRenderer, action: PresentationHotkeyAction) {
-    match action {
-        PresentationHotkeyAction::CyclePresentation => renderer.cycle_presentation_mode(),
-        PresentationHotkeyAction::CycleLighting => renderer.cycle_lighting_mode(),
-        PresentationHotkeyAction::CycleShadows => renderer.cycle_shadow_mode(),
     }
 }
 
@@ -957,25 +925,25 @@ mod tests {
     }
 
     #[test]
-    fn function_keys_map_to_presentation_hotkeys_only_on_press() {
+    fn function_keys_map_to_host_menu_shortcuts_only_on_press() {
         assert_eq!(
-            presentation_hotkey_action(KeyCode::F6, ElementState::Pressed),
-            Some(PresentationHotkeyAction::CyclePresentation)
+            key_to_host_menu_input(KeyCode::F6, ElementState::Pressed),
+            Some(HostMenuInput::CyclePresentation)
         );
         assert_eq!(
-            presentation_hotkey_action(KeyCode::F7, ElementState::Pressed),
-            Some(PresentationHotkeyAction::CycleLighting)
+            key_to_host_menu_input(KeyCode::F7, ElementState::Pressed),
+            Some(HostMenuInput::CycleLighting)
         );
         assert_eq!(
-            presentation_hotkey_action(KeyCode::F8, ElementState::Pressed),
-            Some(PresentationHotkeyAction::CycleShadows)
+            key_to_host_menu_input(KeyCode::F8, ElementState::Pressed),
+            Some(HostMenuInput::CycleShadows)
         );
         assert_eq!(
-            presentation_hotkey_action(KeyCode::F6, ElementState::Released),
+            key_to_host_menu_input(KeyCode::F6, ElementState::Released),
             None
         );
         assert_eq!(
-            presentation_hotkey_action(KeyCode::F5, ElementState::Pressed),
+            key_to_host_menu_input(KeyCode::F5, ElementState::Pressed),
             None
         );
     }

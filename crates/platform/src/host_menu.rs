@@ -20,6 +20,9 @@ pub enum HostMenuInput {
     Right,
     PreviousTab,
     NextTab,
+    CyclePresentation,
+    CycleLighting,
+    CycleShadows,
     Confirm,
     Cancel,
 }
@@ -236,6 +239,9 @@ impl HostMenuState {
                 self.next_tab();
                 None
             }
+            HostMenuInput::CyclePresentation => Some(self.cycle_presentation()),
+            HostMenuInput::CycleLighting => Some(self.cycle_lighting()),
+            HostMenuInput::CycleShadows => Some(self.cycle_shadows()),
             HostMenuInput::Cancel => {
                 if self.mode == HostMenuMode::InGame {
                     Some(HostMenuAction::Resume)
@@ -430,6 +436,32 @@ mod tests {
         assert_eq!(
             state.cycle_shadows(),
             HostMenuAction::SetShadows(ShadowChoice::Raycast)
+        );
+        assert_eq!(
+            state.runtime_settings(),
+            RuntimeSettings {
+                presentation: PresentationChoice::Sharp,
+                lighting: LightingChoice::Ambient,
+                shadows: ShadowChoice::Raycast,
+            }
+        );
+    }
+
+    #[test]
+    fn runtime_shortcut_inputs_cycle_shared_settings() {
+        let mut state = HostMenuState::new(HostMenuMode::InGame, Vec::new());
+
+        assert_eq!(
+            state.handle_input(HostMenuInput::CyclePresentation),
+            Some(HostMenuAction::SetPresentation(PresentationChoice::Sharp))
+        );
+        assert_eq!(
+            state.handle_input(HostMenuInput::CycleLighting),
+            Some(HostMenuAction::SetLighting(LightingChoice::Ambient))
+        );
+        assert_eq!(
+            state.handle_input(HostMenuInput::CycleShadows),
+            Some(HostMenuAction::SetShadows(ShadowChoice::Raycast))
         );
         assert_eq!(
             state.runtime_settings(),

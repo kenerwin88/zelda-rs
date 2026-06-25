@@ -1378,8 +1378,23 @@ fn run_play_with_state(mut game: ZeldaState) {
                         }
                     }
                 }
-            } else if matches!(input, HostMenuInput::Cancel) {
-                host_menu.open_ingame();
+            } else {
+                match input {
+                    HostMenuInput::Cancel => host_menu.open_ingame(),
+                    HostMenuInput::CyclePresentation
+                    | HostMenuInput::CycleLighting
+                    | HostMenuInput::CycleShadows => {
+                        if let Some(
+                            HostMenuAction::SetPresentation(_)
+                            | HostMenuAction::SetLighting(_)
+                            | HostMenuAction::SetShadows(_),
+                        ) = host_menu.handle_input(input)
+                        {
+                            frontend.apply_runtime_settings(host_menu.runtime_settings());
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
         if should_quit {

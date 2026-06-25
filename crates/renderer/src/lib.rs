@@ -160,9 +160,8 @@ impl LightingMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 enum ShadowMode {
-    Off,
-    Soft,
-    Raycast,
+    Off = 0,
+    Raycast = 2,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,7 +184,6 @@ impl ShadowMode {
 
     fn from_value(value: Option<&str>) -> Self {
         match value.map(|s| s.to_ascii_lowercase()) {
-            Some(value) if value == "soft" => Self::Soft,
             Some(value) if value == "raycast" => Self::Raycast,
             Some(value) if matches!(value.as_str(), "off" | "none") => Self::Off,
             Some(_) | None => Self::Off,
@@ -194,8 +192,7 @@ impl ShadowMode {
 
     fn next(self) -> Self {
         match self {
-            Self::Off => Self::Soft,
-            Self::Soft => Self::Raycast,
+            Self::Off => Self::Raycast,
             Self::Raycast => Self::Off,
         }
     }
@@ -295,7 +292,6 @@ impl PresentationNotice {
     fn show_shadows(&mut self, mode: ShadowMode) {
         self.show(match mode {
             ShadowMode::Off => 20,
-            ShadowMode::Soft => 21,
             ShadowMode::Raycast => 22,
         });
     }
@@ -2532,7 +2528,7 @@ mod tests {
         assert_eq!(LightingMode::from_value(Some("bogus")), LightingMode::Off);
 
         assert_eq!(ShadowMode::from_value(None), ShadowMode::Off);
-        assert_eq!(ShadowMode::from_value(Some("soft")), ShadowMode::Soft);
+        assert_eq!(ShadowMode::from_value(Some("soft")), ShadowMode::Off);
         assert_eq!(ShadowMode::from_value(Some("raycast")), ShadowMode::Raycast);
         assert_eq!(ShadowMode::from_value(Some("bogus")), ShadowMode::Off);
     }
@@ -2543,8 +2539,7 @@ mod tests {
         assert_eq!(LightingMode::Ambient.next(), LightingMode::Dynamic);
         assert_eq!(LightingMode::Dynamic.next(), LightingMode::Off);
 
-        assert_eq!(ShadowMode::Off.next(), ShadowMode::Soft);
-        assert_eq!(ShadowMode::Soft.next(), ShadowMode::Raycast);
+        assert_eq!(ShadowMode::Off.next(), ShadowMode::Raycast);
         assert_eq!(ShadowMode::Raycast.next(), ShadowMode::Off);
     }
 
@@ -2625,7 +2620,7 @@ mod tests {
             PresentationParams::new(
                 PresentationMode::Sharp,
                 LightingMode::Ambient,
-                ShadowMode::Soft,
+                ShadowMode::Raycast,
             )
         );
     }
@@ -2700,7 +2695,7 @@ mod tests {
         let params = PresentationParams::new(
             PresentationMode::Crt,
             LightingMode::Dynamic,
-            ShadowMode::Soft,
+            ShadowMode::Raycast,
         );
         let light = PresentationLight {
             x: 0.25,
@@ -2719,7 +2714,7 @@ mod tests {
         assert_eq!(bytes.len(), PRESENTATION_UNIFORM_BYTES);
         assert_eq!(u32::from_ne_bytes(bytes[0..4].try_into().unwrap()), 2);
         assert_eq!(u32::from_ne_bytes(bytes[4..8].try_into().unwrap()), 2);
-        assert_eq!(u32::from_ne_bytes(bytes[8..12].try_into().unwrap()), 1);
+        assert_eq!(u32::from_ne_bytes(bytes[8..12].try_into().unwrap()), 2);
         assert_eq!(u32::from_ne_bytes(bytes[12..16].try_into().unwrap()), 1);
         assert_eq!(u32::from_ne_bytes(bytes[16..20].try_into().unwrap()), 0);
         assert_eq!(f32::from_ne_bytes(bytes[32..36].try_into().unwrap()), 0.25);
