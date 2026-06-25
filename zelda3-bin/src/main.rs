@@ -18,7 +18,10 @@ use std::process;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use platform::{Frontend, NativeFrontend, NativeFrontendOptions};
+use platform::{
+    Frontend, HostMenuAction, HostMenuInput, HostMenuMode, HostMenuState, NativeFrontend,
+    NativeFrontendOptions,
+};
 use renderer::{
     scanlines_from_raw, BgLayerRegs, GpuFrame, Mode7Regs, ObjRegs, OffscreenRenderer,
     PresentationContext, ScanlineRegs,
@@ -1324,6 +1327,11 @@ fn run_play_with_state(mut game: ZeldaState) {
     let audio_channels = frontend.audio_channels();
     let mut audio = vec![0i16; audio_samples * audio_channels];
     let mut host_frame = 0u32;
+    let mut game_started = env::var_os("ZELDA3_SKIP_HOST_MENU").is_some();
+    let mut host_menu = HostMenuState::new(HostMenuMode::PreGame, Vec::new());
+    if game_started {
+        host_menu.close();
+    }
     let trace_live_input = env::var_os("ZELDA3_TRACE_LIVE_INPUT").is_some();
     let mut last_traced_live_input = (
         u16::MAX,
@@ -1341,7 +1349,44 @@ fn run_play_with_state(mut game: ZeldaState) {
     );
 
     while !frontend.quit_requested() {
-        let live_input = frontend.poll_input();
+        let live_input = frontend.poll_input_with_menu(host_menu.is_open());
+        let mut should_quit = false;
+        for input in frontend.drain_host_menu_inputs() {
+            if host_menu.is_open() {
+                if let Some(action) = host_menu.handle_input(input) {
+                    match action {
+                        HostMenuAction::Resume => host_menu.close(),
+                        HostMenuAction::StartQuest => {
+                            game_started = true;
+                            host_menu.close();
+                        }
+                        HostMenuAction::Quit | HostMenuAction::SaveAndQuit => {
+                            should_quit = true;
+                        }
+                        HostMenuAction::SetPresentation(_)
+                        | HostMenuAction::SetLighting(_)
+                        | HostMenuAction::SetShadows(_) => {
+                            frontend.apply_runtime_settings(host_menu.runtime_settings());
+                        }
+                        HostMenuAction::WarpToVerifiedDestination(id) => {
+                            eprintln!("developer destination selected: {id}");
+                        }
+                    }
+                }
+            } else if matches!(input, HostMenuInput::Cancel) {
+                host_menu.open_ingame();
+            }
+        }
+        if should_quit {
+            break;
+        }
+        if host_menu.is_open() {
+            frontend.present_menu_overlay(&host_menu);
+            continue;
+        }
+        if !game_started {
+            game_started = true;
+        }
         let run_what = select_run_what(&game.ram);
         let pre_frame_game = game.clone();
         let mut crash_stage = "run_frame";
@@ -1404,6 +1449,64 @@ fn run_play_with_state(mut game: ZeldaState) {
         host_frame = host_frame.wrapping_add(1);
     }
     game.zelda_write_sram();
+}
+
+#[cfg(test)]
+fn apply_host_menu_action_for_test(
+    menu: &mut HostMenuState,
+    action: HostMenuAction,
+    should_start: &mut bool,
+    should_quit: &mut bool,
+) {
+    match action {
+        HostMenuAction::Resume => menu.close(),
+        HostMenuAction::StartQuest => {
+            *should_start = true;
+            menu.close();
+        }
+        HostMenuAction::Quit | HostMenuAction::SaveAndQuit => *should_quit = true,
+        HostMenuAction::SetPresentation(_)
+        | HostMenuAction::SetLighting(_)
+        | HostMenuAction::SetShadows(_)
+        | HostMenuAction::WarpToVerifiedDestination(_) => {}
+    }
+}
+
+#[cfg(test)]
+mod host_menu_play_tests {
+    use super::*;
+
+    #[test]
+    fn menu_resume_action_closes_ingame_menu() {
+        let mut menu = HostMenuState::new(HostMenuMode::InGame, Vec::new());
+        let mut should_quit = false;
+        let mut should_start = false;
+        apply_host_menu_action_for_test(
+            &mut menu,
+            HostMenuAction::Resume,
+            &mut should_start,
+            &mut should_quit,
+        );
+        assert!(!menu.is_open());
+        assert!(!should_start);
+        assert!(!should_quit);
+    }
+
+    #[test]
+    fn menu_start_action_closes_pregame_menu_and_starts_game() {
+        let mut menu = HostMenuState::new(HostMenuMode::PreGame, Vec::new());
+        let mut should_quit = false;
+        let mut should_start = false;
+        apply_host_menu_action_for_test(
+            &mut menu,
+            HostMenuAction::StartQuest,
+            &mut should_start,
+            &mut should_quit,
+        );
+        assert!(!menu.is_open());
+        assert!(should_start);
+        assert!(!should_quit);
+    }
 }
 
 fn run_replay_save(args: &[String]) {
