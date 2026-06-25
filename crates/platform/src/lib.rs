@@ -247,6 +247,28 @@ impl NativeFrontend {
         }
     }
 
+    pub fn apply_runtime_settings(&mut self, settings: RuntimeSettings) {
+        let renderer_settings = renderer::RendererRuntimeSettings {
+            presentation: match settings.presentation {
+                PresentationChoice::Off => renderer::RendererPresentationChoice::Off,
+                PresentationChoice::Sharp => renderer::RendererPresentationChoice::Sharp,
+                PresentationChoice::Crt => renderer::RendererPresentationChoice::Crt,
+            },
+            lighting: match settings.lighting {
+                LightingChoice::Off => renderer::RendererLightingChoice::Off,
+                LightingChoice::Ambient => renderer::RendererLightingChoice::Ambient,
+                LightingChoice::Dynamic => renderer::RendererLightingChoice::Dynamic,
+            },
+            shadows: match settings.shadows {
+                ShadowChoice::Off => renderer::RendererShadowChoice::Off,
+                ShadowChoice::Raycast => renderer::RendererShadowChoice::Raycast,
+            },
+        };
+        if let Some(renderer) = &mut self.handler.renderer {
+            renderer.apply_runtime_settings(renderer_settings);
+        }
+    }
+
     fn sleep_after_present(&mut self) {
         // Frame pacing — function name and increment text must match exactly;
         // scripts/test_standard_replay_parity.py greps for both literals.

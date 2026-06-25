@@ -89,6 +89,13 @@ enum PresentationMode {
     Crt,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RendererPresentationChoice {
+    Off,
+    Sharp,
+    Crt,
+}
+
 impl PresentationMode {
     fn from_env() -> Self {
         Self::from_value(env::var("ZELDA3_PRESENTATION").ok().as_deref())
@@ -115,6 +122,13 @@ impl PresentationMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 enum LightingMode {
+    Off,
+    Ambient,
+    Dynamic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RendererLightingChoice {
     Off,
     Ambient,
     Dynamic,
@@ -149,6 +163,19 @@ enum ShadowMode {
     Off,
     Soft,
     Raycast,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RendererShadowChoice {
+    Off,
+    Raycast,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RendererRuntimeSettings {
+    pub presentation: RendererPresentationChoice,
+    pub lighting: RendererLightingChoice,
+    pub shadows: RendererShadowChoice,
 }
 
 impl ShadowMode {
@@ -196,6 +223,25 @@ impl PresentationParams {
             lighting,
             shadows,
         }
+    }
+
+    fn from_runtime_settings(settings: RendererRuntimeSettings) -> Self {
+        Self::new(
+            match settings.presentation {
+                RendererPresentationChoice::Off => PresentationMode::Off,
+                RendererPresentationChoice::Sharp => PresentationMode::Sharp,
+                RendererPresentationChoice::Crt => PresentationMode::Crt,
+            },
+            match settings.lighting {
+                RendererLightingChoice::Off => LightingMode::Off,
+                RendererLightingChoice::Ambient => LightingMode::Ambient,
+                RendererLightingChoice::Dynamic => LightingMode::Dynamic,
+            },
+            match settings.shadows {
+                RendererShadowChoice::Off => ShadowMode::Off,
+                RendererShadowChoice::Raycast => ShadowMode::Raycast,
+            },
+        )
     }
 
     fn cycle_presentation(&mut self) {
@@ -1359,6 +1405,16 @@ impl FrameRenderer {
         self.write_cpu_presentation_params();
     }
 
+    pub fn apply_runtime_settings(&mut self, settings: RendererRuntimeSettings) {
+        let next = PresentationParams::from_runtime_settings(settings);
+        let presentation_changed = self.presentation_params.presentation != next.presentation;
+        self.presentation_params = next;
+        if presentation_changed {
+            self.rebuild_presentation_bind_groups();
+        }
+        self.write_cpu_presentation_params();
+    }
+
     fn write_cpu_presentation_params(&self) {
         let bytes = build_presentation_uniform_bytes_with_notice(
             self.presentation_params,
@@ -2159,6 +2215,19 @@ mod tests {
             .as_words(),
             [2, 2, 2, 0]
         );
+    }
+
+    #[test]
+    fn runtime_settings_map_to_renderer_presentation_params() {
+        let settings = RendererRuntimeSettings {
+            presentation: RendererPresentationChoice::Crt,
+            lighting: RendererLightingChoice::Dynamic,
+            shadows: RendererShadowChoice::Raycast,
+        };
+        let params = PresentationParams::from_runtime_settings(settings);
+        assert_eq!(params.presentation, PresentationMode::Crt);
+        assert_eq!(params.lighting, LightingMode::Dynamic);
+        assert_eq!(params.shadows, ShadowMode::Raycast);
     }
 
     #[test]
