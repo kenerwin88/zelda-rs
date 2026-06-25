@@ -231,6 +231,9 @@ impl NativeFrontend {
         if open {
             self.handler.input_state = 0;
         }
+        if let Some(audio) = &mut self.audio {
+            audio.set_volume_scale(if open { 0.35 } else { 1.0 });
+        }
     }
 
     pub fn drain_host_menu_inputs(&mut self) -> Vec<HostMenuInput> {
@@ -734,6 +737,7 @@ fn env_flag_option(value: Option<OsString>) -> Option<bool> {
 
 struct AudioOutput {
     queue: Arc<Mutex<VecDeque<i16>>>,
+    volume_scale: Arc<Mutex<f32>>,
     stream: cpal::Stream,
     sample_rate: u32,
     channels: u16,
@@ -756,20 +760,31 @@ impl AudioOutput {
             buffer_size: cpal::BufferSize::Default,
         };
         let queue = Arc::new(Mutex::new(VecDeque::new()));
+        let volume_scale = Arc::new(Mutex::new(1.0));
         let stream = match supported.sample_format() {
-            cpal::SampleFormat::I16 => {
-                build_output_stream::<i16>(&device, &config, Arc::clone(&queue))?
-            }
-            cpal::SampleFormat::U16 => {
-                build_output_stream::<u16>(&device, &config, Arc::clone(&queue))?
-            }
-            cpal::SampleFormat::F32 => {
-                build_output_stream::<f32>(&device, &config, Arc::clone(&queue))?
-            }
+            cpal::SampleFormat::I16 => build_output_stream::<i16>(
+                &device,
+                &config,
+                Arc::clone(&queue),
+                Arc::clone(&volume_scale),
+            )?,
+            cpal::SampleFormat::U16 => build_output_stream::<u16>(
+                &device,
+                &config,
+                Arc::clone(&queue),
+                Arc::clone(&volume_scale),
+            )?,
+            cpal::SampleFormat::F32 => build_output_stream::<f32>(
+                &device,
+                &config,
+                Arc::clone(&queue),
+                Arc::clone(&volume_scale),
+            )?,
             other => return Err(format!("unsupported audio sample format {other:?}")),
         };
         Ok(Self {
             queue,
+            volume_scale,
             stream,
             sample_rate,
             channels,
@@ -790,6 +805,12 @@ impl AudioOutput {
         }
     }
 
+    fn set_volume_scale(&mut self, scale: f32) {
+        if let Ok(mut value) = self.volume_scale.lock() {
+            *value = scale.clamp(0.0, 1.0);
+        }
+    }
+
     fn queued_bytes(&self) -> u32 {
         self.queue
             .lock()
@@ -802,6 +823,7 @@ fn build_output_stream<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
     queue: Arc<Mutex<VecDeque<i16>>>,
+    volume_scale: Arc<Mutex<f32>>,
 ) -> Result<cpal::Stream, String>
 where
     T: cpal::Sample + cpal::SizedSample + FromI16,
@@ -811,8 +833,9 @@ where
             config,
             move |data: &mut [T], _| {
                 if let Ok(mut queue) = queue.lock() {
+                    let scale = volume_scale.lock().map(|value| *value).unwrap_or(1.0);
                     for sample in data {
-                        let value = queue.pop_front().unwrap_or(0);
+                        let value = scale_i16_sample(queue.pop_front().unwrap_or(0), scale);
                         *sample = T::from_i16(value);
                     }
                 } else {
@@ -825,6 +848,11 @@ where
             None,
         )
         .map_err(|e| e.to_string())
+}
+
+fn scale_i16_sample(sample: i16, scale: f32) -> i16 {
+    let scaled = (sample as f32 * scale).round();
+    scaled.clamp(i16::MIN as f32, i16::MAX as f32) as i16
 }
 
 trait FromI16 {
@@ -919,6 +947,13 @@ mod tests {
             false,
         );
         assert_eq!(input_state, 1 << 5);
+    }
+
+    #[test]
+    fn audio_ducking_scales_i16_samples() {
+        assert_eq!(scale_i16_sample(10_000, 0.25), 2_500);
+        assert_eq!(scale_i16_sample(-10_000, 0.25), -2_500);
+        assert_eq!(scale_i16_sample(i16::MAX, 2.0), i16::MAX);
     }
 
     #[test]
