@@ -3,6 +3,7 @@
 .codegraph/
 .cursor/
 .claude/
+.superpowers/
 **/*.rs.bk
 Cargo.lock.bak
 __pycache__/
