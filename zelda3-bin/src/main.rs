@@ -5,6 +5,8 @@
 //! `--lockstep` keeps the C-oracle comparison path available for parity work,
 //! while `--headless` preserves the raw opcode-budget emulator harness.
 
+mod developer_destinations;
+
 use std::backtrace::Backtrace;
 use std::env;
 use std::error::Error;
@@ -1328,7 +1330,10 @@ fn run_play_with_state(mut game: ZeldaState) {
     let mut audio = vec![0i16; audio_samples * audio_channels];
     let mut host_frame = 0u32;
     let mut game_started = env::var_os("ZELDA3_SKIP_HOST_MENU").is_some();
-    let mut host_menu = HostMenuState::new(HostMenuMode::PreGame, Vec::new());
+    let mut host_menu = HostMenuState::new(
+        HostMenuMode::PreGame,
+        developer_destinations::developer_destinations(),
+    );
     if game_started {
         host_menu.close();
     }
