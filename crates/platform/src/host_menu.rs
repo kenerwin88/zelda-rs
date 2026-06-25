@@ -128,6 +128,7 @@ impl DeveloperDestination {
 pub enum HostMenuAction {
     StartQuest,
     Resume,
+    Quit,
     SaveAndQuit,
     SetPresentation(PresentationChoice),
     SetLighting(LightingChoice),
@@ -189,6 +190,21 @@ impl HostMenuState {
         self.runtime_settings
     }
 
+    pub fn cycle_presentation(&mut self) -> HostMenuAction {
+        self.runtime_settings.presentation = self.runtime_settings.presentation.next();
+        HostMenuAction::SetPresentation(self.runtime_settings.presentation)
+    }
+
+    pub fn cycle_lighting(&mut self) -> HostMenuAction {
+        self.runtime_settings.lighting = self.runtime_settings.lighting.next();
+        HostMenuAction::SetLighting(self.runtime_settings.lighting)
+    }
+
+    pub fn cycle_shadows(&mut self) -> HostMenuAction {
+        self.runtime_settings.shadows = self.runtime_settings.shadows.next();
+        HostMenuAction::SetShadows(self.runtime_settings.shadows)
+    }
+
     pub fn selected_label(&self) -> &'static str {
         match self.active_tab {
             HostMenuTab::Play => self.play_items()[self.selected_index],
@@ -248,24 +264,14 @@ impl HostMenuState {
                     self.set_active_tab(HostMenuTab::DeveloperMap);
                     None
                 }
-                (_, 4) => Some(HostMenuAction::SaveAndQuit),
+                (HostMenuMode::PreGame, 4) => Some(HostMenuAction::Quit),
+                (HostMenuMode::InGame, 4) => Some(HostMenuAction::SaveAndQuit),
                 _ => None,
             },
             HostMenuTab::Video => match self.selected_index {
-                0 => {
-                    self.runtime_settings.presentation = self.runtime_settings.presentation.next();
-                    Some(HostMenuAction::SetPresentation(
-                        self.runtime_settings.presentation,
-                    ))
-                }
-                1 => {
-                    self.runtime_settings.lighting = self.runtime_settings.lighting.next();
-                    Some(HostMenuAction::SetLighting(self.runtime_settings.lighting))
-                }
-                2 => {
-                    self.runtime_settings.shadows = self.runtime_settings.shadows.next();
-                    Some(HostMenuAction::SetShadows(self.runtime_settings.shadows))
-                }
+                0 => Some(self.cycle_presentation()),
+                1 => Some(self.cycle_lighting()),
+                2 => Some(self.cycle_shadows()),
                 _ => None,
             },
             HostMenuTab::Controls => None,
@@ -406,6 +412,79 @@ mod tests {
         assert_eq!(
             state.runtime_settings().presentation,
             PresentationChoice::Sharp
+        );
+    }
+
+    #[test]
+    fn direct_runtime_setting_api_cycles_each_setting() {
+        let mut state = HostMenuState::new(HostMenuMode::InGame, Vec::new());
+
+        assert_eq!(
+            state.cycle_presentation(),
+            HostMenuAction::SetPresentation(PresentationChoice::Sharp)
+        );
+        assert_eq!(
+            state.cycle_lighting(),
+            HostMenuAction::SetLighting(LightingChoice::Ambient)
+        );
+        assert_eq!(
+            state.cycle_shadows(),
+            HostMenuAction::SetShadows(ShadowChoice::Raycast)
+        );
+        assert_eq!(
+            state.runtime_settings(),
+            RuntimeSettings {
+                presentation: PresentationChoice::Sharp,
+                lighting: LightingChoice::Ambient,
+                shadows: ShadowChoice::Raycast,
+            }
+        );
+    }
+
+    #[test]
+    fn video_menu_confirmation_matches_direct_runtime_setting_api() {
+        let mut menu_state = HostMenuState::new(HostMenuMode::InGame, Vec::new());
+        let mut direct_state = HostMenuState::new(HostMenuMode::InGame, Vec::new());
+        menu_state.set_active_tab(HostMenuTab::Video);
+
+        assert_eq!(
+            menu_state.handle_input(HostMenuInput::Confirm),
+            Some(direct_state.cycle_presentation())
+        );
+        assert_eq!(menu_state.runtime_settings(), direct_state.runtime_settings());
+
+        menu_state.handle_input(HostMenuInput::Down);
+        assert_eq!(
+            menu_state.handle_input(HostMenuInput::Confirm),
+            Some(direct_state.cycle_lighting())
+        );
+        assert_eq!(menu_state.runtime_settings(), direct_state.runtime_settings());
+
+        menu_state.handle_input(HostMenuInput::Down);
+        assert_eq!(
+            menu_state.handle_input(HostMenuInput::Confirm),
+            Some(direct_state.cycle_shadows())
+        );
+        assert_eq!(menu_state.runtime_settings(), direct_state.runtime_settings());
+    }
+
+    #[test]
+    fn pregame_quit_uses_distinct_action_from_ingame_save_and_quit() {
+        let mut pregame = HostMenuState::new(HostMenuMode::PreGame, Vec::new());
+        let mut ingame = HostMenuState::new(HostMenuMode::InGame, Vec::new());
+
+        for _ in 0..4 {
+            pregame.handle_input(HostMenuInput::Down);
+            ingame.handle_input(HostMenuInput::Down);
+        }
+
+        assert_eq!(
+            pregame.handle_input(HostMenuInput::Confirm),
+            Some(HostMenuAction::Quit)
+        );
+        assert_eq!(
+            ingame.handle_input(HostMenuInput::Confirm),
+            Some(HostMenuAction::SaveAndQuit)
         );
     }
 
