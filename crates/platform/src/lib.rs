@@ -28,6 +28,12 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
 use winit::window::{Fullscreen, Window, WindowAttributes, WindowId};
 
+pub mod host_menu;
+pub use host_menu::{
+    DeveloperDestination, DeveloperDestinationStatus, HostMenuAction, HostMenuInput, HostMenuMode,
+    HostMenuState, HostMenuTab, LightingChoice, PresentationChoice, RuntimeSettings, ShadowChoice,
+};
+
 // ── Frontend trait ────────────────────────────────────────────────────────────
 
 pub trait Frontend {
