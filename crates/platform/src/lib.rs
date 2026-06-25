@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use gilrs::{Axis, Button, Event, EventType, Gilrs};
-use renderer::{FrameRenderer, GpuFrame, RenderError};
+use renderer::{FrameRenderer, GpuFrame, PresentationContext, RenderError};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, WindowEvent};
@@ -195,8 +195,16 @@ impl NativeFrontend {
     }
 
     pub fn present_gpu_frame(&mut self, frame: &GpuFrame<'_>) {
+        self.present_gpu_frame_with_context(frame, PresentationContext::default());
+    }
+
+    pub fn present_gpu_frame_with_context(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        context: PresentationContext,
+    ) {
         if let Some(renderer) = &mut self.handler.renderer {
-            match renderer.render_gpu_frame(frame) {
+            match renderer.render_gpu_frame_with_context(frame, context) {
                 Ok(()) => {}
                 Err(RenderError::SurfaceReconfigureNeeded) => {
                     if let Some(window) = &self.handler.window {
@@ -336,6 +344,11 @@ impl ApplicationHandler for NativeHandler {
                         self.quit = true;
                         event_loop.exit();
                     }
+                    if let Some(action) = presentation_hotkey_action(key, event.state) {
+                        if let Some(renderer) = &mut self.renderer {
+                            apply_presentation_hotkey(renderer, action);
+                        }
+                    }
                     handle_key_input_state(&mut self.input_state, key, event.state);
                 }
             }
@@ -374,6 +387,36 @@ fn key_to_input_bit(key: KeyCode) -> Option<u16> {
         KeyCode::KeyC | KeyCode::KeyQ => Some(1 << 10), // L
         KeyCode::KeyV | KeyCode::KeyW => Some(1 << 11), // R
         _ => None,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PresentationHotkeyAction {
+    CyclePresentation,
+    CycleLighting,
+    CycleShadows,
+}
+
+fn presentation_hotkey_action(
+    key: KeyCode,
+    state: ElementState,
+) -> Option<PresentationHotkeyAction> {
+    if state != ElementState::Pressed {
+        return None;
+    }
+    match key {
+        KeyCode::F6 => Some(PresentationHotkeyAction::CyclePresentation),
+        KeyCode::F7 => Some(PresentationHotkeyAction::CycleLighting),
+        KeyCode::F8 => Some(PresentationHotkeyAction::CycleShadows),
+        _ => None,
+    }
+}
+
+fn apply_presentation_hotkey(renderer: &mut FrameRenderer, action: PresentationHotkeyAction) {
+    match action {
+        PresentationHotkeyAction::CyclePresentation => renderer.cycle_presentation_mode(),
+        PresentationHotkeyAction::CycleLighting => renderer.cycle_lighting_mode(),
+        PresentationHotkeyAction::CycleShadows => renderer.cycle_shadow_mode(),
     }
 }
 
@@ -645,6 +688,30 @@ mod tests {
         assert_ne!(input_state, 0);
         handle_focus_input_state(&mut input_state, false);
         assert_eq!(input_state, 0);
+    }
+
+    #[test]
+    fn function_keys_map_to_presentation_hotkeys_only_on_press() {
+        assert_eq!(
+            presentation_hotkey_action(KeyCode::F6, ElementState::Pressed),
+            Some(PresentationHotkeyAction::CyclePresentation)
+        );
+        assert_eq!(
+            presentation_hotkey_action(KeyCode::F7, ElementState::Pressed),
+            Some(PresentationHotkeyAction::CycleLighting)
+        );
+        assert_eq!(
+            presentation_hotkey_action(KeyCode::F8, ElementState::Pressed),
+            Some(PresentationHotkeyAction::CycleShadows)
+        );
+        assert_eq!(
+            presentation_hotkey_action(KeyCode::F6, ElementState::Released),
+            None
+        );
+        assert_eq!(
+            presentation_hotkey_action(KeyCode::F5, ElementState::Pressed),
+            None
+        );
     }
 
     #[test]

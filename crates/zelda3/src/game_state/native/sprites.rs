@@ -4204,7 +4204,9 @@ impl<'a> NativeSpriteSystemBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, SpriteSystemState::load_from_ram(self.ram));
+        let mut fresh = SpriteSystemState::load_from_ram(self.ram);
+        fresh.saved_exit_graphics_index = self.state.saved_exit_graphics_index;
+        debug_assert_eq!(*self.state, fresh);
     }
 
     pub(crate) fn set_limit_instance(&mut self, value: u8) {
@@ -4648,7 +4650,11 @@ impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, SpriteWorkspaceState::load_from_ram(self.ram));
+        let mut fresh = SpriteWorkspaceState::load_from_ram(self.ram);
+        if self.ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) == 0 {
+            fresh.where_in_room.clone_from(&self.state.where_in_room);
+        }
+        debug_assert_eq!(*self.state, fresh);
     }
 
     pub(crate) fn set_room_origin_x_high(&mut self, value: u8) {

@@ -140,6 +140,39 @@ fn native_follower_link_bridge_refreshes_projection_before_dual_writes() {
 }
 
 #[test]
+fn native_follower_link_reset_properties_c_clears_defense_flags_in_ram() {
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[PLAYER_DEFENSE_FLAGS] = 2;
+    ram[LINK_POSE_FOR_ITEM] = 1;
+    let mut link = FollowerLinkState::load_from_ram(&ram);
+
+    {
+        let mut bridge = NativeFollowerLinkBridgeMut::new(&mut link, &mut ram);
+        bridge.reset_properties_c_fields();
+    }
+
+    assert_eq!(link.defense_flags(), 0);
+    assert_eq!(ram[PLAYER_DEFENSE_FLAGS], 0);
+    assert_eq!(link.item_hold_pose(), 0);
+    assert_eq!(ram[LINK_POSE_FOR_ITEM], 0);
+}
+
+#[test]
+fn native_follower_link_finish_action_initialization_clears_item_hold_pose_in_state() {
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[LINK_POSE_FOR_ITEM] = 1;
+    let mut link = FollowerLinkState::load_from_ram(&ram);
+
+    {
+        let mut bridge = NativeFollowerLinkBridgeMut::new(&mut link, &mut ram);
+        bridge.finish_link_action_state_initialization();
+    }
+
+    assert_eq!(link.item_hold_pose(), 0);
+    assert_eq!(ram[LINK_POSE_FOR_ITEM], 0);
+}
+
+#[test]
 fn native_follower_link_bridge_disables_both_oam_offsets() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[PLAYER_OAM_X_OFFSET] = 0x11;

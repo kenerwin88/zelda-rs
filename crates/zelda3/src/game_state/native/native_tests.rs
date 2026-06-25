@@ -4,7 +4,7 @@ use super::display::{
 };
 use super::dungeon::{
     DungeonDoorState, DungeonEntranceBackupState, DungeonHeaderState, DungeonRoomDoorSetupState,
-    DungeonScratchWordState,
+    DungeonScratchWordState, DungeonTorchState,
 };
 use super::effects;
 use super::effects::{

@@ -3538,6 +3538,7 @@ impl FollowerLinkState {
         self.defense_flags = 0;
         self.action_handler_timer = 0;
         self.sprite_damage_disabled = 0;
+        self.item_hold_pose = 0;
         self.ancilla_pickup_flag = 0;
         self.sprite_pickup_flag = 0;
         self.clear_pull_for_rupees_sprite_need();
@@ -6782,6 +6783,7 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.ram[LINK_CANT_CHANGE_DIRECTION] = 0;
         self.ram[LINK_AUXILIARY_STATE] = 0;
         self.ram[LINK_INCAPACITATED_TIMER] = 0;
+        self.ram[PLAYER_DEFENSE_FLAGS] = 0;
         self.ram[LINK_ELECTROCUTE_ON_TOUCH] = 0;
         self.ram[LINK_POSE_FOR_ITEM] = 0;
         self.ram[LINK_CAPE_MODE] = 0;

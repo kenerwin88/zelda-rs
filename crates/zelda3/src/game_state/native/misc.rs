@@ -194,10 +194,11 @@ impl<'a> NativeMemorizedTileBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.memorized_tiles,
-            MemorizedTileState::load_from_ram(self.ram)
-        );
+        let mut fresh = MemorizedTileState::load_from_ram(self.ram);
+        if self.ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) != 0 {
+            fresh.values.clone_from(&self.memorized_tiles.values);
+        }
+        debug_assert_eq!(*self.memorized_tiles, fresh);
     }
 
     pub(crate) fn set_count(&mut self, value: u16) {

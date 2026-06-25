@@ -52,6 +52,26 @@ fn native_inventory_items_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
+fn native_inventory_items_bridge_ignores_resource_owned_item_slots_in_coherence_check() {
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[LINK_ITEM_BOMBS] = 2;
+    ram[LINK_ITEM_BOTTLE_INDEX] = 0;
+
+    let mut items = InventoryItemsState::load_from_ram(&ram);
+    ram[LINK_ITEM_BOMBS] = 3;
+    ram[LINK_ITEM_BOTTLE_INDEX] = 1;
+
+    {
+        let mut bridge = NativeInventoryItemsBridgeMut::new(&mut items, &mut ram);
+        bridge.set_inventory_item(0, 2);
+    }
+
+    assert_eq!(ram[LINK_ITEM_BOW], 2);
+    assert_eq!(ram[LINK_ITEM_BOMBS], 3);
+    assert_eq!(ram[LINK_ITEM_BOTTLE_INDEX], 1);
+}
+
+#[test]
 fn dungeon_key_slots_state_loads_from_and_projects_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[LINK_KEYS_EARNED_PER_DUNGEON] = 1;

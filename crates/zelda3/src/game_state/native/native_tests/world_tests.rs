@@ -442,6 +442,28 @@ fn native_world_palette_theme_bridge_projects_native_state_over_stale_ram() {
 }
 
 #[test]
+fn native_world_palette_theme_bridge_ignores_dungeon_exit_backup_bytes_in_coherence_check() {
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[OVERWORLD_TILE_THEME_INDEX_EXIT] = 0;
+    ram[MAIN_TILE_THEME_INDEX_EXIT] = 35;
+    ram[AUX_TILE_THEME_INDEX_EXIT] = 81;
+
+    let mut theme = WorldPaletteThemeState::load_from_ram(&ram);
+    theme.exit_main_tile_theme_index = 0;
+    theme.exit_aux_tile_theme_index = 0;
+
+    {
+        let mut bridge = NativeWorldPaletteThemeBridgeMut::new(&mut theme, &mut ram);
+        bridge.set_main_tile_theme_index(3);
+    }
+
+    assert_eq!(theme.main_tile_theme_index(), 3);
+    assert_eq!(ram[MAIN_TILE_THEME_INDEX], 3);
+    assert_eq!(ram[MAIN_TILE_THEME_INDEX_EXIT], 35);
+    assert_eq!(ram[AUX_TILE_THEME_INDEX_EXIT], 81);
+}
+
+#[test]
 fn sprite_system_projection_preserves_world_palette_theme_fields() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[SPRITE_GRAPHICS_INDEX] = 0x12;
@@ -461,6 +483,24 @@ fn sprite_system_projection_preserves_world_palette_theme_fields() {
     assert_eq!(projected[MAIN_TILE_THEME_INDEX], 0x9a);
     assert_eq!(projected[AUX_TILE_THEME_INDEX], 0xbc);
     assert_eq!(projected[MISC_SPRITES_GRAPHICS_INDEX], 0xde);
+}
+
+#[test]
+fn native_sprite_system_bridge_ignores_dungeon_exit_graphics_backup_in_coherence_check() {
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[SPRITE_GRAPHICS_INDEX_EXIT] = 0x7d;
+
+    let mut system = SpriteSystemState::default();
+    let mut slots = SpriteSlotsState::load_from_ram(&ram);
+
+    {
+        let mut bridge = NativeSpriteSystemBridgeMut::new(&mut system, &mut slots, &mut ram);
+        bridge.set_graphics_index(0x4d);
+    }
+
+    assert_eq!(system.graphics_index(), 0x4d);
+    assert_eq!(ram[SPRITE_GRAPHICS_INDEX], 0x4d);
+    assert_eq!(ram[SPRITE_GRAPHICS_INDEX_EXIT], 0x7d);
 }
 
 #[test]
@@ -903,6 +943,36 @@ fn native_world_scroll_bridge_projects_native_state_over_stale_ram() {
     assert_eq!(WorldScrollState::load_from_ram(&ram), scroll);
     assert_eq!(read_le_u16(&ram, BG1_X_OFFSET), 0x1234);
     assert_eq!(read_le_u16(&ram, OVERWORLD_OFFSET_BASE_X), 0x0909);
+}
+
+#[test]
+fn native_world_scroll_bridge_ignores_room_bounds_owned_scroll_words_in_coherence_check() {
+    let mut ram = vec![0; WRAM_SIZE];
+    write_le_u16(&mut ram, OVERWORLD_SCROLL_X_START, 0x0000);
+    write_le_u16(&mut ram, OVERWORLD_SCROLL_X_END, 0x0300);
+    write_le_u16(&mut ram, OVERWORLD_SCROLL_Y_END, 0x091e);
+
+    let mut scroll = WorldScrollState {
+        bg1_x_offset: 0,
+        bg1_y_offset: 0,
+        overworld_offset_base_x: 0,
+        overworld_offset_base_y: 0x0600,
+        overworld_offset_mask_x: 0x007e,
+        overworld_offset_mask_y: 0x03f0,
+        scroll_x_start: 0x2410,
+        scroll_x_end: 0x2510,
+        scroll_y_end: 0x2400,
+    };
+
+    {
+        let mut bridge = NativeWorldScrollBridgeMut::new(&mut scroll, &mut ram);
+        bridge.set_bg1_x_offset(0x0012);
+    }
+
+    assert_eq!(read_le_u16(&ram, BG1_X_OFFSET), 0x0012);
+    assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_X_START), 0x0000);
+    assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_X_END), 0x0300);
+    assert_eq!(read_le_u16(&ram, OVERWORLD_SCROLL_Y_END), 0x091e);
 }
 
 #[test]

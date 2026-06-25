@@ -8,7 +8,7 @@
 /// (lo-priority tiles) and once with `hi_priority_only=true` (hi-priority tiles),
 /// sandwiching higher-numbered layers in between to match SNES priority order.
 use crate::gpu_frame::{BgLayerRegs, ScanlineRegs};
-use crate::tile_atlas::{CgramPalette, TileAtlas};
+use crate::tile_atlas::{CgramPalette, RgbaTileOverrideTextures, TileAtlas};
 
 // Maximum tilemap dimensions (64×64 tiles when both tilemap_wider and
 // tilemap_higher are set). Standard is 32×32.
@@ -49,6 +49,7 @@ impl BgLayerRenderer {
         device: &wgpu::Device,
         atlas: &TileAtlas,
         palette: &CgramPalette,
+        rgba_overrides: &RgbaTileOverrideTextures,
         output_format: wgpu::TextureFormat,
     ) -> Self {
         let make_uniform_buf = |label| {
@@ -104,6 +105,26 @@ impl BgLayerRenderer {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Uint,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -123,6 +144,14 @@ impl BgLayerRenderer {
                     wgpu::BindGroupEntry {
                         binding: 2,
                         resource: buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(&rgba_overrides.atlas_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::TextureView(&rgba_overrides.lookup_view),
                     },
                 ],
             })

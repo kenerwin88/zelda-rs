@@ -1495,6 +1495,68 @@ fn display_state_owns_mosaic_control_behavior() {
 }
 
 #[test]
+fn display_core_coherence_ignores_room_effects_fixed_color_owner() {
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = 0x1f;
+    let mut display = DisplayState::load_from_ram(&ram);
+    display.overworld_fixed_color_adjustment = 0;
+
+    display.debug_assert_core_matches_ram(&ram);
+}
+
+#[test]
+fn native_display_main_layer_setters_ignore_transient_subscreen_ram_lag() {
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[TS_COPY] = 0;
+
+    let mut display = DisplayState::load_from_ram(&ram);
+    display.sub_screen_layers = 1;
+
+    {
+        let mut bridge = NativeDisplayStateBridgeMut::new(&mut display, &mut ram);
+        bridge.set_main_screen_layers(0x16);
+        bridge.and_main_screen_layers(0x17);
+        bridge.or_main_screen_layers(0x01);
+    }
+
+    assert_eq!(display.main_screen_layers, 0x17);
+    assert_eq!(display.sub_screen_layers, 1);
+    assert_eq!(ram[TM_COPY], 0x17);
+    assert_eq!(ram[TS_COPY], 0);
+}
+
+#[test]
+fn display_core_coherence_ignores_gameplay_velocity_reuse_of_attract_vram_dst() {
+    let mut ram = vec![0; WRAM_SIZE];
+    write_le_u16(&mut ram, ATTRACT_VRAM_DST, 0x0100);
+    let mut display = DisplayState::load_from_ram(&ram);
+    display.attract_vram_destination_address = 0;
+
+    display.debug_assert_core_matches_ram(&ram);
+}
+
+#[test]
+fn display_core_coherence_ignores_indoor_moving_wall_reuse_of_star_phase() {
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[PLAYER_IS_INDOORS] = 1;
+    ram[STAR_TILE_RESTORE_PHASE] = 1;
+    let mut display = DisplayState::load_from_ram(&ram);
+    display.star_tile_restore_phase = 0;
+
+    display.debug_assert_core_matches_ram(&ram);
+}
+
+#[test]
+fn display_core_coherence_ignores_tilemap_buffer_reuse_of_vram_cursor() {
+    let mut ram = vec![0; WRAM_SIZE];
+    write_le_u16(&mut ram, VRAM_UPLOAD_OFFSET, 0x3c15);
+    let mut display = DisplayState::load_from_ram(&ram);
+    display.vram_upload_cursor = 0;
+
+    display.debug_assert_core_matches_ram(&ram);
+}
+
+#[test]
 fn link_dma_source_slots_read_named_source_addresses() {
     let mut ram = vec![0; WRAM_SIZE];
     let slots = [
@@ -1917,4 +1979,22 @@ fn native_ppu_scroll_copy_bridge_projects_native_state_over_stale_ram() {
     assert_eq!(scroll.mapbak_cgwsel_word(), 0x5678);
     assert_eq!(read_le_u16(&ram, BG2_X_SCROLL), 0x2210);
     assert_eq!(read_le_u16(&ram, MAPBAK_CGWSEL), 0x5678);
+}
+
+#[test]
+fn native_ppu_scroll_copy_bridge_keeps_mapbak_tm_word_high_byte_in_sync_with_ts() {
+    let mut ram = vec![0; WRAM_SIZE];
+    let mut scroll = PpuScrollCopyState::default();
+
+    {
+        let mut bridge = NativePpuScrollCopyBridgeMut::new(&mut scroll, &mut ram);
+        bridge.set_mapbak_ts(0x01);
+        bridge.set_mapbak_tm(0x16);
+    }
+
+    assert_eq!(scroll.mapbak_tm(), 0x16);
+    assert_eq!(scroll.mapbak_ts(), 0x01);
+    assert_eq!(scroll.mapbak_tm_word(), 0x0116);
+    assert_eq!(read_le_u16(&ram, MAPBAK_TM), 0x0116);
+    assert_eq!(ram[MAPBAK_TS], 0x01);
 }

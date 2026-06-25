@@ -20,7 +20,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use platform::{Frontend, NativeFrontend, NativeFrontendOptions};
 use renderer::{
-    scanlines_from_raw, BgLayerRegs, GpuFrame, Mode7Regs, ObjRegs, OffscreenRenderer, ScanlineRegs,
+    scanlines_from_raw, BgLayerRegs, GpuFrame, Mode7Regs, ObjRegs, OffscreenRenderer,
+    PresentationContext, ScanlineRegs,
 };
 use serde::{Deserialize, Serialize};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, ppu::PpuRenderFlags, Snes};
@@ -51,6 +52,7 @@ const TRACE_SELECTFILE_VAR11: usize = 0x0b14;
 const TRACE_SELECTFILE_VAR5: usize = 0x0b15;
 const TRACE_SELECTFILE_VAR10: usize = 0x0b16;
 const TRACE_SELECTFILE_ARR2_1: usize = 0x0cb;
+const PLAYER_IS_INDOORS: usize = 0x001b;
 const EMBEDDED_ASSETS: &[u8] = include_bytes!(env!("ZELDA3_EMBEDDED_ASSETS"));
 
 fn main() {
@@ -1273,7 +1275,10 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let scanlines_raw = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
         let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
-        frontend.present_gpu_frame(&gpu_frame);
+        let presentation = PresentationContext {
+            in_dungeon: game.ram[PLAYER_IS_INDOORS] != 0,
+        };
+        frontend.present_gpu_frame_with_context(&gpu_frame, presentation);
     }
 }
 

@@ -3384,36 +3384,52 @@ impl ZeldaState {
         self.display_core_mut().set_bg_mode(value);
     }
 
+    fn mirror_display_layer_masks_to_world_transient(&mut self) {
+        let layer_masks = self.game_state.display.layer_masks_word();
+        self.game_state
+            .world
+            .transient
+            .set_tilemap_layer_copy(layer_masks);
+    }
+
     pub(crate) fn set_main_screen_layers(&mut self, value: u8) {
         self.display_core_mut().set_main_screen_layers(value);
+        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn and_main_screen_layers(&mut self, value: u8) {
         self.display_core_mut().and_main_screen_layers(value);
+        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn or_main_screen_layers(&mut self, value: u8) {
         self.display_core_mut().or_main_screen_layers(value);
+        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn set_sub_screen_layers(&mut self, value: u8) {
         self.display_core_mut().set_sub_screen_layers(value);
+        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn clear_sub_screen_layers_word(&mut self) {
         self.display_core_mut().clear_sub_screen_layers_word();
+        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn and_sub_screen_layers(&mut self, value: u8) {
         self.display_core_mut().and_sub_screen_layers(value);
+        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn or_sub_screen_layers(&mut self, value: u8) {
         self.display_core_mut().or_sub_screen_layers(value);
+        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn set_layer_masks_word(&mut self, value: u16) {
         self.display_core_mut().set_layer_masks_word(value);
+        self.mirror_display_layer_masks_to_world_transient();
     }
 
     pub(crate) fn set_bg12_window_selection(&mut self, value: u8) {

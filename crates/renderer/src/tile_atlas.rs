@@ -31,6 +31,122 @@ pub const ATLAS_WIDTH: u32 = ATLAS_TILES_WIDE * 8;
 pub const ATLAS_HEIGHT: u32 = ATLAS_TILES_TALL * 8;
 /// Total number of 4bpp tile slots encoded in the atlas (= all of 64 KB VRAM).
 pub const ATLAS_TILE_COUNT: u32 = ATLAS_TILES_WIDE * ATLAS_TILES_TALL;
+pub const RGBA_TILE_OVERRIDE_LOOKUP_COUNT: usize = 1024;
+
+#[derive(Clone, Copy)]
+pub struct RgbaTileOverrideData<'a> {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: &'a [u8],
+    pub lookup: &'a [[u32; 4]],
+}
+
+pub struct RgbaTileOverrideTextures {
+    _atlas: wgpu::Texture,
+    pub atlas_view: wgpu::TextureView,
+    _lookup: wgpu::Texture,
+    pub lookup_view: wgpu::TextureView,
+}
+
+impl RgbaTileOverrideTextures {
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        data: Option<RgbaTileOverrideData<'_>>,
+    ) -> Self {
+        let fallback_lookup = [[0u32; 4]; RGBA_TILE_OVERRIDE_LOOKUP_COUNT];
+        let fallback_rgba = [0u8; 4];
+        let (width, height, rgba, lookup) = match data {
+            Some(data) => (data.width, data.height, data.rgba, data.lookup),
+            None => (1, 1, fallback_rgba.as_slice(), fallback_lookup.as_slice()),
+        };
+        debug_assert_eq!(rgba.len(), (width * height * 4) as usize);
+        debug_assert_eq!(lookup.len(), RGBA_TILE_OVERRIDE_LOOKUP_COUNT);
+
+        let atlas = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("rgba_tile_override_atlas"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &atlas,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        let atlas_view = atlas.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut lookup_bytes = Vec::with_capacity(RGBA_TILE_OVERRIDE_LOOKUP_COUNT * 16);
+        for entry in lookup {
+            for word in entry {
+                lookup_bytes.extend_from_slice(&word.to_le_bytes());
+            }
+        }
+        let lookup_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("rgba_tile_override_lookup"),
+            size: wgpu::Extent3d {
+                width: RGBA_TILE_OVERRIDE_LOOKUP_COUNT as u32,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Uint,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &lookup_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &lookup_bytes,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(RGBA_TILE_OVERRIDE_LOOKUP_COUNT as u32 * 16),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: RGBA_TILE_OVERRIDE_LOOKUP_COUNT as u32,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+        let lookup_view = lookup_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        Self {
+            _atlas: atlas,
+            atlas_view,
+            _lookup: lookup_texture,
+            lookup_view,
+        }
+    }
+}
 
 // ── TileAtlas ─────────────────────────────────────────────────────────────────
 

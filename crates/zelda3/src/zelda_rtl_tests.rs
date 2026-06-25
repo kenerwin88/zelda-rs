@@ -6,7 +6,7 @@ use crate::game_state::constants::{
     DMA_SOURCE_ADDR_15, DMA_SOURCE_ADDR_16, DMA_SOURCE_ADDR_17, DMA_SOURCE_ADDR_18,
     DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_2, DMA_SOURCE_ADDR_20, DMA_SOURCE_ADDR_21,
     DMA_SOURCE_ADDR_3, DMA_SOURCE_ADDR_4, DMA_SOURCE_ADDR_5, DMA_SOURCE_ADDR_6, DMA_SOURCE_ADDR_7,
-    DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9,
+    DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9, TM_COPY, TS_COPY,
 };
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
 
@@ -102,6 +102,25 @@ fn scratch_word_high_does_not_alias_nmi_subroutine_index() {
 
     assert_eq!(state.game_state.dungeon.scratch_word.word(), 0x0100);
     assert_eq!(state.game_state.display.pending_nmi_subroutine, 11);
+}
+
+#[test]
+fn screen_layer_helpers_keep_world_transient_layer_copy_coherent() {
+    let mut state = ZeldaState::new();
+    state.ram[TM_COPY] = 0x15;
+    state.ram[TS_COPY] = 0x00;
+    state.sync_native_game_state_from_ram();
+
+    state.set_main_screen_layers(0x16);
+    state.set_sub_screen_layers(0x01);
+    state.set_quadrant_fullsize_x(2);
+
+    assert_eq!(state.game_state.display.main_screen_layers, 0x16);
+    assert_eq!(state.game_state.display.sub_screen_layers, 0x01);
+    assert_eq!(state.game_state.world.transient.tilemap_layer_copy, 0x0116);
+    assert_eq!(state.ram[TM_COPY], 0x16);
+    assert_eq!(state.ram[TS_COPY], 0x01);
+    state.assert_native_display_state_matches_ram();
 }
 
 #[test]

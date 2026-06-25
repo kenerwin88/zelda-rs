@@ -174,6 +174,43 @@ SNES controls as: A/B/X/Y to A/B/X/Y, D-pad and left stick to movement, Menu to
 Start, View to Select, and L1/R1/L2/R2 to L/R. Set `ZELDA3_DISABLE_GAMEPAD=1` to
 force keyboard-only input.
 
+Optional presentation effects run after the fixed 256x224 game render and do
+not change the offscreen parity/readback path. They default to off. Set
+`ZELDA3_PRESENTATION=sharp` or `crt` to change the final surface blit.
+Enhanced presentation modes also add a subtle bright-pass bloom and color grade.
+Set `ZELDA3_LIGHTING=ambient|dynamic` for presentation-only darkening; dynamic
+mode adds dungeon-aware ambient darkness plus a small capped point-light list
+from visible flame/spark/magic-like OBJ tiles, falling back to bright OBJ
+palettes for unclassified effects, and composites those lights through a coarse
+16x14 radial light mask. Set `ZELDA3_SHADOWS=soft|raycast` for
+presentation-only vignette shadowing; `raycast` also samples a coarse 16x14
+occluder mask derived from high-priority BG tile metadata and softens ray edges
+with multi-tap sampling. Leaving these unset preserves the vanilla presentation.
+During native play, F6 cycles presentation mode, F7 cycles lighting mode, and F8
+cycles shadow mode. The changed mode is shown briefly in the top-left corner.
+
+Art sidecars are opt-in with `ZELDA3_ART_SIDECARS=/path/to/manifest.json`.
+`rgba` entries are decoded, packed, and uploaded into a presentation-side
+override atlas texture that can replace matching BG tile pixels; `normal` and
+`depth` entries are decoded for the later enhanced-material path.
+The manifest declares per-tile sidecar paths:
+
+```json
+{
+  "tiles": [
+    {
+      "tile": 42,
+      "normal": "normals/002a.png",
+      "depth": "depth/002a.png",
+      "rgba": "rgba/002a.png"
+    }
+  ]
+}
+```
+
+Leaving `ZELDA3_ART_SIDECARS` unset keeps the palette-index renderer and
+presentation path unchanged.
+
 To validate an existing package folder:
 
 ```bash

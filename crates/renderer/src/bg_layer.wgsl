@@ -66,6 +66,8 @@ struct BgUniforms {
 @group(0) @binding(0) var tile_atlas:    texture_2d<u32>;  // R8Uint  512×256
 @group(0) @binding(1) var cgram_palette: texture_2d<f32>;  // Rgba8Unorm 256×1
 @group(0) @binding(2) var<uniform>       uni: BgUniforms;
+@group(0) @binding(3) var tile_override_atlas: texture_2d<f32>;
+@group(0) @binding(4) var tile_override_lookup: texture_2d<u32>;
 
 // Fullscreen triangle.
 @vertex
@@ -108,6 +110,17 @@ fn layer_window_active(sx: u32, sy: u32) -> bool {
         return test2;
     }
     return test1 || test2;
+}
+
+fn sample_tile_override(tile_num: u32, px: u32, py: u32) -> vec4<f32> {
+    let override_rect = textureLoad(tile_override_lookup, vec2i(i32(tile_num & 0x3ffu), 0), 0);
+    if override_rect.z == 0u || override_rect.w == 0u {
+        return vec4<f32>(0.0);
+    }
+
+    let src_x = override_rect.x + min(override_rect.z - 1u, (px * override_rect.z) / 8u);
+    let src_y = override_rect.y + min(override_rect.w - 1u, (py * override_rect.w) / 8u);
+    return textureLoad(tile_override_atlas, vec2i(i32(src_x), i32(src_y)), 0);
 }
 
 @fragment
@@ -201,11 +214,15 @@ fn fs_main(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
         cgram_idx = palette_sub * 16u + pal_idx;
     }
 
-    let color = textureLoad(cgram_palette, vec2i(i32(cgram_idx), 0), 0);
-
     // Alpha encodes the SNES math_enabled bit position for this layer so the
     // post-process shader can apply color math only to eligible layers.
     // math_bit_pos=255 is the sub-screen sentinel: output alpha=1.0.
     let out_alpha = select(f32(uni.math_bit_pos) / 255.0, 1.0, uni.math_bit_pos >= 255u);
+    let override_color = sample_tile_override(tile_num, px, py);
+    if override_color.a > 0.0 {
+        return vec4<f32>(override_color.rgb, out_alpha);
+    }
+
+    let color = textureLoad(cgram_palette, vec2i(i32(cgram_idx), 0), 0);
     return vec4<f32>(color.rgb, out_alpha);
 }

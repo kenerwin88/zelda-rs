@@ -2055,11 +2055,12 @@ impl PpuScrollCopyState {
     }
 
     pub(crate) fn set_mapbak_tm(&mut self, value: u8) {
-        Self::set_low_byte(&mut self.mapbak_tm, value);
+        self.mapbak_tm = (u16::from(self.mapbak_ts) << 8) | u16::from(value);
     }
 
     pub(crate) fn set_mapbak_ts(&mut self, value: u8) {
         self.mapbak_ts = value;
+        Self::set_high_byte(&mut self.mapbak_tm, value);
     }
 
     pub(crate) fn set_mapbak_tm_word(&mut self, value: u16) {
@@ -2667,8 +2668,27 @@ impl DisplayState {
         // bulk-projecting it here clobbers Link's velocity to 0 every frame.
     }
 
+    fn owned_core_ram_state_for_coherence(&self, ram: &[u8]) -> Self {
+        let mut ram_state = Self::load_from_ram(ram);
+
+        // Core fields below are passive mirrors or mode-reused RAM. They are still kept
+        // in DisplayState for readers and targeted bridges, but the frame-wide display
+        // coherence check must not treat their live RAM bytes as display-owned.
+        //
+        // Targeted bridge methods keep these exact when display owns a mutation; this
+        // normalization applies only to the broad frame-entry/frame-exit core check.
+        ram_state.vram_upload_cursor = self.vram_upload_cursor;
+        ram_state.overworld_fixed_color_adjustment = self.overworld_fixed_color_adjustment;
+        if ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) != 0 {
+            ram_state.star_tile_restore_phase = self.star_tile_restore_phase;
+        }
+        ram_state.attract_vram_destination_address = self.attract_vram_destination_address;
+
+        ram_state
+    }
+
     pub(crate) fn debug_assert_core_matches_ram(&self, ram: &[u8]) {
-        let ram_state = Self::load_from_ram(ram);
+        let ram_state = self.owned_core_ram_state_for_coherence(ram);
         debug_assert_eq!(self.screen_brightness, ram_state.screen_brightness);
         debug_assert_eq!(self.nmi_update_latch, ram_state.nmi_update_latch);
         debug_assert_eq!(
@@ -4444,7 +4464,10 @@ impl<'a> NativePpuScrollCopyBridgeMut<'a> {
     fn debug_assert_matches_ram(&self) {
         // mapbak_palette is write-through (not projected by write_to_ram), so RAM may
         // legitimately differ from this state's stale copy — ignore it in the check.
-        debug_assert!(self.state.matches_ram_ignoring_mapbak(self.ram));
+        let mut live = PpuScrollCopyState::load_from_ram(self.ram);
+        live.mapbak_palette
+            .clone_from(&self.state.mapbak_palette);
+        debug_assert_eq!(*self.state, live);
     }
 
     pub(crate) fn copy_mapbak_palette_from(&mut self, palette: &[u8]) {
@@ -4593,6 +4616,10 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
 
     fn debug_assert_bg_mode_matches_ram(&self) {
         debug_assert_eq!(self.display.bg_mode, ram_byte(self.ram, BGMODE_COPY));
+    }
+
+    fn debug_assert_main_screen_layers_match_ram(&self) {
+        debug_assert_eq!(self.display.main_screen_layers, ram_byte(self.ram, TM_COPY));
     }
 
     fn debug_assert_screen_layer_masks_match_ram(&self) {
@@ -4899,19 +4926,19 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
     pub(crate) fn set_main_screen_layers(&mut self, value: u8) {
         self.display.set_main_screen_layers(value);
         self.ram[TM_COPY] = value;
-        self.debug_assert_screen_layer_masks_match_ram();
+        self.debug_assert_main_screen_layers_match_ram();
     }
 
     pub(crate) fn and_main_screen_layers(&mut self, value: u8) {
         self.display.and_main_screen_layers(value);
         self.ram[TM_COPY] = self.display.main_screen_layers;
-        self.debug_assert_screen_layer_masks_match_ram();
+        self.debug_assert_main_screen_layers_match_ram();
     }
 
     pub(crate) fn or_main_screen_layers(&mut self, value: u8) {
         self.display.or_main_screen_layers(value);
         self.ram[TM_COPY] = self.display.main_screen_layers;
-        self.debug_assert_screen_layer_masks_match_ram();
+        self.debug_assert_main_screen_layers_match_ram();
     }
 
     pub(crate) fn set_sub_screen_layers(&mut self, value: u8) {

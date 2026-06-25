@@ -1,4 +1,5 @@
 use super::*;
+use crate::game_state::native::sprites::SpriteWorkspaceState;
 
 #[test]
 fn native_sprite_slot_bridge_projects_position_and_packed_n_word() {
@@ -977,6 +978,24 @@ fn native_overworld_sprite_flag_bridges_project_native_state_over_stale_ram() {
     assert!(loaded.is_loaded(32, 0b0000_0010));
     assert!(!loaded.is_loaded(32, 0b0010_0000));
     assert_eq!(ram[OVERWORLD_SPRITE_WAS_LOADED + 4], 0b1000_0010);
+}
+
+#[test]
+fn native_sprite_workspace_bridge_allows_outdoor_presence_owner() {
+    let native_ram = vec![0; WRAM_SIZE];
+    let mut workspace = SpriteWorkspaceState::load_from_ram(&native_ram);
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[PLAYER_IS_INDOORS] = 0;
+    ram[SPRITE_WHERE_IN_ROOM + 0x123] = 0x41;
+
+    {
+        let mut bridge = NativeSpriteWorkspaceBridgeMut::new(&mut workspace, &mut ram);
+        bridge.set_pickup_slot_cache(0x5a);
+    }
+
+    assert_eq!(workspace.pickup_slot_cache(), 0x5a);
+    assert_eq!(ram[SPRITE_PICKUP_SLOT_CACHE], 0x5a);
+    assert_eq!(ram[SPRITE_WHERE_IN_ROOM + 0x123], 0x41);
 }
 
 #[test]

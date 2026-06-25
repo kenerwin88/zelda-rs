@@ -1,4 +1,25 @@
 use super::*;
+use crate::game_state::native::dungeon::{
+    DungeonEnvironmentState, NativeDungeonEnvironmentBridgeMut,
+};
+
+#[test]
+fn native_dungeon_environment_bridge_ignores_write_through_water_counter_in_coherence_check() {
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[TURN_ON_OFF_WATER_CTR] = 1;
+
+    let mut environment = DungeonEnvironmentState::default();
+
+    {
+        let mut bridge = NativeDungeonEnvironmentBridgeMut::new(&mut environment, &mut ram);
+        bridge.set_water_hdma_y_radius(0x30);
+    }
+
+    assert_eq!(environment.water_transition_counter(), 0);
+    assert_eq!(environment.water_hdma_y_radius(), 0x30);
+    assert_eq!(ram[TURN_ON_OFF_WATER_CTR], 1);
+    assert_eq!(read_le_u16(&ram, WATER_HDMA_WINDOW_Y_RADIUS), 0x30);
+}
 
 #[test]
 fn native_dungeon_door_bridge_loads_room_tilemap_addresses_from_door_info() {
@@ -58,6 +79,32 @@ fn native_dungeon_room_door_setup_projects_adjacent_door_sentinel_slot() {
 
     assert_eq!(setup.adjacent_door(7), 0x0cce);
     assert_eq!(read_le_u16(&ram, ADJACENT_DOORS + 16), 0xffff);
+}
+
+#[test]
+fn native_dungeon_torch_bridge_clears_room_load_indices() {
+    let mut ram = vec![0; WRAM_SIZE];
+    write_le_u16(&mut ram, DUNG_INDEX_OF_TORCHES_START, 6);
+    write_le_u16(&mut ram, DUNG_INDEX_OF_TORCHES, 6);
+    let mut torch = DungeonTorchState::load_from_ram(&ram);
+
+    write_le_u16(&mut ram, DUNG_INDEX_OF_TORCHES_START, 0);
+    write_le_u16(&mut ram, DUNG_INDEX_OF_TORCHES, 0);
+    write_le_u16(&mut ram, DUNG_OBJECT_POS_IN_OBJDATA, 0x00e3);
+    write_le_u16(&mut ram, DUNG_OBJECT_POS_IN_OBJDATA + 2, 0x00e6);
+
+    {
+        let mut bridge = NativeDungeonTorchBridgeMut::new(&mut torch, &mut ram);
+        bridge.clear_torch_indices();
+        bridge.clear_timers();
+    }
+
+    assert_eq!(torch.torches_start_index(), 0);
+    assert_eq!(torch.torch_index(), 0);
+    assert_eq!(torch.torch_object_data_pos(0), 0x00e3);
+    assert_eq!(torch.torch_object_data_pos(1), 0x00e6);
+    assert_eq!(read_le_u16(&ram, DUNG_INDEX_OF_TORCHES_START), 0);
+    assert_eq!(read_le_u16(&ram, DUNG_INDEX_OF_TORCHES), 0);
 }
 
 #[test]

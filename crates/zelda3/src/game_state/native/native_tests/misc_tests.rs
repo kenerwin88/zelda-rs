@@ -186,6 +186,26 @@ fn native_memorized_tile_bridge_projects_native_state_over_stale_ram() {
 }
 
 #[test]
+fn native_memorized_tile_bridge_ignores_indoor_value_table_reuse_in_coherence_check() {
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[PLAYER_IS_INDOORS] = 1;
+    write_le_u16(&mut ram, NUM_MEMORIZED_TILES, 0);
+    write_le_u16(&mut ram, MEMORIZED_TILE_VALUE, 0x44a8);
+    write_le_u16(&mut ram, MEMORIZED_TILE_VALUE + 2, 0x4b1e);
+
+    let mut memorized_tiles = MemorizedTileState::default();
+    {
+        let mut bridge = NativeMemorizedTileBridgeMut::new(&mut memorized_tiles, &mut ram);
+        bridge.clear_entry_addresses();
+    }
+
+    assert_eq!(memorized_tiles.count(), 0);
+    assert_eq!(read_le_u16(&ram, NUM_MEMORIZED_TILES), 0);
+    assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE), 0x44a8);
+    assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE + 2), 0x4b1e);
+}
+
+#[test]
 fn minigame_state_loads_from_and_projects_to_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[IS_ARCHER_OR_SHOVEL_GAME] = 2;

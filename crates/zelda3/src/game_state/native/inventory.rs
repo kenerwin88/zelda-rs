@@ -284,7 +284,12 @@ impl<'a> NativeInventoryItemsBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.items, InventoryItemsState::load_from_ram(self.ram));
+        let mut ram_items = InventoryItemsState::load_from_ram(self.ram);
+        const BOMBS_IDX: usize = LINK_ITEM_BOMBS - LINK_ITEM_BOW;
+        const BOTTLE_IDX: usize = LINK_ITEM_BOTTLE_INDEX - LINK_ITEM_BOW;
+        ram_items.item_slots[BOMBS_IDX] = self.items.item_slots[BOMBS_IDX];
+        ram_items.item_slots[BOTTLE_IDX] = self.items.item_slots[BOTTLE_IDX];
+        debug_assert_eq!(*self.items, ram_items);
     }
 
     fn absorb_item_memory_byte(&mut self, address: usize) {

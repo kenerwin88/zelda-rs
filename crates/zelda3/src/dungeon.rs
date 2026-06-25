@@ -975,6 +975,9 @@ impl ZeldaState {
         // as misc_object_index / cur_door_idx below).
         self.dungeon_room_effects_mut().clear_blast_wall_state();
         self.dungeon_room_doors_mut().clear_invisible_door_marker();
+        // dung_index_of_torches(_start) are zeroed by the room-load RAM loop. Keep
+        // DungeonTorchState aligned until the current room's misc-object index is installed.
+        self.dungeon_torch_mut().clear_torch_indices();
         self.dungeon_torch_mut().clear_timers();
         self.dungeon_object_tracking_mut()
             .clear_replacement_tile_states();
@@ -1016,7 +1019,6 @@ impl ZeldaState {
         self.dungeon_moving_floor_mut().clear_floor_offsets();
         self.dungeon_environment_mut()
             .set_water_transition_counter(0);
-        self.dungeon_torch_mut().refresh_object_data_positions();
         for i in 0..16 {
             self.dungeon_object_tracking_mut()
                 .set_object_tilemap_pos(i, 0);
@@ -1030,6 +1032,7 @@ impl ZeldaState {
         self.dungeon_room_tilemaps_mut()
             .copy_line_pointer_bytes(&DUNGEON_DRAW_OBJECT_OFFSETS_BG1);
         self.RoomDraw_DrawAllObjectsCurrentRoom();
+        self.dungeon_torch_mut().refresh_object_data_positions();
         let room = self.game_state.world.location.dungeon_room();
         for offset in (0..0x018c).step_by(4) {
             if self

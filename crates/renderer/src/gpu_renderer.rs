@@ -15,11 +15,12 @@ use crate::gpu_frame::GpuFrame;
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
 use crate::sprite_renderer::SpriteRenderer;
-use crate::tile_atlas::{CgramPalette, TileAtlas};
+use crate::tile_atlas::{CgramPalette, RgbaTileOverrideData, RgbaTileOverrideTextures, TileAtlas};
 
 pub struct GpuFrameRenderer {
     tile_atlas: TileAtlas,
     cgram_palette: CgramPalette,
+    _rgba_tile_overrides: RgbaTileOverrideTextures,
     /// bg[0]=BG1, bg[1]=BG2, bg[2]=BG3; indices match `GpuFrame.bg[]`.
     bg: [BgLayerRenderer; 3],
     mode7: Mode7Renderer,
@@ -40,26 +41,34 @@ const COMP_HEIGHT: u32 = 224;
 
 impl GpuFrameRenderer {
     /// Build all GPU resources for an `Rgba8Unorm` output target.
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        rgba_tile_overrides: Option<RgbaTileOverrideData<'_>>,
+    ) -> Self {
         let tile_atlas = TileAtlas::new(device);
         let cgram_palette = CgramPalette::new(device);
+        let rgba_tile_overrides = RgbaTileOverrideTextures::new(device, queue, rgba_tile_overrides);
         let bg = [
             BgLayerRenderer::new(
                 device,
                 &tile_atlas,
                 &cgram_palette,
+                &rgba_tile_overrides,
                 wgpu::TextureFormat::Rgba8Unorm,
             ),
             BgLayerRenderer::new(
                 device,
                 &tile_atlas,
                 &cgram_palette,
+                &rgba_tile_overrides,
                 wgpu::TextureFormat::Rgba8Unorm,
             ),
             BgLayerRenderer::new(
                 device,
                 &tile_atlas,
                 &cgram_palette,
+                &rgba_tile_overrides,
                 wgpu::TextureFormat::Rgba8Unorm,
             ),
         ];
@@ -100,6 +109,7 @@ impl GpuFrameRenderer {
         Self {
             tile_atlas,
             cgram_palette,
+            _rgba_tile_overrides: rgba_tile_overrides,
             bg,
             mode7,
             sprites,

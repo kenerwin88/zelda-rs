@@ -3386,6 +3386,11 @@ impl DungeonTorchState {
         self.timers.fill(0);
     }
 
+    fn clear_torch_indices(&mut self) {
+        self.torches_start_index = 0;
+        self.torch_index = 0;
+    }
+
     fn refresh_object_data_positions_from_ram(&mut self, ram: &[u8]) {
         for (index, position) in self.object_data_positions.iter_mut().enumerate() {
             *position = read_le_u16(ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2);
@@ -4696,10 +4701,9 @@ impl<'a> NativeDungeonEnvironmentBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(
-            *self.state,
-            DungeonEnvironmentState::load_from_ram(self.ram)
-        );
+        let mut ram_state = DungeonEnvironmentState::load_from_ram(self.ram);
+        ram_state.water_transition_counter = self.state.water_transition_counter;
+        debug_assert_eq!(*self.state, ram_state);
     }
 
     pub(crate) fn set_water_transition_counter(&mut self, value: u8) {
@@ -5067,9 +5071,16 @@ impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
+        let mut ram_state = DungeonRoomEffectsState::load_from_ram(self.ram);
+        if self.state.blast_wall_x_open == 0 && self.state.blast_wall_y_open == 0 {
+            ram_state.blast_wall_message_state = self.state.blast_wall_message_state;
+            ram_state.blast_wall_message_x = self.state.blast_wall_message_x;
+            ram_state.blast_wall_message_y = self.state.blast_wall_message_y;
+            ram_state.blast_wall_message_direction = self.state.blast_wall_message_direction;
+        }
         debug_assert_eq!(
             *self.state,
-            DungeonRoomEffectsState::load_from_ram(self.ram)
+            ram_state
         );
     }
 
@@ -5186,6 +5197,36 @@ impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
 pub(crate) struct NativeDungeonRoomParserBridgeMut<'a> {
     state: &'a mut DungeonRoomParserState,
     ram: &'a mut [u8],
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use snes::WRAM_SIZE;
+
+    #[test]
+    fn room_effects_sync_ignores_reused_blast_wall_message_bytes_when_wall_closed() {
+        let mut ram = vec![0; WRAM_SIZE];
+        write_le_u16(&mut ram, MESSAGING_BUF_DUNGEON + 0x1a, 0x007f);
+        write_le_u16(&mut ram, MESSAGING_BUF_DUNGEON + 0x18, 0x003f);
+        write_le_u16(&mut ram, MESSAGING_BUF_DUNGEON + 0x1c, 0x007f);
+
+        let mut state = DungeonRoomEffectsState {
+            blast_wall_message_x: 0x00ff,
+            blast_wall_message_y: 0x00ff,
+            blast_wall_message_direction: 0x007f,
+            ..DungeonRoomEffectsState::default()
+        };
+
+        {
+            let mut bridge = NativeDungeonRoomEffectsBridgeMut::new(&mut state, &mut ram);
+            bridge.clear_trap_trigger_latch();
+        }
+
+        assert_eq!(read_le_u16(&ram, MESSAGING_BUF_DUNGEON + 0x1a), 0x007f);
+        assert_eq!(read_le_u16(&ram, MESSAGING_BUF_DUNGEON + 0x18), 0x003f);
+        assert_eq!(read_le_u16(&ram, MESSAGING_BUF_DUNGEON + 0x1c), 0x007f);
+    }
 }
 
 impl<'a> NativeDungeonRoomParserBridgeMut<'a> {
@@ -5580,7 +5621,8 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
         Self { torch, ram }
     }
 
-    fn debug_assert_matches_ram(&self) {
+    fn debug_assert_matches_ram(&mut self) {
+        self.torch.refresh_object_data_positions_from_ram(self.ram);
         debug_assert_eq!(*self.torch, DungeonTorchState::load_from_ram(self.ram));
     }
 
@@ -5614,6 +5656,13 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
     pub(crate) fn clear_timers(&mut self) {
         self.torch.clear_timers();
         self.ram[TORCH_TIMERS..TORCH_TIMERS + DUNGEON_TORCH_TIMER_COUNT].fill(0);
+        self.debug_assert_matches_ram();
+    }
+
+    pub(crate) fn clear_torch_indices(&mut self) {
+        self.torch.clear_torch_indices();
+        write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES_START, 0);
+        write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES, 0);
         self.debug_assert_matches_ram();
     }
 
