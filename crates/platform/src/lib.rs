@@ -125,6 +125,8 @@ impl NativeFrontend {
             window: None,
             renderer: None,
             input_state: 0,
+            host_menu_inputs: VecDeque::new(),
+            menu_open: false,
             quit: false,
         };
 
@@ -224,6 +226,27 @@ impl NativeFrontend {
         self.sleep_after_present();
     }
 
+    pub fn set_menu_open(&mut self, open: bool) {
+        self.handler.menu_open = open;
+        if open {
+            self.handler.input_state = 0;
+        }
+    }
+
+    pub fn drain_host_menu_inputs(&mut self) -> Vec<HostMenuInput> {
+        self.handler.host_menu_inputs.drain(..).collect()
+    }
+
+    pub fn poll_input_with_menu(&mut self, menu_open: bool) -> u16 {
+        self.set_menu_open(menu_open);
+        if menu_open {
+            let _ = self.poll_input();
+            0
+        } else {
+            self.poll_input()
+        }
+    }
+
     fn sleep_after_present(&mut self) {
         // Frame pacing — function name and increment text must match exactly;
         // scripts/test_standard_replay_parity.py greps for both literals.
@@ -295,6 +318,8 @@ struct NativeHandler {
     renderer: Option<FrameRenderer>,
     // Updated by input events:
     input_state: u16,
+    host_menu_inputs: VecDeque<HostMenuInput>,
+    menu_open: bool,
     quit: bool,
 }
 
@@ -346,16 +371,20 @@ impl ApplicationHandler for NativeHandler {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(key) = event.physical_key {
-                    if key == KeyCode::Escape && event.state == ElementState::Pressed {
-                        self.quit = true;
-                        event_loop.exit();
+                    if let Some(input) = key_to_host_menu_input(key, event.state) {
+                        self.host_menu_inputs.push_back(input);
                     }
                     if let Some(action) = presentation_hotkey_action(key, event.state) {
                         if let Some(renderer) = &mut self.renderer {
                             apply_presentation_hotkey(renderer, action);
                         }
                     }
-                    handle_key_input_state(&mut self.input_state, key, event.state);
+                    handle_key_input_state_with_menu(
+                        &mut self.input_state,
+                        key,
+                        event.state,
+                        self.menu_open,
+                    );
                 }
             }
             _ => {}
@@ -376,6 +405,37 @@ fn handle_key_input_state(input_state: &mut u16, key: KeyCode, state: ElementSta
             ElementState::Released => *input_state &= !bit,
         }
     }
+}
+
+fn key_to_host_menu_input(key: KeyCode, state: ElementState) -> Option<HostMenuInput> {
+    if state != ElementState::Pressed {
+        return None;
+    }
+    match key {
+        KeyCode::Escape => Some(HostMenuInput::Cancel),
+        KeyCode::ArrowUp => Some(HostMenuInput::Up),
+        KeyCode::ArrowDown => Some(HostMenuInput::Down),
+        KeyCode::ArrowLeft => Some(HostMenuInput::Left),
+        KeyCode::ArrowRight => Some(HostMenuInput::Right),
+        KeyCode::Enter | KeyCode::KeyZ | KeyCode::KeyX => Some(HostMenuInput::Confirm),
+        KeyCode::Tab | KeyCode::KeyE | KeyCode::KeyV | KeyCode::KeyW => {
+            Some(HostMenuInput::NextTab)
+        }
+        KeyCode::KeyQ | KeyCode::KeyC => Some(HostMenuInput::PreviousTab),
+        _ => None,
+    }
+}
+
+fn handle_key_input_state_with_menu(
+    input_state: &mut u16,
+    key: KeyCode,
+    state: ElementState,
+    menu_open: bool,
+) {
+    if menu_open {
+        return;
+    }
+    handle_key_input_state(input_state, key, state);
 }
 
 fn key_to_input_bit(key: KeyCode) -> Option<u16> {
@@ -694,6 +754,27 @@ mod tests {
         assert_ne!(input_state, 0);
         handle_focus_input_state(&mut input_state, false);
         assert_eq!(input_state, 0);
+    }
+
+    #[test]
+    fn escape_maps_to_host_menu_input() {
+        assert_eq!(
+            key_to_host_menu_input(KeyCode::Escape, ElementState::Pressed),
+            Some(HostMenuInput::Cancel)
+        );
+        assert_eq!(
+            key_to_host_menu_input(KeyCode::Escape, ElementState::Released),
+            None
+        );
+    }
+
+    #[test]
+    fn menu_open_consumes_snes_direction_keys() {
+        let mut input_state = 0;
+        handle_key_input_state_with_menu(&mut input_state, KeyCode::ArrowDown, ElementState::Pressed, true);
+        assert_eq!(input_state, 0);
+        handle_key_input_state_with_menu(&mut input_state, KeyCode::ArrowDown, ElementState::Pressed, false);
+        assert_eq!(input_state, 1 << 5);
     }
 
     #[test]
