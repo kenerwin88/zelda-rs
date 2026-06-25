@@ -30,9 +30,9 @@ use winit::window::{Fullscreen, Window, WindowAttributes, WindowId};
 
 pub mod host_menu;
 pub use host_menu::{
-    ControlsPanel, DeveloperDestination, DeveloperDestinationStatus, HostMenuAction,
-    HostMenuInput, HostMenuMode, HostMenuState, HostMenuTab, LightingChoice, PresentationChoice,
-    RuntimeSettings, ShadowChoice, ViewportChoice,
+    ControlsPanel, DeveloperDestination, DeveloperDestinationStatus, DeveloperMapPanel,
+    HostMenuAction, HostMenuInput, HostMenuMode, HostMenuState, HostMenuTab, LightingChoice,
+    PresentationChoice, RuntimeSettings, ShadowChoice, ViewportChoice,
 };
 
 // ── Frontend trait ────────────────────────────────────────────────────────────
@@ -497,13 +497,79 @@ fn menu_overlay_lines(menu: &HostMenuState) -> Vec<&'static str> {
     match menu.active_tab() {
         HostMenuTab::Play => play_menu_overlay_lines(menu.mode(), menu.selected_label()),
         HostMenuTab::Video => video_menu_overlay_lines(menu.selected_label()),
-        HostMenuTab::Controls => controls_menu_overlay_lines(menu.selected_label(), menu.controls_panel()),
-        HostMenuTab::DeveloperMap => vec![
-            "PLAY  VIDEO  CONTROLS  DEV MAP",
-            "> CURATED PRESETS",
-            "  ROUTE BOOKMARKS",
-            "  LOCKED BROWSER",
-        ],
+        HostMenuTab::Controls => {
+            controls_menu_overlay_lines(menu.selected_label(), menu.controls_panel())
+        }
+        HostMenuTab::DeveloperMap => developer_map_overlay_lines(menu),
+    }
+}
+
+fn developer_map_overlay_lines(menu: &HostMenuState) -> Vec<&'static str> {
+    let mut lines = vec!["PLAY  VIDEO  CONTROLS  DEV MAP"];
+    match menu.developer_map_panel() {
+        DeveloperMapPanel::Overview => {
+            lines.extend(menu.developer_map_items().into_iter().map(|label| {
+                selected_line(
+                    menu.selected_label(),
+                    label,
+                    match label {
+                        "Curated Presets" => "> CURATED PRESETS",
+                        "Route Bookmarks" => "> ROUTE BOOKMARKS",
+                        "Locked Browser" => "> LOCKED BROWSER",
+                        _ => "> UNKNOWN",
+                    },
+                    match label {
+                        "Curated Presets" => "  CURATED PRESETS",
+                        "Route Bookmarks" => "  ROUTE BOOKMARKS",
+                        "Locked Browser" => "  LOCKED BROWSER",
+                        _ => "  UNKNOWN",
+                    },
+                )
+            }));
+        }
+        DeveloperMapPanel::RouteBookmarks => {
+            lines.push("  ROUTE BOOKMARKS");
+            lines.extend(menu.developer_map_items().into_iter().map(|label| {
+                if menu.selected_label() == label {
+                    label_with_cursor(label)
+                } else {
+                    label_without_cursor(label)
+                }
+            }));
+        }
+        DeveloperMapPanel::LockedBrowser => {
+            lines.push("  LOCKED BROWSER");
+            lines.extend(menu.developer_map_items().into_iter().map(|label| {
+                if menu.selected_label() == label {
+                    label_with_cursor(label)
+                } else {
+                    label_without_cursor(label)
+                }
+            }));
+        }
+    }
+    lines
+}
+
+fn label_with_cursor(label: &'static str) -> &'static str {
+    match label {
+        "Route Start" => "> ROUTE START",
+        "File Select" => "> FILE SELECT",
+        "Late Route Checkpoint" => "> LATE ROUTE CHECKPT",
+        "Overworld Browser" => "> OVERWORLD BROWSER",
+        "Dungeon Room Browser" => "> DUNGEON ROOM BROW",
+        _ => "> UNKNOWN",
+    }
+}
+
+fn label_without_cursor(label: &'static str) -> &'static str {
+    match label {
+        "Route Start" => "  ROUTE START",
+        "File Select" => "  FILE SELECT",
+        "Late Route Checkpoint" => "  LATE ROUTE CHECKPT",
+        "Overworld Browser" => "  OVERWORLD BROWSER",
+        "Dungeon Room Browser" => "  DUNGEON ROOM BROW",
+        _ => "  UNKNOWN",
     }
 }
 

@@ -13,6 +13,13 @@ pub enum HostMenuTab {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeveloperMapPanel {
+    Overview,
+    RouteBookmarks,
+    LockedBrowser,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostMenuInput {
     Up,
     Down,
@@ -175,6 +182,7 @@ pub struct HostMenuState {
     selected_index: usize,
     runtime_settings: RuntimeSettings,
     controls_panel: Option<ControlsPanel>,
+    developer_map_panel: DeveloperMapPanel,
     developer_destinations: Vec<DeveloperDestination>,
 }
 
@@ -187,6 +195,7 @@ impl HostMenuState {
             selected_index: 0,
             runtime_settings: RuntimeSettings::default(),
             controls_panel: None,
+            developer_map_panel: DeveloperMapPanel::Overview,
             developer_destinations,
         }
     }
@@ -217,6 +226,9 @@ impl HostMenuState {
     pub fn set_active_tab(&mut self, tab: HostMenuTab) {
         self.active_tab = tab;
         self.selected_index = 0;
+        if tab == HostMenuTab::DeveloperMap {
+            self.developer_map_panel = DeveloperMapPanel::Overview;
+        }
     }
 
     pub fn runtime_settings(&self) -> RuntimeSettings {
@@ -225,6 +237,30 @@ impl HostMenuState {
 
     pub fn controls_panel(&self) -> Option<ControlsPanel> {
         self.controls_panel
+    }
+
+    pub fn developer_map_panel(&self) -> DeveloperMapPanel {
+        self.developer_map_panel
+    }
+
+    pub fn developer_map_items(&self) -> Vec<&'static str> {
+        match self.developer_map_panel {
+            DeveloperMapPanel::Overview => {
+                vec!["Curated Presets", "Route Bookmarks", "Locked Browser"]
+            }
+            DeveloperMapPanel::RouteBookmarks => self
+                .developer_destinations
+                .iter()
+                .filter(|destination| destination.status == DeveloperDestinationStatus::Verified)
+                .map(|destination| destination.label)
+                .collect(),
+            DeveloperMapPanel::LockedBrowser => self
+                .developer_destinations
+                .iter()
+                .filter(|destination| destination.status == DeveloperDestinationStatus::Locked)
+                .map(|destination| destination.label)
+                .collect(),
+        }
     }
 
     pub fn cycle_presentation(&mut self) -> HostMenuAction {
@@ -258,9 +294,9 @@ impl HostMenuState {
             HostMenuTab::Video => self.video_items()[self.selected_index],
             HostMenuTab::Controls => self.controls_items()[self.selected_index],
             HostMenuTab::DeveloperMap => self
-                .developer_destinations
+                .developer_map_items()
                 .get(self.selected_index)
-                .map(|destination| destination.label)
+                .copied()
                 .unwrap_or("No verified destinations"),
         }
     }
@@ -287,6 +323,18 @@ impl HostMenuState {
             HostMenuInput::CycleLighting => Some(self.cycle_lighting()),
             HostMenuInput::CycleShadows => Some(self.cycle_shadows()),
             HostMenuInput::Cancel => {
+                if self.active_tab == HostMenuTab::DeveloperMap
+                    && self.developer_map_panel != DeveloperMapPanel::Overview
+                {
+                    let overview_index = match self.developer_map_panel {
+                        DeveloperMapPanel::Overview => 0,
+                        DeveloperMapPanel::RouteBookmarks => 1,
+                        DeveloperMapPanel::LockedBrowser => 2,
+                    };
+                    self.developer_map_panel = DeveloperMapPanel::Overview;
+                    self.selected_index = overview_index;
+                    return None;
+                }
                 if self.mode == HostMenuMode::InGame {
                     Some(HostMenuAction::Resume)
                 } else {
@@ -337,11 +385,29 @@ impl HostMenuState {
                 2 => Some(self.reset_runtime_settings()),
                 _ => None,
             },
-            HostMenuTab::DeveloperMap => self
+            HostMenuTab::DeveloperMap => self.confirm_developer_map_selected(),
+        }
+    }
+
+    fn confirm_developer_map_selected(&mut self) -> Option<HostMenuAction> {
+        match self.developer_map_panel {
+            DeveloperMapPanel::Overview => {
+                match self.selected_index {
+                    0 => {}
+                    1 => self.developer_map_panel = DeveloperMapPanel::RouteBookmarks,
+                    2 => self.developer_map_panel = DeveloperMapPanel::LockedBrowser,
+                    _ => {}
+                }
+                self.selected_index = 0;
+                None
+            }
+            DeveloperMapPanel::RouteBookmarks => self
                 .developer_destinations
-                .get(self.selected_index)
+                .iter()
                 .filter(|destination| destination.status == DeveloperDestinationStatus::Verified)
+                .nth(self.selected_index)
                 .map(|destination| HostMenuAction::WarpToVerifiedDestination(destination.id)),
+            DeveloperMapPanel::LockedBrowser => None,
         }
     }
 
@@ -360,23 +426,23 @@ impl HostMenuState {
     }
 
     fn next_tab(&mut self) {
-        self.active_tab = match self.active_tab {
+        let next = match self.active_tab {
             HostMenuTab::Play => HostMenuTab::Video,
             HostMenuTab::Video => HostMenuTab::Controls,
             HostMenuTab::Controls => HostMenuTab::DeveloperMap,
             HostMenuTab::DeveloperMap => HostMenuTab::Play,
         };
-        self.selected_index = 0;
+        self.set_active_tab(next);
     }
 
     fn previous_tab(&mut self) {
-        self.active_tab = match self.active_tab {
+        let previous = match self.active_tab {
             HostMenuTab::Play => HostMenuTab::DeveloperMap,
             HostMenuTab::Video => HostMenuTab::Play,
             HostMenuTab::Controls => HostMenuTab::Video,
             HostMenuTab::DeveloperMap => HostMenuTab::Controls,
         };
-        self.selected_index = 0;
+        self.set_active_tab(previous);
     }
 
     fn current_len(&self) -> usize {
@@ -384,7 +450,7 @@ impl HostMenuState {
             HostMenuTab::Play => self.play_items().len(),
             HostMenuTab::Video => self.video_items().len(),
             HostMenuTab::Controls => self.controls_items().len(),
-            HostMenuTab::DeveloperMap => self.developer_destinations.len().max(1),
+            HostMenuTab::DeveloperMap => self.developer_map_items().len().max(1),
         }
     }
 
@@ -541,28 +607,40 @@ mod tests {
             menu_state.handle_input(HostMenuInput::Confirm),
             Some(direct_state.cycle_presentation())
         );
-        assert_eq!(menu_state.runtime_settings(), direct_state.runtime_settings());
+        assert_eq!(
+            menu_state.runtime_settings(),
+            direct_state.runtime_settings()
+        );
 
         menu_state.handle_input(HostMenuInput::Down);
         assert_eq!(
             menu_state.handle_input(HostMenuInput::Confirm),
             Some(direct_state.cycle_lighting())
         );
-        assert_eq!(menu_state.runtime_settings(), direct_state.runtime_settings());
+        assert_eq!(
+            menu_state.runtime_settings(),
+            direct_state.runtime_settings()
+        );
 
         menu_state.handle_input(HostMenuInput::Down);
         assert_eq!(
             menu_state.handle_input(HostMenuInput::Confirm),
             Some(direct_state.cycle_shadows())
         );
-        assert_eq!(menu_state.runtime_settings(), direct_state.runtime_settings());
+        assert_eq!(
+            menu_state.runtime_settings(),
+            direct_state.runtime_settings()
+        );
 
         menu_state.handle_input(HostMenuInput::Down);
         assert_eq!(
             menu_state.handle_input(HostMenuInput::Confirm),
             Some(direct_state.cycle_viewport())
         );
-        assert_eq!(menu_state.runtime_settings(), direct_state.runtime_settings());
+        assert_eq!(
+            menu_state.runtime_settings(),
+            direct_state.runtime_settings()
+        );
     }
 
     #[test]
@@ -592,7 +670,9 @@ mod tests {
         state.handle_input(HostMenuInput::Down);
         assert_eq!(
             state.handle_input(HostMenuInput::Confirm),
-            Some(HostMenuAction::ResetRuntimeSettings(RuntimeSettings::default()))
+            Some(HostMenuAction::ResetRuntimeSettings(
+                RuntimeSettings::default()
+            ))
         );
         assert_eq!(state.runtime_settings(), RuntimeSettings::default());
     }
@@ -621,11 +701,23 @@ mod tests {
     fn developer_map_only_activates_verified_destinations() {
         let mut state = state_with_destinations();
         state.set_active_tab(HostMenuTab::DeveloperMap);
+        assert_eq!(state.selected_label(), "Curated Presets");
+        assert_eq!(state.handle_input(HostMenuInput::Confirm), None);
+
+        state.handle_input(HostMenuInput::Down);
+        assert_eq!(state.selected_label(), "Route Bookmarks");
+        assert_eq!(state.handle_input(HostMenuInput::Confirm), None);
+        assert_eq!(state.selected_label(), "Sanctuary");
         assert_eq!(
             state.handle_input(HostMenuInput::Confirm),
             Some(HostMenuAction::WarpToVerifiedDestination("sanctuary"))
         );
+
+        assert_eq!(state.handle_input(HostMenuInput::Cancel), None);
+        assert_eq!(state.selected_label(), "Route Bookmarks");
         state.handle_input(HostMenuInput::Down);
+        assert_eq!(state.selected_label(), "Locked Browser");
+        assert_eq!(state.handle_input(HostMenuInput::Confirm), None);
         assert_eq!(state.selected_label(), "Room 003F");
         assert_eq!(state.handle_input(HostMenuInput::Confirm), None);
     }
