@@ -194,12 +194,15 @@ cycles shadow mode. The changed mode is shown briefly in the top-left corner.
 The native frontend opens an LTTP-styled host menu before the game starts.
 During play, press `ESC` to pause the game and open the same menu. Gameplay
 state stops advancing while the menu is open; currently playing music continues
-softly. Presentation controls are available from the Video tab, and F6/F7/F8
-remain shortcuts for presentation, lighting, and shadows.
+softly. The Video tab cycles presentation, lighting, shadows, and viewport
+scaling. The Controls tab shows keyboard/gamepad references and can reset all
+runtime presentation settings to defaults. F6/F7/F8 remain shortcuts for
+presentation, lighting, and shadows.
 
 The Developer Map starts with verified route bookmarks and curated presets.
-Unverified overworld screens and dungeon rooms are shown as locked until their
-initialization paths are tested.
+Verified route bookmarks load the combined route save and return control at the
+bookmark frame. Unverified overworld screens and dungeon rooms are shown as
+locked until their initialization paths are tested.
 
 Art sidecars are opt-in with `ZELDA3_ART_SIDECARS=/path/to/manifest.json`.
 `rgba` entries are decoded, packed, and uploaded into a presentation-side

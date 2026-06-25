@@ -77,10 +77,28 @@ impl ShadowChoice {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewportChoice {
+    Integer,
+    Fit,
+    Stretch,
+}
+
+impl ViewportChoice {
+    fn next(self) -> Self {
+        match self {
+            Self::Integer => Self::Fit,
+            Self::Fit => Self::Stretch,
+            Self::Stretch => Self::Integer,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuntimeSettings {
     pub presentation: PresentationChoice,
     pub lighting: LightingChoice,
     pub shadows: ShadowChoice,
+    pub viewport: ViewportChoice,
 }
 
 impl Default for RuntimeSettings {
@@ -89,8 +107,15 @@ impl Default for RuntimeSettings {
             presentation: PresentationChoice::Off,
             lighting: LightingChoice::Off,
             shadows: ShadowChoice::Off,
+            viewport: ViewportChoice::Integer,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlsPanel {
+    Keyboard,
+    Gamepad,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,6 +161,9 @@ pub enum HostMenuAction {
     SetPresentation(PresentationChoice),
     SetLighting(LightingChoice),
     SetShadows(ShadowChoice),
+    SetViewport(ViewportChoice),
+    ShowControls(ControlsPanel),
+    ResetRuntimeSettings(RuntimeSettings),
     WarpToVerifiedDestination(&'static str),
 }
 
@@ -146,6 +174,7 @@ pub struct HostMenuState {
     active_tab: HostMenuTab,
     selected_index: usize,
     runtime_settings: RuntimeSettings,
+    controls_panel: Option<ControlsPanel>,
     developer_destinations: Vec<DeveloperDestination>,
 }
 
@@ -157,6 +186,7 @@ impl HostMenuState {
             active_tab: HostMenuTab::Play,
             selected_index: 0,
             runtime_settings: RuntimeSettings::default(),
+            controls_panel: None,
             developer_destinations,
         }
     }
@@ -193,6 +223,10 @@ impl HostMenuState {
         self.runtime_settings
     }
 
+    pub fn controls_panel(&self) -> Option<ControlsPanel> {
+        self.controls_panel
+    }
+
     pub fn cycle_presentation(&mut self) -> HostMenuAction {
         self.runtime_settings.presentation = self.runtime_settings.presentation.next();
         HostMenuAction::SetPresentation(self.runtime_settings.presentation)
@@ -206,6 +240,16 @@ impl HostMenuState {
     pub fn cycle_shadows(&mut self) -> HostMenuAction {
         self.runtime_settings.shadows = self.runtime_settings.shadows.next();
         HostMenuAction::SetShadows(self.runtime_settings.shadows)
+    }
+
+    pub fn cycle_viewport(&mut self) -> HostMenuAction {
+        self.runtime_settings.viewport = self.runtime_settings.viewport.next();
+        HostMenuAction::SetViewport(self.runtime_settings.viewport)
+    }
+
+    pub fn reset_runtime_settings(&mut self) -> HostMenuAction {
+        self.runtime_settings = RuntimeSettings::default();
+        HostMenuAction::ResetRuntimeSettings(self.runtime_settings)
     }
 
     pub fn selected_label(&self) -> &'static str {
@@ -278,9 +322,21 @@ impl HostMenuState {
                 0 => Some(self.cycle_presentation()),
                 1 => Some(self.cycle_lighting()),
                 2 => Some(self.cycle_shadows()),
+                3 => Some(self.cycle_viewport()),
                 _ => None,
             },
-            HostMenuTab::Controls => None,
+            HostMenuTab::Controls => match self.selected_index {
+                0 => {
+                    self.controls_panel = Some(ControlsPanel::Keyboard);
+                    Some(HostMenuAction::ShowControls(ControlsPanel::Keyboard))
+                }
+                1 => {
+                    self.controls_panel = Some(ControlsPanel::Gamepad);
+                    Some(HostMenuAction::ShowControls(ControlsPanel::Gamepad))
+                }
+                2 => Some(self.reset_runtime_settings()),
+                _ => None,
+            },
             HostMenuTab::DeveloperMap => self
                 .developer_destinations
                 .get(self.selected_index)
@@ -443,6 +499,7 @@ mod tests {
                 presentation: PresentationChoice::Sharp,
                 lighting: LightingChoice::Ambient,
                 shadows: ShadowChoice::Raycast,
+                viewport: ViewportChoice::Integer,
             }
         );
     }
@@ -469,6 +526,7 @@ mod tests {
                 presentation: PresentationChoice::Sharp,
                 lighting: LightingChoice::Ambient,
                 shadows: ShadowChoice::Raycast,
+                viewport: ViewportChoice::Integer,
             }
         );
     }
@@ -498,6 +556,45 @@ mod tests {
             Some(direct_state.cycle_shadows())
         );
         assert_eq!(menu_state.runtime_settings(), direct_state.runtime_settings());
+
+        menu_state.handle_input(HostMenuInput::Down);
+        assert_eq!(
+            menu_state.handle_input(HostMenuInput::Confirm),
+            Some(direct_state.cycle_viewport())
+        );
+        assert_eq!(menu_state.runtime_settings(), direct_state.runtime_settings());
+    }
+
+    #[test]
+    fn controls_menu_exposes_help_and_reset_actions() {
+        let mut state = HostMenuState::new(HostMenuMode::InGame, Vec::new());
+        state.set_active_tab(HostMenuTab::Controls);
+
+        assert_eq!(
+            state.handle_input(HostMenuInput::Confirm),
+            Some(HostMenuAction::ShowControls(ControlsPanel::Keyboard))
+        );
+        assert_eq!(state.controls_panel(), Some(ControlsPanel::Keyboard));
+
+        state.handle_input(HostMenuInput::Down);
+        assert_eq!(
+            state.handle_input(HostMenuInput::Confirm),
+            Some(HostMenuAction::ShowControls(ControlsPanel::Gamepad))
+        );
+        assert_eq!(state.controls_panel(), Some(ControlsPanel::Gamepad));
+
+        state.cycle_presentation();
+        state.cycle_lighting();
+        state.cycle_shadows();
+        state.cycle_viewport();
+        assert_ne!(state.runtime_settings(), RuntimeSettings::default());
+
+        state.handle_input(HostMenuInput::Down);
+        assert_eq!(
+            state.handle_input(HostMenuInput::Confirm),
+            Some(HostMenuAction::ResetRuntimeSettings(RuntimeSettings::default()))
+        );
+        assert_eq!(state.runtime_settings(), RuntimeSettings::default());
     }
 
     #[test]

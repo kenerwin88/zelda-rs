@@ -181,10 +181,10 @@ fn apply_shadows(color: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
 
 fn notice_label_len() -> u32 {
     switch params.notice_code {
-        case 2u: { return 7u; }
+        case 2u, 30u: { return 7u; }
         case 11u, 12u, 22u: { return 9u; }
-        case 21u: { return 6u; }
-        case 1u, 3u, 10u, 20u: { return 5u; }
+        case 21u, 32u: { return 6u; }
+        case 1u, 3u, 10u, 20u, 31u: { return 5u; }
         default: { return 0u; }
     }
 }
@@ -217,6 +217,15 @@ fn notice_char_code(index: u32) -> u32 {
     if params.notice_code == 22u {
         return array<u32, 9>(83u, 58u, 82u, 65u, 89u, 67u, 65u, 83u, 84u)[index];
     }
+    if params.notice_code == 30u {
+        return array<u32, 9>(86u, 58u, 80u, 73u, 88u, 69u, 76u, 0u, 0u)[index];
+    }
+    if params.notice_code == 31u {
+        return array<u32, 9>(86u, 58u, 70u, 73u, 84u, 0u, 0u, 0u, 0u)[index];
+    }
+    if params.notice_code == 32u {
+        return array<u32, 9>(86u, 58u, 70u, 85u, 76u, 76u, 0u, 0u, 0u)[index];
+    }
     return 0u;
 }
 
@@ -240,6 +249,9 @@ fn glyph_row_bits(code: u32, row: u32) -> u32 {
         case 82u: { rows = array<u32, 7>(30u, 17u, 17u, 30u, 20u, 18u, 17u); }
         case 83u: { rows = array<u32, 7>(15u, 16u, 16u, 14u, 1u, 1u, 30u); }
         case 84u: { rows = array<u32, 7>(31u, 4u, 4u, 4u, 4u, 4u, 4u); }
+        case 85u: { rows = array<u32, 7>(17u, 17u, 17u, 17u, 17u, 17u, 14u); }
+        case 86u: { rows = array<u32, 7>(17u, 17u, 17u, 17u, 10u, 10u, 4u); }
+        case 88u: { rows = array<u32, 7>(17u, 17u, 10u, 4u, 10u, 17u, 17u); }
         case 89u: { rows = array<u32, 7>(17u, 17u, 10u, 4u, 4u, 4u, 4u); }
         default: {}
     }

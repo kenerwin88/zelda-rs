@@ -60,6 +60,13 @@ enum ViewportScaleMode {
     Stretch,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RendererViewportChoice {
+    Integer,
+    Fit,
+    Stretch,
+}
+
 impl ViewportScaleMode {
     fn from_env() -> Self {
         let value = env::var("ZELDA3_VIEWPORT_SCALE")
@@ -77,6 +84,14 @@ impl ViewportScaleMode {
             Some(_) => Self::Integer,
             None if env::var_os("ZELDA3_STEAMDECK").is_some() => Self::Fit,
             None => Self::Integer,
+        }
+    }
+
+    fn from_runtime_choice(choice: RendererViewportChoice) -> Self {
+        match choice {
+            RendererViewportChoice::Integer => Self::Integer,
+            RendererViewportChoice::Fit => Self::Fit,
+            RendererViewportChoice::Stretch => Self::Stretch,
         }
     }
 }
@@ -175,6 +190,7 @@ pub struct RendererRuntimeSettings {
     pub presentation: RendererPresentationChoice,
     pub lighting: RendererLightingChoice,
     pub shadows: RendererShadowChoice,
+    pub viewport: RendererViewportChoice,
 }
 
 impl ShadowMode {
@@ -293,6 +309,14 @@ impl PresentationNotice {
         self.show(match mode {
             ShadowMode::Off => 20,
             ShadowMode::Raycast => 22,
+        });
+    }
+
+    fn show_viewport(&mut self, mode: ViewportScaleMode) {
+        self.show(match mode {
+            ViewportScaleMode::Integer => 30,
+            ViewportScaleMode::Fit => 31,
+            ViewportScaleMode::Stretch => 32,
         });
     }
 
@@ -1745,9 +1769,35 @@ impl FrameRenderer {
     }
 
     pub fn apply_runtime_settings(&mut self, settings: RendererRuntimeSettings) {
+        let next_scale_mode = ViewportScaleMode::from_runtime_choice(settings.viewport);
         let next = PresentationParams::from_runtime_settings(settings);
         let presentation_changed = self.presentation_params.presentation != next.presentation;
+        let lighting_changed = self.presentation_params.lighting != next.lighting;
+        let shadows_changed = self.presentation_params.shadows != next.shadows;
+        let viewport_changed = self.scale_mode != next_scale_mode;
         self.presentation_params = next;
+        if presentation_changed {
+            self.presentation_notice
+                .show_presentation(self.presentation_params.presentation);
+        } else if lighting_changed {
+            self.presentation_notice
+                .show_lighting(self.presentation_params.lighting);
+        } else if shadows_changed {
+            self.presentation_notice
+                .show_shadows(self.presentation_params.shadows);
+        } else if viewport_changed {
+            self.presentation_notice.show_viewport(next_scale_mode);
+        }
+        if viewport_changed {
+            self.scale_mode = next_scale_mode;
+            self.viewport = compute_viewport(
+                self.config.width,
+                self.config.height,
+                self.game_width,
+                self.game_height,
+                self.scale_mode,
+            );
+        }
         if presentation_changed {
             self.rebuild_presentation_bind_groups();
         }
@@ -2567,6 +2617,7 @@ mod tests {
             presentation: RendererPresentationChoice::Crt,
             lighting: RendererLightingChoice::Dynamic,
             shadows: RendererShadowChoice::Raycast,
+            viewport: RendererViewportChoice::Integer,
         };
         let params = PresentationParams::from_runtime_settings(settings);
         assert_eq!(params.presentation, PresentationMode::Crt);
@@ -2643,6 +2694,8 @@ mod tests {
         assert_eq!(notice.code(), 12);
         notice.show_shadows(ShadowMode::Raycast);
         assert_eq!(notice.code(), 22);
+        notice.show_viewport(ViewportScaleMode::Fit);
+        assert_eq!(notice.code(), 31);
     }
 
     #[test]

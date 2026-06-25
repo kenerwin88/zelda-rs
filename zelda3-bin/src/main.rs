@@ -1370,11 +1370,29 @@ fn run_play_with_state(mut game: ZeldaState) {
                         }
                         HostMenuAction::SetPresentation(_)
                         | HostMenuAction::SetLighting(_)
-                        | HostMenuAction::SetShadows(_) => {
+                        | HostMenuAction::SetShadows(_)
+                        | HostMenuAction::SetViewport(_)
+                        | HostMenuAction::ResetRuntimeSettings(_) => {
                             frontend.apply_runtime_settings(host_menu.runtime_settings());
                         }
+                        HostMenuAction::ShowControls(panel) => {
+                            eprintln!("host menu controls panel selected: {panel:?}");
+                        }
                         HostMenuAction::WarpToVerifiedDestination(id) => {
-                            eprintln!("developer destination selected: {id}");
+                            match load_developer_route_bookmark(id) {
+                                Ok((next_game, next_frame)) => {
+                                    game = next_game;
+                                    host_frame = next_frame;
+                                    game_started = true;
+                                    host_menu.close();
+                                    eprintln!(
+                                        "developer destination loaded: {id} frame={next_frame}"
+                                    );
+                                }
+                                Err(e) => {
+                                    eprintln!("developer destination failed: {id}: {e}");
+                                }
+                            }
                         }
                     }
                 }
@@ -1471,6 +1489,29 @@ fn run_play_with_state(mut game: ZeldaState) {
     game.zelda_write_sram();
 }
 
+fn load_developer_route_bookmark(id: &str) -> Result<(ZeldaState, u32), String> {
+    let bookmark = developer_destinations::route_bookmark(id)
+        .ok_or_else(|| format!("unknown or locked destination '{id}'"))?;
+    let mut game = load_translated_replay_state(bookmark.rom_path);
+    game.replay_save_file(Path::new(bookmark.replay_path))
+        .map_err(|e| format!("failed to load {}: {e}", bookmark.replay_path))?;
+    let mut frames = game.state_recorder.replay_frame_counter;
+    while frames < bookmark.target_frame && game.state_recorder.replay_mode {
+        game.zelda_run_frame(0);
+        frames = frames.wrapping_add(1);
+    }
+    if frames != bookmark.target_frame {
+        return Err(format!(
+            "route replay ended at frame {frames}, before target {}",
+            bookmark.target_frame
+        ));
+    }
+    let mut state_recorder = std::mem::take(&mut game.state_recorder);
+    ZeldaState::state_recorder_stop_replay(&mut state_recorder);
+    game.state_recorder = state_recorder;
+    Ok((game, frames))
+}
+
 #[cfg(test)]
 fn apply_host_menu_action_for_test(
     menu: &mut HostMenuState,
@@ -1488,6 +1529,9 @@ fn apply_host_menu_action_for_test(
         HostMenuAction::SetPresentation(_)
         | HostMenuAction::SetLighting(_)
         | HostMenuAction::SetShadows(_)
+        | HostMenuAction::SetViewport(_)
+        | HostMenuAction::ShowControls(_)
+        | HostMenuAction::ResetRuntimeSettings(_)
         | HostMenuAction::WarpToVerifiedDestination(_) => {}
     }
 }
@@ -1526,6 +1570,14 @@ mod host_menu_play_tests {
         assert!(!menu.is_open());
         assert!(should_start);
         assert!(!should_quit);
+    }
+
+    #[test]
+    fn developer_route_start_bookmark_loads_and_stops_replay() {
+        let (game, frame) = load_developer_route_bookmark("route-start")
+            .expect("route-start bookmark should load bundled route save");
+        assert_eq!(frame, 0);
+        assert!(!game.state_recorder.replay_mode);
     }
 }
 
@@ -9179,7 +9231,14 @@ fn find_asset_pack(rom_path: &str) -> Option<PathBuf> {
     }
 
     let cwd_asset = PathBuf::from("zelda3_assets.dat");
-    cwd_asset.is_file().then_some(cwd_asset)
+    if cwd_asset.is_file() {
+        return Some(cwd_asset);
+    }
+
+    let repo_asset = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("zelda3_assets.dat");
+    repo_asset.is_file().then_some(repo_asset)
 }
 
 #[cfg(test)]

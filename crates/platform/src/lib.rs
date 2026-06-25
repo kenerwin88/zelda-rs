@@ -30,8 +30,9 @@ use winit::window::{Fullscreen, Window, WindowAttributes, WindowId};
 
 pub mod host_menu;
 pub use host_menu::{
-    DeveloperDestination, DeveloperDestinationStatus, HostMenuAction, HostMenuInput, HostMenuMode,
-    HostMenuState, HostMenuTab, LightingChoice, PresentationChoice, RuntimeSettings, ShadowChoice,
+    ControlsPanel, DeveloperDestination, DeveloperDestinationStatus, HostMenuAction,
+    HostMenuInput, HostMenuMode, HostMenuState, HostMenuTab, LightingChoice, PresentationChoice,
+    RuntimeSettings, ShadowChoice, ViewportChoice,
 };
 
 // ── Frontend trait ────────────────────────────────────────────────────────────
@@ -266,6 +267,11 @@ impl NativeFrontend {
                 ShadowChoice::Off => renderer::RendererShadowChoice::Off,
                 ShadowChoice::Raycast => renderer::RendererShadowChoice::Raycast,
             },
+            viewport: match settings.viewport {
+                ViewportChoice::Integer => renderer::RendererViewportChoice::Integer,
+                ViewportChoice::Fit => renderer::RendererViewportChoice::Fit,
+                ViewportChoice::Stretch => renderer::RendererViewportChoice::Stretch,
+            },
         };
         if let Some(renderer) = &mut self.handler.renderer {
             renderer.apply_runtime_settings(renderer_settings);
@@ -491,7 +497,7 @@ fn menu_overlay_lines(menu: &HostMenuState) -> Vec<&'static str> {
     match menu.active_tab() {
         HostMenuTab::Play => play_menu_overlay_lines(menu.mode(), menu.selected_label()),
         HostMenuTab::Video => video_menu_overlay_lines(menu.selected_label()),
-        HostMenuTab::Controls => controls_menu_overlay_lines(menu.selected_label()),
+        HostMenuTab::Controls => controls_menu_overlay_lines(menu.selected_label(), menu.controls_panel()),
         HostMenuTab::DeveloperMap => vec![
             "PLAY  VIDEO  CONTROLS  DEV MAP",
             "> CURATED PRESETS",
@@ -546,18 +552,47 @@ fn video_menu_overlay_lines(selected: &'static str) -> Vec<&'static str> {
     ]
 }
 
-fn controls_menu_overlay_lines(selected: &'static str) -> Vec<&'static str> {
-    vec![
-        "PLAY  VIDEO  CONTROLS  DEV MAP",
-        selected_line(selected, "Keyboard", "> KEYBOARD", "  KEYBOARD"),
-        selected_line(selected, "Gamepad", "> GAMEPAD", "  GAMEPAD"),
-        selected_line(
-            selected,
-            "Reset Defaults",
-            "> RESET DEFAULTS",
-            "  RESET DEFAULTS",
-        ),
-    ]
+fn controls_menu_overlay_lines(
+    selected: &'static str,
+    panel: Option<ControlsPanel>,
+) -> Vec<&'static str> {
+    match panel {
+        Some(ControlsPanel::Keyboard) => vec![
+            "PLAY  VIDEO  CONTROLS  DEV MAP",
+            "> KEYBOARD",
+            "  Z/X CONFIRM    ESC BACK",
+            "  ARROWS MOVE    F6-F8 FX",
+            selected_line(
+                selected,
+                "Reset Defaults",
+                "> RESET DEFAULTS",
+                "  RESET DEFAULTS",
+            ),
+        ],
+        Some(ControlsPanel::Gamepad) => vec![
+            "PLAY  VIDEO  CONTROLS  DEV MAP",
+            "> GAMEPAD",
+            "  DPAD MOVE      A CONFIRM",
+            "  B BACK         L/R TABS",
+            selected_line(
+                selected,
+                "Reset Defaults",
+                "> RESET DEFAULTS",
+                "  RESET DEFAULTS",
+            ),
+        ],
+        None => vec![
+            "PLAY  VIDEO  CONTROLS  DEV MAP",
+            selected_line(selected, "Keyboard", "> KEYBOARD", "  KEYBOARD"),
+            selected_line(selected, "Gamepad", "> GAMEPAD", "  GAMEPAD"),
+            selected_line(
+                selected,
+                "Reset Defaults",
+                "> RESET DEFAULTS",
+                "  RESET DEFAULTS",
+            ),
+        ],
+    }
 }
 
 fn selected_line(
