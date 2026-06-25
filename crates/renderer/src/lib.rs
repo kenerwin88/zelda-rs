@@ -325,6 +325,349 @@ impl PresentationNotice {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuOverlayTab {
+    Play,
+    Video,
+    Controls,
+    DeveloperMap,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuOverlayModel {
+    pub tab: MenuOverlayTab,
+    pub selected_index: usize,
+    pub lines: Vec<&'static str>,
+}
+
+impl MenuOverlayModel {
+    fn resume_first_play_tab() -> Self {
+        Self {
+            tab: MenuOverlayTab::Play,
+            selected_index: 0,
+            lines: vec![
+                "PLAY  VIDEO  CONTROLS  DEV MAP",
+                "> RESUME QUEST",
+                "  VIDEO & EFFECTS",
+                "  CONTROLS",
+                "DEVELOPER MAP",
+                "  SAVE & QUIT",
+            ],
+        }
+    }
+}
+
+fn menu_overlay_lines(menu: &MenuOverlayModel) -> Vec<&'static str> {
+    if !menu.lines.is_empty() {
+        return menu.lines.clone();
+    }
+    match menu.tab {
+        MenuOverlayTab::Play => MenuOverlayModel::resume_first_play_tab().lines,
+        MenuOverlayTab::Video => vec![
+            "PLAY  VIDEO  CONTROLS  DEV MAP",
+            "> PRESENTATION",
+            "  LIGHTING",
+            "  SHADOWS",
+            "  VIEWPORT",
+        ],
+        MenuOverlayTab::Controls => vec![
+            "PLAY  VIDEO  CONTROLS  DEV MAP",
+            "> KEYBOARD",
+            "  GAMEPAD",
+            "  RESET DEFAULTS",
+        ],
+        MenuOverlayTab::DeveloperMap => vec![
+            "PLAY  VIDEO  CONTROLS  DEV MAP",
+            "> CURATED PRESETS",
+            "  ROUTE BOOKMARKS",
+            "  LOCKED BROWSER",
+        ],
+    }
+}
+
+const MENU_COLOR_BACKDROP: u32 = 0xff050713;
+const MENU_COLOR_PANEL: u32 = 0xff101629;
+const MENU_COLOR_PANEL_DARK: u32 = 0xff080b18;
+const MENU_COLOR_BORDER: u32 = 0xffd6b45a;
+const MENU_COLOR_BORDER_SHADOW: u32 = 0xff5a3d1a;
+const MENU_COLOR_TEXT: u32 = 0xfffff0b8;
+const MENU_COLOR_TEXT_DIM: u32 = 0xffb9a56c;
+
+fn build_menu_overlay_pixels(menu: &MenuOverlayModel, width: u32, height: u32) -> Vec<u32> {
+    let mut pixels = vec![MENU_COLOR_BACKDROP; width.saturating_mul(height) as usize];
+    if width == 0 || height == 0 {
+        return pixels;
+    }
+
+    draw_rect(
+        &mut pixels,
+        width,
+        height,
+        18,
+        22,
+        220,
+        178,
+        MENU_COLOR_PANEL,
+    );
+    draw_rect(
+        &mut pixels,
+        width,
+        height,
+        22,
+        26,
+        212,
+        170,
+        MENU_COLOR_PANEL_DARK,
+    );
+    draw_border(&mut pixels, width, height, 18, 22, 220, 178);
+    draw_border(&mut pixels, width, height, 22, 26, 212, 170);
+    draw_rect(&mut pixels, width, height, 30, 38, 196, 18, 0xff1b2338);
+
+    let lines = menu_overlay_lines(menu);
+    if let Some(header) = lines.first() {
+        draw_text(
+            &mut pixels,
+            width,
+            height,
+            38,
+            44,
+            header,
+            1,
+            MENU_COLOR_TEXT_DIM,
+        );
+    }
+    for (line_index, line) in lines.iter().skip(1).enumerate() {
+        let y = 74 + line_index as i32 * 22;
+        let color = if line.starts_with('>') {
+            draw_rect(&mut pixels, width, height, 34, y - 4, 188, 17, 0xff202a43);
+            MENU_COLOR_TEXT
+        } else {
+            MENU_COLOR_TEXT_DIM
+        };
+        draw_text(&mut pixels, width, height, 42, y, line, 1, color);
+    }
+
+    pixels
+}
+
+fn draw_border(pixels: &mut [u32], width: u32, height: u32, x: i32, y: i32, w: i32, h: i32) {
+    draw_rect(pixels, width, height, x, y, w, 1, MENU_COLOR_BORDER);
+    draw_rect(pixels, width, height, x, y, 1, h, MENU_COLOR_BORDER);
+    draw_rect(
+        pixels,
+        width,
+        height,
+        x,
+        y + h - 1,
+        w,
+        1,
+        MENU_COLOR_BORDER_SHADOW,
+    );
+    draw_rect(
+        pixels,
+        width,
+        height,
+        x + w - 1,
+        y,
+        1,
+        h,
+        MENU_COLOR_BORDER_SHADOW,
+    );
+}
+
+fn draw_rect(
+    pixels: &mut [u32],
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    color: u32,
+) {
+    for py in y.max(0)..(y + h).min(height as i32) {
+        for px in x.max(0)..(x + w).min(width as i32) {
+            pixels[(py as u32 * width + px as u32) as usize] = color;
+        }
+    }
+}
+
+fn draw_text(
+    pixels: &mut [u32],
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+    text: &str,
+    scale: i32,
+    color: u32,
+) {
+    let mut cursor_x = x;
+    for ch in text.chars() {
+        if ch == ' ' {
+            cursor_x += 4 * scale;
+            continue;
+        }
+        draw_glyph(pixels, width, height, cursor_x, y, ch, scale, color);
+        cursor_x += 6 * scale;
+    }
+}
+
+fn draw_glyph(
+    pixels: &mut [u32],
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+    ch: char,
+    scale: i32,
+    color: u32,
+) {
+    let rows = glyph_rows(ch);
+    for (row, bits) in rows.iter().enumerate() {
+        for col in 0..5 {
+            if bits & (1 << (4 - col)) == 0 {
+                continue;
+            }
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + col * scale,
+                y + row as i32 * scale,
+                scale,
+                scale,
+                color,
+            );
+        }
+    }
+}
+
+fn glyph_rows(ch: char) -> [i32; 7] {
+    match ch {
+        'A' => [
+            0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+        ],
+        'B' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110,
+        ],
+        'C' => [
+            0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110,
+        ],
+        'D' => [
+            0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110,
+        ],
+        'E' => [
+            0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111,
+        ],
+        'F' => [
+            0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000,
+        ],
+        'G' => [
+            0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01110,
+        ],
+        'H' => [
+            0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+        ],
+        'I' => [
+            0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111,
+        ],
+        'J' => [
+            0b00111, 0b00010, 0b00010, 0b00010, 0b10010, 0b10010, 0b01100,
+        ],
+        'K' => [
+            0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001,
+        ],
+        'L' => [
+            0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111,
+        ],
+        'M' => [
+            0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001,
+        ],
+        'N' => [
+            0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001,
+        ],
+        'O' => [
+            0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        'P' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000,
+        ],
+        'Q' => [
+            0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101,
+        ],
+        'R' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001,
+        ],
+        'S' => [
+            0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110,
+        ],
+        'T' => [
+            0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        'U' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        'V' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100,
+        ],
+        'W' => [
+            0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b10101, 0b01010,
+        ],
+        'X' => [
+            0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001,
+        ],
+        'Y' => [
+            0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        'Z' => [
+            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111,
+        ],
+        '0' => [
+            0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110,
+        ],
+        '1' => [
+            0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
+        ],
+        '2' => [
+            0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111,
+        ],
+        '3' => [
+            0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110,
+        ],
+        '4' => [
+            0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010,
+        ],
+        '5' => [
+            0b11111, 0b10000, 0b10000, 0b11110, 0b00001, 0b00001, 0b11110,
+        ],
+        '6' => [
+            0b01110, 0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110,
+        ],
+        '7' => [
+            0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000,
+        ],
+        '8' => [
+            0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110,
+        ],
+        '9' => [
+            0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110,
+        ],
+        '>' => [
+            0b10000, 0b01000, 0b00100, 0b00010, 0b00100, 0b01000, 0b10000,
+        ],
+        '&' => [
+            0b01100, 0b10010, 0b10100, 0b01000, 0b10101, 0b10010, 0b01101,
+        ],
+        '-' => [
+            0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000,
+        ],
+        _ => [
+            0b11111, 0b10001, 0b10101, 0b10101, 0b10101, 0b10001, 0b11111,
+        ],
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PresentationContext {
     pub in_dungeon: bool,
@@ -1511,6 +1854,12 @@ impl FrameRenderer {
         );
     }
 
+    pub fn render_menu_overlay(&mut self, menu: &MenuOverlayModel) -> Result<(), RenderError> {
+        let pixels = build_menu_overlay_pixels(menu, self.game_width, self.game_height);
+        self.upload_frame(&pixels);
+        self.render()
+    }
+
     pub fn render(&mut self) -> Result<(), RenderError> {
         self.maybe_log_viewport();
         if self.presentation_notice.frames_remaining() > 0 {
@@ -2228,6 +2577,25 @@ mod tests {
         assert_eq!(params.presentation, PresentationMode::Crt);
         assert_eq!(params.lighting, LightingMode::Dynamic);
         assert_eq!(params.shadows, ShadowMode::Raycast);
+    }
+
+    #[test]
+    fn menu_overlay_lines_use_resume_first_play_tab() {
+        let menu = MenuOverlayModel::resume_first_play_tab();
+        let lines = menu_overlay_lines(&menu);
+        assert_eq!(lines[0], "PLAY  VIDEO  CONTROLS  DEV MAP");
+        assert_eq!(lines[1], "> RESUME QUEST");
+        assert!(lines.iter().any(|line| *line == "DEVELOPER MAP"));
+    }
+
+    #[test]
+    fn menu_overlay_pixels_include_panel_border_and_text() {
+        let menu = MenuOverlayModel::resume_first_play_tab();
+        let pixels = build_menu_overlay_pixels(&menu, 256, 224);
+        assert_eq!(pixels.len(), 256 * 224);
+        assert!(pixels.contains(&MENU_COLOR_PANEL));
+        assert!(pixels.contains(&MENU_COLOR_BORDER));
+        assert!(pixels.contains(&MENU_COLOR_TEXT));
     }
 
     #[test]

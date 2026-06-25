@@ -269,6 +269,32 @@ impl NativeFrontend {
         }
     }
 
+    pub fn present_menu_overlay(&mut self, menu: &HostMenuState) {
+        let overlay = renderer::MenuOverlayModel {
+            tab: match menu.active_tab() {
+                HostMenuTab::Play => renderer::MenuOverlayTab::Play,
+                HostMenuTab::Video => renderer::MenuOverlayTab::Video,
+                HostMenuTab::Controls => renderer::MenuOverlayTab::Controls,
+                HostMenuTab::DeveloperMap => renderer::MenuOverlayTab::DeveloperMap,
+            },
+            selected_index: 0,
+            lines: menu_overlay_lines(menu),
+        };
+        if let Some(renderer) = &mut self.handler.renderer {
+            match renderer.render_menu_overlay(&overlay) {
+                Ok(()) => {}
+                Err(RenderError::SurfaceReconfigureNeeded) => {
+                    if let Some(window) = &self.handler.window {
+                        renderer.resize(window.inner_size());
+                    }
+                }
+                Err(RenderError::SurfaceSkipped) => {}
+                Err(RenderError::Fatal(e)) => eprintln!("render error: {e}"),
+            }
+        }
+        self.sleep_after_present();
+    }
+
     fn sleep_after_present(&mut self) {
         // Frame pacing — function name and increment text must match exactly;
         // scripts/test_standard_replay_parity.py greps for both literals.
@@ -458,6 +484,92 @@ fn handle_key_input_state_with_menu(
         return;
     }
     handle_key_input_state(input_state, key, state);
+}
+
+fn menu_overlay_lines(menu: &HostMenuState) -> Vec<&'static str> {
+    match menu.active_tab() {
+        HostMenuTab::Play => play_menu_overlay_lines(menu.mode(), menu.selected_label()),
+        HostMenuTab::Video => video_menu_overlay_lines(menu.selected_label()),
+        HostMenuTab::Controls => controls_menu_overlay_lines(menu.selected_label()),
+        HostMenuTab::DeveloperMap => vec![
+            "PLAY  VIDEO  CONTROLS  DEV MAP",
+            "> CURATED PRESETS",
+            "  ROUTE BOOKMARKS",
+            "  LOCKED BROWSER",
+        ],
+    }
+}
+
+fn play_menu_overlay_lines(mode: HostMenuMode, selected: &'static str) -> Vec<&'static str> {
+    let primary = match mode {
+        HostMenuMode::PreGame => {
+            selected_line(selected, "Start Quest", "> START QUEST", "  START QUEST")
+        }
+        HostMenuMode::InGame => {
+            selected_line(selected, "Resume Quest", "> RESUME QUEST", "  RESUME QUEST")
+        }
+    };
+    let exit = match mode {
+        HostMenuMode::PreGame => selected_line(selected, "Quit", "> QUIT", "  QUIT"),
+        HostMenuMode::InGame => {
+            selected_line(selected, "Save & Quit", "> SAVE & QUIT", "  SAVE & QUIT")
+        }
+    };
+    vec![
+        "PLAY  VIDEO  CONTROLS  DEV MAP",
+        primary,
+        selected_line(
+            selected,
+            "Video & Effects",
+            "> VIDEO & EFFECTS",
+            "  VIDEO & EFFECTS",
+        ),
+        selected_line(selected, "Controls", "> CONTROLS", "  CONTROLS"),
+        selected_line(
+            selected,
+            "Developer Map",
+            "> DEVELOPER MAP",
+            "DEVELOPER MAP",
+        ),
+        exit,
+    ]
+}
+
+fn video_menu_overlay_lines(selected: &'static str) -> Vec<&'static str> {
+    vec![
+        "PLAY  VIDEO  CONTROLS  DEV MAP",
+        selected_line(selected, "Presentation", "> PRESENTATION", "  PRESENTATION"),
+        selected_line(selected, "Lighting", "> LIGHTING", "  LIGHTING"),
+        selected_line(selected, "Shadows", "> SHADOWS", "  SHADOWS"),
+        selected_line(selected, "Viewport", "> VIEWPORT", "  VIEWPORT"),
+    ]
+}
+
+fn controls_menu_overlay_lines(selected: &'static str) -> Vec<&'static str> {
+    vec![
+        "PLAY  VIDEO  CONTROLS  DEV MAP",
+        selected_line(selected, "Keyboard", "> KEYBOARD", "  KEYBOARD"),
+        selected_line(selected, "Gamepad", "> GAMEPAD", "  GAMEPAD"),
+        selected_line(
+            selected,
+            "Reset Defaults",
+            "> RESET DEFAULTS",
+            "  RESET DEFAULTS",
+        ),
+    ]
+}
+
+fn selected_line(
+    selected: &'static str,
+    label: &'static str,
+    active: &'static str,
+    inactive: &'static str,
+) -> &'static str {
+    if selected == label {
+        active
+    } else {
+        inactive
+    }
 }
 
 fn key_to_input_bit(key: KeyCode) -> Option<u16> {
@@ -793,9 +905,19 @@ mod tests {
     #[test]
     fn menu_open_consumes_snes_direction_keys() {
         let mut input_state = 0;
-        handle_key_input_state_with_menu(&mut input_state, KeyCode::ArrowDown, ElementState::Pressed, true);
+        handle_key_input_state_with_menu(
+            &mut input_state,
+            KeyCode::ArrowDown,
+            ElementState::Pressed,
+            true,
+        );
         assert_eq!(input_state, 0);
-        handle_key_input_state_with_menu(&mut input_state, KeyCode::ArrowDown, ElementState::Pressed, false);
+        handle_key_input_state_with_menu(
+            &mut input_state,
+            KeyCode::ArrowDown,
+            ElementState::Pressed,
+            false,
+        );
         assert_eq!(input_state, 1 << 5);
     }
 
