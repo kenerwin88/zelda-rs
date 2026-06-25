@@ -182,12 +182,24 @@ Set `ZELDA3_LIGHTING=ambient|dynamic` for presentation-only darkening; dynamic
 mode adds dungeon-aware ambient darkness plus a small capped point-light list
 from visible flame/spark/magic-like OBJ tiles, falling back to bright OBJ
 palettes for unclassified effects, and composites those lights through a coarse
-16x14 radial light mask. Set `ZELDA3_SHADOWS=soft|raycast` for
-presentation-only vignette shadowing; `raycast` also samples a coarse 16x14
-occluder mask derived from high-priority BG tile metadata and softens ray edges
-with multi-tap sampling. Leaving these unset preserves the vanilla presentation.
+16x14 radial light mask. Set `ZELDA3_SHADOWS=raycast` for presentation-only
+vignette shadowing that samples a coarse 16x14 occluder mask derived from
+high-priority BG tile metadata and softens ray edges with multi-tap sampling.
+Leaving these unset preserves the vanilla presentation.
 During native play, F6 cycles presentation mode, F7 cycles lighting mode, and F8
 cycles shadow mode. The changed mode is shown briefly in the top-left corner.
+
+### Host Menu
+
+The native frontend opens an LTTP-styled host menu before the game starts.
+During play, press `ESC` to pause the game and open the same menu. Gameplay
+state stops advancing while the menu is open; currently playing music continues
+softly. Presentation controls are available from the Video tab, and F6/F7/F8
+remain shortcuts for presentation, lighting, and shadows.
+
+The Developer Map starts with verified route bookmarks and curated presets.
+Unverified overworld screens and dungeon rooms are shown as locked until their
+initialization paths are tested.
 
 Art sidecars are opt-in with `ZELDA3_ART_SIDECARS=/path/to/manifest.json`.
 `rgba` entries are decoded, packed, and uploaded into a presentation-side
