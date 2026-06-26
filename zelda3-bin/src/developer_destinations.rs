@@ -39,8 +39,10 @@ pub fn developer_destinations() -> Vec<DeveloperDestination> {
 }
 
 pub fn route_bookmark(id: &str) -> Option<DeveloperRouteBookmark> {
-    const REPLAY_PATH: &str =
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3-combined-route.sav");
+    const REPLAY_PATH: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../saves/zelda3-combined-route.sav"
+    );
     const ROM_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc");
     match id {
         "route-start" => Some(DeveloperRouteBookmark {

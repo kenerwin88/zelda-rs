@@ -1198,7 +1198,7 @@ impl ZeldaState {
         } else {
             hudxy(21, 11)
         };
-        self.hud_draw_nx_n(0x1000, dst, &HUD_PROGRESS_CRYSTAL_BACKGROUND_TILES, 10, 9);
+        self.hud_draw_nx_n(0x1000, dst, &HUD_PROGRESS_PENDANT_BACKGROUND_TILES, 10, 9);
         let f = self.game_state.inventory.player_resources.pendant_flags();
         self.hud_draw_item(
             0x1000,
@@ -1223,7 +1223,7 @@ impl ZeldaState {
         } else {
             hudxy(21, 11)
         };
-        self.hud_draw_nx_n(0x1000, dst, &HUD_PROGRESS_PENDANT_BACKGROUND_TILES, 10, 9);
+        self.hud_draw_nx_n(0x1000, dst, &HUD_PROGRESS_CRYSTAL_BACKGROUND_TILES, 10, 9);
         let f = self.game_state.inventory.player_resources.crystal_flags();
         for (bit, x, y) in [
             (1, 3, 3),

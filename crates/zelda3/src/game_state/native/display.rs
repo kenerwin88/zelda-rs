@@ -4167,14 +4167,17 @@ impl<'a> NativeVramUploadBufferBridgeMut<'a> {
         next
     }
 
+    #[track_caller]
     pub(crate) fn write_buffer_byte(&mut self, offset: usize, value: u8) {
         self.ram[VRAM_UPLOAD_DATA + offset] = value;
     }
 
+    #[track_caller]
     pub(crate) fn write_buffer_word(&mut self, offset: usize, value: u16) {
         write_le_u16(self.ram, VRAM_UPLOAD_DATA + offset, value);
     }
 
+    #[track_caller]
     pub(crate) fn write_tilemap_word(&mut self, offset: usize, value: u16) {
         write_le_u16(self.ram, VRAM_UPLOAD_OFFSET + offset, value);
     }
@@ -4183,10 +4186,12 @@ impl<'a> NativeVramUploadBufferBridgeMut<'a> {
         write_le_u16(self.ram, UVRAM_DATA + word_index * 2, value);
     }
 
+    #[track_caller]
     pub(crate) fn write_absolute_byte(&mut self, address: usize, value: u8) {
         self.ram[address] = value;
     }
 
+    #[track_caller]
     pub(crate) fn write_absolute_word(&mut self, address: usize, value: u16) {
         write_le_u16(self.ram, address, value);
     }
@@ -4465,8 +4470,7 @@ impl<'a> NativePpuScrollCopyBridgeMut<'a> {
         // mapbak_palette is write-through (not projected by write_to_ram), so RAM may
         // legitimately differ from this state's stale copy — ignore it in the check.
         let mut live = PpuScrollCopyState::load_from_ram(self.ram);
-        live.mapbak_palette
-            .clone_from(&self.state.mapbak_palette);
+        live.mapbak_palette.clone_from(&self.state.mapbak_palette);
         debug_assert_eq!(*self.state, live);
     }
 

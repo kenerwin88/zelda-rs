@@ -255,7 +255,7 @@ impl ZeldaState {
     pub(super) fn link_state_bunny_recache(&mut self) {
         self.follower_link_state_mut().recache_bunny_state();
         self.link_reset_swimming_state();
-        self.follower_link_state_mut().set_handler_state(6);
+        self.follower_link_state_mut().set_handler_state(2);
         if self.game_state.player.follower_link.has_moon_pearl() {
             self.follower_link_state_mut().clear_handler_state();
             self.load_actual_gear_palettes();

@@ -5078,10 +5078,7 @@ impl<'a> NativeDungeonRoomEffectsBridgeMut<'a> {
             ram_state.blast_wall_message_y = self.state.blast_wall_message_y;
             ram_state.blast_wall_message_direction = self.state.blast_wall_message_direction;
         }
-        debug_assert_eq!(
-            *self.state,
-            ram_state
-        );
+        debug_assert_eq!(*self.state, ram_state);
     }
 
     pub(crate) fn fill_moving_wall_replacement_buffer(&mut self, value: u16) {

@@ -4688,14 +4688,17 @@ impl ZeldaState {
             .vram_dma_source_bytes(&self.ram, source_addr, len)
     }
 
+    #[track_caller]
     pub(crate) fn write_vram_upload_buffer_byte(&mut self, offset: usize, value: u8) {
         self.vram_upload_mut().write_buffer_byte(offset, value);
     }
 
+    #[track_caller]
     pub(crate) fn write_vram_upload_buffer_word(&mut self, offset: usize, value: u16) {
         self.vram_upload_mut().write_buffer_word(offset, value);
     }
 
+    #[track_caller]
     pub(crate) fn write_vram_upload_tilemap_word(&mut self, offset: usize, value: u16) {
         self.vram_upload_mut().write_tilemap_word(offset, value);
     }
@@ -4705,10 +4708,12 @@ impl ZeldaState {
             .write_overworld_vram_word(word_index, value);
     }
 
+    #[track_caller]
     pub(crate) fn write_vram_upload_absolute_byte(&mut self, address: usize, value: u8) {
         self.vram_upload_mut().write_absolute_byte(address, value);
     }
 
+    #[track_caller]
     pub(crate) fn write_vram_upload_absolute_word(&mut self, address: usize, value: u16) {
         self.vram_upload_mut().write_absolute_word(address, value);
     }

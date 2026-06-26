@@ -140,7 +140,7 @@ fn native_follower_link_bridge_refreshes_projection_before_dual_writes() {
 }
 
 #[test]
-fn native_follower_link_reset_properties_c_clears_defense_flags_in_ram() {
+fn native_follower_link_reset_properties_c_preserves_drag_state_bits() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[PLAYER_DEFENSE_FLAGS] = 2;
     ram[LINK_POSE_FOR_ITEM] = 1;
@@ -151,8 +151,8 @@ fn native_follower_link_reset_properties_c_clears_defense_flags_in_ram() {
         bridge.reset_properties_c_fields();
     }
 
-    assert_eq!(link.defense_flags(), 0);
-    assert_eq!(ram[PLAYER_DEFENSE_FLAGS], 0);
+    assert_eq!(link.defense_flags(), 2);
+    assert_eq!(ram[PLAYER_DEFENSE_FLAGS], 2);
     assert_eq!(link.item_hold_pose(), 0);
     assert_eq!(ram[LINK_POSE_FOR_ITEM], 0);
 }

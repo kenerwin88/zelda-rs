@@ -3535,7 +3535,6 @@ impl FollowerLinkState {
         self.direction_lock = 0;
         self.auxiliary_state = 0;
         self.incapacitated_timer = 0;
-        self.defense_flags = 0;
         self.action_handler_timer = 0;
         self.sprite_damage_disabled = 0;
         self.item_hold_pose = 0;
@@ -6607,6 +6606,8 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.ram[LINK_NEED_FOR_POOF_FOR_TRANSFORM] = 0;
         self.ram[LINK_IS_BUNNY] = 0;
         self.ram[LINK_IS_BUNNY_MIRROR] = 0;
+        // C clears only the low byte here; preserve the high byte in both native
+        // state and RAM projection.
         self.ram[LINK_TIMER_TEMPBUNNY] = 0;
         self.debug_assert_matches_ram();
     }
@@ -6783,7 +6784,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.ram[LINK_CANT_CHANGE_DIRECTION] = 0;
         self.ram[LINK_AUXILIARY_STATE] = 0;
         self.ram[LINK_INCAPACITATED_TIMER] = 0;
-        self.ram[PLAYER_DEFENSE_FLAGS] = 0;
         self.ram[LINK_ELECTROCUTE_ON_TOUCH] = 0;
         self.ram[LINK_POSE_FOR_ITEM] = 0;
         self.ram[LINK_CAPE_MODE] = 0;
