@@ -292,11 +292,11 @@ Install the tracked hooks when your checkout has the local parity dependencies:
 scripts/install_hooks.sh
 ```
 
-The pre-commit hook runs RAM readability guardrails, builds the release replay
-binary, and runs the standard C/Rust replay parity gate. It expects the C
-checkout at `../zelda3` by default and the ROM at `../zelda3/zelda3.sfc`.
-Override script paths with the documented `--c-root`, `--rom`, and environment
-options when your local layout differs.
+The pre-commit hook runs RAM readability guardrails, builds the parity replay
+binary, runs a standalone smoke, and checks Rust output against the committed
+`parity-golden` Merkle/rollup fingerprints. It does not run the live C oracle;
+`ZELDA3_PRECOMMIT_MODE=full git commit` uses the same golden checker for the
+full replay route.
 
 ## Fixtures
 

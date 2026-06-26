@@ -6,6 +6,7 @@ from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "validate_all_parity.py"
+PRE_COMMIT = ROOT / ".githooks" / "pre-commit"
 
 
 def load_module():
@@ -68,6 +69,16 @@ class ValidateAllParityTests(unittest.TestCase):
             calls,
             [["cargo", "run", "-p", "parity", "--", "check", "--frames", "12000"]],
         )
+
+    def test_pre_commit_uses_golden_checker_not_live_c_parity(self):
+        hook = PRE_COMMIT.read_text()
+
+        self.assertIn("scripts/validate_all_parity.py --full", hook)
+        self.assertIn('scripts/validate_all_parity.py --frames "$PARITY_FRAMES"', hook)
+        self.assertNotIn("scripts/test_standard_replay_parity.py", hook)
+        self.assertNotIn("scripts/fast_standard_replay_parity.py", hook)
+        self.assertNotIn("../zelda3/zelda3", hook)
+        self.assertNotIn("--smv-test-frames", hook)
 
 
 if __name__ == "__main__":
