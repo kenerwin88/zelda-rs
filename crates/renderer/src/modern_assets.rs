@@ -20,6 +20,18 @@ pub struct ModernTileAtlasEntry {
     pub atlas_y_px: u16,
     pub atlas_width_px: u16,
     pub atlas_height_px: u16,
+    pub tilemap_entry: u16,
+    pub tilemap_variants: Vec<u16>,
+}
+
+pub fn atlas_entry_for_tilemap_entry<'a>(
+    asset: &'a ModernTileAtlasAsset,
+    tilemap_entry: u16,
+) -> Option<&'a ModernTileAtlasEntry> {
+    asset
+        .entries
+        .iter()
+        .find(|entry| entry.tilemap_entry == tilemap_entry || entry.tilemap_variants.contains(&tilemap_entry))
 }
 
 #[derive(Deserialize)]
@@ -118,5 +130,16 @@ mod tests {
         assert_eq!(atlas.height_px, 3169);
         assert!(!atlas.rgba.is_empty());
         assert_eq!(atlas.entries[0].atlas_x_px, 1);
+    }
+
+    #[test]
+    fn atlas_lookup_finds_tilemap_variant() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let atlas = load_modern_overworld_tile_atlas(&root).expect("atlas should load");
+
+        let entry = atlas_entry_for_tilemap_entry(&atlas, 2218).expect("tilemap entry should exist");
+
+        assert_eq!(entry.id, 0);
+        assert_eq!(entry.atlas_x_px, 1);
     }
 }
