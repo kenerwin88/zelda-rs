@@ -1,6 +1,7 @@
 use crate::gpu_frame::GpuFrame;
 use crate::modern_assets::{atlas_entry_for_tilemap_entry, ModernTileAtlasAsset};
-use crate::modern_frame::{ModernFrame, ModernTileInstance};
+use crate::modern_frame::{ModernFrame, ModernIndexTileInstance, ModernTileInstance};
+use crate::modern_index_atlas::{index_cell_for_tilemap_entry, ModernIndexAtlas};
 
 /// Decoded visual fields from a single SNES BG tilemap entry (u16).
 ///
@@ -88,6 +89,58 @@ pub fn extract_modern_frame_with_atlas(
     modern
 }
 
+/// Extract frame-level visual state and indexed BG tile instances from a `GpuFrame`
+/// into a `ModernFrame`, using a palette-index atlas.
+///
+/// Sets `cgram_rgba` from `frame.cgram`. For layers 0..3 enabled on the main screen,
+/// reads the 32×32 tilemap from `frame.bg[layer].tilemap_adr`, looks up each nonzero
+/// word in the index atlas (by `word & 0xC3FF`), and pushes a `ModernIndexTileInstance`
+/// with the per-word palette, screen position, and `hflip/vflip` fixed false (the atlas
+/// index pattern already bakes flip).
+pub fn extract_modern_frame_with_index_atlas(
+    frame: &GpuFrame<'_>,
+    atlas: &ModernIndexAtlas,
+) -> ModernFrame {
+    let mut modern = extract_modern_frame(frame);
+    modern.cgram_rgba = crate::modern_palette::cgram_words_to_rgba256(frame.cgram);
+    for layer_index in 0..3usize {
+        let enabled_main = frame.screen_enabled[0] & (1 << layer_index) != 0;
+        modern.bg_layers[layer_index].enabled_main = enabled_main;
+        modern.bg_layers[layer_index].enabled_sub =
+            frame.screen_enabled[1] & (1 << layer_index) != 0;
+        modern.bg_layers[layer_index].scroll_x = frame.bg[layer_index].h_scroll;
+        modern.bg_layers[layer_index].scroll_y = frame.bg[layer_index].v_scroll;
+        if !enabled_main {
+            continue;
+        }
+        let base = frame.bg[layer_index].tilemap_adr as usize;
+        let h_scroll = frame.bg[layer_index].h_scroll;
+        let v_scroll = frame.bg[layer_index].v_scroll;
+        for row in 0..32usize {
+            for col in 0..32usize {
+                let entry_word = *frame.vram.get(base + row * 32 + col).unwrap_or(&0);
+                if entry_word == 0 {
+                    continue;
+                }
+                let Some(cell) = index_cell_for_tilemap_entry(atlas, entry_word) else {
+                    continue;
+                };
+                modern.bg_layers[layer_index]
+                    .index_tiles
+                    .push(ModernIndexTileInstance {
+                        cell_id: cell.id,
+                        screen_x: (col * 8) as i16 - h_scroll as i16,
+                        screen_y: (row * 8) as i16 - v_scroll as i16,
+                        palette: ((entry_word >> 10) & 7) as u8,
+                        hflip: false,
+                        vflip: false,
+                    });
+            }
+        }
+    }
+    modern
+}
+
 /// Extract frame-level visual state from a `GpuFrame` into a `ModernFrame`.
 ///
 /// This function copies brightness and forced-blank from the GPU frame.
@@ -104,6 +157,8 @@ mod tests {
     use super::*;
     use crate::gpu_frame::{GpuFrame, ScanlineRegs};
     use crate::modern_assets::{ModernTileAtlasAsset, ModernTileAtlasEntry};
+    use crate::modern_index_atlas::ModernIndexTile;
+    use crate::modern_palette::snes_cgram_to_rgba;
 
     #[test]
     fn decode_snes_tilemap_entry_splits_visual_fields() {
@@ -230,6 +285,59 @@ mod tests {
             !modern.bg_layers[0].tiles[0].vflip,
             "vflip must be false: atlas bakes flip, re-applying would double-flip"
         );
+    }
+
+    /// WORD = 0x0C01: palette=3 (bits [12:10] = 3 = 0b011), tile=1 (bit 0 set), no flip.
+    /// graphics_key = 0x0C01 & 0xC3FF = 0x0001 (palette/priority bits stripped).
+    #[test]
+    fn extract_indexed_frame_emits_index_tile_and_populates_cgram_rgba() {
+        // palette=3, tile=1 → word=0x0C01; graphics_key=0x0001
+        const WORD: u16 = (3u16 << 10) | 1u16; // 0x0C01
+        const GRAPHICS_KEY: u16 = WORD & 0xC3FF; // 0x0001
+
+        let cell = ModernIndexTile {
+            id: 0,
+            indices: [0u8; 64],
+        };
+        // Build an atlas that maps GRAPHICS_KEY → cell index 0
+        let atlas = ModernIndexAtlas::from_keyed_cells_for_test(vec![cell], &[(GRAPHICS_KEY, 0)]);
+
+        let mut vram = vec![0u16; 0x8000];
+        // Set cgram[0]=0x001F (R=31 → [248,0,0,0xff]), cgram[1]=0x7C00 (B=31 → [0,0,248,0xff])
+        let mut cgram = vec![0u16; 0x100];
+        cgram[0] = 0x001F;
+        cgram[1] = 0x7C00;
+        let oam = vec![0u16; 0x110];
+
+        vram[0] = WORD; // tilemap entry at row=0, col=0
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.bg[0].tilemap_adr = 0;
+        frame.screen_enabled = [0x01, 0x00]; // only BG0 enabled on main
+
+        let modern = extract_modern_frame_with_index_atlas(&frame, &atlas);
+
+        // One indexed tile on layer 0
+        assert_eq!(modern.bg_layers[0].index_tiles.len(), 1);
+        let inst = &modern.bg_layers[0].index_tiles[0];
+        assert_eq!(inst.cell_id, 0);
+        assert_eq!(inst.palette, 3);
+        assert_eq!(inst.screen_x, 0);
+        assert_eq!(inst.screen_y, 0);
+        assert!(!inst.hflip);
+        assert!(!inst.vflip);
+
+        // No RGBA atlas tiles emitted
+        assert!(modern.bg_layers[0].tiles.is_empty());
+
+        // Layers 1 and 2 are disabled → no tiles
+        assert!(modern.bg_layers[1].index_tiles.is_empty());
+        assert!(modern.bg_layers[2].index_tiles.is_empty());
+
+        // cgram_rgba populated from frame.cgram
+        assert_eq!(modern.cgram_rgba[0], snes_cgram_to_rgba(0x001F)); // [248,0,0,0xff]
+        assert_eq!(modern.cgram_rgba[1], snes_cgram_to_rgba(0x7C00)); // [0,0,248,0xff]
+                                                                      // Slots beyond the supplied cgram default to black opaque
+        assert_eq!(modern.cgram_rgba[255], [0, 0, 0, 0xff]);
     }
 
     fn test_gpu_frame<'a>(

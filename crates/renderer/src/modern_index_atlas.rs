@@ -111,6 +111,21 @@ impl ModernIndexAtlas {
             key_to_cell: HashMap::new(),
         }
     }
+
+    /// Construct an in-memory atlas with explicit `(graphics_key, cell_index)` lookup
+    /// entries, for unit tests that exercise `index_cell_for_tilemap_entry`.
+    pub fn from_keyed_cells_for_test(cells: Vec<ModernIndexTile>, keys: &[(u16, usize)]) -> Self {
+        let mut key_to_cell = HashMap::new();
+        for &(key, cell_idx) in keys {
+            key_to_cell.insert(key, cell_idx);
+        }
+        Self {
+            tile_width_px: 8,
+            tile_height_px: 8,
+            cells,
+            key_to_cell,
+        }
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
