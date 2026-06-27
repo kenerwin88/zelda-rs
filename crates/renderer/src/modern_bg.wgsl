@@ -95,3 +95,77 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 
     return color;
 }
+
+// ── Palette-index path ───────────────────────────────────────────────────────
+//
+// Tiles are stored as 8x8 grids of 4-bit palette INDICES (0..15) in an R8Uint
+// atlas (one 8x8 cell per grid slot). The live CGRAM is a 256x1 Rgba8Unorm
+// texture. For each fragment: fetch the palette index via integer textureLoad,
+// discard index 0 (transparent), then look up the final color at
+// `cgram[palette*16 + index]`. No hflip/vflip is applied here — the flip is
+// already baked into the atlas index pattern. This matches
+// `render_modern_frame_software_indexed` byte-for-byte.
+
+@group(0) @binding(2) var index_atlas: texture_2d<u32>;
+@group(0) @binding(3) var cgram_tex: texture_2d<f32>;
+
+struct VsIndexOut {
+    @builtin(position) pos: vec4<f32>,
+    // Local SCREEN pixel coordinate within the 8x8 tile (0..8).
+    @location(0) local: vec2<f32>,
+    // Top-left texel of this cell's 8x8 region in the index atlas (flat).
+    @location(1) @interpolate(flat) cell_origin: vec2<u32>,
+    // Palette number 0..7 (flat).
+    @location(2) @interpolate(flat) palette: u32,
+};
+
+@vertex
+fn vs_index(
+    @builtin(vertex_index) vi: u32,
+    @location(0) cell_origin: vec2<u32>,
+    @location(1) screen_xy: vec2<i32>,
+    @location(2) palette: u32,
+) -> VsIndexOut {
+    var corners = array<vec2<f32>, 6>(
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(1.0, 1.0),
+    );
+    let c = corners[vi];
+    // Index tiles always have an 8x8 on-screen footprint (no atlas scaling).
+    let local = c * 8.0;
+    let screen = vec2<f32>(f32(screen_xy.x), f32(screen_xy.y)) + local;
+
+    let ndc_x = screen.x / 256.0 * 2.0 - 1.0;
+    let ndc_y = 1.0 - screen.y / 224.0 * 2.0;
+
+    var out: VsIndexOut;
+    out.pos = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
+    out.local = local;
+    out.cell_origin = cell_origin;
+    out.palette = palette;
+    return out;
+}
+
+@fragment
+fn fs_index(in: VsIndexOut) -> @location(0) vec4<f32> {
+    var lx = u32(floor(in.local.x));
+    var ly = u32(floor(in.local.y));
+    if (lx >= 8u) { lx = 7u; }
+    if (ly >= 8u) { ly = 7u; }
+
+    let ax = i32(in.cell_origin.x + lx);
+    let ay = i32(in.cell_origin.y + ly);
+    let index = textureLoad(index_atlas, vec2<i32>(ax, ay), 0).r;
+
+    // Index 0 is transparent — leave the backdrop / lower layer showing.
+    if (index == 0u) {
+        discard;
+    }
+
+    let cx = i32(in.palette) * 16 + i32(index);
+    return textureLoad(cgram_tex, vec2<i32>(cx, 0), 0);
+}
