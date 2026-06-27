@@ -33,10 +33,9 @@ pub fn atlas_entry_for_tilemap_entry<'a>(
     asset: &'a ModernTileAtlasAsset,
     tilemap_entry: u16,
 ) -> Option<&'a ModernTileAtlasEntry> {
-    asset
-        .entries
-        .iter()
-        .find(|entry| entry.tilemap_entry == tilemap_entry || entry.tilemap_variants.contains(&tilemap_entry))
+    asset.entries.iter().find(|entry| {
+        entry.tilemap_entry == tilemap_entry || entry.tilemap_variants.contains(&tilemap_entry)
+    })
 }
 
 #[derive(Deserialize)]
@@ -145,7 +144,8 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let atlas = load_modern_overworld_tile_atlas(&root).expect("atlas should load");
 
-        let entry = atlas_entry_for_tilemap_entry(&atlas, 2218).expect("tilemap entry should exist");
+        let entry =
+            atlas_entry_for_tilemap_entry(&atlas, 2218).expect("tilemap entry should exist");
 
         assert_eq!(entry.id, 0);
         assert_eq!(entry.atlas_x_px, 1);

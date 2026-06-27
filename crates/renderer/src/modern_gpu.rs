@@ -229,18 +229,14 @@ impl ModernGpuRenderer {
                     {
                         continue; // degenerate quad — software loops produce nothing
                     }
-                    instance_bytes
-                        .extend_from_slice(&(u32::from(tile.atlas_x_px)).to_le_bytes());
-                    instance_bytes
-                        .extend_from_slice(&(u32::from(tile.atlas_y_px)).to_le_bytes());
+                    instance_bytes.extend_from_slice(&(u32::from(tile.atlas_x_px)).to_le_bytes());
+                    instance_bytes.extend_from_slice(&(u32::from(tile.atlas_y_px)).to_le_bytes());
                     instance_bytes
                         .extend_from_slice(&(u32::from(tile.atlas_width_px)).to_le_bytes());
                     instance_bytes
                         .extend_from_slice(&(u32::from(tile.atlas_height_px)).to_le_bytes());
-                    instance_bytes
-                        .extend_from_slice(&(i32::from(tile.screen_x)).to_le_bytes());
-                    instance_bytes
-                        .extend_from_slice(&(i32::from(tile.screen_y)).to_le_bytes());
+                    instance_bytes.extend_from_slice(&(i32::from(tile.screen_x)).to_le_bytes());
+                    instance_bytes.extend_from_slice(&(i32::from(tile.screen_y)).to_le_bytes());
                     instance_bytes
                         .extend_from_slice(&(u32::from(tile.screen_width_px)).to_le_bytes());
                     instance_bytes

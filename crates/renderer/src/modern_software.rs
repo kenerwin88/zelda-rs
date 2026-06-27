@@ -31,8 +31,16 @@ pub fn render_modern_frame_software(
             for y in 0..tile.screen_height_px {
                 for x in 0..tile.screen_width_px {
                     // Mirror on the SCREEN coordinate, then scale up into the source.
-                    let src_x = if tile.hflip { tile.screen_width_px - 1 - x } else { x };
-                    let src_y = if tile.vflip { tile.screen_height_px - 1 - y } else { y };
+                    let src_x = if tile.hflip {
+                        tile.screen_width_px - 1 - x
+                    } else {
+                        x
+                    };
+                    let src_y = if tile.vflip {
+                        tile.screen_height_px - 1 - y
+                    } else {
+                        y
+                    };
                     let atlas_x =
                         u32::from(tile.atlas_x_px) + u32::from(src_x) * u32::from(scale_x);
                     let atlas_y =
@@ -107,7 +115,7 @@ mod tests {
     fn software_renderer_downsamples_scaled_atlas_tile() {
         const SCALE: usize = 4;
         const SRC: usize = 8 * SCALE; // 32
-        // Build a 32x32 atlas that is a 4x nearest upscale of the 8x8 pattern.
+                                      // Build a 32x32 atlas that is a 4x nearest upscale of the 8x8 pattern.
         let mut atlas = vec![0u8; SRC * SRC * 4];
         for ay in 0..SRC {
             for ax in 0..SRC {

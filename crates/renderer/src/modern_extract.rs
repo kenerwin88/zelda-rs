@@ -62,22 +62,24 @@ pub fn extract_modern_frame_with_atlas(
                 };
                 let fields = decode_snes_tilemap_entry(entry_word);
                 let scale = atlas.atlas_scale.max(1);
-                modern.bg_layers[layer_index].tiles.push(ModernTileInstance {
-                    atlas_id: atlas_entry.id,
-                    atlas_x_px: atlas_entry.atlas_x_px,
-                    atlas_y_px: atlas_entry.atlas_y_px,
-                    atlas_width_px: atlas_entry.atlas_width_px,
-                    atlas_height_px: atlas_entry.atlas_height_px,
-                    screen_width_px: atlas_entry.atlas_width_px / scale,
-                    screen_height_px: atlas_entry.atlas_height_px / scale,
-                    screen_x: (col * 8) as i16 - frame.bg[layer_index].h_scroll as i16,
-                    screen_y: (row * 8) as i16 - frame.bg[layer_index].v_scroll as i16,
-                    palette: fields.palette,
-                    priority: u8::from(fields.priority),
-                    hflip: fields.hflip,
-                    vflip: fields.vflip,
-                    transparent_color_zero: true,
-                });
+                modern.bg_layers[layer_index]
+                    .tiles
+                    .push(ModernTileInstance {
+                        atlas_id: atlas_entry.id,
+                        atlas_x_px: atlas_entry.atlas_x_px,
+                        atlas_y_px: atlas_entry.atlas_y_px,
+                        atlas_width_px: atlas_entry.atlas_width_px,
+                        atlas_height_px: atlas_entry.atlas_height_px,
+                        screen_width_px: atlas_entry.atlas_width_px / scale,
+                        screen_height_px: atlas_entry.atlas_height_px / scale,
+                        screen_x: (col * 8) as i16 - frame.bg[layer_index].h_scroll as i16,
+                        screen_y: (row * 8) as i16 - frame.bg[layer_index].v_scroll as i16,
+                        palette: fields.palette,
+                        priority: u8::from(fields.priority),
+                        hflip: fields.hflip,
+                        vflip: fields.vflip,
+                        transparent_color_zero: true,
+                    });
             }
         }
     }
@@ -129,7 +131,8 @@ mod tests {
     #[test]
     fn extract_modern_frame_maps_bg_tilemap_entry_to_atlas_tile() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let atlas = crate::modern_assets::load_modern_overworld_tile_atlas(&root).expect("atlas should load");
+        let atlas = crate::modern_assets::load_modern_overworld_tile_atlas(&root)
+            .expect("atlas should load");
         let mut vram = vec![0u16; 0x8000];
         let cgram = vec![0u16; 0x100];
         let oam = vec![0u16; 0x110];
