@@ -10,6 +10,7 @@ pub struct ModernFrame {
     pub backdrop_color_rgba: [u8; 4],
     pub brightness: u8,
     pub forced_blank: bool,
+    pub cgram_rgba: [[u8; 4]; 256],
 }
 
 impl ModernFrame {
@@ -27,6 +28,7 @@ impl ModernFrame {
             backdrop_color_rgba: [0, 0, 0, 0xff],
             brightness: 15,
             forced_blank: false,
+            cgram_rgba: [[0, 0, 0, 0xff]; 256],
         }
     }
 }
@@ -39,6 +41,7 @@ pub struct ModernBgLayer {
     pub scroll_x: u16,
     pub scroll_y: u16,
     pub tiles: Vec<ModernTileInstance>,
+    pub index_tiles: Vec<ModernIndexTileInstance>,
     pub blend_mode: ModernBlendMode,
 }
 
@@ -51,9 +54,20 @@ impl ModernBgLayer {
             scroll_x: 0,
             scroll_y: 0,
             tiles: Vec::new(),
+            index_tiles: Vec::new(),
             blend_mode: ModernBlendMode::Opaque,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModernIndexTileInstance {
+    pub cell_id: u32,
+    pub screen_x: i16,
+    pub screen_y: i16,
+    pub palette: u8,
+    pub hflip: bool,
+    pub vflip: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -107,6 +121,31 @@ pub enum ModernBlendMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn indexed_tile_cgram_defaults_and_index_tiles_empty() {
+        let frame = ModernFrame::empty();
+        assert_eq!(frame.cgram_rgba[0], [0, 0, 0, 0xff]);
+        assert_eq!(frame.cgram_rgba[255], [0, 0, 0, 0xff]);
+        assert!(frame.bg_layers[0].index_tiles.is_empty());
+    }
+
+    #[test]
+    fn modern_index_tile_instance_fields() {
+        let inst = ModernIndexTileInstance {
+            cell_id: 42,
+            screen_x: -8,
+            screen_y: 16,
+            palette: 3,
+            hflip: true,
+            vflip: false,
+        };
+        assert_eq!(inst.cell_id, 42);
+        assert_eq!(inst.screen_x, -8);
+        assert_eq!(inst.palette, 3);
+        assert!(inst.hflip);
+        assert!(!inst.vflip);
+    }
 
     #[test]
     fn modern_frame_defaults_to_fixed_game_resolution() {
