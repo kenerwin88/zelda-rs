@@ -1,6 +1,5 @@
 // This module provides a dev-tooling function wired up fully in Task 13.  The public API is
 // intentionally unused by the binary for now; silence the lint rather than leaving warnings.
-#![allow(dead_code)]
 
 /// Builds a [`renderer::modern_frame::ModernFrame`] from a developer room's JSON tilemap and
 /// the overworld tile atlas, without touching any SNES VRAM/CGRAM/OAM addresses.
@@ -31,6 +30,7 @@ struct RoomTilemap {
 ///
 /// Uses no SNES VRAM, CGRAM, or OAM addresses — only the room's JSON tilemap and the
 /// prebuilt overworld tile atlas on disk.
+#[allow(dead_code)]
 pub fn load_developer_modern_frame(room_id: &str) -> Result<ModernFrame, String> {
     let room = crate::developer_destinations::synthetic_room(room_id)
         .ok_or_else(|| format!("unknown developer room: {room_id}"))?;

@@ -17,7 +17,13 @@ pub mod bg_layer;
 pub mod gpu_frame;
 pub mod gpu_renderer;
 pub mod mode7_renderer;
+pub mod modern_assets;
+pub mod modern_extract;
+pub mod modern_frame;
+pub mod modern_gpu;
+pub mod modern_software;
 pub mod post_process;
+pub mod renderer_mode;
 pub mod sprite_renderer;
 pub mod tile_atlas;
 
@@ -26,6 +32,7 @@ pub use gpu_frame::{BgLayerRegs, GpuFrame, Mode7Regs, ObjRegs, ScanlineRegs};
 pub use gpu_renderer::GpuFrameRenderer;
 pub use mode7_renderer::Mode7Renderer;
 pub use post_process::scanlines_from_raw;
+pub use renderer_mode::RendererMode;
 pub use tile_atlas::{
     CgramPalette, RgbaTileOverrideData, TileAtlas, ATLAS_HEIGHT, ATLAS_TILE_COUNT, ATLAS_WIDTH,
     RGBA_TILE_OVERRIDE_LOOKUP_COUNT,

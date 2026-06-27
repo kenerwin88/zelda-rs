@@ -471,6 +471,17 @@ impl GpuFrameRenderer {
             &frame.scanlines,
         );
     }
+
+    /// Placeholder for the modern GPU BG renderer comparison pass (Task 9 implements this).
+    pub fn render_modern_frame_for_compare(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        queue: &wgpu::Queue,
+        frame: &GpuFrame<'_>,
+        output_view: &wgpu::TextureView,
+    ) {
+        let _ = (encoder, queue, frame, output_view);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
