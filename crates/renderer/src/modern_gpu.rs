@@ -3,13 +3,14 @@ use crate::modern_frame::ModernFrame;
 
 /// Packed per-instance data uploaded as an instance-step vertex buffer.
 ///
-/// Layout (32 bytes, little-endian) — kept in sync with the vertex attributes in
+/// Layout (40 bytes, little-endian) — kept in sync with the vertex attributes in
 /// `pipeline` and the `@location` inputs in `modern_bg.wgsl`:
-///   offset  0: atlas_x, atlas_y, atlas_w, atlas_h  (4 x u32, Uint32x4)
+///   offset  0: atlas_x, atlas_y, atlas_w, atlas_h  (4 x u32, Uint32x4) SOURCE rect
 ///   offset 16: screen_x, screen_y                  (2 x i32, Sint32x2)
-///   offset 24: flags                               (u32, Uint32) bit0=hflip bit1=vflip bit2=transparent
-///   offset 28: padding                             (u32)
-const INSTANCE_STRIDE: u64 = 32;
+///   offset 24: screen_w, screen_h                  (2 x u32, Uint32x2) on-screen footprint
+///   offset 32: flags                               (u32, Uint32) bit0=hflip bit1=vflip bit2=transparent
+///   offset 36: padding                             (u32)
+const INSTANCE_STRIDE: u64 = 40;
 
 pub struct ModernGpuRenderer {
     pipeline: wgpu::RenderPipeline,
@@ -147,9 +148,14 @@ impl ModernGpuRenderer {
                     shader_location: 1,
                 },
                 wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Uint32, // flags
+                    format: wgpu::VertexFormat::Uint32x2, // screen_wh
                     offset: 24,
                     shader_location: 2,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Uint32, // flags
+                    offset: 32,
+                    shader_location: 3,
                 },
             ],
         };
@@ -216,7 +222,11 @@ impl ModernGpuRenderer {
                     continue;
                 }
                 for tile in &layer.tiles {
-                    if tile.atlas_width_px == 0 || tile.atlas_height_px == 0 {
+                    if tile.atlas_width_px == 0
+                        || tile.atlas_height_px == 0
+                        || tile.screen_width_px == 0
+                        || tile.screen_height_px == 0
+                    {
                         continue; // degenerate quad — software loops produce nothing
                     }
                     instance_bytes
@@ -231,6 +241,10 @@ impl ModernGpuRenderer {
                         .extend_from_slice(&(i32::from(tile.screen_x)).to_le_bytes());
                     instance_bytes
                         .extend_from_slice(&(i32::from(tile.screen_y)).to_le_bytes());
+                    instance_bytes
+                        .extend_from_slice(&(u32::from(tile.screen_width_px)).to_le_bytes());
+                    instance_bytes
+                        .extend_from_slice(&(u32::from(tile.screen_height_px)).to_le_bytes());
                     let mut flags = 0u32;
                     if tile.hflip {
                         flags |= 0b001;
@@ -333,6 +347,7 @@ mod tests {
             let atlas_asset = ModernTileAtlasAsset {
                 tile_width_px: 8,
                 tile_height_px: 8,
+                atlas_scale: 1,
                 width_px: 8,
                 height_px: 8,
                 rgba: atlas_rgba.clone(),
@@ -349,6 +364,8 @@ mod tests {
                 atlas_y_px: 0,
                 atlas_width_px: 8,
                 atlas_height_px: 8,
+                screen_width_px: 8,
+                screen_height_px: 8,
                 screen_x: 0,
                 screen_y: 0,
                 palette: 0,
@@ -432,6 +449,134 @@ mod tests {
             readback.unmap();
 
             let software_rgba = render_modern_frame_software(&frame, &atlas_rgba, 8, 8);
+
+            assert_eq!(gpu_rgba, software_rgba);
+        });
+    }
+
+    #[test]
+    fn modern_gpu_downsampled_tile_matches_software() {
+        pollster::block_on(async {
+            let instance = crate::create_wgpu_instance();
+            let (_adapter, device, queue) = crate::create_device_queue(&instance, None).await;
+
+            // 32x32 atlas = 4x nearest upscale of a pixel-distinct 8x8 pattern.
+            const SCALE: usize = 4;
+            const SRC: usize = 8 * SCALE;
+            let pattern = |x: usize, y: usize| -> [u8; 4] {
+                [(x as u8) * 30 + 5, (y as u8) * 30 + 7, 100, 0xff]
+            };
+            let mut atlas_rgba = vec![0u8; SRC * SRC * 4];
+            for ay in 0..SRC {
+                for ax in 0..SRC {
+                    let px = pattern(ax / SCALE, ay / SCALE);
+                    let o = (ay * SRC + ax) * 4;
+                    atlas_rgba[o..o + 4].copy_from_slice(&px);
+                }
+            }
+            let atlas_asset = ModernTileAtlasAsset {
+                tile_width_px: 8,
+                tile_height_px: 8,
+                atlas_scale: SCALE as u16,
+                width_px: SRC as u32,
+                height_px: SRC as u32,
+                rgba: atlas_rgba.clone(),
+                entries: Vec::new(),
+            };
+
+            // One tile: 32x32 source rect downsampled into an 8x8 footprint.
+            let mut frame = ModernFrame::empty();
+            let mut layer = ModernBgLayer::new(0);
+            layer.enabled_main = true;
+            layer.tiles.push(ModernTileInstance {
+                atlas_id: 0,
+                atlas_x_px: 0,
+                atlas_y_px: 0,
+                atlas_width_px: SRC as u16,
+                atlas_height_px: SRC as u16,
+                screen_width_px: 8,
+                screen_height_px: 8,
+                screen_x: 0,
+                screen_y: 0,
+                palette: 0,
+                priority: 0,
+                hflip: false,
+                vflip: false,
+                transparent_color_zero: false,
+            });
+            frame.bg_layers[0] = layer;
+
+            let renderer = ModernGpuRenderer::new(
+                &device,
+                &queue,
+                &atlas_asset,
+                wgpu::TextureFormat::Rgba8Unorm,
+            );
+
+            let width = 256u32;
+            let height = 224u32;
+            let target = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("modern_gpu_downsample_test_target"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            let view = target.create_view(&wgpu::TextureViewDescriptor::default());
+
+            renderer.render(&device, &queue, &frame, &view);
+
+            let bytes_per_row = width * 4;
+            let readback = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("modern_gpu_downsample_test_readback"),
+                size: (bytes_per_row * height) as u64,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let mut encoder =
+                device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            encoder.copy_texture_to_buffer(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &target,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &readback,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(bytes_per_row),
+                        rows_per_image: None,
+                    },
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            queue.submit([encoder.finish()]);
+
+            let slice = readback.slice(..);
+            slice.map_async(wgpu::MapMode::Read, |_| {});
+            device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .expect("GPU poll failed during readback");
+            let mapped = slice.get_mapped_range();
+            let gpu_rgba = mapped.to_vec();
+            drop(mapped);
+            readback.unmap();
+
+            let software_rgba =
+                render_modern_frame_software(&frame, &atlas_rgba, SRC as u16, SRC as u16);
 
             assert_eq!(gpu_rgba, software_rgba);
         });

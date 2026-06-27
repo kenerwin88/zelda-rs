@@ -59,10 +59,18 @@ impl ModernBgLayer {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ModernTileInstance {
     pub atlas_id: u32,
+    /// Source rect in the atlas (in atlas pixels). For a scaled atlas this is the
+    /// upscaled cell (e.g. 32x32 for an 8x8 tile at atlas_scale 4).
     pub atlas_x_px: u16,
     pub atlas_y_px: u16,
     pub atlas_width_px: u16,
     pub atlas_height_px: u16,
+    /// On-screen footprint of the tile (in screen pixels), distinct from the
+    /// atlas source rect. Equals atlas_{width,height}_px / atlas_scale (e.g. 8x8).
+    /// Renderers downsample the source rect into this footprint (nearest:
+    /// block top-left), so a scaled atlas tile draws at its true size.
+    pub screen_width_px: u16,
+    pub screen_height_px: u16,
     pub screen_x: i16,
     pub screen_y: i16,
     pub palette: u8,
@@ -119,6 +127,8 @@ mod tests {
             atlas_y_px: 32,
             atlas_width_px: 8,
             atlas_height_px: 8,
+            screen_width_px: 8,
+            screen_height_px: 8,
             screen_x: 12,
             screen_y: 20,
             palette: 3,
@@ -130,6 +140,7 @@ mod tests {
 
         assert_eq!(tile.atlas_id, 17);
         assert_eq!(tile.screen_x, 12);
+        assert_eq!(tile.screen_width_px, 8);
         assert!(tile.hflip);
         assert!(tile.transparent_color_zero);
     }

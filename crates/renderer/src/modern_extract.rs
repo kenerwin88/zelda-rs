@@ -61,12 +61,15 @@ pub fn extract_modern_frame_with_atlas(
                     continue;
                 };
                 let fields = decode_snes_tilemap_entry(entry_word);
+                let scale = atlas.atlas_scale.max(1);
                 modern.bg_layers[layer_index].tiles.push(ModernTileInstance {
                     atlas_id: atlas_entry.id,
                     atlas_x_px: atlas_entry.atlas_x_px,
                     atlas_y_px: atlas_entry.atlas_y_px,
                     atlas_width_px: atlas_entry.atlas_width_px,
                     atlas_height_px: atlas_entry.atlas_height_px,
+                    screen_width_px: atlas_entry.atlas_width_px / scale,
+                    screen_height_px: atlas_entry.atlas_height_px / scale,
                     screen_x: (col * 8) as i16 - frame.bg[layer_index].h_scroll as i16,
                     screen_y: (row * 8) as i16 - frame.bg[layer_index].v_scroll as i16,
                     palette: fields.palette,
@@ -140,6 +143,11 @@ mod tests {
 
         assert_eq!(modern.bg_layers[0].tiles.len(), 1);
         assert_eq!(modern.bg_layers[0].tiles[0].atlas_x_px, 1);
+        // Real atlas entry is a 32px source cell at atlas_scale 4, so the on-screen
+        // footprint downsamples to the true 8x8 tile size.
+        assert_eq!(modern.bg_layers[0].tiles[0].atlas_width_px, 32);
+        assert_eq!(modern.bg_layers[0].tiles[0].screen_width_px, 8);
+        assert_eq!(modern.bg_layers[0].tiles[0].screen_height_px, 8);
         assert_eq!(modern.bg_layers[0].tiles[0].screen_x, 0);
         assert_eq!(modern.bg_layers[0].tiles[0].screen_y, 0);
     }

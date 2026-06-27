@@ -7,6 +7,11 @@ use std::path::Path;
 pub struct ModernTileAtlasAsset {
     pub tile_width_px: u16,
     pub tile_height_px: u16,
+    /// Integer upscale factor applied when the atlas was generated: each source
+    /// SNES pixel is stored as a `atlas_scale x atlas_scale` block, so an 8x8
+    /// tile occupies a `8*atlas_scale` square cell. Renderers downsample by this
+    /// factor to draw a tile at its true screen footprint. Always >= 1.
+    pub atlas_scale: u16,
     pub width_px: u32,
     pub height_px: u32,
     pub rgba: Vec<u8>,
@@ -38,6 +43,7 @@ pub fn atlas_entry_for_tilemap_entry<'a>(
 struct Manifest {
     tile_width_px: u16,
     tile_height_px: u16,
+    atlas_scale: u16,
     unique_tiles: Vec<ModernTileAtlasEntry>,
 }
 
@@ -105,6 +111,7 @@ pub fn load_modern_overworld_tile_atlas(repo_root: &Path) -> Result<ModernTileAt
     Ok(ModernTileAtlasAsset {
         tile_width_px: manifest.tile_width_px,
         tile_height_px: manifest.tile_height_px,
+        atlas_scale: manifest.atlas_scale.max(1),
         width_px,
         height_px,
         rgba,
@@ -125,6 +132,7 @@ mod tests {
 
         assert_eq!(atlas.tile_width_px, 8);
         assert_eq!(atlas.tile_height_px, 8);
+        assert_eq!(atlas.atlas_scale, 4);
         assert_eq!(atlas.entries.len(), 6140);
         assert_eq!(atlas.width_px, 2113);
         assert_eq!(atlas.height_px, 3169);
