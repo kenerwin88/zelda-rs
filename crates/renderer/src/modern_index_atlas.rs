@@ -96,6 +96,23 @@ struct CellJson {
     graphics_keys: Vec<u16>,
 }
 
+// ── Test helpers ─────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+impl ModernIndexAtlas {
+    /// Construct an in-memory atlas from a list of cells, for unit tests only.
+    /// `key_to_cell` is left empty; callers access cells by id via
+    /// `atlas.cells.get(cell_id as usize)` (requires dense 0..len ids).
+    pub fn from_cells_for_test(cells: Vec<ModernIndexTile>) -> Self {
+        Self {
+            tile_width_px: 8,
+            tile_height_px: 8,
+            cells,
+            key_to_cell: HashMap::new(),
+        }
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

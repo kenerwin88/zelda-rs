@@ -1,4 +1,5 @@
 use crate::modern_frame::{ModernFrame, MODERN_FRAME_HEIGHT, MODERN_FRAME_WIDTH};
+use crate::modern_index_atlas::ModernIndexAtlas;
 
 pub fn render_modern_frame_software(
     frame: &ModernFrame,
@@ -66,10 +67,120 @@ pub fn render_modern_frame_software(
     out
 }
 
+/// Render a `ModernFrame` using the palette-index atlas + live CGRAM.
+///
+/// For each enabled BG layer, each `index_tiles` instance is drawn: for each
+/// 8×8 pixel in the tile, `index = cell.indices[sy*8+sx]`; if `index == 0`
+/// the pixel is transparent (skip); otherwise `color = frame.cgram_rgba[palette*16 + index]`.
+///
+/// Backdrop and forced_blank behaviour match `render_modern_frame_software`.
+///
+/// Note: `hflip`/`vflip` on the instance are intentionally ignored here.
+/// The index pattern in the atlas already baked flip via `graphics_key` during
+/// Task 2 atlas generation, so re-applying flip would double-mirror the pixels.
+pub fn render_modern_frame_software_indexed(
+    frame: &ModernFrame,
+    atlas: &ModernIndexAtlas,
+) -> Vec<u8> {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    let height = usize::from(MODERN_FRAME_HEIGHT);
+    let mut out = vec![0u8; width * height * 4];
+
+    // Fill backdrop.
+    for px in out.chunks_exact_mut(4) {
+        px.copy_from_slice(&frame.backdrop_color_rgba);
+    }
+
+    // Forced blank: solid black.
+    if frame.forced_blank {
+        for px in out.chunks_exact_mut(4) {
+            px.copy_from_slice(&[0, 0, 0, 0xff]);
+        }
+        return out;
+    }
+
+    for layer in &frame.bg_layers {
+        if !layer.enabled_main {
+            continue;
+        }
+        for inst in &layer.index_tiles {
+            // Cells are stored densely 0..len; guard against a bad id.
+            let cell = match atlas.cells.get(inst.cell_id as usize) {
+                Some(c) => c,
+                None => continue,
+            };
+            for sy in 0..8usize {
+                for sx in 0..8usize {
+                    let index = cell.indices[sy * 8 + sx];
+                    if index == 0 {
+                        continue; // transparent
+                    }
+                    let dst_x = inst.screen_x + sx as i16;
+                    let dst_y = inst.screen_y + sy as i16;
+                    if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                        continue; // clip to screen
+                    }
+                    let color = frame.cgram_rgba[inst.palette as usize * 16 + index as usize];
+                    let dst = (dst_y as usize * width + dst_x as usize) * 4;
+                    out[dst..dst + 4].copy_from_slice(&color);
+                }
+            }
+        }
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modern_frame::{ModernBgLayer, ModernBlendMode, ModernFrame, ModernTileInstance};
+    use crate::modern_frame::{
+        ModernBgLayer, ModernBlendMode, ModernFrame, ModernIndexTileInstance, ModernTileInstance,
+    };
+    use crate::modern_index_atlas::{ModernIndexAtlas, ModernIndexTile};
+
+    #[test]
+    fn software_indexed_renderer_applies_live_cgram() {
+        // Synthetic atlas: one cell (id=0) — all indices zero except (0,0)->1 and (1,0)->2.
+        let mut indices = [0u8; 64];
+        indices[0] = 1; // pixel (0,0): sx=0, sy=0 → indices[sy*8+sx]=indices[0]
+        indices[1] = 2; // pixel (1,0): sx=1, sy=0 → indices[sy*8+sx]=indices[1]
+        let atlas = ModernIndexAtlas::from_cells_for_test(vec![ModernIndexTile { id: 0, indices }]);
+
+        // Frame: palette P=3 so that the palette offset (not P=0) is exercised.
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.cgram_rgba[3 * 16 + 1] = [10, 20, 30, 0xff]; // palette 3, index 1
+        frame.cgram_rgba[3 * 16 + 2] = [40, 50, 60, 0xff]; // palette 3, index 2
+
+        let mut layer = ModernBgLayer::new(0);
+        layer.enabled_main = true;
+        layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 3,
+            hflip: false,
+            vflip: false,
+        });
+        frame.bg_layers[0] = layer;
+
+        let rgba = render_modern_frame_software_indexed(&frame, &atlas);
+
+        // pixel (0,0): index 1, palette 3 → cgram_rgba[3*16+1]
+        let px00 = (0 * 256 + 0) * 4;
+        assert_eq!(&rgba[px00..px00 + 4], &[10, 20, 30, 0xff], "pixel (0,0)");
+        // pixel (1,0): index 2, palette 3 → cgram_rgba[3*16+2]
+        let px10 = (0 * 256 + 1) * 4;
+        assert_eq!(&rgba[px10..px10 + 4], &[40, 50, 60, 0xff], "pixel (1,0)");
+        // pixel (2,0): index 0 → transparent → backdrop
+        let px20 = (0 * 256 + 2) * 4;
+        assert_eq!(
+            &rgba[px20..px20 + 4],
+            &[0, 0, 0, 0xff],
+            "pixel (2,0) should be backdrop"
+        );
+    }
 
     #[test]
     fn software_renderer_blits_one_opaque_tile_from_atlas() {
