@@ -76,8 +76,10 @@ pub fn extract_modern_frame_with_atlas(
                         screen_y: (row * 8) as i16 - frame.bg[layer_index].v_scroll as i16,
                         palette: fields.palette,
                         priority: u8::from(fields.priority),
-                        hflip: fields.hflip,
-                        vflip: fields.vflip,
+                        // atlas bakes the word's flip into the cell appearance; do not re-apply
+                        // flip here — doing so would double-flip asymmetric tiles.
+                        hflip: false,
+                        vflip: false,
                         transparent_color_zero: true,
                     });
             }
@@ -101,6 +103,7 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
 mod tests {
     use super::*;
     use crate::gpu_frame::{GpuFrame, ScanlineRegs};
+    use crate::modern_assets::{ModernTileAtlasAsset, ModernTileAtlasEntry};
 
     #[test]
     fn decode_snes_tilemap_entry_splits_visual_fields() {
@@ -153,6 +156,80 @@ mod tests {
         assert_eq!(modern.bg_layers[0].tiles[0].screen_height_px, 8);
         assert_eq!(modern.bg_layers[0].tiles[0].screen_x, 0);
         assert_eq!(modern.bg_layers[0].tiles[0].screen_y, 0);
+    }
+
+    /// Builds a minimal synthetic atlas with a single entry keyed by the given tilemap word.
+    fn synthetic_atlas(tilemap_entry: u16) -> ModernTileAtlasAsset {
+        ModernTileAtlasAsset {
+            tile_width_px: 8,
+            tile_height_px: 8,
+            atlas_scale: 1,
+            width_px: 8,
+            height_px: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![ModernTileAtlasEntry {
+                id: 0,
+                atlas_x_px: 0,
+                atlas_y_px: 0,
+                atlas_width_px: 8,
+                atlas_height_px: 8,
+                tilemap_entry,
+                tilemap_variants: vec![tilemap_entry],
+            }],
+        }
+    }
+
+    /// The atlas bakes flip into its cell pixels; re-applying the word's flip bits on the
+    /// emitted ModernTileInstance would double-flip asymmetric tiles.  Expect hflip==false
+    /// and vflip==false regardless of what the tilemap word's flip bits say.
+    #[test]
+    fn atlas_sourced_tile_does_not_re_apply_hflip() {
+        let hflip_word: u16 = 0x4001; // bit 14 set = hflip
+        let atlas = synthetic_atlas(hflip_word);
+        let mut vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        vram[0] = hflip_word;
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.bg[0].tilemap_adr = 0;
+        frame.screen_enabled = [0x01, 0x00];
+
+        let modern = extract_modern_frame_with_atlas(&frame, &atlas);
+
+        assert_eq!(modern.bg_layers[0].tiles.len(), 1);
+        assert!(
+            !modern.bg_layers[0].tiles[0].hflip,
+            "hflip must be false: atlas bakes flip, re-applying would double-flip"
+        );
+        assert!(
+            !modern.bg_layers[0].tiles[0].vflip,
+            "vflip must be false: atlas bakes flip"
+        );
+    }
+
+    #[test]
+    fn atlas_sourced_tile_does_not_re_apply_vflip() {
+        let vflip_word: u16 = 0x8001; // bit 15 set = vflip
+        let atlas = synthetic_atlas(vflip_word);
+        let mut vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        vram[0] = vflip_word;
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.bg[0].tilemap_adr = 0;
+        frame.screen_enabled = [0x01, 0x00];
+
+        let modern = extract_modern_frame_with_atlas(&frame, &atlas);
+
+        assert_eq!(modern.bg_layers[0].tiles.len(), 1);
+        assert!(
+            !modern.bg_layers[0].tiles[0].hflip,
+            "hflip must be false: atlas bakes flip"
+        );
+        assert!(
+            !modern.bg_layers[0].tiles[0].vflip,
+            "vflip must be false: atlas bakes flip, re-applying would double-flip"
+        );
     }
 
     fn test_gpu_frame<'a>(
