@@ -7,6 +7,7 @@ pub struct ModernFrame {
     pub height: u16,
     pub bg_layers: Vec<ModernBgLayer>,
     pub sprites: Vec<ModernSpriteInstance>,
+    pub index_sprites: Vec<ModernIndexSpriteInstance>,
     pub backdrop_color_rgba: [u8; 4],
     pub brightness: u8,
     pub forced_blank: bool,
@@ -25,6 +26,7 @@ impl ModernFrame {
                 ModernBgLayer::new(3),
             ],
             sprites: Vec::new(),
+            index_sprites: Vec::new(),
             backdrop_color_rgba: [0, 0, 0, 0xff],
             brightness: 15,
             forced_blank: false,
@@ -66,6 +68,22 @@ pub struct ModernIndexTileInstance {
     pub screen_x: i16,
     pub screen_y: i16,
     pub palette: u8,
+    pub hflip: bool,
+    pub vflip: bool,
+}
+
+/// A single palette-index OBJ (sprite) 8×8 tile instance, decoded from OAM.
+///
+/// `cell_id` indexes into the sprite index atlas (the UNFLIPPED pattern); the
+/// renderer applies `hflip`/`vflip` to the 8×8 when drawing. Color comes from
+/// `cgram_rgba[0x80 + palette*16 + index]`, index 0 transparent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModernIndexSpriteInstance {
+    pub cell_id: u32,
+    pub screen_x: i16,
+    pub screen_y: i16,
+    pub palette: u8,  // OBJ palette 0..7 (renderer maps to cgram 0x80 + palette*16)
+    pub priority: u8, // 0..3 from OAM
     pub hflip: bool,
     pub vflip: bool,
 }
@@ -128,6 +146,12 @@ mod tests {
         assert_eq!(frame.cgram_rgba[0], [0, 0, 0, 0xff]);
         assert_eq!(frame.cgram_rgba[255], [0, 0, 0, 0xff]);
         assert!(frame.bg_layers[0].index_tiles.is_empty());
+    }
+
+    #[test]
+    fn empty_frame_has_no_index_sprites() {
+        let frame = ModernFrame::empty();
+        assert!(frame.index_sprites.is_empty());
     }
 
     #[test]

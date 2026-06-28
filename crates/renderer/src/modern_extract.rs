@@ -1,7 +1,120 @@
 use crate::gpu_frame::GpuFrame;
 use crate::modern_assets::{atlas_entry_for_tilemap_entry, ModernTileAtlasAsset};
-use crate::modern_frame::{ModernFrame, ModernIndexTileInstance, ModernTileInstance};
+use crate::modern_frame::{
+    ModernFrame, ModernIndexSpriteInstance, ModernIndexTileInstance, ModernTileInstance,
+};
 use crate::modern_index_atlas::{index_cell_for_tilemap_entry, ModernIndexAtlas};
+use crate::modern_sprite_atlas::{sprite_index_cell, ModernSpriteIndexAtlas};
+
+// Per SNES PPU OBSEL: maps obj_size (3-bit index) to [small_px, large_px].
+// Copied from sprite_renderer::SPRITE_SIZES so the modern OAM enumeration matches
+// the classic resolver's size selection exactly.
+const SPRITE_SIZES: [[u8; 2]; 8] = [
+    [8, 16],
+    [8, 32],
+    [8, 64],
+    [16, 32],
+    [16, 64],
+    [32, 64],
+    [16, 32],
+    [16, 32],
+];
+
+/// Decode OAM into palette-index sprite-tile instances, mirroring the per-sprite,
+/// per-8×8-tile ENUMERATION of `sprite_renderer::resolve_obj_pixels` (NOT its
+/// per-pixel resolver).
+///
+/// For each of the 128 OAM sprites: skip the off-screen sentinel (`y == 0xf0`),
+/// derive size from `obj.obj_size` + the OAM hi-table, cull horizontally exactly
+/// like the reference, then emit one `ModernIndexSpriteInstance` per 8×8 tile whose
+/// UNFLIPPED pattern is present in `atlas` for `(context, effective_tile)`. The
+/// instance carries the OAM palette/priority/flip; the renderer (Task 5) applies
+/// `hflip`/`vflip` to the cell's 8×8 pixels.
+pub fn extract_modern_sprites(
+    frame: &GpuFrame<'_>,
+    atlas: &ModernSpriteIndexAtlas,
+    context: u64,
+) -> Vec<ModernIndexSpriteInstance> {
+    let oam = frame.oam;
+    let obj = &frame.obj;
+    let mut out = Vec::new();
+
+    for sprite_num in 0..128usize {
+        let idx = sprite_num * 2;
+        let oam0 = oam.get(idx).copied().unwrap_or(0);
+
+        // Off-screen sentinel: the game parks hidden sprites at y == 0xf0.
+        let y_byte = ((oam0 >> 8) & 0xff) as i32;
+        if y_byte == 0xf0 {
+            continue;
+        }
+        // On-screen top row = ((Y+1)&0xff) - 1 (= Y for Y < 0xff), matching the
+        // reference's `yy = ((oam0>>8)+1)&0xff` then `out_y = line - 1`.
+        let top_y = ((y_byte + 1) & 0xff) - 1;
+
+        let hi_word = oam.get(0x100 + idx / 16).copied().unwrap_or(0);
+        let hi_bits = (hi_word >> (idx % 16)) as i32;
+        let size = SPRITE_SIZES[(obj.obj_size & 7) as usize][((hi_bits >> 1) & 1) as usize] as i32;
+
+        let object_x = (oam0 & 0xff) as i32 + (hi_bits & 1) * 256;
+        // extra_left_right = 0: replicate the reference's horizontal cull.
+        if object_x > 256 && object_x + size - 1 < 512 {
+            continue;
+        }
+        let mut x = object_x;
+        if x >= 256 {
+            x -= 512;
+        }
+        if x <= -size {
+            continue;
+        }
+
+        let oam1 = oam.get(idx + 1).copied().unwrap_or(0);
+        let hflip = oam1 & 0x4000 != 0;
+        let vflip = oam1 & 0x8000 != 0;
+        let palette = ((oam1 & 0x0e00) >> 9) as u8;
+        let priority = ((oam1 & 0x3000) >> 12) as u8;
+        let bank: u16 = if oam1 & 0x0100 != 0 { 256 } else { 0 };
+        let tile_row_base = ((oam1 & 0xff) >> 4) as i32;
+        let tile_col_base = (oam1 & 0x0f) as i32;
+
+        let tiles_per_side = size / 8;
+        for sty in 0..tiles_per_side {
+            for stx in 0..tiles_per_side {
+                // Source tile honoring flip at TILE granularity (matches the
+                // reference's used_col = hflip ? size-1-col : col, taken >> 3).
+                let src_col_tile = if hflip {
+                    tiles_per_side - 1 - stx
+                } else {
+                    stx
+                };
+                let src_row_tile = if vflip {
+                    tiles_per_side - 1 - sty
+                } else {
+                    sty
+                };
+                let used_tile = (((tile_row_base + src_row_tile) << 4)
+                    | ((tile_col_base + src_col_tile) & 0x0f)) as u16;
+                let effective_tile = bank + used_tile;
+
+                let Some(cell) = sprite_index_cell(atlas, context, effective_tile) else {
+                    continue;
+                };
+                out.push(ModernIndexSpriteInstance {
+                    cell_id: cell.id,
+                    screen_x: (x + stx * 8) as i16,
+                    screen_y: (top_y + sty * 8) as i16,
+                    palette,
+                    priority,
+                    hflip,
+                    vflip,
+                });
+            }
+        }
+    }
+
+    out
+}
 
 /// Decoded visual fields from a single SNES BG tilemap entry (u16).
 ///
@@ -483,6 +596,85 @@ mod tests {
             modern_wrong_theme.bg_layers[0].index_tiles.is_empty(),
             "wrong theme must yield zero tiles"
         );
+    }
+
+    /// Craft an OAM with ONE 8×8 sprite and assert `extract_modern_sprites`
+    /// resolves it to a single instance with the right cell/palette/priority/pos.
+    /// For an 8×8 sprite, `effective_tile == oam1 & 0xff` (bank 0, single tile).
+    #[test]
+    fn extract_modern_sprites_decodes_one_8x8_sprite() {
+        const CONTEXT: u64 = 21;
+        const TILE: u16 = 5;
+        let palette: u16 = 2;
+        let priority: u16 = 1;
+        let x: u16 = 40;
+        let y: u16 = 50;
+
+        let cell = ModernIndexTile {
+            id: 99,
+            indices: [0u8; 64],
+        };
+        let atlas = ModernSpriteIndexAtlas::from_keyed_cells_for_test(
+            vec![cell],
+            vec![((CONTEXT, TILE), 0)],
+        );
+
+        let vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        oam[0] = (y << 8) | x;
+        oam[1] = (palette << 9) | (priority << 12) | TILE;
+        // hi-word (oam[0x100]) left 0 → size bit 0 (small=8), x-hi 0.
+
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.obj.obj_size = 0; // SPRITE_SIZES[0] = [8, 16] → small = 8
+
+        let sprites = extract_modern_sprites(&frame, &atlas, CONTEXT);
+
+        assert_eq!(sprites.len(), 1);
+        let s = &sprites[0];
+        assert_eq!(s.cell_id, 99);
+        assert_eq!(s.palette, 2);
+        assert_eq!(s.priority, 1);
+        assert_eq!(s.screen_x, 40);
+        assert_eq!(s.screen_y, 50);
+        assert!(!s.hflip);
+        assert!(!s.vflip);
+
+        // Wrong context → no resolution.
+        assert!(extract_modern_sprites(&frame, &atlas, CONTEXT + 1).is_empty());
+    }
+
+    /// hflip on an 8×8 sprite resolves the same single tile but propagates the flag.
+    #[test]
+    fn extract_modern_sprites_propagates_hflip() {
+        const CONTEXT: u64 = 21;
+        const TILE: u16 = 5;
+
+        let cell = ModernIndexTile {
+            id: 7,
+            indices: [0u8; 64],
+        };
+        let atlas = ModernSpriteIndexAtlas::from_keyed_cells_for_test(
+            vec![cell],
+            vec![((CONTEXT, TILE), 0)],
+        );
+
+        let vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        oam[0] = (50u16 << 8) | 40u16;
+        oam[1] = 0x4000 | TILE; // bit 14 = hflip
+
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.obj.obj_size = 0;
+
+        let sprites = extract_modern_sprites(&frame, &atlas, CONTEXT);
+
+        assert_eq!(sprites.len(), 1);
+        assert_eq!(sprites[0].cell_id, 7);
+        assert!(sprites[0].hflip);
+        assert!(!sprites[0].vflip);
     }
 
     fn test_gpu_frame<'a>(
