@@ -660,6 +660,332 @@ impl ModernGpuIndexRenderer {
     }
 }
 
+/// Per-instance stride for the sprite (OBJ) path (little-endian):
+///   offset  0: cell_origin_x, cell_origin_y (2 x u32, Uint32x2) atlas grid origin
+///   offset  8: screen_x, screen_y           (2 x i32, Sint32x2)
+///   offset 16: palette                       (u32, Uint32)
+///   offset 20: flags                         (u32, Uint32) bit0=hflip bit1=vflip
+const SPRITE_INSTANCE_STRIDE: u64 = 24;
+
+/// GPU renderer for the palette-index OBJ (sprite) path. Uploads the SPRITE
+/// index atlas as an `R8Uint` grid (cells stored UNFLIPPED) and draws sprites
+/// OVER an existing BG render (`LoadOp::Load`, no clear). Output is byte-for-byte
+/// identical to [`crate::modern_software::draw_modern_sprites_indexed`].
+pub struct ModernGpuSpriteRenderer {
+    pipeline: wgpu::RenderPipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
+    #[allow(dead_code)]
+    sprite_atlas_texture: wgpu::Texture,
+    sprite_atlas_view: wgpu::TextureView,
+    cell_count: u32,
+}
+
+impl ModernGpuSpriteRenderer {
+    /// Build the sprite renderer, uploading `cells` into an `R8Uint` grid texture
+    /// ([`INDEX_GRID_COLS`] cells wide), one 8x8 UNFLIPPED cell per slot.
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        cells: &[ModernIndexTile],
+        format: wgpu::TextureFormat,
+    ) -> Self {
+        let cell_count = cells.len() as u32;
+        let grid_rows = cell_count.div_ceil(INDEX_GRID_COLS).max(1);
+        let tex_width = INDEX_GRID_COLS * 8;
+        let tex_height = grid_rows * 8;
+
+        let mut data = vec![0u8; (tex_width * tex_height) as usize];
+        for cell in cells {
+            let col = cell.id % INDEX_GRID_COLS;
+            let row = cell.id / INDEX_GRID_COLS;
+            let ox = col * 8;
+            let oy = row * 8;
+            for ly in 0..8u32 {
+                for lx in 0..8u32 {
+                    let px = (oy + ly) * tex_width + (ox + lx);
+                    data[px as usize] = cell.indices[(ly * 8 + lx) as usize];
+                }
+            }
+        }
+
+        let sprite_atlas_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("modern_sprite_atlas"),
+            size: wgpu::Extent3d {
+                width: tex_width,
+                height: tex_height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Uint,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &sprite_atlas_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(tex_width),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: tex_width,
+                height: tex_height,
+                depth_or_array_layers: 1,
+            },
+        );
+        let sprite_atlas_view =
+            sprite_atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Same bind group layout as the BG index path: sprite atlas (Uint) at
+        // binding 2, CGRAM (Float) at binding 3.
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("modern_sprite"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Uint,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("modern_sprite"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("modern_bg.wgsl").into()),
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("modern_sprite"),
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
+        });
+
+        let instance_layout = wgpu::VertexBufferLayout {
+            array_stride: SPRITE_INSTANCE_STRIDE,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Uint32x2, // cell_origin
+                    offset: 0,
+                    shader_location: 0,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Sint32x2, // screen_xy
+                    offset: 8,
+                    shader_location: 1,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Uint32, // palette
+                    offset: 16,
+                    shader_location: 2,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Uint32, // flags
+                    offset: 20,
+                    shader_location: 3,
+                },
+            ],
+        };
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("modern_sprite"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_sprite"),
+                buffers: &[instance_layout],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_sprite"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        Self {
+            pipeline,
+            bind_group_layout,
+            sprite_atlas_texture,
+            sprite_atlas_view,
+            cell_count,
+        }
+    }
+
+    /// Draw `frame.index_sprites` OVER the existing contents of `output_view`
+    /// (a 256x224 `Rgba8Unorm` target that already holds the BG render). The
+    /// target is LOADED, not cleared. Sprites are emitted in REVERSE OAM order so
+    /// the earliest OAM sprite is drawn last and wins (REPLACE), matching
+    /// [`crate::modern_software::draw_modern_sprites_indexed`]. Index 0 is
+    /// transparent; color = `cgram_rgba[0x80 + palette*16 + index]`.
+    pub fn render(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        output_view: &wgpu::TextureView,
+    ) {
+        let mut instance_bytes: Vec<u8> = Vec::new();
+        let mut instance_count: u32 = 0;
+        if !frame.forced_blank {
+            // Reverse OAM order → earliest OAM sprite drawn last (on top).
+            for inst in frame.index_sprites.iter().rev() {
+                if inst.cell_id >= self.cell_count {
+                    continue; // software's `cells.get(..)` returns None → skip
+                }
+                let col = inst.cell_id % INDEX_GRID_COLS;
+                let row = inst.cell_id / INDEX_GRID_COLS;
+                instance_bytes.extend_from_slice(&(col * 8).to_le_bytes());
+                instance_bytes.extend_from_slice(&(row * 8).to_le_bytes());
+                instance_bytes.extend_from_slice(&(i32::from(inst.screen_x)).to_le_bytes());
+                instance_bytes.extend_from_slice(&(i32::from(inst.screen_y)).to_le_bytes());
+                instance_bytes.extend_from_slice(&(u32::from(inst.palette)).to_le_bytes());
+                let mut flags = 0u32;
+                if inst.hflip {
+                    flags |= 0b001;
+                }
+                if inst.vflip {
+                    flags |= 0b010;
+                }
+                instance_bytes.extend_from_slice(&flags.to_le_bytes());
+                instance_count += 1;
+            }
+        }
+        debug_assert_eq!(
+            instance_bytes.len() as u64,
+            u64::from(instance_count) * SPRITE_INSTANCE_STRIDE
+        );
+
+        if instance_count == 0 {
+            return; // nothing to composite; leave the BG render untouched
+        }
+
+        // CGRAM texture (256x1 Rgba8Unorm) — full palette incl. OBJ half 128..255.
+        let mut cgram_bytes = Vec::with_capacity(256 * 4);
+        for px in &frame.cgram_rgba {
+            cgram_bytes.extend_from_slice(px);
+        }
+        let cgram_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("modern_sprite_cgram"),
+            size: wgpu::Extent3d {
+                width: 256,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &cgram_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &cgram_bytes,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256 * 4),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: 256,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+        let cgram_view = cgram_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("modern_sprite"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&self.sprite_atlas_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&cgram_view),
+                },
+            ],
+        });
+
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("modern_sprite_instances"),
+            size: instance_bytes.len() as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&instance_buffer, 0, &instance_bytes);
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("modern_sprite"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("modern_sprite"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: output_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        // Load the BG render — sprites composite OVER it.
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_vertex_buffer(0, instance_buffer.slice(..));
+            pass.draw(0..6, 0..instance_count);
+        }
+        queue.submit([encoder.finish()]);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1038,6 +1364,161 @@ mod tests {
 
             assert_eq!(gpu_rgba.len(), software_rgba.len());
             assert_eq!(gpu_rgba, software_rgba);
+        });
+    }
+
+    /// Render the BG index pass then the sprite pass on the GPU, reading back the
+    /// composited 256x224 RGBA target.
+    async fn gpu_bg_then_sprites(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+    ) -> Vec<u8> {
+        let bg =
+            ModernGpuIndexRenderer::new(device, queue, bg_cells, wgpu::TextureFormat::Rgba8Unorm);
+        let spr = ModernGpuSpriteRenderer::new(
+            device,
+            queue,
+            sprite_cells,
+            wgpu::TextureFormat::Rgba8Unorm,
+        );
+
+        let width = 256u32;
+        let height = 224u32;
+        let target = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("modern_gpu_sprite_test_target"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = target.create_view(&wgpu::TextureViewDescriptor::default());
+
+        bg.render(device, queue, frame, &view);
+        spr.render(device, queue, frame, &view);
+
+        let bytes_per_row = width * 4;
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("modern_gpu_sprite_test_readback"),
+            size: (bytes_per_row * height) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: None,
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        queue.submit([encoder.finish()]);
+
+        let slice = readback.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("GPU poll failed during readback");
+        let mapped = slice.get_mapped_range();
+        let gpu_rgba = mapped.to_vec();
+        drop(mapped);
+        readback.unmap();
+        gpu_rgba
+    }
+
+    #[test]
+    fn modern_gpu_sprite_matches_software() {
+        use crate::modern_frame::ModernIndexSpriteInstance;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_software::{
+            draw_modern_sprites_indexed, render_modern_frame_software_indexed,
+        };
+
+        pollster::block_on(async {
+            let instance = crate::create_wgpu_instance();
+            let (_adapter, device, queue) = crate::create_device_queue(&instance, None).await;
+
+            // ── Case 1: no flip ────────────────────────────────────────────────
+            let mut indices = [0u8; 64];
+            indices[0] = 1; // pixel (0,0) → index 1
+            let sprite_cells = vec![ModernIndexTile { id: 0, indices }];
+
+            let mut frame = ModernFrame::empty();
+            frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+            frame.cgram_rgba[0x80 + 3 * 16 + 1] = [200, 10, 20, 0xff];
+            frame.index_sprites.push(ModernIndexSpriteInstance {
+                cell_id: 0,
+                screen_x: 5,
+                screen_y: 7,
+                palette: 3,
+                priority: 0,
+                hflip: false,
+                vflip: false,
+            });
+
+            let gpu_rgba = gpu_bg_then_sprites(&device, &queue, &frame, &[], &sprite_cells).await;
+            let mut software_rgba = render_modern_frame_software_indexed(&frame, &[]);
+            draw_modern_sprites_indexed(&mut software_rgba, &frame, &sprite_cells);
+            assert_eq!(gpu_rgba.len(), software_rgba.len());
+            assert_eq!(gpu_rgba, software_rgba, "no-flip sprite gpu==software");
+
+            // ── Case 2: hflip ──────────────────────────────────────────────────
+            let mut indices2 = [0u8; 64];
+            indices2[7] = 2; // pixel (7,0) → index 2; hflip lands it at screen x=0
+            let sprite_cells2 = vec![ModernIndexTile {
+                id: 0,
+                indices: indices2,
+            }];
+
+            let mut frame2 = ModernFrame::empty();
+            frame2.backdrop_color_rgba = [0, 0, 0, 0xff];
+            frame2.cgram_rgba[0x80 + 3 * 16 + 2] = [9, 99, 199, 0xff];
+            frame2.index_sprites.push(ModernIndexSpriteInstance {
+                cell_id: 0,
+                screen_x: 5,
+                screen_y: 7,
+                palette: 3,
+                priority: 0,
+                hflip: true,
+                vflip: false,
+            });
+
+            let gpu_rgba2 =
+                gpu_bg_then_sprites(&device, &queue, &frame2, &[], &sprite_cells2).await;
+            let mut software_rgba2 = render_modern_frame_software_indexed(&frame2, &[]);
+            draw_modern_sprites_indexed(&mut software_rgba2, &frame2, &sprite_cells2);
+            // The flipped pixel must land at screen_x (5,7).
+            let px = (7usize * 256 + 5) * 4;
+            assert_eq!(
+                &software_rgba2[px..px + 4],
+                &[9, 99, 199, 0xff],
+                "hflip software pixel at x=5"
+            );
+            assert_eq!(gpu_rgba2, software_rgba2, "hflip sprite gpu==software");
         });
     }
 }

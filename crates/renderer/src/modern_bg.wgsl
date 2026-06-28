@@ -169,3 +169,78 @@ fn fs_index(in: VsIndexOut) -> @location(0) vec4<f32> {
     let cx = i32(in.palette) * 16 + i32(index);
     return textureLoad(cgram_tex, vec2<i32>(cx, 0), 0);
 }
+
+// ── Sprite (OBJ) index path ──────────────────────────────────────────────────
+//
+// Like the BG index path, but sprite cells are stored UNFLIPPED, so the fragment
+// applies the instance's hflip/vflip when sampling the 8x8 cell. The final color
+// comes from the OBJ half of CGRAM: `cgram[128 + palette*16 + index]` (palettes
+// 8..15). Index 0 is transparent. Sprites are drawn over the BG (LoadOp::Load).
+// Reuses @binding(2)=index_atlas (here the SPRITE atlas) and @binding(3)=cgram.
+// Matches `draw_modern_sprites_indexed` byte-for-byte.
+
+struct VsSpriteOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) local: vec2<f32>,
+    @location(1) @interpolate(flat) cell_origin: vec2<u32>,
+    @location(2) @interpolate(flat) palette: u32,
+    // bit0 = hflip, bit1 = vflip.
+    @location(3) @interpolate(flat) flags: u32,
+};
+
+@vertex
+fn vs_sprite(
+    @builtin(vertex_index) vi: u32,
+    @location(0) cell_origin: vec2<u32>,
+    @location(1) screen_xy: vec2<i32>,
+    @location(2) palette: u32,
+    @location(3) flags: u32,
+) -> VsSpriteOut {
+    var corners = array<vec2<f32>, 6>(
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(1.0, 1.0),
+    );
+    let c = corners[vi];
+    let local = c * 8.0;
+    let screen = vec2<f32>(f32(screen_xy.x), f32(screen_xy.y)) + local;
+
+    let ndc_x = screen.x / 256.0 * 2.0 - 1.0;
+    let ndc_y = 1.0 - screen.y / 224.0 * 2.0;
+
+    var out: VsSpriteOut;
+    out.pos = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
+    out.local = local;
+    out.cell_origin = cell_origin;
+    out.palette = palette;
+    out.flags = flags;
+    return out;
+}
+
+@fragment
+fn fs_sprite(in: VsSpriteOut) -> @location(0) vec4<f32> {
+    var lx = u32(floor(in.local.x));
+    var ly = u32(floor(in.local.y));
+    if (lx >= 8u) { lx = 7u; }
+    if (ly >= 8u) { ly = 7u; }
+
+    // Sprite cells are UNFLIPPED — apply flip when sampling.
+    var sx = lx;
+    var sy = ly;
+    if ((in.flags & 1u) != 0u) { sx = 7u - lx; }
+    if ((in.flags & 2u) != 0u) { sy = 7u - ly; }
+
+    let ax = i32(in.cell_origin.x + sx);
+    let ay = i32(in.cell_origin.y + sy);
+    let index = textureLoad(index_atlas, vec2<i32>(ax, ay), 0).r;
+
+    if (index == 0u) {
+        discard;
+    }
+
+    let cx = 128 + i32(in.palette) * 16 + i32(index);
+    return textureLoad(cgram_tex, vec2<i32>(cx, 0), 0);
+}

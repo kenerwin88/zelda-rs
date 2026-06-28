@@ -1,6 +1,60 @@
 use crate::modern_frame::{ModernFrame, MODERN_FRAME_HEIGHT, MODERN_FRAME_WIDTH};
 use crate::modern_index_atlas::ModernIndexTile;
 
+/// Composite the frame's palette-index OAM sprites onto an existing 256x224 RGBA
+/// buffer (`out`, typically the BG render from
+/// [`render_modern_frame_software_indexed`]).
+///
+/// Unlike BG cells, sprite cells in `sprite_cells` are stored UNFLIPPED, so this
+/// applies each instance's `hflip`/`vflip` while sampling:
+/// `src_x = if hflip {7-x}`, `src_y = if vflip {7-y}`,
+/// `index = cell.indices[src_y*8 + src_x]`. Index 0 is transparent. The final
+/// color is `frame.cgram_rgba[0x80 + palette*16 + index]` (OBJ CGRAM is 128..255).
+///
+/// Z-order matches the classic resolver's "first non-transparent pixel in OAM
+/// order wins": sprites are drawn in REVERSE `index_sprites` order with REPLACE,
+/// so the earliest OAM sprite is painted last and ends up on top. Sprites always
+/// draw over the BG (sprite-vs-BG priority is out of scope here).
+///
+/// No-op when `frame.forced_blank` (the BG buffer is already solid black).
+pub fn draw_modern_sprites_indexed(
+    out: &mut [u8],
+    frame: &ModernFrame,
+    sprite_cells: &[ModernIndexTile],
+) {
+    if frame.forced_blank {
+        return;
+    }
+    let width = usize::from(MODERN_FRAME_WIDTH);
+
+    // Reverse OAM order → earliest OAM sprite drawn last (wins) under REPLACE.
+    for inst in frame.index_sprites.iter().rev() {
+        let cell = match sprite_cells.get(inst.cell_id as usize) {
+            Some(c) => c,
+            None => continue,
+        };
+        for y in 0..8usize {
+            for x in 0..8usize {
+                // Sprite cells are UNFLIPPED → apply flip when sampling.
+                let src_x = if inst.hflip { 7 - x } else { x };
+                let src_y = if inst.vflip { 7 - y } else { y };
+                let index = cell.indices[src_y * 8 + src_x];
+                if index == 0 {
+                    continue; // transparent
+                }
+                let dst_x = inst.screen_x + x as i16;
+                let dst_y = inst.screen_y + y as i16;
+                if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                    continue; // clip to screen
+                }
+                let color = frame.cgram_rgba[0x80 + inst.palette as usize * 16 + index as usize];
+                let dst = (dst_y as usize * width + dst_x as usize) * 4;
+                out[dst..dst + 4].copy_from_slice(&color);
+            }
+        }
+    }
+}
+
 pub fn render_modern_frame_software(
     frame: &ModernFrame,
     atlas_rgba: &[u8],
@@ -135,9 +189,74 @@ pub fn render_modern_frame_software_indexed(
 mod tests {
     use super::*;
     use crate::modern_frame::{
-        ModernBgLayer, ModernBlendMode, ModernFrame, ModernIndexTileInstance, ModernTileInstance,
+        ModernBgLayer, ModernBlendMode, ModernFrame, ModernIndexSpriteInstance,
+        ModernIndexTileInstance, ModernTileInstance,
     };
     use crate::modern_index_atlas::ModernIndexTile;
+
+    #[test]
+    fn software_sprites_indexed_draw_over_bg_with_obj_cgram() {
+        // Sprite cell 0: only pixel (0,0) is index 1; everything else transparent.
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        let sprite_cells = vec![ModernIndexTile { id: 0, indices }];
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        // OBJ palette base is 0x80; palette 3, index 1.
+        frame.cgram_rgba[0x80 + 3 * 16 + 1] = [200, 10, 20, 0xff];
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 5,
+            screen_y: 7,
+            palette: 3,
+            priority: 0,
+            hflip: false,
+            vflip: false,
+        });
+
+        // BG is empty (no index_tiles) → backdrop only, then sprites composite over.
+        let mut out = render_modern_frame_software_indexed(&frame, &[]);
+        draw_modern_sprites_indexed(&mut out, &frame, &sprite_cells);
+
+        let px = (7usize * 256 + 5) * 4;
+        assert_eq!(&out[px..px + 4], &[200, 10, 20, 0xff], "sprite pixel (5,7)");
+        // Neighbour stays backdrop (index 0 transparent).
+        let nb = (7usize * 256 + 6) * 4;
+        assert_eq!(&out[nb..nb + 4], &[0, 0, 0, 0xff], "neighbour backdrop");
+    }
+
+    #[test]
+    fn software_sprites_indexed_apply_hflip() {
+        // Sprite cell 0: only pixel (7,0) is index 2.
+        let mut indices = [0u8; 64];
+        indices[7] = 2;
+        let sprite_cells = vec![ModernIndexTile { id: 0, indices }];
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.cgram_rgba[0x80 + 3 * 16 + 2] = [9, 99, 199, 0xff];
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 5,
+            screen_y: 7,
+            palette: 3,
+            priority: 0,
+            hflip: true,
+            vflip: false,
+        });
+
+        let mut out = render_modern_frame_software_indexed(&frame, &[]);
+        draw_modern_sprites_indexed(&mut out, &frame, &sprite_cells);
+
+        // hflip: source pixel (7,0) lands at screen x = screen_x + 0.
+        let px = (7usize * 256 + 5) * 4;
+        assert_eq!(
+            &out[px..px + 4],
+            &[9, 99, 199, 0xff],
+            "hflipped pixel at x=5"
+        );
+    }
 
     #[test]
     fn software_indexed_renderer_applies_live_cgram() {
