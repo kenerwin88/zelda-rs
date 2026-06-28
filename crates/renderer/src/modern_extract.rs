@@ -144,11 +144,13 @@ pub fn extract_modern_frame_with_index_atlas(
 /// Extract frame-level visual state and indexed BG tile instances from a `GpuFrame`
 /// into a `ModernFrame`, using a dungeon palette-index atlas keyed by `(theme, graphics_key)`.
 ///
-/// Sets `cgram_rgba` from `frame.cgram`. For layers 0..3 enabled on the main screen,
-/// reads the 32×32 tilemap from `frame.bg[layer].tilemap_adr`, looks up each nonzero
-/// word in the dungeon atlas via `dungeon_index_cell(atlas, theme, word)`, and pushes a
-/// `ModernIndexTileInstance` with the per-word palette, screen position, and `hflip/vflip`
-/// fixed false (the atlas index pattern already bakes flip).
+/// Sets `cgram_rgba` from `frame.cgram`. For layers 0..3 enabled on the main screen OR
+/// subscreen (dungeon BG1 walls/statues use color-math / subscreen), reads the full SNES
+/// tilemap honoring `tilemap_wider`/`tilemap_higher` (up to 64×64 tiles) with correct
+/// four-quadrant VRAM addressing (each 32×32 block at base + quadrant × 0x400), looks up
+/// each nonzero word in the dungeon atlas via `dungeon_index_cell(atlas, theme, word)`, and
+/// pushes a `ModernIndexTileInstance` with the per-word palette, screen position, and
+/// `hflip/vflip` fixed false (the atlas index pattern already bakes flip).
 pub fn extract_modern_frame_with_dungeon_atlas(
     frame: &GpuFrame<'_>,
     atlas: &crate::modern_dungeon_atlas::ModernDungeonIndexAtlas,
@@ -158,20 +160,37 @@ pub fn extract_modern_frame_with_dungeon_atlas(
     modern.cgram_rgba = crate::modern_palette::cgram_words_to_rgba256(frame.cgram);
     for layer_index in 0..3usize {
         let enabled_main = frame.screen_enabled[0] & (1 << layer_index) != 0;
+        let enabled_sub = frame.screen_enabled[1] & (1 << layer_index) != 0;
         modern.bg_layers[layer_index].enabled_main = enabled_main;
-        modern.bg_layers[layer_index].enabled_sub =
-            frame.screen_enabled[1] & (1 << layer_index) != 0;
+        modern.bg_layers[layer_index].enabled_sub = enabled_sub;
         modern.bg_layers[layer_index].scroll_x = frame.bg[layer_index].h_scroll;
         modern.bg_layers[layer_index].scroll_y = frame.bg[layer_index].v_scroll;
-        if !enabled_main {
+        // Render if enabled on main OR sub — dungeon BG1 (walls/statues) is often on the
+        // subscreen for color-math; skipping !enabled_main would leave it black.
+        let enabled = enabled_main || enabled_sub;
+        if !enabled {
             continue;
         }
         let base = frame.bg[layer_index].tilemap_adr as usize;
         let h_scroll = frame.bg[layer_index].h_scroll;
         let v_scroll = frame.bg[layer_index].v_scroll;
-        for row in 0..32usize {
-            for col in 0..32usize {
-                let entry_word = *frame.vram.get(base + row * 32 + col).unwrap_or(&0);
+        // Dungeon BG tilemaps are 64×64 (four 32×32 quadrants at base+0x000/0x400/0x800/0xC00).
+        // Quadrant index = (right_half ? 1 : 0) + (bottom_half ? (wide ? 2 : 1) : 0).
+        let wide = frame.bg[layer_index].tilemap_wider;
+        let tall = frame.bg[layer_index].tilemap_higher;
+        let cols = if wide { 64usize } else { 32 };
+        let rows = if tall { 64usize } else { 32 };
+        for ty in 0..rows {
+            for tx in 0..cols {
+                let q = (if wide && tx >= 32 { 1 } else { 0 })
+                    + (if tall && ty >= 32 {
+                        if wide { 2 } else { 1 }
+                    } else {
+                        0
+                    });
+                let within = (ty % 32) * 32 + (tx % 32);
+                let addr = base + q * 0x400 + within;
+                let entry_word = *frame.vram.get(addr).unwrap_or(&0);
                 if entry_word == 0 {
                     continue;
                 }
@@ -184,8 +203,8 @@ pub fn extract_modern_frame_with_dungeon_atlas(
                     .index_tiles
                     .push(ModernIndexTileInstance {
                         cell_id: cell.id,
-                        screen_x: (col * 8) as i16 - h_scroll as i16,
-                        screen_y: (row * 8) as i16 - v_scroll as i16,
+                        screen_x: (tx * 8) as i16 - h_scroll as i16,
+                        screen_y: (ty * 8) as i16 - v_scroll as i16,
                         palette: ((entry_word >> 10) & 7) as u8,
                         hflip: false,
                         vflip: false,
