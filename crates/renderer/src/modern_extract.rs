@@ -161,13 +161,16 @@ pub fn extract_modern_frame_with_dungeon_atlas(
     for layer_index in 0..3usize {
         let enabled_main = frame.screen_enabled[0] & (1 << layer_index) != 0;
         let enabled_sub = frame.screen_enabled[1] & (1 << layer_index) != 0;
-        modern.bg_layers[layer_index].enabled_main = enabled_main;
+        // Render if enabled on main OR sub — dungeon BG1 (the room floor/walls) is on the
+        // subscreen for color-math and is NOT set on the main screen. The simplified indexed
+        // renderer only draws layers whose `enabled_main` is true, so persist the combined
+        // (main || sub) visibility into `enabled_main`; otherwise the subscreen floor is
+        // extracted but never drawn, leaving the room black behind the HUD.
+        let enabled = enabled_main || enabled_sub;
+        modern.bg_layers[layer_index].enabled_main = enabled;
         modern.bg_layers[layer_index].enabled_sub = enabled_sub;
         modern.bg_layers[layer_index].scroll_x = frame.bg[layer_index].h_scroll;
         modern.bg_layers[layer_index].scroll_y = frame.bg[layer_index].v_scroll;
-        // Render if enabled on main OR sub — dungeon BG1 (walls/statues) is often on the
-        // subscreen for color-math; skipping !enabled_main would leave it black.
-        let enabled = enabled_main || enabled_sub;
         if !enabled {
             continue;
         }
@@ -184,7 +187,11 @@ pub fn extract_modern_frame_with_dungeon_atlas(
             for tx in 0..cols {
                 let q = (if wide && tx >= 32 { 1 } else { 0 })
                     + (if tall && ty >= 32 {
-                        if wide { 2 } else { 1 }
+                        if wide {
+                            2
+                        } else {
+                            1
+                        }
                     } else {
                         0
                     });
