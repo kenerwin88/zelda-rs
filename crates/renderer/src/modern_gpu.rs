@@ -1,6 +1,6 @@
 use crate::modern_assets::ModernTileAtlasAsset;
 use crate::modern_frame::ModernFrame;
-use crate::modern_index_atlas::ModernIndexAtlas;
+use crate::modern_index_atlas::ModernIndexTile;
 
 /// Packed per-instance data uploaded as an instance-step vertex buffer.
 ///
@@ -345,22 +345,22 @@ pub struct ModernGpuIndexRenderer {
 }
 
 impl ModernGpuIndexRenderer {
-    /// Build the index renderer, uploading `atlas`'s cells into an `R8Uint`
+    /// Build the index renderer, uploading `cells` into an `R8Uint`
     /// grid texture (one 8x8 cell per grid slot, [`INDEX_GRID_COLS`] cells wide).
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        atlas: &ModernIndexAtlas,
+        cells: &[ModernIndexTile],
         format: wgpu::TextureFormat,
     ) -> Self {
-        let cell_count = atlas.cells.len() as u32;
+        let cell_count = cells.len() as u32;
         let grid_rows = cell_count.div_ceil(INDEX_GRID_COLS).max(1);
         let tex_width = INDEX_GRID_COLS * 8;
         let tex_height = grid_rows * 8;
 
         // Lay out each cell's 64 indices into its 8x8 region of the grid.
         let mut data = vec![0u8; (tex_width * tex_height) as usize];
-        for cell in &atlas.cells {
+        for cell in cells {
             let col = cell.id % INDEX_GRID_COLS;
             let row = cell.id / INDEX_GRID_COLS;
             let ox = col * 8;
@@ -935,19 +935,18 @@ mod tests {
     #[test]
     fn modern_gpu_indexed_matches_software() {
         use crate::modern_frame::ModernIndexTileInstance;
-        use crate::modern_index_atlas::{ModernIndexAtlas, ModernIndexTile};
+        use crate::modern_index_atlas::ModernIndexTile;
         use crate::modern_software::render_modern_frame_software_indexed;
 
         pollster::block_on(async {
             let instance = crate::create_wgpu_instance();
             let (_adapter, device, queue) = crate::create_device_queue(&instance, None).await;
 
-            // Same synthetic atlas + frame as the Task 5 software test.
+            // Same synthetic cells + frame as the Task 5 software test.
             let mut indices = [0u8; 64];
             indices[0] = 1; // pixel (0,0)
             indices[1] = 2; // pixel (1,0)
-            let atlas =
-                ModernIndexAtlas::from_cells_for_test(vec![ModernIndexTile { id: 0, indices }]);
+            let cells = vec![ModernIndexTile { id: 0, indices }];
 
             let mut frame = ModernFrame::empty();
             frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -969,7 +968,7 @@ mod tests {
             let renderer = ModernGpuIndexRenderer::new(
                 &device,
                 &queue,
-                &atlas,
+                &cells,
                 wgpu::TextureFormat::Rgba8Unorm,
             );
 
@@ -1035,7 +1034,7 @@ mod tests {
             drop(mapped);
             readback.unmap();
 
-            let software_rgba = render_modern_frame_software_indexed(&frame, &atlas);
+            let software_rgba = render_modern_frame_software_indexed(&frame, &cells);
 
             assert_eq!(gpu_rgba.len(), software_rgba.len());
             assert_eq!(gpu_rgba, software_rgba);

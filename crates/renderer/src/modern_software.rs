@@ -1,5 +1,5 @@
 use crate::modern_frame::{ModernFrame, MODERN_FRAME_HEIGHT, MODERN_FRAME_WIDTH};
-use crate::modern_index_atlas::ModernIndexAtlas;
+use crate::modern_index_atlas::ModernIndexTile;
 
 pub fn render_modern_frame_software(
     frame: &ModernFrame,
@@ -80,7 +80,7 @@ pub fn render_modern_frame_software(
 /// Task 2 atlas generation, so re-applying flip would double-mirror the pixels.
 pub fn render_modern_frame_software_indexed(
     frame: &ModernFrame,
-    atlas: &ModernIndexAtlas,
+    cells: &[ModernIndexTile],
 ) -> Vec<u8> {
     let width = usize::from(MODERN_FRAME_WIDTH);
     let height = usize::from(MODERN_FRAME_HEIGHT);
@@ -105,7 +105,7 @@ pub fn render_modern_frame_software_indexed(
         }
         for inst in &layer.index_tiles {
             // Cells are stored densely 0..len; guard against a bad id.
-            let cell = match atlas.cells.get(inst.cell_id as usize) {
+            let cell = match cells.get(inst.cell_id as usize) {
                 Some(c) => c,
                 None => continue,
             };
@@ -137,7 +137,7 @@ mod tests {
     use crate::modern_frame::{
         ModernBgLayer, ModernBlendMode, ModernFrame, ModernIndexTileInstance, ModernTileInstance,
     };
-    use crate::modern_index_atlas::{ModernIndexAtlas, ModernIndexTile};
+    use crate::modern_index_atlas::ModernIndexTile;
 
     #[test]
     fn software_indexed_renderer_applies_live_cgram() {
@@ -145,7 +145,7 @@ mod tests {
         let mut indices = [0u8; 64];
         indices[0] = 1; // pixel (0,0): sx=0, sy=0 → indices[sy*8+sx]=indices[0]
         indices[1] = 2; // pixel (1,0): sx=1, sy=0 → indices[sy*8+sx]=indices[1]
-        let atlas = ModernIndexAtlas::from_cells_for_test(vec![ModernIndexTile { id: 0, indices }]);
+        let cells = vec![ModernIndexTile { id: 0, indices }];
 
         // Frame: palette P=3 so that the palette offset (not P=0) is exercised.
         let mut frame = ModernFrame::empty();
@@ -165,7 +165,7 @@ mod tests {
         });
         frame.bg_layers[0] = layer;
 
-        let rgba = render_modern_frame_software_indexed(&frame, &atlas);
+        let rgba = render_modern_frame_software_indexed(&frame, &cells);
 
         // pixel (0,0): index 1, palette 3 → cgram_rgba[3*16+1]
         let px00 = (0 * 256 + 0) * 4;
