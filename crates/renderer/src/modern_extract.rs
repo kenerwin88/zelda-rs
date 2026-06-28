@@ -141,6 +141,61 @@ pub fn extract_modern_frame_with_index_atlas(
     modern
 }
 
+/// Extract frame-level visual state and indexed BG tile instances from a `GpuFrame`
+/// into a `ModernFrame`, using a dungeon palette-index atlas keyed by `(theme, graphics_key)`.
+///
+/// Sets `cgram_rgba` from `frame.cgram`. For layers 0..3 enabled on the main screen,
+/// reads the 32×32 tilemap from `frame.bg[layer].tilemap_adr`, looks up each nonzero
+/// word in the dungeon atlas via `dungeon_index_cell(atlas, theme, word)`, and pushes a
+/// `ModernIndexTileInstance` with the per-word palette, screen position, and `hflip/vflip`
+/// fixed false (the atlas index pattern already bakes flip).
+pub fn extract_modern_frame_with_dungeon_atlas(
+    frame: &GpuFrame<'_>,
+    atlas: &crate::modern_dungeon_atlas::ModernDungeonIndexAtlas,
+    theme: u16,
+) -> ModernFrame {
+    let mut modern = extract_modern_frame(frame);
+    modern.cgram_rgba = crate::modern_palette::cgram_words_to_rgba256(frame.cgram);
+    for layer_index in 0..3usize {
+        let enabled_main = frame.screen_enabled[0] & (1 << layer_index) != 0;
+        modern.bg_layers[layer_index].enabled_main = enabled_main;
+        modern.bg_layers[layer_index].enabled_sub =
+            frame.screen_enabled[1] & (1 << layer_index) != 0;
+        modern.bg_layers[layer_index].scroll_x = frame.bg[layer_index].h_scroll;
+        modern.bg_layers[layer_index].scroll_y = frame.bg[layer_index].v_scroll;
+        if !enabled_main {
+            continue;
+        }
+        let base = frame.bg[layer_index].tilemap_adr as usize;
+        let h_scroll = frame.bg[layer_index].h_scroll;
+        let v_scroll = frame.bg[layer_index].v_scroll;
+        for row in 0..32usize {
+            for col in 0..32usize {
+                let entry_word = *frame.vram.get(base + row * 32 + col).unwrap_or(&0);
+                if entry_word == 0 {
+                    continue;
+                }
+                let Some(cell) =
+                    crate::modern_dungeon_atlas::dungeon_index_cell(atlas, theme, entry_word)
+                else {
+                    continue;
+                };
+                modern.bg_layers[layer_index]
+                    .index_tiles
+                    .push(ModernIndexTileInstance {
+                        cell_id: cell.id,
+                        screen_x: (col * 8) as i16 - h_scroll as i16,
+                        screen_y: (row * 8) as i16 - v_scroll as i16,
+                        palette: ((entry_word >> 10) & 7) as u8,
+                        hflip: false,
+                        vflip: false,
+                    });
+            }
+        }
+    }
+    modern
+}
+
 /// Extract frame-level visual state from a `GpuFrame` into a `ModernFrame`.
 ///
 /// This function copies brightness and forced-blank from the GPU frame.
@@ -338,6 +393,70 @@ mod tests {
         assert_eq!(modern.cgram_rgba[1], snes_cgram_to_rgba(0x7C00)); // [0,0,248,0xff]
                                                                       // Slots beyond the supplied cgram default to black opaque
         assert_eq!(modern.cgram_rgba[255], [0, 0, 0, 0xff]);
+    }
+
+    /// WORD = (3<<10)|0x012 → palette=3, tile=0x12, no flip.
+    /// graphics_key = WORD & 0xC3FF = 0x0012 (palette bits stripped).
+    /// packed key  = ((THEME as u32)<<16) | 0x0012.
+    #[test]
+    fn extract_dungeon_frame_emits_index_tile_by_theme_and_populates_cgram_rgba() {
+        const THEME: u16 = 4;
+        const WORD: u16 = (3u16 << 10) | 0x012; // palette=3, tile=0x12 → 0x0C12
+        const GKEY: u32 = ((THEME as u32) << 16) | ((WORD & 0xC3FF) as u32);
+
+        let cell = ModernIndexTile {
+            id: 42,
+            indices: [0u8; 64],
+        };
+        let atlas = crate::modern_dungeon_atlas::ModernDungeonIndexAtlas::from_keyed_cells_for_test(
+            vec![cell],
+            vec![(GKEY, 0)],
+        );
+
+        let mut vram = vec![0u16; 0x8000];
+        let mut cgram = vec![0u16; 0x100];
+        cgram[0] = 0x001F; // R=31 → [248, 0, 0, 255]
+        cgram[1] = 0x7C00; // B=31 → [0, 0, 248, 255]
+        let oam = vec![0u16; 0x110];
+
+        vram[0] = WORD; // tilemap entry at row=0, col=0
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.bg[0].tilemap_adr = 0;
+        frame.screen_enabled = [0x01, 0x00]; // only BG0 on main
+
+        let modern =
+            crate::modern_extract::extract_modern_frame_with_dungeon_atlas(&frame, &atlas, THEME);
+
+        // One indexed tile on layer 0
+        assert_eq!(modern.bg_layers[0].index_tiles.len(), 1);
+        let inst = &modern.bg_layers[0].index_tiles[0];
+        assert_eq!(inst.cell_id, 42);
+        assert_eq!(inst.palette, 3);
+        assert_eq!(inst.screen_x, 0);
+        assert_eq!(inst.screen_y, 0);
+        assert!(!inst.hflip);
+        assert!(!inst.vflip);
+
+        // No RGBA atlas tiles emitted on any layer
+        assert!(modern.bg_layers[0].tiles.is_empty());
+        assert!(modern.bg_layers[1].index_tiles.is_empty());
+        assert!(modern.bg_layers[2].index_tiles.is_empty());
+
+        // cgram_rgba populated from frame.cgram
+        assert_eq!(modern.cgram_rgba[0], snes_cgram_to_rgba(0x001F));
+        assert_eq!(modern.cgram_rgba[1], snes_cgram_to_rgba(0x7C00));
+        assert_eq!(modern.cgram_rgba[255], [0, 0, 0, 0xff]);
+
+        // Wrong theme → zero tiles (key won't resolve)
+        let modern_wrong_theme = crate::modern_extract::extract_modern_frame_with_dungeon_atlas(
+            &frame,
+            &atlas,
+            THEME + 1,
+        );
+        assert!(
+            modern_wrong_theme.bg_layers[0].index_tiles.is_empty(),
+            "wrong theme must yield zero tiles"
+        );
     }
 
     fn test_gpu_frame<'a>(
