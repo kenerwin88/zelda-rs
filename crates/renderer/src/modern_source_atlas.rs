@@ -7,17 +7,36 @@
 //! VRAM slot up in the M1 source table to obtain `{kind, pack, tile_off}`, then
 //! resolves the cell here — never reading VRAM pixel content.
 //!
-//! The lookup key matches the M2 dump exactly:
+//! The lookup key matches the M2 dump exactly. For most kinds:
 //! `key = (kind << 24) | (pack << 8) | (tile_off & 0xff)`.
+//!
+//! Link (kind 3) is the exception: a Link pose's CHR tiles are not injective by
+//! `(pack, relative-tile)` — several DMA pieces of the same pose each restart
+//! their relative tile index at 0, colliding to the wrong cell. The dump keys a
+//! Link tile by its *source identity* (the tile offset within the buffer it was
+//! DMA'd from, plus a 1-bit asset-vs-WRAM buffer flag); see
+//! `chr_source::CHR_LINK_SRC_RAM_FLAG`. That needs a wider `tile_off` field, so
+//! the Link key carries 14 bits of `tile_off` and a 10-bit `pack`:
+//! `key = (3 << 24) | ((pack & 0x3ff) << 14) | (tile_off & 0x3fff)`.
 
 use crate::modern_index_atlas::ModernIndexTile;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
 
+/// `LogicalChrSrc::kind` for Link CHR tiles (mirrors `zelda3::CHR_KIND_LINK`;
+/// the renderer crate must not depend on `zelda3`).
+const CHR_KIND_LINK: u8 = 3;
+
 /// Build the M2 lookup key from a logical CHR source triple.
 pub fn modern_source_key(kind: u8, pack: u16, tile_off: u16) -> u32 {
-    ((kind as u32) << 24) | ((pack as u32) << 8) | ((tile_off as u32) & 0xff)
+    if kind == CHR_KIND_LINK {
+        // Link: source-identity key — 10-bit pack + 14-bit `tile_off`
+        // (buffer flag + per-buffer source tile index). See module docs.
+        ((kind as u32) << 24) | (((pack as u32) & 0x3ff) << 14) | ((tile_off as u32) & 0x3fff)
+    } else {
+        ((kind as u32) << 24) | ((pack as u32) << 8) | ((tile_off as u32) & 0xff)
+    }
 }
 
 /// Atlas of unique palette-agnostic 8x8 cells keyed by logical CHR source.
@@ -126,13 +145,28 @@ mod tests {
 
     #[test]
     fn source_key_matches_m2_layout() {
-        // key = (kind<<24)|(pack<<8)|(tile_off&0xff); tile_off masked to low 8 bits.
+        // Non-Link: key = (kind<<24)|(pack<<8)|(tile_off&0xff); tile_off low 8 bits.
         assert_eq!(modern_source_key(1, 30, 44), 16784940);
         assert_eq!(modern_source_key(2, 8, 41), 33556521);
-        // tile_off high bits are dropped (only low 8 bits keyed).
+        // Non-Link tile_off high bits are dropped (only low 8 bits keyed).
         assert_eq!(
+            modern_source_key(1, 5, 0x107),
+            modern_source_key(1, 5, 0x07)
+        );
+        // Link (kind 3): 10-bit pack (bits 14-23) + 14-bit tile_off (bits 0-13).
+        assert_eq!(
+            modern_source_key(3, 5, 0x2103),
+            (3 << 24) | (5 << 14) | 0x2103
+        );
+        // Link tile_off keeps 14 bits (buffer flag + index), so 0x107 != 0x07.
+        assert_ne!(
             modern_source_key(3, 5, 0x107),
             modern_source_key(3, 5, 0x07)
+        );
+        // Link pack is masked to 10 bits; tile_off to 14.
+        assert_eq!(
+            modern_source_key(3, 0x405, 0x4103),
+            modern_source_key(3, 0x5, 0x103)
         );
     }
 

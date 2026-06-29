@@ -36,6 +36,20 @@ pub const CHR_KIND_BG3: u8 = 4;
 /// `(pack, position)` always decodes the same pixels regardless of phase.
 pub const CHR_KIND_BG_ANIM: u8 = 5;
 
+/// Link `tile_off` bit that distinguishes the two source buffers a Link CHR tile
+/// can be DMA'd from. Link poses are non-injective by `(pack, relative-tile)`
+/// alone: several DMA pieces of the same pose (e.g. BodyBottom and HeadBottom)
+/// each start their relative tile index at 0, so they collapse to the same key
+/// and resolve to the wrong asset cell. The fix keys a Link tile by its *source
+/// identity* instead — the tile offset within the buffer it was copied from:
+/// `tile_off = src_byte_offset >> 5` (32 bytes per 4bpp tile), with this flag set
+/// when the source is the WRAM Link graphics buffer (`copy_ram_bytes_to_vram`) and
+/// clear when it is the static Link sprite asset (`copy_asset_bytes_to_vram`,
+/// offset relative to `0x8000`). The two raw address spaces overlap, so the flag
+/// keeps them distinct. The Link key (`modern_source_key`) carries the full 14-bit
+/// `tile_off` (flag + index) rather than the generic 8-bit field.
+pub const CHR_LINK_SRC_RAM_FLAG: u16 = 0x2000;
+
 /// The logical source that produced one CHR tile slot.
 ///
 /// * `kind`: 0=none, 1=bg, 2=sprite, 3=link.
