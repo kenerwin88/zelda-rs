@@ -58,7 +58,10 @@ fn do3_to_4_high_to_vram_records_sprite_chr_source() {
     assert_eq!(s.kind, CHR_KIND_SPRITE);
     assert_eq!(s.pack, 94);
     assert_eq!(s.tile_off, 0);
-    assert_eq!(state.vram_chr_source().get(0x480 + 0x3f).kind, CHR_KIND_SPRITE);
+    assert_eq!(
+        state.vram_chr_source().get(0x480 + 0x3f).kind,
+        CHR_KIND_SPRITE
+    );
 }
 
 #[test]
@@ -76,4 +79,23 @@ fn record_words_tags_link_chr_region() {
     // 0x20 words = 2 tiles -> slots 0x400, 0x401.
     assert_eq!(t.get(0x401).kind, CHR_KIND_LINK);
     assert_eq!(t.get(0x402).kind, CHR_KIND_NONE);
+}
+
+#[test]
+fn record_tiles_from_keeps_global_tile_off_across_partial_chunks() {
+    // The per-frame incremental sprite upload streams a 64-tile subset to VRAM 16
+    // tiles at a time; each chunk records `tile_off = base_off + t` so the key is
+    // identical to a single full-subset tag. Two adjacent chunks of subset pack 19:
+    let mut t = VramChrSourceTable::new();
+    // chunk k=8: VRAM page 0x5800 (slot 0x580), base_off 0.
+    t.record_tiles_from(0x5800, 16, CHR_KIND_SPRITE, 19, 0);
+    // chunk k=11: VRAM page 0x5b00 (slot 0x5b0), base_off 48.
+    t.record_tiles_from(0x5b00, 16, CHR_KIND_SPRITE, 19, 48);
+
+    // slot 0x58c (the previously pack=0-colliding slot) → pack 19, tile_off 12.
+    let a = t.get(0x58c);
+    assert_eq!((a.kind, a.pack, a.tile_off), (CHR_KIND_SPRITE, 19, 12));
+    // slot 0x5b4 → pack 19, tile_off 48 + 4 = 52.
+    let b = t.get(0x5b4);
+    assert_eq!((b.kind, b.pack, b.tile_off), (CHR_KIND_SPRITE, 19, 52));
 }

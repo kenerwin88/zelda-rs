@@ -20,6 +20,13 @@ pub const CHR_KIND_NONE: u8 = 0;
 pub const CHR_KIND_BG: u8 = 1;
 pub const CHR_KIND_SPRITE: u8 = 2;
 pub const CHR_KIND_LINK: u8 = 3;
+/// The 2bpp BG3 HUD/font layer (mode 1). BG3 tiles are 8 VRAM words, so two of
+/// them share one 16-word CHR slot — finer than this per-slot table can record.
+/// BG3 graphics are STATIC (the HUD font/icons are loaded once, not re-DMA'd per
+/// frame like sprites), so the asset library keys BG3 cells directly by the
+/// tilemap entry `(tile_number, palette)` rather than via this slot table; this
+/// kind tags such cells in `assets_by_source` and the off-VRAM render path.
+pub const CHR_KIND_BG3: u8 = 4;
 
 /// The logical source that produced one CHR tile slot.
 ///
@@ -89,5 +96,34 @@ impl VramChrSourceTable {
     pub fn record_words(&mut self, start_word: usize, num_words: usize, kind: u8, pack: u16) {
         let num_tiles = num_words.div_ceil(16);
         self.record_tiles(start_word, num_tiles, kind, pack);
+    }
+
+    /// Like [`record_tiles`], but the recorded `tile_off` starts at `base_off`
+    /// (so a partial upload of a larger logical tile run keeps a stable, global
+    /// `tile_off` 0..N matching the full-run tagging).
+    ///
+    /// Used by the per-frame incremental sprite VRAM upload, which streams a
+    /// 64-tile sprite subset to VRAM 16 tiles at a time across several frames:
+    /// each 16-tile chunk records `tile_off = base_off + t` so the resulting
+    /// `(kind, pack, tile_off)` key is identical to a single full-subset tag.
+    pub fn record_tiles_from(
+        &mut self,
+        start_word: usize,
+        num_tiles: usize,
+        kind: u8,
+        pack: u16,
+        base_off: u16,
+    ) {
+        let base_slot = start_word / 16;
+        for t in 0..num_tiles {
+            let slot = base_slot + t;
+            if slot < self.entries.len() {
+                self.entries[slot] = LogicalChrSrc {
+                    kind,
+                    pack,
+                    tile_off: base_off + t as u16,
+                };
+            }
+        }
     }
 }

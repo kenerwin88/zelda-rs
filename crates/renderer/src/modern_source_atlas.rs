@@ -157,10 +157,13 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let atlas = load_modern_source_atlas(&root).expect("source atlas loads");
         assert!(!atlas.cells.is_empty());
+        // BG/sprite/link cells are 4bpp palette indices (0..15); BG3 (kind=4) HUD
+        // cells bake the BG3->CGRAM mapping (palette*4 + pal_idx) into low CGRAM,
+        // so their indices span 0..31. All cells stay within a 256-color CGRAM.
         assert!(atlas
             .cells
             .iter()
-            .all(|c| c.indices.iter().all(|&i| i < 16)));
+            .all(|c| c.indices.iter().all(|&i| i < 32)));
         // A known BG (kind=1) source from the committed manifest resolves.
         assert!(source_cell(&atlas, 1, 30, 44).is_some());
     }
