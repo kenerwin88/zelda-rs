@@ -27,6 +27,14 @@ pub const CHR_KIND_LINK: u8 = 3;
 /// tilemap entry `(tile_number, palette)` rather than via this slot table; this
 /// kind tags such cells in `assets_by_source` and the off-VRAM render path.
 pub const CHR_KIND_BG3: u8 = 4;
+/// Per-frame animated overworld BG tiles (water/flowers). These reach VRAM via
+/// the per-frame animated-tile DMA (`nmi_do_updates` → VRAM 0x3c00), streaming a
+/// 32-tile window of a decompressed animation buffer whose window (phase) cycles
+/// every few frames. The static `initialize_tilesets` BG tag for those slots is
+/// stale once the animation streams over them, so this kind re-tags them at the
+/// DMA with `(pack, absolute-buffer-tile-position)`, which is injective: the same
+/// `(pack, position)` always decodes the same pixels regardless of phase.
+pub const CHR_KIND_BG_ANIM: u8 = 5;
 
 /// The logical source that produced one CHR tile slot.
 ///
