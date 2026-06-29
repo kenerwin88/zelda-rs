@@ -187,9 +187,13 @@ pub fn decode_snes_2bpp_tile_indices(
 /// `extract_modern_sprites_from_vram` does for OBJ — makes BG byte-exact with the
 /// classic PPU.
 ///
-/// Only BG1/BG2 (4bpp) are decoded; BG3 (the 2bpp HUD/message layer in mode 1) is
-/// left out because the modern compositor does not window it (drawing it over the
-/// play field would diverge from the classic) — see the loop comment.
+/// BG1/BG2 (4bpp) and BG3 (the 2bpp HUD/message layer in mode 1) are all decoded.
+/// BG3 is decoded as 2bpp (8 words/tile) and its classic CGRAM mapping
+/// (`cgram_idx = palette*4 + pal_idx`, low CGRAM, 4 colors/palette — see
+/// `bg_layer.wgsl`) is BAKED into the cell indices, with the instance palette set
+/// to 0 so the compositor's `cgram_rgba[palette*16 + index]` resolves to
+/// `cgram_rgba[cgram_idx]` exactly like the classic renderer. This makes the
+/// dungeon HUD (LIFE/hearts/magic/items) render correctly.
 /// Geometry (64×64 four-quadrant tilemap, main||sub visibility, scroll) matches
 /// [`extract_modern_frame_with_dungeon_atlas`]. Cells are deduplicated by
 /// `(layer CHR base, tile# + flip, bpp)` and store the FLIP-BAKED 8×8 pattern (the
@@ -209,10 +213,12 @@ pub fn extract_modern_dungeon_frame_from_vram(
     let mut cell_ids: HashMap<(usize, u16), u32> = HashMap::new();
 
     // BG1 (floor/statues, the subscreen color-math operand) and BG2 (walls) are
-    // decoded; BG3 (the 2bpp HUD/message layer in mode 1) is intentionally left out
-    // — the modern compositor does not window it, so drawing it over the play field
-    // would diverge from the classic. The prior static atlas drew ~no BG3 tiles too.
-    for layer_index in 0..2usize {
+    // decoded as 4bpp; BG3 (the 2bpp HUD/message layer in mode 1) is decoded as
+    // 2bpp with its CGRAM mapping baked into the cell (see below) so the dungeon
+    // HUD renders correctly.
+    for layer_index in 0..3usize {
+        // BG3 in PPU mode 1 is 2bpp; BG1/BG2 are 4bpp.
+        let is_2bpp = layer_index == 2;
         let enabled_main = frame.screen_enabled[0] & (1 << layer_index) != 0;
         let enabled_sub = frame.screen_enabled[1] & (1 << layer_index) != 0;
         let enabled = enabled_main || enabled_sub;
@@ -251,9 +257,31 @@ pub fn extract_modern_dungeon_frame_from_vram(
                 }
                 // tile number (bits 0-9) + flip (bits 14/15); palette/priority dropped.
                 let pattern_key = entry_word & 0xC3FF;
-                let cell_id = *cell_ids.entry((chr_base, pattern_key)).or_insert_with(|| {
+                let palette = ((entry_word >> 10) & 7) as u8;
+                // For 2bpp BG3 the palette is BAKED into the cell (see below), so the
+                // dedup key must include the palette bits; the 4bpp path keeps the
+                // palette on the instance and keys on tile#+flip only. The chr_base is
+                // tagged for 2bpp so a 2bpp and 4bpp cell at the same base never alias.
+                let (map_base, map_key) = if is_2bpp {
+                    (chr_base | (1usize << 28), entry_word & 0xDFFF)
+                } else {
+                    (chr_base, pattern_key)
+                };
+                let cell_id = *cell_ids.entry((map_base, map_key)).or_insert_with(|| {
                     // Bake flip into the cell: the dungeon composite samples without flip.
-                    let indices = decode_snes_4bpp_tile_indices(frame.vram, chr_base, pattern_key);
+                    let indices = if is_2bpp {
+                        // BG3 2bpp: decode 0..3, then bake the classic BG3→CGRAM
+                        // mapping (cgram_idx = palette*4 + pal_idx, 4 colors/palette in
+                        // low CGRAM; bg_layer.wgsl). pal_idx 0 stays transparent.
+                        let raw = decode_snes_2bpp_tile_indices(frame.vram, chr_base, pattern_key);
+                        let mut baked = [0u8; 64];
+                        for (b, &p) in baked.iter_mut().zip(raw.iter()) {
+                            *b = if p == 0 { 0 } else { palette * 4 + p };
+                        }
+                        baked
+                    } else {
+                        decode_snes_4bpp_tile_indices(frame.vram, chr_base, pattern_key)
+                    };
                     let id = cells.len() as u32;
                     cells.push(ModernIndexTile { id, indices });
                     id
@@ -267,7 +295,8 @@ pub fn extract_modern_dungeon_frame_from_vram(
                         // `sy` (vertical +1 offset; see bg_layer.wgsl `source_y = sy + 1`).
                         // Mirror it so the modern BG aligns with the classic render.
                         screen_y: (ty * 8) as i16 - v_scroll as i16 - 1,
-                        palette: ((entry_word >> 10) & 7) as u8,
+                        // 2bpp BG3 bakes the CGRAM index into the cell → palette 0.
+                        palette: if is_2bpp { 0 } else { palette },
                         hflip: false,
                         vflip: false,
                     });
@@ -940,8 +969,44 @@ mod tests {
         assert_eq!(cell.indices[1], 0, "neighbour pixel transparent");
         // Backdrop comes from CGRAM[0] (the classic main color-math operand).
         assert_eq!(modern.backdrop_color_rgba, snes_cgram_to_rgba(0x001F));
-        // BG3 (layer 2) is intentionally not decoded from VRAM.
+        // BG3 (layer 2) is not enabled here (screen_enabled bit 2 clear) → no tiles.
         assert!(modern.bg_layers[2].index_tiles.is_empty());
+    }
+
+    /// BG3 (layer 2) is the 2bpp HUD layer: it must decode 2bpp (8 words/tile) and
+    /// bake the classic CGRAM mapping `palette*4 + pal_idx` into the cell, emitting
+    /// instance palette 0 so the compositor resolves `cgram_rgba[palette*4+idx]`.
+    #[test]
+    fn extract_dungeon_from_vram_decodes_bg3_as_2bpp_with_baked_palette() {
+        let mut vram = vec![0u16; 0x8000];
+        // BG3 CHR at base 0x2000, tile#2 → tile_base 0x2000 + 2*8 = 0x2010.
+        // Row 0: bp0 bit7 + bp1 bit7 → pixel (0,0) = 2bpp index 3.
+        vram[0x2010] = 0x8080;
+        // BG3 tilemap at 0x3000: palette 5, tile 2, no flip.
+        vram[0x3000] = (5u16 << 10) | 2;
+
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.bg[2].tilemap_adr = 0x3000;
+        frame.bg[2].tile_adr = 0x2000;
+        frame.screen_enabled = [0x04, 0x00]; // BG3 (bit 2) on main only
+
+        let (modern, cells) = crate::modern_extract::extract_modern_dungeon_frame_from_vram(&frame);
+
+        assert_eq!(modern.bg_layers[2].index_tiles.len(), 1);
+        let inst = &modern.bg_layers[2].index_tiles[0];
+        // Palette baked into cell → instance palette is 0.
+        assert_eq!(inst.palette, 0);
+        assert_eq!(inst.screen_x, 0);
+        assert_eq!(inst.screen_y, -1); // +1 vertical fetch offset
+        let cell = &cells[inst.cell_id as usize];
+        // pixel (0,0): 2bpp index 3, palette 5 → baked cgram idx = 5*4 + 3 = 23.
+        assert_eq!(
+            cell.indices[0], 23,
+            "BG3 baked cgram index = palette*4 + pal_idx"
+        );
+        assert_eq!(cell.indices[1], 0, "transparent neighbour stays 0");
     }
 
     /// Craft an OAM with ONE 8×8 sprite and assert `extract_modern_sprites`
