@@ -731,12 +731,6 @@ pub fn render_modern_frame_full_from_vram(frame: &GpuFrame<'_>) -> Vec<u8> {
 
 use crate::modern_source_atlas::{source_cell, ModernSourceAtlas};
 
-/// `LogicalChrSrc::kind` for the 2bpp BG3 HUD/font layer (mirrors
-/// `zelda3::CHR_KIND_BG3`; the renderer crate stays zelda3-independent). BG3
-/// cells are keyed directly by `(tile_number, palette)` because BG3 graphics are
-/// static and 8-word (two per 16-word CHR slot), finer than the per-slot table.
-const CHR_KIND_BG3: u8 = 4;
-
 /// A thin view over the M1 per-VRAM-slot logical CHR source table, returning
 /// `(kind, pack, tile_off)` for a CHR tile slot (`word_addr / 16`). Defined in
 /// the renderer crate so the off-VRAM path does not depend on the zelda3 crate;
@@ -802,6 +796,15 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
     let mut cells: Vec<ModernIndexTile> = Vec::new();
     // key: (atlas cell id, hflip, vflip) -> local flip-baked cell id
     let mut cell_ids: HashMap<(u32, bool, bool), u32> = HashMap::new();
+    // BG3 (the HUD/message layer) is procedurally COMPOSED at runtime: digit and
+    // item-icon glyphs are streamed into a small set of 2bpp CHR slots, so the same
+    // `(tile_number, palette)` holds different pixels across the route (~46% of BG3
+    // keys are non-injective). A static source atlas therefore cannot represent it
+    // (the dump must drop the ambiguous keys -> HUD gaps / wrong digits). Decode BG3
+    // from LIVE VRAM instead, keyed by `(chr_base, tile+flip+palette)`. Game art
+    // (BG1/BG2/sprites/Link) stays off-VRAM via the source atlas; only this dynamic
+    // UI layer reads VRAM pixels.
+    let mut bg3_cell_ids: HashMap<(usize, u16), u32> = HashMap::new();
 
     for layer_index in 0..3usize {
         let enabled_main = frame.screen_enabled[0] & (1 << layer_index) != 0;
@@ -843,33 +846,49 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                 let tile_number = (entry_word & 0x03ff) as usize;
                 let hflip = entry_word & 0x4000 != 0;
                 let vflip = entry_word & 0x8000 != 0;
-                // BG3 (2bpp HUD/font) is keyed directly by `(tile_number, palette)`
-                // (kind BG3); its cell already bakes the BG3->CGRAM palette mapping,
-                // so it renders with instance palette 0. BG1/BG2 (4bpp) resolve via
-                // the per-slot CHR source table and keep the tilemap palette.
+                // BG3 (2bpp HUD/message) is decoded from LIVE VRAM (procedurally
+                // composed; not injective by tilemap key — see `bg3_cell_ids`). BG1/BG2
+                // (4bpp) resolve via the per-slot CHR source table and keep the tilemap
+                // palette. The BG3 cell bakes the BG3->CGRAM palette + flip, so its
+                // instance renders with palette 0 and no flip.
                 let is_bg3 = layer_index == 2;
-                let (src, palette) = if is_bg3 {
-                    let pal = ((entry_word >> 10) & 7) as u16;
-                    let pack = (tile_number as u16) | (pal << 10);
-                    match source_cell(atlas, CHR_KIND_BG3, pack, 0) {
-                        Some(src) => (src, 0u8),
-                        None => continue,
-                    }
+                let (cell_id, palette) = if is_bg3 {
+                    let pal = ((entry_word >> 10) & 7) as u8;
+                    let chr_base = frame.bg[layer_index].tile_adr as usize;
+                    // dedup key: chr_base + tile# + flip + palette (priority bit dropped)
+                    let map_key = entry_word & 0xDFFF;
+                    let id = *bg3_cell_ids.entry((chr_base, map_key)).or_insert_with(|| {
+                        // 2bpp decode with flip baked, then bake the classic BG3->CGRAM
+                        // palette (cgram_idx = palette*4 + pal_idx; pal_idx 0 transparent).
+                        let raw = decode_snes_2bpp_tile_indices(
+                            frame.vram,
+                            chr_base,
+                            entry_word & 0xc3ff,
+                        );
+                        let mut baked = [0u8; 64];
+                        for (b, &p) in baked.iter_mut().zip(raw.iter()) {
+                            *b = if p == 0 { 0 } else { pal * 4 + p };
+                        }
+                        let id = cells.len() as u32;
+                        cells.push(ModernIndexTile { id, indices: baked });
+                        id
+                    });
+                    (id, 0u8)
                 } else {
                     let slot = chr_slot_base + tile_number;
                     let (kind, pack, tile_off) = src_table.get(slot);
-                    match source_cell(atlas, kind, pack, tile_off) {
+                    let Some(src) = source_cell(atlas, kind, pack, tile_off) else {
                         // No recorded source / not in atlas → leave a gap.
-                        Some(src) => (src, ((entry_word >> 10) & 7) as u8),
-                        None => continue,
-                    }
+                        continue;
+                    };
+                    let id = *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
+                        let indices = flip_index_pattern(&src.indices, hflip, vflip);
+                        let id = cells.len() as u32;
+                        cells.push(ModernIndexTile { id, indices });
+                        id
+                    });
+                    (id, ((entry_word >> 10) & 7) as u8)
                 };
-                let cell_id = *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
-                    let indices = flip_index_pattern(&src.indices, hflip, vflip);
-                    let id = cells.len() as u32;
-                    cells.push(ModernIndexTile { id, indices });
-                    id
-                });
 
                 let bg_w = (cols * 8) as i32;
                 let bg_h = (rows * 8) as i32;
@@ -1092,21 +1111,12 @@ mod tests {
     }
 
     #[test]
-    fn extract_from_sources_renders_bg3_by_tilemap_key_palette_zero() {
+    fn extract_from_sources_decodes_bg3_from_live_vram_palette_zero() {
         use crate::modern_source_atlas::ModernSourceAtlas;
-        // BG3 (layer 2, 2bpp HUD) is keyed directly by (tile_number, palette) with
-        // kind=CHR_KIND_BG3 — NOT via the per-slot source table — and the baked cell
-        // renders at instance palette 0. Build a BG3 cell for tile#7, palette 3:
-        // pack = 7 | (3 << 10) = 0x0c07.
-        let mut indices = [0u8; 64];
-        indices[0] = 3 * 4 + 2; // baked CGRAM index (palette*4 + pal_idx)
-        let cell = ModernIndexTile { id: 0, indices };
-        let pack = 7u16 | (3u16 << 10);
-        let atlas =
-            ModernSourceAtlas::from_keyed_cells_for_test(vec![cell], &[(CHR_KIND_BG3, pack, 0, 0)]);
-
-        // The source TABLE is irrelevant for BG3 (it returns none here); the cell is
-        // resolved purely from the tilemap entry.
+        // BG3 (layer 2, 2bpp HUD) is procedurally composed, so it is decoded from
+        // LIVE VRAM (not the source atlas), with the BG3->CGRAM palette baked into
+        // the cell and rendered at instance palette 0. The atlas is irrelevant here.
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![], &[]);
         let table = |_slot: usize| -> (u8, u16, u16) { (0, 0, 0) };
 
         let mut vram = vec![0u16; 0x8000];
@@ -1114,6 +1124,10 @@ mod tests {
         let oam = vec![0u16; 0x110];
         // BG3 tilemap at adr 0; entry = tile#7, palette 3 (bits 12:10 = 3 << 10).
         vram[0] = 7 | (3 << 10);
+        // 2bpp CHR for tile#7 at chr_base 0x1000: tile_base = 0x1000 + 7*8 = 0x1038.
+        // Row 0 word = bp0 | (bp1 << 8). Set pixel x=0 (bit 0x80) to pal_idx 2
+        // (bp1 bit set, bp0 clear): word = 0x80 << 8 = 0x8000.
+        vram[0x1038] = 0x8000;
         let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
         frame.mode = 1;
         frame.bg[2].tilemap_adr = 0;
@@ -1121,7 +1135,8 @@ mod tests {
         frame.screen_enabled = [0x04, 0x00]; // BG3 main
 
         let (modern, cells) = extract_modern_frame_from_sources(&frame, &table, &atlas);
-        assert_eq!(cells.len(), 1, "BG3 cell emitted from the (tile#,pal) key");
+        assert_eq!(cells.len(), 1, "BG3 cell decoded from live VRAM");
+        // Baked CGRAM index = palette*4 + pal_idx = 3*4 + 2 = 14.
         assert_eq!(cells[0].indices[0], 14);
         let tiles = &modern.bg_layers[2].index_tiles;
         assert_eq!(tiles.len(), 1);
