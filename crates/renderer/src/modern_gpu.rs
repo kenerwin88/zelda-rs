@@ -1288,6 +1288,7 @@ mod tests {
                 palette: 3,
                 hflip: false,
                 vflip: false,
+                priority: false,
             });
             frame.bg_layers[0] = layer;
 

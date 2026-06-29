@@ -206,17 +206,77 @@ impl Screen {
     }
 }
 
+/// Composite one screen (main or sub) in SNES Mode 1 z-order, back → front:
+/// `BG3-lo, OBJ0, OBJ1, BG2-lo, BG1-lo, OBJ2, BG2-hi, BG1-hi, OBJ3, BG3-hi`.
+/// `enabled` is the screen's layer-enable mask (bits 0-2 = BG1-3, bit 4 = OBJ).
+/// Byte-for-byte the same order the GPU reference renderer uses, so the modern
+/// software output matches the classic for high-priority BG tiles (e.g. HUD digits
+/// over the play field) and OBJ-vs-BG interleaving.
+fn composite_mode1(
+    screen: &mut Screen,
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+    sprite_cells: &[ModernIndexTile],
+    enabled: u8,
+) {
+    let bg_on = |i: usize| (enabled >> i) & 1 != 0;
+    let obj_on = (enabled >> 4) & 1 != 0;
+    let bg = &frame.bg_layers;
+    // BG3-lo
+    if bg_on(2) {
+        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, false);
+    }
+    // OBJ0, OBJ1
+    if obj_on {
+        composite_sprites_c5(screen, frame, sprite_cells, 0);
+        composite_sprites_c5(screen, frame, sprite_cells, 1);
+    }
+    // BG2-lo, BG1-lo
+    if bg_on(1) {
+        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, false);
+    }
+    if bg_on(0) {
+        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, false);
+    }
+    // OBJ2
+    if obj_on {
+        composite_sprites_c5(screen, frame, sprite_cells, 2);
+    }
+    // BG2-hi, BG1-hi
+    if bg_on(1) {
+        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, true);
+    }
+    if bg_on(0) {
+        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, true);
+    }
+    // OBJ3
+    if obj_on {
+        composite_sprites_c5(screen, frame, sprite_cells, 3);
+    }
+    // BG3-hi
+    if bg_on(2) {
+        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, true);
+    }
+}
+
 /// Composite one BG layer's indexed tiles into `screen` (painter-style, REPLACE),
-/// stamping the layer's math `bit` and marking pixels real.
+/// stamping the layer's math `bit` and marking pixels real. Only tiles whose
+/// per-tile priority matches `hi_priority` are painted, so the caller can run the
+/// SNES Mode 1 lo-pass and hi-pass with the other layers / OBJ priorities
+/// interleaved between them.
 fn composite_index_tiles_c5(
     screen: &mut Screen,
     layer: &crate::modern_frame::ModernBgLayer,
     cells: &[ModernIndexTile],
     frame: &ModernFrame,
+    hi_priority: bool,
 ) {
     let width = usize::from(MODERN_FRAME_WIDTH);
     let bit = layer.index;
     for inst in &layer.index_tiles {
+        if inst.priority != hi_priority {
+            continue;
+        }
         let cell = match cells.get(inst.cell_id as usize) {
             Some(c) => c,
             None => continue,
@@ -242,15 +302,21 @@ fn composite_index_tiles_c5(
     }
 }
 
-/// Composite OAM sprites into `screen` (reverse OAM order, REPLACE → earliest OAM
-/// sprite wins), stamping the OBJ math bit (4) and marking pixels real.
+/// Composite OAM sprites of one OBJ priority into `screen` (reverse OAM order,
+/// REPLACE → earliest OAM sprite wins within the priority), stamping the OBJ math
+/// bit (4) and marking pixels real. The Mode 1 z-order interleaves the four OBJ
+/// priorities between the BG passes, so the caller invokes this once per priority.
 fn composite_sprites_c5(
     screen: &mut Screen,
     frame: &ModernFrame,
     sprite_cells: &[ModernIndexTile],
+    obj_priority: u8,
 ) {
     let width = usize::from(MODERN_FRAME_WIDTH);
     for inst in frame.index_sprites.iter().rev() {
+        if inst.priority != obj_priority {
+            continue;
+        }
         let cell = match sprite_cells.get(inst.cell_id as usize) {
             Some(c) => c,
             None => continue,
@@ -360,27 +426,28 @@ pub fn render_modern_frame_full(
     let bd = &frame.backdrop_color_rgba;
     let backdrop_c5 = [bd[0] >> 3, bd[1] >> 3, bd[2] >> 3];
 
-    // MAIN composite: enabled-main BG layers (in order) then main sprites.
+    // MAIN composite in SNES Mode 1 z-order (back → front), mirroring the GPU
+    // reference (`gpu_renderer.rs`): BG3-lo, OBJ0, OBJ1, BG2-lo, BG1-lo, OBJ2,
+    // BG2-hi, BG1-hi, OBJ3, BG3-hi. Painter-style REPLACE, so a later (more-front)
+    // source overwrites earlier ones where opaque.
     let mut main = Screen::new(backdrop_c5, len);
-    for layer in &frame.bg_layers {
-        if (frame.screen_enabled_main >> layer.index) & 1 != 0 {
-            composite_index_tiles_c5(&mut main, layer, bg_cells, frame);
-        }
-    }
-    if (frame.screen_enabled_main >> 4) & 1 != 0 {
-        composite_sprites_c5(&mut main, frame, sprite_cells);
-    }
+    composite_mode1(
+        &mut main,
+        frame,
+        bg_cells,
+        sprite_cells,
+        frame.screen_enabled_main,
+    );
 
-    // SUB composite: enabled-sub BG layers then sub sprites.
+    // SUB composite: same Mode 1 z-order over the sub-screen enable mask.
     let mut sub = Screen::new(backdrop_c5, len);
-    for layer in &frame.bg_layers {
-        if (frame.screen_enabled_sub >> layer.index) & 1 != 0 {
-            composite_index_tiles_c5(&mut sub, layer, bg_cells, frame);
-        }
-    }
-    if (frame.screen_enabled_sub >> 4) & 1 != 0 {
-        composite_sprites_c5(&mut sub, frame, sprite_cells);
-    }
+    composite_mode1(
+        &mut sub,
+        frame,
+        bg_cells,
+        sprite_cells,
+        frame.screen_enabled_sub,
+    );
 
     // `rendered_subscreen`: is there ANY sub composite (BG1-4 or OBJ on sub)?
     let rendered_subscreen = (frame.screen_enabled_sub & 0x1f) != 0;
@@ -492,6 +559,7 @@ mod tests {
                 palette: layer_index,
                 hflip: false,
                 vflip: false,
+                priority: false,
             });
         (frame, cells)
     }
@@ -728,6 +796,7 @@ mod tests {
             palette: 3,
             hflip: false,
             vflip: false,
+            priority: false,
         });
         frame.bg_layers[0] = layer;
 

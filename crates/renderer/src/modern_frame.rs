@@ -111,6 +111,10 @@ pub struct ModernIndexTileInstance {
     pub palette: u8,
     pub hflip: bool,
     pub vflip: bool,
+    /// SNES BG per-tile priority bit (tilemap entry bit 13). Drives Mode 1
+    /// compositing order: high-priority BG tiles render above lower-priority tiles
+    /// of the other BG layers (and above the interleaved OBJ priorities).
+    pub priority: bool,
 }
 
 /// A single palette-index OBJ (sprite) 8×8 tile instance, decoded from OAM.
@@ -204,6 +208,7 @@ mod tests {
             palette: 3,
             hflip: true,
             vflip: false,
+            priority: false,
         };
         assert_eq!(inst.cell_id, 42);
         assert_eq!(inst.screen_x, -8);

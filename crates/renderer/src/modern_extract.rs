@@ -315,6 +315,7 @@ pub fn extract_modern_dungeon_frame_from_vram(
                         palette: if is_2bpp { 0 } else { palette },
                         hflip: false,
                         vflip: false,
+                        priority: entry_word & 0x2000 != 0,
                     });
             }
         }
@@ -582,6 +583,7 @@ pub fn extract_modern_frame_with_index_atlas(
                         palette: ((entry_word >> 10) & 7) as u8,
                         hflip: false,
                         vflip: false,
+                        priority: entry_word & 0x2000 != 0,
                     });
             }
         }
@@ -663,6 +665,7 @@ pub fn extract_modern_frame_with_dungeon_atlas(
                         palette: ((entry_word >> 10) & 7) as u8,
                         hflip: false,
                         vflip: false,
+                        priority: entry_word & 0x2000 != 0,
                     });
             }
         }
@@ -911,6 +914,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                         // per-instance BG flip.
                         hflip: false,
                         vflip: false,
+                        priority: entry_word & 0x2000 != 0,
                     });
             }
         }
