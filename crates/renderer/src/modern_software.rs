@@ -294,10 +294,47 @@ fn expand_brightness(c5: i32, brightness: u8) -> u8 {
     ((v8 * u32::from(brightness)) / 15) as u8
 }
 
+/// Decode a CGWSEL clip/math-mode bit, byte-exact with `post_process.wgsl::cw_bit`.
+///
+/// `mode` 0=always 1 (never clip / always math), 1=follows window, 2=inverted,
+/// 3=always 0 (always clip / never math). Mirrors the SNES CW_BITS_MOD table:
+/// `((w & masks[mode]) ^ masks[mode + 4]) != 0`, where `w = 0xff` inside the window.
+#[inline]
+fn cw_bit(in_window: bool, mode: u8) -> bool {
+    const MASKS: [u32; 8] = [0x00, 0xff, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00];
+    let w = if in_window { 0xffu32 } else { 0 };
+    let m = mode as usize & 7;
+    ((w & MASKS[m]) ^ MASKS[m + 4]) != 0
+}
+
+/// Color-math window membership for screen column `sx`, byte-exact with the GPU
+/// post-process shader: enabled W1/W2 masks (each with its inversion flag) are
+/// OR-combined. `windowsel_cm` bits: 0=W1inv, 1=W1en, 2=W2inv, 3=W2en.
+#[inline]
+fn in_cm_window(sx: u32, win: [u8; 4], windowsel_cm: u8) -> bool {
+    let [w1l, w1r, w2l, w2r] = win.map(u32::from);
+    let mut inside = false;
+    if windowsel_cm & 0x2 != 0 {
+        let mut in_w1 = w1l <= w1r && sx >= w1l && sx <= w1r;
+        if windowsel_cm & 0x1 != 0 {
+            in_w1 = !in_w1;
+        }
+        inside |= in_w1;
+    }
+    if windowsel_cm & 0x8 != 0 {
+        let mut in_w2 = w2l <= w2r && sx >= w2l && sx <= w2r;
+        if windowsel_cm & 0x4 != 0 {
+            in_w2 = !in_w2;
+        }
+        inside |= in_w2;
+    }
+    inside
+}
+
 /// Full modern software render: BG + sprites + SNES color-math + master brightness
 /// in one call, producing the FINAL 8-bit RGBA (256×224) that mirrors the classic
-/// post-process pipeline (`post_process.wgsl`), with windows deferred (treated as
-/// always-allowed).
+/// post-process pipeline (`post_process.wgsl`), including the color-math/clip
+/// window gating (`cw_bit` + per-scanline `window_scanlines`).
 ///
 /// `bg_cells` are the indexed BG tile patterns; `sprite_cells` the live-VRAM sprite
 /// patterns (from `extract_modern_sprites_from_vram`). A MAIN and a SUB composite
@@ -359,14 +396,29 @@ pub fn render_modern_frame_full(
         && !rendered_subscreen;
 
     for i in 0..len {
+        let px = i % width;
+        let py = i / width;
         let mut c = [
             i32::from(main.c5[i][0]),
             i32::from(main.c5[i][1]),
             i32::from(main.c5[i][2]),
         ];
         let layer_math_on = (frame.math_enabled >> main.bit[i]) & 1 != 0;
-        // Windows deferred → treat the math window as always-allowing.
-        let do_math = !no_effect_math && layer_math_on;
+        // Color-window membership for this pixel, then gate clip + color-math exactly
+        // like the classic post-process shader.
+        let win = frame.window_scanlines.get(py).copied().unwrap_or([0u8; 4]);
+        let cm_window = in_cm_window(px as u32, win, frame.windowsel_cm);
+        let not_clipped = cw_bit(cm_window, frame.clip_mode);
+        let math_window_ok = cw_bit(cm_window, frame.prevent_math_mode);
+        let do_math = !no_effect_math && layer_math_on && math_window_ok;
+        if !not_clipped {
+            let o = i * 4;
+            out[o] = 0;
+            out[o + 1] = 0;
+            out[o + 2] = 0;
+            out[o + 3] = 0xff;
+            continue;
+        }
         if do_math {
             let (operand, second_real) = if frame.add_subscreen {
                 if sub.real[i] {
@@ -509,6 +561,45 @@ mod tests {
             &out[0..4],
             &[165, 165, 165, 0xff],
             "no-effect-math pixel (0,0)"
+        );
+    }
+
+    #[test]
+    fn color_math_gated_off_outside_color_window() {
+        // Math WOULD add the fixed color, but prevent_math_mode=1 (follows window)
+        // and the color window (x in 10..=20) excludes pixel (0,0) → math is gated
+        // OFF there, so the main channel is unchanged (only brightness applies).
+        let (mut frame, cells) = frame_with_single_bg_pixel(0, [20, 20, 20]);
+        frame.screen_enabled_main = 0x01;
+        frame.screen_enabled_sub = 0;
+        frame.math_enabled = 0x01; // BG1 participates in math
+        frame.add_subscreen = false;
+        frame.half_color = false;
+        frame.subtract_color = false;
+        frame.fixed_color_r = 5; // non-zero → math is "effective" if allowed
+        frame.fixed_color_g = 5;
+        frame.fixed_color_b = 5;
+        frame.brightness = 15;
+        // CGWSEL: prevent math OUTSIDE the window (mode 1, follows window).
+        frame.prevent_math_mode = 1;
+        frame.clip_mode = 0; // never clip
+        frame.windowsel_cm = 0x02; // W1 enabled, not inverted
+        frame.window_scanlines[0] = [10, 20, 0, 0]; // window covers x 10..=20
+
+        let out = render_modern_frame_full(&frame, &cells, &[]);
+        // (0,0) is outside the window → no math → unchanged 20 → v8=165, out=165.
+        assert_eq!(
+            &out[0..4],
+            &[165, 165, 165, 0xff],
+            "pixel (0,0) outside color window: math gated off"
+        );
+        // A pixel inside the window (x=12,y=0) is backdrop here (no tile), but its
+        // window membership is exercised via the clip path staying unclipped.
+        let inside = (0 * 256 + 12) * 4;
+        assert_eq!(
+            &out[inside..inside + 4],
+            &[0, 0, 0, 0xff],
+            "in-window backdrop pixel still renders (not clipped)"
         );
     }
 

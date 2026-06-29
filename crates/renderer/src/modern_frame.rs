@@ -31,6 +31,15 @@ pub struct ModernFrame {
     pub fixed_color_b: u8,
     /// Use the sub-screen pixel as the second math operand instead of the fixed color.
     pub add_subscreen: bool,
+    /// Clip mode (CGWSEL): 0=never clip, 1=outside window, 2=inside window, 3=always.
+    pub clip_mode: u8,
+    /// Prevent-math mode (CGWSEL): 0=never prevent, 1=outside, 2=inside, 3=always.
+    pub prevent_math_mode: u8,
+    /// Color-math window select (windowsel layer 5): bits 0-3 = W1inv, W1en, W2inv, W2en.
+    pub windowsel_cm: u8,
+    /// Per-scanline color-window boundaries `[w1_left, w1_right, w2_left, w2_right]`
+    /// (column indices, inclusive), 224 entries. Mirrors the GPU post-process pass.
+    pub window_scanlines: Vec<[u8; 4]>,
 }
 
 impl ModernFrame {
@@ -59,6 +68,10 @@ impl ModernFrame {
             fixed_color_g: 0,
             fixed_color_b: 0,
             add_subscreen: false,
+            clip_mode: 0,
+            prevent_math_mode: 0,
+            windowsel_cm: 0,
+            window_scanlines: vec![[0u8; 4]; usize::from(MODERN_FRAME_HEIGHT)],
         }
     }
 }

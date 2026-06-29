@@ -263,7 +263,10 @@ pub fn extract_modern_dungeon_frame_from_vram(
                     .push(ModernIndexTileInstance {
                         cell_id,
                         screen_x: (tx * 8) as i16 - h_scroll as i16,
-                        screen_y: (ty * 8) as i16 - v_scroll as i16,
+                        // The SNES PPU fetches BG row `sy + 1` for output scanline
+                        // `sy` (vertical +1 offset; see bg_layer.wgsl `source_y = sy + 1`).
+                        // Mirror it so the modern BG aligns with the classic render.
+                        screen_y: (ty * 8) as i16 - v_scroll as i16 - 1,
                         palette: ((entry_word >> 10) & 7) as u8,
                         hflip: false,
                         vflip: false,
@@ -621,6 +624,23 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
     modern.fixed_color_g = frame.fixed_color_g;
     modern.fixed_color_b = frame.fixed_color_b;
     modern.add_subscreen = frame.add_subscreen;
+    // Color-window registers + per-scanline boundaries for the full software path
+    // (mirrors the GPU post-process color-math window gating).
+    modern.clip_mode = frame.clip_mode;
+    modern.prevent_math_mode = frame.prevent_math_mode;
+    modern.windowsel_cm = frame.windowsel_cm;
+    for (dst, sl) in modern
+        .window_scanlines
+        .iter_mut()
+        .zip(frame.scanlines.iter())
+    {
+        *dst = [
+            sl.window1_left,
+            sl.window1_right,
+            sl.window2_left,
+            sl.window2_right,
+        ];
+    }
     modern
 }
 
@@ -912,7 +932,9 @@ mod tests {
         let inst = &modern.bg_layers[0].index_tiles[0];
         assert_eq!(inst.palette, 3);
         assert_eq!(inst.screen_x, 0);
-        assert_eq!(inst.screen_y, 0);
+        // SNES vertical +1 fetch offset (output line sy shows BG row sy+1), so the
+        // tile at tilemap row 0 with v_scroll=0 lands at screen_y = -1.
+        assert_eq!(inst.screen_y, -1);
         let cell = &cells[inst.cell_id as usize];
         assert_eq!(cell.indices[0], 10, "live-VRAM decoded index at (0,0)");
         assert_eq!(cell.indices[1], 0, "neighbour pixel transparent");
