@@ -482,6 +482,16 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
     let mut modern = ModernFrame::empty();
     modern.brightness = frame.brightness;
     modern.forced_blank = frame.forced_blank;
+    // Raw screen-enable bits + color-math registers for the full software path.
+    modern.screen_enabled_main = frame.screen_enabled[0];
+    modern.screen_enabled_sub = frame.screen_enabled[1];
+    modern.math_enabled = frame.math_enabled;
+    modern.subtract_color = frame.subtract_color;
+    modern.half_color = frame.half_color;
+    modern.fixed_color_r = frame.fixed_color_r;
+    modern.fixed_color_g = frame.fixed_color_g;
+    modern.fixed_color_b = frame.fixed_color_b;
+    modern.add_subscreen = frame.add_subscreen;
     modern
 }
 

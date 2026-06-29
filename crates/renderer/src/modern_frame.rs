@@ -12,6 +12,25 @@ pub struct ModernFrame {
     pub brightness: u8,
     pub forced_blank: bool,
     pub cgram_rgba: [[u8; 4]; 256],
+    /// Raw main-screen layer-enable bits (TM/$212C): 0=BG1..3=BG4, 4=OBJ.
+    /// Used by the full (color-math) software path to build the MAIN composite;
+    /// distinct from the per-layer `enabled_main`, which the dungeon extractor
+    /// pollutes with sub-screen layers so the simple renderer draws them.
+    pub screen_enabled_main: u8,
+    /// Raw sub-screen layer-enable bits (TS/$212D): 0=BG1..3=BG4, 4=OBJ.
+    pub screen_enabled_sub: u8,
+    /// Color-math participation bitmask (CGADSUB): bits 0-5 = BG1-4, OBJ, backdrop.
+    pub math_enabled: u8,
+    /// Color math subtracts the second operand instead of adding.
+    pub subtract_color: bool,
+    /// Halve the post-math channel before brightness scaling.
+    pub half_color: bool,
+    /// Fixed color (COLDATA), each channel 5-bit (0-31).
+    pub fixed_color_r: u8,
+    pub fixed_color_g: u8,
+    pub fixed_color_b: u8,
+    /// Use the sub-screen pixel as the second math operand instead of the fixed color.
+    pub add_subscreen: bool,
 }
 
 impl ModernFrame {
@@ -31,6 +50,15 @@ impl ModernFrame {
             brightness: 15,
             forced_blank: false,
             cgram_rgba: [[0, 0, 0, 0xff]; 256],
+            screen_enabled_main: 0,
+            screen_enabled_sub: 0,
+            math_enabled: 0,
+            subtract_color: false,
+            half_color: false,
+            fixed_color_r: 0,
+            fixed_color_g: 0,
+            fixed_color_b: 0,
+            add_subscreen: false,
         }
     }
 }
