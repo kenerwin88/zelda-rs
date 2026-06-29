@@ -708,6 +708,25 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
     modern
 }
 
+/// Unified live-VRAM modern frame render entry point.
+///
+/// One committed orchestration for the modern (software) path: decode the BG from
+/// live VRAM (mode-agnostic — `extract_modern_frame_from_vram` aliases the dungeon
+/// decoder, which reads only `frame.bg[]`/`frame.vram`/`frame.cgram`/
+/// `frame.screen_enabled`), decode sprites from live VRAM, then composite BG +
+/// sprites + SNES color-math + master brightness in a single
+/// [`crate::modern_software::render_modern_frame_full`] call (mirrors the classic
+/// post-process pipeline).
+///
+/// Returns a `256 * 224 * 4` RGBA buffer in R,G,B,A byte order (the same layout the
+/// offscreen compare hashes against the classic renderer).
+pub fn render_modern_frame_full_from_vram(frame: &GpuFrame<'_>) -> Vec<u8> {
+    let (mut modern, bg_cells) = extract_modern_frame_from_vram(frame);
+    let (sprite_cells, sprites) = extract_modern_sprites_from_vram(frame);
+    modern.index_sprites = sprites;
+    crate::modern_software::render_modern_frame_full(&modern, &bg_cells, &sprite_cells)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -715,6 +734,88 @@ mod tests {
     use crate::modern_assets::{ModernTileAtlasAsset, ModernTileAtlasEntry};
     use crate::modern_index_atlas::ModernIndexTile;
     use crate::modern_palette::snes_cgram_to_rgba;
+
+    #[test]
+    fn render_full_from_vram_returns_256x224x4_backdrop() {
+        // The unified entry point must return a 256×224×4 RGBA buffer. With a
+        // nonzero CGRAM[0] backdrop and no enabled layers, every pixel should be
+        // the backdrop color (non-empty / not all-zero).
+        let vram = vec![0u16; 0x8000];
+        let mut cgram = vec![0u16; 0x100];
+        cgram[0] = 0x7fff; // white backdrop (SNES BGR555)
+        let oam = vec![0u16; 0x110];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        frame.screen_enabled = [0, 0];
+
+        let rgba = render_modern_frame_full_from_vram(&frame);
+        assert_eq!(rgba.len(), 256 * 224 * 4);
+        // Backdrop is non-black; buffer is not all-zero.
+        assert!(rgba.iter().any(|&b| b != 0), "frame buffer is empty");
+        // Alpha channel is opaque.
+        assert!(rgba.chunks_exact(4).all(|px| px[3] == 0xff));
+    }
+
+    #[test]
+    fn perf_render_modern_frame_full_from_vram() {
+        // Microbenchmark: time the unified live-VRAM render on a synthetic,
+        // fully-populated full-screen frame (BG1+BG2 4bpp, BG3 2bpp HUD, 128 OAM
+        // sprites). Reports ms/frame and whether it clears the 16.6ms (60fps) bar.
+        let mut vram = vec![0u16; 0x8000];
+        let mut cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        // Fill CGRAM with a varied palette (avoid all-transparent).
+        for (i, c) in cgram.iter_mut().enumerate() {
+            *c = (i as u16).wrapping_mul(0x0421) | 0x0001;
+        }
+        // Fill CHR for a pool of 256 tiles with non-trivial bitplanes.
+        for (i, w) in vram.iter_mut().enumerate() {
+            *w = (i as u16).wrapping_mul(0x9E37) ^ 0x55AA;
+        }
+        // BG1 (4bpp) + BG2 (4bpp) + BG3 (2bpp) full 32×32 tilemaps, distinct CHR bases.
+        for layer in 0..3usize {
+            let base = layer * 0x400;
+            for cell in 0..0x400usize {
+                // nonzero tile# spread across the CHR pool, with a palette spread.
+                vram[base + cell] = ((cell as u16 & 0xFF) | ((cell as u16 & 0x7) << 10)) | 0x0001;
+            }
+        }
+        // 128 on-screen sprites (8×8) across the frame.
+        for s in 0..128usize {
+            let b = s * 2;
+            let x = ((s * 2) % 248) as u16;
+            let y = ((s * 13) % 216) as u16;
+            oam[b] = (x & 0xFF) | (y << 8);
+            oam[b + 1] = (s as u16 & 0xFF) | 0x0200; // tile# + palette/attr
+        }
+
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        for layer in 0..3usize {
+            frame.bg[layer].tilemap_adr = (layer * 0x400) as u16;
+            frame.bg[layer].tile_adr = 0x1000;
+        }
+        frame.screen_enabled = [0x17, 0x00]; // BG1|BG2|BG3|OBJ on main
+        frame.obj.tile_adr1 = 0x4000;
+        frame.obj.tile_adr2 = 0x5000;
+
+        // Warm up, then time.
+        let out = render_modern_frame_full_from_vram(&frame);
+        assert_eq!(out.len(), 256 * 224 * 4);
+        let iters = 50u32;
+        let t0 = std::time::Instant::now();
+        for _ in 0..iters {
+            let buf = render_modern_frame_full_from_vram(&frame);
+            std::hint::black_box(&buf);
+        }
+        let elapsed = t0.elapsed();
+        let ms = elapsed.as_secs_f64() * 1000.0 / f64::from(iters);
+        println!(
+            "perf render_modern_frame_full_from_vram: {ms:.3} ms/frame ({}) [{} iters]",
+            if ms < 16.6 { "<16.6ms OK for 60fps" } else { "OVER 16.6ms budget" },
+            iters
+        );
+    }
 
     #[test]
     fn dungeon_from_vram_wraps_scroll_modulo_tilemap_size() {
