@@ -322,6 +322,25 @@ pub fn extract_modern_dungeon_frame_from_vram(
     (modern, cells)
 }
 
+/// Live-VRAM BG decode for the OVERWORLD (PPU mode 1, main module 9).
+///
+/// The overworld uses the same SNES BG structure as the dungeon — BG1/BG2 are
+/// 4bpp, BG3 is the 2bpp HUD/message layer, all addressed through
+/// `frame.bg[layer].tilemap_adr` / `tile_adr` in `frame.vram` — so it shares the
+/// dungeon's mode-agnostic live-VRAM decoder verbatim: live tilemap/CHR read, the
+/// SNES +1 vertical fetch offset, scroll-wrap (torus) for wide/tall maps, the
+/// `cgram_rgba` fill, BG3 2bpp CGRAM baking, and `enabled_main || enabled_sub`
+/// visibility. This replaces the STATIC index atlas (which cannot follow the
+/// overworld's per-frame animated CHR / palette), making the overworld BG
+/// byte-exact with the classic PPU the same way the dungeon already is.
+///
+/// `extract_modern_dungeon_frame_from_vram` is genuinely mode-independent (it reads
+/// only `frame.bg[]`/`frame.vram`/`frame.cgram`/`frame.screen_enabled`), so this is
+/// a thin alias rather than a copy; both modes drive the same decode path.
+pub fn extract_modern_frame_from_vram(frame: &GpuFrame<'_>) -> (ModernFrame, Vec<ModernIndexTile>) {
+    extract_modern_dungeon_frame_from_vram(frame)
+}
+
 /// Decode OAM into palette-index sprite-tile instances AND their UNIQUE 8×8 tile
 /// patterns decoded from LIVE VRAM, mirroring the per-sprite, per-8×8-tile
 /// ENUMERATION of `extract_modern_sprites` (same culling, sizes, flip, bank, and
