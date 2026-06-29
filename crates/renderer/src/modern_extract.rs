@@ -3,7 +3,7 @@ use crate::modern_assets::{atlas_entry_for_tilemap_entry, ModernTileAtlasAsset};
 use crate::modern_frame::{
     ModernFrame, ModernIndexSpriteInstance, ModernIndexTileInstance, ModernTileInstance,
 };
-use crate::modern_index_atlas::{index_cell_for_tilemap_entry, ModernIndexAtlas};
+use crate::modern_index_atlas::{index_cell_for_tilemap_entry, ModernIndexAtlas, ModernIndexTile};
 use crate::modern_sprite_atlas::{sprite_index_cell, ModernSpriteIndexAtlas};
 
 // Per SNES PPU OBSEL: maps obj_size (3-bit index) to [small_px, large_px].
@@ -83,18 +83,11 @@ pub fn extract_modern_sprites(
             for stx in 0..tiles_per_side {
                 // Source tile honoring flip at TILE granularity (matches the
                 // reference's used_col = hflip ? size-1-col : col, taken >> 3).
-                let src_col_tile = if hflip {
-                    tiles_per_side - 1 - stx
-                } else {
-                    stx
-                };
-                let src_row_tile = if vflip {
-                    tiles_per_side - 1 - sty
-                } else {
-                    sty
-                };
+                let src_col_tile = if hflip { tiles_per_side - 1 - stx } else { stx };
+                let src_row_tile = if vflip { tiles_per_side - 1 - sty } else { sty };
                 let used_tile = (((tile_row_base + src_row_tile) << 4)
-                    | ((tile_col_base + src_col_tile) & 0x0f)) as u16;
+                    | ((tile_col_base + src_col_tile) & 0x0f))
+                    as u16;
                 let effective_tile = bank + used_tile;
 
                 let Some(cell) = sprite_index_cell(atlas, context, effective_tile) else {
@@ -114,6 +107,152 @@ pub fn extract_modern_sprites(
     }
 
     out
+}
+
+/// Decode one SNES 4bpp 8×8 OBJ/BG tile from live VRAM into 64 palette indices
+/// (row-major, 0–15). `chr_base_words` is the VRAM word base of the CHR page;
+/// `tilemap_entry` carries the tile number in bits [9:0] and flip in bits 14/15.
+///
+/// Mirrors `decode_snes_4bpp_tile_indices` in the binary: each 8×8 tile occupies
+/// 16 words (two bitplane words per row, planes 0+1 then 2+3), pixel x=0 is the
+/// MSB. Call with NO flip bits to obtain the UNFLIPPED pattern (the renderer
+/// applies hflip/vflip when sampling the cell).
+pub fn decode_snes_4bpp_tile_indices(
+    vram: &[u16],
+    chr_base_words: usize,
+    tilemap_entry: u16,
+) -> [u8; 64] {
+    let tile_number = usize::from(tilemap_entry & 0x03ff);
+    let hflip = tilemap_entry & 0x4000 != 0;
+    let vflip = tilemap_entry & 0x8000 != 0;
+    let tile_base = chr_base_words + tile_number * 16;
+    let mut out = [0u8; 64];
+    for y in 0..8usize {
+        let source_y = if vflip { 7 - y } else { y };
+        let w01 = vram.get(tile_base + source_y).copied().unwrap_or(0);
+        let w23 = vram.get(tile_base + 8 + source_y).copied().unwrap_or(0);
+        let (bp0, bp1) = ((w01 & 0xff) as u8, (w01 >> 8) as u8);
+        let (bp2, bp3) = ((w23 & 0xff) as u8, (w23 >> 8) as u8);
+        for x in 0..8usize {
+            let source_x = if hflip { x } else { 7 - x };
+            let bit = 1u8 << source_x;
+            out[y * 8 + x] = ((bp0 & bit != 0) as u8)
+                | (((bp1 & bit != 0) as u8) << 1)
+                | (((bp2 & bit != 0) as u8) << 2)
+                | (((bp3 & bit != 0) as u8) << 3);
+        }
+    }
+    out
+}
+
+/// Decode OAM into palette-index sprite-tile instances AND their UNIQUE 8×8 tile
+/// patterns decoded from LIVE VRAM, mirroring the per-sprite, per-8×8-tile
+/// ENUMERATION of `extract_modern_sprites` (same culling, sizes, flip, bank, and
+/// tile addressing).
+///
+/// Unlike the static-atlas variant, this resolves each sprite tile's pixels from
+/// the current frame's sprite CHR (`frame.obj.tile_adr1` / `tile_adr2`, selected
+/// by the OAM bank bit) in `frame.vram`. Sprite CHR is DMA'd per frame, so this is
+/// the only way modern rendering can follow animations (Link's poses, dynamic
+/// sprites) — a fixed `(context, tile)` atlas cannot.
+///
+/// Returns `(cells, instances)`: `cells` is the deduplicated set of UNFLIPPED 8×8
+/// patterns (sequential ids, ready for `draw_modern_sprites_indexed`); each
+/// instance references its pattern by `cell_id` and carries the OAM
+/// palette/priority/flip and on-screen position. Fully transparent (all-zero)
+/// patterns are skipped.
+pub fn extract_modern_sprites_from_vram(
+    frame: &GpuFrame<'_>,
+) -> (Vec<ModernIndexTile>, Vec<ModernIndexSpriteInstance>) {
+    use std::collections::HashMap;
+
+    let oam = frame.oam;
+    let obj = &frame.obj;
+    let mut cells: Vec<ModernIndexTile> = Vec::new();
+    let mut pattern_ids: HashMap<[u8; 64], u32> = HashMap::new();
+    let mut out = Vec::new();
+
+    for sprite_num in 0..128usize {
+        let idx = sprite_num * 2;
+        let oam0 = oam.get(idx).copied().unwrap_or(0);
+
+        // Off-screen sentinel: the game parks hidden sprites at y == 0xf0.
+        let y_byte = ((oam0 >> 8) & 0xff) as i32;
+        if y_byte == 0xf0 {
+            continue;
+        }
+        let top_y = ((y_byte + 1) & 0xff) - 1;
+
+        let hi_word = oam.get(0x100 + idx / 16).copied().unwrap_or(0);
+        let hi_bits = (hi_word >> (idx % 16)) as i32;
+        let size = SPRITE_SIZES[(obj.obj_size & 7) as usize][((hi_bits >> 1) & 1) as usize] as i32;
+
+        let object_x = (oam0 & 0xff) as i32 + (hi_bits & 1) * 256;
+        if object_x > 256 && object_x + size - 1 < 512 {
+            continue;
+        }
+        let mut x = object_x;
+        if x >= 256 {
+            x -= 512;
+        }
+        if x <= -size {
+            continue;
+        }
+
+        let oam1 = oam.get(idx + 1).copied().unwrap_or(0);
+        let hflip = oam1 & 0x4000 != 0;
+        let vflip = oam1 & 0x8000 != 0;
+        let palette = ((oam1 & 0x0e00) >> 9) as u8;
+        let priority = ((oam1 & 0x3000) >> 12) as u8;
+        // Decode from the correct CHR page directly (the OAM bank bit selects the
+        // word base), so `used_tile` stays 0..255 within that page.
+        let bank_base = if oam1 & 0x0100 != 0 {
+            obj.tile_adr2
+        } else {
+            obj.tile_adr1
+        };
+        let tile_row_base = ((oam1 & 0xff) >> 4) as i32;
+        let tile_col_base = (oam1 & 0x0f) as i32;
+
+        let tiles_per_side = size / 8;
+        for sty in 0..tiles_per_side {
+            for stx in 0..tiles_per_side {
+                let src_col_tile = if hflip { tiles_per_side - 1 - stx } else { stx };
+                let src_row_tile = if vflip { tiles_per_side - 1 - sty } else { sty };
+                let used_tile = (((tile_row_base + src_row_tile) << 4)
+                    | ((tile_col_base + src_col_tile) & 0x0f))
+                    as u16;
+
+                // Decode the UNFLIPPED 8×8 pattern (no flip bits): the renderer
+                // applies hflip/vflip per instance when sampling the cell.
+                let indices =
+                    decode_snes_4bpp_tile_indices(frame.vram, bank_base as usize, used_tile);
+
+                // Skip fully transparent tiles to avoid cluttering the cell set.
+                if indices.iter().all(|&i| i == 0) {
+                    continue;
+                }
+
+                let cell_id = *pattern_ids.entry(indices).or_insert_with(|| {
+                    let id = cells.len() as u32;
+                    cells.push(ModernIndexTile { id, indices });
+                    id
+                });
+
+                out.push(ModernIndexSpriteInstance {
+                    cell_id,
+                    screen_x: (x + stx * 8) as i16,
+                    screen_y: (top_y + sty * 8) as i16,
+                    palette,
+                    priority,
+                    hflip,
+                    vflip,
+                });
+            }
+        }
+    }
+
+    (cells, out)
 }
 
 /// Decoded visual fields from a single SNES BG tilemap entry (u16).
@@ -675,6 +814,94 @@ mod tests {
         assert_eq!(sprites[0].cell_id, 7);
         assert!(sprites[0].hflip);
         assert!(!sprites[0].vflip);
+    }
+
+    /// Live-VRAM sprite decode: an 8×8 sprite using tile T from CHR page
+    /// `tile_adr1 = B` must yield a cell whose pattern equals
+    /// `decode_snes_4bpp_tile_indices` for the same words, and one instance with
+    /// the matching cell_id/palette/screen position.
+    #[test]
+    fn extract_modern_sprites_from_vram_decodes_live_chr() {
+        const B: usize = 0x1000; // CHR page word base (tile_adr1)
+        const TILE: u16 = 3;
+        let palette: u16 = 4;
+        let priority: u16 = 2;
+        let x: u16 = 40;
+        let y: u16 = 50;
+
+        let mut vram = vec![0u16; 0x8000];
+        // Encode a known pattern for tile T at base B:
+        //   row 0: bp0 = 0xFF → all 8 pixels index bit0 set (index 1)
+        //   row 3: bp0/bp1 = 0xFF/0xFF → all 8 pixels index 3
+        let tile_base = B + (TILE as usize) * 16;
+        vram[tile_base] = 0x00FF; // y=0: bp0=0xFF, bp1=0x00
+        vram[tile_base + 3] = 0xFFFF; // y=3: bp0=0xFF, bp1=0xFF
+
+        let cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        oam[0] = (y << 8) | x;
+        oam[1] = (palette << 9) | (priority << 12) | TILE; // bank 0, no flip
+
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.obj.obj_size = 0; // small = 8×8
+        frame.obj.tile_adr1 = B as u16;
+        frame.obj.tile_adr2 = 0;
+
+        let (cells, sprites) = extract_modern_sprites_from_vram(&frame);
+
+        assert_eq!(sprites.len(), 1, "one visible 8×8 sprite tile");
+        let s = &sprites[0];
+        assert_eq!(s.palette, 4);
+        assert_eq!(s.priority, 2);
+        assert_eq!(s.screen_x, 40);
+        assert_eq!(s.screen_y, 50);
+        assert!(!s.hflip);
+        assert!(!s.vflip);
+
+        // The referenced cell's pattern equals the unflipped decode of the words.
+        let expected = decode_snes_4bpp_tile_indices(&vram, B, TILE);
+        assert_ne!(expected, [0u8; 64], "pattern must be non-trivial");
+        let cell = &cells[s.cell_id as usize];
+        assert_eq!(cell.indices, expected);
+        // Spot-check the crafted rows.
+        assert!(cell.indices[0..8].iter().all(|&i| i == 1));
+        assert!(cell.indices[24..32].iter().all(|&i| i == 3));
+    }
+
+    /// hflip propagates as a flag; the decoded cell stays UNFLIPPED (so a second
+    /// hflipped sprite using the same tile dedups to the same cell).
+    #[test]
+    fn extract_modern_sprites_from_vram_propagates_hflip_keeps_cell_unflipped() {
+        const B: usize = 0x2000;
+        const TILE: u16 = 7;
+
+        let mut vram = vec![0u16; 0x8000];
+        let tile_base = B + (TILE as usize) * 16;
+        vram[tile_base] = 0x00FF; // row 0 index 1
+
+        let cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        // Sprite 0: no flip. Sprite 1: hflip, same tile.
+        oam[0] = (50u16 << 8) | 40u16;
+        oam[1] = TILE;
+        oam[2] = (60u16 << 8) | 80u16;
+        oam[3] = 0x4000 | TILE; // bit 14 = hflip
+
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.obj.obj_size = 0;
+        frame.obj.tile_adr1 = B as u16;
+
+        let (cells, sprites) = extract_modern_sprites_from_vram(&frame);
+
+        assert_eq!(sprites.len(), 2);
+        // Both reference the SAME (unflipped) cell — hflip is a per-instance flag.
+        assert_eq!(sprites[0].cell_id, sprites[1].cell_id);
+        assert_eq!(cells.len(), 1, "identical tiles dedup to one cell");
+        assert!(!sprites[0].hflip);
+        assert!(sprites[1].hflip);
+
+        let expected = decode_snes_4bpp_tile_indices(&vram, B, TILE);
+        assert_eq!(cells[sprites[1].cell_id as usize].indices, expected);
     }
 
     fn test_gpu_frame<'a>(
