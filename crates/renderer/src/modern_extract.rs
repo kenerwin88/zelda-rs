@@ -145,6 +145,135 @@ pub fn decode_snes_4bpp_tile_indices(
     out
 }
 
+/// Decode one SNES 2bpp 8×8 tile from live VRAM into 64 palette indices (0–3),
+/// applying `tilemap_entry` flip. Each tile occupies 8 words (one word = two
+/// bitplanes per row); pixel x=0 is the MSB. Used for BG3 in PPU mode 1 (the
+/// dungeon HUD/message layer), which is 2bpp — decoding it as 4bpp reads adjacent
+/// tile data as planes 2/3 and produces garbage indices.
+pub fn decode_snes_2bpp_tile_indices(
+    vram: &[u16],
+    chr_base_words: usize,
+    tilemap_entry: u16,
+) -> [u8; 64] {
+    let tile_number = usize::from(tilemap_entry & 0x03ff);
+    let hflip = tilemap_entry & 0x4000 != 0;
+    let vflip = tilemap_entry & 0x8000 != 0;
+    let tile_base = chr_base_words + tile_number * 8;
+    let mut out = [0u8; 64];
+    for y in 0..8usize {
+        let source_y = if vflip { 7 - y } else { y };
+        let w01 = vram.get(tile_base + source_y).copied().unwrap_or(0);
+        let (bp0, bp1) = ((w01 & 0xff) as u8, (w01 >> 8) as u8);
+        for x in 0..8usize {
+            let source_x = if hflip { x } else { 7 - x };
+            let bit = 1u8 << source_x;
+            out[y * 8 + x] = ((bp0 & bit != 0) as u8) | (((bp1 & bit != 0) as u8) << 1);
+        }
+    }
+    out
+}
+
+/// Extract a dungeon `ModernFrame` whose BG tile patterns are decoded from LIVE
+/// VRAM (not the static `dungeon_index_tiles` atlas), returning the decoded cell
+/// set alongside.
+///
+/// The static dungeon atlas bakes each `(theme, tile#)` pattern from a snapshot of
+/// CHR, but several dungeon BG tiles are ANIMATED — their CHR is re-DMA'd into VRAM
+/// each frame (e.g. the animated floor tile #255, water/lava). A fixed atlas cannot
+/// follow that, so those tiles render with a stale palette index. Because the
+/// dungeon floor is composited as backdrop + BG1-subscreen color-math, a stale BG1
+/// index shows up as a ~1-LSB-low blended floor versus the classic renderer (which
+/// reads live VRAM). Decoding the BG CHR straight from `frame.vram` — exactly as
+/// `extract_modern_sprites_from_vram` does for OBJ — makes BG byte-exact with the
+/// classic PPU.
+///
+/// Only BG1/BG2 (4bpp) are decoded; BG3 (the 2bpp HUD/message layer in mode 1) is
+/// left out because the modern compositor does not window it (drawing it over the
+/// play field would diverge from the classic) — see the loop comment.
+/// Geometry (64×64 four-quadrant tilemap, main||sub visibility, scroll) matches
+/// [`extract_modern_frame_with_dungeon_atlas`]. Cells are deduplicated by
+/// `(layer CHR base, tile# + flip, bpp)` and store the FLIP-BAKED 8×8 pattern (the
+/// dungeon composite samples cells without re-applying flip). The backdrop is set
+/// from CGRAM[0] (the classic main color-math operand for backdrop pixels).
+pub fn extract_modern_dungeon_frame_from_vram(
+    frame: &GpuFrame<'_>,
+) -> (ModernFrame, Vec<ModernIndexTile>) {
+    use std::collections::HashMap;
+    let mut modern = extract_modern_frame(frame);
+    modern.cgram_rgba = crate::modern_palette::cgram_words_to_rgba256(frame.cgram);
+    modern.backdrop_color_rgba =
+        crate::modern_palette::snes_cgram_to_rgba(*frame.cgram.first().unwrap_or(&0));
+
+    let mut cells: Vec<ModernIndexTile> = Vec::new();
+    // key: (CHR word base, tilemap word masked to tile#+flip) -> cell id
+    let mut cell_ids: HashMap<(usize, u16), u32> = HashMap::new();
+
+    // BG1 (floor/statues, the subscreen color-math operand) and BG2 (walls) are
+    // decoded; BG3 (the 2bpp HUD/message layer in mode 1) is intentionally left out
+    // — the modern compositor does not window it, so drawing it over the play field
+    // would diverge from the classic. The prior static atlas drew ~no BG3 tiles too.
+    for layer_index in 0..2usize {
+        let enabled_main = frame.screen_enabled[0] & (1 << layer_index) != 0;
+        let enabled_sub = frame.screen_enabled[1] & (1 << layer_index) != 0;
+        let enabled = enabled_main || enabled_sub;
+        modern.bg_layers[layer_index].enabled_main = enabled;
+        modern.bg_layers[layer_index].enabled_sub = enabled_sub;
+        modern.bg_layers[layer_index].scroll_x = frame.bg[layer_index].h_scroll;
+        modern.bg_layers[layer_index].scroll_y = frame.bg[layer_index].v_scroll;
+        if !enabled {
+            continue;
+        }
+        let base = frame.bg[layer_index].tilemap_adr as usize;
+        let chr_base = frame.bg[layer_index].tile_adr as usize;
+        let h_scroll = frame.bg[layer_index].h_scroll;
+        let v_scroll = frame.bg[layer_index].v_scroll;
+        let wide = frame.bg[layer_index].tilemap_wider;
+        let tall = frame.bg[layer_index].tilemap_higher;
+        let cols = if wide { 64usize } else { 32 };
+        let rows = if tall { 64usize } else { 32 };
+        for ty in 0..rows {
+            for tx in 0..cols {
+                let q = (if wide && tx >= 32 { 1 } else { 0 })
+                    + (if tall && ty >= 32 {
+                        if wide {
+                            2
+                        } else {
+                            1
+                        }
+                    } else {
+                        0
+                    });
+                let within = (ty % 32) * 32 + (tx % 32);
+                let addr = base + q * 0x400 + within;
+                let entry_word = *frame.vram.get(addr).unwrap_or(&0);
+                if entry_word == 0 {
+                    continue;
+                }
+                // tile number (bits 0-9) + flip (bits 14/15); palette/priority dropped.
+                let pattern_key = entry_word & 0xC3FF;
+                let cell_id = *cell_ids.entry((chr_base, pattern_key)).or_insert_with(|| {
+                    // Bake flip into the cell: the dungeon composite samples without flip.
+                    let indices = decode_snes_4bpp_tile_indices(frame.vram, chr_base, pattern_key);
+                    let id = cells.len() as u32;
+                    cells.push(ModernIndexTile { id, indices });
+                    id
+                });
+                modern.bg_layers[layer_index]
+                    .index_tiles
+                    .push(ModernIndexTileInstance {
+                        cell_id,
+                        screen_x: (tx * 8) as i16 - h_scroll as i16,
+                        screen_y: (ty * 8) as i16 - v_scroll as i16,
+                        palette: ((entry_word >> 10) & 7) as u8,
+                        hflip: false,
+                        vflip: false,
+                    });
+            }
+        }
+    }
+    (modern, cells)
+}
+
 /// Decode OAM into palette-index sprite-tile instances AND their UNIQUE 8×8 tile
 /// patterns decoded from LIVE VRAM, mirroring the per-sprite, per-8×8-tile
 /// ENUMERATION of `extract_modern_sprites` (same culling, sizes, flip, bank, and
@@ -745,6 +874,52 @@ mod tests {
             modern_wrong_theme.bg_layers[0].index_tiles.is_empty(),
             "wrong theme must yield zero tiles"
         );
+    }
+
+    #[test]
+    fn decode_2bpp_tile_reads_two_bitplanes() {
+        // tile#0 at chr_base 0: row0 word = planes 0 (low) + 1 (high). Set both bit7
+        // (pixel x=0) → index 3; leave the rest 0.
+        let mut vram = vec![0u16; 0x8000];
+        vram[0] = 0x8080; // bp0 bit7 + bp1 bit7
+        let out = decode_snes_2bpp_tile_indices(&vram, 0, 0);
+        assert_eq!(out[0], 3, "pixel (0,0) = 2bpp index 3");
+        assert_eq!(out[1], 0, "pixel (1,0) untouched");
+        assert_eq!(out[8], 0, "pixel (0,1) untouched");
+    }
+
+    #[test]
+    fn extract_dungeon_from_vram_decodes_live_chr_and_backdrop() {
+        // CHR base 0, tile#1 → tile_base 16. Set pixel (0,0) to 4bpp index 10
+        // (planes 1 and 3 → w01 high byte + w23 high byte have bit7).
+        let mut vram = vec![0u16; 0x8000];
+        vram[16] = 0x8000; // w01: bp1 bit7  (plane 1)
+        vram[24] = 0x8000; // w23: bp3 bit7  (plane 3)  => index 0b1010 = 10
+        vram[0x1000] = (3u16 << 10) | 1; // tilemap entry: palette 3, tile 1, no flip
+
+        let mut cgram = vec![0u16; 0x100];
+        cgram[0] = 0x001F; // backdrop R=31 → [248,0,0,255]
+        let oam = vec![0u16; 0x110];
+
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.bg[0].tilemap_adr = 0x1000;
+        frame.bg[0].tile_adr = 0;
+        frame.screen_enabled = [0x01, 0x00]; // BG1 on main only
+
+        let (modern, cells) = crate::modern_extract::extract_modern_dungeon_frame_from_vram(&frame);
+
+        assert_eq!(modern.bg_layers[0].index_tiles.len(), 1);
+        let inst = &modern.bg_layers[0].index_tiles[0];
+        assert_eq!(inst.palette, 3);
+        assert_eq!(inst.screen_x, 0);
+        assert_eq!(inst.screen_y, 0);
+        let cell = &cells[inst.cell_id as usize];
+        assert_eq!(cell.indices[0], 10, "live-VRAM decoded index at (0,0)");
+        assert_eq!(cell.indices[1], 0, "neighbour pixel transparent");
+        // Backdrop comes from CGRAM[0] (the classic main color-math operand).
+        assert_eq!(modern.backdrop_color_rgba, snes_cgram_to_rgba(0x001F));
+        // BG3 (layer 2) is intentionally not decoded from VRAM.
+        assert!(modern.bg_layers[2].index_tiles.is_empty());
     }
 
     /// Craft an OAM with ONE 8×8 sprite and assert `extract_modern_sprites`
