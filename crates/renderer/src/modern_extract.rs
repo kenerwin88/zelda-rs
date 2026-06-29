@@ -727,6 +727,263 @@ pub fn render_modern_frame_full_from_vram(frame: &GpuFrame<'_>) -> Vec<u8> {
     crate::modern_software::render_modern_frame_full(&modern, &bg_cells, &sprite_cells)
 }
 
+// ── Off-VRAM (logical-CHR-source) render path (Milestone 3) ──────────────────
+
+use crate::modern_source_atlas::{source_cell, ModernSourceAtlas};
+
+/// A thin view over the M1 per-VRAM-slot logical CHR source table, returning
+/// `(kind, pack, tile_off)` for a CHR tile slot (`word_addr / 16`). Defined in
+/// the renderer crate so the off-VRAM path does not depend on the zelda3 crate;
+/// the harness adapts `game.vram_chr_source()` into it (a copied slice or a
+/// closure). Out-of-range slots return `(0, 0, 0)` = kind-none.
+pub trait SourceTableView {
+    fn get(&self, slot: usize) -> (u8, u16, u16);
+}
+
+impl<F: Fn(usize) -> (u8, u16, u16)> SourceTableView for F {
+    fn get(&self, slot: usize) -> (u8, u16, u16) {
+        self(slot)
+    }
+}
+
+impl SourceTableView for [(u8, u16, u16)] {
+    fn get(&self, slot: usize) -> (u8, u16, u16) {
+        <[_]>::get(self, slot).copied().unwrap_or((0, 0, 0))
+    }
+}
+
+/// Apply hflip/vflip to a 64-entry (8x8 row-major) index pattern.
+fn flip_index_pattern(indices: &[u8; 64], hflip: bool, vflip: bool) -> [u8; 64] {
+    if !hflip && !vflip {
+        return *indices;
+    }
+    let mut out = [0u8; 64];
+    for y in 0..8usize {
+        let sy = if vflip { 7 - y } else { y };
+        for x in 0..8usize {
+            let sx = if hflip { 7 - x } else { x };
+            out[y * 8 + x] = indices[sy * 8 + sx];
+        }
+    }
+    out
+}
+
+/// Extract a BG `ModernFrame` whose tile patterns come ONLY from the asset atlas,
+/// selected via the M1 logical CHR source table — never reading `frame.vram` CHR
+/// pixel content. This is the off-VRAM animation-modeled render path.
+///
+/// For each enabled BG layer (main OR sub, mirroring the dungeon subscreen floor)
+/// and each nonzero tilemap entry: the CHR tile slot is
+/// `slot = tile_adr/16 + (entry & 0x3ff)`; its logical source `{kind, pack,
+/// tile_off}` is read from `src_table`; the cell is resolved via `source_cell`.
+/// Missing source (kind 0 / not in atlas) → the tile is skipped (a gap). The
+/// atlas cells are UNFLIPPED (decoded with no flip in M2), and the index-tile
+/// compositor ignores per-instance flip, so the tilemap word's flip bits are
+/// BAKED into a per-(cell, flip) cell here; the emitted instance flip is false.
+/// Geometry (64x64 four-quadrant tilemap, +1 vertical fetch offset, scroll-wrap
+/// torus) matches [`extract_modern_dungeon_frame_from_vram`].
+pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
+    frame: &GpuFrame<'_>,
+    src_table: &S,
+    atlas: &ModernSourceAtlas,
+) -> (ModernFrame, Vec<ModernIndexTile>) {
+    use std::collections::HashMap;
+    let mut modern = extract_modern_frame(frame);
+    modern.cgram_rgba = crate::modern_palette::cgram_words_to_rgba256(frame.cgram);
+    modern.backdrop_color_rgba =
+        crate::modern_palette::snes_cgram_to_rgba(*frame.cgram.first().unwrap_or(&0));
+
+    let mut cells: Vec<ModernIndexTile> = Vec::new();
+    // key: (atlas cell id, hflip, vflip) -> local flip-baked cell id
+    let mut cell_ids: HashMap<(u32, bool, bool), u32> = HashMap::new();
+
+    for layer_index in 0..3usize {
+        let enabled_main = frame.screen_enabled[0] & (1 << layer_index) != 0;
+        let enabled_sub = frame.screen_enabled[1] & (1 << layer_index) != 0;
+        let enabled = enabled_main || enabled_sub;
+        modern.bg_layers[layer_index].enabled_main = enabled;
+        modern.bg_layers[layer_index].enabled_sub = enabled_sub;
+        modern.bg_layers[layer_index].scroll_x = frame.bg[layer_index].h_scroll;
+        modern.bg_layers[layer_index].scroll_y = frame.bg[layer_index].v_scroll;
+        if !enabled {
+            continue;
+        }
+        let base = frame.bg[layer_index].tilemap_adr as usize;
+        let chr_slot_base = frame.bg[layer_index].tile_adr as usize / 16;
+        let h_scroll = frame.bg[layer_index].h_scroll;
+        let v_scroll = frame.bg[layer_index].v_scroll;
+        let wide = frame.bg[layer_index].tilemap_wider;
+        let tall = frame.bg[layer_index].tilemap_higher;
+        let cols = if wide { 64usize } else { 32 };
+        let rows = if tall { 64usize } else { 32 };
+        for ty in 0..rows {
+            for tx in 0..cols {
+                let q = (if wide && tx >= 32 { 1 } else { 0 })
+                    + (if tall && ty >= 32 {
+                        if wide {
+                            2
+                        } else {
+                            1
+                        }
+                    } else {
+                        0
+                    });
+                let within = (ty % 32) * 32 + (tx % 32);
+                let addr = base + q * 0x400 + within;
+                let entry_word = *frame.vram.get(addr).unwrap_or(&0);
+                if entry_word == 0 {
+                    continue;
+                }
+                let tile_number = (entry_word & 0x03ff) as usize;
+                let slot = chr_slot_base + tile_number;
+                let (kind, pack, tile_off) = src_table.get(slot);
+                let Some(src) = source_cell(atlas, kind, pack, tile_off) else {
+                    // No recorded source / not in atlas → leave a gap.
+                    continue;
+                };
+                let hflip = entry_word & 0x4000 != 0;
+                let vflip = entry_word & 0x8000 != 0;
+                let palette = ((entry_word >> 10) & 7) as u8;
+                let cell_id = *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
+                    let indices = flip_index_pattern(&src.indices, hflip, vflip);
+                    let id = cells.len() as u32;
+                    cells.push(ModernIndexTile { id, indices });
+                    id
+                });
+
+                let bg_w = (cols * 8) as i32;
+                let bg_h = (rows * 8) as i32;
+                let mut sx = ((tx * 8) as i32 - h_scroll as i32).rem_euclid(bg_w);
+                if sx >= 256 {
+                    sx -= bg_w;
+                }
+                let mut sy = ((ty * 8) as i32 - v_scroll as i32 - 1).rem_euclid(bg_h);
+                if sy >= 224 {
+                    sy -= bg_h;
+                }
+                modern.bg_layers[layer_index]
+                    .index_tiles
+                    .push(ModernIndexTileInstance {
+                        cell_id,
+                        screen_x: sx as i16,
+                        screen_y: sy as i16,
+                        palette,
+                        // Flip is baked into the cell above; the compositor ignores
+                        // per-instance BG flip.
+                        hflip: false,
+                        vflip: false,
+                    });
+            }
+        }
+    }
+    (modern, cells)
+}
+
+/// Decode OAM into palette-index sprite-tile instances whose 8x8 patterns come
+/// ONLY from the asset atlas via the M1 logical CHR source table — never reading
+/// `frame.vram` CHR pixel content. Mirrors the per-sprite/per-8x8-tile
+/// enumeration of [`extract_modern_sprites_from_vram`] (same culling, sizes,
+/// flip-at-tile-granularity, bank selection, tile addressing).
+///
+/// The CHR tile slot is `slot = bank_base/16 + used_tile` (bank_base from the OAM
+/// bank bit). Missing source (kind 0 / not in atlas) → the tile is skipped. The
+/// sprite compositor applies per-instance hflip/vflip while sampling, so cells are
+/// emitted UNFLIPPED and the instance carries the flip (matching the from-VRAM
+/// variant). Returns `(cells, instances)` with cells re-indexed densely from 0.
+pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
+    frame: &GpuFrame<'_>,
+    src_table: &S,
+    atlas: &ModernSourceAtlas,
+) -> (Vec<ModernIndexTile>, Vec<ModernIndexSpriteInstance>) {
+    use std::collections::HashMap;
+
+    let oam = frame.oam;
+    let obj = &frame.obj;
+    let mut cells: Vec<ModernIndexTile> = Vec::new();
+    // atlas cell id -> local dense cell id
+    let mut cell_ids: HashMap<u32, u32> = HashMap::new();
+    let mut out = Vec::new();
+
+    for sprite_num in 0..128usize {
+        let idx = sprite_num * 2;
+        let oam0 = oam.get(idx).copied().unwrap_or(0);
+
+        let y_byte = ((oam0 >> 8) & 0xff) as i32;
+        if y_byte == 0xf0 {
+            continue;
+        }
+        let top_y = ((y_byte + 1) & 0xff) - 1;
+
+        let hi_word = oam.get(0x100 + idx / 16).copied().unwrap_or(0);
+        let hi_bits = (hi_word >> (idx % 16)) as i32;
+        let size = SPRITE_SIZES[(obj.obj_size & 7) as usize][((hi_bits >> 1) & 1) as usize] as i32;
+
+        let object_x = (oam0 & 0xff) as i32 + (hi_bits & 1) * 256;
+        if object_x > 256 && object_x + size - 1 < 512 {
+            continue;
+        }
+        let mut x = object_x;
+        if x >= 256 {
+            x -= 512;
+        }
+        if x <= -size {
+            continue;
+        }
+
+        let oam1 = oam.get(idx + 1).copied().unwrap_or(0);
+        let hflip = oam1 & 0x4000 != 0;
+        let vflip = oam1 & 0x8000 != 0;
+        let palette = ((oam1 & 0x0e00) >> 9) as u8;
+        let priority = ((oam1 & 0x3000) >> 12) as u8;
+        let bank_base = if oam1 & 0x0100 != 0 {
+            obj.tile_adr2
+        } else {
+            obj.tile_adr1
+        };
+        let chr_slot_base = bank_base as usize / 16;
+        let tile_row_base = ((oam1 & 0xff) >> 4) as i32;
+        let tile_col_base = (oam1 & 0x0f) as i32;
+
+        let tiles_per_side = size / 8;
+        for sty in 0..tiles_per_side {
+            for stx in 0..tiles_per_side {
+                let src_col_tile = if hflip { tiles_per_side - 1 - stx } else { stx };
+                let src_row_tile = if vflip { tiles_per_side - 1 - sty } else { sty };
+                let used_tile = (((tile_row_base + src_row_tile) << 4)
+                    | ((tile_col_base + src_col_tile) & 0x0f))
+                    as usize;
+
+                let slot = chr_slot_base + used_tile;
+                let (kind, pack, tile_off) = src_table.get(slot);
+                let Some(src) = source_cell(atlas, kind, pack, tile_off) else {
+                    continue;
+                };
+
+                let cell_id = *cell_ids.entry(src.id).or_insert_with(|| {
+                    let id = cells.len() as u32;
+                    cells.push(ModernIndexTile {
+                        id,
+                        indices: src.indices,
+                    });
+                    id
+                });
+
+                out.push(ModernIndexSpriteInstance {
+                    cell_id,
+                    screen_x: (x + stx * 8) as i16,
+                    screen_y: (top_y + sty * 8) as i16,
+                    palette,
+                    priority,
+                    hflip,
+                    vflip,
+                });
+            }
+        }
+    }
+
+    (cells, out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -754,6 +1011,64 @@ mod tests {
         assert!(rgba.iter().any(|&b| b != 0), "frame buffer is empty");
         // Alpha channel is opaque.
         assert!(rgba.chunks_exact(4).all(|px| px[3] == 0xff));
+    }
+
+    #[test]
+    fn extract_from_sources_emits_atlas_cell_for_bg_tile() {
+        use crate::modern_source_atlas::ModernSourceAtlas;
+        // Atlas: one BG (kind=1) cell keyed by (pack=5, tile_off=3).
+        let mut indices = [0u8; 64];
+        indices[0] = 7;
+        indices[63] = 9;
+        let cell = ModernIndexTile { id: 0, indices };
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![cell], &[(1, 5, 3, 0)]);
+
+        // Source table: BG CHR base tile_adr=0x2000 → slot base 0x200. The tilemap
+        // entry's tile# = 4 → slot 0x204 maps to source (kind=1, pack=5, tile_off=3).
+        let table = |slot: usize| -> (u8, u16, u16) {
+            if slot == 0x200 + 4 {
+                (1, 5, 3)
+            } else {
+                (0, 0, 0)
+            }
+        };
+
+        let mut vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        vram[0] = 4; // tile# 4, palette 0, no flip, at row0 col0
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        frame.bg[0].tilemap_adr = 0;
+        frame.bg[0].tile_adr = 0x2000;
+        frame.screen_enabled = [0x01, 0x00];
+
+        let (modern, cells) = extract_modern_frame_from_sources(&frame, &table, &atlas);
+        assert_eq!(cells.len(), 1, "one cell emitted from the atlas source");
+        assert_eq!(cells[0].indices[0], 7);
+        assert_eq!(cells[0].indices[63], 9);
+        let tiles = &modern.bg_layers[0].index_tiles;
+        assert_eq!(tiles.len(), 1);
+        assert_eq!(tiles[0].cell_id, 0);
+        assert_eq!(tiles[0].screen_x, 0);
+        // +1 vertical fetch offset, no scroll: (0-0-1).rem_euclid(256)=255 → -=256 → -1.
+        assert_eq!(tiles[0].screen_y, -1);
+        assert_eq!(tiles[0].palette, 0);
+        // NO VRAM CHR pixels were read: the cell pixels came straight from the atlas.
+
+        // A tilemap entry whose slot has no recorded source → skipped (gap).
+        let mut vram2 = vec![0u16; 0x8000];
+        vram2[0] = 9; // tile# 9 → slot 0x209 → source none
+        let mut frame2 = test_gpu_frame(&vram2, &cgram, &oam, 15, false);
+        frame2.mode = 1;
+        frame2.bg[0].tile_adr = 0x2000;
+        frame2.screen_enabled = [0x01, 0x00];
+        let (modern2, cells2) = extract_modern_frame_from_sources(&frame2, &table, &atlas);
+        assert!(cells2.is_empty(), "no source → no cell");
+        assert!(
+            modern2.bg_layers[0].index_tiles.is_empty(),
+            "missing source leaves a gap"
+        );
     }
 
     #[test]
@@ -812,7 +1127,11 @@ mod tests {
         let ms = elapsed.as_secs_f64() * 1000.0 / f64::from(iters);
         println!(
             "perf render_modern_frame_full_from_vram: {ms:.3} ms/frame ({}) [{} iters]",
-            if ms < 16.6 { "<16.6ms OK for 60fps" } else { "OVER 16.6ms budget" },
+            if ms < 16.6 {
+                "<16.6ms OK for 60fps"
+            } else {
+                "OVER 16.6ms budget"
+            },
             iters
         );
     }
