@@ -524,6 +524,44 @@ mod tests {
     }
 
     #[test]
+    fn color_math_adds_subscreen_to_backdrop_main_pixel() {
+        // Regression for the BLACK dungeon room: the MAIN pixel is the BACKDROP
+        // (no BG/sprite on main → math bit 5), the room BG1 is on the SUB screen,
+        // and math_enabled bit 5 + add_subscreen composites the sub room onto the
+        // backdrop. Mirrors post_process.wgsl, which encodes backdrop as alpha=5/255
+        // and checks `(math_enabled >> 5) & 1`.
+        let (mut frame, cells) = frame_with_single_bg_pixel(1, [10, 10, 10]);
+        // Backdrop = cgram[0] = (4,4,4) in 5-bit → [32,32,32] rgba.
+        frame.backdrop_color_rgba = [4 << 3, 4 << 3, 4 << 3, 0xff];
+        frame.screen_enabled_main = 0x00; // nothing on main → backdrop everywhere
+        frame.screen_enabled_sub = 0x02; // BG2 (the room) on sub
+        frame.math_enabled = 0x20; // bit 5 = backdrop participates in math
+        frame.add_subscreen = true;
+        frame.half_color = false;
+        frame.subtract_color = false;
+        frame.fixed_color_r = 0;
+        frame.fixed_color_g = 0;
+        frame.fixed_color_b = 0;
+        frame.brightness = 15;
+
+        let out = render_modern_frame_full(&frame, &cells, &[]);
+        // Pixel (0,0): main = backdrop (4), sub = room (10) → 4 + 10 = 14.
+        // brightness 15 → v8 = (14<<3)|(14>>2) = 115.
+        assert_eq!(
+            &out[0..4],
+            &[115, 115, 115, 0xff],
+            "backdrop main + sub room composited via color math"
+        );
+        // A pixel with NO sub room pixel stays pure backdrop: 4 → v8 = (4<<3)|(4>>2)=33.
+        let nb = (0 * 256 + 1) * 4;
+        assert_eq!(
+            &out[nb..nb + 4],
+            &[33, 33, 33, 0xff],
+            "backdrop pixel with no sub stays backdrop"
+        );
+    }
+
+    #[test]
     fn brightness_only_scales_channels() {
         let (mut frame, cells) = frame_with_single_bg_pixel(0, [31, 31, 31]);
         frame.screen_enabled_main = 0x01;

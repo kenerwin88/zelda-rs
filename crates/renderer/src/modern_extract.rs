@@ -286,15 +286,31 @@ pub fn extract_modern_dungeon_frame_from_vram(
                     cells.push(ModernIndexTile { id, indices });
                     id
                 });
+                // The SNES BG is a torus: scroll wraps modulo the tilemap pixel
+                // size (cols*8 / rows*8), so a tile scrolled past one edge reappears
+                // on the opposite edge. Without this wrap, wide/tall (64-tile, 512px)
+                // dungeon tilemaps with a large scroll (e.g. h_scroll=640 on a 512px
+                // BG) push EVERY tile off-screen, leaving the room BG black. Bring the
+                // wrapped position into the visible window [-(bg-screen)..screen).
+                let bg_w = (cols * 8) as i32;
+                let bg_h = (rows * 8) as i32;
+                let mut sx = ((tx * 8) as i32 - h_scroll as i32).rem_euclid(bg_w);
+                if sx >= 256 {
+                    sx -= bg_w;
+                }
+                // The SNES PPU fetches BG row `sy + 1` for output scanline `sy`
+                // (vertical +1 offset; see bg_layer.wgsl `source_y = sy + 1`). Apply
+                // it before wrapping so the modern BG aligns with the classic render.
+                let mut sy = ((ty * 8) as i32 - v_scroll as i32 - 1).rem_euclid(bg_h);
+                if sy >= 224 {
+                    sy -= bg_h;
+                }
                 modern.bg_layers[layer_index]
                     .index_tiles
                     .push(ModernIndexTileInstance {
                         cell_id,
-                        screen_x: (tx * 8) as i16 - h_scroll as i16,
-                        // The SNES PPU fetches BG row `sy + 1` for output scanline
-                        // `sy` (vertical +1 offset; see bg_layer.wgsl `source_y = sy + 1`).
-                        // Mirror it so the modern BG aligns with the classic render.
-                        screen_y: (ty * 8) as i16 - v_scroll as i16 - 1,
+                        screen_x: sx as i16,
+                        screen_y: sy as i16,
                         // 2bpp BG3 bakes the CGRAM index into the cell → palette 0.
                         palette: if is_2bpp { 0 } else { palette },
                         hflip: false,
@@ -680,6 +696,39 @@ mod tests {
     use crate::modern_assets::{ModernTileAtlasAsset, ModernTileAtlasEntry};
     use crate::modern_index_atlas::ModernIndexTile;
     use crate::modern_palette::snes_cgram_to_rgba;
+
+    #[test]
+    fn dungeon_from_vram_wraps_scroll_modulo_tilemap_size() {
+        // Regression for the BLACK dungeon room: a 64×64 (512px) tilemap with a
+        // large scroll (h_scroll=640) must wrap modulo the BG pixel size so tiles
+        // reappear on-screen instead of being pushed off (the SNES BG is a torus).
+        // Tile at column tx=16, row ty=12 with h_scroll=640 wraps to screen_x=0:
+        //   (16*8 - 640).rem_euclid(512) = (-512).rem_euclid(512) = 0.
+        // Vertical: (12*8 - 0 - 1).rem_euclid(512) = 95.
+        let mut vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        // within = (ty%32)*32 + (tx%32) = 12*32 + 16 = 400; nonzero entry → emitted.
+        vram[400] = 1;
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        frame.bg[0].tilemap_adr = 0;
+        frame.bg[0].tile_adr = 0;
+        frame.bg[0].tilemap_wider = true;
+        frame.bg[0].tilemap_higher = true;
+        frame.bg[0].h_scroll = 640;
+        frame.bg[0].v_scroll = 0;
+        frame.screen_enabled = [0x01, 0x00];
+
+        let (modern, _cells) = extract_modern_dungeon_frame_from_vram(&frame);
+        let tiles = &modern.bg_layers[0].index_tiles;
+        assert_eq!(tiles.len(), 1, "exactly one nonzero tilemap entry emitted");
+        assert_eq!(
+            tiles[0].screen_x, 0,
+            "h_scroll=640 on a 512px BG must wrap to screen_x=0, not -512"
+        );
+        assert_eq!(tiles[0].screen_y, 95, "vertical +1 offset, no wrap needed");
+    }
 
     #[test]
     fn decode_snes_tilemap_entry_splits_visual_fields() {
