@@ -222,14 +222,24 @@ fn composite_mode1(
     let bg_on = |i: usize| (enabled >> i) & 1 != 0;
     let obj_on = (enabled >> 4) & 1 != 0;
     let bg = &frame.bg_layers;
+    // Resolve OBJ-vs-OBJ FIRST, by OAM index (lowest index wins) — NOT by the
+    // priority attribute. The SNES priority attribute (0-3) only sets where the
+    // winning OBJ pixel sits relative to BG layers; it does NOT reorder sprites
+    // against each other. Compositing in priority passes (as before) wrongly let a
+    // higher-priority-attr but higher-index sprite overwrite a lower-index one.
+    let obj = if obj_on {
+        Some(resolve_obj_layer(frame, sprite_cells, screen.c5.len()))
+    } else {
+        None
+    };
     // BG3-lo
     if bg_on(2) {
         composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, false);
     }
-    // OBJ0, OBJ1
-    if obj_on {
-        composite_sprites_c5(screen, frame, sprite_cells, 0);
-        composite_sprites_c5(screen, frame, sprite_cells, 1);
+    // OBJ priority 0, 1 (below BG2/BG1 low)
+    if let Some(o) = &obj {
+        paint_obj_priority(screen, o, 0);
+        paint_obj_priority(screen, o, 1);
     }
     // BG2-lo, BG1-lo
     if bg_on(1) {
@@ -238,9 +248,9 @@ fn composite_mode1(
     if bg_on(0) {
         composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, false);
     }
-    // OBJ2
-    if obj_on {
-        composite_sprites_c5(screen, frame, sprite_cells, 2);
+    // OBJ priority 2 (above BG2/BG1 low)
+    if let Some(o) = &obj {
+        paint_obj_priority(screen, o, 2);
     }
     // BG2-hi, BG1-hi
     if bg_on(1) {
@@ -249,13 +259,79 @@ fn composite_mode1(
     if bg_on(0) {
         composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, true);
     }
-    // OBJ3
-    if obj_on {
-        composite_sprites_c5(screen, frame, sprite_cells, 3);
+    // OBJ priority 3 (above BG2/BG1 high)
+    if let Some(o) = &obj {
+        paint_obj_priority(screen, o, 3);
     }
     // BG3-hi
     if bg_on(2) {
         composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, true);
+    }
+}
+
+/// The resolved OBJ layer: one winning sprite pixel per screen location (lowest
+/// OAM index), carrying its 5-bit color, math `bit` (palette-gated), and the OBJ
+/// priority attribute used to slot it against the BG layers.
+struct ObjLayer {
+    c5: Vec<[u8; 3]>,
+    bit: Vec<u8>,
+    prio: Vec<u8>,
+    real: Vec<bool>,
+}
+
+/// Resolve OBJ-vs-OBJ by OAM index: paint sprites in REVERSE `index_sprites`
+/// order with REPLACE so the earliest (lowest-index) opaque sprite wins each
+/// pixel, recording that pixel's priority attribute for later BG slotting.
+fn resolve_obj_layer(frame: &ModernFrame, sprite_cells: &[ModernIndexTile], len: usize) -> ObjLayer {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    let mut o = ObjLayer {
+        c5: vec![[0u8; 3]; len],
+        bit: vec![0u8; len],
+        prio: vec![0u8; len],
+        real: vec![false; len],
+    };
+    for inst in frame.index_sprites.iter().rev() {
+        let cell = match sprite_cells.get(inst.cell_id as usize) {
+            Some(c) => c,
+            None => continue,
+        };
+        for y in 0..8usize {
+            for x in 0..8usize {
+                let src_x = if inst.hflip { 7 - x } else { x };
+                let src_y = if inst.vflip { 7 - y } else { y };
+                let index = cell.indices[src_y * 8 + src_x];
+                if index == 0 {
+                    continue;
+                }
+                let dst_x = inst.screen_x + x as i16;
+                let dst_y = inst.screen_y + y as i16;
+                if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                    continue;
+                }
+                let color = frame.cgram_rgba[0x80 + inst.palette as usize * 16 + index as usize];
+                let i = dst_y as usize * width + dst_x as usize;
+                o.c5[i] = [color[0] >> 3, color[1] >> 3, color[2] >> 3];
+                // OBJ color-math only for palettes 4-7 (bit 4); 0-3 use bit 6 (never
+                // in `math_enabled`). See the obj_color_math test.
+                o.bit[i] = if inst.palette < 4 { 6 } else { 4 };
+                o.prio[i] = inst.priority;
+                o.real[i] = true;
+            }
+        }
+    }
+    o
+}
+
+/// Paint the resolved OBJ pixels whose priority attribute equals `prio` into the
+/// screen (REPLACE). Called at the matching Mode-1 z-slot so OBJ-vs-BG layering
+/// follows the priority attribute while OBJ-vs-OBJ stays index-ordered.
+fn paint_obj_priority(screen: &mut Screen, obj: &ObjLayer, prio: u8) {
+    for i in 0..obj.real.len() {
+        if obj.real[i] && obj.prio[i] == prio {
+            screen.c5[i] = obj.c5[i];
+            screen.bit[i] = obj.bit[i];
+            screen.real[i] = true;
+        }
     }
 }
 
@@ -296,53 +372,6 @@ fn composite_index_tiles_c5(
                 let i = dst_y as usize * width + dst_x as usize;
                 screen.c5[i] = [color[0] >> 3, color[1] >> 3, color[2] >> 3];
                 screen.bit[i] = bit;
-                screen.real[i] = true;
-            }
-        }
-    }
-}
-
-/// Composite OAM sprites of one OBJ priority into `screen` (reverse OAM order,
-/// REPLACE → earliest OAM sprite wins within the priority), stamping the OBJ math
-/// bit (4) and marking pixels real. The Mode 1 z-order interleaves the four OBJ
-/// priorities between the BG passes, so the caller invokes this once per priority.
-fn composite_sprites_c5(
-    screen: &mut Screen,
-    frame: &ModernFrame,
-    sprite_cells: &[ModernIndexTile],
-    obj_priority: u8,
-) {
-    let width = usize::from(MODERN_FRAME_WIDTH);
-    for inst in frame.index_sprites.iter().rev() {
-        if inst.priority != obj_priority {
-            continue;
-        }
-        let cell = match sprite_cells.get(inst.cell_id as usize) {
-            Some(c) => c,
-            None => continue,
-        };
-        for y in 0..8usize {
-            for x in 0..8usize {
-                let src_x = if inst.hflip { 7 - x } else { x };
-                let src_y = if inst.vflip { 7 - y } else { y };
-                let index = cell.indices[src_y * 8 + src_x];
-                if index == 0 {
-                    continue;
-                }
-                let dst_x = inst.screen_x + x as i16;
-                let dst_y = inst.screen_y + y as i16;
-                if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
-                    continue;
-                }
-                let color = frame.cgram_rgba[0x80 + inst.palette as usize * 16 + index as usize];
-                let i = dst_y as usize * width + dst_x as usize;
-                screen.c5[i] = [color[0] >> 3, color[1] >> 3, color[2] >> 3];
-                // OBJ color-math is enabled ONLY for OBJ palettes 4-7 (CGADSUB bit 4).
-                // Palettes 0-3 use a non-math layer designation (bit 6, never present in
-                // `math_enabled`), matching `resolve_obj_pixels`'s `layer_bit_pos`. Without
-                // this, palette-0-3 sprites (e.g. glow/sparkle effects) wrongly get the
-                // scene's subtract/add applied (observed: -4/channel on dungeon orbs).
-                screen.bit[i] = if inst.palette < 4 { 6 } else { 4 };
                 screen.real[i] = true;
             }
         }
@@ -567,6 +596,38 @@ mod tests {
                 priority: false,
             });
         (frame, cells)
+    }
+
+    /// OBJ-vs-OBJ priority is by OAM INDEX (lowest wins), NOT the priority attribute.
+    /// A lower-index sprite with a LOWER priority attribute must still win over a
+    /// higher-index sprite with a HIGHER priority attribute where they overlap.
+    #[test]
+    fn obj_vs_obj_priority_is_by_index_not_attribute() {
+        let mut indices = [0u8; 64];
+        indices[0] = 1; // pixel (0,0) opaque for both
+        let cells = vec![ModernIndexTile { id: 0, indices }];
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        // A = palette 4 (red), B = palette 5 (green). Distinct colors.
+        frame.cgram_rgba[0x80 + 4 * 16 + 1] = [31 << 3, 0, 0, 0xff];
+        frame.cgram_rgba[0x80 + 5 * 16 + 1] = [0, 31 << 3, 0, 0xff];
+        let spr = |pal: u8, prio: u8| ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: pal,
+            priority: prio,
+            hflip: false,
+            vflip: false,
+        };
+        // A first => lower OAM index, priority attr 0 (lowest). B second => higher
+        // index, priority attr 3 (highest). A must win the overlap.
+        frame.index_sprites.push(spr(4, 0)); // A
+        frame.index_sprites.push(spr(5, 3)); // B
+        frame.screen_enabled_main = 0x10; // OBJ on main
+        frame.brightness = 15;
+        let out = render_modern_frame_full(&frame, &[], &cells);
+        assert_eq!(&out[0..3], &[255, 0, 0], "lower-index A (red) wins, not higher-prio B");
     }
 
     /// OBJ color-math is gated by palette: OBJ palettes 0-3 use a non-math layer
