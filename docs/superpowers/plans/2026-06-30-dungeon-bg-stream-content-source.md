@@ -474,16 +474,24 @@ Expected: `Finished`, no errors.
 Run: `env "${HACKS[@]}" target/parity/zelda3 --dump-assets-by-source saves/zelda3.sfc saves/zelda3-combined-route.sav`
 Expected: writes the two asset files; cell count grows again.
 
-- [ ] **Step 6: Route-wide measurement (0–28k) — dungeon to ~0, OW still 0, oracle still 0.**
+- [ ] **Step 6: Route-wide measurement (0–28k) — in-scope BG residual → 0; OW still 0; oracle unchanged.**
 
-Run:
+The in-scope success metric is the **BG-stream residual**, measured by `ZELDA3_SRC_DEBUG` (`wrong_cell` and `gap`), NOT the raw off-VRAM `mismatch_px`. Two residuals are KNOWN, pre-existing, and OUT OF SCOPE for this BG plan — do NOT report BLOCKED for them: (a) off-VRAM **sprite-atlas** Link-pose residuals (e.g. ~116px at 27800; the live-VRAM oracle renders these correctly, so they are a sprite issue, not BG); (b) a **pre-existing live-VRAM oracle** residual (`via=vram` ≈ 706px across ~9 frames 6000–26800) that caps how low the off-VRAM `mismatch_px` can go on those frames (the source-table work cannot affect the oracle render path).
+
+Run the BG-residual sweep (this is the gate):
+```
+env "${HACKS[@]}" ZELDA3_RENDERER=assets-anim ZELDA3_SRC_DEBUG=1 \
+  target/parity/zelda3 --replay-save saves/zelda3.sfc saves/zelda3-combined-route.sav 28000 \
+  --modern-index-compare 50 2>&1 | rg 'SRC_DEBUG] bg_tiles' \
+  | awk -F'[ =]' '{w+=$4; g+=$6} END{print "wrong_cell_total="w" gap_total="g}'
+```
+Expected: `wrong_cell_total=0 gap_total=0` (every streamed dungeon BG slot resolves to its correct content-hash cell). Also confirm OW unchanged:
 ```
 env "${HACKS[@]}" ZELDA3_RENDERER=assets-anim \
   target/parity/zelda3 --replay-save saves/zelda3.sfc saves/zelda3-combined-route.sav 28000 \
-  --modern-index-compare 50 2>&1 \
-  | awk -F'[ =]' '/mode=dungeon/{d+=$10} /mode=ow/{o+=$10} END{print "dungeon="d" ow="o}'
+  --modern-index-compare 50 2>&1 | rg 'mode=ow' | awk -F'mismatch_px=' '{print $2+0}' | sort -rn | head -1
 ```
-Expected: `dungeon` near 0 (document any residual frames), `ow=0`. If any dungeon frame remains nonzero, run `ZELDA3_SRC_DEBUG=1` with `--modern-index-compare <thatframe>` to classify (wrong_cell vs gap) and record it as a documented residual (e.g. a streaming writer not yet covered, or a hash collision).
+Expected: `0`. If `wrong_cell_total` or `gap_total` is nonzero, classify the worst such frame with `ZELDA3_SRC_DEBUG=1 --modern-index-compare <thatframe>` and either cover the missing streaming writer or record a documented residual (e.g. hash collision). The remaining raw off-VRAM `mismatch_px` (sprites + the 706 oracle cap) is expected and is recorded as out-of-scope, NOT a failure of this task.
 
 - [ ] **Step 7: Verify full unit-test suites.**
 
