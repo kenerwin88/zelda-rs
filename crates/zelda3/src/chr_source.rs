@@ -35,6 +35,26 @@ pub const CHR_KIND_BG3: u8 = 4;
 /// DMA with `(pack, absolute-buffer-tile-position)`, which is injective: the same
 /// `(pack, position)` always decodes the same pixels regardless of phase.
 pub const CHR_KIND_BG_ANIM: u8 = 5;
+/// Per-frame-streamed dungeon BG CHR (`nmi_update_bg_char*`) is room-specific and
+/// re-DMA'd over the same VRAM slots without a stable pack identity, so it is
+/// tagged by a 24-bit hash of the streamed pixels. The hash is split into the
+/// `(pack, tile_off)` fields so `modern_source_key` encodes it as
+/// `(6<<24)|(hash&0xffffff)` with no special key path.
+pub const CHR_KIND_BG_STREAM: u8 = 6;
+
+/// FNV-1a 24-bit hash of the little-endian bytes of `words`. Deterministic and
+/// identical for identical content (so identical streamed tiles dedup to one
+/// asset cell). Masked to 24 bits to fit the `(pack<<8)|tile_off` key payload.
+pub fn chr_content_hash24(words: &[u16]) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    for &w in words {
+        for b in [(w & 0xff) as u8, (w >> 8) as u8] {
+            h ^= b as u32;
+            h = h.wrapping_mul(0x0100_0193);
+        }
+    }
+    (h ^ (h >> 24)) & 0x00ff_ffff
+}
 
 /// Link `tile_off` bit that distinguishes the two source buffers a Link CHR tile
 /// can be DMA'd from. Link poses are non-injective by `(pack, relative-tile)`
@@ -120,6 +140,18 @@ impl VramChrSourceTable {
         self.record_tiles(start_word, num_tiles, kind, pack);
     }
 
+    /// Tag a single CHR slot with a content hash (see [`chr_content_hash24`]),
+    /// splitting the 24-bit hash into `pack=(hash>>8)&0xffff`, `tile_off=hash&0xff`.
+    pub fn record_tile_content_hash(&mut self, slot: usize, kind: u8, hash24: u32) {
+        if slot < self.entries.len() {
+            self.entries[slot] = LogicalChrSrc {
+                kind,
+                pack: ((hash24 >> 8) & 0xffff) as u16,
+                tile_off: (hash24 & 0xff) as u16,
+            };
+        }
+    }
+
     /// Like [`record_tiles`], but the recorded `tile_off` starts at `base_off`
     /// (so a partial upload of a larger logical tile run keeps a stable, global
     /// `tile_off` 0..N matching the full-run tagging).
@@ -147,5 +179,36 @@ impl VramChrSourceTable {
                 };
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod bg_stream_tests {
+    use super::*;
+
+    #[test]
+    fn content_hash_is_deterministic_and_distinguishes_patterns() {
+        let a = [0x1234u16; 16];
+        let b = [0x1234u16; 16];
+        let c = [0x1235u16, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234,
+                 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234];
+        assert_eq!(chr_content_hash24(&a), chr_content_hash24(&b));
+        assert_ne!(chr_content_hash24(&a), chr_content_hash24(&c));
+        assert_eq!(chr_content_hash24(&a) & 0xff00_0000, 0, "must be 24-bit");
+    }
+
+    #[test]
+    fn record_tile_content_hash_round_trips_through_key_split() {
+        let mut t = VramChrSourceTable::default();
+        let hash = 0x00ab_cdefu32;
+        t.record_tile_content_hash(3, CHR_KIND_BG_STREAM, hash);
+        let e = t.get(3);
+        assert_eq!(e.kind, CHR_KIND_BG_STREAM);
+        // pack = hash>>8 & 0xffff, tile_off = hash & 0xff
+        assert_eq!(e.pack, 0xabcd);
+        assert_eq!(e.tile_off, 0xef);
+        // reconstruct the 24-bit hash from the stored fields
+        let recon = ((e.pack as u32) << 8) | (e.tile_off as u32);
+        assert_eq!(recon, hash);
     }
 }
