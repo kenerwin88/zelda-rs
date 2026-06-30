@@ -1017,6 +1017,17 @@ pub fn render_modern_frame_full(
         && !frame.half_color
         && !rendered_subscreen;
 
+    // DIAGNOSTIC (ZELDA3_BITMAP=<path>): write the per-pixel WINNING-LAYER map of
+    // the MAIN screen as raw bytes (one u8 per pixel: 0=BG1 1=BG2 2=BG3 4=OBJ(pal4-7)
+    // 5=backdrop 6=OBJ(pal0-3), 0xff=no real pixel). Lets a viewer attribute every
+    // diff pixel to the layer/source that produced it — ground truth, vs guessing.
+    if let Ok(path) = std::env::var("ZELDA3_BITMAP") {
+        let map: Vec<u8> = (0..len)
+            .map(|i| if main.real[i] { main.bit[i] } else { 0xff })
+            .collect();
+        let _ = std::fs::write(&path, &map);
+    }
+
     for i in 0..len {
         let px = i % width;
         let py = i / width;
