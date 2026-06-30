@@ -862,6 +862,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
     let mut dbg_total = 0usize;
     let mut dbg_mismatch = 0usize;
     let mut dbg_gap = 0usize;
+    let mut dbg_stale = 0usize;
     let mut dbg_samples: Vec<(usize, usize, u8, u16, u16)> = Vec::new();
     // key: (atlas cell id, hflip, vflip) -> local flip-baked cell id
     let mut cell_ids: HashMap<(u32, bool, bool), u32> = HashMap::new();
@@ -994,6 +995,27 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                             }
                             Some(s) if s.indices != live => {
                                 dbg_mismatch += 1;
+                                // Classify: STALE TAG (the source-table hash doesn't match
+                                // the LIVE pixels — the slot was re-loaded without re-tagging)
+                                // vs COLLISION (tag matches live, but the atlas stored another
+                                // area's cell under the same hash). Only meaningful for the
+                                // content-hash kind (6). FNV-1a 24-bit over the 16 live words.
+                                if kind == 6 {
+                                    let mut h: u32 = 0x811c_9dc5;
+                                    for off in 0..16 {
+                                        let w = *frame.vram.get(slot * 16 + off).unwrap_or(&0);
+                                        for b in [(w & 0xff) as u8, (w >> 8) as u8] {
+                                            h ^= b as u32;
+                                            h = h.wrapping_mul(0x0100_0193);
+                                        }
+                                    }
+                                    let live_hash = (h ^ (h >> 24)) & 0x00ff_ffff;
+                                    let tag_hash =
+                                        (((pack as u32) << 8) | (tile_off as u32 & 0xff)) & 0xffffff;
+                                    if live_hash != tag_hash {
+                                        dbg_stale += 1;
+                                    }
+                                }
                                 if dbg_samples.len() < 24 {
                                     dbg_samples.push((slot, tile_number, kind, pack, tile_off));
                                 }
@@ -1042,7 +1064,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
         }
     }
     if dbg {
-        eprintln!("[SRC_DEBUG] bg_tiles={dbg_total} wrong_cell={dbg_mismatch} gap={dbg_gap}");
+        eprintln!("[SRC_DEBUG] bg_tiles={dbg_total} wrong_cell={dbg_mismatch} gap={dbg_gap} stale_of_kind6={dbg_stale}");
         for (slot, tile, kind, pack, off) in &dbg_samples {
             eprintln!(
                 "[SRC_DEBUG]   slot=0x{slot:03x} tile=0x{tile:03x} src=(kind={kind},pack=0x{pack:04x},off={off})"
