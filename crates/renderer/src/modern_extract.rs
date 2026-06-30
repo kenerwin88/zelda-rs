@@ -797,6 +797,15 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
         crate::modern_palette::snes_cgram_to_rgba(*frame.cgram.first().unwrap_or(&0));
 
     let mut cells: Vec<ModernIndexTile> = Vec::new();
+    // Permanent env-gated diagnostic (ZELDA3_SRC_DEBUG): per BG1/BG2 tile, compare
+    // the off-VRAM resolved atlas cell (unflipped) against the live-VRAM decode of
+    // the same slot. wrong_cell>0 means a STALE/WRONG source tag; gap>0 means the
+    // recorded key is absent from the atlas. Off when the var is unset (one getenv).
+    let dbg = std::env::var("ZELDA3_SRC_DEBUG").is_ok();
+    let mut dbg_total = 0usize;
+    let mut dbg_mismatch = 0usize;
+    let mut dbg_gap = 0usize;
+    let mut dbg_samples: Vec<(usize, usize, u8, u16, u16)> = Vec::new();
     // key: (atlas cell id, hflip, vflip) -> local flip-baked cell id
     let mut cell_ids: HashMap<(u32, bool, bool), u32> = HashMap::new();
     // BG3 (the HUD/message layer) is procedurally COMPOSED at runtime: digit and
@@ -880,6 +889,29 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                 } else {
                     let slot = chr_slot_base + tile_number;
                     let (kind, pack, tile_off) = src_table.get(slot);
+                    if dbg && layer_index < 2 {
+                        dbg_total += 1;
+                        let live = decode_snes_4bpp_tile_indices(
+                            frame.vram,
+                            frame.bg[layer_index].tile_adr as usize,
+                            tile_number as u16,
+                        );
+                        match source_cell(atlas, kind, pack, tile_off) {
+                            None => {
+                                dbg_gap += 1;
+                                if dbg_samples.len() < 24 {
+                                    dbg_samples.push((slot, tile_number, kind, pack, tile_off));
+                                }
+                            }
+                            Some(s) if s.indices != live => {
+                                dbg_mismatch += 1;
+                                if dbg_samples.len() < 24 {
+                                    dbg_samples.push((slot, tile_number, kind, pack, tile_off));
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                     let Some(src) = source_cell(atlas, kind, pack, tile_off) else {
                         // No recorded source / not in atlas → leave a gap.
                         continue;
@@ -917,6 +949,14 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                         priority: entry_word & 0x2000 != 0,
                     });
             }
+        }
+    }
+    if dbg {
+        eprintln!("[SRC_DEBUG] bg_tiles={dbg_total} wrong_cell={dbg_mismatch} gap={dbg_gap}");
+        for (slot, tile, kind, pack, off) in &dbg_samples {
+            eprintln!(
+                "[SRC_DEBUG]   slot=0x{slot:03x} tile=0x{tile:03x} src=(kind={kind},pack=0x{pack:04x},off={off})"
+            );
         }
     }
     (modern, cells)
