@@ -763,6 +763,14 @@ pub fn render_modern_frame_full_from_vram(frame: &GpuFrame<'_>) -> Vec<u8> {
 
 use crate::modern_source_atlas::{source_cell, ModernSourceAtlas};
 
+/// Logical CHR source `kind` values that are INJECTIVE by `(kind, pack, tile_off)`
+/// (mirrors `zelda3::chr_source`): `CHR_KIND_BG_ANIM` is keyed by absolute buffer
+/// position and `CHR_KIND_BG_STREAM` is content-hashed, so the assets-by-source
+/// atlas can resolve them faithfully. The generic `CHR_KIND_BG` (= 1) is NOT
+/// injective (see `extract_modern_frame_from_sources`), so it is not listed here.
+const CHR_KIND_BG_ANIM: u8 = 5;
+const CHR_KIND_BG_STREAM: u8 = 6;
+
 /// A thin view over the M1 per-VRAM-slot logical CHR source table, returning
 /// `(kind, pack, tile_off)` for a CHR tile slot (`word_addr / 16`). Defined in
 /// the renderer crate so the off-VRAM path does not depend on the zelda3 crate;
@@ -918,6 +926,38 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                 } else {
                     let slot = chr_slot_base + tile_number;
                     let (kind, pack, tile_off) = src_table.get(slot);
+                    // The generic-BG CHR source key `(CHR_KIND_BG, pack, tile_off)` is
+                    // NOT injective: an area's BG graphics pack is 3bpp ROM data expanded
+                    // to 4bpp VRAM via either the "high" or "low" conversion, chosen per
+                    // (slot, palette theme) in `load_background_graphics`, and the
+                    // conversion variant is NOT encoded in the key — so the SAME
+                    // `(pack, tile_off)` resolves to different pixels in different
+                    // themes/areas. The assets-by-source dump keeps the first occurrence
+                    // (it is processed in frame order), so areas that reuse a key with the
+                    // other conversion render a stale cell (whole-screen shade shift in the
+                    // overworld). The injective BG kinds — `CHR_KIND_BG_ANIM` (keyed by
+                    // absolute buffer position) and `CHR_KIND_BG_STREAM` (content-hashed) —
+                    // do not have this problem, and sprites are content-hashed too. Until
+                    // the generic-BG area-load is content-hashed at the source (the same fix
+                    // already applied to OBJ CHR via `tag_stream_content_hash`), decode the
+                    // non-injective generic-BG tiles (and any untagged/gap slot) from LIVE
+                    // VRAM, exactly like the BG3 exception above and the from-VRAM oracle.
+                    let injective = kind == CHR_KIND_BG_ANIM || kind == CHR_KIND_BG_STREAM;
+                    if !injective {
+                        let pal = ((entry_word >> 10) & 7) as u8;
+                        let chr_base = frame.bg[layer_index].tile_adr as usize;
+                        let pattern_key = entry_word & 0xC3FF;
+                        let id = *cell_ids
+                            .entry((0x8000_0000 | u32::from(pattern_key), false, false))
+                            .or_insert_with(|| {
+                                let indices =
+                                    decode_snes_4bpp_tile_indices(frame.vram, chr_base, pattern_key);
+                                let id = cells.len() as u32;
+                                cells.push(ModernIndexTile { id, indices });
+                                id
+                            });
+                        (id, pal)
+                    } else {
                     if dbg && layer_index < 2 {
                         dbg_total += 1;
                         let live = decode_snes_4bpp_tile_indices(
@@ -952,6 +992,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                         id
                     });
                     (id, ((entry_word >> 10) & 7) as u8)
+                    }
                 };
 
                 let bg_w = (cols * 8) as i32;
@@ -1126,20 +1167,24 @@ mod tests {
     }
 
     #[test]
-    fn extract_from_sources_emits_atlas_cell_for_bg_tile() {
+    fn extract_from_sources_emits_atlas_cell_for_injective_bg_tile() {
         use crate::modern_source_atlas::ModernSourceAtlas;
-        // Atlas: one BG (kind=1) cell keyed by (pack=5, tile_off=3).
+        // Atlas: one injective-BG (kind=CHR_KIND_BG_ANIM=5) cell keyed by (pack=5,
+        // tile_off=3). Only the injective BG kinds (BG_ANIM / BG_STREAM) resolve via
+        // the atlas; generic CHR_KIND_BG (=1) is decoded from live VRAM (see the
+        // separate test below) because its `(pack, tile_off)` key is not injective.
         let mut indices = [0u8; 64];
         indices[0] = 7;
         indices[63] = 9;
         let cell = ModernIndexTile { id: 0, indices };
-        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![cell], &[(1, 5, 3, 0)]);
+        let atlas =
+            ModernSourceAtlas::from_keyed_cells_for_test(vec![cell], &[(CHR_KIND_BG_ANIM, 5, 3, 0)]);
 
         // Source table: BG CHR base tile_adr=0x2000 → slot base 0x200. The tilemap
-        // entry's tile# = 4 → slot 0x204 maps to source (kind=1, pack=5, tile_off=3).
+        // entry's tile# = 4 → slot 0x204 maps to source (kind=5, pack=5, tile_off=3).
         let table = |slot: usize| -> (u8, u16, u16) {
             if slot == 0x200 + 4 {
-                (1, 5, 3)
+                (CHR_KIND_BG_ANIM, 5, 3)
             } else {
                 (0, 0, 0)
             }
@@ -1168,19 +1213,70 @@ mod tests {
         assert_eq!(tiles[0].palette, 0);
         // NO VRAM CHR pixels were read: the cell pixels came straight from the atlas.
 
-        // A tilemap entry whose slot has no recorded source → skipped (gap).
+        // An injective-kind tile whose key is NOT in the atlas → skipped (gap).
+        let table_miss = |slot: usize| -> (u8, u16, u16) {
+            if slot == 0x200 + 9 {
+                (CHR_KIND_BG_ANIM, 5, 99) // key not present in the atlas
+            } else {
+                (0, 0, 0)
+            }
+        };
         let mut vram2 = vec![0u16; 0x8000];
-        vram2[0] = 9; // tile# 9 → slot 0x209 → source none
+        vram2[0] = 9; // tile# 9 → slot 0x209 → injective source, no atlas cell
         let mut frame2 = test_gpu_frame(&vram2, &cgram, &oam, 15, false);
         frame2.mode = 1;
         frame2.bg[0].tile_adr = 0x2000;
         frame2.screen_enabled = [0x01, 0x00];
-        let (modern2, cells2) = extract_modern_frame_from_sources(&frame2, &table, &atlas);
-        assert!(cells2.is_empty(), "no source → no cell");
+        let (modern2, cells2) = extract_modern_frame_from_sources(&frame2, &table_miss, &atlas);
+        assert!(cells2.is_empty(), "injective source absent from atlas → no cell");
         assert!(
             modern2.bg_layers[0].index_tiles.is_empty(),
-            "missing source leaves a gap"
+            "missing injective source leaves a gap"
         );
+    }
+
+    #[test]
+    fn extract_from_sources_decodes_generic_bg_from_live_vram() {
+        use crate::modern_source_atlas::ModernSourceAtlas;
+        // Generic CHR_KIND_BG (=1) is NOT injective by `(pack, tile_off)` (the
+        // theme-dependent high/low 3bpp→4bpp conversion is not encoded in the key),
+        // so the off-VRAM path must decode it from LIVE VRAM to stay byte-exact with
+        // the from-VRAM oracle — even when the source table reports a kind=1 tag and
+        // the atlas holds a (stale) cell for that key. Here the atlas's kind=1 cell
+        // (index 7) must be IGNORED in favour of the live VRAM pattern.
+        let mut stale = [0u8; 64];
+        stale[0] = 7;
+        let cell = ModernIndexTile { id: 0, indices: stale };
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![cell], &[(1, 5, 3, 0)]);
+        let table = |slot: usize| -> (u8, u16, u16) {
+            if slot == 0x200 + 4 {
+                (1, 5, 3)
+            } else {
+                (0, 0, 0)
+            }
+        };
+
+        let mut vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        vram[0] = 4; // BG1 tilemap entry: tile# 4
+                     // Live 4bpp CHR for tile#4 at chr_base 0x2000: tile_base = 0x2000 + 4*16 =
+                     // 0x2040. Row 0 plane01 word: set pixel x=7 (bit 0x01) in plane0 → index 1.
+        vram[0x2040] = 0x0001;
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        frame.bg[0].tilemap_adr = 0;
+        frame.bg[0].tile_adr = 0x2000;
+        frame.screen_enabled = [0x01, 0x00];
+
+        let (modern, cells) = extract_modern_frame_from_sources(&frame, &table, &atlas);
+        assert_eq!(cells.len(), 1, "one cell decoded from live VRAM");
+        // Live decode: pixel (row 0, x=7) = 1; the stale atlas index 7 is NOT used.
+        assert_eq!(cells[0].indices[7], 1, "generic BG decoded from live VRAM");
+        assert_eq!(cells[0].indices[0], 0);
+        let tiles = &modern.bg_layers[0].index_tiles;
+        assert_eq!(tiles.len(), 1);
+        assert_eq!(tiles[0].cell_id, 0);
     }
 
     #[test]
