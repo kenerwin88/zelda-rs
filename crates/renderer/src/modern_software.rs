@@ -223,13 +223,18 @@ fn composite_mode1(
     // OBJ = 0x10), matching the classic per-scanline TM check. `None` for the sub
     // screen (classic skips the per-scanline TM check there).
     main_tm: Option<&[u8]>,
+    // This screen's window-enable mask (TMW/$212E for main, TSW/$212F for sub). Bit L
+    // masks layer L's pixels where the layer's window region is active. The classic
+    // window-masks BOTH screens (unlike the per-scanline TM check, which is main-only),
+    // so this is passed for the sub composite too.
+    windowed: u8,
 ) {
     // SNES mosaic ($2106): active only when the block size is >1 AND at least one
     // ENABLED BG layer (1-3) has its mosaic bit set. When inactive, run the existing
     // (pixel-exact) path UNCHANGED so normal frames are byte-for-byte identical.
     let mosaic_active = frame.mosaic_size > 1 && (frame.mosaic_enabled & enabled & 0x07) != 0;
     if mosaic_active {
-        composite_mode1_mosaic(screen, frame, bg_cells, sprite_cells, enabled, main_tm);
+        composite_mode1_mosaic(screen, frame, bg_cells, sprite_cells, enabled, main_tm, windowed);
         return;
     }
     let bg_on = |i: usize| (enabled >> i) & 1 != 0;
@@ -247,38 +252,38 @@ fn composite_mode1(
     };
     // BG3-lo
     if bg_on(2) {
-        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, false, main_tm);
+        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, false, main_tm, windowed);
     }
     // OBJ priority 0, 1 (below BG2/BG1 low)
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 0, main_tm);
-        paint_obj_priority(screen, o, 1, main_tm);
+        paint_obj_priority(screen, o, 0, main_tm, frame, windowed);
+        paint_obj_priority(screen, o, 1, main_tm, frame, windowed);
     }
     // BG2-lo, BG1-lo
     if bg_on(1) {
-        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, false, main_tm);
+        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, false, main_tm, windowed);
     }
     if bg_on(0) {
-        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, false, main_tm);
+        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, false, main_tm, windowed);
     }
     // OBJ priority 2 (above BG2/BG1 low)
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 2, main_tm);
+        paint_obj_priority(screen, o, 2, main_tm, frame, windowed);
     }
     // BG2-hi, BG1-hi
     if bg_on(1) {
-        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, true, main_tm);
+        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, true, main_tm, windowed);
     }
     if bg_on(0) {
-        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, true, main_tm);
+        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, true, main_tm, windowed);
     }
     // OBJ priority 3 (above BG2/BG1 high)
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 3, main_tm);
+        paint_obj_priority(screen, o, 3, main_tm, frame, windowed);
     }
     // BG3-hi
     if bg_on(2) {
-        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, true, main_tm);
+        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, true, main_tm, windowed);
     }
 }
 
@@ -376,6 +381,8 @@ fn paint_bg_buf(
     layer_index: u8,
     hi_priority: bool,
     main_tm: Option<&[u8]>,
+    frame: &ModernFrame,
+    windowed: u8,
 ) {
     let width = usize::from(MODERN_FRAME_WIDTH);
     let tm_bit = 1u8 << layer_index;
@@ -385,6 +392,17 @@ fn paint_bg_buf(
                 if tm[i / width] & tm_bit == 0 {
                     continue;
                 }
+            }
+            // Main-screen + sub-screen window mask (TMW/TSW), gated by `windowed`.
+            if layer_window_masks(
+                layer_index,
+                frame.windowsel,
+                windowed,
+                (i % width) as u32,
+                i / width,
+                &frame.window_scanlines,
+            ) {
+                continue;
             }
             screen.c5[i] = buf.c5[i];
             screen.bit[i] = layer_index;
@@ -403,6 +421,7 @@ fn composite_mode1_mosaic(
     sprite_cells: &[ModernIndexTile],
     enabled: u8,
     main_tm: Option<&[u8]>,
+    windowed: u8,
 ) {
     let bg_on = |i: usize| (enabled >> i) & 1 != 0;
     let obj_on = (enabled >> 4) & 1 != 0;
@@ -433,32 +452,32 @@ fn composite_mode1_mosaic(
     // Mode-1 z-order: BG3-lo, OBJ0, OBJ1, BG2-lo, BG1-lo, OBJ2, BG2-hi, BG1-hi,
     // OBJ3, BG3-hi.
     if let Some(b) = &bufs[2] {
-        paint_bg_buf(screen, b, 2, false, main_tm);
+        paint_bg_buf(screen, b, 2, false, main_tm, frame, windowed);
     }
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 0, main_tm);
-        paint_obj_priority(screen, o, 1, main_tm);
+        paint_obj_priority(screen, o, 0, main_tm, frame, windowed);
+        paint_obj_priority(screen, o, 1, main_tm, frame, windowed);
     }
     if let Some(b) = &bufs[1] {
-        paint_bg_buf(screen, b, 1, false, main_tm);
+        paint_bg_buf(screen, b, 1, false, main_tm, frame, windowed);
     }
     if let Some(b) = &bufs[0] {
-        paint_bg_buf(screen, b, 0, false, main_tm);
+        paint_bg_buf(screen, b, 0, false, main_tm, frame, windowed);
     }
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 2, main_tm);
+        paint_obj_priority(screen, o, 2, main_tm, frame, windowed);
     }
     if let Some(b) = &bufs[1] {
-        paint_bg_buf(screen, b, 1, true, main_tm);
+        paint_bg_buf(screen, b, 1, true, main_tm, frame, windowed);
     }
     if let Some(b) = &bufs[0] {
-        paint_bg_buf(screen, b, 0, true, main_tm);
+        paint_bg_buf(screen, b, 0, true, main_tm, frame, windowed);
     }
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 3, main_tm);
+        paint_obj_priority(screen, o, 3, main_tm, frame, windowed);
     }
     if let Some(b) = &bufs[2] {
-        paint_bg_buf(screen, b, 2, true, main_tm);
+        paint_bg_buf(screen, b, 2, true, main_tm, frame, windowed);
     }
 }
 
@@ -518,21 +537,88 @@ fn resolve_obj_layer(frame: &ModernFrame, sprite_cells: &[ModernIndexTile], len:
 /// Paint the resolved OBJ pixels whose priority attribute equals `prio` into the
 /// screen (REPLACE). Called at the matching Mode-1 z-slot so OBJ-vs-BG layering
 /// follows the priority attribute while OBJ-vs-OBJ stays index-ordered.
-fn paint_obj_priority(screen: &mut Screen, obj: &ObjLayer, prio: u8, main_tm: Option<&[u8]>) {
+fn paint_obj_priority(
+    screen: &mut Screen,
+    obj: &ObjLayer,
+    prio: u8,
+    main_tm: Option<&[u8]>,
+    frame: &ModernFrame,
+    windowed: u8,
+) {
     let width = usize::from(MODERN_FRAME_WIDTH);
     for i in 0..obj.real.len() {
         if obj.real[i] && obj.prio[i] == prio {
-            // Per-scanline OBJ enable (TM bit 4) for the main screen.
+            // Per-scanline OBJ enable (TM bit 4) for the main screen only.
             if let Some(tm) = main_tm {
                 if tm[i / width] & 0x10 == 0 {
                     continue;
                 }
+            }
+            // OBJ window mask (layer 4: windowsel >> 16, TMW/TSW bit 4) on both screens.
+            if layer_window_masks(
+                4,
+                frame.windowsel,
+                windowed,
+                (i % width) as u32,
+                i / width,
+                &frame.window_scanlines,
+            ) {
+                continue;
             }
             screen.c5[i] = obj.c5[i];
             screen.bit[i] = obj.bit[i];
             screen.real[i] = true;
         }
     }
+}
+
+/// Main-screen window mask for a layer pixel, byte-exact with the classic shaders
+/// (`bg_layer.wgsl::layer_window_active` / `sprite_pixels.wgsl::obj_window_active`).
+///
+/// `layer` is the SNES layer index (BG1-3 = 0-2, OBJ = 4); it selects both the TMW
+/// main-screen window-enable bit (`screen_windowed_main & (1<<layer)`) and the
+/// window-select nibble (`windowsel >> (layer*4)`: bit0=W1inv, bit1=W1en, bit2=W2inv,
+/// bit3=W2en). Returns `true` where the pixel is INSIDE the active window region and
+/// must therefore be MASKED (not drawn → backdrop shows), matching the shaders which
+/// `discard` where the corresponding `*_window_active` is true. Only the main screen
+/// is gated (the classic never window-masks the sub screen).
+fn layer_window_masks(
+    layer: u8,
+    windowsel: u32,
+    screen_windowed_main: u8,
+    sx: u32,
+    sy: usize,
+    window_scanlines: &[[u8; 4]],
+) -> bool {
+    if screen_windowed_main & (1u8 << layer) == 0 {
+        return false;
+    }
+    let window_flags = (windowsel >> (u32::from(layer) * 4)) & 0x0f;
+    let w1_enabled = window_flags & 0x2 != 0;
+    let w2_enabled = window_flags & 0x8 != 0;
+    if !w1_enabled && !w2_enabled {
+        return false;
+    }
+    let [w1l, w1r, w2l, w2r] = window_scanlines
+        .get(sy)
+        .copied()
+        .unwrap_or([0u8; 4])
+        .map(u32::from);
+    let mut test1 = sx >= w1l && sx <= w1r;
+    let mut test2 = sx >= w2l && sx <= w2r;
+    if window_flags & 0x1 != 0 {
+        test1 = !test1;
+    }
+    if window_flags & 0x4 != 0 {
+        test2 = !test2;
+    }
+    if w1_enabled && !w2_enabled {
+        return test1;
+    }
+    if !w1_enabled && w2_enabled {
+        return test2;
+    }
+    test1 || test2
 }
 
 /// Composite one BG layer's indexed tiles into `screen` (painter-style, REPLACE),
@@ -547,6 +633,7 @@ fn composite_index_tiles_c5(
     frame: &ModernFrame,
     hi_priority: bool,
     main_tm: Option<&[u8]>,
+    windowed: u8,
 ) {
     let width = usize::from(MODERN_FRAME_WIDTH);
     let bit = layer.index;
@@ -570,11 +657,22 @@ fn composite_index_tiles_c5(
                 if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
                     continue;
                 }
-                // Per-scanline BG-layer enable (TM) for the main screen.
+                // Per-scanline BG-layer enable (TM) for the main screen only.
                 if let Some(tm) = main_tm {
                     if tm[dst_y as usize] & tm_bit == 0 {
                         continue;
                     }
+                }
+                // BG window mask (TMW/TSW), applied on both screens via `windowed`.
+                if layer_window_masks(
+                    bit,
+                    frame.windowsel,
+                    windowed,
+                    dst_x as u32,
+                    dst_y as usize,
+                    &frame.window_scanlines,
+                ) {
+                    continue;
                 }
                 let color = frame.cgram_rgba[inst.palette as usize * 16 + index as usize];
                 let i = dst_y as usize * width + dst_x as usize;
@@ -680,6 +778,7 @@ pub fn render_modern_frame_full(
         sprite_cells,
         frame.screen_enabled_main,
         Some(&frame.main_tm_scanlines),
+        frame.screen_windowed_main,
     );
 
     // SUB composite: same Mode 1 z-order over the sub-screen enable mask. The sub
@@ -692,6 +791,7 @@ pub fn render_modern_frame_full(
         sprite_cells,
         frame.screen_enabled_sub,
         None,
+        frame.screen_windowed_sub,
     );
 
     // `rendered_subscreen`: is there ANY sub composite (BG1-4 or OBJ on sub)?
@@ -780,6 +880,41 @@ mod tests {
         ModernIndexTileInstance, ModernTileInstance,
     };
     use crate::modern_index_atlas::ModernIndexTile;
+
+    /// `layer_window_masks` mirrors the classic `bg_layer.wgsl::layer_window_active`:
+    /// a windowed layer with W1 enabled and boundary [10,20] masks pixels INSIDE the
+    /// window; not-windowed or W1-disabled never masks; the W1inv flag inverts.
+    #[test]
+    fn layer_window_masks_w1_and_inversion() {
+        // 224 scanlines, window 1 = [10, 20] on every row; window 2 = [0,0].
+        let scan = vec![[10u8, 20u8, 0u8, 0u8]; 224];
+        // BG1 (layer 0), W1 enabled (bit1), no inversion: nibble 0 = 0b0010 = 0x2.
+        let windowsel_w1 = 0x0000_0002u32;
+        let windowed = 0x01u8; // TMW bit 0 (BG1)
+
+        // Not windowed (TMW bit clear) → never masked, even inside the window.
+        assert!(!layer_window_masks(0, windowsel_w1, 0x00, 15, 5, &scan));
+
+        // Windowed + W1en, no inversion: inside [10,20] masked, outside not.
+        assert!(layer_window_masks(0, windowsel_w1, windowed, 15, 5, &scan));
+        assert!(layer_window_masks(0, windowsel_w1, windowed, 10, 5, &scan)); // left edge inclusive
+        assert!(layer_window_masks(0, windowsel_w1, windowed, 20, 5, &scan)); // right edge inclusive
+        assert!(!layer_window_masks(0, windowsel_w1, windowed, 9, 5, &scan));
+        assert!(!layer_window_masks(0, windowsel_w1, windowed, 21, 5, &scan));
+
+        // W1 enabled but W1inv set (nibble 0 = 0b0011 = 0x3): masking INVERTED.
+        let windowsel_w1_inv = 0x0000_0003u32;
+        assert!(!layer_window_masks(0, windowsel_w1_inv, windowed, 15, 5, &scan));
+        assert!(layer_window_masks(0, windowsel_w1_inv, windowed, 9, 5, &scan));
+
+        // W1 region set but neither W1en nor W2en → no masking (flags 0x0).
+        assert!(!layer_window_masks(0, 0x0000_0000, windowed, 15, 5, &scan));
+
+        // OBJ (layer 4) uses windowsel >> 16 and TMW bit 4 (0x10).
+        let windowsel_obj = 0x0002_0000u32; // OBJ nibble (>>16) = W1en
+        assert!(layer_window_masks(4, windowsel_obj, 0x10, 15, 5, &scan));
+        assert!(!layer_window_masks(4, windowsel_obj, 0x00, 15, 5, &scan));
+    }
 
     /// Build a frame with one BG layer (`layer_index`) carrying a single index-1
     /// tile at (0,0) whose color resolves to the given 5-bit channel triple.

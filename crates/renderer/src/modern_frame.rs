@@ -37,6 +37,19 @@ pub struct ModernFrame {
     pub prevent_math_mode: u8,
     /// Color-math window select (windowsel layer 5): bits 0-3 = W1inv, W1en, W2inv, W2en.
     pub windowsel_cm: u8,
+    /// Full per-layer window-select register (PPU windowsel). Each layer L occupies
+    /// nibble L: bit0=W1inv, bit1=W1en, bit2=W2inv, bit3=W2en. Layers 0-2 = BG1-3,
+    /// layer 4 (>>16) = OBJ (layer 5 / >>20 = color-math, kept in `windowsel_cm`).
+    /// Used by the main-screen window mask in the Mode-1 compositor. Default 0.
+    pub windowsel: u32,
+    /// Main-screen window-enable bits (TMW/$212E): bit L masks layer L's main pixels
+    /// where the layer's window region is active. Default 0 (no masking).
+    pub screen_windowed_main: u8,
+    /// Sub-screen window-enable bits (TSW/$212F): bit L masks layer L's sub pixels
+    /// where the layer's window region is active. The classic applies windows to the
+    /// SUB screen too (it only skips the per-scanline TM check there, not the window),
+    /// which is how the dungeon color-math floor iris masks to backdrop. Default 0.
+    pub screen_windowed_sub: u8,
     /// Per-scanline color-window boundaries `[w1_left, w1_right, w2_left, w2_right]`
     /// (column indices, inclusive), 224 entries. Mirrors the GPU post-process pass.
     pub window_scanlines: Vec<[u8; 4]>,
@@ -81,6 +94,9 @@ impl ModernFrame {
             clip_mode: 0,
             prevent_math_mode: 0,
             windowsel_cm: 0,
+            windowsel: 0,
+            screen_windowed_main: 0,
+            screen_windowed_sub: 0,
             window_scanlines: vec![[0u8; 4]; usize::from(MODERN_FRAME_HEIGHT)],
             main_tm_scanlines: vec![0xff; usize::from(MODERN_FRAME_HEIGHT)],
             mosaic_enabled: 0,

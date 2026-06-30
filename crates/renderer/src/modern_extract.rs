@@ -712,6 +712,12 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
     modern.clip_mode = frame.clip_mode;
     modern.prevent_math_mode = frame.prevent_math_mode;
     modern.windowsel_cm = frame.windowsel_cm;
+    // Full per-layer window-select + main-screen window-enable (TMW) for the
+    // Mode-1 compositor's main-screen window mask (mirrors bg_layer.wgsl /
+    // sprite_pixels.wgsl `*_window_active`).
+    modern.windowsel = frame.windowsel;
+    modern.screen_windowed_main = frame.screen_windowed[0];
+    modern.screen_windowed_sub = frame.screen_windowed[1];
     for (dst, sl) in modern
         .window_scanlines
         .iter_mut()
