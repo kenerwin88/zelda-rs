@@ -20,6 +20,18 @@ const SPRITE_SIZES: [[u8; 2]; 8] = [
     [16, 32],
 ];
 
+/// Screen Y of an OBJ 8×8 tile, honoring the SNES 256-line OBJ-Y wrap. The classic
+/// `resolve_obj_pixels` visibility test is `row = (line - yy) & 0xff < size`, i.e. a
+/// sprite whose unwrapped top sits at/below the bottom edge (`top_y + sty*8 >= 224`)
+/// reappears at the TOP via the mod-256 wrap (high-Y sprites — e.g. statue tops that
+/// straddle scanline 0). Remapping such a tile's screen Y by `-256` reproduces that
+/// wrap exactly: tiles in 249..262 become -7..6 (visible at top); 224..248 become
+/// -32..-8 (off-screen either way). The per-pixel clip then handles the boundary.
+fn obj_tile_screen_y(top_y: i32, sty: i32) -> i16 {
+    let y = top_y + sty * 8;
+    (if y >= 224 { y - 256 } else { y }) as i16
+}
+
 /// Decode OAM into palette-index sprite-tile instances, mirroring the per-sprite,
 /// per-8×8-tile ENUMERATION of `sprite_renderer::resolve_obj_pixels` (NOT its
 /// per-pixel resolver).
@@ -96,7 +108,7 @@ pub fn extract_modern_sprites(
                 out.push(ModernIndexSpriteInstance {
                     cell_id: cell.id,
                     screen_x: (x + stx * 8) as i16,
-                    screen_y: (top_y + sty * 8) as i16,
+                    screen_y: obj_tile_screen_y(top_y, sty),
                     palette,
                     priority,
                     hflip,
@@ -439,7 +451,7 @@ pub fn extract_modern_sprites_from_vram(
                 out.push(ModernIndexSpriteInstance {
                     cell_id,
                     screen_x: (x + stx * 8) as i16,
-                    screen_y: (top_y + sty * 8) as i16,
+                    screen_y: obj_tile_screen_y(top_y, sty),
                     palette,
                     priority,
                     hflip,
@@ -1054,7 +1066,7 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                 out.push(ModernIndexSpriteInstance {
                     cell_id,
                     screen_x: (x + stx * 8) as i16,
-                    screen_y: (top_y + sty * 8) as i16,
+                    screen_y: obj_tile_screen_y(top_y, sty),
                     palette,
                     priority,
                     hflip,
@@ -1613,6 +1625,25 @@ mod tests {
             "BG3 baked cgram index = palette*4 + pal_idx"
         );
         assert_eq!(cell.indices[1], 0, "transparent neighbour stays 0");
+    }
+
+    /// The SNES OBJ Y space wraps mod 256: a high-Y sprite's lower tiles reappear
+    /// at the top of the screen. `obj_tile_screen_y` must reproduce that wrap so
+    /// `resolve_obj_pixels`-matching placement is preserved (the statue-tops bug).
+    #[test]
+    fn obj_tile_screen_y_wraps_high_y_objects_to_top() {
+        // Normal on-screen sprite: unchanged.
+        assert_eq!(obj_tile_screen_y(10, 0), 10);
+        assert_eq!(obj_tile_screen_y(10, 1), 18);
+        // Top-straddling sprite (yy==0 -> top_y==-1): unchanged (small negative).
+        assert_eq!(obj_tile_screen_y(-1, 0), -1);
+        // High-Y wrap (yy==250 -> top_y==249, 16px sprite): tile0 -> -7, tile1 -> 1.
+        assert_eq!(obj_tile_screen_y(249, 0), -7);
+        assert_eq!(obj_tile_screen_y(249, 1), 1);
+        // Boundary: exactly at the bottom edge wraps but stays off-screen (-32).
+        assert_eq!(obj_tile_screen_y(224, 0), -32);
+        // Last on-screen row is not wrapped.
+        assert_eq!(obj_tile_screen_y(223, 0), 223);
     }
 
     /// Craft an OAM with ONE 8×8 sprite and assert `extract_modern_sprites`
