@@ -337,7 +337,12 @@ fn composite_sprites_c5(
                 let color = frame.cgram_rgba[0x80 + inst.palette as usize * 16 + index as usize];
                 let i = dst_y as usize * width + dst_x as usize;
                 screen.c5[i] = [color[0] >> 3, color[1] >> 3, color[2] >> 3];
-                screen.bit[i] = 4;
+                // OBJ color-math is enabled ONLY for OBJ palettes 4-7 (CGADSUB bit 4).
+                // Palettes 0-3 use a non-math layer designation (bit 6, never present in
+                // `math_enabled`), matching `resolve_obj_pixels`'s `layer_bit_pos`. Without
+                // this, palette-0-3 sprites (e.g. glow/sparkle effects) wrongly get the
+                // scene's subtract/add applied (observed: -4/channel on dungeon orbs).
+                screen.bit[i] = if inst.palette < 4 { 6 } else { 4 };
                 screen.real[i] = true;
             }
         }
@@ -562,6 +567,44 @@ mod tests {
                 priority: false,
             });
         (frame, cells)
+    }
+
+    /// OBJ color-math is gated by palette: OBJ palettes 0-3 use a non-math layer
+    /// designation (bit 6, never in `math_enabled`) and are NEVER subtracted/added;
+    /// palettes 4-7 (bit 4) participate. Guards the glow-sprite over-subtract bug.
+    #[test]
+    fn obj_color_math_only_applies_to_palettes_4_to_7() {
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        let cells = vec![ModernIndexTile { id: 0, indices }];
+        let make = |pal: u8| {
+            let mut frame = ModernFrame::empty();
+            frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+            frame.cgram_rgba[0x80 + pal as usize * 16 + 1] = [20 << 3, 20 << 3, 20 << 3, 0xff];
+            frame.index_sprites.push(ModernIndexSpriteInstance {
+                cell_id: 0,
+                screen_x: 0,
+                screen_y: 0,
+                palette: pal,
+                priority: 0,
+                hflip: false,
+                vflip: false,
+            });
+            frame.screen_enabled_main = 0x10; // OBJ on main
+            frame.math_enabled = 0x10; // OBJ math layer (bit 4) enabled
+            frame.subtract_color = true;
+            frame.fixed_color_r = 4;
+            frame.fixed_color_g = 4;
+            frame.fixed_color_b = 4;
+            frame.brightness = 15;
+            frame
+        };
+        // palette 2 (<4): unmathed → 5-bit 20 → (20<<3)|(20>>2) = 165.
+        let out_lo = render_modern_frame_full(&make(2), &[], &cells);
+        assert_eq!(&out_lo[0..3], &[165, 165, 165], "palette<4 sprite must not be mathed");
+        // palette 5 (>=4): subtracted by 4 → 5-bit 16 → (16<<3)|(16>>2) = 132.
+        let out_hi = render_modern_frame_full(&make(5), &[], &cells);
+        assert_eq!(&out_hi[0..3], &[132, 132, 132], "palette>=4 sprite must be subtracted");
     }
 
     #[test]
