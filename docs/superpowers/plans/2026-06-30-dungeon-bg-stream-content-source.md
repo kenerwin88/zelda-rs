@@ -246,7 +246,7 @@ git commit --no-verify -m "zelda3: CHR_KIND_BG_STREAM + 24-bit content-hash sour
 
 **Interfaces:**
 - Consumes: `CHR_KIND_BG_STREAM`, `chr_content_hash24`, `VramChrSourceTable::record_tile_content_hash` from Task 2; `self.vram_chr_source` (field, same one the existing `record_tiles` calls use); `self.ppu.vram: Vec<u16>`; `self.game_state.world.location.indoor_flag()`.
-- Produces: after the 0x2c00 stream, slots `0x2c00/16 .. (0x2c00+0x800)/16` (i.e. `0x2c0 .. 0x3c0`, 256 tiles) are tagged `(CHR_KIND_BG_STREAM, hash)` for indoor frames.
+- Produces: after the 0x2c00 stream, slots `0x2c0 .. 0x340` (VRAM words 0x2c00..0x3400, **128 tiles** = 0x80; the copy is 0x1000 bytes = 0x800 words) are tagged `(CHR_KIND_BG_STREAM, hash)` for indoor frames. Must NOT extend into 0x3400 (char5and6's region).
 
 - [ ] **Step 1: Read the current writer.** Confirm `nmi_update_bg_char3and4` is:
 
@@ -272,7 +272,10 @@ git commit --no-verify -m "zelda3: CHR_KIND_BG_STREAM + 24-bit content-hash sour
         // Indoor-only: the overworld owns these slots via its own keys and is at 0.
         if self.game_state.world.location.indoor_flag() != 0 {
             const BASE: usize = 0x2c00;
-            const TILES: usize = 0x100; // 0x800 words / 16 words-per-tile
+            // copy_to_vram_slice len is in BYTES: 0x1000 bytes = 0x800 words = 0x80 tiles
+            // (16 words/tile), covering slots 0x2c0..0x340 (VRAM words 0x2c00..0x3400).
+            // Do NOT over-tag into 0x3400 (char5and6's region).
+            const TILES: usize = 0x80;
             for t in 0..TILES {
                 let word0 = BASE + t * 16;
                 let hash = crate::chr_source::chr_content_hash24(
@@ -396,7 +399,7 @@ git commit --no-verify -m "assets: kind-6 content-hash dungeon BG-stream cells (
         let buf = self.background_character_buffer().to_vec();
         self.copy_to_vram_slice(dst, &buf, 0x1000);
         if dst < 0x4000 && self.game_state.world.location.indoor_flag() != 0 {
-            const TILES: usize = 0x100; // 0x800 words / 16
+            const TILES: usize = 0x80; // 0x1000 BYTES = 0x800 words = 0x80 tiles
             for t in 0..TILES {
                 let word0 = dst + t * 16;
                 let hash = crate::chr_source::chr_content_hash24(
