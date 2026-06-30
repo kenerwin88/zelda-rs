@@ -143,6 +143,10 @@ impl VramChrSourceTable {
     /// Tag a single CHR slot with a content hash (see [`chr_content_hash24`]),
     /// splitting the 24-bit hash into `pack=(hash>>8)&0xffff`, `tile_off=hash&0xff`.
     pub fn record_tile_content_hash(&mut self, slot: usize, kind: u8, hash24: u32) {
+        // Bits 24+ would be silently dropped from `pack`, aliasing keys — the exact
+        // stale/wrong-tag failure this tagging exists to eliminate. Callers pass
+        // `chr_content_hash24` output (already 24-bit); assert it loudly in debug.
+        debug_assert!(hash24 >> 24 == 0, "hash24 must be 24-bit, got {hash24:#010x}");
         if slot < self.entries.len() {
             self.entries[slot] = LogicalChrSrc {
                 kind,
