@@ -224,6 +224,14 @@ fn composite_mode1(
     // screen (classic skips the per-scanline TM check there).
     main_tm: Option<&[u8]>,
 ) {
+    // SNES mosaic ($2106): active only when the block size is >1 AND at least one
+    // ENABLED BG layer (1-3) has its mosaic bit set. When inactive, run the existing
+    // (pixel-exact) path UNCHANGED so normal frames are byte-for-byte identical.
+    let mosaic_active = frame.mosaic_size > 1 && (frame.mosaic_enabled & enabled & 0x07) != 0;
+    if mosaic_active {
+        composite_mode1_mosaic(screen, frame, bg_cells, sprite_cells, enabled, main_tm);
+        return;
+    }
     let bg_on = |i: usize| (enabled >> i) & 1 != 0;
     let obj_on = (enabled >> 4) & 1 != 0;
     let bg = &frame.bg_layers;
@@ -271,6 +279,186 @@ fn composite_mode1(
     // BG3-hi
     if bg_on(2) {
         composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, true, main_tm);
+    }
+}
+
+/// One BG layer rendered into a full-screen buffer for the mosaic path: per-pixel
+/// 5-bit color, whether a non-transparent tile pixel covered it (`real`), and the
+/// tile's priority bit (`hipri`). Built WITHOUT the per-scanline TM gate (that is a
+/// function of the OUTPUT scanline, applied after the mosaic source-snap), so the
+/// snap reads pure tile color/opacity.
+struct BgBuf {
+    c5: Vec<[u8; 3]>,
+    real: Vec<bool>,
+    hipri: Vec<bool>,
+}
+
+/// Render every tile of one BG layer into a `BgBuf` (no TM gate, no priority
+/// filtering — both priorities recorded with their per-pixel `hipri` bit). Mirrors
+/// `composite_index_tiles_c5`'s per-pixel decode. Each visible screen pixel of a BG
+/// layer is covered by at most one tile, so there is no within-layer overwrite.
+fn render_bg_layer_buf(
+    layer: &crate::modern_frame::ModernBgLayer,
+    cells: &[ModernIndexTile],
+    frame: &ModernFrame,
+    len: usize,
+) -> BgBuf {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    let mut buf = BgBuf {
+        c5: vec![[0u8; 3]; len],
+        real: vec![false; len],
+        hipri: vec![false; len],
+    };
+    for inst in &layer.index_tiles {
+        let cell = match cells.get(inst.cell_id as usize) {
+            Some(c) => c,
+            None => continue,
+        };
+        for sy in 0..8usize {
+            for sx in 0..8usize {
+                let index = cell.indices[sy * 8 + sx];
+                if index == 0 {
+                    continue;
+                }
+                let dst_x = inst.screen_x + sx as i16;
+                let dst_y = inst.screen_y + sy as i16;
+                if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                    continue;
+                }
+                let color = frame.cgram_rgba[inst.palette as usize * 16 + index as usize];
+                let i = dst_y as usize * width + dst_x as usize;
+                buf.c5[i] = [color[0] >> 3, color[1] >> 3, color[2] >> 3];
+                buf.real[i] = true;
+                buf.hipri[i] = inst.priority;
+            }
+        }
+    }
+    buf
+}
+
+/// Apply the SNES mosaic source-snap to a BG buffer, IN SCREEN SPACE.
+///
+/// The classic shader (`bg_layer.wgsl`) snaps the pre-scroll source coords
+/// `source_x = sx`, `source_y = sy + 1` (the +1 is the SNES vertical fetch) to the
+/// mosaic grid, THEN adds scroll. Because the modern per-layer buffer already maps
+/// screen pixel `(sx, sy)` to BG sample `(sx + h_scroll, sy + v_scroll + 1)`, the
+/// scroll and the +1 cancel out of the origin lookup, leaving a pure screen-space
+/// snap to the N-grid: `origin = (sx - sx%N, sy - sy%N)`. (Derivation: classic
+/// snapped source row = `(sy+1) - (sy % N)`; the origin screen row `osy` satisfying
+/// `osy + 1 == (sy+1) - (sy%N)` is `osy = sy - sy%N`; likewise for x.) Origin is
+/// always within `[0, sx] x [0, sy]`, so no bounds check is needed.
+fn mosaic_snap_bg_buf(buf: &mut BgBuf, n: usize) {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    let height = usize::from(MODERN_FRAME_HEIGHT);
+    let src_c5 = buf.c5.clone();
+    let src_real = buf.real.clone();
+    let src_hipri = buf.hipri.clone();
+    for sy in 0..height {
+        let osy = sy - sy % n;
+        for sx in 0..width {
+            let osx = sx - sx % n;
+            let i = sy * width + sx;
+            let j = osy * width + osx;
+            buf.c5[i] = src_c5[j];
+            buf.real[i] = src_real[j];
+            buf.hipri[i] = src_hipri[j];
+        }
+    }
+}
+
+/// Paint one BG layer's (possibly mosaiced) buffer into the screen at the given
+/// priority pass (REPLACE), applying the per-scanline main-screen TM gate at the
+/// OUTPUT row (matching the classic, which TM-gates by output scanline regardless of
+/// the mosaic source-snap). `lo` pixels = `real && !hipri`; `hi` = `real && hipri`.
+fn paint_bg_buf(
+    screen: &mut Screen,
+    buf: &BgBuf,
+    layer_index: u8,
+    hi_priority: bool,
+    main_tm: Option<&[u8]>,
+) {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    let tm_bit = 1u8 << layer_index;
+    for i in 0..buf.real.len() {
+        if buf.real[i] && buf.hipri[i] == hi_priority {
+            if let Some(tm) = main_tm {
+                if tm[i / width] & tm_bit == 0 {
+                    continue;
+                }
+            }
+            screen.c5[i] = buf.c5[i];
+            screen.bit[i] = layer_index;
+            screen.real[i] = true;
+        }
+    }
+}
+
+/// Mosaic variant of [`composite_mode1`]: render each enabled BG layer (1-3) into
+/// its own buffer, apply the source-snap to mosaiced layers, then composite in the
+/// SAME Mode-1 z-order. Sprites are NOT mosaiced. Only reached when `mosaic_active`.
+fn composite_mode1_mosaic(
+    screen: &mut Screen,
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+    sprite_cells: &[ModernIndexTile],
+    enabled: u8,
+    main_tm: Option<&[u8]>,
+) {
+    let bg_on = |i: usize| (enabled >> i) & 1 != 0;
+    let obj_on = (enabled >> 4) & 1 != 0;
+    let bg = &frame.bg_layers;
+    let len = screen.c5.len();
+    let n = usize::from(frame.mosaic_size);
+
+    // Build one buffer per enabled BG layer (1-3), source-snapping mosaiced layers.
+    let mut bufs: [Option<BgBuf>; 3] = [None, None, None];
+    for layer in 0..3usize {
+        if !bg_on(layer) {
+            continue;
+        }
+        let mut buf = render_bg_layer_buf(&bg[layer], bg_cells, frame, len);
+        if frame.mosaic_enabled & (1u8 << layer) != 0 {
+            mosaic_snap_bg_buf(&mut buf, n);
+        }
+        bufs[layer] = Some(buf);
+    }
+
+    // OBJ resolved once (sprites are not mosaiced), same as the non-mosaic path.
+    let obj = if obj_on {
+        Some(resolve_obj_layer(frame, sprite_cells, len))
+    } else {
+        None
+    };
+
+    // Mode-1 z-order: BG3-lo, OBJ0, OBJ1, BG2-lo, BG1-lo, OBJ2, BG2-hi, BG1-hi,
+    // OBJ3, BG3-hi.
+    if let Some(b) = &bufs[2] {
+        paint_bg_buf(screen, b, 2, false, main_tm);
+    }
+    if let Some(o) = &obj {
+        paint_obj_priority(screen, o, 0, main_tm);
+        paint_obj_priority(screen, o, 1, main_tm);
+    }
+    if let Some(b) = &bufs[1] {
+        paint_bg_buf(screen, b, 1, false, main_tm);
+    }
+    if let Some(b) = &bufs[0] {
+        paint_bg_buf(screen, b, 0, false, main_tm);
+    }
+    if let Some(o) = &obj {
+        paint_obj_priority(screen, o, 2, main_tm);
+    }
+    if let Some(b) = &bufs[1] {
+        paint_bg_buf(screen, b, 1, true, main_tm);
+    }
+    if let Some(b) = &bufs[0] {
+        paint_bg_buf(screen, b, 0, true, main_tm);
+    }
+    if let Some(o) = &obj {
+        paint_obj_priority(screen, o, 3, main_tm);
+    }
+    if let Some(b) = &bufs[2] {
+        paint_bg_buf(screen, b, 2, true, main_tm);
     }
 }
 
@@ -833,6 +1021,78 @@ mod tests {
             &out[inside..inside + 4],
             &[0, 0, 0, 0xff],
             "in-window backdrop pixel still renders (not clipped)"
+        );
+    }
+
+    /// Mosaic source-snap: a single BG1 tile carrying a 2-D index gradient
+    /// (index = sy*8 + sx + 1) with mosaic_size=4 must snap every pixel within a
+    /// 4×4 block to the block-origin pixel's color, so pixels in the same block are
+    /// equal and pixels in different blocks differ.
+    #[test]
+    fn mosaic_snaps_bg_to_block_origin() {
+        // 8×8 cell: distinct palette index per pixel (1..64), so each source pixel
+        // resolves to a distinct color.
+        let mut indices = [0u8; 64];
+        for (k, slot) in indices.iter_mut().enumerate() {
+            *slot = (k + 1) as u8;
+        }
+        let cells = vec![ModernIndexTile { id: 0, indices }];
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        // Distinct color per index (palette 0). Spread k across the channels' UPPER
+        // bits so the compositor's `>>3` (8-bit → 5-bit) keeps them distinct.
+        for k in 1..=64usize {
+            let k = k as u8;
+            frame.cgram_rgba[k as usize] = [
+                (k & 7) << 5,
+                ((k >> 3) & 7) << 5,
+                ((k >> 6) & 3) << 6,
+                0xff,
+            ];
+        }
+        frame.bg_layers[0].index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.screen_enabled_main = 0x01; // BG1 on main
+        frame.brightness = 15;
+        frame.mosaic_enabled = 0x01; // BG1 mosaiced
+        frame.mosaic_size = 4; // 4×4 blocks
+
+        let out = render_modern_frame_full(&frame, &cells, &[]);
+        let at = |x: usize, y: usize| {
+            let o = (y * 256 + x) * 4;
+            [out[o], out[o + 1], out[o + 2]]
+        };
+        // Block (0,0): origin (0,0). Every pixel in 0..3 × 0..3 equals (0,0).
+        assert_eq!(at(2, 1), at(0, 0), "block (0,0) pixel snaps to origin");
+        assert_eq!(at(3, 3), at(0, 0), "block (0,0) corner snaps to origin");
+        // Block (4,0): origin (4,0).
+        assert_eq!(at(6, 3), at(4, 0), "block (4,0) pixel snaps to origin");
+        // Block (0,4): origin (0,4).
+        assert_eq!(at(1, 6), at(0, 4), "block (0,4) pixel snaps to origin");
+        // Different blocks resolve to different colors (snap actually moved color).
+        assert_ne!(at(2, 1), at(6, 3), "different blocks differ");
+        assert_ne!(at(2, 1), at(1, 6), "different blocks differ");
+        // And the snapped pixel is NOT its own un-snapped color (index at (2,1) is
+        // 1*8+2+1=11; origin index is 1 → colors differ).
+        assert_ne!(
+            at(2, 1),
+            {
+                let c = frame.cgram_rgba[11];
+                [
+                    expand_brightness(i32::from(c[0]), 15),
+                    expand_brightness(i32::from(c[1]), 15),
+                    expand_brightness(i32::from(c[2]), 15),
+                ]
+            },
+            "mosaic actually replaced the pixel's own color"
         );
     }
 

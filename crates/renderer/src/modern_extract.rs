@@ -703,6 +703,10 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
     modern.fixed_color_g = frame.fixed_color_g;
     modern.fixed_color_b = frame.fixed_color_b;
     modern.add_subscreen = frame.add_subscreen;
+    // SNES mosaic ($2106): per-BG enable bits + block size, for the mosaic path in
+    // the Mode-1 compositor (matches the classic bg_layer.wgsl source-snap).
+    modern.mosaic_enabled = frame.mosaic_enabled;
+    modern.mosaic_size = frame.mosaic_size;
     // Color-window registers + per-scanline boundaries for the full software path
     // (mirrors the GPU post-process color-math window gating).
     modern.clip_mode = frame.clip_mode;

@@ -45,6 +45,11 @@ pub struct ModernFrame {
     /// `1<<L`, OBJ = `0x10`), matching the classic per-scanline TM check. Default
     /// `0xff` = all enabled (no gating) so unit frames are unaffected.
     pub main_tm_scanlines: Vec<u8>,
+    /// SNES mosaic enable bits (MOSAIC/$2106 low nibble): bit L = BG layer L mosaiced.
+    /// Default 0 (no layer mosaiced) so normal frames take the non-mosaic path.
+    pub mosaic_enabled: u8,
+    /// SNES mosaic block size N (1..16; N<=1 means mosaic off). Default 1.
+    pub mosaic_size: u8,
 }
 
 impl ModernFrame {
@@ -78,6 +83,8 @@ impl ModernFrame {
             windowsel_cm: 0,
             window_scanlines: vec![[0u8; 4]; usize::from(MODERN_FRAME_HEIGHT)],
             main_tm_scanlines: vec![0xff; usize::from(MODERN_FRAME_HEIGHT)],
+            mosaic_enabled: 0,
+            mosaic_size: 1,
         }
     }
 }
