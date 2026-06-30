@@ -720,6 +720,13 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
             sl.window2_right,
         ];
     }
+    for (dst, sl) in modern
+        .main_tm_scanlines
+        .iter_mut()
+        .zip(frame.scanlines.iter())
+    {
+        *dst = sl.screen_enabled_main;
+    }
     modern
 }
 

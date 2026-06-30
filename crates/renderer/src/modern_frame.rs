@@ -40,6 +40,11 @@ pub struct ModernFrame {
     /// Per-scanline color-window boundaries `[w1_left, w1_right, w2_left, w2_right]`
     /// (column indices, inclusive), 224 entries. Mirrors the GPU post-process pass.
     pub window_scanlines: Vec<[u8; 4]>,
+    /// Per-scanline main-screen layer-enable (TM/$212C, HDMA-captured), 224 entries.
+    /// A main BG/OBJ pixel shows only if its scanline has the layer bit set (BG L =
+    /// `1<<L`, OBJ = `0x10`), matching the classic per-scanline TM check. Default
+    /// `0xff` = all enabled (no gating) so unit frames are unaffected.
+    pub main_tm_scanlines: Vec<u8>,
 }
 
 impl ModernFrame {
@@ -72,6 +77,7 @@ impl ModernFrame {
             prevent_math_mode: 0,
             windowsel_cm: 0,
             window_scanlines: vec![[0u8; 4]; usize::from(MODERN_FRAME_HEIGHT)],
+            main_tm_scanlines: vec![0xff; usize::from(MODERN_FRAME_HEIGHT)],
         }
     }
 }

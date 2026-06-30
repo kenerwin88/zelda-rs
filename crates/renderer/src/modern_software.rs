@@ -218,6 +218,11 @@ fn composite_mode1(
     bg_cells: &[ModernIndexTile],
     sprite_cells: &[ModernIndexTile],
     enabled: u8,
+    // Per-scanline main-screen TM (HDMA layer-enable). `Some` for the main screen:
+    // a pixel on scanline y only shows if `tm[y]` has the layer bit (BG L = 1<<L,
+    // OBJ = 0x10), matching the classic per-scanline TM check. `None` for the sub
+    // screen (classic skips the per-scanline TM check there).
+    main_tm: Option<&[u8]>,
 ) {
     let bg_on = |i: usize| (enabled >> i) & 1 != 0;
     let obj_on = (enabled >> 4) & 1 != 0;
@@ -234,38 +239,38 @@ fn composite_mode1(
     };
     // BG3-lo
     if bg_on(2) {
-        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, false);
+        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, false, main_tm);
     }
     // OBJ priority 0, 1 (below BG2/BG1 low)
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 0);
-        paint_obj_priority(screen, o, 1);
+        paint_obj_priority(screen, o, 0, main_tm);
+        paint_obj_priority(screen, o, 1, main_tm);
     }
     // BG2-lo, BG1-lo
     if bg_on(1) {
-        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, false);
+        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, false, main_tm);
     }
     if bg_on(0) {
-        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, false);
+        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, false, main_tm);
     }
     // OBJ priority 2 (above BG2/BG1 low)
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 2);
+        paint_obj_priority(screen, o, 2, main_tm);
     }
     // BG2-hi, BG1-hi
     if bg_on(1) {
-        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, true);
+        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, true, main_tm);
     }
     if bg_on(0) {
-        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, true);
+        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, true, main_tm);
     }
     // OBJ priority 3 (above BG2/BG1 high)
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 3);
+        paint_obj_priority(screen, o, 3, main_tm);
     }
     // BG3-hi
     if bg_on(2) {
-        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, true);
+        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, true, main_tm);
     }
 }
 
@@ -325,9 +330,16 @@ fn resolve_obj_layer(frame: &ModernFrame, sprite_cells: &[ModernIndexTile], len:
 /// Paint the resolved OBJ pixels whose priority attribute equals `prio` into the
 /// screen (REPLACE). Called at the matching Mode-1 z-slot so OBJ-vs-BG layering
 /// follows the priority attribute while OBJ-vs-OBJ stays index-ordered.
-fn paint_obj_priority(screen: &mut Screen, obj: &ObjLayer, prio: u8) {
+fn paint_obj_priority(screen: &mut Screen, obj: &ObjLayer, prio: u8, main_tm: Option<&[u8]>) {
+    let width = usize::from(MODERN_FRAME_WIDTH);
     for i in 0..obj.real.len() {
         if obj.real[i] && obj.prio[i] == prio {
+            // Per-scanline OBJ enable (TM bit 4) for the main screen.
+            if let Some(tm) = main_tm {
+                if tm[i / width] & 0x10 == 0 {
+                    continue;
+                }
+            }
             screen.c5[i] = obj.c5[i];
             screen.bit[i] = obj.bit[i];
             screen.real[i] = true;
@@ -346,9 +358,11 @@ fn composite_index_tiles_c5(
     cells: &[ModernIndexTile],
     frame: &ModernFrame,
     hi_priority: bool,
+    main_tm: Option<&[u8]>,
 ) {
     let width = usize::from(MODERN_FRAME_WIDTH);
     let bit = layer.index;
+    let tm_bit = 1u8 << bit; // TM enable bit for this BG layer
     for inst in &layer.index_tiles {
         if inst.priority != hi_priority {
             continue;
@@ -367,6 +381,12 @@ fn composite_index_tiles_c5(
                 let dst_y = inst.screen_y + sy as i16;
                 if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
                     continue;
+                }
+                // Per-scanline BG-layer enable (TM) for the main screen.
+                if let Some(tm) = main_tm {
+                    if tm[dst_y as usize] & tm_bit == 0 {
+                        continue;
+                    }
                 }
                 let color = frame.cgram_rgba[inst.palette as usize * 16 + index as usize];
                 let i = dst_y as usize * width + dst_x as usize;
@@ -471,9 +491,11 @@ pub fn render_modern_frame_full(
         bg_cells,
         sprite_cells,
         frame.screen_enabled_main,
+        Some(&frame.main_tm_scanlines),
     );
 
-    // SUB composite: same Mode 1 z-order over the sub-screen enable mask.
+    // SUB composite: same Mode 1 z-order over the sub-screen enable mask. The sub
+    // screen skips the per-scanline TM check (matching the classic renderer).
     let mut sub = Screen::new(backdrop_c5, len);
     composite_mode1(
         &mut sub,
@@ -481,6 +503,7 @@ pub fn render_modern_frame_full(
         bg_cells,
         sprite_cells,
         frame.screen_enabled_sub,
+        None,
     );
 
     // `rendered_subscreen`: is there ANY sub composite (BG1-4 or OBJ on sub)?
