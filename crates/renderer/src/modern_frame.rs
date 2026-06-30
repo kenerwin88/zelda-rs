@@ -63,6 +63,13 @@ pub struct ModernFrame {
     pub mosaic_enabled: u8,
     /// SNES mosaic block size N (1..16; N<=1 means mosaic off). Default 1.
     pub mosaic_size: u8,
+    /// Per-scanline BG scroll captured after HDMA (mirrors the classic GPU's
+    /// `bg_layer.wgsl` `scanline_scroll`): 224 entries, each `[[h, v]; 4]` indexed by
+    /// BG layer 0-3. Empty = "no per-scanline data" → the compositor takes the fast
+    /// path that bakes a single scroll into each tile's `screen_x`/`screen_y`. When a
+    /// layer's per-scanline scroll varies from its base `scroll_x`/`scroll_y`, the
+    /// Mode-1 compositor re-samples that layer per output row (the pyramid HDMA wave).
+    pub bg_scroll_scanlines: Vec<[[u16; 2]; 4]>,
 }
 
 impl ModernFrame {
@@ -101,6 +108,7 @@ impl ModernFrame {
             main_tm_scanlines: vec![0xff; usize::from(MODERN_FRAME_HEIGHT)],
             mosaic_enabled: 0,
             mosaic_size: 1,
+            bg_scroll_scanlines: Vec::new(),
         }
     }
 }
@@ -112,6 +120,11 @@ pub struct ModernBgLayer {
     pub enabled_sub: bool,
     pub scroll_x: u16,
     pub scroll_y: u16,
+    /// BG tilemap pixel dimensions (the SNES scroll torus period): 256 for a 32-tile
+    /// map, 512 for a wide/tall (64-tile) map. Used by the per-scanline-scroll
+    /// compositor to wrap-sample the layer. Default 256.
+    pub wrap_w: u16,
+    pub wrap_h: u16,
     pub tiles: Vec<ModernTileInstance>,
     pub index_tiles: Vec<ModernIndexTileInstance>,
     pub blend_mode: ModernBlendMode,
@@ -125,6 +138,8 @@ impl ModernBgLayer {
             enabled_sub: false,
             scroll_x: 0,
             scroll_y: 0,
+            wrap_w: 256,
+            wrap_h: 256,
             tiles: Vec::new(),
             index_tiles: Vec::new(),
             blend_mode: ModernBlendMode::Opaque,

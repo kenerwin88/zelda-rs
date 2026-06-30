@@ -240,6 +240,29 @@ fn composite_mode1(
     let bg_on = |i: usize| (enabled >> i) & 1 != 0;
     let obj_on = (enabled >> 4) & 1 != 0;
     let bg = &frame.bg_layers;
+    // Per-scanline HDMA BG scroll: if any ENABLED BG layer's per-scanline scroll
+    // differs from its baked base scroll, that layer must be re-sampled per output
+    // row (the classic GPU's `scanline_scroll`; e.g. the pyramid HDMA wave). Detect
+    // here; if NONE vary, fall through to the existing fast path UNCHANGED (so normal
+    // frames stay byte-for-byte identical and the parity gate is preserved).
+    let scroll_layers = [
+        bg_on(0) && bg_layer_scroll_varies(frame, 0),
+        bg_on(1) && bg_layer_scroll_varies(frame, 1),
+        bg_on(2) && bg_layer_scroll_varies(frame, 2),
+    ];
+    if scroll_layers.iter().any(|&v| v) {
+        composite_mode1_scanline_scroll(
+            screen,
+            frame,
+            bg_cells,
+            sprite_cells,
+            enabled,
+            main_tm,
+            windowed,
+            scroll_layers,
+        );
+        return;
+    }
     // Resolve OBJ-vs-OBJ FIRST, by OAM index (lowest index wins) — NOT by the
     // priority attribute. The SNES priority attribute (0-3) only sets where the
     // winning OBJ pixel sits relative to BG layers; it does NOT reorder sprites
@@ -443,6 +466,193 @@ fn composite_mode1_mosaic(
     }
 
     // OBJ resolved once (sprites are not mosaiced), same as the non-mosaic path.
+    let obj = if obj_on {
+        Some(resolve_obj_layer(frame, sprite_cells, len))
+    } else {
+        None
+    };
+
+    // Mode-1 z-order: BG3-lo, OBJ0, OBJ1, BG2-lo, BG1-lo, OBJ2, BG2-hi, BG1-hi,
+    // OBJ3, BG3-hi.
+    if let Some(b) = &bufs[2] {
+        paint_bg_buf(screen, b, 2, false, main_tm, frame, windowed);
+    }
+    if let Some(o) = &obj {
+        paint_obj_priority(screen, o, 0, main_tm, frame, windowed);
+        paint_obj_priority(screen, o, 1, main_tm, frame, windowed);
+    }
+    if let Some(b) = &bufs[1] {
+        paint_bg_buf(screen, b, 1, false, main_tm, frame, windowed);
+    }
+    if let Some(b) = &bufs[0] {
+        paint_bg_buf(screen, b, 0, false, main_tm, frame, windowed);
+    }
+    if let Some(o) = &obj {
+        paint_obj_priority(screen, o, 2, main_tm, frame, windowed);
+    }
+    if let Some(b) = &bufs[1] {
+        paint_bg_buf(screen, b, 1, true, main_tm, frame, windowed);
+    }
+    if let Some(b) = &bufs[0] {
+        paint_bg_buf(screen, b, 0, true, main_tm, frame, windowed);
+    }
+    if let Some(o) = &obj {
+        paint_obj_priority(screen, o, 3, main_tm, frame, windowed);
+    }
+    if let Some(b) = &bufs[2] {
+        paint_bg_buf(screen, b, 2, true, main_tm, frame, windowed);
+    }
+}
+
+/// True when BG `layer`'s per-scanline scroll (HDMA-captured `bg_scroll_scanlines`)
+/// differs from its baked base `scroll_x`/`scroll_y` on any scanline. When false the
+/// layer is uniform and the fast (single-baked-scroll) compositor path is exact.
+fn bg_layer_scroll_varies(frame: &ModernFrame, layer: usize) -> bool {
+    if frame.bg_scroll_scanlines.is_empty() {
+        return false;
+    }
+    let base_h = frame.bg_layers[layer].scroll_x;
+    let base_v = frame.bg_layers[layer].scroll_y;
+    frame
+        .bg_scroll_scanlines
+        .iter()
+        .any(|sl| sl[layer][0] != base_h || sl[layer][1] != base_v)
+}
+
+/// Render one BG layer into a FULL-TORUS buffer (`bg_w` x `bg_h`, the SNES scroll
+/// wrap period), so it can be re-sampled per scanline with an arbitrary scroll. The
+/// baked tile `screen_x`/`screen_y` are the canonical wrapped positions for the base
+/// scroll (range `[-(bg_w-256), 256)` x `[-(bg_h-224), 224)`); they map to torus
+/// index `(screen + off)` with `off = (bg_w-256, bg_h-224)`, and per-pixel wrap
+/// (`rem_euclid`) tiles the torus seamlessly. A torus column `bx` represents tilemap
+/// world pixel `(bx - off_x + base_h) mod bg_w`; row `by` likewise (incl. the SNES
+/// +1 vertical fetch already baked into `screen_y`).
+fn render_bg_layer_torus(
+    layer: &crate::modern_frame::ModernBgLayer,
+    cells: &[ModernIndexTile],
+    frame: &ModernFrame,
+    bg_w: usize,
+    bg_h: usize,
+) -> BgBuf {
+    let len = bg_w * bg_h;
+    let mut buf = BgBuf {
+        c5: vec![[0u8; 3]; len],
+        real: vec![false; len],
+        hipri: vec![false; len],
+    };
+    let off_x = (bg_w as i32) - 256;
+    let off_y = (bg_h as i32) - 224;
+    for inst in &layer.index_tiles {
+        let cell = match cells.get(inst.cell_id as usize) {
+            Some(c) => c,
+            None => continue,
+        };
+        let bx0 = i32::from(inst.screen_x) + off_x;
+        let by0 = i32::from(inst.screen_y) + off_y;
+        for sy in 0..8i32 {
+            for sx in 0..8i32 {
+                let index = cell.indices[(sy * 8 + sx) as usize];
+                if index == 0 {
+                    continue;
+                }
+                let bx = (bx0 + sx).rem_euclid(bg_w as i32) as usize;
+                let by = (by0 + sy).rem_euclid(bg_h as i32) as usize;
+                let color = frame.cgram_rgba[inst.palette as usize * 16 + index as usize];
+                let i = by * bg_w + bx;
+                buf.c5[i] = [color[0] >> 3, color[1] >> 3, color[2] >> 3];
+                buf.real[i] = true;
+                buf.hipri[i] = inst.priority;
+            }
+        }
+    }
+    buf
+}
+
+/// Re-sample a full-torus BG buffer into a 256x224 screen-space [`BgBuf`], applying
+/// each output row's per-scanline scroll DELTA relative to the layer's base scroll.
+/// This is the modern equivalent of the classic `bg_layer.wgsl`, which samples each
+/// output scanline at `(x + h_scroll[sy], sy + 1 + v_scroll[sy])`: with the base
+/// scroll already baked into the torus, output `(x, sy)` reads torus index
+/// `((x + dh + off_x) mod bg_w, (sy + dv + off_y) mod bg_h)`, `dh/dv` the per-row
+/// scroll minus base.
+fn sample_scanline_scroll(
+    torus: &BgBuf,
+    frame: &ModernFrame,
+    layer: usize,
+    bg_w: usize,
+    bg_h: usize,
+) -> BgBuf {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    let height = usize::from(MODERN_FRAME_HEIGHT);
+    let len = width * height;
+    let mut out = BgBuf {
+        c5: vec![[0u8; 3]; len],
+        real: vec![false; len],
+        hipri: vec![false; len],
+    };
+    let base_h = i32::from(frame.bg_layers[layer].scroll_x);
+    let base_v = i32::from(frame.bg_layers[layer].scroll_y);
+    let off_x = (bg_w as i32) - 256;
+    let off_y = (bg_h as i32) - 224;
+    for sy in 0..height {
+        let (dh, dv) = match frame.bg_scroll_scanlines.get(sy) {
+            Some(sl) => (
+                i32::from(sl[layer][0]) - base_h,
+                i32::from(sl[layer][1]) - base_v,
+            ),
+            None => (0, 0),
+        };
+        let by = (sy as i32 + dv + off_y).rem_euclid(bg_h as i32) as usize;
+        for x in 0..width {
+            let bx = (x as i32 + dh + off_x).rem_euclid(bg_w as i32) as usize;
+            let ti = by * bg_w + bx;
+            let oi = sy * width + x;
+            out.c5[oi] = torus.c5[ti];
+            out.real[oi] = torus.real[ti];
+            out.hipri[oi] = torus.hipri[ti];
+        }
+    }
+    out
+}
+
+/// Per-scanline-scroll variant of [`composite_mode1`]: BG layers flagged in
+/// `scroll_layers` are wrap-sampled per output row (HDMA scroll); the rest use the
+/// plain baked-scroll per-layer buffer (identical to the direct fast path). Composited
+/// in the SAME Mode-1 z-order as [`composite_mode1_mosaic`], with the same TM/window
+/// gates via [`paint_bg_buf`]/[`paint_obj_priority`]. Mosaic is handled by its own
+/// path; this runs only when mosaic is inactive.
+#[allow(clippy::too_many_arguments)]
+fn composite_mode1_scanline_scroll(
+    screen: &mut Screen,
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+    sprite_cells: &[ModernIndexTile],
+    enabled: u8,
+    main_tm: Option<&[u8]>,
+    windowed: u8,
+    scroll_layers: [bool; 3],
+) {
+    let bg_on = |i: usize| (enabled >> i) & 1 != 0;
+    let obj_on = (enabled >> 4) & 1 != 0;
+    let bg = &frame.bg_layers;
+    let len = screen.c5.len();
+
+    let mut bufs: [Option<BgBuf>; 3] = [None, None, None];
+    for l in 0..3usize {
+        if !bg_on(l) {
+            continue;
+        }
+        let buf = if scroll_layers[l] {
+            let bg_w = usize::from(bg[l].wrap_w).max(256);
+            let bg_h = usize::from(bg[l].wrap_h).max(224);
+            let torus = render_bg_layer_torus(&bg[l], bg_cells, frame, bg_w, bg_h);
+            sample_scanline_scroll(&torus, frame, l, bg_w, bg_h)
+        } else {
+            render_bg_layer_buf(&bg[l], bg_cells, frame, len)
+        };
+        bufs[l] = Some(buf);
+    }
+
     let obj = if obj_on {
         Some(resolve_obj_layer(frame, sprite_cells, len))
     } else {
@@ -942,6 +1152,70 @@ mod tests {
                 priority: false,
             });
         (frame, cells)
+    }
+
+    /// Per-scanline HDMA BG scroll: a layer whose `bg_scroll_scanlines` differs from
+    /// its base scroll is re-sampled PER OUTPUT ROW. Two adjacent BG1 tiles (A at
+    /// x0-7, B at x8-15); row 0 carries h-scroll +8 (so it samples 8px right → B),
+    /// row 1 carries the base scroll (+0 → A). The same scene must therefore render a
+    /// DIFFERENT pixel at column 0 on the two rows, proving the shift is per-scanline
+    /// and that uniform rows still match the fast path.
+    #[test]
+    fn per_scanline_scroll_shifts_each_row_independently() {
+        let mut indices = [0u8; 64];
+        for v in indices.iter_mut() {
+            *v = 1; // fully opaque 8x8 tile
+        }
+        let cells = vec![ModernIndexTile { id: 0, indices }];
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.brightness = 15;
+        frame.screen_enabled_main = 0x01; // BG1 on main, no color math
+        // A = red (palette 0), B = green (palette 1).
+        frame.cgram_rgba[1] = [20 << 3, 0, 0, 0xff];
+        frame.cgram_rgba[16 + 1] = [0, 20 << 3, 0, 0xff];
+        let bg1 = &mut frame.bg_layers[0];
+        bg1.scroll_x = 0;
+        bg1.scroll_y = 0;
+        bg1.wrap_w = 256;
+        bg1.wrap_h = 256;
+        bg1.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        bg1.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 8,
+            screen_y: 0,
+            palette: 1,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        // Per-scanline scroll: row 0 = h+8 (samples B at column 0), all others = base.
+        let mut scan = vec![[[0u16; 2]; 4]; usize::from(MODERN_FRAME_HEIGHT)];
+        scan[0][0] = [8, 0];
+        frame.bg_scroll_scanlines = scan;
+
+        let out = render_modern_frame_full(&frame, &cells, &[]);
+        // c5 20, brightness 15 → (20<<3)|(20>>2) = 165.
+        let row0 = (0 * 256 + 0) * 4;
+        let row1 = (1 * 256 + 0) * 4;
+        assert_eq!(
+            &out[row0..row0 + 3],
+            &[0, 165, 0],
+            "row 0 (+8 h-scroll) samples tile B (green) at column 0"
+        );
+        assert_eq!(
+            &out[row1..row1 + 3],
+            &[165, 0, 0],
+            "row 1 (base scroll) samples tile A (red) at column 0"
+        );
     }
 
     /// OBJ-vs-OBJ priority is by OAM INDEX (lowest wins), NOT the priority attribute.

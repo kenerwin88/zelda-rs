@@ -737,6 +737,26 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
     {
         *dst = sl.screen_enabled_main;
     }
+    // Per-scanline BG scroll (HDMA), mirroring the classic GPU's `scanline_scroll`
+    // uniform. Drives the per-output-row re-sample in the Mode-1 compositor for BG
+    // layers whose scroll varies across scanlines (e.g. the pyramid HDMA wave).
+    modern.bg_scroll_scanlines = frame
+        .scanlines
+        .iter()
+        .map(|sl| {
+            let mut per_layer = [[0u16; 2]; 4];
+            for (l, slot) in per_layer.iter_mut().enumerate() {
+                *slot = [sl.bg_h_scroll[l], sl.bg_v_scroll[l]];
+            }
+            per_layer
+        })
+        .collect();
+    // Scroll-torus period per BG layer (256 for a 32-tile map, 512 for wide/tall),
+    // used by the per-scanline-scroll wrap-sampler.
+    for (l, layer) in modern.bg_layers.iter_mut().enumerate() {
+        layer.wrap_w = if frame.bg[l].tilemap_wider { 512 } else { 256 };
+        layer.wrap_h = if frame.bg[l].tilemap_higher { 512 } else { 256 };
+    }
     modern
 }
 
