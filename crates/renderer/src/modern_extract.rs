@@ -1009,9 +1009,8 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                             h = h.wrapping_mul(0x0100_0193);
                                         }
                                     }
-                                    let live_hash = (h ^ (h >> 24)) & 0x00ff_ffff;
-                                    let tag_hash =
-                                        (((pack as u32) << 8) | (tile_off as u32 & 0xff)) & 0xffffff;
+                                    let live_hash = h;
+                                    let tag_hash = ((pack as u32) << 16) | (tile_off as u32);
                                     if live_hash != tag_hash {
                                         dbg_stale += 1;
                                     }

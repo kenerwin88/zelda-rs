@@ -42,10 +42,14 @@ pub const CHR_KIND_BG_ANIM: u8 = 5;
 /// `(6<<24)|(hash&0xffffff)` with no special key path.
 pub const CHR_KIND_BG_STREAM: u8 = 6;
 
-/// FNV-1a 24-bit hash of the little-endian bytes of `words`. Deterministic and
+/// FNV-1a 32-bit hash of the little-endian bytes of `words`. Deterministic and
 /// identical for identical content (so identical streamed tiles dedup to one
-/// asset cell). Masked to 24 bits to fit the `(pack<<8)|tile_off` key payload.
-pub fn chr_content_hash24(words: &[u16]) -> u32 {
+/// asset cell). Full 32 bits round-trip losslessly through the
+/// `pack=hash>>16, tile_off=hash&0xffff` key split (see
+/// [`VramChrSourceTable::record_tile_content_hash`]) — a narrower hash space
+/// (e.g. 24-bit) hits real birthday-paradox collisions once enough distinct
+/// streamed patterns exist route-wide (~18.7k for dungeon BG_STREAM).
+pub fn chr_content_hash32(words: &[u16]) -> u32 {
     let mut h: u32 = 0x811c_9dc5;
     for &w in words {
         for b in [(w & 0xff) as u8, (w >> 8) as u8] {
@@ -53,7 +57,7 @@ pub fn chr_content_hash24(words: &[u16]) -> u32 {
             h = h.wrapping_mul(0x0100_0193);
         }
     }
-    (h ^ (h >> 24)) & 0x00ff_ffff
+    h
 }
 
 /// Link `tile_off` bit that distinguishes the two source buffers a Link CHR tile
@@ -140,18 +144,15 @@ impl VramChrSourceTable {
         self.record_tiles(start_word, num_tiles, kind, pack);
     }
 
-    /// Tag a single CHR slot with a content hash (see [`chr_content_hash24`]),
-    /// splitting the 24-bit hash into `pack=(hash>>8)&0xffff`, `tile_off=hash&0xff`.
-    pub fn record_tile_content_hash(&mut self, slot: usize, kind: u8, hash24: u32) {
-        // Bits 24+ would be silently dropped from `pack`, aliasing keys — the exact
-        // stale/wrong-tag failure this tagging exists to eliminate. Callers pass
-        // `chr_content_hash24` output (already 24-bit); assert it loudly in debug.
-        debug_assert!(hash24 >> 24 == 0, "hash24 must be 24-bit, got {hash24:#010x}");
+    /// Tag a single CHR slot with a content hash (see [`chr_content_hash32`]),
+    /// splitting the full 32-bit hash into `pack=hash>>16`, `tile_off=hash&0xffff`
+    /// — a lossless round-trip (both fields are u16).
+    pub fn record_tile_content_hash(&mut self, slot: usize, kind: u8, hash32: u32) {
         if slot < self.entries.len() {
             self.entries[slot] = LogicalChrSrc {
                 kind,
-                pack: ((hash24 >> 8) & 0xffff) as u16,
-                tile_off: (hash24 & 0xff) as u16,
+                pack: (hash32 >> 16) as u16,
+                tile_off: (hash32 & 0xffff) as u16,
             };
         }
     }
@@ -196,23 +197,21 @@ mod bg_stream_tests {
         let b = [0x1234u16; 16];
         let c = [0x1235u16, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234,
                  0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234];
-        assert_eq!(chr_content_hash24(&a), chr_content_hash24(&b));
-        assert_ne!(chr_content_hash24(&a), chr_content_hash24(&c));
-        assert_eq!(chr_content_hash24(&a) & 0xff00_0000, 0, "must be 24-bit");
+        assert_eq!(chr_content_hash32(&a), chr_content_hash32(&b));
+        assert_ne!(chr_content_hash32(&a), chr_content_hash32(&c));
     }
 
     #[test]
     fn record_tile_content_hash_round_trips_through_key_split() {
         let mut t = VramChrSourceTable::default();
-        let hash = 0x00ab_cdefu32;
+        let hash = 0xabcd_ef12u32;
         t.record_tile_content_hash(3, CHR_KIND_BG_STREAM, hash);
         let e = t.get(3);
         assert_eq!(e.kind, CHR_KIND_BG_STREAM);
-        // pack = hash>>8 & 0xffff, tile_off = hash & 0xff
+        // pack = hash>>16, tile_off = hash&0xffff (lossless: both fields are u16)
         assert_eq!(e.pack, 0xabcd);
-        assert_eq!(e.tile_off, 0xef);
-        // reconstruct the 24-bit hash from the stored fields
-        let recon = ((e.pack as u32) << 8) | (e.tile_off as u32);
+        assert_eq!(e.tile_off, 0xef12);
+        let recon = ((e.pack as u32) << 16) | (e.tile_off as u32);
         assert_eq!(recon, hash);
     }
 }

@@ -7,8 +7,13 @@
 //! VRAM slot up in the M1 source table to obtain `{kind, pack, tile_off}`, then
 //! resolves the cell here — never reading VRAM pixel content.
 //!
-//! The lookup key matches the M2 dump exactly. For most kinds:
-//! `key = (kind << 24) | (pack << 8) | (tile_off & 0xff)`.
+//! The lookup key matches the M2 dump exactly. For most kinds it carries the
+//! FULL `pack`/`tile_off` u16 fields losslessly (needed for content-hash kinds
+//! — BG_STREAM/sprite — whose `tile_off` is hash payload, not a small index;
+//! truncating to 8 bits collapsed the hash to 24 effective bits and produced
+//! real birthday-paradox collisions once enough distinct patterns existed
+//! route-wide):
+//! `key = (kind << 32) | (pack << 16) | tile_off` (u64).
 //!
 //! Link (kind 3) is the exception: a Link pose's CHR tiles are not injective by
 //! `(pack, relative-tile)` — several DMA pieces of the same pose each restart
@@ -16,8 +21,9 @@
 //! Link tile by its *source identity* (the tile offset within the buffer it was
 //! DMA'd from, plus a 1-bit asset-vs-WRAM buffer flag); see
 //! `chr_source::CHR_LINK_SRC_RAM_FLAG`. That needs a wider `tile_off` field, so
-//! the Link key carries 14 bits of `tile_off` and a 10-bit `pack`:
-//! `key = (3 << 24) | ((pack & 0x3ff) << 14) | (tile_off & 0x3fff)`.
+//! the Link key carries 14 bits of `tile_off` and a 10-bit `pack`, in a lower
+//! bit range than the non-Link `kind << 32` keys (no collision risk between the
+//! two namespaces): `key = (3 << 24) | ((pack & 0x3ff) << 14) | (tile_off & 0x3fff)`.
 
 use crate::modern_index_atlas::ModernIndexTile;
 use serde::Deserialize;
@@ -29,20 +35,20 @@ use std::path::Path;
 const CHR_KIND_LINK: u8 = 3;
 
 /// Build the M2 lookup key from a logical CHR source triple.
-pub fn modern_source_key(kind: u8, pack: u16, tile_off: u16) -> u32 {
+pub fn modern_source_key(kind: u8, pack: u16, tile_off: u16) -> u64 {
     if kind == CHR_KIND_LINK {
         // Link: source-identity key — 10-bit pack + 14-bit `tile_off`
         // (buffer flag + per-buffer source tile index). See module docs.
-        ((kind as u32) << 24) | (((pack as u32) & 0x3ff) << 14) | ((tile_off as u32) & 0x3fff)
+        ((kind as u64) << 24) | (((pack as u64) & 0x3ff) << 14) | ((tile_off as u64) & 0x3fff)
     } else {
-        ((kind as u32) << 24) | ((pack as u32) << 8) | ((tile_off as u32) & 0xff)
+        ((kind as u64) << 32) | ((pack as u64) << 16) | (tile_off as u64)
     }
 }
 
 /// Atlas of unique palette-agnostic 8x8 cells keyed by logical CHR source.
 pub struct ModernSourceAtlas {
     pub cells: Vec<ModernIndexTile>,
-    key_to_cell: HashMap<u32, usize>,
+    key_to_cell: HashMap<u64, usize>,
 }
 
 /// Resolve the cell for a logical CHR source `{kind, pack, tile_off}`.
@@ -83,7 +89,7 @@ pub fn load_modern_source_atlas(repo_root: &Path) -> Result<ModernSourceAtlas, S
     }
 
     let mut cells = Vec::with_capacity(manifest.cells.len());
-    let mut key_to_cell: HashMap<u32, usize> = HashMap::new();
+    let mut key_to_cell: HashMap<u64, usize> = HashMap::new();
 
     for cell_json in &manifest.cells {
         let offset = cell_json.id as usize * 64;
@@ -128,7 +134,7 @@ impl ModernSourceAtlas {
         cells: Vec<ModernIndexTile>,
         keys: &[(u8, u16, u16, usize)],
     ) -> Self {
-        let mut key_to_cell = HashMap::new();
+        let mut key_to_cell: HashMap<u64, usize> = HashMap::new();
         for &(kind, pack, tile_off, cell_idx) in keys {
             key_to_cell.insert(modern_source_key(kind, pack, tile_off), cell_idx);
         }
@@ -145,18 +151,20 @@ mod tests {
 
     #[test]
     fn source_key_matches_m2_layout() {
-        // Non-Link: key = (kind<<24)|(pack<<8)|(tile_off&0xff); tile_off low 8 bits.
-        assert_eq!(modern_source_key(1, 30, 44), 16784940);
-        assert_eq!(modern_source_key(2, 8, 41), 33556521);
-        // Non-Link tile_off high bits are dropped (only low 8 bits keyed).
-        assert_eq!(
+        // Non-Link: key = (kind<<32)|(pack<<16)|tile_off; FULL 16 bits of tile_off
+        // are kept (lossless — needed for content-hash kinds' hash payload).
+        assert_eq!(modern_source_key(1, 30, 44), (1u64 << 32) | (30 << 16) | 44);
+        assert_eq!(modern_source_key(2, 8, 41), (2u64 << 32) | (8 << 16) | 41);
+        // Non-Link tile_off high bits are NOT dropped (full 16 bits keyed).
+        assert_ne!(
             modern_source_key(1, 5, 0x107),
             modern_source_key(1, 5, 0x07)
         );
-        // Link (kind 3): 10-bit pack (bits 14-23) + 14-bit tile_off (bits 0-13).
+        // Link (kind 3): 10-bit pack (bits 14-23) + 14-bit tile_off (bits 0-13),
+        // in a lower bit range than non-Link's `kind<<32` keys.
         assert_eq!(
             modern_source_key(3, 5, 0x2103),
-            (3 << 24) | (5 << 14) | 0x2103
+            (3u64 << 24) | (5 << 14) | 0x2103
         );
         // Link tile_off keeps 14 bits (buffer flag + index), so 0x107 != 0x07.
         assert_ne!(
