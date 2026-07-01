@@ -884,6 +884,13 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
 /// Returns a `256 * 224 * 4` RGBA buffer in R,G,B,A byte order (the same layout the
 /// offscreen compare hashes against the classic renderer).
 pub fn render_modern_frame_full_from_vram(frame: &GpuFrame<'_>) -> Vec<u8> {
+    // Mode 7 (affine BG, e.g. the map screen) isn't a Mode-1 tilemap; the dedicated
+    // CPU Mode-7 compositor handles it. This is the single live entry point
+    // (`Renderer::render_modern_frame`) as well as the compare's `via=vram` path, so
+    // branching here fixes both.
+    if frame.mode == 7 {
+        return crate::modern_software::render_modern_mode7_frame(frame);
+    }
     let (mut modern, bg_cells) = extract_modern_frame_from_vram(frame);
     let (sprite_cells, sprites) = extract_modern_sprites_from_vram(frame);
     modern.index_sprites = sprites;
