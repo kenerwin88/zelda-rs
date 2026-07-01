@@ -1010,6 +1010,19 @@ pub fn render_modern_frame_full(
         frame.screen_windowed_sub,
     );
 
+    finalize_frame(&main, &sub, frame)
+}
+
+/// Shared color-math + master-brightness resolve for a composited MAIN/SUB screen
+/// pair, byte-identical to the classic post-process shader. Also emits the
+/// `ZELDA3_BITMAP` winning-layer diagnostic for the main screen. Used by both the
+/// Mode-1 (`render_modern_frame_full`) and Mode-7 (`render_modern_mode7_frame`)
+/// compositors so they share one finalize path.
+fn finalize_frame(main: &Screen, sub: &Screen, frame: &ModernFrame) -> Vec<u8> {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    let len = main.c5.len();
+    let mut out = vec![0u8; len * 4];
+
     // `rendered_subscreen`: is there ANY sub composite (BG1-4 or OBJ on sub)?
     let rendered_subscreen = (frame.screen_enabled_sub & 0x1f) != 0;
     let fixed = [
@@ -1097,6 +1110,203 @@ pub fn render_modern_frame_full(
     }
 
     out
+}
+
+// --- Mode 7 (affine BG) software path ---------------------------------------
+// CPU port of `mode7.wgsl`, sharing the modern OBJ + color-math + brightness
+// machinery. Used for the map screen (module 14, PPU mode 7), which the Mode-1
+// compositor cannot render. The Mode-7 BG decodes from live VRAM (its CHR is a
+// single affine field, not a reusable atlas asset — same VRAM-decode precedent as
+// BG3/Link in the Mode-1 path).
+
+fn expand_m7_13(value: i32) -> i32 {
+    let masked = value & 0x1fff;
+    if masked & 0x1000 != 0 {
+        masked | -8192
+    } else {
+        masked
+    }
+}
+
+fn clip_m7_offset(value: i32) -> i32 {
+    if value & 0x2000 != 0 {
+        value | -1024
+    } else {
+        value & 1023
+    }
+}
+
+/// Resolve one Mode-7 BG pixel to a CGRAM index (0..255), or `None` if transparent
+/// (index 0) — byte-exact with `mode7.wgsl::fs_main`'s affine sample.
+fn mode7_bg_index(frame: &crate::gpu_frame::GpuFrame<'_>, sx: usize, sy: usize) -> Option<u8> {
+    let m7 = &frame.mode7;
+    let m = frame.scanlines[sy].mode7_matrix;
+    let (m0, m1, m2, m3) = (m[0] as i32, m[1] as i32, m[2] as i32, m[3] as i32);
+    let x_center = expand_m7_13(m[4] as i32);
+    let y_center = expand_m7_13(m[5] as i32);
+    let h_scroll = expand_m7_13(m[6] as i32);
+    let v_scroll = expand_m7_13(m[7] as i32);
+    let clipped_h = clip_m7_offset(h_scroll - x_center);
+    let clipped_v = clip_m7_offset(v_scroll - y_center);
+
+    let y = sy as i32 + 1;
+    let ry = if m7.y_flip { 255 - y } else { y };
+    let start_x =
+        (m0 * clipped_h & -64) + (m1 * ry & -64) + (m1 * clipped_v & -64) + (x_center << 8);
+    let start_y =
+        (m2 * clipped_h & -64) + (m3 * ry & -64) + (m3 * clipped_v & -64) + (y_center << 8);
+    let rx = if m7.x_flip { 255 - sx as i32 } else { sx as i32 };
+
+    let mut x_pos = (start_x + m0 * rx) >> 8;
+    let mut y_pos = (start_y + m2 * rx) >> 8;
+    let mut outside = x_pos < 0 || x_pos >= 1024 || y_pos < 0 || y_pos >= 1024;
+    x_pos &= 0x3ff;
+    y_pos &= 0x3ff;
+    if !m7.large_field {
+        outside = false;
+    }
+
+    let tile = if outside {
+        0u32
+    } else {
+        (frame
+            .vram
+            .get(((y_pos >> 3) * 128 + (x_pos >> 3)) as usize)
+            .copied()
+            .unwrap_or(0)
+            & 0xff) as u32
+    };
+    let pixel = if outside && !m7.char_fill {
+        0u32
+    } else {
+        ((frame
+            .vram
+            .get((tile * 64 + ((y_pos & 7) * 8 + (x_pos & 7)) as u32) as usize)
+            .copied()
+            .unwrap_or(0)
+            >> 8)
+            & 0xff) as u32
+    };
+    if pixel == 0 {
+        None
+    } else {
+        Some(pixel as u8)
+    }
+}
+
+/// Paint the Mode-7 BG (BG1) into `screen` (REPLACE). `main_tm`=Some enforces the
+/// per-scanline BG1 enable (main call, `layer_bit=1`); `None` skips it (sub call,
+/// `layer_bit=0`). Stamps math bit 0 (BG1).
+fn paint_mode7_bg(
+    screen: &mut Screen,
+    frame: &crate::gpu_frame::GpuFrame<'_>,
+    modern: &ModernFrame,
+    main_tm: Option<&[u8]>,
+    windowed: u8,
+) {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    let height = usize::from(MODERN_FRAME_HEIGHT);
+    for sy in 0..height {
+        if let Some(tm) = main_tm {
+            if tm[sy] & 0x01 == 0 {
+                continue; // BG1 disabled on this scanline
+            }
+        }
+        for sx in 0..width {
+            if layer_window_masks(
+                0,
+                modern.windowsel,
+                windowed,
+                sx as u32,
+                sy,
+                &modern.window_scanlines,
+            ) {
+                continue;
+            }
+            if let Some(pixel) = mode7_bg_index(frame, sx, sy) {
+                let color = modern.cgram_rgba[pixel as usize];
+                let i = sy * width + sx;
+                screen.c5[i] = [color[0] >> 3, color[1] >> 3, color[2] >> 3];
+                screen.bit[i] = 0; // BG1
+                screen.real[i] = true;
+            }
+        }
+    }
+}
+
+/// Full Mode-7 frame render: composites in the classic Mode-7 z-order
+/// (OBJ0 -> Mode7 BG -> OBJ1/2/3), then the shared color-math + brightness finalize.
+/// BG decodes from live VRAM; sprites via the live-VRAM OAM path.
+pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<u8> {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    let height = usize::from(MODERN_FRAME_HEIGHT);
+    let len = width * height;
+
+    let mut modern = crate::modern_extract::extract_modern_frame(frame);
+    modern.cgram_rgba = crate::modern_palette::cgram_words_to_rgba256(frame.cgram);
+    modern.backdrop_color_rgba =
+        crate::modern_palette::snes_cgram_to_rgba(*frame.cgram.first().unwrap_or(&0));
+
+    if modern.forced_blank {
+        let mut out = vec![0u8; len * 4];
+        for px in out.chunks_exact_mut(4) {
+            px.copy_from_slice(&[0, 0, 0, 0xff]);
+        }
+        return out;
+    }
+
+    let (sprite_cells, sprites) = crate::modern_extract::extract_modern_sprites_from_vram(frame);
+    modern.index_sprites = sprites;
+
+    let bd = &modern.backdrop_color_rgba;
+    let backdrop_c5 = [bd[0] >> 3, bd[1] >> 3, bd[2] >> 3];
+    let obj = resolve_obj_layer(&modern, &sprite_cells, len);
+
+    // MAIN: OBJ0 (behind BG) -> Mode7 BG -> OBJ 1..3 (matches render_mode7_frame).
+    let mut main = Screen::new(backdrop_c5, len);
+    paint_obj_priority(
+        &mut main,
+        &obj,
+        0,
+        Some(&modern.main_tm_scanlines),
+        &modern,
+        modern.screen_windowed_main,
+    );
+    paint_mode7_bg(
+        &mut main,
+        frame,
+        &modern,
+        Some(&modern.main_tm_scanlines),
+        modern.screen_windowed_main,
+    );
+    for prio in 1..=3 {
+        paint_obj_priority(
+            &mut main,
+            &obj,
+            prio,
+            Some(&modern.main_tm_scanlines),
+            &modern,
+            modern.screen_windowed_main,
+        );
+    }
+
+    // SUB: Mode7 BG (only if BG1 sub-enabled; no per-scanline TM) then OBJ 0..3.
+    let mut sub = Screen::new(backdrop_c5, len);
+    if modern.screen_enabled_sub & 0x01 != 0 {
+        paint_mode7_bg(&mut sub, frame, &modern, None, modern.screen_windowed_sub);
+    }
+    for prio in 0..=3 {
+        paint_obj_priority(
+            &mut sub,
+            &obj,
+            prio,
+            None,
+            &modern,
+            modern.screen_windowed_sub,
+        );
+    }
+
+    finalize_frame(&main, &sub, &modern)
 }
 
 #[cfg(test)]
