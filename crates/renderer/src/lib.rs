@@ -976,6 +976,13 @@ impl ArtSidecarConfig {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 struct ArtSidecarManifest {
     tiles: Vec<ArtSidecarTile>,
+    /// Path (relative to the manifest) to the 256×1 RGBA PNG holding the CGRAM the HD
+    /// override art was authored against. The shader recolors overrides as
+    /// `live_cgram[idx] * (override / reference_cgram[idx])`, so the reference lets HD
+    /// art track the runtime palette. Absent → detail-modulate falls back to a 1×1
+    /// placeholder (only matters once real overrides ship).
+    #[serde(default)]
+    reference_palette: Option<String>,
 }
 
 impl ArtSidecarManifest {
@@ -1022,6 +1029,10 @@ struct ArtSidecarRgbaAtlas {
     height: u32,
     rgba: Vec<u8>,
     lookup: Vec<ArtSidecarAtlasEntry>,
+    /// Reference CGRAM (256 × RGBA8 = 1024 bytes) the overrides were authored against,
+    /// carried through to `RgbaTileOverrideData` for detail-modulated recolor. Empty
+    /// when the manifest omits a reference palette.
+    reference_cgram: Vec<u8>,
 }
 
 impl ArtSidecarRgbaAtlas {
@@ -1061,12 +1072,11 @@ impl ArtSidecarRgbaAtlas {
             height: self.height,
             rgba: &self.rgba,
             lookup,
-            // TODO(hd-phase2): source the reference CGRAM (the palette the HD art was
-            // authored against) from the sidecar manifest / the assets-by-source
-            // reference-palette dump. Empty → 1×1 placeholder; the shader's
-            // detail-modulate path only matters once real HD overrides ship with a
-            // reference, so today's (no-override) parity runs are unaffected.
-            reference_cgram: &[],
+            // Sourced from the sidecar manifest's `reference_palette` (a 256×1 RGBA
+            // PNG). Empty when the manifest omits it → 1×1 placeholder (the shader's
+            // detail-modulate path only fires where an override tile exists, and
+            // today's parity runs load no sidecar at all).
+            reference_cgram: &self.reference_cgram,
         }
     }
 
@@ -1080,6 +1090,11 @@ impl ArtSidecarRgbaAtlas {
 struct ArtSidecarAssets {
     _manifest: Option<ArtSidecarManifest>,
     tiles: Vec<ArtSidecarTileAssets>,
+    /// The reference CGRAM (256 entries × RGBA8 = 1024 bytes) the HD overrides were
+    /// authored against, decoded from `manifest.reference_palette`. Empty when the
+    /// manifest omits it (or it fails to load) → the override recolor uses a 1×1
+    /// placeholder reference.
+    reference_cgram: Vec<u8>,
 }
 
 impl ArtSidecarAssets {
@@ -1101,9 +1116,12 @@ impl ArtSidecarAssets {
                             rgba: load_optional_sidecar_image(base_dir, tile.rgba.as_deref()),
                         })
                         .collect();
+                    let reference_cgram =
+                        load_reference_cgram(base_dir, manifest.reference_palette.as_deref());
                     Self {
                         _manifest: Some(manifest),
                         tiles,
+                        reference_cgram,
                     }
                 }
                 Err(err) => {
@@ -1173,7 +1191,41 @@ impl ArtSidecarAssets {
             height,
             rgba,
             lookup,
+            reference_cgram: self.reference_cgram.clone(),
         })
+    }
+}
+
+/// Decode the reference-palette PNG (expected 256×1 RGBA, the authoring CGRAM) into a
+/// flat 1024-byte RGBA8 buffer. Returns empty on any problem (absent path, load error,
+/// or wrong pixel count) so the detail-modulate path degrades to its 1×1 placeholder
+/// rather than mis-recoloring.
+fn load_reference_cgram(base_dir: &Path, path: Option<&str>) -> Vec<u8> {
+    let Some(path) = path else {
+        return Vec::new();
+    };
+    let resolved = base_dir.join(path);
+    match load_art_sidecar_image(&resolved) {
+        Ok(image) if (image.width * image.height) as usize == 256 && image.rgba.len() == 1024 => {
+            image.rgba
+        }
+        Ok(image) => {
+            eprintln!(
+                "ZELDA3_ART_SIDECARS reference_palette {} must be 256 RGBA pixels \
+                 (got {}×{}); ignoring",
+                resolved.display(),
+                image.width,
+                image.height
+            );
+            Vec::new()
+        }
+        Err(err) => {
+            eprintln!(
+                "failed to load ZELDA3_ART_SIDECARS reference_palette {}: {err}",
+                resolved.display()
+            );
+            Vec::new()
+        }
     }
 }
 
@@ -3344,6 +3396,7 @@ mod tests {
                     rgba: Some(second),
                 },
             ],
+            reference_cgram: Vec::new(),
         };
 
         let atlas = assets.build_rgba_override_atlas().unwrap();
@@ -3381,12 +3434,41 @@ mod tests {
     }
 
     #[test]
+    fn art_sidecar_reference_cgram_flows_through_to_override_data() {
+        let mut reference_cgram = vec![0u8; 1024];
+        reference_cgram[4..8].copy_from_slice(&[0x80, 0x80, 0x80, 0xff]); // slot 1
+        let assets = ArtSidecarAssets {
+            _manifest: None,
+            tiles: vec![ArtSidecarTileAssets {
+                tile: 0x20,
+                normal: None,
+                depth: None,
+                rgba: Some(ArtSidecarImage {
+                    width: 1,
+                    height: 1,
+                    rgba: vec![0x40, 0x40, 0x40, 0xff],
+                }),
+            }],
+            reference_cgram: reference_cgram.clone(),
+        };
+
+        let atlas = assets.build_rgba_override_atlas().unwrap();
+        // The reference palette is carried onto the atlas...
+        assert_eq!(atlas.reference_cgram, reference_cgram);
+        // ...and exposed to the GPU override data for detail-modulated recolor.
+        let lookup = atlas.lookup_texture_pixels();
+        let data = atlas.as_tile_override_data(&lookup);
+        assert_eq!(data.reference_cgram, reference_cgram.as_slice());
+    }
+
+    #[test]
     fn art_sidecar_rgba_atlas_reports_gpu_upload_layout() {
         let atlas = ArtSidecarRgbaAtlas {
             width: 3,
             height: 2,
             rgba: vec![0; 3 * 2 * 4],
             lookup: Vec::new(),
+            reference_cgram: Vec::new(),
         };
 
         assert_eq!(atlas.texture_extent().width, 3);
@@ -3417,6 +3499,7 @@ mod tests {
                     height: 2,
                 },
             ],
+            reference_cgram: Vec::new(),
         };
 
         let lookup = atlas.lookup_texture_pixels();
@@ -3475,6 +3558,7 @@ mod tests {
                 depth: None,
                 rgba: None,
             }],
+            reference_cgram: Vec::new(),
         };
 
         assert!(assets.build_rgba_override_atlas().is_none());
