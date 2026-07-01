@@ -32,6 +32,100 @@ fn obj_tile_screen_y(top_y: i32, sty: i32) -> i16 {
     (if y >= 224 { y - 256 } else { y }) as i16
 }
 
+/// Replicate the SNES per-scanline OBJ range/time-over limits (max 32 sprites and
+/// 34 tile-columns per scanline) EXACTLY as `sprite_renderer::resolve_obj_pixels`
+/// selects them, returning — per scanline 0..224 — the `(sprite_num, tile_left_x)`
+/// tile-columns that survive the budget and are therefore actually drawn.
+///
+/// The modern OBJ compositor is instance-based (one instance per 8×8 tile) and
+/// otherwise draws every sprite, so without this it renders sprites the real PPU
+/// drops on crowded scanlines (e.g. frame 198300: 33 sprites on lines 118-119 →
+/// classic drops sprite_num≥66, modern kept it → a 30px right-edge diff). Each
+/// emitted instance is gated per-row against this table via `row_mask`.
+fn compute_obj_drawn_tiles(frame: &GpuFrame<'_>) -> Vec<Vec<(u8, i16)>> {
+    let oam = frame.oam;
+    let obj = &frame.obj;
+    let extra = frame.extra_left_right as i32;
+    let mut drawn: Vec<Vec<(u8, i16)>> = vec![Vec::new(); 224];
+
+    for line in 1..=224i32 {
+        // +1 sentinels: 33 sprites / 35 tiles → the 33rd sprite and 35th tile are
+        // the ones that make the counter hit 0 and are NOT drawn (range/time over).
+        let mut sprites_left = 33i32;
+        let mut tiles_left = 35i32;
+        let mut sprites: Vec<(usize, i32, i32)> = Vec::with_capacity(34); // (sprite_num, x, size)
+
+        for sprite_num in 0..128usize {
+            let idx = sprite_num * 2;
+            let oam0 = oam.get(idx).copied().unwrap_or(0);
+            let yy = (((oam0 >> 8) as i32) + 1) & 0xff;
+            if yy == 0xf0 {
+                continue;
+            }
+            let row = (line - yy) & 0xff;
+            let hi_word = oam.get(0x100 + idx / 16).copied().unwrap_or(0);
+            let hi_bits = (hi_word >> (idx % 16)) as i32;
+            let sprite_size =
+                SPRITE_SIZES[(obj.obj_size & 7) as usize][((hi_bits >> 1) & 1) as usize] as i32;
+            if row >= sprite_size {
+                continue;
+            }
+            let object_x = (oam0 & 0xff) as i32 + (hi_bits & 1) * 256;
+            if object_x > 256 && object_x + sprite_size - 1 < 512 {
+                continue;
+            }
+            let mut x = object_x;
+            if x >= 256 + extra {
+                x -= 512;
+            }
+            if x <= -(sprite_size + extra) {
+                continue;
+            }
+            sprites_left -= 1;
+            if sprites_left == 0 {
+                break;
+            }
+            sprites.push((sprite_num, x, sprite_size));
+        }
+
+        let out_y = (line - 1) as usize;
+        'tiles: for (sprite_num, sx, sprite_size) in sprites {
+            let mut col = 0;
+            while col < sprite_size {
+                if col + sx <= -8 - extra || col + sx >= 256 + extra {
+                    col += 8;
+                    continue;
+                }
+                tiles_left -= 1;
+                if tiles_left == 0 {
+                    break 'tiles;
+                }
+                drawn[out_y].push((sprite_num as u8, (sx + col) as i16));
+                col += 8;
+            }
+        }
+    }
+
+    drawn
+}
+
+/// Per-row visibility mask (bit r = output row `screen_y + r` survives the OBJ
+/// per-scanline budget) for a tile of `sprite_num` whose left edge is `screen_x`.
+fn obj_row_mask(drawn: &[Vec<(u8, i16)>], sprite_num: usize, screen_x: i16, screen_y: i16) -> u8 {
+    let mut mask = 0u8;
+    for r in 0..8i32 {
+        let dy = screen_y as i32 + r;
+        if (0..224).contains(&dy)
+            && drawn[dy as usize]
+                .iter()
+                .any(|&(sn, tx)| sn as usize == sprite_num && tx == screen_x)
+        {
+            mask |= 1 << r;
+        }
+    }
+    mask
+}
+
 /// Decode OAM into palette-index sprite-tile instances, mirroring the per-sprite,
 /// per-8×8-tile ENUMERATION of `sprite_renderer::resolve_obj_pixels` (NOT its
 /// per-pixel resolver).
@@ -49,6 +143,7 @@ pub fn extract_modern_sprites(
 ) -> Vec<ModernIndexSpriteInstance> {
     let oam = frame.oam;
     let obj = &frame.obj;
+    let drawn = compute_obj_drawn_tiles(frame);
     let mut out = Vec::new();
 
     for sprite_num in 0..128usize {
@@ -102,17 +197,24 @@ pub fn extract_modern_sprites(
                     as u16;
                 let effective_tile = bank + used_tile;
 
+                let screen_x = (x + stx * 8) as i16;
+                let screen_y = obj_tile_screen_y(top_y, sty);
+                let row_mask = obj_row_mask(&drawn, sprite_num, screen_x, screen_y);
+                if row_mask == 0 {
+                    continue; // fully dropped by the per-scanline OBJ budget
+                }
                 let Some(cell) = sprite_index_cell(atlas, context, effective_tile) else {
                     continue;
                 };
                 out.push(ModernIndexSpriteInstance {
                     cell_id: cell.id,
-                    screen_x: (x + stx * 8) as i16,
-                    screen_y: obj_tile_screen_y(top_y, sty),
+                    screen_x,
+                    screen_y,
                     palette,
                     priority,
                     hflip,
                     vflip,
+                    row_mask,
                 });
             }
         }
@@ -377,6 +479,7 @@ pub fn extract_modern_sprites_from_vram(
 
     let oam = frame.oam;
     let obj = &frame.obj;
+    let drawn = compute_obj_drawn_tiles(frame);
     let mut cells: Vec<ModernIndexTile> = Vec::new();
     let mut pattern_ids: HashMap<[u8; 64], u32> = HashMap::new();
     let mut out = Vec::new();
@@ -442,6 +545,13 @@ pub fn extract_modern_sprites_from_vram(
                     continue;
                 }
 
+                let screen_x = (x + stx * 8) as i16;
+                let screen_y = obj_tile_screen_y(top_y, sty);
+                let row_mask = obj_row_mask(&drawn, sprite_num, screen_x, screen_y);
+                if row_mask == 0 {
+                    continue; // fully dropped by the per-scanline OBJ budget
+                }
+
                 let cell_id = *pattern_ids.entry(indices).or_insert_with(|| {
                     let id = cells.len() as u32;
                     cells.push(ModernIndexTile { id, indices });
@@ -450,12 +560,13 @@ pub fn extract_modern_sprites_from_vram(
 
                 out.push(ModernIndexSpriteInstance {
                     cell_id,
-                    screen_x: (x + stx * 8) as i16,
-                    screen_y: obj_tile_screen_y(top_y, sty),
+                    screen_x,
+                    screen_y,
                     palette,
                     priority,
                     hflip,
                     vflip,
+                    row_mask,
                 });
             }
         }
@@ -1135,6 +1246,7 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
 
     let oam = frame.oam;
     let obj = &frame.obj;
+    let drawn = compute_obj_drawn_tiles(frame);
     let mut cells: Vec<ModernIndexTile> = Vec::new();
     // atlas cell id -> local dense cell id
     let mut cell_ids: HashMap<u32, u32> = HashMap::new();
@@ -1189,6 +1301,13 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                     | ((tile_col_base + src_col_tile) & 0x0f))
                     as usize;
 
+                let screen_x = (x + stx * 8) as i16;
+                let screen_y = obj_tile_screen_y(top_y, sty);
+                let row_mask = obj_row_mask(&drawn, sprite_num, screen_x, screen_y);
+                if row_mask == 0 {
+                    continue; // fully dropped by the per-scanline OBJ budget
+                }
+
                 let slot = chr_slot_base + used_tile;
                 let (kind, mut pack, mut tile_off) = src_table.get(slot);
                 if kind == CHR_KIND_BG_STREAM {
@@ -1217,6 +1336,11 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                         })
                 } else {
                     let Some(src) = source_cell(atlas, kind, pack, tile_off) else {
+                        if std::env::var("ZELDA3_SPR_DEBUG").is_ok() {
+                            eprintln!(
+                                "[SPR_GAP] slot=0x{slot:03x} kind={kind} pack=0x{pack:04x} off=0x{tile_off:04x} x={screen_x} y={screen_y}"
+                            );
+                        }
                         continue;
                     };
                     *cell_ids.entry(src.id).or_insert_with(|| {
@@ -1231,12 +1355,13 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
 
                 out.push(ModernIndexSpriteInstance {
                     cell_id,
-                    screen_x: (x + stx * 8) as i16,
-                    screen_y: obj_tile_screen_y(top_y, sty),
+                    screen_x,
+                    screen_y,
                     palette,
                     priority,
                     hflip,
                     vflip,
+                    row_mask,
                 });
             }
         }
@@ -2086,5 +2211,44 @@ mod tests {
             windowsel: 0,
             scanlines: Box::new([ScanlineRegs::default(); 224]),
         }
+    }
+
+    #[test]
+    fn obj_per_scanline_sprite_limit_drops_33rd_sprite() {
+        // The SNES OBJ evaluator draws at most 32 sprites per scanline (range over);
+        // `compute_obj_drawn_tiles` must reproduce that so the instance compositor
+        // drops the same sprites the classic renderer does (frame 198300 regression).
+        let vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        // 33 8×8 sprites, all overlapping scanline y=10 at distinct x.
+        for s in 0..33usize {
+            oam[s * 2] = (10u16 << 8) | (s as u16); // y=10, x=s
+            oam[s * 2 + 1] = 0; // tile 0, palette 0, no flip
+        }
+        let frame = test_gpu_frame(&vram, &cgram, &oam, 15, false); // obj_size 0 → 8×8
+        let drawn = compute_obj_drawn_tiles(&frame);
+        // Line 11 (out_y=10) is where all 33 sprites are visible; only 32 survive.
+        assert_eq!(drawn[10].len(), 32, "per-scanline sprite limit should keep 32");
+        assert!(
+            drawn[10].iter().all(|&(sn, _)| sn < 32),
+            "the 33rd sprite (num 32) must be dropped"
+        );
+        // A scanline none of the sprites cover stays empty.
+        assert!(drawn[50].is_empty());
+    }
+
+    #[test]
+    fn obj_row_mask_reflects_per_scanline_budget() {
+        // A single sprite on an uncrowded line is fully visible (row_mask covers its
+        // 8 rows within the screen).
+        let vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        oam[0] = (10u16 << 8) | 20u16; // one sprite at y=10, x=20
+        let frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        let drawn = compute_obj_drawn_tiles(&frame);
+        let mask = obj_row_mask(&drawn, 0, 20, 10);
+        assert_eq!(mask, 0xff, "an uncontended 8×8 sprite draws all 8 rows");
     }
 }

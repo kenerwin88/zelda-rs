@@ -1479,6 +1479,7 @@ mod tests {
                 priority: 0,
                 hflip: false,
                 vflip: false,
+                row_mask: 0xff,
             });
 
             let gpu_rgba = gpu_bg_then_sprites(&device, &queue, &frame, &[], &sprite_cells).await;
@@ -1506,6 +1507,7 @@ mod tests {
                 priority: 0,
                 hflip: true,
                 vflip: false,
+                row_mask: 0xff,
             });
 
             let gpu_rgba2 =

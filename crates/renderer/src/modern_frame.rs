@@ -175,6 +175,11 @@ pub struct ModernIndexSpriteInstance {
     pub priority: u8, // 0..3 from OAM
     pub hflip: bool,
     pub vflip: bool,
+    /// Per-output-row visibility under the SNES per-scanline OBJ range/time-over
+    /// limit (bit r = row `screen_y + r` survives). The compositor skips rows whose
+    /// bit is clear so it drops the same over-budget sprites the classic PPU does.
+    /// `0xff` = all rows visible (the default when the budget is not modeled).
+    pub row_mask: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

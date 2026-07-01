@@ -34,6 +34,9 @@ pub fn draw_modern_sprites_indexed(
             None => continue,
         };
         for y in 0..8usize {
+            if inst.row_mask & (1 << y) == 0 {
+                continue; // dropped by the per-scanline OBJ budget
+            }
             for x in 0..8usize {
                 // Sprite cells are UNFLIPPED → apply flip when sampling.
                 let src_x = if inst.hflip { 7 - x } else { x };
@@ -718,6 +721,9 @@ fn resolve_obj_layer(frame: &ModernFrame, sprite_cells: &[ModernIndexTile], len:
             None => continue,
         };
         for y in 0..8usize {
+            if inst.row_mask & (1 << y) == 0 {
+                continue; // dropped by the per-scanline OBJ budget
+            }
             for x in 0..8usize {
                 let src_x = if inst.hflip { 7 - x } else { x };
                 let src_y = if inst.vflip { 7 - y } else { y };
@@ -1250,6 +1256,7 @@ mod tests {
             priority: prio,
             hflip: false,
             vflip: false,
+            row_mask: 0xff,
         };
         // A first => lower OAM index, priority attr 0 (lowest). B second => higher
         // index, priority attr 3 (highest). A must win the overlap.
@@ -1281,6 +1288,7 @@ mod tests {
                 priority: 0,
                 hflip: false,
                 vflip: false,
+                row_mask: 0xff,
             });
             frame.screen_enabled_main = 0x10; // OBJ on main
             frame.math_enabled = 0x10; // OBJ math layer (bit 4) enabled
@@ -1535,6 +1543,7 @@ mod tests {
             priority: 0,
             hflip: false,
             vflip: false,
+            row_mask: 0xff,
         });
 
         // BG is empty (no index_tiles) → backdrop only, then sprites composite over.
@@ -1566,6 +1575,7 @@ mod tests {
             priority: 0,
             hflip: true,
             vflip: false,
+            row_mask: 0xff,
         });
 
         let mut out = render_modern_frame_software_indexed(&frame, &[]);
