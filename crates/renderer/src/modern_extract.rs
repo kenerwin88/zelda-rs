@@ -2258,4 +2258,33 @@ mod tests {
         let mask = obj_row_mask(&drawn, 0, 20, 10);
         assert_eq!(mask, 0xff, "an uncontended 8×8 sprite draws all 8 rows");
     }
+
+    #[test]
+    fn mode7_bg_samples_affine_field_through_tilemap_and_palette() {
+        // Identity Mode-7 transform: screen (0,0) samples texture (0,1) (the SNES
+        // scanline+1 vertical offset). Prove the affine sample follows the tilemap
+        // indirection (entry -> tile -> CHR texel) and resolves via CGRAM.
+        let mut vram = vec![0u16; 0x8000];
+        vram[0] = 0x0002; // tilemap entry (0,0): low byte = tile number 2
+        vram[2 * 64 + (1 * 8)] = 5u16 << 8; // tile 2, texel row1 col0: high byte = index 5
+        let mut cgram = vec![0u16; 0x100];
+        cgram[5] = 0x7C1F; // BGR555: R=31, G=0, B=31 (magenta)
+        let oam = vec![0u16; 0x110];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 7;
+        frame.screen_enabled = [0x01, 0]; // BG1 on main
+        for sl in frame.scanlines.iter_mut() {
+            sl.mode7_matrix = [256, 0, 0, 256, 0, 0, 0, 0]; // identity (8.8 fixed)
+            sl.screen_enabled_main = 0x01; // per-scanline BG1 enable (TM)
+        }
+        let rgba = crate::modern_software::render_modern_mode7_frame(&frame);
+        // Pixel (0,0) resolves to CGRAM[5] (magenta), NOT the black backdrop.
+        assert_eq!(rgba[1], 0, "green channel of magenta");
+        assert!(
+            rgba[0] > 200 && rgba[2] > 200,
+            "mode7 pixel (0,0) should be CGRAM[5] magenta via tile-2 affine sample, got {:?}",
+            &rgba[0..4]
+        );
+        assert_eq!(rgba[3], 0xff);
+    }
 }
