@@ -398,6 +398,20 @@ fn decode_cgram_entry(entry: u16, dst: &mut [u8]) {
     dst[3] = 0xFF;
 }
 
+/// Expand a CGRAM (up to 256 `u16` BGR555 entries) into a flat 256×RGBA8 buffer
+/// (`1024` bytes), using the exact same channel expansion as the live `cgram_palette`
+/// texture. This is the canonical way to snapshot a CGRAM as an HD "reference palette"
+/// PNG: art authored by rendering under `expand_cgram_to_rgba8(cgram)` recolors to the
+/// live palette exactly (detail == 1) under the shader's detail-modulate path. Entries
+/// past `cgram.len()` (or beyond 256) are left transparent-black.
+pub fn expand_cgram_to_rgba8(cgram: &[u16]) -> Vec<u8> {
+    let mut out = vec![0u8; 256 * 4];
+    for (i, &entry) in cgram.iter().take(256).enumerate() {
+        decode_cgram_entry(entry, &mut out[i * 4..i * 4 + 4]);
+    }
+    out
+}
+
 /// FNV-1a hash over a `u16` slice (little-endian byte order).
 pub(crate) fn fnv32_u16(data: &[u16]) -> u32 {
     let mut hash = 2166136261u32;
@@ -494,6 +508,24 @@ mod tests {
         let mut dst = [0u8; 4];
         decode_cgram_entry(0x7C00, &mut dst);
         assert_eq!(dst, [0, 0, 248, 255]);
+    }
+
+    #[test]
+    fn expand_cgram_snapshots_256_entries_matching_live_expansion() {
+        let mut cgram = vec![0u16; 256];
+        cgram[0] = 0x001F; // red
+        cgram[1] = 0x7FFF; // white
+        cgram[255] = 0x7C00; // blue
+        let out = expand_cgram_to_rgba8(&cgram);
+        assert_eq!(out.len(), 1024);
+        assert_eq!(&out[0..4], &[248, 0, 0, 255]);
+        assert_eq!(&out[4..8], &[248, 248, 248, 255]);
+        assert_eq!(&out[255 * 4..255 * 4 + 4], &[0, 0, 248, 255]);
+        // Short CGRAM: missing entries stay transparent-black.
+        let short = expand_cgram_to_rgba8(&[0x001F]);
+        assert_eq!(short.len(), 1024);
+        assert_eq!(&short[0..4], &[248, 0, 0, 255]);
+        assert_eq!(&short[4..8], &[0, 0, 0, 0]);
     }
 
     #[test]
