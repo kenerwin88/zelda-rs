@@ -1382,6 +1382,17 @@ pub struct ZeldaState {
     pub(crate) game_state: GameState,
     pub sram: Vec<u8>,
     pub ppu: PpuState,
+    /// Per-VRAM-slot logical CHR source bookkeeping (animation-modeled asset
+    /// renderer M1). Write-only observation; never affects game/VRAM behavior,
+    /// so it is excluded from serialization (recomputed at every CHR upload).
+    #[serde(skip)]
+    pub vram_chr_source: crate::chr_source::VramChrSourceTable,
+    /// ROM graphics pack last decompressed into the animated-tile buffer (0xa680).
+    /// Used only to tag the per-frame animated-tile DMA's VRAM slots with an
+    /// injective logical CHR source (`CHR_KIND_BG_ANIM`). Pure render-bookkeeping,
+    /// excluded from serialization like `vram_chr_source`.
+    #[serde(skip)]
+    pub animated_tile_pack: u16,
     pub dma: DmaState,
     pub frame_ctr_dbg: u32,
     rom: Vec<u8>,
@@ -5874,6 +5885,8 @@ impl ZeldaState {
             game_state: GameState::default(),
             sram: vec![0; SRAM_SIZE],
             ppu: PpuState::new(),
+            vram_chr_source: crate::chr_source::VramChrSourceTable::new(),
+            animated_tile_pack: 0,
             dma: DmaState::new(),
             frame_ctr_dbg: 0,
             rom: Vec::new(),
@@ -6036,6 +6049,12 @@ impl ZeldaState {
 
     pub fn vram(&self) -> &[u16] {
         &self.ppu.vram
+    }
+
+    /// Read-only access to the per-VRAM-slot logical CHR source table
+    /// (animation-modeled asset renderer M1 bookkeeping).
+    pub fn vram_chr_source(&self) -> &crate::chr_source::VramChrSourceTable {
+        &self.vram_chr_source
     }
 
     pub fn vram_mut(&mut self) -> &mut [u16] {
@@ -8516,3 +8535,7 @@ fn decompress_asset(src: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 #[path = "zelda_rtl_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "chr_source_tests.rs"]
+mod chr_source_tests;

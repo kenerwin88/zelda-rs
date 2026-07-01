@@ -40,6 +40,35 @@ impl ZeldaState {
         u16::from(self.game_state.world.location.overworld_screen_index())
     }
 
+    pub fn parity_probe_overworld_screen_and_build_map(&mut self, screen: u16) -> u16 {
+        self.set_indoor_flag(0);
+        self.set_overworld_area_index_word(screen);
+        self.set_overworld_screen_word(screen);
+        self.Overworld_LoadNewScreenProperties();
+        let sc = self.game_state.world.location.overworld_screen_index();
+        self.DecompressAnimatedOverworldTiles(0x5e);
+        self.InitializeTilesets();
+        self.OverworldLoadScreensPaletteSet();
+        self.Overworld_LoadPalettes(
+            self.GetOverworldBgPalette(sc),
+            self.overworld_config_table().sprite_palette(sc as usize),
+        );
+        self.Palette_SetOwBgColor();
+        self.Overworld_LoadPalettesInner();
+        for i in 0..0x100usize {
+            self.ppu.cgram[i] = read_le_u16(&self.ram, MAIN_PALETTE_BUFFER + i * 2);
+        }
+        self.Overworld_LoadAndBuildScreen();
+        u16::from(self.game_state.world.location.overworld_screen_index())
+    }
+
+    pub fn parity_probe_overworld_bg2_map8_entry(&self, tile_index: usize) -> u16 {
+        self.game_state
+            .dungeon
+            .bg2_attributes
+            .bg2_attr_word(tile_index * 2)
+    }
+
     fn replay_trace_door_overlay(&self, label: &str, pos: u16) {
         if std::env::var_os("ZELDA3_REPLAY_TRACE_DOOR").is_none() {
             return;

@@ -18,10 +18,15 @@ pub mod gpu_frame;
 pub mod gpu_renderer;
 pub mod mode7_renderer;
 pub mod modern_assets;
+pub mod modern_dungeon_atlas;
 pub mod modern_extract;
 pub mod modern_frame;
 pub mod modern_gpu;
+pub mod modern_index_atlas;
+pub mod modern_palette;
 pub mod modern_software;
+pub mod modern_source_atlas;
+pub mod modern_sprite_atlas;
 pub mod post_process;
 pub mod renderer_mode;
 pub mod sprite_renderer;
@@ -360,11 +365,24 @@ pub enum MenuOverlayTab {
     DeveloperMap,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuOverlayThumbnail {
+    RouteStart,
+    FileSelect,
+    Sanctuary,
+    LateDungeon,
+    DevRoom,
+    LockedOverworld,
+    LockedDungeon,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MenuOverlayModel {
     pub tab: MenuOverlayTab,
     pub selected_index: usize,
     pub lines: Vec<&'static str>,
+    pub detail_lines: Vec<String>,
+    pub thumbnail: Option<MenuOverlayThumbnail>,
 }
 
 impl MenuOverlayModel {
@@ -380,6 +398,8 @@ impl MenuOverlayModel {
                 "DEVELOPER MAP",
                 "  SAVE & QUIT",
             ],
+            detail_lines: Vec::new(),
+            thumbnail: None,
         }
     }
 }
@@ -419,6 +439,10 @@ const MENU_COLOR_BORDER: u32 = 0xffd6b45a;
 const MENU_COLOR_BORDER_SHADOW: u32 = 0xff5a3d1a;
 const MENU_COLOR_TEXT: u32 = 0xfffff0b8;
 const MENU_COLOR_TEXT_DIM: u32 = 0xffb9a56c;
+const MENU_COLOR_THUMB_STONE: u32 = 0xff81746a;
+const MENU_COLOR_THUMB_LIGHT: u32 = 0xffffd66d;
+const MENU_COLOR_THUMB_GRASS: u32 = 0xff2f7d3b;
+const MENU_COLOR_THUMB_LOCKED: u32 = 0xff383f4f;
 
 fn build_menu_overlay_pixels(menu: &MenuOverlayModel, width: u32, height: u32) -> Vec<u32> {
     let mut pixels = vec![MENU_COLOR_BACKDROP; width.saturating_mul(height) as usize];
@@ -466,7 +490,21 @@ fn build_menu_overlay_pixels(menu: &MenuOverlayModel, width: u32, height: u32) -
     for (line_index, line) in lines.iter().skip(1).enumerate() {
         let y = 74 + line_index as i32 * 22;
         let color = if line.starts_with('>') {
-            draw_rect(&mut pixels, width, height, 34, y - 4, 188, 17, 0xff202a43);
+            let highlight_width = if menu.thumbnail.is_some() || !menu.detail_lines.is_empty() {
+                90
+            } else {
+                188
+            };
+            draw_rect(
+                &mut pixels,
+                width,
+                height,
+                34,
+                y - 4,
+                highlight_width,
+                17,
+                0xff202a43,
+            );
             MENU_COLOR_TEXT
         } else {
             MENU_COLOR_TEXT_DIM
@@ -474,7 +512,214 @@ fn build_menu_overlay_pixels(menu: &MenuOverlayModel, width: u32, height: u32) -
         draw_text(&mut pixels, width, height, 42, y, line, 1, color);
     }
 
+    if menu.thumbnail.is_some() || !menu.detail_lines.is_empty() {
+        draw_developer_detail_panel(&mut pixels, width, height, menu);
+    }
+
     pixels
+}
+
+fn draw_developer_detail_panel(
+    pixels: &mut [u32],
+    width: u32,
+    height: u32,
+    menu: &MenuOverlayModel,
+) {
+    draw_rect(pixels, width, height, 136, 68, 86, 106, 0xff141c31);
+    draw_border(pixels, width, height, 136, 68, 86, 106);
+    if let Some(thumbnail) = menu.thumbnail {
+        draw_thumbnail(pixels, width, height, 144, 78, thumbnail);
+    }
+    for (index, line) in menu.detail_lines.iter().take(5).enumerate() {
+        let y = 120 + index as i32 * 10;
+        let color = if index == 0 {
+            MENU_COLOR_TEXT
+        } else {
+            MENU_COLOR_TEXT_DIM
+        };
+        draw_text(pixels, width, height, 144, y, line, 1, color);
+    }
+}
+
+fn draw_thumbnail(
+    pixels: &mut [u32],
+    width: u32,
+    height: u32,
+    x: i32,
+    y: i32,
+    thumbnail: MenuOverlayThumbnail,
+) {
+    draw_rect(pixels, width, height, x, y, 56, 34, 0xff03050b);
+    draw_border(pixels, width, height, x, y, 56, 34);
+    match thumbnail {
+        MenuOverlayThumbnail::RouteStart => {
+            draw_rect(pixels, width, height, x + 3, y + 3, 50, 28, 0xff191f3a);
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + 10,
+                y + 18,
+                36,
+                6,
+                MENU_COLOR_THUMB_GRASS,
+            );
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + 24,
+                y + 8,
+                8,
+                18,
+                MENU_COLOR_THUMB_LIGHT,
+            );
+        }
+        MenuOverlayThumbnail::FileSelect => {
+            draw_rect(pixels, width, height, x + 3, y + 3, 50, 28, 0xff10172a);
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + 12,
+                y + 8,
+                32,
+                4,
+                MENU_COLOR_THUMB_LIGHT,
+            );
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + 12,
+                y + 16,
+                32,
+                4,
+                MENU_COLOR_THUMB_STONE,
+            );
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + 12,
+                y + 24,
+                32,
+                4,
+                MENU_COLOR_THUMB_STONE,
+            );
+        }
+        MenuOverlayThumbnail::Sanctuary => {
+            draw_rect(pixels, width, height, x + 3, y + 3, 50, 28, 0xff202437);
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + 8,
+                y + 18,
+                40,
+                10,
+                MENU_COLOR_THUMB_STONE,
+            );
+            draw_rect(pixels, width, height, x + 16, y + 10, 24, 10, 0xff6a5a4c);
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + 25,
+                y + 7,
+                6,
+                21,
+                MENU_COLOR_THUMB_LIGHT,
+            );
+        }
+        MenuOverlayThumbnail::LateDungeon => {
+            draw_rect(pixels, width, height, x + 3, y + 3, 50, 28, 0xff16101f);
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + 8,
+                y + 9,
+                40,
+                18,
+                MENU_COLOR_THUMB_STONE,
+            );
+            draw_rect(pixels, width, height, x + 12, y + 13, 12, 10, 0xff5b2231);
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + 32,
+                y + 13,
+                12,
+                10,
+                MENU_COLOR_THUMB_LIGHT,
+            );
+        }
+        MenuOverlayThumbnail::DevRoom => {
+            draw_rect(pixels, width, height, x + 3, y + 3, 50, 28, 0xff17232f);
+            draw_rect(pixels, width, height, x + 6, y + 6, 44, 22, 0xff243240);
+            draw_rect(pixels, width, height, x + 10, y + 10, 12, 8, 0xff4b8f68);
+            draw_rect(pixels, width, height, x + 28, y + 10, 12, 8, 0xff9b4d5b);
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + 18,
+                y + 21,
+                16,
+                5,
+                MENU_COLOR_THUMB_LIGHT,
+            );
+            draw_rect(pixels, width, height, x + 25, y + 8, 4, 20, 0xffd6b45a);
+        }
+        MenuOverlayThumbnail::LockedOverworld => {
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + 3,
+                y + 3,
+                50,
+                28,
+                MENU_COLOR_THUMB_LOCKED,
+            );
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + 8,
+                y + 19,
+                40,
+                7,
+                MENU_COLOR_THUMB_GRASS,
+            );
+            draw_rect(pixels, width, height, x + 18, y + 8, 20, 16, 0xff222831);
+        }
+        MenuOverlayThumbnail::LockedDungeon => {
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + 3,
+                y + 3,
+                50,
+                28,
+                MENU_COLOR_THUMB_LOCKED,
+            );
+            draw_rect(pixels, width, height, x + 9, y + 9, 38, 18, 0xff202737);
+            draw_rect(
+                pixels,
+                width,
+                height,
+                x + 22,
+                y + 12,
+                12,
+                12,
+                MENU_COLOR_THUMB_STONE,
+            );
+        }
+    }
 }
 
 fn draw_border(pixels: &mut [u32], width: u32, height: u32, x: i32, y: i32, w: i32, h: i32) {
@@ -1913,6 +2158,47 @@ impl FrameRenderer {
         self.render()
     }
 
+    /// Upload an already-RGBA (R,G,B,A byte order) framebuffer straight into the
+    /// `Rgba8Unorm` game texture — no BGR→RGB swap (unlike `upload_frame`, whose
+    /// input is packed PPU `0xAARRGGBB` u32s). The buffer must be
+    /// `game_width * game_height * 4` bytes.
+    pub fn upload_rgba8(&mut self, rgba: &[u8]) {
+        debug_assert_eq!(
+            rgba.len(),
+            (self.game_width * self.game_height * 4) as usize
+        );
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.game_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(self.game_width * 4),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: self.game_width,
+                height: self.game_height,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
+    /// Modern (software) live-VRAM render path. Decodes BG + sprites from the live
+    /// `GpuFrame` VRAM and composites them on the CPU
+    /// ([`modern_extract::render_modern_frame_full_from_vram`]), then uploads the
+    /// resulting RGBA into the game texture and blits it with the standard
+    /// presentation pipeline (`render()`). Default/Classic callers are unaffected.
+    pub fn render_modern_frame(&mut self, frame: &GpuFrame<'_>) -> Result<(), RenderError> {
+        let rgba = crate::modern_extract::render_modern_frame_full_from_vram(frame);
+        self.upload_rgba8(&rgba);
+        self.render()
+    }
+
     pub fn render(&mut self) -> Result<(), RenderError> {
         self.maybe_log_viewport();
         if self.presentation_notice.frames_remaining() > 0 {
@@ -2649,6 +2935,55 @@ mod tests {
         assert!(pixels.contains(&MENU_COLOR_PANEL));
         assert!(pixels.contains(&MENU_COLOR_BORDER));
         assert!(pixels.contains(&MENU_COLOR_TEXT));
+    }
+
+    #[test]
+    fn developer_menu_overlay_paints_thumbnail_and_detail_panel() {
+        let menu = MenuOverlayModel {
+            tab: MenuOverlayTab::DeveloperMap,
+            selected_index: 0,
+            lines: vec![
+                "PLAY  VIDEO  CONTROLS  DEV MAP",
+                "> SANCTUARY",
+                "  FILE SELECT",
+            ],
+            detail_lines: vec![
+                "SANCTUARY".to_string(),
+                "ROOM 0050".to_string(),
+                "VERIFIED".to_string(),
+            ],
+            thumbnail: Some(MenuOverlayThumbnail::Sanctuary),
+        };
+
+        let pixels = build_menu_overlay_pixels(&menu, 256, 224);
+        assert!(pixels.contains(&MENU_COLOR_THUMB_STONE));
+        assert!(pixels.contains(&MENU_COLOR_THUMB_LIGHT));
+        assert!(pixels.contains(&MENU_COLOR_TEXT));
+    }
+
+    #[test]
+    fn every_developer_thumbnail_variant_paints_preview_pixels() {
+        let thumbnails = [
+            MenuOverlayThumbnail::RouteStart,
+            MenuOverlayThumbnail::FileSelect,
+            MenuOverlayThumbnail::Sanctuary,
+            MenuOverlayThumbnail::LateDungeon,
+            MenuOverlayThumbnail::DevRoom,
+            MenuOverlayThumbnail::LockedOverworld,
+            MenuOverlayThumbnail::LockedDungeon,
+        ];
+
+        for thumbnail in thumbnails {
+            let mut pixels = vec![0u32; 80 * 50];
+            draw_thumbnail(&mut pixels, 80, 50, 10, 8, thumbnail);
+            assert!(pixels.contains(&MENU_COLOR_BORDER));
+            assert!(
+                pixels
+                    .iter()
+                    .any(|pixel| *pixel != 0 && *pixel != MENU_COLOR_BORDER),
+                "{thumbnail:?} did not draw distinct thumbnail pixels"
+            );
+        }
     }
 
     #[test]

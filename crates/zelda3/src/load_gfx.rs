@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::chr_source;
+
 mod load_gfx_shared;
 use load_gfx_shared::*;
 use load_gfx_shared::{
@@ -61,6 +63,18 @@ const SPOTLIGHT_CIRCLE_X_RADIUS_CURVE: [u8; 129] = [
 impl ZeldaState {
     fn sprite_gfx_subset(&self, slot: usize) -> u8 {
         self.game_state.sprites.workspace.graphics_subset(slot)
+    }
+
+    /// Public read-only accessor for the per-area sprite CHR identity: the 4
+    /// `graphics_subset` packs (`slot` 0..4) loaded into VRAM by the sprite
+    /// graphics loader. Used by the sprite-sheets probe/dump to key sprite cells
+    /// by a stable per-area context (a hash of these 4 values). `slot >= 4`
+    /// returns 0.
+    pub fn parity_probe_sprite_graphics_subset(&self, slot: usize) -> u8 {
+        if slot >= 4 {
+            return 0;
+        }
+        self.sprite_gfx_subset(slot)
     }
 
     fn set_sprite_gfx_subset(&mut self, slot: usize, pack: u8) {
@@ -958,7 +972,7 @@ impl ZeldaState {
         let Some(source) = self.asset_bytes(64, 0).map(Vec::from) else {
             return;
         };
-        self.do3_to_4_high_to_vram(0x4000, &source);
+        self.do3_to_4_high_to_vram(0x4000, &source, chr_source::CHR_KIND_SPRITE, 0);
         self.decompress_and_upload_2bpp(0x7000, 0x6a);
         self.decompress_and_upload_2bpp(0x7400, 0x6b);
         self.decompress_and_upload_2bpp(0x7800, 0x69);
@@ -1118,19 +1132,15 @@ impl ZeldaState {
     }
 
     pub(super) fn load_common_sprites(&mut self) {
-        let Some(data) = self
-            .asset_bytes(
-                64,
-                self.game_state
-                    .world
-                    .palette_theme
-                    .misc_sprites_graphics_index() as usize,
-            )
-            .map(Vec::from)
-        else {
+        let misc_pack = self
+            .game_state
+            .world
+            .palette_theme
+            .misc_sprites_graphics_index() as usize;
+        let Some(data) = self.asset_bytes(64, misc_pack).map(Vec::from) else {
             return;
         };
-        self.do3_to_4_high_to_vram(0x4400, &data);
+        self.do3_to_4_high_to_vram(0x4400, &data, chr_source::CHR_KIND_SPRITE, misc_pack as u16);
 
         if self.game_state.frame.main_module == 1 {
             self.load_sprite_graphics(
@@ -1149,12 +1159,12 @@ impl ZeldaState {
         let Some(data) = self.asset_bytes(64, 6).map(Vec::from) else {
             return;
         };
-        self.do3_to_4_low_to_vram(0x4800, &data);
+        self.do3_to_4_low_to_vram(0x4800, &data, chr_source::CHR_KIND_SPRITE, 6);
 
         let Some(data) = self.asset_bytes(64, 7).map(Vec::from) else {
             return;
         };
-        self.do3_to_4_low_to_vram(0x4c00, &data);
+        self.do3_to_4_low_to_vram(0x4c00, &data, chr_source::CHR_KIND_SPRITE, 7);
     }
 
     pub(super) fn load_sprite_graphics(
@@ -1168,9 +1178,9 @@ impl ZeldaState {
         };
         self.copy_decompressed_graphics_to(decompression_buffer_offset, &data);
         if matches!(gfx_pack, 0x52 | 0x53 | 0x5a | 0x5b | 0x5c | 0x5e | 0x5f) {
-            self.do3_to_4_high_to_vram(dst, &data);
+            self.do3_to_4_high_to_vram(dst, &data, chr_source::CHR_KIND_SPRITE, gfx_pack as u16);
         } else {
-            self.do3_to_4_low_to_vram(dst, &data);
+            self.do3_to_4_low_to_vram(dst, &data, chr_source::CHR_KIND_SPRITE, gfx_pack as u16);
         }
     }
 
@@ -1191,9 +1201,9 @@ impl ZeldaState {
             slot >= 4
         };
         if high {
-            self.do3_to_4_high_to_vram(dst, &data);
+            self.do3_to_4_high_to_vram(dst, &data, chr_source::CHR_KIND_BG, gfx_pack as u16);
         } else {
-            self.do3_to_4_low_to_vram(dst, &data);
+            self.do3_to_4_low_to_vram(dst, &data, chr_source::CHR_KIND_BG, gfx_pack as u16);
         }
     }
 
@@ -1329,7 +1339,16 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn do3_to_4_high_to_vram(&mut self, mut dst: usize, data: &[u8]) {
+    pub(super) fn do3_to_4_high_to_vram(
+        &mut self,
+        mut dst: usize,
+        data: &[u8],
+        chr_kind: u8,
+        chr_pack: u16,
+    ) {
+        let start = dst;
+        self.vram_chr_source
+            .record_tiles(dst, 64, chr_kind, chr_pack);
         let mut src = 0usize;
         let mut tmp = [0u8; 8];
         for _ in 0..64 {
@@ -1349,9 +1368,24 @@ impl ZeldaState {
                 src += 1;
             }
         }
+        // OBJ CHR keyed by (pack, off) is heavily non-injective (subset numbers,
+        // esp. pack 0, are reused with different gfx across areas). Re-tag sprite
+        // tiles by content hash so the off-VRAM sprite path resolves the live cell.
+        if chr_kind == chr_source::CHR_KIND_SPRITE {
+            self.tag_stream_content_hash(start, 64);
+        }
     }
 
-    pub(super) fn do3_to_4_low_to_vram(&mut self, mut dst: usize, data: &[u8]) {
+    pub(super) fn do3_to_4_low_to_vram(
+        &mut self,
+        mut dst: usize,
+        data: &[u8],
+        chr_kind: u8,
+        chr_pack: u16,
+    ) {
+        let start = dst;
+        self.vram_chr_source
+            .record_tiles(dst, 64, chr_kind, chr_pack);
         let mut src = 0usize;
         for _ in 0..64 {
             for _ in 0..8 {
@@ -1364,6 +1398,10 @@ impl ZeldaState {
                 dst += 1;
                 src += 1;
             }
+        }
+        // See do3_to_4_high_to_vram: content-hash sprite CHR (subset key non-injective).
+        if chr_kind == chr_source::CHR_KIND_SPRITE {
+            self.tag_stream_content_hash(start, 64);
         }
     }
 
@@ -1549,6 +1587,9 @@ impl ZeldaState {
         let tmp = self.graphics_primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xae80, &tmp, 0, 32);
         self.set_animated_tile_vram_destination_address(0x3c00);
+        // Remember the pack filling the animated-tile buffer so the per-frame
+        // animated-tile DMA can tag its VRAM slots injectively (CHR_KIND_BG_ANIM).
+        self.animated_tile_pack = a as u16;
     }
 
     pub(super) fn LoadItemGFX_Auxiliary(&mut self) {
@@ -1911,6 +1952,26 @@ impl ZeldaState {
             INCREMENTAL_VRAM_UPLOAD_DESTINATIONS[k],
             INCREMENTAL_VRAM_UPLOAD_SOURCES[k],
         );
+        // Tag the per-frame animated-sprite CHR with an INJECTIVE logical source.
+        // This streams the 4 per-area sprite gfx subsets (64 tiles each) to VRAM
+        // 0x5000-0x5fff, 16 tiles per frame: chunk `k` fills VRAM page (0x50+k)
+        // with subset `k/4`, sub-chunk `k%4`. `initialize_tilesets` already tagged
+        // this region once via `load_sprite_graphics`, but with a possibly-stale /
+        // zero `graphics_subset` (e.g. pack=0 when a subset was never set), while
+        // the real animated content is re-DMA'd here every frame — leaving the
+        // logical key (sprite, pack=0, tile_off) non-injective. Re-tag with the
+        // LIVE subset pack so `(kind, pack, tile_off)` maps 1:1 to the pixels.
+        let subset = k / 4;
+        let pack = self.sprite_gfx_subset(subset) as u16;
+        let dst_word = (INCREMENTAL_VRAM_UPLOAD_DESTINATIONS[k] as usize) << 8;
+        let base_off = ((k % 4) * 16) as u16;
+        self.vram_chr_source.record_tiles_from(
+            dst_word,
+            16,
+            chr_source::CHR_KIND_SPRITE,
+            pack,
+            base_off,
+        );
         self.increment_vram_upload_counter();
     }
 
@@ -1967,11 +2028,21 @@ impl ZeldaState {
     }
 
     pub(super) fn Do3To4High(&mut self, vram_ptr: usize, decompression_buffer_offset: &[u8]) {
-        self.do3_to_4_high_to_vram(vram_ptr, decompression_buffer_offset);
+        self.do3_to_4_high_to_vram(
+            vram_ptr,
+            decompression_buffer_offset,
+            chr_source::CHR_KIND_NONE,
+            0,
+        );
     }
 
     pub(super) fn Do3To4Low(&mut self, vram_ptr: usize, decompression_buffer_offset: &[u8]) {
-        self.do3_to_4_low_to_vram(vram_ptr, decompression_buffer_offset);
+        self.do3_to_4_low_to_vram(
+            vram_ptr,
+            decompression_buffer_offset,
+            chr_source::CHR_KIND_NONE,
+            0,
+        );
     }
 
     pub(super) fn LoadSpriteGraphics(

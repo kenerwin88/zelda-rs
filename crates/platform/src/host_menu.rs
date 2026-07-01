@@ -15,6 +15,7 @@ pub enum HostMenuTab {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeveloperMapPanel {
     Overview,
+    CuratedPresets,
     RouteBookmarks,
     LockedBrowser,
 }
@@ -131,30 +132,132 @@ pub enum DeveloperDestinationStatus {
     Locked,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeveloperDestinationKind {
+    CuratedPreset,
+    RouteBookmark,
+    LockedBrowser,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeveloperThumbnail {
+    RouteStart,
+    FileSelect,
+    Sanctuary,
+    LateDungeon,
+    DevRoom,
+    LockedOverworld,
+    LockedDungeon,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeveloperDestination {
     pub id: &'static str,
     pub label: &'static str,
+    pub menu_label: &'static str,
+    pub location: &'static str,
     pub provenance: &'static str,
+    pub detail: &'static str,
     pub status: DeveloperDestinationStatus,
+    pub kind: DeveloperDestinationKind,
+    pub thumbnail: DeveloperThumbnail,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeveloperCurrentLocation {
+    pub label: String,
+    pub location: String,
+    pub detail: String,
+    pub thumbnail: DeveloperThumbnail,
 }
 
 impl DeveloperDestination {
     pub fn verified(id: &'static str, label: &'static str, provenance: &'static str) -> Self {
+        Self::route_bookmark(
+            id,
+            label,
+            label,
+            "ROUTE",
+            provenance,
+            provenance,
+            DeveloperThumbnail::RouteStart,
+        )
+    }
+
+    pub fn curated_preset(
+        id: &'static str,
+        label: &'static str,
+        menu_label: &'static str,
+        location: &'static str,
+        provenance: &'static str,
+        detail: &'static str,
+        thumbnail: DeveloperThumbnail,
+    ) -> Self {
         Self {
             id,
             label,
+            menu_label,
+            location,
             provenance,
+            detail,
             status: DeveloperDestinationStatus::Verified,
+            kind: DeveloperDestinationKind::CuratedPreset,
+            thumbnail,
+        }
+    }
+
+    pub fn route_bookmark(
+        id: &'static str,
+        label: &'static str,
+        menu_label: &'static str,
+        location: &'static str,
+        provenance: &'static str,
+        detail: &'static str,
+        thumbnail: DeveloperThumbnail,
+    ) -> Self {
+        Self {
+            id,
+            label,
+            menu_label,
+            location,
+            provenance,
+            detail,
+            status: DeveloperDestinationStatus::Verified,
+            kind: DeveloperDestinationKind::RouteBookmark,
+            thumbnail,
         }
     }
 
     pub fn locked(id: &'static str, label: &'static str, provenance: &'static str) -> Self {
+        let thumbnail = if id.contains("overworld") {
+            DeveloperThumbnail::LockedOverworld
+        } else {
+            DeveloperThumbnail::LockedDungeon
+        };
+        Self::locked_browser(
+            id, label, label, "LOCKED", provenance, provenance, thumbnail,
+        )
+    }
+
+    pub fn locked_browser(
+        id: &'static str,
+        label: &'static str,
+        menu_label: &'static str,
+        location: &'static str,
+        provenance: &'static str,
+        detail: &'static str,
+        thumbnail: DeveloperThumbnail,
+    ) -> Self {
         Self {
             id,
             label,
+            menu_label,
+            location,
             provenance,
+            detail,
             status: DeveloperDestinationStatus::Locked,
+            kind: DeveloperDestinationKind::LockedBrowser,
+            thumbnail,
         }
     }
 }
@@ -184,6 +287,7 @@ pub struct HostMenuState {
     controls_panel: Option<ControlsPanel>,
     developer_map_panel: DeveloperMapPanel,
     developer_destinations: Vec<DeveloperDestination>,
+    current_developer_location: Option<DeveloperCurrentLocation>,
 }
 
 impl HostMenuState {
@@ -197,6 +301,7 @@ impl HostMenuState {
             controls_panel: None,
             developer_map_panel: DeveloperMapPanel::Overview,
             developer_destinations,
+            current_developer_location: None,
         }
     }
 
@@ -243,24 +348,98 @@ impl HostMenuState {
         self.developer_map_panel
     }
 
+    pub fn set_current_developer_location(&mut self, location: DeveloperCurrentLocation) {
+        self.current_developer_location = Some(location);
+    }
+
     pub fn developer_map_items(&self) -> Vec<&'static str> {
         match self.developer_map_panel {
             DeveloperMapPanel::Overview => {
                 vec!["Curated Presets", "Route Bookmarks", "Locked Browser"]
             }
+            DeveloperMapPanel::CuratedPresets => self
+                .developer_destinations
+                .iter()
+                .filter(|destination| destination.kind == DeveloperDestinationKind::CuratedPreset)
+                .map(|destination| destination.label)
+                .collect(),
             DeveloperMapPanel::RouteBookmarks => self
                 .developer_destinations
                 .iter()
-                .filter(|destination| destination.status == DeveloperDestinationStatus::Verified)
+                .filter(|destination| destination.kind == DeveloperDestinationKind::RouteBookmark)
                 .map(|destination| destination.label)
                 .collect(),
             DeveloperMapPanel::LockedBrowser => self
                 .developer_destinations
                 .iter()
-                .filter(|destination| destination.status == DeveloperDestinationStatus::Locked)
+                .filter(|destination| destination.kind == DeveloperDestinationKind::LockedBrowser)
                 .map(|destination| destination.label)
                 .collect(),
         }
+    }
+
+    pub fn selected_developer_destination(&self) -> Option<&DeveloperDestination> {
+        let kind = match self.developer_map_panel {
+            DeveloperMapPanel::Overview => return None,
+            DeveloperMapPanel::CuratedPresets => DeveloperDestinationKind::CuratedPreset,
+            DeveloperMapPanel::RouteBookmarks => DeveloperDestinationKind::RouteBookmark,
+            DeveloperMapPanel::LockedBrowser => DeveloperDestinationKind::LockedBrowser,
+        };
+        self.developer_destinations
+            .iter()
+            .filter(|destination| destination.kind == kind)
+            .nth(self.selected_index)
+    }
+
+    pub fn developer_thumbnail(&self) -> Option<DeveloperThumbnail> {
+        self.selected_developer_destination()
+            .map(|destination| destination.thumbnail)
+            .or_else(|| {
+                (self.active_tab == HostMenuTab::DeveloperMap
+                    && self.developer_map_panel == DeveloperMapPanel::Overview)
+                    .then(|| {
+                        self.current_developer_location
+                            .as_ref()
+                            .map(|location| location.thumbnail)
+                    })
+                    .flatten()
+            })
+    }
+
+    pub fn developer_detail_lines(&self) -> Vec<String> {
+        let Some(destination) = self.selected_developer_destination() else {
+            return match self.developer_map_panel {
+                DeveloperMapPanel::Overview => self
+                    .current_developer_location
+                    .as_ref()
+                    .map(|location| {
+                        vec![
+                            location.label.clone(),
+                            location.location.clone(),
+                            "CURRENT".to_string(),
+                            location.detail.clone(),
+                        ]
+                    })
+                    .unwrap_or_else(|| {
+                        vec![
+                            "SELECT A PANEL".to_string(),
+                            "VERIFIED ONLY".to_string(),
+                            "LOCKED SHOW WHY".to_string(),
+                        ]
+                    }),
+                _ => vec!["NO DESTINATION".to_string()],
+            };
+        };
+        vec![
+            destination.menu_label.to_string(),
+            destination.location.to_string(),
+            match destination.status {
+                DeveloperDestinationStatus::Verified => "VERIFIED".to_string(),
+                DeveloperDestinationStatus::Locked => "LOCKED".to_string(),
+            },
+            destination.detail.to_string(),
+            destination.provenance.to_string(),
+        ]
     }
 
     pub fn cycle_presentation(&mut self) -> HostMenuAction {
@@ -328,6 +507,7 @@ impl HostMenuState {
                 {
                     let overview_index = match self.developer_map_panel {
                         DeveloperMapPanel::Overview => 0,
+                        DeveloperMapPanel::CuratedPresets => 0,
                         DeveloperMapPanel::RouteBookmarks => 1,
                         DeveloperMapPanel::LockedBrowser => 2,
                     };
@@ -393,7 +573,7 @@ impl HostMenuState {
         match self.developer_map_panel {
             DeveloperMapPanel::Overview => {
                 match self.selected_index {
-                    0 => {}
+                    0 => self.developer_map_panel = DeveloperMapPanel::CuratedPresets,
                     1 => self.developer_map_panel = DeveloperMapPanel::RouteBookmarks,
                     2 => self.developer_map_panel = DeveloperMapPanel::LockedBrowser,
                     _ => {}
@@ -401,11 +581,19 @@ impl HostMenuState {
                 self.selected_index = 0;
                 None
             }
+            DeveloperMapPanel::CuratedPresets => self
+                .developer_destinations
+                .iter()
+                .filter(|destination| destination.kind == DeveloperDestinationKind::CuratedPreset)
+                .nth(self.selected_index)
+                .filter(|destination| destination.status == DeveloperDestinationStatus::Verified)
+                .map(|destination| HostMenuAction::WarpToVerifiedDestination(destination.id)),
             DeveloperMapPanel::RouteBookmarks => self
                 .developer_destinations
                 .iter()
-                .filter(|destination| destination.status == DeveloperDestinationStatus::Verified)
+                .filter(|destination| destination.kind == DeveloperDestinationKind::RouteBookmark)
                 .nth(self.selected_index)
+                .filter(|destination| destination.status == DeveloperDestinationStatus::Verified)
                 .map(|destination| HostMenuAction::WarpToVerifiedDestination(destination.id)),
             DeveloperMapPanel::LockedBrowser => None,
         }
@@ -490,8 +678,33 @@ mod tests {
         HostMenuState::new(
             HostMenuMode::InGame,
             vec![
-                DeveloperDestination::verified("sanctuary", "Sanctuary", "route frame 12000"),
-                DeveloperDestination::locked("room-003f", "Room 003F", "unverified room init"),
+                DeveloperDestination::curated_preset(
+                    "sanctuary",
+                    "Sanctuary",
+                    "SANCTUARY",
+                    "ROOM 0050",
+                    "12000",
+                    "ROUTE FRAME",
+                    DeveloperThumbnail::Sanctuary,
+                ),
+                DeveloperDestination::route_bookmark(
+                    "sanctuary",
+                    "Sanctuary",
+                    "SANCTUARY",
+                    "ROOM 0050",
+                    "12000",
+                    "ROUTE FRAME",
+                    DeveloperThumbnail::Sanctuary,
+                ),
+                DeveloperDestination::locked_browser(
+                    "room-003f",
+                    "Room 003F",
+                    "ROOM 003F",
+                    "ROOM 003F",
+                    "unverified room init",
+                    "UNVERIFIED INIT",
+                    DeveloperThumbnail::LockedDungeon,
+                ),
             ],
         )
     }
@@ -703,7 +916,18 @@ mod tests {
         state.set_active_tab(HostMenuTab::DeveloperMap);
         assert_eq!(state.selected_label(), "Curated Presets");
         assert_eq!(state.handle_input(HostMenuInput::Confirm), None);
+        assert_eq!(
+            state.developer_map_panel(),
+            DeveloperMapPanel::CuratedPresets
+        );
 
+        state.handle_input(HostMenuInput::Down);
+        assert_eq!(
+            state.handle_input(HostMenuInput::Confirm),
+            Some(HostMenuAction::WarpToVerifiedDestination("sanctuary"))
+        );
+
+        assert_eq!(state.handle_input(HostMenuInput::Cancel), None);
         state.handle_input(HostMenuInput::Down);
         assert_eq!(state.selected_label(), "Route Bookmarks");
         assert_eq!(state.handle_input(HostMenuInput::Confirm), None);
@@ -720,5 +944,55 @@ mod tests {
         assert_eq!(state.handle_input(HostMenuInput::Confirm), None);
         assert_eq!(state.selected_label(), "Room 003F");
         assert_eq!(state.handle_input(HostMenuInput::Confirm), None);
+    }
+
+    #[test]
+    fn developer_map_exposes_selected_destination_details_and_thumbnail() {
+        let mut state = state_with_destinations();
+        state.set_active_tab(HostMenuTab::DeveloperMap);
+        state.handle_input(HostMenuInput::Confirm);
+
+        let destination = state
+            .selected_developer_destination()
+            .expect("curated preset should expose selected destination metadata");
+        assert_eq!(destination.id, "sanctuary");
+        assert_eq!(destination.kind, DeveloperDestinationKind::CuratedPreset);
+        assert_eq!(destination.status, DeveloperDestinationStatus::Verified);
+        assert_eq!(destination.location, "ROOM 0050");
+        assert_eq!(destination.thumbnail, DeveloperThumbnail::Sanctuary);
+
+        let detail_lines = state.developer_detail_lines();
+        assert!(detail_lines.contains(&"SANCTUARY".to_string()));
+        assert!(detail_lines.contains(&"ROOM 0050".to_string()));
+        assert!(detail_lines.contains(&"VERIFIED".to_string()));
+        assert!(detail_lines.contains(&"ROUTE FRAME".to_string()));
+        assert!(detail_lines.contains(&"12000".to_string()));
+    }
+
+    #[test]
+    fn developer_map_overview_shows_current_location_marker_when_available() {
+        let mut state = state_with_destinations();
+        state.set_active_tab(HostMenuTab::DeveloperMap);
+        state.set_current_developer_location(DeveloperCurrentLocation {
+            label: "CURRENT LOC".to_string(),
+            location: "ROOM 0050".to_string(),
+            detail: "FRAME 12000".to_string(),
+            thumbnail: DeveloperThumbnail::Sanctuary,
+        });
+
+        assert_eq!(state.developer_map_panel(), DeveloperMapPanel::Overview);
+        assert_eq!(
+            state.developer_detail_lines(),
+            vec![
+                "CURRENT LOC".to_string(),
+                "ROOM 0050".to_string(),
+                "CURRENT".to_string(),
+                "FRAME 12000".to_string(),
+            ]
+        );
+        assert_eq!(
+            state.developer_thumbnail(),
+            Some(DeveloperThumbnail::Sanctuary)
+        );
     }
 }

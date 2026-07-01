@@ -132,13 +132,13 @@ impl ZeldaState {
             .decompressed_sprite_graphics_data(0x5e)
             .expect("file select sprite sheet 0x5e must decompress");
         self.copy_to_primary_decompression_buffer(&data);
-        self.do3_to_4_high_to_vram(0x5000, &data);
+        self.do3_to_4_high_to_vram(0x5000, &data, crate::chr_source::CHR_KIND_SPRITE, 0x5e);
 
         let data = self
             .decompressed_sprite_graphics_data(0x5f)
             .expect("file select sprite sheet 0x5f must decompress");
         self.copy_to_primary_decompression_buffer(&data);
-        self.do3_to_4_high_to_vram(0x5400, &data);
+        self.do3_to_4_high_to_vram(0x5400, &data, crate::chr_source::CHR_KIND_SPRITE, 0x5f);
 
         self.transfer_font_to_vram();
 

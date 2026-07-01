@@ -6,8 +6,10 @@
 //! while `--headless` preserves the raw opcode-budget emulator harness.
 
 mod developer_destinations;
+mod developer_modern_map;
 
 use std::backtrace::Backtrace;
+use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::ffi::{CStr, CString};
@@ -21,8 +23,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use platform::{
-    Frontend, HostMenuAction, HostMenuInput, HostMenuMode, HostMenuState, NativeFrontend,
-    NativeFrontendOptions,
+    DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
+    HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
 };
 use renderer::{
     scanlines_from_raw, BgLayerRegs, GpuFrame, Mode7Regs, ObjRegs, OffscreenRenderer,
@@ -58,6 +60,50 @@ const TRACE_SELECTFILE_VAR5: usize = 0x0b15;
 const TRACE_SELECTFILE_VAR10: usize = 0x0b16;
 const TRACE_SELECTFILE_ARR2_1: usize = 0x0cb;
 const PLAYER_IS_INDOORS: usize = 0x001b;
+const TM_COPY: usize = 0x001c;
+const TS_COPY: usize = 0x001d;
+const BGMODE_COPY: usize = 0x0094;
+const FLAG_UPDATE_CGRAM_IN_NMI: usize = 0x0015;
+#[cfg(test)]
+const MUSIC_CONTROL: usize = 0x012c;
+#[cfg(test)]
+const CURRENT_MUSIC_CONTROL: usize = 0x0130;
+#[cfg(test)]
+const LAST_MUSIC_CONTROL: usize = 0x0133;
+const MAIN_PALETTE_BUFFER: usize = 0x0c500;
+const DEVELOPER_ROOM_BG_TILE_BASE: u16 = 0x2000;
+const DEVELOPER_ROOM_SOURCE_BG_LAYER: usize = 1;
+const OVERWORLD_BG_CHR_BASE: usize = 0x2000;
+// Dungeon BG CHR base (VRAM word address), pinned by the Task 1 spike. The dungeon
+// blockset loads the same way the overworld does: `InitializeTilesets` writes the
+// main blockset's first BG graphics pack to VRAM word 0x2000 via
+// `load_background_graphics(0x2000, main_tile_set[0], ..)` (crates/zelda3/src/load_gfx.rs).
+// Tile numbers (tilemap_entry & 0x3ff) index 16-word tiles from this base, so the
+// main blockset spans words 0x2000..0x4000 — identical to OVERWORLD_BG_CHR_BASE.
+// (allow(dead_code): consumed by the Task 2 --dump-dungeon-index-tiles command.)
+#[allow(dead_code)]
+const DUNGEON_BG_CHR_BASE: usize = 0x2000;
+// BG1 dungeon tilemap is 64x64 tiles8 => 0x1000 word entries (matches the overworld
+// 64x64 walk). Word index 0..0x1000 into game_state.dungeon.room_tilemaps BG1.
+#[allow(dead_code)]
+const DUNGEON_BG1_TILEMAP_WORDS: usize = 0x1000;
+const UNIQUE_OVERWORLD_MANIFEST_SOURCE_LIMIT: usize = 32;
+const DEV_TOWN_ROOF: u16 = 224;
+const DEV_TOWN_WALL: u16 = 225;
+const DEV_TOWN_DOOR: u16 = 226;
+const DEV_TOWN_GRASS: u16 = 227;
+const DEV_TOWN_PATH: u16 = 228;
+const DEV_TOWN_FENCE: u16 = 229;
+const DEV_TOWN_SHRUB: u16 = 230;
+const DEV_TOWN_SIGN: u16 = 231;
+const DEV_TOWN_TREE: u16 = 232;
+const DEV_TOWN_CLIFF_TOP: u16 = 233;
+const DEV_TOWN_CLIFF_FACE: u16 = 234;
+const DEV_TOWN_FLOWERS: u16 = 235;
+const DEV_TOWN_STONE: u16 = 236;
+const DEV_TOWN_HEDGE: u16 = 237;
+#[cfg(test)]
+const DEVELOPER_ROOM_KAKARIKO_MUSIC: u8 = 0x07;
 const EMBEDDED_ASSETS: &[u8] = include_bytes!(env!("ZELDA3_EMBEDDED_ASSETS"));
 
 fn main() {
@@ -145,6 +191,54 @@ fn main() {
         run_dump_frame(&args[2..]);
         return;
     }
+    if args.get(1).map(String::as_str) == Some("--dump-developer-destination") {
+        run_dump_developer_destination(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--dump-overworld-screen") {
+        run_dump_overworld_screen(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--scan-replay-checkpoints") {
+        run_scan_replay_checkpoints(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--dump-replay-checkpoint-ppu") {
+        run_dump_replay_checkpoint_ppu(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--dump-developer-tileset") {
+        run_dump_developer_tileset(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--dump-unique-overworld-cells") {
+        run_dump_unique_overworld_cells(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--dump-unique-overworld-tiles") {
+        run_dump_unique_overworld_tiles(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--dump-dungeon-index-tiles") {
+        run_dump_dungeon_index_tiles(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--dump-sprite-index-tiles") {
+        run_dump_sprite_index_tiles(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--dump-sprite-sheet-png") {
+        run_dump_sprite_sheet_png(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--dump-dungeon-sheet-png") {
+        run_dump_dungeon_sheet_png(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--dump-assets-by-source") {
+        run_dump_assets_by_source(&args[2..]);
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("--compare-lockstep-render") {
         run_compare_lockstep_render(&args[2..]);
         return;
@@ -178,6 +272,12 @@ fn main() {
 
 fn read_le_u16(bytes: &[u8], index: usize) -> u16 {
     u16::from_le_bytes([bytes[index], bytes[index + 1]])
+}
+
+fn write_le_u16(bytes: &mut [u8], index: usize, value: u16) {
+    let [lo, hi] = value.to_le_bytes();
+    bytes[index] = lo;
+    bytes[index + 1] = hi;
 }
 
 fn replay_sram_checksum_ok(bytes: &[u8], base: usize) -> bool {
@@ -233,6 +333,28 @@ fn route_coverage_frame_from_game(
         sprite_types,
         ancilla_types,
         active_item: (game.ram[0x0202] != 0).then_some(game.ram[0x0202]),
+    }
+}
+
+fn current_developer_location_from_ram(ram: &[u8], host_frame: u32) -> DeveloperCurrentLocation {
+    let indoors = ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) != 0;
+    let indoor_room = indoors.then(|| read_le_u16(ram, 0x48e));
+    let location = if indoors {
+        format!("ROOM {:04X}", indoor_room.unwrap())
+    } else {
+        format!("OW {:04X}", read_le_u16(ram, 0x8a))
+    };
+    DeveloperCurrentLocation {
+        label: "CURRENT LOC".to_string(),
+        location,
+        detail: format!("FRAME {host_frame}"),
+        thumbnail: if indoor_room == Some(0x01ff) {
+            DeveloperThumbnail::DevRoom
+        } else if indoors {
+            DeveloperThumbnail::Sanctuary
+        } else {
+            DeveloperThumbnail::LockedOverworld
+        },
     }
 }
 
@@ -1324,6 +1446,10 @@ fn run_play_with_state(mut game: ZeldaState) {
             process::exit(1);
         }
     };
+    // ZELDA3_RENDERER=modern (or modern-compare) routes the live present through the
+    // modern (software) live-VRAM render path; default Classic = unchanged wgpu PPU.
+    let renderer_mode = renderer::RendererMode::parse(env::var("ZELDA3_RENDERER").ok().as_deref());
+    frontend.set_renderer_mode(renderer_mode);
     let mut frame = vec![0u8; width as usize * height as usize * 4];
     let audio_samples = frontend.audio_samples_per_frame();
     let audio_channels = frontend.audio_channels();
@@ -1379,7 +1505,7 @@ fn run_play_with_state(mut game: ZeldaState) {
                             eprintln!("host menu controls panel selected: {panel:?}");
                         }
                         HostMenuAction::WarpToVerifiedDestination(id) => {
-                            match load_developer_route_bookmark(id) {
+                            match load_developer_destination(id) {
                                 Ok((next_game, next_frame)) => {
                                     game = next_game;
                                     host_frame = next_frame;
@@ -1419,6 +1545,9 @@ fn run_play_with_state(mut game: ZeldaState) {
             break;
         }
         if host_menu.is_open() {
+            host_menu.set_current_developer_location(current_developer_location_from_ram(
+                &game.ram, host_frame,
+            ));
             frontend.present_menu_overlay(&host_menu);
             continue;
         }
@@ -1493,13 +1622,21 @@ fn load_developer_route_bookmark(id: &str) -> Result<(ZeldaState, u32), String> 
     let bookmark = developer_destinations::route_bookmark(id)
         .ok_or_else(|| format!("unknown or locked destination '{id}'"))?;
     let mut game = load_translated_replay_state(bookmark.rom_path);
-    game.replay_save_file(Path::new(bookmark.replay_path))
-        .map_err(|e| format!("failed to load {}: {e}", bookmark.replay_path))?;
-    let mut frames = game.state_recorder.replay_frame_counter;
-    while frames < bookmark.target_frame && game.state_recorder.replay_mode {
-        game.zelda_run_frame(0);
-        frames = frames.wrapping_add(1);
-    }
+    let checkpoint_path = bookmark.checkpoint_path.map(Path::new);
+    let frames = if let Some(path) = checkpoint_path.filter(|path| path.exists()) {
+        load_replay_save_checkpoint(&mut game, path)
+            .map_err(|e| format!("failed to load checkpoint {}: {e}", path.display()))?;
+        bookmark.target_frame
+    } else {
+        game.replay_save_file(Path::new(bookmark.replay_path))
+            .map_err(|e| format!("failed to load {}: {e}", bookmark.replay_path))?;
+        let mut frames = game.state_recorder.replay_frame_counter;
+        while frames < bookmark.target_frame && game.state_recorder.replay_mode {
+            game.zelda_run_frame(0);
+            frames = frames.wrapping_add(1);
+        }
+        frames
+    };
     if frames != bookmark.target_frame {
         return Err(format!(
             "route replay ended at frame {frames}, before target {}",
@@ -1510,6 +1647,787 @@ fn load_developer_route_bookmark(id: &str) -> Result<(ZeldaState, u32), String> 
     ZeldaState::state_recorder_stop_replay(&mut state_recorder);
     game.state_recorder = state_recorder;
     Ok((game, frames))
+}
+
+#[derive(Debug, Deserialize)]
+struct DeveloperSandboxTilemapManifest {
+    format: String,
+    width: u16,
+    height: u16,
+    rows: Vec<Vec<u16>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct DeveloperTilesetManifest {
+    format: String,
+    id: String,
+    source: String,
+    source_layer: usize,
+    cell_width_tiles: u8,
+    cell_height_tiles: u8,
+    columns: u16,
+    rows: u16,
+    entries: Vec<DeveloperTilesetEntry>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct DeveloperTilesetEntry {
+    id: u16,
+    source_cell: u16,
+    source_x: u8,
+    source_y: u8,
+    name: String,
+    approved: bool,
+    tags: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct UniqueOverworldCellAtlasManifest {
+    format: &'static str,
+    id: &'static str,
+    cell_width_px: u8,
+    cell_height_px: u8,
+    columns: u16,
+    rows: u16,
+    unique_cells: Vec<UniqueOverworldCellManifestEntry>,
+}
+
+#[derive(Debug, Serialize)]
+struct UniqueOverworldCellManifestEntry {
+    id: u16,
+    tilemap_entries: [u16; 4],
+    tilemap_variants: Vec<[u16; 4]>,
+    rendered_hash: u32,
+    sources: Vec<UniqueOverworldCellSource>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct UniqueOverworldCellSource {
+    screen: u16,
+    loaded_screen: u16,
+    layer: u8,
+    x: u8,
+    y: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct UniqueOverworldCell {
+    tilemap_entries: [u16; 4],
+    tilemap_variants: Vec<[u16; 4]>,
+    rendered_rgba: Vec<u8>,
+    rendered_hash: u32,
+    sources: Vec<UniqueOverworldCellSource>,
+}
+
+#[derive(Debug, Default)]
+struct UniqueOverworldCellCollector {
+    cells: Vec<UniqueOverworldCell>,
+    index_by_rendered_rgba: HashMap<Vec<u8>, usize>,
+}
+
+impl UniqueOverworldCellCollector {
+    fn insert(
+        &mut self,
+        tilemap_entries: [u16; 4],
+        rendered_rgba: Vec<u8>,
+        source: UniqueOverworldCellSource,
+    ) -> u16 {
+        if let Some(&index) = self.index_by_rendered_rgba.get(&rendered_rgba) {
+            if !self.cells[index]
+                .tilemap_variants
+                .contains(&tilemap_entries)
+            {
+                self.cells[index].tilemap_variants.push(tilemap_entries);
+            }
+            self.cells[index].sources.push(source);
+            return index as u16;
+        }
+
+        let index = self.cells.len();
+        let rendered_hash = fnv32_bytes(&rendered_rgba);
+        self.cells.push(UniqueOverworldCell {
+            tilemap_entries,
+            tilemap_variants: vec![tilemap_entries],
+            rendered_rgba,
+            rendered_hash,
+            sources: vec![source],
+        });
+        self.index_by_rendered_rgba
+            .insert(self.cells[index].rendered_rgba.clone(), index);
+        index as u16
+    }
+
+    fn manifest(&self, columns: u16) -> UniqueOverworldCellAtlasManifest {
+        let rows = if self.cells.is_empty() {
+            0
+        } else {
+            ((self.cells.len() as u16) + columns - 1) / columns
+        };
+        UniqueOverworldCellAtlasManifest {
+            format: "zelda3_unique_overworld_cells_v1",
+            id: "unique_overworld_cells",
+            cell_width_px: 16,
+            cell_height_px: 16,
+            columns,
+            rows,
+            unique_cells: self
+                .cells
+                .iter()
+                .enumerate()
+                .map(|(id, cell)| UniqueOverworldCellManifestEntry {
+                    id: id as u16,
+                    tilemap_entries: cell.tilemap_entries,
+                    tilemap_variants: cell.tilemap_variants.clone(),
+                    rendered_hash: cell.rendered_hash,
+                    sources: cell.sources.clone(),
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct UniqueOverworldTileAtlasManifest {
+    format: &'static str,
+    id: &'static str,
+    tile_width_px: u8,
+    tile_height_px: u8,
+    atlas_scale: u8,
+    atlas_grid_px: u8,
+    columns: u16,
+    rows: u16,
+    unique_tiles: Vec<UniqueOverworldTileManifestEntry>,
+}
+
+#[derive(Debug, Serialize)]
+struct UniqueOverworldTileManifestEntry {
+    id: u16,
+    atlas_col: u16,
+    atlas_row: u16,
+    atlas_x_px: u16,
+    atlas_y_px: u16,
+    atlas_width_px: u16,
+    atlas_height_px: u16,
+    tilemap_entry: u16,
+    tilemap_entry_decoded: DecodedTilemapEntry,
+    tilemap_variants: Vec<u16>,
+    tilemap_variants_decoded: Vec<DecodedTilemapEntry>,
+    rendered_hash: u32,
+    source_count: usize,
+    sources_truncated: bool,
+    sources: Vec<UniqueOverworldCellSource>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+struct DecodedTilemapEntry {
+    tile_number: u16,
+    palette: u8,
+    priority: bool,
+    hflip: bool,
+    vflip: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct UniqueOverworldTile {
+    tilemap_entry: u16,
+    tilemap_variants: Vec<u16>,
+    rendered_rgba: Vec<u8>,
+    rendered_hash: u32,
+    sources: Vec<UniqueOverworldCellSource>,
+}
+
+#[derive(Debug, Default)]
+struct UniqueOverworldTileCollector {
+    tiles: Vec<UniqueOverworldTile>,
+    index_by_rendered_rgba: HashMap<Vec<u8>, usize>,
+}
+
+impl UniqueOverworldTileCollector {
+    fn insert(
+        &mut self,
+        tilemap_entry: u16,
+        rendered_rgba: Vec<u8>,
+        source: UniqueOverworldCellSource,
+    ) -> u16 {
+        if let Some(&index) = self.index_by_rendered_rgba.get(&rendered_rgba) {
+            if !self.tiles[index].tilemap_variants.contains(&tilemap_entry) {
+                self.tiles[index].tilemap_variants.push(tilemap_entry);
+            }
+            self.tiles[index].sources.push(source);
+            return index as u16;
+        }
+
+        let index = self.tiles.len();
+        let rendered_hash = fnv32_bytes(&rendered_rgba);
+        self.tiles.push(UniqueOverworldTile {
+            tilemap_entry,
+            tilemap_variants: vec![tilemap_entry],
+            rendered_rgba,
+            rendered_hash,
+            sources: vec![source],
+        });
+        self.index_by_rendered_rgba
+            .insert(self.tiles[index].rendered_rgba.clone(), index);
+        index as u16
+    }
+
+    fn manifest(
+        &self,
+        columns: u16,
+        atlas_scale: u8,
+        atlas_grid_px: u8,
+    ) -> UniqueOverworldTileAtlasManifest {
+        let rows = if self.tiles.is_empty() {
+            0
+        } else {
+            ((self.tiles.len() as u16) + columns - 1) / columns
+        };
+        let atlas_tile_width_px = u16::from(8 * atlas_scale);
+        let atlas_tile_height_px = u16::from(8 * atlas_scale);
+        let atlas_stride_x = atlas_tile_width_px + u16::from(atlas_grid_px);
+        let atlas_stride_y = atlas_tile_height_px + u16::from(atlas_grid_px);
+        UniqueOverworldTileAtlasManifest {
+            format: "zelda3_unique_overworld_tiles_v2",
+            id: "unique_overworld_tiles",
+            tile_width_px: 8,
+            tile_height_px: 8,
+            atlas_scale,
+            atlas_grid_px,
+            columns,
+            rows,
+            unique_tiles: self
+                .tiles
+                .iter()
+                .enumerate()
+                .map(|(id, tile)| {
+                    let id = id as u16;
+                    let atlas_col = id % columns;
+                    let atlas_row = id / columns;
+                    UniqueOverworldTileManifestEntry {
+                        id,
+                        atlas_col,
+                        atlas_row,
+                        atlas_x_px: u16::from(atlas_grid_px) + atlas_col * atlas_stride_x,
+                        atlas_y_px: u16::from(atlas_grid_px) + atlas_row * atlas_stride_y,
+                        atlas_width_px: atlas_tile_width_px,
+                        atlas_height_px: atlas_tile_height_px,
+                        tilemap_entry: tile.tilemap_entry,
+                        tilemap_entry_decoded: decode_tilemap_entry(tile.tilemap_entry),
+                        tilemap_variants: tile.tilemap_variants.clone(),
+                        tilemap_variants_decoded: tile
+                            .tilemap_variants
+                            .iter()
+                            .copied()
+                            .map(decode_tilemap_entry)
+                            .collect(),
+                        rendered_hash: tile.rendered_hash,
+                        source_count: tile.sources.len(),
+                        sources_truncated: tile.sources.len()
+                            > UNIQUE_OVERWORLD_MANIFEST_SOURCE_LIMIT,
+                        sources: tile
+                            .sources
+                            .iter()
+                            .take(UNIQUE_OVERWORLD_MANIFEST_SOURCE_LIMIT)
+                            .cloned()
+                            .collect(),
+                    }
+                })
+                .collect(),
+        }
+    }
+}
+
+/// One cell in the palette-index overworld atlas: 64 raw palette indices (0..=15) for an 8×8 tile,
+/// deduped by graphics identity (tile_number + hflip + vflip, palette-agnostic).
+#[derive(Debug)]
+struct OverworldIndexTile {
+    /// All distinct `tilemap_entry & 0xC3FF` values (tile_number + hflip + vflip) that produced
+    /// this identical 64-byte index pattern.
+    graphics_keys: Vec<u16>,
+    indices: [u8; 64],
+}
+
+#[derive(Debug, Default)]
+struct OverworldIndexTileCollector {
+    tiles: Vec<OverworldIndexTile>,
+    index_by_pattern: HashMap<[u8; 64], usize>,
+}
+
+impl OverworldIndexTileCollector {
+    fn insert(&mut self, tilemap_entry: u16, indices: [u8; 64]) {
+        // graphics_key strips palette (bits 12-10) and priority (bit 13); keeps tile, hflip, vflip.
+        let graphics_key = tilemap_entry & 0xC3FF;
+        if let Some(&pos) = self.index_by_pattern.get(&indices) {
+            if !self.tiles[pos].graphics_keys.contains(&graphics_key) {
+                self.tiles[pos].graphics_keys.push(graphics_key);
+            }
+            return;
+        }
+        let pos = self.tiles.len();
+        self.tiles.push(OverworldIndexTile {
+            graphics_keys: vec![graphics_key],
+            indices,
+        });
+        self.index_by_pattern.insert(indices, pos);
+    }
+}
+
+#[derive(Serialize)]
+struct OverworldIndexTileAtlasManifest {
+    format: &'static str,
+    tile_width_px: u8,
+    tile_height_px: u8,
+    cell_count: u32,
+    cells: Vec<OverworldIndexTileCellManifest>,
+}
+
+#[derive(Serialize)]
+struct OverworldIndexTileCellManifest {
+    id: u32,
+    graphics_keys: Vec<u16>,
+}
+
+fn decode_tilemap_entry(entry: u16) -> DecodedTilemapEntry {
+    DecodedTilemapEntry {
+        tile_number: entry & 0x03ff,
+        palette: ((entry >> 10) & 0x07) as u8,
+        priority: entry & 0x2000 != 0,
+        hflip: entry & 0x4000 != 0,
+        vflip: entry & 0x8000 != 0,
+    }
+}
+
+fn collect_unique_overworld_cells_from_built_bg2_map(
+    collector: &mut UniqueOverworldCellCollector,
+    game: &ZeldaState,
+    requested_screen: u16,
+    loaded_screen: u16,
+) {
+    let width_tiles = 64usize;
+    let height_tiles = 64usize;
+    for cell_y in 0..height_tiles / 2 {
+        for cell_x in 0..width_tiles / 2 {
+            let tile_x = cell_x * 2;
+            let tile_y = cell_y * 2;
+            let entries = [
+                game.parity_probe_overworld_bg2_map8_entry(tile_y * width_tiles + tile_x),
+                game.parity_probe_overworld_bg2_map8_entry(tile_y * width_tiles + tile_x + 1),
+                game.parity_probe_overworld_bg2_map8_entry((tile_y + 1) * width_tiles + tile_x),
+                game.parity_probe_overworld_bg2_map8_entry((tile_y + 1) * width_tiles + tile_x + 1),
+            ];
+            if entries == [0, 0, 0, 0] {
+                continue;
+            }
+            let rendered_rgba = render_snes_4bpp_cell_to_rgba(
+                &game.ppu.vram,
+                &game.ppu.cgram,
+                OVERWORLD_BG_CHR_BASE,
+                entries,
+            );
+            collector.insert(
+                entries,
+                rendered_rgba,
+                UniqueOverworldCellSource {
+                    screen: requested_screen,
+                    loaded_screen,
+                    layer: DEVELOPER_ROOM_SOURCE_BG_LAYER as u8,
+                    x: cell_x as u8,
+                    y: cell_y as u8,
+                },
+            );
+        }
+    }
+}
+
+fn collect_unique_overworld_tiles_from_built_bg2_map(
+    collector: &mut UniqueOverworldTileCollector,
+    index_collector: &mut OverworldIndexTileCollector,
+    game: &ZeldaState,
+    requested_screen: u16,
+    loaded_screen: u16,
+) {
+    let width_tiles = 64usize;
+    let height_tiles = 64usize;
+    for tile_y in 0..height_tiles {
+        for tile_x in 0..width_tiles {
+            let entry = game.parity_probe_overworld_bg2_map8_entry(tile_y * width_tiles + tile_x);
+            if entry == 0 {
+                continue;
+            }
+            let rendered_rgba = render_snes_4bpp_tile_to_rgba(
+                &game.ppu.vram,
+                &game.ppu.cgram,
+                OVERWORLD_BG_CHR_BASE,
+                entry,
+            );
+            collector.insert(
+                entry,
+                rendered_rgba,
+                UniqueOverworldCellSource {
+                    screen: requested_screen,
+                    loaded_screen,
+                    layer: DEVELOPER_ROOM_SOURCE_BG_LAYER as u8,
+                    x: tile_x as u8,
+                    y: tile_y as u8,
+                },
+            );
+            let indices =
+                decode_snes_4bpp_tile_indices(&game.ppu.vram, OVERWORLD_BG_CHR_BASE, entry);
+            index_collector.insert(entry, indices);
+        }
+    }
+}
+
+fn render_snes_4bpp_cell_to_rgba(
+    vram: &[u16],
+    cgram: &[u16],
+    chr_base_words: usize,
+    tilemap_entries: [u16; 4],
+) -> Vec<u8> {
+    let mut rgba = vec![0u8; 16 * 16 * 4];
+    for (index, entry) in tilemap_entries.iter().copied().enumerate() {
+        let tile_x = index % 2;
+        let tile_y = index / 2;
+        draw_snes_4bpp_tilemap_entry_to_rgba(
+            vram,
+            cgram,
+            chr_base_words,
+            entry,
+            &mut rgba,
+            16,
+            tile_x * 8,
+            tile_y * 8,
+            1,
+        );
+    }
+    rgba
+}
+
+fn render_snes_4bpp_tile_to_rgba(
+    vram: &[u16],
+    cgram: &[u16],
+    chr_base_words: usize,
+    tilemap_entry: u16,
+) -> Vec<u8> {
+    let mut rgba = vec![0u8; 8 * 8 * 4];
+    draw_snes_4bpp_tilemap_entry_to_rgba(
+        vram,
+        cgram,
+        chr_base_words,
+        tilemap_entry,
+        &mut rgba,
+        8,
+        0,
+        0,
+        1,
+    );
+    rgba
+}
+
+fn render_unique_overworld_cell_atlas(
+    collector: &UniqueOverworldCellCollector,
+    columns: usize,
+    scale: usize,
+) -> (Vec<u8>, u32, u32) {
+    let rows = if collector.cells.is_empty() {
+        0usize
+    } else {
+        (collector.cells.len() + columns - 1) / columns
+    };
+    let cell_px = 16usize;
+    let grid_px = 1usize;
+    let width = columns * cell_px * scale + (columns + 1) * grid_px;
+    let height = rows * cell_px * scale + (rows + 1) * grid_px;
+    let mut atlas = vec![0u8; width * height * 4];
+    for px in atlas.chunks_exact_mut(4) {
+        px.copy_from_slice(&[24, 24, 24, 0xff]);
+    }
+    for (id, cell) in collector.cells.iter().enumerate() {
+        let dst_x = grid_px + (id % columns) * (cell_px * scale + grid_px);
+        let dst_y = grid_px + (id / columns) * (cell_px * scale + grid_px);
+        blit_scaled_rgba_cell(
+            &cell.rendered_rgba,
+            &mut atlas,
+            width,
+            dst_x,
+            dst_y,
+            16,
+            scale,
+        );
+    }
+    (atlas, width as u32, height as u32)
+}
+
+fn render_unique_overworld_tile_atlas(
+    collector: &UniqueOverworldTileCollector,
+    columns: usize,
+    scale: usize,
+) -> (Vec<u8>, u32, u32) {
+    let rows = if collector.tiles.is_empty() {
+        0usize
+    } else {
+        (collector.tiles.len() + columns - 1) / columns
+    };
+    let tile_px = 8usize;
+    let grid_px = 1usize;
+    let width = columns * tile_px * scale + (columns + 1) * grid_px;
+    let height = rows * tile_px * scale + (rows + 1) * grid_px;
+    let mut atlas = vec![0u8; width * height * 4];
+    for px in atlas.chunks_exact_mut(4) {
+        px.copy_from_slice(&[24, 24, 24, 0xff]);
+    }
+    for (id, tile) in collector.tiles.iter().enumerate() {
+        let dst_x = grid_px + (id % columns) * (tile_px * scale + grid_px);
+        let dst_y = grid_px + (id / columns) * (tile_px * scale + grid_px);
+        blit_scaled_rgba_cell(
+            &tile.rendered_rgba,
+            &mut atlas,
+            width,
+            dst_x,
+            dst_y,
+            8,
+            scale,
+        );
+    }
+    (atlas, width as u32, height as u32)
+}
+
+fn blit_scaled_rgba_cell(
+    source: &[u8],
+    out: &mut [u8],
+    out_width: usize,
+    out_x: usize,
+    out_y: usize,
+    cell_px: usize,
+    scale: usize,
+) {
+    for y in 0..cell_px {
+        for x in 0..cell_px {
+            let src_index = (y * cell_px + x) * 4;
+            for yy in 0..scale {
+                for xx in 0..scale {
+                    let out_index =
+                        ((out_y + y * scale + yy) * out_width + out_x + x * scale + xx) * 4;
+                    out[out_index..out_index + 4]
+                        .copy_from_slice(&source[src_index..src_index + 4]);
+                }
+            }
+        }
+    }
+}
+
+fn fnv32_bytes(data: &[u8]) -> u32 {
+    let mut hash = 0x811c9dc5u32;
+    for &byte in data {
+        hash ^= u32::from(byte);
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    hash
+}
+
+fn load_developer_destination(id: &str) -> Result<(ZeldaState, u32), String> {
+    match developer_destinations::destination_target(id)
+        .ok_or_else(|| format!("unknown or locked destination '{id}'"))?
+    {
+        developer_destinations::DeveloperDestinationTarget::RouteBookmark(bookmark) => {
+            load_developer_route_bookmark(bookmark.id)
+        }
+        developer_destinations::DeveloperDestinationTarget::SyntheticRoom(room) => {
+            load_developer_synthetic_room(room)
+        }
+    }
+}
+
+fn developer_sandbox_tilemap_manifest(
+    room: developer_destinations::DeveloperSyntheticRoom,
+) -> Result<DeveloperSandboxTilemapManifest, String> {
+    let manifest: DeveloperSandboxTilemapManifest = serde_json::from_str(room.tilemap_json)
+        .map_err(|e| format!("failed to parse {} tilemap JSON: {e}", room.id))?;
+    if manifest.format != "zelda3_byte_tilemap_v1" {
+        return Err(format!(
+            "{} uses unsupported tilemap format {}",
+            room.id, manifest.format
+        ));
+    }
+    if manifest.width == 0 || manifest.height == 0 {
+        return Err(format!("{} tilemap must be non-empty", room.id));
+    }
+    if manifest.rows.len() != manifest.height as usize {
+        return Err(format!(
+            "{} tilemap row count {} does not match height {}",
+            room.id,
+            manifest.rows.len(),
+            manifest.height
+        ));
+    }
+    for (row_index, row) in manifest.rows.iter().enumerate() {
+        if row.len() != manifest.width as usize {
+            return Err(format!(
+                "{} tilemap row {row_index} width {} does not match {}",
+                room.id,
+                row.len(),
+                manifest.width
+            ));
+        }
+    }
+    Ok(manifest)
+}
+
+fn developer_kakariko_tileset_manifest() -> Result<DeveloperTilesetManifest, String> {
+    const KAKARIKO_TILESET_JSON: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/developer_tilesets/kakariko_town_tileset.json"
+    ));
+    serde_json::from_str(KAKARIKO_TILESET_JSON)
+        .map_err(|e| format!("failed to parse Kakariko developer tileset: {e}"))
+}
+
+fn load_developer_synthetic_room(
+    room: developer_destinations::DeveloperSyntheticRoom,
+) -> Result<(ZeldaState, u32), String> {
+    let manifest = developer_sandbox_tilemap_manifest(room)?;
+    let mut game =
+        load_translated_replay_state(concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc"));
+    load_replay_save_checkpoint(&mut game, Path::new(room.seed_checkpoint_path)).map_err(|e| {
+        format!(
+            "failed to load synthetic room seed checkpoint {}: {e}",
+            room.seed_checkpoint_path
+        )
+    })?;
+    let mut state_recorder = std::mem::take(&mut game.state_recorder);
+    ZeldaState::state_recorder_stop_replay(&mut state_recorder);
+    game.state_recorder = state_recorder;
+
+    game.developer_prepare_synthetic_room(room.room_id);
+    game.developer_queue_music_track(room.music_track);
+
+    let theme_source = load_developer_room_theme_source(room)?;
+    write_developer_room_visuals_to_ppu(&mut game, &manifest, room.visual_theme, &theme_source);
+    Ok((game, 0))
+}
+
+fn load_developer_room_theme_source(
+    room: developer_destinations::DeveloperSyntheticRoom,
+) -> Result<ZeldaState, String> {
+    let mut source =
+        load_translated_replay_state(concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc"));
+    load_replay_save_checkpoint(&mut source, Path::new(room.theme_checkpoint_path)).map_err(
+        |e| {
+            format!(
+                "failed to load synthetic room theme checkpoint {}: {e}",
+                room.theme_checkpoint_path
+            )
+        },
+    )?;
+    for _ in 0..32 {
+        source.zelda_run_frame(0);
+    }
+    Ok(source)
+}
+
+fn write_developer_room_visuals_to_ppu(
+    game: &mut ZeldaState,
+    manifest: &DeveloperSandboxTilemapManifest,
+    theme: developer_destinations::DeveloperSyntheticRoomTheme,
+    source: &ZeldaState,
+) {
+    game.ppu.mode = 1;
+    game.ppu.forced_blank = false;
+    game.ppu.brightness = 15;
+    game.ppu.screen_enabled[0] = 0x11; // BG1 plus sprites.
+    game.ppu.screen_enabled[1] = 0x00;
+    game.ppu.bg_layer[0].tilemap_adr = 0x1000;
+    game.ppu.bg_layer[0].tile_adr = DEVELOPER_ROOM_BG_TILE_BASE;
+    game.ppu.bg_layer[0].tilemap_wider = false;
+    game.ppu.bg_layer[0].tilemap_higher = false;
+    game.ram[BGMODE_COPY] = 9;
+    game.ram[TM_COPY] = 0x11;
+    game.ram[TS_COPY] = 0x00;
+
+    write_developer_room_palette_from_source(game, source);
+    game.ppu.vram.copy_from_slice(&source.ppu.vram);
+    copy_developer_room_chr_from_source(game, source);
+
+    let base = game.ppu.bg_layer[0].tilemap_adr as usize;
+    let source_base = source.ppu.bg_layer[DEVELOPER_ROOM_SOURCE_BG_LAYER].tilemap_adr as usize;
+    let stride = 32usize;
+    for (row_index, row) in manifest.rows.iter().enumerate() {
+        for (column_index, tile) in row.iter().enumerate() {
+            let (sample_x, sample_y) = match theme {
+                developer_destinations::DeveloperSyntheticRoomTheme::Kakariko => {
+                    developer_room_kakariko_sample_origin(source, *tile)
+                }
+            };
+            let screen_x = column_index * 2;
+            let screen_y = row_index * 2;
+            for y_offset in 0..2 {
+                for x_offset in 0..2 {
+                    let source_index =
+                        source_base + (sample_y + y_offset) * stride + sample_x + x_offset;
+                    let destination_index =
+                        base + (screen_y + y_offset) * stride + screen_x + x_offset;
+                    if let (Some(&entry), Some(slot)) = (
+                        source.ppu.vram.get(source_index),
+                        game.ppu.vram.get_mut(destination_index),
+                    ) {
+                        *slot = entry;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn write_developer_room_palette_from_source(game: &mut ZeldaState, source: &ZeldaState) {
+    game.ppu.cgram.copy_from_slice(&source.ppu.cgram);
+    for (index, color) in source.ppu.cgram.iter().copied().enumerate() {
+        write_le_u16(&mut game.ram, MAIN_PALETTE_BUFFER + index * 2, color);
+    }
+    game.ram[FLAG_UPDATE_CGRAM_IN_NMI] = 1;
+}
+
+fn copy_developer_room_chr_from_source(game: &mut ZeldaState, source: &ZeldaState) {
+    let source_vram = source.ppu.vram.clone();
+    let source_base = source.ppu.bg_layer[DEVELOPER_ROOM_SOURCE_BG_LAYER].tile_adr as usize;
+    let destination_base = usize::from(DEVELOPER_ROOM_BG_TILE_BASE);
+    for tile in 0..1024usize {
+        let source_index = source_base + tile * 16;
+        let destination_index = destination_base + tile * 16;
+        if source_index + 16 <= source_vram.len() && destination_index + 16 <= game.ppu.vram.len() {
+            game.ppu.vram[destination_index..destination_index + 16]
+                .copy_from_slice(&source_vram[source_index..source_index + 16]);
+        }
+    }
+}
+
+fn developer_room_kakariko_sample_origin(source: &ZeldaState, tile: u16) -> (usize, usize) {
+    let visible_cell = developer_room_kakariko_visible_cell(tile);
+    let visible_x = usize::from(visible_cell % 16) * 2;
+    let visible_y = usize::from(visible_cell / 16) * 2;
+    let bg = &source.ppu.bg_layer[DEVELOPER_ROOM_SOURCE_BG_LAYER];
+    let source_x = (visible_x * 8 + usize::from(bg.h_scroll)) % 256;
+    let source_y = (visible_y * 8 + usize::from(bg.v_scroll) + 1) % 256;
+    (source_x / 8, source_y / 8)
+}
+
+fn developer_room_kakariko_visible_cell(tile: u16) -> u16 {
+    match tile {
+        DEV_TOWN_ROOF => 2,
+        DEV_TOWN_WALL => 34,
+        DEV_TOWN_DOOR => 35,
+        DEV_TOWN_GRASS => 71,
+        DEV_TOWN_PATH => 179,
+        DEV_TOWN_FENCE => 97,
+        DEV_TOWN_SHRUB => 64,
+        DEV_TOWN_SIGN => 75,
+        DEV_TOWN_TREE => 11,
+        DEV_TOWN_CLIFF_TOP => 110,
+        DEV_TOWN_CLIFF_FACE => 126,
+        DEV_TOWN_FLOWERS => 31,
+        DEV_TOWN_STONE => 176,
+        DEV_TOWN_HEDGE => 30,
+        _ => tile.min(223),
+    }
 }
 
 #[cfg(test)]
@@ -1579,6 +2497,700 @@ mod host_menu_play_tests {
         assert_eq!(frame, 0);
         assert!(!game.state_recorder.replay_mode);
     }
+
+    #[test]
+    fn developer_late_checkpoint_bookmark_uses_prepared_checkpoint_when_present() {
+        let bookmark = developer_destinations::route_bookmark("route-late-checkpoint")
+            .expect("late checkpoint bookmark should be in developer manifest");
+        let Some(path) = bookmark.checkpoint_path else {
+            panic!("late checkpoint bookmark should declare a prepared checkpoint path");
+        };
+        if !Path::new(path).exists() {
+            eprintln!("skipping late checkpoint load test because {path} is not present");
+            return;
+        }
+
+        let (game, frame) = load_developer_route_bookmark("route-late-checkpoint")
+            .expect("late checkpoint bookmark should load prepared checkpoint");
+        assert_eq!(frame, 1_045_813);
+        assert!(!game.state_recorder.replay_mode);
+    }
+
+    #[test]
+    fn developer_sandbox_room_manifest_uses_byte_tilemap_json() {
+        let room = developer_destinations::synthetic_room("preset-dev-sandbox")
+            .expect("sandbox room should be registered");
+        let manifest = developer_sandbox_tilemap_manifest(room).expect("manifest should parse");
+
+        assert_eq!(manifest.format, "zelda3_byte_tilemap_v1");
+        assert_eq!(manifest.width, 16);
+        assert_eq!(manifest.height, 14);
+        assert_eq!(manifest.rows.len(), manifest.height as usize);
+        assert!(manifest
+            .rows
+            .iter()
+            .all(|row| row.len() == manifest.width as usize));
+    }
+
+    fn load_developer_kakariko_tileset_manifest_for_test() -> DeveloperTilesetManifest {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("developer_tilesets")
+            .join("kakariko_town_tileset.json");
+        let data = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+        serde_json::from_str(&data)
+            .unwrap_or_else(|e| panic!("failed to parse {}: {e}", path.display()))
+    }
+
+    #[test]
+    fn developer_kakariko_tileset_manifest_extracts_full_visible_grid() {
+        let tileset = load_developer_kakariko_tileset_manifest_for_test();
+
+        assert_eq!(tileset.format, "zelda3_developer_tileset_v1");
+        assert_eq!(tileset.id, "kakariko_town");
+        assert_eq!(tileset.source_layer, DEVELOPER_ROOM_SOURCE_BG_LAYER);
+        assert_eq!(tileset.cell_width_tiles, 2);
+        assert_eq!(tileset.cell_height_tiles, 2);
+        assert_eq!(tileset.columns, 16);
+        assert_eq!(tileset.rows, 14);
+        assert_eq!(tileset.entries.len(), 224);
+        for (expected_id, entry) in tileset.entries.iter().enumerate() {
+            assert_eq!(entry.id, expected_id as u16);
+            assert_eq!(entry.source_cell, expected_id as u16);
+            assert_eq!(entry.source_x, (expected_id % 16) as u8 * 2);
+            assert_eq!(entry.source_y, (expected_id / 16) as u8 * 2);
+        }
+        for required in [
+            "house.roof.left",
+            "house.wall.door",
+            "grass.clean.01",
+            "grass.clean.02",
+            "grass.flowers.01",
+            "fence.horizontal.left",
+            "fence.horizontal.mid",
+            "cliff.top.mid",
+            "path.stone.light",
+        ] {
+            assert!(
+                tileset
+                    .entries
+                    .iter()
+                    .any(|entry| entry.name == required && entry.approved),
+                "missing approved Kakariko tile {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn developer_sandbox_room_uses_approved_kakariko_tileset_entries() {
+        let room = developer_destinations::synthetic_room("preset-dev-sandbox")
+            .expect("sandbox room should be registered");
+        let manifest = developer_sandbox_tilemap_manifest(room).expect("manifest should parse");
+        let tileset = load_developer_kakariko_tileset_manifest_for_test();
+
+        for row in &manifest.rows {
+            for &tile in row {
+                let entry = tileset
+                    .entries
+                    .iter()
+                    .find(|entry| entry.id == tile)
+                    .unwrap_or_else(|| panic!("room references missing tileset id {tile}"));
+                assert!(entry.approved, "room references unapproved tile id {tile}");
+            }
+        }
+    }
+
+    #[test]
+    fn developer_tileset_dump_decodes_vram_tile_entries_directly() {
+        let mut vram = vec![0u16; 0x8000];
+        let mut cgram = vec![0u16; 0x100];
+        let chr_base = 0x20usize;
+        let tile_number = 3usize;
+        let tile_base = chr_base + tile_number * 16;
+        vram[tile_base] = 0x0080;
+        cgram[0x21] = 0x001f;
+
+        let mut out = vec![0u8; 8 * 8 * 4];
+        draw_snes_4bpp_tilemap_entry_to_rgba(
+            &vram,
+            &cgram,
+            chr_base,
+            tile_number as u16 | (2 << 10),
+            &mut out,
+            8,
+            0,
+            0,
+            1,
+        );
+        assert_eq!(&out[0..4], &[248, 0, 0, 0xff]);
+        assert_eq!(&out[4..8], &[0, 0, 0, 0xff]);
+
+        let mut flipped = vec![0u8; 8 * 8 * 4];
+        draw_snes_4bpp_tilemap_entry_to_rgba(
+            &vram,
+            &cgram,
+            chr_base,
+            tile_number as u16 | (2 << 10) | 0x4000,
+            &mut flipped,
+            8,
+            0,
+            0,
+            1,
+        );
+        assert_eq!(&flipped[0..4], &[0, 0, 0, 0xff]);
+        assert_eq!(&flipped[7 * 4..7 * 4 + 4], &[248, 0, 0, 0xff]);
+    }
+
+    #[test]
+    fn unique_overworld_cell_collector_collapses_duplicate_tilemap_entries() {
+        let mut collector = UniqueOverworldCellCollector::default();
+        let rgba = vec![0xaa; 16 * 16 * 4];
+        let first_source = UniqueOverworldCellSource {
+            screen: 0x00,
+            loaded_screen: 0x00,
+            layer: 1,
+            x: 3,
+            y: 4,
+        };
+        let second_source = UniqueOverworldCellSource {
+            screen: 0x40,
+            loaded_screen: 0x40,
+            layer: 1,
+            x: 5,
+            y: 6,
+        };
+
+        let first_id = collector.insert([1, 2, 3, 4], rgba.clone(), first_source.clone());
+        let second_id = collector.insert([1, 2, 3, 4], rgba, second_source.clone());
+
+        assert_eq!(first_id, 0);
+        assert_eq!(second_id, first_id);
+        assert_eq!(collector.cells.len(), 1);
+        assert_eq!(
+            collector.cells[0].sources,
+            vec![first_source, second_source]
+        );
+    }
+
+    #[test]
+    fn unique_overworld_cell_collector_collapses_identical_rendered_cells() {
+        let mut collector = UniqueOverworldCellCollector::default();
+        let rgba = vec![0x55; 16 * 16 * 4];
+        let first_source = UniqueOverworldCellSource {
+            screen: 0x00,
+            loaded_screen: 0x00,
+            layer: 1,
+            x: 3,
+            y: 4,
+        };
+        let second_source = UniqueOverworldCellSource {
+            screen: 0x40,
+            loaded_screen: 0x40,
+            layer: 1,
+            x: 5,
+            y: 6,
+        };
+
+        let first_id = collector.insert([1, 2, 3, 4], rgba.clone(), first_source.clone());
+        let second_id = collector.insert([5, 6, 7, 8], rgba, second_source.clone());
+
+        assert_eq!(first_id, 0);
+        assert_eq!(second_id, first_id);
+        assert_eq!(collector.cells.len(), 1);
+        assert_eq!(
+            collector.cells[0].tilemap_variants,
+            vec![[1, 2, 3, 4], [5, 6, 7, 8]]
+        );
+        assert_eq!(
+            collector.cells[0].sources,
+            vec![first_source, second_source]
+        );
+    }
+
+    #[test]
+    fn unique_overworld_cell_manifest_records_sources_and_layout() {
+        let mut collector = UniqueOverworldCellCollector::default();
+        collector.insert(
+            [1, 2, 3, 4],
+            vec![0x11; 16 * 16 * 4],
+            UniqueOverworldCellSource {
+                screen: 0x02,
+                loaded_screen: 0x02,
+                layer: 1,
+                x: 7,
+                y: 8,
+            },
+        );
+        collector.insert(
+            [5, 6, 7, 8],
+            vec![0x22; 16 * 16 * 4],
+            UniqueOverworldCellSource {
+                screen: 0x03,
+                loaded_screen: 0x03,
+                layer: 1,
+                x: 9,
+                y: 10,
+            },
+        );
+
+        let manifest = collector.manifest(16);
+
+        assert_eq!(manifest.format, "zelda3_unique_overworld_cells_v1");
+        assert_eq!(manifest.columns, 16);
+        assert_eq!(manifest.rows, 1);
+        assert_eq!(manifest.unique_cells.len(), 2);
+        assert_eq!(manifest.unique_cells[0].id, 0);
+        assert_eq!(manifest.unique_cells[0].tilemap_entries, [1, 2, 3, 4]);
+        assert_eq!(manifest.unique_cells[0].sources[0].screen, 0x02);
+        assert_eq!(manifest.unique_cells[1].id, 1);
+        assert_eq!(manifest.unique_cells[1].tilemap_entries, [5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn unique_overworld_tile_collector_collapses_identical_rendered_tiles() {
+        let mut collector = UniqueOverworldTileCollector::default();
+        let rgba = vec![0x77; 8 * 8 * 4];
+        let first_source = UniqueOverworldCellSource {
+            screen: 0x00,
+            loaded_screen: 0x00,
+            layer: 1,
+            x: 3,
+            y: 4,
+        };
+        let second_source = UniqueOverworldCellSource {
+            screen: 0x40,
+            loaded_screen: 0x40,
+            layer: 1,
+            x: 5,
+            y: 6,
+        };
+
+        let first_id = collector.insert(0x0123, rgba.clone(), first_source.clone());
+        let second_id = collector.insert(0x4567, rgba, second_source.clone());
+
+        assert_eq!(first_id, 0);
+        assert_eq!(second_id, first_id);
+        assert_eq!(collector.tiles.len(), 1);
+        assert_eq!(collector.tiles[0].tilemap_variants, vec![0x0123, 0x4567]);
+        assert_eq!(
+            collector.tiles[0].sources,
+            vec![first_source, second_source]
+        );
+    }
+
+    #[test]
+    fn unique_overworld_tile_manifest_records_atlas_and_decoded_tilemap_metadata() {
+        let mut collector = UniqueOverworldTileCollector::default();
+        collector.insert(
+            0xed23,
+            vec![0x33; 8 * 8 * 4],
+            UniqueOverworldCellSource {
+                screen: 0x00,
+                loaded_screen: 0x00,
+                layer: 1,
+                x: 3,
+                y: 4,
+            },
+        );
+        collector.insert(
+            0x0124,
+            vec![0x33; 8 * 8 * 4],
+            UniqueOverworldCellSource {
+                screen: 0x01,
+                loaded_screen: 0x01,
+                layer: 1,
+                x: 5,
+                y: 6,
+            },
+        );
+
+        let manifest = collector.manifest(4, 4, 1);
+        let tile = &manifest.unique_tiles[0];
+
+        assert_eq!(manifest.format, "zelda3_unique_overworld_tiles_v2");
+        assert_eq!(manifest.atlas_scale, 4);
+        assert_eq!(manifest.atlas_grid_px, 1);
+        assert_eq!(tile.atlas_col, 0);
+        assert_eq!(tile.atlas_row, 0);
+        assert_eq!(tile.atlas_x_px, 1);
+        assert_eq!(tile.atlas_y_px, 1);
+        assert_eq!(tile.atlas_width_px, 32);
+        assert_eq!(tile.atlas_height_px, 32);
+        assert_eq!(tile.tilemap_entry_decoded.tile_number, 0x0123);
+        assert_eq!(tile.tilemap_entry_decoded.palette, 3);
+        assert!(tile.tilemap_entry_decoded.priority);
+        assert!(tile.tilemap_entry_decoded.hflip);
+        assert!(tile.tilemap_entry_decoded.vflip);
+        assert_eq!(tile.tilemap_variants_decoded[1].tile_number, 0x0124);
+    }
+
+    #[test]
+    fn unique_overworld_tile_manifest_caps_source_samples() {
+        let mut collector = UniqueOverworldTileCollector::default();
+        for x in 0..40u8 {
+            collector.insert(
+                0x0123,
+                vec![0x44; 8 * 8 * 4],
+                UniqueOverworldCellSource {
+                    screen: u16::from(x),
+                    loaded_screen: u16::from(x),
+                    layer: 1,
+                    x,
+                    y: 0,
+                },
+            );
+        }
+
+        let manifest = collector.manifest(4, 4, 1);
+        let tile = &manifest.unique_tiles[0];
+
+        assert_eq!(tile.source_count, 40);
+        assert!(tile.sources_truncated);
+        assert_eq!(tile.sources.len(), UNIQUE_OVERWORLD_MANIFEST_SOURCE_LIMIT);
+    }
+
+    #[test]
+    fn unique_overworld_probe_loads_graphics_for_rendered_cells() {
+        let mut game = load_translated_replay_state(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../saves/zelda3.sfc"
+        ));
+        let loaded_screen = game.parity_probe_overworld_screen_and_build_map(0);
+        let mut collector = UniqueOverworldCellCollector::default();
+
+        collect_unique_overworld_cells_from_built_bg2_map(&mut collector, &game, 0, loaded_screen);
+
+        assert!(
+            collector.cells.iter().any(|cell| {
+                let colors = cell
+                    .rendered_rgba
+                    .chunks_exact(4)
+                    .filter(|pixel| *pixel != [0, 0, 0, 0xff])
+                    .collect::<std::collections::HashSet<_>>();
+                colors.len() >= 2
+            }),
+            "loaded overworld cells should render with varied graphics and palette colors"
+        );
+    }
+
+    #[test]
+    fn developer_sandbox_room_manifest_is_semantic_town_square() {
+        let room = developer_destinations::synthetic_room("preset-dev-sandbox")
+            .expect("sandbox room should be registered");
+        let manifest = developer_sandbox_tilemap_manifest(room).expect("manifest should parse");
+
+        assert!(
+            manifest.rows[4..=8].iter().all(|row| row
+                .iter()
+                .all(|&tile| matches!(tile, 76..=78 | 91..=93 | 96..=101 | 104..=108))),
+            "middle of the room should be a coherent walkable grass plaza"
+        );
+        assert!(
+            manifest.rows[1][0..=7].iter().copied().eq(16..=23)
+                && manifest.rows[2][0..=7].iter().copied().eq(32..=39),
+            "top-left should read as a house frontage"
+        );
+        assert!(
+            manifest.rows[9][2..=13]
+                .iter()
+                .filter(|&&tile| (128..=135).contains(&tile))
+                .count()
+                >= 6,
+            "lower half should include a town-square fence line"
+        );
+    }
+
+    #[test]
+    fn developer_sandbox_town_square_uses_coherent_kakariko_chunks() {
+        let room = developer_destinations::synthetic_room("preset-dev-sandbox")
+            .expect("sandbox room should be registered");
+        let manifest = developer_sandbox_tilemap_manifest(room).expect("manifest should parse");
+
+        assert_eq!(
+            &manifest.rows[0][0..8],
+            &[0, 1, 2, 3, 4, 5, 6, 7],
+            "top-left should preserve the Kakariko roof chunk"
+        );
+        assert_eq!(
+            &manifest.rows[2][0..8],
+            &[32, 33, 34, 35, 36, 37, 38, 39],
+            "house frontage should come from adjacent source cells, not repeated wall samples"
+        );
+        assert_eq!(
+            &manifest.rows[9][0..8],
+            &[128, 129, 130, 131, 132, 133, 134, 135],
+            "fence line should preserve a coherent Kakariko fence run"
+        );
+        assert_eq!(
+            &manifest.rows[10][8..14],
+            &[120, 121, 122, 123, 124, 125],
+            "cliff edge should preserve adjacent cliff source cells"
+        );
+    }
+
+    #[test]
+    fn developer_sandbox_town_square_keeps_plaza_clear_of_house_chunks() {
+        let room = developer_destinations::synthetic_room("preset-dev-sandbox")
+            .expect("sandbox room should be registered");
+        let manifest = developer_sandbox_tilemap_manifest(room).expect("manifest should parse");
+
+        let plaza_cells = [
+            76, 77, 78, 91, 92, 93, 96, 97, 98, 99, 100, 101, 104, 105, 106, 107, 108,
+        ];
+        for row in &manifest.rows[4..=8] {
+            assert!(
+                row.iter().all(|tile| plaza_cells.contains(tile)),
+                "plaza rows should use clean Kakariko grass/flower samples, not cluttered crop cells"
+            );
+        }
+        for row in &manifest.rows[4..] {
+            assert!(
+                row.iter().all(|&tile| !(0..=63).contains(&tile)),
+                "house-front source cells should stay in the top frontage band"
+            );
+        }
+    }
+
+    #[test]
+    fn developer_sandbox_semantic_samples_resolve_to_visible_kakariko_cells() {
+        let room = developer_destinations::synthetic_room("preset-dev-sandbox")
+            .expect("sandbox room should be registered");
+        let source = load_developer_room_theme_source(room).expect("theme source should load");
+        let expected_cells = [
+            (DEV_TOWN_ROOF, 2),
+            (DEV_TOWN_WALL, 34),
+            (DEV_TOWN_DOOR, 35),
+            (DEV_TOWN_GRASS, 71),
+            (DEV_TOWN_PATH, 179),
+            (DEV_TOWN_FENCE, 97),
+            (DEV_TOWN_SHRUB, 64),
+            (DEV_TOWN_SIGN, 75),
+            (DEV_TOWN_TREE, 11),
+            (DEV_TOWN_CLIFF_TOP, 110),
+            (DEV_TOWN_CLIFF_FACE, 126),
+            (DEV_TOWN_FLOWERS, 31),
+            (DEV_TOWN_STONE, 176),
+            (DEV_TOWN_HEDGE, 30),
+        ];
+
+        for (semantic_tile, visible_cell) in expected_cells {
+            assert_eq!(
+                developer_room_kakariko_sample_origin(&source, semantic_tile),
+                developer_room_kakariko_sample_origin(&source, visible_cell),
+                "semantic sample {semantic_tile} should resolve to visible Kakariko cell {visible_cell}"
+            );
+        }
+    }
+
+    #[test]
+    fn developer_sandbox_preset_loads_synthetic_room_state() {
+        let (game, frame) = load_developer_destination("preset-dev-sandbox")
+            .expect("sandbox preset should load from JSON-backed synthetic room");
+
+        assert_eq!(frame, 0);
+        assert_eq!(game.ram[PLAYER_IS_INDOORS], 1);
+        assert_eq!(read_le_u16(&game.ram, 0x48e), 0x01ff);
+        assert_eq!(game.ram[MUSIC_CONTROL], DEVELOPER_ROOM_KAKARIKO_MUSIC);
+
+        let location = current_developer_location_from_ram(&game.ram, frame);
+        assert_eq!(location.location, "ROOM 01FF");
+        assert_eq!(location.thumbnail, platform::DeveloperThumbnail::DevRoom);
+    }
+
+    #[test]
+    fn developer_sandbox_starts_kakariko_music_after_first_frame() {
+        let (mut game, _) = load_developer_destination("preset-dev-sandbox")
+            .expect("sandbox preset should load from JSON-backed synthetic room");
+
+        assert_eq!(game.ram[MUSIC_CONTROL], DEVELOPER_ROOM_KAKARIKO_MUSIC);
+
+        game.zelda_run_frame(0);
+
+        assert_eq!(game.ram[MUSIC_CONTROL], 0);
+        assert_eq!(
+            game.ram[CURRENT_MUSIC_CONTROL],
+            DEVELOPER_ROOM_KAKARIKO_MUSIC
+        );
+        assert_eq!(game.ram[LAST_MUSIC_CONTROL], DEVELOPER_ROOM_KAKARIKO_MUSIC);
+    }
+
+    #[test]
+    fn developer_sandbox_stays_in_room_after_first_game_frame() {
+        let (mut game, _) = load_developer_destination("preset-dev-sandbox")
+            .expect("sandbox preset should load from JSON-backed synthetic room");
+
+        assert!(!game.state_recorder.replay_mode);
+        assert_eq!(game.ram[TRACE_MAIN_MODULE_INDEX], 0x07);
+        assert_eq!(game.ram[TRACE_SUBMODULE_INDEX], 0x00);
+        assert_eq!(game.ram[PLAYER_IS_INDOORS], 1);
+        assert_eq!(read_le_u16(&game.ram, 0x48e), 0x01ff);
+
+        game.zelda_run_frame(0);
+
+        assert_eq!(game.ram[TRACE_MAIN_MODULE_INDEX], 0x07);
+        assert_eq!(game.ram[PLAYER_IS_INDOORS], 1);
+        assert_eq!(read_le_u16(&game.ram, 0x48e), 0x01ff);
+        assert!(!game.ppu.forced_blank);
+        assert!(game.ppu.brightness > 0);
+        assert_eq!(game.ppu.screen_enabled[0] & 0x11, 0x11);
+        assert_eq!(game.ppu.screen_enabled[0] & 0x06, 0x00);
+        assert_eq!(game.ppu.screen_enabled[1], 0x00);
+    }
+
+    #[test]
+    fn developer_sandbox_responds_to_live_movement_input() {
+        let (mut game, _) = load_developer_destination("preset-dev-sandbox")
+            .expect("sandbox preset should load from JSON-backed synthetic room");
+
+        game.zelda_run_frame(0);
+        let start_x = read_le_u16(&game.ram, 0x22);
+        let start_y = read_le_u16(&game.ram, 0x20);
+        for _ in 0..30 {
+            game.zelda_run_frame(1 << 7);
+        }
+        let end_x = read_le_u16(&game.ram, 0x22);
+        let end_y = read_le_u16(&game.ram, 0x20);
+
+        assert_eq!(game.ram[TRACE_MAIN_MODULE_INDEX], 0x07);
+        assert_ne!((end_x, end_y), (start_x, start_y));
+    }
+
+    #[test]
+    fn developer_sandbox_does_not_inherit_room_actors_or_dialogue() {
+        let (game, _) = load_developer_destination("preset-dev-sandbox")
+            .expect("sandbox preset should load from JSON-backed synthetic room");
+
+        assert!(game.ram[0x0dd0..0x0de0].iter().all(|&state| state == 0));
+        assert!(game.ram[0x0e20..0x0e30].iter().all(|&ty| ty == 0));
+        assert!(game.ram[0x0c4a..0x0c54].iter().all(|&ty| ty == 0));
+        assert!(game.ram[0x0b00..0x0b08].iter().all(|&ty| ty == 0));
+        assert!(game.ram[0x1f800..0x1f81e].iter().all(|&ty| ty == 0));
+        assert_eq!(game.ram[0x1cd8], 0);
+        assert_eq!(game.ram[0x1cd4], 0);
+        assert_eq!(game.ram[0x1cf0], 0);
+        assert_eq!(game.ram[0x1cf1], 0);
+    }
+
+    #[test]
+    fn developer_sandbox_uses_json_tilemap_after_frame() {
+        let room = developer_destinations::synthetic_room("preset-dev-sandbox")
+            .expect("sandbox room should be registered");
+        let manifest = developer_sandbox_tilemap_manifest(room).expect("manifest should parse");
+        let (mut game, _) = load_developer_destination("preset-dev-sandbox")
+            .expect("sandbox preset should load from JSON-backed synthetic room");
+
+        game.zelda_run_frame(0);
+        for _ in 0..30 {
+            game.zelda_run_frame(1 << 7);
+        }
+
+        let base = game.ppu.bg_layer[0].tilemap_adr as usize;
+        let source = load_developer_room_theme_source(room).expect("theme source should load");
+        let source_base = source.ppu.bg_layer[DEVELOPER_ROOM_SOURCE_BG_LAYER].tilemap_adr as usize;
+        for (row_index, row) in manifest.rows.iter().enumerate() {
+            for (column_index, tile) in row.iter().enumerate() {
+                let (sample_x, sample_y) = developer_room_kakariko_sample_origin(&source, *tile);
+                for y_offset in 0..2 {
+                    for x_offset in 0..2 {
+                        let source_index =
+                            source_base + (sample_y + y_offset) * 32 + sample_x + x_offset;
+                        let index =
+                            base + (row_index * 2 + y_offset) * 32 + column_index * 2 + x_offset;
+                        assert_eq!(game.ppu.vram[index], source.ppu.vram[source_index]);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn developer_sandbox_owns_visible_background_layers() {
+        let (mut game, _) = load_developer_destination("preset-dev-sandbox")
+            .expect("sandbox preset should load from JSON-backed synthetic room");
+
+        game.zelda_run_frame(0);
+
+        assert_eq!(game.ppu.mode, 1);
+        assert_eq!(game.ppu.screen_enabled[0] & 0x01, 0x01);
+        assert_eq!(game.ppu.screen_enabled[0] & 0x06, 0x00);
+        assert_eq!(game.ppu.screen_enabled[0] & 0x10, 0x10);
+        assert_eq!(game.ppu.screen_enabled[1], 0x00);
+        assert_eq!(game.ppu.bg_layer[0].tile_adr, DEVELOPER_ROOM_BG_TILE_BASE);
+        assert_eq!(game.ram[TM_COPY], 0x11);
+        assert_eq!(game.ram[TS_COPY], 0x00);
+    }
+
+    #[test]
+    fn developer_sandbox_samples_kakariko_checkpoint_visuals() {
+        let room = developer_destinations::synthetic_room("preset-dev-sandbox")
+            .expect("sandbox room should be registered");
+        let manifest = developer_sandbox_tilemap_manifest(room).expect("manifest should parse");
+        let source = load_developer_room_theme_source(room).expect("theme source should load");
+        let (game, _) = load_developer_destination("preset-dev-sandbox")
+            .expect("sandbox preset should load from JSON-backed synthetic room");
+
+        assert!((0x0018..=0x001b).contains(&read_le_u16(&source.ram, 0x8a)));
+        assert_eq!(game.ppu.cgram, source.ppu.cgram);
+
+        let destination_base = game.ppu.bg_layer[0].tilemap_adr as usize;
+        let source_base = source.ppu.bg_layer[DEVELOPER_ROOM_SOURCE_BG_LAYER].tilemap_adr as usize;
+        let first_grass = manifest.rows[1][1];
+        let first_border = manifest.rows[0][0];
+        let (grass_x, grass_y) = developer_room_kakariko_sample_origin(&source, first_grass);
+        let (border_x, border_y) = developer_room_kakariko_sample_origin(&source, first_border);
+        let grass_source_index = source_base + grass_y * 32 + grass_x;
+        let border_source_index = source_base + border_y * 32 + border_x;
+        let grass_destination_index = destination_base + 2 * 32 + 2;
+        let border_destination_index = destination_base;
+
+        assert_eq!(
+            game.ppu.vram[grass_destination_index],
+            source.ppu.vram[grass_source_index]
+        );
+        assert_eq!(
+            game.ppu.vram[border_destination_index],
+            source.ppu.vram[border_source_index]
+        );
+        let source_chr_base = source.ppu.bg_layer[DEVELOPER_ROOM_SOURCE_BG_LAYER].tile_adr as usize;
+        let destination_chr_base = usize::from(DEVELOPER_ROOM_BG_TILE_BASE);
+        let grass_tile = usize::from(source.ppu.vram[grass_source_index] & 0x03ff);
+        let grass_source_chr = source_chr_base + grass_tile * 16;
+        let grass_destination_chr = destination_chr_base + grass_tile * 16;
+        assert_eq!(
+            &game.ppu.vram[grass_destination_chr..grass_destination_chr + 16],
+            &source.ppu.vram[grass_source_chr..grass_source_chr + 16]
+        );
+        assert_ne!(
+            game.ppu.vram[grass_destination_index],
+            game.ppu.vram[border_destination_index]
+        );
+        assert!(manifest.rows.iter().flatten().all(|tile| {
+            let (sample_x, sample_y) = developer_room_kakariko_sample_origin(&source, *tile);
+            source.ppu.vram[source_base + sample_y * 32 + sample_x] != 0
+        }));
+    }
+
+    #[test]
+    fn current_developer_location_reports_room_or_overworld_from_ram() {
+        let mut ram = vec![0u8; 0x2000];
+        ram[PLAYER_IS_INDOORS] = 1;
+        ram[0x48e] = 0x50;
+        ram[0x48f] = 0x00;
+        let indoor = current_developer_location_from_ram(&ram, 12_000);
+        assert_eq!(indoor.label, "CURRENT LOC");
+        assert_eq!(indoor.location, "ROOM 0050");
+        assert_eq!(indoor.detail, "FRAME 12000");
+
+        ram[PLAYER_IS_INDOORS] = 0;
+        ram[0x8a] = 0x1b;
+        ram[0x8b] = 0x00;
+        let overworld = current_developer_location_from_ram(&ram, 3_852);
+        assert_eq!(overworld.location, "OW 001B");
+        assert_eq!(
+            overworld.thumbnail,
+            platform::DeveloperThumbnail::LockedOverworld
+        );
+    }
 }
 
 fn run_replay_save(args: &[String]) {
@@ -1603,6 +3215,7 @@ fn run_replay_save(args: &[String]) {
     let mut gpu_render_compare_count = 0u32;
     let mut gpu_render_compare_last_frame = 0u32;
     let mut gpu_render_compare_last_hash = 0u32;
+    let mut modern_index_compare = 0u32;
     let mut render_hash_dump_frame = None::<(u32, PathBuf)>;
     let mut save_state_path = None::<PathBuf>;
     let mut save_state_at: Vec<(u32, PathBuf)> = Vec::new();
@@ -1675,6 +3288,21 @@ fn run_replay_save(args: &[String]) {
             "--gpu-render-compare-quiet" => {
                 gpu_render_compare_quiet = true;
                 i += 1;
+            }
+            "--modern-index-compare" => {
+                let stride = args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--modern-index-compare requires a stride");
+                    process::exit(2);
+                });
+                modern_index_compare = stride.parse::<u32>().unwrap_or_else(|_| {
+                    eprintln!("invalid --modern-index-compare stride: {stride}");
+                    process::exit(2);
+                });
+                if modern_index_compare == 0 {
+                    eprintln!("--modern-index-compare stride must be greater than zero");
+                    process::exit(2);
+                }
+                i += 2;
             }
             "--render-hash-dump-frame" => {
                 let frame = args.get(i + 1).unwrap_or_else(|| {
@@ -1864,6 +3492,7 @@ fn run_replay_save(args: &[String]) {
         || gpu_render_compare != 0
         || render_hash_dump_frame.is_some()
         || dump_frame_path.is_some()
+        || modern_index_compare != 0
     {
         Some(pollster::block_on(OffscreenRenderer::new(256, 224)))
     } else {
@@ -1882,6 +3511,54 @@ fn run_replay_save(args: &[String]) {
     let mut route_coverage = coverage_log
         .as_ref()
         .map(|_| parity::coverage::RouteCoverage::default());
+    let index_atlas = if modern_index_compare != 0 {
+        Some(
+            renderer::modern_index_atlas::load_modern_overworld_index_atlas(std::path::Path::new(
+                ".",
+            ))
+            .unwrap_or_else(|e| {
+                eprintln!("index atlas load failed: {e}");
+                process::exit(2);
+            }),
+        )
+    } else {
+        None
+    };
+    let dungeon_index_atlas = if modern_index_compare != 0 {
+        Some(
+            renderer::modern_dungeon_atlas::load_modern_dungeon_index_atlas(std::path::Path::new(
+                ".",
+            ))
+            .unwrap_or_else(|e| {
+                eprintln!("dungeon index atlas load failed: {e}");
+                process::exit(2);
+            }),
+        )
+    } else {
+        None
+    };
+    // Sprite tiles are now decoded from LIVE VRAM per frame
+    // (extract_modern_sprites_from_vram); the static sprite atlas is no longer
+    // loaded for rendering.
+    //
+    // Off-VRAM (assets-anim) path: ZELDA3_RENDERER=assets-anim makes the modern
+    // compare render BG + sprites ENTIRELY from the assets-by-source atlas via the
+    // M1 logical CHR source table (no VRAM CHR pixel reads). The atlas is loaded
+    // once here when that mode is selected during a --modern-index-compare run.
+    let assets_anim_mode = std::env::var("ZELDA3_RENDERER")
+        .map(|v| v == "assets-anim")
+        .unwrap_or(false);
+    let source_atlas = if modern_index_compare != 0 && assets_anim_mode {
+        Some(
+            renderer::modern_source_atlas::load_modern_source_atlas(std::path::Path::new("."))
+                .unwrap_or_else(|e| {
+                    eprintln!("assets-by-source atlas load failed: {e}");
+                    process::exit(2);
+                }),
+        )
+    } else {
+        None
+    };
     let capture_panic_pre_frame =
         std::env::var_os("ZELDA3_REPLAY_CAPTURE_PANIC_PRE_FRAME").is_some();
     let mut last_frame_had_fingerprint_render = false;
@@ -3637,6 +5314,120 @@ fn run_replay_save(args: &[String]) {
                 );
             }
         }
+        if modern_index_compare != 0 && frames % modern_index_compare == 0 {
+            let module = game.ram[TRACE_MAIN_MODULE_INDEX];
+            // 0x0aa1 = MAIN_TILE_THEME_INDEX (the blockset CHR key; same RAM address the dungeon dump uses)
+            let theme = game.ram[0x0aa1] as u16;
+            // Default: only Mode-1 gameplay (dungeon/overworld) is compared. Set
+            // ZELDA3_COMPARE_ALL_MODULES=1 to survey EVERY module (title, menus,
+            // credits, transitions) — the label becomes `mod{N}` and the PPU mode is
+            // printed so Mode-7 screens (which the Mode-1 modern path can't render)
+            // are visible in the sweep.
+            let survey_all = std::env::var("ZELDA3_COMPARE_ALL_MODULES").is_ok();
+            let mode_str: Option<String> = match module {
+                9 | 11 => Some("ow".to_string()),
+                7 | 16 => Some("dungeon".to_string()),
+                m if survey_all => Some(format!("mod{m}")),
+                _ => None,
+            };
+            if let Some(mode_label) = mode_str {
+                let hdma_cgram = game.cgram_after_first_hdma_line();
+                let scanlines_raw = game.ppu_scanline_windows();
+                let gpu_ppu = game.ppu.clone();
+                let gpu_frame =
+                    gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+                let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
+                let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
+                let _ = (theme, &dungeon_index_atlas, &index_atlas);
+                // Off-VRAM (assets-anim) path: render BG + sprites ENTIRELY from the
+                // assets-by-source atlas via the M1 logical CHR source table — NO
+                // VRAM CHR pixel reads. Otherwise: the unified live-VRAM modern path.
+                let (modern_rgba, via) = if gpu_frame.mode == 7 {
+                    // Mode 7 (affine BG, e.g. the map screen) is not a tilemap the
+                    // Mode-1 compositor can render; use the dedicated CPU Mode-7 path.
+                    // It decodes the affine field from VRAM regardless of compare mode.
+                    (
+                        renderer::modern_software::render_modern_mode7_frame(&gpu_frame),
+                        "mode7",
+                    )
+                } else if let Some(atlas) = source_atlas.as_ref() {
+                    // Copy the M1 source table into a plain (kind, pack, tile_off)
+                    // slice the renderer crate consumes (it must not depend on zelda3).
+                    // Content-hashed slots (CHR_KIND_BG_STREAM) are re-keyed from frame-end
+                    // VRAM inside `extract_modern_frame_from_sources` (see
+                    // `content_hash32_slot`), so this copy stays a plain passthrough.
+                    let src_slice: Vec<(u8, u16, u16)> = game
+                        .vram_chr_source()
+                        .as_slice()
+                        .iter()
+                        .map(|s| (s.kind, s.pack, s.tile_off))
+                        .collect();
+                    let (mut modern, bg_cells) =
+                        renderer::modern_extract::extract_modern_frame_from_sources(
+                            &gpu_frame,
+                            &src_slice[..],
+                            atlas,
+                        );
+                    let (sprite_cells, sprites) =
+                        renderer::modern_extract::extract_modern_sprites_from_sources(
+                            &gpu_frame,
+                            &src_slice[..],
+                            atlas,
+                        );
+                    modern.index_sprites = sprites;
+                    let rgba = renderer::modern_software::render_modern_frame_full(
+                        &modern,
+                        &bg_cells,
+                        &sprite_cells,
+                    );
+                    (rgba, "sources")
+                } else {
+                    // Both dungeon and overworld BG patterns are decoded from LIVE VRAM
+                    // (animated CHR / palettes). Unified live-VRAM modern path: BG +
+                    // sprites + SNES color-math + master brightness in one entry point.
+                    (
+                        renderer::modern_extract::render_modern_frame_full_from_vram(&gpu_frame),
+                        "vram",
+                    )
+                };
+                let mut mismatch = 0usize;
+                for (c, m) in classic_rgba
+                    .chunks_exact(4)
+                    .zip(modern_rgba.chunks_exact(4))
+                {
+                    if c[0] != m[0] || c[1] != m[1] || c[2] != m[2] {
+                        mismatch += 1;
+                    }
+                }
+                println!(
+                    "modern_index_compare frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via}",
+                    gpu_frame.mode
+                );
+                if let Ok(dump_str) = std::env::var("ZELDA3_MODERN_INDEX_DUMP_FRAME") {
+                    if let Ok(dump_frame) = dump_str.parse::<u32>() {
+                        if frames == dump_frame {
+                            let classic_path = PathBuf::from(format!("/tmp/classic_{frames}.png"));
+                            let modern_path =
+                                PathBuf::from(format!("/tmp/modern_index_{frames}.png"));
+                            if let Err(e) =
+                                write_rgba_frame_png(&classic_path, &classic_rgba, 256, 224)
+                            {
+                                eprintln!("failed to write {}: {e}", classic_path.display());
+                            } else {
+                                println!("dumped classic frame to {}", classic_path.display());
+                            }
+                            if let Err(e) =
+                                write_rgba_frame_png(&modern_path, &modern_rgba, 256, 224)
+                            {
+                                eprintln!("failed to write {}: {e}", modern_path.display());
+                            } else {
+                                println!("dumped modern_index frame to {}", modern_path.display());
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let mut fp_render_leaf: u32 = 0;
         if should_fingerprint_frame {
             let frame = render_hash_frame.as_mut().expect("render frame allocated");
@@ -4836,9 +6627,26 @@ fn load_play_or_checkpoint(rom_path: &str, load_state: Option<&Path>) -> (ZeldaS
         }
         match load_lockstep_checkpoint(path) {
             Ok(checkpoint) => return (checkpoint.oracle.game, checkpoint.frame),
-            Err(e) => {
-                eprintln!("failed to load checkpoint {}: {e}", path.display());
-                process::exit(1);
+            Err(lockstep_err) => {
+                // Fall back to the replay-save C-style state_recorder checkpoint format
+                // (written by --replay-save --save-state and the replay-bisect cache).
+                // These are a different on-disk format than the bincode play-crash /
+                // lockstep checkpoints above, so accept them here too for parity probes.
+                let mut game = load_play_state(rom_path);
+                match load_replay_save_checkpoint(&mut game, path) {
+                    Ok(()) => {
+                        game.set_rom_startup_timing(true);
+                        let frame = game.state_recorder.replay_frame_counter;
+                        return (game, frame);
+                    }
+                    Err(state_recorder_err) => {
+                        eprintln!(
+                            "failed to load checkpoint {} (not a play-crash, lockstep, or replay-save checkpoint): lockstep={lockstep_err}; replay-save={state_recorder_err}",
+                            path.display()
+                        );
+                        process::exit(1);
+                    }
+                }
             }
         }
     }
@@ -7364,6 +9172,2040 @@ fn run_dump_frame(args: &[String]) {
     );
 }
 
+fn run_dump_developer_destination(args: &[String]) {
+    let id = match args.first() {
+        Some(id) => id,
+        None => {
+            eprintln!(
+                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <cpu-out.png> [--gpu <gpu-out.png>]"
+            );
+            process::exit(2);
+        }
+    };
+    let frames: u32 = match args.get(1).and_then(|s| s.parse().ok()) {
+        Some(frames) => frames,
+        None => {
+            eprintln!(
+                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <cpu-out.png> [--gpu <gpu-out.png>]"
+            );
+            process::exit(2);
+        }
+    };
+    let out_path = match args.get(2) {
+        Some(path) => PathBuf::from(path),
+        None => {
+            eprintln!(
+                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <cpu-out.png> [--gpu <gpu-out.png>]"
+            );
+            process::exit(2);
+        }
+    };
+    let mut gpu_out_path = None::<PathBuf>;
+    let mut i = 3usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--gpu" => {
+                let path = args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--gpu requires a path");
+                    process::exit(2);
+                });
+                gpu_out_path = Some(PathBuf::from(path));
+                i += 2;
+            }
+            flag => {
+                eprintln!("unknown dump-developer-destination option: {flag}");
+                process::exit(2);
+            }
+        }
+    }
+
+    let (mut game, start_frame) = match load_developer_destination(id) {
+        Ok(loaded) => loaded,
+        Err(e) => {
+            eprintln!("failed to load developer destination {id}: {e}");
+            process::exit(1);
+        }
+    };
+    let width = 256u32;
+    let height = 224u32;
+    let mut frame = vec![0u8; width as usize * height as usize * 4];
+    for _ in 0..frames {
+        run_play_frame(&mut game, 0, &mut frame, PpuRenderFlags::empty());
+    }
+    if let Err(e) = write_argb_frame_png(&out_path, &frame, width, height) {
+        eprintln!("failed to write {}: {e}", out_path.display());
+        process::exit(1);
+    }
+
+    if let Some(path) = gpu_out_path.as_deref() {
+        let hdma_cgram = game.cgram_after_first_hdma_line();
+        let scanlines_raw = game.ppu_scanline_windows();
+        let ppu = game.ppu.clone();
+        let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+        let mut offscreen = pollster::block_on(OffscreenRenderer::new(width, height));
+        let rgba = offscreen.render_gpu_frame(&gpu_frame);
+        if let Err(e) = write_rgba_frame_png(path, &rgba, width, height) {
+            eprintln!("failed to write {}: {e}", path.display());
+            process::exit(1);
+        }
+    }
+
+    println!(
+        "dumped developer destination {id} frames={frames} start_frame={start_frame} to {}; gpu={}; main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; bg1_tm={:04x}; bg1_chr={:04x}; cgram_nonzero={}; oam_nonzero={}",
+        out_path.display(),
+        gpu_out_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "none".to_string()),
+        game.ram[0x10],
+        game.ram[0x11],
+        game.ppu.mode,
+        game.ppu.screen_enabled[0],
+        game.ppu.screen_enabled[1],
+        game.ppu.bg_layer[0].tilemap_adr,
+        game.ppu.bg_layer[0].tile_adr,
+        game.ppu.cgram.iter().filter(|&&v| v != 0).count(),
+        game.ppu.oam.iter().filter(|&&v| v != 0).count(),
+    );
+}
+
+fn run_dump_overworld_screen(args: &[String]) {
+    let rom_path = match args.first() {
+        Some(path) => path,
+        None => {
+            eprintln!("usage: zelda3 --dump-overworld-screen <path-to-rom.sfc> <screen> <out.png>");
+            process::exit(2);
+        }
+    };
+    let screen = match args.get(1).and_then(|s| parse_u16_auto(s)) {
+        Some(screen) => screen,
+        None => {
+            eprintln!("usage: zelda3 --dump-overworld-screen <path-to-rom.sfc> <screen> <out.png>");
+            process::exit(2);
+        }
+    };
+    let out_path = match args.get(2) {
+        Some(path) => PathBuf::from(path),
+        None => {
+            eprintln!("usage: zelda3 --dump-overworld-screen <path-to-rom.sfc> <screen> <out.png>");
+            process::exit(2);
+        }
+    };
+
+    let mut game = load_translated_replay_state(rom_path);
+    let loaded = game.parity_probe_overworld_screen(screen);
+    let width = 256u32;
+    let height = 224u32;
+    let mut frame = vec![0u8; width as usize * height as usize * 4];
+    draw_play_ppu_frame(
+        &mut game,
+        &mut frame,
+        width as usize * 4,
+        PpuRenderFlags::empty(),
+    );
+    if let Err(e) = write_argb_frame_png(&out_path, &frame, width, height) {
+        eprintln!("failed to write {}: {e}", out_path.display());
+        process::exit(1);
+    }
+    println!(
+        "dumped overworld screen requested=0x{screen:04x} loaded=0x{loaded:04x} to {}; mode={}; screen={:02x}/{:02x}; bg1_tm={:04x}; bg1_chr={:04x}; bg2_tm={:04x}; bg2_chr={:04x}",
+        out_path.display(),
+        game.ppu.mode,
+        game.ppu.screen_enabled[0],
+        game.ppu.screen_enabled[1],
+        game.ppu.bg_layer[0].tilemap_adr,
+        game.ppu.bg_layer[0].tile_adr,
+        game.ppu.bg_layer[1].tilemap_adr,
+        game.ppu.bg_layer[1].tile_adr,
+    );
+}
+
+fn run_scan_replay_checkpoints(args: &[String]) {
+    let rom_path = match args.first() {
+        Some(path) => path,
+        None => {
+            eprintln!(
+                "usage: zelda3 --scan-replay-checkpoints <path-to-rom.sfc> <checkpoint-dir> [screen]"
+            );
+            process::exit(2);
+        }
+    };
+    let checkpoint_dir = match args.get(1) {
+        Some(path) => PathBuf::from(path),
+        None => {
+            eprintln!(
+                "usage: zelda3 --scan-replay-checkpoints <path-to-rom.sfc> <checkpoint-dir> [screen]"
+            );
+            process::exit(2);
+        }
+    };
+    let target_screen = args.get(2).and_then(|value| parse_u16_auto(value));
+    let mut checkpoints = match fs::read_dir(&checkpoint_dir) {
+        Ok(entries) => entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("sav"))
+            .collect::<Vec<_>>(),
+        Err(e) => {
+            eprintln!("failed to read {}: {e}", checkpoint_dir.display());
+            process::exit(1);
+        }
+    };
+    checkpoints.sort();
+
+    for path in checkpoints {
+        let mut game = load_translated_replay_state(rom_path);
+        if let Err(e) = load_replay_save_checkpoint(&mut game, &path) {
+            eprintln!("failed to load {}: {e}", path.display());
+            continue;
+        }
+        let indoors = game.ram[PLAYER_IS_INDOORS] != 0;
+        let room = read_le_u16(&game.ram, 0x48e);
+        let screen = read_le_u16(&game.ram, 0x8a);
+        if target_screen.is_some_and(|target| indoors || screen != target) {
+            continue;
+        }
+        println!(
+            "{} indoors={} room=0x{room:04x} ow=0x{screen:04x} main={:02x} sub={:02x} mode={} screen={:02x}/{:02x} bg1_tm={:04x} bg1_chr={:04x} bg2_tm={:04x} bg2_chr={:04x} cgram_nonzero={} vram_nonzero={}",
+            path.display(),
+            indoors,
+            game.ram[0x10],
+            game.ram[0x11],
+            game.ppu.mode,
+            game.ppu.screen_enabled[0],
+            game.ppu.screen_enabled[1],
+            game.ppu.bg_layer[0].tilemap_adr,
+            game.ppu.bg_layer[0].tile_adr,
+            game.ppu.bg_layer[1].tilemap_adr,
+            game.ppu.bg_layer[1].tile_adr,
+            game.ppu.cgram.iter().filter(|&&v| v != 0).count(),
+            game.ppu.vram.iter().filter(|&&v| v != 0).count(),
+        );
+    }
+}
+
+fn run_dump_replay_checkpoint_ppu(args: &[String]) {
+    let rom_path = match args.first() {
+        Some(path) => path,
+        None => {
+            eprintln!(
+                "usage: zelda3 --dump-replay-checkpoint-ppu <path-to-rom.sfc> <checkpoint.sav> <out.png> [frames]"
+            );
+            process::exit(2);
+        }
+    };
+    let checkpoint_path = match args.get(1) {
+        Some(path) => PathBuf::from(path),
+        None => {
+            eprintln!(
+                "usage: zelda3 --dump-replay-checkpoint-ppu <path-to-rom.sfc> <checkpoint.sav> <out.png> [frames]"
+            );
+            process::exit(2);
+        }
+    };
+    let out_path = match args.get(2) {
+        Some(path) => PathBuf::from(path),
+        None => {
+            eprintln!(
+                "usage: zelda3 --dump-replay-checkpoint-ppu <path-to-rom.sfc> <checkpoint.sav> <out.png> [frames]"
+            );
+            process::exit(2);
+        }
+    };
+    let frames = args
+        .get(3)
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1);
+    let mut game = load_translated_replay_state(rom_path);
+    if let Err(e) = load_replay_save_checkpoint(&mut game, &checkpoint_path) {
+        eprintln!("failed to load {}: {e}", checkpoint_path.display());
+        process::exit(1);
+    }
+    let width = 256u32;
+    let height = 224u32;
+    let mut frame = vec![0u8; width as usize * height as usize * 4];
+    for _ in 0..frames {
+        run_play_frame(&mut game, 0, &mut frame, PpuRenderFlags::empty());
+    }
+    if let Err(e) = write_argb_frame_png(&out_path, &frame, width, height) {
+        eprintln!("failed to write {}: {e}", out_path.display());
+        process::exit(1);
+    }
+    println!(
+        "dumped replay checkpoint {} frames={frames} to {}; indoors={} ow=0x{:04x} main={:02x} sub={:02x} mode={} screen={:02x}/{:02x} bg1_tm={:04x} bg1_chr={:04x}",
+        checkpoint_path.display(),
+        out_path.display(),
+        game.ram[PLAYER_IS_INDOORS] != 0,
+        read_le_u16(&game.ram, 0x8a),
+        game.ram[0x10],
+        game.ram[0x11],
+        game.ppu.mode,
+        game.ppu.screen_enabled[0],
+        game.ppu.screen_enabled[1],
+        game.ppu.bg_layer[0].tilemap_adr,
+        game.ppu.bg_layer[0].tile_adr,
+    );
+}
+
+fn run_dump_developer_tileset(args: &[String]) {
+    let tileset_id = match args.first() {
+        Some(id) => id,
+        None => {
+            eprintln!(
+                "usage: zelda3 --dump-developer-tileset <tileset-id> <atlas.png> [manifest.json]"
+            );
+            process::exit(2);
+        }
+    };
+    if tileset_id != "kakariko-town" && tileset_id != "kakariko_town" {
+        eprintln!("unknown developer tileset '{tileset_id}'");
+        process::exit(2);
+    }
+    let atlas_path = match args.get(1) {
+        Some(path) => PathBuf::from(path),
+        None => {
+            eprintln!(
+                "usage: zelda3 --dump-developer-tileset <tileset-id> <atlas.png> [manifest.json]"
+            );
+            process::exit(2);
+        }
+    };
+    let manifest_out_path = args.get(2).map(PathBuf::from);
+    let room = developer_destinations::synthetic_room("preset-dev-sandbox")
+        .expect("developer sandbox synthetic room should be registered");
+    let source = match load_developer_room_theme_source(room) {
+        Ok(source) => source,
+        Err(e) => {
+            eprintln!("{e}");
+            process::exit(1);
+        }
+    };
+    let manifest = match developer_kakariko_tileset_manifest() {
+        Ok(manifest) => manifest,
+        Err(e) => {
+            eprintln!("{e}");
+            process::exit(1);
+        }
+    };
+    let scale = 2usize;
+    let cell_px = 16usize;
+    let grid_px = 1usize;
+    let atlas_width =
+        manifest.columns as usize * cell_px * scale + (manifest.columns as usize + 1) * grid_px;
+    let atlas_height =
+        manifest.rows as usize * cell_px * scale + (manifest.rows as usize + 1) * grid_px;
+    let mut atlas = vec![0u8; atlas_width * atlas_height * 4];
+    for px in atlas.chunks_exact_mut(4) {
+        px.copy_from_slice(&[24, 24, 24, 0xff]);
+    }
+    let bg = source.ppu.bg_layer[DEVELOPER_ROOM_SOURCE_BG_LAYER];
+    for entry in &manifest.entries {
+        let (source_x, source_y) = developer_room_kakariko_sample_origin(&source, entry.id);
+        let atlas_cell_x =
+            grid_px + usize::from(entry.id % manifest.columns) * (cell_px * scale + grid_px);
+        let atlas_cell_y =
+            grid_px + usize::from(entry.id / manifest.columns) * (cell_px * scale + grid_px);
+        for y_offset in 0..2usize {
+            for x_offset in 0..2usize {
+                let tilemap_index =
+                    bg.tilemap_adr as usize + (source_y + y_offset) * 32 + source_x + x_offset;
+                let tilemap_entry = source.ppu.vram.get(tilemap_index).copied().unwrap_or(0);
+                draw_snes_4bpp_tilemap_entry_to_rgba(
+                    &source.ppu.vram,
+                    &source.ppu.cgram,
+                    bg.tile_adr as usize,
+                    tilemap_entry,
+                    &mut atlas,
+                    atlas_width,
+                    atlas_cell_x + x_offset * 8 * scale,
+                    atlas_cell_y + y_offset * 8 * scale,
+                    scale,
+                );
+            }
+        }
+    }
+    if let Err(e) =
+        write_rgba_frame_png(&atlas_path, &atlas, atlas_width as u32, atlas_height as u32)
+    {
+        eprintln!("failed to write {}: {e}", atlas_path.display());
+        process::exit(1);
+    }
+    if let Some(path) = manifest_out_path.as_deref() {
+        let json = match serde_json::to_vec_pretty(&manifest) {
+            Ok(json) => json,
+            Err(e) => {
+                eprintln!("failed to serialize Kakariko developer tileset: {e}");
+                process::exit(1);
+            }
+        };
+        if let Err(e) = fs::write(path, json) {
+            eprintln!("failed to write {}: {e}", path.display());
+            process::exit(1);
+        }
+    }
+    println!(
+        "dumped developer tileset {} entries={} atlas={} manifest={}",
+        manifest.id,
+        manifest.entries.len(),
+        atlas_path.display(),
+        manifest_out_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "none".to_string()),
+    );
+}
+
+fn run_dump_unique_overworld_cells(args: &[String]) {
+    let atlas_path = match args.first() {
+        Some(path) => PathBuf::from(path),
+        None => {
+            eprintln!(
+                "usage: zelda3 --dump-unique-overworld-cells <atlas.png> <manifest.json> [max-screen]"
+            );
+            process::exit(2);
+        }
+    };
+    let manifest_path = match args.get(1) {
+        Some(path) => PathBuf::from(path),
+        None => {
+            eprintln!(
+                "usage: zelda3 --dump-unique-overworld-cells <atlas.png> <manifest.json> [max-screen]"
+            );
+            process::exit(2);
+        }
+    };
+    let max_screen = args
+        .get(2)
+        .and_then(|value| parse_u16_auto(value))
+        .unwrap_or(0x7f);
+
+    let rom_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc");
+    let mut collector = UniqueOverworldCellCollector::default();
+    let mut loaded_count = 0u16;
+    let mut skipped_count = 0u16;
+    let original_hook = panic::take_hook();
+    panic::set_hook(Box::new(|_| {}));
+    for screen in 0..=max_screen {
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+            let mut game = load_translated_replay_state(rom_path);
+            let loaded_screen = game.parity_probe_overworld_screen_and_build_map(screen);
+            collect_unique_overworld_cells_from_built_bg2_map(
+                &mut collector,
+                &game,
+                screen,
+                loaded_screen,
+            );
+        }));
+        if result.is_ok() {
+            loaded_count = loaded_count.wrapping_add(1);
+        } else {
+            skipped_count = skipped_count.wrapping_add(1);
+        }
+    }
+    panic::set_hook(original_hook);
+
+    let columns = 64usize;
+    let (atlas, width, height) = render_unique_overworld_cell_atlas(&collector, columns, 2);
+    if let Err(e) = write_rgba_frame_png(&atlas_path, &atlas, width, height) {
+        eprintln!("failed to write {}: {e}", atlas_path.display());
+        process::exit(1);
+    }
+    let manifest = collector.manifest(columns as u16);
+    let json = match serde_json::to_vec_pretty(&manifest) {
+        Ok(json) => json,
+        Err(e) => {
+            eprintln!("failed to serialize unique overworld cell manifest: {e}");
+            process::exit(1);
+        }
+    };
+    if let Err(e) = fs::write(&manifest_path, json) {
+        eprintln!("failed to write {}: {e}", manifest_path.display());
+        process::exit(1);
+    }
+    println!(
+        "dumped unique overworld cells unique={} sources={} loaded_screens={} skipped_screens={} atlas={} manifest={}",
+        collector.cells.len(),
+        collector
+            .cells
+            .iter()
+            .map(|cell| cell.sources.len())
+            .sum::<usize>(),
+        loaded_count,
+        skipped_count,
+        atlas_path.display(),
+        manifest_path.display(),
+    );
+}
+
+fn run_dump_unique_overworld_tiles(args: &[String]) {
+    let atlas_path = match args.first() {
+        Some(path) => PathBuf::from(path),
+        None => {
+            eprintln!(
+                "usage: zelda3 --dump-unique-overworld-tiles <atlas.png> <manifest.json> [max-screen]"
+            );
+            process::exit(2);
+        }
+    };
+    let manifest_path = match args.get(1) {
+        Some(path) => PathBuf::from(path),
+        None => {
+            eprintln!(
+                "usage: zelda3 --dump-unique-overworld-tiles <atlas.png> <manifest.json> [max-screen]"
+            );
+            process::exit(2);
+        }
+    };
+    let max_screen = args
+        .get(2)
+        .and_then(|value| parse_u16_auto(value))
+        .unwrap_or(0x7f);
+
+    let rom_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc");
+    let mut collector = UniqueOverworldTileCollector::default();
+    let mut index_collector = OverworldIndexTileCollector::default();
+    let mut loaded_count = 0u16;
+    let mut skipped_count = 0u16;
+    let original_hook = panic::take_hook();
+    panic::set_hook(Box::new(|_| {}));
+    for screen in 0..=max_screen {
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+            let mut game = load_translated_replay_state(rom_path);
+            let loaded_screen = game.parity_probe_overworld_screen_and_build_map(screen);
+            collect_unique_overworld_tiles_from_built_bg2_map(
+                &mut collector,
+                &mut index_collector,
+                &game,
+                screen,
+                loaded_screen,
+            );
+        }));
+        if result.is_ok() {
+            loaded_count = loaded_count.wrapping_add(1);
+        } else {
+            skipped_count = skipped_count.wrapping_add(1);
+        }
+    }
+    panic::set_hook(original_hook);
+
+    let columns = 64usize;
+    let atlas_scale = 4u8;
+    let atlas_grid_px = 1u8;
+    let (atlas, width, height) =
+        render_unique_overworld_tile_atlas(&collector, columns, usize::from(atlas_scale));
+    if let Err(e) = write_rgba_frame_png(&atlas_path, &atlas, width, height) {
+        eprintln!("failed to write {}: {e}", atlas_path.display());
+        process::exit(1);
+    }
+    let manifest = collector.manifest(columns as u16, atlas_scale, atlas_grid_px);
+    let json = match serde_json::to_vec_pretty(&manifest) {
+        Ok(json) => json,
+        Err(e) => {
+            eprintln!("failed to serialize unique overworld tile manifest: {e}");
+            process::exit(1);
+        }
+    };
+    if let Err(e) = fs::write(&manifest_path, json) {
+        eprintln!("failed to write {}: {e}", manifest_path.display());
+        process::exit(1);
+    }
+    println!(
+        "dumped unique overworld tiles unique={} sources={} loaded_screens={} skipped_screens={} atlas={} manifest={}",
+        collector.tiles.len(),
+        collector
+            .tiles
+            .iter()
+            .map(|tile| tile.sources.len())
+            .sum::<usize>(),
+        loaded_count,
+        skipped_count,
+        atlas_path.display(),
+        manifest_path.display(),
+    );
+
+    // Write palette-index atlas (canonical paths, independent of the RGBA output args).
+    const INDEX_BIN: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/developer_tilesets/overworld_index_tiles.bin"
+    );
+    const INDEX_JSON: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/developer_tilesets/overworld_index_tiles.json"
+    );
+    let cell_count = index_collector.tiles.len();
+    let mut bin = Vec::with_capacity(cell_count * 64);
+    for tile in &index_collector.tiles {
+        bin.extend_from_slice(&tile.indices);
+    }
+    if let Err(e) = fs::write(INDEX_BIN, &bin) {
+        eprintln!("failed to write index atlas bin {INDEX_BIN}: {e}");
+        process::exit(1);
+    }
+    let index_manifest = OverworldIndexTileAtlasManifest {
+        format: "zelda3_overworld_index_tiles_v1",
+        tile_width_px: 8,
+        tile_height_px: 8,
+        cell_count: cell_count as u32,
+        cells: index_collector
+            .tiles
+            .iter()
+            .enumerate()
+            .map(|(id, tile)| OverworldIndexTileCellManifest {
+                id: id as u32,
+                graphics_keys: tile.graphics_keys.clone(),
+            })
+            .collect(),
+    };
+    let index_json = match serde_json::to_vec_pretty(&index_manifest) {
+        Ok(json) => json,
+        Err(e) => {
+            eprintln!("failed to serialize overworld index tile manifest: {e}");
+            process::exit(1);
+        }
+    };
+    if let Err(e) = fs::write(INDEX_JSON, &index_json) {
+        eprintln!("failed to write index atlas json {INDEX_JSON}: {e}");
+        process::exit(1);
+    }
+    println!(
+        "dumped index atlas cells={} bin={} json={}",
+        cell_count, INDEX_BIN, INDEX_JSON
+    );
+}
+
+#[derive(Serialize)]
+struct DungeonIndexTileAtlasManifest {
+    format: &'static str,
+    tile_width_px: u8,
+    tile_height_px: u8,
+    cell_count: u32,
+    cells: Vec<DungeonIndexTileCellManifest>,
+}
+
+#[derive(Serialize)]
+struct DungeonIndexTileCellManifest {
+    id: u32,
+    /// Packed keys: `(theme as u32) << 16 | (tilemap_entry & 0xC3FF) as u32`.
+    keys: Vec<u32>,
+}
+
+/// Manifest for the sprite palette-index tile atlas produced by `--dump-sprite-index-tiles`.
+/// Format version: `zelda3_sprite_index_tiles_v1`.
+#[derive(Serialize)]
+struct SpriteIndexTileAtlasManifest {
+    format: &'static str,
+    tile_width_px: u8,
+    tile_height_px: u8,
+    cell_count: u32,
+    cells: Vec<SpriteIndexTileCellManifest>,
+}
+
+#[derive(Serialize)]
+struct SpriteIndexTileCellManifest {
+    id: u32,
+    keys: Vec<SpriteIndexKey>,
+}
+
+/// One lookup key for a sprite index cell: a `(context, tile)` pair where
+/// `context = g0|(g1<<16)|(g2<<32)|(g3<<48)` (sprite graphics subsets 0..4)
+/// and `tile` is the 8×8 cell offset in 0..512 from VRAM base 0x4000.
+#[derive(Serialize)]
+struct SpriteIndexKey {
+    context: u64,
+    tile: u16,
+}
+
+/// Walk all 0x128 dungeon entrance indices, dedup tiles by 64-byte pattern, and emit
+/// `developer_tilesets/dungeon_index_tiles.{bin,json}`.
+fn run_dump_dungeon_index_tiles(_args: &[String]) {
+    use std::collections::BTreeSet;
+
+    const INDEX_BIN: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/developer_tilesets/dungeon_index_tiles.bin"
+    );
+    const INDEX_JSON: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/developer_tilesets/dungeon_index_tiles.json"
+    );
+
+    let rom = concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc");
+    let mut cells: Vec<[u8; 64]> = Vec::new();
+    let mut index_by_pattern: HashMap<[u8; 64], usize> = HashMap::new();
+    let mut keys_by_cell: Vec<BTreeSet<u32>> = Vec::new();
+
+    let original_hook = panic::take_hook();
+    panic::set_hook(Box::new(|_| {}));
+    for room in 0u16..0x128 {
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+            let mut game = load_translated_replay_state(rom);
+            dungeon_room_index_probe(&mut game, room)
+        }));
+        let (theme, tiles) = match result {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        for (word, pattern) in tiles {
+            let key = ((theme as u32) << 16) | ((word & 0xC3FF) as u32);
+            let id = *index_by_pattern.entry(pattern).or_insert_with(|| {
+                cells.push(pattern);
+                keys_by_cell.push(BTreeSet::new());
+                cells.len() - 1
+            });
+            keys_by_cell[id].insert(key);
+        }
+    }
+    panic::set_hook(original_hook);
+
+    let cell_count = cells.len();
+    let mut bin = Vec::with_capacity(cell_count * 64);
+    for pattern in &cells {
+        bin.extend_from_slice(pattern);
+    }
+    if let Err(e) = fs::write(INDEX_BIN, &bin) {
+        eprintln!("failed to write dungeon index atlas bin {INDEX_BIN}: {e}");
+        process::exit(1);
+    }
+
+    let manifest = DungeonIndexTileAtlasManifest {
+        format: "zelda3_dungeon_index_tiles_v1",
+        tile_width_px: 8,
+        tile_height_px: 8,
+        cell_count: cell_count as u32,
+        cells: keys_by_cell
+            .iter()
+            .enumerate()
+            .map(|(id, keys)| DungeonIndexTileCellManifest {
+                id: id as u32,
+                keys: keys.iter().copied().collect(),
+            })
+            .collect(),
+    };
+    let index_json = match serde_json::to_vec_pretty(&manifest) {
+        Ok(json) => json,
+        Err(e) => {
+            eprintln!("failed to serialize dungeon index tile manifest: {e}");
+            process::exit(1);
+        }
+    };
+    if let Err(e) = fs::write(INDEX_JSON, &index_json) {
+        eprintln!("failed to write dungeon index atlas json {INDEX_JSON}: {e}");
+        process::exit(1);
+    }
+
+    println!("dumped dungeon index atlas cells={cell_count}");
+}
+
+/// Walk all dungeon entrances (0..0x128) and overworld screens (0..0x80), decode
+/// every non-zero 8×8 sprite CHR tile (VRAM 0x4000, 512 tiles), dedup by 64-byte
+/// pattern, and emit `developer_tilesets/sprite_index_tiles.{bin,json}`.
+///
+/// Context key: `g0|(g1<<16)|(g2<<32)|(g3<<48)` over the 4 sprite graphics subsets
+/// populated by `InitializeTilesets`; one full decode per unique context.
+fn run_dump_sprite_index_tiles(_args: &[String]) {
+    use std::collections::{BTreeSet, HashSet};
+
+    /// VRAM word base for OBJ (sprite) CHR, bank 1 (tile_adr1=0x4000).
+    /// The 512-tile window covers 0x4000..0x5FFF: tiles 0..256 = bank1, 256..512 = bank2.
+    const SPRITE_CHR_VRAM_BASE: usize = 0x4000;
+    const SPRITE_CHR_TILE_COUNT: u16 = 512;
+
+    const INDEX_BIN: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/developer_tilesets/sprite_index_tiles.bin"
+    );
+    const INDEX_JSON: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/developer_tilesets/sprite_index_tiles.json"
+    );
+    let rom = concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc");
+
+    let mut cells: Vec<[u8; 64]> = Vec::new();
+    let mut index_by_pattern: HashMap<[u8; 64], usize> = HashMap::new();
+    let mut keys_by_cell: Vec<BTreeSet<(u64, u16)>> = Vec::new();
+    let mut seen_contexts: HashSet<u64> = HashSet::new();
+
+    let original_hook = panic::take_hook();
+    panic::set_hook(Box::new(|_| {}));
+
+    // Walk dungeon entrances 0..0x128.
+    for room in 0u16..0x128 {
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+            let mut game = load_translated_replay_state(rom);
+            game.parity_probe_dungeon_load_and_draw(room);
+            let context = (game.parity_probe_sprite_graphics_subset(0) as u64)
+                | ((game.parity_probe_sprite_graphics_subset(1) as u64) << 16)
+                | ((game.parity_probe_sprite_graphics_subset(2) as u64) << 32)
+                | ((game.parity_probe_sprite_graphics_subset(3) as u64) << 48);
+            let tiles: Vec<(u16, [u8; 64])> = (0u16..SPRITE_CHR_TILE_COUNT)
+                .filter_map(|tile| {
+                    let pattern =
+                        decode_snes_4bpp_tile_indices(&game.ppu.vram, SPRITE_CHR_VRAM_BASE, tile);
+                    if pattern == [0u8; 64] {
+                        None
+                    } else {
+                        Some((tile, pattern))
+                    }
+                })
+                .collect();
+            (context, tiles)
+        }));
+        if let Ok((context, tiles)) = result {
+            if !seen_contexts.insert(context) {
+                continue;
+            }
+            for (tile, pattern) in tiles {
+                let id = *index_by_pattern.entry(pattern).or_insert_with(|| {
+                    cells.push(pattern);
+                    keys_by_cell.push(BTreeSet::new());
+                    cells.len() - 1
+                });
+                keys_by_cell[id].insert((context, tile));
+            }
+        }
+    }
+
+    // Walk overworld screens 0..0x80.
+    for screen in 0u16..0x80 {
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+            let mut game = load_translated_replay_state(rom);
+            game.parity_probe_overworld_screen_and_build_map(screen);
+            let context = (game.parity_probe_sprite_graphics_subset(0) as u64)
+                | ((game.parity_probe_sprite_graphics_subset(1) as u64) << 16)
+                | ((game.parity_probe_sprite_graphics_subset(2) as u64) << 32)
+                | ((game.parity_probe_sprite_graphics_subset(3) as u64) << 48);
+            let tiles: Vec<(u16, [u8; 64])> = (0u16..SPRITE_CHR_TILE_COUNT)
+                .filter_map(|tile| {
+                    let pattern =
+                        decode_snes_4bpp_tile_indices(&game.ppu.vram, SPRITE_CHR_VRAM_BASE, tile);
+                    if pattern == [0u8; 64] {
+                        None
+                    } else {
+                        Some((tile, pattern))
+                    }
+                })
+                .collect();
+            (context, tiles)
+        }));
+        if let Ok((context, tiles)) = result {
+            if !seen_contexts.insert(context) {
+                continue;
+            }
+            for (tile, pattern) in tiles {
+                let id = *index_by_pattern.entry(pattern).or_insert_with(|| {
+                    cells.push(pattern);
+                    keys_by_cell.push(BTreeSet::new());
+                    cells.len() - 1
+                });
+                keys_by_cell[id].insert((context, tile));
+            }
+        }
+    }
+
+    panic::set_hook(original_hook);
+
+    let cell_count = cells.len();
+    let context_count = seen_contexts.len();
+
+    let mut bin = Vec::with_capacity(cell_count * 64);
+    for pattern in &cells {
+        bin.extend_from_slice(pattern);
+    }
+    if let Err(e) = fs::write(INDEX_BIN, &bin) {
+        eprintln!("failed to write sprite index atlas bin {INDEX_BIN}: {e}");
+        process::exit(1);
+    }
+
+    let manifest = SpriteIndexTileAtlasManifest {
+        format: "zelda3_sprite_index_tiles_v1",
+        tile_width_px: 8,
+        tile_height_px: 8,
+        cell_count: cell_count as u32,
+        cells: keys_by_cell
+            .iter()
+            .enumerate()
+            .map(|(id, keys)| SpriteIndexTileCellManifest {
+                id: id as u32,
+                keys: keys
+                    .iter()
+                    .map(|&(context, tile)| SpriteIndexKey { context, tile })
+                    .collect(),
+            })
+            .collect(),
+    };
+    let index_json = match serde_json::to_vec_pretty(&manifest) {
+        Ok(json) => json,
+        Err(e) => {
+            eprintln!("failed to serialize sprite index tile manifest: {e}");
+            process::exit(1);
+        }
+    };
+    if let Err(e) = fs::write(INDEX_JSON, &index_json) {
+        eprintln!("failed to write sprite index atlas json {INDEX_JSON}: {e}");
+        process::exit(1);
+    }
+
+    println!("dumped sprite index atlas cells={cell_count} contexts={context_count}");
+}
+
+#[derive(Debug, Serialize)]
+struct SpriteSheetPngManifest {
+    format: &'static str,
+    tile_width_px: u8,
+    tile_height_px: u8,
+    cell_count: u32,
+    columns: u32,
+    cells: Vec<SpriteSheetPngCell>,
+}
+
+#[derive(Debug, Serialize)]
+struct SpriteSheetPngCell {
+    id: u32,
+    atlas_x_px: u32,
+    atlas_y_px: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct AssetsBySourceManifest {
+    format: &'static str,
+    cell_count: u32,
+    cells: Vec<AssetsBySourceCell>,
+}
+
+#[derive(Debug, Serialize)]
+struct AssetsBySourceCell {
+    id: u32,
+    key: u64,
+    kind: u8,
+    pack: u16,
+    tile_off: u16,
+}
+
+/// Walk the combined-route replay and dump an asset library keyed by the LOGICAL
+/// CHR SOURCE (Milestone 2 of the animation-modeled asset renderer), NOT by VRAM
+/// appearance.
+///
+/// At each frame the CHR tile slots actually USED that frame are enumerated by
+/// walking the three BG tilemaps + OAM and mapping every referenced tile back to
+/// its VRAM CHR slot (`tile_word_base / 16`). For each used slot the M1
+/// bookkeeping table (`game.vram_chr_source()`) names the logical source that
+/// filled it (`kind/pack/tile_off`); slots with no recorded source (`kind == 0`)
+/// are skipped. Each unique logical source key
+/// (`(kind<<24)|(pack<<8)|(tile_off&0xff)`) becomes one cell, whose 8×8 4bpp
+/// palette-index pattern is decoded offline from live VRAM at that slot.
+///
+/// Emits `developer_tilesets/assets_by_source.{bin,json}`.
+fn run_dump_assets_by_source(args: &[String]) {
+    use renderer::modern_extract::decode_snes_2bpp_tile_indices;
+    use renderer::modern_source_atlas::modern_source_key;
+    use zelda3::{
+        chr_content_hash32, CHR_KIND_BG, CHR_KIND_BG3, CHR_KIND_BG_STREAM, CHR_KIND_LINK,
+        CHR_KIND_NONE, CHR_KIND_SPRITE,
+    };
+
+    // Content-hashed slots (CHR_KIND_BG_STREAM: streamed dungeon BG + all sprite CHR)
+    // are keyed by a hash of their pixels. The source-table tag is computed at
+    // DMA/rehash time; if the slot is rewritten in-place before frame-end (when this
+    // dump decodes the cell), the tag and the captured pixels DESYNC — keep-first then
+    // stores a cell under a key that does not match its pixels, and the render (which
+    // trusts the live source-table tag) resolves the wrong cell. Re-derive the key from
+    // the ACTUAL captured frame-end pixels so the atlas is self-consistent
+    // (atlas[hash(W)] == decode(W) for the same 16 words W the render hashes live).
+    let rekey_content_hash = |vram: &[u16], slot: usize, src: zelda3::LogicalChrSrc| -> u64 {
+        if src.kind == CHR_KIND_BG_STREAM {
+            let base = slot * 16;
+            if base + 16 <= vram.len() {
+                let h = chr_content_hash32(&vram[base..base + 16]);
+                return modern_source_key(
+                    CHR_KIND_BG_STREAM,
+                    (h >> 16) as u16,
+                    (h & 0xffff) as u16,
+                );
+            }
+        }
+        modern_source_key(src.kind, src.pack, src.tile_off)
+    };
+
+    /// Hardware OBJ sizes by `obj_size` (small, large) — mirrors SPRITE_SIZES.
+    const SPRITE_SIZES: [[i32; 2]; 8] = [
+        [8, 16],
+        [8, 32],
+        [8, 64],
+        [16, 32],
+        [16, 64],
+        [32, 64],
+        [16, 32],
+        [16, 32],
+    ];
+
+    const OUT_BIN: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/developer_tilesets/assets_by_source.bin"
+    );
+    const OUT_JSON: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/developer_tilesets/assets_by_source.json"
+    );
+    let rom = concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc");
+    let replay = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../saves/zelda3-combined-route.sav"
+    );
+
+    let max_frames = args
+        .first()
+        .map(|s| {
+            s.parse::<u32>().unwrap_or_else(|_| {
+                eprintln!("invalid frame count: {s}");
+                process::exit(2);
+            })
+        })
+        .unwrap_or(60_000);
+
+    // Optional single-key watcher (ZELDA3_DUMP_WATCH_KEY=0x<u64key>): logs every
+    // distinct decoded pixel pattern seen under that source key across the route,
+    // with the frame range each pattern appeared in. Distinguishes an AMBIGUOUS
+    // key (>1 distinct pattern => genuine non-injectivity/collision) from a
+    // stale-tag or gap issue (exactly 1 pattern => the key is injective and the
+    // render mismatch lives elsewhere). Pattern id = FNV-1a of the 64 index bytes.
+    let watch_key: Option<u64> = std::env::var("ZELDA3_DUMP_WATCH_KEY")
+        .ok()
+        .and_then(|s| u64::from_str_radix(s.trim().trim_start_matches("0x"), 16).ok());
+    // pattern_hash -> (first_frame, last_frame, count, first_slot, ctx@first)
+    // ctx = (main_module, submodule, indoor, animated_tile_pack) captured at the
+    // FIRST frame the pattern appeared, to reveal what game state produced it.
+    #[allow(clippy::type_complexity)]
+    let mut watch_patterns: std::collections::BTreeMap<
+        u32,
+        (u32, u32, u32, usize, u8, u8, u8, u16),
+    > = std::collections::BTreeMap::new();
+
+    // key -> cell id, and the parallel cell pattern store (64 index bytes each).
+    let mut cell_by_key: HashMap<u64, usize> = HashMap::new();
+    let mut cells: Vec<[u8; 64]> = Vec::new();
+    let mut collisions: usize = 0;
+    // Keys whose decoded pattern was NOT stable across the route (the keep-first
+    // representative differs from a later occurrence). For BG3 these are dropped
+    // from the atlas: BG3 CHR is reused, so a non-injective (tile_number, palette)
+    // key would otherwise overdraw the play area with a stale glyph. Stable HUD
+    // glyphs survive; ambiguous BG3 tiles become transparent gaps (which is what
+    // the classic renders for those play-area tiles).
+    let mut ambiguous_keys: std::collections::HashSet<u64> = std::collections::HashSet::new();
+
+    // Dedup one cell per logical-source key, keep-first on pattern collision.
+    let mut record_keyed =
+        |key: u64, pattern: [u8; 64], dbg_slot: usize| match cell_by_key.get(&key) {
+            Some(&id) => {
+                if cells[id] != pattern {
+                    collisions += 1;
+                    ambiguous_keys.insert(key);
+                    if collisions <= 10 {
+                        eprintln!(
+                            "[warn] key 0x{key:016x} decoded to a different pattern at \
+                             slot {dbg_slot:#x}; keeping first"
+                        );
+                    }
+                }
+            }
+            None => {
+                let id = cells.len();
+                cell_by_key.insert(key, id);
+                cells.push(pattern);
+            }
+        };
+
+    let mut collect_used_slots = |game: &ZeldaState, cur_frame: u32| {
+        let ppu = &game.ppu;
+
+        // --- BG tilemaps (all 3 layers) ---
+        for layer_index in 0..3usize {
+            let bg = &ppu.bg_layer[layer_index];
+            let base = bg.tilemap_adr as usize;
+            let chr_base = bg.tile_adr as usize;
+            if base == 0 && chr_base == 0 {
+                continue;
+            }
+            // BG3 (mode 1) is the 2bpp HUD/font layer: its tiles are 8 words and
+            // STATIC, so they are keyed directly by `(tile_number, palette)` (kind
+            // BG3) rather than via the 16-word per-slot CHR source table, and decoded
+            // as 2bpp with the classic BG3->CGRAM mapping (cgram = palette*4 + p)
+            // baked in so the render path can emit palette 0. See `CHR_KIND_BG3`.
+            let is_bg3 = layer_index == 2;
+            let wide = bg.tilemap_wider;
+            let tall = bg.tilemap_higher;
+            let cols = if wide { 64usize } else { 32 };
+            let rows = if tall { 64usize } else { 32 };
+            for ty in 0..rows {
+                for tx in 0..cols {
+                    let q = (if wide && tx >= 32 { 1 } else { 0 })
+                        + (if tall && ty >= 32 {
+                            if wide {
+                                2
+                            } else {
+                                1
+                            }
+                        } else {
+                            0
+                        });
+                    let within = (ty % 32) * 32 + (tx % 32);
+                    let addr = base + q * 0x400 + within;
+                    let entry_word = ppu.vram.get(addr).copied().unwrap_or(0);
+                    let tile_number = usize::from(entry_word & 0x03ff);
+                    if is_bg3 {
+                        if entry_word == 0 {
+                            continue;
+                        }
+                        let palette = ((entry_word >> 10) & 7) as u16;
+                        let pack = (tile_number as u16) | (palette << 10);
+                        let key = modern_source_key(CHR_KIND_BG3, pack, 0);
+                        // 2bpp decode UNFLIPPED (flip baked at render time), then bake
+                        // the BG3->CGRAM palette mapping into the indices.
+                        let raw =
+                            decode_snes_2bpp_tile_indices(&ppu.vram, chr_base, entry_word & 0x03ff);
+                        let mut baked = [0u8; 64];
+                        for (b, &p) in baked.iter_mut().zip(raw.iter()) {
+                            *b = if p == 0 { 0 } else { (palette as u8) * 4 + p };
+                        }
+                        record_keyed(key, baked, chr_base + tile_number * 8);
+                        continue;
+                    }
+                    let slot = (chr_base + tile_number * 16) / 16;
+                    let src = game.vram_chr_source().get(slot);
+                    if src.kind == CHR_KIND_NONE {
+                        continue;
+                    }
+                    let key = rekey_content_hash(&ppu.vram, slot, src);
+                    let pattern = decode_snes_4bpp_tile_indices(&ppu.vram, slot * 16, 0);
+                    if watch_key == Some(key) {
+                        let mut h: u32 = 0x811c_9dc5;
+                        for &b in pattern.iter() {
+                            h ^= b as u32;
+                            h = h.wrapping_mul(0x0100_0193);
+                        }
+                        let module = game.ram.get(0x10).copied().unwrap_or(0);
+                        let submodule = game.ram.get(0x11).copied().unwrap_or(0);
+                        let indoor = game.ram.get(0x1b).copied().unwrap_or(0);
+                        let anim_pack = game.animated_tile_pack;
+                        let e = watch_patterns.entry(h).or_insert((
+                            cur_frame, cur_frame, 0, slot, module, submodule, indoor, anim_pack,
+                        ));
+                        e.1 = cur_frame;
+                        e.2 += 1;
+                    }
+                    record_keyed(key, pattern, slot);
+                }
+            }
+        }
+
+        // --- OAM (sprites, incl. Link) ---
+        for sprite_num in 0..128usize {
+            let idx = sprite_num * 2;
+            let oam0 = ppu.oam.get(idx).copied().unwrap_or(0);
+            let y_byte = ((oam0 >> 8) & 0xff) as i32;
+            if y_byte == 0xf0 {
+                continue; // off-screen sentinel
+            }
+            let hi_word = ppu.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
+            let hi_bits = (hi_word >> (idx % 16)) as i32;
+            let size = SPRITE_SIZES[(ppu.obj_size & 7) as usize][((hi_bits >> 1) & 1) as usize];
+            let object_x = (oam0 & 0xff) as i32 + (hi_bits & 1) * 256;
+            if object_x > 256 && object_x + size - 1 < 512 {
+                continue;
+            }
+            let mut x = object_x;
+            if x >= 256 {
+                x -= 512;
+            }
+            if x <= -size {
+                continue;
+            }
+            let oam1 = ppu.oam.get(idx + 1).copied().unwrap_or(0);
+            let obj_addr = if oam1 & 0x0100 != 0 {
+                ppu.obj_tile_adr2
+            } else {
+                ppu.obj_tile_adr1
+            };
+            let tile_row_base = ((oam1 & 0xff) >> 4) as i32;
+            let tile_col_base = (oam1 & 0x0f) as i32;
+            let tiles_per_side = size / 8;
+            for sty in 0..tiles_per_side {
+                for stx in 0..tiles_per_side {
+                    let used_tile =
+                        (((tile_row_base + sty) << 4) | ((tile_col_base + stx) & 0x0f)) as u16;
+                    let tile_word_base =
+                        obj_addr.wrapping_add(used_tile.wrapping_mul(16)) as usize & 0x7fff;
+                    let slot = tile_word_base / 16;
+                    let src = game.vram_chr_source().get(slot);
+                    if src.kind == CHR_KIND_NONE {
+                        continue;
+                    }
+                    let key = rekey_content_hash(&ppu.vram, slot, src);
+                    let pattern = decode_snes_4bpp_tile_indices(&ppu.vram, slot * 16, 0);
+                    record_keyed(key, pattern, slot);
+                }
+            }
+        }
+    };
+
+    let original_hook = panic::take_hook();
+    panic::set_hook(Box::new(|_| {}));
+
+    let walk = panic::catch_unwind(AssertUnwindSafe(|| {
+        let mut game = load_translated_replay_state(rom);
+        if let Err(e) = game.replay_save_file(Path::new(replay)) {
+            eprintln!("failed to load replay save {replay}: {e}");
+            process::exit(1);
+        }
+        let mut frames = game.state_recorder.replay_frame_counter;
+        while frames < max_frames && game.state_recorder.replay_mode {
+            let step = panic::catch_unwind(AssertUnwindSafe(|| {
+                game.zelda_run_frame_with_replay_input_override(0, None);
+            }));
+            if step.is_err() {
+                eprintln!("[warn] replay frame {frames} panicked; stopping walk early");
+                break;
+            }
+            frames = frames.wrapping_add(1);
+            collect_used_slots(&game, frames);
+        }
+        frames
+    }));
+
+    panic::set_hook(original_hook);
+
+    let frames_walked = match walk {
+        Ok(f) => f,
+        Err(_) => {
+            eprintln!("assets-by-source walk aborted by panic");
+            process::exit(1);
+        }
+    };
+
+    if let Some(wk) = watch_key {
+        eprintln!(
+            "[WATCH] key 0x{wk:016x}: {} distinct pattern(s) over the route{}",
+            watch_patterns.len(),
+            if watch_patterns.len() > 1 {
+                "  => AMBIGUOUS KEY (non-injective / collision)"
+            } else {
+                "  => injective (mismatch is elsewhere: stale tag or gap)"
+            }
+        );
+        for (h, (first, last, count, slot, module, submodule, indoor, anim_pack)) in &watch_patterns
+        {
+            eprintln!(
+                "[WATCH]   pattern 0x{h:08x}: frames {first}..{last} (x{count}), first slot 0x{slot:03x} \
+                 | @first: module=0x{module:02x} submodule=0x{submodule:02x} indoor={indoor} anim_pack=0x{anim_pack:04x}"
+            );
+        }
+    }
+
+    // Build the canonical bin + json manifest. Ambiguous BG3 keys (reused CHR,
+    // non-injective by tile_number) are DROPPED so they render as transparent gaps
+    // instead of overdrawing the play area with a stale glyph; cells are then
+    // re-indexed densely so each manifest `id` is its 64-byte slot in the bin.
+    let mut bin = Vec::with_capacity(cells.len() * 64);
+    let mut manifest_cells = Vec::with_capacity(cells.len());
+    let mut count_bg = 0usize;
+    let mut count_sprite = 0usize;
+    let mut count_link = 0usize;
+    let mut count_bg3 = 0usize;
+    let mut dropped_bg3 = 0usize;
+    // Reconstruct each cell's key (cell id order == insertion order); invert map.
+    let mut key_by_id = vec![0u64; cells.len()];
+    for (&key, &id) in &cell_by_key {
+        key_by_id[id] = key;
+    }
+    for (id, pattern) in cells.iter().enumerate() {
+        let key = key_by_id[id];
+        // Link keys live in the `kind<<24` namespace (< 2^32, since the only Link
+        // kind value is 3); every other kind uses `kind<<32` (full 16+16-bit
+        // pack/tile_off content-hash payload) — see `modern_source_key`. The two
+        // namespaces don't overlap, so the magnitude alone distinguishes them.
+        let (kind, pack, tile_off) = if key < (1u64 << 32) {
+            (
+                CHR_KIND_LINK,
+                ((key >> 14) & 0x3ff) as u16,
+                (key & 0x3fff) as u16,
+            )
+        } else {
+            (
+                (key >> 32) as u8,
+                ((key >> 16) & 0xffff) as u16,
+                (key & 0xffff) as u16,
+            )
+        };
+        if kind == CHR_KIND_BG3 && ambiguous_keys.contains(&key) {
+            dropped_bg3 += 1;
+            continue;
+        }
+        let new_id = manifest_cells.len() as u32;
+        bin.extend_from_slice(&pattern[..]);
+        match kind {
+            CHR_KIND_BG => count_bg += 1,
+            CHR_KIND_SPRITE => count_sprite += 1,
+            CHR_KIND_LINK => count_link += 1,
+            CHR_KIND_BG3 => count_bg3 += 1,
+            _ => {}
+        }
+        manifest_cells.push(AssetsBySourceCell {
+            id: new_id,
+            key,
+            kind,
+            pack,
+            tile_off,
+        });
+    }
+    let cell_count = manifest_cells.len();
+
+    // Diagnostic runs (partial frame ranges, key-watching) set ZELDA3_DUMP_NO_WRITE=1
+    // to avoid overwriting the committed full-route atlas with partial coverage.
+    let no_write = std::env::var("ZELDA3_DUMP_NO_WRITE").is_ok();
+
+    if !no_write {
+        if let Err(e) = fs::write(OUT_BIN, &bin) {
+            eprintln!("failed to write assets bin {OUT_BIN}: {e}");
+            process::exit(1);
+        }
+    }
+
+    let manifest = AssetsBySourceManifest {
+        format: "zelda3_assets_by_source_v1",
+        cell_count: cell_count as u32,
+        cells: manifest_cells,
+    };
+    let json = match serde_json::to_vec_pretty(&manifest) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!("failed to serialize assets manifest: {e}");
+            process::exit(1);
+        }
+    };
+    if !no_write {
+        if let Err(e) = fs::write(OUT_JSON, &json) {
+            eprintln!("failed to write assets manifest {OUT_JSON}: {e}");
+            process::exit(1);
+        }
+    }
+    if no_write {
+        eprintln!("[dump] ZELDA3_DUMP_NO_WRITE set — atlas files NOT written (diagnostic run)");
+    }
+
+    if collisions > 0 {
+        eprintln!("[warn] {collisions} source->pattern collisions (kept first per key)");
+    }
+    println!(
+        "dumped assets-by-source cells={cell_count} kind_counts(bg/sprite/link/bg3)={count_bg}/{count_sprite}/{count_link}/{count_bg3} dropped_bg3_ambiguous={dropped_bg3} frames={frames_walked}"
+    );
+}
+
+/// Walk the combined-route replay and extract a REAL colored sprite sheet: every
+/// visible OAM 8x8 tile is decoded from live VRAM, colored with the live sprite
+/// palette (CGRAM), and deduped by its 8x8 RGBA appearance so each unique colored
+/// pose = one cell (captures all of Link's animation poses + every sprite seen).
+///
+/// Emits `developer_tilesets/sprite_sheet.{png,json}`.
+fn run_dump_sprite_sheet_png(args: &[String]) {
+    use renderer::modern_palette::snes_cgram_to_rgba;
+
+    /// Hardware OBJ sizes by `obj_size` (small, large) — mirrors SPRITE_SIZES.
+    const SPRITE_SIZES: [[i32; 2]; 8] = [
+        [8, 16],
+        [8, 32],
+        [8, 64],
+        [16, 32],
+        [16, 64],
+        [32, 64],
+        [16, 32],
+        [16, 32],
+    ];
+
+    const OUT_PNG: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/developer_tilesets/sprite_sheet.png"
+    );
+    const OUT_JSON: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/developer_tilesets/sprite_sheet.json"
+    );
+    let rom = concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc");
+    let replay = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../saves/zelda3-combined-route.sav"
+    );
+
+    let max_frames = args
+        .first()
+        .map(|s| {
+            s.parse::<u32>().unwrap_or_else(|_| {
+                eprintln!("invalid frame count: {s}");
+                process::exit(2);
+            })
+        })
+        .unwrap_or(60_000);
+
+    let mut cells: Vec<Vec<u8>> = Vec::new();
+    let mut index_by_rgba: HashMap<Vec<u8>, usize> = HashMap::new();
+
+    let mut collect_visible_sprite_tiles = |game: &ZeldaState| {
+        let ppu = &game.ppu;
+        for sprite_num in 0..128usize {
+            let idx = sprite_num * 2;
+            let oam0 = ppu.oam.get(idx).copied().unwrap_or(0);
+
+            // Off-screen sentinel: hidden sprites are parked at y == 0xf0.
+            let y_byte = ((oam0 >> 8) & 0xff) as i32;
+            if y_byte == 0xf0 {
+                continue;
+            }
+            let top_y = ((y_byte + 1) & 0xff) - 1;
+
+            let hi_word = ppu.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
+            let hi_bits = (hi_word >> (idx % 16)) as i32;
+            let size = SPRITE_SIZES[(ppu.obj_size & 7) as usize][((hi_bits >> 1) & 1) as usize];
+
+            let object_x = (oam0 & 0xff) as i32 + (hi_bits & 1) * 256;
+            if object_x > 256 && object_x + size - 1 < 512 {
+                continue;
+            }
+            let mut x = object_x;
+            if x >= 256 {
+                x -= 512;
+            }
+            if x <= -size {
+                continue;
+            }
+
+            let oam1 = ppu.oam.get(idx + 1).copied().unwrap_or(0);
+            let hflip = oam1 & 0x4000 != 0;
+            let vflip = oam1 & 0x8000 != 0;
+            let palette = ((oam1 & 0x0e00) >> 9) as u32;
+            let obj_addr = if oam1 & 0x0100 != 0 {
+                ppu.obj_tile_adr2
+            } else {
+                ppu.obj_tile_adr1
+            };
+            let tile_row_base = ((oam1 & 0xff) >> 4) as i32;
+            let tile_col_base = (oam1 & 0x0f) as i32;
+            let _ = top_y; // screen position is irrelevant for an appearance-deduped sheet
+
+            let tiles_per_side = size / 8;
+            for sty in 0..tiles_per_side {
+                for stx in 0..tiles_per_side {
+                    let src_col_tile = if hflip { tiles_per_side - 1 - stx } else { stx };
+                    let src_row_tile = if vflip { tiles_per_side - 1 - sty } else { sty };
+                    let used_tile = (((tile_row_base + src_row_tile) << 4)
+                        | ((tile_col_base + src_col_tile) & 0x0f))
+                        as u16;
+                    let tile_word_base =
+                        obj_addr.wrapping_add(used_tile.wrapping_mul(16)) as usize & 0x7fff;
+                    // Apply 8x8-level flips while decoding the 4bpp pattern.
+                    let entry = (u16::from(hflip) * 0x4000) | (u16::from(vflip) * 0x8000);
+                    let indices = decode_snes_4bpp_tile_indices(&ppu.vram, tile_word_base, entry);
+                    if indices == [0u8; 64] {
+                        continue;
+                    }
+                    let mut rgba = vec![0u8; 64 * 4];
+                    for (px, &index) in indices.iter().enumerate() {
+                        if index == 0 {
+                            continue; // transparent
+                        }
+                        let cgram_idx = 0x80 + palette as usize * 16 + index as usize;
+                        let color =
+                            snes_cgram_to_rgba(ppu.cgram.get(cgram_idx).copied().unwrap_or(0));
+                        rgba[px * 4..px * 4 + 4].copy_from_slice(&color);
+                    }
+                    if !index_by_rgba.contains_key(&rgba) {
+                        let id = cells.len();
+                        index_by_rgba.insert(rgba.clone(), id);
+                        cells.push(rgba);
+                    }
+                }
+            }
+        }
+    };
+
+    let original_hook = panic::take_hook();
+    panic::set_hook(Box::new(|_| {}));
+
+    let walk = panic::catch_unwind(AssertUnwindSafe(|| {
+        let mut game = load_translated_replay_state(rom);
+        if let Err(e) = game.replay_save_file(Path::new(replay)) {
+            eprintln!("failed to load replay save {replay}: {e}");
+            process::exit(1);
+        }
+        let mut frames = game.state_recorder.replay_frame_counter;
+        while frames < max_frames && game.state_recorder.replay_mode {
+            let step = panic::catch_unwind(AssertUnwindSafe(|| {
+                game.zelda_run_frame_with_replay_input_override(0, None);
+            }));
+            if step.is_err() {
+                eprintln!("[warn] replay frame {frames} panicked; stopping walk early");
+                break;
+            }
+            frames = frames.wrapping_add(1);
+            collect_visible_sprite_tiles(&game);
+        }
+        frames
+    }));
+
+    panic::set_hook(original_hook);
+
+    let frames_walked = match walk {
+        Ok(f) => f,
+        Err(_) => {
+            eprintln!("sprite-sheet walk aborted by panic");
+            process::exit(1);
+        }
+    };
+
+    let cell_count = cells.len();
+    let columns = 64usize;
+    let rows = if cell_count == 0 {
+        0
+    } else {
+        (cell_count + columns - 1) / columns
+    };
+    let tile_px = 8usize;
+    let width = columns * tile_px;
+    let height = rows * tile_px;
+    let mut atlas = vec![0u8; width * height * 4]; // transparent background
+
+    let mut manifest_cells = Vec::with_capacity(cell_count);
+    for (id, rgba) in cells.iter().enumerate() {
+        let col = id % columns;
+        let row = id / columns;
+        let dst_x = col * tile_px;
+        let dst_y = row * tile_px;
+        for y in 0..tile_px {
+            for x in 0..tile_px {
+                let src = (y * tile_px + x) * 4;
+                let dst = ((dst_y + y) * width + dst_x + x) * 4;
+                atlas[dst..dst + 4].copy_from_slice(&rgba[src..src + 4]);
+            }
+        }
+        manifest_cells.push(SpriteSheetPngCell {
+            id: id as u32,
+            atlas_x_px: dst_x as u32,
+            atlas_y_px: dst_y as u32,
+        });
+    }
+
+    if let Err(e) = write_rgba_frame_png(Path::new(OUT_PNG), &atlas, width as u32, height as u32) {
+        eprintln!("failed to write sprite sheet png {OUT_PNG}: {e}");
+        process::exit(1);
+    }
+
+    let manifest = SpriteSheetPngManifest {
+        format: "zelda3_sprite_sheet_png_v1",
+        tile_width_px: 8,
+        tile_height_px: 8,
+        cell_count: cell_count as u32,
+        columns: columns as u32,
+        cells: manifest_cells,
+    };
+    let json = match serde_json::to_vec_pretty(&manifest) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!("failed to serialize sprite sheet manifest: {e}");
+            process::exit(1);
+        }
+    };
+    if let Err(e) = fs::write(OUT_JSON, &json) {
+        eprintln!("failed to write sprite sheet manifest {OUT_JSON}: {e}");
+        process::exit(1);
+    }
+
+    println!(
+        "dumped sprite sheet cells={cell_count} frames={frames_walked} png={width}x{height} columns={columns}"
+    );
+}
+
+#[derive(Debug, Serialize)]
+struct DungeonSheetPngManifest {
+    format: &'static str,
+    tile_width_px: u8,
+    tile_height_px: u8,
+    cell_count: u32,
+    columns: u32,
+    cells: Vec<DungeonSheetPngCell>,
+}
+
+#[derive(Debug, Serialize)]
+struct DungeonSheetPngCell {
+    id: u32,
+    atlas_x_px: u32,
+    atlas_y_px: u32,
+}
+
+/// Walk the combined-route replay and extract a colored dungeon BG tile sheet.
+///
+/// For every DUNGEON frame (main_module == 7 or 16) each BG tilemap entry is
+/// decoded from live VRAM and colored with the live CGRAM:
+///  - BG1 / BG2 (layer 0/1): 4bpp, palette base = ((word>>10)&7)*16.
+///  - BG3 HUD (layer 2): 2bpp (8 words/tile), palette base = ((word>>10)&7)*4.
+///
+/// Tiles are deduped by their 8×8 RGBA appearance (not tile number); each unique
+/// colored 8×8 appearance becomes one cell in the atlas.
+///
+/// Emits `developer_tilesets/dungeon_sheet.{png,json}`.
+fn run_dump_dungeon_sheet_png(args: &[String]) {
+    use renderer::modern_extract::decode_snes_2bpp_tile_indices;
+    use renderer::modern_palette::snes_cgram_to_rgba;
+
+    const OUT_PNG: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/developer_tilesets/dungeon_sheet.png"
+    );
+    const OUT_JSON: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/developer_tilesets/dungeon_sheet.json"
+    );
+    let rom = concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc");
+    let replay = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../saves/zelda3-combined-route.sav"
+    );
+
+    let max_frames = args
+        .first()
+        .map(|s| {
+            s.parse::<u32>().unwrap_or_else(|_| {
+                eprintln!("invalid frame count: {s}");
+                process::exit(2);
+            })
+        })
+        .unwrap_or(60_000);
+
+    let mut cells: Vec<Vec<u8>> = Vec::new();
+    let mut index_by_rgba: HashMap<Vec<u8>, usize> = HashMap::new();
+
+    let mut collect_dungeon_bg_tiles = |game: &ZeldaState| {
+        let main_module = game.ram[TRACE_MAIN_MODULE_INDEX];
+        // Only process dungeon frames.
+        if main_module != 7 && main_module != 16 {
+            return;
+        }
+        let ppu = &game.ppu;
+
+        for layer_index in 0..3usize {
+            // BG3 in PPU mode 1 is 2bpp; BG1/BG2 are 4bpp.
+            let is_2bpp = layer_index == 2;
+            let bg = &ppu.bg_layer[layer_index];
+            let base = bg.tilemap_adr as usize;
+            let chr_base = bg.tile_adr as usize;
+            // Skip layers that haven't been set up yet (base==0 means the PPU
+            // register was never written; VRAM[0] is usually zero/garbage).
+            if base == 0 && chr_base == 0 {
+                continue;
+            }
+            let wide = bg.tilemap_wider;
+            let tall = bg.tilemap_higher;
+            let cols = if wide { 64usize } else { 32 };
+            let rows = if tall { 64usize } else { 32 };
+
+            for ty in 0..rows {
+                for tx in 0..cols {
+                    // Quadrant layout (mirrors extract_modern_dungeon_frame_from_vram):
+                    //   q0 = top-left, q1 = top-right (wide), q2 = bottom-left (tall),
+                    //   q3 = bottom-right (wide+tall).
+                    let q = (if wide && tx >= 32 { 1 } else { 0 })
+                        + (if tall && ty >= 32 {
+                            if wide {
+                                2
+                            } else {
+                                1
+                            }
+                        } else {
+                            0
+                        });
+                    let within = (ty % 32) * 32 + (tx % 32);
+                    let addr = base + q * 0x400 + within;
+                    let entry_word = ppu.vram.get(addr).copied().unwrap_or(0);
+                    if entry_word == 0 {
+                        continue;
+                    }
+
+                    // Decode 8×8 palette indices from live VRAM.
+                    let indices: [u8; 64] = if is_2bpp {
+                        decode_snes_2bpp_tile_indices(&ppu.vram, chr_base, entry_word)
+                    } else {
+                        decode_snes_4bpp_tile_indices(&ppu.vram, chr_base, entry_word)
+                    };
+                    if indices == [0u8; 64] {
+                        continue; // fully transparent tile — skip
+                    }
+
+                    // Color with live CGRAM.
+                    let palette = ((entry_word >> 10) & 7) as usize;
+                    // 4bpp: 16 colors/palette (BG1/BG2 start at palette*16 in CGRAM).
+                    // 2bpp: 4 colors/palette (BG3 starts at palette*4 in low CGRAM).
+                    let colors_per_pal = if is_2bpp { 4usize } else { 16usize };
+                    let palette_base = palette * colors_per_pal;
+                    let mut rgba = vec![0u8; 64 * 4];
+                    let mut all_transparent = true;
+                    for (px, &index) in indices.iter().enumerate() {
+                        if index == 0 {
+                            continue; // palette index 0 is transparent
+                        }
+                        let cgram_idx = palette_base + index as usize;
+                        let color =
+                            snes_cgram_to_rgba(ppu.cgram.get(cgram_idx).copied().unwrap_or(0));
+                        rgba[px * 4..px * 4 + 4].copy_from_slice(&color);
+                        all_transparent = false;
+                    }
+                    if all_transparent {
+                        continue;
+                    }
+                    if !index_by_rgba.contains_key(&rgba) {
+                        let id = cells.len();
+                        index_by_rgba.insert(rgba.clone(), id);
+                        cells.push(rgba);
+                    }
+                }
+            }
+        }
+    };
+
+    let original_hook = panic::take_hook();
+    panic::set_hook(Box::new(|_| {}));
+
+    let walk = panic::catch_unwind(AssertUnwindSafe(|| {
+        let mut game = load_translated_replay_state(rom);
+        if let Err(e) = game.replay_save_file(Path::new(replay)) {
+            eprintln!("failed to load replay save {replay}: {e}");
+            process::exit(1);
+        }
+        let mut frames = game.state_recorder.replay_frame_counter;
+        while frames < max_frames && game.state_recorder.replay_mode {
+            let step = panic::catch_unwind(AssertUnwindSafe(|| {
+                game.zelda_run_frame_with_replay_input_override(0, None);
+            }));
+            if step.is_err() {
+                eprintln!("[warn] replay frame {frames} panicked; stopping walk early");
+                break;
+            }
+            frames = frames.wrapping_add(1);
+            collect_dungeon_bg_tiles(&game);
+        }
+        frames
+    }));
+
+    panic::set_hook(original_hook);
+
+    let frames_walked = match walk {
+        Ok(f) => f,
+        Err(_) => {
+            eprintln!("dungeon-sheet walk aborted by panic");
+            process::exit(1);
+        }
+    };
+
+    let cell_count = cells.len();
+    let columns = 64usize;
+    let rows = if cell_count == 0 {
+        0
+    } else {
+        (cell_count + columns - 1) / columns
+    };
+    let tile_px = 8usize;
+    let width = columns * tile_px;
+    let height = rows * tile_px;
+    let mut atlas = vec![0u8; width * height * 4]; // transparent background
+
+    let mut manifest_cells = Vec::with_capacity(cell_count);
+    for (id, rgba) in cells.iter().enumerate() {
+        let col = id % columns;
+        let row = id / columns;
+        let dst_x = col * tile_px;
+        let dst_y = row * tile_px;
+        for y in 0..tile_px {
+            for x in 0..tile_px {
+                let src = (y * tile_px + x) * 4;
+                let dst = ((dst_y + y) * width + dst_x + x) * 4;
+                atlas[dst..dst + 4].copy_from_slice(&rgba[src..src + 4]);
+            }
+        }
+        manifest_cells.push(DungeonSheetPngCell {
+            id: id as u32,
+            atlas_x_px: dst_x as u32,
+            atlas_y_px: dst_y as u32,
+        });
+    }
+
+    if let Err(e) = write_rgba_frame_png(Path::new(OUT_PNG), &atlas, width as u32, height as u32) {
+        eprintln!("failed to write dungeon sheet png {OUT_PNG}: {e}");
+        process::exit(1);
+    }
+
+    let manifest = DungeonSheetPngManifest {
+        format: "zelda3_dungeon_sheet_v1",
+        tile_width_px: 8,
+        tile_height_px: 8,
+        cell_count: cell_count as u32,
+        columns: columns as u32,
+        cells: manifest_cells,
+    };
+    let json = match serde_json::to_vec_pretty(&manifest) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!("failed to serialize dungeon sheet manifest: {e}");
+            process::exit(1);
+        }
+    };
+    if let Err(e) = fs::write(OUT_JSON, &json) {
+        eprintln!("failed to write dungeon sheet manifest {OUT_JSON}: {e}");
+        process::exit(1);
+    }
+
+    println!(
+        "dumped dungeon sheet cells={cell_count} frames={frames_walked} png={width}x{height} columns={columns}"
+    );
+}
+
+/// Decode one SNES 4bpp tile into 64 palette indices (8×8, row-major, no color lookup).
+/// Respects hflip (bit 14) and vflip (bit 15) in `tilemap_entry`; ignores palette/priority bits.
+/// Each output byte is a raw 4-bit palette index (0..=15).
+/// Task 1 spike deliverable: load + draw one real dungeon room and return its
+/// blockset theme plus the decoded 4bpp index pattern for every nonzero BG1
+/// tilemap entry.
+///
+/// Pinned facts (see `DUNGEON_BG_CHR_BASE` and `parity_probe_dungeon_load_and_draw`):
+///   - Load+draw sequence: `parity_probe_dungeon_load_and_draw(room)` =
+///     `Dungeon_LoadAndDrawEntranceRoom(room as u8)` (draws room_tilemaps + sets
+///     palette_theme) then `InitializeTilesets()` (loads blockset CHR into VRAM).
+///   - Theme/blockset key: `world.palette_theme.main_tile_theme_index()`.
+///   - BG1 accessor: `parity_probe_dungeon_bg1_map8_entry(word_index)` over
+///     `game_state.dungeon.room_tilemaps` (64x64 => word_index 0..0x1000).
+///   - CHR base: `DUNGEON_BG_CHR_BASE` (= 0x2000 words), decoded via
+///     `decode_snes_4bpp_tile_indices`.
+///
+/// NOTE: `room` is an ENTRANCE index (it is forwarded to
+/// `Dungeon_LoadAndDrawEntranceRoom`), not a raw room-header index.
+// (allow(dead_code): consumed by the Task 2 --dump-dungeon-index-tiles command.)
+#[allow(dead_code)]
+fn dungeon_room_index_probe(game: &mut ZeldaState, room: u16) -> (u16, Vec<(u16, [u8; 64])>) {
+    let theme = game.parity_probe_dungeon_load_and_draw(room);
+    // BG1 (walls/objects) and BG2 (floor) both decode from the same blockset CHR
+    // loaded into VRAM at DUNGEON_BG_CHR_BASE (0x2000): at runtime the game writes
+    // $210B = 0x22, so BG1 char base = 0x2<<12 = 0x2000 and BG2 char base =
+    // 0x20<<8 = 0x2000 (shared). The synthetic dump load does not configure the PPU
+    // char-base registers (bg_layer[*].tile_adr == 0 here), so decode against the
+    // pinned base, not the register.
+    let mut tiles = Vec::new();
+    for word_index in 0..DUNGEON_BG1_TILEMAP_WORDS {
+        let entry = game.parity_probe_dungeon_bg1_map8_entry(word_index);
+        if entry != 0 {
+            let pattern = decode_snes_4bpp_tile_indices(&game.ppu.vram, DUNGEON_BG_CHR_BASE, entry);
+            tiles.push((entry, pattern));
+        }
+        let entry2 = game.parity_probe_dungeon_bg2_map8_entry(word_index);
+        if entry2 != 0 {
+            let pattern =
+                decode_snes_4bpp_tile_indices(&game.ppu.vram, DUNGEON_BG_CHR_BASE, entry2);
+            tiles.push((entry2, pattern));
+        }
+    }
+    (theme, tiles)
+}
+
+/// SNES OBJ size table: `[small, large]` pixel dimensions per OBSEL `obj_size`
+/// nibble (0..8). Mirrors `SPRITE_SIZES` in crates/renderer/src/sprite_renderer.rs
+/// and the inline table in the gpu-dbg sprite scans above.
+const OBJ_SIZE_TABLE: [[u32; 2]; 8] = [
+    [8, 16],
+    [8, 32],
+    [8, 64],
+    [16, 32],
+    [16, 64],
+    [32, 64],
+    [16, 32],
+    [16, 32],
+];
+
+/// One decoded 8x8 OBJ tile of a visible OAM sprite.
+///
+/// `bank_base` is the OBJ CHR base VRAM **word** address (`obj_tile_adr1` for
+/// name-table 0, `obj_tile_adr2` for name-table 1), exactly as
+/// `sprite_renderer::resolve_obj_pixels` uses it (`addr = obj_addr +
+/// used_tile*16 + row`, masked to 0x7fff). `tile` is the resolved name
+/// (`used_tile`, the 8x8 cell number within the bank), with NO flip bits set.
+/// `indices` is the UNFLIPPED 4bpp pattern (`hflip`/`vflip` are recorded
+/// separately so a cell can be deduped once and flipped at draw time).
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
+struct SpriteTileProbe {
+    bank_base: u16,
+    tile: u16,
+    hflip: bool,
+    vflip: bool,
+    indices: [u8; 64],
+}
+
+/// Task 1 spike deliverable: enumerate the visible OAM sprites of a *loaded*
+/// area and decode each of their 8x8 OBJ tiles into 4bpp palette-index patterns.
+///
+/// Pinned facts (verified against `crates/renderer/src/sprite_renderer.rs`):
+///   - OAM enumeration mirrors `resolve_obj_pixels` (sprite_renderer.rs:349):
+///     per sprite_num 0..128, `yy = ((oam0>>8)+1)&0xff` (skip 0xf0); size from
+///     `OBJ_SIZE_TABLE[obj_size&7][(hi_bits>>1)&1]`; `x = (oam0&0xff) +
+///     (hi_bits&1)*256` with the same offscreen cull; per-sprite attrs come from
+///     `oam1` (`tile_row_base=(oam1&0xff)>>4`, `tile_col_base=oam1&0x0f`,
+///     hflip=`oam1&0x4000`, vflip=`oam1&0x8000`, bank=`oam1&0x100 ? tile_adr2 :
+///     tile_adr1`). A `size`px sprite spans `size/8` tiles per axis;
+///     `used_tile = ((tile_row_base+ty)<<4) | ((tile_col_base+tx)&0x0f)`.
+///   - CHR addressing: `bank_base` (`obj_tile_adr1/2`) is a VRAM word address;
+///     `decode_snes_4bpp_tile_indices(vram, bank_base as usize, used_tile)`
+///     reads `bank_base + used_tile*16 + row` — identical to resolve_obj_pixels.
+///   - Decode convention: decode the UNFLIPPED pattern (no flip bits in the
+///     entry passed to the decoder) and record hflip/vflip on the probe, so a
+///     cell is stored once and flipped at draw time. (The BG dump bakes flip
+///     because it passes the live tilemap entry; sprites instead dedup by the
+///     canonical unflipped pattern + a flip flag.)
+///   - Context: a 64-bit fold of the 4 per-area sprite `graphics_subset` packs
+///     (`parity_probe_sprite_graphics_subset(0..4)`), the per-area sprite CHR
+///     identity used to key sprite cells: `g0 | g1<<16 | g2<<32 | g3<<48`.
+///
+/// The caller must have a loaded area with populated OAM + sprite CHR in VRAM
+/// (e.g. a replay checkpoint advanced one frame); this fn does not load.
+// (allow(dead_code): consumed by the Task 2 --dump-sprite-index-tiles command.)
+#[allow(dead_code)]
+fn sprite_index_probe(game: &mut ZeldaState) -> (u64, Vec<SpriteTileProbe>) {
+    let context = (game.parity_probe_sprite_graphics_subset(0) as u64)
+        | ((game.parity_probe_sprite_graphics_subset(1) as u64) << 16)
+        | ((game.parity_probe_sprite_graphics_subset(2) as u64) << 32)
+        | ((game.parity_probe_sprite_graphics_subset(3) as u64) << 48);
+
+    let oam = &game.ppu.oam;
+    let sizes = OBJ_SIZE_TABLE[(game.ppu.obj_size as usize) & 7];
+    let tile_adr1 = game.ppu.obj_tile_adr1;
+    let tile_adr2 = game.ppu.obj_tile_adr2;
+
+    let mut probes = Vec::new();
+    for sprite_num in 0..128usize {
+        let idx = sprite_num * 2;
+        let oam0 = oam.get(idx).copied().unwrap_or(0);
+        let yy = (((oam0 >> 8) as i32) + 1) & 0xff;
+        if yy == 0xf0 {
+            continue;
+        }
+        let hi_word = oam.get(0x100 + idx / 16).copied().unwrap_or(0);
+        let hi_bits = (hi_word >> (idx % 16)) as i32;
+        let sprite_size = sizes[((hi_bits >> 1) & 1) as usize] as i32;
+
+        // Offscreen cull, mirroring resolve_obj_pixels (extra_left_right=0 here).
+        let object_x = (oam0 & 0xff) as i32 + (hi_bits & 1) * 256;
+        if object_x > 256 && object_x + sprite_size - 1 < 512 {
+            continue;
+        }
+        let mut x = object_x;
+        if x >= 256 {
+            x -= 512;
+        }
+        if x <= -sprite_size {
+            continue;
+        }
+
+        let oam1 = oam.get(idx + 1).copied().unwrap_or(0);
+        let tile_row_base = ((oam1 & 0xff) >> 4) as i32;
+        let tile_col_base = (oam1 & 0x0f) as i32;
+        let hflip = oam1 & 0x4000 != 0;
+        let vflip = oam1 & 0x8000 != 0;
+        let bank_base = if oam1 & 0x0100 != 0 {
+            tile_adr2
+        } else {
+            tile_adr1
+        };
+
+        let tiles_per_axis = (sprite_size / 8).max(1);
+        for ty in 0..tiles_per_axis {
+            for tx in 0..tiles_per_axis {
+                let used_tile =
+                    (((tile_row_base + ty) << 4) | ((tile_col_base + tx) & 0x0f)) as u16;
+                // Decode the UNFLIPPED pattern: no flip bits in the entry.
+                let indices =
+                    decode_snes_4bpp_tile_indices(&game.ppu.vram, bank_base as usize, used_tile);
+                probes.push(SpriteTileProbe {
+                    bank_base,
+                    tile: used_tile,
+                    hflip,
+                    vflip,
+                    indices,
+                });
+            }
+        }
+    }
+    (context, probes)
+}
+
+fn decode_snes_4bpp_tile_indices(
+    vram: &[u16],
+    chr_base_words: usize,
+    tilemap_entry: u16,
+) -> [u8; 64] {
+    let tile_number = usize::from(tilemap_entry & 0x03ff);
+    let hflip = tilemap_entry & 0x4000 != 0;
+    let vflip = tilemap_entry & 0x8000 != 0;
+    let tile_base = chr_base_words + tile_number * 16;
+    let mut out = [0u8; 64];
+    for y in 0..8usize {
+        let source_y = if vflip { 7 - y } else { y };
+        let w01 = vram.get(tile_base + source_y).copied().unwrap_or(0);
+        let w23 = vram.get(tile_base + 8 + source_y).copied().unwrap_or(0);
+        let (bp0, bp1) = ((w01 & 0xff) as u8, (w01 >> 8) as u8);
+        let (bp2, bp3) = ((w23 & 0xff) as u8, (w23 >> 8) as u8);
+        for x in 0..8usize {
+            let source_x = if hflip { x } else { 7 - x };
+            let bit = 1u8 << source_x;
+            out[y * 8 + x] = ((bp0 & bit != 0) as u8)
+                | (((bp1 & bit != 0) as u8) << 1)
+                | (((bp2 & bit != 0) as u8) << 2)
+                | (((bp3 & bit != 0) as u8) << 3);
+        }
+    }
+    out
+}
+
+fn draw_snes_4bpp_tilemap_entry_to_rgba(
+    vram: &[u16],
+    cgram: &[u16],
+    chr_base_words: usize,
+    tilemap_entry: u16,
+    out: &mut [u8],
+    out_width: usize,
+    out_x: usize,
+    out_y: usize,
+    scale: usize,
+) {
+    let palette_base = usize::from((tilemap_entry >> 10) & 0x07) * 16;
+    let indices = decode_snes_4bpp_tile_indices(vram, chr_base_words, tilemap_entry);
+    for y in 0..8usize {
+        for x in 0..8usize {
+            let palette_index = usize::from(indices[y * 8 + x]);
+            let color = snes_cgram_entry_to_rgba(cgram.get(palette_base + palette_index).copied());
+            for yy in 0..scale {
+                for xx in 0..scale {
+                    let out_index =
+                        ((out_y + y * scale + yy) * out_width + out_x + x * scale + xx) * 4;
+                    if out_index + 4 <= out.len() {
+                        out[out_index..out_index + 4].copy_from_slice(&color);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn snes_cgram_entry_to_rgba(entry: Option<u16>) -> [u8; 4] {
+    let entry = entry.unwrap_or(0);
+    [
+        ((entry & 0x1f) as u8) << 3,
+        (((entry >> 5) & 0x1f) as u8) << 3,
+        (((entry >> 10) & 0x1f) as u8) << 3,
+        0xff,
+    ]
+}
+
 fn run_play_gpu_render_compare(args: &[String]) {
     let rom_path = match args.first() {
         Some(p) => p,
@@ -7384,10 +11226,12 @@ fn run_play_gpu_render_compare(args: &[String]) {
     } else {
         1usize
     };
+    let renderer_mode = renderer::RendererMode::parse(env::var("ZELDA3_RENDERER").ok().as_deref());
     let mut input_script = InputScript::default();
     let mut load_sram = None::<PathBuf>;
     let mut load_state = None::<PathBuf>;
     let mut stride = 1u32;
+    let mut modern_render_compare = 0u32;
     while i < args.len() {
         match args[i].as_str() {
             "--input-script" => {
@@ -7435,10 +11279,37 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 }
                 i += 2;
             }
+            "--modern-render-compare" => {
+                let value = args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--modern-render-compare requires a value");
+                    process::exit(2);
+                });
+                modern_render_compare = value.parse::<u32>().unwrap_or_else(|_| {
+                    eprintln!("invalid --modern-render-compare value: {value}");
+                    process::exit(2);
+                });
+                if modern_render_compare == 0 {
+                    eprintln!("--modern-render-compare must be greater than zero");
+                    process::exit(2);
+                }
+                i += 2;
+            }
             flag => {
                 eprintln!("unknown --play-gpu-render-compare option: {flag}");
                 process::exit(2);
             }
+        }
+    }
+    if renderer_mode == renderer::RendererMode::ModernCompare
+        || renderer_mode == renderer::RendererMode::Modern
+    {
+        if renderer_mode == renderer::RendererMode::Modern {
+            eprintln!(
+                "note: ZELDA3_RENDERER=modern is experimental; modern path cannot render most content — running as modern-compare"
+            );
+        }
+        if modern_render_compare == 0 {
+            modern_render_compare = stride; // env var alone turns on the compare at the regular stride
         }
     }
     if load_state.is_some() && load_sram.is_some() {
@@ -7458,6 +11329,17 @@ fn run_play_gpu_render_compare(args: &[String]) {
         apply_sram_to_game_or_exit(&mut game, path, &sram);
     }
 
+    let modern_atlas = if modern_render_compare != 0 {
+        Some(
+            renderer::modern_assets::load_modern_overworld_tile_atlas(Path::new("."))
+                .unwrap_or_else(|e| {
+                    eprintln!("failed to load modern atlas: {e}");
+                    process::exit(2);
+                }),
+        )
+    } else {
+        None
+    };
     let last_panic = install_crash_panic_hook();
     let mut offscreen = pollster::block_on(OffscreenRenderer::new(256, 224));
     let mut render_frame = vec![0u8; 256 * 224 * 4];
@@ -7477,20 +11359,53 @@ fn run_play_gpu_render_compare(args: &[String]) {
             process::exit(101);
         }
         let completed_frame = frame.wrapping_add(1);
-        if completed_frame % stride != 0 {
+        let should_compare_stride = completed_frame % stride == 0;
+        let should_compare_modern =
+            modern_render_compare != 0 && completed_frame % modern_render_compare == 0;
+        if !should_compare_stride && !should_compare_modern {
             continue;
         }
-        let Some(cpu_hash) = compare_gpu_render_current_frame(
-            &mut game,
-            &mut offscreen,
-            &mut render_frame,
-            completed_frame,
-        ) else {
-            process::exit(1);
-        };
-        compared = compared.wrapping_add(1);
-        last_frame = completed_frame;
-        last_hash = cpu_hash;
+        if should_compare_stride {
+            let Some(cpu_hash) = compare_gpu_render_current_frame(
+                &mut game,
+                &mut offscreen,
+                &mut render_frame,
+                completed_frame,
+            ) else {
+                process::exit(1);
+            };
+            compared = compared.wrapping_add(1);
+            last_frame = completed_frame;
+            last_hash = cpu_hash;
+        }
+        if should_compare_modern {
+            if let Some(atlas) = modern_atlas.as_ref() {
+                // Reconstruct the GpuFrame the same way compare_gpu_render_current_frame does:
+                let hdma_cgram = game.cgram_after_first_hdma_line();
+                let scanlines_raw = game.ppu_scanline_windows();
+                let gpu_ppu = game.ppu.clone();
+                let gpu_frame =
+                    gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+                // Classic GPU render (oracle) via the offscreen renderer:
+                let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
+                let old_hash = render_frame_rgb_hash_rgba(&classic_rgba);
+                // Modern path (software for now; Task 9 swaps in GPU):
+                let modern =
+                    renderer::modern_extract::extract_modern_frame_with_atlas(&gpu_frame, atlas);
+                // Atlas dimensions (2113×3169) fit in u16 (<65535); cast is safe.
+                let modern_rgba = renderer::modern_software::render_modern_frame_software(
+                    &modern,
+                    &atlas.rgba,
+                    atlas.width_px as u16,
+                    atlas.height_px as u16,
+                );
+                let modern_hash = render_frame_rgb_hash_rgba(&modern_rgba);
+                println!(
+                    "modern_render_compare frame={completed_frame} old=0x{old_hash:08x} modern=0x{modern_hash:08x} match={}",
+                    old_hash == modern_hash
+                );
+            }
+        }
     }
 
     println!(
@@ -9246,6 +13161,81 @@ mod tests {
     use super::*;
 
     #[test]
+    fn dungeon_room_index_probe_reads_a_real_room() {
+        let mut game = load_translated_replay_state(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../saves/zelda3.sfc"
+        ));
+        let (theme, tiles) = dungeon_room_index_probe(&mut game, 0x0002);
+        eprintln!(
+            "dungeon probe: theme={theme} nonzero_bg1_entries={} first={:?}",
+            tiles.len(),
+            tiles.first().map(|(w, p)| (*w, &p[..8]))
+        );
+        assert!(theme != 0, "theme should be set for a dungeon room");
+        assert!(!tiles.is_empty(), "room should have BG tiles");
+        // patterns are real 4bpp indices (0..16) and not uniformly zero
+        assert!(tiles.iter().all(|(_, p)| p.iter().all(|&i| i < 16)));
+        assert!(tiles.iter().any(|(_, p)| p.iter().any(|&i| i != 0)));
+    }
+
+    #[test]
+    fn sprite_index_probe_reads_visible_sprites() {
+        // Real gameplay area with Link + NPCs/sprites: load the committed replay
+        // checkpoint (sanctuary, frame 12000) which restores PPU OAM/VRAM/obj
+        // regs, then advance one frame so the sprite engine rebuilds OAM.
+        let mut game = load_translated_replay_state(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../saves/zelda3.sfc"
+        ));
+        load_replay_save_checkpoint(
+            &mut game,
+            Path::new(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../.cache/replay-bisect/rust-frame-12000.sav"
+            )),
+        )
+        .expect("load sanctuary checkpoint");
+        game.zelda_run_frame(0);
+
+        let (context, probes) = sprite_index_probe(&mut game);
+        let active_oam = (0..128usize)
+            .filter(|&n| {
+                let oam0 = game.ppu.oam.get(n * 2).copied().unwrap_or(0);
+                (((oam0 >> 8) as i32) + 1) & 0xff != 0xf0
+            })
+            .count();
+        eprintln!(
+            "sprite probe: context={context:#018x} subsets={:?} obj_size={} tile_adr1={:#06x} tile_adr2={:#06x} active_oam={active_oam} probe_tiles={} first={:?}",
+            [
+                game.parity_probe_sprite_graphics_subset(0),
+                game.parity_probe_sprite_graphics_subset(1),
+                game.parity_probe_sprite_graphics_subset(2),
+                game.parity_probe_sprite_graphics_subset(3),
+            ],
+            game.ppu.obj_size,
+            game.ppu.obj_tile_adr1,
+            game.ppu.obj_tile_adr2,
+            probes.len(),
+            probes.first().map(|p| (p.bank_base, p.tile, p.hflip, p.vflip, &p.indices[..8])),
+        );
+
+        assert!(context != 0, "sprite graphics context should be set");
+        assert!(
+            !probes.is_empty(),
+            "area should have at least one visible sprite tile"
+        );
+        assert!(
+            probes.iter().all(|p| p.indices.iter().all(|&i| i < 16)),
+            "every index must be a 4bpp value (0..16)",
+        );
+        assert!(
+            probes.iter().any(|p| p.indices.iter().any(|&i| i != 0)),
+            "at least one sprite tile must be non-degenerate (a real sprite)",
+        );
+    }
+
+    #[test]
     fn parses_named_buttons_to_snes_serial_bits() {
         assert_eq!(parse_buttons("START").unwrap(), 0x0008);
         assert_eq!(parse_buttons("A+RIGHT").unwrap(), 0x0180);
@@ -9384,5 +13374,57 @@ mod tests {
         let frame = route_coverage_frame_from_game(1, &game);
 
         assert_eq!(frame.sprite_types, vec![0x00]);
+    }
+}
+
+#[cfg(test)]
+mod decode_4bpp_tests {
+    use super::*;
+
+    #[test]
+    fn decode_4bpp_indices_reads_planar_bits_and_flips() {
+        // Build a 16-word tile (one SNES 4bpp tile = 16 words).
+        // Words 0-7: rows 0-7, bp0=low byte, bp1=high byte.
+        // Words 8-15: rows 0-7, bp2=low byte, bp3=high byte.
+        // Set word 0 so bp0 has bit 7 set (0x80) → leftmost pixel of row 0 gets index 1.
+        let mut vram = vec![0u16; 16];
+        vram[0] = 0x0080; // bp0 = 0x80 (bit 7 set), bp1 = 0x00
+
+        // No flip: tilemap_entry = 0 (tile 0, palette 0, hflip=false, vflip=false).
+        // For pixel x=0: source_x = 7-0 = 7, bit = 0x80; bp0 & 0x80 != 0 → index bit 0 = 1 → index 1.
+        let out_no_flip = decode_snes_4bpp_tile_indices(&vram, 0, 0x0000);
+        assert_eq!(
+            out_no_flip[0], 1,
+            "no-flip: pixel (0,0) should be index 1 from bp0 bit 7"
+        );
+        assert!(
+            out_no_flip[1..].iter().all(|&b| b == 0),
+            "no-flip: all other pixels should be 0"
+        );
+
+        // H-flip: tilemap_entry = 0x4000.
+        // With hflip, source_x = x (not 7-x), so pixel x=7 reads source_x=7 (bit 0x80).
+        let out_hflip = decode_snes_4bpp_tile_indices(&vram, 0, 0x4000);
+        assert_eq!(out_hflip[7], 1, "hflip: pixel (7,0) should be index 1");
+        assert!(
+            out_hflip
+                .iter()
+                .enumerate()
+                .all(|(i, &b)| if i == 7 { b == 1 } else { b == 0 }),
+            "hflip: only pixel index 7 should be 1"
+        );
+
+        // V-flip: tilemap_entry = 0x8000.
+        // With vflip, display row 0 reads source row 7 and display row 7 reads source row 0.
+        // Our data is at source row 0 → it appears at display row 7 → out[7*8+0] = out[56] = 1.
+        let out_vflip = decode_snes_4bpp_tile_indices(&vram, 0, 0x8000);
+        assert_eq!(out_vflip[56], 1, "vflip: pixel (0,7) should be index 1");
+        assert!(
+            out_vflip
+                .iter()
+                .enumerate()
+                .all(|(i, &b)| if i == 56 { b == 1 } else { b == 0 }),
+            "vflip: only pixel index 56 should be 1"
+        );
     }
 }

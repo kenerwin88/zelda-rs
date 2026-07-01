@@ -1,6 +1,7 @@
 // Methods ported from zelda3/src/dungeon.c and included inside ZeldaState.
 
 use super::*;
+use crate::game_state::constants::{MAIN_MODULE, SUBMODULE, SUBSUBMODULE};
 use crate::types::Point16U;
 use crate::zelda_rtl::misc::DUNG_ANIMATED_TILES;
 use crate::zelda_rtl::sprite::SpriteSpawnInfo;
@@ -20,6 +21,79 @@ impl ZeldaState {
         self.set_dungeon_room(room);
         self.dungeon_room_tracking_mut().set_room_index2_word(room);
         self.game_state.dungeon.room_tracking.room_index2_word()
+    }
+
+    pub fn developer_prepare_synthetic_room(&mut self, room: u16) {
+        self.set_indoor_flag(1);
+        self.set_dungeon_room(room);
+        self.dungeon_room_tracking_mut().set_room_index2_word(room);
+        self.ram[MAIN_MODULE] = 0x07;
+        self.ram[SUBMODULE] = 0x00;
+        self.ram[SUBSUBMODULE] = 0x00;
+
+        self.ram[SPRITE_STATE..SPRITE_STATE + 16].fill(0);
+        self.ram[SPRITE_TYPE..SPRITE_TYPE + 16].fill(0);
+        self.ram[0x0c4a..0x0c54].fill(0);
+        self.ram[0x0b00..0x0b08].fill(0);
+        self.ram[0x1f800..0x1f81e].fill(0);
+        self.ram[0x1d00..0x1d10].fill(0);
+        self.ram[0x1d10..0x1d20].fill(0);
+        self.ram[ALT_SPRITES_FLAG] = 0;
+
+        self.ram[0x1cd4] = 0;
+        self.ram[0x1cd7] = 0;
+        self.ram[0x1cd8] = 0;
+        self.ram[0x1cf0] = 0;
+        self.ram[0x1cf1] = 0;
+        self.ram[SHARED_MESSAGE_TIMER] = 0;
+        self.ram[SHARED_MESSAGE_TIMER + 1] = 0;
+        self.ram[MESSAGE_OR_SPRITE_STATE_CACHE] = 0;
+
+        self.sync_native_game_state_from_ram();
+    }
+
+    /// Spike probe (dungeon-tileset plan, Task 1): load + draw a real dungeon
+    /// entrance room from a fresh state AND load its blockset CHR into VRAM,
+    /// returning the blockset theme (`main_tile_theme_index`, the BG-CHR key).
+    ///
+    /// Sequence (mirrors the attract-mode dungeon scene + the overworld
+    /// `parity_probe_overworld_screen_and_build_map` probe):
+    ///   1. `Dungeon_LoadAndDrawEntranceRoom(entrance)` — resolves the entrance to
+    ///      a room, runs `Dungeon_LoadHeader` (sets `palette_theme`), and draws the
+    ///      64x64 BG1/BG2 tilemap into `game_state.dungeon.room_tilemaps`.
+    ///   2. `InitializeTilesets()` — decompresses the main blockset CHR (keyed off
+    ///      `palette_theme.main_tile_theme_index()`) into `ppu.vram` at word base
+    ///      0x2000 (the first `load_background_graphics(0x2000, main_tile_set[0], ..)`).
+    ///
+    /// After this call, read BG1 tilemap words via
+    /// `parity_probe_dungeon_bg1_map8_entry`, and decode CHR from `ppu.vram` at
+    /// word base 0x2000.
+    ///
+    /// NOTE: the argument is an ENTRANCE index (consumed by
+    /// `Dungeon_LoadAndDrawEntranceRoom`), not a raw room-header index.
+    pub fn parity_probe_dungeon_load_and_draw(&mut self, entrance: u16) -> u16 {
+        self.Dungeon_LoadAndDrawEntranceRoom(entrance as u8);
+        self.InitializeTilesets();
+        u16::from(self.game_state.world.palette_theme.main_tile_theme_index())
+    }
+
+    /// Spike probe: read a BG1 tilemap word (tile8 entry) from the loaded room.
+    /// `tile_index` is a word index into the 64x64 (0x1000-word) BG1 tilemap;
+    /// mirrors `parity_probe_overworld_bg2_map8_entry` for the dungeon BG1 layer.
+    pub fn parity_probe_dungeon_bg1_map8_entry(&self, tile_index: usize) -> u16 {
+        self.game_state.dungeon.room_tilemaps.bg1_tile(tile_index)
+    }
+
+    /// Spike probe: read a BG2 (dungeon floor) tilemap word from the loaded room.
+    /// `tile_index` is a word index into the 64x64 (0x1000-word) BG2 tilemap;
+    /// mirrors `parity_probe_dungeon_bg1_map8_entry` for the dungeon BG2 layer.
+    pub fn parity_probe_dungeon_bg2_map8_entry(&self, tile_index: usize) -> u16 {
+        self.game_state.dungeon.room_tilemaps.bg2_tile(tile_index)
+    }
+
+    pub fn developer_queue_music_track(&mut self, track: u8) {
+        self.set_music_control(track);
+        self.set_last_music_control(0);
     }
 
     pub(super) fn Dungeon_LoadAndDrawEntranceRoom(&mut self, room: u8) {

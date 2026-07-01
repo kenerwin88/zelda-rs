@@ -1,0 +1,2288 @@
+{
+  "format": "zelda3_developer_tileset_v1",
+  "id": "kakariko_town",
+  "source": ".cache/replay-bisect/rust-frame-1034462.sav projected 32 frames",
+  "source_layer": 1,
+  "cell_width_tiles": 2,
+  "cell_height_tiles": 2,
+  "columns": 16,
+  "rows": 14,
+  "entries": [
+    {
+      "id": 0,
+      "source_cell": 0,
+      "source_x": 0,
+      "source_y": 0,
+      "name": "house.roof.left",
+      "approved": true,
+      "tags": [
+        "house",
+        "roof"
+      ]
+    },
+    {
+      "id": 1,
+      "source_cell": 1,
+      "source_x": 2,
+      "source_y": 0,
+      "name": "house.roof.mid.01",
+      "approved": true,
+      "tags": [
+        "house",
+        "roof"
+      ]
+    },
+    {
+      "id": 2,
+      "source_cell": 2,
+      "source_x": 4,
+      "source_y": 0,
+      "name": "house.roof.mid.02",
+      "approved": true,
+      "tags": [
+        "house",
+        "roof"
+      ]
+    },
+    {
+      "id": 3,
+      "source_cell": 3,
+      "source_x": 6,
+      "source_y": 0,
+      "name": "house.roof.mid.03",
+      "approved": true,
+      "tags": [
+        "house",
+        "roof"
+      ]
+    },
+    {
+      "id": 4,
+      "source_cell": 4,
+      "source_x": 8,
+      "source_y": 0,
+      "name": "house.roof.mid.04",
+      "approved": true,
+      "tags": [
+        "house",
+        "roof"
+      ]
+    },
+    {
+      "id": 5,
+      "source_cell": 5,
+      "source_x": 10,
+      "source_y": 0,
+      "name": "house.roof.mid.05",
+      "approved": true,
+      "tags": [
+        "house",
+        "roof"
+      ]
+    },
+    {
+      "id": 6,
+      "source_cell": 6,
+      "source_x": 12,
+      "source_y": 0,
+      "name": "house.roof.mid.06",
+      "approved": true,
+      "tags": [
+        "house",
+        "roof"
+      ]
+    },
+    {
+      "id": 7,
+      "source_cell": 7,
+      "source_x": 14,
+      "source_y": 0,
+      "name": "house.roof.right",
+      "approved": true,
+      "tags": [
+        "house",
+        "roof"
+      ]
+    },
+    {
+      "id": 8,
+      "source_cell": 8,
+      "source_x": 16,
+      "source_y": 0,
+      "name": "source.008",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 9,
+      "source_cell": 9,
+      "source_x": 18,
+      "source_y": 0,
+      "name": "source.009",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 10,
+      "source_cell": 10,
+      "source_x": 20,
+      "source_y": 0,
+      "name": "tree.wall.left",
+      "approved": true,
+      "tags": [
+        "tree",
+        "boundary"
+      ]
+    },
+    {
+      "id": 11,
+      "source_cell": 11,
+      "source_x": 22,
+      "source_y": 0,
+      "name": "tree.canopy.01",
+      "approved": true,
+      "tags": [
+        "tree"
+      ]
+    },
+    {
+      "id": 12,
+      "source_cell": 12,
+      "source_x": 24,
+      "source_y": 0,
+      "name": "tree.canopy.02",
+      "approved": true,
+      "tags": [
+        "tree"
+      ]
+    },
+    {
+      "id": 13,
+      "source_cell": 13,
+      "source_x": 26,
+      "source_y": 0,
+      "name": "tree.canopy.03",
+      "approved": true,
+      "tags": [
+        "tree"
+      ]
+    },
+    {
+      "id": 14,
+      "source_cell": 14,
+      "source_x": 28,
+      "source_y": 0,
+      "name": "hedge.flowers.01",
+      "approved": true,
+      "tags": [
+        "hedge",
+        "flowers"
+      ]
+    },
+    {
+      "id": 15,
+      "source_cell": 15,
+      "source_x": 30,
+      "source_y": 0,
+      "name": "hedge.flowers.02",
+      "approved": true,
+      "tags": [
+        "hedge",
+        "flowers"
+      ]
+    },
+    {
+      "id": 16,
+      "source_cell": 16,
+      "source_x": 0,
+      "source_y": 2,
+      "name": "house.eave.left",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 17,
+      "source_cell": 17,
+      "source_x": 2,
+      "source_y": 2,
+      "name": "house.eave.mid.01",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 18,
+      "source_cell": 18,
+      "source_x": 4,
+      "source_y": 2,
+      "name": "house.eave.mid.02",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 19,
+      "source_cell": 19,
+      "source_x": 6,
+      "source_y": 2,
+      "name": "house.eave.mid.03",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 20,
+      "source_cell": 20,
+      "source_x": 8,
+      "source_y": 2,
+      "name": "house.eave.mid.04",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 21,
+      "source_cell": 21,
+      "source_x": 10,
+      "source_y": 2,
+      "name": "house.eave.mid.05",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 22,
+      "source_cell": 22,
+      "source_x": 12,
+      "source_y": 2,
+      "name": "house.eave.mid.06",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 23,
+      "source_cell": 23,
+      "source_x": 14,
+      "source_y": 2,
+      "name": "house.eave.right",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 24,
+      "source_cell": 24,
+      "source_x": 16,
+      "source_y": 2,
+      "name": "source.024",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 25,
+      "source_cell": 25,
+      "source_x": 18,
+      "source_y": 2,
+      "name": "source.025",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 26,
+      "source_cell": 26,
+      "source_x": 20,
+      "source_y": 2,
+      "name": "tree.trunk.left",
+      "approved": true,
+      "tags": [
+        "tree",
+        "boundary"
+      ]
+    },
+    {
+      "id": 27,
+      "source_cell": 27,
+      "source_x": 22,
+      "source_y": 2,
+      "name": "tree.trunk.mid",
+      "approved": true,
+      "tags": [
+        "tree",
+        "boundary"
+      ]
+    },
+    {
+      "id": 28,
+      "source_cell": 28,
+      "source_x": 24,
+      "source_y": 2,
+      "name": "tree.trunk.right",
+      "approved": true,
+      "tags": [
+        "tree",
+        "boundary"
+      ]
+    },
+    {
+      "id": 29,
+      "source_cell": 29,
+      "source_x": 26,
+      "source_y": 2,
+      "name": "hedge.dark.01",
+      "approved": true,
+      "tags": [
+        "hedge"
+      ]
+    },
+    {
+      "id": 30,
+      "source_cell": 30,
+      "source_x": 28,
+      "source_y": 2,
+      "name": "hedge.dark.02",
+      "approved": true,
+      "tags": [
+        "hedge"
+      ]
+    },
+    {
+      "id": 31,
+      "source_cell": 31,
+      "source_x": 30,
+      "source_y": 2,
+      "name": "grass.flowers.01",
+      "approved": true,
+      "tags": [
+        "grass",
+        "flowers"
+      ]
+    },
+    {
+      "id": 32,
+      "source_cell": 32,
+      "source_x": 0,
+      "source_y": 4,
+      "name": "house.wall.left",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 33,
+      "source_cell": 33,
+      "source_x": 2,
+      "source_y": 4,
+      "name": "house.wall.window",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 34,
+      "source_cell": 34,
+      "source_x": 4,
+      "source_y": 4,
+      "name": "house.wall.door",
+      "approved": true,
+      "tags": [
+        "house",
+        "door"
+      ]
+    },
+    {
+      "id": 35,
+      "source_cell": 35,
+      "source_x": 6,
+      "source_y": 4,
+      "name": "house.door",
+      "approved": true,
+      "tags": [
+        "house",
+        "door"
+      ]
+    },
+    {
+      "id": 36,
+      "source_cell": 36,
+      "source_x": 8,
+      "source_y": 4,
+      "name": "house.wall.mid.01",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 37,
+      "source_cell": 37,
+      "source_x": 10,
+      "source_y": 4,
+      "name": "house.wall.mid.02",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 38,
+      "source_cell": 38,
+      "source_x": 12,
+      "source_y": 4,
+      "name": "house.wall.mid.03",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 39,
+      "source_cell": 39,
+      "source_x": 14,
+      "source_y": 4,
+      "name": "house.wall.right",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 40,
+      "source_cell": 40,
+      "source_x": 16,
+      "source_y": 4,
+      "name": "source.040",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 41,
+      "source_cell": 41,
+      "source_x": 18,
+      "source_y": 4,
+      "name": "source.041",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 42,
+      "source_cell": 42,
+      "source_x": 20,
+      "source_y": 4,
+      "name": "house.wall.right_extension.01",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 43,
+      "source_cell": 43,
+      "source_x": 22,
+      "source_y": 4,
+      "name": "house.wall.right_extension.02",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 44,
+      "source_cell": 44,
+      "source_x": 24,
+      "source_y": 4,
+      "name": "house.wall.right_extension.03",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 45,
+      "source_cell": 45,
+      "source_x": 26,
+      "source_y": 4,
+      "name": "house.wall.right_extension.04",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 46,
+      "source_cell": 46,
+      "source_x": 28,
+      "source_y": 4,
+      "name": "house.wall.right_extension.05",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 47,
+      "source_cell": 47,
+      "source_x": 30,
+      "source_y": 4,
+      "name": "house.wall.right_extension.06",
+      "approved": true,
+      "tags": [
+        "house",
+        "wall"
+      ]
+    },
+    {
+      "id": 48,
+      "source_cell": 48,
+      "source_x": 0,
+      "source_y": 6,
+      "name": "source.048",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 49,
+      "source_cell": 49,
+      "source_x": 2,
+      "source_y": 6,
+      "name": "source.049",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 50,
+      "source_cell": 50,
+      "source_x": 4,
+      "source_y": 6,
+      "name": "source.050",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 51,
+      "source_cell": 51,
+      "source_x": 6,
+      "source_y": 6,
+      "name": "source.051",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 52,
+      "source_cell": 52,
+      "source_x": 8,
+      "source_y": 6,
+      "name": "source.052",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 53,
+      "source_cell": 53,
+      "source_x": 10,
+      "source_y": 6,
+      "name": "source.053",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 54,
+      "source_cell": 54,
+      "source_x": 12,
+      "source_y": 6,
+      "name": "source.054",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 55,
+      "source_cell": 55,
+      "source_x": 14,
+      "source_y": 6,
+      "name": "source.055",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 56,
+      "source_cell": 56,
+      "source_x": 16,
+      "source_y": 6,
+      "name": "source.056",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 57,
+      "source_cell": 57,
+      "source_x": 18,
+      "source_y": 6,
+      "name": "source.057",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 58,
+      "source_cell": 58,
+      "source_x": 20,
+      "source_y": 6,
+      "name": "source.058",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 59,
+      "source_cell": 59,
+      "source_x": 22,
+      "source_y": 6,
+      "name": "source.059",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 60,
+      "source_cell": 60,
+      "source_x": 24,
+      "source_y": 6,
+      "name": "source.060",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 61,
+      "source_cell": 61,
+      "source_x": 26,
+      "source_y": 6,
+      "name": "source.061",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 62,
+      "source_cell": 62,
+      "source_x": 28,
+      "source_y": 6,
+      "name": "source.062",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 63,
+      "source_cell": 63,
+      "source_x": 30,
+      "source_y": 6,
+      "name": "source.063",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 64,
+      "source_cell": 64,
+      "source_x": 0,
+      "source_y": 8,
+      "name": "source.064",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 65,
+      "source_cell": 65,
+      "source_x": 2,
+      "source_y": 8,
+      "name": "source.065",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 66,
+      "source_cell": 66,
+      "source_x": 4,
+      "source_y": 8,
+      "name": "source.066",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 67,
+      "source_cell": 67,
+      "source_x": 6,
+      "source_y": 8,
+      "name": "source.067",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 68,
+      "source_cell": 68,
+      "source_x": 8,
+      "source_y": 8,
+      "name": "source.068",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 69,
+      "source_cell": 69,
+      "source_x": 10,
+      "source_y": 8,
+      "name": "source.069",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 70,
+      "source_cell": 70,
+      "source_x": 12,
+      "source_y": 8,
+      "name": "source.070",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 71,
+      "source_cell": 71,
+      "source_x": 14,
+      "source_y": 8,
+      "name": "source.071",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 72,
+      "source_cell": 72,
+      "source_x": 16,
+      "source_y": 8,
+      "name": "source.072",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 73,
+      "source_cell": 73,
+      "source_x": 18,
+      "source_y": 8,
+      "name": "source.073",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 74,
+      "source_cell": 74,
+      "source_x": 20,
+      "source_y": 8,
+      "name": "source.074",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 75,
+      "source_cell": 75,
+      "source_x": 22,
+      "source_y": 8,
+      "name": "source.075",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 76,
+      "source_cell": 76,
+      "source_x": 24,
+      "source_y": 8,
+      "name": "grass.clean.01",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 77,
+      "source_cell": 77,
+      "source_x": 26,
+      "source_y": 8,
+      "name": "grass.clean.02",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 78,
+      "source_cell": 78,
+      "source_x": 28,
+      "source_y": 8,
+      "name": "grass.clean.03",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 79,
+      "source_cell": 79,
+      "source_x": 30,
+      "source_y": 8,
+      "name": "source.079",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 80,
+      "source_cell": 80,
+      "source_x": 0,
+      "source_y": 10,
+      "name": "source.080",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 81,
+      "source_cell": 81,
+      "source_x": 2,
+      "source_y": 10,
+      "name": "source.081",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 82,
+      "source_cell": 82,
+      "source_x": 4,
+      "source_y": 10,
+      "name": "source.082",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 83,
+      "source_cell": 83,
+      "source_x": 6,
+      "source_y": 10,
+      "name": "source.083",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 84,
+      "source_cell": 84,
+      "source_x": 8,
+      "source_y": 10,
+      "name": "source.084",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 85,
+      "source_cell": 85,
+      "source_x": 10,
+      "source_y": 10,
+      "name": "source.085",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 86,
+      "source_cell": 86,
+      "source_x": 12,
+      "source_y": 10,
+      "name": "source.086",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 87,
+      "source_cell": 87,
+      "source_x": 14,
+      "source_y": 10,
+      "name": "source.087",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 88,
+      "source_cell": 88,
+      "source_x": 16,
+      "source_y": 10,
+      "name": "source.088",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 89,
+      "source_cell": 89,
+      "source_x": 18,
+      "source_y": 10,
+      "name": "source.089",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 90,
+      "source_cell": 90,
+      "source_x": 20,
+      "source_y": 10,
+      "name": "source.090",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 91,
+      "source_cell": 91,
+      "source_x": 22,
+      "source_y": 10,
+      "name": "grass.clean.04",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 92,
+      "source_cell": 92,
+      "source_x": 24,
+      "source_y": 10,
+      "name": "grass.clean.05",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 93,
+      "source_cell": 93,
+      "source_x": 26,
+      "source_y": 10,
+      "name": "grass.clean.06",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 94,
+      "source_cell": 94,
+      "source_x": 28,
+      "source_y": 10,
+      "name": "source.094",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 95,
+      "source_cell": 95,
+      "source_x": 30,
+      "source_y": 10,
+      "name": "source.095",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 96,
+      "source_cell": 96,
+      "source_x": 0,
+      "source_y": 12,
+      "name": "grass.clean.07",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 97,
+      "source_cell": 97,
+      "source_x": 2,
+      "source_y": 12,
+      "name": "grass.clean.08",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 98,
+      "source_cell": 98,
+      "source_x": 4,
+      "source_y": 12,
+      "name": "grass.clean.09",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 99,
+      "source_cell": 99,
+      "source_x": 6,
+      "source_y": 12,
+      "name": "grass.clean.10",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 100,
+      "source_cell": 100,
+      "source_x": 8,
+      "source_y": 12,
+      "name": "grass.clean.11",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 101,
+      "source_cell": 101,
+      "source_x": 10,
+      "source_y": 12,
+      "name": "grass.clean.12",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 102,
+      "source_cell": 102,
+      "source_x": 12,
+      "source_y": 12,
+      "name": "source.102",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 103,
+      "source_cell": 103,
+      "source_x": 14,
+      "source_y": 12,
+      "name": "source.103",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 104,
+      "source_cell": 104,
+      "source_x": 16,
+      "source_y": 12,
+      "name": "grass.clean.13",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 105,
+      "source_cell": 105,
+      "source_x": 18,
+      "source_y": 12,
+      "name": "grass.clean.14",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 106,
+      "source_cell": 106,
+      "source_x": 20,
+      "source_y": 12,
+      "name": "grass.clean.15",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 107,
+      "source_cell": 107,
+      "source_x": 22,
+      "source_y": 12,
+      "name": "grass.clean.16",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 108,
+      "source_cell": 108,
+      "source_x": 24,
+      "source_y": 12,
+      "name": "grass.clean.17",
+      "approved": true,
+      "tags": [
+        "grass",
+        "clean"
+      ]
+    },
+    {
+      "id": 109,
+      "source_cell": 109,
+      "source_x": 26,
+      "source_y": 12,
+      "name": "source.109",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 110,
+      "source_cell": 110,
+      "source_x": 28,
+      "source_y": 12,
+      "name": "source.110",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 111,
+      "source_cell": 111,
+      "source_x": 30,
+      "source_y": 12,
+      "name": "source.111",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 112,
+      "source_cell": 112,
+      "source_x": 0,
+      "source_y": 14,
+      "name": "source.112",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 113,
+      "source_cell": 113,
+      "source_x": 2,
+      "source_y": 14,
+      "name": "source.113",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 114,
+      "source_cell": 114,
+      "source_x": 4,
+      "source_y": 14,
+      "name": "source.114",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 115,
+      "source_cell": 115,
+      "source_x": 6,
+      "source_y": 14,
+      "name": "source.115",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 116,
+      "source_cell": 116,
+      "source_x": 8,
+      "source_y": 14,
+      "name": "source.116",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 117,
+      "source_cell": 117,
+      "source_x": 10,
+      "source_y": 14,
+      "name": "source.117",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 118,
+      "source_cell": 118,
+      "source_x": 12,
+      "source_y": 14,
+      "name": "source.118",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 119,
+      "source_cell": 119,
+      "source_x": 14,
+      "source_y": 14,
+      "name": "source.119",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 120,
+      "source_cell": 120,
+      "source_x": 16,
+      "source_y": 14,
+      "name": "cliff.top.left",
+      "approved": true,
+      "tags": [
+        "cliff",
+        "top"
+      ]
+    },
+    {
+      "id": 121,
+      "source_cell": 121,
+      "source_x": 18,
+      "source_y": 14,
+      "name": "cliff.top.mid.01",
+      "approved": true,
+      "tags": [
+        "cliff",
+        "top"
+      ]
+    },
+    {
+      "id": 122,
+      "source_cell": 122,
+      "source_x": 20,
+      "source_y": 14,
+      "name": "cliff.top.mid",
+      "approved": true,
+      "tags": [
+        "cliff",
+        "top"
+      ]
+    },
+    {
+      "id": 123,
+      "source_cell": 123,
+      "source_x": 22,
+      "source_y": 14,
+      "name": "cliff.top.mid.03",
+      "approved": true,
+      "tags": [
+        "cliff",
+        "top"
+      ]
+    },
+    {
+      "id": 124,
+      "source_cell": 124,
+      "source_x": 24,
+      "source_y": 14,
+      "name": "cliff.top.mid.04",
+      "approved": true,
+      "tags": [
+        "cliff",
+        "top"
+      ]
+    },
+    {
+      "id": 125,
+      "source_cell": 125,
+      "source_x": 26,
+      "source_y": 14,
+      "name": "cliff.top.mid.05",
+      "approved": true,
+      "tags": [
+        "cliff",
+        "top"
+      ]
+    },
+    {
+      "id": 126,
+      "source_cell": 126,
+      "source_x": 28,
+      "source_y": 14,
+      "name": "cliff.top.right",
+      "approved": true,
+      "tags": [
+        "cliff",
+        "top"
+      ]
+    },
+    {
+      "id": 127,
+      "source_cell": 127,
+      "source_x": 30,
+      "source_y": 14,
+      "name": "stone.wall.right",
+      "approved": true,
+      "tags": [
+        "stone",
+        "boundary"
+      ]
+    },
+    {
+      "id": 128,
+      "source_cell": 128,
+      "source_x": 0,
+      "source_y": 16,
+      "name": "fence.horizontal.left",
+      "approved": true,
+      "tags": [
+        "fence"
+      ]
+    },
+    {
+      "id": 129,
+      "source_cell": 129,
+      "source_x": 2,
+      "source_y": 16,
+      "name": "fence.horizontal.mid.01",
+      "approved": true,
+      "tags": [
+        "fence"
+      ]
+    },
+    {
+      "id": 130,
+      "source_cell": 130,
+      "source_x": 4,
+      "source_y": 16,
+      "name": "fence.horizontal.mid.02",
+      "approved": true,
+      "tags": [
+        "fence"
+      ]
+    },
+    {
+      "id": 131,
+      "source_cell": 131,
+      "source_x": 6,
+      "source_y": 16,
+      "name": "fence.horizontal.mid.03",
+      "approved": true,
+      "tags": [
+        "fence"
+      ]
+    },
+    {
+      "id": 132,
+      "source_cell": 132,
+      "source_x": 8,
+      "source_y": 16,
+      "name": "fence.horizontal.mid.04",
+      "approved": true,
+      "tags": [
+        "fence"
+      ]
+    },
+    {
+      "id": 133,
+      "source_cell": 133,
+      "source_x": 10,
+      "source_y": 16,
+      "name": "fence.horizontal.mid.05",
+      "approved": true,
+      "tags": [
+        "fence"
+      ]
+    },
+    {
+      "id": 134,
+      "source_cell": 134,
+      "source_x": 12,
+      "source_y": 16,
+      "name": "fence.horizontal.mid",
+      "approved": true,
+      "tags": [
+        "fence"
+      ]
+    },
+    {
+      "id": 135,
+      "source_cell": 135,
+      "source_x": 14,
+      "source_y": 16,
+      "name": "fence.horizontal.right",
+      "approved": true,
+      "tags": [
+        "fence"
+      ]
+    },
+    {
+      "id": 136,
+      "source_cell": 136,
+      "source_x": 16,
+      "source_y": 16,
+      "name": "grass.cliff.left",
+      "approved": true,
+      "tags": [
+        "grass",
+        "cliff"
+      ]
+    },
+    {
+      "id": 137,
+      "source_cell": 137,
+      "source_x": 18,
+      "source_y": 16,
+      "name": "grass.cliff.mid.01",
+      "approved": true,
+      "tags": [
+        "grass",
+        "cliff"
+      ]
+    },
+    {
+      "id": 138,
+      "source_cell": 138,
+      "source_x": 20,
+      "source_y": 16,
+      "name": "cliff.face.left",
+      "approved": true,
+      "tags": [
+        "cliff",
+        "face"
+      ]
+    },
+    {
+      "id": 139,
+      "source_cell": 139,
+      "source_x": 22,
+      "source_y": 16,
+      "name": "cliff.face.mid.01",
+      "approved": true,
+      "tags": [
+        "cliff",
+        "face"
+      ]
+    },
+    {
+      "id": 140,
+      "source_cell": 140,
+      "source_x": 24,
+      "source_y": 16,
+      "name": "cliff.face.mid.02",
+      "approved": true,
+      "tags": [
+        "cliff",
+        "face"
+      ]
+    },
+    {
+      "id": 141,
+      "source_cell": 141,
+      "source_x": 26,
+      "source_y": 16,
+      "name": "cliff.face.right",
+      "approved": true,
+      "tags": [
+        "cliff",
+        "face"
+      ]
+    },
+    {
+      "id": 142,
+      "source_cell": 142,
+      "source_x": 28,
+      "source_y": 16,
+      "name": "grass.cliff.right.01",
+      "approved": true,
+      "tags": [
+        "grass",
+        "cliff"
+      ]
+    },
+    {
+      "id": 143,
+      "source_cell": 143,
+      "source_x": 30,
+      "source_y": 16,
+      "name": "grass.cliff.right.02",
+      "approved": true,
+      "tags": [
+        "grass",
+        "cliff"
+      ]
+    },
+    {
+      "id": 144,
+      "source_cell": 144,
+      "source_x": 0,
+      "source_y": 18,
+      "name": "source.144",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 145,
+      "source_cell": 145,
+      "source_x": 2,
+      "source_y": 18,
+      "name": "source.145",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 146,
+      "source_cell": 146,
+      "source_x": 4,
+      "source_y": 18,
+      "name": "source.146",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 147,
+      "source_cell": 147,
+      "source_x": 6,
+      "source_y": 18,
+      "name": "source.147",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 148,
+      "source_cell": 148,
+      "source_x": 8,
+      "source_y": 18,
+      "name": "source.148",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 149,
+      "source_cell": 149,
+      "source_x": 10,
+      "source_y": 18,
+      "name": "source.149",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 150,
+      "source_cell": 150,
+      "source_x": 12,
+      "source_y": 18,
+      "name": "source.150",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 151,
+      "source_cell": 151,
+      "source_x": 14,
+      "source_y": 18,
+      "name": "source.151",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 152,
+      "source_cell": 152,
+      "source_x": 16,
+      "source_y": 18,
+      "name": "source.152",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 153,
+      "source_cell": 153,
+      "source_x": 18,
+      "source_y": 18,
+      "name": "source.153",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 154,
+      "source_cell": 154,
+      "source_x": 20,
+      "source_y": 18,
+      "name": "source.154",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 155,
+      "source_cell": 155,
+      "source_x": 22,
+      "source_y": 18,
+      "name": "source.155",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 156,
+      "source_cell": 156,
+      "source_x": 24,
+      "source_y": 18,
+      "name": "source.156",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 157,
+      "source_cell": 157,
+      "source_x": 26,
+      "source_y": 18,
+      "name": "source.157",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 158,
+      "source_cell": 158,
+      "source_x": 28,
+      "source_y": 18,
+      "name": "source.158",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 159,
+      "source_cell": 159,
+      "source_x": 30,
+      "source_y": 18,
+      "name": "source.159",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 160,
+      "source_cell": 160,
+      "source_x": 0,
+      "source_y": 20,
+      "name": "source.160",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 161,
+      "source_cell": 161,
+      "source_x": 2,
+      "source_y": 20,
+      "name": "source.161",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 162,
+      "source_cell": 162,
+      "source_x": 4,
+      "source_y": 20,
+      "name": "source.162",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 163,
+      "source_cell": 163,
+      "source_x": 6,
+      "source_y": 20,
+      "name": "source.163",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 164,
+      "source_cell": 164,
+      "source_x": 8,
+      "source_y": 20,
+      "name": "source.164",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 165,
+      "source_cell": 165,
+      "source_x": 10,
+      "source_y": 20,
+      "name": "source.165",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 166,
+      "source_cell": 166,
+      "source_x": 12,
+      "source_y": 20,
+      "name": "source.166",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 167,
+      "source_cell": 167,
+      "source_x": 14,
+      "source_y": 20,
+      "name": "source.167",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 168,
+      "source_cell": 168,
+      "source_x": 16,
+      "source_y": 20,
+      "name": "source.168",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 169,
+      "source_cell": 169,
+      "source_x": 18,
+      "source_y": 20,
+      "name": "source.169",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 170,
+      "source_cell": 170,
+      "source_x": 20,
+      "source_y": 20,
+      "name": "source.170",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 171,
+      "source_cell": 171,
+      "source_x": 22,
+      "source_y": 20,
+      "name": "source.171",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 172,
+      "source_cell": 172,
+      "source_x": 24,
+      "source_y": 20,
+      "name": "source.172",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 173,
+      "source_cell": 173,
+      "source_x": 26,
+      "source_y": 20,
+      "name": "source.173",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 174,
+      "source_cell": 174,
+      "source_x": 28,
+      "source_y": 20,
+      "name": "source.174",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 175,
+      "source_cell": 175,
+      "source_x": 30,
+      "source_y": 20,
+      "name": "source.175",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 176,
+      "source_cell": 176,
+      "source_x": 0,
+      "source_y": 22,
+      "name": "path.stone.light",
+      "approved": true,
+      "tags": [
+        "path",
+        "stone"
+      ]
+    },
+    {
+      "id": 177,
+      "source_cell": 177,
+      "source_x": 2,
+      "source_y": 22,
+      "name": "path.stone.mid.01",
+      "approved": true,
+      "tags": [
+        "path",
+        "stone"
+      ]
+    },
+    {
+      "id": 178,
+      "source_cell": 178,
+      "source_x": 4,
+      "source_y": 22,
+      "name": "path.stone.mid.02",
+      "approved": true,
+      "tags": [
+        "path",
+        "stone"
+      ]
+    },
+    {
+      "id": 179,
+      "source_cell": 179,
+      "source_x": 6,
+      "source_y": 22,
+      "name": "path.stone.mid.03",
+      "approved": true,
+      "tags": [
+        "path",
+        "stone"
+      ]
+    },
+    {
+      "id": 180,
+      "source_cell": 180,
+      "source_x": 8,
+      "source_y": 22,
+      "name": "path.stone.mid.04",
+      "approved": true,
+      "tags": [
+        "path",
+        "stone"
+      ]
+    },
+    {
+      "id": 181,
+      "source_cell": 181,
+      "source_x": 10,
+      "source_y": 22,
+      "name": "path.stone.mid.05",
+      "approved": true,
+      "tags": [
+        "path",
+        "stone"
+      ]
+    },
+    {
+      "id": 182,
+      "source_cell": 182,
+      "source_x": 12,
+      "source_y": 22,
+      "name": "path.stone.mid.06",
+      "approved": true,
+      "tags": [
+        "path",
+        "stone"
+      ]
+    },
+    {
+      "id": 183,
+      "source_cell": 183,
+      "source_x": 14,
+      "source_y": 22,
+      "name": "path.stone.dark",
+      "approved": true,
+      "tags": [
+        "path",
+        "stone"
+      ]
+    },
+    {
+      "id": 184,
+      "source_cell": 184,
+      "source_x": 16,
+      "source_y": 22,
+      "name": "source.184",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 185,
+      "source_cell": 185,
+      "source_x": 18,
+      "source_y": 22,
+      "name": "source.185",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 186,
+      "source_cell": 186,
+      "source_x": 20,
+      "source_y": 22,
+      "name": "source.186",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 187,
+      "source_cell": 187,
+      "source_x": 22,
+      "source_y": 22,
+      "name": "source.187",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 188,
+      "source_cell": 188,
+      "source_x": 24,
+      "source_y": 22,
+      "name": "source.188",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 189,
+      "source_cell": 189,
+      "source_x": 26,
+      "source_y": 22,
+      "name": "source.189",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 190,
+      "source_cell": 190,
+      "source_x": 28,
+      "source_y": 22,
+      "name": "source.190",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 191,
+      "source_cell": 191,
+      "source_x": 30,
+      "source_y": 22,
+      "name": "source.191",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 192,
+      "source_cell": 192,
+      "source_x": 0,
+      "source_y": 24,
+      "name": "source.192",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 193,
+      "source_cell": 193,
+      "source_x": 2,
+      "source_y": 24,
+      "name": "source.193",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 194,
+      "source_cell": 194,
+      "source_x": 4,
+      "source_y": 24,
+      "name": "source.194",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 195,
+      "source_cell": 195,
+      "source_x": 6,
+      "source_y": 24,
+      "name": "source.195",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 196,
+      "source_cell": 196,
+      "source_x": 8,
+      "source_y": 24,
+      "name": "source.196",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 197,
+      "source_cell": 197,
+      "source_x": 10,
+      "source_y": 24,
+      "name": "source.197",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 198,
+      "source_cell": 198,
+      "source_x": 12,
+      "source_y": 24,
+      "name": "source.198",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 199,
+      "source_cell": 199,
+      "source_x": 14,
+      "source_y": 24,
+      "name": "source.199",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 200,
+      "source_cell": 200,
+      "source_x": 16,
+      "source_y": 24,
+      "name": "source.200",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 201,
+      "source_cell": 201,
+      "source_x": 18,
+      "source_y": 24,
+      "name": "source.201",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 202,
+      "source_cell": 202,
+      "source_x": 20,
+      "source_y": 24,
+      "name": "source.202",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 203,
+      "source_cell": 203,
+      "source_x": 22,
+      "source_y": 24,
+      "name": "source.203",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 204,
+      "source_cell": 204,
+      "source_x": 24,
+      "source_y": 24,
+      "name": "source.204",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 205,
+      "source_cell": 205,
+      "source_x": 26,
+      "source_y": 24,
+      "name": "source.205",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 206,
+      "source_cell": 206,
+      "source_x": 28,
+      "source_y": 24,
+      "name": "source.206",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 207,
+      "source_cell": 207,
+      "source_x": 30,
+      "source_y": 24,
+      "name": "source.207",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 208,
+      "source_cell": 208,
+      "source_x": 0,
+      "source_y": 26,
+      "name": "source.208",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 209,
+      "source_cell": 209,
+      "source_x": 2,
+      "source_y": 26,
+      "name": "source.209",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 210,
+      "source_cell": 210,
+      "source_x": 4,
+      "source_y": 26,
+      "name": "source.210",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 211,
+      "source_cell": 211,
+      "source_x": 6,
+      "source_y": 26,
+      "name": "source.211",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 212,
+      "source_cell": 212,
+      "source_x": 8,
+      "source_y": 26,
+      "name": "source.212",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 213,
+      "source_cell": 213,
+      "source_x": 10,
+      "source_y": 26,
+      "name": "source.213",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 214,
+      "source_cell": 214,
+      "source_x": 12,
+      "source_y": 26,
+      "name": "source.214",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 215,
+      "source_cell": 215,
+      "source_x": 14,
+      "source_y": 26,
+      "name": "source.215",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 216,
+      "source_cell": 216,
+      "source_x": 16,
+      "source_y": 26,
+      "name": "source.216",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 217,
+      "source_cell": 217,
+      "source_x": 18,
+      "source_y": 26,
+      "name": "source.217",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 218,
+      "source_cell": 218,
+      "source_x": 20,
+      "source_y": 26,
+      "name": "source.218",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 219,
+      "source_cell": 219,
+      "source_x": 22,
+      "source_y": 26,
+      "name": "source.219",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 220,
+      "source_cell": 220,
+      "source_x": 24,
+      "source_y": 26,
+      "name": "source.220",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 221,
+      "source_cell": 221,
+      "source_x": 26,
+      "source_y": 26,
+      "name": "source.221",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 222,
+      "source_cell": 222,
+      "source_x": 28,
+      "source_y": 26,
+      "name": "source.222",
+      "approved": false,
+      "tags": []
+    },
+    {
+      "id": 223,
+      "source_cell": 223,
+      "source_x": 30,
+      "source_y": 26,
+      "name": "source.223",
+      "approved": false,
+      "tags": []
+    }
+  ]
+}

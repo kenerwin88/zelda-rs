@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use gilrs::{Axis, Button, Event, EventType, Gilrs};
-use renderer::{FrameRenderer, GpuFrame, PresentationContext, RenderError};
+use renderer::{FrameRenderer, GpuFrame, PresentationContext, RenderError, RendererMode};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, WindowEvent};
@@ -30,9 +30,10 @@ use winit::window::{Fullscreen, Window, WindowAttributes, WindowId};
 
 pub mod host_menu;
 pub use host_menu::{
-    ControlsPanel, DeveloperDestination, DeveloperDestinationStatus, DeveloperMapPanel,
-    HostMenuAction, HostMenuInput, HostMenuMode, HostMenuState, HostMenuTab, LightingChoice,
-    PresentationChoice, RuntimeSettings, ShadowChoice, ViewportChoice,
+    ControlsPanel, DeveloperCurrentLocation, DeveloperDestination, DeveloperDestinationKind,
+    DeveloperDestinationStatus, DeveloperMapPanel, DeveloperThumbnail, HostMenuAction,
+    HostMenuInput, HostMenuMode, HostMenuState, HostMenuTab, LightingChoice, PresentationChoice,
+    RuntimeSettings, ShadowChoice, ViewportChoice,
 };
 
 // ── Frontend trait ────────────────────────────────────────────────────────────
@@ -89,6 +90,7 @@ pub struct NativeFrontend {
     audio_queue_limit_bytes: u32,
     next_frame_tick: Instant,
     presented_frames: u32,
+    renderer_mode: RendererMode,
 }
 
 impl NativeFrontend {
@@ -142,6 +144,7 @@ impl NativeFrontend {
             audio_queue_limit_bytes: (735 * 2 * std::mem::size_of::<i16>() * 10) as u32,
             next_frame_tick: Instant::now(),
             presented_frames: 0,
+            renderer_mode: RendererMode::Classic,
         };
 
         // Pump the event loop until Resumed fires and creates the window + renderer.
@@ -203,6 +206,13 @@ impl NativeFrontend {
         self.audio_queue_target_bytes
     }
 
+    /// Select the live render path. `Classic` (default) is the wgpu GPU PPU; the
+    /// `Modern`/`ModernCompare` modes route the live present through the modern
+    /// (software) live-VRAM render path.
+    pub fn set_renderer_mode(&mut self, mode: RendererMode) {
+        self.renderer_mode = mode;
+    }
+
     pub fn present_gpu_frame(&mut self, frame: &GpuFrame<'_>) {
         self.present_gpu_frame_with_context(frame, PresentationContext::default());
     }
@@ -212,8 +222,17 @@ impl NativeFrontend {
         frame: &GpuFrame<'_>,
         context: PresentationContext,
     ) {
+        let modern = matches!(
+            self.renderer_mode,
+            RendererMode::Modern | RendererMode::ModernCompare
+        );
         if let Some(renderer) = &mut self.handler.renderer {
-            match renderer.render_gpu_frame_with_context(frame, context) {
+            let result = if modern {
+                renderer.render_modern_frame(frame)
+            } else {
+                renderer.render_gpu_frame_with_context(frame, context)
+            };
+            match result {
                 Ok(()) => {}
                 Err(RenderError::SurfaceReconfigureNeeded) => {
                     if let Some(window) = &self.handler.window {
@@ -288,6 +307,22 @@ impl NativeFrontend {
             },
             selected_index: 0,
             lines: menu_overlay_lines(menu),
+            detail_lines: if menu.active_tab() == HostMenuTab::DeveloperMap {
+                menu.developer_detail_lines()
+            } else {
+                Vec::new()
+            },
+            thumbnail: menu.developer_thumbnail().map(|thumbnail| match thumbnail {
+                DeveloperThumbnail::RouteStart => renderer::MenuOverlayThumbnail::RouteStart,
+                DeveloperThumbnail::FileSelect => renderer::MenuOverlayThumbnail::FileSelect,
+                DeveloperThumbnail::Sanctuary => renderer::MenuOverlayThumbnail::Sanctuary,
+                DeveloperThumbnail::LateDungeon => renderer::MenuOverlayThumbnail::LateDungeon,
+                DeveloperThumbnail::DevRoom => renderer::MenuOverlayThumbnail::DevRoom,
+                DeveloperThumbnail::LockedOverworld => {
+                    renderer::MenuOverlayThumbnail::LockedOverworld
+                }
+                DeveloperThumbnail::LockedDungeon => renderer::MenuOverlayThumbnail::LockedDungeon,
+            }),
         };
         if let Some(renderer) = &mut self.handler.renderer {
             match renderer.render_menu_overlay(&overlay) {
@@ -527,6 +562,16 @@ fn developer_map_overlay_lines(menu: &HostMenuState) -> Vec<&'static str> {
                 )
             }));
         }
+        DeveloperMapPanel::CuratedPresets => {
+            lines.push("  CURATED PRESETS");
+            lines.extend(menu.developer_map_items().into_iter().map(|label| {
+                if menu.selected_label() == label {
+                    label_with_cursor(label)
+                } else {
+                    label_without_cursor(label)
+                }
+            }));
+        }
         DeveloperMapPanel::RouteBookmarks => {
             lines.push("  ROUTE BOOKMARKS");
             lines.extend(menu.developer_map_items().into_iter().map(|label| {
@@ -555,9 +600,12 @@ fn label_with_cursor(label: &'static str) -> &'static str {
     match label {
         "Route Start" => "> ROUTE START",
         "File Select" => "> FILE SELECT",
+        "Sanctuary" => "> SANCTUARY",
+        "Late Dungeon" => "> LATE DUNGEON",
         "Late Route Checkpoint" => "> LATE ROUTE CHECKPT",
         "Overworld Browser" => "> OVERWORLD BROWSER",
         "Dungeon Room Browser" => "> DUNGEON ROOM BROW",
+        "Room 003F" => "> ROOM 003F",
         _ => "> UNKNOWN",
     }
 }
@@ -566,9 +614,12 @@ fn label_without_cursor(label: &'static str) -> &'static str {
     match label {
         "Route Start" => "  ROUTE START",
         "File Select" => "  FILE SELECT",
+        "Sanctuary" => "  SANCTUARY",
+        "Late Dungeon" => "  LATE DUNGEON",
         "Late Route Checkpoint" => "  LATE ROUTE CHECKPT",
         "Overworld Browser" => "  OVERWORLD BROWSER",
         "Dungeon Room Browser" => "  DUNGEON ROOM BROW",
+        "Room 003F" => "  ROOM 003F",
         _ => "  UNKNOWN",
     }
 }

@@ -27,6 +27,9 @@ impl ZeldaState {
             }
         }
         self.write_ppu_registers();
+        // After all CHR DMAs have settled this frame, refresh the OBJ CHR logical
+        // sources by content hash so the off-VRAM sprite path resolves live cells.
+        self.rehash_streamed_obj_sources();
     }
 
     pub(super) fn interrupt_nmi_audio_parts_locked(&mut self) {
@@ -70,6 +73,46 @@ impl ZeldaState {
                 let data = self.animated_tile_dma_source_bytes().to_vec();
                 for i in 0..0x200 {
                     self.ppu.vram[dst + i] = read_word_from_slice(&data, i * 2);
+                }
+                // Tag the per-frame animated BG tiles (VRAM 0x3c00 overworld water /
+                // flowers). These are tagged CHR_KIND_BG_ANIM, but the off-VRAM
+                // extractor decodes them from LIVE VRAM (see `extract_modern_frame_from_
+                // sources`), NOT from the assets atlas: the assets dump captures these
+                // slots' pixels at frame-end while several overworld animations rewrite
+                // the same 0xa680 buffer position in-place per phase, so no static
+                // `(pack, position)` key OR content hash the dump records matches the
+                // pixels the live frame streams (frame 250000 waterfall: atlas cell
+                // wrong for BOTH key schemes; only live-VRAM decode is byte-exact).
+                // The `(pack, base_off)` tag is kept as metadata / debug provenance.
+                const ANIMATED_TILE_BUFFER_BASE: usize = 0xa680;
+                if dst == 0x3c00 && src_addr >= ANIMATED_TILE_BUFFER_BASE {
+                    let base_off = ((src_addr - ANIMATED_TILE_BUFFER_BASE) / 32) as u16;
+                    self.vram_chr_source.record_tiles_from(
+                        dst,
+                        0x20,
+                        crate::chr_source::CHR_KIND_BG_ANIM,
+                        self.animated_tile_pack,
+                        base_off,
+                    );
+                } else if dst != 0x3c00 {
+                    // DUNGEON animated tiles (dst 0x3b00): re-DMA'd over slots tagged
+                    // static kind=1 BG by initialize_tilesets. Content-hash (32-bit) so
+                    // the off-VRAM path resolves the live animated cell. Unlike the OW
+                    // path above, the dungeon dump binding is stable (verified byte-exact
+                    // at frame 435000), so the atlas cell is correct here.
+                    for t in 0..0x20usize {
+                        let word0 = dst + t * 16;
+                        if word0 + 16 <= self.ppu.vram.len() {
+                            let hash = crate::chr_source::chr_content_hash32(
+                                &self.ppu.vram[word0..word0 + 16],
+                            );
+                            self.vram_chr_source.record_tile_content_hash(
+                                dst / 16 + t,
+                                crate::chr_source::CHR_KIND_BG_STREAM,
+                                hash,
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -316,12 +359,81 @@ impl ZeldaState {
     pub(super) fn nmi_update_bg_char3and4(&mut self) {
         let buf = self.background_character_buffer().to_vec();
         self.copy_to_vram_slice(0x2c00, &buf, 0x1000);
+        // Animation-modeled asset renderer: this NMI DMA re-streams room-specific
+        // dungeon BG CHR over VRAM 0x2c00-0x3bff every room transition, leaving the
+        // room-entry do3->4 `(BG, pack, off)` tag stale. Re-tag the 256 streamed
+        // tiles with a 24-bit content hash of the just-written VRAM words so the
+        // off-VRAM path resolves the live floor/room cell, not the initial blockset.
+        // Indoor-only: the overworld owns these slots via its own keys and is at 0.
+        if self.game_state.world.location.indoor_flag() != 0 {
+            const BASE: usize = 0x2c00;
+            // copy_to_vram_slice len is in BYTES: 0x1000 bytes = 0x800 words = 0x80 tiles
+            // (16 words/tile), covering slots 0x2c0..0x340 (VRAM words 0x2c00..0x3400).
+            // Do NOT over-tag into 0x3400 (char5and6's region).
+            const TILES: usize = 0x80;
+            for t in 0..TILES {
+                let word0 = BASE + t * 16;
+                let hash = crate::chr_source::chr_content_hash32(
+                    &self.ppu.vram[word0..word0 + 16],
+                );
+                self.vram_chr_source.record_tile_content_hash(
+                    BASE / 16 + t,
+                    crate::chr_source::CHR_KIND_BG_STREAM,
+                    hash,
+                );
+            }
+        } else {
+            // OUTDOORS: re-tag GENERIC so the off-VRAM path decodes from live VRAM,
+            // clearing any stale BG_STREAM tag left over these slots by a prior
+            // indoor area (same stale-tag class as nmi_run_tile_map_update_dma).
+            self.tag_stream_generic(0x2c00, 0x80);
+        }
         self.clear_core_update_disable_flag();
     }
 
     pub(super) fn nmi_update_bg_char5and6(&mut self) {
         let buf = self.background_character_half_buffer().to_vec();
         self.copy_to_vram_slice(0x3400, &buf, 0x1000);
+        // Animation-modeled asset renderer (M1/approach A): VRAM 0x3400 is the OW
+        // BG2 char base. `initialize_tilesets` statically tagged it once with the
+        // area's aux BG pack, but the overworld re-DMAs the half buffer here on
+        // every area transition with DIFFERENT decompressed aux gfx, leaving the
+        // per-slot CHR source tag stale (non-injective across the route — the same
+        // `(BG, 0x4d, off)` key resolves to different pixels in different areas).
+        // Re-tag the streamed slots with a per-AUX-THEME-stable, injective key:
+        // the half-buffer content at slot N is deterministic in the aux tile theme
+        // (LoadTransAuxGFX rebuilds it from `aux_tileset(theme)`), so
+        // `(BG, 0x8000 | theme, N)` maps 1:1 to the streamed pixels. The 0x8000 bit
+        // keeps it disjoint from real BG packs (< 0x100). Overworld-only (the indoor
+        // path does not stream different content over this region).
+        if self.game_state.world.location.indoor_flag() == 0 {
+            let theme = self.game_state.world.palette_theme.aux_tile_theme_index() as u16;
+            // 0x1000 BYTES = 0x800 words = 0x80 tiles. (Was 0x100 = 256 tiles, which
+            // SPILLED past 0x3c00 into the OBJ/Link region 0x4000-0x43ff, stamping a
+            // BG tag over sprite slots and corrupting the off-VRAM sprite path.)
+            self.vram_chr_source.record_tiles(
+                0x3400,
+                0x80,
+                crate::chr_source::CHR_KIND_BG,
+                0x8000 | theme,
+            );
+        } else {
+            // DUNGEON: re-stream of room BG CHR over 0x3400; content-hash like the
+            // other streaming writers (theme key was non-injective for room-specific
+            // tiles). 0x80 tiles = 0x800 words.
+            const TILES: usize = 0x80;
+            for t in 0..TILES {
+                let word0 = 0x3400 + t * 16;
+                let hash = crate::chr_source::chr_content_hash32(
+                    &self.ppu.vram[word0..word0 + 16],
+                );
+                self.vram_chr_source.record_tile_content_hash(
+                    0x3400 / 16 + t,
+                    crate::chr_source::CHR_KIND_BG_STREAM,
+                    hash,
+                );
+            }
+        }
         self.clear_core_update_disable_flag();
     }
 
@@ -341,9 +453,59 @@ impl ZeldaState {
         self.nmi_run_tile_map_update_dma(0x3800);
     }
 
+    /// Per-frame: content-hash the non-Link OBJ CHR region (VRAM 0x4400-0x5fff)
+    /// into the source table. OBJ subset keys are non-injective (subset numbers,
+    /// especially pack 0, are reused with different gfx across areas, and the
+    /// per-frame incremental upload re-DMAs them), so the static `(SPRITE, pack,
+    /// off)` tag is wrong for the live pixels. Hashing the settled VRAM each frame
+    /// is injective and order-independent, regardless of which writer (do3->4,
+    /// incremental upload, obj-char DMA) last touched the slot. Link (0x4000-0x43ff)
+    /// keeps its `CHR_KIND_LINK` pose key. Bookkeeping only — does not touch VRAM.
+    pub(super) fn rehash_streamed_obj_sources(&mut self) {
+        // Start just past the Link CHR (0x4000-0x423f, tagged CHR_KIND_LINK by the
+        // pose DMA) so Link keeps its injective pose key; cover the rest of the OBJ
+        // banks (common sprites, per-area subsets, incremental upload region).
+        const OBJ_START: usize = 0x4240;
+        const OBJ_END: usize = 0x6000;
+        self.tag_stream_content_hash(OBJ_START, (OBJ_END - OBJ_START) / 16);
+    }
+
+    /// Re-tag `tiles` CHR slots starting at VRAM word `dst_word` with a 24-bit
+    /// content hash of the just-written pixels (animation-modeled asset renderer).
+    /// Used by streaming NMI DMAs whose room/area-specific content makes the static
+    /// `do3->4` tag stale; the content hash is injective and self-healing.
+    /// Re-tag `tiles` CHR slots as GENERIC BG (kind 1) so the off-VRAM path decodes
+    /// them from live VRAM. Used by outdoor BG streaming to CLEAR a stale BG_STREAM
+    /// tag (left by indoor streaming over the same slots). Generic BG ignores
+    /// pack/tile_off (decoded from VRAM), so pack 0 is fine. Bookkeeping only.
+    pub(super) fn tag_stream_generic(&mut self, dst_word: usize, tiles: usize) {
+        self.vram_chr_source
+            .record_tiles(dst_word, tiles, crate::chr_source::CHR_KIND_BG, 0);
+    }
+
+    pub(super) fn tag_stream_content_hash(&mut self, dst_word: usize, tiles: usize) {
+        for t in 0..tiles {
+            let word0 = dst_word + t * 16;
+            if word0 + 16 <= self.ppu.vram.len() {
+                let hash =
+                    crate::chr_source::chr_content_hash32(&self.ppu.vram[word0..word0 + 16]);
+                self.vram_chr_source.record_tile_content_hash(
+                    dst_word / 16 + t,
+                    crate::chr_source::CHR_KIND_BG_STREAM,
+                    hash,
+                );
+            }
+        }
+    }
+
     pub(super) fn nmi_update_obj_char0(&mut self) {
         let buf = self.background_character_buffer().to_vec();
         self.copy_to_vram_slice(0x4400, &buf, 0x800);
+        // OBJ CHR (common sprites / items at 0x4400) is streamed per-frame and
+        // outlives its static do3->4 tag; content-hash it so the off-VRAM sprite
+        // path resolves the live sprite. NOT indoor-gated — sprites appear in OW too.
+        // 0x800 bytes = 0x400 words = 0x40 tiles.
+        self.tag_stream_content_hash(0x4400, 0x40);
         self.clear_core_update_disable_flag();
     }
 
@@ -358,6 +520,18 @@ impl ZeldaState {
     pub(super) fn nmi_run_tile_map_update_dma(&mut self, dst: usize) {
         let buf = self.background_character_buffer().to_vec();
         self.copy_to_vram_slice(dst, &buf, 0x1000);
+        // 0x1000 BYTES = 0x800 words = 0x80 tiles. OBJ destinations (>=0x4000:
+        // 0x5000/0x5800) are content-hashed unconditionally. BG destinations
+        // (<0x4000): content-hash INDOORS; OUTDOORS re-tag GENERIC so the off-VRAM
+        // path decodes from live VRAM — clearing any stale BG_STREAM tag left from a
+        // previous indoor area (the dark-world pyramid streams BG over slots that
+        // were content-hash-tagged while indoors; without this they render the prior
+        // area). Outdoor generic-BG decodes from VRAM, so it's correct + injective.
+        if dst >= 0x4000 || self.game_state.world.location.indoor_flag() != 0 {
+            self.tag_stream_content_hash(dst, 0x80);
+        } else {
+            self.tag_stream_generic(dst, 0x80);
+        }
         self.clear_core_update_disable_flag();
     }
 
@@ -412,6 +586,16 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_core_link_graphics_update(&mut self) {
+        // Animation-modeled asset renderer M1: tag the Link CHR VRAM slots with
+        // the active Link DMA graphics index as the logical source. Write-only
+        // bookkeeping; does not affect the VRAM bytes written below.
+        let link_pack = (self
+            .game_state
+            .player
+            .follower_link
+            .link_dma_graphics_index_word()
+            >> 1) as u16;
+
         if let Some(link_graphics) = self.asset_raw(57).map(Vec::from) {
             for (dst, source, len) in [
                 (0x4100, LinkDmaSourceSlot::BodyBottom, 0x40),
@@ -421,7 +605,20 @@ impl ZeldaState {
                 (0x4020, LinkDmaSourceSlot::HeadTop, 0x40),
                 (0x4040, LinkDmaSourceSlot::HandLeft, 0x20),
             ] {
+                // Key the tile by its source identity (offset within the static
+                // Link sprite asset, 32 bytes / 4bpp tile) so distinct pose pieces
+                // that share `(pack, relative-tile)` no longer collide. Asset
+                // offsets use the `0x8000`-relative source address; buffer flag 0.
+                let src_addr = self.game_state.display.link_dma_source(source) as usize;
+                let base_off = (src_addr.saturating_sub(0x8000) >> 5) as u16;
                 self.copy_asset_bytes_to_vram(dst, &link_graphics, source, len);
+                self.vram_chr_source.record_tiles_from(
+                    dst,
+                    (len / 2).div_ceil(16),
+                    crate::chr_source::CHR_KIND_LINK,
+                    link_pack,
+                    base_off,
+                );
             }
         }
 
@@ -439,7 +636,19 @@ impl ZeldaState {
             (0x4200, LinkDmaSourceSlot::HeadPointerUpper, 0x40),
             (0x4220, LinkDmaSourceSlot::BodyPointerUpper, 0x40),
         ] {
+            // WRAM-sourced Link tiles: key by the WRAM source tile offset, tagged
+            // with the buffer flag so they never collide with asset-sourced tiles
+            // (the raw address spaces overlap). See `CHR_LINK_SRC_RAM_FLAG`.
+            let src_addr = self.game_state.display.link_dma_source(source) as usize;
+            let base_off = crate::chr_source::CHR_LINK_SRC_RAM_FLAG | ((src_addr >> 5) as u16);
             self.copy_ram_bytes_to_vram(dst, source, len);
+            self.vram_chr_source.record_tiles_from(
+                dst,
+                (len / 2).div_ceil(16),
+                crate::chr_source::CHR_KIND_LINK,
+                link_pack,
+                base_off,
+            );
         }
         self.copy_ram_bytes_to_vram_absolute(0x4240, 0xbd40, 0x40);
         for (dst, source) in [
@@ -587,6 +796,26 @@ impl ZeldaState {
         let buf = self.background_character_half_buffer().to_vec();
         for i in 0..0x200 {
             self.ppu.vram[dst + i] = read_word_from_slice(&buf, i * 2);
+        }
+        if dst < 0x4000 {
+            if self.game_state.world.location.indoor_flag() != 0 {
+                const TILES: usize = 0x20; // 0x200 words / 16
+                for t in 0..TILES {
+                    let word0 = dst + t * 16;
+                    let hash = crate::chr_source::chr_content_hash32(
+                        &self.ppu.vram[word0..word0 + 16],
+                    );
+                    self.vram_chr_source.record_tile_content_hash(
+                        dst / 16 + t,
+                        crate::chr_source::CHR_KIND_BG_STREAM,
+                        hash,
+                    );
+                }
+            } else {
+                // OUTDOORS: re-tag GENERIC (decode from live VRAM) so a stale
+                // BG_STREAM tag from a prior indoor area is cleared. 0x20 tiles.
+                self.tag_stream_generic(dst, 0x20);
+            }
         }
     }
 
