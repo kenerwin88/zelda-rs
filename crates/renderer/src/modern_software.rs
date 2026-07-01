@@ -2051,4 +2051,136 @@ mod tests {
             assert_eq!(&rgba[o..o + 4], &backdrop, "({x},{y}) should be backdrop");
         }
     }
+
+    /// Smallest full-path fixture with ONE BG index tile (BG1, palette 3, index 1,
+    /// opaque at screen (0,0)) and ONE index sprite (palette 5, index 1, opaque at
+    /// screen (50,60)), each cell carrying a distinct real `source_key`. Live palette
+    /// channels ([16,32,48] BG / [48,16,32] sprite) are each a `2 * c5` value with
+    /// `c5 < 4` (0..3), so `expand_brightness(c5, 15) == c5*8` exactly (no low-bit
+    /// fill spills into the zeroed low 3 bits) — halving these channels stays exact
+    /// through the render's 8-bit -> 5-bit -> 8-bit round trip, not just in raw
+    /// arithmetic. `screen_enabled_main` carries BG1 (bit0) + OBJ (bit4); no
+    /// color-math/windows/mosaic, so `render_modern_frame_full`'s only per-pixel
+    /// transform is that quantize/expand.
+    fn tiny_bg_and_sprite_fixture() -> (
+        ModernFrame,
+        Vec<ModernIndexTile>,
+        Vec<ModernIndexTile>,
+        (usize, usize, u8),
+        (usize, usize, u8),
+    ) {
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.screen_enabled_main = 0x11; // BG1 (bit0) + OBJ (bit4)
+
+        // BG: one opaque index-1 pixel at screen (0,0), palette 3.
+        let mut bg_indices = [0u8; 64];
+        bg_indices[0] = 1; // pixel (0,0)
+        let bg_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: bg_indices,
+            source_key: 0x0000_0001_0000_0000,
+        }];
+        let bg_cgram_idx = 3 * 16 + 1;
+        frame.cgram_rgba[bg_cgram_idx] = [16, 32, 48, 0xff];
+        frame.bg_layers[0].index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 3,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        let bg_probe = (0usize, bg_cgram_idx, 1u8); // screen (0,0) -> byte offset 0
+
+        // Sprite: one opaque index-1 pixel at screen (50,60), palette 5.
+        let mut spr_indices = [0u8; 64];
+        spr_indices[0] = 1; // pixel (0,0) of the sprite cell
+        let sprite_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: spr_indices,
+            source_key: 0x0000_0002_0000_0000,
+        }];
+        let spr_cgram_idx = 0x80 + 5 * 16 + 1;
+        frame.cgram_rgba[spr_cgram_idx] = [48, 16, 32, 0xff];
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 50,
+            screen_y: 60,
+            palette: 5,
+            priority: 0,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        });
+        let spr_probe = ((60usize * 256 + 50) * 4, spr_cgram_idx, 1u8);
+
+        (frame, bg_cells, sprite_cells, bg_probe, spr_probe)
+    }
+
+    /// End-to-end: a source-keyed HD override authored as the reference palette
+    /// (detail 1) renders byte-identical to the no-override render for BOTH a BG
+    /// index tile and an index sprite; an override authored as half the reference
+    /// recolors the probed BG and sprite pixels to exactly half their live value.
+    #[test]
+    fn source_keyed_overrides_recolor_bg_and_sprite() {
+        use crate::modern_hd_overrides::{HdCell, HdOverrideCtx, ModernHdOverrides};
+        use std::collections::HashMap;
+
+        let (frame, bg_cells, sprite_cells, bg_probe, spr_probe) = tiny_bg_and_sprite_fixture();
+
+        let bg_key = bg_cells[0].source_key;
+        let spr_key = sprite_cells[0].source_key;
+        assert_ne!(bg_key, crate::modern_hd_overrides::NO_SOURCE_KEY);
+        assert_ne!(spr_key, crate::modern_hd_overrides::NO_SOURCE_KEY);
+
+        let plain = render_modern_frame_full(&frame, &bg_cells, &sprite_cells);
+
+        // (a) reference == the frame's live palette, HD art == reference -> detail 1
+        // -> byte-identical to the plain (no-override) render.
+        let mut ref_pal = [[0u8; 4]; 256];
+        for (i, e) in ref_pal.iter_mut().enumerate() {
+            *e = frame.cgram_rgba[i];
+        }
+        let hd_identity = |cgram_idx: usize| {
+            let c = ref_pal[cgram_idx];
+            HdCell { width: 8, height: 8, rgba: vec![c[0], c[1], c[2], 0xff].repeat(64) }
+        };
+        let mut by_key = HashMap::new();
+        by_key.insert(bg_key, hd_identity(bg_probe.1));
+        by_key.insert(spr_key, hd_identity(spr_probe.1));
+        let store_identity = ModernHdOverrides::from_parts(by_key, ref_pal);
+        let identity = render_modern_frame_full_with_overrides(
+            &frame,
+            &bg_cells,
+            &sprite_cells,
+            &HdOverrideCtx::new(&store_identity),
+        );
+        assert_eq!(identity, plain, "detail=1 override must match no-override render");
+
+        // (b) HD art = half the reference -> live halved at the probed pixels.
+        let hd_half = |cgram_idx: usize| {
+            let c = ref_pal[cgram_idx];
+            HdCell { width: 8, height: 8, rgba: vec![c[0] / 2, c[1] / 2, c[2] / 2, 0xff].repeat(64) }
+        };
+        let mut by_key2 = HashMap::new();
+        by_key2.insert(bg_key, hd_half(bg_probe.1));
+        by_key2.insert(spr_key, hd_half(spr_probe.1));
+        let store_half = ModernHdOverrides::from_parts(by_key2, ref_pal);
+        let recolored = render_modern_frame_full_with_overrides(
+            &frame,
+            &bg_cells,
+            &sprite_cells,
+            &HdOverrideCtx::new(&store_half),
+        );
+
+        for probe in [bg_probe, spr_probe] {
+            let (off, cgram_idx, _base) = probe;
+            let live = ref_pal[cgram_idx];
+            let expected = [live[0] / 2, live[1] / 2, live[2] / 2];
+            assert_eq!(&recolored[off..off + 3], &expected, "recolor at {off}");
+            assert_ne!(&recolored[off..off + 3], &plain[off..off + 3], "must differ from plain");
+        }
+    }
 }
