@@ -790,6 +790,11 @@ use crate::modern_source_atlas::{source_cell, ModernSourceAtlas};
 /// injective (see `extract_modern_frame_from_sources`), so it is not listed here.
 const CHR_KIND_BG_ANIM: u8 = 5;
 const CHR_KIND_BG_STREAM: u8 = 6;
+/// Link CHR (mirrors `zelda3::CHR_KIND_LINK`). Decoded from live VRAM in the sprite
+/// path, not the atlas: Link's pose CHR is DMA'd per-frame from a source buffer whose
+/// offsets are reused across poses, so the source-identity atlas key is non-injective
+/// in practice (the dump captures a different pose than the live frame streams).
+const CHR_KIND_LINK: u8 = 3;
 
 /// A thin view over the M1 per-VRAM-slot logical CHR source table, returning
 /// `(kind, pack, tile_off)` for a CHR tile slot (`word_addr / 16`). Defined in
@@ -1157,18 +1162,34 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
 
                 let slot = chr_slot_base + used_tile;
                 let (kind, pack, tile_off) = src_table.get(slot);
-                let Some(src) = source_cell(atlas, kind, pack, tile_off) else {
-                    continue;
+                // Link (kind=3) decodes from LIVE VRAM (unflipped; per-instance flip is
+                // applied by the compositor). Its pose CHR is DMA'd per-frame from a
+                // source buffer whose offsets are reused across poses, so the source-
+                // identity atlas key resolves a stale pose (frame 253000 Link: 98px).
+                // Cache the per-slot decode under a high-bit-tagged key disjoint from
+                // atlas cell ids. All other sprites (kind=2, content-hashed) use the atlas.
+                let cell_id = if kind == CHR_KIND_LINK {
+                    *cell_ids
+                        .entry(0x8000_0000 | slot as u32)
+                        .or_insert_with(|| {
+                            let indices = decode_snes_4bpp_tile_indices(frame.vram, slot * 16, 0);
+                            let id = cells.len() as u32;
+                            cells.push(ModernIndexTile { id, indices });
+                            id
+                        })
+                } else {
+                    let Some(src) = source_cell(atlas, kind, pack, tile_off) else {
+                        continue;
+                    };
+                    *cell_ids.entry(src.id).or_insert_with(|| {
+                        let id = cells.len() as u32;
+                        cells.push(ModernIndexTile {
+                            id,
+                            indices: src.indices,
+                        });
+                        id
+                    })
                 };
-
-                let cell_id = *cell_ids.entry(src.id).or_insert_with(|| {
-                    let id = cells.len() as u32;
-                    cells.push(ModernIndexTile {
-                        id,
-                        indices: src.indices,
-                    });
-                    id
-                });
 
                 out.push(ModernIndexSpriteInstance {
                     cell_id,
