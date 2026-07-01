@@ -68,40 +68,61 @@ pub fn source_cell<'a>(
 pub fn load_modern_source_atlas(repo_root: &Path) -> Result<ModernSourceAtlas, String> {
     let base = repo_root.join("zelda3-bin/developer_tilesets");
     let json_path = base.join("assets_by_source.json");
-    let bin_path = base.join("assets_by_source.bin");
+    let png_path = base.join("assets_by_source.png");
 
     let json_bytes = std::fs::read(&json_path)
         .map_err(|e| format!("failed to read {}: {e}", json_path.display()))?;
     let manifest: Manifest = serde_json::from_slice(&json_bytes)
         .map_err(|e| format!("failed to parse {}: {e}", json_path.display()))?;
 
-    let bin_bytes = std::fs::read(&bin_path)
-        .map_err(|e| format!("failed to read {}: {e}", bin_path.display()))?;
-
-    let expected_len = manifest.cell_count as usize * 64;
-    if bin_bytes.len() != expected_len {
+    // Decode the INDEXED index-channel PNG: one byte per pixel = the 0..15 palette
+    // slot. Cells are 8x8, laid out `width/8` per row in dump `id` order (see
+    // `write_assets_index_png`). The color comes from live CGRAM at render time, so
+    // this sheet is palette-agnostic — byte-exact with the retired `.bin`.
+    let file = std::fs::File::open(&png_path)
+        .map_err(|e| format!("failed to open {}: {e}", png_path.display()))?;
+    let decoder = png::Decoder::new(std::io::BufReader::new(file));
+    let mut reader = decoder
+        .read_info()
+        .map_err(|e| format!("failed to read PNG header {}: {e}", png_path.display()))?;
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let info = reader
+        .next_frame(&mut buf)
+        .map_err(|e| format!("failed to decode {}: {e}", png_path.display()))?;
+    if info.bit_depth != png::BitDepth::Eight || info.color_type != png::ColorType::Indexed {
         return Err(format!(
-            "assets-by-source bin length {} does not match expected {} ({} cells * 64)",
-            bin_bytes.len(),
-            expected_len,
-            manifest.cell_count,
+            "{}: expected an 8-bit indexed PNG, got {:?}/{:?}",
+            png_path.display(),
+            info.color_type,
+            info.bit_depth
         ));
     }
+    let width = info.width as usize;
+    let cols = width / 8;
+    if cols == 0 {
+        return Err(format!("{}: PNG width {width} is less than one 8px cell", png_path.display()));
+    }
+    let data = &buf[..info.buffer_size()];
 
     let mut cells = Vec::with_capacity(manifest.cells.len());
     let mut key_to_cell: HashMap<u64, usize> = HashMap::new();
 
     for cell_json in &manifest.cells {
-        let offset = cell_json.id as usize * 64;
+        let id = cell_json.id as usize;
+        let cx = (id % cols) * 8;
+        let cy = (id / cols) * 8;
         let mut indices = [0u8; 64];
-        indices.copy_from_slice(&bin_bytes[offset..offset + 64]);
+        for py in 0..8 {
+            let row_start = (cy + py) * width + cx;
+            indices[py * 8..py * 8 + 8].copy_from_slice(&data[row_start..row_start + 8]);
+        }
         let cell_index = cells.len();
         cells.push(ModernIndexTile {
             id: cell_json.id,
             indices,
         });
         // Rebuild the key from {kind, pack, tile_off} so the loader is robust even
-        // if the JSON `key` field were ever stale; this matches the M2 dump.
+        // if the JSON `key` field were ever stale; this matches the dump.
         let key = modern_source_key(cell_json.kind, cell_json.pack, cell_json.tile_off);
         key_to_cell.insert(key, cell_index);
     }
