@@ -8,6 +8,10 @@ use std::path::Path;
 pub struct ModernIndexTile {
     pub id: u32,
     pub indices: [u8; 64],
+    /// Logical source key (`modern_source_key(kind, pack, tile_off)`) for HD override
+    /// lookup, or `crate::modern_hd_overrides::NO_SOURCE_KEY` (0) for cells with no
+    /// atlas source (live-VRAM-decoded animation cells, test cells).
+    pub source_key: u64,
 }
 
 /// Atlas of all unique palette-agnostic tile patterns for the overworld.
@@ -66,6 +70,7 @@ pub fn load_modern_overworld_index_atlas(repo_root: &Path) -> Result<ModernIndex
         cells.push(ModernIndexTile {
             id: cell_json.id,
             indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
         });
         for &key in &cell_json.graphics_keys {
             key_to_cell.insert(key, cell_index);

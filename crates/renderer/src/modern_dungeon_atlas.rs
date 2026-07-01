@@ -63,6 +63,7 @@ pub fn load_modern_dungeon_index_atlas(
         cells.push(ModernIndexTile {
             id: cell_json.id,
             indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
         });
         for &key in &cell_json.keys {
             key_to_cell.insert(key, cell_index);

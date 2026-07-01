@@ -397,7 +397,11 @@ pub fn extract_modern_dungeon_frame_from_vram(
                         decode_snes_4bpp_tile_indices(frame.vram, chr_base, pattern_key)
                     };
                     let id = cells.len() as u32;
-                    cells.push(ModernIndexTile { id, indices });
+                    cells.push(ModernIndexTile {
+                        id,
+                        indices,
+                        source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                    });
                     id
                 });
                 // The SNES BG is a torus: scroll wraps modulo the tilemap pixel
@@ -554,7 +558,11 @@ pub fn extract_modern_sprites_from_vram(
 
                 let cell_id = *pattern_ids.entry(indices).or_insert_with(|| {
                     let id = cells.len() as u32;
-                    cells.push(ModernIndexTile { id, indices });
+                    cells.push(ModernIndexTile {
+                        id,
+                        indices,
+                        source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                    });
                     id
                 });
 
@@ -1085,7 +1093,11 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                             *b = if p == 0 { 0 } else { pal * 4 + p };
                         }
                         let id = cells.len() as u32;
-                        cells.push(ModernIndexTile { id, indices: baked });
+                        cells.push(ModernIndexTile {
+                            id,
+                            indices: baked,
+                            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                        });
                         id
                     });
                     (id, 0u8)
@@ -1134,7 +1146,11 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                 let indices =
                                     decode_snes_4bpp_tile_indices(frame.vram, chr_base, pattern_key);
                                 let id = cells.len() as u32;
-                                cells.push(ModernIndexTile { id, indices });
+                                cells.push(ModernIndexTile {
+                                    id,
+                                    indices,
+                                    source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                });
                                 id
                             });
                         (id, pal)
@@ -1189,7 +1205,13 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                     let id = *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
                         let indices = flip_index_pattern(&src.indices, hflip, vflip);
                         let id = cells.len() as u32;
-                        cells.push(ModernIndexTile { id, indices });
+                        cells.push(ModernIndexTile {
+                            id,
+                            indices,
+                            source_key: crate::modern_source_atlas::modern_source_key(
+                                kind, pack, tile_off,
+                            ),
+                        });
                         id
                     });
                     (id, ((entry_word >> 10) & 7) as u8)
@@ -1338,7 +1360,11 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                         .or_insert_with(|| {
                             let indices = decode_snes_4bpp_tile_indices(frame.vram, slot * 16, 0);
                             let id = cells.len() as u32;
-                            cells.push(ModernIndexTile { id, indices });
+                            cells.push(ModernIndexTile {
+                                id,
+                                indices,
+                                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                            });
                             id
                         })
                 } else {
@@ -1355,6 +1381,9 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                         cells.push(ModernIndexTile {
                             id,
                             indices: src.indices,
+                            source_key: crate::modern_source_atlas::modern_source_key(
+                                kind, pack, tile_off,
+                            ),
                         });
                         id
                     })
@@ -1440,7 +1469,11 @@ mod tests {
         let mut indices = [0u8; 64];
         indices[0] = 7;
         indices[63] = 9;
-        let cell = ModernIndexTile { id: 0, indices };
+        let cell = ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+        };
         let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
             vec![cell],
             &[(CHR_KIND_BG_STREAM, (h >> 16) as u16, (h & 0xffff) as u16, 0)],
@@ -1503,7 +1536,11 @@ mod tests {
         // (index 7) must be IGNORED in favour of the live VRAM pattern.
         let mut stale = [0u8; 64];
         stale[0] = 7;
-        let cell = ModernIndexTile { id: 0, indices: stale };
+        let cell = ModernIndexTile {
+            id: 0,
+            indices: stale,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+        };
         let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![cell], &[(1, 5, 3, 0)]);
         let table = |slot: usize| -> (u8, u16, u16) {
             if slot == 0x200 + 4 {
@@ -1807,6 +1844,7 @@ mod tests {
         let cell = ModernIndexTile {
             id: 0,
             indices: [0u8; 64],
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
         };
         // Build an atlas that maps GRAPHICS_KEY → cell index 0
         let atlas = ModernIndexAtlas::from_keyed_cells_for_test(vec![cell], &[(GRAPHICS_KEY, 0)]);
@@ -1861,6 +1899,7 @@ mod tests {
         let cell = ModernIndexTile {
             id: 42,
             indices: [0u8; 64],
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
         };
         let atlas = crate::modern_dungeon_atlas::ModernDungeonIndexAtlas::from_keyed_cells_for_test(
             vec![cell],
@@ -2031,6 +2070,7 @@ mod tests {
         let cell = ModernIndexTile {
             id: 99,
             indices: [0u8; 64],
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
         };
         let atlas = ModernSpriteIndexAtlas::from_keyed_cells_for_test(
             vec![cell],
@@ -2072,6 +2112,7 @@ mod tests {
         let cell = ModernIndexTile {
             id: 7,
             indices: [0u8; 64],
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
         };
         let atlas = ModernSpriteIndexAtlas::from_keyed_cells_for_test(
             vec![cell],

@@ -1361,7 +1361,7 @@ mod tests {
     ) -> (ModernFrame, Vec<ModernIndexTile>) {
         let mut indices = [0u8; 64];
         indices[0] = 1; // pixel (0,0)
-        let cells = vec![ModernIndexTile { id: 0, indices }];
+        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
         // Use palette `layer_index` so the two layers in the half-add test don't share a slot.
@@ -1393,7 +1393,7 @@ mod tests {
         for v in indices.iter_mut() {
             *v = 1; // fully opaque 8x8 tile
         }
-        let cells = vec![ModernIndexTile { id: 0, indices }];
+        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
         frame.brightness = 15;
@@ -1452,7 +1452,7 @@ mod tests {
     fn obj_vs_obj_priority_is_by_index_not_attribute() {
         let mut indices = [0u8; 64];
         indices[0] = 1; // pixel (0,0) opaque for both
-        let cells = vec![ModernIndexTile { id: 0, indices }];
+        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
         // A = palette 4 (red), B = palette 5 (green). Distinct colors.
@@ -1485,7 +1485,7 @@ mod tests {
     fn obj_color_math_only_applies_to_palettes_4_to_7() {
         let mut indices = [0u8; 64];
         indices[0] = 1;
-        let cells = vec![ModernIndexTile { id: 0, indices }];
+        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
         let make = |pal: u8| {
             let mut frame = ModernFrame::empty();
             frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -1674,7 +1674,7 @@ mod tests {
         for (k, slot) in indices.iter_mut().enumerate() {
             *slot = (k + 1) as u8;
         }
-        let cells = vec![ModernIndexTile { id: 0, indices }];
+        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
 
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -1739,7 +1739,7 @@ mod tests {
         // Sprite cell 0: only pixel (0,0) is index 1; everything else transparent.
         let mut indices = [0u8; 64];
         indices[0] = 1;
-        let sprite_cells = vec![ModernIndexTile { id: 0, indices }];
+        let sprite_cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
 
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -1772,7 +1772,7 @@ mod tests {
         // Sprite cell 0: only pixel (7,0) is index 2.
         let mut indices = [0u8; 64];
         indices[7] = 2;
-        let sprite_cells = vec![ModernIndexTile { id: 0, indices }];
+        let sprite_cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
 
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -1806,7 +1806,7 @@ mod tests {
         let mut indices = [0u8; 64];
         indices[0] = 1; // pixel (0,0): sx=0, sy=0 → indices[sy*8+sx]=indices[0]
         indices[1] = 2; // pixel (1,0): sx=1, sy=0 → indices[sy*8+sx]=indices[1]
-        let cells = vec![ModernIndexTile { id: 0, indices }];
+        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
 
         // Frame: palette P=3 so that the palette offset (not P=0) is exercised.
         let mut frame = ModernFrame::empty();
