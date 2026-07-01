@@ -107,14 +107,27 @@ Four units, each independently testable:
 - API: `get(source_key: u64) -> Option<&HdCell>`, `reference() -> &[[u8;4];256]`,
   `is_enabled() -> bool`.
 
-### 3. Per-atlas override table
+### 3. Source key on the per-frame cell (`ModernIndexTile.source_key`)
 
-- Requires `cell_id -> source_key` on the atlas. Add a parallel `cell_keys: Vec<u64>`
-  to `ModernSourceAtlas`, populated wherever `key_to_cell` is built (both the real
-  loader and `from_keyed_cells_for_test`). The sprite atlas exposes the same.
-- At atlas construction, build `Vec<Option<HdCell>>` (clone-or-Rc the `HdCell`) indexed
-  by `cell_id`: `table[cell_id] = store.get(cell_keys[cell_id]).cloned()`. Direct index
-  at composite time — no per-pixel hashing.
+**Design correction (found during planning):** the compositor's `cell_id` is NOT an
+atlas-stable id. `extract_modern_frame_from_sources` / `extract_modern_sprites_from_
+sources` build a fresh, per-frame `Vec<ModernIndexTile>` (`bg_cells` / `sprite_cells`),
+deduped via a per-frame `cell_ids` map, and `ModernIndexTileInstance.cell_id` indexes
+into that per-frame Vec. So an atlas-load table keyed by cell_id cannot work.
+
+Instead, carry the source key on the cell, set at the exact point extract already
+resolves the atlas source:
+
+- Add `source_key: u64` to `ModernIndexTile` (`crates/renderer/src/modern_index_atlas.rs`).
+  A dedicated `NO_SOURCE_KEY` sentinel (`0`) marks cells with no atlas source (the
+  live-VRAM-decoded animation cells, which never have overrides). Real keys are the
+  nonzero `modern_source_key(kind, pack, tile_off)`.
+- In extract, set `source_key` where each atlas-backed cell is pushed
+  (`source_cell(...)` path) using `modern_source_key(kind, pack, tile_off)`; set
+  `NO_SOURCE_KEY` for the non-injective live-decode path and any test constructor.
+- At composite time the override is resolved **once per instance** (not per pixel):
+  `let ov = ctx.and_then(|s| s.get(cell.source_key));`. `ModernSourceAtlas` is
+  unchanged; no `cell_keys` needed.
 
 ### 4. Recolor kernel (`modern_software`)
 
@@ -148,19 +161,29 @@ fn resolve_pixel_color(
 
 ## Data flow & threading
 
-1. **Load once** → `ModernHdOverrides` store.
-2. **At atlas construction** (BG atlas, sprite atlas) → two `Vec<Option<HdCell>>`
-   override tables.
-3. **Per frame**: `render_modern_frame_full` threads `(&bg_table, &sprite_table,
-   reference)` into `composite_index_tiles`, `composite_index_tiles_c5`,
-   `composite_mode1_mosaic`, `composite_mode1_scanline_scroll`, and
-   `resolve_obj_layer`. Each fn resolves `Option<&HdCell>` **once per instance** by
-   `cell_id`, then calls `resolve_pixel_color` per pixel. Because the kernel takes the
-   already-computed `cgram_idx`, BG and sprite paths use the identical kernel.
+1. **Load once** → `ModernHdOverrides` store (env-gated).
+2. **Extract** sets `ModernIndexTile.source_key` per cell (atlas key or `NO_SOURCE_KEY`).
+3. **Per frame**: a new `render_modern_frame_full_with_overrides(frame, bg_cells,
+   sprite_cells, ctx: &HdOverrideCtx)` threads `ctx` into the four full-path resolve
+   sites — `composite_index_tiles_c5` (main BG), `render_bg_layer_buf` (mosaic BG),
+   `render_bg_layer_torus` (scanline-scroll BG), and `resolve_obj_layer` (sprites) —
+   via `composite_mode1`. Each resolves `Option<&HdCell>` **once per instance** from the
+   cell's `source_key`, then calls `resolve_pixel_color` per pixel. Because the kernel
+   takes the already-computed `cgram_idx`, BG and sprite paths use the identical kernel.
+   `HdOverrideCtx { store: Option<&ModernHdOverrides> }`; `store: None` (or a store with
+   no matching key) → the kernel returns `live` → byte-identical to today.
+4. `render_modern_frame_full(frame, bg_cells, sprite_cells)` stays as a thin wrapper
+   that calls `_with_overrides` with a **disabled** ctx (`store: None`), so all existing
+   callers/tests are byte-unchanged. The `render_modern_frame_full_from_vram` oracle
+   path likewise stays disabled (its cells are live-VRAM-decoded, `NO_SOURCE_KEY`).
 
 The exact function-signature threading is an implementation detail for the plan; the
 constraint is: one shared kernel, per-instance override resolve (not per-pixel), and a
-`None`/empty-table fast path that leaves no-override pixels byte-identical to today.
+disabled-ctx fast path that leaves no-override pixels byte-identical to today.
+
+The **simple** (non-parity) path — `render_modern_frame_software_indexed` /
+`draw_modern_sprites_indexed` (resolve sites at lines ~53 and ~180) — is intentionally
+NOT covered in Phase 1; the parity/compare path is `render_modern_frame_full`.
 
 ## Error handling
 
