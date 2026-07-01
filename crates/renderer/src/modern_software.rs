@@ -231,13 +231,16 @@ fn composite_mode1(
     // window-masks BOTH screens (unlike the per-scanline TM check, which is main-only),
     // so this is passed for the sub composite too.
     windowed: u8,
+    ctx: &crate::modern_hd_overrides::HdOverrideCtx,
 ) {
     // SNES mosaic ($2106): active only when the block size is >1 AND at least one
     // ENABLED BG layer (1-3) has its mosaic bit set. When inactive, run the existing
     // (pixel-exact) path UNCHANGED so normal frames are byte-for-byte identical.
     let mosaic_active = frame.mosaic_size > 1 && (frame.mosaic_enabled & enabled & 0x07) != 0;
     if mosaic_active {
-        composite_mode1_mosaic(screen, frame, bg_cells, sprite_cells, enabled, main_tm, windowed);
+        composite_mode1_mosaic(
+            screen, frame, bg_cells, sprite_cells, enabled, main_tm, windowed, ctx,
+        );
         return;
     }
     let bg_on = |i: usize| (enabled >> i) & 1 != 0;
@@ -263,6 +266,7 @@ fn composite_mode1(
             main_tm,
             windowed,
             scroll_layers,
+            ctx,
         );
         return;
     }
@@ -272,13 +276,13 @@ fn composite_mode1(
     // against each other. Compositing in priority passes (as before) wrongly let a
     // higher-priority-attr but higher-index sprite overwrite a lower-index one.
     let obj = if obj_on {
-        Some(resolve_obj_layer(frame, sprite_cells, screen.c5.len()))
+        Some(resolve_obj_layer(frame, sprite_cells, screen.c5.len(), ctx))
     } else {
         None
     };
     // BG3-lo
     if bg_on(2) {
-        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, false, main_tm, windowed);
+        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, false, main_tm, windowed, ctx);
     }
     // OBJ priority 0, 1 (below BG2/BG1 low)
     if let Some(o) = &obj {
@@ -287,10 +291,10 @@ fn composite_mode1(
     }
     // BG2-lo, BG1-lo
     if bg_on(1) {
-        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, false, main_tm, windowed);
+        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, false, main_tm, windowed, ctx);
     }
     if bg_on(0) {
-        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, false, main_tm, windowed);
+        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, false, main_tm, windowed, ctx);
     }
     // OBJ priority 2 (above BG2/BG1 low)
     if let Some(o) = &obj {
@@ -298,10 +302,10 @@ fn composite_mode1(
     }
     // BG2-hi, BG1-hi
     if bg_on(1) {
-        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, true, main_tm, windowed);
+        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, true, main_tm, windowed, ctx);
     }
     if bg_on(0) {
-        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, true, main_tm, windowed);
+        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, true, main_tm, windowed, ctx);
     }
     // OBJ priority 3 (above BG2/BG1 high)
     if let Some(o) = &obj {
@@ -309,7 +313,7 @@ fn composite_mode1(
     }
     // BG3-hi
     if bg_on(2) {
-        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, true, main_tm, windowed);
+        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, true, main_tm, windowed, ctx);
     }
 }
 
@@ -333,6 +337,7 @@ fn render_bg_layer_buf(
     cells: &[ModernIndexTile],
     frame: &ModernFrame,
     len: usize,
+    ctx: &crate::modern_hd_overrides::HdOverrideCtx,
 ) -> BgBuf {
     let width = usize::from(MODERN_FRAME_WIDTH);
     let mut buf = BgBuf {
@@ -345,6 +350,7 @@ fn render_bg_layer_buf(
             Some(c) => c,
             None => continue,
         };
+        let ov = ctx.resolve(cell.source_key);
         for sy in 0..8usize {
             for sx in 0..8usize {
                 let index = cell.indices[sy * 8 + sx];
@@ -356,7 +362,19 @@ fn render_bg_layer_buf(
                 if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
                     continue;
                 }
-                let color = frame.cgram_rgba[inst.palette as usize * 16 + index as usize];
+                let cgram_idx = inst.palette as usize * 16 + index as usize;
+                let color = match crate::modern_hd_overrides::resolve_pixel_color(
+                    index,
+                    cgram_idx,
+                    frame.cgram_rgba[cgram_idx],
+                    ov,
+                    ctx.reference(),
+                    sx as u32,
+                    sy as u32,
+                ) {
+                    Some(c) => c,
+                    None => continue,
+                };
                 let i = dst_y as usize * width + dst_x as usize;
                 buf.c5[i] = [color[0] >> 3, color[1] >> 3, color[2] >> 3];
                 buf.real[i] = true;
@@ -448,6 +466,7 @@ fn composite_mode1_mosaic(
     enabled: u8,
     main_tm: Option<&[u8]>,
     windowed: u8,
+    ctx: &crate::modern_hd_overrides::HdOverrideCtx,
 ) {
     let bg_on = |i: usize| (enabled >> i) & 1 != 0;
     let obj_on = (enabled >> 4) & 1 != 0;
@@ -461,7 +480,7 @@ fn composite_mode1_mosaic(
         if !bg_on(layer) {
             continue;
         }
-        let mut buf = render_bg_layer_buf(&bg[layer], bg_cells, frame, len);
+        let mut buf = render_bg_layer_buf(&bg[layer], bg_cells, frame, len, ctx);
         if frame.mosaic_enabled & (1u8 << layer) != 0 {
             mosaic_snap_bg_buf(&mut buf, n);
         }
@@ -470,7 +489,7 @@ fn composite_mode1_mosaic(
 
     // OBJ resolved once (sprites are not mosaiced), same as the non-mosaic path.
     let obj = if obj_on {
-        Some(resolve_obj_layer(frame, sprite_cells, len))
+        Some(resolve_obj_layer(frame, sprite_cells, len, ctx))
     } else {
         None
     };
@@ -536,6 +555,7 @@ fn render_bg_layer_torus(
     frame: &ModernFrame,
     bg_w: usize,
     bg_h: usize,
+    ctx: &crate::modern_hd_overrides::HdOverrideCtx,
 ) -> BgBuf {
     let len = bg_w * bg_h;
     let mut buf = BgBuf {
@@ -550,6 +570,7 @@ fn render_bg_layer_torus(
             Some(c) => c,
             None => continue,
         };
+        let ov = ctx.resolve(cell.source_key);
         let bx0 = i32::from(inst.screen_x) + off_x;
         let by0 = i32::from(inst.screen_y) + off_y;
         for sy in 0..8i32 {
@@ -560,7 +581,19 @@ fn render_bg_layer_torus(
                 }
                 let bx = (bx0 + sx).rem_euclid(bg_w as i32) as usize;
                 let by = (by0 + sy).rem_euclid(bg_h as i32) as usize;
-                let color = frame.cgram_rgba[inst.palette as usize * 16 + index as usize];
+                let cgram_idx = inst.palette as usize * 16 + index as usize;
+                let color = match crate::modern_hd_overrides::resolve_pixel_color(
+                    index,
+                    cgram_idx,
+                    frame.cgram_rgba[cgram_idx],
+                    ov,
+                    ctx.reference(),
+                    sx as u32,
+                    sy as u32,
+                ) {
+                    Some(c) => c,
+                    None => continue,
+                };
                 let i = by * bg_w + bx;
                 buf.c5[i] = [color[0] >> 3, color[1] >> 3, color[2] >> 3];
                 buf.real[i] = true;
@@ -634,6 +667,7 @@ fn composite_mode1_scanline_scroll(
     main_tm: Option<&[u8]>,
     windowed: u8,
     scroll_layers: [bool; 3],
+    ctx: &crate::modern_hd_overrides::HdOverrideCtx,
 ) {
     let bg_on = |i: usize| (enabled >> i) & 1 != 0;
     let obj_on = (enabled >> 4) & 1 != 0;
@@ -648,16 +682,16 @@ fn composite_mode1_scanline_scroll(
         let buf = if scroll_layers[l] {
             let bg_w = usize::from(bg[l].wrap_w).max(256);
             let bg_h = usize::from(bg[l].wrap_h).max(224);
-            let torus = render_bg_layer_torus(&bg[l], bg_cells, frame, bg_w, bg_h);
+            let torus = render_bg_layer_torus(&bg[l], bg_cells, frame, bg_w, bg_h, ctx);
             sample_scanline_scroll(&torus, frame, l, bg_w, bg_h)
         } else {
-            render_bg_layer_buf(&bg[l], bg_cells, frame, len)
+            render_bg_layer_buf(&bg[l], bg_cells, frame, len, ctx)
         };
         bufs[l] = Some(buf);
     }
 
     let obj = if obj_on {
-        Some(resolve_obj_layer(frame, sprite_cells, len))
+        Some(resolve_obj_layer(frame, sprite_cells, len, ctx))
     } else {
         None
     };
@@ -707,7 +741,12 @@ struct ObjLayer {
 /// Resolve OBJ-vs-OBJ by OAM index: paint sprites in REVERSE `index_sprites`
 /// order with REPLACE so the earliest (lowest-index) opaque sprite wins each
 /// pixel, recording that pixel's priority attribute for later BG slotting.
-fn resolve_obj_layer(frame: &ModernFrame, sprite_cells: &[ModernIndexTile], len: usize) -> ObjLayer {
+fn resolve_obj_layer(
+    frame: &ModernFrame,
+    sprite_cells: &[ModernIndexTile],
+    len: usize,
+    ctx: &crate::modern_hd_overrides::HdOverrideCtx,
+) -> ObjLayer {
     let width = usize::from(MODERN_FRAME_WIDTH);
     let mut o = ObjLayer {
         c5: vec![[0u8; 3]; len],
@@ -720,6 +759,7 @@ fn resolve_obj_layer(frame: &ModernFrame, sprite_cells: &[ModernIndexTile], len:
             Some(c) => c,
             None => continue,
         };
+        let ov = ctx.resolve(cell.source_key);
         for y in 0..8usize {
             if inst.row_mask & (1 << y) == 0 {
                 continue; // dropped by the per-scanline OBJ budget
@@ -736,7 +776,19 @@ fn resolve_obj_layer(frame: &ModernFrame, sprite_cells: &[ModernIndexTile], len:
                 if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
                     continue;
                 }
-                let color = frame.cgram_rgba[0x80 + inst.palette as usize * 16 + index as usize];
+                let cgram_idx = 0x80 + inst.palette as usize * 16 + index as usize;
+                let color = match crate::modern_hd_overrides::resolve_pixel_color(
+                    index,
+                    cgram_idx,
+                    frame.cgram_rgba[cgram_idx],
+                    ov,
+                    ctx.reference(),
+                    src_x as u32,
+                    src_y as u32,
+                ) {
+                    Some(c) => c,
+                    None => continue,
+                };
                 let i = dst_y as usize * width + dst_x as usize;
                 o.c5[i] = [color[0] >> 3, color[1] >> 3, color[2] >> 3];
                 // OBJ color-math only for palettes 4-7 (bit 4); 0-3 use bit 6 (never
@@ -850,6 +902,7 @@ fn composite_index_tiles_c5(
     hi_priority: bool,
     main_tm: Option<&[u8]>,
     windowed: u8,
+    ctx: &crate::modern_hd_overrides::HdOverrideCtx,
 ) {
     let width = usize::from(MODERN_FRAME_WIDTH);
     let bit = layer.index;
@@ -862,6 +915,7 @@ fn composite_index_tiles_c5(
             Some(c) => c,
             None => continue,
         };
+        let ov = ctx.resolve(cell.source_key);
         for sy in 0..8usize {
             for sx in 0..8usize {
                 let index = cell.indices[sy * 8 + sx];
@@ -890,7 +944,19 @@ fn composite_index_tiles_c5(
                 ) {
                     continue;
                 }
-                let color = frame.cgram_rgba[inst.palette as usize * 16 + index as usize];
+                let cgram_idx = inst.palette as usize * 16 + index as usize;
+                let color = match crate::modern_hd_overrides::resolve_pixel_color(
+                    index,
+                    cgram_idx,
+                    frame.cgram_rgba[cgram_idx],
+                    ov,
+                    ctx.reference(),
+                    sx as u32,
+                    sy as u32,
+                ) {
+                    Some(c) => c,
+                    None => continue,
+                };
                 let i = dst_y as usize * width + dst_x as usize;
                 screen.c5[i] = [color[0] >> 3, color[1] >> 3, color[2] >> 3];
                 screen.bit[i] = bit;
@@ -967,6 +1033,23 @@ pub fn render_modern_frame_full(
     bg_cells: &[ModernIndexTile],
     sprite_cells: &[ModernIndexTile],
 ) -> Vec<u8> {
+    render_modern_frame_full_with_overrides(
+        frame,
+        bg_cells,
+        sprite_cells,
+        &crate::modern_hd_overrides::HdOverrideCtx::disabled(),
+    )
+}
+
+/// As `render_modern_frame_full`, but applies source-keyed HD overrides via `ctx`
+/// (detail-modulated recolor). `HdOverrideCtx::disabled()` → byte-identical to the
+/// plain entry.
+pub fn render_modern_frame_full_with_overrides(
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+    sprite_cells: &[ModernIndexTile],
+    ctx: &crate::modern_hd_overrides::HdOverrideCtx,
+) -> Vec<u8> {
     let width = usize::from(MODERN_FRAME_WIDTH);
     let height = usize::from(MODERN_FRAME_HEIGHT);
     let len = width * height;
@@ -995,6 +1078,7 @@ pub fn render_modern_frame_full(
         frame.screen_enabled_main,
         Some(&frame.main_tm_scanlines),
         frame.screen_windowed_main,
+        ctx,
     );
 
     // SUB composite: same Mode 1 z-order over the sub-screen enable mask. The sub
@@ -1008,6 +1092,7 @@ pub fn render_modern_frame_full(
         frame.screen_enabled_sub,
         None,
         frame.screen_windowed_sub,
+        ctx,
     );
 
     finalize_frame(&main, &sub, frame)
@@ -1260,7 +1345,14 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
 
     let bd = &modern.backdrop_color_rgba;
     let backdrop_c5 = [bd[0] >> 3, bd[1] >> 3, bd[2] >> 3];
-    let obj = resolve_obj_layer(&modern, &sprite_cells, len);
+    // Mode-7 wiring of HD overrides is deferred (Phase 2); always disabled here so
+    // Mode-7 output is unaffected.
+    let obj = resolve_obj_layer(
+        &modern,
+        &sprite_cells,
+        len,
+        &crate::modern_hd_overrides::HdOverrideCtx::disabled(),
+    );
 
     // MAIN: OBJ0 (behind BG) -> Mode7 BG -> OBJ 1..3 (matches render_mode7_frame).
     let mut main = Screen::new(backdrop_c5, len);
@@ -1597,6 +1689,24 @@ mod tests {
             &[136, 136, 136, 0xff],
             "brightness-only pixel (0,0)"
         );
+    }
+
+    #[test]
+    fn disabled_overrides_match_plain_full_render() {
+        use crate::modern_hd_overrides::HdOverrideCtx;
+        let (mut frame, cells) = frame_with_single_bg_pixel(0, [31, 31, 31]);
+        frame.screen_enabled_main = 0x01;
+        frame.math_enabled = 0;
+        frame.brightness = 8;
+
+        let plain = render_modern_frame_full(&frame, &cells, &[]);
+        let disabled = render_modern_frame_full_with_overrides(
+            &frame,
+            &cells,
+            &[],
+            &HdOverrideCtx::disabled(),
+        );
+        assert_eq!(plain, disabled);
     }
 
     #[test]
