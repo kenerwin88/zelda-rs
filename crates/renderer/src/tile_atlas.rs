@@ -39,6 +39,14 @@ pub struct RgbaTileOverrideData<'a> {
     pub height: u32,
     pub rgba: &'a [u8],
     pub lookup: &'a [[u32; 4]],
+    /// Reference CGRAM (256 entries × RGBA8 = 1024 bytes) the HD override art was
+    /// authored against. The BG shader recolors overrides as
+    /// `live_cgram[idx] * (override_rgb / reference_cgram[idx])` — "detail-modulated"
+    /// — so HD art tracks runtime palette instead of showing baked colors. Base art
+    /// extracted as `reference_cgram[idx]` recolors to `live_cgram[idx]` exactly
+    /// (parity). Empty → a 1×1 placeholder (never sampled, since the override branch
+    /// only fires where an override tile exists).
+    pub reference_cgram: &'a [u8],
 }
 
 pub struct RgbaTileOverrideTextures {
@@ -46,6 +54,8 @@ pub struct RgbaTileOverrideTextures {
     pub atlas_view: wgpu::TextureView,
     _lookup: wgpu::Texture,
     pub lookup_view: wgpu::TextureView,
+    _reference_cgram: wgpu::Texture,
+    pub reference_cgram_view: wgpu::TextureView,
 }
 
 impl RgbaTileOverrideTextures {
@@ -62,6 +72,50 @@ impl RgbaTileOverrideTextures {
         };
         debug_assert_eq!(rgba.len(), (width * height * 4) as usize);
         debug_assert_eq!(lookup.len(), RGBA_TILE_OVERRIDE_LOOKUP_COUNT);
+
+        // Reference-CGRAM texture: 256×1 RGBA when supplied, else a 1×1 placeholder
+        // (never sampled — the override branch only runs where an override exists,
+        // and overrides always ship with their reference palette).
+        let ref_fallback = [0u8; 4];
+        let (ref_w, ref_bytes): (u32, &[u8]) = match data {
+            Some(d) if d.reference_cgram.len() == 256 * 4 => (256, d.reference_cgram),
+            _ => (1, ref_fallback.as_slice()),
+        };
+        let reference_cgram = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("rgba_tile_override_reference_cgram"),
+            size: wgpu::Extent3d {
+                width: ref_w,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &reference_cgram,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            ref_bytes,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(ref_w * 4),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: ref_w,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+        let reference_cgram_view =
+            reference_cgram.create_view(&wgpu::TextureViewDescriptor::default());
 
         let atlas = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("rgba_tile_override_atlas"),
@@ -144,6 +198,8 @@ impl RgbaTileOverrideTextures {
             atlas_view,
             _lookup: lookup_texture,
             lookup_view,
+            _reference_cgram: reference_cgram,
+            reference_cgram_view,
         }
     }
 }

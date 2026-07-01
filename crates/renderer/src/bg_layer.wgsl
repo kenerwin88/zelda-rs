@@ -68,6 +68,7 @@ struct BgUniforms {
 @group(0) @binding(2) var<uniform>       uni: BgUniforms;
 @group(0) @binding(3) var tile_override_atlas: texture_2d<f32>;
 @group(0) @binding(4) var tile_override_lookup: texture_2d<u32>;
+@group(0) @binding(5) var reference_cgram: texture_2d<f32>;  // Rgba8Unorm 256×1 (HD authoring palette)
 
 // Fullscreen triangle.
 @vertex
@@ -220,7 +221,17 @@ fn fs_main(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
     let out_alpha = select(f32(uni.math_bit_pos) / 255.0, 1.0, uni.math_bit_pos >= 255u);
     let override_color = sample_tile_override(tile_num, px, py);
     if override_color.a > 0.0 {
-        return vec4<f32>(override_color.rgb, out_alpha);
+        // DETAIL-MODULATED recolor: the HD art carries per-pixel DETAIL relative to
+        // the palette it was authored against (reference_cgram); the live color comes
+        // from CGRAM, so the override tracks runtime palette (day/night, swaps,
+        // flashes) instead of showing baked colors. detail = override / reference;
+        // final = live * detail. Base art authored as reference[idx] → detail=1 →
+        // final = live[idx] (exact parity). Reference channels are clamped away from
+        // zero to avoid divide-by-zero on dark slots.
+        let live = textureLoad(cgram_palette, vec2i(i32(cgram_idx), 0), 0);
+        let reference = textureLoad(reference_cgram, vec2i(i32(cgram_idx), 0), 0);
+        let detail = override_color.rgb / max(reference.rgb, vec3<f32>(1.0 / 255.0));
+        return vec4<f32>(clamp(live.rgb * detail, vec3<f32>(0.0), vec3<f32>(1.0)), out_alpha);
     }
 
     let color = textureLoad(cgram_palette, vec2i(i32(cgram_idx), 0), 0);

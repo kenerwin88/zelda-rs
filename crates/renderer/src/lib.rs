@@ -1061,6 +1061,12 @@ impl ArtSidecarRgbaAtlas {
             height: self.height,
             rgba: &self.rgba,
             lookup,
+            // TODO(hd-phase2): source the reference CGRAM (the palette the HD art was
+            // authored against) from the sidecar manifest / the assets-by-source
+            // reference-palette dump. Empty → 1×1 placeholder; the shader's
+            // detail-modulate path only matters once real HD overrides ship with a
+            // reference, so today's (no-override) parity runs are unaffected.
+            reference_cgram: &[],
         }
     }
 
@@ -2658,7 +2664,14 @@ mod tests {
             mapped_at_creation: false,
         });
 
-        let rgba = [0x10, 0x20, 0x30, 0xff];
+        // Detail-modulated HD recolor: final = live_cgram * (override / reference).
+        // Author-intent: the HD art (`rgba`) is authored against `reference_cgram`;
+        // dividing by the reference recovers a palette-agnostic "detail" ratio that is
+        // then re-lit by the LIVE CGRAM every frame (keeps day/night, flashes, area
+        // swaps). Here: override 0x40 / reference 0x80 = detail 0.5, live 0xf8 → 0x7c.
+        let rgba = [0x40, 0x40, 0x40, 0xff];
+        let mut reference_cgram = vec![0u8; 1024];
+        reference_cgram[4..8].copy_from_slice(&[0x80, 0x80, 0x80, 0xff]); // CGRAM slot 1
         let mut lookup = vec![[0u32; 4]; RGBA_TILE_OVERRIDE_LOOKUP_COUNT];
         lookup[1] = [0, 0, 1, 1];
         let override_data = RgbaTileOverrideData {
@@ -2666,6 +2679,7 @@ mod tests {
             height: 1,
             rgba: &rgba,
             lookup: &lookup,
+            reference_cgram: &reference_cgram,
         };
         let mut renderer = GpuFrameRenderer::new(&device, &queue, Some(override_data));
 
@@ -2676,7 +2690,7 @@ mod tests {
         }
         let mut cgram = vec![0u16; 0x100];
         cgram[0] = 0;
-        cgram[1] = 0x7c00;
+        cgram[1] = 0x7fff; // live white; each channel expands 31<<3 = 0xf8
         let oam = vec![0u16; 0x110];
         let mut scanlines = Box::new([ScanlineRegs::default(); 224]);
         for scanline in scanlines.iter_mut() {
@@ -3422,14 +3436,29 @@ mod tests {
         assert!(shader.contains("fn sample_tile_override("));
         assert!(shader.contains("let override_color = sample_tile_override(tile_num, px, py);"));
         assert!(shader.contains("if override_color.a > 0.0"));
+        // Detail-modulated HD recolor: the override is divided by the reference CGRAM
+        // and re-lit by the live CGRAM, not returned verbatim.
+        assert!(shader.contains("@binding(5) var reference_cgram: texture_2d<f32>"));
+        assert!(shader.contains("let detail = override_color.rgb / max(reference.rgb"));
     }
 
     #[test]
     fn rgba_sidecar_override_changes_bg_tile_output_color() {
         let pixels = pollster::block_on(render_test_bg_with_rgba_override());
 
-        assert_eq!(&pixels[0..4], &[0x10, 0x21, 0x31, 0xff]);
-        assert_ne!(&pixels[0..4], &[0x00, 0x00, 0xf8, 0xff]);
+        // Detail-modulated: live 0xf8 * (override 0x40 / reference 0x80) = 0xf8 * 0.5 ≈ 0x7c.
+        // Allow ±1 for GPU float-division rounding (backend-dependent last-bit).
+        for &c in &pixels[0..3] {
+            assert!(
+                (c as i32 - 0x7c).abs() <= 1,
+                "expected ~0x7c (detail-modulated), got {c:#x}"
+            );
+        }
+        assert_eq!(pixels[3], 0xff);
+        // Not the raw live color (override applied) and not raw override passthrough
+        // (it was re-lit through the live palette, not copied verbatim).
+        assert_ne!(&pixels[0..4], &[0xf8, 0xf8, 0xf8, 0xff]);
+        assert_ne!(&pixels[0..4], &[0x40, 0x40, 0x40, 0xff]);
     }
 
     #[test]

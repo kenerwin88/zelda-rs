@@ -125,6 +125,19 @@ impl BgLayerRenderer {
                     },
                     count: None,
                 },
+                // Binding 5: reference CGRAM the HD override art was authored against
+                // (for palette-responsive "detail-modulated" recolor). See
+                // `bg_layer.wgsl::sample_tile_override` / RgbaTileOverrideData.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -152,6 +165,12 @@ impl BgLayerRenderer {
                     wgpu::BindGroupEntry {
                         binding: 4,
                         resource: wgpu::BindingResource::TextureView(&rgba_overrides.lookup_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::TextureView(
+                            &rgba_overrides.reference_cgram_view,
+                        ),
                     },
                 ],
             })
