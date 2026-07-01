@@ -385,4 +385,25 @@ mod tests {
         // Reference missing/unreadable → overrides disabled entirely (returns None).
         assert!(ModernHdOverrides::load_manifest(&manifest).is_none());
     }
+
+    #[test]
+    fn end_to_end_manifest_load_resolves_override_cell() {
+        let dir = unique_dir("e2e");
+        write_png(&dir.join("ref.png"), 256, 1, &vec![0x80u8; 256 * 4]);
+        // 16×16 (2×) HD cell, solid color 0x40.
+        write_png(&dir.join("hd.png"), 16, 16, &vec![0x40u8; 16 * 16 * 4]);
+        let manifest = dir.join("m.json");
+        std::fs::write(
+            &manifest,
+            r#"{"reference_palette":"ref.png","overrides":[{"key":"0x00000002abcd0000","rgba":"hd.png"}]}"#,
+        )
+        .unwrap();
+
+        let store = ModernHdOverrides::load_manifest(&manifest).unwrap();
+        let ctx = HdOverrideCtx::new(&store);
+        let cell = ctx.resolve(0x0000_0002_abcd_0000).unwrap();
+        assert_eq!((cell.width, cell.height), (16, 16));
+        assert_eq!(cell.sample_native(3, 3), [0x40, 0x40, 0x40]);
+        assert!(ctx.resolve(NO_SOURCE_KEY).is_none());
+    }
 }

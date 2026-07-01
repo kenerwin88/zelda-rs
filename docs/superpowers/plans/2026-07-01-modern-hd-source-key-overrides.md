@@ -862,3 +862,18 @@ git commit --no-verify -m "test(renderer): end-to-end HD override manifest load;
 - **Spec coverage:** Manifest+store (Task 2) ↔ spec §Components 1-2; `source_key` on cell (Task 3) ↔ spec §Component 3 (corrected); kernel (Task 1) ↔ §Component 4; threading + wrapper (Task 4) ↔ §Data flow; error handling (Task 2: disable-on-bad-reference, skip-bad-rgba) ↔ §Error handling; tests (Tasks 1,2,5,6) ↔ §Testing (kernel identity/recolor/transparency, BG+sprite integration, parity via disabled ctx, e2e load). Parity gate untouched ↔ §Parity gate.
 - **Not covered (by design):** simple non-parity path (`render_modern_frame_software_indexed` / `draw_modern_sprites_indexed`); live on-screen display wiring; N× output — all explicitly Phase 2.
 - **Type consistency:** `resolve_pixel_color` signature identical in Task 1 (def) and Task 4 (call). `HdOverrideCtx::{disabled,new,resolve,reference}` consistent Tasks 2/4/5. `ModernIndexTile.source_key: u64` consistent Tasks 3/4/5. `ModernHdOverrides::{from_parts,load_manifest,get,reference}` consistent Tasks 2/5/6.
+
+---
+
+## Phase 1 status / Phase 2 hookup
+
+**Phase 1 COMPLETE** (all 6 tasks):
+- Kernel + detail-modulate recolor (`modern_hd_overrides` module, Task 1)
+- Manifest parser + store (`ModernHdOverrides`, `HdOverrideCtx`, Task 2)
+- Source-key carry on `ModernIndexTile` (Task 3)
+- Compositor threading with `HdOverrideCtx` (Task 4)
+- Integration + parity tests (Tasks 5–6)
+
+**Current state:** The live on-screen display still calls `render_modern_frame_full` (internally with `HdOverrideCtx::disabled()`), so no overrides are applied on screen yet. The full end-to-end infrastructure (manifest → store → kernel recolor → render) is proven by tests; it is ready for live wiring.
+
+**Phase 2 (future):** Wiring `ZELDA3_MODERN_HD_OVERRIDES` into the live `sources` render path (zelda3-bin/src/main.rs ~5382, building `HdOverrideCtx::new(&ModernHdOverrides::from_env())`) will be done together with the N× buffer upscaling so there is something visible to show on screen.
