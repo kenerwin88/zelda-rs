@@ -783,13 +783,35 @@ pub fn render_modern_frame_full_from_vram(frame: &GpuFrame<'_>) -> Vec<u8> {
 
 use crate::modern_source_atlas::{source_cell, ModernSourceAtlas};
 
-/// Logical CHR source `kind` values that are INJECTIVE by `(kind, pack, tile_off)`
-/// (mirrors `zelda3::chr_source`): `CHR_KIND_BG_ANIM` is keyed by absolute buffer
-/// position and `CHR_KIND_BG_STREAM` is content-hashed, so the assets-by-source
-/// atlas can resolve them faithfully. The generic `CHR_KIND_BG` (= 1) is NOT
-/// injective (see `extract_modern_frame_from_sources`), so it is not listed here.
-const CHR_KIND_BG_ANIM: u8 = 5;
+/// The one BG kind resolved via the assets atlas: `CHR_KIND_BG_STREAM` is content-
+/// hashed (streamed dungeon BG + sprite CHR), keyed by the hash of its frame-end
+/// pixels so the atlas is self-consistent. The other kinds are NOT atlas-resolved:
+/// generic `CHR_KIND_BG` (= 1, non-injective 3bpp->4bpp conversion) and
+/// `CHR_KIND_BG_ANIM` (= 5, in-place overworld animation) decode from LIVE VRAM (see
+/// `extract_modern_frame_from_sources`); `CHR_KIND_LINK` decodes from live VRAM in the
+/// sprite path.
 const CHR_KIND_BG_STREAM: u8 = 6;
+
+/// FNV-1a 32-bit hash of one 16-word (4bpp) CHR tile at `slot`, over its little-endian
+/// bytes — byte-identical to `zelda3::chr_content_hash32`. Content-hashed source tags
+/// (`CHR_KIND_BG_STREAM`) are re-derived from this at render time so they reflect the
+/// FRAME-END pixels: sprite CHR is uploaded incrementally, so the tag the game wrote at
+/// NMI/rehash time can desync from the pixels present when the frame is drawn. The
+/// assets dump keys cells the same way, so the tag and the atlas cell stay consistent
+/// (atlas[hash(W)] == decode(W) for the same 16 words W).
+fn content_hash32_slot(vram: &[u16], slot: usize) -> u32 {
+    let base = slot * 16;
+    let mut h: u32 = 0x811c_9dc5;
+    for off in 0..16 {
+        let w = *vram.get(base + off).unwrap_or(&0);
+        for b in [(w & 0xff) as u8, (w >> 8) as u8] {
+            h ^= b as u32;
+            h = h.wrapping_mul(0x0100_0193);
+        }
+    }
+    h
+}
+
 /// Link CHR (mirrors `zelda3::CHR_KIND_LINK`). Decoded from live VRAM in the sprite
 /// path, not the atlas: Link's pose CHR is DMA'd per-frame from a source buffer whose
 /// offsets are reused across poses, so the source-identity atlas key is non-injective
@@ -951,7 +973,14 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                     (id, 0u8)
                 } else {
                     let slot = chr_slot_base + tile_number;
-                    let (kind, pack, tile_off) = src_table.get(slot);
+                    let (kind, mut pack, mut tile_off) = src_table.get(slot);
+                    if kind == CHR_KIND_BG_STREAM {
+                        // Re-derive the content-hash key from the FRAME-END pixels (see
+                        // `content_hash32_slot`) so it matches how the assets dump keys.
+                        let h = content_hash32_slot(frame.vram, slot);
+                        pack = (h >> 16) as u16;
+                        tile_off = (h & 0xffff) as u16;
+                    }
                     // The generic-BG CHR source key `(CHR_KIND_BG, pack, tile_off)` is
                     // NOT injective: an area's BG graphics pack is 3bpp ROM data expanded
                     // to 4bpp VRAM via either the "high" or "low" conversion, chosen per
@@ -1161,7 +1190,16 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                     as usize;
 
                 let slot = chr_slot_base + used_tile;
-                let (kind, pack, tile_off) = src_table.get(slot);
+                let (kind, mut pack, mut tile_off) = src_table.get(slot);
+                if kind == CHR_KIND_BG_STREAM {
+                    // Sprite CHR is content-hashed (kind BG_STREAM). Re-derive the key
+                    // from the FRAME-END pixels so it matches the assets dump (the tag the
+                    // game wrote at rehash time can desync from the drawn pixels because
+                    // sprite CHR uploads incrementally). See `content_hash32_slot`.
+                    let h = content_hash32_slot(frame.vram, slot);
+                    pack = (h >> 16) as u16;
+                    tile_off = (h & 0xffff) as u16;
+                }
                 // Link (kind=3) decodes from LIVE VRAM (unflipped; per-instance flip is
                 // applied by the compositor). Its pose CHR is DMA'd per-frame from a
                 // source buffer whose offsets are reused across poses, so the source-
@@ -1239,21 +1277,18 @@ mod tests {
     #[test]
     fn extract_from_sources_emits_atlas_cell_for_injective_bg_tile() {
         use crate::modern_source_atlas::ModernSourceAtlas;
-        // Atlas: one injective-BG (kind=CHR_KIND_BG_STREAM=6, content-hashed) cell
-        // keyed by (pack=5, tile_off=3). Only CHR_KIND_BG_STREAM resolves via the
-        // atlas; generic CHR_KIND_BG (=1) and CHR_KIND_BG_ANIM (=5) decode from live
-        // VRAM (see the separate test below) because their keys are not injective.
-        let mut indices = [0u8; 64];
-        indices[0] = 7;
-        indices[63] = 9;
-        let cell = ModernIndexTile { id: 0, indices };
-        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
-            vec![cell],
-            &[(CHR_KIND_BG_STREAM, 5, 3, 0)],
-        );
+        // Only CHR_KIND_BG_STREAM (=6, content-hashed) resolves via the atlas; generic
+        // CHR_KIND_BG (=1) and CHR_KIND_BG_ANIM (=5) decode from live VRAM. The
+        // BG_STREAM key is RE-DERIVED from the tile's frame-end VRAM pixels
+        // (content_hash32_slot), NOT the source-table tag's pack/tile_off — so the
+        // source table below can report an arbitrary (pack, tile_off); the render
+        // ignores it and keys by the hash. The atlas cell must be keyed by that hash.
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
 
-        // Source table: BG CHR base tile_adr=0x2000 → slot base 0x200. The tilemap
-        // entry's tile# = 4 → slot 0x204 maps to source (kind=6, pack=5, tile_off=3).
+        // Source-table tag: BG CHR base tile_adr=0x2000 → slot base 0x200. Tile# 4 →
+        // slot 0x204. The tag's pack/tile_off (5, 3) are intentionally ignored by the
+        // re-key; only kind=CHR_KIND_BG_STREAM matters.
         let table = |slot: usize| -> (u8, u16, u16) {
             if slot == 0x200 + 4 {
                 (CHR_KIND_BG_STREAM, 5, 3)
@@ -1262,10 +1297,23 @@ mod tests {
             }
         };
 
+        // Give slot 0x204's CHR tile (VRAM words 0x2040..0x2050) distinctive pixels so
+        // its content hash is non-trivial; key the atlas cell by that hash.
         let mut vram = vec![0u16; 0x8000];
-        let cgram = vec![0u16; 0x100];
-        let oam = vec![0u16; 0x110];
+        for (i, w) in vram[0x2040..0x2050].iter_mut().enumerate() {
+            *w = 0x1000u16.wrapping_add(i as u16);
+        }
         vram[0] = 4; // tile# 4, palette 0, no flip, at row0 col0
+        let h = content_hash32_slot(&vram, 0x204);
+        let mut indices = [0u8; 64];
+        indices[0] = 7;
+        indices[63] = 9;
+        let cell = ModernIndexTile { id: 0, indices };
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
+            vec![cell],
+            &[(CHR_KIND_BG_STREAM, (h >> 16) as u16, (h & 0xffff) as u16, 0)],
+        );
+
         let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
         frame.mode = 1;
         frame.bg[0].tilemap_adr = 0;
@@ -1283,24 +1331,29 @@ mod tests {
         // +1 vertical fetch offset, no scroll: (0-0-1).rem_euclid(256)=255 → -=256 → -1.
         assert_eq!(tiles[0].screen_y, -1);
         assert_eq!(tiles[0].palette, 0);
-        // NO VRAM CHR pixels were read: the cell pixels came straight from the atlas.
+        // The CELL pixels came from the atlas (7,9), not the VRAM tile pixels; only the
+        // KEY was derived from VRAM (the frame-end content hash).
 
-        // An injective-kind tile whose key is NOT in the atlas → skipped (gap).
+        // A BG_STREAM tile whose content hash is NOT in the atlas → skipped (gap). Use a
+        // different tile with distinct pixels (slot 0x209) so its hash misses.
         let table_miss = |slot: usize| -> (u8, u16, u16) {
             if slot == 0x200 + 9 {
-                (CHR_KIND_BG_STREAM, 5, 99) // key not present in the atlas
+                (CHR_KIND_BG_STREAM, 5, 99)
             } else {
                 (0, 0, 0)
             }
         };
         let mut vram2 = vec![0u16; 0x8000];
-        vram2[0] = 9; // tile# 9 → slot 0x209 → injective source, no atlas cell
+        for (i, w) in vram2[0x2090..0x20a0].iter_mut().enumerate() {
+            *w = 0x7abcu16.wrapping_sub(i as u16); // distinct content → different hash
+        }
+        vram2[0] = 9; // tile# 9 → slot 0x209
         let mut frame2 = test_gpu_frame(&vram2, &cgram, &oam, 15, false);
         frame2.mode = 1;
         frame2.bg[0].tile_adr = 0x2000;
         frame2.screen_enabled = [0x01, 0x00];
         let (modern2, cells2) = extract_modern_frame_from_sources(&frame2, &table_miss, &atlas);
-        assert!(cells2.is_empty(), "injective source absent from atlas → no cell");
+        assert!(cells2.is_empty(), "content hash absent from atlas → no cell");
         assert!(
             modern2.bg_layers[0].index_tiles.is_empty(),
             "missing injective source leaves a gap"
