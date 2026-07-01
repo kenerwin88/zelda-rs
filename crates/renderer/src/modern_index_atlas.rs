@@ -12,6 +12,12 @@ pub struct ModernIndexTile {
     /// lookup, or `crate::modern_hd_overrides::NO_SOURCE_KEY` (0) for cells with no
     /// atlas source (live-VRAM-decoded animation cells, test cells).
     pub source_key: u64,
+    /// For a BG cell whose `indices` were baked with `flip_index_pattern`, the original
+    /// tilemap flip — used ONLY to un-flip HD-override sampling back to source orientation
+    /// so the HD art aligns with the baked base index. `false` on every cell that has no
+    /// atlas `source_key` (its flip is never read: `ctx.resolve(NO_SOURCE_KEY) == None`).
+    pub hflip: bool,
+    pub vflip: bool,
 }
 
 /// Atlas of all unique palette-agnostic tile patterns for the overworld.
@@ -71,6 +77,8 @@ pub fn load_modern_overworld_index_atlas(repo_root: &Path) -> Result<ModernIndex
             id: cell_json.id,
             indices,
             source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
         });
         for &key in &cell_json.graphics_keys {
             key_to_cell.insert(key, cell_index);

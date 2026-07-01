@@ -215,6 +215,7 @@ impl Screen {
 /// Byte-for-byte the same order the GPU reference renderer uses, so the modern
 /// software output matches the classic for high-priority BG tiles (e.g. HUD digits
 /// over the play field) and OBJ-vs-BG interleaving.
+#[allow(clippy::too_many_arguments)]
 fn composite_mode1(
     screen: &mut Screen,
     frame: &ModernFrame,
@@ -362,6 +363,9 @@ fn render_bg_layer_buf(
                 if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
                     continue;
                 }
+                // un-flip HD sampling back to source orientation (base index is baked-flipped)
+                let hx = if cell.hflip { 7 - sx } else { sx };
+                let hy = if cell.vflip { 7 - sy } else { sy };
                 let cgram_idx = inst.palette as usize * 16 + index as usize;
                 let color = match crate::modern_hd_overrides::resolve_pixel_color(
                     index,
@@ -369,8 +373,8 @@ fn render_bg_layer_buf(
                     frame.cgram_rgba[cgram_idx],
                     ov,
                     ctx.reference(),
-                    sx as u32,
-                    sy as u32,
+                    hx as u32,
+                    hy as u32,
                 ) {
                     Some(c) => c,
                     None => continue,
@@ -458,6 +462,7 @@ fn paint_bg_buf(
 /// Mosaic variant of [`composite_mode1`]: render each enabled BG layer (1-3) into
 /// its own buffer, apply the source-snap to mosaiced layers, then composite in the
 /// SAME Mode-1 z-order. Sprites are NOT mosaiced. Only reached when `mosaic_active`.
+#[allow(clippy::too_many_arguments)]
 fn composite_mode1_mosaic(
     screen: &mut Screen,
     frame: &ModernFrame,
@@ -581,6 +586,9 @@ fn render_bg_layer_torus(
                 }
                 let bx = (bx0 + sx).rem_euclid(bg_w as i32) as usize;
                 let by = (by0 + sy).rem_euclid(bg_h as i32) as usize;
+                // un-flip HD sampling back to source orientation (base index is baked-flipped)
+                let hx = if cell.hflip { 7 - sx } else { sx };
+                let hy = if cell.vflip { 7 - sy } else { sy };
                 let cgram_idx = inst.palette as usize * 16 + index as usize;
                 let color = match crate::modern_hd_overrides::resolve_pixel_color(
                     index,
@@ -588,8 +596,8 @@ fn render_bg_layer_torus(
                     frame.cgram_rgba[cgram_idx],
                     ov,
                     ctx.reference(),
-                    sx as u32,
-                    sy as u32,
+                    hx as u32,
+                    hy as u32,
                 ) {
                     Some(c) => c,
                     None => continue,
@@ -894,6 +902,7 @@ fn layer_window_masks(
 /// per-tile priority matches `hi_priority` are painted, so the caller can run the
 /// SNES Mode 1 lo-pass and hi-pass with the other layers / OBJ priorities
 /// interleaved between them.
+#[allow(clippy::too_many_arguments)]
 fn composite_index_tiles_c5(
     screen: &mut Screen,
     layer: &crate::modern_frame::ModernBgLayer,
@@ -944,6 +953,9 @@ fn composite_index_tiles_c5(
                 ) {
                     continue;
                 }
+                // un-flip HD sampling back to source orientation (base index is baked-flipped)
+                let hx = if cell.hflip { 7 - sx } else { sx };
+                let hy = if cell.vflip { 7 - sy } else { sy };
                 let cgram_idx = inst.palette as usize * 16 + index as usize;
                 let color = match crate::modern_hd_overrides::resolve_pixel_color(
                     index,
@@ -951,8 +963,8 @@ fn composite_index_tiles_c5(
                     frame.cgram_rgba[cgram_idx],
                     ov,
                     ctx.reference(),
-                    sx as u32,
-                    sy as u32,
+                    hx as u32,
+                    hy as u32,
                 ) {
                     Some(c) => c,
                     None => continue,
@@ -1453,7 +1465,7 @@ mod tests {
     ) -> (ModernFrame, Vec<ModernIndexTile>) {
         let mut indices = [0u8; 64];
         indices[0] = 1; // pixel (0,0)
-        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
+        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
         // Use palette `layer_index` so the two layers in the half-add test don't share a slot.
@@ -1485,7 +1497,7 @@ mod tests {
         for v in indices.iter_mut() {
             *v = 1; // fully opaque 8x8 tile
         }
-        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
+        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
         frame.brightness = 15;
@@ -1544,7 +1556,7 @@ mod tests {
     fn obj_vs_obj_priority_is_by_index_not_attribute() {
         let mut indices = [0u8; 64];
         indices[0] = 1; // pixel (0,0) opaque for both
-        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
+        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
         // A = palette 4 (red), B = palette 5 (green). Distinct colors.
@@ -1577,7 +1589,7 @@ mod tests {
     fn obj_color_math_only_applies_to_palettes_4_to_7() {
         let mut indices = [0u8; 64];
         indices[0] = 1;
-        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
+        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
         let make = |pal: u8| {
             let mut frame = ModernFrame::empty();
             frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -1784,7 +1796,7 @@ mod tests {
         for (k, slot) in indices.iter_mut().enumerate() {
             *slot = (k + 1) as u8;
         }
-        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
+        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
 
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -1849,7 +1861,7 @@ mod tests {
         // Sprite cell 0: only pixel (0,0) is index 1; everything else transparent.
         let mut indices = [0u8; 64];
         indices[0] = 1;
-        let sprite_cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
+        let sprite_cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
 
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -1882,7 +1894,7 @@ mod tests {
         // Sprite cell 0: only pixel (7,0) is index 2.
         let mut indices = [0u8; 64];
         indices[7] = 2;
-        let sprite_cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
+        let sprite_cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
 
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -1916,7 +1928,7 @@ mod tests {
         let mut indices = [0u8; 64];
         indices[0] = 1; // pixel (0,0): sx=0, sy=0 → indices[sy*8+sx]=indices[0]
         indices[1] = 2; // pixel (1,0): sx=1, sy=0 → indices[sy*8+sx]=indices[1]
-        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
+        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
 
         // Frame: palette P=3 so that the palette offset (not P=0) is exercised.
         let mut frame = ModernFrame::empty();
@@ -2080,6 +2092,8 @@ mod tests {
             id: 0,
             indices: bg_indices,
             source_key: 0x0000_0001_0000_0000,
+            hflip: false,
+            vflip: false,
         }];
         let bg_cgram_idx = 3 * 16 + 1;
         frame.cgram_rgba[bg_cgram_idx] = [16, 32, 48, 0xff];
@@ -2101,6 +2115,8 @@ mod tests {
             id: 0,
             indices: spr_indices,
             source_key: 0x0000_0002_0000_0000,
+            hflip: false,
+            vflip: false,
         }];
         let spr_cgram_idx = 0x80 + 5 * 16 + 1;
         frame.cgram_rgba[spr_cgram_idx] = [48, 16, 32, 0xff];
@@ -2182,5 +2198,101 @@ mod tests {
             assert_eq!(&recolored[off..off + 3], &expected, "recolor at {off}");
             assert_ne!(&recolored[off..off + 3], &plain[off..off + 3], "must differ from plain");
         }
+    }
+
+    /// Regression test for the BG-flip HD-sampling fix: a BG cell baked with
+    /// `hflip: true` must sample its HD-override art at the UN-FLIPPED source
+    /// coordinate, not the post-flip screen coordinate. Unlike
+    /// `source_keyed_overrides_recolor_bg_and_sprite` (which uses SOLID-color HD
+    /// cells and therefore cannot distinguish a coordinate bug from a passing test),
+    /// this uses a SPATIALLY-VARYING HD cell — color encodes the sampled `(x,y)` — so
+    /// a wrong `(lx,ly)` produces a different, detectably-wrong pixel.
+    ///
+    /// Layout: one BG1 tile at screen (0,0), palette 2, base index 1 (cgram_idx =
+    /// 2*16+1 = 33). `cell.indices` holds the BAKED (post-hflip) pattern: opaque ONLY
+    /// at screen-local (0,0) — i.e. the pre-flip SOURCE tile was opaque at column 7,
+    /// which mirrors to baked column 0 under hflip. `cell.hflip = true`.
+    ///
+    /// HD art (8x8, unflipped SOURCE orientation) encodes position:
+    /// `r(x,y) = x*32`, `g(x,y) = y*32`, `b = 128` (constant). The reference palette
+    /// at cgram_idx 33 is `[224, 128, 128, 0xff]` (R = 7*32, matching HD r at source
+    /// x=7 exactly), so the CORRECT un-flipped sample (source x=7, y=0) gives:
+    ///   detail_r = 224/224 = 1.0 -> final_r = live_r = 24
+    ///   detail_g = 0/128   = 0.0 -> final_g = 0
+    ///   detail_b = 128/128 = 1.0 -> final_b = live_b = 8
+    /// All three predicted bytes (24, 0, 8) are `< 32` and multiples of 8, so the
+    /// render's internal 8->5->8 (c5) quantize/expand round-trips them losslessly
+    /// (`expand_brightness` at full brightness is the identity for c5 < 4) — the
+    /// assertion below compares exact final bytes, not an approximation.
+    ///
+    /// A WRONG sample (the coordinate bug: reading screen coords `(sx,sy)=(0,0)`
+    /// instead of the un-flipped `(7,0)`) would read `hd_rgb(0,0) = [0,0,128]` ->
+    /// final_r = 0, NOT 24 — a different, failing result. (Confirmed by temporarily
+    /// reverting the un-flip at the 3 BG resolve sites: this test then fails,
+    /// asserting a 0 red byte where 24 is expected.)
+    #[test]
+    fn flipped_bg_cell_samples_unflipped_hd_source() {
+        use crate::modern_hd_overrides::{HdCell, HdOverrideCtx, ModernHdOverrides};
+        use std::collections::HashMap;
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.screen_enabled_main = 0x01; // BG1 only
+
+        const CGRAM_IDX: usize = 2 * 16 + 1; // palette=2, index=1
+        frame.cgram_rgba[CGRAM_IDX] = [24, 16, 8, 0xff]; // live
+
+        const SOURCE_KEY: u64 = 0x0000_0009_0000_0000;
+        let mut indices = [0u8; 64];
+        indices[0] = 1; // baked (post-hflip) opaque pixel at screen-local (0,0)
+        let bg_cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: SOURCE_KEY,
+            hflip: true,
+            vflip: false,
+        }];
+        frame.bg_layers[0].index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 2,
+            // BG instance flip is always false; the CELL carries the baked flip.
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+
+        // Spatially-varying HD source art (unflipped orientation): r=x*32, g=y*32, b=128.
+        let mut hd_rgba = vec![0u8; 8 * 8 * 4];
+        for y in 0..8usize {
+            for x in 0..8usize {
+                let o = (y * 8 + x) * 4;
+                hd_rgba[o] = (x as u8) * 32;
+                hd_rgba[o + 1] = (y as u8) * 32;
+                hd_rgba[o + 2] = 128;
+                hd_rgba[o + 3] = 0xff;
+            }
+        }
+        let hd_cell = HdCell { width: 8, height: 8, rgba: hd_rgba };
+
+        let mut reference = [[0u8; 4]; 256];
+        reference[CGRAM_IDX] = [224, 128, 128, 0xff];
+
+        let mut by_key = HashMap::new();
+        by_key.insert(SOURCE_KEY, hd_cell);
+        let store = ModernHdOverrides::from_parts(by_key, reference);
+        let ctx = HdOverrideCtx::new(&store);
+
+        let sprite_cells: Vec<ModernIndexTile> = Vec::new();
+        let out = render_modern_frame_full_with_overrides(&frame, &bg_cells, &sprite_cells, &ctx);
+
+        let off = 0usize; // screen (0,0) -> byte offset 0
+        assert_eq!(
+            &out[off..off + 3],
+            &[24, 0, 8],
+            "un-flipped HD sample must read source (7,0) (detail_r=1.0 -> final_r=24); \
+             a wrong sample at screen/source (0,0) would give final_r=0"
+        );
     }
 }

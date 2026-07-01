@@ -121,6 +121,8 @@ pub fn load_modern_source_atlas(repo_root: &Path) -> Result<ModernSourceAtlas, S
             id: cell_json.id,
             indices,
             source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
         });
         // Rebuild the key from {kind, pack, tile_off} so the loader is robust even
         // if the JSON `key` field were ever stale; this matches the dump.
@@ -206,6 +208,8 @@ mod tests {
             id: 7,
             indices: [9u8; 64],
             source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
         };
         let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![cell], &[(1, 30, 44, 0)]);
         let got = source_cell(&atlas, 1, 30, 44).expect("known source resolves");

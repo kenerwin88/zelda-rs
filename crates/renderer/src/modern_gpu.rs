@@ -1272,7 +1272,7 @@ mod tests {
             let mut indices = [0u8; 64];
             indices[0] = 1; // pixel (0,0)
             indices[1] = 2; // pixel (1,0)
-            let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
+            let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
 
             let mut frame = ModernFrame::empty();
             frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -1466,7 +1466,7 @@ mod tests {
             // ── Case 1: no flip ────────────────────────────────────────────────
             let mut indices = [0u8; 64];
             indices[0] = 1; // pixel (0,0) → index 1
-            let sprite_cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY }];
+            let sprite_cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
 
             let mut frame = ModernFrame::empty();
             frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -1495,6 +1495,8 @@ mod tests {
                 id: 0,
                 indices: indices2,
                 source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                hflip: false,
+                vflip: false,
             }];
 
             let mut frame2 = ModernFrame::empty();

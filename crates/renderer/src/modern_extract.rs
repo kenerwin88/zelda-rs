@@ -401,6 +401,8 @@ pub fn extract_modern_dungeon_frame_from_vram(
                         id,
                         indices,
                         source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                        hflip: false,
+                        vflip: false,
                     });
                     id
                 });
@@ -562,6 +564,8 @@ pub fn extract_modern_sprites_from_vram(
                         id,
                         indices,
                         source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                        hflip: false,
+                        vflip: false,
                     });
                     id
                 });
@@ -1097,6 +1101,8 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                             id,
                             indices: baked,
                             source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                            hflip: false,
+                            vflip: false,
                         });
                         id
                     });
@@ -1150,6 +1156,8 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                     id,
                                     indices,
                                     source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                    hflip: false,
+                                    vflip: false,
                                 });
                                 id
                             });
@@ -1211,6 +1219,8 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                             source_key: crate::modern_source_atlas::modern_source_key(
                                 kind, pack, tile_off,
                             ),
+                            hflip,
+                            vflip,
                         });
                         id
                     });
@@ -1364,6 +1374,8 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                                 id,
                                 indices,
                                 source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                hflip: false,
+                                vflip: false,
                             });
                             id
                         })
@@ -1384,6 +1396,8 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                             source_key: crate::modern_source_atlas::modern_source_key(
                                 kind, pack, tile_off,
                             ),
+                            hflip: false,
+                            vflip: false,
                         });
                         id
                     })
@@ -1473,6 +1487,8 @@ mod tests {
             id: 0,
             indices,
             source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
         };
         let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
             vec![cell],
@@ -1540,6 +1556,8 @@ mod tests {
             id: 0,
             indices: stale,
             source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
         };
         let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![cell], &[(1, 5, 3, 0)]);
         let table = |slot: usize| -> (u8, u16, u16) {
@@ -1845,6 +1863,8 @@ mod tests {
             id: 0,
             indices: [0u8; 64],
             source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
         };
         // Build an atlas that maps GRAPHICS_KEY → cell index 0
         let atlas = ModernIndexAtlas::from_keyed_cells_for_test(vec![cell], &[(GRAPHICS_KEY, 0)]);
@@ -1900,6 +1920,8 @@ mod tests {
             id: 42,
             indices: [0u8; 64],
             source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
         };
         let atlas = crate::modern_dungeon_atlas::ModernDungeonIndexAtlas::from_keyed_cells_for_test(
             vec![cell],
@@ -2071,6 +2093,8 @@ mod tests {
             id: 99,
             indices: [0u8; 64],
             source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
         };
         let atlas = ModernSpriteIndexAtlas::from_keyed_cells_for_test(
             vec![cell],
@@ -2113,6 +2137,8 @@ mod tests {
             id: 7,
             indices: [0u8; 64],
             source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
         };
         let atlas = ModernSpriteIndexAtlas::from_keyed_cells_for_test(
             vec![cell],
