@@ -6,6 +6,12 @@
 //! different HD color recolors while still tracking the runtime palette. Phase 1
 //! samples at native 8×8 (nearest block top-left); Phase 2 will sample at N×.
 
+use std::collections::HashMap;
+use std::io::BufReader;
+use std::path::Path;
+
+use serde::Deserialize;
+
 /// Sentinel for a cell with no atlas source key (live-VRAM-decoded animation cells,
 /// test cells): never has an override.
 pub const NO_SOURCE_KEY: u64 = 0;
@@ -71,9 +77,197 @@ pub fn resolve_pixel_color(
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct ManifestJson {
+    reference_palette: String,
+    #[serde(default)]
+    overrides: Vec<OverrideJson>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OverrideJson {
+    /// Logical source key, hex string (`0x…`) as emitted by `--dump-assets-by-source`.
+    key: String,
+    /// RGBA PNG path relative to the manifest; dims are multiples of 8.
+    rgba: String,
+}
+
+/// Source-keyed HD override store: `source_key → HdCell` plus the reference palette the
+/// HD art was authored against. Loaded once; empty/absent → the modern renderer is
+/// byte-identical to today.
+#[derive(Debug, Clone)]
+pub struct ModernHdOverrides {
+    by_key: HashMap<u64, HdCell>,
+    reference: [[u8; 4]; 256],
+}
+
+impl ModernHdOverrides {
+    pub fn from_parts(by_key: HashMap<u64, HdCell>, reference: [[u8; 4]; 256]) -> Self {
+        Self { by_key, reference }
+    }
+
+    /// Load from `ZELDA3_MODERN_HD_OVERRIDES=<manifest path>`. Unset → `None` (disabled).
+    pub fn from_env() -> Option<Self> {
+        let path = std::env::var_os("ZELDA3_MODERN_HD_OVERRIDES")?;
+        Self::load_manifest(Path::new(&path))
+    }
+
+    /// Parse a manifest and decode its art. Returns `None` (overrides disabled) if the
+    /// manifest is unreadable/invalid or the reference palette is missing / not 256 px —
+    /// never mis-recolor against a bad reference. Individual bad `rgba` entries are
+    /// skipped (logged); other overrides still load.
+    pub fn load_manifest(path: &Path) -> Option<Self> {
+        let json = std::fs::read_to_string(path)
+            .map_err(|e| eprintln!("ZELDA3_MODERN_HD_OVERRIDES read {}: {e}", path.display()))
+            .ok()?;
+        let manifest: ManifestJson = serde_json::from_str(&json)
+            .map_err(|e| eprintln!("ZELDA3_MODERN_HD_OVERRIDES parse {}: {e}", path.display()))
+            .ok()?;
+        let base = path.parent().unwrap_or_else(|| Path::new("."));
+
+        let reference = decode_reference(&base.join(&manifest.reference_palette))?;
+
+        let mut by_key = HashMap::new();
+        for ovr in &manifest.overrides {
+            let Some(key) = parse_key(&ovr.key) else {
+                eprintln!("ZELDA3_MODERN_HD_OVERRIDES bad key {:?}; skipping", ovr.key);
+                continue;
+            };
+            match decode_rgba_cell(&base.join(&ovr.rgba)) {
+                Some(cell) => {
+                    by_key.insert(key, cell);
+                }
+                None => eprintln!(
+                    "ZELDA3_MODERN_HD_OVERRIDES bad rgba {}; skipping",
+                    base.join(&ovr.rgba).display()
+                ),
+            }
+        }
+        Some(Self { by_key, reference })
+    }
+
+    pub fn get(&self, key: u64) -> Option<&HdCell> {
+        if key == NO_SOURCE_KEY {
+            return None;
+        }
+        self.by_key.get(&key)
+    }
+
+    pub fn reference(&self) -> &[[u8; 4]; 256] {
+        &self.reference
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        !self.by_key.is_empty()
+    }
+}
+
+fn parse_key(s: &str) -> Option<u64> {
+    let t = s.trim();
+    match t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+        Some(hex) => u64::from_str_radix(hex, 16).ok(),
+        None => t.parse::<u64>().ok(),
+    }
+}
+
+/// Decode a `width×height` RGBA8 PNG (dims multiples of 8) into an `HdCell`.
+fn decode_rgba_cell(path: &Path) -> Option<HdCell> {
+    let (width, height, rgba) = decode_rgba_png(path)?;
+    if width == 0 || height == 0 || width % 8 != 0 || height % 8 != 0 {
+        eprintln!(
+            "ZELDA3_MODERN_HD_OVERRIDES rgba {} dims {width}×{height} not multiples of 8",
+            path.display()
+        );
+        return None;
+    }
+    Some(HdCell { width, height, rgba })
+}
+
+/// Decode a 256×1 RGBA PNG into a `[[u8;4];256]` reference palette. `None` if not 256 px.
+fn decode_reference(path: &Path) -> Option<[[u8; 4]; 256]> {
+    let (width, height, rgba) = decode_rgba_png(path)
+        .or_else(|| {
+            eprintln!("ZELDA3_MODERN_HD_OVERRIDES reference {} unreadable", path.display());
+            None
+        })?;
+    if (width * height) as usize != 256 || rgba.len() != 256 * 4 {
+        eprintln!(
+            "ZELDA3_MODERN_HD_OVERRIDES reference {} must be 256 RGBA px (got {width}×{height})",
+            path.display()
+        );
+        return None;
+    }
+    let mut out = [[0u8; 4]; 256];
+    for (i, px) in out.iter_mut().enumerate() {
+        px.copy_from_slice(&rgba[i * 4..i * 4 + 4]);
+    }
+    Some(out)
+}
+
+/// Decode any RGBA8 PNG to `(width, height, rgba)`.
+fn decode_rgba_png(path: &Path) -> Option<(u32, u32, Vec<u8>)> {
+    let file = std::fs::File::open(path).ok()?;
+    let decoder = png::Decoder::new(BufReader::new(file));
+    let mut reader = decoder.read_info().ok()?;
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).ok()?;
+    if info.color_type != png::ColorType::Rgba || info.bit_depth != png::BitDepth::Eight {
+        return None;
+    }
+    buf.truncate(info.buffer_size());
+    Some((info.width, info.height, buf))
+}
+
+/// Render-time override context threaded through the compositor. `disabled()` (no store)
+/// makes every resolve a no-op → byte-identical to today.
+#[derive(Clone, Copy)]
+pub struct HdOverrideCtx<'a> {
+    store: Option<&'a ModernHdOverrides>,
+}
+
+static ZERO_REFERENCE: [[u8; 4]; 256] = [[0, 0, 0, 0xff]; 256];
+
+impl<'a> HdOverrideCtx<'a> {
+    pub fn disabled() -> Self {
+        Self { store: None }
+    }
+
+    pub fn new(store: &'a ModernHdOverrides) -> Self {
+        Self { store: Some(store) }
+    }
+
+    pub fn resolve(&self, source_key: u64) -> Option<&'a HdCell> {
+        self.store.and_then(|s| s.get(source_key))
+    }
+
+    pub fn reference(&self) -> &[[u8; 4]; 256] {
+        match self.store {
+            Some(s) => s.reference(),
+            None => &ZERO_REFERENCE,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    fn write_png(path: &std::path::Path, width: u32, height: u32, rgba: &[u8]) {
+        let file = std::fs::File::create(path).unwrap();
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().unwrap().write_image_data(rgba).unwrap();
+    }
+
+    fn unique_dir(tag: &str) -> PathBuf {
+        // No Date/random needed: process id + tag is unique enough per test run.
+        let dir = std::env::temp_dir().join(format!("zelda3_hd_ovr_{}_{}", std::process::id(), tag));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
 
     #[test]
     fn detail_one_identity_returns_live() {
@@ -134,5 +328,61 @@ mod tests {
             resolve_pixel_color(1, 5, [100, 100, 100, 0xff], Some(&cell), &reference, 0, 0),
             Some([50, 50, 50, 0xff])
         );
+    }
+
+    #[test]
+    fn ctx_disabled_resolves_nothing() {
+        let ctx = HdOverrideCtx::disabled();
+        assert!(ctx.resolve(0x0600_0000_1234_0000).is_none());
+        assert_eq!(ctx.reference(), &[[0u8, 0, 0, 0xff]; 256]);
+    }
+
+    #[test]
+    fn store_get_ignores_no_source_key() {
+        let mut by_key = HashMap::new();
+        by_key.insert(NO_SOURCE_KEY, HdCell { width: 8, height: 8, rgba: vec![0; 256] });
+        let store = ModernHdOverrides::from_parts(by_key, [[0u8; 4]; 256]);
+        assert!(store.get(NO_SOURCE_KEY).is_none());
+    }
+
+    #[test]
+    fn load_manifest_decodes_overrides_and_reference() {
+        let dir = unique_dir("load_ok");
+        let mut ref_rgba = vec![0u8; 256 * 4];
+        for i in 0..256 {
+            ref_rgba[i * 4] = 0x80;
+            ref_rgba[i * 4 + 1] = 0x80;
+            ref_rgba[i * 4 + 2] = 0x80;
+            ref_rgba[i * 4 + 3] = 0xff;
+        }
+        write_png(&dir.join("ref.png"), 256, 1, &ref_rgba);
+        write_png(&dir.join("grass.png"), 8, 8, &vec![0x40u8; 8 * 8 * 4]);
+        let manifest = dir.join("m.json");
+        std::fs::write(
+            &manifest,
+            r#"{"reference_palette":"ref.png","overrides":[{"key":"0x0000000100000000","rgba":"grass.png"}]}"#,
+        )
+        .unwrap();
+
+        let store = ModernHdOverrides::load_manifest(&manifest).unwrap();
+        assert!(store.is_enabled());
+        assert_eq!(store.reference()[5], [0x80, 0x80, 0x80, 0xff]);
+        let cell = store.get(0x0000_0001_0000_0000).unwrap();
+        assert_eq!((cell.width, cell.height), (8, 8));
+    }
+
+    #[test]
+    fn load_manifest_disables_when_reference_missing() {
+        let dir = unique_dir("no_ref");
+        write_png(&dir.join("grass.png"), 8, 8, &vec![0x40u8; 8 * 8 * 4]);
+        let manifest = dir.join("m.json");
+        std::fs::write(
+            &manifest,
+            r#"{"reference_palette":"missing.png","overrides":[{"key":"0x1","rgba":"grass.png"}]}"#,
+        )
+        .unwrap();
+
+        // Reference missing/unreadable → overrides disabled entirely (returns None).
+        assert!(ModernHdOverrides::load_manifest(&manifest).is_none());
     }
 }
