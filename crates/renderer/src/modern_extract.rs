@@ -963,7 +963,15 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                     // already applied to OBJ CHR via `tag_stream_content_hash`), decode the
                     // non-injective generic-BG tiles (and any untagged/gap slot) from LIVE
                     // VRAM, exactly like the BG3 exception above and the from-VRAM oracle.
-                    let injective = kind == CHR_KIND_BG_ANIM || kind == CHR_KIND_BG_STREAM;
+                    // NOTE: CHR_KIND_BG_ANIM (overworld water/flower tiles at VRAM
+                    // 0x3c00) is intentionally NOT injective here — it decodes from LIVE
+                    // VRAM below. Those animations rewrite the same 0xa680 buffer position
+                    // in-place per phase, so the frame-end pixels the assets dump captures
+                    // never match the pixels the live frame streams; no static key
+                    // (neither (pack,position) nor content-hash) yields a byte-exact atlas
+                    // cell (frame 250000 waterfall). Only CHR_KIND_BG_STREAM (content-
+                    // hashed dungeon/streamed BG, verified byte-exact) resolves via the atlas.
+                    let injective = kind == CHR_KIND_BG_STREAM;
                     if !injective {
                         let pal = ((entry_word >> 10) & 7) as u8;
                         let chr_base = frame.bg[layer_index].tile_adr as usize;
@@ -1210,22 +1218,24 @@ mod tests {
     #[test]
     fn extract_from_sources_emits_atlas_cell_for_injective_bg_tile() {
         use crate::modern_source_atlas::ModernSourceAtlas;
-        // Atlas: one injective-BG (kind=CHR_KIND_BG_ANIM=5) cell keyed by (pack=5,
-        // tile_off=3). Only the injective BG kinds (BG_ANIM / BG_STREAM) resolve via
-        // the atlas; generic CHR_KIND_BG (=1) is decoded from live VRAM (see the
-        // separate test below) because its `(pack, tile_off)` key is not injective.
+        // Atlas: one injective-BG (kind=CHR_KIND_BG_STREAM=6, content-hashed) cell
+        // keyed by (pack=5, tile_off=3). Only CHR_KIND_BG_STREAM resolves via the
+        // atlas; generic CHR_KIND_BG (=1) and CHR_KIND_BG_ANIM (=5) decode from live
+        // VRAM (see the separate test below) because their keys are not injective.
         let mut indices = [0u8; 64];
         indices[0] = 7;
         indices[63] = 9;
         let cell = ModernIndexTile { id: 0, indices };
-        let atlas =
-            ModernSourceAtlas::from_keyed_cells_for_test(vec![cell], &[(CHR_KIND_BG_ANIM, 5, 3, 0)]);
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
+            vec![cell],
+            &[(CHR_KIND_BG_STREAM, 5, 3, 0)],
+        );
 
         // Source table: BG CHR base tile_adr=0x2000 → slot base 0x200. The tilemap
-        // entry's tile# = 4 → slot 0x204 maps to source (kind=5, pack=5, tile_off=3).
+        // entry's tile# = 4 → slot 0x204 maps to source (kind=6, pack=5, tile_off=3).
         let table = |slot: usize| -> (u8, u16, u16) {
             if slot == 0x200 + 4 {
-                (CHR_KIND_BG_ANIM, 5, 3)
+                (CHR_KIND_BG_STREAM, 5, 3)
             } else {
                 (0, 0, 0)
             }
@@ -1257,7 +1267,7 @@ mod tests {
         // An injective-kind tile whose key is NOT in the atlas → skipped (gap).
         let table_miss = |slot: usize| -> (u8, u16, u16) {
             if slot == 0x200 + 9 {
-                (CHR_KIND_BG_ANIM, 5, 99) // key not present in the atlas
+                (CHR_KIND_BG_STREAM, 5, 99) // key not present in the atlas
             } else {
                 (0, 0, 0)
             }
