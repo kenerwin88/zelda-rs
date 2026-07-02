@@ -1182,6 +1182,85 @@ pub fn render_modern_frame_full_with_overrides(
     finalize_frame(&main, &sub, frame, width, 1)
 }
 
+/// True if the frame would take the mosaic OR per-scanline-scroll composite path on
+/// EITHER screen — those paths are not N×-parameterized (Phase 2), so the entry renders
+/// them natively and nearest-upscales. Detection mirrors `composite_mode1` verbatim.
+fn frame_uses_complex_bg_path(frame: &ModernFrame) -> bool {
+    for enabled in [frame.screen_enabled_main, frame.screen_enabled_sub] {
+        let mosaic = frame.mosaic_size > 1 && (frame.mosaic_enabled & enabled & 0x07) != 0;
+        let bg_on = |i: usize| (enabled >> i) & 1 != 0;
+        let scanline = (0..3).any(|i| bg_on(i) && bg_layer_scroll_varies(frame, i));
+        if mosaic || scanline {
+            return true;
+        }
+    }
+    false
+}
+
+/// Modern render at integer `scale` (1..=4). `scale<=1` → the native entry unchanged.
+/// A mosaic / per-scanline-scroll frame → native render nearest-upscaled to N× (those
+/// composite paths are not N×-parameterized). Otherwise the parameterized common path
+/// runs directly at N·256 × N·224, sampling HD overrides sub-pixel.
+pub fn render_modern_frame_full_scaled(
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+    sprite_cells: &[ModernIndexTile],
+    ctx: &crate::modern_hd_overrides::HdOverrideCtx,
+    scale: u32,
+) -> Vec<u8> {
+    let scale = scale.clamp(1, 4) as usize;
+    if scale == 1 {
+        return render_modern_frame_full_with_overrides(frame, bg_cells, sprite_cells, ctx);
+    }
+    if frame_uses_complex_bg_path(frame) {
+        let native = render_modern_frame_full_with_overrides(frame, bg_cells, sprite_cells, ctx);
+        return upscale_rgba_nearest(
+            &native,
+            usize::from(MODERN_FRAME_WIDTH),
+            usize::from(MODERN_FRAME_HEIGHT),
+            scale,
+        );
+    }
+    let out_width = 256 * scale;
+    let len = out_width * 224 * scale;
+    if frame.forced_blank {
+        let mut out = vec![0u8; len * 4];
+        for px in out.chunks_exact_mut(4) {
+            px.copy_from_slice(&[0, 0, 0, 0xff]);
+        }
+        return out;
+    }
+    let bd = &frame.backdrop_color_rgba;
+    let backdrop_c5 = [bd[0] >> 3, bd[1] >> 3, bd[2] >> 3];
+    let mut main = Screen::new(backdrop_c5, len);
+    composite_mode1(
+        &mut main,
+        frame,
+        bg_cells,
+        sprite_cells,
+        frame.screen_enabled_main,
+        Some(&frame.main_tm_scanlines),
+        frame.screen_windowed_main,
+        ctx,
+        out_width,
+        scale,
+    );
+    let mut sub = Screen::new(backdrop_c5, len);
+    composite_mode1(
+        &mut sub,
+        frame,
+        bg_cells,
+        sprite_cells,
+        frame.screen_enabled_sub,
+        None,
+        frame.screen_windowed_sub,
+        ctx,
+        out_width,
+        scale,
+    );
+    finalize_frame(&main, &sub, frame, out_width, scale)
+}
+
 /// Block-replicate an RGBA frame to `scale`× (nearest upscale): each source pixel
 /// becomes a `scale×scale` block. Used for the mosaic/per-scanline-scroll fallback,
 /// which renders natively then upscales to match the HD frame size.
@@ -2428,5 +2507,172 @@ mod tests {
         assert_eq!(&out[row1..row1 + 4], &[10, 20, 30, 40]);
         // scale 1 is identity
         assert_eq!(upscale_rgba_nearest(&src, 2, 1, 1), src);
+    }
+
+    /// Minimal frame for the N× compositor tests: BG1 enabled on main, full brightness,
+    /// one fully-opaque 8×8 BG1 tile at screen (0,0), palette 0. No mosaic, no
+    /// per-scanline scroll, no overrides — takes the simple (parameterizable) path.
+    fn tiny_simple_bg_fixture() -> (ModernFrame, Vec<ModernIndexTile>) {
+        let indices = [1u8; 64]; // fully opaque 8×8
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.brightness = 15;
+        frame.screen_enabled_main = 0x01; // BG1
+        frame.cgram_rgba[1] = [20 << 3, 10 << 3, 5 << 3, 0xff];
+        frame.bg_layers[0].index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        (frame, cells)
+    }
+
+    #[test]
+    fn composite_scale1_is_identity_and_scale2_block_upscales() {
+        // One opaque BG tile (no mosaic, no scanline scroll, no overrides).
+        let (frame, bg_cells) = tiny_simple_bg_fixture();
+        // Native reference.
+        let native = render_modern_frame_full(&frame, &bg_cells, &[]); // 256×224×4
+        // scale=2 via the new entry: every native pixel must equal its 2×2 block.
+        let hd = render_modern_frame_full_scaled(
+            &frame,
+            &bg_cells,
+            &[],
+            &crate::modern_hd_overrides::HdOverrideCtx::disabled(),
+            2,
+        );
+        assert_eq!(hd.len(), 512 * 448 * 4);
+        for ny in 0..224usize {
+            for nx in 0..256usize {
+                let src = (ny * 256 + nx) * 4;
+                for dy in 0..2 {
+                    for dx in 0..2 {
+                        let o = ((ny * 2 + dy) * 512 + (nx * 2 + dx)) * 4;
+                        assert_eq!(&hd[o..o + 3], &native[src..src + 3], "block ({nx},{ny})");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn scaled_entry_scale1_equals_native() {
+        let (frame, bg_cells) = tiny_simple_bg_fixture();
+        let native = render_modern_frame_full(&frame, &bg_cells, &[]);
+        let via = render_modern_frame_full_scaled(
+            &frame,
+            &bg_cells,
+            &[],
+            &crate::modern_hd_overrides::HdOverrideCtx::disabled(),
+            1,
+        );
+        assert_eq!(via, native);
+    }
+
+    #[test]
+    fn complex_frame_falls_back_to_native_upscaled() {
+        // A mosaic-active frame: scale=2 output must equal the native render block-upscaled.
+        let (mut frame, bg_cells) = tiny_simple_bg_fixture();
+        frame.mosaic_size = 2;
+        frame.mosaic_enabled = 0x01; // BG1 mosaic
+        frame.screen_enabled_main |= 0x01; // BG1 enabled
+        assert!(frame_uses_complex_bg_path(&frame));
+        let native = render_modern_frame_full(&frame, &bg_cells, &[]);
+        let expected = upscale_rgba_nearest(&native, 256, 224, 2);
+        let hd = render_modern_frame_full_scaled(
+            &frame,
+            &bg_cells,
+            &[],
+            &crate::modern_hd_overrides::HdOverrideCtx::disabled(),
+            2,
+        );
+        assert_eq!(hd, expected);
+    }
+
+    /// HD overrides must sample SUB-PIXEL at N×: at scale=2, two adjacent output pixels
+    /// of the SAME native texel (output (0,0) and (1,0) both map to native texel 0)
+    /// sample ADJACENT HD texels (0 and 1). A spatially-varying 16×16 HD cell (red =
+    /// column·16) makes those two pixels differ — impossible if the wiring sampled the
+    /// native texel coordinate instead of the output sub-pixel. Reverting the `(ox,oy)`
+    /// footprint sampling in `composite_index_tiles_c5` to the native texel (`nsx`) makes
+    /// this assertion fail (both output pixels collapse to HD texel 0).
+    #[test]
+    fn hd_override_samples_subpixel_at_scale2() {
+        use crate::modern_hd_overrides::{HdCell, HdOverrideCtx, ModernHdOverrides};
+        use std::collections::HashMap;
+
+        const CGRAM_IDX: usize = 1; // palette 0, index 1
+        const SOURCE_KEY: u64 = 0x0000_0007_0000_0000;
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.brightness = 15;
+        frame.screen_enabled_main = 0x01; // BG1
+        frame.cgram_rgba[CGRAM_IDX] = [128, 128, 128, 0xff]; // live
+
+        let indices = [1u8; 64]; // fully opaque, base index 1 everywhere
+        let bg_cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+        frame.bg_layers[0].index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+
+        // 16×16 (2×) HD art: red encodes the HD column (x·16), g/b constant 128.
+        let mut hd_rgba = vec![0u8; 16 * 16 * 4];
+        for y in 0..16usize {
+            for x in 0..16usize {
+                let o = (y * 16 + x) * 4;
+                hd_rgba[o] = (x as u8) * 16;
+                hd_rgba[o + 1] = 128;
+                hd_rgba[o + 2] = 128;
+                hd_rgba[o + 3] = 0xff;
+            }
+        }
+        let hd_cell = HdCell { width: 16, height: 16, rgba: hd_rgba };
+
+        let mut reference = [[0u8; 4]; 256];
+        reference[CGRAM_IDX] = [128, 128, 128, 0xff]; // detail baseline == live
+
+        let mut by_key = HashMap::new();
+        by_key.insert(SOURCE_KEY, hd_cell);
+        let store = ModernHdOverrides::from_parts(by_key, reference);
+        let ctx = HdOverrideCtx::new(&store);
+
+        let hd2 = render_modern_frame_full_scaled(&frame, &bg_cells, &[], &ctx, 2);
+        // Output (0,0) samples HD texel col 0 (red 0); output (1,0) — SAME native texel
+        // 0 but sub-pixel — samples HD texel col 1 (red 16). They must differ in red.
+        let p00 = 0usize; // (0,0)
+        let p10 = 4usize; // (1,0)
+        assert_eq!(hd2[p00], 0, "output (0,0) red from HD texel col 0");
+        assert_eq!(hd2[p10], 16, "output (1,0) red from HD texel col 1 (sub-pixel)");
+        assert_ne!(hd2[p00], hd2[p10], "adjacent output pixels must sample adjacent HD texels");
+
+        // A block-upscale of the scale=1 render CANNOT reproduce the sub-pixel detail:
+        // the N× output must differ from a nearest-upscale of the native render.
+        let native1 = render_modern_frame_full_scaled(&frame, &bg_cells, &[], &ctx, 1);
+        let block = upscale_rgba_nearest(&native1, 256, 224, 2);
+        assert_ne!(hd2, block, "sub-pixel HD sampling must differ from a block upscale");
     }
 }
