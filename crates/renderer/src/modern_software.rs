@@ -1233,31 +1233,38 @@ pub fn render_modern_frame_full_scaled(
     let bd = &frame.backdrop_color_rgba;
     let backdrop_c5 = [bd[0] >> 3, bd[1] >> 3, bd[2] >> 3];
     let mut main = Screen::new(backdrop_c5, len);
-    composite_mode1(
-        &mut main,
-        frame,
-        bg_cells,
-        sprite_cells,
-        frame.screen_enabled_main,
-        Some(&frame.main_tm_scanlines),
-        frame.screen_windowed_main,
-        ctx,
-        out_width,
-        scale,
-    );
     let mut sub = Screen::new(backdrop_c5, len);
-    composite_mode1(
-        &mut sub,
-        frame,
-        bg_cells,
-        sprite_cells,
-        frame.screen_enabled_sub,
-        None,
-        frame.screen_windowed_sub,
-        ctx,
-        out_width,
-        scale,
-    );
+    // The main and sub composites write disjoint buffers and share only immutable
+    // inputs, so build them concurrently (scoped threads → no borrow escape). At scale 1
+    // this path isn't taken (the native entry handles it), so parity is unaffected.
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            composite_mode1(
+                &mut main,
+                frame,
+                bg_cells,
+                sprite_cells,
+                frame.screen_enabled_main,
+                Some(&frame.main_tm_scanlines),
+                frame.screen_windowed_main,
+                ctx,
+                out_width,
+                scale,
+            );
+        });
+        composite_mode1(
+            &mut sub,
+            frame,
+            bg_cells,
+            sprite_cells,
+            frame.screen_enabled_sub,
+            None,
+            frame.screen_windowed_sub,
+            ctx,
+            out_width,
+            scale,
+        );
+    });
     finalize_frame(&main, &sub, frame, out_width, scale)
 }
 
@@ -1292,6 +1299,83 @@ pub fn upscale_rgba_nearest(rgba: &[u8], width: usize, height: usize, scale: usi
 /// `ZELDA3_BITMAP` winning-layer diagnostic for the main screen. Used by both the
 /// Mode-1 (`render_modern_frame_full`) and Mode-7 (`render_modern_mode7_frame`)
 /// compositors so they share one finalize path.
+/// Resolve one finalized output pixel `i` to RGBA — the per-pixel color-math +
+/// brightness body of `finalize_frame`, factored out so the finalize pass can run it
+/// serially or across parallel row stripes with identical results. `fixed` and
+/// `no_effect_math` are the frame-constant terms hoisted by the caller.
+#[allow(clippy::too_many_arguments)]
+#[inline]
+fn finalize_pixel(
+    i: usize,
+    main: &Screen,
+    sub: &Screen,
+    frame: &ModernFrame,
+    width: usize,
+    scale: usize,
+    fixed: [i32; 3],
+    no_effect_math: bool,
+) -> [u8; 4] {
+    // Per-output pixel color math, but the window data is NATIVE-length, so index
+    // it by the native row/col (`out_y / scale`, `out_x / scale`). At scale == 1
+    // these equal the output coords — byte-identical to before.
+    let out_x = i % width;
+    let out_y = i / width;
+    let nrow = out_y / scale;
+    let ncol = out_x / scale;
+    let mut c = [
+        i32::from(main.c5[i][0]),
+        i32::from(main.c5[i][1]),
+        i32::from(main.c5[i][2]),
+    ];
+    let layer_math_on = (frame.math_enabled >> main.bit[i]) & 1 != 0;
+    // Color-window membership for this pixel, then gate clip + color-math exactly
+    // like the classic post-process shader.
+    let win = frame.window_scanlines.get(nrow).copied().unwrap_or([0u8; 4]);
+    let cm_window = in_cm_window(ncol as u32, win, frame.windowsel_cm);
+    let not_clipped = cw_bit(cm_window, frame.clip_mode);
+    let math_window_ok = cw_bit(cm_window, frame.prevent_math_mode);
+    let do_math = !no_effect_math && layer_math_on && math_window_ok;
+    if !not_clipped {
+        return [0, 0, 0, 0xff];
+    }
+    if do_math {
+        let (operand, second_real) = if frame.add_subscreen {
+            if sub.real[i] {
+                (
+                    [
+                        i32::from(sub.c5[i][0]),
+                        i32::from(sub.c5[i][1]),
+                        i32::from(sub.c5[i][2]),
+                    ],
+                    true,
+                )
+            } else {
+                (fixed, false)
+            }
+        } else {
+            (fixed, false)
+        };
+        for ch in 0..3 {
+            if frame.subtract_color {
+                c[ch] -= operand[ch];
+            } else {
+                c[ch] += operand[ch];
+            }
+        }
+        if frame.half_color && (second_real || !frame.add_subscreen) {
+            for ch in 0..3 {
+                c[ch] >>= 1;
+            }
+        }
+    }
+    [
+        expand_brightness(c[0], frame.brightness),
+        expand_brightness(c[1], frame.brightness),
+        expand_brightness(c[2], frame.brightness),
+        0xff,
+    ]
+}
+
 fn finalize_frame(
     main: &Screen,
     sub: &Screen,
@@ -1327,71 +1411,40 @@ fn finalize_frame(
         let _ = std::fs::write(&path, &map);
     }
 
-    for i in 0..len {
-        // Per-output pixel color math, but the window data is NATIVE-length, so index
-        // it by the native row/col (`out_y / scale`, `out_x / scale`). At scale == 1
-        // these equal the output coords — byte-identical to before.
-        let out_x = i % width;
-        let out_y = i / width;
-        let nrow = out_y / scale;
-        let ncol = out_x / scale;
-        let mut c = [
-            i32::from(main.c5[i][0]),
-            i32::from(main.c5[i][1]),
-            i32::from(main.c5[i][2]),
-        ];
-        let layer_math_on = (frame.math_enabled >> main.bit[i]) & 1 != 0;
-        // Color-window membership for this pixel, then gate clip + color-math exactly
-        // like the classic post-process shader.
-        let win = frame.window_scanlines.get(nrow).copied().unwrap_or([0u8; 4]);
-        let cm_window = in_cm_window(ncol as u32, win, frame.windowsel_cm);
-        let not_clipped = cw_bit(cm_window, frame.clip_mode);
-        let math_window_ok = cw_bit(cm_window, frame.prevent_math_mode);
-        let do_math = !no_effect_math && layer_math_on && math_window_ok;
-        if !not_clipped {
-            let o = i * 4;
-            out[o] = 0;
-            out[o + 1] = 0;
-            out[o + 2] = 0;
-            out[o + 3] = 0xff;
-            continue;
+    // Per-pixel color math is independent per output pixel. For large (scaled) frames,
+    // stripe the rows across CPU threads; for small/native frames the thread overhead
+    // isn't worth it, so run serial. Both paths call `finalize_pixel`, so the output is
+    // byte-identical either way (the parallel test-suite gate proves it).
+    let n_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    const PARALLEL_MIN_PIXELS: usize = 200_000; // native 256×224 stays serial; scale≥2 parallelizes
+    if n_threads <= 1 || len < PARALLEL_MIN_PIXELS {
+        for i in 0..len {
+            let px = finalize_pixel(i, main, sub, frame, width, scale, fixed, no_effect_math);
+            out[i * 4..i * 4 + 4].copy_from_slice(&px);
         }
-        if do_math {
-            let (operand, second_real) = if frame.add_subscreen {
-                if sub.real[i] {
-                    (
-                        [
-                            i32::from(sub.c5[i][0]),
-                            i32::from(sub.c5[i][1]),
-                            i32::from(sub.c5[i][2]),
-                        ],
-                        true,
-                    )
-                } else {
-                    (fixed, false)
-                }
-            } else {
-                (fixed, false)
-            };
-            for ch in 0..3 {
-                if frame.subtract_color {
-                    c[ch] -= operand[ch];
-                } else {
-                    c[ch] += operand[ch];
-                }
+    } else {
+        let rows = len / width;
+        let rows_per = rows.div_ceil(n_threads);
+        std::thread::scope(|s| {
+            for (t, chunk) in out.chunks_mut(rows_per * width * 4).enumerate() {
+                let row0 = t * rows_per;
+                s.spawn(move || {
+                    let chunk_rows = chunk.len() / (width * 4);
+                    for lr in 0..chunk_rows {
+                        let y = row0 + lr;
+                        let base = y * width;
+                        for x in 0..width {
+                            let px =
+                                finalize_pixel(base + x, main, sub, frame, width, scale, fixed, no_effect_math);
+                            let o = lr * width * 4 + x * 4;
+                            chunk[o..o + 4].copy_from_slice(&px);
+                        }
+                    }
+                });
             }
-            if frame.half_color && (second_real || !frame.add_subscreen) {
-                for ch in 0..3 {
-                    c[ch] >>= 1;
-                }
-            }
-        }
-
-        let o = i * 4;
-        out[o] = expand_brightness(c[0], frame.brightness);
-        out[o + 1] = expand_brightness(c[1], frame.brightness);
-        out[o + 2] = expand_brightness(c[2], frame.brightness);
-        out[o + 3] = 0xff;
+        });
     }
 
     out
