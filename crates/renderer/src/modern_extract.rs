@@ -1691,6 +1691,74 @@ mod tests {
         );
     }
 
+    /// Same synthetic fully-populated frame as `perf_render_modern_frame_full_from_vram`
+    /// (BG1+BG2 4bpp, BG3 2bpp HUD, 128 OAM sprites), but pre-extracted to the
+    /// `ModernFrame` + cells the modern software compositor entries take directly, so
+    /// scaled-render perf tests don't pay VRAM-decode cost per iteration.
+    fn perf_fixture() -> (ModernFrame, Vec<ModernIndexTile>, Vec<ModernIndexTile>) {
+        let mut vram = vec![0u16; 0x8000];
+        let mut cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        for (i, c) in cgram.iter_mut().enumerate() {
+            *c = (i as u16).wrapping_mul(0x0421) | 0x0001;
+        }
+        for (i, w) in vram.iter_mut().enumerate() {
+            *w = (i as u16).wrapping_mul(0x9E37) ^ 0x55AA;
+        }
+        for layer in 0..3usize {
+            let base = layer * 0x400;
+            for cell in 0..0x400usize {
+                vram[base + cell] = ((cell as u16 & 0xFF) | ((cell as u16 & 0x7) << 10)) | 0x0001;
+            }
+        }
+        for s in 0..128usize {
+            let b = s * 2;
+            let x = ((s * 2) % 248) as u16;
+            let y = ((s * 13) % 216) as u16;
+            oam[b] = (x & 0xFF) | (y << 8);
+            oam[b + 1] = (s as u16 & 0xFF) | 0x0200;
+        }
+
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        for layer in 0..3usize {
+            frame.bg[layer].tilemap_adr = (layer * 0x400) as u16;
+            frame.bg[layer].tile_adr = 0x1000;
+        }
+        frame.screen_enabled = [0x17, 0x00];
+        frame.obj.tile_adr1 = 0x4000;
+        frame.obj.tile_adr2 = 0x5000;
+
+        let (mut modern, bg_cells) = extract_modern_frame_from_vram(&frame);
+        let (sprite_cells, sprites) = extract_modern_sprites_from_vram(&frame);
+        modern.index_sprites = sprites;
+        (modern, bg_cells, sprite_cells)
+    }
+
+    #[test]
+    fn perf_render_modern_frame_scaled() {
+        // Reuse the same frame/cells construction as perf_render_modern_frame_full_from_vram.
+        let (frame, bg_cells, sprite_cells) = perf_fixture();
+        for scale in [2u32, 4] {
+            let iters = 20;
+            let start = std::time::Instant::now();
+            let mut sink = 0usize;
+            for _ in 0..iters {
+                let out = crate::modern_software::render_modern_frame_full_scaled(
+                    &frame,
+                    &bg_cells,
+                    &sprite_cells,
+                    &crate::modern_hd_overrides::HdOverrideCtx::disabled(),
+                    scale,
+                );
+                sink = sink.wrapping_add(out.len());
+            }
+            let ms = start.elapsed().as_secs_f64() * 1000.0 / iters as f64;
+            eprintln!("perf render_modern_frame_full_scaled x{scale}: {ms:.3} ms/frame ({sink})");
+            assert!(ms < 16.6, "scale {scale} too slow: {ms:.3} ms");
+        }
+    }
+
     #[test]
     fn dungeon_from_vram_wraps_scroll_modulo_tilemap_size() {
         // Regression for the BLACK dungeon room: a 64×64 (512px) tilemap with a
