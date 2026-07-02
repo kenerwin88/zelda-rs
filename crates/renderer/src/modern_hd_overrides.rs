@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 use std::io::BufReader;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use serde::Deserialize;
 
@@ -51,13 +52,34 @@ impl HdCell {
     }
 }
 
+/// Precomputed `detail[hd][ref] = hd / max(ref, 1)` for every u8 pair — the exact same
+/// float expression the per-pixel path used, hoisted out of the hot loop so the override
+/// compositor does a table lookup instead of a division per channel per pixel. Built once
+/// on first use (256×256 f32 = 256 KiB). Bit-identical to the inline division, so the
+/// `detail == 1 → final == live` guarantee and every kernel test are preserved exactly.
+fn detail_lut() -> &'static [[f32; 256]; 256] {
+    static LUT: OnceLock<Box<[[f32; 256]; 256]>> = OnceLock::new();
+    LUT.get_or_init(|| {
+        let mut t = Box::new([[0.0f32; 256]; 256]);
+        for hd in 0..256usize {
+            for r in 0..256usize {
+                t[hd][r] = hd as f32 / (r as f32).max(1.0);
+            }
+        }
+        t
+    })
+}
+
 /// `final = clamp(live * (hd / max(reference, 1)))` per RGB channel; alpha from `live`.
 /// Reference is guarded away from 0 to avoid divide-by-zero on dark slots. Authoring HD
-/// as `reference[idx]` yields detail 1 → `final == live` (exact parity).
+/// as `reference[idx]` yields detail 1 → `final == live` (exact parity). The per-channel
+/// `hd / max(ref, 1)` comes from `detail_lut()` (precomputed), removing the division from
+/// the per-pixel hot path with no change to the result.
 pub fn detail_modulate(live: [u8; 4], hd: [u8; 3], reference: [u8; 3]) -> [u8; 4] {
+    let lut = detail_lut();
     let mut out = [0u8, 0, 0, live[3]];
     for c in 0..3 {
-        let detail = hd[c] as f32 / (reference[c] as f32).max(1.0);
+        let detail = lut[hd[c] as usize][reference[c] as usize];
         out[c] = (live[c] as f32 * detail).round().clamp(0.0, 255.0) as u8;
     }
     out
@@ -330,6 +352,25 @@ mod tests {
         // ref 0 → guarded to 1; huge detail clamps to 255. alpha preserved from live.
         let out = detail_modulate([200, 0, 0, 0xff], [255, 0, 0], [0, 0, 0]);
         assert_eq!(out, [255, 0, 0, 0xff]);
+    }
+
+    #[test]
+    fn detail_lut_is_bit_identical_to_inline_division() {
+        // The LUT optimization MUST NOT change any output pixel. Sweep hd/ref/live and
+        // compare detail_modulate against the original inline-division formula.
+        let inline = |live: u8, hd: u8, r: u8| -> u8 {
+            let detail = hd as f32 / (r as f32).max(1.0);
+            (live as f32 * detail).round().clamp(0.0, 255.0) as u8
+        };
+        for &hd in &[0u8, 1, 7, 31, 64, 127, 128, 200, 254, 255] {
+            for &r in &[0u8, 1, 3, 16, 63, 100, 128, 200, 255] {
+                for &live in &[0u8, 1, 15, 50, 128, 200, 255] {
+                    let out = detail_modulate([live, live, live, 0xff], [hd, hd, hd], [r, r, r]);
+                    let want = inline(live, hd, r);
+                    assert_eq!(out[0], want, "hd={hd} ref={r} live={live}");
+                }
+            }
+        }
     }
 
     #[test]
