@@ -137,7 +137,8 @@ pub fn load_modern_source_atlas(repo_root: &Path) -> Result<ModernSourceAtlas, S
 
 #[derive(Deserialize)]
 struct Manifest {
-    cell_count: u32,
+    #[serde(rename = "cell_count")]
+    _cell_count: u32,
     cells: Vec<CellJson>,
 }
 
