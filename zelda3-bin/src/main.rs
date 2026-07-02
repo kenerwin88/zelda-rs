@@ -3664,7 +3664,16 @@ fn run_replay_save(args: &[String]) {
     let assets_anim_mode = std::env::var("ZELDA3_RENDERER")
         .map(|v| v == "assets-anim")
         .unwrap_or(false);
-    let source_atlas = if modern_index_compare != 0 && assets_anim_mode {
+    let atlas_gpu_compare = std::env::var("ZELDA3_RENDERER")
+        .map(|v| v == "assets-anim-gpu")
+        .unwrap_or(false);
+    let modern_gpu_headless: Option<renderer::ModernGpuHeadless> =
+        if modern_index_compare != 0 && atlas_gpu_compare {
+            Some(renderer::ModernGpuHeadless::new())
+        } else {
+            None
+        };
+    let source_atlas = if modern_index_compare != 0 && (assets_anim_mode || atlas_gpu_compare) {
         Some(
             renderer::modern_source_atlas::load_modern_source_atlas(std::path::Path::new("."))
                 .unwrap_or_else(|e| {
@@ -5458,7 +5467,34 @@ fn run_replay_save(args: &[String]) {
                 // Off-VRAM (assets-anim) path: render BG + sprites ENTIRELY from the
                 // assets-by-source atlas via the M1 logical CHR source table — NO
                 // VRAM CHR pixel reads. Otherwise: the unified live-VRAM modern path.
-                let (modern_rgba, via) = if gpu_frame.mode == 7 {
+                let (modern_rgba, via) = if let (Some(headless), false) =
+                    (modern_gpu_headless.as_ref(), gpu_frame.mode == 7)
+                {
+                    let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
+                    let src_slice: Vec<(u8, u16, u16)> = game
+                        .vram_chr_source()
+                        .as_slice()
+                        .iter()
+                        .map(|s| (s.kind, s.pack, s.tile_off))
+                        .collect();
+                    let (mut modern, bg_cells) =
+                        renderer::modern_extract::extract_modern_frame_from_sources(
+                            &gpu_frame,
+                            &src_slice[..],
+                            atlas,
+                        );
+                    let (sprite_cells, sprites) =
+                        renderer::modern_extract::extract_modern_sprites_from_sources(
+                            &gpu_frame,
+                            &src_slice[..],
+                            atlas,
+                        );
+                    modern.index_sprites = sprites;
+                    (
+                        headless.render_rgba(&modern, &bg_cells, &sprite_cells),
+                        "gpu",
+                    )
+                } else if gpu_frame.mode == 7 {
                     // Mode 7 (affine BG, e.g. the map screen) is not a tilemap the
                     // Mode-1 compositor can render; use the dedicated CPU Mode-7 path.
                     // It decodes the affine field from VRAM regardless of compare mode.
