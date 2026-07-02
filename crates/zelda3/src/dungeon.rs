@@ -1,7 +1,11 @@
 // Methods ported from zelda3/src/dungeon.c and included inside ZeldaState.
 
 use super::*;
-use crate::game_state::constants::{MAIN_MODULE, SUBMODULE, SUBSUBMODULE};
+use crate::game_state::constants::{
+    ALT_SPRITE_STATE, ALT_SPRITE_TYPE, ANCILLA_TYPE, DIALOGUE_MESSAGE_INDEX, GARNISH_TYPE,
+    MAIN_MODULE, MESSAGING_MODULE, OVERLORD_TYPE, SUBMODULE, SUBSUBMODULE, TEXT_INCREMENTAL_STATE,
+    TEXT_RENDER_STATE,
+};
 use crate::types::Point16U;
 use crate::zelda_rtl::misc::DUNG_ANIMATED_TILES;
 use crate::zelda_rtl::sprite::SpriteSpawnInfo;
@@ -33,18 +37,18 @@ impl ZeldaState {
 
         self.ram[SPRITE_STATE..SPRITE_STATE + 16].fill(0);
         self.ram[SPRITE_TYPE..SPRITE_TYPE + 16].fill(0);
-        self.ram[0x0c4a..0x0c54].fill(0);
-        self.ram[0x0b00..0x0b08].fill(0);
-        self.ram[0x1f800..0x1f81e].fill(0);
-        self.ram[0x1d00..0x1d10].fill(0);
-        self.ram[0x1d10..0x1d20].fill(0);
+        self.ram[ANCILLA_TYPE..ANCILLA_TYPE + 10].fill(0);
+        self.ram[OVERLORD_TYPE..OVERLORD_TYPE + 8].fill(0);
+        self.ram[GARNISH_TYPE..GARNISH_TYPE + 0x1e].fill(0);
+        self.ram[ALT_SPRITE_STATE..ALT_SPRITE_STATE + 16].fill(0);
+        self.ram[ALT_SPRITE_TYPE..ALT_SPRITE_TYPE + 16].fill(0);
         self.ram[ALT_SPRITES_FLAG] = 0;
 
-        self.ram[0x1cd4] = 0;
-        self.ram[0x1cd7] = 0;
-        self.ram[0x1cd8] = 0;
-        self.ram[0x1cf0] = 0;
-        self.ram[0x1cf1] = 0;
+        self.ram[TEXT_RENDER_STATE] = 0;
+        self.ram[TEXT_INCREMENTAL_STATE] = 0;
+        self.ram[MESSAGING_MODULE] = 0;
+        self.ram[DIALOGUE_MESSAGE_INDEX] = 0;
+        self.ram[DIALOGUE_MESSAGE_INDEX + 1] = 0;
         self.ram[SHARED_MESSAGE_TIMER] = 0;
         self.ram[SHARED_MESSAGE_TIMER + 1] = 0;
         self.ram[MESSAGE_OR_SPRITE_STATE_CACHE] = 0;
