@@ -3332,8 +3332,7 @@ fn run_replay_save(args: &[String]) {
     let mut gpu_render_compare_last_frame = 0u32;
     let mut gpu_render_compare_last_hash = 0u32;
     let mut modern_index_compare = 0u32;
-    let modern_index_compare_summary =
-        std::env::var("ZELDA3_MODERN_INDEX_COMPARE_SUMMARY").is_ok();
+    let modern_index_compare_summary = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_SUMMARY").is_ok();
     let modern_index_compare_progress = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_PROGRESS")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
@@ -3341,6 +3340,13 @@ fn run_replay_save(args: &[String]) {
     let mut modern_index_compare_count = 0u64;
     let mut modern_index_compare_bad_count = 0u64;
     let mut modern_index_compare_bad_pixels = 0u64;
+    let mut modern_index_compare_gpu_count = 0u64;
+    let mut modern_index_compare_mode7_gpu_count = 0u64;
+    let mut modern_index_compare_cpu_count = 0u64;
+    let ppu_mode_summary = std::env::var("ZELDA3_PPU_MODE_SUMMARY").is_ok();
+    let mut ppu_mode_counts = [0u64; 8];
+    let mut first_mode7_frame = None::<u32>;
+    let mut last_mode7_frame = None::<u32>;
     let mut render_hash_dump_frame = None::<(u32, PathBuf)>;
     let mut save_state_path = None::<PathBuf>;
     let mut save_state_at: Vec<(u32, PathBuf)> = Vec::new();
@@ -3712,6 +3718,16 @@ fn run_replay_save(args: &[String]) {
             process::exit(101);
         }
         frames = frames.wrapping_add(1);
+        if ppu_mode_summary {
+            let mode = usize::from(game.ppu.mode);
+            if mode < ppu_mode_counts.len() {
+                ppu_mode_counts[mode] += 1;
+            }
+            if game.ppu.mode == 7 {
+                first_mode7_frame.get_or_insert(frames);
+                last_mode7_frame = Some(frames);
+            }
+        }
         last_frame_had_fingerprint_render = false;
         let mut fp_audio_leaf: u32 = 0;
         let should_fingerprint_frame =
@@ -5470,43 +5486,47 @@ fn run_replay_save(args: &[String]) {
                 let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
                 let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
                 let _ = (theme, &dungeon_index_atlas, &index_atlas);
-                // Off-VRAM (assets-anim) path: render BG + sprites ENTIRELY from the
-                // assets-by-source atlas via the M1 logical CHR source table — NO
-                // VRAM CHR pixel reads. Otherwise: the unified live-VRAM modern path.
-                let (modern_rgba, via) = if let (Some(headless), false) =
-                    (modern_gpu_headless.as_ref(), gpu_frame.mode == 7)
-                {
-                    let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
-                    let src_slice: Vec<(u8, u16, u16)> = game
-                        .vram_chr_source()
-                        .as_slice()
-                        .iter()
-                        .map(|s| (s.kind, s.pack, s.tile_off))
-                        .collect();
-                    let (mut modern, bg_cells) =
-                        renderer::modern_extract::extract_modern_frame_from_sources(
-                            &gpu_frame,
-                            &src_slice[..],
-                            atlas,
-                        );
-                    let (sprite_cells, sprites) =
-                        renderer::modern_extract::extract_modern_sprites_from_sources(
-                            &gpu_frame,
-                            &src_slice[..],
-                            atlas,
-                        );
-                    modern.index_sprites = sprites;
-                    (
-                        headless.render_rgba(&modern, &bg_cells, &sprite_cells),
-                        "gpu",
-                    )
+                // Off-VRAM (assets-anim-gpu) path: Mode-1 renders BG + sprites
+                // ENTIRELY from the assets-by-source atlas via the M1 logical CHR
+                // source table. Mode-7 is not a Mode-1 tilemap; render those frames
+                // through the dedicated GPU Mode-7 frame path so the GPU default does
+                // not fall back to CPU composition.
+                let (modern_rgba, via) = if let Some(headless) = modern_gpu_headless.as_ref() {
+                    if gpu_frame.mode == 7 {
+                        (headless.render_mode7_rgba(&gpu_frame), "mode7-gpu")
+                    } else {
+                        let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
+                        let src_slice: Vec<(u8, u16, u16)> = game
+                            .vram_chr_source()
+                            .as_slice()
+                            .iter()
+                            .map(|s| (s.kind, s.pack, s.tile_off))
+                            .collect();
+                        let (mut modern, bg_cells) =
+                            renderer::modern_extract::extract_modern_frame_from_sources(
+                                &gpu_frame,
+                                &src_slice[..],
+                                atlas,
+                            );
+                        let (sprite_cells, sprites) =
+                            renderer::modern_extract::extract_modern_sprites_from_sources(
+                                &gpu_frame,
+                                &src_slice[..],
+                                atlas,
+                            );
+                        modern.index_sprites = sprites;
+                        (
+                            headless.render_rgba(&modern, &bg_cells, &sprite_cells),
+                            "gpu",
+                        )
+                    }
                 } else if gpu_frame.mode == 7 {
                     // Mode 7 (affine BG, e.g. the map screen) is not a tilemap the
-                    // Mode-1 compositor can render; use the dedicated CPU Mode-7 path.
-                    // It decodes the affine field from VRAM regardless of compare mode.
+                    // Mode-1 compositor can render. Non-GPU compare modes keep the
+                    // dedicated CPU oracle; assets-anim-gpu uses `mode7-gpu` above.
                     (
                         renderer::modern_software::render_modern_mode7_frame(&gpu_frame),
-                        "mode7",
+                        "mode7-cpu",
                     )
                 } else if let Some(atlas) = source_atlas.as_ref() {
                     // Copy the M1 source table into a plain (kind, pack, tile_off)
@@ -5558,6 +5578,12 @@ fn run_replay_save(args: &[String]) {
                     }
                 }
                 modern_index_compare_count += 1;
+                match via {
+                    "gpu" => modern_index_compare_gpu_count += 1,
+                    "mode7-gpu" => modern_index_compare_mode7_gpu_count += 1,
+                    "mode7-cpu" | "sources" | "vram" => modern_index_compare_cpu_count += 1,
+                    _ => {}
+                }
                 if mismatch != 0 {
                     modern_index_compare_bad_count += 1;
                     modern_index_compare_bad_pixels += mismatch as u64;
@@ -5653,7 +5679,26 @@ fn run_replay_save(args: &[String]) {
 
     if modern_index_compare != 0 && modern_index_compare_summary {
         println!(
-            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels}"
+            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels} gpu_count={modern_index_compare_gpu_count} mode7_gpu_count={modern_index_compare_mode7_gpu_count} cpu_count={modern_index_compare_cpu_count}"
+        );
+    }
+    if ppu_mode_summary {
+        println!(
+            "ppu_mode_summary m0={} m1={} m2={} m3={} m4={} m5={} m6={} m7={} first_m7={} last_m7={}",
+            ppu_mode_counts[0],
+            ppu_mode_counts[1],
+            ppu_mode_counts[2],
+            ppu_mode_counts[3],
+            ppu_mode_counts[4],
+            ppu_mode_counts[5],
+            ppu_mode_counts[6],
+            ppu_mode_counts[7],
+            first_mode7_frame
+                .map(|f| f.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+            last_mode7_frame
+                .map(|f| f.to_string())
+                .unwrap_or_else(|| "none".to_string())
         );
     }
 
@@ -10741,7 +10786,10 @@ fn run_dump_reference_palette(args: &[String]) {
 /// Flatten a 256-entry CGRAM RGBA table to a 256x1 RGBA PNG (mirrors
 /// `run_dump_reference_palette`'s encoding, but from an already-expanded
 /// `ModernFrame::cgram_rgba` rather than raw CGRAM words).
-fn write_reference_palette_png(path: &str, cgram_rgba: &[[u8; 4]; 256]) -> Result<(), Box<dyn Error>> {
+fn write_reference_palette_png(
+    path: &str,
+    cgram_rgba: &[[u8; 4]; 256],
+) -> Result<(), Box<dyn Error>> {
     let mut rgba = Vec::with_capacity(cgram_rgba.len() * 4);
     for px in cgram_rgba {
         rgba.extend_from_slice(px);
@@ -11004,7 +11052,10 @@ fn run_slice_hd_cells(args: &[String]) {
 
     let overrides: Vec<OutOverride> = written
         .iter()
-        .map(|(k, path)| OutOverride { key: k.clone(), rgba: path.clone() })
+        .map(|(k, path)| OutOverride {
+            key: k.clone(),
+            rgba: path.clone(),
+        })
         .collect();
     let manifest = OutManifest {
         reference_palette: "capture/reference_palette.png".into(),
@@ -11039,7 +11090,10 @@ fn decode_rgba_png(path: &Path) -> Option<(Vec<u8>, u32, u32)> {
             rgba
         }
         (color, depth) => {
-            eprintln!("{}: unsupported PNG format {color:?}/{depth:?}", path.display());
+            eprintln!(
+                "{}: unsupported PNG format {color:?}/{depth:?}",
+                path.display()
+            );
             return None;
         }
     };

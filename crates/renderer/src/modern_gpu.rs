@@ -1,6 +1,7 @@
 use crate::modern_assets::ModernTileAtlasAsset;
 use crate::modern_frame::ModernFrame;
 use crate::modern_index_atlas::ModernIndexTile;
+use std::cell::RefCell;
 
 /// Packed per-instance data uploaded as an instance-step vertex buffer.
 ///
@@ -1229,7 +1230,9 @@ pub struct ModernGpuHeadless {
     device: wgpu::Device,
     queue: wgpu::Queue,
     compositor: ModernGpuCompositor,
+    gpu_frame_renderer: RefCell<crate::gpu_renderer::GpuFrameRenderer>,
     target: wgpu::Texture,
+    target_view: wgpu::TextureView,
 }
 
 impl ModernGpuHeadless {
@@ -1239,6 +1242,9 @@ impl ModernGpuHeadless {
             pollster::block_on(crate::create_device_queue(&instance, None));
         let format = wgpu::TextureFormat::Rgba8Unorm;
         let compositor = ModernGpuCompositor::new(&device, &queue, format);
+        let gpu_frame_renderer = RefCell::new(crate::gpu_renderer::GpuFrameRenderer::new(
+            &device, &queue, None,
+        ));
         let target = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("modern_gpu_headless_target"),
             size: wgpu::Extent3d {
@@ -1255,11 +1261,14 @@ impl ModernGpuHeadless {
                 | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
+        let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
         Self {
             device,
             queue,
             compositor,
+            gpu_frame_renderer,
             target,
+            target_view,
         }
     }
 
@@ -1278,6 +1287,27 @@ impl ModernGpuHeadless {
             &self.target,
         );
 
+        self.read_target_rgba()
+    }
+
+    pub fn render_mode7_rgba(&self, frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<u8> {
+        debug_assert_eq!(frame.mode, 7);
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("modern_gpu_mode7"),
+            });
+        self.gpu_frame_renderer.borrow_mut().render_frame(
+            &mut encoder,
+            &self.queue,
+            frame,
+            &self.target_view,
+        );
+        self.queue.submit([encoder.finish()]);
+        self.read_target_rgba()
+    }
+
+    fn read_target_rgba(&self) -> Vec<u8> {
         let (width, height) = (256u32, 224u32);
         let bytes_per_row = width * 4;
         let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -1887,6 +1917,66 @@ mod tests {
             "first pixel exercises sub-screen half-add plus brightness"
         );
         assert_eq!(gpu, software);
+    }
+
+    #[test]
+    fn modern_gpu_mode7_matches_modern_software_oracle() {
+        let mut vram = vec![0u16; 0x8000];
+        vram[0] = 0x0002; // tilemap entry (0,0): low byte = tile number 2
+        vram[2 * 64 + 8] = 5u16 << 8; // tile 2, texel row1 col0: high byte = index 5
+        let mut cgram = vec![0u16; 0x100];
+        cgram[5] = 0x7c1f; // BGR555 magenta
+        let oam = vec![0u16; 0x110];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 7;
+        frame.screen_enabled = [0x01, 0];
+        for sl in frame.scanlines.iter_mut() {
+            sl.mode7_matrix = [256, 0, 0, 256, 0, 0, 0, 0];
+            sl.screen_enabled_main = 0x01;
+        }
+
+        let gpu = ModernGpuHeadless::new().render_mode7_rgba(&frame);
+        let software = crate::modern_software::render_modern_mode7_frame(&frame);
+
+        assert_eq!(gpu.len(), software.len());
+        assert_eq!(gpu, software);
+    }
+
+    fn test_gpu_frame<'a>(
+        vram: &'a [u16],
+        cgram: &'a [u16],
+        oam: &'a [u16],
+        brightness: u8,
+        forced_blank: bool,
+    ) -> crate::gpu_frame::GpuFrame<'a> {
+        crate::gpu_frame::GpuFrame {
+            vram,
+            cgram,
+            oam,
+            mode: 1,
+            bg: Default::default(),
+            obj: Default::default(),
+            mosaic_enabled: 0,
+            mosaic_size: 0,
+            extra_left_right: 0,
+            mode7: Default::default(),
+            screen_enabled: [0, 0],
+            screen_windowed: [0, 0],
+            brightness,
+            forced_blank,
+            math_enabled: 0,
+            subtract_color: false,
+            half_color: false,
+            fixed_color_r: 0,
+            fixed_color_g: 0,
+            fixed_color_b: 0,
+            add_subscreen: false,
+            clip_mode: 0,
+            prevent_math_mode: 0,
+            windowsel_cm: 0,
+            windowsel: 0,
+            scanlines: Box::new([crate::gpu_frame::ScanlineRegs::default(); 224]),
+        }
     }
 
     /// Render the BG index pass then the sprite pass on the GPU, reading back the
