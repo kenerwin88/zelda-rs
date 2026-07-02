@@ -919,6 +919,146 @@ impl ModernGpuSpriteRenderer {
     }
 }
 
+/// Simple-z-order GPU compositor over the PNG index atlas: draws each enabled
+/// BG layer's index tiles, then OBJ sprites on top, into a caller
+/// `Rgba8Unorm` view. Persistent pipelines; per-frame atlas/CGRAM/instance
+/// uploads.
+///
+/// NOTE: simple z-order only. Mode-1 BG/OBJ priority interleave, color math,
+/// windows, HDMA scroll, mosaic, and the OBJ budget are later sub-projects.
+pub struct ModernGpuCompositor {
+    bg: ModernGpuIndexRenderer,
+    sprites: ModernGpuSpriteRenderer,
+}
+
+impl ModernGpuCompositor {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
+        Self {
+            bg: ModernGpuIndexRenderer::new(device, queue, format),
+            sprites: ModernGpuSpriteRenderer::new(device, queue, format),
+        }
+    }
+
+    /// Draw BG (clears the target to backdrop) then OBJ (loads on top) into
+    /// `output_view`.
+    pub fn render(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        output_view: &wgpu::TextureView,
+    ) {
+        self.bg.render(device, queue, bg_cells, frame, output_view);
+        self.sprites
+            .render(device, queue, sprite_cells, frame, output_view);
+    }
+}
+
+/// Owns a headless wgpu device + a 256x224 offscreen `Rgba8Unorm` target + the
+/// compositor. Construct once and reuse; device creation is expensive.
+pub struct ModernGpuHeadless {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    compositor: ModernGpuCompositor,
+    target: wgpu::Texture,
+    view: wgpu::TextureView,
+}
+
+impl ModernGpuHeadless {
+    pub fn new() -> Self {
+        let instance = crate::create_wgpu_instance();
+        let (_adapter, device, queue) =
+            pollster::block_on(crate::create_device_queue(&instance, None));
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        let compositor = ModernGpuCompositor::new(&device, &queue, format);
+        let target = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("modern_gpu_headless_target"),
+            size: wgpu::Extent3d {
+                width: 256,
+                height: 224,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = target.create_view(&wgpu::TextureViewDescriptor::default());
+        Self {
+            device,
+            queue,
+            compositor,
+            target,
+            view,
+        }
+    }
+
+    pub fn render_rgba(
+        &self,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+    ) -> Vec<u8> {
+        self.compositor.render(
+            &self.device,
+            &self.queue,
+            frame,
+            bg_cells,
+            sprite_cells,
+            &self.view,
+        );
+
+        let (width, height) = (256u32, 224u32);
+        let bytes_per_row = width * 4;
+        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("modern_gpu_headless_readback"),
+            size: (bytes_per_row * height) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.target,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: None,
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([encoder.finish()]);
+
+        let slice = readback.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("GPU poll failed during readback");
+        let mapped = slice.get_mapped_range();
+        let out = mapped.to_vec();
+        drop(mapped);
+        readback.unmap();
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1301,6 +1441,123 @@ mod tests {
             assert_eq!(gpu_rgba.len(), software_rgba.len());
             assert_eq!(gpu_rgba, software_rgba);
         });
+    }
+
+    #[test]
+    fn modern_gpu_compositor_matches_simple_zorder_software() {
+        use crate::modern_frame::{
+            ModernBgLayer, ModernIndexSpriteInstance, ModernIndexTileInstance,
+        };
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_software::{
+            draw_modern_sprites_indexed, render_modern_frame_software_indexed,
+        };
+
+        let mut a = [0u8; 64];
+        a[0] = 1;
+        a[9] = 2;
+        let mut b = [0u8; 64];
+        b[63] = 3;
+        let bg_cells = vec![
+            ModernIndexTile {
+                id: 0,
+                indices: a,
+                source_key: NO_SOURCE_KEY,
+                hflip: false,
+                vflip: false,
+            },
+            ModernIndexTile {
+                id: 1,
+                indices: b,
+                source_key: NO_SOURCE_KEY,
+                hflip: false,
+                vflip: false,
+            },
+        ];
+
+        let mut s0 = [0u8; 64];
+        s0[0] = 4;
+        let mut s1 = [0u8; 64];
+        s1[7] = 5;
+        let sprite_cells = vec![
+            ModernIndexTile {
+                id: 0,
+                indices: s0,
+                source_key: NO_SOURCE_KEY,
+                hflip: false,
+                vflip: false,
+            },
+            ModernIndexTile {
+                id: 1,
+                indices: s1,
+                source_key: NO_SOURCE_KEY,
+                hflip: false,
+                vflip: false,
+            },
+        ];
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.cgram_rgba[3 * 16 + 1] = [10, 20, 30, 0xff];
+        frame.cgram_rgba[3 * 16 + 2] = [40, 50, 60, 0xff];
+        frame.cgram_rgba[3 * 16 + 3] = [70, 80, 90, 0xff];
+        frame.cgram_rgba[0x80 + 16 + 4] = [100, 110, 120, 0xff];
+        frame.cgram_rgba[0x80 + 16 + 5] = [130, 140, 150, 0xff];
+
+        let mut layer = ModernBgLayer::new(0);
+        layer.enabled_main = true;
+        layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 3,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 1,
+            screen_x: 16,
+            screen_y: 8,
+            palette: 3,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = layer;
+
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 40,
+            screen_y: 40,
+            palette: 1,
+            priority: 0,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        });
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 1,
+            screen_x: 48,
+            screen_y: 40,
+            palette: 1,
+            priority: 0,
+            hflip: true,
+            vflip: true,
+            row_mask: 0xff,
+        });
+
+        let gpu = ModernGpuHeadless::new().render_rgba(&frame, &bg_cells, &sprite_cells);
+
+        let mut software = render_modern_frame_software_indexed(&frame, &bg_cells);
+        draw_modern_sprites_indexed(&mut software, &frame, &sprite_cells);
+
+        assert_eq!(gpu.len(), software.len());
+        assert_eq!(
+            gpu, software,
+            "GPU compositor must match simple z-order CPU reference"
+        );
     }
 
     /// Render the BG index pass then the sprite pass on the GPU, reading back the

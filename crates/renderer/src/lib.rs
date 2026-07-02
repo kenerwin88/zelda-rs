@@ -38,6 +38,7 @@ pub use bg_layer::BgLayerRenderer;
 pub use gpu_frame::{BgLayerRegs, GpuFrame, Mode7Regs, ObjRegs, ScanlineRegs};
 pub use gpu_renderer::GpuFrameRenderer;
 pub use mode7_renderer::Mode7Renderer;
+pub use modern_gpu::{ModernGpuCompositor, ModernGpuHeadless};
 pub use post_process::scanlines_from_raw;
 pub use renderer_mode::RendererMode;
 pub use tile_atlas::{
@@ -1728,8 +1729,14 @@ impl GameTexture {
         let texture = create_game_texture(device, width, height);
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = create_presentation_sampler(device, presentation, "blit");
-        let bind_group =
-            create_blit_bind_group(device, bind_group_layout, &view, &sampler, presentation_buf, "blit");
+        let bind_group = create_blit_bind_group(
+            device,
+            bind_group_layout,
+            &view,
+            &sampler,
+            presentation_buf,
+            "blit",
+        );
         self.texture = texture;
         self.bind_group = bind_group;
         self.width = width;
@@ -2355,8 +2362,10 @@ impl FrameRenderer {
             let native = crate::modern_software::render_modern_mode7_frame(frame);
             crate::modern_software::upscale_rgba_nearest(&native, 256, 224, scale as usize)
         } else {
-            let (mut modern, bg_cells) = crate::modern_extract::extract_modern_frame_from_vram(frame);
-            let (sprite_cells, sprites) = crate::modern_extract::extract_modern_sprites_from_vram(frame);
+            let (mut modern, bg_cells) =
+                crate::modern_extract::extract_modern_frame_from_vram(frame);
+            let (sprite_cells, sprites) =
+                crate::modern_extract::extract_modern_sprites_from_vram(frame);
             modern.index_sprites = sprites;
             crate::modern_software::render_modern_frame_full_scaled(
                 &modern,
@@ -3876,6 +3885,9 @@ mod tests {
             512,
             448,
         );
-        assert!(!recreated_again, "unchanged size must not recreate the texture");
+        assert!(
+            !recreated_again,
+            "unchanged size must not recreate the texture"
+        );
     }
 }
