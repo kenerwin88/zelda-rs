@@ -2,6 +2,20 @@
 
 **Date:** 2026-07-01
 **Status:** Design approved; ready for implementation planning.
+
+**Scope refinement (found during planning):** the **mosaic** and **per-scanline-scroll**
+composite paths build intermediate native-res BG buffers and run screen-space passes
+(`mosaic_snap_bg_buf`, `paint_bg_buf`, `render_bg_layer_torus`), which are far more
+coupled than a simple footprint scale. Phase 2 therefore parameterizes only the **common
+path** (`composite_index_tiles_c5` + `resolve_obj_layer`/`paint_obj_priority` +
+`finalize_frame`) for N×. A frame that would take the mosaic or per-scanline-scroll path
+on either screen is rendered by the **existing native compositor and nearest-upscaled to
+N×** (HD sub-pixel detail simply doesn't appear on those transient frames — mosaic wipes,
+parallax scenes). The hard paths are a documented follow-on. Detection (verbatim from
+`composite_mode1`): `mosaic_active = frame.mosaic_size > 1 && (frame.mosaic_enabled &
+enabled & 0x07) != 0`; per-scanline scroll = any enabled BG layer `i` with
+`bg_layer_scroll_varies(frame, i)`. The entry evaluates these for the union of the main
+and sub `screen_enabled_*` masks.
 **Predecessor:** `2026-07-01-modern-hd-source-key-overrides-design.md` (Phase 1 — the
 source-keyed HD override kernel/store, shipped on `main`).
 
