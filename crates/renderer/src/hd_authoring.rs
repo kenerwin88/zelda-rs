@@ -51,6 +51,34 @@ pub fn build_hd_placement_map(
     out
 }
 
+/// Crop one cell's HD pixels from a super-resolved frame. `sr` is row-major RGBA8
+/// of `sr_w × sr_h`. The cell footprint is `w×h` native px at native `(x,y)`,
+/// upscaled by `scale` (so the crop is `(w*scale)×(h*scale)`). Returns `None` if
+/// the upscaled crop is not fully inside the frame (partial/negative → skip).
+pub fn slice_hd_cell(
+    sr: &[u8], sr_w: u32, sr_h: u32,
+    x: i16, y: i16, w: u16, h: u16, scale: u32,
+) -> Option<Vec<u8>> {
+    if x < 0 || y < 0 {
+        return None;
+    }
+    let ow = w as u32 * scale;
+    let oh = h as u32 * scale;
+    let ox = x as u32 * scale;
+    let oy = y as u32 * scale;
+    if ox + ow > sr_w || oy + oh > sr_h {
+        return None;
+    }
+    let row_bytes = (ow * 4) as usize;
+    let mut out = vec![0u8; (ow * oh * 4) as usize];
+    for row in 0..oh {
+        let src = (((oy + row) * sr_w + ox) * 4) as usize;
+        let dst = (row * ow * 4) as usize;
+        out[dst..dst + row_bytes].copy_from_slice(&sr[src..src + row_bytes]);
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,5 +113,25 @@ mod tests {
             HdPlacement { key: "0x000000000000abcd".into(), x: 16, y: 24, w: 8, h: 8 },
             HdPlacement { key: "0x0000000000001234".into(), x: 32, y: 40, w: 8, h: 8 },
         ]);
+    }
+
+    #[test]
+    fn slice_extracts_scaled_region_and_skips_offscreen() {
+        // 4x2 native SR frame at scale 2 -> sr is 8x4 RGBA. Fill each pixel R=x, G=y.
+        let (sr_w, sr_h, scale) = (8u32, 4u32, 2u32);
+        let mut sr = vec![0u8; (sr_w * sr_h * 4) as usize];
+        for py in 0..sr_h { for px in 0..sr_w {
+            let i = ((py * sr_w + px) * 4) as usize;
+            sr[i] = px as u8; sr[i + 1] = py as u8; sr[i + 3] = 0xff;
+        }}
+        // Native cell 1x1 footprint at native (1,0), scale 2 -> crop sr region x=2..4, y=0..2.
+        let got = slice_hd_cell(&sr, sr_w, sr_h, 1, 0, 1, 1, scale).expect("on-screen");
+        assert_eq!(got.len(), (2 * 2 * 4) as usize);
+        assert_eq!(&got[0..4], &[2, 0, 0, 0xff]);   // sr (2,0)
+        assert_eq!(&got[4..8], &[3, 0, 0, 0xff]);   // sr (3,0)
+        assert_eq!(&got[8..12], &[2, 1, 0, 0xff]);  // sr (2,1)
+        // Negative and overhanging placements skip.
+        assert!(slice_hd_cell(&sr, sr_w, sr_h, -1, 0, 1, 1, scale).is_none());
+        assert!(slice_hd_cell(&sr, sr_w, sr_h, 4, 0, 1, 1, scale).is_none()); // x*scale=8 >= sr_w
     }
 }
