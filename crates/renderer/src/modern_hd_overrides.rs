@@ -248,6 +248,35 @@ impl<'a> HdOverrideCtx<'a> {
     }
 }
 
+/// Integer HD scale factor for the modern N× compositor. `ZELDA3_HD_SCALE`,
+/// default 2, clamped to 1..=4 (the CPU 60fps ceiling).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HdScale(u32);
+
+impl HdScale {
+    pub const DEFAULT: u32 = 2;
+
+    pub fn from_env() -> Self {
+        Self::from_str_opt(std::env::var("ZELDA3_HD_SCALE").ok().as_deref())
+    }
+
+    /// Testable core: parse/clamp an optional string.
+    pub fn from_str_opt(s: Option<&str>) -> Self {
+        let v = match s {
+            None => Self::DEFAULT,
+            Some(t) => match t.trim().parse::<u32>() {
+                Ok(n) => n.clamp(1, 4),
+                Err(_) => Self::DEFAULT,
+            },
+        };
+        HdScale(v)
+    }
+
+    pub fn get(&self) -> u32 {
+        self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,5 +434,15 @@ mod tests {
         assert_eq!((cell.width, cell.height), (16, 16));
         assert_eq!(cell.sample_native(3, 3), [0x40, 0x40, 0x40]);
         assert!(ctx.resolve(NO_SOURCE_KEY).is_none());
+    }
+
+    #[test]
+    fn hd_scale_parses_and_clamps() {
+        assert_eq!(HdScale::from_str_opt(None).get(), 2);        // default
+        assert_eq!(HdScale::from_str_opt(Some("1")).get(), 1);
+        assert_eq!(HdScale::from_str_opt(Some("4")).get(), 4);
+        assert_eq!(HdScale::from_str_opt(Some("0")).get(), 1);   // clamp low
+        assert_eq!(HdScale::from_str_opt(Some("9")).get(), 4);   // clamp high
+        assert_eq!(HdScale::from_str_opt(Some("xyz")).get(), 2); // invalid → default
     }
 }
