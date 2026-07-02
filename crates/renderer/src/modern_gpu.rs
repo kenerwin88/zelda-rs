@@ -330,85 +330,80 @@ const INDEX_GRID_COLS: u32 = 64;
 ///   offset 20: padding                       (u32)
 const INDEX_INSTANCE_STRIDE: u64 = 24;
 
+fn build_index_atlas(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    cells: &[ModernIndexTile],
+    label: &'static str,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let cell_count = cells.len() as u32;
+    let grid_rows = cell_count.div_ceil(INDEX_GRID_COLS).max(1);
+    let tex_width = INDEX_GRID_COLS * 8;
+    let tex_height = grid_rows * 8;
+
+    let mut data = vec![0u8; (tex_width * tex_height) as usize];
+    for cell in cells {
+        let col = cell.id % INDEX_GRID_COLS;
+        let row = cell.id / INDEX_GRID_COLS;
+        let ox = col * 8;
+        let oy = row * 8;
+        for ly in 0..8u32 {
+            for lx in 0..8u32 {
+                let px = (oy + ly) * tex_width + (ox + lx);
+                data[px as usize] = cell.indices[(ly * 8 + lx) as usize];
+            }
+        }
+    }
+
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width: tex_width,
+            height: tex_height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::R8Uint,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &data,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(tex_width),
+            rows_per_image: Some(tex_height),
+        },
+        wgpu::Extent3d {
+            width: tex_width,
+            height: tex_height,
+            depth_or_array_layers: 1,
+        },
+    );
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
+}
+
 /// GPU renderer for the palette-index path: an `R8Uint` atlas of 8x8 index
 /// cells + the live CGRAM as a 256x1 `Rgba8Unorm` texture. Produces output
 /// byte-for-byte identical to [`crate::modern_software::render_modern_frame_software_indexed`].
 pub struct ModernGpuIndexRenderer {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
-    // Held to keep the index-atlas texture alive for the renderer's lifetime.
-    #[allow(dead_code)]
-    index_atlas_texture: wgpu::Texture,
-    index_atlas_view: wgpu::TextureView,
-    /// Number of cells in the atlas (used to map cell_id -> grid origin).
-    cell_count: u32,
 }
 
 impl ModernGpuIndexRenderer {
-    /// Build the index renderer, uploading `cells` into an `R8Uint`
-    /// grid texture (one 8x8 cell per grid slot, [`INDEX_GRID_COLS`] cells wide).
-    pub fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        cells: &[ModernIndexTile],
-        format: wgpu::TextureFormat,
-    ) -> Self {
-        let cell_count = cells.len() as u32;
-        let grid_rows = cell_count.div_ceil(INDEX_GRID_COLS).max(1);
-        let tex_width = INDEX_GRID_COLS * 8;
-        let tex_height = grid_rows * 8;
-
-        // Lay out each cell's 64 indices into its 8x8 region of the grid.
-        let mut data = vec![0u8; (tex_width * tex_height) as usize];
-        for cell in cells {
-            let col = cell.id % INDEX_GRID_COLS;
-            let row = cell.id / INDEX_GRID_COLS;
-            let ox = col * 8;
-            let oy = row * 8;
-            for ly in 0..8u32 {
-                for lx in 0..8u32 {
-                    let px = (oy + ly) * tex_width + (ox + lx);
-                    data[px as usize] = cell.indices[(ly * 8 + lx) as usize];
-                }
-            }
-        }
-
-        let index_atlas_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("modern_index_atlas"),
-            size: wgpu::Extent3d {
-                width: tex_width,
-                height: tex_height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Uint,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &index_atlas_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &data,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(tex_width),
-                rows_per_image: None,
-            },
-            wgpu::Extent3d {
-                width: tex_width,
-                height: tex_height,
-                depth_or_array_layers: 1,
-            },
-        );
-        let index_atlas_view =
-            index_atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
+    /// Build the index renderer's persistent pipeline. Per-frame cells are
+    /// uploaded into an `R8Uint` grid texture by [`Self::render`].
+    pub fn new(device: &wgpu::Device, _queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
         // Bind group: index atlas (Uint) at binding 2, CGRAM (Float) at binding 3
         // — matching the `@binding` slots in `modern_bg.wgsl`'s index path.
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -499,9 +494,6 @@ impl ModernGpuIndexRenderer {
         Self {
             pipeline,
             bind_group_layout,
-            index_atlas_texture,
-            index_atlas_view,
-            cell_count,
         }
     }
 
@@ -516,9 +508,13 @@ impl ModernGpuIndexRenderer {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        cells: &[ModernIndexTile],
         frame: &ModernFrame,
         output_view: &wgpu::TextureView,
     ) {
+        let (_index_atlas_texture, index_atlas_view) =
+            build_index_atlas(device, queue, cells, "modern_index_atlas");
+
         // Build the per-tile instance buffer in draw order.
         let mut instance_bytes: Vec<u8> = Vec::new();
         let mut instance_count: u32 = 0;
@@ -528,7 +524,7 @@ impl ModernGpuIndexRenderer {
                     continue;
                 }
                 for inst in &layer.index_tiles {
-                    if inst.cell_id >= self.cell_count {
+                    if inst.cell_id as usize >= cells.len() {
                         continue; // software's `atlas.cells.get(..)` returns None → skip
                     }
                     let col = inst.cell_id % INDEX_GRID_COLS;
@@ -595,7 +591,7 @@ impl ModernGpuIndexRenderer {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&self.index_atlas_view),
+                    resource: wgpu::BindingResource::TextureView(&index_atlas_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -674,76 +670,12 @@ const SPRITE_INSTANCE_STRIDE: u64 = 24;
 pub struct ModernGpuSpriteRenderer {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
-    #[allow(dead_code)]
-    sprite_atlas_texture: wgpu::Texture,
-    sprite_atlas_view: wgpu::TextureView,
-    cell_count: u32,
 }
 
 impl ModernGpuSpriteRenderer {
-    /// Build the sprite renderer, uploading `cells` into an `R8Uint` grid texture
-    /// ([`INDEX_GRID_COLS`] cells wide), one 8x8 UNFLIPPED cell per slot.
-    pub fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        cells: &[ModernIndexTile],
-        format: wgpu::TextureFormat,
-    ) -> Self {
-        let cell_count = cells.len() as u32;
-        let grid_rows = cell_count.div_ceil(INDEX_GRID_COLS).max(1);
-        let tex_width = INDEX_GRID_COLS * 8;
-        let tex_height = grid_rows * 8;
-
-        let mut data = vec![0u8; (tex_width * tex_height) as usize];
-        for cell in cells {
-            let col = cell.id % INDEX_GRID_COLS;
-            let row = cell.id / INDEX_GRID_COLS;
-            let ox = col * 8;
-            let oy = row * 8;
-            for ly in 0..8u32 {
-                for lx in 0..8u32 {
-                    let px = (oy + ly) * tex_width + (ox + lx);
-                    data[px as usize] = cell.indices[(ly * 8 + lx) as usize];
-                }
-            }
-        }
-
-        let sprite_atlas_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("modern_sprite_atlas"),
-            size: wgpu::Extent3d {
-                width: tex_width,
-                height: tex_height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Uint,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &sprite_atlas_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &data,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(tex_width),
-                rows_per_image: None,
-            },
-            wgpu::Extent3d {
-                width: tex_width,
-                height: tex_height,
-                depth_or_array_layers: 1,
-            },
-        );
-        let sprite_atlas_view =
-            sprite_atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
+    /// Build the sprite renderer's persistent pipeline. Per-frame cells are
+    /// uploaded into an `R8Uint` grid texture by [`Self::render`].
+    pub fn new(device: &wgpu::Device, _queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
         // Same bind group layout as the BG index path: sprite atlas (Uint) at
         // binding 2, CGRAM (Float) at binding 3.
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -839,9 +771,6 @@ impl ModernGpuSpriteRenderer {
         Self {
             pipeline,
             bind_group_layout,
-            sprite_atlas_texture,
-            sprite_atlas_view,
-            cell_count,
         }
     }
 
@@ -855,15 +784,19 @@ impl ModernGpuSpriteRenderer {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        cells: &[ModernIndexTile],
         frame: &ModernFrame,
         output_view: &wgpu::TextureView,
     ) {
+        let (_sprite_atlas_texture, sprite_atlas_view) =
+            build_index_atlas(device, queue, cells, "modern_sprite_atlas");
+
         let mut instance_bytes: Vec<u8> = Vec::new();
         let mut instance_count: u32 = 0;
         if !frame.forced_blank {
             // Reverse OAM order → earliest OAM sprite drawn last (on top).
             for inst in frame.index_sprites.iter().rev() {
-                if inst.cell_id >= self.cell_count {
+                if inst.cell_id as usize >= cells.len() {
                     continue; // software's `cells.get(..)` returns None → skip
                 }
                 let col = inst.cell_id % INDEX_GRID_COLS;
@@ -939,7 +872,7 @@ impl ModernGpuSpriteRenderer {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&self.sprite_atlas_view),
+                    resource: wgpu::BindingResource::TextureView(&sprite_atlas_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -1272,7 +1205,13 @@ mod tests {
             let mut indices = [0u8; 64];
             indices[0] = 1; // pixel (0,0)
             indices[1] = 2; // pixel (1,0)
-            let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
+            let cells = vec![ModernIndexTile {
+                id: 0,
+                indices,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                hflip: false,
+                vflip: false,
+            }];
 
             let mut frame = ModernFrame::empty();
             frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -1292,12 +1231,8 @@ mod tests {
             });
             frame.bg_layers[0] = layer;
 
-            let renderer = ModernGpuIndexRenderer::new(
-                &device,
-                &queue,
-                &cells,
-                wgpu::TextureFormat::Rgba8Unorm,
-            );
+            let renderer =
+                ModernGpuIndexRenderer::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm);
 
             let width = 256u32;
             let height = 224u32;
@@ -1317,7 +1252,7 @@ mod tests {
             });
             let view = target.create_view(&wgpu::TextureViewDescriptor::default());
 
-            renderer.render(&device, &queue, &frame, &view);
+            renderer.render(&device, &queue, &cells, &frame, &view);
 
             let bytes_per_row = width * 4;
             let readback = device.create_buffer(&wgpu::BufferDescriptor {
@@ -1377,14 +1312,8 @@ mod tests {
         bg_cells: &[ModernIndexTile],
         sprite_cells: &[ModernIndexTile],
     ) -> Vec<u8> {
-        let bg =
-            ModernGpuIndexRenderer::new(device, queue, bg_cells, wgpu::TextureFormat::Rgba8Unorm);
-        let spr = ModernGpuSpriteRenderer::new(
-            device,
-            queue,
-            sprite_cells,
-            wgpu::TextureFormat::Rgba8Unorm,
-        );
+        let bg = ModernGpuIndexRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
+        let spr = ModernGpuSpriteRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
 
         let width = 256u32;
         let height = 224u32;
@@ -1404,8 +1333,8 @@ mod tests {
         });
         let view = target.create_view(&wgpu::TextureViewDescriptor::default());
 
-        bg.render(device, queue, frame, &view);
-        spr.render(device, queue, frame, &view);
+        bg.render(device, queue, bg_cells, frame, &view);
+        spr.render(device, queue, sprite_cells, frame, &view);
 
         let bytes_per_row = width * 4;
         let readback = device.create_buffer(&wgpu::BufferDescriptor {
@@ -1466,7 +1395,13 @@ mod tests {
             // ── Case 1: no flip ────────────────────────────────────────────────
             let mut indices = [0u8; 64];
             indices[0] = 1; // pixel (0,0) → index 1
-            let sprite_cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
+            let sprite_cells = vec![ModernIndexTile {
+                id: 0,
+                indices,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                hflip: false,
+                vflip: false,
+            }];
 
             let mut frame = ModernFrame::empty();
             frame.backdrop_color_rgba = [0, 0, 0, 0xff];
