@@ -1674,6 +1674,69 @@ async fn create_device_queue(
     (adapter, device, queue)
 }
 
+/// Creates the `Rgba8Unorm` (TEXTURE_BINDING | COPY_DST) game-frame input
+/// texture at `(width, height)`. Shared by the initial construction
+/// ([`create_game_texture_resources`]) and HD resize
+/// ([`GameTexture::ensure_size`]), which recreate it at a new size.
+fn create_game_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("game_frame"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    })
+}
+
+/// The game-frame texture + its bind group, size-tracked so callers only
+/// recreate it when the uploaded frame's dimensions actually change (the
+/// classic path always uploads native 256×224; the modern HD path uploads
+/// `scale*256 × scale*224` and may change `scale` at runtime).
+struct GameTexture {
+    texture: wgpu::Texture,
+    bind_group: wgpu::BindGroup,
+    width: u32,
+    height: u32,
+}
+
+impl GameTexture {
+    /// Recreate the texture + bind group at `(width, height)` if they differ
+    /// from the current size (the existing `bind_group_layout` and
+    /// `presentation_buf` are reused — only the sized texture and its bind
+    /// group change); returns whether it recreated. A same-size call is a
+    /// cheap no-op, so this can run unconditionally every present.
+    fn ensure_size(
+        &mut self,
+        device: &wgpu::Device,
+        bind_group_layout: &wgpu::BindGroupLayout,
+        presentation_buf: &wgpu::Buffer,
+        presentation: PresentationMode,
+        width: u32,
+        height: u32,
+    ) -> bool {
+        if width == self.width && height == self.height {
+            return false;
+        }
+        let texture = create_game_texture(device, width, height);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = create_presentation_sampler(device, presentation, "blit");
+        let bind_group =
+            create_blit_bind_group(device, bind_group_layout, &view, &sampler, presentation_buf, "blit");
+        self.texture = texture;
+        self.bind_group = bind_group;
+        self.width = width;
+        self.height = height;
+        true
+    }
+}
+
 /// Creates the game-frame input texture, its bind group layout, and bind group.
 ///
 /// The texture is `Rgba8Unorm` (TEXTURE_BINDING | COPY_DST). Callers upload
@@ -1689,20 +1752,7 @@ fn create_game_texture_resources(
     wgpu::BindGroup,
     wgpu::Buffer,
 ) {
-    let game_texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("game_frame"),
-        size: wgpu::Extent3d {
-            width: game_width,
-            height: game_height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
+    let game_texture = create_game_texture(device, game_width, game_height);
 
     let game_texture_view = game_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -1910,9 +1960,8 @@ pub struct FrameRenderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
-    game_texture: wgpu::Texture,
+    game_texture: GameTexture,
     bind_group_layout: wgpu::BindGroupLayout,
-    bind_group: wgpu::BindGroup,
     presentation_buf: wgpu::Buffer,
     gpu_renderer: GpuFrameRenderer,
     _gpu_texture: wgpu::Texture,
@@ -1929,6 +1978,12 @@ pub struct FrameRenderer {
     presentation_notice: PresentationNotice,
     viewport: Viewport,
     log_viewport: bool,
+    /// Integer HD scale for the modern (off-VRAM) live render path
+    /// (`ZELDA3_HD_SCALE`, default 2); read once at construction so every
+    /// `render_modern_frame` call — and callers of [`FrameRenderer::hd_scale`]
+    /// building their own N× frame (the sources+overrides path, which needs
+    /// the CHR-source table this renderer can't reach) — agree on one value.
+    hd_scale: modern_hd_overrides::HdScale,
 }
 
 impl FrameRenderer {
@@ -1987,8 +2042,14 @@ impl FrameRenderer {
                 );
             }
         }
-        let (game_texture, bind_group_layout, bind_group, presentation_buf) =
+        let (texture, bind_group_layout, bind_group, presentation_buf) =
             create_game_texture_resources(&device, game_width, game_height, presentation_params);
+        let game_texture = GameTexture {
+            texture,
+            bind_group,
+            width: game_width,
+            height: game_height,
+        };
         let pipeline = create_blit_pipeline(&device, &bind_group_layout, surface_format);
         let gpu_renderer =
             GpuFrameRenderer::new(&device, &queue, art_sidecar_rgba_override.as_ref().copied());
@@ -2028,6 +2089,7 @@ impl FrameRenderer {
             scale_mode,
         );
         let upload_buf = vec![0u8; (game_width * game_height * 4) as usize];
+        let hd_scale = modern_hd_overrides::HdScale::from_env();
 
         Self {
             surface,
@@ -2037,7 +2099,6 @@ impl FrameRenderer {
             pipeline,
             game_texture,
             bind_group_layout,
-            bind_group,
             presentation_buf,
             gpu_renderer,
             _gpu_texture: gpu_texture,
@@ -2054,7 +2115,17 @@ impl FrameRenderer {
             presentation_notice: PresentationNotice::default(),
             viewport,
             log_viewport: env::var_os("ZELDA3_RENDER_VIEWPORT_LOG").is_some(),
+            hd_scale,
         }
+    }
+
+    /// Current live HD scale (`ZELDA3_HD_SCALE`, default 2), cached at
+    /// construction. Callers that render the modern sources+overrides path
+    /// themselves (see module docs on `hd_scale` field) use this so their
+    /// finished RGBA is sized consistently with `render_modern_frame`'s own
+    /// VRAM-only fallback.
+    pub fn hd_scale(&self) -> u32 {
+        self.hd_scale.get()
     }
 
     pub fn cycle_presentation_mode(&mut self) {
@@ -2133,13 +2204,14 @@ impl FrameRenderer {
     fn rebuild_presentation_bind_groups(&mut self) {
         let game_texture_view = self
             .game_texture
+            .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = create_presentation_sampler(
             &self.device,
             self.presentation_params.presentation,
             "blit",
         );
-        self.bind_group = create_blit_bind_group(
+        self.game_texture.bind_group = create_blit_bind_group(
             &self.device,
             &self.bind_group_layout,
             &game_texture_view,
@@ -2199,11 +2271,22 @@ impl FrameRenderer {
     }
 
     /// Upload one frame of pixels. `pixels` must be `game_width * game_height`
-    /// packed `u32` values in PPU format `0xFF_RR_GG_BB`.
+    /// packed `u32` values in PPU format `0xFF_RR_GG_BB`. Always native
+    /// 256×224 (the classic path never runs at HD scale), but still routed
+    /// through [`GameTexture::ensure_size`] so the texture shrinks back down
+    /// if a prior modern HD frame grew it.
     pub fn upload_frame(&mut self, pixels: &[u32]) {
+        self.game_texture.ensure_size(
+            &self.device,
+            &self.bind_group_layout,
+            &self.presentation_buf,
+            self.presentation_params.presentation,
+            self.game_width,
+            self.game_height,
+        );
         upload_ppu_pixels(
             &self.queue,
-            &self.game_texture,
+            &self.game_texture.texture,
             pixels,
             &mut self.upload_buf,
             self.game_width,
@@ -2219,16 +2302,22 @@ impl FrameRenderer {
 
     /// Upload an already-RGBA (R,G,B,A byte order) framebuffer straight into the
     /// `Rgba8Unorm` game texture — no BGR→RGB swap (unlike `upload_frame`, whose
-    /// input is packed PPU `0xAARRGGBB` u32s). The buffer must be
-    /// `game_width * game_height * 4` bytes.
-    pub fn upload_rgba8(&mut self, rgba: &[u8]) {
-        debug_assert_eq!(
-            rgba.len(),
-            (self.game_width * self.game_height * 4) as usize
+    /// input is packed PPU `0xAARRGGBB` u32s). `rgba` must be `width * height * 4`
+    /// bytes; the game texture is recreated first if `(width, height)` changed
+    /// (e.g. the modern renderer's HD scale), via [`GameTexture::ensure_size`].
+    pub fn upload_rgba8(&mut self, rgba: &[u8], width: u32, height: u32) {
+        self.game_texture.ensure_size(
+            &self.device,
+            &self.bind_group_layout,
+            &self.presentation_buf,
+            self.presentation_params.presentation,
+            width,
+            height,
         );
+        debug_assert_eq!(rgba.len(), (width * height * 4) as usize);
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
-                texture: &self.game_texture,
+                texture: &self.game_texture.texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
@@ -2236,25 +2325,64 @@ impl FrameRenderer {
             rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(self.game_width * 4),
+                bytes_per_row: Some(width * 4),
                 rows_per_image: None,
             },
             wgpu::Extent3d {
-                width: self.game_width,
-                height: self.game_height,
+                width,
+                height,
                 depth_or_array_layers: 1,
             },
         );
     }
 
-    /// Modern (software) live-VRAM render path. Decodes BG + sprites from the live
-    /// `GpuFrame` VRAM and composites them on the CPU
-    /// ([`modern_extract::render_modern_frame_full_from_vram`]), then uploads the
-    /// resulting RGBA into the game texture and blits it with the standard
-    /// presentation pipeline (`render()`). Default/Classic callers are unaffected.
+    /// Modern (software) live-VRAM render path: the fallback used when the
+    /// caller can't supply the sources+overrides render (that path needs the
+    /// CHR-source table, which lives on the zelda3 `GameState` this crate
+    /// can't depend on — see [`FrameRenderer::present_modern_rgba`] for the
+    /// caller-supplied alternative). Decodes BG + sprites from the live
+    /// `GpuFrame` VRAM, composites at [`FrameRenderer::hd_scale`] (N× nearest,
+    /// no HD overrides — those are source-keyed and VRAM-decoded cells never
+    /// carry a source key), then uploads the resulting `scale*256 × scale*224`
+    /// RGBA and blits it with the standard presentation pipeline (`render()`).
+    /// Mode 7 (not a Mode-1 tilemap) routes through the dedicated CPU
+    /// compositor, nearest-upscaled to match. Default/Classic callers are
+    /// unaffected.
     pub fn render_modern_frame(&mut self, frame: &GpuFrame<'_>) -> Result<(), RenderError> {
-        let rgba = crate::modern_extract::render_modern_frame_full_from_vram(frame);
-        self.upload_rgba8(&rgba);
+        let scale = self.hd_scale.get();
+        let rgba = if frame.mode == 7 {
+            let native = crate::modern_software::render_modern_mode7_frame(frame);
+            crate::modern_software::upscale_rgba_nearest(&native, 256, 224, scale as usize)
+        } else {
+            let (mut modern, bg_cells) = crate::modern_extract::extract_modern_frame_from_vram(frame);
+            let (sprite_cells, sprites) = crate::modern_extract::extract_modern_sprites_from_vram(frame);
+            modern.index_sprites = sprites;
+            crate::modern_software::render_modern_frame_full_scaled(
+                &modern,
+                &bg_cells,
+                &sprite_cells,
+                &crate::modern_hd_overrides::HdOverrideCtx::disabled(),
+                scale,
+            )
+        };
+        self.upload_rgba8(&rgba, 256 * scale, 224 * scale);
+        self.render()
+    }
+
+    /// Present an already-composited modern frame built by the caller (the
+    /// sources+overrides path in `zelda3-bin`'s live present loop, which holds
+    /// the CHR-source table `FrameRenderer` can't reach — see
+    /// [`FrameRenderer::render_modern_frame`]'s docs). `width`/`height` should
+    /// be `scale*256 × scale*224` for [`FrameRenderer::hd_scale`] so present
+    /// stays consistent with the VRAM-only fallback; the game texture is
+    /// recreated on size change via [`GameTexture::ensure_size`].
+    pub fn present_modern_rgba(
+        &mut self,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<(), RenderError> {
+        self.upload_rgba8(rgba, width, height);
         self.render()
     }
 
@@ -2308,7 +2436,7 @@ impl FrameRenderer {
             });
 
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_bind_group(0, &self.game_texture.bind_group, &[]);
             pass.set_viewport(
                 self.viewport.x,
                 self.viewport.y,
@@ -3673,5 +3801,80 @@ mod tests {
             (64u32 * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT),
             256
         );
+    }
+
+    // `FrameRenderer` itself needs a live winit window (real `wgpu::Surface`), so
+    // it can't be constructed in a headless test; exercise the size-aware
+    // texture-recreation logic it delegates to (`GameTexture::ensure_size`)
+    // directly against a device/queue, the same headless pattern
+    // `render_test_bg_with_rgba_override` uses for `GpuFrameRenderer`.
+    #[test]
+    fn game_texture_recreates_only_on_size_change() {
+        let instance = create_wgpu_instance();
+        let (_adapter, device, queue) = pollster::block_on(create_device_queue(&instance, None));
+        let presentation_params = PresentationParams::from_env();
+        let (texture, bind_group_layout, bind_group, presentation_buf) =
+            create_game_texture_resources(&device, 256, 224, presentation_params);
+        let mut game_texture = GameTexture {
+            texture,
+            bind_group,
+            width: 256,
+            height: 224,
+        };
+        assert_eq!(game_texture.texture.size().width, 256);
+        assert_eq!(game_texture.texture.size().height, 224);
+
+        // A live 2× HD frame (`render_modern_frame_full_scaled(…, 2)`) is
+        // 512×448 — the size the texture must grow to.
+        let hd_rgba = crate::modern_software::render_modern_frame_full_scaled(
+            &crate::modern_frame::ModernFrame::empty(),
+            &[],
+            &[],
+            &crate::modern_hd_overrides::HdOverrideCtx::disabled(),
+            2,
+        );
+        assert_eq!(hd_rgba.len(), 512 * 448 * 4);
+
+        let recreated = game_texture.ensure_size(
+            &device,
+            &bind_group_layout,
+            &presentation_buf,
+            presentation_params.presentation,
+            512,
+            448,
+        );
+        assert!(recreated, "texture must recreate when the frame size grows");
+        assert_eq!(game_texture.texture.size().width, 512);
+        assert_eq!(game_texture.texture.size().height, 448);
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &game_texture.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &hd_rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(512 * 4),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: 512,
+                height: 448,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        // Guard: re-requesting the SAME size must not recreate (no per-frame churn).
+        let recreated_again = game_texture.ensure_size(
+            &device,
+            &bind_group_layout,
+            &presentation_buf,
+            presentation_params.presentation,
+            512,
+            448,
+        );
+        assert!(!recreated_again, "unchanged size must not recreate the texture");
     }
 }

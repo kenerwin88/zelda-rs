@@ -1388,7 +1388,42 @@ impl PlayRendererBackend for CpuPlayRenderer {
     }
 }
 
-struct GpuPlayRenderer;
+/// Off-VRAM (assets-anim) source atlas + HD override store for the live modern
+/// present path, loaded once. `ZELDA3_RENDERER=assets-anim` is the only mode
+/// that loads the atlas (mirrors the `--modern-index-compare` harness's
+/// `assets_anim_mode` gate below) — `source_atlas` is `None` for plain
+/// `modern`/`modern-compare`/`classic`, so those keep rendering (VRAM-decoded,
+/// no HD overrides) through `FrameRenderer::render_modern_frame`'s fallback.
+struct GpuPlayRenderer {
+    source_atlas: Option<renderer::modern_source_atlas::ModernSourceAtlas>,
+    hd_overrides: Option<renderer::modern_hd_overrides::ModernHdOverrides>,
+}
+
+impl GpuPlayRenderer {
+    fn new() -> Self {
+        let assets_anim_mode = env::var("ZELDA3_RENDERER")
+            .map(|v| v == "assets-anim")
+            .unwrap_or(false);
+        let source_atlas = if assets_anim_mode {
+            match renderer::modern_source_atlas::load_modern_source_atlas(Path::new(".")) {
+                Ok(atlas) => Some(atlas),
+                Err(e) => {
+                    eprintln!(
+                        "assets-by-source atlas load failed: {e}; live present falls back to the VRAM-decoded modern path"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let hd_overrides = renderer::modern_hd_overrides::ModernHdOverrides::from_env();
+        Self {
+            source_atlas,
+            hd_overrides,
+        }
+    }
+}
 
 impl PlayRendererBackend for GpuPlayRenderer {
     fn name(&self) -> &'static str {
@@ -1406,6 +1441,45 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let scanlines_raw = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
         let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+        // Off-VRAM sources+overrides path: needs the CHR-source table
+        // (`game.vram_chr_source()`), which only this binary (holding the
+        // zelda3 `GameState`) can see — `FrameRenderer` only gets `GpuFrame`.
+        // Mode 7 isn't a Mode-1 tilemap the sources extractor can render; fall
+        // through to the frontend's VRAM-decoded Mode-7 compositor instead.
+        if let Some(atlas) = self.source_atlas.as_ref().filter(|_| gpu_frame.mode != 7) {
+            let src_slice: Vec<(u8, u16, u16)> = game
+                .vram_chr_source()
+                .as_slice()
+                .iter()
+                .map(|s| (s.kind, s.pack, s.tile_off))
+                .collect();
+            let (mut modern, bg_cells) = renderer::modern_extract::extract_modern_frame_from_sources(
+                &gpu_frame,
+                &src_slice[..],
+                atlas,
+            );
+            let (sprite_cells, sprites) =
+                renderer::modern_extract::extract_modern_sprites_from_sources(
+                    &gpu_frame,
+                    &src_slice[..],
+                    atlas,
+                );
+            modern.index_sprites = sprites;
+            let ctx = match &self.hd_overrides {
+                Some(store) => renderer::modern_hd_overrides::HdOverrideCtx::new(store),
+                None => renderer::modern_hd_overrides::HdOverrideCtx::disabled(),
+            };
+            let scale = frontend.renderer_hd_scale();
+            let rgba = renderer::modern_software::render_modern_frame_full_scaled(
+                &modern,
+                &bg_cells,
+                &sprite_cells,
+                &ctx,
+                scale,
+            );
+            frontend.present_modern_rgba(&rgba, 256 * scale, 224 * scale);
+            return;
+        }
         let presentation = PresentationContext {
             in_dungeon: game.ram[PLAYER_IS_INDOORS] != 0,
         };
@@ -1416,12 +1490,12 @@ impl PlayRendererBackend for GpuPlayRenderer {
 fn play_renderer_from_env() -> Box<dyn PlayRendererBackend> {
     match env::var("ZELDA3_RENDER_BACKEND") {
         Ok(value) if value.eq_ignore_ascii_case("cpu") => Box::new(CpuPlayRenderer),
-        Ok(value) if value.eq_ignore_ascii_case("gpu") => Box::new(GpuPlayRenderer),
+        Ok(value) if value.eq_ignore_ascii_case("gpu") => Box::new(GpuPlayRenderer::new()),
         Ok(value) => {
             eprintln!("unknown ZELDA3_RENDER_BACKEND={value:?}; expected cpu or gpu");
             process::exit(2);
         }
-        Err(_) => Box::new(GpuPlayRenderer),
+        Err(_) => Box::new(GpuPlayRenderer::new()),
     }
 }
 
@@ -1452,7 +1526,18 @@ fn run_play_with_state(mut game: ZeldaState) {
     };
     // ZELDA3_RENDERER=modern (or modern-compare) routes the live present through the
     // modern (software) live-VRAM render path; default Classic = unchanged wgpu PPU.
-    let renderer_mode = renderer::RendererMode::parse(env::var("ZELDA3_RENDERER").ok().as_deref());
+    // `assets-anim` (the off-VRAM sources+overrides path `GpuPlayRenderer` builds
+    // above) is also Modern here: `RendererMode::parse` only recognizes
+    // "modern"/"modern-compare" (it's shared with the offline compare harness,
+    // which tracks assets-anim separately), but the live present still needs
+    // Modern's fallback (`FrameRenderer::render_modern_frame`, N× VRAM-decode)
+    // for Mode-7 frames and for any frame the atlas doesn't cover.
+    let renderer_env = env::var("ZELDA3_RENDERER").ok();
+    let renderer_mode = if renderer_env.as_deref() == Some("assets-anim") {
+        renderer::RendererMode::Modern
+    } else {
+        renderer::RendererMode::parse(renderer_env.as_deref())
+    };
     frontend.set_renderer_mode(renderer_mode);
     let mut frame = vec![0u8; width as usize * height as usize * 4];
     let audio_samples = frontend.audio_samples_per_frame();
