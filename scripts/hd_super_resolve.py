@@ -58,10 +58,10 @@ def _build_transformer_net():
         def __init__(self, in_c, out_c, kernel_size, stride):
             super().__init__()
             self.pad = torch.nn.ReflectionPad2d(kernel_size // 2)
-            self.conv = torch.nn.Conv2d(in_c, out_c, kernel_size, stride)
+            self.conv2d = torch.nn.Conv2d(in_c, out_c, kernel_size, stride)
 
         def forward(self, x):
-            return self.conv(self.pad(x))
+            return self.conv2d(self.pad(x))
 
     class ResidualBlock(torch.nn.Module):
         def __init__(self, ch):
@@ -81,11 +81,11 @@ def _build_transformer_net():
             super().__init__()
             self.upsample = upsample
             self.pad = torch.nn.ReflectionPad2d(kernel_size // 2)
-            self.conv = torch.nn.Conv2d(in_c, out_c, kernel_size, stride)
+            self.conv2d = torch.nn.Conv2d(in_c, out_c, kernel_size, stride)
 
         def forward(self, x):
             x = torch.nn.functional.interpolate(x, mode="nearest", scale_factor=self.upsample)
-            return self.conv(self.pad(x))
+            return self.conv2d(self.pad(x))
 
     class TransformerNet(torch.nn.Module):
         def __init__(self):
@@ -162,7 +162,8 @@ def main():
     ap.add_argument("--in", dest="indir", default="hd_art/capture")
     ap.add_argument("--out", dest="outdir", default="hd_art/sr")
     ap.add_argument("--scale", type=int, default=4)
-    ap.add_argument("--model", choices=["anime", "photo"], default="anime")
+    ap.add_argument("--model", choices=["anime", "photo", "nearest"], default="anime",
+                    help="'nearest' skips Real-ESRGAN (plain block upscale) — no basicsr/realesrgan dep")
     ap.add_argument("--style", choices=("none",) + STYLES, default="none",
                     help="apply fast neural style transfer after SR (makes overrides obviously different art)")
     ap.add_argument("--style-weights", default=None,
@@ -192,7 +193,10 @@ def main():
         return
 
     os.makedirs(args.outdir, exist_ok=True)
-    run = _load_model(args.scale, args.model, args.cache)
+    if args.model == "nearest":
+        run = lambda arr: _nearest(arr, args.scale)
+    else:
+        run = _load_model(args.scale, args.model, args.cache)
     stylize = _load_style(args.style, args.cache, args.style_weights) if args.style != "none" else None
     frames = [f for f in sorted(glob.glob(os.path.join(args.indir, "frame_*.png")))
               if "reference_palette" not in os.path.basename(f)]
