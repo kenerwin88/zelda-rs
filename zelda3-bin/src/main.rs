@@ -247,6 +247,10 @@ fn main() {
         run_dump_hd_capture(&args[2..]);
         return;
     }
+    if args.get(1).map(String::as_str) == Some("--slice-hd-cells") {
+        run_slice_hd_cells(&args[2..]);
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("--compare-lockstep-render") {
         run_compare_lockstep_render(&args[2..]);
         return;
@@ -10804,6 +10808,160 @@ fn run_dump_hd_capture(args: &[String]) {
         "dumped hd capture: {captured}/{} frame(s) -> {OUT_DIR}/",
         targets.len()
     );
+}
+
+/// Assemble the HD-art override manifest from a Task-3 capture + a Task-4 super-
+/// resolution pass (Task 5 of the HD-art-via-ML-super-resolution pipeline). For each
+/// `hd_art/capture/frame_<n>.map.json` (ascending by `n`, so the first frame a source
+/// key appears in wins — deterministic keep-first), crops that frame's matching
+/// `hd_art/sr/frame_<n>.x<scale>.png` at each placement's `(x,y,w,h)` (scaled up by
+/// `scale`, via [`renderer::hd_authoring::slice_hd_cell`]) and writes one PNG per
+/// unique source key into `hd_art/cells/`. Finishes by writing `hd_art/manifest.json`
+/// (`ModernHdOverrides::load_manifest`'s format) referencing the reference palette +
+/// every cell written.
+///
+/// This does not touch the render/parity path — it's a standalone offline tool.
+///
+/// Usage: `zelda3 --slice-hd-cells [scale]` (default 4; must match the scale the SR
+/// frames in `hd_art/sr/` were generated at).
+fn run_slice_hd_cells(args: &[String]) {
+    use renderer::hd_authoring::{slice_hd_cell, HdPlacement};
+    use std::collections::HashSet;
+
+    let scale: u32 = args.first().and_then(|s| s.parse().ok()).unwrap_or(4);
+
+    const CAPTURE_DIR: &str = "hd_art/capture";
+    const SR_DIR: &str = "hd_art/sr";
+    const CELLS_DIR: &str = "hd_art/cells";
+    if let Err(e) = fs::create_dir_all(CELLS_DIR) {
+        eprintln!("failed to create {CELLS_DIR}: {e}");
+        process::exit(1);
+    }
+
+    // Collect capture frame numbers from `frame_<n>.map.json`, sorted ascending so the
+    // keep-first dedup below is deterministic regardless of directory-listing order.
+    let mut frame_nums: Vec<u32> = match fs::read_dir(CAPTURE_DIR) {
+        Ok(entries) => entries
+            .filter_map(Result::ok)
+            .filter_map(|entry| {
+                let name = entry.file_name();
+                let name = name.to_str()?;
+                let n = name.strip_prefix("frame_")?.strip_suffix(".map.json")?;
+                n.parse::<u32>().ok()
+            })
+            .collect(),
+        Err(e) => {
+            eprintln!("failed to read {CAPTURE_DIR}: {e}");
+            process::exit(1);
+        }
+    };
+    frame_nums.sort_unstable();
+
+    let mut written_keys: HashSet<String> = HashSet::new();
+    let mut written: Vec<(String, String)> = Vec::new();
+
+    for n in frame_nums {
+        let map_path = format!("{CAPTURE_DIR}/frame_{n}.map.json");
+        let placements: Vec<HdPlacement> = match fs::read(&map_path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        {
+            Some(p) => p,
+            None => {
+                eprintln!("[warn] failed to read/parse {map_path}; skipping frame {n}");
+                continue;
+            }
+        };
+
+        let sr_path = format!("{SR_DIR}/frame_{n}.x{scale}.png");
+        let (sr, sr_w, sr_h) = match decode_rgba_png(Path::new(&sr_path)) {
+            Some(decoded) => decoded,
+            None => {
+                eprintln!("[warn] SR frame {sr_path} missing/unreadable; skipping frame {n}");
+                continue;
+            }
+        };
+
+        for p in &placements {
+            if written_keys.contains(&p.key) {
+                continue;
+            }
+            if u64::from_str_radix(p.key.trim_start_matches("0x"), 16).is_err() {
+                eprintln!("[warn] bad placement key {:?}; skipping", p.key);
+                continue;
+            }
+            let Some(cell) = slice_hd_cell(&sr, sr_w, sr_h, p.x, p.y, p.w, p.h, scale) else {
+                continue;
+            };
+            let rel_path = format!("cells/{}.png", p.key);
+            let cell_path = format!("{CELLS_DIR}/{}.png", p.key);
+            if let Err(e) = write_rgba_frame_png(
+                Path::new(&cell_path),
+                &cell,
+                p.w as u32 * scale,
+                p.h as u32 * scale,
+            ) {
+                eprintln!("failed to write {cell_path}: {e}");
+                process::exit(1);
+            }
+            written_keys.insert(p.key.clone());
+            written.push((p.key.clone(), rel_path));
+        }
+    }
+
+    #[derive(serde::Serialize)]
+    struct OutManifest {
+        reference_palette: String,
+        overrides: Vec<OutOverride>,
+    }
+    #[derive(serde::Serialize)]
+    struct OutOverride {
+        key: String,
+        rgba: String,
+    }
+
+    let overrides: Vec<OutOverride> = written
+        .iter()
+        .map(|(k, path)| OutOverride { key: k.clone(), rgba: path.clone() })
+        .collect();
+    let manifest = OutManifest {
+        reference_palette: "capture/reference_palette.png".into(),
+        overrides,
+    };
+    if let Err(e) = fs::write(
+        "hd_art/manifest.json",
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    ) {
+        eprintln!("failed to write hd_art/manifest.json: {e}");
+        process::exit(1);
+    }
+    println!("wrote {} cells + hd_art/manifest.json", written.len());
+}
+
+/// Decode any RGBA8 PNG to `(rgba, width, height)`; RGB is expanded to RGBA (alpha
+/// 0xff). Used by [`run_slice_hd_cells`] to read the super-resolved source frames.
+fn decode_rgba_png(path: &Path) -> Option<(Vec<u8>, u32, u32)> {
+    let file = fs::File::open(path).ok()?;
+    let decoder = png::Decoder::new(std::io::BufReader::new(file));
+    let mut reader = decoder.read_info().ok()?;
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf).ok()?;
+    let bytes = &buf[..info.buffer_size()];
+    let rgba = match (info.color_type, info.bit_depth) {
+        (png::ColorType::Rgba, png::BitDepth::Eight) => bytes.to_vec(),
+        (png::ColorType::Rgb, png::BitDepth::Eight) => {
+            let mut rgba = Vec::with_capacity((info.width * info.height * 4) as usize);
+            for rgb in bytes.chunks_exact(3) {
+                rgba.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 0xff]);
+            }
+            rgba
+        }
+        (color, depth) => {
+            eprintln!("{}: unsupported PNG format {color:?}/{depth:?}", path.display());
+            return None;
+        }
+    };
+    Some((rgba, info.width, info.height))
 }
 
 /// Walk the combined-route replay and extract a REAL colored sprite sheet: every
