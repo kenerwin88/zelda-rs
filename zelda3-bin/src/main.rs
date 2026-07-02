@@ -1417,11 +1417,14 @@ fn effective_play_renderer() -> String {
 struct GpuPlayRenderer {
     source_atlas: Option<renderer::modern_source_atlas::ModernSourceAtlas>,
     hd_overrides: Option<renderer::modern_hd_overrides::ModernHdOverrides>,
+    atlas_gpu: bool,
 }
 
 impl GpuPlayRenderer {
     fn new() -> Self {
-        let assets_anim_mode = effective_play_renderer() == "assets-anim";
+        let mode = effective_play_renderer();
+        let assets_anim_mode = mode == "assets-anim" || mode == "assets-anim-gpu";
+        let atlas_gpu = mode == "assets-anim-gpu";
         let source_atlas = if assets_anim_mode {
             match renderer::modern_source_atlas::load_modern_source_atlas(Path::new(".")) {
                 Ok(atlas) => Some(atlas),
@@ -1439,6 +1442,7 @@ impl GpuPlayRenderer {
         Self {
             source_atlas,
             hd_overrides,
+            atlas_gpu,
         }
     }
 }
@@ -1471,11 +1475,12 @@ impl PlayRendererBackend for GpuPlayRenderer {
                 .iter()
                 .map(|s| (s.kind, s.pack, s.tile_off))
                 .collect();
-            let (mut modern, bg_cells) = renderer::modern_extract::extract_modern_frame_from_sources(
-                &gpu_frame,
-                &src_slice[..],
-                atlas,
-            );
+            let (mut modern, bg_cells) =
+                renderer::modern_extract::extract_modern_frame_from_sources(
+                    &gpu_frame,
+                    &src_slice[..],
+                    atlas,
+                );
             let (sprite_cells, sprites) =
                 renderer::modern_extract::extract_modern_sprites_from_sources(
                     &gpu_frame,
@@ -1483,6 +1488,10 @@ impl PlayRendererBackend for GpuPlayRenderer {
                     atlas,
                 );
             modern.index_sprites = sprites;
+            if self.atlas_gpu {
+                frontend.present_modern_gpu(&modern, &bg_cells, &sprite_cells);
+                return;
+            }
             let ctx = match &self.hd_overrides {
                 Some(store) => renderer::modern_hd_overrides::HdOverrideCtx::new(store),
                 None => renderer::modern_hd_overrides::HdOverrideCtx::disabled(),
@@ -1551,7 +1560,7 @@ fn run_play_with_state(mut game: ZeldaState) {
     // still needs Modern's fallback (`FrameRenderer::render_modern_frame`, N×
     // VRAM-decode) for Mode-7 frames and for any frame the atlas doesn't cover.
     let renderer_env = effective_play_renderer();
-    let renderer_mode = if renderer_env == "assets-anim" {
+    let renderer_mode = if renderer_env == "assets-anim" || renderer_env == "assets-anim-gpu" {
         renderer::RendererMode::Modern
     } else {
         renderer::RendererMode::parse(Some(renderer_env.as_str()))
