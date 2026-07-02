@@ -27,3 +27,6 @@ external/mesen2-oracle/local/
 external/bsnes-libretro/local/
 
 .cache/parity-golden/
+
+# HD-art authoring outputs + model weights (regenerable; never commit)
+/hd_art/
