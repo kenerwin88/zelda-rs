@@ -1396,12 +1396,24 @@ impl PlayRendererBackend for CpuPlayRenderer {
     }
 }
 
+/// Effective renderer for the INTERACTIVE play path only. Unset now defaults to
+/// `assets-anim` (the off-VRAM PNG-atlas compositor — byte-identical to the
+/// classic wgpu PPU at scale 1, proven per-frame by `--modern-index-compare`);
+/// set `ZELDA3_RENDERER=classic` to opt back into the wgpu PPU path. This governs
+/// only the live present. The replay/parity harness reads `ZELDA3_RENDERER`
+/// directly (see the `assets_anim_mode` gate in `run_replay_save`) and still
+/// defaults to classic, so the render-hash/fingerprint gates are unaffected.
+fn effective_play_renderer() -> String {
+    env::var("ZELDA3_RENDERER").unwrap_or_else(|_| "assets-anim".to_string())
+}
+
 /// Off-VRAM (assets-anim) source atlas + HD override store for the live modern
-/// present path, loaded once. `ZELDA3_RENDERER=assets-anim` is the only mode
-/// that loads the atlas (mirrors the `--modern-index-compare` harness's
-/// `assets_anim_mode` gate below) — `source_atlas` is `None` for plain
-/// `modern`/`modern-compare`/`classic`, so those keep rendering (VRAM-decoded,
-/// no HD overrides) through `FrameRenderer::render_modern_frame`'s fallback.
+/// present path, loaded once. The atlas loads for the default (unset) and explicit
+/// `assets-anim` interactive modes (see `effective_play_renderer`) — `source_atlas`
+/// is `None` for explicit `modern`/`modern-compare`/`classic`, so those keep
+/// rendering (VRAM-decoded, no HD overrides) through
+/// `FrameRenderer::render_modern_frame`'s fallback. If the atlas fails to load it
+/// falls back gracefully to the classic path.
 struct GpuPlayRenderer {
     source_atlas: Option<renderer::modern_source_atlas::ModernSourceAtlas>,
     hd_overrides: Option<renderer::modern_hd_overrides::ModernHdOverrides>,
@@ -1409,9 +1421,7 @@ struct GpuPlayRenderer {
 
 impl GpuPlayRenderer {
     fn new() -> Self {
-        let assets_anim_mode = env::var("ZELDA3_RENDERER")
-            .map(|v| v == "assets-anim")
-            .unwrap_or(false);
+        let assets_anim_mode = effective_play_renderer() == "assets-anim";
         let source_atlas = if assets_anim_mode {
             match renderer::modern_source_atlas::load_modern_source_atlas(Path::new(".")) {
                 Ok(atlas) => Some(atlas),
@@ -1532,19 +1542,19 @@ fn run_play_with_state(mut game: ZeldaState) {
             process::exit(1);
         }
     };
-    // ZELDA3_RENDERER=modern (or modern-compare) routes the live present through the
-    // modern (software) live-VRAM render path; default Classic = unchanged wgpu PPU.
-    // `assets-anim` (the off-VRAM sources+overrides path `GpuPlayRenderer` builds
-    // above) is also Modern here: `RendererMode::parse` only recognizes
-    // "modern"/"modern-compare" (it's shared with the offline compare harness,
-    // which tracks assets-anim separately), but the live present still needs
-    // Modern's fallback (`FrameRenderer::render_modern_frame`, N× VRAM-decode)
-    // for Mode-7 frames and for any frame the atlas doesn't cover.
-    let renderer_env = env::var("ZELDA3_RENDERER").ok();
-    let renderer_mode = if renderer_env.as_deref() == Some("assets-anim") {
+    // Default (unset) now selects `assets-anim` (the off-VRAM PNG-atlas path
+    // `GpuPlayRenderer` builds above); `ZELDA3_RENDERER=classic` opts back into the
+    // wgpu PPU. `ZELDA3_RENDERER=modern`/`modern-compare` route through the modern
+    // (software) live-VRAM path. `assets-anim` maps to Modern here: `RendererMode::
+    // parse` only recognizes "modern"/"modern-compare" (it's shared with the offline
+    // compare harness, which tracks assets-anim separately), but the live present
+    // still needs Modern's fallback (`FrameRenderer::render_modern_frame`, N×
+    // VRAM-decode) for Mode-7 frames and for any frame the atlas doesn't cover.
+    let renderer_env = effective_play_renderer();
+    let renderer_mode = if renderer_env == "assets-anim" {
         renderer::RendererMode::Modern
     } else {
-        renderer::RendererMode::parse(renderer_env.as_deref())
+        renderer::RendererMode::parse(Some(renderer_env.as_str()))
     };
     frontend.set_renderer_mode(renderer_mode);
     let mut frame = vec![0u8; width as usize * height as usize * 4];
