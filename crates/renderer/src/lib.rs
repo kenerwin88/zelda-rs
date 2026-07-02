@@ -29,6 +29,7 @@ pub mod modern_palette;
 pub mod modern_software;
 pub mod modern_source_atlas;
 pub mod modern_sprite_atlas;
+pub mod modern_variant_atlas;
 pub mod post_process;
 pub mod renderer_mode;
 pub mod sprite_renderer;
