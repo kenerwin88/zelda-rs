@@ -11,6 +11,7 @@ from rgba_variant_atlas import (
     RgbaVariant,
     VariantKey,
     pack_rgba_variants,
+    classify_palette_policy,
     rgba_tile_from_indices,
     variant_id,
     write_rom_variant_atlas,
@@ -158,6 +159,13 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             self.assertTrue(
                 any(entry["palette"] == "palette_main_spr" for entry in manifest["entries"])
             )
+
+    def test_known_static_palettes_are_stable(self) -> None:
+        self.assertEqual(classify_palette_policy("palette_main_spr"), "stable")
+        self.assertEqual(classify_palette_policy("palette_dung_bg_main"), "stable")
+
+    def test_unknown_palette_requires_live_palette_until_proven(self) -> None:
+        self.assertEqual(classify_palette_policy("palette_runtime_flash"), "requires_live_palette")
 
 
 if __name__ == "__main__":

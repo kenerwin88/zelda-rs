@@ -36,6 +36,7 @@ class AtlasEntry:
     rect: tuple[int, int, int, int]
     sha1: str
     duplicate_of: str | None
+    dynamic_policy: str
 
 
 def variant_id(key: VariantKey) -> str:
@@ -43,6 +44,15 @@ def variant_id(key: VariantKey) -> str:
         f"{key.source_kind}:{key.asset}:pack{key.pack}:tile{key.tile}:"
         f"{key.bpp}bpp:{key.palette}:row{key.palette_row}"
     )
+
+
+def classify_palette_policy(palette_name: str) -> str:
+    stable_palettes = {
+        "palette_main_spr",
+        "palette_dung_bg_main",
+        "palette_overworld_bg_main",
+    }
+    return "stable" if palette_name in stable_palettes else "requires_live_palette"
 
 
 def rgba_tile_from_indices(
@@ -87,9 +97,12 @@ def pack_rgba_variants(
             raise ValueError("each RGBA variant must be one 8x8 RGBA tile")
         digest = hashlib.sha1(variant.pixels).hexdigest()
         entry_id = variant_id(variant.key)
+        dynamic_policy = classify_palette_policy(variant.key.palette)
         if digest in sha_to_rect:
             original_id, rect = sha_to_rect[digest]
-            entries.append(AtlasEntry(entry_id, variant.key, rect, digest, original_id))
+            entries.append(
+                AtlasEntry(entry_id, variant.key, rect, digest, original_id, dynamic_policy)
+            )
             continue
 
         unique_index = len(unique_pixels)
@@ -98,7 +111,7 @@ def pack_rgba_variants(
         rect = (x, y, 8, 8)
         unique_pixels.append(variant.pixels)
         sha_to_rect[digest] = (entry_id, rect)
-        entries.append(AtlasEntry(entry_id, variant.key, rect, digest, None))
+        entries.append(AtlasEntry(entry_id, variant.key, rect, digest, None, dynamic_policy))
 
     rows = max(1, (len(unique_pixels) + columns - 1) // columns)
     width = columns * 8
@@ -202,6 +215,7 @@ def _entry_to_json(entry: AtlasEntry) -> dict[str, object]:
         "rect": list(entry.rect),
         "sha1": entry.sha1,
         "duplicate_of": entry.duplicate_of,
+        "dynamic_policy": entry.dynamic_policy,
     }
 
 
