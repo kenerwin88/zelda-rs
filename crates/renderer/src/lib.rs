@@ -1992,6 +1992,11 @@ pub struct FrameRenderer {
     /// building their own N× frame (the sources+overrides path, which needs
     /// the CHR-source table this renderer can't reach) — agree on one value.
     hd_scale: modern_hd_overrides::HdScale,
+    /// Lazily built on first `present_modern_gpu` call (assets-anim-gpu mode).
+    modern_gpu: Option<ModernGpuCompositor>,
+    /// Offscreen Rgba8Unorm 256x224 target the compositor renders into before
+    /// it is GPU-copied into `game_texture` and blit by `render()`.
+    modern_gpu_target: Option<(wgpu::Texture, wgpu::TextureView)>,
 }
 
 impl FrameRenderer {
@@ -2124,6 +2129,8 @@ impl FrameRenderer {
             viewport,
             log_viewport: env::var_os("ZELDA3_RENDER_VIEWPORT_LOG").is_some(),
             hd_scale,
+            modern_gpu: None,
+            modern_gpu_target: None,
         }
     }
 
@@ -2393,6 +2400,89 @@ impl FrameRenderer {
         height: u32,
     ) -> Result<(), RenderError> {
         self.upload_rgba8(rgba, width, height);
+        self.render()
+    }
+
+    /// Live GPU present of the PNG-atlas path (`ZELDA3_RENDERER=assets-anim-gpu`).
+    /// Renders the compositor into an offscreen 256x224 target, GPU-copies it
+    /// into `game_texture`, then blits via the standard presentation path. No
+    /// CPU readback.
+    pub fn present_modern_gpu(
+        &mut self,
+        frame: &modern_frame::ModernFrame,
+        bg_cells: &[modern_index_atlas::ModernIndexTile],
+        sprite_cells: &[modern_index_atlas::ModernIndexTile],
+    ) -> Result<(), RenderError> {
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        if self.modern_gpu.is_none() {
+            self.modern_gpu = Some(ModernGpuCompositor::new(&self.device, &self.queue, format));
+        }
+        if self.modern_gpu_target.is_none() {
+            let target = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("modern_gpu_live_target"),
+                size: wgpu::Extent3d {
+                    width: 256,
+                    height: 224,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            let view = target.create_view(&wgpu::TextureViewDescriptor::default());
+            self.modern_gpu_target = Some((target, view));
+        }
+
+        self.game_texture.ensure_size(
+            &self.device,
+            &self.bind_group_layout,
+            &self.presentation_buf,
+            self.presentation_params.presentation,
+            256,
+            224,
+        );
+
+        let compositor = self.modern_gpu.as_ref().expect("compositor built above");
+        let (target_texture, target_view) =
+            self.modern_gpu_target.as_ref().expect("target built above");
+        compositor.render(
+            &self.device,
+            &self.queue,
+            frame,
+            bg_cells,
+            sprite_cells,
+            target_view,
+        );
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("modern_gpu_copy_to_game_texture"),
+            });
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: target_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.game_texture.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: 256,
+                height: 224,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([encoder.finish()]);
+
         self.render()
     }
 
