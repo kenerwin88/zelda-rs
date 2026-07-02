@@ -1114,6 +1114,32 @@ pub fn render_modern_frame_full_with_overrides(
     finalize_frame(&main, &sub, frame)
 }
 
+/// Block-replicate an RGBA frame to `scale`× (nearest upscale): each source pixel
+/// becomes a `scale×scale` block. Used for the mosaic/per-scanline-scroll fallback,
+/// which renders natively then upscales to match the HD frame size.
+pub fn upscale_rgba_nearest(rgba: &[u8], width: usize, height: usize, scale: usize) -> Vec<u8> {
+    if scale <= 1 {
+        return rgba.to_vec();
+    }
+    let out_w = width * scale;
+    let mut out = vec![0u8; out_w * height * scale * 4];
+    for sy in 0..height {
+        for sx in 0..width {
+            let src = (sy * width + sx) * 4;
+            let px: [u8; 4] = [rgba[src], rgba[src + 1], rgba[src + 2], rgba[src + 3]];
+            for dy in 0..scale {
+                let oy = sy * scale + dy;
+                for dx in 0..scale {
+                    let ox = sx * scale + dx;
+                    let o = (oy * out_w + ox) * 4;
+                    out[o..o + 4].copy_from_slice(&px);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Shared color-math + master-brightness resolve for a composited MAIN/SUB screen
 /// pair, byte-identical to the classic post-process shader. Also emits the
 /// `ZELDA3_BITMAP` winning-layer diagnostic for the main screen. Used by both the
@@ -2298,5 +2324,22 @@ mod tests {
             "un-flipped HD sample must read source (7,0) (detail_r=1.0 -> final_r=24); \
              a wrong sample at screen/source (0,0) would give final_r=0"
         );
+    }
+
+    #[test]
+    fn upscale_nearest_block_replicates() {
+        // 2×1 source, scale 2 → 4×2 output; each pixel a 2×2 block.
+        let src = vec![10, 20, 30, 40, /*px1*/ 50, 60, 70, 80];
+        let out = upscale_rgba_nearest(&src, 2, 1, 2);
+        assert_eq!(out.len(), 4 * 2 * 4);
+        // row 0: px0 px0 px1 px1
+        assert_eq!(&out[0..4], &[10, 20, 30, 40]);
+        assert_eq!(&out[4..8], &[10, 20, 30, 40]);
+        assert_eq!(&out[8..12], &[50, 60, 70, 80]);
+        // row 1 mirrors row 0
+        let row1 = 4 * 4;
+        assert_eq!(&out[row1..row1 + 4], &[10, 20, 30, 40]);
+        // scale 1 is identity
+        assert_eq!(upscale_rgba_nearest(&src, 2, 1, 1), src);
     }
 }
