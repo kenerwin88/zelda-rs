@@ -283,6 +283,32 @@ impl NativeFrontend {
         self.sleep_after_present();
     }
 
+    /// Present a modern PNG-atlas frame fully on the GPU (`assets-anim-gpu`).
+    /// The caller builds `(ModernFrame, bg_cells, sprite_cells)` via the source
+    /// extractor because that path needs the CHR-source table this crate can't
+    /// reach.
+    pub fn present_modern_gpu(
+        &mut self,
+        frame: &renderer::modern_frame::ModernFrame,
+        bg_cells: &[renderer::modern_index_atlas::ModernIndexTile],
+        sprite_cells: &[renderer::modern_index_atlas::ModernIndexTile],
+    ) {
+        if let Some(renderer) = &mut self.handler.renderer {
+            let result = renderer.present_modern_gpu(frame, bg_cells, sprite_cells);
+            match result {
+                Ok(()) => {}
+                Err(RenderError::SurfaceReconfigureNeeded) => {
+                    if let Some(window) = &self.handler.window {
+                        renderer.resize(window.inner_size());
+                    }
+                }
+                Err(RenderError::SurfaceSkipped) => {}
+                Err(RenderError::Fatal(e)) => eprintln!("render error: {e}"),
+            }
+        }
+        self.sleep_after_present();
+    }
+
     pub fn set_menu_open(&mut self, open: bool) {
         self.handler.menu_open = open;
         if open {
