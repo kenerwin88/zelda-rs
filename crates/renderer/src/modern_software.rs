@@ -233,12 +233,20 @@ fn composite_mode1(
     // so this is passed for the sub composite too.
     windowed: u8,
     ctx: &crate::modern_hd_overrides::HdOverrideCtx,
+    // Output-buffer width (`256 * scale`) and integer render `scale`. At `scale == 1`
+    // this is the native 256-wide path, byte-identical to before; at `scale > 1` the
+    // simple (non-mosaic, non-scanline-scroll) branch renders at N× — the mosaic and
+    // scanline branches are only reached at `scale == 1` (the N× entry routes complex
+    // frames to a native render + nearest-upscale), so they pass native dims onward.
+    out_width: usize,
+    scale: usize,
 ) {
     // SNES mosaic ($2106): active only when the block size is >1 AND at least one
     // ENABLED BG layer (1-3) has its mosaic bit set. When inactive, run the existing
     // (pixel-exact) path UNCHANGED so normal frames are byte-for-byte identical.
     let mosaic_active = frame.mosaic_size > 1 && (frame.mosaic_enabled & enabled & 0x07) != 0;
     if mosaic_active {
+        // Native-only path (reached only at scale == 1).
         composite_mode1_mosaic(
             screen, frame, bg_cells, sprite_cells, enabled, main_tm, windowed, ctx,
         );
@@ -277,44 +285,56 @@ fn composite_mode1(
     // against each other. Compositing in priority passes (as before) wrongly let a
     // higher-priority-attr but higher-index sprite overwrite a lower-index one.
     let obj = if obj_on {
-        Some(resolve_obj_layer(frame, sprite_cells, screen.c5.len(), ctx))
+        Some(resolve_obj_layer(frame, sprite_cells, screen.c5.len(), ctx, out_width, scale))
     } else {
         None
     };
     // BG3-lo
     if bg_on(2) {
-        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, false, main_tm, windowed, ctx);
+        composite_index_tiles_c5(
+            screen, &bg[2], bg_cells, frame, false, main_tm, windowed, ctx, out_width, scale,
+        );
     }
     // OBJ priority 0, 1 (below BG2/BG1 low)
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 0, main_tm, frame, windowed);
-        paint_obj_priority(screen, o, 1, main_tm, frame, windowed);
+        paint_obj_priority(screen, o, 0, main_tm, frame, windowed, out_width, scale);
+        paint_obj_priority(screen, o, 1, main_tm, frame, windowed, out_width, scale);
     }
     // BG2-lo, BG1-lo
     if bg_on(1) {
-        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, false, main_tm, windowed, ctx);
+        composite_index_tiles_c5(
+            screen, &bg[1], bg_cells, frame, false, main_tm, windowed, ctx, out_width, scale,
+        );
     }
     if bg_on(0) {
-        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, false, main_tm, windowed, ctx);
+        composite_index_tiles_c5(
+            screen, &bg[0], bg_cells, frame, false, main_tm, windowed, ctx, out_width, scale,
+        );
     }
     // OBJ priority 2 (above BG2/BG1 low)
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 2, main_tm, frame, windowed);
+        paint_obj_priority(screen, o, 2, main_tm, frame, windowed, out_width, scale);
     }
     // BG2-hi, BG1-hi
     if bg_on(1) {
-        composite_index_tiles_c5(screen, &bg[1], bg_cells, frame, true, main_tm, windowed, ctx);
+        composite_index_tiles_c5(
+            screen, &bg[1], bg_cells, frame, true, main_tm, windowed, ctx, out_width, scale,
+        );
     }
     if bg_on(0) {
-        composite_index_tiles_c5(screen, &bg[0], bg_cells, frame, true, main_tm, windowed, ctx);
+        composite_index_tiles_c5(
+            screen, &bg[0], bg_cells, frame, true, main_tm, windowed, ctx, out_width, scale,
+        );
     }
     // OBJ priority 3 (above BG2/BG1 high)
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 3, main_tm, frame, windowed);
+        paint_obj_priority(screen, o, 3, main_tm, frame, windowed, out_width, scale);
     }
     // BG3-hi
     if bg_on(2) {
-        composite_index_tiles_c5(screen, &bg[2], bg_cells, frame, true, main_tm, windowed, ctx);
+        composite_index_tiles_c5(
+            screen, &bg[2], bg_cells, frame, true, main_tm, windowed, ctx, out_width, scale,
+        );
     }
 }
 
@@ -494,8 +514,10 @@ fn composite_mode1_mosaic(
     }
 
     // OBJ resolved once (sprites are not mosaiced), same as the non-mosaic path.
+    // Mosaic is a native-only path (scale == 1), so OBJ uses native dims.
+    let native_w = usize::from(MODERN_FRAME_WIDTH);
     let obj = if obj_on {
-        Some(resolve_obj_layer(frame, sprite_cells, len, ctx))
+        Some(resolve_obj_layer(frame, sprite_cells, len, ctx, native_w, 1))
     } else {
         None
     };
@@ -506,8 +528,8 @@ fn composite_mode1_mosaic(
         paint_bg_buf(screen, b, 2, false, main_tm, frame, windowed);
     }
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 0, main_tm, frame, windowed);
-        paint_obj_priority(screen, o, 1, main_tm, frame, windowed);
+        paint_obj_priority(screen, o, 0, main_tm, frame, windowed, native_w, 1);
+        paint_obj_priority(screen, o, 1, main_tm, frame, windowed, native_w, 1);
     }
     if let Some(b) = &bufs[1] {
         paint_bg_buf(screen, b, 1, false, main_tm, frame, windowed);
@@ -516,7 +538,7 @@ fn composite_mode1_mosaic(
         paint_bg_buf(screen, b, 0, false, main_tm, frame, windowed);
     }
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 2, main_tm, frame, windowed);
+        paint_obj_priority(screen, o, 2, main_tm, frame, windowed, native_w, 1);
     }
     if let Some(b) = &bufs[1] {
         paint_bg_buf(screen, b, 1, true, main_tm, frame, windowed);
@@ -525,7 +547,7 @@ fn composite_mode1_mosaic(
         paint_bg_buf(screen, b, 0, true, main_tm, frame, windowed);
     }
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 3, main_tm, frame, windowed);
+        paint_obj_priority(screen, o, 3, main_tm, frame, windowed, native_w, 1);
     }
     if let Some(b) = &bufs[2] {
         paint_bg_buf(screen, b, 2, true, main_tm, frame, windowed);
@@ -700,8 +722,10 @@ fn composite_mode1_scanline_scroll(
         bufs[l] = Some(buf);
     }
 
+    // Per-scanline-scroll is a native-only path (scale == 1); OBJ uses native dims.
+    let native_w = usize::from(MODERN_FRAME_WIDTH);
     let obj = if obj_on {
-        Some(resolve_obj_layer(frame, sprite_cells, len, ctx))
+        Some(resolve_obj_layer(frame, sprite_cells, len, ctx, native_w, 1))
     } else {
         None
     };
@@ -712,8 +736,8 @@ fn composite_mode1_scanline_scroll(
         paint_bg_buf(screen, b, 2, false, main_tm, frame, windowed);
     }
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 0, main_tm, frame, windowed);
-        paint_obj_priority(screen, o, 1, main_tm, frame, windowed);
+        paint_obj_priority(screen, o, 0, main_tm, frame, windowed, native_w, 1);
+        paint_obj_priority(screen, o, 1, main_tm, frame, windowed, native_w, 1);
     }
     if let Some(b) = &bufs[1] {
         paint_bg_buf(screen, b, 1, false, main_tm, frame, windowed);
@@ -722,7 +746,7 @@ fn composite_mode1_scanline_scroll(
         paint_bg_buf(screen, b, 0, false, main_tm, frame, windowed);
     }
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 2, main_tm, frame, windowed);
+        paint_obj_priority(screen, o, 2, main_tm, frame, windowed, native_w, 1);
     }
     if let Some(b) = &bufs[1] {
         paint_bg_buf(screen, b, 1, true, main_tm, frame, windowed);
@@ -731,7 +755,7 @@ fn composite_mode1_scanline_scroll(
         paint_bg_buf(screen, b, 0, true, main_tm, frame, windowed);
     }
     if let Some(o) = &obj {
-        paint_obj_priority(screen, o, 3, main_tm, frame, windowed);
+        paint_obj_priority(screen, o, 3, main_tm, frame, windowed, native_w, 1);
     }
     if let Some(b) = &bufs[2] {
         paint_bg_buf(screen, b, 2, true, main_tm, frame, windowed);
@@ -756,51 +780,69 @@ fn resolve_obj_layer(
     sprite_cells: &[ModernIndexTile],
     len: usize,
     ctx: &crate::modern_hd_overrides::HdOverrideCtx,
+    out_width: usize,
+    scale: usize,
 ) -> ObjLayer {
-    let width = usize::from(MODERN_FRAME_WIDTH);
     let mut o = ObjLayer {
         c5: vec![[0u8; 3]; len],
         bit: vec![0u8; len],
         prio: vec![0u8; len],
         real: vec![false; len],
     };
+    // Per-tile output footprint in pixels (`8 * scale`); sub-pixel HD sampling maps each
+    // output pixel to an HD texel within this footprint. At scale == 1 this is 8.
+    let fp = (8 * scale) as u32;
     for inst in frame.index_sprites.iter().rev() {
         let cell = match sprite_cells.get(inst.cell_id as usize) {
             Some(c) => c,
             None => continue,
         };
         let ov = ctx.resolve(cell.source_key);
-        for y in 0..8usize {
-            if inst.row_mask & (1 << y) == 0 {
+        for oy in 0..(8 * scale) {
+            let ny = oy / scale; // native texel row 0..8
+            if inst.row_mask & (1 << ny) == 0 {
                 continue; // dropped by the per-scanline OBJ budget
             }
-            for x in 0..8usize {
-                let src_x = if inst.hflip { 7 - x } else { x };
-                let src_y = if inst.vflip { 7 - y } else { y };
+            for ox in 0..(8 * scale) {
+                let nx = ox / scale; // native texel column 0..8
+                // Sprites are NOT flip-baked: read the index at the un-flipped source
+                // texel, exactly as the native path did.
+                let src_x = if inst.hflip { 7 - nx } else { nx };
+                let src_y = if inst.vflip { 7 - ny } else { ny };
                 let index = cell.indices[src_y * 8 + src_x];
                 if index == 0 {
                     continue;
                 }
-                let dst_x = inst.screen_x + x as i16;
-                let dst_y = inst.screen_y + y as i16;
-                if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                let dst_x = inst.screen_x as isize * scale as isize + ox as isize;
+                let dst_y = inst.screen_y as isize * scale as isize + oy as isize;
+                if dst_x < 0
+                    || dst_y < 0
+                    || dst_x >= (256 * scale) as isize
+                    || dst_y >= (224 * scale) as isize
+                {
                     continue;
                 }
+                let (dst_x, dst_y) = (dst_x as usize, dst_y as usize);
                 let cgram_idx = 0x80 + inst.palette as usize * 16 + index as usize;
+                // HD sample coords in SOURCE orientation over the `fp` footprint: the
+                // un-flip mirrors the whole footprint (`fp-1-ox`), so at scale == 1 this
+                // collapses to `src_x`/`src_y` (fp == 8) — the native sampling.
+                let hx = if inst.hflip { fp as usize - 1 - ox } else { ox };
+                let hy = if inst.vflip { fp as usize - 1 - oy } else { oy };
                 let color = match crate::modern_hd_overrides::resolve_pixel_color(
                     index,
                     cgram_idx,
                     frame.cgram_rgba[cgram_idx],
                     ov,
                     ctx.reference(),
-                    src_x as u32,
-                    src_y as u32,
-                    8,
+                    hx as u32,
+                    hy as u32,
+                    fp,
                 ) {
                     Some(c) => c,
                     None => continue,
                 };
-                let i = dst_y as usize * width + dst_x as usize;
+                let i = dst_y * out_width + dst_x;
                 o.c5[i] = [color[0] >> 3, color[1] >> 3, color[2] >> 3];
                 // OBJ color-math only for palettes 4-7 (bit 4); 0-3 use bit 6 (never
                 // in `math_enabled`). See the obj_color_math test.
@@ -823,13 +865,19 @@ fn paint_obj_priority(
     main_tm: Option<&[u8]>,
     frame: &ModernFrame,
     windowed: u8,
+    out_width: usize,
+    scale: usize,
 ) {
-    let width = usize::from(MODERN_FRAME_WIDTH);
     for i in 0..obj.real.len() {
         if obj.real[i] && obj.prio[i] == prio {
+            // Per-scanline TM and window data are NATIVE-length: index them by the
+            // native row/col (`out_y / scale`, `out_x / scale`). At scale == 1 these
+            // collapse to `i / width` / `i % width` — the native indexing.
+            let nrow = (i / out_width) / scale;
+            let ncol = (i % out_width) / scale;
             // Per-scanline OBJ enable (TM bit 4) for the main screen only.
             if let Some(tm) = main_tm {
-                if tm[i / width] & 0x10 == 0 {
+                if tm[nrow] & 0x10 == 0 {
                     continue;
                 }
             }
@@ -838,8 +886,8 @@ fn paint_obj_priority(
                 4,
                 frame.windowsel,
                 windowed,
-                (i % width) as u32,
-                i / width,
+                ncol as u32,
+                nrow,
                 &frame.window_scanlines,
             ) {
                 continue;
@@ -915,10 +963,13 @@ fn composite_index_tiles_c5(
     main_tm: Option<&[u8]>,
     windowed: u8,
     ctx: &crate::modern_hd_overrides::HdOverrideCtx,
+    out_width: usize,
+    scale: usize,
 ) {
-    let width = usize::from(MODERN_FRAME_WIDTH);
     let bit = layer.index;
     let tm_bit = 1u8 << bit; // TM enable bit for this BG layer
+    // Per-tile output footprint in pixels (`8 * scale`); at scale == 1 this is 8.
+    let fp = (8 * scale) as u32;
     for inst in &layer.index_tiles {
         if inst.priority != hi_priority {
             continue;
@@ -928,20 +979,31 @@ fn composite_index_tiles_c5(
             None => continue,
         };
         let ov = ctx.resolve(cell.source_key);
-        for sy in 0..8usize {
-            for sx in 0..8usize {
-                let index = cell.indices[sy * 8 + sx];
+        for oy in 0..(8 * scale) {
+            let nsy = oy / scale; // native texel row 0..8
+            for ox in 0..(8 * scale) {
+                let nsx = ox / scale; // native texel column 0..8
+                let index = cell.indices[nsy * 8 + nsx];
                 if index == 0 {
                     continue; // transparent
                 }
-                let dst_x = inst.screen_x + sx as i16;
-                let dst_y = inst.screen_y + sy as i16;
-                if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                let dst_x = inst.screen_x as isize * scale as isize + ox as isize;
+                let dst_y = inst.screen_y as isize * scale as isize + oy as isize;
+                if dst_x < 0
+                    || dst_y < 0
+                    || dst_x >= (256 * scale) as isize
+                    || dst_y >= (224 * scale) as isize
+                {
                     continue;
                 }
+                let (dst_x, dst_y) = (dst_x as usize, dst_y as usize);
+                // Per-scanline TM and window data are NATIVE-length: index by the native
+                // row/col. At scale == 1 these equal `dst_y`/`dst_x`.
+                let nrow = dst_y / scale;
+                let ncol = dst_x / scale;
                 // Per-scanline BG-layer enable (TM) for the main screen only.
                 if let Some(tm) = main_tm {
-                    if tm[dst_y as usize] & tm_bit == 0 {
+                    if tm[nrow] & tm_bit == 0 {
                         continue;
                     }
                 }
@@ -950,15 +1012,17 @@ fn composite_index_tiles_c5(
                     bit,
                     frame.windowsel,
                     windowed,
-                    dst_x as u32,
-                    dst_y as usize,
+                    ncol as u32,
+                    nrow,
                     &frame.window_scanlines,
                 ) {
                     continue;
                 }
-                // un-flip HD sampling back to source orientation (base index is baked-flipped)
-                let hx = if cell.hflip { 7 - sx } else { sx };
-                let hy = if cell.vflip { 7 - sy } else { sy };
+                // un-flip HD sampling back to source orientation (base index is
+                // baked-flipped) over the `fp` footprint: at scale == 1 this collapses
+                // to `7 - sx` / `sx` (fp == 8) — the native sampling.
+                let hx = if cell.hflip { fp as usize - 1 - ox } else { ox };
+                let hy = if cell.vflip { fp as usize - 1 - oy } else { oy };
                 let cgram_idx = inst.palette as usize * 16 + index as usize;
                 let color = match crate::modern_hd_overrides::resolve_pixel_color(
                     index,
@@ -968,12 +1032,12 @@ fn composite_index_tiles_c5(
                     ctx.reference(),
                     hx as u32,
                     hy as u32,
-                    8,
+                    fp,
                 ) {
                     Some(c) => c,
                     None => continue,
                 };
-                let i = dst_y as usize * width + dst_x as usize;
+                let i = dst_y * out_width + dst_x;
                 screen.c5[i] = [color[0] >> 3, color[1] >> 3, color[2] >> 3];
                 screen.bit[i] = bit;
                 screen.real[i] = true;
@@ -1095,6 +1159,8 @@ pub fn render_modern_frame_full_with_overrides(
         Some(&frame.main_tm_scanlines),
         frame.screen_windowed_main,
         ctx,
+        width,
+        1,
     );
 
     // SUB composite: same Mode 1 z-order over the sub-screen enable mask. The sub
@@ -1109,9 +1175,11 @@ pub fn render_modern_frame_full_with_overrides(
         None,
         frame.screen_windowed_sub,
         ctx,
+        width,
+        1,
     );
 
-    finalize_frame(&main, &sub, frame)
+    finalize_frame(&main, &sub, frame, width, 1)
 }
 
 /// Block-replicate an RGBA frame to `scale`× (nearest upscale): each source pixel
@@ -1145,8 +1213,14 @@ pub fn upscale_rgba_nearest(rgba: &[u8], width: usize, height: usize, scale: usi
 /// `ZELDA3_BITMAP` winning-layer diagnostic for the main screen. Used by both the
 /// Mode-1 (`render_modern_frame_full`) and Mode-7 (`render_modern_mode7_frame`)
 /// compositors so they share one finalize path.
-fn finalize_frame(main: &Screen, sub: &Screen, frame: &ModernFrame) -> Vec<u8> {
-    let width = usize::from(MODERN_FRAME_WIDTH);
+fn finalize_frame(
+    main: &Screen,
+    sub: &Screen,
+    frame: &ModernFrame,
+    out_width: usize,
+    scale: usize,
+) -> Vec<u8> {
+    let width = out_width;
     let len = main.c5.len();
     let mut out = vec![0u8; len * 4];
 
@@ -1175,8 +1249,13 @@ fn finalize_frame(main: &Screen, sub: &Screen, frame: &ModernFrame) -> Vec<u8> {
     }
 
     for i in 0..len {
-        let px = i % width;
-        let py = i / width;
+        // Per-output pixel color math, but the window data is NATIVE-length, so index
+        // it by the native row/col (`out_y / scale`, `out_x / scale`). At scale == 1
+        // these equal the output coords — byte-identical to before.
+        let out_x = i % width;
+        let out_y = i / width;
+        let nrow = out_y / scale;
+        let ncol = out_x / scale;
         let mut c = [
             i32::from(main.c5[i][0]),
             i32::from(main.c5[i][1]),
@@ -1185,8 +1264,8 @@ fn finalize_frame(main: &Screen, sub: &Screen, frame: &ModernFrame) -> Vec<u8> {
         let layer_math_on = (frame.math_enabled >> main.bit[i]) & 1 != 0;
         // Color-window membership for this pixel, then gate clip + color-math exactly
         // like the classic post-process shader.
-        let win = frame.window_scanlines.get(py).copied().unwrap_or([0u8; 4]);
-        let cm_window = in_cm_window(px as u32, win, frame.windowsel_cm);
+        let win = frame.window_scanlines.get(nrow).copied().unwrap_or([0u8; 4]);
+        let cm_window = in_cm_window(ncol as u32, win, frame.windowsel_cm);
         let not_clipped = cw_bit(cm_window, frame.clip_mode);
         let math_window_ok = cw_bit(cm_window, frame.prevent_math_mode);
         let do_math = !no_effect_math && layer_math_on && math_window_ok;
@@ -1394,6 +1473,8 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
         &sprite_cells,
         len,
         &crate::modern_hd_overrides::HdOverrideCtx::disabled(),
+        width,
+        1,
     );
 
     // MAIN: OBJ0 (behind BG) -> Mode7 BG -> OBJ 1..3 (matches render_mode7_frame).
@@ -1405,6 +1486,8 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
         Some(&modern.main_tm_scanlines),
         &modern,
         modern.screen_windowed_main,
+        width,
+        1,
     );
     paint_mode7_bg(
         &mut main,
@@ -1421,6 +1504,8 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
             Some(&modern.main_tm_scanlines),
             &modern,
             modern.screen_windowed_main,
+            width,
+            1,
         );
     }
 
@@ -1437,10 +1522,12 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
             None,
             &modern,
             modern.screen_windowed_sub,
+            width,
+            1,
         );
     }
 
-    finalize_frame(&main, &sub, &modern)
+    finalize_frame(&main, &sub, &modern, width, 1)
 }
 
 #[cfg(test)]
