@@ -209,6 +209,34 @@ impl Screen {
     }
 }
 
+/// Packed MAIN/SUB compositing buffers for the GPU finalizer.
+///
+/// Each `u32` stores the 5-bit color channels, winning color-math layer bit, and
+/// whether a real BG/OBJ pixel covered the backdrop:
+/// bits 0..4 = R, 5..9 = G, 10..14 = B, 15..17 = math bit, 18 = real.
+pub(crate) struct ModernCompositedScreens {
+    pub(crate) width: usize,
+    pub(crate) scale: usize,
+    pub(crate) main: Vec<u32>,
+    pub(crate) sub: Vec<u32>,
+}
+
+fn pack_screen(screen: &Screen) -> Vec<u32> {
+    screen
+        .c5
+        .iter()
+        .zip(screen.bit.iter())
+        .zip(screen.real.iter())
+        .map(|((c5, bit), real)| {
+            u32::from(c5[0])
+                | (u32::from(c5[1]) << 5)
+                | (u32::from(c5[2]) << 10)
+                | (u32::from(*bit) << 15)
+                | ((if *real { 1u32 } else { 0u32 }) << 18)
+        })
+        .collect()
+}
+
 /// Composite one screen (main or sub) in SNES Mode 1 z-order, back → front:
 /// `BG3-lo, OBJ0, OBJ1, BG2-lo, BG1-lo, OBJ2, BG2-hi, BG1-hi, OBJ3, BG3-hi`.
 /// `enabled` is the screen's layer-enable mask (bits 0-2 = BG1-3, bit 4 = OBJ).
@@ -1130,16 +1158,23 @@ pub fn render_modern_frame_full_with_overrides(
     sprite_cells: &[ModernIndexTile],
     ctx: &crate::modern_hd_overrides::HdOverrideCtx,
 ) -> Vec<u8> {
+    let (main, sub) = build_modern_screens_with_overrides(frame, bg_cells, sprite_cells, ctx);
+    finalize_frame(&main, &sub, frame, usize::from(MODERN_FRAME_WIDTH), 1)
+}
+
+fn build_modern_screens_with_overrides(
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+    sprite_cells: &[ModernIndexTile],
+    ctx: &crate::modern_hd_overrides::HdOverrideCtx,
+) -> (Screen, Screen) {
     let width = usize::from(MODERN_FRAME_WIDTH);
     let height = usize::from(MODERN_FRAME_HEIGHT);
     let len = width * height;
-    let mut out = vec![0u8; len * 4];
 
     if frame.forced_blank {
-        for px in out.chunks_exact_mut(4) {
-            px.copy_from_slice(&[0, 0, 0, 0xff]);
-        }
-        return out;
+        let black = [0, 0, 0];
+        return (Screen::new(black, len), Screen::new(black, len));
     }
 
     let bd = &frame.backdrop_color_rgba;
@@ -1179,7 +1214,26 @@ pub fn render_modern_frame_full_with_overrides(
         1,
     );
 
-    finalize_frame(&main, &sub, frame, width, 1)
+    (main, sub)
+}
+
+pub(crate) fn build_modern_composited_screens(
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+    sprite_cells: &[ModernIndexTile],
+) -> ModernCompositedScreens {
+    let (main, sub) = build_modern_screens_with_overrides(
+        frame,
+        bg_cells,
+        sprite_cells,
+        &crate::modern_hd_overrides::HdOverrideCtx::disabled(),
+    );
+    ModernCompositedScreens {
+        width: usize::from(MODERN_FRAME_WIDTH),
+        scale: 1,
+        main: pack_screen(&main),
+        sub: pack_screen(&sub),
+    }
 }
 
 /// True if the frame would take the mosaic OR per-scanline-scroll composite path on

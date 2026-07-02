@@ -919,28 +919,294 @@ impl ModernGpuSpriteRenderer {
     }
 }
 
-/// Simple-z-order GPU compositor over the PNG index atlas: draws each enabled
-/// BG layer's index tiles, then OBJ sprites on top, into a caller
-/// `Rgba8Unorm` view. Persistent pipelines; per-frame atlas/CGRAM/instance
-/// uploads.
-///
-/// NOTE: simple z-order only. Mode-1 BG/OBJ priority interleave, color math,
-/// windows, HDMA scroll, mosaic, and the OBJ budget are later sub-projects.
-pub struct ModernGpuCompositor {
-    bg: ModernGpuIndexRenderer,
-    sprites: ModernGpuSpriteRenderer,
+fn u32s_to_le_bytes(words: &[u32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(words.len() * 4);
+    for word in words {
+        bytes.extend_from_slice(&word.to_le_bytes());
+    }
+    bytes
 }
 
-impl ModernGpuCompositor {
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
+fn frame_windows_to_words(frame: &ModernFrame) -> Vec<u32> {
+    (0..usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT))
+        .map(|win| {
+            let win = frame.window_scanlines.get(win).copied().unwrap_or([0u8; 4]);
+            u32::from(win[0])
+                | (u32::from(win[1]) << 8)
+                | (u32::from(win[2]) << 16)
+                | (u32::from(win[3]) << 24)
+        })
+        .collect()
+}
+
+pub(crate) struct ModernGpuFinalizer {
+    pipeline: wgpu::ComputePipeline,
+    bind_group: wgpu::BindGroup,
+    main_buffer: wgpu::Buffer,
+    sub_buffer: wgpu::Buffer,
+    window_buffer: wgpu::Buffer,
+    params_buffer: wgpu::Buffer,
+    out_buffer: wgpu::Buffer,
+}
+
+impl ModernGpuFinalizer {
+    pub fn new(device: &wgpu::Device) -> Self {
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("modern_finalize"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let pixel_count = u64::from(crate::modern_frame::MODERN_FRAME_WIDTH)
+            * u64::from(crate::modern_frame::MODERN_FRAME_HEIGHT);
+        let screen_bytes = pixel_count * 4;
+        let main_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("modern_finalize_main"),
+            size: screen_bytes,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let sub_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("modern_finalize_sub"),
+            size: screen_bytes,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let window_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("modern_finalize_windows"),
+            size: u64::from(crate::modern_frame::MODERN_FRAME_HEIGHT) * 4,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("modern_finalize_params"),
+            size: 12 * 4,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let out_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("modern_finalize_out"),
+            size: screen_bytes,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("modern_finalize"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: main_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: sub_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: window_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: out_buffer.as_entire_binding(),
+                },
+            ],
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("modern_finalize"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("modern_finalize.wgsl").into()),
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("modern_finalize"),
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("modern_finalize"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("cs_main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
         Self {
-            bg: ModernGpuIndexRenderer::new(device, queue, format),
-            sprites: ModernGpuSpriteRenderer::new(device, queue, format),
+            pipeline,
+            bind_group,
+            main_buffer,
+            sub_buffer,
+            window_buffer,
+            params_buffer,
+            out_buffer,
         }
     }
 
-    /// Draw BG (clears the target to backdrop) then OBJ (loads on top) into
-    /// `output_view`.
+    pub(crate) fn render_to_texture(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        screens: &crate::modern_software::ModernCompositedScreens,
+        output_texture: &wgpu::Texture,
+    ) {
+        let len = screens.main.len() as u32;
+        debug_assert_eq!(screens.sub.len(), screens.main.len());
+        debug_assert!(
+            len <= u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
+                * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT)
+        );
+        let windows = frame_windows_to_words(frame);
+        let rendered_subscreen = (frame.screen_enabled_sub & 0x1f) != 0;
+        let no_effect_math = frame.fixed_color_r == 0
+            && frame.fixed_color_g == 0
+            && frame.fixed_color_b == 0
+            && !frame.half_color
+            && !rendered_subscreen;
+        let mut flags = 0u32;
+        if frame.subtract_color {
+            flags |= 0x1;
+        }
+        if frame.half_color {
+            flags |= 0x2;
+        }
+        if frame.add_subscreen {
+            flags |= 0x4;
+        }
+        if no_effect_math {
+            flags |= 0x8;
+        }
+        if frame.forced_blank {
+            flags |= 0x10;
+        }
+        let fixed = u32::from(frame.fixed_color_r)
+            | (u32::from(frame.fixed_color_g) << 8)
+            | (u32::from(frame.fixed_color_b) << 16);
+        let params = [
+            len,
+            screens.width as u32,
+            screens.scale as u32,
+            u32::from(frame.brightness),
+            u32::from(frame.math_enabled),
+            flags,
+            fixed,
+            u32::from(frame.clip_mode),
+            u32::from(frame.prevent_math_mode),
+            u32::from(frame.windowsel_cm),
+            0,
+            0,
+        ];
+
+        queue.write_buffer(&self.main_buffer, 0, &u32s_to_le_bytes(&screens.main));
+        queue.write_buffer(&self.sub_buffer, 0, &u32s_to_le_bytes(&screens.sub));
+        queue.write_buffer(&self.window_buffer, 0, &u32s_to_le_bytes(&windows));
+        queue.write_buffer(&self.params_buffer, 0, &u32s_to_le_bytes(&params));
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("modern_finalize"),
+        });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("modern_finalize"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.dispatch_workgroups(len.div_ceil(64), 1, 1);
+        }
+        encoder.copy_buffer_to_texture(
+            wgpu::TexelCopyBufferInfo {
+                buffer: &self.out_buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some((screens.width * 4) as u32),
+                    rows_per_image: None,
+                },
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: output_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: screens.width as u32,
+                height: (len / screens.width as u32),
+                depth_or_array_layers: 1,
+            },
+        );
+        queue.submit([encoder.finish()]);
+    }
+}
+
+/// GPU finalizer compositor for the PNG index-atlas path. The Mode-1 priority
+/// MAIN/SUB screens are built through the same packed intermediate as the
+/// byte-exact CPU renderer; the final color-math, windows, and master brightness
+/// resolve runs as a compute pass into the caller's `Rgba8Unorm` texture.
+pub struct ModernGpuCompositor {
+    finalizer: ModernGpuFinalizer,
+}
+
+impl ModernGpuCompositor {
+    pub fn new(device: &wgpu::Device, _queue: &wgpu::Queue, _format: wgpu::TextureFormat) -> Self {
+        Self {
+            finalizer: ModernGpuFinalizer::new(device),
+        }
+    }
+
+    /// Build the packed MAIN/SUB screens and resolve the final RGBA through the
+    /// GPU finalizer into `output_texture`.
     pub fn render(
         &self,
         device: &wgpu::Device,
@@ -948,11 +1214,12 @@ impl ModernGpuCompositor {
         frame: &ModernFrame,
         bg_cells: &[ModernIndexTile],
         sprite_cells: &[ModernIndexTile],
-        output_view: &wgpu::TextureView,
+        output_texture: &wgpu::Texture,
     ) {
-        self.bg.render(device, queue, bg_cells, frame, output_view);
-        self.sprites
-            .render(device, queue, sprite_cells, frame, output_view);
+        let screens =
+            crate::modern_software::build_modern_composited_screens(frame, bg_cells, sprite_cells);
+        self.finalizer
+            .render_to_texture(device, queue, frame, &screens, output_texture);
     }
 }
 
@@ -963,7 +1230,6 @@ pub struct ModernGpuHeadless {
     queue: wgpu::Queue,
     compositor: ModernGpuCompositor,
     target: wgpu::Texture,
-    view: wgpu::TextureView,
 }
 
 impl ModernGpuHeadless {
@@ -984,16 +1250,16 @@ impl ModernGpuHeadless {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        let view = target.create_view(&wgpu::TextureViewDescriptor::default());
         Self {
             device,
             queue,
             compositor,
             target,
-            view,
         }
     }
 
@@ -1009,7 +1275,7 @@ impl ModernGpuHeadless {
             frame,
             bg_cells,
             sprite_cells,
-            &self.view,
+            &self.target,
         );
 
         let (width, height) = (256u32, 224u32);
@@ -1444,15 +1710,13 @@ mod tests {
     }
 
     #[test]
-    fn modern_gpu_compositor_matches_simple_zorder_software() {
+    fn modern_gpu_compositor_matches_full_software_basic_bg_obj() {
         use crate::modern_frame::{
             ModernBgLayer, ModernIndexSpriteInstance, ModernIndexTileInstance,
         };
         use crate::modern_hd_overrides::NO_SOURCE_KEY;
         use crate::modern_index_atlas::ModernIndexTile;
-        use crate::modern_software::{
-            draw_modern_sprites_indexed, render_modern_frame_software_indexed,
-        };
+        use crate::modern_software::render_modern_frame_full;
 
         let mut a = [0u8; 64];
         a[0] = 1;
@@ -1547,17 +1811,82 @@ mod tests {
             vflip: true,
             row_mask: 0xff,
         });
+        frame.screen_enabled_main = 0x11; // BG1 + OBJ.
+        frame.brightness = 15;
 
         let gpu = ModernGpuHeadless::new().render_rgba(&frame, &bg_cells, &sprite_cells);
-
-        let mut software = render_modern_frame_software_indexed(&frame, &bg_cells);
-        draw_modern_sprites_indexed(&mut software, &frame, &sprite_cells);
+        let software = render_modern_frame_full(&frame, &bg_cells, &sprite_cells);
 
         assert_eq!(gpu.len(), software.len());
         assert_eq!(
             gpu, software,
-            "GPU compositor must match simple z-order CPU reference"
+            "GPU compositor must match full CPU reference"
         );
+    }
+
+    #[test]
+    fn modern_gpu_compositor_matches_full_software_color_math() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_software::render_modern_frame_full;
+
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.cgram_rgba[1] = [20 << 3, 18 << 3, 16 << 3, 0xff];
+        frame.cgram_rgba[16 + 1] = [10 << 3, 8 << 3, 6 << 3, 0xff];
+
+        let mut main = ModernBgLayer::new(0);
+        main.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = main;
+
+        let mut sub = ModernBgLayer::new(1);
+        sub.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 1,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[1] = sub;
+
+        frame.screen_enabled_main = 0x01; // BG1.
+        frame.screen_enabled_sub = 0x02; // BG2.
+        frame.math_enabled = 0x01; // Math on winning BG1.
+        frame.add_subscreen = true;
+        frame.half_color = true;
+        frame.brightness = 11;
+
+        let gpu = ModernGpuHeadless::new().render_rgba(&frame, &cells, &[]);
+        let software = render_modern_frame_full(&frame, &cells, &[]);
+
+        assert_eq!(gpu.len(), software.len());
+        assert_eq!(
+            &gpu[0..4],
+            &software[0..4],
+            "first pixel exercises sub-screen half-add plus brightness"
+        );
+        assert_eq!(gpu, software);
     }
 
     /// Render the BG index pass then the sprite pass on the GPU, reading back the

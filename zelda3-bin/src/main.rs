@@ -3332,6 +3332,15 @@ fn run_replay_save(args: &[String]) {
     let mut gpu_render_compare_last_frame = 0u32;
     let mut gpu_render_compare_last_hash = 0u32;
     let mut modern_index_compare = 0u32;
+    let modern_index_compare_summary =
+        std::env::var("ZELDA3_MODERN_INDEX_COMPARE_SUMMARY").is_ok();
+    let modern_index_compare_progress = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_PROGRESS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+    let mut modern_index_compare_count = 0u64;
+    let mut modern_index_compare_bad_count = 0u64;
+    let mut modern_index_compare_bad_pixels = 0u64;
     let mut render_hash_dump_frame = None::<(u32, PathBuf)>;
     let mut save_state_path = None::<PathBuf>;
     let mut save_state_at: Vec<(u32, PathBuf)> = Vec::new();
@@ -5443,17 +5452,14 @@ fn run_replay_save(args: &[String]) {
             let module = game.ram[TRACE_MAIN_MODULE_INDEX];
             // 0x0aa1 = MAIN_TILE_THEME_INDEX (the blockset CHR key; same RAM address the dungeon dump uses)
             let theme = game.ram[0x0aa1] as u16;
-            // Default: only Mode-1 gameplay (dungeon/overworld) is compared. Set
-            // ZELDA3_COMPARE_ALL_MODULES=1 to survey EVERY module (title, menus,
-            // credits, transitions) — the label becomes `mod{N}` and the PPU mode is
-            // printed so Mode-7 screens (which the Mode-1 modern path can't render)
-            // are visible in the sweep.
-            let survey_all = std::env::var("ZELDA3_COMPARE_ALL_MODULES").is_ok();
+            // Compare every module by default so full-route parity sweeps do not
+            // silently skip title, menus, credits, transitions, or unsupported PPU
+            // modes. Non-gameplay modules are labeled `mod{N}` and include the PPU
+            // mode in the output so the failure surface stays explicit.
             let mode_str: Option<String> = match module {
                 9 | 11 => Some("ow".to_string()),
                 7 | 16 => Some("dungeon".to_string()),
-                m if survey_all => Some(format!("mod{m}")),
-                _ => None,
+                m => Some(format!("mod{m}")),
             };
             if let Some(mode_label) = mode_str {
                 let hdma_cgram = game.cgram_after_first_hdma_line();
@@ -5551,10 +5557,25 @@ fn run_replay_save(args: &[String]) {
                         mismatch += 1;
                     }
                 }
-                println!(
-                    "modern_index_compare frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via}",
-                    gpu_frame.mode
-                );
+                modern_index_compare_count += 1;
+                if mismatch != 0 {
+                    modern_index_compare_bad_count += 1;
+                    modern_index_compare_bad_pixels += mismatch as u64;
+                }
+                if !modern_index_compare_summary || mismatch != 0 {
+                    println!(
+                        "modern_index_compare frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via}",
+                        gpu_frame.mode
+                    );
+                }
+                if modern_index_compare_summary
+                    && modern_index_compare_progress != 0
+                    && modern_index_compare_count % modern_index_compare_progress == 0
+                {
+                    eprintln!(
+                        "modern_index_compare_progress compare_count={modern_index_compare_count} frame={frames} bad_count={modern_index_compare_bad_count}"
+                    );
+                }
                 if let Ok(dump_str) = std::env::var("ZELDA3_MODERN_INDEX_DUMP_FRAME") {
                     if let Ok(dump_frame) = dump_str.parse::<u32>() {
                         if frames == dump_frame {
@@ -5628,6 +5649,12 @@ fn run_replay_save(args: &[String]) {
             }
             write_checkpoint(&mut game, frames, path);
         }
+    }
+
+    if modern_index_compare != 0 && modern_index_compare_summary {
+        println!(
+            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels}"
+        );
     }
 
     if let Some(mut w) = fingerprint_writer.take() {

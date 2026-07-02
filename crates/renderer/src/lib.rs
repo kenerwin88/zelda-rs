@@ -2429,7 +2429,9 @@ impl FrameRenderer {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::COPY_SRC
+                    | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
             let view = target.create_view(&wgpu::TextureViewDescriptor::default());
@@ -2446,7 +2448,7 @@ impl FrameRenderer {
         );
 
         let compositor = self.modern_gpu.as_ref().expect("compositor built above");
-        let (target_texture, target_view) =
+        let (target_texture, _target_view) =
             self.modern_gpu_target.as_ref().expect("target built above");
         compositor.render(
             &self.device,
@@ -2454,7 +2456,7 @@ impl FrameRenderer {
             frame,
             bg_cells,
             sprite_cells,
-            target_view,
+            target_texture,
         );
 
         let mut encoder = self
