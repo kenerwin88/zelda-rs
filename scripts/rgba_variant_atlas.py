@@ -3,8 +3,13 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from dataclasses import dataclass
 import hashlib
+import json
+from pathlib import Path
+
+import chr_editable_sheets
 
 
 @dataclass(frozen=True)
@@ -107,3 +112,118 @@ def pack_rgba_variants(
             src = row * 8 * 4
             atlas[dst : dst + 8 * 4] = tile[src : src + 8 * 4]
     return width, height, bytes(atlas), entries
+
+
+def _parse_rgb888(value: str) -> list[int]:
+    if len(value) != 7 or not value.startswith("#"):
+        raise ValueError(f"invalid rgb888 color: {value}")
+    return [int(value[index : index + 2], 16) for index in (1, 3, 5)]
+
+
+def read_palette_colors(path: Path) -> list[list[int]]:
+    data = json.loads(path.read_text())
+    colors_by_index: dict[int, list[int]] = {}
+    for color in data.get("colors", []):
+        colors_by_index[int(color["index"])] = _parse_rgb888(str(color["rgb888"]))
+    if not colors_by_index:
+        raise ValueError(f"{path}: palette has no colors")
+    return [colors_by_index.get(index, [0, 0, 0]) for index in range(max(colors_by_index) + 1)]
+
+
+def _asset_name_for_kind(kind: str) -> str:
+    if kind == "sprite":
+        return "kSprGfx"
+    if kind == "bg":
+        return "kBgGfx"
+    raise ValueError(f"unknown decoded CHR pack kind: {kind}")
+
+
+def _default_palette_names(asset_dir: Path) -> list[str]:
+    palettes_dir = asset_dir / "assets_src/palettes"
+    preferred = ["palette_main_spr", "palette_dung_bg_main", "palette_overworld_bg_main"]
+    return [name for name in preferred if (palettes_dir / f"{name}.json").is_file()]
+
+
+def _rows_for_bpp(bpp: int) -> tuple[int, int]:
+    if bpp == 2:
+        return 4, 4
+    if bpp == 3:
+        return 8, 8
+    if bpp == 4:
+        return 16, 16
+    raise ValueError(f"unsupported SNES tile bit depth: {bpp}")
+
+
+def build_rom_variant_atlas(
+    asset_dir: Path,
+    palette_names: list[str] | None = None,
+) -> tuple[int, int, bytes, list[AtlasEntry]]:
+    palette_names = palette_names or _default_palette_names(asset_dir)
+    if not palette_names:
+        raise FileNotFoundError(asset_dir / "assets_src/palettes")
+
+    palettes_dir = asset_dir / "assets_src/palettes"
+    palettes = {
+        name: read_palette_colors(palettes_dir / f"{name}.json")
+        for name in palette_names
+    }
+    sprite_packs, bg_packs = chr_editable_sheets.read_decoded_chr_packs(asset_dir)
+    variants: list[RgbaVariant] = []
+    for pack in [*sprite_packs, *bg_packs]:
+        rows, colors_per_row = _rows_for_bpp(pack.bpp)
+        for palette_name, colors in palettes.items():
+            for palette_row in range(rows):
+                if (palette_row + 1) * colors_per_row > len(colors):
+                    continue
+                for tile_index, tile in enumerate(pack.tiles):
+                    key = VariantKey(
+                        pack.kind,
+                        _asset_name_for_kind(pack.kind),
+                        pack.pack_index,
+                        tile_index,
+                        pack.bpp,
+                        palette_name,
+                        palette_row,
+                    )
+                    variants.append(
+                        RgbaVariant(
+                            key,
+                            rgba_tile_from_indices(tile, colors, palette_row, colors_per_row),
+                        )
+                    )
+    return pack_rgba_variants(variants)
+
+
+def _entry_to_json(entry: AtlasEntry) -> dict[str, object]:
+    key = asdict(entry.key)
+    return {
+        "id": entry.id,
+        **key,
+        "rect": list(entry.rect),
+        "sha1": entry.sha1,
+        "duplicate_of": entry.duplicate_of,
+    }
+
+
+def write_rom_variant_atlas(asset_dir: Path, out_dir: Path | None = None) -> list[Path]:
+    from PIL import Image
+
+    destination = out_dir or asset_dir / "atlas"
+    width, height, pixels, entries = build_rom_variant_atlas(asset_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    png_path = destination / "tile_variants.png"
+    json_path = destination / "tile_variants.json"
+
+    image = Image.frombytes("RGBA", (width, height), pixels)
+    image.save(png_path)
+    manifest = {
+        "format": "zelda3_rgba_variant_atlas_v1",
+        "tile_width": 8,
+        "tile_height": 8,
+        "width": width,
+        "height": height,
+        "entry_count": len(entries),
+        "entries": [_entry_to_json(entry) for entry in entries],
+    }
+    json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    return [png_path, json_path]

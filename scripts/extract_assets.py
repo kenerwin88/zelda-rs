@@ -384,6 +384,26 @@ def write_chr_source_sheets(out_dir: Path) -> list[dict[str, str]]:
     return entries
 
 
+def write_rgba_variant_atlas(out_dir: Path) -> list[dict[str, str]]:
+    import rgba_variant_atlas
+
+    try:
+        written = rgba_variant_atlas.write_rom_variant_atlas(out_dir)
+    except FileNotFoundError as exc:
+        print(f"skipping RGBA variant atlas: missing {exc.filename}", file=sys.stderr)
+        return []
+
+    if not written:
+        return []
+    return [
+        {
+            "image_file": "atlas/tile_variants.png",
+            "manifest_file": "atlas/tile_variants.json",
+            "source_format": "zelda3_rgba_variant_atlas_v1",
+        }
+    ]
+
+
 def decomp_asset(data: bytes) -> bytes:
     result = bytearray()
     offset = 0
@@ -650,6 +670,7 @@ def main() -> int:
 
     manifest_assets = write_asset_outputs(out_dir, assets)
     chr_source_sheets = write_chr_source_sheets(out_dir)
+    rgba_variant_atlas = write_rgba_variant_atlas(out_dir)
     previews = write_preview_images(out_dir, assets)
 
     manifest.write_text(
@@ -661,6 +682,7 @@ def main() -> int:
                 "assets": manifest_assets,
                 "chr_source_sheets": chr_source_sheets,
                 "image_previews": previews,
+                "rgba_variant_atlas": rgba_variant_atlas,
                 "restool_pack_sha1": sha1(source_pack),
                 "rom_sha1": sha1(rom),
                 "source_tool": str(restool),
@@ -685,6 +707,8 @@ def main() -> int:
         print(f"wrote {len(previews)} PNG previews to {out_dir / 'images'}")
     if chr_source_sheets:
         print(f"wrote {len(chr_source_sheets)} editable CHR sheets to {out_dir / 'assets_src/chr'}")
+    if rgba_variant_atlas:
+        print(f"wrote RGBA variant atlas to {out_dir / 'atlas'}")
     print(f"wrote {manifest}")
     return 0
 
