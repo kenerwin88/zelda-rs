@@ -243,6 +243,10 @@ fn main() {
         run_dump_reference_palette(&args[2..]);
         return;
     }
+    if args.get(1).map(String::as_str) == Some("--dump-hd-capture") {
+        run_dump_hd_capture(&args[2..]);
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("--compare-lockstep-render") {
         run_compare_lockstep_render(&args[2..]);
         return;
@@ -10646,6 +10650,160 @@ fn run_dump_reference_palette(args: &[String]) {
         process::exit(1);
     }
     println!("dumped reference palette frame={frames} -> {out_path} (256x1 RGBA)");
+}
+
+/// Flatten a 256-entry CGRAM RGBA table to a 256x1 RGBA PNG (mirrors
+/// `run_dump_reference_palette`'s encoding, but from an already-expanded
+/// `ModernFrame::cgram_rgba` rather than raw CGRAM words).
+fn write_reference_palette_png(path: &str, cgram_rgba: &[[u8; 4]; 256]) -> Result<(), Box<dyn Error>> {
+    let mut rgba = Vec::with_capacity(cgram_rgba.len() * 4);
+    for px in cgram_rgba {
+        rgba.extend_from_slice(px);
+    }
+    write_rgba_frame_png(Path::new(path), &rgba, 256, 1)
+}
+
+/// Capture native composited frames for offline HD-art authoring (Task 3 of the
+/// HD-art-via-ML-super-resolution pipeline). At each requested replay frame, builds
+/// the SAME `GpuFrame` -> sources-extract -> `ModernFrame` pipeline the live present
+/// path uses (`GpuPlayRenderer::present_frame`), renders it at scale 1 with HD
+/// overrides disabled (native RGBA — the frame the super-resolution step ingests),
+/// and writes into `hd_art/capture/`:
+///   - `frame_<n>.png`         native 256x224 RGBA
+///   - `frame_<n>.map.json`    `Vec<HdPlacement>` (source key -> screen rect)
+///   - `reference_palette.png` 256x1 RGBA CGRAM snapshot, from the FIRST captured frame
+///
+/// This does not touch the render/parity path — it's a standalone offline dump.
+///
+/// Usage: `zelda3 --dump-hd-capture <frame> [frame...]` (needs the 7 timing-hack env
+/// vars, like every replay run). Mode-7 frames are skipped (the sources path, like
+/// the live present path, doesn't cover Mode 7).
+fn run_dump_hd_capture(args: &[String]) {
+    use renderer::hd_authoring::build_hd_placement_map;
+
+    let targets: Vec<u32> = args.iter().filter_map(|s| s.parse::<u32>().ok()).collect();
+    if targets.is_empty() {
+        eprintln!("usage: zelda3 --dump-hd-capture <frame> [frame...]");
+        process::exit(2);
+    }
+    let max_frame = *targets.iter().max().unwrap();
+
+    let atlas = match renderer::modern_source_atlas::load_modern_source_atlas(Path::new(".")) {
+        Ok(atlas) => atlas,
+        Err(e) => {
+            eprintln!("failed to load source atlas: {e}");
+            process::exit(1);
+        }
+    };
+
+    const OUT_DIR: &str = "hd_art/capture";
+    if let Err(e) = fs::create_dir_all(OUT_DIR) {
+        eprintln!("failed to create {OUT_DIR}: {e}");
+        process::exit(1);
+    }
+
+    let rom = concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc");
+    let replay = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../saves/zelda3-combined-route.sav"
+    );
+
+    let mut game = load_translated_replay_state(rom);
+    if let Err(e) = game.replay_save_file(Path::new(replay)) {
+        eprintln!("failed to load replay save {replay}: {e}");
+        process::exit(1);
+    }
+
+    let mut first_capture = true;
+    let mut captured = 0usize;
+    let mut completed = game.state_recorder.replay_frame_counter;
+    while completed < max_frame && game.state_recorder.replay_mode {
+        game.zelda_run_frame_with_replay_input_override(0, None);
+        completed = completed.wrapping_add(1);
+
+        if !targets.contains(&completed) {
+            continue;
+        }
+
+        let hdma_cgram = game.cgram_after_first_hdma_line();
+        let scanlines_raw = game.ppu_scanline_windows();
+        let ppu = game.ppu.clone();
+        let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+        if gpu_frame.mode == 7 {
+            eprintln!("frame {completed}: Mode 7 not supported by the sources path; skipping");
+            continue;
+        }
+        let src_slice: Vec<(u8, u16, u16)> = game
+            .vram_chr_source()
+            .as_slice()
+            .iter()
+            .map(|s| (s.kind, s.pack, s.tile_off))
+            .collect();
+        let (mut modern, bg_cells) = renderer::modern_extract::extract_modern_frame_from_sources(
+            &gpu_frame,
+            &src_slice[..],
+            &atlas,
+        );
+        let (sprite_cells, sprites) = renderer::modern_extract::extract_modern_sprites_from_sources(
+            &gpu_frame,
+            &src_slice[..],
+            &atlas,
+        );
+        modern.index_sprites = sprites;
+
+        // Native RGBA (scale 1, overrides disabled) — the colorized frame SR ingests.
+        let ctx = renderer::modern_hd_overrides::HdOverrideCtx::disabled();
+        let rgba = renderer::modern_software::render_modern_frame_full_scaled(
+            &modern,
+            &bg_cells,
+            &sprite_cells,
+            &ctx,
+            1,
+        );
+        let png_path = format!("{OUT_DIR}/frame_{completed}.png");
+        if let Err(e) = write_rgba_frame_png(Path::new(&png_path), &rgba, 256, 224) {
+            eprintln!("failed to write {png_path}: {e}");
+            process::exit(1);
+        }
+
+        // Placement map.
+        let map = build_hd_placement_map(&modern, &bg_cells, &sprite_cells);
+        let map_path = format!("{OUT_DIR}/frame_{completed}.map.json");
+        let json = match serde_json::to_vec_pretty(&map) {
+            Ok(j) => j,
+            Err(e) => {
+                eprintln!("failed to serialize placement map: {e}");
+                process::exit(1);
+            }
+        };
+        if let Err(e) = fs::write(&map_path, &json) {
+            eprintln!("failed to write {map_path}: {e}");
+            process::exit(1);
+        }
+
+        // Reference palette from the FIRST captured frame's CGRAM (256x1 RGBA).
+        if first_capture {
+            let pal_path = format!("{OUT_DIR}/reference_palette.png");
+            if let Err(e) = write_reference_palette_png(&pal_path, &modern.cgram_rgba) {
+                eprintln!("failed to write {pal_path}: {e}");
+                process::exit(1);
+            }
+            first_capture = false;
+        }
+        captured += 1;
+        eprintln!("captured frame {completed}: {} placements", map.len());
+    }
+
+    if captured < targets.len() {
+        eprintln!(
+            "[warn] replay ended at frame {completed} before capturing all {} requested frame(s) ({captured} captured)",
+            targets.len()
+        );
+    }
+    println!(
+        "dumped hd capture: {captured}/{} frame(s) -> {OUT_DIR}/",
+        targets.len()
+    );
 }
 
 /// Walk the combined-route replay and extract a REAL colored sprite sheet: every
