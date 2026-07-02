@@ -359,6 +359,31 @@ def write_asset_outputs(out_dir: Path, assets: list[tuple[str, bytes]]) -> list[
     return manifest_assets
 
 
+def write_chr_source_sheets(out_dir: Path) -> list[dict[str, str]]:
+    import chr_editable_sheets
+
+    try:
+        written = chr_editable_sheets.write_editable_chr_sheets(out_dir)
+    except FileNotFoundError as exc:
+        print(f"skipping editable CHR sheets: missing {exc.filename}", file=sys.stderr)
+        return []
+
+    entries = []
+    for image_path in written:
+        if image_path.suffix != ".png":
+            continue
+        manifest_path = image_path.with_suffix(".json")
+        entries.append(
+            {
+                "sheet": image_path.stem,
+                "image_file": image_path.relative_to(out_dir).as_posix(),
+                "manifest_file": manifest_path.relative_to(out_dir).as_posix(),
+                "source_format": "zelda3_editable_chr_sheet_v1",
+            }
+        )
+    return entries
+
+
 def decomp_asset(data: bytes) -> bytes:
     result = bytearray()
     offset = 0
@@ -624,6 +649,7 @@ def main() -> int:
     key_signature_path.write_bytes(key_signature)
 
     manifest_assets = write_asset_outputs(out_dir, assets)
+    chr_source_sheets = write_chr_source_sheets(out_dir)
     previews = write_preview_images(out_dir, assets)
 
     manifest.write_text(
@@ -633,6 +659,7 @@ def main() -> int:
                 "asset_key_signature": key_signature_path.name,
                 "asset_signature": signature_path.name,
                 "assets": manifest_assets,
+                "chr_source_sheets": chr_source_sheets,
                 "image_previews": previews,
                 "restool_pack_sha1": sha1(source_pack),
                 "rom_sha1": sha1(rom),
@@ -656,6 +683,8 @@ def main() -> int:
         )
     if previews:
         print(f"wrote {len(previews)} PNG previews to {out_dir / 'images'}")
+    if chr_source_sheets:
+        print(f"wrote {len(chr_source_sheets)} editable CHR sheets to {out_dir / 'assets_src/chr'}")
     print(f"wrote {manifest}")
     return 0
 
