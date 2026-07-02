@@ -94,6 +94,30 @@ model) over every `hd_art/capture/frame_*.png` and writes
 `hd_art/sr/frame_<n>.x<scale>.png`. Model weights download once to `hd_art/models/`
 (gitignored — do not commit). Uses MPS/CUDA if available, else CPU.
 
+### Optional: neural style transfer (make overrides OBVIOUSLY different art)
+
+Add `--style <udnie|mosaic|candy|rain_princess>` to run a fast neural-style-transfer
+pass on each super-resolved frame before it is written. The override cells then render
+as a dramatically different art style in-game (the detail-modulate kernel treats the art
+as detail vs the reference palette and re-lights it through live CGRAM, so the restyle
+shows through while still tracking the live palette). Slice/manifest/proof stages are
+unchanged.
+
+```bash
+# one-time: fetch the pretrained fast-neural-style weights into hd_art/models/
+git clone --depth 1 https://github.com/pytorch/examples
+python examples/fast_neural_style/download_saved_models.py
+cp examples/fast_neural_style/saved_models/udnie.pth hd_art/models/
+
+python3 scripts/hd_super_resolve.py --in hd_art/capture --out hd_art/sr \
+  --scale 4 --model anime --style udnie
+```
+
+`--style-weights <path>` overrides the default `hd_art/models/<style>.pth` lookup.
+Plumbing checks (no weights/model needed): `--self-test` (SR geometry, torch-free) and
+`--self-test-style` (runs the TransformerNet forward pass on MPS/CPU to confirm the
+style net loads and is size-preserving).
+
 ## Stage 3 — slice cells + build the manifest
 
 ```bash
