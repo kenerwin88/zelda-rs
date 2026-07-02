@@ -37,6 +37,18 @@ impl HdCell {
         let idx = ((py * self.width + px) * 4) as usize;
         [self.rgba[idx], self.rgba[idx + 1], self.rgba[idx + 2]]
     }
+
+    /// Sample the HD texel for output-local pixel `(out_local_x, out_local_y)` within a
+    /// tile footprint of `footprint_px` output pixels (= 8·scale): `hd = out_local *
+    /// width / footprint_px`. At `footprint_px == 8` this is the native 8×8 sampling
+    /// (equals `sample_native`). Alpha dropped (transparency is the base slot index's).
+    pub fn sample_scaled(&self, out_local_x: u32, out_local_y: u32, footprint_px: u32) -> [u8; 3] {
+        let fp = footprint_px.max(1);
+        let px = (out_local_x * self.width / fp).min(self.width.saturating_sub(1));
+        let py = (out_local_y * self.height / fp).min(self.height.saturating_sub(1));
+        let idx = ((py * self.width + px) * 4) as usize;
+        [self.rgba[idx], self.rgba[idx + 1], self.rgba[idx + 2]]
+    }
 }
 
 /// `final = clamp(live * (hd / max(reference, 1)))` per RGB channel; alpha from `live`.
@@ -63,13 +75,14 @@ pub fn resolve_pixel_color(
     reference: &[[u8; 4]; 256],
     lx: u32,
     ly: u32,
+    footprint_px: u32,
 ) -> Option<[u8; 4]> {
     if base_index == 0 {
         return None;
     }
     match override_cell {
         Some(hd) => {
-            let hd_rgb = hd.sample_native(lx, ly);
+            let hd_rgb = hd.sample_scaled(lx, ly, footprint_px);
             let r = reference[cgram_idx];
             Some(detail_modulate(live_rgba, hd_rgb, [r[0], r[1], r[2]]))
         }
@@ -333,7 +346,7 @@ mod tests {
     fn resolve_transparent_when_base_index_zero() {
         let reference = [[0u8; 4]; 256];
         assert_eq!(
-            resolve_pixel_color(0, 5, [1, 2, 3, 0xff], None, &reference, 0, 0),
+            resolve_pixel_color(0, 5, [1, 2, 3, 0xff], None, &reference, 0, 0, 8),
             None
         );
     }
@@ -342,7 +355,7 @@ mod tests {
     fn resolve_returns_live_without_override() {
         let reference = [[0u8; 4]; 256];
         assert_eq!(
-            resolve_pixel_color(1, 5, [1, 2, 3, 0xff], None, &reference, 0, 0),
+            resolve_pixel_color(1, 5, [1, 2, 3, 0xff], None, &reference, 0, 0, 8),
             Some([1, 2, 3, 0xff])
         );
     }
@@ -354,7 +367,7 @@ mod tests {
         let cell = HdCell { width: 8, height: 8, rgba: vec![64u8; 8 * 8 * 4] };
         // live 100 * (hd 64 / ref 128) = 50.
         assert_eq!(
-            resolve_pixel_color(1, 5, [100, 100, 100, 0xff], Some(&cell), &reference, 0, 0),
+            resolve_pixel_color(1, 5, [100, 100, 100, 0xff], Some(&cell), &reference, 0, 0, 8),
             Some([50, 50, 50, 0xff])
         );
     }
@@ -444,5 +457,32 @@ mod tests {
         assert_eq!(HdScale::from_str_opt(Some("0")).get(), 1);   // clamp low
         assert_eq!(HdScale::from_str_opt(Some("9")).get(), 4);   // clamp high
         assert_eq!(HdScale::from_str_opt(Some("xyz")).get(), 2); // invalid → default
+    }
+
+    #[test]
+    fn sample_scaled_maps_output_pixel_to_hd_texel() {
+        // 16×16 HD cell (M=16). footprint 16 (scale 2): 1:1 mapping.
+        let mut rgba = vec![0u8; 16 * 16 * 4];
+        let put = |r: &mut Vec<u8>, x: usize, y: usize, c: [u8; 4]| {
+            let i = (y * 16 + x) * 4;
+            r[i..i + 4].copy_from_slice(&c);
+        };
+        put(&mut rgba, 9, 3, [7, 8, 9, 0xff]);
+        let cell = HdCell { width: 16, height: 16, rgba };
+        assert_eq!(cell.sample_scaled(9, 3, 16), [7, 8, 9]); // 9*16/16=9, 3*16/16=3
+        // footprint 8 (scale 1) == native top-left of the whole cell region.
+        assert_eq!(cell.sample_scaled(0, 0, 8), cell.sample_native(0, 0));
+    }
+
+    #[test]
+    fn resolve_pixel_color_footprint_8_matches_phase1() {
+        let mut reference = [[0u8; 4]; 256];
+        reference[5] = [128, 128, 128, 0xff];
+        let cell = HdCell { width: 8, height: 8, rgba: vec![64u8; 8 * 8 * 4] };
+        // Same as the Phase 1 test, now with explicit footprint 8.
+        assert_eq!(
+            resolve_pixel_color(1, 5, [100, 100, 100, 0xff], Some(&cell), &reference, 0, 0, 8),
+            Some([50, 50, 50, 0xff])
+        );
     }
 }

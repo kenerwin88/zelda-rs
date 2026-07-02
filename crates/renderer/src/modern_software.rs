@@ -375,6 +375,7 @@ fn render_bg_layer_buf(
                     ctx.reference(),
                     hx as u32,
                     hy as u32,
+                    8,
                 ) {
                     Some(c) => c,
                     None => continue,
@@ -598,6 +599,7 @@ fn render_bg_layer_torus(
                     ctx.reference(),
                     hx as u32,
                     hy as u32,
+                    8,
                 ) {
                     Some(c) => c,
                     None => continue,
@@ -793,6 +795,7 @@ fn resolve_obj_layer(
                     ctx.reference(),
                     src_x as u32,
                     src_y as u32,
+                    8,
                 ) {
                     Some(c) => c,
                     None => continue,
@@ -965,6 +968,7 @@ fn composite_index_tiles_c5(
                     ctx.reference(),
                     hx as u32,
                     hy as u32,
+                    8,
                 ) {
                     Some(c) => c,
                     None => continue,
