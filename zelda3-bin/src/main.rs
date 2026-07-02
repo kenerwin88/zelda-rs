@@ -1396,15 +1396,18 @@ impl PlayRendererBackend for CpuPlayRenderer {
     }
 }
 
-/// Effective renderer for the INTERACTIVE play path only. Unset now defaults to
-/// `assets-anim` (the off-VRAM PNG-atlas compositor — byte-identical to the
-/// classic wgpu PPU at scale 1, proven per-frame by `--modern-index-compare`);
-/// set `ZELDA3_RENDERER=classic` to opt back into the wgpu PPU path. This governs
-/// only the live present. The replay/parity harness reads `ZELDA3_RENDERER`
-/// directly (see the `assets_anim_mode` gate in `run_replay_save`) and still
-/// defaults to classic, so the render-hash/fingerprint gates are unaffected.
+const DEFAULT_RENDERER_ENV: &str = "assets-anim-gpu";
+
+/// Effective renderer for paths that honor `ZELDA3_RENDERER`. Unset defaults to
+/// `assets-anim-gpu` so Mode-1 atlas composition and Mode-7 frames both use GPU
+/// rendering by default. Explicit `assets-anim` keeps the CPU atlas compositor,
+/// and `classic` opts back into the wgpu PPU path.
+fn renderer_env_or_default(value: Option<&str>) -> &str {
+    value.unwrap_or(DEFAULT_RENDERER_ENV)
+}
+
 fn effective_play_renderer() -> String {
-    env::var("ZELDA3_RENDERER").unwrap_or_else(|_| "assets-anim".to_string())
+    renderer_env_or_default(env::var("ZELDA3_RENDERER").ok().as_deref()).to_string()
 }
 
 /// Off-VRAM (assets-anim) source atlas + HD override store for the live modern
@@ -3672,16 +3675,13 @@ fn run_replay_save(args: &[String]) {
     // (extract_modern_sprites_from_vram); the static sprite atlas is no longer
     // loaded for rendering.
     //
-    // Off-VRAM (assets-anim) path: ZELDA3_RENDERER=assets-anim makes the modern
-    // compare render BG + sprites ENTIRELY from the assets-by-source atlas via the
-    // M1 logical CHR source table (no VRAM CHR pixel reads). The atlas is loaded
-    // once here when that mode is selected during a --modern-index-compare run.
-    let assets_anim_mode = std::env::var("ZELDA3_RENDERER")
-        .map(|v| v == "assets-anim")
-        .unwrap_or(false);
-    let atlas_gpu_compare = std::env::var("ZELDA3_RENDERER")
-        .map(|v| v == "assets-anim-gpu")
-        .unwrap_or(false);
+    // Off-VRAM (assets-anim*) path: unset and `assets-anim-gpu` make the modern
+    // compare render through the full GPU path. Explicit `assets-anim` keeps the
+    // CPU atlas compositor as an opt-out/debug oracle.
+    let replay_renderer_env = std::env::var("ZELDA3_RENDERER").ok();
+    let replay_renderer_mode = renderer_env_or_default(replay_renderer_env.as_deref());
+    let assets_anim_mode = replay_renderer_mode == "assets-anim";
+    let atlas_gpu_compare = replay_renderer_mode == "assets-anim-gpu";
     let modern_gpu_headless: Option<renderer::ModernGpuHeadless> =
         if modern_index_compare != 0 && atlas_gpu_compare {
             Some(renderer::ModernGpuHeadless::new())
@@ -13984,6 +13984,21 @@ mod tests {
         assert!(should_write_fingerprint(None, 41));
         assert!(should_write_fingerprint(Some(42), 42));
         assert!(!should_write_fingerprint(Some(42), 41));
+    }
+
+    #[test]
+    fn unset_renderer_defaults_to_full_gpu_path() {
+        assert_eq!(renderer_env_or_default(None), "assets-anim-gpu");
+        assert_eq!(
+            renderer_env_or_default(Some("assets-anim")),
+            "assets-anim",
+            "explicit CPU atlas mode remains an opt-out"
+        );
+        assert_eq!(
+            renderer_env_or_default(Some("classic")),
+            "classic",
+            "explicit classic mode remains an opt-out"
+        );
     }
 
     #[test]
