@@ -58,6 +58,218 @@ pub fn draw_modern_sprites_indexed(
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct VariantAtlasRenderStats {
+    pub stable_draws: u32,
+    pub dynamic_palette_draws: u32,
+    pub missing_variant_draws: u32,
+}
+
+pub fn render_modern_frame_software_variant_atlas(
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+    sprite_cells: &[ModernIndexTile],
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+    bg_palette_name: &str,
+    sprite_palette_name: &str,
+) -> (Vec<u8>, VariantAtlasRenderStats) {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    let height = usize::from(MODERN_FRAME_HEIGHT);
+    let mut out = vec![0u8; width * height * 4];
+    for px in out.chunks_exact_mut(4) {
+        px.copy_from_slice(&frame.backdrop_color_rgba);
+    }
+
+    if frame.forced_blank {
+        for px in out.chunks_exact_mut(4) {
+            px.copy_from_slice(&[0, 0, 0, 0xff]);
+        }
+        return (out, VariantAtlasRenderStats::default());
+    }
+
+    let mut stats = VariantAtlasRenderStats::default();
+    for layer in &frame.bg_layers {
+        if !layer.enabled_main {
+            continue;
+        }
+        for inst in &layer.index_tiles {
+            let Some(cell) = bg_cells.get(inst.cell_id as usize) else {
+                continue;
+            };
+            let key = crate::modern_variant_atlas::variant_key_for_index_tile(
+                cell,
+                bg_palette_name,
+                inst.palette,
+            );
+            let entry = key.as_ref().and_then(|key| atlas.entry_for_key(key));
+            match entry {
+                Some(entry) if entry.dynamic_policy == "stable" => {
+                    draw_variant_bg_instance(&mut out, frame, atlas, entry, cell, inst);
+                    stats.stable_draws += 1;
+                }
+                Some(_) => {
+                    draw_indexed_bg_instance(&mut out, frame, cell, inst);
+                    stats.dynamic_palette_draws += 1;
+                }
+                None => {
+                    draw_indexed_bg_instance(&mut out, frame, cell, inst);
+                    stats.missing_variant_draws += 1;
+                }
+            }
+        }
+    }
+
+    for inst in frame.index_sprites.iter().rev() {
+        let Some(cell) = sprite_cells.get(inst.cell_id as usize) else {
+            continue;
+        };
+        let key = crate::modern_variant_atlas::variant_key_for_index_tile(
+            cell,
+            sprite_palette_name,
+            inst.palette,
+        );
+        let entry = key.as_ref().and_then(|key| atlas.entry_for_key(key));
+        match entry {
+            Some(entry) if entry.dynamic_policy == "stable" => {
+                draw_variant_sprite_instance(&mut out, atlas, entry, inst);
+                stats.stable_draws += 1;
+            }
+            Some(_) => {
+                draw_indexed_sprite_instance(&mut out, frame, cell, inst);
+                stats.dynamic_palette_draws += 1;
+            }
+            None => {
+                draw_indexed_sprite_instance(&mut out, frame, cell, inst);
+                stats.missing_variant_draws += 1;
+            }
+        }
+    }
+
+    (out, stats)
+}
+
+fn draw_variant_bg_instance(
+    out: &mut [u8],
+    _frame: &ModernFrame,
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
+    cell: &ModernIndexTile,
+    inst: &crate::modern_frame::ModernIndexTileInstance,
+) {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    for sy in 0..8usize {
+        for sx in 0..8usize {
+            let src_x = if cell.hflip { 7 - sx } else { sx };
+            let src_y = if cell.vflip { 7 - sy } else { sy };
+            let atlas_x = entry.rect[0] as usize + src_x;
+            let atlas_y = entry.rect[1] as usize + src_y;
+            if atlas_x >= atlas.width as usize || atlas_y >= atlas.height as usize {
+                continue;
+            }
+            let src = (atlas_y * atlas.width as usize + atlas_x) * 4;
+            if atlas.rgba[src + 3] == 0 {
+                continue;
+            }
+            let dst_x = inst.screen_x + sx as i16;
+            let dst_y = inst.screen_y + sy as i16;
+            if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                continue;
+            }
+            let dst = (dst_y as usize * width + dst_x as usize) * 4;
+            out[dst..dst + 4].copy_from_slice(&atlas.rgba[src..src + 4]);
+        }
+    }
+}
+
+fn draw_indexed_bg_instance(
+    out: &mut [u8],
+    frame: &ModernFrame,
+    cell: &ModernIndexTile,
+    inst: &crate::modern_frame::ModernIndexTileInstance,
+) {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    for sy in 0..8usize {
+        for sx in 0..8usize {
+            let index = cell.indices[sy * 8 + sx];
+            if index == 0 {
+                continue;
+            }
+            let dst_x = inst.screen_x + sx as i16;
+            let dst_y = inst.screen_y + sy as i16;
+            if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                continue;
+            }
+            let color = frame.cgram_rgba[inst.palette as usize * 16 + index as usize];
+            let dst = (dst_y as usize * width + dst_x as usize) * 4;
+            out[dst..dst + 4].copy_from_slice(&color);
+        }
+    }
+}
+
+fn draw_variant_sprite_instance(
+    out: &mut [u8],
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
+    inst: &crate::modern_frame::ModernIndexSpriteInstance,
+) {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    for y in 0..8usize {
+        if inst.row_mask & (1 << y) == 0 {
+            continue;
+        }
+        for x in 0..8usize {
+            let src_x = if inst.hflip { 7 - x } else { x };
+            let src_y = if inst.vflip { 7 - y } else { y };
+            let atlas_x = entry.rect[0] as usize + src_x;
+            let atlas_y = entry.rect[1] as usize + src_y;
+            if atlas_x >= atlas.width as usize || atlas_y >= atlas.height as usize {
+                continue;
+            }
+            let src = (atlas_y * atlas.width as usize + atlas_x) * 4;
+            if atlas.rgba[src + 3] == 0 {
+                continue;
+            }
+            let dst_x = inst.screen_x + x as i16;
+            let dst_y = inst.screen_y + y as i16;
+            if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                continue;
+            }
+            let dst = (dst_y as usize * width + dst_x as usize) * 4;
+            out[dst..dst + 4].copy_from_slice(&atlas.rgba[src..src + 4]);
+        }
+    }
+}
+
+fn draw_indexed_sprite_instance(
+    out: &mut [u8],
+    frame: &ModernFrame,
+    cell: &ModernIndexTile,
+    inst: &crate::modern_frame::ModernIndexSpriteInstance,
+) {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    for y in 0..8usize {
+        if inst.row_mask & (1 << y) == 0 {
+            continue;
+        }
+        for x in 0..8usize {
+            let src_x = if inst.hflip { 7 - x } else { x };
+            let src_y = if inst.vflip { 7 - y } else { y };
+            let index = cell.indices[src_y * 8 + src_x];
+            if index == 0 {
+                continue;
+            }
+            let dst_x = inst.screen_x + x as i16;
+            let dst_y = inst.screen_y + y as i16;
+            if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                continue;
+            }
+            let color = frame.cgram_rgba[0x80 + inst.palette as usize * 16 + index as usize];
+            let dst = (dst_y as usize * width + dst_x as usize) * 4;
+            out[dst..dst + 4].copy_from_slice(&color);
+        }
+    }
+}
+
 pub fn render_modern_frame_software(
     frame: &ModernFrame,
     atlas_rgba: &[u8],
@@ -2501,6 +2713,75 @@ mod tests {
             assert_eq!(&recolored[off..off + 3], &expected, "recolor at {off}");
             assert_ne!(&recolored[off..off + 3], &plain[off..off + 3], "must differ from plain");
         }
+    }
+
+    #[test]
+    fn variant_atlas_software_matches_indexed_bg_tile() {
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, VariantAtlasEntry, VariantAtlasKey,
+        };
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.bg_layers[0].enabled_main = true;
+        frame.cgram_rgba[3 * 16 + 1] = [16, 32, 48, 0xff];
+        frame.bg_layers[0].index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 3,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+        let mut atlas_rgba = vec![0u8; 8 * 8 * 4];
+        atlas_rgba[0..4].copy_from_slice(&[16, 32, 48, 0xff]);
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: atlas_rgba,
+            entries: vec![VariantAtlasEntry {
+                id: "bg:kBgGfx:pack0:tile0:3bpp:palette_main_spr:row3".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "bg".to_string(),
+                    asset: "kBgGfx".to_string(),
+                    pack: 0,
+                    tile: 0,
+                    bpp: 3,
+                    palette: "palette_main_spr".to_string(),
+                    palette_row: 3,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "test".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+            }],
+        };
+
+        let indexed = render_modern_frame_software_indexed(&frame, &cells);
+        let (variant, stats) = render_modern_frame_software_variant_atlas(
+            &frame,
+            &cells,
+            &[],
+            &atlas,
+            "palette_main_spr",
+            "palette_main_spr",
+        );
+
+        assert_eq!(variant, indexed);
+        assert_eq!(stats.stable_draws, 1);
+        assert_eq!(stats.missing_variant_draws, 0);
+        assert_eq!(stats.dynamic_palette_draws, 0);
     }
 
     /// Regression test for the BG-flip HD-sampling fix: a BG cell baked with

@@ -30,6 +30,41 @@ pub struct ModernVariantAtlas {
     pub entries: Vec<VariantAtlasEntry>,
 }
 
+pub fn variant_key_for_index_tile(
+    cell: &crate::modern_index_atlas::ModernIndexTile,
+    palette_name: &str,
+    palette_row: u8,
+) -> Option<VariantAtlasKey> {
+    if cell.source_key == crate::modern_hd_overrides::NO_SOURCE_KEY {
+        return None;
+    }
+    let kind = (cell.source_key >> 32) as u8;
+    let pack = ((cell.source_key >> 16) & 0xffff) as u16;
+    let tile = (cell.source_key & 0xffff) as u16;
+    let (source_kind, asset) = match kind {
+        1 | 5 | 6 => ("bg", "kBgGfx"),
+        2 => ("sprite", "kSprGfx"),
+        _ => return None,
+    };
+    Some(VariantAtlasKey {
+        source_kind: source_kind.to_string(),
+        asset: asset.to_string(),
+        pack,
+        tile,
+        // The current ROM-derived source packs that feed this atlas are 3bpp.
+        // Link/special live sources are deliberately unresolved above.
+        bpp: 3,
+        palette: palette_name.to_string(),
+        palette_row,
+    })
+}
+
+impl ModernVariantAtlas {
+    pub fn entry_for_key(&self, key: &VariantAtlasKey) -> Option<&VariantAtlasEntry> {
+        self.entries.iter().find(|entry| entry.key == *key)
+    }
+}
+
 pub fn load_modern_variant_atlas(root: &Path) -> Result<ModernVariantAtlas, String> {
     let atlas_dir = if root.join("atlas/tile_variants.json").is_file() {
         root.join("atlas")
