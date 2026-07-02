@@ -5,7 +5,17 @@ from __future__ import annotations
 
 import unittest
 
-from rgba_variant_atlas import VariantKey, rgba_tile_from_indices, variant_id
+from rgba_variant_atlas import (
+    RgbaVariant,
+    VariantKey,
+    pack_rgba_variants,
+    rgba_tile_from_indices,
+    variant_id,
+)
+
+
+def solid_rgba(value: int) -> bytes:
+    return bytes([value, value, value, 255] * 64)
 
 
 class RgbaVariantAtlasTests(unittest.TestCase):
@@ -44,6 +54,21 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             variant_id(key),
             "sprite:kSprGfx:pack12:tile37:3bpp:palette_main_spr:row3",
         )
+
+    def test_pack_rgba_variants_deduplicates_identical_pixels(self) -> None:
+        key_a = VariantKey("sprite", "kSprGfx", 1, 2, 3, "palette_main_spr", 0)
+        key_b = VariantKey("sprite", "kSprGfx", 1, 3, 3, "palette_main_spr", 0)
+
+        width, height, pixels, entries = pack_rgba_variants(
+            [RgbaVariant(key_a, solid_rgba(7)), RgbaVariant(key_b, solid_rgba(7))],
+            columns=2,
+        )
+
+        self.assertEqual((width, height), (16, 8))
+        self.assertEqual(len(pixels), 16 * 8 * 4)
+        self.assertIsNone(entries[0].duplicate_of)
+        self.assertEqual(entries[1].duplicate_of, entries[0].id)
+        self.assertEqual(entries[1].rect, entries[0].rect)
 
 
 if __name__ == "__main__":
