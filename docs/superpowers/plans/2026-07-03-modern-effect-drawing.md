@@ -604,12 +604,9 @@ precisely.
 ### Task 14: Move Sub-Screen Color Math Into the Variant GPU Path
 
 **Files:**
-- [ ] Modify: `crates/renderer/src/modern_gpu.rs`
-- [ ] Modify: `crates/renderer/src/modern_software.rs`
-- [ ] Modify: `crates/renderer/src/post_process.rs`
-- [ ] Modify: `crates/renderer/src/post_process.wgsl`
-- [ ] Test: focused renderer unit covering a sub-screen math packet
-- [ ] Test: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --only opening-uncle-dismiss-and-move --fast --frames 1000 --stride 60 --require-stable-draws --progress-every 0 --release`
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Test: focused renderer unit covering a static sub-screen math packet
+- [x] Test: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --only opening-uncle-dismiss-and-move --fast --frames 1000 --stride 60 --require-stable-draws --progress-every 0 --release`
 
 **Goal:** Let stable variant BG effect packets participate in the same
 main/sub/final color-math resolve used by the non-variant GPU renderer, so the
@@ -623,3 +620,38 @@ intermediate with the same layer-bit alpha contract used by
 the finalizer/post-process after those packets are present. Keep fixed-color and
 clip subtype counters in place so future routes can prove whether additional
 math cases remain after sub-screen support lands.
+
+**Done:** The mixed headless variant path now has a pre-final lane for static
+variant-effect BG packets that need color math. It patches those packet pixels
+into the packed main-screen buffer with the correct layer math bit, then runs
+the existing GPU finalizer so sub-screen/fixed-color/clip math happens in the
+same pass as the parity renderer. The old final-RGBA overlay path remains in
+place for packets that do not need color math. The focused unit
+`modern_gpu_variant_headless_applies_subscreen_math_to_mixed_effect_bg` proves
+a static effect packet finalizes with the sub-screen operand.
+
+**Route result:** The opening tail remains `mismatched_pixels=0`, but the
+representative route counters stay at
+`mixed_overlay_bg_effect_reject_complex_color_math_subscreen=1861`. Debugging
+showed those route packets are live-CGRAM fallback packets, not static
+variant-effect packets. Re-overlaying live-CGRAM packets in the pre-final lane
+can overwrite already-correct fallback pixels, so they intentionally remain
+rejected/fallback until the renderer has a native live-CGRAM pre-final draw
+path.
+
+### Task 15: Add Native Live-CGRAM Pre-Final Drawing
+
+**Files:**
+- [ ] Modify: `crates/renderer/src/modern_gpu.rs`
+- [ ] Test: focused renderer unit covering a live-CGRAM sub-screen packet
+- [ ] Test: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --only opening-uncle-dismiss-and-move --fast --frames 1000 --stride 60 --require-stable-draws --progress-every 0 --release`
+
+**Goal:** Reduce the 1,861 representative route sub-screen rejects by drawing
+live-CGRAM BG packets into the same pre-final composition space without
+disturbing fallback pixels or reusing the final-RGBA overlay assumptions.
+
+**Approach:** Build a dedicated pre-final live-CGRAM lane instead of reusing the
+current late overlay transform. It must match the fallback compositor's source
+orientation and palette lookup exactly, write packed 5-bit RGB plus layer math
+bit, and only claim draws after the focused route counters drop with zero
+mismatched pixels.

@@ -666,6 +666,21 @@ fn mixed_variant_overlay_bg_packets<'a>(
     frame: &ModernFrame,
     plan: &crate::modern_variant_draw::VariantDrawPlan<'a>,
 ) -> MixedVariantOverlayBgSelection<'a> {
+    mixed_variant_overlay_bg_packets_with_policy(frame, plan, false)
+}
+
+fn mixed_variant_prefinal_bg_packets<'a>(
+    frame: &ModernFrame,
+    plan: &crate::modern_variant_draw::VariantDrawPlan<'a>,
+) -> MixedVariantOverlayBgSelection<'a> {
+    mixed_variant_overlay_bg_packets_with_policy(frame, plan, true)
+}
+
+fn mixed_variant_overlay_bg_packets_with_policy<'a>(
+    frame: &ModernFrame,
+    plan: &crate::modern_variant_draw::VariantDrawPlan<'a>,
+    allow_color_math: bool,
+) -> MixedVariantOverlayBgSelection<'a> {
     let mut out = MixedVariantOverlayBgSelection::default();
     let candidates = plan
         .bg
@@ -691,7 +706,9 @@ fn mixed_variant_overlay_bg_packets<'a>(
         else {
             continue;
         };
-        if let Some(reason) = bg_effect_packet_complex_reject_reason(frame, packet, entry, effect) {
+        if let Some(reason) =
+            bg_effect_packet_complex_reject_reason(frame, packet, entry, effect, allow_color_math)
+        {
             out.record_complex_reject(reason);
             continue;
         }
@@ -718,6 +735,7 @@ fn bg_effect_packet_complex_reject_reason(
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     entry: &crate::modern_variant_atlas::VariantAtlasEntry,
     effect: &crate::modern_variant_atlas::TileEffect,
+    allow_color_math: bool,
 ) -> Option<MixedOverlayComplexRejectReason> {
     if frame.brightness != 15 {
         return Some(MixedOverlayComplexRejectReason::Brightness);
@@ -776,6 +794,16 @@ fn bg_effect_packet_complex_reject_reason(
                 return Some(MixedOverlayComplexRejectReason::LayerWindow);
             }
             if let Some(reason) = bg_packet_pixel_math_reject_reason(frame, layer, sx, sy) {
+                if allow_color_math
+                    && matches!(
+                        reason,
+                        MixedOverlayComplexRejectReason::ColorMathClip
+                            | MixedOverlayComplexRejectReason::ColorMathSubscreen
+                            | MixedOverlayComplexRejectReason::ColorMathFixedColor
+                    )
+                {
+                    continue;
+                }
                 return Some(reason);
             }
         }
@@ -930,6 +958,131 @@ fn bg_packet_can_use_live_cgram(
         }
     }
     true
+}
+
+fn overlay_mixed_variant_bg_packets_on_main_screen(
+    screens: &mut crate::modern_software::ModernCompositedScreens,
+    frame: &ModernFrame,
+    static_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
+    live_cgram_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
+) {
+    debug_assert_eq!(screens.scale, 1);
+    for packet in static_packets {
+        overlay_mixed_variant_bg_packet_on_main_screen(screens, frame, packet, |index| {
+            let crate::modern_variant_atlas::VariantAtlasDraw::Stable {
+                effect: Some(effect),
+                ..
+            } = packet.draw
+            else {
+                return None;
+            };
+            effect.index_to_rgba.get(usize::from(index)).copied()
+        });
+    }
+    for packet in live_cgram_packets {
+        overlay_mixed_variant_bg_packet_on_main_screen(screens, frame, packet, |index| {
+            let palette_base = usize::from(packet.inst.palette) * EFFECT_LUT_WIDTH as usize;
+            frame
+                .cgram_rgba
+                .get(palette_base + usize::from(index))
+                .copied()
+        });
+    }
+}
+
+fn bg_packet_needs_prefinal_color_math(
+    frame: &ModernFrame,
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+) -> bool {
+    bg_packet_prefinal_color_math_reason(frame, packet).is_some()
+}
+
+fn bg_packet_prefinal_color_math_reason(
+    frame: &ModernFrame,
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+) -> Option<MixedOverlayComplexRejectReason> {
+    let crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, .. } = packet.draw else {
+        return None;
+    };
+    let Ok(layer) = u8::try_from(packet.layer_index) else {
+        return None;
+    };
+    if layer >= 4 {
+        return None;
+    }
+    for y in 0..8usize {
+        for x in 0..8usize {
+            if bg_effect_packet_index_at_local(packet, entry, x, y) == 0 {
+                continue;
+            }
+            let dst_x = packet.inst.screen_x + x as i16;
+            let dst_y = packet.inst.screen_y + y as i16;
+            if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                continue;
+            }
+            let reason =
+                bg_packet_pixel_math_reject_reason(frame, layer, dst_x as u32, dst_y as usize);
+            if matches!(
+                reason,
+                Some(
+                    MixedOverlayComplexRejectReason::ColorMathClip
+                        | MixedOverlayComplexRejectReason::ColorMathSubscreen
+                        | MixedOverlayComplexRejectReason::ColorMathFixedColor
+                )
+            ) {
+                return reason;
+            }
+        }
+    }
+    None
+}
+
+fn overlay_mixed_variant_bg_packet_on_main_screen(
+    screens: &mut crate::modern_software::ModernCompositedScreens,
+    _frame: &ModernFrame,
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+    color_for_index: impl Fn(u8) -> Option<[u8; 4]>,
+) {
+    let crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, .. } = packet.draw else {
+        return;
+    };
+    let Ok(math_bit) = u8::try_from(packet.layer_index) else {
+        return;
+    };
+    if math_bit >= 4 {
+        return;
+    }
+    for y in 0..8usize {
+        for x in 0..8usize {
+            let index = bg_effect_packet_index_at_local(packet, entry, x, y);
+            if index == 0 {
+                continue;
+            }
+            let Some(rgba) = color_for_index(index) else {
+                continue;
+            };
+            if rgba[3] == 0 {
+                continue;
+            }
+            let dst_x = packet.inst.screen_x + x as i16;
+            let dst_y = packet.inst.screen_y + y as i16;
+            if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                continue;
+            }
+            let offset = dst_y as usize * screens.width + dst_x as usize;
+            if let Some(pixel) = screens.main.get_mut(offset) {
+                *pixel = pack_variant_prefinal_pixel(rgba, math_bit);
+            }
+        }
+    }
+}
+
+fn pack_variant_prefinal_pixel(rgba: [u8; 4], math_bit: u8) -> u32 {
+    u32::from(rgba[0] >> 3)
+        | (u32::from(rgba[1] >> 3) << 5)
+        | (u32::from(rgba[2] >> 3) << 10)
+        | (u32::from(math_bit) << 15)
+        | (1u32 << 18)
 }
 
 fn bg_packet_overlaps_other_packets(
@@ -2676,60 +2829,114 @@ impl ModernGpuVariantHeadless {
         let variant_frame = self.renderer.build_variant_frame_from_plan(frame, &plan);
         let mut stats = plan.stats;
         if stats.fallback_draws != 0 {
-            self.compositor.render(
-                &self.device,
-                &self.queue,
-                fallback_frame,
-                fallback_bg_cells,
-                fallback_sprite_cells,
-                &self.target,
-            );
-            let overlay = mixed_variant_overlay_bg_packets(frame, &plan);
-            stats.mixed_overlay_bg_effect_draws +=
-                (overlay.bg.len() + overlay.live_cgram_bg.len()) as u32;
-            stats.mixed_overlay_bg_effect_candidates += overlay.candidates;
-            stats.mixed_overlay_bg_effect_reject_complex_frame += overlay.reject_complex_frame;
+            let overlay = mixed_variant_prefinal_bg_packets(frame, &plan);
+            let final_overlay = mixed_variant_overlay_bg_packets(frame, &plan);
+            let prefinal_bg: Vec<_> = overlay
+                .bg
+                .iter()
+                .filter(|packet| bg_packet_needs_prefinal_color_math(frame, packet))
+                .cloned()
+                .collect();
+            let prefinal_color_math = prefinal_bg
+                .iter()
+                .filter_map(|packet| bg_packet_prefinal_color_math_reason(frame, packet))
+                .collect::<Vec<_>>();
+            let accepted_prefinal_color_math = prefinal_color_math.len() as u32;
+            let accepted_prefinal_color_math_clip = prefinal_color_math
+                .iter()
+                .filter(|reason| **reason == MixedOverlayComplexRejectReason::ColorMathClip)
+                .count() as u32;
+            let accepted_prefinal_color_math_subscreen = prefinal_color_math
+                .iter()
+                .filter(|reason| **reason == MixedOverlayComplexRejectReason::ColorMathSubscreen)
+                .count() as u32;
+            let accepted_prefinal_color_math_fixed_color = prefinal_color_math
+                .iter()
+                .filter(|reason| **reason == MixedOverlayComplexRejectReason::ColorMathFixedColor)
+                .count() as u32;
+            stats.mixed_overlay_bg_effect_draws += (final_overlay.bg.len()
+                + final_overlay.live_cgram_bg.len()
+                + prefinal_bg.len()) as u32;
+            stats.mixed_overlay_bg_effect_candidates += final_overlay.candidates;
+            stats.mixed_overlay_bg_effect_reject_complex_frame += final_overlay
+                .reject_complex_frame
+                .saturating_sub(accepted_prefinal_color_math);
             stats.mixed_overlay_bg_effect_reject_complex_brightness +=
-                overlay.reject_complex_brightness;
+                final_overlay.reject_complex_brightness;
             stats.mixed_overlay_bg_effect_reject_complex_invalid_layer +=
-                overlay.reject_complex_invalid_layer;
-            stats.mixed_overlay_bg_effect_reject_complex_mosaic += overlay.reject_complex_mosaic;
+                final_overlay.reject_complex_invalid_layer;
+            stats.mixed_overlay_bg_effect_reject_complex_mosaic +=
+                final_overlay.reject_complex_mosaic;
             stats.mixed_overlay_bg_effect_reject_complex_sub_window +=
-                overlay.reject_complex_sub_window;
+                final_overlay.reject_complex_sub_window;
             stats.mixed_overlay_bg_effect_reject_complex_effect_bounds +=
-                overlay.reject_complex_effect_bounds;
+                final_overlay.reject_complex_effect_bounds;
             stats.mixed_overlay_bg_effect_reject_complex_scanline_main +=
-                overlay.reject_complex_scanline_main;
+                final_overlay.reject_complex_scanline_main;
             stats.mixed_overlay_bg_effect_reject_complex_layer_window +=
-                overlay.reject_complex_layer_window;
-            stats.mixed_overlay_bg_effect_reject_complex_color_math +=
-                overlay.reject_complex_color_math;
-            stats.mixed_overlay_bg_effect_reject_complex_color_math_clip +=
-                overlay.reject_complex_color_math_clip;
-            stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen +=
-                overlay.reject_complex_color_math_subscreen;
-            stats.mixed_overlay_bg_effect_reject_complex_color_math_fixed_color +=
-                overlay.reject_complex_color_math_fixed_color;
-            stats.mixed_overlay_bg_effect_reject_cgram_mismatch += overlay.reject_cgram_mismatch;
-            stats.mixed_overlay_bg_effect_reject_overlap += overlay.reject_overlap;
-            if !overlay.bg.is_empty() {
+                final_overlay.reject_complex_layer_window;
+            stats.mixed_overlay_bg_effect_reject_complex_color_math += final_overlay
+                .reject_complex_color_math
+                .saturating_sub(accepted_prefinal_color_math);
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_clip += final_overlay
+                .reject_complex_color_math_clip
+                .saturating_sub(accepted_prefinal_color_math_clip);
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen += final_overlay
+                .reject_complex_color_math_subscreen
+                .saturating_sub(accepted_prefinal_color_math_subscreen);
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_fixed_color += final_overlay
+                .reject_complex_color_math_fixed_color
+                .saturating_sub(accepted_prefinal_color_math_fixed_color);
+            stats.mixed_overlay_bg_effect_reject_cgram_mismatch +=
+                final_overlay.reject_cgram_mismatch;
+            stats.mixed_overlay_bg_effect_reject_overlap += final_overlay.reject_overlap;
+            if prefinal_bg.is_empty() {
+                self.compositor.render(
+                    &self.device,
+                    &self.queue,
+                    fallback_frame,
+                    fallback_bg_cells,
+                    fallback_sprite_cells,
+                    &self.target,
+                );
+            } else {
+                let mut screens = crate::modern_software::build_modern_composited_screens(
+                    fallback_frame,
+                    fallback_bg_cells,
+                    fallback_sprite_cells,
+                );
+                overlay_mixed_variant_bg_packets_on_main_screen(
+                    &mut screens,
+                    frame,
+                    &prefinal_bg,
+                    &[],
+                );
+                self.compositor.finalizer.render_to_texture(
+                    &self.device,
+                    &self.queue,
+                    fallback_frame,
+                    &screens,
+                    &self.target,
+                );
+            }
+            if !final_overlay.bg.is_empty() {
                 self.renderer.effect_renderer.render_bg(
                     &self.device,
                     &self.queue,
                     bg_cells,
                     &self.renderer.atlas,
-                    &overlay.bg,
+                    &final_overlay.bg,
                     &self.target_view,
                     wgpu::LoadOp::Load,
                 );
             }
-            if !overlay.live_cgram_bg.is_empty() {
+            if !final_overlay.live_cgram_bg.is_empty() {
                 self.renderer.effect_renderer.render_bg_with_live_cgram(
                     &self.device,
                     &self.queue,
                     bg_cells,
                     frame,
-                    &overlay.live_cgram_bg,
+                    &final_overlay.live_cgram_bg,
                     &self.target_view,
                     wgpu::LoadOp::Load,
                 );
@@ -4395,6 +4602,156 @@ mod tests {
         assert_eq!(stats.dynamic_material_draws, 0);
         assert_eq!(stats.missing_art_draws, 0);
         assert_eq!(stats.unkeyed_fallback_draws, 1);
+    }
+
+    #[test]
+    fn modern_gpu_variant_headless_applies_subscreen_math_to_mixed_effect_bg() {
+        use crate::modern_frame::{
+            ModernBgLayer, ModernIndexSpriteInstance, ModernIndexTileInstance,
+        };
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, TileEffect, VariantAtlasEntry, VariantAtlasKey,
+        };
+
+        let mut main_indices = [0u8; 64];
+        main_indices[0] = 1;
+        let mut sub_indices = [0u8; 64];
+        sub_indices[0] = 1;
+        let bg_cells = vec![
+            ModernIndexTile {
+                id: 0,
+                indices: main_indices,
+                source_key: modern_source_key(1, 0, 0),
+                hflip: false,
+                vflip: false,
+            },
+            ModernIndexTile {
+                id: 1,
+                indices: sub_indices,
+                source_key: modern_source_key(1, 9, 9),
+                hflip: false,
+                vflip: false,
+            },
+        ];
+        let mut sprite_indices = [0u8; 64];
+        sprite_indices[0] = 1;
+        let sprite_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: sprite_indices,
+            source_key: NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.screen_enabled_main = 0x11;
+        frame.screen_enabled_sub = 0x02;
+        frame.math_enabled = 0x01;
+        frame.add_subscreen = true;
+        frame.cgram_rgba[33] = [80, 0, 0, 0xff];
+        frame.cgram_rgba[1] = [24, 0, 0, 0xff];
+        frame.cgram_rgba[0x81] = [0, 80, 0, 0xff];
+
+        let mut main_layer = ModernBgLayer::new(0);
+        main_layer.enabled_main = true;
+        main_layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 2,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = main_layer;
+
+        let mut sub_layer = ModernBgLayer::new(1);
+        sub_layer.enabled_sub = true;
+        sub_layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 1,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[1] = sub_layer;
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 32,
+            screen_y: 32,
+            palette: 0,
+            priority: 0,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        });
+
+        let mut fallback_frame = frame.clone();
+        fallback_frame.cgram_rgba[33] = [40, 0, 0, 0xff];
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![VariantAtlasEntry {
+                id: "bg:kBgGfx:pack0:tile0:3bpp".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "bg".to_string(),
+                    asset: "kBgGfx".to_string(),
+                    pack: 0,
+                    tile: 0,
+                    bpp: 3,
+                    palette: "palette_dung_bg_main".to_string(),
+                    palette_row: 2,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "stable".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                source_hflip: false,
+                source_vflip: false,
+            }],
+            effects: vec![TileEffect {
+                id: "palette_dung_bg_main:8color:row2".to_string(),
+                palette: "palette_dung_bg_main".to_string(),
+                palette_row: 2,
+                colors_per_row: 8,
+                index_to_rgba: vec![
+                    [0, 0, 0, 0xff],
+                    [80, 0, 0, 0xff],
+                    [2, 2, 2, 0xff],
+                    [3, 3, 3, 0xff],
+                    [4, 4, 4, 0xff],
+                    [5, 5, 5, 0xff],
+                    [6, 6, 6, 0xff],
+                    [7, 7, 7, 0xff],
+                ],
+                dynamic_policy: "stable".to_string(),
+            }],
+        };
+
+        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+            &frame,
+            &bg_cells,
+            &sprite_cells,
+            &fallback_frame,
+            &bg_cells,
+            &sprite_cells,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(&rgba[0..4], &[107, 0, 0, 0xff]);
+        assert_eq!(stats.mixed_overlay_bg_effect_draws, 1);
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen,
+            0
+        );
     }
 
     #[test]

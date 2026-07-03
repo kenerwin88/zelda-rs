@@ -350,6 +350,14 @@ and sub-screen color-math composition. A fixed-color-only overlay shader would
 not reduce this representative route because the current color-math rejects are
 all sub-screen dependent.
 
+The first pre-final sub-screen implementation supports static variant-effect BG
+packets: those pixels can be written into the packed main-screen buffer before
+the GPU finalizer runs, so final color math uses the real sub-screen operand.
+The opening-route bucket above does not drop yet because its remaining
+sub-screen rejects are live-CGRAM fallback packets. Those stay rejected until a
+native live-CGRAM pre-final lane matches the fallback compositor's source
+orientation and palette lookup exactly.
+
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay
 a stable BG effect packet only when each nontransparent packet pixel is proven
