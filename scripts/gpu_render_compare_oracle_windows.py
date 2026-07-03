@@ -193,6 +193,7 @@ def run_items_for_windows(
     windows: list[OracleWindow],
     checkpoints_by_name: dict[str, list[OracleCheckpoint]],
     fast: bool,
+    frame_limit: int | None = None,
 ) -> list[RunItem]:
     items = []
     for window in windows:
@@ -204,6 +205,8 @@ def run_items_for_windows(
         tail_frames = window.frames
         if checkpoint is not None:
             tail_frames = window.frames - checkpoint.frame
+        if frame_limit is not None:
+            tail_frames = min(tail_frames, frame_limit)
         items.append(RunItem(window=window, checkpoint=checkpoint, tail_frames=tail_frames))
     return items
 
@@ -213,6 +216,7 @@ def selected_windows(
     only: list[str],
     max_frames: int | None,
     include_sram_windows: bool,
+    limit: int | None = None,
 ) -> list[OracleWindow]:
     selected = [window for window in windows if window.status == "pass"]
     if only:
@@ -229,6 +233,8 @@ def selected_windows(
             for window in selected
             if (sidecar := sram_sidecar(window)) is None or not sidecar.exists()
         ]
+    if limit is not None:
+        selected = selected[:limit]
     return selected
 
 
@@ -275,6 +281,27 @@ def command_for(
     return command
 
 
+def command_for_run_item(
+    item: RunItem,
+    rom: Path,
+    stride: int,
+    release: bool,
+    renderer: str | None,
+) -> list[str]:
+    load_state = (
+        item.checkpoint.checkpoint_path if item.checkpoint is not None else None
+    )
+    return command_for(
+        item.window,
+        rom,
+        stride,
+        release,
+        renderer,
+        frames=item.tail_frames,
+        load_state=load_state,
+    )
+
+
 def env_for_renderer(
     base_env: dict[str, str],
     renderer: str | None,
@@ -290,6 +317,16 @@ def env_for_renderer(
     return env
 
 
+def ensure_required_stable_draws(
+    stable_preview_draws: int,
+    stable_effect_draws: int,
+) -> None:
+    if stable_preview_draws + stable_effect_draws == 0:
+        raise SystemExit(
+            "required stable source-art/effect draws, but selected windows drew zero"
+        )
+
+
 def run_window(
     window: OracleWindow,
     rom: Path,
@@ -298,19 +335,22 @@ def run_window(
     renderer: str | None,
     progress_every: int,
     checkpoint: OracleCheckpoint | None,
+    tail_frames: int | None = None,
 ) -> tuple[int, str, int, tuple[int, int, int, int]]:
-    tail_frames = window.frames
+    run_frames = window.frames
     load_state = None
     if checkpoint is not None:
-        tail_frames = window.frames - checkpoint.frame
+        run_frames = window.frames - checkpoint.frame
         load_state = checkpoint.checkpoint_path
+    if tail_frames is not None:
+        run_frames = tail_frames
     command = command_for(
         window,
         rom,
         stride,
         release,
         renderer,
-        frames=tail_frames,
+        frames=run_frames,
         load_state=load_state,
     )
     prefix = f"ZELDA3_RENDERER={renderer} " if renderer else ""
@@ -319,7 +359,7 @@ def run_window(
     else:
         print(
             f"running {window.name} from checkpoint frame {checkpoint.frame} "
-            f"({tail_frames} tail frame(s)): {prefix}{' '.join(command)}",
+            f"({run_frames} tail frame(s)): {prefix}{' '.join(command)}",
             flush=True,
         )
     env = env_for_renderer(os.environ, renderer, progress_every)
@@ -414,6 +454,24 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--include-sram-windows", action="store_true")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help="run only the first N selected passing windows after filters",
+    )
+    parser.add_argument(
+        "--frames",
+        type=int,
+        help="cap each selected run to N frames after frame 0 or the selected checkpoint",
+    )
+    parser.add_argument(
+        "--require-stable-draws",
+        action="store_true",
+        help=(
+            "fail unless selected assets-variant-gpu windows draw at least one "
+            "stable preview/effect-backed source-art tile"
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--jobs",
@@ -441,6 +499,12 @@ def parse_args() -> argparse.Namespace:
         raise SystemExit("--max-frames must be greater than zero")
     if args.progress_every < 0:
         raise SystemExit("--progress-every must be zero or greater")
+    if args.limit is not None and args.limit <= 0:
+        raise SystemExit("--limit must be greater than zero")
+    if args.frames is not None and args.frames <= 0:
+        raise SystemExit("--frames must be greater than zero")
+    if args.require_stable_draws and args.renderer != "assets-variant-gpu":
+        raise SystemExit("--require-stable-draws requires --renderer assets-variant-gpu")
     if args.jobs <= 0:
         raise SystemExit("--jobs must be greater than zero")
     if not args.rom.exists():
@@ -460,10 +524,16 @@ def main() -> None:
         args.only,
         args.max_frames,
         args.include_sram_windows,
+        args.limit,
     )
     if not windows:
         raise SystemExit("no windows selected")
-    run_items = run_items_for_windows(windows, checkpoints_by_name, args.fast)
+    run_items = run_items_for_windows(
+        windows,
+        checkpoints_by_name,
+        args.fast,
+        args.frames,
+    )
 
     total_compared = 0
     total_variant_draws = 0
@@ -477,22 +547,16 @@ def main() -> None:
     total_unkeyed_fallback_draws = 0
     if args.dry_run:
         for item in run_items:
-            window = item.window
-            checkpoint = item.checkpoint
-            tail_frames = item.tail_frames
-            load_state = checkpoint.checkpoint_path if checkpoint is not None else None
             prefix = f"ZELDA3_RENDERER={args.renderer} " if args.renderer else ""
             print(
                 prefix
                 + " ".join(
-                    command_for(
-                        window,
+                    command_for_run_item(
+                        item,
                         args.rom,
                         args.stride,
                         args.release,
                         args.renderer,
-                        frames=tail_frames,
-                        load_state=load_state,
                     )
                 )
             )
@@ -507,6 +571,7 @@ def main() -> None:
             args.renderer,
             args.progress_every,
             item.checkpoint,
+            item.tail_frames,
         )
 
     if args.jobs == 1:
@@ -529,6 +594,12 @@ def main() -> None:
         total_dynamic_material_draws += variant_stats[6]
         total_missing_art_draws += variant_stats[7]
         total_unkeyed_fallback_draws += variant_stats[8]
+
+    if args.require_stable_draws:
+        ensure_required_stable_draws(
+            stable_preview_draws=total_stable_preview_draws,
+            stable_effect_draws=total_stable_effect_draws,
+        )
 
     print(
         "gpu-render-oracle-windows completed "

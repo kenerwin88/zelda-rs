@@ -267,6 +267,33 @@ dynamic material, missing art, and unkeyed fallback draws,
 The CHR/palette-index path remains the oracle until representative replay and
 oracle-window comparisons prove the base/effect path.
 
+For a focused route-window proof that avoids a broad scan while still requiring
+nonzero stable source-art/effect coverage, run:
+
+```bash
+python3 scripts/gpu_render_compare_oracle_windows.py \
+  --renderer assets-variant-gpu \
+  --windows docs/porting/oracle_windows.tsv \
+  --only opening-uncle-dismiss-and-move \
+  --fast \
+  --frames 1000 \
+  --stride 60 \
+  --require-stable-draws \
+  --progress-every 0 \
+  --release
+```
+
+Expected output includes `mismatched_pixels=0` and nonzero
+`stable_preview_draws` or `stable_effect_draws`. The current representative
+proof reports `stable_effect_draws=21038` over 17 sampled compares from the
+checkpointed opening route tail.
+
+Mixed frames that still need dynamic, missing, or unkeyed fallback cells keep
+the fully composited fallback pixels for parity. The draw-mix counters still
+report stable source-art/effect opportunities in those frames; actually
+overlaying those packets over a mixed fallback image waits until packet
+visibility and final composition state are modeled.
+
 ## Modder Workflow Target
 
 Use `art_tiles.png` as the human-editable sheet. It is intentionally smaller

@@ -228,8 +228,9 @@ execution. A real `--jobs 2` rerun of `file-select-button-taps` and
 
 Current implementation evidence after the default-art/effect-loader and live
 present work: `art_tiles.*` source-kind-default refs can resolve as stable when
-`tile_effects.json` has a stable LUT; mixed fallback/effect frames overlay
-effect-backed stable cells through the LUT shader; and live
+`tile_effects.json` has a stable LUT; frames with no fallback draws use
+effect-backed stable cells through the LUT shader; mixed fallback/effect frames
+now keep the full compositor result until packet visibility is modeled; and live
 `assets-variant-gpu` presents on the window renderer's GPU device without
 headless readback or CPU RGBA upload. Use `ZELDA3_VARIANT_LIVE_STATS=1` for a
 cheap live draw-mix check; representative oracle windows should be rerun when a
@@ -359,7 +360,7 @@ Run:
 cargo test -p renderer modern_gpu -- --nocapture
 ```
 
-Expected: pass, including mixed fallback/effect overlay tests.
+Expected: pass, including mixed fallback/effect tests.
 
 - [x] **Step 5: Commit**
 
@@ -381,7 +382,7 @@ git commit -m "refactor(renderer): share variant draw resolution"
 - Modify: `scripts/gpu_render_compare_windows.py`
 - Modify: `scripts/test_gpu_render_compare_oracle_windows.py`
 - Modify: `docs/assets/rgba-variant-atlas.md`
-- Test: `cargo test -p renderer variant_atlas_software modern_gpu_variant_headless_mixed_fallback_uses_effect_overlay`
+- Test: `cargo test -p renderer variant_atlas_software modern_gpu_variant_headless_mixed_fallback_keeps_compositor_pixels`
 - Test: `python3 scripts/test_gpu_render_compare_oracle_windows.py`
 
 **Goal:** Make live and oracle logs report the modern draw mix in source terms:
@@ -452,11 +453,19 @@ policies.
 ### Task 8: Add A Route-Window Proof For Nonzero Variant Draws
 
 **Files:**
-- Modify: `scripts/gpu_render_compare_oracle_windows.py` only if stats parsing
-  needs the Task 6 names.
-- Modify: `docs/assets/rgba-variant-atlas.md`
-- Test: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --cold --limit 1`
+- [x] Modify: `scripts/gpu_render_compare_oracle_windows.py`
+- [x] Modify: `scripts/test_gpu_render_compare_oracle_windows.py`
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Modify: `docs/assets/rgba-variant-atlas.md`
+- [x] Test: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --only opening-uncle-dismiss-and-move --fast --frames 1000 --stride 60 --require-stable-draws --progress-every 0 --release`
 
 **Goal:** Prove at least one representative oracle window has nonzero stable
 source-art/effect draws and zero mismatched pixels. Keep this as a focused
 window proof, not a full route scan.
+
+**Done:** The oracle-window wrapper now supports `--limit`, per-window
+`--frames`, and `--require-stable-draws`. The focused proof command above
+resumes from `opening-uncle-dismiss-and-move` frame `28610`, samples 17
+comparison frames over a 1000-frame tail at stride 60, and reports
+`mismatched_pixels=0`, `variant_draws=21038`,
+`stable_effect_draws=21038`, and `unkeyed_fallback_draws=133112`.

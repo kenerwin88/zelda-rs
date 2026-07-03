@@ -441,29 +441,6 @@ impl ModernGpuVariantRenderer {
             let spr = ModernGpuSpriteRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
             bg.render(device, queue, bg_cells, frame, output_view);
             spr.render(device, queue, sprite_cells, frame, output_view);
-            if stats.effect_draws != 0 {
-                self.effect_renderer.render_bg(
-                    device,
-                    queue,
-                    bg_cells,
-                    &self.atlas,
-                    &plan.bg,
-                    output_view,
-                    wgpu::LoadOp::Load,
-                );
-                self.effect_renderer.render_sprites(
-                    device,
-                    queue,
-                    sprite_cells,
-                    &self.atlas,
-                    &plan.sprites,
-                    output_view,
-                );
-            }
-            if stats.stable_draws != stats.effect_draws {
-                self.renderer
-                    .render_overlay(device, queue, &variant_frame, output_view);
-            }
         } else if stats.effect_draws != 0 {
             self.effect_renderer.render_bg(
                 device,
@@ -2074,33 +2051,6 @@ impl ModernGpuVariantHeadless {
                 fallback_sprite_cells,
                 &self.target,
             );
-            if stats.effect_draws != 0 {
-                self.renderer.effect_renderer.render_bg(
-                    &self.device,
-                    &self.queue,
-                    bg_cells,
-                    &self.renderer.atlas,
-                    &plan.bg,
-                    &self.target_view,
-                    wgpu::LoadOp::Load,
-                );
-                self.renderer.effect_renderer.render_sprites(
-                    &self.device,
-                    &self.queue,
-                    sprite_cells,
-                    &self.renderer.atlas,
-                    &plan.sprites,
-                    &self.target_view,
-                );
-            }
-            if stats.stable_draws != stats.effect_draws {
-                self.renderer.renderer.render_overlay(
-                    &self.device,
-                    &self.queue,
-                    &variant_frame,
-                    &self.target_view,
-                );
-            }
         } else if stats.effect_draws != 0 {
             self.renderer.effect_renderer.render_bg(
                 &self.device,
@@ -2923,7 +2873,7 @@ mod tests {
     }
 
     #[test]
-    fn modern_gpu_variant_headless_mixed_fallback_uses_effect_overlay() {
+    fn modern_gpu_variant_headless_mixed_fallback_keeps_compositor_pixels() {
         use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
         use crate::modern_index_atlas::ModernIndexTile;
         use crate::modern_source_atlas::modern_source_key;
@@ -3047,7 +2997,7 @@ mod tests {
         assert_eq!(stats.dynamic_material_draws, 0);
         assert_eq!(stats.missing_art_draws, 1);
         assert_eq!(stats.unkeyed_fallback_draws, 0);
-        assert_eq!(&variant[0..4], &[90, 100, 110, 0xff]);
+        assert_eq!(&variant[0..4], &fallback[0..4]);
         let missing_offset = 8 * 4;
         assert_eq!(
             &variant[missing_offset..missing_offset + 4],

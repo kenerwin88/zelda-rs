@@ -16,10 +16,13 @@ from gpu_render_compare_oracle_windows import (
     MODERN_INDEX_PROGRESS_RE,
     MODERN_INDEX_SUMMARY_RE,
     OracleCheckpoint,
+    RunItem,
     OracleWindow,
     best_checkpoint_for,
     command_for,
+    command_for_run_item,
     env_for_renderer,
+    ensure_required_stable_draws,
     run_items_for_windows,
     run_command_capture_output,
     selected_windows,
@@ -142,6 +145,34 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
 
         self.assertEqual([window.name for window in selected], ["no-input-intro"])
 
+    def test_selected_windows_can_limit_after_filters(self) -> None:
+        windows = [
+            OracleWindow("first", "pass", 100, "", "", ""),
+            OracleWindow("skip", "fail", 100, "", "", ""),
+            OracleWindow("second", "pass", 100, "", "", ""),
+        ]
+
+        selected = selected_windows(
+            windows,
+            only=[],
+            max_frames=None,
+            include_sram_windows=False,
+            limit=1,
+        )
+
+        self.assertEqual([window.name for window in selected], ["first"])
+
+    def test_required_stable_draws_rejects_zero_source_art(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "stable source-art/effect draws"):
+            ensure_required_stable_draws(
+                stable_preview_draws=0,
+                stable_effect_draws=0,
+            )
+
+    def test_required_stable_draws_accepts_preview_or_effect_art(self) -> None:
+        ensure_required_stable_draws(stable_preview_draws=1, stable_effect_draws=0)
+        ensure_required_stable_draws(stable_preview_draws=0, stable_effect_draws=1)
+
     def test_command_for_checkpoint_uses_tail_frames_and_load_state(self) -> None:
         window = OracleWindow(
             name="file-select-button-taps",
@@ -244,6 +275,32 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         self.assertIsNone(items[0].checkpoint)
         self.assertIsNotNone(items[1].checkpoint)
         self.assertEqual(items[1].tail_frames, 25)
+
+    def test_run_items_can_cap_tail_frames_for_short_proofs(self) -> None:
+        window = OracleWindow("short-proof", "pass", 5000, "scripts/inputs/short.txt", "", "")
+
+        items = run_items_for_windows(
+            [window],
+            checkpoints_by_name={},
+            fast=False,
+            frame_limit=120,
+        )
+
+        self.assertEqual(items[0].tail_frames, 120)
+
+    def test_command_for_run_item_uses_capped_tail_frames(self) -> None:
+        window = OracleWindow("short-proof", "pass", 5000, "scripts/inputs/short.txt", "", "")
+        item = RunItem(window=window, checkpoint=None, tail_frames=120)
+
+        command = command_for_run_item(
+            item,
+            Path("/rom.sfc"),
+            stride=1,
+            release=True,
+            renderer="assets-variant-gpu",
+        )
+
+        self.assertEqual(command[8:10], ["/rom.sfc", "120"])
 
 
 if __name__ == "__main__":
