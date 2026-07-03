@@ -8,6 +8,7 @@ import csv
 import os
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -34,6 +35,26 @@ class OracleWindow:
     input_script: str
     coverage: str
     notes: str
+
+
+def run_command_capture_output(
+    command: list[str],
+    cwd: Path,
+    env: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    with tempfile.TemporaryFile("w+", encoding="utf-8") as stdout:
+        result = subprocess.run(
+            command,
+            cwd=cwd,
+            env=env,
+            text=True,
+            stdout=stdout,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        stdout.seek(0)
+        result.stdout = stdout.read()
+        return result
 
 
 def load_windows(path: Path) -> list[OracleWindow]:
@@ -125,15 +146,7 @@ def run_window(
         env["ZELDA3_RENDERER"] = renderer
     if renderer == "assets-variant-gpu":
         env["ZELDA3_MODERN_INDEX_COMPARE_SUMMARY"] = "1"
-    result = subprocess.run(
-        command,
-        cwd=REPO_ROOT,
-        env=env,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-    )
+    result = run_command_capture_output(command, cwd=REPO_ROOT, env=env)
     if result.returncode != 0:
         if result.stdout:
             print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
