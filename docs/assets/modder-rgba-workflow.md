@@ -63,6 +63,9 @@ The gate checks the editable PNG dimensions and art rects against
 `art_tiles.json`, then verifies that every canonical source ref has stable
 loader coverage.
 
+Default extraction runs the same gate after writing compact atlases and records
+the result as `canonical_art_atlas_summary` in `generated/zelda3_assets/manifest.json`.
+
 ## Run
 
 The default renderer now uses the variant atlas GPU path and presents it through

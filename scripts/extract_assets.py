@@ -469,6 +469,23 @@ def write_canonical_art_atlas(out_dir: Path) -> list[dict[str, str]]:
     ]
 
 
+def validate_canonical_art_atlas(out_dir: Path) -> dict[str, object]:
+    import variant_atlas_summary
+
+    atlas_dir = out_dir / "atlas"
+    if not (atlas_dir / "art_tiles.json").is_file():
+        return {}
+    if not (atlas_dir / "tile_effects.json").is_file():
+        return {}
+
+    summary = variant_atlas_summary.summarize_variant_atlas(atlas_dir)
+    errors = variant_atlas_summary.coverage_errors(summary)
+    if errors:
+        joined = "; ".join(errors)
+        raise RuntimeError(f"canonical art atlas validation failed: {joined}")
+    return summary
+
+
 def decomp_asset(data: bytes) -> bytes:
     result = bytearray()
     offset = 0
@@ -737,6 +754,7 @@ def main() -> int:
     chr_source_sheets = write_chr_source_sheets(out_dir)
     base_effect_atlas = write_base_effect_atlas(out_dir)
     canonical_art_atlas = write_canonical_art_atlas(out_dir)
+    canonical_art_atlas_summary = validate_canonical_art_atlas(out_dir)
     rgba_variant_atlas = write_rgba_variant_atlas(
         out_dir,
         write_diagnostic_variants=args.write_diagnostic_variants,
@@ -752,6 +770,7 @@ def main() -> int:
                 "assets": manifest_assets,
                 "base_effect_atlas": base_effect_atlas,
                 "canonical_art_atlas": canonical_art_atlas,
+                "canonical_art_atlas_summary": canonical_art_atlas_summary,
                 "chr_source_sheets": chr_source_sheets,
                 "image_previews": previews,
                 "rgba_variant_atlas": rgba_variant_atlas,

@@ -300,3 +300,7 @@ matches the manifest dimensions, and contains every declared art rect.
 `--require-full-stable` makes it fail if the PNG/manifest size drifts, the art
 or source-ref counts drift, any art rect is malformed/out of bounds, or any
 canonical source ref lacks stable coverage.
+
+`scripts/extract_assets.py` runs this gate for the default compact atlas output
+and writes the resulting counts to `manifest.json` as
+`canonical_art_atlas_summary`.

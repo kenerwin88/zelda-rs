@@ -442,6 +442,83 @@ class ExtractAssetSourcesTests(unittest.TestCase):
             self.assertTrue((out_dir / "atlas/art_tiles.png").is_file())
             self.assertTrue((out_dir / "atlas/art_tiles.json").is_file())
 
+    def test_validates_canonical_art_atlas_for_manifest_summary(self) -> None:
+        raw_pack = bytes([0] * 1536)
+        sprite_items = [raw_pack] * 12 + [compressed_literal(raw_pack)]
+        assets = [(f"kUnused_{i}", b"x") for i in range(64)]
+        assets.append(("kSprGfx", pack_arrays(sprite_items)))
+        assets.append(("kBgGfx", pack_arrays([compressed_literal(raw_pack)])))
+
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            extract_assets.write_asset_outputs(out_dir, assets)
+            palette_path = out_dir / "assets_src/palettes/palette_main_spr.json"
+            palette_path.parent.mkdir(parents=True, exist_ok=True)
+            palette_path.write_text(
+                json.dumps(
+                    {
+                        "asset": "kPalette_MainSpr",
+                        "colors": [
+                            {
+                                "index": index,
+                                "rgb888": "#000000",
+                                "snes_bgr15": "0x0000",
+                            }
+                            for index in range(64)
+                        ],
+                    }
+                )
+            )
+            extract_assets.write_base_effect_atlas(out_dir)
+            extract_assets.write_canonical_art_atlas(out_dir)
+
+            summary = extract_assets.validate_canonical_art_atlas(out_dir)
+
+            self.assertEqual(summary["art_count"], summary["counted_art_entries"])
+            self.assertEqual(summary["source_refs"], summary["manifest_source_refs"])
+            self.assertEqual(summary["missing_effect_refs"], 0)
+            self.assertEqual(summary["invalid_rect_count"], 0)
+
+    def test_canonical_art_atlas_validation_rejects_manifest_drift(self) -> None:
+        raw_pack = bytes([0] * 1536)
+        sprite_items = [raw_pack] * 12 + [compressed_literal(raw_pack)]
+        assets = [(f"kUnused_{i}", b"x") for i in range(64)]
+        assets.append(("kSprGfx", pack_arrays(sprite_items)))
+        assets.append(("kBgGfx", pack_arrays([compressed_literal(raw_pack)])))
+
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            extract_assets.write_asset_outputs(out_dir, assets)
+            palette_path = out_dir / "assets_src/palettes/palette_main_spr.json"
+            palette_path.parent.mkdir(parents=True, exist_ok=True)
+            palette_path.write_text(
+                json.dumps(
+                    {
+                        "asset": "kPalette_MainSpr",
+                        "colors": [
+                            {
+                                "index": index,
+                                "rgb888": "#000000",
+                                "snes_bgr15": "0x0000",
+                            }
+                            for index in range(64)
+                        ],
+                    }
+                )
+            )
+            extract_assets.write_base_effect_atlas(out_dir)
+            extract_assets.write_canonical_art_atlas(out_dir)
+            manifest_path = out_dir / "atlas/art_tiles.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["art_count"] += 1
+            manifest_path.write_text(json.dumps(manifest))
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "manifest art_count does not match counted arts",
+            ):
+                extract_assets.validate_canonical_art_atlas(out_dir)
+
 
 if __name__ == "__main__":
     unittest.main()
