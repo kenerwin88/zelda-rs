@@ -75,6 +75,8 @@ class ValidateAllParityTests(unittest.TestCase):
 
         self.assertIn("scripts/validate_all_parity.py --full", hook)
         self.assertIn('scripts/validate_all_parity.py --frames "$PARITY_FRAMES"', hook)
+        self.assertIn("scripts/variant_atlas_summary.py --require-full-stable", hook)
+        self.assertIn("--manifest generated/zelda3_assets/manifest.json", hook)
         self.assertNotIn("scripts/test_standard_replay_parity.py", hook)
         self.assertNotIn("scripts/fast_standard_replay_parity.py", hook)
         self.assertNotIn("../zelda3/zelda3", hook)

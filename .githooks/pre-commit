@@ -4,6 +4,13 @@ set -eu
 echo "pre-commit: checking RAM readability guardrails"
 python3 scripts/check_ram_readability.py
 
+if [ -f generated/zelda3_assets/manifest.json ] && [ -d generated/zelda3_assets/atlas ]; then
+  echo "pre-commit: checking compact RGBA atlas manifest"
+  python3 scripts/variant_atlas_summary.py --require-full-stable \
+    --manifest generated/zelda3_assets/manifest.json \
+    generated/zelda3_assets/atlas
+fi
+
 PRECOMMIT_MODE="${ZELDA3_PRECOMMIT_MODE:-fast}"
 
 snapshot_dir="$(mktemp -d "${TMPDIR:-/tmp}/zelda3-pre-commit-sram.XXXXXX")"
