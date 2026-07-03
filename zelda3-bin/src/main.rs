@@ -1425,6 +1425,10 @@ fn effective_play_renderer() -> String {
     renderer_env_or_default(env::var("ZELDA3_RENDERER").ok().as_deref()).to_string()
 }
 
+fn gpu_asset_renderer_mode(mode: &str) -> bool {
+    mode == "assets-anim-gpu" || mode == "assets-variant-gpu"
+}
+
 /// Off-VRAM source atlas + HD override store for the live modern present path,
 /// loaded once. The atlas loads for the default (unset) and explicit `assets-anim`
 /// interactive modes (see `effective_play_renderer`) — `source_atlas`
@@ -1435,7 +1439,7 @@ fn effective_play_renderer() -> String {
 struct GpuPlayRenderer {
     source_atlas: Option<renderer::modern_source_atlas::ModernSourceAtlas>,
     hd_overrides: Option<renderer::modern_hd_overrides::ModernHdOverrides>,
-    atlas_gpu: bool,
+    gpu_asset_mode: bool,
     variant_atlas: Option<renderer::modern_variant_atlas::ModernVariantAtlas>,
     variant_live_stats: VariantLiveStats,
 }
@@ -1493,13 +1497,13 @@ impl GpuPlayRenderer {
         let mode = effective_play_renderer();
         let assets_anim_mode =
             mode == "assets-anim" || mode == "assets-anim-gpu" || mode == "assets-variant-gpu";
-        let atlas_gpu = mode == "assets-anim-gpu";
+        let gpu_asset_mode = gpu_asset_renderer_mode(&mode);
         let variant_atlas = if mode == "assets-variant-gpu" {
             match renderer::modern_variant_atlas::load_modern_base_art_atlas(Path::new(".")) {
                 Ok(atlas) => Some(atlas),
                 Err(e) => {
                     eprintln!(
-                        "base art atlas load failed: {e}; live present falls back to the VRAM-decoded modern path"
+                        "base art atlas load failed: {e}; live present falls back to the indexed GPU atlas path"
                     );
                     None
                 }
@@ -1512,7 +1516,7 @@ impl GpuPlayRenderer {
                 Ok(atlas) => Some(atlas),
                 Err(e) => {
                     eprintln!(
-                        "assets-by-source atlas load failed: {e}; live present falls back to the VRAM-decoded modern path"
+                        "assets-by-source atlas load failed: {e}; live present falls back according to the selected renderer mode"
                     );
                     None
                 }
@@ -1524,7 +1528,7 @@ impl GpuPlayRenderer {
         Self {
             source_atlas,
             hd_overrides,
-            atlas_gpu,
+            gpu_asset_mode,
             variant_atlas,
             variant_live_stats: VariantLiveStats::from_env(),
         }
@@ -1547,7 +1551,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let scanlines_raw = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
         let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
-        if gpu_frame.mode == 7 && (self.variant_atlas.is_some() || self.atlas_gpu) {
+        if gpu_frame.mode == 7 && self.gpu_asset_mode {
             frontend.present_modern_mode7_gpu(&gpu_frame);
             return;
         }
@@ -1596,7 +1600,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
                 }
                 return;
             }
-            if self.atlas_gpu {
+            if self.gpu_asset_mode {
                 frontend.present_modern_gpu(&modern, &bg_cells, &sprite_cells);
                 return;
             }
@@ -1615,7 +1619,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
             frontend.present_modern_rgba(&rgba, 256 * scale, 224 * scale);
             return;
         }
-        if gpu_frame.mode != 7 && (self.variant_atlas.is_some() || self.atlas_gpu) {
+        if gpu_frame.mode != 7 && self.gpu_asset_mode {
             let (mut modern, bg_cells) =
                 renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
             let (sprite_cells, sprites) =
@@ -14751,6 +14755,11 @@ mod tests {
             default_renderer_env_for_variant_setting(None),
             "assets-variant-gpu"
         );
+        assert!(gpu_asset_renderer_mode(
+            default_renderer_env_for_variant_setting(None)
+        ));
+        assert!(gpu_asset_renderer_mode("assets-anim-gpu"));
+        assert!(!gpu_asset_renderer_mode("assets-anim"));
         assert_eq!(
             default_renderer_env_for_variant_setting(Some("off")),
             "assets-anim-gpu",
