@@ -277,6 +277,51 @@ class ExtractAssetSourcesTests(unittest.TestCase):
             self.assertTrue((out_dir / "atlas/tile_variants.png").is_file())
             self.assertTrue((out_dir / "atlas/tile_variants.json").is_file())
 
+    def test_writes_base_effect_atlas_from_extracted_graphics_assets(self) -> None:
+        raw_pack = bytes([0] * 1536)
+        sprite_items = [raw_pack] * 12 + [compressed_literal(raw_pack)]
+        assets = [(f"kUnused_{i}", b"x") for i in range(64)]
+        assets.append(("kSprGfx", pack_arrays(sprite_items)))
+        assets.append(("kBgGfx", pack_arrays([compressed_literal(raw_pack)])))
+
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            extract_assets.write_asset_outputs(out_dir, assets)
+            palette_path = out_dir / "assets_src/palettes/palette_main_spr.json"
+            palette_path.parent.mkdir(parents=True, exist_ok=True)
+            palette_path.write_text(
+                json.dumps(
+                    {
+                        "asset": "kPalette_MainSpr",
+                        "colors": [
+                            {
+                                "index": index,
+                                "rgb888": "#000000",
+                                "snes_bgr15": "0x0000",
+                            }
+                            for index in range(64)
+                        ],
+                    }
+                )
+            )
+
+            atlas = extract_assets.write_base_effect_atlas(out_dir)
+
+            self.assertEqual(
+                atlas,
+                [
+                    {
+                        "image_file": "atlas/base_tiles.png",
+                        "manifest_file": "atlas/base_tiles.json",
+                        "effects_file": "atlas/tile_effects.json",
+                        "source_format": "zelda3_base_art_atlas_v1",
+                    }
+                ],
+            )
+            self.assertTrue((out_dir / "atlas/base_tiles.png").is_file())
+            self.assertTrue((out_dir / "atlas/base_tiles.json").is_file())
+            self.assertTrue((out_dir / "atlas/tile_effects.json").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

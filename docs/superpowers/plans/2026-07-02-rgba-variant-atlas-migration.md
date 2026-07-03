@@ -2,18 +2,19 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace CHR-as-rendered-art with a ROM-traceable RGBA variant atlas first, then layer semantic modder-friendly PNG authoring on top without losing final-pixel parity proof.
+**Goal:** Replace CHR-as-rendered-art with a ROM-traceable base-art atlas plus reusable modern effects first, then layer semantic modder-friendly PNG authoring on top without losing final-pixel parity proof.
 
-**Architecture:** Build a generated `tile_variants.png` plus `tile_variants.json` from ROM-derived CHR, palettes, and observed draw identities. Teach the renderer to resolve existing tile/palette draw identity into atlas rectangles, keeping the current palette-index path as the oracle. Once the atlas contract is stable, add semantic RGBA authoring sheets that compile into the same atlas format.
+**Architecture:** Build generated `base_tiles.png`, `base_tiles.json`, and `tile_effects.json` from ROM-derived CHR and palettes. The base atlas stores each source tile once using palette-usage evidence when available, with a broad source-kind preview palette only as a fallback. The effect table represents recolors, flashes, fades, lighting, and palette-like looks as reusable shader/material transforms. Keep the brute-force `tile_variants.*` artifact only as a diagnostic oracle while the renderer migrates to base art plus effects.
 
 **Tech Stack:** Python 3 asset generation scripts, `unittest`, Pillow/PNG tooling, Rust renderer crate, wgpu, existing `ModernFrame`, `ModernIndexTile`, `ModernSourceAtlas`, `ModernGpuCompositor`, replay parity scripts.
 
 ## Global Constraints
 
 - The ROM remains the extraction source of truth. NES_Ver2/CGX files may inform naming and grouping, but the generated atlas must be buildable from a supported ROM plus repo metadata.
-- `tile_variants.json` is the bridge contract. Runtime and semantic authoring both target that contract.
-- Do not remove the current CHR/palette-index path until the atlas path has frame-level parity proof over representative windows.
-- Dynamic palette effects must remain correct. If a palette can change at runtime, either keep it on the existing palette path for that phase or invalidate/rebuild affected atlas variants explicitly.
+- `base_tiles.json` plus `tile_effects.json` is the bridge contract. Runtime and semantic authoring both target that contract.
+- Raw CHR bytes do not contain final colors. Any claim that `base_tiles.png` uses the right real palette must be backed by `palette_usage.json` or replay/source-map evidence, not by source-kind guesses.
+- Do not remove the current CHR/palette-index path until the base/effect path has frame-level parity proof over representative windows.
+- Dynamic palette effects must remain correct. If a palette can change at runtime, either keep it on the existing palette path for that phase or model it as an explicit effect with replay evidence.
 - Generated assets under `generated/` stay ignored unless a later task intentionally promotes a small fixture into the repo.
 - Keep current dirty work isolated. Do not stage unrelated `crates/renderer/src/modern_source_atlas.rs` changes unless that task explicitly owns them.
 - Verification must compare final `256x224` framebuffer pixels, not just atlas entries.
@@ -23,15 +24,15 @@
 ## File Structure
 
 - Create: `scripts/rgba_variant_atlas.py`  
-  Builds RGBA tile variants from decoded CHR packs, extracted palette JSON, and draw-identity manifests.
+  Builds compact base-art atlases, reusable effect tables, and a diagnostic brute-force variant atlas from decoded CHR packs and extracted palette JSON.
 - Create: `scripts/test_rgba_variant_atlas.py`  
   Unit tests for palette application, variant keys, deduplication, atlas packing, manifest schema, and dynamic-palette classification.
 - Modify: `scripts/extract_assets.py`  
   Adds optional `write_rgba_variant_atlas(out_dir)` integration after palette and CHR source assets exist.
 - Modify: `scripts/test_extract_asset_sources.py`  
-  Integration test that extraction emits `atlas/tile_variants.png` and `atlas/tile_variants.json` when graphics and palettes are present.
+  Integration test that extraction emits `atlas/base_tiles.png`, `atlas/base_tiles.json`, `atlas/tile_effects.json`, and diagnostic `atlas/tile_variants.*` when graphics and palettes are present.
 - Create: `crates/renderer/src/modern_variant_atlas.rs`  
-  Rust loader for `tile_variants.json` and `tile_variants.png`, plus lookup types keyed by existing source identity and palette identity.
+  Rust loader for diagnostic `tile_variants.json`/PNG, later extended to load `base_tiles.json`/PNG and `tile_effects.json`.
 - Modify: `crates/renderer/src/lib.rs`  
   Exports `modern_variant_atlas`.
 - Modify: `crates/renderer/src/modern_gpu.rs`  
@@ -49,9 +50,9 @@
 
 ---
 
-## Phase 1: ROM-Derived RGBA Variant Atlas
+## Phase 1: ROM-Derived Base Art and Effect Atlas
 
-Purpose: generate a normal-color atlas while preserving exact source identity. This phase does not change runtime rendering.
+Purpose: generate a normal-color base-art atlas while preserving exact source identity, prefer real palette usage evidence for previews, and represent alternate palette rows as reusable effects instead of baking them into hundreds of thousands of duplicate recolors. This phase does not change runtime rendering.
 
 ### Task 1: Define Variant Keys and Palette Application
 

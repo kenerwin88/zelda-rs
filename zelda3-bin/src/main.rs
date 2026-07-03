@@ -10305,6 +10305,179 @@ struct AssetsBySourceCell {
     tile_off: u16,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct PaletteUsageKey {
+    source_kind: &'static str,
+    asset: &'static str,
+    pack: u16,
+    tile: u16,
+    bpp: u8,
+    preview_palette: &'static str,
+    preview_palette_row: u8,
+}
+
+#[derive(Debug, Serialize)]
+struct PaletteUsageManifest {
+    format: &'static str,
+    entries: Vec<PaletteUsageEntry>,
+}
+
+#[derive(Debug, Serialize)]
+struct PaletteUsageEntry {
+    source_kind: &'static str,
+    asset: &'static str,
+    pack: u16,
+    tile: u16,
+    bpp: u8,
+    preview_palette: &'static str,
+    preview_palette_row: u8,
+    evidence_count: u32,
+}
+
+fn palette_usage_key_from_chr_source(
+    src: zelda3::LogicalChrSrc,
+    preview_palette: &'static str,
+    preview_palette_row: u8,
+) -> Option<PaletteUsageKey> {
+    let (source_kind, asset) = match src.kind {
+        zelda3::CHR_KIND_BG => ("bg", "kBgGfx"),
+        zelda3::CHR_KIND_SPRITE => ("sprite", "kSprGfx"),
+        _ => return None,
+    };
+    Some(PaletteUsageKey {
+        source_kind,
+        asset,
+        pack: src.pack,
+        tile: src.tile_off,
+        bpp: 3,
+        preview_palette,
+        preview_palette_row,
+    })
+}
+
+fn record_palette_usage_count(
+    counts: &mut HashMap<PaletteUsageKey, u32>,
+    src: zelda3::LogicalChrSrc,
+    preview_palette: &'static str,
+    preview_palette_row: u8,
+) {
+    if let Some(key) = palette_usage_key_from_chr_source(src, preview_palette, preview_palette_row)
+    {
+        *counts.entry(key).or_insert(0) += 1;
+    }
+}
+
+fn palette_usage_entries_from_counts(
+    counts: &HashMap<PaletteUsageKey, u32>,
+) -> Vec<PaletteUsageEntry> {
+    let mut best_by_tile: HashMap<
+        (&'static str, &'static str, u16, u16, u8),
+        (PaletteUsageKey, u32),
+    > = HashMap::new();
+    for (&key, &count) in counts {
+        let tile_key = (key.source_kind, key.asset, key.pack, key.tile, key.bpp);
+        match best_by_tile.get(&tile_key) {
+            Some((best_key, best_count))
+                if count < *best_count
+                    || (count == *best_count
+                        && (key.preview_palette, key.preview_palette_row)
+                            >= (best_key.preview_palette, best_key.preview_palette_row)) => {}
+            _ => {
+                best_by_tile.insert(tile_key, (key, count));
+            }
+        }
+    }
+
+    let mut entries: Vec<_> = best_by_tile
+        .into_values()
+        .map(|(key, evidence_count)| PaletteUsageEntry {
+            source_kind: key.source_kind,
+            asset: key.asset,
+            pack: key.pack,
+            tile: key.tile,
+            bpp: key.bpp,
+            preview_palette: key.preview_palette,
+            preview_palette_row: key.preview_palette_row,
+            evidence_count,
+        })
+        .collect();
+    entries.sort_by_key(|entry| {
+        (
+            entry.source_kind,
+            entry.asset,
+            entry.pack,
+            entry.tile,
+            entry.bpp,
+            entry.preview_palette,
+            entry.preview_palette_row,
+        )
+    });
+    entries
+}
+
+#[cfg(test)]
+mod palette_usage_tests {
+    use super::*;
+
+    #[test]
+    fn raw_chr_sources_map_to_base_tile_usage_keys() {
+        let bg = zelda3::LogicalChrSrc {
+            kind: zelda3::CHR_KIND_BG,
+            pack: 5,
+            tile_off: 17,
+        };
+        let sprite = zelda3::LogicalChrSrc {
+            kind: zelda3::CHR_KIND_SPRITE,
+            pack: 12,
+            tile_off: 3,
+        };
+        let streamed = zelda3::LogicalChrSrc {
+            kind: zelda3::CHR_KIND_BG_STREAM,
+            pack: 0x1234,
+            tile_off: 0x5678,
+        };
+
+        self::assert_palette_usage_key(
+            palette_usage_key_from_chr_source(bg, "palette_dung_bg_main", 2),
+            "bg",
+            "kBgGfx",
+            5,
+            17,
+            "palette_dung_bg_main",
+            2,
+        );
+        self::assert_palette_usage_key(
+            palette_usage_key_from_chr_source(sprite, "palette_main_spr", 6),
+            "sprite",
+            "kSprGfx",
+            12,
+            3,
+            "palette_main_spr",
+            6,
+        );
+        assert!(palette_usage_key_from_chr_source(streamed, "palette_dung_bg_main", 1).is_none());
+    }
+
+    fn assert_palette_usage_key(
+        got: Option<PaletteUsageKey>,
+        source_kind: &str,
+        asset: &str,
+        pack: u16,
+        tile: u16,
+        palette: &str,
+        palette_row: u8,
+    ) {
+        let got = got.expect("expected usage key");
+        assert_eq!(got.source_kind, source_kind);
+        assert_eq!(got.asset, asset);
+        assert_eq!(got.pack, pack);
+        assert_eq!(got.tile, tile);
+        assert_eq!(got.bpp, 3);
+        assert_eq!(got.preview_palette, palette);
+        assert_eq!(got.preview_palette_row, palette_row);
+    }
+}
+
 /// Walk the combined-route replay and dump an asset library keyed by the LOGICAL
 /// CHR SOURCE (Milestone 2 of the animation-modeled asset renderer), NOT by VRAM
 /// appearance.
@@ -10370,6 +10543,10 @@ fn run_dump_assets_by_source(args: &[String]) {
         env!("CARGO_MANIFEST_DIR"),
         "/developer_tilesets/assets_by_source.json"
     );
+    const PALETTE_USAGE_OUT_JSON: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../generated/zelda3_assets/atlas/palette_usage.json"
+    );
     let rom = concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc");
     let replay = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -10408,6 +10585,7 @@ fn run_dump_assets_by_source(args: &[String]) {
     let mut cell_by_key: HashMap<u64, usize> = HashMap::new();
     let mut cells: Vec<[u8; 64]> = Vec::new();
     let mut collisions: usize = 0;
+    let mut palette_usage_counts: HashMap<PaletteUsageKey, u32> = HashMap::new();
     // Keys whose decoded pattern was NOT stable across the route (the keep-first
     // representative differs from a later occurrence). For BG3 these are dropped
     // from the atlas: BG3 CHR is reused, so a non-injective (tile_number, palette)
@@ -10498,6 +10676,19 @@ fn run_dump_assets_by_source(args: &[String]) {
                     if src.kind == CHR_KIND_NONE {
                         continue;
                     }
+                    let palette_row = ((entry_word >> 10) & 7) as u8;
+                    let palette_name = if game.ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) != 0
+                    {
+                        "palette_dung_bg_main"
+                    } else {
+                        "palette_overworld_bg_main"
+                    };
+                    record_palette_usage_count(
+                        &mut palette_usage_counts,
+                        src,
+                        palette_name,
+                        palette_row,
+                    );
                     let key = rekey_content_hash(&ppu.vram, slot, src);
                     let pattern = decode_snes_4bpp_tile_indices(&ppu.vram, slot * 16, 0);
                     if watch_key == Some(key) {
@@ -10563,6 +10754,21 @@ fn run_dump_assets_by_source(args: &[String]) {
                     if src.kind == CHR_KIND_NONE {
                         continue;
                     }
+                    let preview_src = game.vram_chr_preview_source().get(slot);
+                    let usage_src = if src.kind == CHR_KIND_BG_STREAM
+                        && preview_src.kind == CHR_KIND_SPRITE
+                    {
+                        preview_src
+                    } else {
+                        src
+                    };
+                    let palette_row = ((oam1 >> 9) & 7) as u8;
+                    record_palette_usage_count(
+                        &mut palette_usage_counts,
+                        usage_src,
+                        "palette_main_spr",
+                        palette_row,
+                    );
                     let key = rekey_content_hash(&ppu.vram, slot, src);
                     let pattern = decode_snes_4bpp_tile_indices(&ppu.vram, slot * 16, 0);
                     record_keyed(key, pattern, slot);
@@ -10710,6 +10916,30 @@ fn run_dump_assets_by_source(args: &[String]) {
             eprintln!("failed to write assets manifest {OUT_JSON}: {e}");
             process::exit(1);
         }
+        let usage_manifest = PaletteUsageManifest {
+            format: "zelda3_palette_usage_v1",
+            entries: palette_usage_entries_from_counts(&palette_usage_counts),
+        };
+        let usage_json = match serde_json::to_vec_pretty(&usage_manifest) {
+            Ok(j) => j,
+            Err(e) => {
+                eprintln!("failed to serialize palette usage manifest: {e}");
+                process::exit(1);
+            }
+        };
+        if let Some(parent) = Path::new(PALETTE_USAGE_OUT_JSON).parent() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                eprintln!(
+                    "failed to create palette usage dir {}: {e}",
+                    parent.display()
+                );
+                process::exit(1);
+            }
+        }
+        if let Err(e) = fs::write(PALETTE_USAGE_OUT_JSON, &usage_json) {
+            eprintln!("failed to write palette usage manifest {PALETTE_USAGE_OUT_JSON}: {e}");
+            process::exit(1);
+        }
     }
     if no_write {
         eprintln!("[dump] ZELDA3_DUMP_NO_WRITE set — atlas files NOT written (diagnostic run)");
@@ -10719,7 +10949,8 @@ fn run_dump_assets_by_source(args: &[String]) {
         eprintln!("[warn] {collisions} source->pattern collisions (kept first per key)");
     }
     println!(
-        "dumped assets-by-source cells={cell_count} kind_counts(bg/sprite/link/bg3)={count_bg}/{count_sprite}/{count_link}/{count_bg3} dropped_bg3_ambiguous={dropped_bg3} frames={frames_walked}"
+        "dumped assets-by-source cells={cell_count} kind_counts(bg/sprite/link/bg3)={count_bg}/{count_sprite}/{count_link}/{count_bg3} dropped_bg3_ambiguous={dropped_bg3} palette_usage_entries={} frames={frames_walked}",
+        palette_usage_entries_from_counts(&palette_usage_counts).len()
     );
 }
 

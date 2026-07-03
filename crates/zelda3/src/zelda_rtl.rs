@@ -1387,6 +1387,11 @@ pub struct ZeldaState {
     /// so it is excluded from serialization (recomputed at every CHR upload).
     #[serde(skip)]
     pub vram_chr_source: crate::chr_source::VramChrSourceTable,
+    /// Raw source identity for authoring/preview tooling. Unlike `vram_chr_source`,
+    /// sprite entries are not overwritten by content hashes, so offline tools can
+    /// still map observed sprite palette usage back to `kSprGfx` pack/tile IDs.
+    #[serde(skip)]
+    pub vram_chr_preview_source: crate::chr_source::VramChrSourceTable,
     /// ROM graphics pack last decompressed into the animated-tile buffer (0xa680).
     /// Used only to tag the per-frame animated-tile DMA's VRAM slots with an
     /// injective logical CHR source (`CHR_KIND_BG_ANIM`). Pure render-bookkeeping,
@@ -5886,6 +5891,7 @@ impl ZeldaState {
             sram: vec![0; SRAM_SIZE],
             ppu: PpuState::new(),
             vram_chr_source: crate::chr_source::VramChrSourceTable::new(),
+            vram_chr_preview_source: crate::chr_source::VramChrSourceTable::new(),
             animated_tile_pack: 0,
             dma: DmaState::new(),
             frame_ctr_dbg: 0,
@@ -6055,6 +6061,13 @@ impl ZeldaState {
     /// (animation-modeled asset renderer M1 bookkeeping).
     pub fn vram_chr_source(&self) -> &crate::chr_source::VramChrSourceTable {
         &self.vram_chr_source
+    }
+
+    /// Read-only access to the raw per-VRAM-slot CHR source table used by
+    /// authoring/preview tooling. This table preserves sprite pack/tile identity
+    /// even when the render source table is content-hashed for correctness.
+    pub fn vram_chr_preview_source(&self) -> &crate::chr_source::VramChrSourceTable {
+        &self.vram_chr_preview_source
     }
 
     pub fn vram_mut(&mut self) -> &mut [u16] {

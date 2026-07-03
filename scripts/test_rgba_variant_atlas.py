@@ -11,9 +11,11 @@ from rgba_variant_atlas import (
     RgbaVariant,
     VariantKey,
     pack_rgba_variants,
+    build_base_effect_atlas,
     classify_palette_policy,
     rgba_tile_from_indices,
     variant_id,
+    write_base_effect_atlas,
     write_rom_variant_atlas,
 )
 
@@ -159,6 +161,240 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             self.assertTrue(
                 any(entry["palette"] == "palette_main_spr" for entry in manifest["entries"])
             )
+
+    def test_build_base_effect_atlas_uses_one_human_default_per_tile(self) -> None:
+        raw_pack = bytearray(1536)
+        raw_pack[0] = 0x80
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [
+            "#000000",
+            "#102030",
+            "#203040",
+            "#304050",
+            "#405060",
+            "#506070",
+            "#607080",
+            "#708090",
+        ] * 16
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+
+            width, height, pixels, entries, effects = build_base_effect_atlas(asset_dir)
+
+            self.assertEqual((width, height), (256, 8))
+            self.assertLess(len(entries), 2000)
+            self.assertEqual(entries[0]["preview_palette"], "palette_main_spr")
+            self.assertEqual(entries[0]["preview_palette_row"], 0)
+            self.assertEqual(list(pixels[:4]), [0x10, 0x20, 0x30, 255])
+            self.assertTrue(
+                any(effect["id"] == "palette_main_spr:8color:row1" for effect in effects["effects"])
+            )
+
+    def test_base_effect_atlas_uses_palette_usage_map_for_preview_colors(self) -> None:
+        import json
+
+        raw_pack = bytearray(1536)
+        raw_pack[0] = 0x80
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [
+            "#000000",
+            "#102030",
+            "#203040",
+            "#304050",
+            "#405060",
+            "#506070",
+            "#607080",
+            "#708090",
+            "#000000",
+            "#A0B0C0",
+            "#A1B1C1",
+            "#A2B2C2",
+            "#A3B3C3",
+            "#A4B4C4",
+            "#A5B5C5",
+            "#A6B6C6",
+        ] * 8
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+            usage_path = asset_dir / "atlas/palette_usage.json"
+            usage_path.parent.mkdir(parents=True, exist_ok=True)
+            usage_path.write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_palette_usage_v1",
+                        "entries": [
+                            {
+                                "source_kind": "sprite",
+                                "asset": "kSprGfx",
+                                "pack": 0,
+                                "tile": 0,
+                                "bpp": 3,
+                                "preview_palette": "palette_main_spr",
+                                "preview_palette_row": 1,
+                                "evidence_count": 7,
+                            }
+                        ],
+                    }
+                )
+            )
+
+            _width, _height, pixels, entries, _effects = build_base_effect_atlas(asset_dir)
+
+            self.assertEqual(entries[0]["preview_palette"], "palette_main_spr")
+            self.assertEqual(entries[0]["preview_palette_row"], 1)
+            self.assertEqual(entries[0]["preview_source"], "palette_usage")
+            self.assertEqual(entries[0]["palette_usage_evidence_count"], 7)
+            self.assertEqual(list(pixels[:4]), [0xA0, 0xB0, 0xC0, 255])
+
+    def test_base_effect_atlas_loads_auxiliary_palette_from_usage_map(self) -> None:
+        import json
+
+        raw_pack = bytearray(1536)
+        raw_pack[0] = 0x80
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        fallback_colors = [
+            "#000000",
+            "#102030",
+            "#203040",
+            "#304050",
+            "#405060",
+            "#506070",
+            "#607080",
+            "#708090",
+        ] * 16
+        aux_colors = [
+            "#000000",
+            "#010203",
+            "#020304",
+            "#030405",
+            "#040506",
+            "#050607",
+            "#060708",
+            "#070809",
+            "#000000",
+            "#D0E0F0",
+            "#D1E1F1",
+            "#D2E2F2",
+            "#D3E3F3",
+            "#D4E4F4",
+            "#D5E5F5",
+            "#D6E6F6",
+        ] * 8
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                fallback_colors,
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_sprite_aux1.json",
+                aux_colors,
+            )
+            usage_path = asset_dir / "atlas/palette_usage.json"
+            usage_path.parent.mkdir(parents=True, exist_ok=True)
+            usage_path.write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_palette_usage_v1",
+                        "entries": [
+                            {
+                                "source_kind": "sprite",
+                                "asset": "kSprGfx",
+                                "pack": 0,
+                                "tile": 0,
+                                "bpp": 3,
+                                "preview_palette": "palette_sprite_aux1",
+                                "preview_palette_row": 1,
+                            }
+                        ],
+                    }
+                )
+            )
+
+            _width, _height, pixels, entries, effects = build_base_effect_atlas(asset_dir)
+
+            self.assertEqual(entries[0]["preview_palette"], "palette_sprite_aux1")
+            self.assertEqual(entries[0]["preview_palette_row"], 1)
+            self.assertEqual(list(pixels[:4]), [0xD0, 0xE0, 0xF0, 255])
+            self.assertTrue(
+                any(
+                    effect["id"] == "palette_sprite_aux1:8color:row1"
+                    for effect in effects["effects"]
+                )
+            )
+
+    def test_write_base_effect_atlas_emits_compact_art_and_effect_table(self) -> None:
+        import json
+        from PIL import Image
+
+        raw_pack = bytearray(1536)
+        raw_pack[0] = 0x80
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [
+            "#000000",
+            "#102030",
+            "#203040",
+            "#304050",
+            "#405060",
+            "#506070",
+            "#607080",
+            "#708090",
+        ] * 16
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+
+            written = write_base_effect_atlas(asset_dir)
+
+            self.assertIn(asset_dir / "atlas/base_tiles.png", written)
+            self.assertIn(asset_dir / "atlas/base_tiles.json", written)
+            self.assertIn(asset_dir / "atlas/tile_effects.json", written)
+            with Image.open(asset_dir / "atlas/base_tiles.png") as image:
+                self.assertEqual(image.mode, "RGBA")
+            manifest = json.loads((asset_dir / "atlas/base_tiles.json").read_text())
+            effects = json.loads((asset_dir / "atlas/tile_effects.json").read_text())
+            self.assertEqual(manifest["format"], "zelda3_base_art_atlas_v1")
+            self.assertEqual(effects["format"], "zelda3_tile_effect_table_v1")
+            self.assertLess(manifest["entry_count"], 2000)
 
     def test_known_static_palettes_are_stable(self) -> None:
         self.assertEqual(classify_palette_policy("palette_main_spr"), "stable")

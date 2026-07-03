@@ -1349,6 +1349,8 @@ impl ZeldaState {
         let start = dst;
         self.vram_chr_source
             .record_tiles(dst, 64, chr_kind, chr_pack);
+        self.vram_chr_preview_source
+            .record_tiles(dst, 64, chr_kind, chr_pack);
         let mut src = 0usize;
         let mut tmp = [0u8; 8];
         for _ in 0..64 {
@@ -1385,6 +1387,8 @@ impl ZeldaState {
     ) {
         let start = dst;
         self.vram_chr_source
+            .record_tiles(dst, 64, chr_kind, chr_pack);
+        self.vram_chr_preview_source
             .record_tiles(dst, 64, chr_kind, chr_pack);
         let mut src = 0usize;
         for _ in 0..64 {
@@ -1966,6 +1970,13 @@ impl ZeldaState {
         let dst_word = (INCREMENTAL_VRAM_UPLOAD_DESTINATIONS[k] as usize) << 8;
         let base_off = ((k % 4) * 16) as u16;
         self.vram_chr_source.record_tiles_from(
+            dst_word,
+            16,
+            chr_source::CHR_KIND_SPRITE,
+            pack,
+            base_off,
+        );
+        self.vram_chr_preview_source.record_tiles_from(
             dst_word,
             16,
             chr_source::CHR_KIND_SPRITE,

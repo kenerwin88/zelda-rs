@@ -4,7 +4,8 @@
 
 use super::*;
 use crate::chr_source::{
-    LogicalChrSrc, VramChrSourceTable, CHR_KIND_BG, CHR_KIND_LINK, CHR_KIND_NONE, CHR_KIND_SPRITE,
+    LogicalChrSrc, VramChrSourceTable, CHR_KIND_BG, CHR_KIND_BG_STREAM, CHR_KIND_LINK,
+    CHR_KIND_NONE, CHR_KIND_SPRITE,
 };
 
 #[test]
@@ -12,8 +13,13 @@ fn table_starts_empty() {
     let state = ZeldaState::new();
     // Every slot defaults to "none" before any CHR upload (RED baseline).
     assert_eq!(state.vram_chr_source().get(0x200), LogicalChrSrc::default());
+    assert_eq!(
+        state.vram_chr_preview_source().get(0x200),
+        LogicalChrSrc::default()
+    );
     assert_eq!(state.vram_chr_source().get(0x480).kind, CHR_KIND_NONE);
     assert_eq!(state.vram_chr_source().as_slice().len(), 0x800);
+    assert_eq!(state.vram_chr_preview_source().as_slice().len(), 0x800);
 }
 
 #[test]
@@ -47,7 +53,7 @@ fn do3_to_4_low_to_vram_records_bg_chr_source() {
 }
 
 #[test]
-fn do3_to_4_high_to_vram_records_sprite_chr_source() {
+fn sprite_chr_upload_keeps_raw_preview_source_after_render_source_is_hashed() {
     let mut state = ZeldaState::new();
     let data = vec![0u8; 0x600];
 
@@ -55,12 +61,19 @@ fn do3_to_4_high_to_vram_records_sprite_chr_source() {
     state.do3_to_4_high_to_vram(0x4800, &data, CHR_KIND_SPRITE, 94);
 
     let s = state.vram_chr_source().get(0x480);
-    assert_eq!(s.kind, CHR_KIND_SPRITE);
-    assert_eq!(s.pack, 94);
-    assert_eq!(s.tile_off, 0);
+    assert_eq!(s.kind, CHR_KIND_BG_STREAM);
+
+    let preview = state.vram_chr_preview_source().get(0x480);
+    assert_eq!(preview.kind, CHR_KIND_SPRITE);
+    assert_eq!(preview.pack, 94);
+    assert_eq!(preview.tile_off, 0);
+    assert_eq!(
+        state.vram_chr_preview_source().get(0x480 + 0x3f).kind,
+        CHR_KIND_SPRITE
+    );
     assert_eq!(
         state.vram_chr_source().get(0x480 + 0x3f).kind,
-        CHR_KIND_SPRITE
+        CHR_KIND_BG_STREAM
     );
 }
 
