@@ -215,6 +215,33 @@ impl ModernGpuRenderer {
         frame: &ModernFrame,
         output_view: &wgpu::TextureView,
     ) {
+        self.render_with_load_op(
+            device,
+            queue,
+            frame,
+            output_view,
+            modern_frame_clear_op(frame),
+        );
+    }
+
+    fn render_overlay(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        output_view: &wgpu::TextureView,
+    ) {
+        self.render_with_load_op(device, queue, frame, output_view, wgpu::LoadOp::Load);
+    }
+
+    fn render_with_load_op(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        output_view: &wgpu::TextureView,
+        load: wgpu::LoadOp<wgpu::Color>,
+    ) {
         // Build the packed instance buffer in draw order (painter's algorithm).
         let mut instance_bytes: Vec<u8> = Vec::new();
         let mut instance_count: u32 = 0;
@@ -264,20 +291,6 @@ impl ModernGpuRenderer {
             u64::from(instance_count) * INSTANCE_STRIDE
         );
 
-        // Clear color = backdrop (opaque black when forced blank). Rgba8Unorm is
-        // not sRGB, so `b/255` round-trips back to byte `b` exactly.
-        let backdrop = if frame.forced_blank {
-            [0u8, 0, 0, 0xff]
-        } else {
-            frame.backdrop_color_rgba
-        };
-        let clear = wgpu::Color {
-            r: f64::from(backdrop[0]) / 255.0,
-            g: f64::from(backdrop[1]) / 255.0,
-            b: f64::from(backdrop[2]) / 255.0,
-            a: f64::from(backdrop[3]) / 255.0,
-        };
-
         let instance_buffer = if instance_count > 0 {
             let buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("modern_bg_instances"),
@@ -302,7 +315,7 @@ impl ModernGpuRenderer {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(clear),
+                        load,
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -320,6 +333,22 @@ impl ModernGpuRenderer {
         }
         queue.submit([encoder.finish()]);
     }
+}
+
+fn modern_frame_clear_op(frame: &ModernFrame) -> wgpu::LoadOp<wgpu::Color> {
+    // Clear color = backdrop (opaque black when forced blank). Rgba8Unorm is not
+    // sRGB, so `b/255` round-trips back to byte `b` exactly.
+    let backdrop = if frame.forced_blank {
+        [0u8, 0, 0, 0xff]
+    } else {
+        frame.backdrop_color_rgba
+    };
+    wgpu::LoadOp::Clear(wgpu::Color {
+        r: f64::from(backdrop[0]) / 255.0,
+        g: f64::from(backdrop[1]) / 255.0,
+        b: f64::from(backdrop[2]) / 255.0,
+        a: f64::from(backdrop[3]) / 255.0,
+    })
 }
 
 pub struct ModernGpuVariantRenderer {
@@ -367,8 +396,19 @@ impl ModernGpuVariantRenderer {
             bg_palette_name,
             sprite_palette_name,
         );
-        self.renderer
-            .render(device, queue, &variant_frame, output_view);
+        if stats.dynamic_palette_draws != 0 || stats.missing_variant_draws != 0 {
+            let bg = ModernGpuIndexRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
+            let spr = ModernGpuSpriteRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
+            bg.render(device, queue, bg_cells, frame, output_view);
+            spr.render(device, queue, sprite_cells, frame, output_view);
+            if stats.stable_draws != 0 {
+                self.renderer
+                    .render_overlay(device, queue, &variant_frame, output_view);
+            }
+        } else {
+            self.renderer
+                .render(device, queue, &variant_frame, output_view);
+        }
         stats
     }
 

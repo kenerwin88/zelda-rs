@@ -1508,11 +1508,16 @@ impl PlayRendererBackend for GpuPlayRenderer {
                 );
             modern.index_sprites = sprites;
             if let Some(variant_gpu) = self.variant_gpu.as_ref() {
+                let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
+                    "palette_dung_bg_main"
+                } else {
+                    "palette_overworld_bg_main"
+                };
                 let (rgba, _stats) = variant_gpu.render_rgba(
                     &modern,
                     &bg_cells,
                     &sprite_cells,
-                    "palette_dung_bg_main",
+                    bg_palette_name,
                     "palette_main_spr",
                 );
                 frontend.present_modern_rgba(&rgba, 256, 224);
@@ -5569,11 +5574,16 @@ fn run_replay_save(args: &[String]) {
                                 atlas,
                             );
                         modern.index_sprites = sprites;
+                        let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
+                            "palette_dung_bg_main"
+                        } else {
+                            "palette_overworld_bg_main"
+                        };
                         let (rgba, stats) = variant_headless.render_rgba(
                             &modern,
                             &bg_cells,
                             &sprite_cells,
-                            "palette_dung_bg_main",
+                            bg_palette_name,
                             "palette_main_spr",
                         );
                         variant_stats = Some(stats);
