@@ -4,7 +4,7 @@
 
 **Goal:** Replace baked/precolored variant drawing with compact source art plus reusable palette/effect materials while preserving final framebuffer parity.
 
-**Architecture:** `art_tiles.*` and `base_tiles.*` provide source identity and atlas rects. `tile_effects.json` provides stable palette LUT effects keyed by palette, row, and color depth. The software renderer is the oracle for effect application first; the GPU renderer then moves the same LUT application into shader/material data instead of relying on preview RGBA pixels.
+**Architecture:** `art_tiles.*` provides source identity and atlas rects for the default runtime path. `tile_effects.json` provides stable palette LUT effects keyed by palette, row, and color depth. `base_tiles.*` is legacy/debug output only. The software renderer is the oracle for effect application first; the GPU renderer then moves the same LUT application into shader/material data instead of relying on preview RGBA pixels.
 
 **Tech Stack:** Rust renderer crate, serde JSON loaders, existing `ModernFrame`/`ModernIndexTile` draw data, wgpu, Python extractor-generated `tile_effects.json`, existing replay/oracle parity scripts.
 

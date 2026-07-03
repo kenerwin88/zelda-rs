@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - The ROM remains the extraction source of truth. NES_Ver2/CGX files may inform naming and grouping, but the generated atlas must be buildable from a supported ROM plus repo metadata.
-- `art_tiles.json`, `base_tiles.json`, and `tile_effects.json` are the bridge contracts. Runtime prefers `art_tiles.*` when present and falls back to `base_tiles.*`; canonical authoring targets `art_tiles.*`.
+- `art_tiles.json` and `tile_effects.json` are the default bridge contracts. Runtime requires `art_tiles.*`; `base_tiles.*` is legacy/debug output behind `--write-base-effect-atlas`; canonical authoring targets `art_tiles.*`.
 - Raw CHR bytes do not contain final colors. Any claim that `base_tiles.png` uses the right real palette must be backed by `palette_usage.json` or replay/source-map evidence, not by source-kind guesses.
 - Do not remove the current CHR/palette-index path until the base/effect path has frame-level parity proof over representative windows.
 - Dynamic palette effects must remain correct. If a palette can change at runtime, either keep it on the existing palette path for that phase or model it as an explicit effect with replay evidence.
@@ -360,7 +360,7 @@ python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zel
 
 Expected:
 - tests pass
-- default extraction writes compact `art_tiles.*`, `base_tiles.*`, and `tile_effects.json`
+- default extraction writes compact `art_tiles.*` and `tile_effects.json`; `base_tiles.*` is legacy/debug output behind `--write-base-effect-atlas`
 - diagnostic extraction with `--write-diagnostic-variants` prints that
   `atlas/tile_variants.png` and `atlas/tile_variants.json` were written
 - `generated/zelda3_assets/atlas/tile_variants.png` is RGBA after the diagnostic run
@@ -780,5 +780,5 @@ Expected:
 
 - This plan has no dependency on NES_Ver2 at runtime.
 - Each phase leaves a working artifact even if later phases are deferred.
-- The runtime contract is the compact `art_tiles.*`/`base_tiles.*` bridge; `tile_variants.*` remains an opt-in diagnostic oracle so authoring cannot silently bypass provenance.
+- The runtime contract is the compact `art_tiles.*` plus `tile_effects.json` bridge; `tile_variants.*` remains an opt-in diagnostic oracle so authoring cannot silently bypass provenance.
 - Dynamic palette behavior is intentionally conservative until replay evidence proves a palette row is stable.

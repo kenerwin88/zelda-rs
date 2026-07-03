@@ -55,6 +55,21 @@ def classify_palette_policy(palette_name: str) -> str:
     return "stable" if palette_name in stable_palettes else "requires_live_palette"
 
 
+def _build_effect_table_from_palettes(
+    palettes: dict[str, list[list[int]]],
+) -> dict[str, object]:
+    effects_by_id: dict[str, dict[str, object]] = {}
+    for name, colors in palettes.items():
+        for colors_per_row in (4, 8, 16):
+            for effect in _effect_rows_for_palette(name, colors, colors_per_row):
+                effects_by_id.setdefault(str(effect["id"]), effect)
+    return {
+        "format": "zelda3_tile_effect_table_v1",
+        "strategy": "canonical_art_plus_shader_effects",
+        "effects": list(effects_by_id.values()),
+    }
+
+
 def rgba_tile_from_indices(
     indices: bytes,
     palette_colors: list[list[int]],
@@ -520,17 +535,36 @@ def build_base_effect_atlas(
         json_entry["dynamic_policy"] = classify_palette_policy(preview_palette)
         entries.append(json_entry)
 
-    effects_by_id: dict[str, dict[str, object]] = {}
-    for name, colors in palettes.items():
-        for colors_per_row in (4, 8, 16):
-            for effect in _effect_rows_for_palette(name, colors, colors_per_row):
-                effects_by_id.setdefault(str(effect["id"]), effect)
-    effects = {
-        "format": "zelda3_tile_effect_table_v1",
-        "strategy": "base_art_plus_shader_effects",
-        "effects": list(effects_by_id.values()),
-    }
+    effects = _build_effect_table_from_palettes(palettes)
     return width, height, pixels, entries, effects
+
+
+def build_tile_effect_table(
+    asset_dir: Path,
+    palette_names: list[str] | None = None,
+) -> dict[str, object]:
+    palette_names = palette_names or _default_palette_names(asset_dir)
+    if not palette_names:
+        raise FileNotFoundError(asset_dir / "assets_src/palettes")
+
+    palettes_dir = asset_dir / "assets_src/palettes"
+    palettes = {
+        name: read_palette_colors(palettes_dir / f"{name}.json")
+        for name in palette_names
+    }
+    return _build_effect_table_from_palettes(palettes)
+
+
+def write_tile_effect_table(
+    asset_dir: Path,
+    out_dir: Path | None = None,
+) -> list[Path]:
+    destination = out_dir or asset_dir / "atlas"
+    effects = build_tile_effect_table(asset_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    effects_path = destination / "tile_effects.json"
+    effects_path.write_text(json.dumps(effects, indent=2, sort_keys=True) + "\n")
+    return [effects_path]
 
 
 def write_base_effect_atlas(

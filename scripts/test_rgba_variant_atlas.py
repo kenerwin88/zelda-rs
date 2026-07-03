@@ -19,6 +19,7 @@ from rgba_variant_atlas import (
     write_base_effect_atlas,
     write_canonical_art_atlas,
     write_rom_variant_atlas,
+    write_tile_effect_table,
 )
 
 
@@ -919,6 +920,44 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             self.assertEqual(manifest["format"], "zelda3_base_art_atlas_v1")
             self.assertEqual(effects["format"], "zelda3_tile_effect_table_v1")
             self.assertLess(manifest["entry_count"], 2000)
+
+    def test_write_tile_effect_table_omits_legacy_base_tiles(self) -> None:
+        import json
+
+        raw_pack = bytearray(1536)
+        raw_pack[0] = 0x80
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [
+            "#000000",
+            "#102030",
+            "#203040",
+            "#304050",
+            "#405060",
+            "#506070",
+            "#607080",
+            "#708090",
+        ] * 16
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+
+            written = write_tile_effect_table(asset_dir)
+
+            self.assertEqual(written, [asset_dir / "atlas/tile_effects.json"])
+            self.assertFalse((asset_dir / "atlas/base_tiles.png").exists())
+            self.assertFalse((asset_dir / "atlas/base_tiles.json").exists())
+            effects = json.loads((asset_dir / "atlas/tile_effects.json").read_text())
+            self.assertEqual(effects["format"], "zelda3_tile_effect_table_v1")
 
     def test_known_static_palettes_are_stable(self) -> None:
         self.assertEqual(classify_palette_policy("palette_main_spr"), "stable")

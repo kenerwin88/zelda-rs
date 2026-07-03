@@ -49,6 +49,7 @@ class ExtractAssetSourcesTests(unittest.TestCase):
             args = extract_assets.parse_args()
 
             self.assertFalse(args.write_diagnostic_variants)
+            self.assertFalse(args.write_base_effect_atlas)
         finally:
             sys.argv = original_argv
 
@@ -65,6 +66,22 @@ class ExtractAssetSourcesTests(unittest.TestCase):
             args = extract_assets.parse_args()
 
             self.assertTrue(args.write_diagnostic_variants)
+        finally:
+            sys.argv = original_argv
+
+    def test_parse_args_accepts_legacy_base_effect_atlas_flag(self) -> None:
+        original_argv = sys.argv
+        try:
+            sys.argv = [
+                "extract_assets.py",
+                "--rom",
+                "zelda3.sfc",
+                "--write-base-effect-atlas",
+            ]
+
+            args = extract_assets.parse_args()
+
+            self.assertTrue(args.write_base_effect_atlas)
         finally:
             sys.argv = original_argv
 
@@ -399,6 +416,49 @@ class ExtractAssetSourcesTests(unittest.TestCase):
             self.assertTrue((out_dir / "atlas/base_tiles.json").is_file())
             self.assertTrue((out_dir / "atlas/tile_effects.json").is_file())
 
+    def test_writes_tile_effect_table_without_base_tiles(self) -> None:
+        raw_pack = bytes([0] * 1536)
+        sprite_items = [raw_pack] * 12 + [compressed_literal(raw_pack)]
+        assets = [(f"kUnused_{i}", b"x") for i in range(64)]
+        assets.append(("kSprGfx", pack_arrays(sprite_items)))
+        assets.append(("kBgGfx", pack_arrays([compressed_literal(raw_pack)])))
+
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            extract_assets.write_asset_outputs(out_dir, assets)
+            palette_path = out_dir / "assets_src/palettes/palette_main_spr.json"
+            palette_path.parent.mkdir(parents=True, exist_ok=True)
+            palette_path.write_text(
+                json.dumps(
+                    {
+                        "asset": "kPalette_MainSpr",
+                        "colors": [
+                            {
+                                "index": index,
+                                "rgb888": "#000000",
+                                "snes_bgr15": "0x0000",
+                            }
+                            for index in range(64)
+                        ],
+                    }
+                )
+            )
+
+            atlas = extract_assets.write_tile_effect_table(out_dir)
+
+            self.assertEqual(
+                atlas,
+                [
+                    {
+                        "effects_file": "atlas/tile_effects.json",
+                        "source_format": "zelda3_tile_effect_table_v1",
+                    }
+                ],
+            )
+            self.assertTrue((out_dir / "atlas/tile_effects.json").is_file())
+            self.assertFalse((out_dir / "atlas/base_tiles.png").exists())
+            self.assertFalse((out_dir / "atlas/base_tiles.json").exists())
+
     def test_writes_canonical_art_atlas_from_extracted_graphics_assets(self) -> None:
         raw_pack = bytes([0] * 1536)
         sprite_items = [raw_pack] * 12 + [compressed_literal(raw_pack)]
@@ -469,7 +529,7 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                     }
                 )
             )
-            extract_assets.write_base_effect_atlas(out_dir)
+            extract_assets.write_tile_effect_table(out_dir)
             extract_assets.write_canonical_art_atlas(out_dir)
 
             summary = extract_assets.validate_canonical_art_atlas(out_dir)
@@ -506,7 +566,7 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                     }
                 )
             )
-            extract_assets.write_base_effect_atlas(out_dir)
+            extract_assets.write_tile_effect_table(out_dir)
             extract_assets.write_canonical_art_atlas(out_dir)
             manifest_path = out_dir / "atlas/art_tiles.json"
             manifest = json.loads(manifest_path.read_text())

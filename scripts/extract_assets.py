@@ -209,6 +209,14 @@ def parse_args() -> argparse.Namespace:
             "is large and is not needed for the default compact asset path."
         ),
     )
+    parser.add_argument(
+        "--write-base-effect-atlas",
+        action="store_true",
+        help=(
+            "Also emit legacy atlas/base_tiles.{png,json}. The default runtime "
+            "uses atlas/art_tiles.{png,json} plus atlas/tile_effects.json."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -442,6 +450,25 @@ def write_base_effect_atlas(out_dir: Path) -> list[dict[str, str]]:
             "manifest_file": "atlas/base_tiles.json",
             "effects_file": "atlas/tile_effects.json",
             "source_format": "zelda3_base_art_atlas_v1",
+        }
+    ]
+
+
+def write_tile_effect_table(out_dir: Path) -> list[dict[str, str]]:
+    import rgba_variant_atlas
+
+    try:
+        written = rgba_variant_atlas.write_tile_effect_table(out_dir)
+    except FileNotFoundError as exc:
+        print(f"skipping tile effect table: missing {exc.filename}", file=sys.stderr)
+        return []
+
+    if not written:
+        return []
+    return [
+        {
+            "effects_file": "atlas/tile_effects.json",
+            "source_format": "zelda3_tile_effect_table_v1",
         }
     ]
 
@@ -752,7 +779,10 @@ def main() -> int:
 
     manifest_assets = write_asset_outputs(out_dir, assets)
     chr_source_sheets = write_chr_source_sheets(out_dir)
-    base_effect_atlas = write_base_effect_atlas(out_dir)
+    tile_effect_table = write_tile_effect_table(out_dir)
+    base_effect_atlas = (
+        write_base_effect_atlas(out_dir) if args.write_base_effect_atlas else []
+    )
     canonical_art_atlas = write_canonical_art_atlas(out_dir)
     canonical_art_atlas_summary = validate_canonical_art_atlas(out_dir)
     rgba_variant_atlas = write_rgba_variant_atlas(
@@ -777,6 +807,7 @@ def main() -> int:
                 "restool_pack_sha1": sha1(source_pack),
                 "rom_sha1": sha1(rom),
                 "source_tool": str(restool),
+                "tile_effect_table": tile_effect_table,
             },
             indent=2,
             sort_keys=True,
@@ -799,7 +830,9 @@ def main() -> int:
     if chr_source_sheets:
         print(f"wrote {len(chr_source_sheets)} editable CHR sheets to {out_dir / 'assets_src/chr'}")
     if base_effect_atlas:
-        print(f"wrote base/effect atlas to {out_dir / 'atlas'}")
+        print(f"wrote legacy base/effect atlas to {out_dir / 'atlas'}")
+    elif tile_effect_table:
+        print(f"wrote tile effect table to {out_dir / 'atlas'}")
     if rgba_variant_atlas:
         print(f"wrote RGBA variant atlas to {out_dir / 'atlas'}")
     print(f"wrote {manifest}")

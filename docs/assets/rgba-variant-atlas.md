@@ -1,10 +1,10 @@
-# Base Art and Effect Atlas Contract
+# Canonical Art and Effect Atlas Contract
 
-The base/effect atlas is the bridge between SNES-style source graphics and the
-future modder-facing RGBA workflow. It keeps each source tile as human-readable
-base art once, then represents recolors, flashes, fades, and palette-style looks
-as reusable runtime effects instead of baking every recolor into a separate PNG
-tile.
+The canonical art/effect atlas is the bridge between SNES-style source graphics
+and the modder-facing RGBA workflow. It keeps each editable source tile as
+human-readable art once, then represents recolors, flashes, fades, and
+palette-style looks as reusable runtime effects instead of baking every recolor
+into a separate PNG tile.
 
 ## Files
 
@@ -12,27 +12,33 @@ tile.
 emits the compact default atlas set:
 
 ```text
-generated/zelda3_assets/atlas/base_tiles.png
-generated/zelda3_assets/atlas/base_tiles.json
 generated/zelda3_assets/atlas/tile_effects.json
 generated/zelda3_assets/atlas/art_tiles.png
 generated/zelda3_assets/atlas/art_tiles.json
 ```
 
-The PNG is an RGBA atlas of pre-colored 8x8 base tiles. When
-`atlas/palette_usage.json` exists, each tile is previewed with the palette row
-seen in real draw usage. Without that evidence, extraction falls back to a broad
-source-kind default. `base_tiles.json` is the source identity contract.
-`tile_effects.json` describes reusable shader/material effects that can produce
-the alternate looks without duplicating the base art.
+`art_tiles.png` is the modder-facing art sheet and the default compact runtime
+atlas. It deduplicates source tiles by raw index art, collapses
+hflip/vflip-equivalent tiles into one editable tile, and records every source
+identity that maps to that art under `source_refs`. The renderer expands those
+source refs into lookup entries and composes the stored source flip with the
+live draw flip. Palette rows, flashes, fades, and other recolors stay metadata
+or effects instead of becoming more editable PNG tiles.
 
-`art_tiles.png` is the cleaner modder-facing art sheet and the preferred compact
-runtime atlas when present. It deduplicates source tiles by raw index art,
-collapses hflip/vflip-equivalent tiles into one editable tile, and records every
-source identity that maps to that art under `source_refs`. The renderer expands
-those source refs into lookup entries and composes the stored source flip with
-the live draw flip. Palette rows, flashes, fades, and other recolors stay
-metadata or effects instead of becoming more editable PNG tiles.
+`tile_effects.json` describes reusable shader/material effects that can produce
+stable palette looks without duplicating the base art. Extraction can still
+write the older pre-colored base preview atlas for debugging:
+
+```bash
+python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zelda3_assets --write-base-effect-atlas
+```
+
+That optional legacy output creates:
+
+```text
+generated/zelda3_assets/atlas/base_tiles.png
+generated/zelda3_assets/atlas/base_tiles.json
+```
 
 For oracle/debug work, extraction can also write the diagnostic brute-force
 files:
@@ -50,9 +56,8 @@ python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zel
 
 Those files are useful as an oracle and for size/coverage analysis. They are not
 the hand-authored source format and are no longer part of default extraction.
-The live variant GPU path loads `art_tiles.*` when available and falls back to
-`base_tiles.*`; `tile_variants.*` is retained as a diagnostic compatibility
-format.
+The live variant GPU path requires `art_tiles.*`; `tile_variants.*` is retained
+as a diagnostic compatibility format.
 
 ## Entry Identity
 
@@ -117,8 +122,8 @@ runtime or compiler layer can reconstruct the original draw identity.
 
 Raw CHR tile bytes do not encode their real colors. SNES BG tilemap attributes,
 OAM attributes, CGRAM state, and runtime palette effects decide the final color.
-That means `base_tiles.png` can only use the "right" palette when extraction has
-usage evidence for that source tile.
+That means `art_tiles.png` can only use the "right" preview palette when
+extraction has usage evidence for that source tile.
 
 The generator reads the first existing usage file from:
 
@@ -143,8 +148,8 @@ editable PNG. Runtime drawing can still use stable `tile_effects.json` LUTs for
 those defaults when the live draw key names a modeled stable palette row; unknown
 or runtime-derived palettes remain on the live indexed fallback.
 
-Usage entries are keyed by the same ROM-derived source identity used by
-`base_tiles.json`:
+Usage entries are keyed by the same ROM-derived source identity recorded in
+`art_tiles.json` source refs:
 
 ```json
 {
@@ -165,7 +170,8 @@ Usage entries are keyed by the same ROM-derived source identity used by
 ```
 
 If an entry references a missing palette or a row outside the palette's color
-range, the base atlas falls back to the source-kind default for that tile.
+range, the canonical art atlas falls back to the source-kind default for that
+tile.
 
 `preview_source` records where the preview color came from:
 
@@ -211,12 +217,12 @@ palette rows differently:
 - 4bpp: 16-color LUTs
 
 Effects should be used for palette swaps, flashes, fades, lighting/darkening,
-and other temporary visual treatments. Separate RGBA base art should be authored
-only for true semantic variants: different materials, different costumes,
-different objects, or intentionally changed art.
+and other temporary visual treatments. Separate RGBA art should be authored only
+for true semantic variants: different materials, different costumes, different
+objects, or intentionally changed art.
 
-The Rust atlas loader reads `tile_effects.json` alongside `art_tiles.*` or
-`base_tiles.*`. The software variant renderer uses a stable matching
+The Rust atlas loader reads `tile_effects.json` alongside `art_tiles.*`. The
+software variant renderer uses a stable matching
 `palette_lut` effect by sampling the live source tile index and looking up the
 final RGB in `index_to_rgb`; index zero remains transparent. If no matching
 stable effect exists, it keeps the older preview-RGBA atlas sampling behavior.
@@ -263,8 +269,8 @@ python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zel
 cargo run --profile parity -p zelda3-bin
 ```
 
-The default runtime loads `art_tiles.*` directly when those files are present,
-so edits to the canonical sheet are the preferred runtime input. Do not use
+The default runtime loads `art_tiles.*` directly, so edits to the canonical
+sheet are the preferred runtime input. Do not use
 `tile_variants.png` as an authoring sheet; generate it only with
 `--write-diagnostic-variants` when parity/oracle debugging needs the brute-force
 cache. Dynamic-palette fallback remains a runtime parity concern: an art tile
@@ -277,10 +283,10 @@ readback or CPU RGBA upload. Use `ZELDA3_VARIANT_ATLAS=off` to keep the older
 indexed GPU atlas path, or `ZELDA3_RENDERER=assets-anim` for the CPU atlas
 compositor oracle.
 
-If optional `art_tiles.*` / `base_tiles.*` variant art fails to load, the
-selected default mode still stays on the live indexed GPU atlas fallback. The
-CPU atlas compositor is only used for the explicit `ZELDA3_RENDERER=assets-anim`
-oracle/debug mode.
+If `art_tiles.*` fails to load, the selected default mode reports a canonical
+art atlas error instead of silently switching to legacy base previews. Use
+`ZELDA3_VARIANT_ATLAS=off` for the older indexed GPU atlas path, or
+`ZELDA3_RENDERER=assets-anim` for the CPU atlas compositor oracle/debug mode.
 
 For a cheap live coverage check without a replay scan, set
 `ZELDA3_VARIANT_LIVE_STATS=1`. The play loop prints aggregate
