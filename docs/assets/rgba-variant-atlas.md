@@ -246,11 +246,23 @@ The base/effect path is not correct just because `base_tiles.png` looks right.
 Correctness is final `256x224` framebuffer parity against the current
 renderer/oracle. Verification must report:
 
-- base art draws
-- effect-table draws
-- live palette fallback draws
-- missing base tile draws
+- `stable_preview_draws`: source art drawn directly from `art_tiles.png`
+  because the live draw material matches the entry preview material.
+- `stable_effect_draws`: source art drawn through a stable `tile_effects.json`
+  palette/effect LUT.
+- `dynamic_material_draws`: source art exists, but the live material has no
+  modeled stable effect, so the renderer uses the live indexed fallback.
+- `missing_art_draws`: the live draw has a source key but no canonical art
+  entry.
+- `unkeyed_fallback_draws`: the live draw has no ROM/source key and must stay
+  on the live indexed path.
 - final mismatched pixels
+
+Legacy log names remain available for compatibility: `variant_draws` is the
+sum of stable preview and stable effect draws, `fallback_draws` is the sum of
+dynamic material, missing art, and unkeyed fallback draws,
+`dynamic_palette_draws` mirrors `dynamic_material_draws`, and
+`missing_variant_draws` mirrors `missing_art_draws`.
 
 The CHR/palette-index path remains the oracle until representative replay and
 oracle-window comparisons prove the base/effect path.
@@ -290,8 +302,9 @@ art atlas error instead of silently switching to legacy base previews. Use
 
 For a cheap live coverage check without a replay scan, set
 `ZELDA3_VARIANT_LIVE_STATS=1`. The play loop prints aggregate
-`variant_live_summary` lines every 300 presented variant frames by default; use
-`ZELDA3_VARIANT_LIVE_STATS_EVERY=<frames>` to change the interval.
+`variant_live_summary` lines every 300 presented variant frames by default.
+Those lines include both legacy counters and the source/material counters named
+above. Use `ZELDA3_VARIANT_LIVE_STATS_EVERY=<frames>` to change the interval.
 
 For an even cheaper generated-asset check that does not start the emulator, run:
 

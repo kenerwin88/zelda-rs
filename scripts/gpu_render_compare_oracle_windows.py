@@ -29,6 +29,8 @@ MODERN_INDEX_SUMMARY_RE = re.compile(
     r"modern_index_compare_summary compare_count=(\d+) bad_count=(\d+) bad_pixels=(\d+) "
     r"gpu_count=(\d+) mode7_gpu_count=(\d+) cpu_count=(\d+) "
     r"variant_draws=(\d+) fallback_draws=(\d+) dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
+    r"(?: stable_preview_draws=(\d+) stable_effect_draws=(\d+) dynamic_material_draws=(\d+) "
+    r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+))?"
 )
 MODERN_INDEX_PROGRESS_RE = re.compile(
     r"modern_index_compare_progress compare_count=(\d+) frame=(\d+) bad_count=(\d+)"
@@ -351,7 +353,7 @@ def run_window(
         )
     if mismatched_pixels != 0:
         raise SystemExit(f"{window.name}: reported {mismatched_pixels} mismatched pixels")
-    variant_stats = (0, 0, 0, 0)
+    variant_stats = (0, 0, 0, 0, 0, 0, 0, 0, 0)
     modern_match = MODERN_INDEX_SUMMARY_RE.search(result.stdout)
     if renderer == "assets-variant-gpu":
         if not modern_match:
@@ -366,6 +368,11 @@ def run_window(
             int(modern_match.group(8)),
             int(modern_match.group(9)),
             int(modern_match.group(10)),
+            int(modern_match.group(11) or 0),
+            int(modern_match.group(12) or 0),
+            int(modern_match.group(13) or 0),
+            int(modern_match.group(14) or 0),
+            int(modern_match.group(15) or 0),
         )
     print(
         f"{window.name}: compared={compared} frames={window.frames} "
@@ -374,7 +381,12 @@ def run_window(
         f"variant_draws={variant_stats[0]} "
         f"fallback_draws={variant_stats[1]} "
         f"dynamic_palette_draws={variant_stats[2]} "
-        f"missing_variant_draws={variant_stats[3]}"
+        f"missing_variant_draws={variant_stats[3]} "
+        f"stable_preview_draws={variant_stats[4]} "
+        f"stable_effect_draws={variant_stats[5]} "
+        f"dynamic_material_draws={variant_stats[6]} "
+        f"missing_art_draws={variant_stats[7]} "
+        f"unkeyed_fallback_draws={variant_stats[8]}"
     )
     return compared, last_hash, mismatched_pixels, variant_stats
 
@@ -458,6 +470,11 @@ def main() -> None:
     total_fallback_draws = 0
     total_dynamic_palette_draws = 0
     total_missing_variant_draws = 0
+    total_stable_preview_draws = 0
+    total_stable_effect_draws = 0
+    total_dynamic_material_draws = 0
+    total_missing_art_draws = 0
+    total_unkeyed_fallback_draws = 0
     if args.dry_run:
         for item in run_items:
             window = item.window
@@ -481,7 +498,7 @@ def main() -> None:
             )
         return
 
-    def run_item(item: RunItem) -> tuple[int, str, int, tuple[int, int, int, int]]:
+    def run_item(item: RunItem) -> tuple[int, str, int, tuple[int, ...]]:
         return run_window(
             item.window,
             args.rom,
@@ -507,6 +524,11 @@ def main() -> None:
         total_fallback_draws += variant_stats[1]
         total_dynamic_palette_draws += variant_stats[2]
         total_missing_variant_draws += variant_stats[3]
+        total_stable_preview_draws += variant_stats[4]
+        total_stable_effect_draws += variant_stats[5]
+        total_dynamic_material_draws += variant_stats[6]
+        total_missing_art_draws += variant_stats[7]
+        total_unkeyed_fallback_draws += variant_stats[8]
 
     print(
         "gpu-render-oracle-windows completed "
@@ -515,7 +537,12 @@ def main() -> None:
         f"variant_draws={total_variant_draws} "
         f"fallback_draws={total_fallback_draws} "
         f"dynamic_palette_draws={total_dynamic_palette_draws} "
-        f"missing_variant_draws={total_missing_variant_draws}"
+        f"missing_variant_draws={total_missing_variant_draws} "
+        f"stable_preview_draws={total_stable_preview_draws} "
+        f"stable_effect_draws={total_stable_effect_draws} "
+        f"dynamic_material_draws={total_dynamic_material_draws} "
+        f"missing_art_draws={total_missing_art_draws} "
+        f"unkeyed_fallback_draws={total_unkeyed_fallback_draws}"
     )
 
 

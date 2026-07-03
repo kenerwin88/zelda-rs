@@ -376,13 +376,57 @@ git commit -m "refactor(renderer): share variant draw resolution"
 **Files:**
 - Modify: `crates/renderer/src/modern_software.rs`
 - Modify: `crates/renderer/src/modern_gpu.rs`
+- Modify: `zelda3-bin/src/main.rs`
+- Modify: `scripts/gpu_render_compare_oracle_windows.py`
+- Modify: `scripts/gpu_render_compare_windows.py`
+- Modify: `scripts/test_gpu_render_compare_oracle_windows.py`
 - Modify: `docs/assets/rgba-variant-atlas.md`
 - Test: `cargo test -p renderer variant_atlas_software modern_gpu_variant_headless_mixed_fallback_uses_effect_overlay`
+- Test: `python3 scripts/test_gpu_render_compare_oracle_windows.py`
 
 **Goal:** Make live and oracle logs report the modern draw mix in source terms:
 stable preview draws, stable effect draws, dynamic material fallback draws,
 missing source-art draws, and unkeyed live draws. This replaces ambiguous
 legacy wording where all non-preview draws could appear as generic fallback.
+
+- [x] **Step 1: Add failing counter tests**
+
+Add assertions for `stable_preview_draws`, `stable_effect_draws`,
+`dynamic_material_draws`, `missing_art_draws`, and
+`unkeyed_fallback_draws` in the software variant atlas and GPU variant
+headless tests. Add a software regression test where source art exists but the
+live material has no stable effect, proving it counts as
+`dynamic_material_draws`.
+
+Run:
+
+```bash
+cargo test -p renderer variant_atlas_software -- --nocapture
+cargo test -p renderer modern_gpu_variant_headless -- --nocapture
+```
+
+Expected red result: compile failure because the new stats fields do not exist.
+
+- [x] **Step 2: Implement resolver-driven stats**
+
+Extend `VariantAtlasRenderStats` with the five source/material counters and a
+single `record_draw(&VariantAtlasDraw)` helper. Route both the software oracle
+and GPU variant build path through that helper so legacy and modern counters
+are updated together.
+
+- [x] **Step 3: Expose counters in live and oracle logs**
+
+Append `stable_preview_draws`, `stable_effect_draws`,
+`dynamic_material_draws`, `missing_art_draws`, and
+`unkeyed_fallback_draws` to `variant_live_summary`,
+`modern_index_compare`, and `modern_index_compare_summary` lines while keeping
+the existing legacy field names.
+
+- [x] **Step 4: Update compare wrappers and docs**
+
+Update the oracle/window wrapper parsers to accept both old and new summary
+formats, aggregate the new counters when present, and print them in wrapper
+summaries. Document the counter meanings in `docs/assets/rgba-variant-atlas.md`.
 
 ### Task 7: Compile Variant Draws Into Backend-Neutral Draw Packets
 

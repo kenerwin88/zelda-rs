@@ -65,6 +65,41 @@ pub struct VariantAtlasRenderStats {
     pub fallback_draws: u32,
     pub dynamic_palette_draws: u32,
     pub missing_variant_draws: u32,
+    pub stable_preview_draws: u32,
+    pub stable_effect_draws: u32,
+    pub dynamic_material_draws: u32,
+    pub missing_art_draws: u32,
+    pub unkeyed_fallback_draws: u32,
+}
+
+impl VariantAtlasRenderStats {
+    pub fn record_draw(&mut self, draw: &crate::modern_variant_atlas::VariantAtlasDraw<'_>) {
+        match draw {
+            crate::modern_variant_atlas::VariantAtlasDraw::Stable { effect, .. } => {
+                self.stable_draws += 1;
+                if effect.is_some() {
+                    self.effect_draws += 1;
+                    self.stable_effect_draws += 1;
+                } else {
+                    self.stable_preview_draws += 1;
+                }
+            }
+            crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {
+                self.fallback_draws += 1;
+                self.dynamic_palette_draws += 1;
+                self.dynamic_material_draws += 1;
+            }
+            crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
+                self.fallback_draws += 1;
+                self.missing_variant_draws += 1;
+                self.missing_art_draws += 1;
+            }
+            crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {
+                self.fallback_draws += 1;
+                self.unkeyed_fallback_draws += 1;
+            }
+        }
+    }
 }
 
 pub fn render_modern_frame_software_variant_atlas(
@@ -104,27 +139,19 @@ pub fn render_modern_frame_software_variant_atlas(
                 inst.palette,
             );
             let draw = atlas.resolve_draw(key.as_ref());
+            stats.record_draw(&draw);
             match draw {
                 crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
                     draw_variant_bg_instance(&mut out, frame, atlas, entry, effect, cell, inst);
-                    stats.stable_draws += 1;
-                    if effect.is_some() {
-                        stats.effect_draws += 1;
-                    }
                 }
                 crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {
                     draw_indexed_bg_instance(&mut out, frame, cell, inst);
-                    stats.fallback_draws += 1;
-                    stats.dynamic_palette_draws += 1;
                 }
                 crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
                     draw_indexed_bg_instance(&mut out, frame, cell, inst);
-                    stats.fallback_draws += 1;
-                    stats.missing_variant_draws += 1;
                 }
                 crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {
                     draw_indexed_bg_instance(&mut out, frame, cell, inst);
-                    stats.fallback_draws += 1;
                 }
             }
         }
@@ -140,27 +167,19 @@ pub fn render_modern_frame_software_variant_atlas(
             inst.palette,
         );
         let draw = atlas.resolve_draw(key.as_ref());
+        stats.record_draw(&draw);
         match draw {
             crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
                 draw_variant_sprite_instance(&mut out, atlas, entry, effect, cell, inst);
-                stats.stable_draws += 1;
-                if effect.is_some() {
-                    stats.effect_draws += 1;
-                }
             }
             crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {
                 draw_indexed_sprite_instance(&mut out, frame, cell, inst);
-                stats.fallback_draws += 1;
-                stats.dynamic_palette_draws += 1;
             }
             crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
                 draw_indexed_sprite_instance(&mut out, frame, cell, inst);
-                stats.fallback_draws += 1;
-                stats.missing_variant_draws += 1;
             }
             crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {
                 draw_indexed_sprite_instance(&mut out, frame, cell, inst);
-                stats.fallback_draws += 1;
             }
         }
     }
@@ -3046,6 +3065,11 @@ mod tests {
         assert_eq!(stats.fallback_draws, 0);
         assert_eq!(stats.missing_variant_draws, 0);
         assert_eq!(stats.dynamic_palette_draws, 0);
+        assert_eq!(stats.stable_preview_draws, 1);
+        assert_eq!(stats.stable_effect_draws, 0);
+        assert_eq!(stats.dynamic_material_draws, 0);
+        assert_eq!(stats.missing_art_draws, 0);
+        assert_eq!(stats.unkeyed_fallback_draws, 0);
     }
 
     #[test]
@@ -3135,6 +3159,8 @@ mod tests {
         assert_eq!(stats.stable_draws, 1);
         assert_eq!(stats.effect_draws, 1);
         assert_eq!(stats.fallback_draws, 0);
+        assert_eq!(stats.stable_preview_draws, 0);
+        assert_eq!(stats.stable_effect_draws, 1);
     }
 
     #[test]
@@ -3224,6 +3250,85 @@ mod tests {
         assert_eq!(stats.effect_draws, 1);
         assert_eq!(stats.fallback_draws, 0);
         assert_eq!(stats.missing_variant_draws, 0);
+        assert_eq!(stats.stable_preview_draws, 0);
+        assert_eq!(stats.stable_effect_draws, 1);
+        assert_eq!(stats.dynamic_material_draws, 0);
+        assert_eq!(stats.missing_art_draws, 0);
+        assert_eq!(stats.unkeyed_fallback_draws, 0);
+    }
+
+    #[test]
+    fn variant_atlas_software_counts_unmodeled_material_fallback() {
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{ModernVariantAtlas, VariantAtlasEntry, VariantAtlasKey};
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.bg_layers[0].enabled_main = true;
+        frame.cgram_rgba[3 * 16 + 1] = [44, 55, 66, 0xff];
+        frame.bg_layers[0]
+            .index_tiles
+            .push(ModernIndexTileInstance {
+                cell_id: 0,
+                screen_x: 0,
+                screen_y: 0,
+                palette: 3,
+                hflip: false,
+                vflip: false,
+                priority: false,
+            });
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![VariantAtlasEntry {
+                id: "bg:kBgGfx:pack0:tile0:3bpp".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "bg".to_string(),
+                    asset: "kBgGfx".to_string(),
+                    pack: 0,
+                    tile: 0,
+                    bpp: 3,
+                    palette: "palette_dung_bg_main".to_string(),
+                    palette_row: 0,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "test".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                source_hflip: false,
+                source_vflip: false,
+            }],
+            effects: Vec::new(),
+        };
+
+        let (variant, stats) = render_modern_frame_software_variant_atlas(
+            &frame,
+            &cells,
+            &[],
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(&variant[0..4], &[44, 55, 66, 0xff]);
+        assert_eq!(stats.stable_draws, 0);
+        assert_eq!(stats.fallback_draws, 1);
+        assert_eq!(stats.dynamic_palette_draws, 1);
+        assert_eq!(stats.stable_preview_draws, 0);
+        assert_eq!(stats.stable_effect_draws, 0);
+        assert_eq!(stats.dynamic_material_draws, 1);
+        assert_eq!(stats.missing_art_draws, 0);
+        assert_eq!(stats.unkeyed_fallback_draws, 0);
     }
 
     #[test]
@@ -3311,6 +3416,8 @@ mod tests {
         assert_eq!(stats.stable_draws, 1);
         assert_eq!(stats.effect_draws, 1);
         assert_eq!(stats.fallback_draws, 0);
+        assert_eq!(stats.stable_preview_draws, 0);
+        assert_eq!(stats.stable_effect_draws, 1);
     }
 
     /// Regression test for the BG-flip HD-sampling fix: a BG cell baked with

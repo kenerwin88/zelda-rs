@@ -21,11 +21,15 @@ COMPARE_RE = re.compile(
 MODERN_INDEX_SUMMARY_RE = re.compile(
     r"modern_index_compare_summary compare_count=(\d+) bad_count=(\d+) bad_pixels=(\d+) "
     r"gpu_count=(\d+) mode7_gpu_count=(\d+) cpu_count=(\d+)"
-    r"(?: variant_draws=(\d+)(?: fallback_draws=(\d+))? dynamic_palette_draws=(\d+) missing_variant_draws=(\d+))?"
+    r"(?: variant_draws=(\d+)(?: fallback_draws=(\d+))? dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
+    r"(?: stable_preview_draws=(\d+) stable_effect_draws=(\d+) dynamic_material_draws=(\d+) "
+    r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+))?)?"
 )
 MODERN_INDEX_VARIANT_RE = re.compile(
     r"modern_index_compare frame=(\d+) .* via=variant-gpu "
     r"variant_draws=(\d+)(?: fallback_draws=(\d+))? dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
+    r"(?: stable_preview_draws=(\d+) stable_effect_draws=(\d+) dynamic_material_draws=(\d+) "
+    r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+))?"
 )
 SAVED_RE = re.compile(r"saved replay-save checkpoint frame=(\d+) to (.+)")
 SUMMARY_PREFIXES = (
@@ -217,22 +221,42 @@ def compare_window(
             fallback_draws = int(match.group(8) or 0)
             dynamic_palette_draws = int(match.group(9))
             missing_variant_draws = int(match.group(10))
+            stable_preview_draws = int(match.group(11) or 0)
+            stable_effect_draws = int(match.group(12) or 0)
+            dynamic_material_draws = int(match.group(13) or 0)
+            missing_art_draws = int(match.group(14) or 0)
+            unkeyed_fallback_draws = int(match.group(15) or 0)
         else:
             variant_draws = 0
             fallback_draws = 0
             dynamic_palette_draws = 0
             missing_variant_draws = 0
+            stable_preview_draws = 0
+            stable_effect_draws = 0
+            dynamic_material_draws = 0
+            missing_art_draws = 0
+            unkeyed_fallback_draws = 0
             for frame_match in MODERN_INDEX_VARIANT_RE.finditer(output):
                 variant_draws += int(frame_match.group(2))
                 fallback_draws += int(frame_match.group(3) or 0)
                 dynamic_palette_draws += int(frame_match.group(4))
                 missing_variant_draws += int(frame_match.group(5))
+                stable_preview_draws += int(frame_match.group(6) or 0)
+                stable_effect_draws += int(frame_match.group(7) or 0)
+                dynamic_material_draws += int(frame_match.group(8) or 0)
+                missing_art_draws += int(frame_match.group(9) or 0)
+                unkeyed_fallback_draws += int(frame_match.group(10) or 0)
         print(
             f"modern-index window {start}..{end}: compared={compared} "
             f"bad_pixels={bad_pixels} renderer={renderer} "
             f"variant_draws={variant_draws} fallback_draws={fallback_draws} "
             f"dynamic_palette_draws={dynamic_palette_draws} "
-            f"missing_variant_draws={missing_variant_draws}"
+            f"missing_variant_draws={missing_variant_draws} "
+            f"stable_preview_draws={stable_preview_draws} "
+            f"stable_effect_draws={stable_effect_draws} "
+            f"dynamic_material_draws={dynamic_material_draws} "
+            f"missing_art_draws={missing_art_draws} "
+            f"unkeyed_fallback_draws={unkeyed_fallback_draws}"
         )
         if save_checkpoint is not None and not save_checkpoint.exists():
             raise SystemExit(f"end checkpoint was not created: {save_checkpoint}")
@@ -241,7 +265,17 @@ def compare_window(
             end,
             "0x00000000",
             bad_pixels,
-            (variant_draws, fallback_draws, dynamic_palette_draws, missing_variant_draws),
+            (
+                variant_draws,
+                fallback_draws,
+                dynamic_palette_draws,
+                missing_variant_draws,
+                stable_preview_draws,
+                stable_effect_draws,
+                dynamic_material_draws,
+                missing_art_draws,
+                unkeyed_fallback_draws,
+            ),
         )
     match = COMPARE_RE.search(output)
     if not match:
@@ -261,7 +295,7 @@ def compare_window(
         )
     if save_checkpoint is not None and not save_checkpoint.exists():
         raise SystemExit(f"end checkpoint was not created: {save_checkpoint}")
-    return compared, last_frame, last_hash, mismatched_pixels, (0, 0, 0, 0)
+    return compared, last_frame, last_hash, mismatched_pixels, (0, 0, 0, 0, 0, 0, 0, 0, 0)
 
 
 def parse_args() -> argparse.Namespace:
@@ -309,6 +343,11 @@ def main() -> None:
     total_fallback_draws = 0
     total_dynamic_palette_draws = 0
     total_missing_variant_draws = 0
+    total_stable_preview_draws = 0
+    total_stable_effect_draws = 0
+    total_dynamic_material_draws = 0
+    total_missing_art_draws = 0
+    total_unkeyed_fallback_draws = 0
     last_frame = args.start
     last_hash = "0x00000000"
 
@@ -367,6 +406,11 @@ def main() -> None:
         total_fallback_draws += variant_stats[1]
         total_dynamic_palette_draws += variant_stats[2]
         total_missing_variant_draws += variant_stats[3]
+        total_stable_preview_draws += variant_stats[4]
+        total_stable_effect_draws += variant_stats[5]
+        total_dynamic_material_draws += variant_stats[6]
+        total_missing_art_draws += variant_stats[7]
+        total_unkeyed_fallback_draws += variant_stats[8]
 
     if not args.dry_run:
         print(
@@ -377,7 +421,12 @@ def main() -> None:
             f"variant_draws={total_variant_draws} "
             f"fallback_draws={total_fallback_draws} "
             f"dynamic_palette_draws={total_dynamic_palette_draws} "
-            f"missing_variant_draws={total_missing_variant_draws}"
+            f"missing_variant_draws={total_missing_variant_draws} "
+            f"stable_preview_draws={total_stable_preview_draws} "
+            f"stable_effect_draws={total_stable_effect_draws} "
+            f"dynamic_material_draws={total_dynamic_material_draws} "
+            f"missing_art_draws={total_missing_art_draws} "
+            f"unkeyed_fallback_draws={total_unkeyed_fallback_draws}"
         )
 
 

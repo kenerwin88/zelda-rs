@@ -528,6 +528,7 @@ impl ModernGpuVariantRenderer {
                     inst.palette,
                 );
                 let draw = self.atlas.resolve_draw(key.as_ref());
+                stats.record_draw(&draw);
                 match draw {
                     crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
                         if effect.is_none() {
@@ -539,25 +540,14 @@ impl ModernGpuVariantRenderer {
                                 cell.vflip ^ entry.source_vflip,
                             ));
                         }
-                        stats.stable_draws += 1;
-                        if effect.is_some() {
-                            stats.effect_draws += 1;
-                        }
                     }
-                    crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {
-                        stats.fallback_draws += 1;
-                        stats.dynamic_palette_draws += 1;
-                    }
+                    crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {}
                     crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
-                        stats.fallback_draws += 1;
                         if let Some(key) = key.as_ref() {
                             debug_variant_missing_key(key);
-                            stats.missing_variant_draws += 1;
                         }
                     }
-                    crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {
-                        stats.fallback_draws += 1;
-                    }
+                    crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {}
                 }
             }
         }
@@ -573,6 +563,7 @@ impl ModernGpuVariantRenderer {
                 inst.palette,
             );
             let draw = self.atlas.resolve_draw(key.as_ref());
+            stats.record_draw(&draw);
             match draw {
                 crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
                     if effect.is_none() {
@@ -584,25 +575,14 @@ impl ModernGpuVariantRenderer {
                             inst.vflip ^ entry.source_vflip,
                         ));
                     }
-                    stats.stable_draws += 1;
-                    if effect.is_some() {
-                        stats.effect_draws += 1;
-                    }
                 }
-                crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {
-                    stats.fallback_draws += 1;
-                    stats.dynamic_palette_draws += 1;
-                }
+                crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {}
                 crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
-                    stats.fallback_draws += 1;
                     if let Some(key) = key.as_ref() {
                         debug_variant_missing_key(key);
-                        stats.missing_variant_draws += 1;
                     }
                 }
-                crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {
-                    stats.fallback_draws += 1;
-                }
+                crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {}
             }
         }
 
@@ -2909,6 +2889,11 @@ mod tests {
         assert_eq!(stats.fallback_draws, 1);
         assert_eq!(stats.dynamic_palette_draws, 0);
         assert_eq!(stats.missing_variant_draws, 1);
+        assert_eq!(stats.stable_preview_draws, 0);
+        assert_eq!(stats.stable_effect_draws, 0);
+        assert_eq!(stats.dynamic_material_draws, 0);
+        assert_eq!(stats.missing_art_draws, 1);
+        assert_eq!(stats.unkeyed_fallback_draws, 0);
         assert_eq!(variant, full);
     }
 
@@ -2994,6 +2979,11 @@ mod tests {
         assert_eq!(stats.fallback_draws, 1);
         assert_eq!(stats.dynamic_palette_draws, 0);
         assert_eq!(stats.missing_variant_draws, 1);
+        assert_eq!(stats.stable_preview_draws, 0);
+        assert_eq!(stats.stable_effect_draws, 0);
+        assert_eq!(stats.dynamic_material_draws, 0);
+        assert_eq!(stats.missing_art_draws, 1);
+        assert_eq!(stats.unkeyed_fallback_draws, 0);
         assert_eq!(variant, fallback);
     }
 
@@ -3117,6 +3107,11 @@ mod tests {
         assert_eq!(stats.fallback_draws, 1);
         assert_eq!(stats.dynamic_palette_draws, 0);
         assert_eq!(stats.missing_variant_draws, 1);
+        assert_eq!(stats.stable_preview_draws, 0);
+        assert_eq!(stats.stable_effect_draws, 1);
+        assert_eq!(stats.dynamic_material_draws, 0);
+        assert_eq!(stats.missing_art_draws, 1);
+        assert_eq!(stats.unkeyed_fallback_draws, 0);
         assert_eq!(&variant[0..4], &[90, 100, 110, 0xff]);
         let missing_offset = 8 * 4;
         assert_eq!(
@@ -3177,6 +3172,11 @@ mod tests {
         assert_eq!(stats.fallback_draws, 1);
         assert_eq!(stats.dynamic_palette_draws, 0);
         assert_eq!(stats.missing_variant_draws, 0);
+        assert_eq!(stats.stable_preview_draws, 0);
+        assert_eq!(stats.stable_effect_draws, 0);
+        assert_eq!(stats.dynamic_material_draws, 0);
+        assert_eq!(stats.missing_art_draws, 0);
+        assert_eq!(stats.unkeyed_fallback_draws, 1);
     }
 
     #[test]

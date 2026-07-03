@@ -14,6 +14,7 @@ from io import StringIO
 
 from gpu_render_compare_oracle_windows import (
     MODERN_INDEX_PROGRESS_RE,
+    MODERN_INDEX_SUMMARY_RE,
     OracleCheckpoint,
     OracleWindow,
     best_checkpoint_for,
@@ -90,6 +91,35 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         self.assertEqual(env["ZELDA3_RENDERER"], "assets-variant-gpu")
         self.assertEqual(env["ZELDA3_MODERN_INDEX_COMPARE_SUMMARY"], "1")
         self.assertNotIn("ZELDA3_MODERN_INDEX_COMPARE_PROGRESS", env)
+
+    def test_modern_index_summary_regex_accepts_modern_draw_mix(self) -> None:
+        line = (
+            "modern_index_compare_summary compare_count=7 bad_count=0 bad_pixels=0 "
+            "gpu_count=5 mode7_gpu_count=1 cpu_count=1 variant_draws=11 "
+            "fallback_draws=13 dynamic_palette_draws=17 missing_variant_draws=19 "
+            "stable_preview_draws=2 stable_effect_draws=3 dynamic_material_draws=5 "
+            "missing_art_draws=7 unkeyed_fallback_draws=11"
+        )
+
+        match = MODERN_INDEX_SUMMARY_RE.search(line)
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(7), "11")
+        self.assertEqual(match.group(11), "2")
+        self.assertEqual(match.group(15), "11")
+
+    def test_modern_index_summary_regex_accepts_legacy_draw_mix(self) -> None:
+        line = (
+            "modern_index_compare_summary compare_count=7 bad_count=0 bad_pixels=0 "
+            "gpu_count=5 mode7_gpu_count=1 cpu_count=1 variant_draws=11 "
+            "fallback_draws=13 dynamic_palette_draws=17 missing_variant_draws=19"
+        )
+
+        match = MODERN_INDEX_SUMMARY_RE.search(line)
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(7), "11")
+        self.assertIsNone(match.group(11))
 
     def test_no_input_windows_are_not_treated_as_sram_windows(self) -> None:
         windows = [
