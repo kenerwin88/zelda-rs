@@ -169,6 +169,21 @@ The button-direction probe route also passes under `assets-variant-gpu`:
 `mismatched_pixels=0`, `variant_draws=0`, `fallback_draws=1273018978`,
 `dynamic_palette_draws=0`, `missing_variant_draws=538171`.
 
+The remaining non-SRAM TAS/opening windows also pass under
+`assets-variant-gpu`:
+`tas-us-rta-ace` completed `compared=32613`, `mismatched_pixels=0`,
+`variant_draws=0`, `fallback_draws=288354177`,
+`dynamic_palette_draws=0`, `missing_variant_draws=1258620`;
+`opening-uncle-dismiss-and-move` completed `compared=36810`,
+`mismatched_pixels=0`, `variant_draws=0`, `fallback_draws=402547348`,
+`dynamic_palette_draws=0`, `missing_variant_draws=383791`;
+`opening-uncle-extended-move` completed `compared=45610`,
+`mismatched_pixels=0`, `variant_draws=0`, `fallback_draws=501784948`,
+`dynamic_palette_draws=0`, `missing_variant_draws=401391`;
+`opening-uncle-diagonal-sweeps` completed `compared=45610`,
+`mismatched_pixels=0`, `variant_draws=0`, `fallback_draws=501784948`,
+`dynamic_palette_draws=0`, `missing_variant_draws=401391`.
+
 `no-input-intro` is now included in dry-runs after fixing the empty-input SRAM
 sidecar filter. That exposed a real modern compositor gap: the first mismatch
 was frame `1954`, `ppumode=1`, `via=vram`/`variant-gpu`, with a far-left
