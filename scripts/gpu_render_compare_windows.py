@@ -27,6 +27,14 @@ MODERN_INDEX_SUMMARY_RE = re.compile(
     r"(?: mixed_overlay_bg_effect_draws=(\d+)"
     r"(?: mixed_overlay_bg_effect_candidates=(\d+) "
     r"mixed_overlay_bg_effect_reject_complex_frame=(\d+) "
+    r"(?:mixed_overlay_bg_effect_reject_complex_brightness=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_invalid_layer=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_mosaic=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_sub_window=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_effect_bounds=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_scanline_main=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_layer_window=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_color_math=(\d+) )?"
     r"mixed_overlay_bg_effect_reject_cgram_mismatch=(\d+) "
     r"mixed_overlay_bg_effect_reject_overlap=(\d+))?)?)?)?"
 )
@@ -38,6 +46,14 @@ MODERN_INDEX_VARIANT_RE = re.compile(
     r"(?: mixed_overlay_bg_effect_draws=(\d+)"
     r"(?: mixed_overlay_bg_effect_candidates=(\d+) "
     r"mixed_overlay_bg_effect_reject_complex_frame=(\d+) "
+    r"(?:mixed_overlay_bg_effect_reject_complex_brightness=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_invalid_layer=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_mosaic=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_sub_window=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_effect_bounds=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_scanline_main=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_layer_window=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_color_math=(\d+) )?"
     r"mixed_overlay_bg_effect_reject_cgram_mismatch=(\d+) "
     r"mixed_overlay_bg_effect_reject_overlap=(\d+))?)?"
 )
@@ -239,8 +255,16 @@ def compare_window(
             mixed_overlay_bg_effect_draws = int(match.group(16) or 0)
             mixed_overlay_bg_effect_candidates = int(match.group(17) or 0)
             mixed_overlay_bg_effect_reject_complex_frame = int(match.group(18) or 0)
-            mixed_overlay_bg_effect_reject_cgram_mismatch = int(match.group(19) or 0)
-            mixed_overlay_bg_effect_reject_overlap = int(match.group(20) or 0)
+            mixed_overlay_bg_effect_reject_complex_brightness = int(match.group(19) or 0)
+            mixed_overlay_bg_effect_reject_complex_invalid_layer = int(match.group(20) or 0)
+            mixed_overlay_bg_effect_reject_complex_mosaic = int(match.group(21) or 0)
+            mixed_overlay_bg_effect_reject_complex_sub_window = int(match.group(22) or 0)
+            mixed_overlay_bg_effect_reject_complex_effect_bounds = int(match.group(23) or 0)
+            mixed_overlay_bg_effect_reject_complex_scanline_main = int(match.group(24) or 0)
+            mixed_overlay_bg_effect_reject_complex_layer_window = int(match.group(25) or 0)
+            mixed_overlay_bg_effect_reject_complex_color_math = int(match.group(26) or 0)
+            mixed_overlay_bg_effect_reject_cgram_mismatch = int(match.group(27) or 0)
+            mixed_overlay_bg_effect_reject_overlap = int(match.group(28) or 0)
         else:
             variant_draws = 0
             fallback_draws = 0
@@ -254,6 +278,14 @@ def compare_window(
             mixed_overlay_bg_effect_draws = 0
             mixed_overlay_bg_effect_candidates = 0
             mixed_overlay_bg_effect_reject_complex_frame = 0
+            mixed_overlay_bg_effect_reject_complex_brightness = 0
+            mixed_overlay_bg_effect_reject_complex_invalid_layer = 0
+            mixed_overlay_bg_effect_reject_complex_mosaic = 0
+            mixed_overlay_bg_effect_reject_complex_sub_window = 0
+            mixed_overlay_bg_effect_reject_complex_effect_bounds = 0
+            mixed_overlay_bg_effect_reject_complex_scanline_main = 0
+            mixed_overlay_bg_effect_reject_complex_layer_window = 0
+            mixed_overlay_bg_effect_reject_complex_color_math = 0
             mixed_overlay_bg_effect_reject_cgram_mismatch = 0
             mixed_overlay_bg_effect_reject_overlap = 0
             for frame_match in MODERN_INDEX_VARIANT_RE.finditer(output):
@@ -269,8 +301,16 @@ def compare_window(
                 mixed_overlay_bg_effect_draws += int(frame_match.group(11) or 0)
                 mixed_overlay_bg_effect_candidates += int(frame_match.group(12) or 0)
                 mixed_overlay_bg_effect_reject_complex_frame += int(frame_match.group(13) or 0)
-                mixed_overlay_bg_effect_reject_cgram_mismatch += int(frame_match.group(14) or 0)
-                mixed_overlay_bg_effect_reject_overlap += int(frame_match.group(15) or 0)
+                mixed_overlay_bg_effect_reject_complex_brightness += int(frame_match.group(14) or 0)
+                mixed_overlay_bg_effect_reject_complex_invalid_layer += int(frame_match.group(15) or 0)
+                mixed_overlay_bg_effect_reject_complex_mosaic += int(frame_match.group(16) or 0)
+                mixed_overlay_bg_effect_reject_complex_sub_window += int(frame_match.group(17) or 0)
+                mixed_overlay_bg_effect_reject_complex_effect_bounds += int(frame_match.group(18) or 0)
+                mixed_overlay_bg_effect_reject_complex_scanline_main += int(frame_match.group(19) or 0)
+                mixed_overlay_bg_effect_reject_complex_layer_window += int(frame_match.group(20) or 0)
+                mixed_overlay_bg_effect_reject_complex_color_math += int(frame_match.group(21) or 0)
+                mixed_overlay_bg_effect_reject_cgram_mismatch += int(frame_match.group(22) or 0)
+                mixed_overlay_bg_effect_reject_overlap += int(frame_match.group(23) or 0)
         print(
             f"modern-index window {start}..{end}: compared={compared} "
             f"bad_pixels={bad_pixels} renderer={renderer} "
@@ -285,6 +325,14 @@ def compare_window(
             f"mixed_overlay_bg_effect_draws={mixed_overlay_bg_effect_draws} "
             f"mixed_overlay_bg_effect_candidates={mixed_overlay_bg_effect_candidates} "
             f"mixed_overlay_bg_effect_reject_complex_frame={mixed_overlay_bg_effect_reject_complex_frame} "
+            f"mixed_overlay_bg_effect_reject_complex_brightness={mixed_overlay_bg_effect_reject_complex_brightness} "
+            f"mixed_overlay_bg_effect_reject_complex_invalid_layer={mixed_overlay_bg_effect_reject_complex_invalid_layer} "
+            f"mixed_overlay_bg_effect_reject_complex_mosaic={mixed_overlay_bg_effect_reject_complex_mosaic} "
+            f"mixed_overlay_bg_effect_reject_complex_sub_window={mixed_overlay_bg_effect_reject_complex_sub_window} "
+            f"mixed_overlay_bg_effect_reject_complex_effect_bounds={mixed_overlay_bg_effect_reject_complex_effect_bounds} "
+            f"mixed_overlay_bg_effect_reject_complex_scanline_main={mixed_overlay_bg_effect_reject_complex_scanline_main} "
+            f"mixed_overlay_bg_effect_reject_complex_layer_window={mixed_overlay_bg_effect_reject_complex_layer_window} "
+            f"mixed_overlay_bg_effect_reject_complex_color_math={mixed_overlay_bg_effect_reject_complex_color_math} "
             f"mixed_overlay_bg_effect_reject_cgram_mismatch={mixed_overlay_bg_effect_reject_cgram_mismatch} "
             f"mixed_overlay_bg_effect_reject_overlap={mixed_overlay_bg_effect_reject_overlap}"
         )
@@ -308,6 +356,14 @@ def compare_window(
                 mixed_overlay_bg_effect_draws,
                 mixed_overlay_bg_effect_candidates,
                 mixed_overlay_bg_effect_reject_complex_frame,
+                mixed_overlay_bg_effect_reject_complex_brightness,
+                mixed_overlay_bg_effect_reject_complex_invalid_layer,
+                mixed_overlay_bg_effect_reject_complex_mosaic,
+                mixed_overlay_bg_effect_reject_complex_sub_window,
+                mixed_overlay_bg_effect_reject_complex_effect_bounds,
+                mixed_overlay_bg_effect_reject_complex_scanline_main,
+                mixed_overlay_bg_effect_reject_complex_layer_window,
+                mixed_overlay_bg_effect_reject_complex_color_math,
                 mixed_overlay_bg_effect_reject_cgram_mismatch,
                 mixed_overlay_bg_effect_reject_overlap,
             ),
@@ -386,6 +442,14 @@ def main() -> None:
     total_mixed_overlay_bg_effect_draws = 0
     total_mixed_overlay_bg_effect_candidates = 0
     total_mixed_overlay_bg_effect_reject_complex_frame = 0
+    total_mixed_overlay_bg_effect_reject_complex_brightness = 0
+    total_mixed_overlay_bg_effect_reject_complex_invalid_layer = 0
+    total_mixed_overlay_bg_effect_reject_complex_mosaic = 0
+    total_mixed_overlay_bg_effect_reject_complex_sub_window = 0
+    total_mixed_overlay_bg_effect_reject_complex_effect_bounds = 0
+    total_mixed_overlay_bg_effect_reject_complex_scanline_main = 0
+    total_mixed_overlay_bg_effect_reject_complex_layer_window = 0
+    total_mixed_overlay_bg_effect_reject_complex_color_math = 0
     total_mixed_overlay_bg_effect_reject_cgram_mismatch = 0
     total_mixed_overlay_bg_effect_reject_overlap = 0
     last_frame = args.start
@@ -454,8 +518,16 @@ def main() -> None:
         total_mixed_overlay_bg_effect_draws += variant_stats[9]
         total_mixed_overlay_bg_effect_candidates += variant_stats[10]
         total_mixed_overlay_bg_effect_reject_complex_frame += variant_stats[11]
-        total_mixed_overlay_bg_effect_reject_cgram_mismatch += variant_stats[12]
-        total_mixed_overlay_bg_effect_reject_overlap += variant_stats[13]
+        total_mixed_overlay_bg_effect_reject_complex_brightness += variant_stats[12]
+        total_mixed_overlay_bg_effect_reject_complex_invalid_layer += variant_stats[13]
+        total_mixed_overlay_bg_effect_reject_complex_mosaic += variant_stats[14]
+        total_mixed_overlay_bg_effect_reject_complex_sub_window += variant_stats[15]
+        total_mixed_overlay_bg_effect_reject_complex_effect_bounds += variant_stats[16]
+        total_mixed_overlay_bg_effect_reject_complex_scanline_main += variant_stats[17]
+        total_mixed_overlay_bg_effect_reject_complex_layer_window += variant_stats[18]
+        total_mixed_overlay_bg_effect_reject_complex_color_math += variant_stats[19]
+        total_mixed_overlay_bg_effect_reject_cgram_mismatch += variant_stats[20]
+        total_mixed_overlay_bg_effect_reject_overlap += variant_stats[21]
 
     if not args.dry_run:
         print(
@@ -475,6 +547,14 @@ def main() -> None:
             f"mixed_overlay_bg_effect_draws={total_mixed_overlay_bg_effect_draws} "
             f"mixed_overlay_bg_effect_candidates={total_mixed_overlay_bg_effect_candidates} "
             f"mixed_overlay_bg_effect_reject_complex_frame={total_mixed_overlay_bg_effect_reject_complex_frame} "
+            f"mixed_overlay_bg_effect_reject_complex_brightness={total_mixed_overlay_bg_effect_reject_complex_brightness} "
+            f"mixed_overlay_bg_effect_reject_complex_invalid_layer={total_mixed_overlay_bg_effect_reject_complex_invalid_layer} "
+            f"mixed_overlay_bg_effect_reject_complex_mosaic={total_mixed_overlay_bg_effect_reject_complex_mosaic} "
+            f"mixed_overlay_bg_effect_reject_complex_sub_window={total_mixed_overlay_bg_effect_reject_complex_sub_window} "
+            f"mixed_overlay_bg_effect_reject_complex_effect_bounds={total_mixed_overlay_bg_effect_reject_complex_effect_bounds} "
+            f"mixed_overlay_bg_effect_reject_complex_scanline_main={total_mixed_overlay_bg_effect_reject_complex_scanline_main} "
+            f"mixed_overlay_bg_effect_reject_complex_layer_window={total_mixed_overlay_bg_effect_reject_complex_layer_window} "
+            f"mixed_overlay_bg_effect_reject_complex_color_math={total_mixed_overlay_bg_effect_reject_complex_color_math} "
             f"mixed_overlay_bg_effect_reject_cgram_mismatch={total_mixed_overlay_bg_effect_reject_cgram_mismatch} "
             f"mixed_overlay_bg_effect_reject_overlap={total_mixed_overlay_bg_effect_reject_overlap}"
         )

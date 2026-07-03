@@ -270,6 +270,25 @@ renderer/oracle. Verification must report:
 - `mixed_overlay_bg_effect_reject_complex_frame`: candidates blocked because
   the frame still uses composition features the overlay path does not model yet
   such as color math, windows, mosaic, or non-simple layer state.
+- `mixed_overlay_bg_effect_reject_complex_brightness`: complex-frame rejects
+  blocked by non-full master brightness.
+- `mixed_overlay_bg_effect_reject_complex_invalid_layer`: complex-frame rejects
+  whose source layer cannot be mapped to a supported BG overlay layer.
+- `mixed_overlay_bg_effect_reject_complex_mosaic`: complex-frame rejects
+  blocked by active mosaic on the candidate's BG layer.
+- `mixed_overlay_bg_effect_reject_complex_sub_window`: complex-frame rejects
+  blocked by sub-screen windowing state.
+- `mixed_overlay_bg_effect_reject_complex_effect_bounds`: complex-frame rejects
+  whose source indices exceed the static effect row.
+- `mixed_overlay_bg_effect_reject_complex_scanline_main`: complex-frame rejects
+  blocked because the candidate's layer is disabled by per-scanline main-screen
+  state at one of its nontransparent pixels.
+- `mixed_overlay_bg_effect_reject_complex_layer_window`: complex-frame rejects
+  blocked by layer window masking at one of the candidate's nontransparent
+  pixels.
+- `mixed_overlay_bg_effect_reject_complex_color_math`: complex-frame rejects
+  blocked because color math would change at least one nontransparent candidate
+  pixel and the current overlay shader writes final RGB directly.
 - `mixed_overlay_bg_effect_reject_cgram_mismatch`: candidates blocked because
   neither the extracted stable effect LUT nor the live-CGRAM LUT can represent
   the packet's source indices.
@@ -309,11 +328,14 @@ proof reports `stable_effect_draws=21038`,
 `mixed_overlay_bg_effect_candidates=20674`,
 `mixed_overlay_bg_effect_draws=17272`,
 `mixed_overlay_bg_effect_reject_complex_frame=3402`,
+`mixed_overlay_bg_effect_reject_complex_scanline_main=1541`,
+`mixed_overlay_bg_effect_reject_complex_color_math=1861`,
 `mixed_overlay_bg_effect_reject_cgram_mismatch=0`, and
 `mixed_overlay_bg_effect_reject_overlap=0` over 17 sampled compares from the
 checkpointed opening route tail. That means most stable BG opportunities in
 this sampled mixed window now execute through the GPU overlay path with exact
-final-pixel parity; the remaining blocker is explicit composition state.
+final-pixel parity; the remaining blockers are per-scanline layer visibility
+and color-math-aware final RGB generation.
 
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay

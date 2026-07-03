@@ -566,3 +566,33 @@ when opaque packet pixels collide. The focused proof remains
 `mixed_overlay_bg_effect_reject_cgram_mismatch=0`, and
 `mixed_overlay_bg_effect_reject_overlap=0`. The next modernization target is
 the remaining explicit composition-state rejects.
+
+### Task 13: Split Remaining Complex Rejects Into Actionable Subreasons
+
+**Files:**
+- [x] Modify: `crates/renderer/src/modern_software.rs`
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Modify: `zelda3-bin/src/main.rs`
+- [x] Modify: `scripts/gpu_render_compare_oracle_windows.py`
+- [x] Modify: `scripts/gpu_render_compare_windows.py`
+- [x] Modify: `scripts/test_gpu_render_compare_oracle_windows.py`
+- [x] Modify: `docs/assets/rgba-variant-atlas.md`
+- [x] Test: `python3 scripts/test_gpu_render_compare_oracle_windows.py`
+- [x] Test: `cargo test -p renderer mixed -- --nocapture`
+- [x] Test: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --only opening-uncle-dismiss-and-move --fast --frames 1000 --stride 60 --require-stable-draws --progress-every 0 --release`
+
+**Goal:** Make the last mixed-overlay blocker concrete enough to drive the next
+renderer change without another broad scan.
+
+**Done:** `reject_complex_frame` is now split into brightness, invalid-layer,
+mosaic, sub-window, effect-bounds, per-scanline main-screen visibility,
+layer-window, and color-math subreason counters across live/replay logs and
+both compare wrappers. The focused proof remains `mismatched_pixels=0` and
+keeps `mixed_overlay_bg_effect_draws=17272`. The remaining
+`mixed_overlay_bg_effect_reject_complex_frame=3402` splits into
+`mixed_overlay_bg_effect_reject_complex_scanline_main=1541` and
+`mixed_overlay_bg_effect_reject_complex_color_math=1861`; every other complex
+subreason is zero in the sampled route tail. The next implementation target is
+therefore a color-math-aware overlay path, while scanline-main rejects are not
+visible on the main screen and should remain non-drawn unless packet visibility
+is represented more precisely.

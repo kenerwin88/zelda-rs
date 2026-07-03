@@ -104,8 +104,16 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
             "missing_art_draws=7 unkeyed_fallback_draws=11 mixed_overlay_bg_effect_draws=13 "
             "mixed_overlay_bg_effect_candidates=17 "
             "mixed_overlay_bg_effect_reject_complex_frame=19 "
-            "mixed_overlay_bg_effect_reject_cgram_mismatch=23 "
-            "mixed_overlay_bg_effect_reject_overlap=29"
+            "mixed_overlay_bg_effect_reject_complex_brightness=23 "
+            "mixed_overlay_bg_effect_reject_complex_invalid_layer=29 "
+            "mixed_overlay_bg_effect_reject_complex_mosaic=31 "
+            "mixed_overlay_bg_effect_reject_complex_sub_window=37 "
+            "mixed_overlay_bg_effect_reject_complex_effect_bounds=41 "
+            "mixed_overlay_bg_effect_reject_complex_scanline_main=43 "
+            "mixed_overlay_bg_effect_reject_complex_layer_window=47 "
+            "mixed_overlay_bg_effect_reject_complex_color_math=53 "
+            "mixed_overlay_bg_effect_reject_cgram_mismatch=59 "
+            "mixed_overlay_bg_effect_reject_overlap=61"
         )
 
         match = MODERN_INDEX_SUMMARY_RE.search(line)
@@ -119,6 +127,10 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         self.assertEqual(match.group(18), "19")
         self.assertEqual(match.group(19), "23")
         self.assertEqual(match.group(20), "29")
+        self.assertEqual(match.group(21), "31")
+        self.assertEqual(match.group(26), "53")
+        self.assertEqual(match.group(27), "59")
+        self.assertEqual(match.group(28), "61")
 
     def test_modern_index_summary_regex_accepts_legacy_draw_mix(self) -> None:
         line = (
