@@ -734,3 +734,33 @@ That means the representative 910 rejects are not simple behind-BG overlap; the
 next useful step is to split the overlap bucket into front/same-order BG versus
 OBJ overlap and then handle fully eligible overlapping BG groups in Mode-1 draw
 order.
+
+### Task 18: Split Pre-Final Overlap by BG vs OBJ
+
+**Files:**
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Modify: `crates/renderer/src/modern_software.rs`
+- [x] Modify: `zelda3-bin/src/main.rs`
+- [x] Modify: `scripts/gpu_render_compare_oracle_windows.py`
+- [x] Modify: `scripts/gpu_render_compare_windows.py`
+- [x] Test: focused renderer units for BG-order and OBJ overlap reasons
+- [x] Test: parser summary regex
+- [x] Test: focused opening-route oracle window
+
+**Goal:** Make the remaining pre-final overlap bucket actionable. The previous
+route proof showed 910 overlapping sub-screen color-math packets, but not
+whether the blocker was BG ordering or OBJ composition.
+
+**Done:** The pre-final overlap classifier now records BG and OBJ subreasons:
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg` and
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj`.
+Renderer stats, live summaries, compare summaries, oracle-window wrappers, and
+parser tests all carry the split. The focused units guard both a front/same-order
+BG reject and an OBJ reject while keeping the behind-only overlap test green.
+
+**Route result:** The opening tail remains `mismatched_pixels=0`. The remaining
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=910` splits
+into `prefinal_overlap_bg=703` and `prefinal_overlap_obj=207`. The next build
+target should be an ordered pre-final BG group path; it covers most remaining
+overlap rejects and avoids the harder OBJ interaction until BG ordering is
+modeled.

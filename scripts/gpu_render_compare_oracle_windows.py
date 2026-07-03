@@ -46,7 +46,9 @@ MODERN_INDEX_SUMMARY_RE = re.compile(
     r"mixed_overlay_bg_effect_reject_complex_color_math_subscreen=(\d+) "
     r"mixed_overlay_bg_effect_reject_complex_color_math_fixed_color=(\d+) "
     r"(?:mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=(\d+) )?)?)?"
+    r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=(\d+) "
+    r"(?:mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj=(\d+) )?)?)?)?"
     r"mixed_overlay_bg_effect_reject_cgram_mismatch=(\d+) "
     r"mixed_overlay_bg_effect_reject_overlap=(\d+))?)?)?"
 )
@@ -439,6 +441,8 @@ def run_window(
         0,
         0,
         0,
+        0,
+        0,
     )
     modern_match = MODERN_INDEX_SUMMARY_RE.search(result.stdout)
     if renderer == "assets-variant-gpu":
@@ -477,6 +481,8 @@ def run_window(
             int(modern_match.group(31) or 0),
             int(modern_match.group(32) or 0),
             int(modern_match.group(33) or 0),
+            int(modern_match.group(34) or 0),
+            int(modern_match.group(35) or 0),
         )
     print(
         f"{window.name}: compared={compared} frames={window.frames} "
@@ -507,8 +513,10 @@ def run_window(
         f"mixed_overlay_bg_effect_reject_complex_color_math_fixed_color={variant_stats[22]} "
         f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch={variant_stats[23]} "
         f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap={variant_stats[24]} "
-        f"mixed_overlay_bg_effect_reject_cgram_mismatch={variant_stats[25]} "
-        f"mixed_overlay_bg_effect_reject_overlap={variant_stats[26]}"
+        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg={variant_stats[25]} "
+        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj={variant_stats[26]} "
+        f"mixed_overlay_bg_effect_reject_cgram_mismatch={variant_stats[27]} "
+        f"mixed_overlay_bg_effect_reject_overlap={variant_stats[28]}"
     )
     return compared, last_hash, mismatched_pixels, variant_stats
 
@@ -643,6 +651,8 @@ def main() -> None:
     total_mixed_overlay_bg_effect_reject_complex_color_math_fixed_color = 0
     total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch = 0
     total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap = 0
+    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg = 0
+    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj = 0
     total_mixed_overlay_bg_effect_reject_cgram_mismatch = 0
     total_mixed_overlay_bg_effect_reject_overlap = 0
     if args.dry_run:
@@ -714,8 +724,14 @@ def main() -> None:
         total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap += variant_stats[
             24
         ]
-        total_mixed_overlay_bg_effect_reject_cgram_mismatch += variant_stats[25]
-        total_mixed_overlay_bg_effect_reject_overlap += variant_stats[26]
+        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg += (
+            variant_stats[25]
+        )
+        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj += (
+            variant_stats[26]
+        )
+        total_mixed_overlay_bg_effect_reject_cgram_mismatch += variant_stats[27]
+        total_mixed_overlay_bg_effect_reject_overlap += variant_stats[28]
 
     if args.require_stable_draws:
         ensure_required_stable_draws(
@@ -752,6 +768,8 @@ def main() -> None:
         f"mixed_overlay_bg_effect_reject_complex_color_math_fixed_color={total_mixed_overlay_bg_effect_reject_complex_color_math_fixed_color} "
         f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch} "
         f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap} "
+        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg} "
+        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj} "
         f"mixed_overlay_bg_effect_reject_cgram_mismatch={total_mixed_overlay_bg_effect_reject_cgram_mismatch} "
         f"mixed_overlay_bg_effect_reject_overlap={total_mixed_overlay_bg_effect_reject_overlap}"
     )

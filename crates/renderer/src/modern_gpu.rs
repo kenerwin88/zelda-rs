@@ -611,6 +611,8 @@ struct MixedVariantOverlayBgSelection<'a> {
     reject_complex_color_math_fixed_color: u32,
     reject_cgram_mismatch: u32,
     reject_overlap: u32,
+    reject_overlap_bg: u32,
+    reject_overlap_obj: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -625,6 +627,12 @@ enum MixedOverlayComplexRejectReason {
     ColorMathClip,
     ColorMathSubscreen,
     ColorMathFixedColor,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MixedOverlayOverlapRejectReason {
+    Bg,
+    Obj,
 }
 
 impl<'a> MixedVariantOverlayBgSelection<'a> {
@@ -658,6 +666,14 @@ impl<'a> MixedVariantOverlayBgSelection<'a> {
                 self.reject_complex_color_math += 1;
                 self.reject_complex_color_math_fixed_color += 1;
             }
+        }
+    }
+
+    fn record_overlap_reject(&mut self, reason: MixedOverlayOverlapRejectReason) {
+        self.reject_overlap += 1;
+        match reason {
+            MixedOverlayOverlapRejectReason::Bg => self.reject_overlap_bg += 1,
+            MixedOverlayOverlapRejectReason::Obj => self.reject_overlap_obj += 1,
         }
     }
 }
@@ -712,13 +728,15 @@ fn mixed_variant_overlay_bg_packets_with_policy<'a>(
             out.record_complex_reject(reason);
             continue;
         }
-        let has_unsafe_overlap = if allow_color_math {
-            bg_packet_has_unsafe_prefinal_overlap(packet_index, packet, plan)
+        let overlap_reject = if allow_color_math {
+            bg_packet_prefinal_overlap_reject_reason(packet_index, packet, plan)
+        } else if bg_packet_overlaps_other_packets(packet_index, packet, plan) {
+            Some(MixedOverlayOverlapRejectReason::Bg)
         } else {
-            bg_packet_overlaps_other_packets(packet_index, packet, plan)
+            None
         };
-        if has_unsafe_overlap {
-            out.reject_overlap += 1;
+        if let Some(reason) = overlap_reject {
+            out.record_overlap_reject(reason);
             continue;
         }
         if bg_effect_matches_live_cgram(packet.cell, packet.inst.palette, effect, frame) {
@@ -1146,13 +1164,13 @@ fn bg_packet_overlaps_other_packets(
     false
 }
 
-fn bg_packet_has_unsafe_prefinal_overlap(
+fn bg_packet_prefinal_overlap_reject_reason(
     packet_index: usize,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
-) -> bool {
+) -> Option<MixedOverlayOverlapRejectReason> {
     let crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, .. } = packet.draw else {
-        return false;
+        return None;
     };
     for y in 0..8usize {
         for x in 0..8usize {
@@ -1170,13 +1188,15 @@ fn bg_packet_has_unsafe_prefinal_overlap(
                 plan,
                 screen_x,
                 screen_y,
-            ) || other_packet_has_opaque_sprite_pixel(plan, screen_x, screen_y)
-            {
-                return true;
+            ) {
+                return Some(MixedOverlayOverlapRejectReason::Bg);
+            }
+            if other_packet_has_opaque_sprite_pixel(plan, screen_x, screen_y) {
+                return Some(MixedOverlayOverlapRejectReason::Obj);
             }
         }
     }
-    false
+    None
 }
 
 fn bg_effect_packet_index_at_local(
@@ -3013,6 +3033,10 @@ impl ModernGpuVariantHeadless {
                 overlay.reject_cgram_mismatch;
             stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap +=
                 overlay.reject_overlap;
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg +=
+                overlay.reject_overlap_bg;
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj +=
+                overlay.reject_overlap_obj;
             stats.mixed_overlay_bg_effect_reject_cgram_mismatch +=
                 final_overlay.reject_cgram_mismatch;
             stats.mixed_overlay_bg_effect_reject_overlap += final_overlay.reject_overlap;
@@ -5166,6 +5190,14 @@ mod tests {
             stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap,
             1
         );
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg,
+            1
+        );
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj,
+            0
+        );
     }
 
     #[test]
@@ -5305,6 +5337,153 @@ mod tests {
         assert_eq!(
             stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap,
             0
+        );
+    }
+
+    #[test]
+    fn modern_gpu_variant_headless_counts_prefinal_obj_overlap_color_math_reject() {
+        use crate::modern_frame::{
+            ModernBgLayer, ModernIndexSpriteInstance, ModernIndexTileInstance,
+        };
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, TileEffect, VariantAtlasEntry, VariantAtlasKey,
+        };
+
+        let mut stable_indices = [0u8; 64];
+        stable_indices[0] = 1;
+        let bg_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: stable_indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+        let mut sprite_indices = [0u8; 64];
+        sprite_indices[0] = 1;
+        let sprite_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: sprite_indices,
+            source_key: NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.screen_enabled_main = 0x11;
+        frame.screen_enabled_sub = 0x02;
+        frame.math_enabled = 0x01;
+        frame.add_subscreen = true;
+        frame.cgram_rgba[33] = [80, 0, 0, 0xff];
+        frame.cgram_rgba[1] = [24, 0, 0, 0xff];
+        frame.cgram_rgba[0x81] = [0, 80, 0, 0xff];
+
+        let mut main_layer = ModernBgLayer::new(0);
+        main_layer.enabled_main = true;
+        main_layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 2,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = main_layer;
+
+        let mut sub_layer = ModernBgLayer::new(1);
+        sub_layer.enabled_sub = true;
+        sub_layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[1] = sub_layer;
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            priority: 3,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        });
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![VariantAtlasEntry {
+                id: "bg:kBgGfx:pack0:tile0:3bpp".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "bg".to_string(),
+                    asset: "kBgGfx".to_string(),
+                    pack: 0,
+                    tile: 0,
+                    bpp: 3,
+                    palette: "palette_dung_bg_main".to_string(),
+                    palette_row: 2,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "stable".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                source_hflip: false,
+                source_vflip: false,
+            }],
+            effects: vec![TileEffect {
+                id: "palette_dung_bg_main:8color:row2".to_string(),
+                palette: "palette_dung_bg_main".to_string(),
+                palette_row: 2,
+                colors_per_row: 8,
+                index_to_rgba: vec![
+                    [0, 0, 0, 0xff],
+                    [80, 0, 0, 0xff],
+                    [2, 2, 2, 0xff],
+                    [3, 3, 3, 0xff],
+                    [4, 4, 4, 0xff],
+                    [5, 5, 5, 0xff],
+                    [6, 6, 6, 0xff],
+                    [7, 7, 7, 0xff],
+                ],
+                dynamic_policy: "stable".to_string(),
+            }],
+        };
+
+        let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+            &frame,
+            &bg_cells,
+            &sprite_cells,
+            &frame,
+            &bg_cells,
+            &sprite_cells,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(stats.mixed_overlay_bg_effect_candidates, 1);
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen,
+            1
+        );
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap,
+            1
+        );
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg,
+            0
+        );
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj,
+            1
         );
     }
 

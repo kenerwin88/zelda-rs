@@ -304,6 +304,12 @@ renderer/oracle. Verification must report:
 - `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap`: packets
   accepted by the color-math pre-final policy but still blocked because their
   nontransparent pixels overlap another BG or OBJ packet before finalization.
+- `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg`:
+  pre-final overlap rejects caused by a front or same-order BG packet at one of
+  the candidate's nontransparent pixels.
+- `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj`:
+  pre-final overlap rejects caused by an OBJ pixel at one of the candidate's
+  nontransparent pixels.
 - `mixed_overlay_bg_effect_reject_cgram_mismatch`: candidates blocked because
   neither the extracted stable effect LUT nor the live-CGRAM LUT can represent
   the packet's source indices.
@@ -350,6 +356,8 @@ proof reports `stable_effect_draws=21038`,
 `mixed_overlay_bg_effect_reject_complex_color_math_fixed_color=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=910`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg=703`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj=207`,
 `mixed_overlay_bg_effect_reject_cgram_mismatch=0`, and
 `mixed_overlay_bg_effect_reject_overlap=0` over 17 sampled compares from the
 checkpointed opening route tail. That means most stable BG opportunities in
@@ -371,8 +379,9 @@ the representative sub-screen reject bucket from 1,861 to 910 with
 packets: if every overlapping BG pixel is behind the variant packet in Mode-1
 painter order and no OBJ pixel overlaps it, the packed main-screen overlay can
 replace the fallback pixel before final color math. The representative route
-still reports the same 910 pre-final overlap rejects, so its remaining overlap
-cases are front/same-order BG or OBJ overlap, not the simple behind-BG case.
+still reports the same 910 pre-final overlap rejects, split as 703
+front/same-order BG overlaps and 207 OBJ overlaps. The next useful renderer lane
+is therefore an ordered pre-final BG group path before OBJ-aware composition.
 
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay
