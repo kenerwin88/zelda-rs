@@ -9,7 +9,7 @@ tile.
 ## Files
 
 `scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zelda3_assets`
-emits:
+emits the compact default atlas set:
 
 ```text
 generated/zelda3_assets/atlas/base_tiles.png
@@ -26,23 +26,33 @@ source-kind default. `base_tiles.json` is the source identity contract.
 `tile_effects.json` describes reusable shader/material effects that can produce
 the alternate looks without duplicating the base art.
 
-`art_tiles.png` is the cleaner modder-facing art sheet. It deduplicates source
-tiles by raw index art, collapses hflip/vflip-equivalent tiles into one editable
-tile, and records every source identity that maps to that art under
-`source_refs`. Palette rows, flashes, fades, and other recolors stay metadata or
-effects instead of becoming more editable PNG tiles.
+`art_tiles.png` is the cleaner modder-facing art sheet and the preferred compact
+runtime atlas when present. It deduplicates source tiles by raw index art,
+collapses hflip/vflip-equivalent tiles into one editable tile, and records every
+source identity that maps to that art under `source_refs`. The renderer expands
+those source refs into lookup entries and composes the stored source flip with
+the live draw flip. Palette rows, flashes, fades, and other recolors stay
+metadata or effects instead of becoming more editable PNG tiles.
 
-The extraction also still writes the diagnostic brute-force files:
+For oracle/debug work, extraction can also write the diagnostic brute-force
+files:
 
 ```text
 generated/zelda3_assets/atlas/tile_variants.png
 generated/zelda3_assets/atlas/tile_variants.json
 ```
 
+Enable them explicitly:
+
+```bash
+python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zelda3_assets --write-diagnostic-variants
+```
+
 Those files are useful as an oracle and for size/coverage analysis. They are not
-the intended long-term hand-authored source format, but they remain the runtime
-contract for pre-colored RGBA variants. Semantic modder sheets compile back into
-this same `tile_variants.*` schema.
+the hand-authored source format and are no longer part of default extraction.
+The live variant GPU path loads `art_tiles.*` when available and falls back to
+`base_tiles.*`; `tile_variants.*` is retained as a diagnostic compatibility
+format.
 
 ## Entry Identity
 
@@ -239,10 +249,11 @@ python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zel
 cargo run --profile parity -p zelda3-bin
 ```
 
-The compiler that projects edited `art_tiles.*` back into runtime assets is the
-next layer; do not use `tile_variants.png` as an authoring sheet while building
-that compiler. Dynamic-palette fallback remains a runtime parity concern: an art
-tile can be useful for editing while the renderer still uses live palette
+The compiler that projects edited `art_tiles.*` back into runtime assets is a
+later layer. Do not use `tile_variants.png` as an authoring sheet; generate it
+only with `--write-diagnostic-variants` when parity/oracle debugging needs the
+brute-force cache. Dynamic-palette fallback remains a runtime parity concern: an
+art tile can be useful for editing while the renderer still uses live palette
 fallback for rows that are not stable final pixels.
 
 Unset `ZELDA3_RENDERER` now chooses the variant atlas GPU path. Use

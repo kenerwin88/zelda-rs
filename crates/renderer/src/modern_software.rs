@@ -168,8 +168,16 @@ fn draw_variant_bg_instance(
     let width = usize::from(MODERN_FRAME_WIDTH);
     for sy in 0..8usize {
         for sx in 0..8usize {
-            let src_x = if cell.hflip { 7 - sx } else { sx };
-            let src_y = if cell.vflip { 7 - sy } else { sy };
+            let src_x = if cell.hflip ^ entry.source_hflip {
+                7 - sx
+            } else {
+                sx
+            };
+            let src_y = if cell.vflip ^ entry.source_vflip {
+                7 - sy
+            } else {
+                sy
+            };
             let atlas_x = entry.rect[0] as usize + src_x;
             let atlas_y = entry.rect[1] as usize + src_y;
             if atlas_x >= atlas.width as usize || atlas_y >= atlas.height as usize {
@@ -227,8 +235,16 @@ fn draw_variant_sprite_instance(
             continue;
         }
         for x in 0..8usize {
-            let src_x = if inst.hflip { 7 - x } else { x };
-            let src_y = if inst.vflip { 7 - y } else { y };
+            let src_x = if inst.hflip ^ entry.source_hflip {
+                7 - x
+            } else {
+                x
+            };
+            let src_y = if inst.vflip ^ entry.source_vflip {
+                7 - y
+            } else {
+                y
+            };
             let atlas_x = entry.rect[0] as usize + src_x;
             let atlas_y = entry.rect[1] as usize + src_y;
             if atlas_x >= atlas.width as usize || atlas_y >= atlas.height as usize {
@@ -2774,6 +2790,8 @@ mod tests {
                 sha1: "test".to_string(),
                 duplicate_of: None,
                 dynamic_policy: "stable".to_string(),
+                source_hflip: false,
+                source_vflip: false,
             }],
         };
 

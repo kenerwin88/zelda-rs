@@ -201,6 +201,14 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Path to the original zelda3 C checkout containing assets/restool.py",
     )
+    parser.add_argument(
+        "--write-diagnostic-variants",
+        action="store_true",
+        help=(
+            "Also emit atlas/tile_variants.{png,json}; this brute-force oracle "
+            "is large and is not needed for the default compact asset path."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -249,6 +257,7 @@ def clean_generated_output(out_dir: Path) -> Path:
     assets_dir = out_dir / "assets"
     images_dir = out_dir / "images"
     assets_src_dir = out_dir / "assets_src"
+    atlas_dir = out_dir / "atlas"
     if assets_dir.exists():
         for path in assets_dir.iterdir():
             if path.is_file():
@@ -261,6 +270,8 @@ def clean_generated_output(out_dir: Path) -> Path:
                 path.unlink()
     if assets_src_dir.exists():
         shutil.rmtree(assets_src_dir)
+    if atlas_dir.exists():
+        shutil.rmtree(atlas_dir)
     old_pack = out_dir / "zelda3_assets.dat"
     if old_pack.exists():
         old_pack.unlink()
@@ -384,7 +395,14 @@ def write_chr_source_sheets(out_dir: Path) -> list[dict[str, str]]:
     return entries
 
 
-def write_rgba_variant_atlas(out_dir: Path) -> list[dict[str, str]]:
+def write_rgba_variant_atlas(
+    out_dir: Path,
+    *,
+    write_diagnostic_variants: bool = True,
+) -> list[dict[str, str]]:
+    if not write_diagnostic_variants:
+        return []
+
     import rgba_variant_atlas
 
     try:
@@ -719,7 +737,10 @@ def main() -> int:
     chr_source_sheets = write_chr_source_sheets(out_dir)
     base_effect_atlas = write_base_effect_atlas(out_dir)
     canonical_art_atlas = write_canonical_art_atlas(out_dir)
-    rgba_variant_atlas = write_rgba_variant_atlas(out_dir)
+    rgba_variant_atlas = write_rgba_variant_atlas(
+        out_dir,
+        write_diagnostic_variants=args.write_diagnostic_variants,
+    )
     previews = write_preview_images(out_dir, assets)
 
     manifest.write_text(

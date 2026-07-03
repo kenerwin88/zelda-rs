@@ -4,14 +4,14 @@
 
 **Goal:** Replace CHR-as-rendered-art with a ROM-traceable base-art atlas plus reusable modern effects first, then layer compact canonical art PNG authoring on top without losing final-pixel parity proof.
 
-**Architecture:** Build generated `base_tiles.png`, `base_tiles.json`, and `tile_effects.json` from ROM-derived CHR and palettes. The base atlas stores each source tile once using palette-usage evidence when available, with a broad source-kind preview palette only as a fallback. The effect table represents recolors, flashes, fades, lighting, and palette-like looks as reusable shader/material transforms. Keep the brute-force `tile_variants.*` artifact only as a diagnostic oracle while the renderer migrates to base art plus effects.
+**Architecture:** Build generated `art_tiles.png`, `art_tiles.json`, `base_tiles.png`, `base_tiles.json`, and `tile_effects.json` from ROM-derived CHR and palettes. The canonical art atlas stores each editable raw-index tile once and maps source identities through `source_refs`; the base/effect bridge stores per-source previews and reusable shader/material transforms for recolors, flashes, fades, lighting, and palette-like looks. Keep the brute-force `tile_variants.*` artifact only as an opt-in diagnostic oracle.
 
 **Tech Stack:** Python 3 asset generation scripts, `unittest`, Pillow/PNG tooling, Rust renderer crate, wgpu, existing `ModernFrame`, `ModernIndexTile`, `ModernSourceAtlas`, `ModernGpuCompositor`, replay parity scripts.
 
 ## Global Constraints
 
 - The ROM remains the extraction source of truth. NES_Ver2/CGX files may inform naming and grouping, but the generated atlas must be buildable from a supported ROM plus repo metadata.
-- `base_tiles.json`, `art_tiles.json`, and `tile_effects.json` are the bridge contracts. Runtime and canonical authoring both target those contracts.
+- `art_tiles.json`, `base_tiles.json`, and `tile_effects.json` are the bridge contracts. Runtime prefers `art_tiles.*` when present and falls back to `base_tiles.*`; canonical authoring targets `art_tiles.*`.
 - Raw CHR bytes do not contain final colors. Any claim that `base_tiles.png` uses the right real palette must be backed by `palette_usage.json` or replay/source-map evidence, not by source-kind guesses.
 - Do not remove the current CHR/palette-index path until the base/effect path has frame-level parity proof over representative windows.
 - Dynamic palette effects must remain correct. If a palette can change at runtime, either keep it on the existing palette path for that phase or model it as an explicit effect with replay evidence.
@@ -28,9 +28,9 @@
 - Create: `scripts/test_rgba_variant_atlas.py`  
   Unit tests for palette application, variant keys, deduplication, atlas packing, manifest schema, and dynamic-palette classification.
 - Modify: `scripts/extract_assets.py`  
-  Adds optional `write_rgba_variant_atlas(out_dir)` integration after palette and CHR source assets exist.
+  Writes compact art/base/effect atlases by default and keeps `write_rgba_variant_atlas(out_dir)` behind `--write-diagnostic-variants`.
 - Modify: `scripts/test_extract_asset_sources.py`  
-  Integration test that extraction emits `atlas/base_tiles.png`, `atlas/base_tiles.json`, `atlas/tile_effects.json`, and diagnostic `atlas/tile_variants.*` when graphics and palettes are present.
+  Integration test that extraction emits `atlas/art_tiles.png`, `atlas/base_tiles.png`, `atlas/base_tiles.json`, and `atlas/tile_effects.json` by default, with diagnostic `atlas/tile_variants.*` only when requested.
 - Create: `crates/renderer/src/modern_variant_atlas.rs`  
   Rust loader for diagnostic `tile_variants.json`/PNG, later extended to load `base_tiles.json`/PNG and `tile_effects.json`.
 - Modify: `crates/renderer/src/lib.rs`  
@@ -761,7 +761,7 @@ python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-g
 
 Expected:
 - Python tests pass.
-- Extractor writes `atlas/art_tiles.png`, `atlas/art_tiles.json`, and the runtime diagnostic atlases.
+- Extractor writes `atlas/art_tiles.png`, `atlas/art_tiles.json`, and the compact runtime bridge atlases by default.
 - Renderer tests pass.
 - Parity-profile build succeeds.
 - Oracle-window compare reports zero missing stable variants and only documented dynamic-palette fallbacks.
@@ -777,5 +777,5 @@ Expected:
 
 - This plan has no dependency on NES_Ver2 at runtime.
 - Each phase leaves a working artifact even if later phases are deferred.
-- The runtime contract remains `tile_variants.json`, so semantic authoring cannot silently bypass provenance.
+- The runtime contract is the compact `art_tiles.*`/`base_tiles.*` bridge; `tile_variants.*` remains an opt-in diagnostic oracle so authoring cannot silently bypass provenance.
 - Dynamic palette behavior is intentionally conservative until replay evidence proves a palette row is stable.

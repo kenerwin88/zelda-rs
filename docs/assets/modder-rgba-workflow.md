@@ -4,7 +4,7 @@ This is the preferred workflow for replacing stable visual art without editing
 CHR bytes, CGRAM rows, or CGX-era source sheets directly. Start with the
 canonical art sheet, not the brute-force runtime variant atlas: palette rows,
 flashes, fades, and flipped duplicates should stay metadata unless there is a
-specific reason to edit a runtime variant directly.
+specific parity/debug reason to inspect a fully materialized variant directly.
 
 ## Extract
 
@@ -14,8 +14,14 @@ Generate the ignored asset workspace from a ROM:
 python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zelda3_assets
 ```
 
-This creates the runtime atlases under `generated/zelda3_assets/atlas/` and the
-readable source tree under `generated/zelda3_assets/assets_src/`.
+This creates the compact runtime/art atlases under
+`generated/zelda3_assets/atlas/` and the readable source tree under
+`generated/zelda3_assets/assets_src/`. It does not write the giant
+`tile_variants.*` diagnostic atlas unless you ask for it:
+
+```bash
+python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zelda3_assets --write-diagnostic-variants
+```
 
 ## Edit Canonical Art First
 
@@ -29,15 +35,17 @@ generated/zelda3_assets/atlas/art_tiles.json
 `art_tiles.png` stores one canonical RGBA preview per raw index tile, with
 hflip/vflip-equivalent tiles collapsed into a single editable tile. The JSON
 sidecar records `source_refs`, so many ROM/source draw identities can point at
-the same art. This is the right place to make broad visual replacements before
-semantic naming exists.
+the same art. The renderer expands those refs and preserves their stored
+hflip/vflip transforms, so this compact sheet can serve both editing and the
+default variant GPU runtime. This is the right place to make broad visual
+replacements before clean source-family naming exists.
 
 ## Edit
 
 Open `art_tiles.png` in any RGBA-capable editor and change pixels directly.
 Use `art_tiles.json` to see every source tile that points at the edited art.
-Do not edit `tile_variants.png` as an authoring sheet; it is a derived
-runtime/parity cache.
+Do not edit `tile_variants.png` as an authoring sheet; it is an opt-in derived
+oracle/cache for parity debugging.
 
 ## Rebuild Runtime Art
 

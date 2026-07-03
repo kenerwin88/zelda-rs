@@ -465,8 +465,8 @@ impl ModernGpuVariantRenderer {
                             entry,
                             inst.screen_x,
                             inst.screen_y,
-                            cell.hflip,
-                            cell.vflip,
+                            cell.hflip ^ entry.source_hflip,
+                            cell.vflip ^ entry.source_vflip,
                         ));
                         stats.stable_draws += 1;
                     }
@@ -502,8 +502,8 @@ impl ModernGpuVariantRenderer {
                         entry,
                         inst.screen_x,
                         inst.screen_y,
-                        inst.hflip,
-                        inst.vflip,
+                        inst.hflip ^ entry.source_hflip,
+                        inst.vflip ^ entry.source_vflip,
                     ));
                     stats.stable_draws += 1;
                 }
@@ -2690,6 +2690,8 @@ mod tests {
                     sha1: "test".to_string(),
                     duplicate_of: None,
                     dynamic_policy: "stable".to_string(),
+                    source_hflip: false,
+                    source_vflip: false,
                 }],
             };
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -40,6 +41,45 @@ def compressed_literal(payload: bytes) -> bytes:
 
 
 class ExtractAssetSourcesTests(unittest.TestCase):
+    def test_parse_args_defaults_diagnostic_variant_atlas_off(self) -> None:
+        original_argv = sys.argv
+        try:
+            sys.argv = ["extract_assets.py", "--rom", "zelda3.sfc"]
+
+            args = extract_assets.parse_args()
+
+            self.assertFalse(args.write_diagnostic_variants)
+        finally:
+            sys.argv = original_argv
+
+    def test_parse_args_accepts_diagnostic_variant_atlas_flag(self) -> None:
+        original_argv = sys.argv
+        try:
+            sys.argv = [
+                "extract_assets.py",
+                "--rom",
+                "zelda3.sfc",
+                "--write-diagnostic-variants",
+            ]
+
+            args = extract_assets.parse_args()
+
+            self.assertTrue(args.write_diagnostic_variants)
+        finally:
+            sys.argv = original_argv
+
+    def test_clean_generated_output_removes_stale_atlas_files(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            atlas_dir = out_dir / "atlas"
+            atlas_dir.mkdir(parents=True)
+            stale_path = atlas_dir / "tile_variants.json"
+            stale_path.write_text("{}")
+
+            extract_assets.clean_generated_output(out_dir)
+
+            self.assertFalse(stale_path.exists())
+
     def test_writes_light_overworld_tilemap_as_json_source(self) -> None:
         payload = bytes(range(64)) * 64
 
@@ -276,6 +316,43 @@ class ExtractAssetSourcesTests(unittest.TestCase):
             )
             self.assertTrue((out_dir / "atlas/tile_variants.png").is_file())
             self.assertTrue((out_dir / "atlas/tile_variants.json").is_file())
+
+    def test_diagnostic_rgba_variant_atlas_manifest_entry_is_opt_in(self) -> None:
+        raw_pack = bytes([0] * 1536)
+        sprite_items = [raw_pack] * 12 + [compressed_literal(raw_pack)]
+        assets = [(f"kUnused_{i}", b"x") for i in range(64)]
+        assets.append(("kSprGfx", pack_arrays(sprite_items)))
+        assets.append(("kBgGfx", pack_arrays([compressed_literal(raw_pack)])))
+
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            extract_assets.write_asset_outputs(out_dir, assets)
+            palette_path = out_dir / "assets_src/palettes/palette_main_spr.json"
+            palette_path.parent.mkdir(parents=True, exist_ok=True)
+            palette_path.write_text(
+                json.dumps(
+                    {
+                        "asset": "kPalette_MainSpr",
+                        "colors": [
+                            {
+                                "index": index,
+                                "rgb888": "#000000",
+                                "snes_bgr15": "0x0000",
+                            }
+                            for index in range(64)
+                        ],
+                    }
+                )
+            )
+
+            atlas = extract_assets.write_rgba_variant_atlas(
+                out_dir,
+                write_diagnostic_variants=False,
+            )
+
+            self.assertEqual(atlas, [])
+            self.assertFalse((out_dir / "atlas/tile_variants.png").exists())
+            self.assertFalse((out_dir / "atlas/tile_variants.json").exists())
 
     def test_writes_base_effect_atlas_from_extracted_graphics_assets(self) -> None:
         raw_pack = bytes([0] * 1536)
