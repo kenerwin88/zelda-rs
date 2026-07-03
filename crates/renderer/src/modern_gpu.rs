@@ -1602,6 +1602,29 @@ impl ModernGpuVariantHeadless {
         bg_palette_name: &str,
         sprite_palette_name: &str,
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
+        self.render_rgba_with_fallback(
+            frame,
+            bg_cells,
+            sprite_cells,
+            frame,
+            bg_cells,
+            sprite_cells,
+            bg_palette_name,
+            sprite_palette_name,
+        )
+    }
+
+    pub fn render_rgba_with_fallback(
+        &self,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        fallback_frame: &ModernFrame,
+        fallback_bg_cells: &[ModernIndexTile],
+        fallback_sprite_cells: &[ModernIndexTile],
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+    ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
         let (variant_frame, stats) = self.renderer.build_variant_frame(
             frame,
             bg_cells,
@@ -1613,9 +1636,9 @@ impl ModernGpuVariantHeadless {
             self.compositor.render(
                 &self.device,
                 &self.queue,
-                frame,
-                bg_cells,
-                sprite_cells,
+                fallback_frame,
+                fallback_bg_cells,
+                fallback_sprite_cells,
                 &self.target,
             );
             if stats.stable_draws != 0 {
@@ -2322,6 +2345,89 @@ mod tests {
         assert_eq!(stats.dynamic_palette_draws, 0);
         assert_eq!(stats.missing_variant_draws, 1);
         assert_eq!(variant, full);
+    }
+
+    #[test]
+    fn modern_gpu_variant_headless_missing_tiles_use_live_fallback_cells() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::ModernVariantAtlas;
+
+        let mut source_indices = [0u8; 64];
+        source_indices[0] = 1;
+        let source_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: source_indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut fallback_indices = [0u8; 64];
+        fallback_indices[0] = 1;
+        let fallback_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: fallback_indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut source_frame = ModernFrame::empty();
+        source_frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        source_frame.cgram_rgba[1] = [200, 0, 0, 0xff];
+        let mut source_layer = ModernBgLayer::new(0);
+        source_layer.enabled_main = true;
+        source_layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        source_frame.bg_layers[0] = source_layer;
+
+        let mut fallback_frame = ModernFrame::empty();
+        fallback_frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        fallback_frame.cgram_rgba[1] = [0, 160, 80, 0xff];
+        let mut fallback_layer = ModernBgLayer::new(0);
+        fallback_layer.enabled_main = true;
+        fallback_layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        fallback_frame.bg_layers[0] = fallback_layer;
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: Vec::new(),
+        };
+        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+            &source_frame,
+            &source_cells,
+            &[],
+            &fallback_frame,
+            &fallback_cells,
+            &[],
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+        let fallback = ModernGpuHeadless::new().render_rgba(&fallback_frame, &fallback_cells, &[]);
+
+        assert_eq!(stats.stable_draws, 0);
+        assert_eq!(stats.dynamic_palette_draws, 0);
+        assert_eq!(stats.missing_variant_draws, 1);
+        assert_eq!(variant, fallback);
     }
 
     #[test]

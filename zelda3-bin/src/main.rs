@@ -3381,6 +3381,9 @@ fn run_replay_save(args: &[String]) {
     let mut modern_index_compare_gpu_count = 0u64;
     let mut modern_index_compare_mode7_gpu_count = 0u64;
     let mut modern_index_compare_cpu_count = 0u64;
+    let mut modern_index_compare_variant_draws = 0u64;
+    let mut modern_index_compare_dynamic_palette_draws = 0u64;
+    let mut modern_index_compare_missing_variant_draws = 0u64;
     let ppu_mode_summary = std::env::var("ZELDA3_PPU_MODE_SUMMARY").is_ok();
     let mut ppu_mode_counts = [0u64; 8];
     let mut first_mode7_frame = None::<u32>;
@@ -5579,10 +5582,18 @@ fn run_replay_save(args: &[String]) {
                         } else {
                             "palette_overworld_bg_main"
                         };
-                        let (rgba, stats) = variant_headless.render_rgba(
+                        let (mut fallback_modern, fallback_bg_cells) =
+                            renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
+                        let (fallback_sprite_cells, fallback_sprites) =
+                            renderer::modern_extract::extract_modern_sprites_from_vram(&gpu_frame);
+                        fallback_modern.index_sprites = fallback_sprites;
+                        let (rgba, stats) = variant_headless.render_rgba_with_fallback(
                             &modern,
                             &bg_cells,
                             &sprite_cells,
+                            &fallback_modern,
+                            &fallback_bg_cells,
+                            &fallback_sprite_cells,
                             bg_palette_name,
                             "palette_main_spr",
                         );
@@ -5687,6 +5698,13 @@ fn run_replay_save(args: &[String]) {
                     modern_index_compare_bad_count += 1;
                     modern_index_compare_bad_pixels += mismatch as u64;
                 }
+                if let Some(stats) = variant_stats {
+                    modern_index_compare_variant_draws += u64::from(stats.stable_draws);
+                    modern_index_compare_dynamic_palette_draws +=
+                        u64::from(stats.dynamic_palette_draws);
+                    modern_index_compare_missing_variant_draws +=
+                        u64::from(stats.missing_variant_draws);
+                }
                 if !modern_index_compare_summary || mismatch != 0 {
                     if let Some(stats) = variant_stats {
                         println!(
@@ -5788,7 +5806,7 @@ fn run_replay_save(args: &[String]) {
 
     if modern_index_compare != 0 && modern_index_compare_summary {
         println!(
-            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels} gpu_count={modern_index_compare_gpu_count} mode7_gpu_count={modern_index_compare_mode7_gpu_count} cpu_count={modern_index_compare_cpu_count}"
+            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels} gpu_count={modern_index_compare_gpu_count} mode7_gpu_count={modern_index_compare_mode7_gpu_count} cpu_count={modern_index_compare_cpu_count} variant_draws={modern_index_compare_variant_draws} dynamic_palette_draws={modern_index_compare_dynamic_palette_draws} missing_variant_draws={modern_index_compare_missing_variant_draws}"
         );
     }
     if ppu_mode_summary {
@@ -12152,7 +12170,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
         Some(p) => p,
         None => {
             eprintln!(
-                "usage: zelda3 --play-gpu-render-compare <path-to-rom.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--load-state <path>] [--stride <n>]"
+                "usage: zelda3 --play-gpu-render-compare <path-to-rom.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--load-state <path>] [--stride <n>] [--modern-index-compare <n>]"
             );
             process::exit(2);
         }
@@ -12173,6 +12191,21 @@ fn run_play_gpu_render_compare(args: &[String]) {
     let mut load_state = None::<PathBuf>;
     let mut stride = 1u32;
     let mut modern_render_compare = 0u32;
+    let mut modern_index_compare = 0u32;
+    let modern_index_compare_summary = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_SUMMARY").is_ok();
+    let modern_index_compare_progress = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_PROGRESS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+    let mut modern_index_compare_count = 0u64;
+    let mut modern_index_compare_bad_count = 0u64;
+    let mut modern_index_compare_bad_pixels = 0u64;
+    let mut modern_index_compare_gpu_count = 0u64;
+    let mut modern_index_compare_mode7_gpu_count = 0u64;
+    let mut modern_index_compare_cpu_count = 0u64;
+    let mut modern_index_compare_variant_draws = 0u64;
+    let mut modern_index_compare_dynamic_palette_draws = 0u64;
+    let mut modern_index_compare_missing_variant_draws = 0u64;
     while i < args.len() {
         match args[i].as_str() {
             "--input-script" => {
@@ -12235,6 +12268,21 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 }
                 i += 2;
             }
+            "--modern-index-compare" => {
+                let value = args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--modern-index-compare requires a value");
+                    process::exit(2);
+                });
+                modern_index_compare = value.parse::<u32>().unwrap_or_else(|_| {
+                    eprintln!("invalid --modern-index-compare value: {value}");
+                    process::exit(2);
+                });
+                if modern_index_compare == 0 {
+                    eprintln!("--modern-index-compare must be greater than zero");
+                    process::exit(2);
+                }
+                i += 2;
+            }
             flag => {
                 eprintln!("unknown --play-gpu-render-compare option: {flag}");
                 process::exit(2);
@@ -12281,6 +12329,41 @@ fn run_play_gpu_render_compare(args: &[String]) {
     } else {
         None
     };
+    let play_renderer_env = std::env::var("ZELDA3_RENDERER").ok();
+    let play_renderer_mode = renderer_env_or_default(play_renderer_env.as_deref());
+    let atlas_gpu_compare = play_renderer_mode == "assets-anim-gpu";
+    let variant_gpu_compare = play_renderer_mode == "assets-variant-gpu";
+    let modern_gpu_headless: Option<renderer::ModernGpuHeadless> =
+        if modern_index_compare != 0 && (atlas_gpu_compare || variant_gpu_compare) {
+            Some(renderer::ModernGpuHeadless::new())
+        } else {
+            None
+        };
+    let variant_atlas = if modern_index_compare != 0 && variant_gpu_compare {
+        Some(
+            renderer::modern_variant_atlas::load_modern_base_art_atlas(Path::new("."))
+                .unwrap_or_else(|e| {
+                    eprintln!("base art atlas load failed: {e}");
+                    process::exit(2);
+                }),
+        )
+    } else {
+        None
+    };
+    let modern_variant_headless: Option<renderer::ModernGpuVariantHeadless> =
+        variant_atlas.as_ref().map(renderer::ModernGpuVariantHeadless::new);
+    let source_atlas =
+        if modern_index_compare != 0 && (atlas_gpu_compare || variant_gpu_compare) {
+            Some(
+                renderer::modern_source_atlas::load_modern_source_atlas(Path::new("."))
+                    .unwrap_or_else(|e| {
+                        eprintln!("assets-by-source atlas load failed: {e}");
+                        process::exit(2);
+                    }),
+            )
+        } else {
+            None
+        };
     let last_panic = install_crash_panic_hook();
     let mut offscreen = pollster::block_on(OffscreenRenderer::new(256, 224));
     let mut render_frame = vec![0u8; 256 * 224 * 4];
@@ -12303,7 +12386,9 @@ fn run_play_gpu_render_compare(args: &[String]) {
         let should_compare_stride = completed_frame % stride == 0;
         let should_compare_modern =
             modern_render_compare != 0 && completed_frame % modern_render_compare == 0;
-        if !should_compare_stride && !should_compare_modern {
+        let should_compare_modern_index =
+            modern_index_compare != 0 && completed_frame % modern_index_compare == 0;
+        if !should_compare_stride && !should_compare_modern && !should_compare_modern_index {
             continue;
         }
         if should_compare_stride {
@@ -12347,11 +12432,172 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 );
             }
         }
+        if should_compare_modern_index {
+            let module = game.ram[TRACE_MAIN_MODULE_INDEX];
+            let mode_label = match module {
+                9 | 11 => "ow".to_string(),
+                7 | 16 => "dungeon".to_string(),
+                m => format!("mod{m}"),
+            };
+            let hdma_cgram = game.cgram_after_first_hdma_line();
+            let scanlines_raw = game.ppu_scanline_windows();
+            let gpu_ppu = game.ppu.clone();
+            let gpu_frame =
+                gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+            let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
+
+            let mut variant_stats = None;
+            let (modern_rgba, via) =
+                if let Some(variant_headless) = modern_variant_headless.as_ref() {
+                    if gpu_frame.mode == 7 {
+                        let headless = modern_gpu_headless
+                            .as_ref()
+                            .expect("mode7 helper allocated for variant compare");
+                        (headless.render_mode7_rgba(&gpu_frame), "mode7-gpu")
+                    } else {
+                        let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
+                        let src_slice: Vec<(u8, u16, u16)> = game
+                            .vram_chr_source()
+                            .as_slice()
+                            .iter()
+                            .map(|s| (s.kind, s.pack, s.tile_off))
+                            .collect();
+                        let (mut modern, bg_cells) =
+                            renderer::modern_extract::extract_modern_frame_from_sources(
+                                &gpu_frame,
+                                &src_slice[..],
+                                atlas,
+                            );
+                        let (sprite_cells, sprites) =
+                            renderer::modern_extract::extract_modern_sprites_from_sources(
+                                &gpu_frame,
+                                &src_slice[..],
+                                atlas,
+                            );
+                        modern.index_sprites = sprites;
+                        let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
+                            "palette_dung_bg_main"
+                        } else {
+                            "palette_overworld_bg_main"
+                        };
+                        let (mut fallback_modern, fallback_bg_cells) =
+                            renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
+                        let (fallback_sprite_cells, fallback_sprites) =
+                            renderer::modern_extract::extract_modern_sprites_from_vram(&gpu_frame);
+                        fallback_modern.index_sprites = fallback_sprites;
+                        let (rgba, stats) = variant_headless.render_rgba_with_fallback(
+                            &modern,
+                            &bg_cells,
+                            &sprite_cells,
+                            &fallback_modern,
+                            &fallback_bg_cells,
+                            &fallback_sprite_cells,
+                            bg_palette_name,
+                            "palette_main_spr",
+                        );
+                        variant_stats = Some(stats);
+                        (rgba, "variant-gpu")
+                    }
+                } else if let Some(headless) = modern_gpu_headless.as_ref() {
+                    if gpu_frame.mode == 7 {
+                        (headless.render_mode7_rgba(&gpu_frame), "mode7-gpu")
+                    } else {
+                        let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
+                        let src_slice: Vec<(u8, u16, u16)> = game
+                            .vram_chr_source()
+                            .as_slice()
+                            .iter()
+                            .map(|s| (s.kind, s.pack, s.tile_off))
+                            .collect();
+                        let (mut modern, bg_cells) =
+                            renderer::modern_extract::extract_modern_frame_from_sources(
+                                &gpu_frame,
+                                &src_slice[..],
+                                atlas,
+                            );
+                        let (sprite_cells, sprites) =
+                            renderer::modern_extract::extract_modern_sprites_from_sources(
+                                &gpu_frame,
+                                &src_slice[..],
+                                atlas,
+                            );
+                        modern.index_sprites = sprites;
+                        (
+                            headless.render_rgba(&modern, &bg_cells, &sprite_cells),
+                            "gpu",
+                        )
+                    }
+                } else if gpu_frame.mode == 7 {
+                    (
+                        renderer::modern_software::render_modern_mode7_frame(&gpu_frame),
+                        "mode7-cpu",
+                    )
+                } else {
+                    (
+                        renderer::modern_extract::render_modern_frame_full_from_vram(&gpu_frame),
+                        "vram",
+                    )
+                };
+            let mut mismatch = 0usize;
+            for (c, m) in classic_rgba
+                .chunks_exact(4)
+                .zip(modern_rgba.chunks_exact(4))
+            {
+                if c[0] != m[0] || c[1] != m[1] || c[2] != m[2] {
+                    mismatch += 1;
+                }
+            }
+            modern_index_compare_count += 1;
+            match via {
+                "gpu" | "variant-gpu" => modern_index_compare_gpu_count += 1,
+                "mode7-gpu" => modern_index_compare_mode7_gpu_count += 1,
+                "mode7-cpu" | "vram" => modern_index_compare_cpu_count += 1,
+                _ => {}
+            }
+            if mismatch != 0 {
+                modern_index_compare_bad_count += 1;
+                modern_index_compare_bad_pixels += mismatch as u64;
+            }
+            if let Some(stats) = variant_stats {
+                modern_index_compare_variant_draws += u64::from(stats.stable_draws);
+                modern_index_compare_dynamic_palette_draws +=
+                    u64::from(stats.dynamic_palette_draws);
+                modern_index_compare_missing_variant_draws +=
+                    u64::from(stats.missing_variant_draws);
+                if !modern_index_compare_summary || mismatch != 0 {
+                    println!(
+                        "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} dynamic_palette_draws={} missing_variant_draws={}",
+                        gpu_frame.mode,
+                        stats.stable_draws,
+                        stats.dynamic_palette_draws,
+                        stats.missing_variant_draws
+                    );
+                }
+            } else if !modern_index_compare_summary || mismatch != 0 {
+                println!(
+                    "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via}",
+                    gpu_frame.mode
+                );
+            }
+            if modern_index_compare_summary
+                && modern_index_compare_progress != 0
+                && modern_index_compare_count % modern_index_compare_progress == 0
+            {
+                eprintln!(
+                    "modern_index_compare_progress compare_count={modern_index_compare_count} frame={completed_frame} bad_count={modern_index_compare_bad_count}"
+                );
+            }
+        }
     }
 
     println!(
         "play-gpu-render-compare completed compared={compared} start_frame={start_frame} last_frame={last_frame} last_hash=0x{last_hash:08x} mismatched_pixels=0"
     );
+    if modern_index_compare != 0 && modern_index_compare_summary {
+        println!(
+            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels} gpu_count={modern_index_compare_gpu_count} mode7_gpu_count={modern_index_compare_mode7_gpu_count} cpu_count={modern_index_compare_cpu_count} variant_draws={modern_index_compare_variant_draws} dynamic_palette_draws={modern_index_compare_dynamic_palette_draws} missing_variant_draws={modern_index_compare_missing_variant_draws}"
+        );
+    }
 }
 
 fn write_argb_frame_png(

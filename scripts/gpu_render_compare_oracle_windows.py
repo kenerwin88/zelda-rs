@@ -19,6 +19,11 @@ SUMMARY_RE = re.compile(
     r"play-gpu-render-compare completed compared=(\d+) start_frame=(\d+) "
     r"last_frame=(\d+) last_hash=(0x[0-9a-fA-F]{8}) mismatched_pixels=(\d+)"
 )
+MODERN_INDEX_SUMMARY_RE = re.compile(
+    r"modern_index_compare_summary compare_count=(\d+) bad_count=(\d+) bad_pixels=(\d+) "
+    r"gpu_count=(\d+) mode7_gpu_count=(\d+) cpu_count=(\d+) "
+    r"variant_draws=(\d+) dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
+)
 
 
 @dataclass(frozen=True)
@@ -72,7 +77,13 @@ def sram_sidecar(window: OracleWindow) -> Path:
     return (REPO_ROOT / window.input_script).with_suffix(".sram")
 
 
-def command_for(window: OracleWindow, rom: Path, stride: int, release: bool) -> list[str]:
+def command_for(
+    window: OracleWindow,
+    rom: Path,
+    stride: int,
+    release: bool,
+    renderer: str | None = None,
+) -> list[str]:
     command = ["cargo", "run"]
     if release:
         command.append("--release")
@@ -89,6 +100,8 @@ def command_for(window: OracleWindow, rom: Path, stride: int, release: bool) -> 
             str(stride),
         ]
     )
+    if renderer == "assets-variant-gpu":
+        command.extend(["--modern-index-compare", str(stride)])
     if window.input_script:
         command.extend(["--input-script", window.input_script])
         sidecar = sram_sidecar(window)
@@ -103,13 +116,15 @@ def run_window(
     stride: int,
     release: bool,
     renderer: str | None,
-) -> tuple[int, str]:
-    command = command_for(window, rom, stride, release)
+) -> tuple[int, str, int, tuple[int, int, int]]:
+    command = command_for(window, rom, stride, release, renderer)
     prefix = f"ZELDA3_RENDERER={renderer} " if renderer else ""
     print(f"running {window.name}: {prefix}{' '.join(command)}", flush=True)
     env = os.environ.copy()
     if renderer:
         env["ZELDA3_RENDERER"] = renderer
+    if renderer == "assets-variant-gpu":
+        env["ZELDA3_MODERN_INDEX_COMPARE_SUMMARY"] = "1"
     result = subprocess.run(
         command,
         cwd=REPO_ROOT,
@@ -133,11 +148,29 @@ def run_window(
     mismatched_pixels = int(match.group(5))
     if mismatched_pixels != 0:
         raise SystemExit(f"{window.name}: reported {mismatched_pixels} mismatched pixels")
+    variant_stats = (0, 0, 0)
+    modern_match = MODERN_INDEX_SUMMARY_RE.search(result.stdout)
+    if renderer == "assets-variant-gpu":
+        if not modern_match:
+            if result.stdout:
+                print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+            raise SystemExit(f"{window.name}: missing modern-index compare summary")
+        modern_bad_pixels = int(modern_match.group(3))
+        if modern_bad_pixels != 0:
+            raise SystemExit(f"{window.name}: reported {modern_bad_pixels} modern-index bad pixels")
+        variant_stats = (
+            int(modern_match.group(7)),
+            int(modern_match.group(8)),
+            int(modern_match.group(9)),
+        )
     print(
         f"{window.name}: compared={compared} frames={window.frames} "
-        f"last_hash={last_hash} mismatched_pixels=0"
+        f"last_hash={last_hash} mismatched_pixels=0 "
+        f"variant_draws={variant_stats[0]} "
+        f"dynamic_palette_draws={variant_stats[1]} "
+        f"missing_variant_draws={variant_stats[2]}"
     )
-    return compared, last_hash
+    return compared, last_hash, mismatched_pixels, variant_stats
 
 
 def parse_args() -> argparse.Namespace:
@@ -178,19 +211,33 @@ def main() -> None:
         raise SystemExit("no windows selected")
 
     total_compared = 0
+    total_variant_draws = 0
+    total_dynamic_palette_draws = 0
+    total_missing_variant_draws = 0
     for window in windows:
         if args.dry_run:
             prefix = f"ZELDA3_RENDERER={args.renderer} " if args.renderer else ""
-            print(prefix + " ".join(command_for(window, args.rom, args.stride, args.release)))
+            print(
+                prefix
+                + " ".join(command_for(window, args.rom, args.stride, args.release, args.renderer))
+            )
             continue
-        compared, _ = run_window(window, args.rom, args.stride, args.release, args.renderer)
+        compared, _, _, variant_stats = run_window(
+            window, args.rom, args.stride, args.release, args.renderer
+        )
         total_compared += compared
+        total_variant_draws += variant_stats[0]
+        total_dynamic_palette_draws += variant_stats[1]
+        total_missing_variant_draws += variant_stats[2]
 
     if not args.dry_run:
         print(
             "gpu-render-oracle-windows completed "
             f"windows={len(windows)} compared={total_compared} stride={args.stride} "
-            "mismatched_pixels=0"
+            "mismatched_pixels=0 "
+            f"variant_draws={total_variant_draws} "
+            f"dynamic_palette_draws={total_dynamic_palette_draws} "
+            f"missing_variant_draws={total_missing_variant_draws}"
         )
 
 

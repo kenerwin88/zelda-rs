@@ -21,6 +21,7 @@ COMPARE_RE = re.compile(
 MODERN_INDEX_SUMMARY_RE = re.compile(
     r"modern_index_compare_summary compare_count=(\d+) bad_count=(\d+) bad_pixels=(\d+) "
     r"gpu_count=(\d+) mode7_gpu_count=(\d+) cpu_count=(\d+)"
+    r"(?: variant_draws=(\d+) dynamic_palette_draws=(\d+) missing_variant_draws=(\d+))?"
 )
 MODERN_INDEX_VARIANT_RE = re.compile(
     r"modern_index_compare frame=(\d+) .* via=variant-gpu "
@@ -211,13 +212,18 @@ def compare_window(
             raise SystemExit(f"missing modern-index compare summary for window {start}..{end}")
         compared = int(match.group(1))
         bad_pixels = int(match.group(3))
-        variant_draws = 0
-        dynamic_palette_draws = 0
-        missing_variant_draws = 0
-        for frame_match in MODERN_INDEX_VARIANT_RE.finditer(output):
-            variant_draws += int(frame_match.group(2))
-            dynamic_palette_draws += int(frame_match.group(3))
-            missing_variant_draws += int(frame_match.group(4))
+        if match.group(7) is not None:
+            variant_draws = int(match.group(7))
+            dynamic_palette_draws = int(match.group(8))
+            missing_variant_draws = int(match.group(9))
+        else:
+            variant_draws = 0
+            dynamic_palette_draws = 0
+            missing_variant_draws = 0
+            for frame_match in MODERN_INDEX_VARIANT_RE.finditer(output):
+                variant_draws += int(frame_match.group(2))
+                dynamic_palette_draws += int(frame_match.group(3))
+                missing_variant_draws += int(frame_match.group(4))
         print(
             f"modern-index window {start}..{end}: compared={compared} "
             f"bad_pixels={bad_pixels} renderer={renderer} "
