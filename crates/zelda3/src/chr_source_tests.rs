@@ -23,26 +23,36 @@ fn table_starts_empty() {
 }
 
 #[test]
-fn do3_to_4_low_to_vram_records_bg_chr_source() {
+fn bg_chr_upload_keeps_raw_preview_source_after_render_source_is_hashed() {
     let mut state = ZeldaState::new();
     let data = vec![0u8; 0x600];
 
     let before = state.ppu.vram.clone();
     state.do3_to_4_low_to_vram(0x2000, &data, CHR_KIND_BG, 5);
 
-    // BG CHR region: word 0x2000 / 16 = slot 0x200.
+    // BG CHR region: word 0x2000 / 16 = slot 0x200. The render source is
+    // content-hashed because generic BG pack/off keys are non-injective across
+    // conversion modes and themes.
     let s0 = state.vram_chr_source().get(0x200);
-    assert_eq!(s0.kind, CHR_KIND_BG);
-    assert_eq!(s0.pack, 5);
-    assert_eq!(s0.tile_off, 0);
+    assert_eq!(s0.kind, CHR_KIND_BG_STREAM);
 
     let s10 = state.vram_chr_source().get(0x200 + 10);
-    assert_eq!(s10.kind, CHR_KIND_BG);
-    assert_eq!(s10.pack, 5);
-    assert_eq!(s10.tile_off, 10);
+    assert_eq!(s10.kind, CHR_KIND_BG_STREAM);
+
+    // The preview source remains the raw logical pack/off for palette usage and
+    // modder-facing atlas organization.
+    let preview0 = state.vram_chr_preview_source().get(0x200);
+    assert_eq!(preview0.kind, CHR_KIND_BG);
+    assert_eq!(preview0.pack, 5);
+    assert_eq!(preview0.tile_off, 0);
+
+    let preview10 = state.vram_chr_preview_source().get(0x200 + 10);
+    assert_eq!(preview10.kind, CHR_KIND_BG);
+    assert_eq!(preview10.pack, 5);
+    assert_eq!(preview10.tile_off, 10);
 
     // do3 writes exactly 64 tiles -> slots 0x200..0x240; 0x240 stays untouched.
-    assert_eq!(state.vram_chr_source().get(0x23f).kind, CHR_KIND_BG);
+    assert_eq!(state.vram_chr_source().get(0x23f).kind, CHR_KIND_BG_STREAM);
     assert_eq!(state.vram_chr_source().get(0x240).kind, CHR_KIND_NONE);
 
     // The bookkeeping must NOT change the VRAM bytes (here data is zeros so the

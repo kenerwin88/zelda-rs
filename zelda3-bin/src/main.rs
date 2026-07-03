@@ -10829,9 +10829,16 @@ fn run_dump_assets_by_source(args: &[String]) {
                     } else {
                         "palette_overworld_bg_main"
                     };
+                    let preview_src = game.vram_chr_preview_source().get(slot);
+                    let usage_src =
+                        if src.kind == CHR_KIND_BG_STREAM && preview_src.kind == CHR_KIND_BG {
+                            preview_src
+                        } else {
+                            src
+                        };
                     record_palette_usage_count(
                         &mut palette_usage_counts,
-                        src,
+                        usage_src,
                         palette_name,
                         palette_row,
                     );

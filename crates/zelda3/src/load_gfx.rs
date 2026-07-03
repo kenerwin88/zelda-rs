@@ -1371,9 +1371,15 @@ impl ZeldaState {
             }
         }
         // OBJ CHR keyed by (pack, off) is heavily non-injective (subset numbers,
-        // esp. pack 0, are reused with different gfx across areas). Re-tag sprite
-        // tiles by content hash so the off-VRAM sprite path resolves the live cell.
-        if chr_kind == chr_source::CHR_KIND_SPRITE {
+        // esp. pack 0, are reused with different gfx across areas). Generic BG
+        // CHR is also non-injective because the same 3bpp pack/off can expand via
+        // the high or low conversion depending on theme/slot. Re-tag render
+        // sources by content hash so off-VRAM paths resolve the exact live cell,
+        // while vram_chr_preview_source keeps the raw pack/off for authoring.
+        if matches!(
+            chr_kind,
+            chr_source::CHR_KIND_BG | chr_source::CHR_KIND_SPRITE
+        ) {
             self.tag_stream_content_hash(start, 64);
         }
     }
@@ -1403,8 +1409,12 @@ impl ZeldaState {
                 src += 1;
             }
         }
-        // See do3_to_4_high_to_vram: content-hash sprite CHR (subset key non-injective).
-        if chr_kind == chr_source::CHR_KIND_SPRITE {
+        // See do3_to_4_high_to_vram: content-hash non-injective BG/sprite CHR
+        // for render lookup, preserving raw preview provenance separately.
+        if matches!(
+            chr_kind,
+            chr_source::CHR_KIND_BG | chr_source::CHR_KIND_SPRITE
+        ) {
             self.tag_stream_content_hash(start, 64);
         }
     }
