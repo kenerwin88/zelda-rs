@@ -164,6 +164,11 @@ The isolated button-tap route also passes under `assets-variant-gpu`:
 `mismatched_pixels=0`, `variant_draws=0`, `fallback_draws=1250464978`,
 `dynamic_palette_draws=0`, `missing_variant_draws=534171`.
 
+The button-direction probe route also passes under `assets-variant-gpu`:
+`file-select-button-direction-probes` completed `compared=114000`,
+`mismatched_pixels=0`, `variant_draws=0`, `fallback_draws=1273018978`,
+`dynamic_palette_draws=0`, `missing_variant_draws=538171`.
+
 `no-input-intro` is now included in dry-runs after fixing the empty-input SRAM
 sidecar filter. That exposed a real modern compositor gap: the first mismatch
 was frame `1954`, `ppumode=1`, `via=vram`/`variant-gpu`, with a far-left
