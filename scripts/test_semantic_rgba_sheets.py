@@ -12,6 +12,8 @@ from tempfile import TemporaryDirectory
 
 from PIL import Image
 
+from semantic_rgba_sheets import compile_semantic_sheets
+from semantic_rgba_sheets import SemanticCoverageError
 from semantic_rgba_sheets import write_initial_semantic_sheets
 
 
@@ -141,6 +143,114 @@ class SemanticRgbaSheetsTests(unittest.TestCase):
                 self.assertEqual(image.getpixel((0, 8)), (40, 50, 60, 255))
             manifest = json.loads(json_path.read_text())
             self.assertEqual(manifest["frames"][128]["source_rect"], [0, 8, 8, 8])
+
+    def test_compile_semantic_sheets_emits_rgba_variant_with_original_key(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            write_test_atlas(asset_dir, entry_count=1)
+            semantic_dir = asset_dir / "assets_src/semantic"
+            sheet_dir = semantic_dir / "sprites"
+            sheet_dir.mkdir(parents=True)
+            image = Image.new("RGBA", (8, 8), (90, 80, 70, 255))
+            image.save(sheet_dir / "sprite_kSprGfx_pack12.png")
+            (sheet_dir / "sprite_kSprGfx_pack12.json").write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_semantic_rgba_sheet_v1",
+                        "source_kind": "sprite",
+                        "asset": "kSprGfx",
+                        "pack": 12,
+                        "tile_width": 8,
+                        "tile_height": 8,
+                        "image_file": "sprite_kSprGfx_pack12.png",
+                        "frames": [
+                            {
+                                "id": "edited_sprite",
+                                "source_rect": [0, 0, 8, 8],
+                                "emits": [
+                                    "sprite:kSprGfx:pack12:tile3:3bpp:palette_main_spr:row0"
+                                ],
+                            }
+                        ],
+                    }
+                )
+                + "\n"
+            )
+
+            variants = compile_semantic_sheets(asset_dir, semantic_dir)
+
+            self.assertEqual(len(variants), 1)
+            self.assertEqual(variants[0].key.source_kind, "sprite")
+            self.assertEqual(variants[0].key.asset, "kSprGfx")
+            self.assertEqual(variants[0].key.pack, 12)
+            self.assertEqual(variants[0].key.tile, 3)
+            self.assertEqual(variants[0].key.palette, "palette_main_spr")
+            self.assertEqual(variants[0].key.palette_row, 0)
+            self.assertEqual(variants[0].pixels[:4], bytes([90, 80, 70, 255]))
+
+    def test_compile_semantic_sheets_reports_missing_duplicate_and_out_of_bounds(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            write_test_atlas(asset_dir, entry_count=2)
+            semantic_dir = asset_dir / "assets_src/semantic"
+            sheet_dir = semantic_dir / "sprites"
+            sheet_dir.mkdir(parents=True)
+            Image.new("RGBA", (8, 8), (90, 80, 70, 255)).save(
+                sheet_dir / "sprite_kSprGfx_pack12.png"
+            )
+            (sheet_dir / "sprite_kSprGfx_pack12.json").write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_semantic_rgba_sheet_v1",
+                        "source_kind": "sprite",
+                        "asset": "kSprGfx",
+                        "pack": 12,
+                        "tile_width": 8,
+                        "tile_height": 8,
+                        "image_file": "sprite_kSprGfx_pack12.png",
+                        "frames": [
+                            {
+                                "id": "first",
+                                "source_rect": [0, 0, 8, 8],
+                                "emits": [
+                                    "sprite:kSprGfx:pack12:tile3:3bpp:palette_main_spr:row0"
+                                ],
+                            },
+                            {
+                                "id": "duplicate",
+                                "source_rect": [0, 0, 8, 8],
+                                "emits": [
+                                    "sprite:kSprGfx:pack12:tile3:3bpp:palette_main_spr:row0"
+                                ],
+                            },
+                            {
+                                "id": "bounds",
+                                "source_rect": [7, 7, 8, 8],
+                                "emits": [
+                                    "sprite:kSprGfx:pack12:tile4:3bpp:palette_main_spr:row1"
+                                ],
+                            },
+                        ],
+                    }
+                )
+                + "\n"
+            )
+
+            with self.assertRaises(SemanticCoverageError) as raised:
+                compile_semantic_sheets(asset_dir, semantic_dir)
+
+            self.assertEqual(
+                raised.exception.missing_variant_ids,
+                ["sprite:kSprGfx:pack12:tile4:3bpp:palette_main_spr:row1"],
+            )
+            self.assertEqual(
+                raised.exception.duplicate_variant_ids,
+                ["sprite:kSprGfx:pack12:tile3:3bpp:palette_main_spr:row0"],
+            )
+            self.assertEqual(
+                raised.exception.rect_out_of_bounds,
+                ["sprite:kSprGfx:pack12:tile4:3bpp:palette_main_spr:row1"],
+            )
 
 
 if __name__ == "__main__":

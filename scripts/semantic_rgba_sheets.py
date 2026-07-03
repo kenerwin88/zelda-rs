@@ -8,6 +8,9 @@ import argparse
 import json
 from pathlib import Path
 
+from rgba_variant_atlas import RgbaVariant
+from rgba_variant_atlas import VariantKey
+
 
 SEMANTIC_SHEET_COLUMNS = 128
 
@@ -30,6 +33,24 @@ class AtlasVariantEntry:
     palette: str
     palette_row: int
     rect: tuple[int, int, int, int]
+
+
+class SemanticCoverageError(Exception):
+    def __init__(
+        self,
+        missing_variant_ids: list[str],
+        duplicate_variant_ids: list[str],
+        rect_out_of_bounds: list[str],
+    ) -> None:
+        super().__init__(
+            "semantic sheet coverage failed: "
+            f"missing={len(missing_variant_ids)} "
+            f"duplicates={len(duplicate_variant_ids)} "
+            f"rect_out_of_bounds={len(rect_out_of_bounds)}"
+        )
+        self.missing_variant_ids = missing_variant_ids
+        self.duplicate_variant_ids = duplicate_variant_ids
+        self.rect_out_of_bounds = rect_out_of_bounds
 
 
 def _atlas_paths(asset_dir: Path) -> tuple[Path, Path]:
@@ -59,6 +80,18 @@ def _read_variant_entries(asset_dir: Path) -> list[AtlasVariantEntry]:
             )
         )
     return entries
+
+
+def _variant_key(entry: AtlasVariantEntry) -> VariantKey:
+    return VariantKey(
+        entry.source_kind,
+        entry.asset,
+        entry.pack,
+        entry.tile,
+        entry.bpp,
+        entry.palette,
+        entry.palette_row,
+    )
 
 
 def _semantic_subdir(source_kind: str) -> str:
@@ -151,6 +184,60 @@ def write_initial_semantic_sheets(asset_dir: Path, out_dir: Path | None = None) 
             json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
             written.extend([png_path, json_path])
         return written
+
+
+def compile_semantic_sheets(asset_dir: Path, semantic_dir: Path) -> list[RgbaVariant]:
+    from PIL import Image
+
+    entries = _read_variant_entries(asset_dir)
+    entry_by_id = {entry.id: entry for entry in entries}
+    pixels_by_variant_id: dict[str, bytes] = {}
+    duplicate_variant_ids: set[str] = set()
+    rect_out_of_bounds: list[str] = []
+
+    for json_path in sorted(semantic_dir.rglob("*.json")):
+        manifest = json.loads(json_path.read_text())
+        if manifest.get("format") != "zelda3_semantic_rgba_sheet_v1":
+            continue
+        image_path = json_path.parent / str(manifest["image_file"])
+        with Image.open(image_path) as image:
+            sheet = image.convert("RGBA")
+            for frame in manifest.get("frames", []):
+                rect = [int(value) for value in frame["source_rect"]]
+                x, y, width, height = rect
+                emits = [str(value) for value in frame.get("emits", [])]
+                if (
+                    x < 0
+                    or y < 0
+                    or width <= 0
+                    or height <= 0
+                    or x + width > sheet.width
+                    or y + height > sheet.height
+                ):
+                    rect_out_of_bounds.extend(emits)
+                    continue
+                crop = sheet.crop((x, y, x + width, y + height))
+                pixels = crop.tobytes()
+                for variant_id in emits:
+                    if variant_id not in entry_by_id:
+                        raise ValueError(f"{json_path}: unknown emitted variant id {variant_id!r}")
+                    if variant_id in pixels_by_variant_id:
+                        duplicate_variant_ids.add(variant_id)
+                        continue
+                    pixels_by_variant_id[variant_id] = pixels
+
+    missing_variant_ids = [entry.id for entry in entries if entry.id not in pixels_by_variant_id]
+    if missing_variant_ids or duplicate_variant_ids or rect_out_of_bounds:
+        raise SemanticCoverageError(
+            missing_variant_ids,
+            sorted(duplicate_variant_ids),
+            rect_out_of_bounds,
+        )
+
+    return [
+        RgbaVariant(_variant_key(entry), pixels_by_variant_id[entry.id])
+        for entry in entries
+    ]
 
 
 def parse_args() -> argparse.Namespace:
