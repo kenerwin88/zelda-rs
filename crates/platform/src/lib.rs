@@ -309,6 +309,38 @@ impl NativeFrontend {
         self.sleep_after_present();
     }
 
+    pub fn present_modern_variant_gpu(
+        &mut self,
+        frame: &renderer::modern_frame::ModernFrame,
+        bg_cells: &[renderer::modern_index_atlas::ModernIndexTile],
+        sprite_cells: &[renderer::modern_index_atlas::ModernIndexTile],
+        atlas: &renderer::modern_variant_atlas::ModernVariantAtlas,
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+    ) {
+        if let Some(renderer) = &mut self.handler.renderer {
+            let result = renderer.present_modern_variant_gpu(
+                frame,
+                bg_cells,
+                sprite_cells,
+                atlas,
+                bg_palette_name,
+                sprite_palette_name,
+            );
+            match result {
+                Ok(()) => {}
+                Err(RenderError::SurfaceReconfigureNeeded) => {
+                    if let Some(window) = &self.handler.window {
+                        renderer.resize(window.inner_size());
+                    }
+                }
+                Err(RenderError::SurfaceSkipped) => {}
+                Err(RenderError::Fatal(e)) => eprintln!("render error: {e}"),
+            }
+        }
+        self.sleep_after_present();
+    }
+
     pub fn present_modern_mode7_gpu(&mut self, frame: &GpuFrame<'_>) {
         if let Some(renderer) = &mut self.handler.renderer {
             let result = renderer.present_modern_mode7_gpu(frame);

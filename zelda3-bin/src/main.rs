@@ -1436,7 +1436,7 @@ struct GpuPlayRenderer {
     source_atlas: Option<renderer::modern_source_atlas::ModernSourceAtlas>,
     hd_overrides: Option<renderer::modern_hd_overrides::ModernHdOverrides>,
     atlas_gpu: bool,
-    variant_gpu: Option<renderer::ModernGpuVariantHeadless>,
+    variant_atlas: Option<renderer::modern_variant_atlas::ModernVariantAtlas>,
 }
 
 impl GpuPlayRenderer {
@@ -1445,9 +1445,9 @@ impl GpuPlayRenderer {
         let assets_anim_mode =
             mode == "assets-anim" || mode == "assets-anim-gpu" || mode == "assets-variant-gpu";
         let atlas_gpu = mode == "assets-anim-gpu";
-        let variant_gpu = if mode == "assets-variant-gpu" {
+        let variant_atlas = if mode == "assets-variant-gpu" {
             match renderer::modern_variant_atlas::load_modern_base_art_atlas(Path::new(".")) {
-                Ok(atlas) => Some(renderer::ModernGpuVariantHeadless::new(&atlas)),
+                Ok(atlas) => Some(atlas),
                 Err(e) => {
                     eprintln!(
                         "base art atlas load failed: {e}; live present falls back to the VRAM-decoded modern path"
@@ -1476,7 +1476,7 @@ impl GpuPlayRenderer {
             source_atlas,
             hd_overrides,
             atlas_gpu,
-            variant_gpu,
+            variant_atlas,
         }
     }
 }
@@ -1497,7 +1497,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let scanlines_raw = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
         let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
-        if gpu_frame.mode == 7 && (self.variant_gpu.is_some() || self.atlas_gpu) {
+        if gpu_frame.mode == 7 && (self.variant_atlas.is_some() || self.atlas_gpu) {
             frontend.present_modern_mode7_gpu(&gpu_frame);
             return;
         }
@@ -1528,20 +1528,20 @@ impl PlayRendererBackend for GpuPlayRenderer {
                     atlas,
                 );
             modern.index_sprites = sprites;
-            if let Some(variant_gpu) = self.variant_gpu.as_ref() {
+            if let Some(variant_atlas) = self.variant_atlas.as_ref() {
                 let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
                     "palette_dung_bg_main"
                 } else {
                     "palette_overworld_bg_main"
                 };
-                let (rgba, _stats) = variant_gpu.render_rgba(
+                frontend.present_modern_variant_gpu(
                     &modern,
                     &bg_cells,
                     &sprite_cells,
+                    variant_atlas,
                     bg_palette_name,
                     "palette_main_spr",
                 );
-                frontend.present_modern_rgba(&rgba, 256, 224);
                 return;
             }
             if self.atlas_gpu {

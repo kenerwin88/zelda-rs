@@ -56,7 +56,8 @@ verify renderer behavior.
 
 ## Run
 
-The default renderer now uses the variant atlas GPU path:
+The default renderer now uses the variant atlas GPU path and presents it through
+the live window GPU renderer without headless readback:
 
 ```bash
 cargo run --profile parity -p zelda3-bin

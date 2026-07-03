@@ -220,11 +220,12 @@ The Rust atlas loader reads `tile_effects.json` alongside `art_tiles.*` or
 `palette_lut` effect by sampling the live source tile index and looking up the
 final RGB in `index_to_rgb`; index zero remains transparent. If no matching
 stable effect exists, it keeps the older preview-RGBA atlas sampling behavior.
-The GPU variant path now has a LUT-backed shader/material route for all-stable
+The GPU variant path now has a LUT-backed shader/material route for stable
 effect-backed BG and sprite draws, including source/draw flips and OBJ row
-masks. Mixed preview/effect/fallback frames continue through the existing
-preview-RGBA or live indexed fallback paths until those material cases are
-modeled.
+masks. Mixed frames keep live indexed fallback for missing/dynamic cells while
+overlaying effect-backed stable cells through the LUT shader; stable entries
+without an effect still use the preview-RGBA atlas overlay until those material
+cases are modeled.
 
 `dynamic_policy` remains conservative:
 
@@ -269,6 +270,8 @@ brute-force cache. Dynamic-palette fallback remains a runtime parity concern: an
 art tile can be useful for editing while the renderer still uses live palette
 fallback for rows that are not stable final pixels.
 
-Unset `ZELDA3_RENDERER` now chooses the variant atlas GPU path. Use
-`ZELDA3_VARIANT_ATLAS=off` to keep the older indexed GPU atlas path, or
-`ZELDA3_RENDERER=assets-anim` for the CPU atlas compositor oracle.
+Unset `ZELDA3_RENDERER` now chooses the variant atlas GPU path. Live play
+presents that path on the window renderer's GPU device without headless
+readback or CPU RGBA upload. Use `ZELDA3_VARIANT_ATLAS=off` to keep the older
+indexed GPU atlas path, or `ZELDA3_RENDERER=assets-anim` for the CPU atlas
+compositor oracle.
