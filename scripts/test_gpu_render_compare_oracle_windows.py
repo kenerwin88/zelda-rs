@@ -19,6 +19,7 @@ from gpu_render_compare_oracle_windows import (
     best_checkpoint_for,
     command_for,
     env_for_renderer,
+    run_items_for_windows,
     run_command_capture_output,
     selected_windows,
 )
@@ -186,6 +187,33 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
 
         self.assertIsNotNone(checkpoint)
         self.assertEqual(checkpoint.frame, 150)
+
+    def test_run_items_preserve_window_order_and_checkpoint_selection(self) -> None:
+        first = OracleWindow("first", "pass", 100, "scripts/inputs/first.txt", "", "")
+        second = OracleWindow("second", "pass", 200, "scripts/inputs/second.txt", "", "")
+        checkpoint_path = Path("target/test-run-items-checkpoint.sav")
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint_path.write_bytes(b"state")
+        self.addCleanup(lambda: checkpoint_path.unlink(missing_ok=True))
+        checkpoints = {
+            "second": [
+                OracleCheckpoint(
+                    "second",
+                    175,
+                    str(checkpoint_path),
+                    "scripts/inputs/second.txt",
+                    "digest",
+                    "",
+                )
+            ]
+        }
+
+        items = run_items_for_windows([first, second], checkpoints, fast=True)
+
+        self.assertEqual([item.window.name for item in items], ["first", "second"])
+        self.assertIsNone(items[0].checkpoint)
+        self.assertIsNotNone(items[1].checkpoint)
+        self.assertEqual(items[1].tail_frames, 25)
 
 
 if __name__ == "__main__":

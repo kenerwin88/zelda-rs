@@ -204,4 +204,8 @@ the newest recorded checkpoint by default. A real checkpointed rerun of
 `start_frame=107000` and passed with `mismatched_pixels=0`,
 `fallback_draws=34650495`, `dynamic_palette_draws=0`, and
 `missing_variant_draws=67564`; the equivalent cold run remains available with
-`--cold`.
+`--cold`. The wrapper also accepts `--jobs N` for controlled parallel window
+execution. A real `--jobs 2` rerun of `file-select-button-taps` and
+`opening-uncle-extended-move` passed with `compared=22000`,
+`mismatched_pixels=0`, `fallback_draws=216038244`,
+`dynamic_palette_draws=0`, and `missing_variant_draws=2088816`.

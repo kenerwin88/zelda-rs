@@ -10,6 +10,7 @@ import re
 import subprocess
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Pattern
@@ -52,6 +53,13 @@ class OracleCheckpoint:
     input_script: str
     wram_digest: str
     notes: str
+
+
+@dataclass(frozen=True)
+class RunItem:
+    window: OracleWindow
+    checkpoint: OracleCheckpoint | None
+    tail_frames: int
 
 
 def run_command_capture_output(
@@ -177,6 +185,25 @@ def best_checkpoint_for(
     if not usable:
         return None
     return max(usable, key=lambda checkpoint: checkpoint.frame)
+
+
+def run_items_for_windows(
+    windows: list[OracleWindow],
+    checkpoints_by_name: dict[str, list[OracleCheckpoint]],
+    fast: bool,
+) -> list[RunItem]:
+    items = []
+    for window in windows:
+        checkpoint = (
+            best_checkpoint_for(window, checkpoints_by_name.get(window.name, []))
+            if fast
+            else None
+        )
+        tail_frames = window.frames
+        if checkpoint is not None:
+            tail_frames = window.frames - checkpoint.frame
+        items.append(RunItem(window=window, checkpoint=checkpoint, tail_frames=tail_frames))
+    return items
 
 
 def selected_windows(
@@ -376,6 +403,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--include-sram-windows", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="run up to N selected windows in parallel; default 1",
+    )
     parser.set_defaults(fast=True)
     parser.add_argument(
         "--fast",
@@ -396,6 +429,8 @@ def parse_args() -> argparse.Namespace:
         raise SystemExit("--max-frames must be greater than zero")
     if args.progress_every < 0:
         raise SystemExit("--progress-every must be zero or greater")
+    if args.jobs <= 0:
+        raise SystemExit("--jobs must be greater than zero")
     if not args.rom.exists():
         raise SystemExit(f"ROM does not exist: {args.rom}")
     if not args.windows.exists():
@@ -416,25 +451,20 @@ def main() -> None:
     )
     if not windows:
         raise SystemExit("no windows selected")
+    run_items = run_items_for_windows(windows, checkpoints_by_name, args.fast)
 
     total_compared = 0
     total_variant_draws = 0
     total_fallback_draws = 0
     total_dynamic_palette_draws = 0
     total_missing_variant_draws = 0
-    for window in windows:
-        checkpoint = (
-            best_checkpoint_for(window, checkpoints_by_name.get(window.name, []))
-            if args.fast
-            else None
-        )
-        if args.dry_run:
+    if args.dry_run:
+        for item in run_items:
+            window = item.window
+            checkpoint = item.checkpoint
+            tail_frames = item.tail_frames
+            load_state = checkpoint.checkpoint_path if checkpoint is not None else None
             prefix = f"ZELDA3_RENDERER={args.renderer} " if args.renderer else ""
-            tail_frames = window.frames
-            load_state = None
-            if checkpoint is not None:
-                tail_frames = window.frames - checkpoint.frame
-                load_state = checkpoint.checkpoint_path
             print(
                 prefix
                 + " ".join(
@@ -449,32 +479,44 @@ def main() -> None:
                     )
                 )
             )
-            continue
-        compared, _, _, variant_stats = run_window(
-            window,
+        return
+
+    def run_item(item: RunItem) -> tuple[int, str, int, tuple[int, int, int, int]]:
+        return run_window(
+            item.window,
             args.rom,
             args.stride,
             args.release,
             args.renderer,
             args.progress_every,
-            checkpoint,
+            item.checkpoint,
         )
+
+    if args.jobs == 1:
+        results = [run_item(item) for item in run_items]
+    else:
+        results = []
+        with ThreadPoolExecutor(max_workers=args.jobs) as executor:
+            futures = [executor.submit(run_item, item) for item in run_items]
+            for future in as_completed(futures):
+                results.append(future.result())
+
+    for compared, _, _, variant_stats in results:
         total_compared += compared
         total_variant_draws += variant_stats[0]
         total_fallback_draws += variant_stats[1]
         total_dynamic_palette_draws += variant_stats[2]
         total_missing_variant_draws += variant_stats[3]
 
-    if not args.dry_run:
-        print(
-            "gpu-render-oracle-windows completed "
-            f"windows={len(windows)} compared={total_compared} stride={args.stride} "
-            "mismatched_pixels=0 "
-            f"variant_draws={total_variant_draws} "
-            f"fallback_draws={total_fallback_draws} "
-            f"dynamic_palette_draws={total_dynamic_palette_draws} "
-            f"missing_variant_draws={total_missing_variant_draws}"
-        )
+    print(
+        "gpu-render-oracle-windows completed "
+        f"windows={len(windows)} compared={total_compared} stride={args.stride} "
+        "mismatched_pixels=0 "
+        f"variant_draws={total_variant_draws} "
+        f"fallback_draws={total_fallback_draws} "
+        f"dynamic_palette_draws={total_dynamic_palette_draws} "
+        f"missing_variant_draws={total_missing_variant_draws}"
+    )
 
 
 if __name__ == "__main__":
