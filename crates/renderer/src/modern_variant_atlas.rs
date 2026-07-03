@@ -105,11 +105,13 @@ impl ModernVariantAtlas {
     }
 
     pub fn effect_for_key(&self, key: &VariantAtlasKey) -> Option<&TileEffect> {
-        let colors_per_row = 1u8.checked_shl(u32::from(key.bpp))?;
-        self.effects.iter().find(|effect| {
-            effect.palette == key.palette
-                && effect.palette_row == key.palette_row
-                && effect.colors_per_row == colors_per_row
+        let colors_per_row = runtime_effect_color_rows(key)?;
+        colors_per_row.into_iter().find_map(|colors_per_row| {
+            self.effects.iter().find(|effect| {
+                effect.palette == key.palette
+                    && effect.palette_row == key.palette_row
+                    && effect.colors_per_row == colors_per_row
+            })
         })
     }
 
@@ -151,6 +153,18 @@ impl ModernVariantAtlas {
 
 fn entry_matches_material(entry: &VariantAtlasEntry, key: &VariantAtlasKey) -> bool {
     entry.key.palette == key.palette && entry.key.palette_row == key.palette_row
+}
+
+fn runtime_effect_color_rows(key: &VariantAtlasKey) -> Option<Vec<u8>> {
+    let source_stride = 1u8.checked_shl(u32::from(key.bpp))?;
+    let mut rows = Vec::new();
+    if matches!(key.source_kind.as_str(), "bg" | "sprite") {
+        rows.push(16);
+    }
+    if !rows.contains(&source_stride) {
+        rows.push(source_stride);
+    }
+    Some(rows)
 }
 
 pub fn load_modern_variant_atlas(root: &Path) -> Result<ModernVariantAtlas, String> {
@@ -389,14 +403,25 @@ fn load_modern_canonical_art_atlas_from_dir(
 }
 
 fn has_stable_effect_for_source_ref(effects: &[TileEffect], source_ref: &ArtSourceRefJson) -> bool {
-    let Some(colors_per_row) = 1u8.checked_shl(u32::from(source_ref.bpp)) else {
+    let key = VariantAtlasKey {
+        source_kind: source_ref.source_kind.clone(),
+        asset: source_ref.asset.clone(),
+        pack: source_ref.pack,
+        tile: source_ref.tile,
+        bpp: source_ref.bpp,
+        palette: source_ref.preview_palette.clone(),
+        palette_row: source_ref.preview_palette_row,
+    };
+    let Some(colors_per_rows) = runtime_effect_color_rows(&key) else {
         return false;
     };
-    effects.iter().any(|effect| {
-        effect.dynamic_policy == "stable"
-            && effect.palette == source_ref.preview_palette
-            && effect.palette_row == source_ref.preview_palette_row
-            && effect.colors_per_row == colors_per_row
+    colors_per_rows.into_iter().any(|colors_per_row| {
+        effects.iter().any(|effect| {
+            effect.dynamic_policy == "stable"
+                && effect.palette == source_ref.preview_palette
+                && effect.palette_row == source_ref.preview_palette_row
+                && effect.colors_per_row == colors_per_row
+        })
     })
 }
 
@@ -612,6 +637,17 @@ mod tests {
             palette_row,
             colors_per_row: 8,
             index_to_rgba: vec![[0, 0, 0, 255]; 8],
+            dynamic_policy: "stable".to_string(),
+        }
+    }
+
+    fn bg_runtime_effect_with_palette_row(palette_row: u8) -> TileEffect {
+        TileEffect {
+            id: format!("palette_dung_bg_main:16color:row{palette_row}"),
+            palette: "palette_dung_bg_main".to_string(),
+            palette_row,
+            colors_per_row: 16,
+            index_to_rgba: vec![[0, 0, 0, 255]; 16],
             dynamic_policy: "stable".to_string(),
         }
     }
@@ -887,6 +923,19 @@ mod tests {
                 .id,
             "palette_main_spr:8color:row4"
         );
+    }
+
+    #[test]
+    fn effect_lookup_uses_live_cgram_stride_for_runtime_bg_draws() {
+        let atlas = bg_test_atlas(1, vec![bg_runtime_effect_with_palette_row(3)]);
+        let live_key = bg_test_key_with_palette_row(3);
+
+        let effect = atlas
+            .effect_for_key(&live_key)
+            .expect("runtime effect should use live CGRAM row stride");
+
+        assert_eq!(effect.id, "palette_dung_bg_main:16color:row3");
+        assert_eq!(effect.colors_per_row, 16);
     }
 
     #[test]

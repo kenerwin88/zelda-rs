@@ -216,6 +216,11 @@ palette rows differently:
 - 3bpp: 8-color LUTs
 - 4bpp: 16-color LUTs
 
+Runtime BG/OBJ drawing still samples live SNES CGRAM as `palette * 16 + index`.
+When both source-width and 16-color rows exist for the same palette row, the
+renderer prefers the 16-color row for runtime material matching and keeps the
+source-width rows available for preview/diagnostic compatibility.
+
 Effects should be used for palette swaps, flashes, fades, lighting/darkening,
 and other temporary visual treatments. Separate RGBA art should be authored only
 for true semantic variants: different materials, different costumes, different
@@ -229,9 +234,11 @@ stable effect exists, it keeps the older preview-RGBA atlas sampling behavior.
 The GPU variant path now has a LUT-backed shader/material route for stable
 effect-backed BG and sprite draws, including source/draw flips and OBJ row
 masks. Mixed frames keep live indexed fallback for missing/dynamic cells while
-overlaying effect-backed stable cells through the LUT shader; stable entries
-without an effect still use the preview-RGBA atlas overlay until those material
-cases are modeled.
+overlaying safe stable BG cells through the LUT shader. If the static
+`tile_effects.json` LUT does not match live CGRAM but the packet is otherwise
+composition-safe, the mixed overlay path binds a per-frame live-CGRAM LUT
+instead of rejecting the packet. Stable entries without an effect still use the
+preview-RGBA atlas overlay until those material cases are modeled.
 
 `dynamic_policy` remains conservative:
 
@@ -264,11 +271,11 @@ renderer/oracle. Verification must report:
   the frame still uses composition features the overlay path does not model yet
   such as color math, windows, mosaic, or non-simple layer state.
 - `mixed_overlay_bg_effect_reject_cgram_mismatch`: candidates blocked because
-  the extracted stable effect LUT does not exactly match the live CGRAM colors
-  used by the source tile indices.
+  neither the extracted stable effect LUT nor the live-CGRAM LUT can represent
+  the packet's source indices.
 - `mixed_overlay_bg_effect_reject_overlap`: candidates blocked because their
-  screen footprint overlaps another BG or OBJ packet, so a late overlay could
-  disturb final priority/composition.
+  nontransparent screen pixels overlap another BG or OBJ packet, so a late
+  overlay could disturb final priority/composition.
 - final mismatched pixels
 
 Legacy log names remain available for compatibility: `variant_draws` is the
@@ -300,22 +307,22 @@ Expected output includes `mismatched_pixels=0` and nonzero
 `stable_preview_draws` or `stable_effect_draws`. The current representative
 proof reports `stable_effect_draws=21038`,
 `mixed_overlay_bg_effect_candidates=20674`,
-`mixed_overlay_bg_effect_draws=0`,
-`mixed_overlay_bg_effect_reject_complex_frame=20674`,
+`mixed_overlay_bg_effect_draws=17272`,
+`mixed_overlay_bg_effect_reject_complex_frame=3402`,
 `mixed_overlay_bg_effect_reject_cgram_mismatch=0`, and
 `mixed_overlay_bg_effect_reject_overlap=0` over 17 sampled compares from the
-checkpointed opening route tail. That means this route has stable effect
-opportunities and no palette/overlap blocker in the sampled window; the next
-modernization target is the frame-composition guard.
+checkpointed opening route tail. That means most stable BG opportunities in
+this sampled mixed window now execute through the GPU overlay path with exact
+final-pixel parity; the remaining blocker is explicit composition state.
 
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay
-a stable BG effect packet only when the frame has no color-math/window/mosaic
-composition features, the effect LUT matches the live CGRAM for every nonzero
-source index in the tile, and the packet footprint is disjoint from every other
-BG or OBJ packet. Other stable opportunities stay counted but are not drawn
-over the mixed fallback image until packet visibility and final composition
-state are modeled more completely.
+a stable BG effect packet only when each nontransparent packet pixel is proven
+unchanged by brightness, windows, mosaic, per-scanline main enable, and color
+math, and when those pixels do not overlap any other BG or OBJ packet. Other
+stable opportunities stay counted but are not drawn over the mixed fallback
+image until packet visibility and final composition state are modeled more
+completely.
 
 ## Modder Workflow Target
 

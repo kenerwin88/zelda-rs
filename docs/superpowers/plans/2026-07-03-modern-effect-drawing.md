@@ -540,3 +540,29 @@ summaries. The focused proof remains `mismatched_pixels=0` and reports
 `mixed_overlay_bg_effect_reject_overlap=0`. The next best modernization step is
 therefore to replace the broad complex-frame guard with explicit modeled
 composition state for these sampled mixed frames.
+
+### Task 12: Draw Composition-Safe Mixed BG Packets With Live CGRAM
+
+**Files:**
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Modify: `crates/renderer/src/modern_variant_atlas.rs`
+- [x] Modify: `docs/assets/rgba-variant-atlas.md`
+- [x] Test: `cargo test -p renderer mixed -- --nocapture`
+- [x] Test: `cargo test -p renderer modern_variant_atlas -- --nocapture`
+- [x] Test: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --only opening-uncle-dismiss-and-move --fast --frames 1000 --stride 60 --require-stable-draws --progress-every 0 --release`
+
+**Goal:** Convert the proven stable BG opportunities from counted-only to
+actually drawn by the GPU overlay path while preserving final-pixel parity.
+
+**Done:** The mixed overlay selector now proves safety per packet pixel instead
+of using the old whole-frame guard, prefers runtime 16-color CGRAM-stride
+effects for BG/OBJ material lookup, falls back to a per-frame live-CGRAM LUT
+when static effects do not match the current palette, and rejects overlap only
+when opaque packet pixels collide. The focused proof remains
+`mismatched_pixels=0` and now reports
+`mixed_overlay_bg_effect_draws=17272`,
+`mixed_overlay_bg_effect_candidates=20674`,
+`mixed_overlay_bg_effect_reject_complex_frame=3402`,
+`mixed_overlay_bg_effect_reject_cgram_mismatch=0`, and
+`mixed_overlay_bg_effect_reject_overlap=0`. The next modernization target is
+the remaining explicit composition-state rejects.

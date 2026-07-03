@@ -442,7 +442,8 @@ impl ModernGpuVariantRenderer {
             bg.render(device, queue, bg_cells, frame, output_view);
             spr.render(device, queue, sprite_cells, frame, output_view);
             let overlay = mixed_variant_overlay_bg_packets(frame, &plan);
-            stats.mixed_overlay_bg_effect_draws += overlay.bg.len() as u32;
+            stats.mixed_overlay_bg_effect_draws +=
+                (overlay.bg.len() + overlay.live_cgram_bg.len()) as u32;
             stats.mixed_overlay_bg_effect_candidates += overlay.candidates;
             stats.mixed_overlay_bg_effect_reject_complex_frame += overlay.reject_complex_frame;
             stats.mixed_overlay_bg_effect_reject_cgram_mismatch += overlay.reject_cgram_mismatch;
@@ -454,6 +455,17 @@ impl ModernGpuVariantRenderer {
                     bg_cells,
                     &self.atlas,
                     &overlay.bg,
+                    output_view,
+                    wgpu::LoadOp::Load,
+                );
+            }
+            if !overlay.live_cgram_bg.is_empty() {
+                self.effect_renderer.render_bg_with_live_cgram(
+                    device,
+                    queue,
+                    bg_cells,
+                    frame,
+                    &overlay.live_cgram_bg,
                     output_view,
                     wgpu::LoadOp::Load,
                 );
@@ -562,6 +574,7 @@ struct ModernGpuVariantEffectRenderer {
 #[derive(Default)]
 struct MixedVariantOverlayBgSelection<'a> {
     bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
+    live_cgram_bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
     candidates: u32,
     reject_complex_frame: u32,
     reject_cgram_mismatch: u32,
@@ -588,44 +601,199 @@ fn mixed_variant_overlay_bg_packets<'a>(
         .count() as u32;
     out.candidates = candidates;
 
-    if !frame_allows_simple_mixed_variant_overlay(frame) {
-        out.reject_complex_frame = candidates;
-        return out;
-    }
-
     for (packet_index, packet) in plan.bg.iter().enumerate() {
         let crate::modern_variant_atlas::VariantAtlasDraw::Stable {
+            entry,
             effect: Some(effect),
             ..
         } = packet.draw
         else {
             continue;
         };
-        if !bg_effect_matches_live_cgram(packet.cell, packet.inst.palette, effect, frame) {
-            out.reject_cgram_mismatch += 1;
+        if !bg_effect_packet_preserves_final_color(frame, packet, entry, effect) {
+            out.reject_complex_frame += 1;
             continue;
         }
         if bg_packet_overlaps_other_packets(packet_index, packet, plan) {
             out.reject_overlap += 1;
             continue;
         }
-        out.bg.push(packet.clone());
+        if bg_effect_matches_live_cgram(packet.cell, packet.inst.palette, effect, frame) {
+            out.bg.push(packet.clone());
+            continue;
+        }
+        if bg_packet_can_use_live_cgram(packet, frame) {
+            out.live_cgram_bg.push(packet.clone());
+            continue;
+        } else {
+            out.reject_cgram_mismatch += 1;
+        }
     }
     out
 }
 
-fn frame_allows_simple_mixed_variant_overlay(frame: &ModernFrame) -> bool {
-    frame.brightness == 15
-        && frame.screen_enabled_sub & 0x1f == 0
-        && frame.math_enabled == 0
-        && frame.clip_mode == 0
-        && frame.prevent_math_mode == 0
+fn bg_effect_packet_preserves_final_color(
+    frame: &ModernFrame,
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
+    effect: &crate::modern_variant_atlas::TileEffect,
+) -> bool {
+    if frame.brightness != 15 {
+        return false;
+    }
+    let Ok(layer) = u8::try_from(packet.layer_index) else {
+        return false;
+    };
+    if layer >= 4 {
+        return false;
+    }
+    let layer_bit = 1u8 << layer;
+    if frame.mosaic_size > 1 && (frame.mosaic_enabled & layer_bit) != 0 {
+        return false;
+    }
+    if frame.screen_windowed_sub != 0 {
+        return false;
+    }
+
+    for y in 0..8usize {
+        for x in 0..8usize {
+            let src_x = if packet.cell.hflip ^ entry.source_hflip {
+                7 - x
+            } else {
+                x
+            };
+            let src_y = if packet.cell.vflip ^ entry.source_vflip {
+                7 - y
+            } else {
+                y
+            };
+            let index = packet.cell.indices[src_y * 8 + src_x];
+            if index == 0 {
+                continue;
+            }
+            if usize::from(index) >= effect.colors_per_row as usize
+                || usize::from(index) >= effect.index_to_rgba.len()
+            {
+                return false;
+            }
+
+            let dst_x = packet.inst.screen_x + x as i16;
+            let dst_y = packet.inst.screen_y + y as i16;
+            if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                continue;
+            }
+            let sx = dst_x as u32;
+            let sy = dst_y as usize;
+            if frame
+                .main_tm_scanlines
+                .get(sy)
+                .is_some_and(|tm| tm & layer_bit == 0)
+            {
+                return false;
+            }
+            if bg_layer_window_masks_packet_pixel(frame, layer, sx, sy) {
+                return false;
+            }
+            if !bg_packet_pixel_math_preserves_color(frame, layer, sx, sy) {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+fn bg_layer_window_masks_packet_pixel(frame: &ModernFrame, layer: u8, sx: u32, sy: usize) -> bool {
+    if frame.screen_windowed_main & (1u8 << layer) == 0 {
+        return false;
+    }
+    let window_flags = (frame.windowsel >> (u32::from(layer) * 4)) & 0x0f;
+    let w1_enabled = window_flags & 0x2 != 0;
+    let w2_enabled = window_flags & 0x8 != 0;
+    if !w1_enabled && !w2_enabled {
+        return false;
+    }
+    let [w1l, w1r, w2l, w2r] = frame
+        .window_scanlines
+        .get(sy)
+        .copied()
+        .unwrap_or([0u8; 4])
+        .map(u32::from);
+    let mut test1 = sx >= w1l && sx <= w1r;
+    let mut test2 = sx >= w2l && sx <= w2r;
+    if window_flags & 0x1 != 0 {
+        test1 = !test1;
+    }
+    if window_flags & 0x4 != 0 {
+        test2 = !test2;
+    }
+    match (w1_enabled, w2_enabled) {
+        (true, false) => test1,
+        (false, true) => test2,
+        (true, true) => test1 || test2,
+        (false, false) => false,
+    }
+}
+
+fn bg_packet_pixel_math_preserves_color(
+    frame: &ModernFrame,
+    layer: u8,
+    sx: u32,
+    sy: usize,
+) -> bool {
+    if frame.clip_mode == 0
+        && frame.prevent_math_mode == 3
         && frame.windowsel_cm == 0
-        && frame.screen_windowed_main == 0
-        && frame.screen_windowed_sub == 0
-        && frame.windowsel == 0
-        && frame.mosaic_enabled == 0
-        && frame.mosaic_size <= 1
+        && frame.math_enabled & (1u8 << layer) == 0
+    {
+        return true;
+    }
+
+    let win = frame.window_scanlines.get(sy).copied().unwrap_or([0u8; 4]);
+    let cm_window = bg_packet_in_color_math_window(sx, win, frame.windowsel_cm);
+    if !bg_packet_color_window_bit(cm_window, frame.clip_mode) {
+        return false;
+    }
+    if frame.math_enabled & (1u8 << layer) == 0 {
+        return true;
+    }
+    if !bg_packet_color_window_bit(cm_window, frame.prevent_math_mode) {
+        return true;
+    }
+    if frame.add_subscreen {
+        return false;
+    }
+    frame.fixed_color_r == 0
+        && frame.fixed_color_g == 0
+        && frame.fixed_color_b == 0
+        && !frame.half_color
+}
+
+fn bg_packet_color_window_bit(in_window: bool, mode: u8) -> bool {
+    const MASKS: [u32; 8] = [0x00, 0xff, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00];
+    let w = if in_window { 0xffu32 } else { 0 };
+    let m = mode as usize & 7;
+    ((w & MASKS[m]) ^ MASKS[m + 4]) != 0
+}
+
+fn bg_packet_in_color_math_window(sx: u32, win: [u8; 4], windowsel_cm: u8) -> bool {
+    let [w1l, w1r, w2l, w2r] = win.map(u32::from);
+    let mut inside = false;
+    if windowsel_cm & 0x2 != 0 {
+        let mut in_w1 = w1l <= w1r && sx >= w1l && sx <= w1r;
+        if windowsel_cm & 0x1 != 0 {
+            in_w1 = !in_w1;
+        }
+        inside |= in_w1;
+    }
+    if windowsel_cm & 0x8 != 0 {
+        let mut in_w2 = w2l <= w2r && sx >= w2l && sx <= w2r;
+        if windowsel_cm & 0x4 != 0 {
+            in_w2 = !in_w2;
+        }
+        inside |= in_w2;
+    }
+    inside
 }
 
 fn bg_effect_matches_live_cgram(
@@ -655,34 +823,122 @@ fn bg_effect_matches_live_cgram(
     true
 }
 
+fn bg_packet_can_use_live_cgram(
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+    frame: &ModernFrame,
+) -> bool {
+    let palette_base = usize::from(packet.inst.palette) * EFFECT_LUT_WIDTH as usize;
+    for index in packet.cell.indices {
+        if index == 0 {
+            continue;
+        }
+        if usize::from(index) >= EFFECT_LUT_WIDTH as usize {
+            return false;
+        }
+        if frame
+            .cgram_rgba
+            .get(palette_base + usize::from(index))
+            .is_none()
+        {
+            return false;
+        }
+    }
+    true
+}
+
 fn bg_packet_overlaps_other_packets(
     packet_index: usize,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
 ) -> bool {
-    let rect = packet_rect(packet.inst.screen_x, packet.inst.screen_y);
+    let crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, .. } = packet.draw else {
+        return false;
+    };
+    for y in 0..8usize {
+        for x in 0..8usize {
+            if bg_effect_packet_index_at_local(packet, entry, x, y) == 0 {
+                continue;
+            }
+            let screen_x = packet.inst.screen_x + x as i16;
+            let screen_y = packet.inst.screen_y + y as i16;
+            if screen_x < 0 || screen_y < 0 || screen_x >= 256 || screen_y >= 224 {
+                continue;
+            }
+            if other_packet_has_opaque_bg_pixel(packet_index, plan, screen_x, screen_y)
+                || other_packet_has_opaque_sprite_pixel(plan, screen_x, screen_y)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn bg_effect_packet_index_at_local(
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
+    x: usize,
+    y: usize,
+) -> u8 {
+    let src_x = if packet.cell.hflip ^ entry.source_hflip {
+        7 - x
+    } else {
+        x
+    };
+    let src_y = if packet.cell.vflip ^ entry.source_vflip {
+        7 - y
+    } else {
+        y
+    };
+    packet.cell.indices[src_y * 8 + src_x]
+}
+
+fn other_packet_has_opaque_bg_pixel(
+    packet_index: usize,
+    plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+    screen_x: i16,
+    screen_y: i16,
+) -> bool {
     for (other_index, other) in plan.bg.iter().enumerate() {
         if other_index == packet_index {
             continue;
         }
-        if rects_overlap(rect, packet_rect(other.inst.screen_x, other.inst.screen_y)) {
-            return true;
+        let local_x = screen_x - other.inst.screen_x;
+        let local_y = screen_y - other.inst.screen_y;
+        if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
+            continue;
         }
-    }
-    for other in &plan.sprites {
-        if rects_overlap(rect, packet_rect(other.inst.screen_x, other.inst.screen_y)) {
+        let index = other.cell.indices[local_y as usize * 8 + local_x as usize];
+        if index != 0 {
             return true;
         }
     }
     false
 }
 
-fn packet_rect(screen_x: i16, screen_y: i16) -> (i16, i16, i16, i16) {
-    (screen_x, screen_y, screen_x + 8, screen_y + 8)
-}
-
-fn rects_overlap(a: (i16, i16, i16, i16), b: (i16, i16, i16, i16)) -> bool {
-    a.0 < b.2 && b.0 < a.2 && a.1 < b.3 && b.1 < a.3
+fn other_packet_has_opaque_sprite_pixel(
+    plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+    screen_x: i16,
+    screen_y: i16,
+) -> bool {
+    for other in &plan.sprites {
+        let local_x = screen_x - other.inst.screen_x;
+        let local_y = screen_y - other.inst.screen_y;
+        if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
+            continue;
+        }
+        let y = local_y as usize;
+        if other.inst.row_mask & (1 << y) == 0 {
+            continue;
+        }
+        let x = local_x as usize;
+        let src_x = if other.inst.hflip { 7 - x } else { x };
+        let src_y = if other.inst.vflip { 7 - y } else { y };
+        if other.cell.indices[src_y * 8 + src_x] != 0 {
+            return true;
+        }
+    }
+    false
 }
 
 impl ModernGpuVariantEffectRenderer {
@@ -938,6 +1194,108 @@ impl ModernGpuVariantEffectRenderer {
         queue.submit([encoder.finish()]);
     }
 
+    fn render_bg_with_live_cgram(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bg_cells: &[ModernIndexTile],
+        frame: &ModernFrame,
+        packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
+        output_view: &wgpu::TextureView,
+        load: wgpu::LoadOp<wgpu::Color>,
+    ) {
+        let (_index_atlas_texture, index_atlas_view) = build_index_atlas(
+            device,
+            queue,
+            bg_cells,
+            "modern_variant_live_cgram_index_atlas",
+        );
+        let (_live_lut_texture, live_lut_view) = build_live_effect_lut(device, queue, frame);
+        let mut instance_bytes = Vec::new();
+        let mut instance_count = 0u32;
+        for packet in packets {
+            let entry = match packet.draw {
+                crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, .. } => entry,
+                _ => continue,
+            };
+            let col = packet.inst.cell_id % INDEX_GRID_COLS;
+            let row = packet.inst.cell_id / INDEX_GRID_COLS;
+            instance_bytes.extend_from_slice(&(col * 8).to_le_bytes());
+            instance_bytes.extend_from_slice(&(row * 8).to_le_bytes());
+            instance_bytes.extend_from_slice(&(i32::from(packet.inst.screen_x)).to_le_bytes());
+            instance_bytes.extend_from_slice(&(i32::from(packet.inst.screen_y)).to_le_bytes());
+            let mut flags = 0xffu32 << 8;
+            if packet.cell.hflip ^ entry.source_hflip {
+                flags |= 0b001;
+            }
+            if packet.cell.vflip ^ entry.source_vflip {
+                flags |= 0b010;
+            }
+            instance_bytes.extend_from_slice(&flags.to_le_bytes());
+            instance_bytes.extend_from_slice(&(u32::from(packet.inst.palette)).to_le_bytes());
+            instance_count += 1;
+        }
+        debug_assert_eq!(
+            instance_bytes.len() as u64,
+            u64::from(instance_count) * INDEX_INSTANCE_STRIDE
+        );
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("modern_variant_live_cgram_effect"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&index_atlas_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&live_lut_view),
+                },
+            ],
+        });
+        let instance_buffer = if instance_count > 0 {
+            let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("modern_variant_live_cgram_effect_instances"),
+                size: instance_bytes.len() as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            queue.write_buffer(&buffer, 0, &instance_bytes);
+            Some(buffer)
+        } else {
+            None
+        };
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("modern_variant_live_cgram_effect"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("modern_variant_live_cgram_effect"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: output_view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            if let Some(buffer) = &instance_buffer {
+                pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(0, &bind_group, &[]);
+                pass.set_vertex_buffer(0, buffer.slice(..));
+                pass.draw(0..6, 0..instance_count);
+            }
+        }
+        queue.submit([encoder.finish()]);
+    }
+
     fn render_sprites(
         &self,
         device: &wgpu::Device,
@@ -1131,6 +1489,52 @@ fn build_index_atlas(
         wgpu::Extent3d {
             width: tex_width,
             height: tex_height,
+            depth_or_array_layers: 1,
+        },
+    );
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
+}
+
+fn build_live_effect_lut(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    frame: &ModernFrame,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("modern_variant_live_cgram_lut"),
+        size: wgpu::Extent3d {
+            width: EFFECT_LUT_WIDTH,
+            height: 16,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let mut lut_bytes = Vec::with_capacity(16 * EFFECT_LUT_WIDTH as usize * 4);
+    for color in &frame.cgram_rgba {
+        lut_bytes.extend_from_slice(color);
+    }
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &lut_bytes,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(EFFECT_LUT_WIDTH * 4),
+            rows_per_image: Some(16),
+        },
+        wgpu::Extent3d {
+            width: EFFECT_LUT_WIDTH,
+            height: 16,
             depth_or_array_layers: 1,
         },
     );
@@ -2195,7 +2599,8 @@ impl ModernGpuVariantHeadless {
                 &self.target,
             );
             let overlay = mixed_variant_overlay_bg_packets(frame, &plan);
-            stats.mixed_overlay_bg_effect_draws += overlay.bg.len() as u32;
+            stats.mixed_overlay_bg_effect_draws +=
+                (overlay.bg.len() + overlay.live_cgram_bg.len()) as u32;
             stats.mixed_overlay_bg_effect_candidates += overlay.candidates;
             stats.mixed_overlay_bg_effect_reject_complex_frame += overlay.reject_complex_frame;
             stats.mixed_overlay_bg_effect_reject_cgram_mismatch += overlay.reject_cgram_mismatch;
@@ -2207,6 +2612,17 @@ impl ModernGpuVariantHeadless {
                     bg_cells,
                     &self.renderer.atlas,
                     &overlay.bg,
+                    &self.target_view,
+                    wgpu::LoadOp::Load,
+                );
+            }
+            if !overlay.live_cgram_bg.is_empty() {
+                self.renderer.effect_renderer.render_bg_with_live_cgram(
+                    &self.device,
+                    &self.queue,
+                    bg_cells,
+                    frame,
+                    &overlay.live_cgram_bg,
                     &self.target_view,
                     wgpu::LoadOp::Load,
                 );
@@ -3321,8 +3737,8 @@ mod tests {
         assert_eq!(selection.bg[0].inst.cell_id, 0);
         assert_eq!(selection.candidates, 2);
         assert_eq!(selection.reject_complex_frame, 0);
-        assert_eq!(selection.reject_cgram_mismatch, 1);
-        assert_eq!(selection.reject_overlap, 0);
+        assert_eq!(selection.reject_cgram_mismatch, 0);
+        assert_eq!(selection.reject_overlap, 1);
 
         let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
             &frame,
@@ -3338,8 +3754,296 @@ mod tests {
         assert_eq!(stats.mixed_overlay_bg_effect_draws, 1);
         assert_eq!(stats.mixed_overlay_bg_effect_candidates, 2);
         assert_eq!(stats.mixed_overlay_bg_effect_reject_complex_frame, 0);
-        assert_eq!(stats.mixed_overlay_bg_effect_reject_cgram_mismatch, 1);
-        assert_eq!(stats.mixed_overlay_bg_effect_reject_overlap, 0);
+        assert_eq!(stats.mixed_overlay_bg_effect_reject_cgram_mismatch, 0);
+        assert_eq!(stats.mixed_overlay_bg_effect_reject_overlap, 1);
+    }
+
+    #[test]
+    fn mixed_variant_overlay_allows_subscreen_when_color_math_cannot_change_packet() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, TileEffect, VariantAtlasEntry, VariantAtlasKey,
+        };
+
+        let mut stable_indices = [0u8; 64];
+        stable_indices[0] = 1;
+        let bg_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: stable_indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.screen_enabled_sub = 0x02;
+        frame.cgram_rgba[33] = [90, 100, 110, 0xff];
+        let mut layer = ModernBgLayer::new(0);
+        layer.enabled_main = true;
+        layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 2,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = layer;
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![VariantAtlasEntry {
+                id: "bg:kBgGfx:pack0:tile0:3bpp".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "bg".to_string(),
+                    asset: "kBgGfx".to_string(),
+                    pack: 0,
+                    tile: 0,
+                    bpp: 3,
+                    palette: "palette_dung_bg_main".to_string(),
+                    palette_row: 2,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "stable".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                source_hflip: false,
+                source_vflip: false,
+            }],
+            effects: vec![TileEffect {
+                id: "palette_dung_bg_main:8color:row2".to_string(),
+                palette: "palette_dung_bg_main".to_string(),
+                palette_row: 2,
+                colors_per_row: 8,
+                index_to_rgba: vec![
+                    [0, 0, 0, 0xff],
+                    [90, 100, 110, 0xff],
+                    [2, 2, 2, 0xff],
+                    [3, 3, 3, 0xff],
+                    [4, 4, 4, 0xff],
+                    [5, 5, 5, 0xff],
+                    [6, 6, 6, 0xff],
+                    [7, 7, 7, 0xff],
+                ],
+                dynamic_policy: "stable".to_string(),
+            }],
+        };
+        let plan = crate::modern_variant_draw::compile_variant_draws(
+            &frame,
+            &bg_cells,
+            &[],
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        let selection = mixed_variant_overlay_bg_packets(&frame, &plan);
+
+        assert_eq!(selection.bg.len(), 1);
+        assert_eq!(selection.candidates, 1);
+        assert_eq!(selection.reject_complex_frame, 0);
+        assert_eq!(selection.reject_cgram_mismatch, 0);
+        assert_eq!(selection.reject_overlap, 0);
+    }
+
+    #[test]
+    fn mixed_variant_overlay_selects_live_cgram_when_static_effect_differs() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, TileEffect, VariantAtlasEntry, VariantAtlasKey,
+        };
+
+        let mut stable_indices = [0u8; 64];
+        stable_indices[0] = 1;
+        let bg_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: stable_indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.screen_enabled_sub = 0x02;
+        frame.cgram_rgba[33] = [90, 100, 110, 0xff];
+        let mut layer = ModernBgLayer::new(0);
+        layer.enabled_main = true;
+        layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 2,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = layer;
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![VariantAtlasEntry {
+                id: "bg:kBgGfx:pack0:tile0:3bpp".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "bg".to_string(),
+                    asset: "kBgGfx".to_string(),
+                    pack: 0,
+                    tile: 0,
+                    bpp: 3,
+                    palette: "palette_dung_bg_main".to_string(),
+                    palette_row: 2,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "stable".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                source_hflip: false,
+                source_vflip: false,
+            }],
+            effects: vec![TileEffect {
+                id: "palette_dung_bg_main:8color:row2".to_string(),
+                palette: "palette_dung_bg_main".to_string(),
+                palette_row: 2,
+                colors_per_row: 8,
+                index_to_rgba: vec![[12, 34, 56, 0xff]; 8],
+                dynamic_policy: "stable".to_string(),
+            }],
+        };
+        let plan = crate::modern_variant_draw::compile_variant_draws(
+            &frame,
+            &bg_cells,
+            &[],
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        let selection = mixed_variant_overlay_bg_packets(&frame, &plan);
+
+        assert_eq!(selection.bg.len(), 0);
+        assert_eq!(selection.live_cgram_bg.len(), 1);
+        assert_eq!(selection.candidates, 1);
+        assert_eq!(selection.reject_complex_frame, 0);
+        assert_eq!(selection.reject_cgram_mismatch, 0);
+        assert_eq!(selection.reject_overlap, 0);
+    }
+
+    #[test]
+    fn mixed_variant_overlay_allows_rect_overlap_when_opaque_pixels_do_not_overlap() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, TileEffect, VariantAtlasEntry, VariantAtlasKey,
+        };
+
+        let mut stable_indices = [0u8; 64];
+        stable_indices[0] = 1;
+        let mut neighbor_indices = [0u8; 64];
+        neighbor_indices[7] = 1;
+        let bg_cells = vec![
+            ModernIndexTile {
+                id: 0,
+                indices: stable_indices,
+                source_key: modern_source_key(1, 0, 0),
+                hflip: false,
+                vflip: false,
+            },
+            ModernIndexTile {
+                id: 1,
+                indices: neighbor_indices,
+                source_key: modern_source_key(1, 9, 9),
+                hflip: false,
+                vflip: false,
+            },
+        ];
+
+        let mut frame = ModernFrame::empty();
+        frame.cgram_rgba[33] = [90, 100, 110, 0xff];
+        let mut layer = ModernBgLayer::new(0);
+        layer.enabled_main = true;
+        layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 2,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 1,
+            screen_x: 1,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = layer;
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![VariantAtlasEntry {
+                id: "bg:kBgGfx:pack0:tile0:3bpp".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "bg".to_string(),
+                    asset: "kBgGfx".to_string(),
+                    pack: 0,
+                    tile: 0,
+                    bpp: 3,
+                    palette: "palette_dung_bg_main".to_string(),
+                    palette_row: 2,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "stable".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                source_hflip: false,
+                source_vflip: false,
+            }],
+            effects: vec![TileEffect {
+                id: "palette_dung_bg_main:8color:row2".to_string(),
+                palette: "palette_dung_bg_main".to_string(),
+                palette_row: 2,
+                colors_per_row: 8,
+                index_to_rgba: vec![
+                    [0, 0, 0, 0xff],
+                    [90, 100, 110, 0xff],
+                    [2, 2, 2, 0xff],
+                    [3, 3, 3, 0xff],
+                    [4, 4, 4, 0xff],
+                    [5, 5, 5, 0xff],
+                    [6, 6, 6, 0xff],
+                    [7, 7, 7, 0xff],
+                ],
+                dynamic_policy: "stable".to_string(),
+            }],
+        };
+        let plan = crate::modern_variant_draw::compile_variant_draws(
+            &frame,
+            &bg_cells,
+            &[],
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        let selection = mixed_variant_overlay_bg_packets(&frame, &plan);
+
+        assert_eq!(selection.bg.len(), 1);
+        assert_eq!(selection.candidates, 1);
+        assert_eq!(selection.reject_overlap, 0);
     }
 
     #[test]
