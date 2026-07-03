@@ -70,6 +70,7 @@ pub struct VariantAtlasRenderStats {
     pub dynamic_material_draws: u32,
     pub missing_art_draws: u32,
     pub unkeyed_fallback_draws: u32,
+    pub mixed_overlay_bg_effect_draws: u32,
 }
 
 impl VariantAtlasRenderStats {

@@ -256,6 +256,8 @@ renderer/oracle. Verification must report:
   entry.
 - `unkeyed_fallback_draws`: the live draw has no ROM/source key and must stay
   on the live indexed path.
+- `mixed_overlay_bg_effect_draws`: stable BG effect packets actually overlaid
+  on top of a mixed fallback frame by the conservative safe-packet selector.
 - final mismatched pixels
 
 Legacy log names remain available for compatibility: `variant_draws` is the
@@ -285,8 +287,10 @@ python3 scripts/gpu_render_compare_oracle_windows.py \
 
 Expected output includes `mismatched_pixels=0` and nonzero
 `stable_preview_draws` or `stable_effect_draws`. The current representative
-proof reports `stable_effect_draws=21038` over 17 sampled compares from the
-checkpointed opening route tail.
+proof reports `stable_effect_draws=21038` and
+`mixed_overlay_bg_effect_draws=0` over 17 sampled compares from the checkpointed
+opening route tail. That means this route has stable effect opportunities, but
+none pass the current conservative mixed-frame overlay selector yet.
 
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay

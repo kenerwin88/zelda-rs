@@ -101,7 +101,7 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
             "gpu_count=5 mode7_gpu_count=1 cpu_count=1 variant_draws=11 "
             "fallback_draws=13 dynamic_palette_draws=17 missing_variant_draws=19 "
             "stable_preview_draws=2 stable_effect_draws=3 dynamic_material_draws=5 "
-            "missing_art_draws=7 unkeyed_fallback_draws=11"
+            "missing_art_draws=7 unkeyed_fallback_draws=11 mixed_overlay_bg_effect_draws=13"
         )
 
         match = MODERN_INDEX_SUMMARY_RE.search(line)
@@ -110,6 +110,7 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         self.assertEqual(match.group(7), "11")
         self.assertEqual(match.group(11), "2")
         self.assertEqual(match.group(15), "11")
+        self.assertEqual(match.group(16), "13")
 
     def test_modern_index_summary_regex_accepts_legacy_draw_mix(self) -> None:
         line = (

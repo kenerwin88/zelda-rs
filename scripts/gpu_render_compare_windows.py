@@ -23,13 +23,15 @@ MODERN_INDEX_SUMMARY_RE = re.compile(
     r"gpu_count=(\d+) mode7_gpu_count=(\d+) cpu_count=(\d+)"
     r"(?: variant_draws=(\d+)(?: fallback_draws=(\d+))? dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
     r"(?: stable_preview_draws=(\d+) stable_effect_draws=(\d+) dynamic_material_draws=(\d+) "
-    r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+))?)?"
+    r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+)"
+    r"(?: mixed_overlay_bg_effect_draws=(\d+))?)?)?"
 )
 MODERN_INDEX_VARIANT_RE = re.compile(
     r"modern_index_compare frame=(\d+) .* via=variant-gpu "
     r"variant_draws=(\d+)(?: fallback_draws=(\d+))? dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
     r"(?: stable_preview_draws=(\d+) stable_effect_draws=(\d+) dynamic_material_draws=(\d+) "
-    r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+))?"
+    r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+)"
+    r"(?: mixed_overlay_bg_effect_draws=(\d+))?)?"
 )
 SAVED_RE = re.compile(r"saved replay-save checkpoint frame=(\d+) to (.+)")
 SUMMARY_PREFIXES = (
@@ -226,6 +228,7 @@ def compare_window(
             dynamic_material_draws = int(match.group(13) or 0)
             missing_art_draws = int(match.group(14) or 0)
             unkeyed_fallback_draws = int(match.group(15) or 0)
+            mixed_overlay_bg_effect_draws = int(match.group(16) or 0)
         else:
             variant_draws = 0
             fallback_draws = 0
@@ -236,6 +239,7 @@ def compare_window(
             dynamic_material_draws = 0
             missing_art_draws = 0
             unkeyed_fallback_draws = 0
+            mixed_overlay_bg_effect_draws = 0
             for frame_match in MODERN_INDEX_VARIANT_RE.finditer(output):
                 variant_draws += int(frame_match.group(2))
                 fallback_draws += int(frame_match.group(3) or 0)
@@ -246,6 +250,7 @@ def compare_window(
                 dynamic_material_draws += int(frame_match.group(8) or 0)
                 missing_art_draws += int(frame_match.group(9) or 0)
                 unkeyed_fallback_draws += int(frame_match.group(10) or 0)
+                mixed_overlay_bg_effect_draws += int(frame_match.group(11) or 0)
         print(
             f"modern-index window {start}..{end}: compared={compared} "
             f"bad_pixels={bad_pixels} renderer={renderer} "
@@ -256,7 +261,8 @@ def compare_window(
             f"stable_effect_draws={stable_effect_draws} "
             f"dynamic_material_draws={dynamic_material_draws} "
             f"missing_art_draws={missing_art_draws} "
-            f"unkeyed_fallback_draws={unkeyed_fallback_draws}"
+            f"unkeyed_fallback_draws={unkeyed_fallback_draws} "
+            f"mixed_overlay_bg_effect_draws={mixed_overlay_bg_effect_draws}"
         )
         if save_checkpoint is not None and not save_checkpoint.exists():
             raise SystemExit(f"end checkpoint was not created: {save_checkpoint}")
@@ -275,6 +281,7 @@ def compare_window(
                 dynamic_material_draws,
                 missing_art_draws,
                 unkeyed_fallback_draws,
+                mixed_overlay_bg_effect_draws,
             ),
         )
     match = COMPARE_RE.search(output)
@@ -348,6 +355,7 @@ def main() -> None:
     total_dynamic_material_draws = 0
     total_missing_art_draws = 0
     total_unkeyed_fallback_draws = 0
+    total_mixed_overlay_bg_effect_draws = 0
     last_frame = args.start
     last_hash = "0x00000000"
 
@@ -411,6 +419,7 @@ def main() -> None:
         total_dynamic_material_draws += variant_stats[6]
         total_missing_art_draws += variant_stats[7]
         total_unkeyed_fallback_draws += variant_stats[8]
+        total_mixed_overlay_bg_effect_draws += variant_stats[9]
 
     if not args.dry_run:
         print(
@@ -426,7 +435,8 @@ def main() -> None:
             f"stable_effect_draws={total_stable_effect_draws} "
             f"dynamic_material_draws={total_dynamic_material_draws} "
             f"missing_art_draws={total_missing_art_draws} "
-            f"unkeyed_fallback_draws={total_unkeyed_fallback_draws}"
+            f"unkeyed_fallback_draws={total_unkeyed_fallback_draws} "
+            f"mixed_overlay_bg_effect_draws={total_mixed_overlay_bg_effect_draws}"
         )
 
 

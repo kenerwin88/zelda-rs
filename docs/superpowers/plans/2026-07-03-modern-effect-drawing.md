@@ -487,3 +487,28 @@ footprint is disjoint from every other BG/OBJ packet.
 The selector returns only CGRAM-matching, footprint-disjoint BG effect packets
 for simple frames. Overlapping packets, palette/effect mismatches, sprites, and
 frames with color math/window/mosaic state continue to use the fallback pixels.
+
+### Task 10: Expose Actual Mixed Overlay Counts
+
+**Files:**
+- [x] Modify: `crates/renderer/src/modern_software.rs`
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Modify: `zelda3-bin/src/main.rs`
+- [x] Modify: `scripts/gpu_render_compare_oracle_windows.py`
+- [x] Modify: `scripts/gpu_render_compare_windows.py`
+- [x] Modify: `scripts/test_gpu_render_compare_oracle_windows.py`
+- [x] Modify: `docs/assets/rgba-variant-atlas.md`
+- [x] Test: `python3 scripts/test_gpu_render_compare_oracle_windows.py`
+- [x] Test: `cargo test -p renderer mixed_variant_overlay_selects_only_cgram_matching_disjoint_effect_bg_packets -- --nocapture`
+- [x] Test: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --only opening-uncle-dismiss-and-move --fast --frames 1000 --stride 60 --require-stable-draws --progress-every 0 --release`
+
+**Goal:** Separate stable effect opportunities from actual mixed-frame overlay
+execution, so the next visibility work can prove it is drawing more packets
+rather than only keeping parity.
+
+**Done:** `VariantAtlasRenderStats` now carries
+`mixed_overlay_bg_effect_draws`, live/replay logs print it, and both compare
+wrappers parse and aggregate it. The representative route proof remains
+`mismatched_pixels=0` and reports `mixed_overlay_bg_effect_draws=0`, which
+shows the current safe selector is parity-clean but too conservative for that
+route tail.

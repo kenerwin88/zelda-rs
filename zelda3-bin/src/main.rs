@@ -1489,6 +1489,7 @@ struct VariantLiveStats {
     dynamic_material_draws: u64,
     missing_art_draws: u64,
     unkeyed_fallback_draws: u64,
+    mixed_overlay_bg_effect_draws: u64,
 }
 
 impl VariantLiveStats {
@@ -1520,9 +1521,10 @@ impl VariantLiveStats {
         self.dynamic_material_draws += u64::from(stats.dynamic_material_draws);
         self.missing_art_draws += u64::from(stats.missing_art_draws);
         self.unkeyed_fallback_draws += u64::from(stats.unkeyed_fallback_draws);
+        self.mixed_overlay_bg_effect_draws += u64::from(stats.mixed_overlay_bg_effect_draws);
         if self.frames % self.log_every_frames == 0 {
             eprintln!(
-                "variant_live_summary frames={} variant_draws={} fallback_draws={} dynamic_palette_draws={} missing_variant_draws={} stable_preview_draws={} stable_effect_draws={} dynamic_material_draws={} missing_art_draws={} unkeyed_fallback_draws={}",
+                "variant_live_summary frames={} variant_draws={} fallback_draws={} dynamic_palette_draws={} missing_variant_draws={} stable_preview_draws={} stable_effect_draws={} dynamic_material_draws={} missing_art_draws={} unkeyed_fallback_draws={} mixed_overlay_bg_effect_draws={}",
                 self.frames,
                 self.stable_draws,
                 self.fallback_draws,
@@ -1532,7 +1534,8 @@ impl VariantLiveStats {
                 self.stable_effect_draws,
                 self.dynamic_material_draws,
                 self.missing_art_draws,
-                self.unkeyed_fallback_draws
+                self.unkeyed_fallback_draws,
+                self.mixed_overlay_bg_effect_draws
             );
         }
     }
@@ -3504,6 +3507,7 @@ fn run_replay_save(args: &[String]) {
     let mut modern_index_compare_dynamic_material_draws = 0u64;
     let mut modern_index_compare_missing_art_draws = 0u64;
     let mut modern_index_compare_unkeyed_fallback_draws = 0u64;
+    let mut modern_index_compare_mixed_overlay_bg_effect_draws = 0u64;
     let ppu_mode_summary = std::env::var("ZELDA3_PPU_MODE_SUMMARY").is_ok();
     let mut ppu_mode_counts = [0u64; 8];
     let mut first_mode7_frame = None::<u32>;
@@ -5837,11 +5841,13 @@ fn run_replay_save(args: &[String]) {
                     modern_index_compare_missing_art_draws += u64::from(stats.missing_art_draws);
                     modern_index_compare_unkeyed_fallback_draws +=
                         u64::from(stats.unkeyed_fallback_draws);
+                    modern_index_compare_mixed_overlay_bg_effect_draws +=
+                        u64::from(stats.mixed_overlay_bg_effect_draws);
                 }
                 if !modern_index_compare_summary || mismatch != 0 {
                     if let Some(stats) = variant_stats {
                         println!(
-                            "modern_index_compare frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} fallback_draws={} dynamic_palette_draws={} missing_variant_draws={} stable_preview_draws={} stable_effect_draws={} dynamic_material_draws={} missing_art_draws={} unkeyed_fallback_draws={}",
+                            "modern_index_compare frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} fallback_draws={} dynamic_palette_draws={} missing_variant_draws={} stable_preview_draws={} stable_effect_draws={} dynamic_material_draws={} missing_art_draws={} unkeyed_fallback_draws={} mixed_overlay_bg_effect_draws={}",
                             gpu_frame.mode,
                             stats.stable_draws,
                             stats.fallback_draws,
@@ -5851,7 +5857,8 @@ fn run_replay_save(args: &[String]) {
                             stats.stable_effect_draws,
                             stats.dynamic_material_draws,
                             stats.missing_art_draws,
-                            stats.unkeyed_fallback_draws
+                            stats.unkeyed_fallback_draws,
+                            stats.mixed_overlay_bg_effect_draws
                         );
                     } else {
                         println!(
@@ -5945,7 +5952,7 @@ fn run_replay_save(args: &[String]) {
 
     if modern_index_compare != 0 && modern_index_compare_summary {
         println!(
-            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels} gpu_count={modern_index_compare_gpu_count} mode7_gpu_count={modern_index_compare_mode7_gpu_count} cpu_count={modern_index_compare_cpu_count} variant_draws={modern_index_compare_variant_draws} fallback_draws={modern_index_compare_fallback_draws} dynamic_palette_draws={modern_index_compare_dynamic_palette_draws} missing_variant_draws={modern_index_compare_missing_variant_draws} stable_preview_draws={modern_index_compare_stable_preview_draws} stable_effect_draws={modern_index_compare_stable_effect_draws} dynamic_material_draws={modern_index_compare_dynamic_material_draws} missing_art_draws={modern_index_compare_missing_art_draws} unkeyed_fallback_draws={modern_index_compare_unkeyed_fallback_draws}"
+            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels} gpu_count={modern_index_compare_gpu_count} mode7_gpu_count={modern_index_compare_mode7_gpu_count} cpu_count={modern_index_compare_cpu_count} variant_draws={modern_index_compare_variant_draws} fallback_draws={modern_index_compare_fallback_draws} dynamic_palette_draws={modern_index_compare_dynamic_palette_draws} missing_variant_draws={modern_index_compare_missing_variant_draws} stable_preview_draws={modern_index_compare_stable_preview_draws} stable_effect_draws={modern_index_compare_stable_effect_draws} dynamic_material_draws={modern_index_compare_dynamic_material_draws} missing_art_draws={modern_index_compare_missing_art_draws} unkeyed_fallback_draws={modern_index_compare_unkeyed_fallback_draws} mixed_overlay_bg_effect_draws={modern_index_compare_mixed_overlay_bg_effect_draws}"
         );
     }
     if ppu_mode_summary {
@@ -12357,6 +12364,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
     let mut modern_index_compare_dynamic_material_draws = 0u64;
     let mut modern_index_compare_missing_art_draws = 0u64;
     let mut modern_index_compare_unkeyed_fallback_draws = 0u64;
+    let mut modern_index_compare_mixed_overlay_bg_effect_draws = 0u64;
     while i < args.len() {
         match args[i].as_str() {
             "--input-script" => {
@@ -12720,10 +12728,12 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 modern_index_compare_missing_art_draws += u64::from(stats.missing_art_draws);
                 modern_index_compare_unkeyed_fallback_draws +=
                     u64::from(stats.unkeyed_fallback_draws);
+                modern_index_compare_mixed_overlay_bg_effect_draws +=
+                    u64::from(stats.mixed_overlay_bg_effect_draws);
                 if !modern_index_compare_summary || mismatch != 0 {
                     if let Some(diff) = modern_diff.as_ref() {
                         println!(
-                            "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} fallback_draws={} dynamic_palette_draws={} missing_variant_draws={} stable_preview_draws={} stable_effect_draws={} dynamic_material_draws={} missing_art_draws={} unkeyed_fallback_draws={} first_mismatch=({}, {}) classic_rgb=({},{},{}) modern_rgb=({},{},{})",
+                            "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} fallback_draws={} dynamic_palette_draws={} missing_variant_draws={} stable_preview_draws={} stable_effect_draws={} dynamic_material_draws={} missing_art_draws={} unkeyed_fallback_draws={} mixed_overlay_bg_effect_draws={} first_mismatch=({}, {}) classic_rgb=({},{},{}) modern_rgb=({},{},{})",
                             gpu_frame.mode,
                             stats.stable_draws,
                             stats.fallback_draws,
@@ -12734,6 +12744,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
                             stats.dynamic_material_draws,
                             stats.missing_art_draws,
                             stats.unkeyed_fallback_draws,
+                            stats.mixed_overlay_bg_effect_draws,
                             diff.first_x,
                             diff.first_y,
                             diff.cpu_rgb.0,
@@ -12745,7 +12756,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
                         );
                     } else {
                         println!(
-                            "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} fallback_draws={} dynamic_palette_draws={} missing_variant_draws={} stable_preview_draws={} stable_effect_draws={} dynamic_material_draws={} missing_art_draws={} unkeyed_fallback_draws={}",
+                            "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} fallback_draws={} dynamic_palette_draws={} missing_variant_draws={} stable_preview_draws={} stable_effect_draws={} dynamic_material_draws={} missing_art_draws={} unkeyed_fallback_draws={} mixed_overlay_bg_effect_draws={}",
                             gpu_frame.mode,
                             stats.stable_draws,
                             stats.fallback_draws,
@@ -12755,7 +12766,8 @@ fn run_play_gpu_render_compare(args: &[String]) {
                             stats.stable_effect_draws,
                             stats.dynamic_material_draws,
                             stats.missing_art_draws,
-                            stats.unkeyed_fallback_draws
+                            stats.unkeyed_fallback_draws,
+                            stats.mixed_overlay_bg_effect_draws
                         );
                     }
                 }
@@ -12817,7 +12829,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
     );
     if modern_index_compare != 0 && modern_index_compare_summary {
         println!(
-            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels} gpu_count={modern_index_compare_gpu_count} mode7_gpu_count={modern_index_compare_mode7_gpu_count} cpu_count={modern_index_compare_cpu_count} variant_draws={modern_index_compare_variant_draws} fallback_draws={modern_index_compare_fallback_draws} dynamic_palette_draws={modern_index_compare_dynamic_palette_draws} missing_variant_draws={modern_index_compare_missing_variant_draws} stable_preview_draws={modern_index_compare_stable_preview_draws} stable_effect_draws={modern_index_compare_stable_effect_draws} dynamic_material_draws={modern_index_compare_dynamic_material_draws} missing_art_draws={modern_index_compare_missing_art_draws} unkeyed_fallback_draws={modern_index_compare_unkeyed_fallback_draws}"
+            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels} gpu_count={modern_index_compare_gpu_count} mode7_gpu_count={modern_index_compare_mode7_gpu_count} cpu_count={modern_index_compare_cpu_count} variant_draws={modern_index_compare_variant_draws} fallback_draws={modern_index_compare_fallback_draws} dynamic_palette_draws={modern_index_compare_dynamic_palette_draws} missing_variant_draws={modern_index_compare_missing_variant_draws} stable_preview_draws={modern_index_compare_stable_preview_draws} stable_effect_draws={modern_index_compare_stable_effect_draws} dynamic_material_draws={modern_index_compare_dynamic_material_draws} missing_art_draws={modern_index_compare_missing_art_draws} unkeyed_fallback_draws={modern_index_compare_unkeyed_fallback_draws} mixed_overlay_bg_effect_draws={modern_index_compare_mixed_overlay_bg_effect_draws}"
         );
     }
 }

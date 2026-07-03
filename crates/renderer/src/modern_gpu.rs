@@ -415,7 +415,7 @@ impl ModernGpuVariantRenderer {
             sprite_palette_name,
         );
         let variant_frame = self.build_variant_frame_from_plan(frame, &plan);
-        let stats = plan.stats;
+        let mut stats = plan.stats;
         if stats.fallback_draws == 0 && stats.effect_draws == stats.stable_draws {
             self.effect_renderer.render_bg(
                 device,
@@ -442,6 +442,7 @@ impl ModernGpuVariantRenderer {
             bg.render(device, queue, bg_cells, frame, output_view);
             spr.render(device, queue, sprite_cells, frame, output_view);
             let overlay_bg = mixed_variant_overlay_bg_packets(frame, &plan);
+            stats.mixed_overlay_bg_effect_draws += overlay_bg.len() as u32;
             if !overlay_bg.is_empty() {
                 self.effect_renderer.render_bg(
                     device,
@@ -2152,7 +2153,7 @@ impl ModernGpuVariantHeadless {
             sprite_palette_name,
         );
         let variant_frame = self.renderer.build_variant_frame_from_plan(frame, &plan);
-        let stats = plan.stats;
+        let mut stats = plan.stats;
         if stats.fallback_draws != 0 {
             self.compositor.render(
                 &self.device,
@@ -2163,6 +2164,7 @@ impl ModernGpuVariantHeadless {
                 &self.target,
             );
             let overlay_bg = mixed_variant_overlay_bg_packets(frame, &plan);
+            stats.mixed_overlay_bg_effect_draws += overlay_bg.len() as u32;
             if !overlay_bg.is_empty() {
                 self.renderer.effect_renderer.render_bg(
                     &self.device,
@@ -3282,6 +3284,19 @@ mod tests {
 
         assert_eq!(bg.len(), 1);
         assert_eq!(bg[0].inst.cell_id, 0);
+
+        let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+            &frame,
+            &bg_cells,
+            &[],
+            &frame,
+            &bg_cells,
+            &[],
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(stats.mixed_overlay_bg_effect_draws, 1);
     }
 
     #[test]
