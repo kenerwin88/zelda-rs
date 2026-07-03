@@ -32,74 +32,19 @@ sidecar records `source_refs`, so many ROM/source draw identities can point at
 the same art. This is the right place to make broad visual replacements before
 semantic naming exists.
 
-## Export Runtime Variant Sheets
-
-Only after the canonical art layer is clean, create semantic RGBA sheets from
-the current runtime atlas:
-
-```bash
-python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets
-```
-
-Editable sheets are written under:
-
-```text
-generated/zelda3_assets/assets_src/semantic/backgrounds/
-generated/zelda3_assets/assets_src/semantic/sprites/
-```
-
-Each PNG has a matching JSON sidecar. The PNG is the editable art. The JSON
-defines frame rectangles and `emits` links back to exact runtime variant IDs.
-Keep those links intact unless you are deliberately changing atlas coverage.
-
 ## Edit
 
-Open the PNGs in any RGBA-capable editor and change pixels directly. The current
-sheet names are mechanical, for example:
+Open `art_tiles.png` in any RGBA-capable editor and change pixels directly.
+Use `art_tiles.json` to see every source tile that points at the edited art.
+Do not edit `tile_variants.png` as an authoring sheet; it is a derived
+runtime/parity cache.
 
-```text
-sprites/sprite_kSprGfx_pack12.png
-backgrounds/bg_kBgGfx_pack42.png
-```
+## Rebuild Runtime Art
 
-Do not rename sheets or frame IDs as object names yet. Semantic names should be
-introduced only after coverage validation can prove the mapping.
-
-## Validate
-
-Check that every stable runtime variant is covered exactly once:
-
-```bash
-python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets --validate
-```
-
-The validator writes:
-
-```text
-generated/zelda3_assets/assets_src/semantic/coverage_report.json
-```
-
-Validation fails if a stable variant ID is missing, emitted more than once, or
-referenced by a rectangle outside its PNG. Variants marked as requiring live
-palette behavior may be absent only when listed under `dynamic_fallback`.
-
-## Compile
-
-Compile edited semantic sheets back into the runtime atlas:
-
-```bash
-python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets --compile
-```
-
-This rewrites:
-
-```text
-generated/zelda3_assets/atlas/tile_variants.png
-generated/zelda3_assets/atlas/tile_variants.json
-```
-
-The compile step preserves the atlas schema consumed by the renderer, so mods
-can replace art without changing runtime lookup code.
+The canonical art sheet is the authoring source. A later compiler step should
+project it into the renderer's runtime atlas. Until that compiler exists,
+regenerate assets from the ROM after extractor changes and use parity checks to
+verify renderer behavior.
 
 ## Run
 
@@ -123,8 +68,7 @@ ZELDA3_RENDERER=assets-anim cargo run --profile parity -p zelda3-bin
 
 Some variants are not stable final pixels. The game can recolor a source tile
 through live palette updates, flashes, fades, lighting, or other effects. Those
-rows may still appear in semantic PNGs for editing and inspection, but the
-renderer must use live palette fallback until replay evidence proves a stable
+rows should remain metadata/effects until replay evidence proves a stable
 final-pixel policy.
 
 The parity rule is final framebuffer equality at `256x224`, not whether a PNG

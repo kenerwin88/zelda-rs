@@ -5,15 +5,16 @@ Readable migrated assets live under `generated/zelda3_assets/assets_src/`, which
 is ignored for the same reason as generated `.bin` assets: it still contains
 extracted vanilla game data.
 
-For visual art replacement, use the semantic RGBA workflow first:
+For visual art replacement, use the canonical RGBA art workflow first:
 
 ```text
 docs/assets/modder-rgba-workflow.md
 ```
 
-That workflow exports normal RGBA PNG sheets, validates exact runtime coverage,
-and compiles edits back into the variant atlas. The lower-level source formats
-below remain useful for extraction, packing, and parity implementation work.
+That workflow starts from `generated/zelda3_assets/atlas/art_tiles.png`, which
+deduplicates palette and flip variants into a cleaner editable sheet. The
+lower-level source formats below remain useful for extraction, packing, and
+parity implementation work.
 
 The runtime continues to consume byte-exact packed assets so C parity stays
 unchanged. The build script packs generated readable sources into the embedded

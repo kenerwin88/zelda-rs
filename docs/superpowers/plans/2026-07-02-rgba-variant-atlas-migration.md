@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace CHR-as-rendered-art with a ROM-traceable base-art atlas plus reusable modern effects first, then layer semantic modder-friendly PNG authoring on top without losing final-pixel parity proof.
+**Goal:** Replace CHR-as-rendered-art with a ROM-traceable base-art atlas plus reusable modern effects first, then layer compact canonical art PNG authoring on top without losing final-pixel parity proof.
 
 **Architecture:** Build generated `base_tiles.png`, `base_tiles.json`, and `tile_effects.json` from ROM-derived CHR and palettes. The base atlas stores each source tile once using palette-usage evidence when available, with a broad source-kind preview palette only as a fallback. The effect table represents recolors, flashes, fades, lighting, and palette-like looks as reusable shader/material transforms. Keep the brute-force `tile_variants.*` artifact only as a diagnostic oracle while the renderer migrates to base art plus effects.
 
@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - The ROM remains the extraction source of truth. NES_Ver2/CGX files may inform naming and grouping, but the generated atlas must be buildable from a supported ROM plus repo metadata.
-- `base_tiles.json` plus `tile_effects.json` is the bridge contract. Runtime and semantic authoring both target that contract.
+- `base_tiles.json`, `art_tiles.json`, and `tile_effects.json` are the bridge contracts. Runtime and canonical authoring both target those contracts.
 - Raw CHR bytes do not contain final colors. Any claim that `base_tiles.png` uses the right real palette must be backed by `palette_usage.json` or replay/source-map evidence, not by source-kind guesses.
 - Do not remove the current CHR/palette-index path until the base/effect path has frame-level parity proof over representative windows.
 - Dynamic palette effects must remain correct. If a palette can change at runtime, either keep it on the existing palette path for that phase or model it as an explicit effect with replay evidence.
@@ -41,10 +41,6 @@
   Adds optional variant identity fields only if Phase 2 proves that existing `cell_id + palette` cannot resolve atlas entries cleanly.
 - Modify: `zelda3-bin/src/main.rs`  
   Adds opt-in renderer/compare modes during Phase 2; default changes only after parity gates pass.
-- Create: `scripts/semantic_rgba_sheets.py`  
-  Generates and compiles semantic modder sheets in Phase 3.
-- Create: `scripts/test_semantic_rgba_sheets.py`  
-  Tests semantic sheet mapping, coverage validation, and atlas recompilation.
 - Create: `docs/assets/rgba-variant-atlas.md`  
   Documents the contract for atlas, sidecar keys, dynamic-palette policy, and modder workflow.
 
@@ -642,216 +638,24 @@ git commit -m "test: widen RGBA variant atlas parity coverage"
 
 ---
 
-## Phase 3: Semantic RGBA Authoring Compiles Into Atlas
+## Phase 3: Canonical Art Authoring
 
-Purpose: make the human-editable source assets normal RGBA PNGs while preserving `tile_variants.json` as the runtime contract.
+Purpose: make the human-editable source assets normal RGBA PNGs without creating one editable tile per palette row, flash, fade, or flip. This phase supersedes the earlier semantic-sheet plan.
 
-### Task 9: Generate Initial Semantic Sheets From Atlas Provenance
+Semantic runtime-variant sheets were removed because they recreated the same duplicate explosion in a different folder. The active authoring target is now:
 
-**Files:**
-- Create: `scripts/semantic_rgba_sheets.py`
-- Create: `scripts/test_semantic_rgba_sheets.py`
-
-**Interfaces:**
-- Produces: `SemanticFrame(id: str, source_rect: tuple[int, int, int, int], emits: list[str])`.
-- Produces: `write_initial_semantic_sheets(asset_dir: Path, out_dir: Path | None = None) -> list[Path]`.
-- Output: `assets_src/semantic/sprites/*.png`, `assets_src/semantic/sprites/*.json`.
-
-- [ ] **Step 1: Write failing semantic export test**
-
-Test with a tiny atlas manifest containing two sprite variants and assert the generated semantic sheet contains both rects and sidecar `emits` IDs.
-
-- [ ] **Step 2: Run test and verify RED**
-
-Run: `PYTHONPATH=scripts python3 scripts/test_semantic_rgba_sheets.py`
-
-Expected: fail because module is missing.
-
-- [ ] **Step 3: Implement initial semantic export**
-
-Implementation requirements:
-- Group by `source_kind` and `asset`.
-- Start with mechanical names such as `sprite_kSprGfx_pack12.png`.
-- Preserve exact `emits` links to variant IDs.
-- Do not invent object names such as `guards` until coverage tooling can prove the mapping.
-
-- [ ] **Step 4: Run tests and real export**
-
-Run:
-
-```bash
-PYTHONPATH=scripts python3 scripts/test_semantic_rgba_sheets.py
-PYTHONPATH=scripts python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets
+```text
+generated/zelda3_assets/atlas/art_tiles.png
+generated/zelda3_assets/atlas/art_tiles.json
 ```
 
-Expected: test passes and semantic sheets are written under `generated/zelda3_assets/assets_src/semantic`.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add scripts/semantic_rgba_sheets.py scripts/test_semantic_rgba_sheets.py
-git commit -m "feat: export initial semantic RGBA sheets"
-```
-
-### Task 10: Compile Semantic Sheets Back Into Variant Atlas
-
-**Files:**
-- Modify: `scripts/semantic_rgba_sheets.py`
-- Modify: `scripts/test_semantic_rgba_sheets.py`
-
-**Interfaces:**
-- Produces: `compile_semantic_sheets(asset_dir: Path, semantic_dir: Path) -> list[RgbaVariant]`.
-- Produces coverage error type with fields `missing_variant_ids`, `duplicate_variant_ids`, `rect_out_of_bounds`.
-
-- [ ] **Step 1: Write failing compile test**
-
-Create a temp semantic PNG and JSON where one frame emits one variant ID. Assert `compile_semantic_sheets` returns an `RgbaVariant` with matching pixels and key.
-
-- [ ] **Step 2: Run test and verify RED**
-
-Run: `PYTHONPATH=scripts python3 scripts/test_semantic_rgba_sheets.py`
-
-Expected: fail because compiler is missing.
-
-- [ ] **Step 3: Implement compiler**
-
-Implementation requirements:
-- Read semantic PNG as RGBA.
-- Crop each frame rect.
-- Emit pixels under the exact original `VariantKey`.
-- Fail if a required variant ID is not covered exactly once.
-- Reuse `pack_rgba_variants` so output atlas format is unchanged.
-
-- [ ] **Step 4: Run tests**
-
-Run: `PYTHONPATH=scripts python3 scripts/test_semantic_rgba_sheets.py`
-
-Expected: tests pass.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add scripts/semantic_rgba_sheets.py scripts/test_semantic_rgba_sheets.py
-git commit -m "feat: compile semantic RGBA sheets into variant atlas"
-```
-
-### Task 11: Add Modded Atlas Build Mode
-
-**Files:**
-- Modify: `scripts/extract_assets.py`
-- Modify: `scripts/semantic_rgba_sheets.py`
-- Modify: `docs/assets/rgba-variant-atlas.md`
-
-**Interfaces:**
-- Produces command: `python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets --compile`.
-- Produces output: `generated/zelda3_assets/atlas/tile_variants.png` and JSON from semantic sources.
-
-- [ ] **Step 1: Add end-to-end test with a temp semantic edit**
-
-Test flow:
-1. Build tiny baseline atlas.
-2. Export semantic sheet.
-3. Modify one semantic pixel in the PNG.
-4. Compile semantic sheets.
-5. Assert compiled atlas has the modified pixel in the emitted variant rect.
-
-- [ ] **Step 2: Run test and verify RED**
-
-Run: `PYTHONPATH=scripts python3 scripts/test_semantic_rgba_sheets.py`
-
-Expected: fail until compile mode writes atlas files.
-
-- [ ] **Step 3: Implement compile CLI**
-
-Add CLI args:
-- `--asset-dir`
-- `--semantic-dir`
-- `--compile`
-- `--out-dir`
-
-Default `semantic_dir` to `asset_dir/assets_src/semantic`; default `out_dir` to `asset_dir/atlas`.
-
-- [ ] **Step 4: Update docs**
-
-Document the modder loop:
-
-```bash
-python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zelda3_assets
-python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets
-# edit generated/zelda3_assets/assets_src/semantic/**/*.png
-python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets --compile
-ZELDA3_RENDERER=assets-variant-gpu cargo run --profile parity -p zelda3-bin
-```
-
-- [ ] **Step 5: Run tests**
-
-Run:
-
-```bash
-PYTHONPATH=scripts python3 scripts/test_semantic_rgba_sheets.py
-python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets --compile
-```
-
-Expected: tests pass and compile command writes atlas files.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add scripts/semantic_rgba_sheets.py scripts/test_semantic_rgba_sheets.py docs/assets/rgba-variant-atlas.md
-git commit -m "feat: compile modder RGBA sheets into runtime atlas"
-```
+The canonical art atlas deduplicates raw tile art, records hflip/vflip transforms in `source_refs`, and leaves palette/effect variation in metadata.
 
 ---
 
 ## Phase 4: Native Modder Workflow and Default Path
 
-Purpose: make semantic RGBA sheets the preferred workflow while keeping atlas parity gates and ROM fallback available.
-
-### Task 12: Coverage Validator for Semantic Sources
-
-**Files:**
-- Modify: `scripts/semantic_rgba_sheets.py`
-- Modify: `scripts/test_semantic_rgba_sheets.py`
-
-**Interfaces:**
-- Produces command: `python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets --validate`.
-- Produces machine-readable report: `assets_src/semantic/coverage_report.json`.
-
-- [ ] **Step 1: Write failing validation test**
-
-Create a temp baseline atlas with three variants and semantic sheets covering two. Assert validation fails with the missing third ID and writes `coverage_report.json`.
-
-- [ ] **Step 2: Run test and verify RED**
-
-Run: `PYTHONPATH=scripts python3 scripts/test_semantic_rgba_sheets.py`
-
-Expected: fail because validation mode is missing.
-
-- [ ] **Step 3: Implement validator**
-
-Validation rules:
-- Every stable variant ID must be covered exactly once.
-- Dynamic-policy variants may be absent only if report lists them under `dynamic_fallback`.
-- Rects must be inside PNG bounds.
-- Duplicate `emits` IDs are errors.
-
-- [ ] **Step 4: Run validator on real generated assets**
-
-Run:
-
-```bash
-PYTHONPATH=scripts python3 scripts/test_semantic_rgba_sheets.py
-python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets --validate
-```
-
-Expected: tests pass; real validation writes report with stable coverage counts.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add scripts/semantic_rgba_sheets.py scripts/test_semantic_rgba_sheets.py
-git commit -m "feat: validate semantic RGBA sheet coverage"
-```
+Purpose: make canonical RGBA art sheets the preferred workflow while keeping atlas parity gates and ROM fallback available.
 
 ### Task 13: Promote Variant Atlas Runtime as the Modern GPU Default
 
@@ -914,16 +718,14 @@ git commit -m "feat: default modern GPU renderer to RGBA variant atlas"
 
 Create `docs/assets/modder-rgba-workflow.md` with:
 - how to extract assets
-- where semantic PNGs live
+- where canonical art PNGs live
 - how to edit
-- how to validate
-- how to compile
 - how to run the atlas renderer
 - what dynamic-palette fallback means
 
 - [ ] **Step 2: Update existing readable source docs**
 
-Point CHR docs at the new semantic workflow as the preferred route. Keep CHR docs as implementation notes.
+Point CHR docs at the new canonical art workflow as the preferred route. Keep CHR docs as implementation notes.
 
 - [ ] **Step 3: Run documentation sanity commands**
 
@@ -931,16 +733,15 @@ Run:
 
 ```bash
 rg -n "NEEDS_DECISION|NOT_YET_DEFINED|CHR-only|palette blob" docs/assets
-python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets --validate
 ```
 
-Expected: no unresolved placeholder language; validator still runs.
+Expected: no unresolved placeholder language.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add docs/assets/readable-sources.md docs/assets/rgba-variant-atlas.md docs/assets/modder-rgba-workflow.md
-git commit -m "docs: document semantic RGBA modder workflow"
+git commit -m "docs: document canonical RGBA art workflow"
 ```
 
 ---
@@ -951,11 +752,8 @@ Run after all four phases:
 
 ```bash
 PYTHONPATH=scripts python3 scripts/test_rgba_variant_atlas.py
-PYTHONPATH=scripts python3 scripts/test_semantic_rgba_sheets.py
 PYTHONPATH=scripts python3 scripts/test_extract_asset_sources.py
 python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zelda3_assets
-python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets --validate
-python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets --compile
 cargo test -p renderer
 cargo build --profile parity -p zelda3-bin
 python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv
@@ -963,9 +761,7 @@ python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-g
 
 Expected:
 - Python tests pass.
-- Extractor writes `atlas/tile_variants.png` and `atlas/tile_variants.json`.
-- Semantic validator reports all stable variants covered exactly once.
-- Semantic compiler rewrites the atlas without schema drift.
+- Extractor writes `atlas/art_tiles.png`, `atlas/art_tiles.json`, and the runtime diagnostic atlases.
 - Renderer tests pass.
 - Parity-profile build succeeds.
 - Oracle-window compare reports zero missing stable variants and only documented dynamic-palette fallbacks.

@@ -227,80 +227,23 @@ oracle-window comparisons prove the base/effect path.
 
 ## Modder Workflow Target
 
-Semantic RGBA sheets compile into the same `tile_variants.*` runtime contract.
-The runtime should not care whether RGBA variant art came directly from ROM CHR
-or from a modder-edited semantic PNG; both paths must emit the same source IDs
-and coverage checks.
+Use `art_tiles.png` as the human-editable sheet. It is intentionally smaller
+than both `base_tiles.png` and the brute-force `tile_variants.png` cache because
+palette rows and hflip/vflip duplicates are represented in JSON metadata.
 
-## Semantic RGBA Authoring
-
-The semantic sheet exporter creates normal RGBA PNGs grouped by source kind,
-asset, and pack. These names are mechanical on purpose; object names such as
-`guards` or `pots` should wait until coverage tooling can prove the mapping.
-
-Export sheets from the current atlas:
-
-```bash
-python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets
-```
-
-This writes files such as:
-
-```text
-generated/zelda3_assets/assets_src/semantic/sprites/sprite_kSprGfx_pack12.png
-generated/zelda3_assets/assets_src/semantic/sprites/sprite_kSprGfx_pack12.json
-generated/zelda3_assets/assets_src/semantic/backgrounds/bg_kBgGfx_pack42.png
-generated/zelda3_assets/assets_src/semantic/backgrounds/bg_kBgGfx_pack42.json
-```
-
-The sidecar JSON lists frames and exact runtime variant IDs:
-
-```json
-{
-  "format": "zelda3_semantic_rgba_sheet_v1",
-  "source_kind": "sprite",
-  "asset": "kSprGfx",
-  "pack": 12,
-  "image_file": "sprite_kSprGfx_pack12.png",
-  "frames": [
-    {
-      "id": "sprite_kSprGfx_pack12_tile3_palette_main_spr_row0",
-      "source_rect": [0, 0, 8, 8],
-      "emits": ["sprite:kSprGfx:pack12:tile3:3bpp:palette_main_spr:row0"]
-    }
-  ]
-}
-```
-
-Edit the PNGs, keep frame rectangles and `emits` links intact, then compile
-back into the runtime atlas:
-
-```bash
-python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets --compile
-```
-
-The compile step rewrites:
-
-```text
-generated/zelda3_assets/atlas/tile_variants.png
-generated/zelda3_assets/atlas/tile_variants.json
-```
-
-The current modder loop is:
+The current art-inspection loop is:
 
 ```bash
 python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zelda3_assets
-python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets
-# edit generated/zelda3_assets/assets_src/semantic/**/*.png
-python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets --compile
+# inspect or edit generated/zelda3_assets/atlas/art_tiles.png
 cargo run --profile parity -p zelda3-bin
 ```
 
-Compilation fails if a required variant ID is missing, emitted more than once,
-or referenced by a frame rectangle outside its PNG bounds. Dynamic-palette
-fallback remains a runtime parity concern: a PNG can be useful for editing while
-the renderer still uses live palette fallback for rows that are not stable final
-pixels.
+The compiler that projects edited `art_tiles.*` back into runtime assets is the
+next layer; do not use `tile_variants.png` as an authoring sheet while building
+that compiler. Dynamic-palette fallback remains a runtime parity concern: an art
+tile can be useful for editing while the renderer still uses live palette
+fallback for rows that are not stable final pixels.
 
 Unset `ZELDA3_RENDERER` now chooses the variant atlas GPU path. Use
 `ZELDA3_VARIANT_ATLAS=off` to keep the older indexed GPU atlas path, or
