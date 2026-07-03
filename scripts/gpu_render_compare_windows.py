@@ -21,11 +21,11 @@ COMPARE_RE = re.compile(
 MODERN_INDEX_SUMMARY_RE = re.compile(
     r"modern_index_compare_summary compare_count=(\d+) bad_count=(\d+) bad_pixels=(\d+) "
     r"gpu_count=(\d+) mode7_gpu_count=(\d+) cpu_count=(\d+)"
-    r"(?: variant_draws=(\d+) dynamic_palette_draws=(\d+) missing_variant_draws=(\d+))?"
+    r"(?: variant_draws=(\d+)(?: fallback_draws=(\d+))? dynamic_palette_draws=(\d+) missing_variant_draws=(\d+))?"
 )
 MODERN_INDEX_VARIANT_RE = re.compile(
     r"modern_index_compare frame=(\d+) .* via=variant-gpu "
-    r"variant_draws=(\d+) dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
+    r"variant_draws=(\d+)(?: fallback_draws=(\d+))? dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
 )
 SAVED_RE = re.compile(r"saved replay-save checkpoint frame=(\d+) to (.+)")
 SUMMARY_PREFIXES = (
@@ -191,7 +191,7 @@ def compare_window(
     stride: int,
     release: bool,
     renderer: str | None,
-) -> tuple[int, int, str, int, tuple[int, int, int]]:
+) -> tuple[int, int, str, int, tuple[int, int, int, int]]:
     compare_mode = "modern-index" if renderer == "assets-variant-gpu" else "gpu-render"
     output = run(
         replay_command(
@@ -214,20 +214,24 @@ def compare_window(
         bad_pixels = int(match.group(3))
         if match.group(7) is not None:
             variant_draws = int(match.group(7))
-            dynamic_palette_draws = int(match.group(8))
-            missing_variant_draws = int(match.group(9))
+            fallback_draws = int(match.group(8) or 0)
+            dynamic_palette_draws = int(match.group(9))
+            missing_variant_draws = int(match.group(10))
         else:
             variant_draws = 0
+            fallback_draws = 0
             dynamic_palette_draws = 0
             missing_variant_draws = 0
             for frame_match in MODERN_INDEX_VARIANT_RE.finditer(output):
                 variant_draws += int(frame_match.group(2))
-                dynamic_palette_draws += int(frame_match.group(3))
-                missing_variant_draws += int(frame_match.group(4))
+                fallback_draws += int(frame_match.group(3) or 0)
+                dynamic_palette_draws += int(frame_match.group(4))
+                missing_variant_draws += int(frame_match.group(5))
         print(
             f"modern-index window {start}..{end}: compared={compared} "
             f"bad_pixels={bad_pixels} renderer={renderer} "
-            f"variant_draws={variant_draws} dynamic_palette_draws={dynamic_palette_draws} "
+            f"variant_draws={variant_draws} fallback_draws={fallback_draws} "
+            f"dynamic_palette_draws={dynamic_palette_draws} "
             f"missing_variant_draws={missing_variant_draws}"
         )
         if save_checkpoint is not None and not save_checkpoint.exists():
@@ -237,7 +241,7 @@ def compare_window(
             end,
             "0x00000000",
             bad_pixels,
-            (variant_draws, dynamic_palette_draws, missing_variant_draws),
+            (variant_draws, fallback_draws, dynamic_palette_draws, missing_variant_draws),
         )
     match = COMPARE_RE.search(output)
     if not match:
@@ -257,7 +261,7 @@ def compare_window(
         )
     if save_checkpoint is not None and not save_checkpoint.exists():
         raise SystemExit(f"end checkpoint was not created: {save_checkpoint}")
-    return compared, last_frame, last_hash, mismatched_pixels, (0, 0, 0)
+    return compared, last_frame, last_hash, mismatched_pixels, (0, 0, 0, 0)
 
 
 def parse_args() -> argparse.Namespace:
@@ -302,6 +306,7 @@ def main() -> None:
     total_compared = 0
     total_mismatched_pixels = 0
     total_variant_draws = 0
+    total_fallback_draws = 0
     total_dynamic_palette_draws = 0
     total_missing_variant_draws = 0
     last_frame = args.start
@@ -359,8 +364,9 @@ def main() -> None:
         total_compared += compared
         total_mismatched_pixels += mismatched_pixels
         total_variant_draws += variant_stats[0]
-        total_dynamic_palette_draws += variant_stats[1]
-        total_missing_variant_draws += variant_stats[2]
+        total_fallback_draws += variant_stats[1]
+        total_dynamic_palette_draws += variant_stats[2]
+        total_missing_variant_draws += variant_stats[3]
 
     if not args.dry_run:
         print(
@@ -369,6 +375,7 @@ def main() -> None:
             f"compared={total_compared} last_frame={last_frame} last_hash={last_hash} "
             f"mismatched_pixels={total_mismatched_pixels} "
             f"variant_draws={total_variant_draws} "
+            f"fallback_draws={total_fallback_draws} "
             f"dynamic_palette_draws={total_dynamic_palette_draws} "
             f"missing_variant_draws={total_missing_variant_draws}"
         )

@@ -22,7 +22,7 @@ SUMMARY_RE = re.compile(
 MODERN_INDEX_SUMMARY_RE = re.compile(
     r"modern_index_compare_summary compare_count=(\d+) bad_count=(\d+) bad_pixels=(\d+) "
     r"gpu_count=(\d+) mode7_gpu_count=(\d+) cpu_count=(\d+) "
-    r"variant_draws=(\d+) dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
+    r"variant_draws=(\d+) fallback_draws=(\d+) dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
 )
 
 
@@ -116,7 +116,7 @@ def run_window(
     stride: int,
     release: bool,
     renderer: str | None,
-) -> tuple[int, str, int, tuple[int, int, int]]:
+) -> tuple[int, str, int, tuple[int, int, int, int]]:
     command = command_for(window, rom, stride, release, renderer)
     prefix = f"ZELDA3_RENDERER={renderer} " if renderer else ""
     print(f"running {window.name}: {prefix}{' '.join(command)}", flush=True)
@@ -148,7 +148,7 @@ def run_window(
     mismatched_pixels = int(match.group(5))
     if mismatched_pixels != 0:
         raise SystemExit(f"{window.name}: reported {mismatched_pixels} mismatched pixels")
-    variant_stats = (0, 0, 0)
+    variant_stats = (0, 0, 0, 0)
     modern_match = MODERN_INDEX_SUMMARY_RE.search(result.stdout)
     if renderer == "assets-variant-gpu":
         if not modern_match:
@@ -162,13 +162,15 @@ def run_window(
             int(modern_match.group(7)),
             int(modern_match.group(8)),
             int(modern_match.group(9)),
+            int(modern_match.group(10)),
         )
     print(
         f"{window.name}: compared={compared} frames={window.frames} "
         f"last_hash={last_hash} mismatched_pixels=0 "
         f"variant_draws={variant_stats[0]} "
-        f"dynamic_palette_draws={variant_stats[1]} "
-        f"missing_variant_draws={variant_stats[2]}"
+        f"fallback_draws={variant_stats[1]} "
+        f"dynamic_palette_draws={variant_stats[2]} "
+        f"missing_variant_draws={variant_stats[3]}"
     )
     return compared, last_hash, mismatched_pixels, variant_stats
 
@@ -212,6 +214,7 @@ def main() -> None:
 
     total_compared = 0
     total_variant_draws = 0
+    total_fallback_draws = 0
     total_dynamic_palette_draws = 0
     total_missing_variant_draws = 0
     for window in windows:
@@ -227,8 +230,9 @@ def main() -> None:
         )
         total_compared += compared
         total_variant_draws += variant_stats[0]
-        total_dynamic_palette_draws += variant_stats[1]
-        total_missing_variant_draws += variant_stats[2]
+        total_fallback_draws += variant_stats[1]
+        total_dynamic_palette_draws += variant_stats[2]
+        total_missing_variant_draws += variant_stats[3]
 
     if not args.dry_run:
         print(
@@ -236,6 +240,7 @@ def main() -> None:
             f"windows={len(windows)} compared={total_compared} stride={args.stride} "
             "mismatched_pixels=0 "
             f"variant_draws={total_variant_draws} "
+            f"fallback_draws={total_fallback_draws} "
             f"dynamic_palette_draws={total_dynamic_palette_draws} "
             f"missing_variant_draws={total_missing_variant_draws}"
         )

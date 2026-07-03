@@ -61,6 +61,7 @@ pub fn draw_modern_sprites_indexed(
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct VariantAtlasRenderStats {
     pub stable_draws: u32,
+    pub fallback_draws: u32,
     pub dynamic_palette_draws: u32,
     pub missing_variant_draws: u32,
 }
@@ -109,11 +110,15 @@ pub fn render_modern_frame_software_variant_atlas(
                 }
                 Some(_) => {
                     draw_indexed_bg_instance(&mut out, frame, cell, inst);
+                    stats.fallback_draws += 1;
                     stats.dynamic_palette_draws += 1;
                 }
                 None => {
                     draw_indexed_bg_instance(&mut out, frame, cell, inst);
-                    stats.missing_variant_draws += 1;
+                    stats.fallback_draws += 1;
+                    if key.is_some() {
+                        stats.missing_variant_draws += 1;
+                    }
                 }
             }
         }
@@ -136,11 +141,15 @@ pub fn render_modern_frame_software_variant_atlas(
             }
             Some(_) => {
                 draw_indexed_sprite_instance(&mut out, frame, cell, inst);
+                stats.fallback_draws += 1;
                 stats.dynamic_palette_draws += 1;
             }
             None => {
                 draw_indexed_sprite_instance(&mut out, frame, cell, inst);
-                stats.missing_variant_draws += 1;
+                stats.fallback_draws += 1;
+                if key.is_some() {
+                    stats.missing_variant_draws += 1;
+                }
             }
         }
     }
@@ -2780,6 +2789,7 @@ mod tests {
 
         assert_eq!(variant, indexed);
         assert_eq!(stats.stable_draws, 1);
+        assert_eq!(stats.fallback_draws, 0);
         assert_eq!(stats.missing_variant_draws, 0);
         assert_eq!(stats.dynamic_palette_draws, 0);
     }

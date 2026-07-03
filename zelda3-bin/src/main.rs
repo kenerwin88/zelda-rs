@@ -3382,6 +3382,7 @@ fn run_replay_save(args: &[String]) {
     let mut modern_index_compare_mode7_gpu_count = 0u64;
     let mut modern_index_compare_cpu_count = 0u64;
     let mut modern_index_compare_variant_draws = 0u64;
+    let mut modern_index_compare_fallback_draws = 0u64;
     let mut modern_index_compare_dynamic_palette_draws = 0u64;
     let mut modern_index_compare_missing_variant_draws = 0u64;
     let ppu_mode_summary = std::env::var("ZELDA3_PPU_MODE_SUMMARY").is_ok();
@@ -3740,8 +3741,9 @@ fn run_replay_save(args: &[String]) {
     } else {
         None
     };
-    let modern_variant_headless: Option<renderer::ModernGpuVariantHeadless> =
-        variant_atlas.as_ref().map(renderer::ModernGpuVariantHeadless::new);
+    let modern_variant_headless: Option<renderer::ModernGpuVariantHeadless> = variant_atlas
+        .as_ref()
+        .map(renderer::ModernGpuVariantHeadless::new);
     let source_atlas = if modern_index_compare != 0
         && (assets_anim_mode || atlas_gpu_compare || variant_gpu_compare)
     {
@@ -5700,6 +5702,7 @@ fn run_replay_save(args: &[String]) {
                 }
                 if let Some(stats) = variant_stats {
                     modern_index_compare_variant_draws += u64::from(stats.stable_draws);
+                    modern_index_compare_fallback_draws += u64::from(stats.fallback_draws);
                     modern_index_compare_dynamic_palette_draws +=
                         u64::from(stats.dynamic_palette_draws);
                     modern_index_compare_missing_variant_draws +=
@@ -5708,9 +5711,10 @@ fn run_replay_save(args: &[String]) {
                 if !modern_index_compare_summary || mismatch != 0 {
                     if let Some(stats) = variant_stats {
                         println!(
-                            "modern_index_compare frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} dynamic_palette_draws={} missing_variant_draws={}",
+                            "modern_index_compare frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} fallback_draws={} dynamic_palette_draws={} missing_variant_draws={}",
                             gpu_frame.mode,
                             stats.stable_draws,
+                            stats.fallback_draws,
                             stats.dynamic_palette_draws,
                             stats.missing_variant_draws
                         );
@@ -5806,7 +5810,7 @@ fn run_replay_save(args: &[String]) {
 
     if modern_index_compare != 0 && modern_index_compare_summary {
         println!(
-            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels} gpu_count={modern_index_compare_gpu_count} mode7_gpu_count={modern_index_compare_mode7_gpu_count} cpu_count={modern_index_compare_cpu_count} variant_draws={modern_index_compare_variant_draws} dynamic_palette_draws={modern_index_compare_dynamic_palette_draws} missing_variant_draws={modern_index_compare_missing_variant_draws}"
+            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels} gpu_count={modern_index_compare_gpu_count} mode7_gpu_count={modern_index_compare_mode7_gpu_count} cpu_count={modern_index_compare_cpu_count} variant_draws={modern_index_compare_variant_draws} fallback_draws={modern_index_compare_fallback_draws} dynamic_palette_draws={modern_index_compare_dynamic_palette_draws} missing_variant_draws={modern_index_compare_missing_variant_draws}"
         );
     }
     if ppu_mode_summary {
@@ -10882,13 +10886,12 @@ fn run_dump_assets_by_source(args: &[String]) {
                         continue;
                     }
                     let preview_src = game.vram_chr_preview_source().get(slot);
-                    let usage_src = if src.kind == CHR_KIND_BG_STREAM
-                        && preview_src.kind == CHR_KIND_SPRITE
-                    {
-                        preview_src
-                    } else {
-                        src
-                    };
+                    let usage_src =
+                        if src.kind == CHR_KIND_BG_STREAM && preview_src.kind == CHR_KIND_SPRITE {
+                            preview_src
+                        } else {
+                            src
+                        };
                     let palette_row = ((oam1 >> 9) & 7) as u8;
                     record_palette_usage_count(
                         &mut palette_usage_counts,
@@ -12204,6 +12207,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
     let mut modern_index_compare_mode7_gpu_count = 0u64;
     let mut modern_index_compare_cpu_count = 0u64;
     let mut modern_index_compare_variant_draws = 0u64;
+    let mut modern_index_compare_fallback_draws = 0u64;
     let mut modern_index_compare_dynamic_palette_draws = 0u64;
     let mut modern_index_compare_missing_variant_draws = 0u64;
     while i < args.len() {
@@ -12350,20 +12354,21 @@ fn run_play_gpu_render_compare(args: &[String]) {
     } else {
         None
     };
-    let modern_variant_headless: Option<renderer::ModernGpuVariantHeadless> =
-        variant_atlas.as_ref().map(renderer::ModernGpuVariantHeadless::new);
-    let source_atlas =
-        if modern_index_compare != 0 && (atlas_gpu_compare || variant_gpu_compare) {
-            Some(
-                renderer::modern_source_atlas::load_modern_source_atlas(Path::new("."))
-                    .unwrap_or_else(|e| {
-                        eprintln!("assets-by-source atlas load failed: {e}");
-                        process::exit(2);
-                    }),
-            )
-        } else {
-            None
-        };
+    let modern_variant_headless: Option<renderer::ModernGpuVariantHeadless> = variant_atlas
+        .as_ref()
+        .map(renderer::ModernGpuVariantHeadless::new);
+    let source_atlas = if modern_index_compare != 0 && (atlas_gpu_compare || variant_gpu_compare) {
+        Some(
+            renderer::modern_source_atlas::load_modern_source_atlas(Path::new(".")).unwrap_or_else(
+                |e| {
+                    eprintln!("assets-by-source atlas load failed: {e}");
+                    process::exit(2);
+                },
+            ),
+        )
+    } else {
+        None
+    };
     let last_panic = install_crash_panic_hook();
     let mut offscreen = pollster::block_on(OffscreenRenderer::new(256, 224));
     let mut render_frame = vec![0u8; 256 * 224 * 4];
@@ -12560,15 +12565,17 @@ fn run_play_gpu_render_compare(args: &[String]) {
             }
             if let Some(stats) = variant_stats {
                 modern_index_compare_variant_draws += u64::from(stats.stable_draws);
+                modern_index_compare_fallback_draws += u64::from(stats.fallback_draws);
                 modern_index_compare_dynamic_palette_draws +=
                     u64::from(stats.dynamic_palette_draws);
                 modern_index_compare_missing_variant_draws +=
                     u64::from(stats.missing_variant_draws);
                 if !modern_index_compare_summary || mismatch != 0 {
                     println!(
-                        "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} dynamic_palette_draws={} missing_variant_draws={}",
+                        "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} fallback_draws={} dynamic_palette_draws={} missing_variant_draws={}",
                         gpu_frame.mode,
                         stats.stable_draws,
+                        stats.fallback_draws,
                         stats.dynamic_palette_draws,
                         stats.missing_variant_draws
                     );
@@ -12595,7 +12602,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
     );
     if modern_index_compare != 0 && modern_index_compare_summary {
         println!(
-            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels} gpu_count={modern_index_compare_gpu_count} mode7_gpu_count={modern_index_compare_mode7_gpu_count} cpu_count={modern_index_compare_cpu_count} variant_draws={modern_index_compare_variant_draws} dynamic_palette_draws={modern_index_compare_dynamic_palette_draws} missing_variant_draws={modern_index_compare_missing_variant_draws}"
+            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels} gpu_count={modern_index_compare_gpu_count} mode7_gpu_count={modern_index_compare_mode7_gpu_count} cpu_count={modern_index_compare_cpu_count} variant_draws={modern_index_compare_variant_draws} fallback_draws={modern_index_compare_fallback_draws} dynamic_palette_draws={modern_index_compare_dynamic_palette_draws} missing_variant_draws={modern_index_compare_missing_variant_draws}"
         );
     }
 }

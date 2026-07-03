@@ -356,6 +356,21 @@ pub struct ModernGpuVariantRenderer {
     renderer: ModernGpuRenderer,
 }
 
+fn debug_variant_missing_key(key: &crate::modern_variant_atlas::VariantAtlasKey) {
+    static PRINTED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let Ok(limit) = std::env::var("ZELDA3_VARIANT_DEBUG_MISSING") else {
+        return;
+    };
+    let limit = limit.parse::<usize>().unwrap_or(16);
+    let printed = PRINTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if printed < limit {
+        eprintln!(
+            "variant_missing source_kind={} asset={} pack={} tile={} bpp={} palette={} row={}",
+            key.source_kind, key.asset, key.pack, key.tile, key.bpp, key.palette, key.palette_row
+        );
+    }
+}
+
 impl ModernGpuVariantRenderer {
     pub fn new(
         device: &wgpu::Device,
@@ -396,7 +411,7 @@ impl ModernGpuVariantRenderer {
             bg_palette_name,
             sprite_palette_name,
         );
-        if stats.dynamic_palette_draws != 0 || stats.missing_variant_draws != 0 {
+        if stats.fallback_draws != 0 {
             let bg = ModernGpuIndexRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
             let spr = ModernGpuSpriteRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
             bg.render(device, queue, bg_cells, frame, output_view);
@@ -455,8 +470,17 @@ impl ModernGpuVariantRenderer {
                         ));
                         stats.stable_draws += 1;
                     }
-                    Some(_) => stats.dynamic_palette_draws += 1,
-                    None => stats.missing_variant_draws += 1,
+                    Some(_) => {
+                        stats.fallback_draws += 1;
+                        stats.dynamic_palette_draws += 1;
+                    }
+                    None => {
+                        stats.fallback_draws += 1;
+                        if let Some(key) = key.as_ref() {
+                            debug_variant_missing_key(key);
+                            stats.missing_variant_draws += 1;
+                        }
+                    }
                 }
             }
         }
@@ -483,8 +507,17 @@ impl ModernGpuVariantRenderer {
                     ));
                     stats.stable_draws += 1;
                 }
-                Some(_) => stats.dynamic_palette_draws += 1,
-                None => stats.missing_variant_draws += 1,
+                Some(_) => {
+                    stats.fallback_draws += 1;
+                    stats.dynamic_palette_draws += 1;
+                }
+                None => {
+                    stats.fallback_draws += 1;
+                    if let Some(key) = key.as_ref() {
+                        debug_variant_missing_key(key);
+                        stats.missing_variant_draws += 1;
+                    }
+                }
             }
         }
 
@@ -1632,7 +1665,7 @@ impl ModernGpuVariantHeadless {
             bg_palette_name,
             sprite_palette_name,
         );
-        if stats.dynamic_palette_draws != 0 || stats.missing_variant_draws != 0 {
+        if stats.fallback_draws != 0 {
             self.compositor.render(
                 &self.device,
                 &self.queue,
@@ -2342,6 +2375,7 @@ mod tests {
         let full = ModernGpuHeadless::new().render_rgba(&frame, &cells, &[]);
 
         assert_eq!(stats.stable_draws, 0);
+        assert_eq!(stats.fallback_draws, 1);
         assert_eq!(stats.dynamic_palette_draws, 0);
         assert_eq!(stats.missing_variant_draws, 1);
         assert_eq!(variant, full);
@@ -2425,9 +2459,63 @@ mod tests {
         let fallback = ModernGpuHeadless::new().render_rgba(&fallback_frame, &fallback_cells, &[]);
 
         assert_eq!(stats.stable_draws, 0);
+        assert_eq!(stats.fallback_draws, 1);
         assert_eq!(stats.dynamic_palette_draws, 0);
         assert_eq!(stats.missing_variant_draws, 1);
         assert_eq!(variant, fallback);
+    }
+
+    #[test]
+    fn modern_gpu_variant_headless_unkeyed_tiles_are_fallback_not_missing() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_variant_atlas::ModernVariantAtlas;
+
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.cgram_rgba[1] = [40, 80, 120, 0xff];
+        let mut layer = ModernBgLayer::new(0);
+        layer.enabled_main = true;
+        layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = layer;
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: Vec::new(),
+        };
+        let (_variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
+            &frame,
+            &cells,
+            &[],
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(stats.stable_draws, 0);
+        assert_eq!(stats.fallback_draws, 1);
+        assert_eq!(stats.dynamic_palette_draws, 0);
+        assert_eq!(stats.missing_variant_draws, 0);
     }
 
     #[test]
@@ -2571,11 +2659,9 @@ mod tests {
     fn modern_gpu_variant_atlas_bg_tile_matches_software_variant() {
         use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
         use crate::modern_index_atlas::ModernIndexTile;
-        use crate::modern_source_atlas::modern_source_key;
         use crate::modern_software::render_modern_frame_software_variant_atlas;
-        use crate::modern_variant_atlas::{
-            ModernVariantAtlas, VariantAtlasEntry, VariantAtlasKey,
-        };
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{ModernVariantAtlas, VariantAtlasEntry, VariantAtlasKey};
 
         pollster::block_on(async {
             let instance = crate::create_wgpu_instance();
@@ -2716,6 +2802,7 @@ mod tests {
             );
 
             assert_eq!(stats.stable_draws, 1);
+            assert_eq!(stats.fallback_draws, 0);
             assert_eq!(stats, software_stats);
             assert_eq!(gpu_rgba, software_rgba);
         });

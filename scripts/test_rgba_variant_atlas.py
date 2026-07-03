@@ -268,6 +268,105 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             self.assertEqual(entries[0]["palette_usage_evidence_count"], 7)
             self.assertEqual(list(pixels[:4]), [0xA0, 0xB0, 0xC0, 255])
 
+    def test_base_effect_atlas_ingests_source_key_tiles_with_usage_palette(self) -> None:
+        import json
+        from PIL import Image
+
+        raw_pack = bytearray(1536)
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [
+            "#000000",
+            "#102030",
+            "#203040",
+            "#304050",
+            "#405060",
+            "#506070",
+            "#607080",
+            "#708090",
+            "#000000",
+            "#A0B0C0",
+            "#A1B1C1",
+            "#A2B2C2",
+            "#A3B3C3",
+            "#A4B4C4",
+            "#A5B5C5",
+            "#A6B6C6",
+        ] * 8
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+            usage_path = asset_dir / "atlas/palette_usage.json"
+            usage_path.parent.mkdir(parents=True, exist_ok=True)
+            usage_path.write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_palette_usage_v1",
+                        "entries": [
+                            {
+                                "source_kind": "bg",
+                                "asset": "kBgGfx",
+                                "pack": 32800,
+                                "tile": 7,
+                                "bpp": 3,
+                                "preview_palette": "palette_main_spr",
+                                "preview_palette_row": 1,
+                                "evidence_count": 11,
+                            }
+                        ],
+                    }
+                )
+            )
+            source_dir = asset_dir / "developer_tilesets"
+            source_dir.mkdir()
+            (source_dir / "assets_by_source.json").write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_assets_by_source_v2_png",
+                        "cell_count": 1,
+                        "cells": [
+                            {
+                                "id": 0,
+                                "key": (6 << 32) | (32800 << 16) | 7,
+                                "kind": 6,
+                                "pack": 32800,
+                                "tile_off": 7,
+                            }
+                        ],
+                    }
+                )
+            )
+            image = Image.new("P", (8, 8))
+            image.putdata([1] + [0] * 63)
+            image.save(source_dir / "assets_by_source.png")
+
+            width, _height, pixels, entries, _effects = build_base_effect_atlas(
+                asset_dir,
+                source_tiles_dir=source_dir,
+            )
+
+            entry = next(
+                entry
+                for entry in entries
+                if entry["id"] == "bg:kBgGfx:pack32800:tile7:3bpp"
+            )
+            self.assertEqual(entry["preview_palette"], "palette_main_spr")
+            self.assertEqual(entry["preview_palette_row"], 1)
+            self.assertEqual(entry["preview_source"], "palette_usage")
+            self.assertEqual(entry["palette_usage_evidence_count"], 11)
+            x, y, _w, _h = entry["rect"]
+            pixel_offset = (y * width + x) * 4
+            self.assertEqual(list(pixels[pixel_offset : pixel_offset + 4]), [0xA0, 0xB0, 0xC0, 255])
+
     def test_base_effect_atlas_loads_auxiliary_palette_from_usage_map(self) -> None:
         import json
 

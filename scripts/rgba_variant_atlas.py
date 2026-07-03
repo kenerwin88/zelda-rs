@@ -176,12 +176,12 @@ def _default_preview_palette(
 ) -> tuple[str, int]:
     preferred = {
         "sprite": "palette_main_spr",
-        "bg": "palette_dung_bg_main",
+        "bg": "palette_overworld_bg_main",
     }.get(kind)
     if preferred in available_palette_names:
         return preferred, 0
-    if "palette_overworld_bg_main" in available_palette_names and kind == "bg":
-        return "palette_overworld_bg_main", 0
+    if "palette_dung_bg_main" in available_palette_names and kind == "bg":
+        return "palette_dung_bg_main", 0
     if available_palette_names:
         return available_palette_names[0], 0
     raise FileNotFoundError("no extracted palettes available for base atlas")
@@ -199,6 +199,61 @@ def _tile_usage_key(
     bpp: int,
 ) -> tuple[str, str, int, int, int]:
     return kind, asset, pack, tile, bpp
+
+
+def _source_tile_key_for_kind(
+    kind: int,
+    pack: int,
+    tile: int,
+) -> tuple[str, str, int, int, int] | None:
+    if kind in (1, 5, 6):
+        return "bg", "kBgGfx", pack, tile, 3
+    if kind == 2:
+        return "sprite", "kSprGfx", pack, tile, 3
+    return None
+
+
+def _source_tiles_paths(source_tiles_dir: Path) -> tuple[Path, Path]:
+    return source_tiles_dir / "assets_by_source.json", source_tiles_dir / "assets_by_source.png"
+
+
+def _read_source_tile_indices(source_tiles_dir: Path) -> list[tuple[tuple[str, str, int, int, int], bytes]]:
+    from PIL import Image
+
+    manifest_path, image_path = _source_tiles_paths(source_tiles_dir)
+    if not manifest_path.is_file() or not image_path.is_file():
+        return []
+
+    data = json.loads(manifest_path.read_text())
+    if data.get("format") not in {
+        "zelda3_assets_by_source_v1",
+        "zelda3_assets_by_source_v2_png",
+    }:
+        raise ValueError(f"{manifest_path}: unsupported source-tile format {data.get('format')!r}")
+    with Image.open(image_path) as image:
+        indexed = image.convert("P")
+        width, height = indexed.size
+        if width % 8 != 0 or height % 8 != 0:
+            raise ValueError(f"{image_path}: source tile sheet size must be divisible by 8")
+        columns = width // 8
+        pixels = indexed.load()
+        source_tiles: list[tuple[tuple[str, str, int, int, int], bytes]] = []
+        for cell in data.get("cells", []):
+            cell_id = int(cell["id"])
+            x0 = (cell_id % columns) * 8
+            y0 = (cell_id // columns) * 8
+            if y0 + 8 > height:
+                raise ValueError(f"{manifest_path}: cell {cell_id} is outside {image_path.name}")
+            key = _source_tile_key_for_kind(
+                int(cell["kind"]),
+                int(cell["pack"]),
+                int(cell["tile_off"]),
+            )
+            if key is None:
+                continue
+            indices = bytes(int(pixels[x0 + x, y0 + y]) for y in range(8) for x in range(8))
+            source_tiles.append((key, indices))
+    return source_tiles
 
 
 def _palette_usage_paths(asset_dir: Path) -> list[Path]:
@@ -255,6 +310,42 @@ def _preview_palette_for_tile(
     return preview_palette, preview_row, "source_kind_default", None
 
 
+def _source_extra_preview_rows(
+    *,
+    kind: str,
+    bpp: int,
+    palettes: dict[str, list[list[int]]],
+    primary_palette: str,
+    primary_row: int,
+) -> list[tuple[str, int]]:
+    _rows, colors_per_row = _rows_for_bpp(bpp)
+    candidates: list[tuple[str, int]] = []
+    if kind == "bg":
+        candidates.extend(("palette_main_spr", row) for row in range(_rows))
+
+    extras: list[tuple[str, int]] = []
+    seen = {(primary_palette, primary_row)}
+    for palette, row in candidates:
+        colors = palettes.get(palette)
+        if colors is None or row < 0 or (row + 1) * colors_per_row > len(colors):
+            continue
+        key = (palette, row)
+        if key in seen:
+            continue
+        seen.add(key)
+        extras.append(key)
+    return extras
+
+
+def _indices_fit_palette(
+    indices: bytes,
+    colors: list[list[int]],
+    palette_row: int,
+    colors_per_row: int,
+) -> bool:
+    return palette_row >= 0 and palette_row * colors_per_row + max(indices, default=0) < len(colors)
+
+
 def _effect_rows_for_palette(
     palette_name: str,
     colors: list[list[int]],
@@ -279,6 +370,7 @@ def _effect_rows_for_palette(
 def build_base_effect_atlas(
     asset_dir: Path,
     palette_names: list[str] | None = None,
+    source_tiles_dir: Path | None = None,
 ) -> tuple[int, int, bytes, list[dict[str, object]], dict[str, object]]:
     palette_names = palette_names or _default_palette_names(asset_dir)
     if not palette_names:
@@ -292,11 +384,14 @@ def build_base_effect_atlas(
     palette_usage = read_palette_usage_map(asset_dir)
     sprite_packs, bg_packs = chr_editable_sheets.read_decoded_chr_packs(asset_dir)
     variants: list[RgbaVariant] = []
-    metadata: list[tuple[VariantKey, str, int, str, dict[str, object] | None]] = []
+    metadata: list[tuple[str, VariantKey, str, int, str, dict[str, object] | None]] = []
+    seen_variant_keys: set[VariantKey] = set()
+    seen_base_keys: set[tuple[str, str, int, int, int]] = set()
     for pack in [*sprite_packs, *bg_packs]:
         _rows, colors_per_row = _rows_for_bpp(pack.bpp)
         asset = _asset_name_for_kind(pack.kind)
         for tile_index, tile in enumerate(pack.tiles):
+            base_key = _tile_usage_key(pack.kind, asset, pack.pack_index, tile_index, pack.bpp)
             preview_palette, preview_row, preview_source, usage = _preview_palette_for_tile(
                 kind=pack.kind,
                 asset=asset,
@@ -324,15 +419,121 @@ def build_base_effect_atlas(
                     rgba_tile_from_indices(tile, colors, preview_row, colors_per_row),
                 )
             )
-            metadata.append((key, preview_palette, preview_row, preview_source, usage))
+            metadata.append((
+                _tile_entry_id(key.source_kind, key.asset, key.pack, key.tile, key.bpp),
+                key,
+                preview_palette,
+                preview_row,
+                preview_source,
+                usage,
+            ))
+            seen_base_keys.add(base_key)
+            seen_variant_keys.add(key)
 
-    width, height, pixels, packed_entries = pack_rgba_variants(variants)
+    if source_tiles_dir is not None:
+        for (kind, asset, pack, tile, bpp), indices in _read_source_tile_indices(source_tiles_dir):
+            base_key = _tile_usage_key(kind, asset, pack, tile, bpp)
+            if base_key in seen_base_keys:
+                continue
+            _rows, colors_per_row = _rows_for_bpp(bpp)
+            preview_palette, preview_row, preview_source, usage = _preview_palette_for_tile(
+                kind=kind,
+                asset=asset,
+                pack=pack,
+                tile=tile,
+                bpp=bpp,
+                colors_per_row=colors_per_row,
+                available_palette_names=palette_names,
+                palettes=palettes,
+                palette_usage=palette_usage,
+            )
+            colors = palettes[preview_palette]
+            if not _indices_fit_palette(indices, colors, preview_row, colors_per_row):
+                continue
+            key = VariantKey(
+                kind,
+                asset,
+                pack,
+                tile,
+                bpp,
+                preview_palette,
+                preview_row,
+            )
+            variants.append(
+                RgbaVariant(
+                    key,
+                    rgba_tile_from_indices(indices, colors, preview_row, colors_per_row),
+                )
+            )
+            metadata.append((
+                _tile_entry_id(key.source_kind, key.asset, key.pack, key.tile, key.bpp),
+                key,
+                preview_palette,
+                preview_row,
+                preview_source,
+                usage,
+            ))
+            seen_variant_keys.add(key)
+            for extra_palette, extra_row in _source_extra_preview_rows(
+                kind=kind,
+                bpp=bpp,
+                palettes=palettes,
+                primary_palette=preview_palette,
+                primary_row=preview_row,
+            ):
+                extra_key = VariantKey(
+                    kind,
+                    asset,
+                    pack,
+                    tile,
+                    bpp,
+                    extra_palette,
+                    extra_row,
+                )
+                if extra_key in seen_variant_keys:
+                    continue
+                if not _indices_fit_palette(
+                    indices,
+                    palettes[extra_palette],
+                    extra_row,
+                    colors_per_row,
+                ):
+                    continue
+                variants.append(
+                    RgbaVariant(
+                        extra_key,
+                        rgba_tile_from_indices(
+                            indices,
+                            palettes[extra_palette],
+                            extra_row,
+                            colors_per_row,
+                        ),
+                    )
+                )
+                metadata.append((
+                    (
+                        f"{_tile_entry_id(kind, asset, pack, tile, bpp)}:"
+                        f"{extra_palette}:row{extra_row}"
+                    ),
+                    extra_key,
+                    extra_palette,
+                    extra_row,
+                    "source_kind_fallback",
+                    None,
+                ))
+                seen_variant_keys.add(extra_key)
+            seen_base_keys.add(base_key)
+
+    width, height, pixels, packed_entries = pack_rgba_variants(
+        variants,
+        columns=128 if source_tiles_dir is not None else 32,
+    )
     entries = []
-    for entry, (key, preview_palette, preview_row, preview_source, usage) in zip(
+    for entry, (entry_id, key, preview_palette, preview_row, preview_source, usage) in zip(
         packed_entries, metadata
     ):
         json_entry = {
-            "id": _tile_entry_id(key.source_kind, key.asset, key.pack, key.tile, key.bpp),
+            "id": entry_id,
             "source_kind": key.source_kind,
             "asset": key.asset,
             "pack": key.pack,
@@ -347,6 +548,11 @@ def build_base_effect_atlas(
         }
         if usage is not None and "evidence_count" in usage:
             json_entry["palette_usage_evidence_count"] = int(usage["evidence_count"])
+        json_entry["dynamic_policy"] = (
+            classify_palette_policy(preview_palette)
+            if preview_source == "palette_usage"
+            else "requires_live_palette"
+        )
         entries.append(json_entry)
 
     effects_by_id: dict[str, dict[str, object]] = {}
@@ -362,11 +568,18 @@ def build_base_effect_atlas(
     return width, height, pixels, entries, effects
 
 
-def write_base_effect_atlas(asset_dir: Path, out_dir: Path | None = None) -> list[Path]:
+def write_base_effect_atlas(
+    asset_dir: Path,
+    out_dir: Path | None = None,
+    source_tiles_dir: Path | None = None,
+) -> list[Path]:
     from PIL import Image
 
     destination = out_dir or asset_dir / "atlas"
-    width, height, pixels, entries, effects = build_base_effect_atlas(asset_dir)
+    width, height, pixels, entries, effects = build_base_effect_atlas(
+        asset_dir,
+        source_tiles_dir=source_tiles_dir,
+    )
     destination.mkdir(parents=True, exist_ok=True)
     png_path = destination / "base_tiles.png"
     json_path = destination / "base_tiles.json"

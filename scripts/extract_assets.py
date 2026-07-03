@@ -408,7 +408,10 @@ def write_base_effect_atlas(out_dir: Path) -> list[dict[str, str]]:
     import rgba_variant_atlas
 
     try:
-        written = rgba_variant_atlas.write_base_effect_atlas(out_dir)
+        written = rgba_variant_atlas.write_base_effect_atlas(
+            out_dir,
+            source_tiles_dir=REPO_ROOT / "zelda3-bin/developer_tilesets",
+        )
     except FileNotFoundError as exc:
         print(f"skipping base/effect atlas: missing {exc.filename}", file=sys.stderr)
         return []

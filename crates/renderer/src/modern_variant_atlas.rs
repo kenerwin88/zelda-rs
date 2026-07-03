@@ -115,7 +115,11 @@ pub fn load_modern_variant_atlas(root: &Path) -> Result<ModernVariantAtlas, Stri
         ));
     }
     let rgba = buf[..info.buffer_size()].to_vec();
-    let entries = manifest.entries.into_iter().map(VariantAtlasEntry::from).collect();
+    let entries = manifest
+        .entries
+        .into_iter()
+        .map(VariantAtlasEntry::from)
+        .collect();
 
     Ok(ModernVariantAtlas {
         width: info.width,
@@ -175,7 +179,11 @@ pub fn load_modern_base_art_atlas(root: &Path) -> Result<ModernVariantAtlas, Str
         ));
     }
     let rgba = buf[..info.buffer_size()].to_vec();
-    let entries = manifest.entries.into_iter().map(VariantAtlasEntry::from).collect();
+    let entries = manifest
+        .entries
+        .into_iter()
+        .map(VariantAtlasEntry::from)
+        .collect();
 
     Ok(ModernVariantAtlas {
         width: info.width,
@@ -224,7 +232,7 @@ impl From<BaseEntryJson> for VariantAtlasEntry {
             rect: entry.rect,
             sha1: entry.sha1,
             duplicate_of: entry.duplicate_of,
-            dynamic_policy: "stable".to_string(),
+            dynamic_policy: entry.dynamic_policy.unwrap_or_else(|| "stable".to_string()),
         }
     }
 }
@@ -274,6 +282,7 @@ struct BaseEntryJson {
     rect: [u32; 4],
     sha1: String,
     duplicate_of: Option<String>,
+    dynamic_policy: Option<String>,
 }
 
 #[cfg(test)]
@@ -306,9 +315,7 @@ mod tests {
         let root = unique_temp_root();
         let atlas_dir = root.join("atlas");
         std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
-        let rgba = vec![
-            1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255,
-        ];
+        let rgba = vec![1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255];
         write_rgba_png(&atlas_dir.join("tile_variants.png"), 2, 2, &rgba);
         std::fs::write(
             atlas_dir.join("tile_variants.json"),
@@ -343,7 +350,10 @@ mod tests {
         assert_eq!(atlas.height, 2);
         assert_eq!(atlas.rgba, rgba);
         assert_eq!(atlas.entries.len(), 1);
-        assert_eq!(atlas.entries[0].id, "sprite:kSprGfx:pack12:tile37:3bpp:palette_main_spr:row3");
+        assert_eq!(
+            atlas.entries[0].id,
+            "sprite:kSprGfx:pack12:tile37:3bpp:palette_main_spr:row3"
+        );
         assert_eq!(atlas.entries[0].key.source_kind, "sprite");
         assert_eq!(atlas.entries[0].key.pack, 12);
         assert_eq!(atlas.entries[0].key.palette_row, 3);
@@ -357,9 +367,7 @@ mod tests {
         let root = unique_temp_root();
         let atlas_dir = root.join("atlas");
         std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
-        let rgba = vec![
-            1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255,
-        ];
+        let rgba = vec![1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255];
         write_rgba_png(&atlas_dir.join("base_tiles.png"), 2, 2, &rgba);
         std::fs::write(
             atlas_dir.join("base_tiles.json"),
