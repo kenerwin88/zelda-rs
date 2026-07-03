@@ -18,6 +18,14 @@ COMPARE_RE = re.compile(
     r"gpu-render-compare completed compared=(\d+) last_frame=(\d+) "
     r"last_hash=(0x[0-9a-fA-F]{8}) mismatched_pixels=(\d+)"
 )
+MODERN_INDEX_SUMMARY_RE = re.compile(
+    r"modern_index_compare_summary compare_count=(\d+) bad_count=(\d+) bad_pixels=(\d+) "
+    r"gpu_count=(\d+) mode7_gpu_count=(\d+) cpu_count=(\d+)"
+)
+MODERN_INDEX_VARIANT_RE = re.compile(
+    r"modern_index_compare frame=(\d+) .* via=variant-gpu "
+    r"variant_draws=(\d+) dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
+)
 SAVED_RE = re.compile(r"saved replay-save checkpoint frame=(\d+) to (.+)")
 SUMMARY_PREFIXES = (
     "gpu-render-compare completed ",
@@ -32,11 +40,18 @@ def print_success_summary(output: str) -> None:
             print(line)
 
 
-def run(command: list[str]) -> str:
-    print("+ " + " ".join(command), flush=True)
+def run(command: list[str], *, renderer: str | None = None) -> str:
+    prefix = f"ZELDA3_RENDERER={renderer} " if renderer else ""
+    print("+ " + prefix + " ".join(command), flush=True)
+    env = os.environ.copy()
+    if renderer:
+        env["ZELDA3_RENDERER"] = renderer
+    if renderer == "assets-variant-gpu":
+        env["ZELDA3_MODERN_INDEX_COMPARE_SUMMARY"] = "1"
     result = subprocess.run(
         command,
         cwd=REPO_ROOT,
+        env=env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -71,6 +86,7 @@ def replay_command(
     load_state: Path | None = None,
     save_state: Path | None = None,
     compare_stride: int | None = None,
+    compare_mode: str = "gpu-render",
 ) -> list[str]:
     command = [
         *cargo_prefix(release),
@@ -84,13 +100,16 @@ def replay_command(
     if save_state is not None:
         command.extend(["--save-state", str(save_state)])
     if compare_stride is not None:
-        command.extend(
-            [
-                "--gpu-render-compare",
-                str(compare_stride),
-                "--gpu-render-compare-quiet",
-            ]
-        )
+        if compare_mode == "modern-index":
+            command.extend(["--modern-index-compare", str(compare_stride)])
+        else:
+            command.extend(
+                [
+                    "--gpu-render-compare",
+                    str(compare_stride),
+                    "--gpu-render-compare-quiet",
+                ]
+            )
     return command
 
 
@@ -170,7 +189,9 @@ def compare_window(
     end: int,
     stride: int,
     release: bool,
-) -> tuple[int, int, str]:
+    renderer: str | None,
+) -> tuple[int, int, str, int, tuple[int, int, int]]:
+    compare_mode = "modern-index" if renderer == "assets-variant-gpu" else "gpu-render"
     output = run(
         replay_command(
             rom=rom,
@@ -180,8 +201,38 @@ def compare_window(
             load_state=checkpoint,
             save_state=save_checkpoint,
             compare_stride=stride,
-        )
+            compare_mode=compare_mode,
+        ),
+        renderer=renderer,
     )
+    if compare_mode == "modern-index":
+        match = MODERN_INDEX_SUMMARY_RE.search(output)
+        if not match:
+            raise SystemExit(f"missing modern-index compare summary for window {start}..{end}")
+        compared = int(match.group(1))
+        bad_pixels = int(match.group(3))
+        variant_draws = 0
+        dynamic_palette_draws = 0
+        missing_variant_draws = 0
+        for frame_match in MODERN_INDEX_VARIANT_RE.finditer(output):
+            variant_draws += int(frame_match.group(2))
+            dynamic_palette_draws += int(frame_match.group(3))
+            missing_variant_draws += int(frame_match.group(4))
+        print(
+            f"modern-index window {start}..{end}: compared={compared} "
+            f"bad_pixels={bad_pixels} renderer={renderer} "
+            f"variant_draws={variant_draws} dynamic_palette_draws={dynamic_palette_draws} "
+            f"missing_variant_draws={missing_variant_draws}"
+        )
+        if save_checkpoint is not None and not save_checkpoint.exists():
+            raise SystemExit(f"end checkpoint was not created: {save_checkpoint}")
+        return (
+            compared,
+            end,
+            "0x00000000",
+            bad_pixels,
+            (variant_draws, dynamic_palette_draws, missing_variant_draws),
+        )
     match = COMPARE_RE.search(output)
     if not match:
         raise SystemExit(f"missing gpu-render-compare completion for window {start}..{end}")
@@ -200,7 +251,7 @@ def compare_window(
         )
     if save_checkpoint is not None and not save_checkpoint.exists():
         raise SystemExit(f"end checkpoint was not created: {save_checkpoint}")
-    return compared, last_frame, last_hash
+    return compared, last_frame, last_hash, mismatched_pixels, (0, 0, 0)
 
 
 def parse_args() -> argparse.Namespace:
@@ -211,7 +262,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--end", type=int, required=True)
     parser.add_argument("--window-size", type=int, default=10_000)
+    parser.add_argument("--max-windows", type=int, help="limit the number of windows to run")
     parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument(
+        "--renderer",
+        help="set ZELDA3_RENDERER for compare windows, e.g. assets-variant-gpu",
+    )
     parser.add_argument("--release", action="store_true")
     parser.add_argument(
         "--no-save-end-checkpoints",
@@ -226,6 +282,8 @@ def parse_args() -> argparse.Namespace:
         raise SystemExit("--window-size must be greater than zero")
     if args.stride <= 0:
         raise SystemExit("--stride must be greater than zero")
+    if args.max_windows is not None and args.max_windows <= 0:
+        raise SystemExit("--max-windows must be greater than zero")
     if not args.rom.exists():
         raise SystemExit(f"ROM does not exist: {args.rom}")
     if not args.save.exists():
@@ -236,10 +294,16 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     total_compared = 0
+    total_mismatched_pixels = 0
+    total_variant_draws = 0
+    total_dynamic_palette_draws = 0
+    total_missing_variant_draws = 0
     last_frame = args.start
     last_hash = "0x00000000"
 
-    for start in range(args.start, args.end, args.window_size):
+    for window_index, start in enumerate(range(args.start, args.end, args.window_size)):
+        if args.max_windows is not None and window_index >= args.max_windows:
+            break
         end = min(start + args.window_size, args.end)
         checkpoint = checkpoint_path(args.checkpoint_dir, start) if start > 0 else None
         save_checkpoint = (
@@ -251,11 +315,14 @@ def main() -> None:
             if checkpoint is not None:
                 print(f"ensure checkpoint {start}: {checkpoint}")
             if save_checkpoint is None:
-                print(f"compare window {start}..{end} stride={args.stride}")
+                print(
+                    f"compare window {start}..{end} stride={args.stride} "
+                    f"renderer={args.renderer or '<default>'}"
+                )
             else:
                 print(
                     f"compare window {start}..{end} stride={args.stride} "
-                    f"save_checkpoint={save_checkpoint}"
+                    f"save_checkpoint={save_checkpoint} renderer={args.renderer or '<default>'}"
                 )
             continue
 
@@ -266,7 +333,13 @@ def main() -> None:
             frame=start,
             release=args.release,
         )
-        compared, last_frame, last_hash = compare_window(
+        (
+            compared,
+            last_frame,
+            last_hash,
+            mismatched_pixels,
+            variant_stats,
+        ) = compare_window(
             rom=args.rom,
             save=args.save,
             checkpoint=checkpoint,
@@ -275,15 +348,23 @@ def main() -> None:
             end=end,
             stride=args.stride,
             release=args.release,
+            renderer=args.renderer,
         )
         total_compared += compared
+        total_mismatched_pixels += mismatched_pixels
+        total_variant_draws += variant_stats[0]
+        total_dynamic_palette_draws += variant_stats[1]
+        total_missing_variant_draws += variant_stats[2]
 
     if not args.dry_run:
         print(
             "gpu-render-window-compare completed "
             f"start={args.start} end={args.end} stride={args.stride} "
             f"compared={total_compared} last_frame={last_frame} last_hash={last_hash} "
-            "mismatched_pixels=0"
+            f"mismatched_pixels={total_mismatched_pixels} "
+            f"variant_draws={total_variant_draws} "
+            f"dynamic_palette_draws={total_dynamic_palette_draws} "
+            f"missing_variant_draws={total_missing_variant_draws}"
         )
 
 

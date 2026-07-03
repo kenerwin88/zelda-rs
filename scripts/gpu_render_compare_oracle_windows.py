@@ -97,12 +97,23 @@ def command_for(window: OracleWindow, rom: Path, stride: int, release: bool) -> 
     return command
 
 
-def run_window(window: OracleWindow, rom: Path, stride: int, release: bool) -> tuple[int, str]:
+def run_window(
+    window: OracleWindow,
+    rom: Path,
+    stride: int,
+    release: bool,
+    renderer: str | None,
+) -> tuple[int, str]:
     command = command_for(window, rom, stride, release)
-    print(f"running {window.name}: {' '.join(command)}", flush=True)
+    prefix = f"ZELDA3_RENDERER={renderer} " if renderer else ""
+    print(f"running {window.name}: {prefix}{' '.join(command)}", flush=True)
+    env = os.environ.copy()
+    if renderer:
+        env["ZELDA3_RENDERER"] = renderer
     result = subprocess.run(
         command,
         cwd=REPO_ROOT,
+        env=env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -136,6 +147,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--only", action="append", default=[], metavar="NAME")
     parser.add_argument("--max-frames", type=int)
     parser.add_argument("--stride", type=int, default=1)
+    parser.add_argument(
+        "--renderer",
+        help="set ZELDA3_RENDERER for oracle window compares, e.g. assets-variant-gpu",
+    )
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--include-sram-windows", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -165,9 +180,10 @@ def main() -> None:
     total_compared = 0
     for window in windows:
         if args.dry_run:
-            print(" ".join(command_for(window, args.rom, args.stride, args.release)))
+            prefix = f"ZELDA3_RENDERER={args.renderer} " if args.renderer else ""
+            print(prefix + " ".join(command_for(window, args.rom, args.stride, args.release)))
             continue
-        compared, _ = run_window(window, args.rom, args.stride, args.release)
+        compared, _ = run_window(window, args.rom, args.stride, args.release, args.renderer)
         total_compared += compared
 
     if not args.dry_run:

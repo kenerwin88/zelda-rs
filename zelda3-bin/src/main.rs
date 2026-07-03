@@ -1421,13 +1421,28 @@ struct GpuPlayRenderer {
     source_atlas: Option<renderer::modern_source_atlas::ModernSourceAtlas>,
     hd_overrides: Option<renderer::modern_hd_overrides::ModernHdOverrides>,
     atlas_gpu: bool,
+    variant_gpu: Option<renderer::ModernGpuVariantHeadless>,
 }
 
 impl GpuPlayRenderer {
     fn new() -> Self {
         let mode = effective_play_renderer();
-        let assets_anim_mode = mode == "assets-anim" || mode == "assets-anim-gpu";
+        let assets_anim_mode =
+            mode == "assets-anim" || mode == "assets-anim-gpu" || mode == "assets-variant-gpu";
         let atlas_gpu = mode == "assets-anim-gpu";
+        let variant_gpu = if mode == "assets-variant-gpu" {
+            match renderer::modern_variant_atlas::load_modern_base_art_atlas(Path::new(".")) {
+                Ok(atlas) => Some(renderer::ModernGpuVariantHeadless::new(&atlas)),
+                Err(e) => {
+                    eprintln!(
+                        "base art atlas load failed: {e}; live present falls back to the VRAM-decoded modern path"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let source_atlas = if assets_anim_mode {
             match renderer::modern_source_atlas::load_modern_source_atlas(Path::new(".")) {
                 Ok(atlas) => Some(atlas),
@@ -1446,6 +1461,7 @@ impl GpuPlayRenderer {
             source_atlas,
             hd_overrides,
             atlas_gpu,
+            variant_gpu,
         }
     }
 }
@@ -1491,6 +1507,17 @@ impl PlayRendererBackend for GpuPlayRenderer {
                     atlas,
                 );
             modern.index_sprites = sprites;
+            if let Some(variant_gpu) = self.variant_gpu.as_ref() {
+                let (rgba, _stats) = variant_gpu.render_rgba(
+                    &modern,
+                    &bg_cells,
+                    &sprite_cells,
+                    "palette_dung_bg_main",
+                    "palette_main_spr",
+                );
+                frontend.present_modern_rgba(&rgba, 256, 224);
+                return;
+            }
             if self.atlas_gpu {
                 frontend.present_modern_gpu(&modern, &bg_cells, &sprite_cells);
                 return;
@@ -1563,7 +1590,10 @@ fn run_play_with_state(mut game: ZeldaState) {
     // still needs Modern's fallback (`FrameRenderer::render_modern_frame`, N×
     // VRAM-decode) for Mode-7 frames and for any frame the atlas doesn't cover.
     let renderer_env = effective_play_renderer();
-    let renderer_mode = if renderer_env == "assets-anim" || renderer_env == "assets-anim-gpu" {
+    let renderer_mode = if renderer_env == "assets-anim"
+        || renderer_env == "assets-anim-gpu"
+        || renderer_env == "assets-variant-gpu"
+    {
         renderer::RendererMode::Modern
     } else {
         renderer::RendererMode::parse(Some(renderer_env.as_str()))
@@ -3675,20 +3705,38 @@ fn run_replay_save(args: &[String]) {
     // (extract_modern_sprites_from_vram); the static sprite atlas is no longer
     // loaded for rendering.
     //
-    // Off-VRAM (assets-anim*) path: unset and `assets-anim-gpu` make the modern
-    // compare render through the full GPU path. Explicit `assets-anim` keeps the
-    // CPU atlas compositor as an opt-out/debug oracle.
+    // Off-VRAM atlas paths: unset and `assets-anim-gpu` make the modern compare
+    // render through the full indexed GPU path. Explicit `assets-anim` keeps the
+    // CPU atlas compositor as an opt-out/debug oracle. `assets-variant-gpu` uses
+    // pre-colored RGBA variant atlas entries for stable draws and reports fallback
+    // counts.
     let replay_renderer_env = std::env::var("ZELDA3_RENDERER").ok();
     let replay_renderer_mode = renderer_env_or_default(replay_renderer_env.as_deref());
     let assets_anim_mode = replay_renderer_mode == "assets-anim";
     let atlas_gpu_compare = replay_renderer_mode == "assets-anim-gpu";
+    let variant_gpu_compare = replay_renderer_mode == "assets-variant-gpu";
     let modern_gpu_headless: Option<renderer::ModernGpuHeadless> =
-        if modern_index_compare != 0 && atlas_gpu_compare {
+        if modern_index_compare != 0 && (atlas_gpu_compare || variant_gpu_compare) {
             Some(renderer::ModernGpuHeadless::new())
         } else {
             None
         };
-    let source_atlas = if modern_index_compare != 0 && (assets_anim_mode || atlas_gpu_compare) {
+    let variant_atlas = if modern_index_compare != 0 && variant_gpu_compare {
+        Some(
+            renderer::modern_variant_atlas::load_modern_base_art_atlas(std::path::Path::new("."))
+                .unwrap_or_else(|e| {
+                    eprintln!("base art atlas load failed: {e}");
+                    process::exit(2);
+                }),
+        )
+    } else {
+        None
+    };
+    let modern_variant_headless: Option<renderer::ModernGpuVariantHeadless> =
+        variant_atlas.as_ref().map(renderer::ModernGpuVariantHeadless::new);
+    let source_atlas = if modern_index_compare != 0
+        && (assets_anim_mode || atlas_gpu_compare || variant_gpu_compare)
+    {
         Some(
             renderer::modern_source_atlas::load_modern_source_atlas(std::path::Path::new("."))
                 .unwrap_or_else(|e| {
@@ -5491,7 +5539,47 @@ fn run_replay_save(args: &[String]) {
                 // source table. Mode-7 is not a Mode-1 tilemap; render those frames
                 // through the dedicated GPU Mode-7 frame path so the GPU default does
                 // not fall back to CPU composition.
-                let (modern_rgba, via) = if let Some(headless) = modern_gpu_headless.as_ref() {
+                let mut variant_stats = None;
+                let (modern_rgba, via) = if let Some(variant_headless) =
+                    modern_variant_headless.as_ref()
+                {
+                    if gpu_frame.mode == 7 {
+                        let headless = modern_gpu_headless
+                            .as_ref()
+                            .expect("mode7 helper allocated for variant compare");
+                        (headless.render_mode7_rgba(&gpu_frame), "mode7-gpu")
+                    } else {
+                        let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
+                        let src_slice: Vec<(u8, u16, u16)> = game
+                            .vram_chr_source()
+                            .as_slice()
+                            .iter()
+                            .map(|s| (s.kind, s.pack, s.tile_off))
+                            .collect();
+                        let (mut modern, bg_cells) =
+                            renderer::modern_extract::extract_modern_frame_from_sources(
+                                &gpu_frame,
+                                &src_slice[..],
+                                atlas,
+                            );
+                        let (sprite_cells, sprites) =
+                            renderer::modern_extract::extract_modern_sprites_from_sources(
+                                &gpu_frame,
+                                &src_slice[..],
+                                atlas,
+                            );
+                        modern.index_sprites = sprites;
+                        let (rgba, stats) = variant_headless.render_rgba(
+                            &modern,
+                            &bg_cells,
+                            &sprite_cells,
+                            "palette_dung_bg_main",
+                            "palette_main_spr",
+                        );
+                        variant_stats = Some(stats);
+                        (rgba, "variant-gpu")
+                    }
+                } else if let Some(headless) = modern_gpu_headless.as_ref() {
                     if gpu_frame.mode == 7 {
                         (headless.render_mode7_rgba(&gpu_frame), "mode7-gpu")
                     } else {
@@ -5580,6 +5668,7 @@ fn run_replay_save(args: &[String]) {
                 modern_index_compare_count += 1;
                 match via {
                     "gpu" => modern_index_compare_gpu_count += 1,
+                    "variant-gpu" => modern_index_compare_gpu_count += 1,
                     "mode7-gpu" => modern_index_compare_mode7_gpu_count += 1,
                     "mode7-cpu" | "sources" | "vram" => modern_index_compare_cpu_count += 1,
                     _ => {}
@@ -5589,10 +5678,20 @@ fn run_replay_save(args: &[String]) {
                     modern_index_compare_bad_pixels += mismatch as u64;
                 }
                 if !modern_index_compare_summary || mismatch != 0 {
-                    println!(
-                        "modern_index_compare frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via}",
-                        gpu_frame.mode
-                    );
+                    if let Some(stats) = variant_stats {
+                        println!(
+                            "modern_index_compare frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} dynamic_palette_draws={} missing_variant_draws={}",
+                            gpu_frame.mode,
+                            stats.stable_draws,
+                            stats.dynamic_palette_draws,
+                            stats.missing_variant_draws
+                        );
+                    } else {
+                        println!(
+                            "modern_index_compare frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via}",
+                            gpu_frame.mode
+                        );
+                    }
                 }
                 if modern_index_compare_summary
                     && modern_index_compare_progress != 0

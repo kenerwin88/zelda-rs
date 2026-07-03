@@ -322,6 +322,161 @@ impl ModernGpuRenderer {
     }
 }
 
+pub struct ModernGpuVariantRenderer {
+    atlas: crate::modern_variant_atlas::ModernVariantAtlas,
+    renderer: ModernGpuRenderer,
+}
+
+impl ModernGpuVariantRenderer {
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+        format: wgpu::TextureFormat,
+    ) -> Self {
+        let atlas_asset = ModernTileAtlasAsset {
+            tile_width_px: 8,
+            tile_height_px: 8,
+            atlas_scale: 1,
+            width_px: atlas.width,
+            height_px: atlas.height,
+            rgba: atlas.rgba.clone(),
+            entries: Vec::new(),
+        };
+        Self {
+            atlas: atlas.clone(),
+            renderer: ModernGpuRenderer::new(device, queue, &atlas_asset, format),
+        }
+    }
+
+    pub fn render(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+        output_view: &wgpu::TextureView,
+    ) -> crate::modern_software::VariantAtlasRenderStats {
+        let (variant_frame, stats) = self.build_variant_frame(
+            frame,
+            bg_cells,
+            sprite_cells,
+            bg_palette_name,
+            sprite_palette_name,
+        );
+        self.renderer
+            .render(device, queue, &variant_frame, output_view);
+        stats
+    }
+
+    fn build_variant_frame(
+        &self,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+    ) -> (ModernFrame, crate::modern_software::VariantAtlasRenderStats) {
+        let mut out = ModernFrame::empty();
+        out.backdrop_color_rgba = frame.backdrop_color_rgba;
+        out.forced_blank = frame.forced_blank;
+        let mut stats = crate::modern_software::VariantAtlasRenderStats::default();
+
+        if frame.forced_blank {
+            return (out, stats);
+        }
+
+        out.bg_layers[0].enabled_main = true;
+        for layer in &frame.bg_layers {
+            if !layer.enabled_main {
+                continue;
+            }
+            for inst in &layer.index_tiles {
+                let Some(cell) = bg_cells.get(inst.cell_id as usize) else {
+                    continue;
+                };
+                let key = crate::modern_variant_atlas::variant_key_for_index_tile(
+                    cell,
+                    bg_palette_name,
+                    inst.palette,
+                );
+                let entry = key.as_ref().and_then(|key| self.atlas.entry_for_key(key));
+                match entry {
+                    Some(entry) if entry.dynamic_policy == "stable" => {
+                        out.bg_layers[0].tiles.push(variant_tile_instance(
+                            entry,
+                            inst.screen_x,
+                            inst.screen_y,
+                            cell.hflip,
+                            cell.vflip,
+                        ));
+                        stats.stable_draws += 1;
+                    }
+                    Some(_) => stats.dynamic_palette_draws += 1,
+                    None => stats.missing_variant_draws += 1,
+                }
+            }
+        }
+
+        out.bg_layers[1].enabled_main = true;
+        for inst in frame.index_sprites.iter().rev() {
+            let Some(cell) = sprite_cells.get(inst.cell_id as usize) else {
+                continue;
+            };
+            let key = crate::modern_variant_atlas::variant_key_for_index_tile(
+                cell,
+                sprite_palette_name,
+                inst.palette,
+            );
+            let entry = key.as_ref().and_then(|key| self.atlas.entry_for_key(key));
+            match entry {
+                Some(entry) if entry.dynamic_policy == "stable" => {
+                    out.bg_layers[1].tiles.push(variant_tile_instance(
+                        entry,
+                        inst.screen_x,
+                        inst.screen_y,
+                        inst.hflip,
+                        inst.vflip,
+                    ));
+                    stats.stable_draws += 1;
+                }
+                Some(_) => stats.dynamic_palette_draws += 1,
+                None => stats.missing_variant_draws += 1,
+            }
+        }
+
+        (out, stats)
+    }
+}
+
+fn variant_tile_instance(
+    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
+    screen_x: i16,
+    screen_y: i16,
+    hflip: bool,
+    vflip: bool,
+) -> crate::modern_frame::ModernTileInstance {
+    crate::modern_frame::ModernTileInstance {
+        atlas_id: 0,
+        atlas_x_px: entry.rect[0] as u16,
+        atlas_y_px: entry.rect[1] as u16,
+        atlas_width_px: entry.rect[2] as u16,
+        atlas_height_px: entry.rect[3] as u16,
+        screen_width_px: 8,
+        screen_height_px: 8,
+        screen_x,
+        screen_y,
+        palette: 0,
+        priority: 0,
+        hflip,
+        vflip,
+        transparent_color_zero: true,
+    }
+}
+
 /// Number of 8x8 cells per row in the index-atlas grid texture.
 const INDEX_GRID_COLS: u32 = 64;
 /// Per-instance stride for the index path (little-endian):
@@ -1355,6 +1510,114 @@ impl ModernGpuHeadless {
     }
 }
 
+pub struct ModernGpuVariantHeadless {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    renderer: ModernGpuVariantRenderer,
+    target: wgpu::Texture,
+    target_view: wgpu::TextureView,
+}
+
+impl ModernGpuVariantHeadless {
+    pub fn new(atlas: &crate::modern_variant_atlas::ModernVariantAtlas) -> Self {
+        let instance = crate::create_wgpu_instance();
+        let (_adapter, device, queue) =
+            pollster::block_on(crate::create_device_queue(&instance, None));
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        let renderer = ModernGpuVariantRenderer::new(&device, &queue, atlas, format);
+        let target = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("modern_gpu_variant_headless_target"),
+            size: wgpu::Extent3d {
+                width: 256,
+                height: 224,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+        Self {
+            device,
+            queue,
+            renderer,
+            target,
+            target_view,
+        }
+    }
+
+    pub fn render_rgba(
+        &self,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+    ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
+        let stats = self.renderer.render(
+            &self.device,
+            &self.queue,
+            frame,
+            bg_cells,
+            sprite_cells,
+            bg_palette_name,
+            sprite_palette_name,
+            &self.target_view,
+        );
+        (self.read_target_rgba(), stats)
+    }
+
+    fn read_target_rgba(&self) -> Vec<u8> {
+        let (width, height) = (256u32, 224u32);
+        let bytes_per_row = width * 4;
+        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("modern_gpu_variant_headless_readback"),
+            size: (bytes_per_row * height) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.target,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: None,
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([encoder.finish()]);
+
+        let slice = readback.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("GPU poll failed during variant readback");
+        let mapped = slice.get_mapped_range();
+        let out = mapped.to_vec();
+        drop(mapped);
+        readback.unmap();
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2054,6 +2317,160 @@ mod tests {
         drop(mapped);
         readback.unmap();
         gpu_rgba
+    }
+
+    #[test]
+    fn modern_gpu_variant_atlas_bg_tile_matches_software_variant() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_software::render_modern_frame_software_variant_atlas;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, VariantAtlasEntry, VariantAtlasKey,
+        };
+
+        pollster::block_on(async {
+            let instance = crate::create_wgpu_instance();
+            let (_adapter, device, queue) = crate::create_device_queue(&instance, None).await;
+
+            let mut atlas_rgba = vec![0u8; 8 * 8 * 4];
+            for px in atlas_rgba.chunks_exact_mut(4) {
+                px.copy_from_slice(&[180, 20, 40, 0xff]);
+            }
+            let atlas = ModernVariantAtlas {
+                width: 8,
+                height: 8,
+                rgba: atlas_rgba,
+                entries: vec![VariantAtlasEntry {
+                    id: "bg:kBgGfx:pack0:tile0:3bpp:palette_dung_bg_main:row2".to_string(),
+                    key: VariantAtlasKey {
+                        source_kind: "bg".to_string(),
+                        asset: "kBgGfx".to_string(),
+                        pack: 0,
+                        tile: 0,
+                        bpp: 3,
+                        palette: "palette_dung_bg_main".to_string(),
+                        palette_row: 2,
+                    },
+                    rect: [0, 0, 8, 8],
+                    sha1: "test".to_string(),
+                    duplicate_of: None,
+                    dynamic_policy: "stable".to_string(),
+                }],
+            };
+
+            let cells = vec![ModernIndexTile {
+                id: 0,
+                indices: [1u8; 64],
+                source_key: modern_source_key(1, 0, 0),
+                hflip: false,
+                vflip: false,
+            }];
+            let mut frame = ModernFrame::empty();
+            frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+            let mut layer = ModernBgLayer::new(0);
+            layer.enabled_main = true;
+            layer.index_tiles.push(ModernIndexTileInstance {
+                cell_id: 0,
+                screen_x: 3,
+                screen_y: 5,
+                palette: 2,
+                hflip: false,
+                vflip: false,
+                priority: false,
+            });
+            frame.bg_layers[0] = layer;
+
+            let renderer = ModernGpuVariantRenderer::new(
+                &device,
+                &queue,
+                &atlas,
+                wgpu::TextureFormat::Rgba8Unorm,
+            );
+            let width = 256u32;
+            let height = 224u32;
+            let target = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("modern_gpu_variant_test_target"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            let view = target.create_view(&wgpu::TextureViewDescriptor::default());
+
+            let stats = renderer.render(
+                &device,
+                &queue,
+                &frame,
+                &cells,
+                &[],
+                "palette_dung_bg_main",
+                "palette_main_spr",
+                &view,
+            );
+
+            let bytes_per_row = width * 4;
+            let readback = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("modern_gpu_variant_test_readback"),
+                size: (bytes_per_row * height) as u64,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            let mut encoder =
+                device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            encoder.copy_texture_to_buffer(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &target,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &readback,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(bytes_per_row),
+                        rows_per_image: None,
+                    },
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            queue.submit([encoder.finish()]);
+
+            let slice = readback.slice(..);
+            slice.map_async(wgpu::MapMode::Read, |_| {});
+            device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .expect("GPU poll failed during readback");
+            let mapped = slice.get_mapped_range();
+            let gpu_rgba = mapped.to_vec();
+            drop(mapped);
+            readback.unmap();
+
+            let (software_rgba, software_stats) = render_modern_frame_software_variant_atlas(
+                &frame,
+                &cells,
+                &[],
+                &atlas,
+                "palette_dung_bg_main",
+                "palette_main_spr",
+            );
+
+            assert_eq!(stats.stable_draws, 1);
+            assert_eq!(stats, software_stats);
+            assert_eq!(gpu_rgba, software_rgba);
+        });
     }
 
     #[test]

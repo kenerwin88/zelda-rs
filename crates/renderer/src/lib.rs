@@ -39,7 +39,7 @@ pub use bg_layer::BgLayerRenderer;
 pub use gpu_frame::{BgLayerRegs, GpuFrame, Mode7Regs, ObjRegs, ScanlineRegs};
 pub use gpu_renderer::GpuFrameRenderer;
 pub use mode7_renderer::Mode7Renderer;
-pub use modern_gpu::{ModernGpuCompositor, ModernGpuHeadless};
+pub use modern_gpu::{ModernGpuCompositor, ModernGpuHeadless, ModernGpuVariantHeadless};
 pub use post_process::scanlines_from_raw;
 pub use renderer_mode::RendererMode;
 pub use tile_atlas::{

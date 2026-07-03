@@ -125,6 +125,66 @@ pub fn load_modern_variant_atlas(root: &Path) -> Result<ModernVariantAtlas, Stri
     })
 }
 
+pub fn load_modern_base_art_atlas(root: &Path) -> Result<ModernVariantAtlas, String> {
+    let atlas_dir = if root.join("atlas/base_tiles.json").is_file() {
+        root.join("atlas")
+    } else {
+        root.join("generated/zelda3_assets/atlas")
+    };
+    let json_path = atlas_dir.join("base_tiles.json");
+    let png_path = atlas_dir.join("base_tiles.png");
+
+    let manifest_bytes = std::fs::read(&json_path)
+        .map_err(|e| format!("failed to read {}: {e}", json_path.display()))?;
+    let manifest: BaseManifestJson = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| format!("failed to parse {}: {e}", json_path.display()))?;
+    if manifest.format != "zelda3_base_art_atlas_v1" {
+        return Err(format!(
+            "{}: unsupported format {:?}",
+            json_path.display(),
+            manifest.format
+        ));
+    }
+
+    let file = std::fs::File::open(&png_path)
+        .map_err(|e| format!("failed to open {}: {e}", png_path.display()))?;
+    let decoder = png::Decoder::new(std::io::BufReader::new(file));
+    let mut reader = decoder
+        .read_info()
+        .map_err(|e| format!("failed to read PNG header {}: {e}", png_path.display()))?;
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let info = reader
+        .next_frame(&mut buf)
+        .map_err(|e| format!("failed to decode {}: {e}", png_path.display()))?;
+    if info.bit_depth != png::BitDepth::Eight || info.color_type != png::ColorType::Rgba {
+        return Err(format!(
+            "{}: expected an 8-bit RGBA PNG, got {:?}/{:?}",
+            png_path.display(),
+            info.color_type,
+            info.bit_depth
+        ));
+    }
+    if info.width != manifest.width || info.height != manifest.height {
+        return Err(format!(
+            "{}: PNG size {}x{} does not match manifest {}x{}",
+            png_path.display(),
+            info.width,
+            info.height,
+            manifest.width,
+            manifest.height
+        ));
+    }
+    let rgba = buf[..info.buffer_size()].to_vec();
+    let entries = manifest.entries.into_iter().map(VariantAtlasEntry::from).collect();
+
+    Ok(ModernVariantAtlas {
+        width: info.width,
+        height: info.height,
+        rgba,
+        entries,
+    })
+}
+
 impl From<EntryJson> for VariantAtlasEntry {
     fn from(entry: EntryJson) -> Self {
         let key = VariantAtlasKey {
@@ -143,6 +203,28 @@ impl From<EntryJson> for VariantAtlasEntry {
             sha1: entry.sha1,
             duplicate_of: entry.duplicate_of,
             dynamic_policy: entry.dynamic_policy,
+        }
+    }
+}
+
+impl From<BaseEntryJson> for VariantAtlasEntry {
+    fn from(entry: BaseEntryJson) -> Self {
+        let key = VariantAtlasKey {
+            source_kind: entry.source_kind,
+            asset: entry.asset,
+            pack: entry.pack,
+            tile: entry.tile,
+            bpp: entry.bpp,
+            palette: entry.preview_palette,
+            palette_row: entry.preview_palette_row,
+        };
+        Self {
+            id: entry.id,
+            key,
+            rect: entry.rect,
+            sha1: entry.sha1,
+            duplicate_of: entry.duplicate_of,
+            dynamic_policy: "stable".to_string(),
         }
     }
 }
@@ -169,6 +251,29 @@ struct EntryJson {
     sha1: String,
     duplicate_of: Option<String>,
     dynamic_policy: String,
+}
+
+#[derive(Deserialize)]
+struct BaseManifestJson {
+    format: String,
+    width: u32,
+    height: u32,
+    entries: Vec<BaseEntryJson>,
+}
+
+#[derive(Deserialize)]
+struct BaseEntryJson {
+    id: String,
+    source_kind: String,
+    asset: String,
+    pack: u16,
+    tile: u16,
+    bpp: u8,
+    preview_palette: String,
+    preview_palette_row: u8,
+    rect: [u32; 4],
+    sha1: String,
+    duplicate_of: Option<String>,
 }
 
 #[cfg(test)]
@@ -242,6 +347,59 @@ mod tests {
         assert_eq!(atlas.entries[0].key.source_kind, "sprite");
         assert_eq!(atlas.entries[0].key.pack, 12);
         assert_eq!(atlas.entries[0].key.palette_row, 3);
+        assert_eq!(atlas.entries[0].dynamic_policy, "stable");
+
+        std::fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn modern_base_art_atlas_loads_preview_keys_from_base_tiles_manifest() {
+        let root = unique_temp_root();
+        let atlas_dir = root.join("atlas");
+        std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
+        let rgba = vec![
+            1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255,
+        ];
+        write_rgba_png(&atlas_dir.join("base_tiles.png"), 2, 2, &rgba);
+        std::fs::write(
+            atlas_dir.join("base_tiles.json"),
+            r#"{
+              "format": "zelda3_base_art_atlas_v1",
+              "tile_width": 8,
+              "tile_height": 8,
+              "width": 2,
+              "height": 2,
+              "entry_count": 1,
+              "entries": [{
+                "id": "bg:kBgGfx:pack5:tile17:3bpp",
+                "source_kind": "bg",
+                "asset": "kBgGfx",
+                "pack": 5,
+                "tile": 17,
+                "bpp": 3,
+                "preview_palette": "palette_dung_bg_main",
+                "preview_palette_row": 2,
+                "preview_source": "palette_usage",
+                "rect": [0, 0, 8, 8],
+                "sha1": "abc",
+                "duplicate_of": null
+              }]
+            }"#,
+        )
+        .expect("write manifest");
+
+        let atlas = load_modern_base_art_atlas(&root).expect("load base atlas");
+
+        assert_eq!(atlas.width, 2);
+        assert_eq!(atlas.height, 2);
+        assert_eq!(atlas.rgba, rgba);
+        assert_eq!(atlas.entries.len(), 1);
+        assert_eq!(atlas.entries[0].id, "bg:kBgGfx:pack5:tile17:3bpp");
+        assert_eq!(atlas.entries[0].key.source_kind, "bg");
+        assert_eq!(atlas.entries[0].key.pack, 5);
+        assert_eq!(atlas.entries[0].key.tile, 17);
+        assert_eq!(atlas.entries[0].key.palette, "palette_dung_bg_main");
+        assert_eq!(atlas.entries[0].key.palette_row, 2);
         assert_eq!(atlas.entries[0].dynamic_policy, "stable");
 
         std::fs::remove_dir_all(root).expect("remove temp root");
