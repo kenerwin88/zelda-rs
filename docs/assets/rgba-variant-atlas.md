@@ -367,9 +367,12 @@ The native live-CGRAM pre-final lane uses the fallback compositor's direct
 indexed sampling rules (`cell.indices[y*8+x]`, `palette*16+index`) and writes
 packed 5-bit RGB plus the layer math bit before the finalizer runs. This reduces
 the representative sub-screen reject bucket from 1,861 to 910 with
-`mismatched_pixels=0`. The next useful lane is not more palette handling; it is
-ordering/merging overlapped pre-final BG packets into the packed composition
-buffer before final color math.
+`mismatched_pixels=0`. Behind-only BG overlap is now allowed for pre-final
+packets: if every overlapping BG pixel is behind the variant packet in Mode-1
+painter order and no OBJ pixel overlaps it, the packed main-screen overlay can
+replace the fallback pixel before final color math. The representative route
+still reports the same 910 pre-final overlap rejects, so its remaining overlap
+cases are front/same-order BG or OBJ overlap, not the simple behind-BG case.
 
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay
@@ -378,7 +381,8 @@ unchanged by brightness, windows, mosaic, per-scanline main enable, and color
 math, and when those pixels do not overlap any other BG or OBJ packet. Other
 stable opportunities stay counted but are not drawn over the mixed fallback
 image until packet visibility and final composition state are modeled more
-completely.
+completely. For pre-final color-math packets, behind-only BG overlap is the
+first modeled exception because it cannot change the winning visible pixel.
 
 ## Modder Workflow Target
 

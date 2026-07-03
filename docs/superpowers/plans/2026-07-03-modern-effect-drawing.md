@@ -705,3 +705,32 @@ and `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=910`.
 That makes the next best modernization target explicit: handle overlapped
 pre-final BG effect packets in the packed composition buffer before GPU final
 color math, rather than building another palette or fixed-color lane.
+
+### Task 17: Accept Behind-Only Pre-Final BG Overlap
+
+**Files:**
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Test: focused renderer unit covering a pre-final BG packet over a behind
+  BG overlap
+- [x] Test: focused opening-route oracle window
+
+**Goal:** Start reducing the pre-final overlap blocker without giving up the
+fallback compositor as the oracle. The first safe case is a variant BG packet
+whose overlapping BG pixels are all behind it in Mode-1 painter order; replacing
+the packed main-screen pixel before final color math preserves the same winning
+visible source. OBJ overlap remains rejected.
+
+**Done:** The pre-final selector now uses Mode-1 BG order for color-math
+pre-final packets. Behind-only BG overlap is allowed, while same-rank later
+tiles, front BG layers, and OBJ pixels remain unsafe. The focused unit
+`modern_gpu_variant_headless_applies_prefinal_bg_over_behind_overlap` guards the
+new path by proving the fallback pixel is replaced before sub-screen addition.
+`modern_gpu_variant_headless_counts_prefinal_overlap_color_math_reject` still
+guards the front/same-order reject case.
+
+**Route result:** The opening tail remains `mismatched_pixels=0`, but the route
+still reports `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=910`.
+That means the representative 910 rejects are not simple behind-BG overlap; the
+next useful step is to split the overlap bucket into front/same-order BG versus
+OBJ overlap and then handle fully eligible overlapping BG groups in Mode-1 draw
+order.
