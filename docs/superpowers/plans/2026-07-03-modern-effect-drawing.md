@@ -642,9 +642,9 @@ path.
 ### Task 15: Add Native Live-CGRAM Pre-Final Drawing
 
 **Files:**
-- [ ] Modify: `crates/renderer/src/modern_gpu.rs`
-- [ ] Test: focused renderer unit covering a live-CGRAM sub-screen packet
-- [ ] Test: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --only opening-uncle-dismiss-and-move --fast --frames 1000 --stride 60 --require-stable-draws --progress-every 0 --release`
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Test: focused renderer unit covering a live-CGRAM sub-screen packet
+- [x] Test: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --only opening-uncle-dismiss-and-move --fast --frames 1000 --stride 60 --require-stable-draws --progress-every 0 --release`
 
 **Goal:** Reduce the 1,861 representative route sub-screen rejects by drawing
 live-CGRAM BG packets into the same pre-final composition space without
@@ -655,3 +655,36 @@ current late overlay transform. It must match the fallback compositor's source
 orientation and palette lookup exactly, write packed 5-bit RGB plus layer math
 bit, and only claim draws after the focused route counters drop with zero
 mismatched pixels.
+
+**Done:** The packed pre-final overlay now has a native live-CGRAM lane. Unlike
+the late overlay path, it samples live BG packet indices exactly like the
+fallback compositor (`cell.indices[y*8+x]`) and resolves color from
+`frame.cgram_rgba[palette*16+index]`, then writes packed 5-bit RGB plus the BG
+layer math bit before the GPU finalizer runs. The focused unit
+`modern_gpu_variant_headless_applies_subscreen_math_to_mixed_live_cgram_bg`
+guards this behavior with a flipped source cell to prevent accidentally using
+the static atlas/source-flip transform.
+
+**Route result:** The opening tail remains `mismatched_pixels=0`. The focused
+route now reports `mixed_overlay_bg_effect_draws=18223`,
+`mixed_overlay_bg_effect_reject_complex_frame=2451`,
+`mixed_overlay_bg_effect_reject_complex_scanline_main=1541`, and
+`mixed_overlay_bg_effect_reject_complex_color_math_subscreen=910`. This moves
+951 additional mixed BG effect packets onto the GPU path while keeping
+final-pixel parity.
+
+### Task 16: Classify the Remaining Sub-Screen Rejects
+
+**Files:**
+- [ ] Modify: `crates/renderer/src/modern_gpu.rs`
+- [ ] Modify: `zelda3-bin/src/main.rs`
+- [ ] Modify: `scripts/gpu_render_compare_oracle_windows.py`
+- [ ] Modify: `scripts/gpu_render_compare_windows.py`
+- [ ] Test: focused renderer unit for the next remaining subtype
+- [ ] Test: focused opening-route oracle window
+
+**Goal:** Explain and reduce the remaining 910 sub-screen color-math rejects
+without guessing. These packets are no longer the obvious static-effect or
+live-CGRAM cases covered by Tasks 14 and 15, so the next step is to split the
+remaining reject path into actionable reasons before adding another renderer
+lane.

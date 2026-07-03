@@ -334,12 +334,12 @@ Expected output includes `mismatched_pixels=0` and nonzero
 `stable_preview_draws` or `stable_effect_draws`. The current representative
 proof reports `stable_effect_draws=21038`,
 `mixed_overlay_bg_effect_candidates=20674`,
-`mixed_overlay_bg_effect_draws=17272`,
-`mixed_overlay_bg_effect_reject_complex_frame=3402`,
+`mixed_overlay_bg_effect_draws=18223`,
+`mixed_overlay_bg_effect_reject_complex_frame=2451`,
 `mixed_overlay_bg_effect_reject_complex_scanline_main=1541`,
-`mixed_overlay_bg_effect_reject_complex_color_math=1861`,
+`mixed_overlay_bg_effect_reject_complex_color_math=910`,
 `mixed_overlay_bg_effect_reject_complex_color_math_clip=0`,
-`mixed_overlay_bg_effect_reject_complex_color_math_subscreen=1861`,
+`mixed_overlay_bg_effect_reject_complex_color_math_subscreen=910`,
 `mixed_overlay_bg_effect_reject_complex_color_math_fixed_color=0`,
 `mixed_overlay_bg_effect_reject_cgram_mismatch=0`, and
 `mixed_overlay_bg_effect_reject_overlap=0` over 17 sampled compares from the
@@ -347,16 +347,17 @@ checkpointed opening route tail. That means most stable BG opportunities in
 this sampled mixed window now execute through the GPU overlay path with exact
 final-pixel parity; the remaining blockers are per-scanline layer visibility
 and sub-screen color-math composition. A fixed-color-only overlay shader would
-not reduce this representative route because the current color-math rejects are
-all sub-screen dependent.
+not reduce this representative route because the current remaining color-math
+rejects are all sub-screen dependent.
 
 The first pre-final sub-screen implementation supports static variant-effect BG
 packets: those pixels can be written into the packed main-screen buffer before
 the GPU finalizer runs, so final color math uses the real sub-screen operand.
-The opening-route bucket above does not drop yet because its remaining
-sub-screen rejects are live-CGRAM fallback packets. Those stay rejected until a
-native live-CGRAM pre-final lane matches the fallback compositor's source
-orientation and palette lookup exactly.
+The native live-CGRAM pre-final lane uses the fallback compositor's direct
+indexed sampling rules (`cell.indices[y*8+x]`, `palette*16+index`) and writes
+packed 5-bit RGB plus the layer math bit before the finalizer runs. This reduces
+the representative sub-screen reject bucket from 1,861 to 910 with
+`mismatched_pixels=0`.
 
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay
