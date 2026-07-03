@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace CHR-as-rendered-art with a ROM-traceable base-art atlas plus reusable modern effects first, then layer compact canonical art PNG authoring on top without losing final-pixel parity proof.
+**Goal:** Replace CHR-as-rendered-art with a ROM-traceable canonical art atlas plus reusable modern effects, without losing final-pixel parity proof.
 
-**Architecture:** Build generated `art_tiles.png`, `art_tiles.json`, `base_tiles.png`, `base_tiles.json`, and `tile_effects.json` from ROM-derived CHR and palettes. The canonical art atlas stores each editable raw-index tile once and maps source identities through `source_refs`; the base/effect bridge stores per-source previews and reusable shader/material transforms for recolors, flashes, fades, lighting, and palette-like looks. Keep the brute-force `tile_variants.*` artifact only as an opt-in diagnostic oracle.
+**Architecture:** Build generated `art_tiles.png`, `art_tiles.json`, and `tile_effects.json` from ROM-derived CHR and palettes. The canonical art atlas stores each editable raw-index tile once and maps source identities through `source_refs`; reusable shader/material transforms handle recolors, flashes, fades, lighting, and palette-like looks. `base_tiles.*` remains legacy/debug output behind `--write-base-effect-atlas`; keep the brute-force `tile_variants.*` artifact only as an opt-in diagnostic oracle.
 
 **Tech Stack:** Python 3 asset generation scripts, `unittest`, Pillow/PNG tooling, Rust renderer crate, wgpu, existing `ModernFrame`, `ModernIndexTile`, `ModernSourceAtlas`, `ModernGpuCompositor`, replay parity scripts.
 
@@ -28,11 +28,11 @@
 - Create: `scripts/test_rgba_variant_atlas.py`  
   Unit tests for palette application, variant keys, deduplication, atlas packing, manifest schema, and dynamic-palette classification.
 - Modify: `scripts/extract_assets.py`  
-  Writes compact art/base/effect atlases by default and keeps `write_rgba_variant_atlas(out_dir)` behind `--write-diagnostic-variants`.
+  Writes compact art/effect atlases by default, keeps legacy `base_tiles.*` behind `--write-base-effect-atlas`, and keeps `write_rgba_variant_atlas(out_dir)` behind `--write-diagnostic-variants`.
 - Modify: `scripts/test_extract_asset_sources.py`  
-  Integration test that extraction emits `atlas/art_tiles.png`, `atlas/base_tiles.png`, `atlas/base_tiles.json`, and `atlas/tile_effects.json` by default, with diagnostic `atlas/tile_variants.*` only when requested.
+  Integration test that extraction emits `atlas/art_tiles.png`, `atlas/art_tiles.json`, and `atlas/tile_effects.json` by default, with legacy `atlas/base_tiles.*` and diagnostic `atlas/tile_variants.*` only when requested.
 - Create: `crates/renderer/src/modern_variant_atlas.rs`  
-  Rust loader for diagnostic `tile_variants.json`/PNG, later extended to load `base_tiles.json`/PNG and `tile_effects.json`.
+  Rust loader for diagnostic `tile_variants.json`/PNG and canonical `art_tiles.json`/PNG plus `tile_effects.json`.
 - Modify: `crates/renderer/src/lib.rs`  
   Exports `modern_variant_atlas`.
 - Modify: `crates/renderer/src/modern_gpu.rs`  
