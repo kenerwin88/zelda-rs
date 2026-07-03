@@ -1,9 +1,10 @@
 # Modder RGBA Workflow
 
 This is the preferred workflow for replacing stable visual art without editing
-CHR bytes, CGRAM rows, or CGX-era source sheets directly. The source of truth for
-runtime identity remains the atlas manifest; the editable files are normal RGBA
-PNGs plus JSON sidecars that preserve exact variant IDs.
+CHR bytes, CGRAM rows, or CGX-era source sheets directly. Start with the
+canonical art sheet, not the brute-force runtime variant atlas: palette rows,
+flashes, fades, and flipped duplicates should stay metadata unless there is a
+specific reason to edit a runtime variant directly.
 
 ## Extract
 
@@ -16,9 +17,25 @@ python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zel
 This creates the runtime atlases under `generated/zelda3_assets/atlas/` and the
 readable source tree under `generated/zelda3_assets/assets_src/`.
 
-## Export Editable Sheets
+## Edit Canonical Art First
 
-Create semantic RGBA sheets from the current runtime atlas:
+The compact editable sheet is:
+
+```text
+generated/zelda3_assets/atlas/art_tiles.png
+generated/zelda3_assets/atlas/art_tiles.json
+```
+
+`art_tiles.png` stores one canonical RGBA preview per raw index tile, with
+hflip/vflip-equivalent tiles collapsed into a single editable tile. The JSON
+sidecar records `source_refs`, so many ROM/source draw identities can point at
+the same art. This is the right place to make broad visual replacements before
+semantic naming exists.
+
+## Export Runtime Variant Sheets
+
+Only after the canonical art layer is clean, create semantic RGBA sheets from
+the current runtime atlas:
 
 ```bash
 python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets

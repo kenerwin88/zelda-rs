@@ -428,6 +428,29 @@ def write_base_effect_atlas(out_dir: Path) -> list[dict[str, str]]:
     ]
 
 
+def write_canonical_art_atlas(out_dir: Path) -> list[dict[str, str]]:
+    import rgba_variant_atlas
+
+    try:
+        written = rgba_variant_atlas.write_canonical_art_atlas(
+            out_dir,
+            source_tiles_dir=REPO_ROOT / "zelda3-bin/developer_tilesets",
+        )
+    except FileNotFoundError as exc:
+        print(f"skipping canonical art atlas: missing {exc.filename}", file=sys.stderr)
+        return []
+
+    if not written:
+        return []
+    return [
+        {
+            "image_file": "atlas/art_tiles.png",
+            "manifest_file": "atlas/art_tiles.json",
+            "source_format": "zelda3_canonical_art_atlas_v1",
+        }
+    ]
+
+
 def decomp_asset(data: bytes) -> bytes:
     result = bytearray()
     offset = 0
@@ -695,6 +718,7 @@ def main() -> int:
     manifest_assets = write_asset_outputs(out_dir, assets)
     chr_source_sheets = write_chr_source_sheets(out_dir)
     base_effect_atlas = write_base_effect_atlas(out_dir)
+    canonical_art_atlas = write_canonical_art_atlas(out_dir)
     rgba_variant_atlas = write_rgba_variant_atlas(out_dir)
     previews = write_preview_images(out_dir, assets)
 
@@ -706,6 +730,7 @@ def main() -> int:
                 "asset_signature": signature_path.name,
                 "assets": manifest_assets,
                 "base_effect_atlas": base_effect_atlas,
+                "canonical_art_atlas": canonical_art_atlas,
                 "chr_source_sheets": chr_source_sheets,
                 "image_previews": previews,
                 "rgba_variant_atlas": rgba_variant_atlas,

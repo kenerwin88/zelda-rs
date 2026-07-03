@@ -12,10 +12,12 @@ from rgba_variant_atlas import (
     VariantKey,
     pack_rgba_variants,
     build_base_effect_atlas,
+    build_canonical_art_atlas,
     classify_palette_policy,
     rgba_tile_from_indices,
     variant_id,
     write_base_effect_atlas,
+    write_canonical_art_atlas,
     write_rom_variant_atlas,
 )
 
@@ -367,6 +369,104 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             pixel_offset = (y * width + x) * 4
             self.assertEqual(list(pixels[pixel_offset : pixel_offset + 4]), [0xA0, 0xB0, 0xC0, 255])
 
+    def test_base_effect_atlas_keeps_one_canonical_source_tile_preview(self) -> None:
+        import json
+        from PIL import Image
+
+        raw_pack = bytearray(1536)
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [
+            "#000000",
+            "#102030",
+            "#203040",
+            "#304050",
+            "#405060",
+            "#506070",
+            "#607080",
+            "#708090",
+            "#000000",
+            "#A0B0C0",
+            "#A1B1C1",
+            "#A2B2C2",
+            "#A3B3C3",
+            "#A4B4C4",
+            "#A5B5C5",
+            "#A6B6C6",
+        ] * 8
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+            usage_path = asset_dir / "atlas/palette_usage.json"
+            usage_path.parent.mkdir(parents=True, exist_ok=True)
+            usage_path.write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_palette_usage_v1",
+                        "entries": [
+                            {
+                                "source_kind": "bg",
+                                "asset": "kBgGfx",
+                                "pack": 32800,
+                                "tile": 7,
+                                "bpp": 3,
+                                "preview_palette": "palette_main_spr",
+                                "preview_palette_row": 1,
+                                "evidence_count": 11,
+                            }
+                        ],
+                    }
+                )
+            )
+            source_dir = asset_dir / "developer_tilesets"
+            source_dir.mkdir()
+            (source_dir / "assets_by_source.json").write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_assets_by_source_v2_png",
+                        "cell_count": 1,
+                        "cells": [
+                            {
+                                "id": 0,
+                                "key": (6 << 32) | (32800 << 16) | 7,
+                                "kind": 6,
+                                "pack": 32800,
+                                "tile_off": 7,
+                            }
+                        ],
+                    }
+                )
+            )
+            image = Image.new("P", (8, 8))
+            image.putdata([1] + [0] * 63)
+            image.save(source_dir / "assets_by_source.png")
+
+            _width, _height, _pixels, entries, _effects = build_base_effect_atlas(
+                asset_dir,
+                source_tiles_dir=source_dir,
+            )
+
+            source_entries = [
+                entry
+                for entry in entries
+                if entry["source_kind"] == "bg"
+                and entry["asset"] == "kBgGfx"
+                and entry["pack"] == 32800
+                and entry["tile"] == 7
+                and entry["bpp"] == 3
+            ]
+            self.assertEqual(len(source_entries), 1)
+            self.assertEqual(source_entries[0]["preview_source"], "palette_usage")
+
     def test_base_effect_atlas_loads_auxiliary_palette_from_usage_map(self) -> None:
         import json
 
@@ -450,6 +550,297 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                     for effect in effects["effects"]
                 )
             )
+
+    def test_canonical_art_atlas_dedupes_raw_tiles_and_keeps_source_refs(self) -> None:
+        import json
+        from PIL import Image
+
+        raw_pack = bytearray(1536)
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [
+            "#000000",
+            "#102030",
+            "#203040",
+            "#304050",
+            "#405060",
+            "#506070",
+            "#607080",
+            "#708090",
+        ] * 16
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+            source_dir = asset_dir / "developer_tilesets"
+            source_dir.mkdir()
+            (source_dir / "assets_by_source.json").write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_assets_by_source_v2_png",
+                        "cell_count": 2,
+                        "cells": [
+                            {
+                                "id": 0,
+                                "key": (6 << 32) | (32800 << 16) | 7,
+                                "kind": 6,
+                                "pack": 32800,
+                                "tile_off": 7,
+                            },
+                            {
+                                "id": 1,
+                                "key": (6 << 32) | (32801 << 16) | 9,
+                                "kind": 6,
+                                "pack": 32801,
+                                "tile_off": 9,
+                            },
+                        ],
+                    }
+                )
+            )
+            image = Image.new("P", (16, 8))
+            image.putdata(([1] + [0] * 7 + [1] + [0] * 7) * 8)
+            image.save(source_dir / "assets_by_source.png")
+
+            _width, _height, _pixels, arts = build_canonical_art_atlas(
+                asset_dir,
+                source_tiles_dir=source_dir,
+            )
+
+            matching = [
+                (art["art_id"], source)
+                for art in arts
+                for source in art["source_refs"]
+                if source["pack"] in {32800, 32801}
+            ]
+            self.assertEqual(len(matching), 2)
+            self.assertEqual({art_id for art_id, _source in matching}, {matching[0][0]})
+
+    def test_canonical_art_atlas_collapses_flipped_tiles_into_source_ref_transform(self) -> None:
+        import json
+        from PIL import Image
+
+        raw_pack = bytearray(1536)
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [
+            "#000000",
+            "#102030",
+            "#203040",
+            "#304050",
+            "#405060",
+            "#506070",
+            "#607080",
+            "#708090",
+        ] * 16
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+            source_dir = asset_dir / "developer_tilesets"
+            source_dir.mkdir()
+            (source_dir / "assets_by_source.json").write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_assets_by_source_v2_png",
+                        "cell_count": 2,
+                        "cells": [
+                            {
+                                "id": 0,
+                                "key": (6 << 32) | (32800 << 16) | 7,
+                                "kind": 6,
+                                "pack": 32800,
+                                "tile_off": 7,
+                            },
+                            {
+                                "id": 1,
+                                "key": (6 << 32) | (32801 << 16) | 9,
+                                "kind": 6,
+                                "pack": 32801,
+                                "tile_off": 9,
+                            },
+                        ],
+                    }
+                )
+            )
+            row = [1, 2, 3, 4, 5, 6, 7, 0]
+            flipped_row = list(reversed(row))
+            image = Image.new("P", (16, 8))
+            image.putdata((row + flipped_row) * 8)
+            image.save(source_dir / "assets_by_source.png")
+
+            _width, _height, _pixels, arts = build_canonical_art_atlas(
+                asset_dir,
+                source_tiles_dir=source_dir,
+            )
+
+            matching = [
+                (art["art_id"], source)
+                for art in arts
+                for source in art["source_refs"]
+                if source["pack"] in {32800, 32801}
+            ]
+            self.assertEqual(len(matching), 2)
+            self.assertEqual({art_id for art_id, _source in matching}, {matching[0][0]})
+            transforms = {
+                (source["pack"], source["hflip"], source["vflip"])
+                for _art_id, source in matching
+            }
+            self.assertEqual(transforms, {(32800, False, False), (32801, True, False)})
+
+    def test_canonical_art_atlas_prefers_real_palette_usage_for_preview(self) -> None:
+        import json
+        from PIL import Image
+
+        raw_pack = bytearray(1536)
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [
+            "#000000",
+            "#102030",
+            "#203040",
+            "#304050",
+            "#405060",
+            "#506070",
+            "#607080",
+            "#708090",
+            "#000000",
+            "#A0B0C0",
+            "#A1B1C1",
+            "#A2B2C2",
+            "#A3B3C3",
+            "#A4B4C4",
+            "#A5B5C5",
+            "#A6B6C6",
+        ] * 8
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+            usage_path = asset_dir / "atlas/palette_usage.json"
+            usage_path.parent.mkdir(parents=True, exist_ok=True)
+            usage_path.write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_palette_usage_v1",
+                        "entries": [
+                            {
+                                "source_kind": "bg",
+                                "asset": "kBgGfx",
+                                "pack": 32800,
+                                "tile": 7,
+                                "bpp": 3,
+                                "preview_palette": "palette_main_spr",
+                                "preview_palette_row": 1,
+                                "evidence_count": 11,
+                            }
+                        ],
+                    }
+                )
+            )
+            source_dir = asset_dir / "developer_tilesets"
+            source_dir.mkdir()
+            (source_dir / "assets_by_source.json").write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_assets_by_source_v2_png",
+                        "cell_count": 1,
+                        "cells": [
+                            {
+                                "id": 0,
+                                "key": (6 << 32) | (32800 << 16) | 7,
+                                "kind": 6,
+                                "pack": 32800,
+                                "tile_off": 7,
+                            }
+                        ],
+                    }
+                )
+            )
+            image = Image.new("P", (8, 8))
+            image.putdata([1] + [0] * 63)
+            image.save(source_dir / "assets_by_source.png")
+
+            width, _height, pixels, arts = build_canonical_art_atlas(
+                asset_dir,
+                source_tiles_dir=source_dir,
+            )
+
+            art = next(
+                art
+                for art in arts
+                if any(source["pack"] == 32800 and source["tile"] == 7 for source in art["source_refs"])
+            )
+            self.assertEqual(art["preview_source"], "palette_usage")
+            self.assertEqual(art["preview_palette_row"], 1)
+            x, y, _w, _h = art["rect"]
+            pixel_offset = (y * width + x) * 4
+            self.assertEqual(list(pixels[pixel_offset : pixel_offset + 4]), [0xA0, 0xB0, 0xC0, 255])
+
+    def test_write_canonical_art_atlas_emits_art_tiles_manifest(self) -> None:
+        import json
+        from PIL import Image
+
+        raw_pack = bytearray(1536)
+        raw_pack[0] = 0x80
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [
+            "#000000",
+            "#102030",
+            "#203040",
+            "#304050",
+            "#405060",
+            "#506070",
+            "#607080",
+            "#708090",
+        ] * 16
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+
+            written = write_canonical_art_atlas(asset_dir)
+
+            self.assertIn(asset_dir / "atlas/art_tiles.png", written)
+            self.assertIn(asset_dir / "atlas/art_tiles.json", written)
+            with Image.open(asset_dir / "atlas/art_tiles.png") as image:
+                self.assertEqual(image.mode, "RGBA")
+            manifest = json.loads((asset_dir / "atlas/art_tiles.json").read_text())
+            self.assertEqual(manifest["format"], "zelda3_canonical_art_atlas_v1")
+            self.assertLess(manifest["art_count"], manifest["source_ref_count"])
 
     def test_write_base_effect_atlas_emits_compact_art_and_effect_table(self) -> None:
         import json

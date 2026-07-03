@@ -15,6 +15,8 @@ emits:
 generated/zelda3_assets/atlas/base_tiles.png
 generated/zelda3_assets/atlas/base_tiles.json
 generated/zelda3_assets/atlas/tile_effects.json
+generated/zelda3_assets/atlas/art_tiles.png
+generated/zelda3_assets/atlas/art_tiles.json
 ```
 
 The PNG is an RGBA atlas of pre-colored 8x8 base tiles. When
@@ -23,6 +25,12 @@ seen in real draw usage. Without that evidence, extraction falls back to a broad
 source-kind default. `base_tiles.json` is the source identity contract.
 `tile_effects.json` describes reusable shader/material effects that can produce
 the alternate looks without duplicating the base art.
+
+`art_tiles.png` is the cleaner modder-facing art sheet. It deduplicates source
+tiles by raw index art, collapses hflip/vflip-equivalent tiles into one editable
+tile, and records every source identity that maps to that art under
+`source_refs`. Palette rows, flashes, fades, and other recolors stay metadata or
+effects instead of becoming more editable PNG tiles.
 
 The extraction also still writes the diagnostic brute-force files:
 
@@ -60,6 +68,40 @@ Each base entry represents one source tile rendered with one preview palette:
 
 `duplicate_of` points at the first entry with identical RGBA pixels. Duplicate
 entries keep their own source identity but reuse the original atlas rectangle.
+
+## Canonical Art Identity
+
+Each canonical art entry represents one editable 8x8 tile:
+
+```json
+{
+  "art_id": "art:raw-index-sha1",
+  "bpp": 3,
+  "rect": [128, 64, 8, 8],
+  "sha1_indices": "raw-index-sha1",
+  "preview_palette": "palette_main_spr",
+  "preview_palette_row": 3,
+  "preview_source": "palette_usage",
+  "source_refs": [
+    {
+      "source_kind": "sprite",
+      "asset": "kSprGfx",
+      "pack": 12,
+      "tile": 37,
+      "bpp": 3,
+      "hflip": false,
+      "vflip": false,
+      "preview_palette": "palette_main_spr",
+      "preview_palette_row": 3,
+      "preview_source": "palette_usage"
+    }
+  ]
+}
+```
+
+If two source tiles are identical after an hflip/vflip transform, they share the
+same `art_id`. The transform is recorded on the source reference so a later
+runtime or compiler layer can reconstruct the original draw identity.
 
 ## Palette Usage
 

@@ -310,33 +310,6 @@ def _preview_palette_for_tile(
     return preview_palette, preview_row, "source_kind_default", None
 
 
-def _source_extra_preview_rows(
-    *,
-    kind: str,
-    bpp: int,
-    palettes: dict[str, list[list[int]]],
-    primary_palette: str,
-    primary_row: int,
-) -> list[tuple[str, int]]:
-    _rows, colors_per_row = _rows_for_bpp(bpp)
-    candidates: list[tuple[str, int]] = []
-    if kind == "bg":
-        candidates.extend(("palette_main_spr", row) for row in range(_rows))
-
-    extras: list[tuple[str, int]] = []
-    seen = {(primary_palette, primary_row)}
-    for palette, row in candidates:
-        colors = palettes.get(palette)
-        if colors is None or row < 0 or (row + 1) * colors_per_row > len(colors):
-            continue
-        key = (palette, row)
-        if key in seen:
-            continue
-        seen.add(key)
-        extras.append(key)
-    return extras
-
-
 def _indices_fit_palette(
     indices: bytes,
     colors: list[list[int]],
@@ -344,6 +317,53 @@ def _indices_fit_palette(
     colors_per_row: int,
 ) -> bool:
     return palette_row >= 0 and palette_row * colors_per_row + max(indices, default=0) < len(colors)
+
+
+def _source_ref(
+    kind: str,
+    asset: str,
+    pack: int,
+    tile: int,
+    bpp: int,
+    preview_palette: str,
+    preview_row: int,
+    preview_source: str,
+    usage: dict[str, object] | None,
+    hflip: bool = False,
+    vflip: bool = False,
+) -> dict[str, object]:
+    ref: dict[str, object] = {
+        "source_kind": kind,
+        "asset": asset,
+        "pack": pack,
+        "tile": tile,
+        "bpp": bpp,
+        "hflip": hflip,
+        "vflip": vflip,
+        "preview_palette": preview_palette,
+        "preview_palette_row": preview_row,
+        "preview_source": preview_source,
+    }
+    if usage is not None and "evidence_count" in usage:
+        ref["palette_usage_evidence_count"] = int(usage["evidence_count"])
+    return ref
+
+
+def _preview_rank(preview_source: str, usage: dict[str, object] | None) -> tuple[int, int]:
+    if preview_source != "palette_usage":
+        return 0, 0
+    evidence_count = int(usage.get("evidence_count", 0)) if usage is not None else 0
+    return 1, evidence_count
+
+
+def _transform_indices(indices: bytes, hflip: bool, vflip: bool) -> bytes:
+    out = bytearray(64)
+    for y in range(8):
+        for x in range(8):
+            src_x = 7 - x if hflip else x
+            src_y = 7 - y if vflip else y
+            out[y * 8 + x] = indices[src_y * 8 + src_x]
+    return bytes(out)
 
 
 def _effect_rows_for_palette(
@@ -385,7 +405,6 @@ def build_base_effect_atlas(
     sprite_packs, bg_packs = chr_editable_sheets.read_decoded_chr_packs(asset_dir)
     variants: list[RgbaVariant] = []
     metadata: list[tuple[str, VariantKey, str, int, str, dict[str, object] | None]] = []
-    seen_variant_keys: set[VariantKey] = set()
     seen_base_keys: set[tuple[str, str, int, int, int]] = set()
     for pack in [*sprite_packs, *bg_packs]:
         _rows, colors_per_row = _rows_for_bpp(pack.bpp)
@@ -428,7 +447,6 @@ def build_base_effect_atlas(
                 usage,
             ))
             seen_base_keys.add(base_key)
-            seen_variant_keys.add(key)
 
     if source_tiles_dir is not None:
         for (kind, asset, pack, tile, bpp), indices in _read_source_tile_indices(source_tiles_dir):
@@ -473,55 +491,6 @@ def build_base_effect_atlas(
                 preview_source,
                 usage,
             ))
-            seen_variant_keys.add(key)
-            for extra_palette, extra_row in _source_extra_preview_rows(
-                kind=kind,
-                bpp=bpp,
-                palettes=palettes,
-                primary_palette=preview_palette,
-                primary_row=preview_row,
-            ):
-                extra_key = VariantKey(
-                    kind,
-                    asset,
-                    pack,
-                    tile,
-                    bpp,
-                    extra_palette,
-                    extra_row,
-                )
-                if extra_key in seen_variant_keys:
-                    continue
-                if not _indices_fit_palette(
-                    indices,
-                    palettes[extra_palette],
-                    extra_row,
-                    colors_per_row,
-                ):
-                    continue
-                variants.append(
-                    RgbaVariant(
-                        extra_key,
-                        rgba_tile_from_indices(
-                            indices,
-                            palettes[extra_palette],
-                            extra_row,
-                            colors_per_row,
-                        ),
-                    )
-                )
-                metadata.append((
-                    (
-                        f"{_tile_entry_id(kind, asset, pack, tile, bpp)}:"
-                        f"{extra_palette}:row{extra_row}"
-                    ),
-                    extra_key,
-                    extra_palette,
-                    extra_row,
-                    "source_kind_fallback",
-                    None,
-                ))
-                seen_variant_keys.add(extra_key)
             seen_base_keys.add(base_key)
 
     width, height, pixels, packed_entries = pack_rgba_variants(
@@ -598,6 +567,176 @@ def write_base_effect_atlas(
     json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     effects_path.write_text(json.dumps(effects, indent=2, sort_keys=True) + "\n")
     return [png_path, json_path, effects_path]
+
+
+def build_canonical_art_atlas(
+    asset_dir: Path,
+    palette_names: list[str] | None = None,
+    source_tiles_dir: Path | None = None,
+) -> tuple[int, int, bytes, list[dict[str, object]]]:
+    palette_names = palette_names or _default_palette_names(asset_dir)
+    if not palette_names:
+        raise FileNotFoundError(asset_dir / "assets_src/palettes")
+
+    palettes_dir = asset_dir / "assets_src/palettes"
+    palettes = {
+        name: read_palette_colors(palettes_dir / f"{name}.json")
+        for name in palette_names
+    }
+    palette_usage = read_palette_usage_map(asset_dir)
+    sprite_packs, bg_packs = chr_editable_sheets.read_decoded_chr_packs(asset_dir)
+
+    groups: dict[str, dict[str, object]] = {}
+    seen_source_keys: set[tuple[str, str, int, int, int]] = set()
+
+    def add_tile(kind: str, asset: str, pack: int, tile: int, bpp: int, indices: bytes) -> None:
+        _rows, colors_per_row = _rows_for_bpp(bpp)
+        preview_palette, preview_row, preview_source, usage = _preview_palette_for_tile(
+            kind=kind,
+            asset=asset,
+            pack=pack,
+            tile=tile,
+            bpp=bpp,
+            colors_per_row=colors_per_row,
+            available_palette_names=palette_names,
+            palettes=palettes,
+            palette_usage=palette_usage,
+        )
+        colors = palettes[preview_palette]
+        if not _indices_fit_palette(indices, colors, preview_row, colors_per_row):
+            return
+        digest = hashlib.sha1(bytes([bpp]) + indices).hexdigest()
+        hflip = False
+        vflip = False
+        for candidate_hflip, candidate_vflip in (
+            (False, False),
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            transformed = _transform_indices(indices, candidate_hflip, candidate_vflip)
+            transformed_digest = hashlib.sha1(bytes([bpp]) + transformed).hexdigest()
+            if transformed_digest in groups:
+                digest = transformed_digest
+                hflip = candidate_hflip
+                vflip = candidate_vflip
+                break
+        rank = _preview_rank(preview_source, usage)
+        ref = _source_ref(
+            kind,
+            asset,
+            pack,
+            tile,
+            bpp,
+            preview_palette,
+            preview_row,
+            preview_source,
+            usage,
+            hflip=hflip,
+            vflip=vflip,
+        )
+        group = groups.get(digest)
+        if group is None:
+            groups[digest] = {
+                "digest": digest,
+                "bpp": bpp,
+                "indices": indices,
+                "preview_palette": preview_palette,
+                "preview_row": preview_row,
+                "preview_source": preview_source,
+                "preview_rank": rank,
+                "source_refs": [ref],
+            }
+            return
+        group["source_refs"].append(ref)  # type: ignore[index]
+        if rank > group["preview_rank"]:
+            group["preview_palette"] = preview_palette
+            group["preview_row"] = preview_row
+            group["preview_source"] = preview_source
+            group["preview_rank"] = rank
+
+    for pack in [*sprite_packs, *bg_packs]:
+        asset = _asset_name_for_kind(pack.kind)
+        for tile_index, tile in enumerate(pack.tiles):
+            source_key = _tile_usage_key(pack.kind, asset, pack.pack_index, tile_index, pack.bpp)
+            add_tile(pack.kind, asset, pack.pack_index, tile_index, pack.bpp, tile)
+            seen_source_keys.add(source_key)
+
+    if source_tiles_dir is not None:
+        for (kind, asset, pack, tile, bpp), indices in _read_source_tile_indices(source_tiles_dir):
+            source_key = _tile_usage_key(kind, asset, pack, tile, bpp)
+            if source_key in seen_source_keys:
+                continue
+            add_tile(kind, asset, pack, tile, bpp, indices)
+            seen_source_keys.add(source_key)
+
+    columns = 128
+    art_groups = list(groups.values())
+    rows = max(1, (len(art_groups) + columns - 1) // columns)
+    width = columns * 8
+    height = rows * 8
+    pixels = bytearray(width * height * 4)
+    arts: list[dict[str, object]] = []
+    for index, group in enumerate(art_groups):
+        x = (index % columns) * 8
+        y = (index // columns) * 8
+        bpp = int(group["bpp"])
+        _rows, colors_per_row = _rows_for_bpp(bpp)
+        preview_palette = str(group["preview_palette"])
+        preview_row = int(group["preview_row"])
+        tile_pixels = rgba_tile_from_indices(
+            group["indices"],  # type: ignore[arg-type]
+            palettes[preview_palette],
+            preview_row,
+            colors_per_row,
+        )
+        for row in range(8):
+            dst = ((y + row) * width + x) * 4
+            src = row * 8 * 4
+            pixels[dst : dst + 8 * 4] = tile_pixels[src : src + 8 * 4]
+        arts.append(
+            {
+                "art_id": f"art:{group['digest']}",
+                "bpp": bpp,
+                "rect": [x, y, 8, 8],
+                "sha1_indices": group["digest"],
+                "preview_palette": preview_palette,
+                "preview_palette_row": preview_row,
+                "preview_source": group["preview_source"],
+                "source_refs": group["source_refs"],
+            }
+        )
+    return width, height, bytes(pixels), arts
+
+
+def write_canonical_art_atlas(
+    asset_dir: Path,
+    out_dir: Path | None = None,
+    source_tiles_dir: Path | None = None,
+) -> list[Path]:
+    from PIL import Image
+
+    destination = out_dir or asset_dir / "atlas"
+    width, height, pixels, arts = build_canonical_art_atlas(
+        asset_dir,
+        source_tiles_dir=source_tiles_dir,
+    )
+    destination.mkdir(parents=True, exist_ok=True)
+    png_path = destination / "art_tiles.png"
+    json_path = destination / "art_tiles.json"
+    Image.frombytes("RGBA", (width, height), pixels).save(png_path)
+    manifest = {
+        "format": "zelda3_canonical_art_atlas_v1",
+        "tile_width": 8,
+        "tile_height": 8,
+        "width": width,
+        "height": height,
+        "art_count": len(arts),
+        "source_ref_count": sum(len(art["source_refs"]) for art in arts),
+        "arts": arts,
+    }
+    json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    return [png_path, json_path]
 
 
 def build_rom_variant_atlas(
