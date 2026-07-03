@@ -288,11 +288,14 @@ Expected output includes `mismatched_pixels=0` and nonzero
 proof reports `stable_effect_draws=21038` over 17 sampled compares from the
 checkpointed opening route tail.
 
-Mixed frames that still need dynamic, missing, or unkeyed fallback cells keep
-the fully composited fallback pixels for parity. The draw-mix counters still
-report stable source-art/effect opportunities in those frames; actually
-overlaying those packets over a mixed fallback image waits until packet
-visibility and final composition state are modeled.
+Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
+from the fully composited fallback pixels for parity. The GPU path may overlay
+a stable BG effect packet only when the frame has no color-math/window/mosaic
+composition features, the effect LUT matches the live CGRAM for every nonzero
+source index in the tile, and the packet footprint is disjoint from every other
+BG or OBJ packet. Other stable opportunities stay counted but are not drawn
+over the mixed fallback image until packet visibility and final composition
+state are modeled more completely.
 
 ## Modder Workflow Target
 

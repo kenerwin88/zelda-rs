@@ -469,3 +469,21 @@ resumes from `opening-uncle-dismiss-and-move` frame `28610`, samples 17
 comparison frames over a 1000-frame tail at stride 60, and reports
 `mismatched_pixels=0`, `variant_draws=21038`,
 `stable_effect_draws=21038`, and `unkeyed_fallback_draws=133112`.
+
+### Task 9: Re-enable Provably Safe Mixed Fallback BG Effect Packets
+
+**Files:**
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Modify: `docs/assets/rgba-variant-atlas.md`
+- [x] Test: `cargo test -p renderer mixed -- --nocapture`
+- [x] Test: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --only opening-uncle-dismiss-and-move --fast --frames 1000 --stride 60 --require-stable-draws --progress-every 0 --release`
+
+**Goal:** Move beyond the all-or-nothing mixed fallback guard by drawing only
+the stable BG effect packets that are provably safe: simple frame composition,
+effect LUT equals live CGRAM for all nonzero source indices, and the packet
+footprint is disjoint from every other BG/OBJ packet.
+
+**Done:** Mixed fallback frames now call `mixed_variant_overlay_bg_packets`.
+The selector returns only CGRAM-matching, footprint-disjoint BG effect packets
+for simple frames. Overlapping packets, palette/effect mismatches, sprites, and
+frames with color math/window/mosaic state continue to use the fallback pixels.
