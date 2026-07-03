@@ -1437,6 +1437,55 @@ struct GpuPlayRenderer {
     hd_overrides: Option<renderer::modern_hd_overrides::ModernHdOverrides>,
     atlas_gpu: bool,
     variant_atlas: Option<renderer::modern_variant_atlas::ModernVariantAtlas>,
+    variant_live_stats: VariantLiveStats,
+}
+
+#[derive(Default)]
+struct VariantLiveStats {
+    enabled: bool,
+    log_every_frames: u64,
+    frames: u64,
+    stable_draws: u64,
+    fallback_draws: u64,
+    dynamic_palette_draws: u64,
+    missing_variant_draws: u64,
+}
+
+impl VariantLiveStats {
+    fn from_env() -> Self {
+        let enabled = env::var_os("ZELDA3_VARIANT_LIVE_STATS").is_some();
+        let log_every_frames = env::var("ZELDA3_VARIANT_LIVE_STATS_EVERY")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|value| *value != 0)
+            .unwrap_or(300);
+        Self {
+            enabled,
+            log_every_frames,
+            ..Self::default()
+        }
+    }
+
+    fn record(&mut self, stats: renderer::modern_software::VariantAtlasRenderStats) {
+        if !self.enabled {
+            return;
+        }
+        self.frames += 1;
+        self.stable_draws += u64::from(stats.stable_draws);
+        self.fallback_draws += u64::from(stats.fallback_draws);
+        self.dynamic_palette_draws += u64::from(stats.dynamic_palette_draws);
+        self.missing_variant_draws += u64::from(stats.missing_variant_draws);
+        if self.frames % self.log_every_frames == 0 {
+            eprintln!(
+                "variant_live_summary frames={} variant_draws={} fallback_draws={} dynamic_palette_draws={} missing_variant_draws={}",
+                self.frames,
+                self.stable_draws,
+                self.fallback_draws,
+                self.dynamic_palette_draws,
+                self.missing_variant_draws
+            );
+        }
+    }
 }
 
 impl GpuPlayRenderer {
@@ -1477,6 +1526,7 @@ impl GpuPlayRenderer {
             hd_overrides,
             atlas_gpu,
             variant_atlas,
+            variant_live_stats: VariantLiveStats::from_env(),
         }
     }
 }
@@ -1534,14 +1584,16 @@ impl PlayRendererBackend for GpuPlayRenderer {
                 } else {
                     "palette_overworld_bg_main"
                 };
-                frontend.present_modern_variant_gpu(
+                if let Some(stats) = frontend.present_modern_variant_gpu(
                     &modern,
                     &bg_cells,
                     &sprite_cells,
                     variant_atlas,
                     bg_palette_name,
                     "palette_main_spr",
-                );
+                ) {
+                    self.variant_live_stats.record(stats);
+                }
                 return;
             }
             if self.atlas_gpu {

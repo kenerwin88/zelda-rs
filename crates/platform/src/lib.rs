@@ -317,7 +317,8 @@ impl NativeFrontend {
         atlas: &renderer::modern_variant_atlas::ModernVariantAtlas,
         bg_palette_name: &str,
         sprite_palette_name: &str,
-    ) {
+    ) -> Option<renderer::modern_software::VariantAtlasRenderStats> {
+        let mut stats = None;
         if let Some(renderer) = &mut self.handler.renderer {
             let result = renderer.present_modern_variant_gpu(
                 frame,
@@ -328,7 +329,7 @@ impl NativeFrontend {
                 sprite_palette_name,
             );
             match result {
-                Ok(()) => {}
+                Ok(render_stats) => stats = Some(render_stats),
                 Err(RenderError::SurfaceReconfigureNeeded) => {
                     if let Some(window) = &self.handler.window {
                         renderer.resize(window.inner_size());
@@ -339,6 +340,7 @@ impl NativeFrontend {
             }
         }
         self.sleep_after_present();
+        stats
     }
 
     pub fn present_modern_mode7_gpu(&mut self, frame: &GpuFrame<'_>) {

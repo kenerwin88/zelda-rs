@@ -2507,7 +2507,7 @@ impl FrameRenderer {
         atlas: &modern_variant_atlas::ModernVariantAtlas,
         bg_palette_name: &str,
         sprite_palette_name: &str,
-    ) -> Result<(), RenderError> {
+    ) -> Result<modern_software::VariantAtlasRenderStats, RenderError> {
         let format = wgpu::TextureFormat::Rgba8Unorm;
         if self.modern_variant_gpu.is_none() {
             self.modern_variant_gpu = Some(ModernGpuVariantRenderer::new(
@@ -2553,7 +2553,7 @@ impl FrameRenderer {
             .expect("variant renderer built above");
         let (target_texture, target_view) =
             self.modern_gpu_target.as_ref().expect("target built above");
-        let _stats = variant.render(
+        let stats = variant.render(
             &self.device,
             &self.queue,
             frame,
@@ -2590,7 +2590,8 @@ impl FrameRenderer {
         );
         self.queue.submit([encoder.finish()]);
 
-        self.render()
+        self.render()?;
+        Ok(stats)
     }
 
     /// Present a Mode-7 frame through the live GPU PPU path, then GPU-copy the
