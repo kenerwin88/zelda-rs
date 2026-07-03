@@ -17,6 +17,7 @@ from typing import Pattern
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_WINDOWS = REPO_ROOT / "docs" / "porting" / "oracle_windows.tsv"
+DEFAULT_CHECKPOINTS = REPO_ROOT / "docs" / "porting" / "oracle_checkpoints.tsv"
 DEFAULT_ROM = Path(os.environ.get("ZELDA3_ROM", str(REPO_ROOT.parent / "zelda3" / "zelda3.sfc")))
 DEFAULT_PROGRESS_EVERY = 10_000
 SUMMARY_RE = re.compile(
@@ -40,6 +41,16 @@ class OracleWindow:
     frames: int
     input_script: str
     coverage: str
+    notes: str
+
+
+@dataclass(frozen=True)
+class OracleCheckpoint:
+    name: str
+    frame: int
+    checkpoint_path: str
+    input_script: str
+    wram_digest: str
     notes: str
 
 
@@ -127,6 +138,47 @@ def load_windows(path: Path) -> list[OracleWindow]:
         ]
 
 
+def load_checkpoints(path: Path) -> list[OracleCheckpoint]:
+    if not path.exists():
+        return []
+    with path.open(newline="") as fh:
+        return [
+            OracleCheckpoint(
+                name=row["name"],
+                frame=int(row["frame"]),
+                checkpoint_path=row["checkpoint_path"],
+                input_script=row["input_script"],
+                wram_digest=row["wram_digest"],
+                notes=row["notes"],
+            )
+            for row in csv.DictReader(fh, delimiter="\t")
+        ]
+
+
+def group_checkpoints(checkpoints: list[OracleCheckpoint]) -> dict[str, list[OracleCheckpoint]]:
+    grouped: dict[str, list[OracleCheckpoint]] = {}
+    for checkpoint in checkpoints:
+        grouped.setdefault(checkpoint.name, []).append(checkpoint)
+    return grouped
+
+
+def best_checkpoint_for(
+    window: OracleWindow,
+    checkpoints: list[OracleCheckpoint],
+) -> OracleCheckpoint | None:
+    usable = [
+        checkpoint
+        for checkpoint in checkpoints
+        if checkpoint.name == window.name
+        and checkpoint.input_script == window.input_script
+        and 0 < checkpoint.frame < window.frames
+        and (REPO_ROOT / checkpoint.checkpoint_path).exists()
+    ]
+    if not usable:
+        return None
+    return max(usable, key=lambda checkpoint: checkpoint.frame)
+
+
 def selected_windows(
     windows: list[OracleWindow],
     only: list[str],
@@ -163,6 +215,8 @@ def command_for(
     stride: int,
     release: bool,
     renderer: str | None = None,
+    frames: int | None = None,
+    load_state: str | None = None,
 ) -> list[str]:
     command = ["cargo", "run"]
     if release:
@@ -175,7 +229,7 @@ def command_for(
             "--",
             "--play-gpu-render-compare",
             str(rom),
-            str(window.frames),
+            str(frames if frames is not None else window.frames),
             "--stride",
             str(stride),
         ]
@@ -185,8 +239,10 @@ def command_for(
     if window.input_script:
         command.extend(["--input-script", window.input_script])
         sidecar = sram_sidecar(window)
-        if sidecar is not None and sidecar.exists():
+        if load_state is None and sidecar is not None and sidecar.exists():
             command.extend(["--load-sram", str(sidecar)])
+    if load_state is not None:
+        command.extend(["--load-state", load_state])
     return command
 
 
@@ -212,10 +268,31 @@ def run_window(
     release: bool,
     renderer: str | None,
     progress_every: int,
+    checkpoint: OracleCheckpoint | None,
 ) -> tuple[int, str, int, tuple[int, int, int, int]]:
-    command = command_for(window, rom, stride, release, renderer)
+    tail_frames = window.frames
+    load_state = None
+    if checkpoint is not None:
+        tail_frames = window.frames - checkpoint.frame
+        load_state = checkpoint.checkpoint_path
+    command = command_for(
+        window,
+        rom,
+        stride,
+        release,
+        renderer,
+        frames=tail_frames,
+        load_state=load_state,
+    )
     prefix = f"ZELDA3_RENDERER={renderer} " if renderer else ""
-    print(f"running {window.name}: {prefix}{' '.join(command)}", flush=True)
+    if checkpoint is None:
+        print(f"running {window.name}: {prefix}{' '.join(command)}", flush=True)
+    else:
+        print(
+            f"running {window.name} from checkpoint frame {checkpoint.frame} "
+            f"({tail_frames} tail frame(s)): {prefix}{' '.join(command)}",
+            flush=True,
+        )
     env = env_for_renderer(os.environ, renderer, progress_every)
     live_patterns = (
         (MODERN_INDEX_PROGRESS_RE,)
@@ -238,8 +315,13 @@ def run_window(
             print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
         raise SystemExit(f"{window.name}: missing play-gpu-render-compare summary")
     compared = int(match.group(1))
+    start_frame = int(match.group(2))
     last_hash = match.group(4)
     mismatched_pixels = int(match.group(5))
+    if checkpoint is not None and start_frame != checkpoint.frame:
+        raise SystemExit(
+            f"{window.name}: checkpoint start mismatch: expected {checkpoint.frame}, got {start_frame}"
+        )
     if mismatched_pixels != 0:
         raise SystemExit(f"{window.name}: reported {mismatched_pixels} mismatched pixels")
     variant_stats = (0, 0, 0, 0)
@@ -260,6 +342,7 @@ def run_window(
         )
     print(
         f"{window.name}: compared={compared} frames={window.frames} "
+        f"start_frame={start_frame} "
         f"last_hash={last_hash} mismatched_pixels=0 "
         f"variant_draws={variant_stats[0]} "
         f"fallback_draws={variant_stats[1]} "
@@ -272,6 +355,7 @@ def run_window(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--windows", type=Path, default=DEFAULT_WINDOWS)
+    parser.add_argument("--checkpoints", type=Path, default=DEFAULT_CHECKPOINTS)
     parser.add_argument("--rom", type=Path, default=DEFAULT_ROM)
     parser.add_argument("--only", action="append", default=[], metavar="NAME")
     parser.add_argument("--max-frames", type=int)
@@ -292,6 +376,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--include-sram-windows", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.set_defaults(fast=True)
+    parser.add_argument(
+        "--fast",
+        dest="fast",
+        action="store_true",
+        help="resume from the newest recorded checkpoint before each window's final frame; default",
+    )
+    parser.add_argument(
+        "--cold",
+        dest="fast",
+        action="store_false",
+        help="run each GPU oracle window from frame 0 instead of resuming from checkpoints",
+    )
     args = parser.parse_args()
     if args.stride <= 0:
         raise SystemExit("--stride must be greater than zero")
@@ -303,11 +400,14 @@ def parse_args() -> argparse.Namespace:
         raise SystemExit(f"ROM does not exist: {args.rom}")
     if not args.windows.exists():
         raise SystemExit(f"window table does not exist: {args.windows}")
+    if not args.checkpoints.exists():
+        raise SystemExit(f"checkpoint table does not exist: {args.checkpoints}")
     return args
 
 
 def main() -> None:
     args = parse_args()
+    checkpoints_by_name = group_checkpoints(load_checkpoints(args.checkpoints))
     windows = selected_windows(
         load_windows(args.windows),
         args.only,
@@ -323,11 +423,31 @@ def main() -> None:
     total_dynamic_palette_draws = 0
     total_missing_variant_draws = 0
     for window in windows:
+        checkpoint = (
+            best_checkpoint_for(window, checkpoints_by_name.get(window.name, []))
+            if args.fast
+            else None
+        )
         if args.dry_run:
             prefix = f"ZELDA3_RENDERER={args.renderer} " if args.renderer else ""
+            tail_frames = window.frames
+            load_state = None
+            if checkpoint is not None:
+                tail_frames = window.frames - checkpoint.frame
+                load_state = checkpoint.checkpoint_path
             print(
                 prefix
-                + " ".join(command_for(window, args.rom, args.stride, args.release, args.renderer))
+                + " ".join(
+                    command_for(
+                        window,
+                        args.rom,
+                        args.stride,
+                        args.release,
+                        args.renderer,
+                        frames=tail_frames,
+                        load_state=load_state,
+                    )
+                )
             )
             continue
         compared, _, _, variant_stats = run_window(
@@ -337,6 +457,7 @@ def main() -> None:
             args.release,
             args.renderer,
             args.progress_every,
+            checkpoint,
         )
         total_compared += compared
         total_variant_draws += variant_stats[0]

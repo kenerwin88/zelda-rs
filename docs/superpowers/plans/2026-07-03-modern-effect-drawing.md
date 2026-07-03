@@ -136,11 +136,11 @@ Run: `cargo build --profile parity -p zelda3-bin`
 
 Expected: build succeeds.
 
-- [ ] **Step 3: Run representative oracle windows**
+- [x] **Step 3: Run representative oracle windows**
 
-Run: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv`
+Run: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --cold`
 
-Expected: no new mismatches from effect-backed draws; remaining fallbacks are documented dynamic/missing cases.
+Expected: no new mismatches from effect-backed draws; remaining fallbacks are documented dynamic/missing cases. The wrapper now uses the existing oracle checkpoint ledger by default for routine tail validation; pass `--cold` when the proof must replay every selected window from frame 0.
 
 Current evidence: `title-start` and `file-select-new-game` passed with
 `mismatched_pixels=0` under `assets-variant-gpu`. The progress-friendly wrapper
@@ -197,5 +197,11 @@ instead of the existing torus wrap sampler. New evidence after the fix:
 `variant_draws=0`, `fallback_draws=188749315`, `dynamic_palette_draws=0`,
 `missing_variant_draws=2070467`.
 
-Remaining proof: rerun the full representative oracle window matrix under
-`assets-variant-gpu`.
+The non-SRAM representative oracle matrix has now passed under
+`assets-variant-gpu`. For faster iteration, the GPU oracle wrapper resumes from
+the newest recorded checkpoint by default. A real checkpointed rerun of
+`file-select-button-taps` compared only the `5000`-frame tail from
+`start_frame=107000` and passed with `mismatched_pixels=0`,
+`fallback_draws=34650495`, `dynamic_palette_draws=0`, and
+`missing_variant_draws=67564`; the equivalent cold run remains available with
+`--cold`.

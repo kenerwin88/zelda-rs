@@ -14,7 +14,10 @@ from io import StringIO
 
 from gpu_render_compare_oracle_windows import (
     MODERN_INDEX_PROGRESS_RE,
+    OracleCheckpoint,
     OracleWindow,
+    best_checkpoint_for,
+    command_for,
     env_for_renderer,
     run_command_capture_output,
     selected_windows,
@@ -107,6 +110,82 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         )
 
         self.assertEqual([window.name for window in selected], ["no-input-intro"])
+
+    def test_command_for_checkpoint_uses_tail_frames_and_load_state(self) -> None:
+        window = OracleWindow(
+            name="file-select-button-taps",
+            status="pass",
+            frames=112000,
+            input_script="scripts/inputs/file-select-enter-game-button-taps.txt",
+            coverage="buttons",
+            notes="",
+        )
+
+        command = command_for(
+            window,
+            Path("/rom.sfc"),
+            stride=1,
+            release=True,
+            renderer="assets-variant-gpu",
+            frames=5000,
+            load_state="target/lockstep-checkpoints/file-select.bin",
+        )
+
+        self.assertEqual(
+            command[:8],
+            [
+                "cargo",
+                "run",
+                "--release",
+                "-q",
+                "-p",
+                "zelda3-bin",
+                "--",
+                "--play-gpu-render-compare",
+            ],
+        )
+        self.assertEqual(command[8:10], ["/rom.sfc", "5000"])
+        self.assertIn("--modern-index-compare", command)
+        self.assertIn("--load-state", command)
+        self.assertEqual(
+            command[command.index("--load-state") + 1],
+            "target/lockstep-checkpoints/file-select.bin",
+        )
+        self.assertIn("--input-script", command)
+        self.assertNotIn("--load-sram", command)
+
+    def test_best_checkpoint_uses_newest_existing_matching_checkpoint(self) -> None:
+        window = OracleWindow(
+            name="route",
+            status="pass",
+            frames=200,
+            input_script="scripts/inputs/route.txt",
+            coverage="",
+            notes="",
+        )
+        existing = Path("target/test-existing-checkpoint.sav")
+        existing.parent.mkdir(parents=True, exist_ok=True)
+        existing.write_bytes(b"state")
+        self.addCleanup(lambda: existing.unlink(missing_ok=True))
+        checkpoints = [
+            OracleCheckpoint(
+                "route", 50, "target/missing.sav", "scripts/inputs/route.txt", "a", ""
+            ),
+            OracleCheckpoint(
+                "route", 150, str(existing), "scripts/inputs/route.txt", "b", ""
+            ),
+            OracleCheckpoint(
+                "route", 175, str(existing), "scripts/inputs/other.txt", "c", ""
+            ),
+            OracleCheckpoint(
+                "route", 250, str(existing), "scripts/inputs/route.txt", "d", ""
+            ),
+        ]
+
+        checkpoint = best_checkpoint_for(window, checkpoints)
+
+        self.assertIsNotNone(checkpoint)
+        self.assertEqual(checkpoint.frame, 150)
 
 
 if __name__ == "__main__":
