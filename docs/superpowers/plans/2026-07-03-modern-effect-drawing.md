@@ -764,3 +764,32 @@ into `prefinal_overlap_bg=703` and `prefinal_overlap_obj=207`. The next build
 target should be an ordered pre-final BG group path; it covers most remaining
 overlap rejects and avoids the harder OBJ interaction until BG ordering is
 modeled.
+
+### Task 19: Admit Terminal Ordered Pre-Final BG Groups
+
+**Files:**
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Test: focused renderer unit covering a terminal two-packet BG group
+- [x] Test: focused opening-route oracle window
+
+**Goal:** Start the ordered BG group path without guessing across deeper chains.
+The first safe group case is a behind packet overlapped by a front/same-order BG
+packet that is itself representable in the pre-final path and has no further
+front BG at that pixel. Drawing both packets in existing packet order preserves
+the winning visible pixel while allowing the hidden behind packet to move off
+the fallback-only path.
+
+**Done:** The pre-final BG overlap predicate now allows a front/same-order BG
+overlap when the front packet can cover the pixel as a terminal pre-final group
+member. The focused unit
+`modern_gpu_variant_headless_applies_ordered_prefinal_bg_group` proves that both
+packets are counted as GPU draws and that final sub-screen color math remains
+pixel-exact. Existing tests still guard the simple behind-only path, the
+front/same-order reject, and OBJ overlap rejection.
+
+**Route result:** The opening tail remains `mismatched_pixels=0`, but the route
+counters stay at `prefinal_overlap=910`, `prefinal_overlap_bg=703`, and
+`prefinal_overlap_obj=207`. The representative BG overlaps are therefore not
+terminal two-packet groups; the next useful step is to split `prefinal_overlap_bg`
+into terminal, deeper-chain, unrepresentable-front, and mixed static/live order
+subreasons before broadening the group renderer.

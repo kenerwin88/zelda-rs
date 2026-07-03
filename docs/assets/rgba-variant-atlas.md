@@ -382,6 +382,11 @@ replace the fallback pixel before final color math. The representative route
 still reports the same 910 pre-final overlap rejects, split as 703
 front/same-order BG overlaps and 207 OBJ overlaps. The next useful renderer lane
 is therefore an ordered pre-final BG group path before OBJ-aware composition.
+The first ordered BG group slice admits terminal two-packet BG groups, where the
+front overlapping packet is itself representable and has no further front BG at
+that pixel; the opening route counters did not move, so its 703 BG overlaps are
+deeper chains, front packets with their own blockers, or mixed static/live
+ordering cases.
 
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay
