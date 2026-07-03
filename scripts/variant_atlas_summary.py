@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -113,6 +114,21 @@ def format_summary(summary: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def coverage_errors(summary: dict[str, Any]) -> list[str]:
+    errors = []
+    if summary["manifest_source_refs"] != summary["source_refs"]:
+        errors.append(
+            "manifest source_ref_count does not match counted source_refs: "
+            f"{summary['manifest_source_refs']} != {summary['source_refs']}"
+        )
+    if summary["missing_effect_refs"] != 0:
+        errors.append(
+            "canonical source refs without stable preview/effect coverage: "
+            f"{summary['missing_effect_refs']}"
+        )
+    return errors
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -123,6 +139,11 @@ def main() -> None:
         help="directory containing art_tiles.json and tile_effects.json",
     )
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    parser.add_argument(
+        "--require-full-stable",
+        action="store_true",
+        help="exit nonzero unless every canonical source ref is stable-covered",
+    )
     args = parser.parse_args()
 
     summary = summarize_variant_atlas(args.atlas_dir)
@@ -130,6 +151,12 @@ def main() -> None:
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:
         print(format_summary(summary))
+    if args.require_full_stable:
+        errors = coverage_errors(summary)
+        if errors:
+            for error in errors:
+                print(f"error: {error}", file=sys.stderr)
+            raise SystemExit(1)
 
 
 if __name__ == "__main__":

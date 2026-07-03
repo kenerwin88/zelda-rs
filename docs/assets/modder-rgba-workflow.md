@@ -49,10 +49,15 @@ oracle/cache for parity debugging.
 
 ## Rebuild Runtime Art
 
-The canonical art sheet is the authoring source. A later compiler step should
-project it into the renderer's runtime atlas. Until that compiler exists,
-regenerate assets from the ROM after extractor changes and use parity checks to
-verify renderer behavior.
+The canonical art sheet is the authoring source and the default runtime input.
+The renderer loads `art_tiles.*` directly when present, expands `source_refs`
+into runtime draw entries, and keeps palette/effect behavior in metadata.
+
+Run the manifest gate after extractor changes or art-sheet edits:
+
+```bash
+python3 scripts/variant_atlas_summary.py --require-full-stable generated/zelda3_assets/atlas
+```
 
 ## Run
 

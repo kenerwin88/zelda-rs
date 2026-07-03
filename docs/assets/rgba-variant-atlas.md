@@ -263,12 +263,13 @@ python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zel
 cargo run --profile parity -p zelda3-bin
 ```
 
-The compiler that projects edited `art_tiles.*` back into runtime assets is a
-later layer. Do not use `tile_variants.png` as an authoring sheet; generate it
-only with `--write-diagnostic-variants` when parity/oracle debugging needs the
-brute-force cache. Dynamic-palette fallback remains a runtime parity concern: an
-art tile can be useful for editing while the renderer still uses live palette
-fallback for rows that are not stable final pixels.
+The default runtime loads `art_tiles.*` directly when those files are present,
+so edits to the canonical sheet are the preferred runtime input. Do not use
+`tile_variants.png` as an authoring sheet; generate it only with
+`--write-diagnostic-variants` when parity/oracle debugging needs the brute-force
+cache. Dynamic-palette fallback remains a runtime parity concern: an art tile
+can be useful for editing while the renderer still uses live palette fallback
+for rows that are not stable final pixels.
 
 Unset `ZELDA3_RENDERER` now chooses the variant atlas GPU path. Live play
 presents that path on the window renderer's GPU device without headless
@@ -289,9 +290,10 @@ For a cheap live coverage check without a replay scan, set
 For an even cheaper generated-asset check that does not start the emulator, run:
 
 ```bash
-python3 scripts/variant_atlas_summary.py generated/zelda3_assets/atlas
+python3 scripts/variant_atlas_summary.py --require-full-stable generated/zelda3_assets/atlas
 ```
 
 That command reads `art_tiles.json` and `tile_effects.json` and reports how many
 canonical source refs are covered by the same stable preview/effect rule used by
-the variant atlas loader.
+the variant atlas loader. `--require-full-stable` makes it fail if the manifest
+count drifts or any canonical source ref lacks stable coverage.

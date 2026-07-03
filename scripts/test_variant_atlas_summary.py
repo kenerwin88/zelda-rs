@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from variant_atlas_summary import format_summary, summarize_variant_atlas
+from variant_atlas_summary import coverage_errors, format_summary, summarize_variant_atlas
 
 
 def write_json(path: Path, data: object) -> None:
@@ -119,6 +119,31 @@ class VariantAtlasSummaryTests(unittest.TestCase):
         self.assertIn("source_refs=3", text)
         self.assertIn("stable_by_kind bg=1 sprite=1", text)
         self.assertIn("preview_sources palette_usage=1 source_kind_default=2", text)
+
+    def test_coverage_errors_require_manifest_match_and_full_stable_coverage(self) -> None:
+        self.assertEqual(
+            coverage_errors(
+                {
+                    "source_refs": 3,
+                    "manifest_source_refs": 3,
+                    "missing_effect_refs": 0,
+                }
+            ),
+            [],
+        )
+        self.assertEqual(
+            coverage_errors(
+                {
+                    "source_refs": 3,
+                    "manifest_source_refs": 4,
+                    "missing_effect_refs": 1,
+                }
+            ),
+            [
+                "manifest source_ref_count does not match counted source_refs: 4 != 3",
+                "canonical source refs without stable preview/effect coverage: 1",
+            ],
+        )
 
 
 if __name__ == "__main__":
