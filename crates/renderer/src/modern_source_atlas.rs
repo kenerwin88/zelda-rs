@@ -74,6 +74,21 @@ pub fn load_modern_source_atlas(repo_root: &Path) -> Result<ModernSourceAtlas, S
         .map_err(|e| format!("failed to read {}: {e}", json_path.display()))?;
     let manifest: Manifest = serde_json::from_slice(&json_bytes)
         .map_err(|e| format!("failed to parse {}: {e}", json_path.display()))?;
+    if manifest.format != "zelda3_assets_by_source_v2_png" {
+        return Err(format!(
+            "{}: unsupported format {:?}",
+            json_path.display(),
+            manifest.format
+        ));
+    }
+    if manifest.cell_count != manifest.cells.len() as u32 {
+        return Err(format!(
+            "{}: cell_count {} does not match {} cells",
+            json_path.display(),
+            manifest.cell_count,
+            manifest.cells.len()
+        ));
+    }
 
     // Decode the INDEXED index-channel PNG: one byte per pixel = the 0..15 palette
     // slot. Cells are 8x8, laid out `width/8` per row in dump `id` order (see
@@ -98,6 +113,15 @@ pub fn load_modern_source_atlas(repo_root: &Path) -> Result<ModernSourceAtlas, S
         ));
     }
     let width = info.width as usize;
+    let height = info.height as usize;
+    if width % 8 != 0 || height % 8 != 0 {
+        return Err(format!(
+            "{}: PNG size {}x{} is not aligned to 8x8 cells",
+            png_path.display(),
+            info.width,
+            info.height
+        ));
+    }
     let cols = width / 8;
     if cols == 0 {
         return Err(format!(
@@ -105,6 +129,8 @@ pub fn load_modern_source_atlas(repo_root: &Path) -> Result<ModernSourceAtlas, S
             png_path.display()
         ));
     }
+    let rows = height / 8;
+    let grid_capacity = cols * rows;
     let data = &buf[..info.buffer_size()];
 
     let mut cells = Vec::with_capacity(manifest.cells.len());
@@ -112,6 +138,16 @@ pub fn load_modern_source_atlas(repo_root: &Path) -> Result<ModernSourceAtlas, S
 
     for cell_json in &manifest.cells {
         let id = cell_json.id as usize;
+        if id >= grid_capacity {
+            return Err(format!(
+                "{}: cell id {} is outside PNG grid capacity {} ({}x{} cells)",
+                json_path.display(),
+                cell_json.id,
+                grid_capacity,
+                cols,
+                rows
+            ));
+        }
         let cx = (id % cols) * 8;
         let cy = (id / cols) * 8;
         let mut indices = [0u8; 64];
@@ -140,8 +176,8 @@ pub fn load_modern_source_atlas(repo_root: &Path) -> Result<ModernSourceAtlas, S
 
 #[derive(Deserialize)]
 struct Manifest {
-    #[serde(rename = "cell_count")]
-    _cell_count: u32,
+    format: String,
+    cell_count: u32,
     cells: Vec<CellJson>,
 }
 
@@ -175,7 +211,34 @@ impl ModernSourceAtlas {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
+    use std::io::BufWriter;
     use std::path::Path;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static TEMP_ROOT_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn unique_temp_root() -> std::path::PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before unix epoch")
+            .as_nanos();
+        let pid = std::process::id();
+        let counter = TEMP_ROOT_COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("zelda3-source-atlas-test-{pid}-{suffix}-{counter}"))
+    }
+
+    fn write_index_png(path: &Path, width: u32, height: u32, pixels: &[u8]) {
+        let file = File::create(path).expect("create png");
+        let writer = BufWriter::new(file);
+        let mut encoder = png::Encoder::new(writer, width, height);
+        encoder.set_color(png::ColorType::Indexed);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_palette(vec![0, 0, 0, 255, 255, 255]);
+        let mut writer = encoder.write_header().expect("write png header");
+        writer.write_image_data(pixels).expect("write png data");
+    }
 
     #[test]
     fn source_key_matches_m2_layout() {
@@ -239,5 +302,72 @@ mod tests {
             .all(|c| c.indices.iter().all(|&i| i < 32)));
         // A known BG (kind=1) source from the committed manifest resolves.
         assert!(source_cell(&atlas, 1, 30, 44).is_some());
+    }
+
+    #[test]
+    fn rejects_assets_by_source_manifest_count_drift() {
+        let root = unique_temp_root();
+        let atlas_dir = root.join("zelda3-bin/developer_tilesets");
+        std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
+        write_index_png(&atlas_dir.join("assets_by_source.png"), 8, 8, &[0u8; 64]);
+        std::fs::write(
+            atlas_dir.join("assets_by_source.json"),
+            r#"{
+              "format": "zelda3_assets_by_source_v2_png",
+              "cell_count": 2,
+              "cells": [{
+                "id": 0,
+                "key": 4294967296,
+                "kind": 1,
+                "pack": 0,
+                "tile_off": 0
+              }]
+            }"#,
+        )
+        .expect("write manifest");
+
+        let err = match load_modern_source_atlas(&root) {
+            Ok(_) => panic!("source atlas count drift should be rejected"),
+            Err(err) => err,
+        };
+
+        assert!(err.contains("cell_count 2 does not match 1 cells"), "{err}");
+
+        std::fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn rejects_assets_by_source_cells_outside_png_grid() {
+        let root = unique_temp_root();
+        let atlas_dir = root.join("zelda3-bin/developer_tilesets");
+        std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
+        write_index_png(&atlas_dir.join("assets_by_source.png"), 8, 8, &[0u8; 64]);
+        std::fs::write(
+            atlas_dir.join("assets_by_source.json"),
+            r#"{
+              "format": "zelda3_assets_by_source_v2_png",
+              "cell_count": 1,
+              "cells": [{
+                "id": 1,
+                "key": 4294967296,
+                "kind": 1,
+                "pack": 0,
+                "tile_off": 0
+              }]
+            }"#,
+        )
+        .expect("write manifest");
+
+        let err = match load_modern_source_atlas(&root) {
+            Ok(_) => panic!("source atlas out-of-bounds cell should be rejected"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.contains("cell id 1 is outside PNG grid capacity 1"),
+            "{err}"
+        );
+
+        std::fs::remove_dir_all(root).expect("remove temp root");
     }
 }
