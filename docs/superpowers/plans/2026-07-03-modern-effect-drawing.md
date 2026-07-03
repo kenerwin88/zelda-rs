@@ -149,6 +149,11 @@ also proved the longer `file-select-enter-game` window:
 `fallback_draws=1194079978`, `dynamic_palette_draws=0`,
 `missing_variant_draws=524171`.
 
+The extended saved-slot gameplay route also passes under `assets-variant-gpu`:
+`file-select-message-dismiss-wander` completed `compared=122000`,
+`mismatched_pixels=0`, `variant_draws=0`, `fallback_draws=1363234978`,
+`dynamic_palette_draws=0`, `missing_variant_draws=554171`.
+
 `no-input-intro` is now included in dry-runs after fixing the empty-input SRAM
 sidecar filter. That exposed a real modern compositor gap: the first mismatch
 was frame `1954`, `ppumode=1`, `via=vram`/`variant-gpu`, with a far-left
@@ -157,11 +162,10 @@ cause was uniform non-zero BG scroll using the fast screen-space compositor path
 instead of the existing torus wrap sampler. New evidence after the fix:
 `ZELDA3_RENDERER=classic ... --play-gpu-render-compare ... 30000
 --modern-index-compare 1` completed with `bad_count=0`, `bad_pixels=0`, and
-`cpu_count=30000`; the default `assets-variant-gpu` path passed the targeted
-first-failure window through frame `2000` with `bad_count=0`, `bad_pixels=0`.
+`cpu_count=30000`. The default `assets-variant-gpu` path now passes the full
+`no-input-intro` window too: `compared=30000`, `mismatched_pixels=0`,
+`variant_draws=0`, `fallback_draws=188749315`, `dynamic_palette_draws=0`,
+`missing_variant_draws=2070467`.
 
-Remaining proof: rerun full `no-input-intro` and then the full representative
-oracle window matrix under `assets-variant-gpu`. The full `no-input-intro`
-variant-GPU run is slower now because exact torus sampling is used on uniformly
-scrolled fallback frames, so it may need an overnight/progress run or a focused
-performance pass before the all-window gate is practical.
+Remaining proof: rerun the full representative oracle window matrix under
+`assets-variant-gpu`.
