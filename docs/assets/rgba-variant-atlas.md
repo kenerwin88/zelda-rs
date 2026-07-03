@@ -285,3 +285,13 @@ For a cheap live coverage check without a replay scan, set
 `ZELDA3_VARIANT_LIVE_STATS=1`. The play loop prints aggregate
 `variant_live_summary` lines every 300 presented variant frames by default; use
 `ZELDA3_VARIANT_LIVE_STATS_EVERY=<frames>` to change the interval.
+
+For an even cheaper generated-asset check that does not start the emulator, run:
+
+```bash
+python3 scripts/variant_atlas_summary.py generated/zelda3_assets/atlas
+```
+
+That command reads `art_tiles.json` and `tile_effects.json` and reports how many
+canonical source refs are covered by the same stable preview/effect rule used by
+the variant atlas loader.
