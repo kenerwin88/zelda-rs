@@ -317,6 +317,39 @@ fn load_modern_canonical_art_atlas_from_dir(
             manifest.height
         ));
     }
+    if manifest.art_count != manifest.arts.len() as u32 {
+        return Err(format!(
+            "{}: art_count {} does not match {} arts",
+            json_path.display(),
+            manifest.art_count,
+            manifest.arts.len()
+        ));
+    }
+    let source_ref_count: u32 = manifest
+        .arts
+        .iter()
+        .map(|art| art.source_refs.len() as u32)
+        .sum();
+    if manifest.source_ref_count != source_ref_count {
+        return Err(format!(
+            "{}: source_ref_count {} does not match {} source refs",
+            json_path.display(),
+            manifest.source_ref_count,
+            source_ref_count
+        ));
+    }
+    for art in &manifest.arts {
+        if !rect_within_atlas(art.rect, info.width, info.height) {
+            return Err(format!(
+                "{}: art rect {:?} for {} is outside PNG bounds {}x{}",
+                json_path.display(),
+                art.rect,
+                art.art_id,
+                info.width,
+                info.height
+            ));
+        }
+    }
 
     let effects = load_tile_effects_from_dir(atlas_dir)?;
     let mut entries = Vec::new();
@@ -377,6 +410,20 @@ fn has_stable_effect_for_source_ref(effects: &[TileEffect], source_ref: &ArtSour
             && effect.palette_row == source_ref.preview_palette_row
             && effect.colors_per_row == colors_per_row
     })
+}
+
+fn rect_within_atlas(rect: [u32; 4], width: u32, height: u32) -> bool {
+    let [x, y, w, h] = rect;
+    if w == 0 || h == 0 {
+        return false;
+    }
+    let Some(right) = x.checked_add(w) else {
+        return false;
+    };
+    let Some(bottom) = y.checked_add(h) else {
+        return false;
+    };
+    right <= width && bottom <= height
 }
 
 fn load_tile_effects_from_dir(atlas_dir: &Path) -> Result<Vec<TileEffect>, String> {
@@ -484,11 +531,14 @@ struct ArtManifestJson {
     format: String,
     width: u32,
     height: u32,
+    art_count: u32,
+    source_ref_count: u32,
     arts: Vec<ArtEntryJson>,
 }
 
 #[derive(Deserialize)]
 struct ArtEntryJson {
+    art_id: String,
     rect: [u32; 4],
     sha1_indices: String,
     source_refs: Vec<ArtSourceRefJson>,
@@ -556,6 +606,14 @@ mod tests {
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder.write_header().expect("write png header");
         writer.write_image_data(rgba).expect("write png data");
+    }
+
+    fn solid_rgba(width: u32, height: u32, rgba: [u8; 4]) -> Vec<u8> {
+        let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+        for _ in 0..(width * height) {
+            pixels.extend_from_slice(&rgba);
+        }
+        pixels
     }
 
     #[test]
@@ -709,16 +767,16 @@ mod tests {
         let root = unique_temp_root();
         let atlas_dir = root.join("atlas");
         std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
-        let rgba = vec![1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255];
-        write_rgba_png(&atlas_dir.join("art_tiles.png"), 2, 2, &rgba);
+        let rgba = solid_rgba(8, 8, [1, 2, 3, 255]);
+        write_rgba_png(&atlas_dir.join("art_tiles.png"), 8, 8, &rgba);
         std::fs::write(
             atlas_dir.join("art_tiles.json"),
             r#"{
               "format": "zelda3_canonical_art_atlas_v1",
               "tile_width": 8,
               "tile_height": 8,
-              "width": 2,
-              "height": 2,
+              "width": 8,
+              "height": 8,
               "art_count": 1,
               "source_ref_count": 1,
               "arts": [{
@@ -748,8 +806,8 @@ mod tests {
 
         let atlas = load_modern_base_art_atlas(&root).expect("load art atlas");
 
-        assert_eq!(atlas.width, 2);
-        assert_eq!(atlas.height, 2);
+        assert_eq!(atlas.width, 8);
+        assert_eq!(atlas.height, 8);
         assert_eq!(atlas.rgba, rgba);
         assert_eq!(atlas.entries.len(), 1);
         assert_eq!(atlas.entries[0].id, "bg:kBgGfx:pack5:tile17:3bpp");
@@ -771,16 +829,16 @@ mod tests {
         let root = unique_temp_root();
         let atlas_dir = root.join("atlas");
         std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
-        let rgba = vec![1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255];
-        write_rgba_png(&atlas_dir.join("art_tiles.png"), 2, 2, &rgba);
+        let rgba = solid_rgba(8, 8, [1, 2, 3, 255]);
+        write_rgba_png(&atlas_dir.join("art_tiles.png"), 8, 8, &rgba);
         std::fs::write(
             atlas_dir.join("art_tiles.json"),
             r#"{
               "format": "zelda3_canonical_art_atlas_v1",
               "tile_width": 8,
               "tile_height": 8,
-              "width": 2,
-              "height": 2,
+              "width": 8,
+              "height": 8,
               "art_count": 1,
               "source_ref_count": 1,
               "arts": [{
@@ -845,6 +903,107 @@ mod tests {
                 .expect("resolve source-kind default effect")
                 .id,
             "palette_main_spr:8color:row0"
+        );
+
+        std::fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn canonical_art_loader_rejects_manifest_count_drift() {
+        let root = unique_temp_root();
+        let atlas_dir = root.join("atlas");
+        std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
+        let rgba = solid_rgba(8, 8, [1, 2, 3, 255]);
+        write_rgba_png(&atlas_dir.join("art_tiles.png"), 8, 8, &rgba);
+        std::fs::write(
+            atlas_dir.join("art_tiles.json"),
+            r#"{
+              "format": "zelda3_canonical_art_atlas_v1",
+              "tile_width": 8,
+              "tile_height": 8,
+              "width": 8,
+              "height": 8,
+              "art_count": 2,
+              "source_ref_count": 1,
+              "arts": [{
+                "art_id": "art:abc",
+                "bpp": 3,
+                "rect": [0, 0, 8, 8],
+                "sha1_indices": "abc",
+                "preview_palette": "palette_main_spr",
+                "preview_palette_row": 0,
+                "preview_source": "palette_usage",
+                "source_refs": [{
+                  "source_kind": "sprite",
+                  "asset": "kSprGfx",
+                  "pack": 0,
+                  "tile": 7,
+                  "bpp": 3,
+                  "hflip": false,
+                  "vflip": false,
+                  "preview_palette": "palette_main_spr",
+                  "preview_palette_row": 0,
+                  "preview_source": "palette_usage"
+                }]
+              }]
+            }"#,
+        )
+        .expect("write manifest");
+
+        let err = load_modern_base_art_atlas(&root).expect_err("reject count drift");
+
+        assert!(err.contains("art_count 2 does not match 1 arts"), "{err}");
+
+        std::fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn canonical_art_loader_rejects_out_of_bounds_rects() {
+        let root = unique_temp_root();
+        let atlas_dir = root.join("atlas");
+        std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
+        let rgba = solid_rgba(8, 8, [1, 2, 3, 255]);
+        write_rgba_png(&atlas_dir.join("art_tiles.png"), 8, 8, &rgba);
+        std::fs::write(
+            atlas_dir.join("art_tiles.json"),
+            r#"{
+              "format": "zelda3_canonical_art_atlas_v1",
+              "tile_width": 8,
+              "tile_height": 8,
+              "width": 8,
+              "height": 8,
+              "art_count": 1,
+              "source_ref_count": 1,
+              "arts": [{
+                "art_id": "art:abc",
+                "bpp": 3,
+                "rect": [4, 0, 8, 8],
+                "sha1_indices": "abc",
+                "preview_palette": "palette_main_spr",
+                "preview_palette_row": 0,
+                "preview_source": "palette_usage",
+                "source_refs": [{
+                  "source_kind": "sprite",
+                  "asset": "kSprGfx",
+                  "pack": 0,
+                  "tile": 7,
+                  "bpp": 3,
+                  "hflip": false,
+                  "vflip": false,
+                  "preview_palette": "palette_main_spr",
+                  "preview_palette_row": 0,
+                  "preview_source": "palette_usage"
+                }]
+              }]
+            }"#,
+        )
+        .expect("write manifest");
+
+        let err = load_modern_base_art_atlas(&root).expect_err("reject bad rect");
+
+        assert!(
+            err.contains("art rect [4, 0, 8, 8] for art:abc is outside PNG bounds 8x8"),
+            "{err}"
         );
 
         std::fs::remove_dir_all(root).expect("remove temp root");
