@@ -51,5 +51,14 @@ jobs:
       - name: Check Python scripts
         run: python3 -m py_compile scripts/*.py
 
+      - name: Install Python test dependencies
+        run: python3 -m pip install Pillow
+
+      - name: Test compact asset pipeline scripts
+        run: |
+          PYTHONPATH=scripts python3 scripts/test_rgba_variant_atlas.py
+          PYTHONPATH=scripts python3 scripts/test_extract_asset_sources.py
+          PYTHONPATH=scripts python3 scripts/test_variant_atlas_summary.py
+
       - name: Check RAM readability guardrails
         run: python3 scripts/check_ram_readability.py
