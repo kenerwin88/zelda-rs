@@ -12558,15 +12558,11 @@ fn run_play_gpu_render_compare(args: &[String]) {
                         "vram",
                     )
                 };
-            let mut mismatch = 0usize;
-            for (c, m) in classic_rgba
-                .chunks_exact(4)
-                .zip(modern_rgba.chunks_exact(4))
-            {
-                if c[0] != m[0] || c[1] != m[1] || c[2] != m[2] {
-                    mismatch += 1;
-                }
-            }
+            let modern_diff = compare_rgba_to_rgba(&classic_rgba, &modern_rgba);
+            let mismatch = modern_diff
+                .as_ref()
+                .map(|diff| diff.mismatched_pixels)
+                .unwrap_or(0);
             modern_index_compare_count += 1;
             match via {
                 "gpu" | "variant-gpu" => modern_index_compare_gpu_count += 1,
@@ -12586,20 +12582,54 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 modern_index_compare_missing_variant_draws +=
                     u64::from(stats.missing_variant_draws);
                 if !modern_index_compare_summary || mismatch != 0 {
-                    println!(
-                        "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} fallback_draws={} dynamic_palette_draws={} missing_variant_draws={}",
-                        gpu_frame.mode,
-                        stats.stable_draws,
-                        stats.fallback_draws,
-                        stats.dynamic_palette_draws,
-                        stats.missing_variant_draws
-                    );
+                    if let Some(diff) = modern_diff.as_ref() {
+                        println!(
+                            "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} fallback_draws={} dynamic_palette_draws={} missing_variant_draws={} first_mismatch=({}, {}) classic_rgb=({},{},{}) modern_rgb=({},{},{})",
+                            gpu_frame.mode,
+                            stats.stable_draws,
+                            stats.fallback_draws,
+                            stats.dynamic_palette_draws,
+                            stats.missing_variant_draws,
+                            diff.first_x,
+                            diff.first_y,
+                            diff.cpu_rgb.0,
+                            diff.cpu_rgb.1,
+                            diff.cpu_rgb.2,
+                            diff.gpu_rgb.0,
+                            diff.gpu_rgb.1,
+                            diff.gpu_rgb.2
+                        );
+                    } else {
+                        println!(
+                            "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} fallback_draws={} dynamic_palette_draws={} missing_variant_draws={}",
+                            gpu_frame.mode,
+                            stats.stable_draws,
+                            stats.fallback_draws,
+                            stats.dynamic_palette_draws,
+                            stats.missing_variant_draws
+                        );
+                    }
                 }
             } else if !modern_index_compare_summary || mismatch != 0 {
-                println!(
-                    "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via}",
-                    gpu_frame.mode
-                );
+                if let Some(diff) = modern_diff.as_ref() {
+                    println!(
+                        "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} first_mismatch=({}, {}) classic_rgb=({},{},{}) modern_rgb=({},{},{})",
+                        gpu_frame.mode,
+                        diff.first_x,
+                        diff.first_y,
+                        diff.cpu_rgb.0,
+                        diff.cpu_rgb.1,
+                        diff.cpu_rgb.2,
+                        diff.gpu_rgb.0,
+                        diff.gpu_rgb.1,
+                        diff.gpu_rgb.2
+                    );
+                } else {
+                    println!(
+                        "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via}",
+                        gpu_frame.mode
+                    );
+                }
             }
             if modern_index_compare_summary
                 && modern_index_compare_progress != 0
@@ -12608,6 +12638,27 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 eprintln!(
                     "modern_index_compare_progress compare_count={modern_index_compare_count} frame={completed_frame} bad_count={modern_index_compare_bad_count}"
                 );
+            }
+            if let Ok(dump_str) = std::env::var("ZELDA3_MODERN_INDEX_DUMP_FRAME") {
+                if let Ok(dump_frame) = dump_str.parse::<u32>() {
+                    if completed_frame == dump_frame {
+                        let classic_path =
+                            PathBuf::from(format!("/tmp/classic_{completed_frame}.png"));
+                        let modern_path =
+                            PathBuf::from(format!("/tmp/modern_index_{completed_frame}.png"));
+                        if let Err(e) = write_rgba_frame_png(&classic_path, &classic_rgba, 256, 224)
+                        {
+                            eprintln!("failed to write {}: {e}", classic_path.display());
+                        } else {
+                            println!("dumped classic frame to {}", classic_path.display());
+                        }
+                        if let Err(e) = write_rgba_frame_png(&modern_path, &modern_rgba, 256, 224) {
+                            eprintln!("failed to write {}: {e}", modern_path.display());
+                        } else {
+                            println!("dumped modern_index frame to {}", modern_path.display());
+                        }
+                    }
+                }
             }
         }
     }
@@ -12762,6 +12813,31 @@ fn compare_bgra_to_rgba(cpu_bgra: &[u8], gpu_rgba: &[u8]) -> Option<GpuRenderDif
         if cpu_rgb != gpu_rgb {
             mismatched_pixels += 1;
             first.get_or_insert((i, cpu_rgb, gpu_rgb));
+        }
+    }
+
+    first.map(|(i, cpu_rgb, gpu_rgb)| GpuRenderDiff {
+        mismatched_pixels,
+        first_x: i % 256,
+        first_y: i / 256,
+        cpu_rgb,
+        gpu_rgb,
+    })
+}
+
+fn compare_rgba_to_rgba(classic_rgba: &[u8], modern_rgba: &[u8]) -> Option<GpuRenderDiff> {
+    let mut mismatched_pixels = 0usize;
+    let mut first = None;
+    for (i, (classic, modern)) in classic_rgba
+        .chunks_exact(4)
+        .zip(modern_rgba.chunks_exact(4))
+        .enumerate()
+    {
+        let classic_rgb = (classic[0], classic[1], classic[2]);
+        let modern_rgb = (modern[0], modern[1], modern[2]);
+        if classic_rgb != modern_rgb {
+            mismatched_pixels += 1;
+            first.get_or_insert((i, classic_rgb, modern_rgb));
         }
     }
 
@@ -14596,7 +14672,10 @@ mod tests {
 
     #[test]
     fn unset_renderer_defaults_to_full_gpu_path() {
-        assert_eq!(default_renderer_env_for_variant_setting(None), "assets-variant-gpu");
+        assert_eq!(
+            default_renderer_env_for_variant_setting(None),
+            "assets-variant-gpu"
+        );
         assert_eq!(
             default_renderer_env_for_variant_setting(Some("off")),
             "assets-anim-gpu",
@@ -14612,6 +14691,26 @@ mod tests {
             "classic",
             "explicit classic mode remains an opt-out"
         );
+    }
+
+    #[test]
+    fn rgba_frame_diff_reports_first_mismatch() {
+        let classic = [
+            1, 2, 3, 0xff, //
+            4, 5, 6, 0xff,
+        ];
+        let modern = [
+            1, 2, 3, 0xff, //
+            4, 7, 6, 0xff,
+        ];
+
+        let diff = compare_rgba_to_rgba(&classic, &modern).expect("one pixel differs");
+
+        assert_eq!(diff.mismatched_pixels, 1);
+        assert_eq!(diff.first_x, 1);
+        assert_eq!(diff.first_y, 0);
+        assert_eq!(diff.cpu_rgb, (4, 5, 6));
+        assert_eq!(diff.gpu_rgb, (4, 7, 6));
     }
 
     #[test]

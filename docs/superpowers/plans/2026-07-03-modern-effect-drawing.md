@@ -143,7 +143,25 @@ Run: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-var
 Expected: no new mismatches from effect-backed draws; remaining fallbacks are documented dynamic/missing cases.
 
 Current evidence: `title-start` and `file-select-new-game` passed with
-`mismatched_pixels=0` under `assets-variant-gpu`. The longer
-`file-select-enter-game` window was stopped after an interactive direct release
-run remained active for roughly nineteen minutes without a progress summary; it
-needs a separate progress-friendly or overnight verification pass.
+`mismatched_pixels=0` under `assets-variant-gpu`. The progress-friendly wrapper
+also proved the longer `file-select-enter-game` window:
+`compared=107000`, `mismatched_pixels=0`, `variant_draws=0`,
+`fallback_draws=1194079978`, `dynamic_palette_draws=0`,
+`missing_variant_draws=524171`.
+
+`no-input-intro` is now included in dry-runs after fixing the empty-input SRAM
+sidecar filter. That exposed a real modern compositor gap: the first mismatch
+was frame `1954`, `ppumode=1`, `via=vram`/`variant-gpu`, with a far-left
+scroll-wrap strip (`classic_rgb=(66,24,0)`, `modern_rgb=(24,16,0)`). The root
+cause was uniform non-zero BG scroll using the fast screen-space compositor path
+instead of the existing torus wrap sampler. New evidence after the fix:
+`ZELDA3_RENDERER=classic ... --play-gpu-render-compare ... 30000
+--modern-index-compare 1` completed with `bad_count=0`, `bad_pixels=0`, and
+`cpu_count=30000`; the default `assets-variant-gpu` path passed the targeted
+first-failure window through frame `2000` with `bad_count=0`, `bad_pixels=0`.
+
+Remaining proof: rerun full `no-input-intro` and then the full representative
+oracle window matrix under `assets-variant-gpu`. The full `no-input-intro`
+variant-GPU run is slower now because exact torus sampling is used on uniformly
+scrolled fallback frames, so it may need an overnight/progress run or a focused
+performance pass before the all-window gate is practical.

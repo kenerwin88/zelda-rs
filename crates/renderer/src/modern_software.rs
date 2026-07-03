@@ -581,15 +581,13 @@ fn composite_mode1(
     let bg_on = |i: usize| (enabled >> i) & 1 != 0;
     let obj_on = (enabled >> 4) & 1 != 0;
     let bg = &frame.bg_layers;
-    // Per-scanline HDMA BG scroll: if any ENABLED BG layer's per-scanline scroll
-    // differs from its baked base scroll, that layer must be re-sampled per output
-    // row (the classic GPU's `scanline_scroll`; e.g. the pyramid HDMA wave). Detect
-    // here; if NONE vary, fall through to the existing fast path UNCHANGED (so normal
-    // frames stay byte-for-byte identical and the parity gate is preserved).
+    // BG scroll wrapping: varying HDMA scroll must be re-sampled per output row,
+    // and uniform non-zero scroll still needs torus sampling so edge-crossing tiles
+    // wrap across the screen boundary. Zero-scroll layers stay on the fast path.
     let scroll_layers = [
-        bg_on(0) && bg_layer_scroll_varies(frame, 0),
-        bg_on(1) && bg_layer_scroll_varies(frame, 1),
-        bg_on(2) && bg_layer_scroll_varies(frame, 2),
+        bg_on(0) && bg_layer_needs_torus_sampling(frame, 0),
+        bg_on(1) && bg_layer_needs_torus_sampling(frame, 1),
+        bg_on(2) && bg_layer_needs_torus_sampling(frame, 2),
     ];
     if scroll_layers.iter().any(|&v| v) {
         composite_mode1_scanline_scroll(
@@ -893,6 +891,16 @@ fn bg_layer_scroll_varies(frame: &ModernFrame, layer: usize) -> bool {
         .bg_scroll_scanlines
         .iter()
         .any(|sl| sl[layer][0] != base_h || sl[layer][1] != base_v)
+}
+
+/// True when a BG layer must be sampled through the full tilemap torus instead
+/// of the fast screen-space buffer. Varying HDMA scroll needs per-row deltas;
+/// uniform non-zero scroll still needs torus sampling so edge-crossing tiles wrap
+/// across the screen boundary like the SNES tilemap.
+fn bg_layer_needs_torus_sampling(frame: &ModernFrame, layer: usize) -> bool {
+    bg_layer_scroll_varies(frame, layer)
+        || frame.bg_layers[layer].scroll_x != 0
+        || frame.bg_layers[layer].scroll_y != 0
 }
 
 /// Render one BG layer into a FULL-TORUS buffer (`bg_w` x `bg_h`, the SNES scroll
@@ -1534,15 +1542,15 @@ pub(crate) fn build_modern_composited_screens(
     }
 }
 
-/// True if the frame would take the mosaic OR per-scanline-scroll composite path on
+/// True if the frame would take the mosaic OR torus-scroll composite path on
 /// EITHER screen — those paths are not N×-parameterized (Phase 2), so the entry renders
 /// them natively and nearest-upscales. Detection mirrors `composite_mode1` verbatim.
 fn frame_uses_complex_bg_path(frame: &ModernFrame) -> bool {
     for enabled in [frame.screen_enabled_main, frame.screen_enabled_sub] {
         let mosaic = frame.mosaic_size > 1 && (frame.mosaic_enabled & enabled & 0x07) != 0;
         let bg_on = |i: usize| (enabled >> i) & 1 != 0;
-        let scanline = (0..3).any(|i| bg_on(i) && bg_layer_scroll_varies(frame, i));
-        if mosaic || scanline {
+        let torus_scroll = (0..3).any(|i| bg_on(i) && bg_layer_needs_torus_sampling(frame, i));
+        if mosaic || torus_scroll {
             return true;
         }
     }
@@ -1550,7 +1558,7 @@ fn frame_uses_complex_bg_path(frame: &ModernFrame) -> bool {
 }
 
 /// Modern render at integer `scale` (1..=4). `scale<=1` → the native entry unchanged.
-/// A mosaic / per-scanline-scroll frame → native render nearest-upscaled to N× (those
+/// A mosaic / torus-scroll frame → native render nearest-upscaled to N× (those
 /// composite paths are not N×-parameterized). Otherwise the parameterized common path
 /// runs directly at N·256 × N·224, sampling HD overrides sub-pixel.
 pub fn render_modern_frame_full_scaled(
@@ -2147,6 +2155,50 @@ mod tests {
             &out[row1..row1 + 3],
             &[165, 0, 0],
             "row 1 (base scroll) samples tile A (red) at column 0"
+        );
+    }
+
+    #[test]
+    fn uniform_scroll_wraps_tiles_past_screen_edge() {
+        let mut indices = [0u8; 64];
+        for v in indices.iter_mut() {
+            *v = 1;
+        }
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.brightness = 15;
+        frame.screen_enabled_main = 0x01;
+        frame.cgram_rgba[1] = [20 << 3, 0, 0, 0xff];
+
+        let bg1 = &mut frame.bg_layers[0];
+        bg1.scroll_x = 6;
+        bg1.scroll_y = 0;
+        bg1.wrap_w = 256;
+        bg1.wrap_h = 256;
+        bg1.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 250,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+
+        let out = render_modern_frame_full(&frame, &cells, &[]);
+        let left_wrapped = (0usize * 256 + 0) * 4;
+
+        assert_eq!(
+            &out[left_wrapped..left_wrapped + 3],
+            &[165, 0, 0],
+            "uniformly scrolled BG tiles that cross the right edge must wrap to the left"
         );
     }
 
