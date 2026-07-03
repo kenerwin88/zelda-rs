@@ -586,13 +586,40 @@ renderer change without another broad scan.
 
 **Done:** `reject_complex_frame` is now split into brightness, invalid-layer,
 mosaic, sub-window, effect-bounds, per-scanline main-screen visibility,
-layer-window, and color-math subreason counters across live/replay logs and
-both compare wrappers. The focused proof remains `mismatched_pixels=0` and
-keeps `mixed_overlay_bg_effect_draws=17272`. The remaining
-`mixed_overlay_bg_effect_reject_complex_frame=3402` splits into
+layer-window, color-math, and color-math subtype counters across live/replay
+logs and both compare wrappers. The focused proof remains
+`mismatched_pixels=0` and keeps `mixed_overlay_bg_effect_draws=17272`. The
+remaining `mixed_overlay_bg_effect_reject_complex_frame=3402` splits into
 `mixed_overlay_bg_effect_reject_complex_scanline_main=1541` and
-`mixed_overlay_bg_effect_reject_complex_color_math=1861`; every other complex
-subreason is zero in the sampled route tail. The next implementation target is
-therefore a color-math-aware overlay path, while scanline-main rejects are not
-visible on the main screen and should remain non-drawn unless packet visibility
-is represented more precisely.
+`mixed_overlay_bg_effect_reject_complex_color_math=1861`; the color-math
+rejects are all
+`mixed_overlay_bg_effect_reject_complex_color_math_subscreen=1861`, with
+`mixed_overlay_bg_effect_reject_complex_color_math_clip=0` and
+`mixed_overlay_bg_effect_reject_complex_color_math_fixed_color=0`. The next
+implementation target is therefore sub-screen-aware variant composition, not a
+fixed-color-only shader. Scanline-main rejects are not visible on the main
+screen and should remain non-drawn unless packet visibility is represented more
+precisely.
+
+### Task 14: Move Sub-Screen Color Math Into the Variant GPU Path
+
+**Files:**
+- [ ] Modify: `crates/renderer/src/modern_gpu.rs`
+- [ ] Modify: `crates/renderer/src/modern_software.rs`
+- [ ] Modify: `crates/renderer/src/post_process.rs`
+- [ ] Modify: `crates/renderer/src/post_process.wgsl`
+- [ ] Test: focused renderer unit covering a sub-screen math packet
+- [ ] Test: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --only opening-uncle-dismiss-and-move --fast --frames 1000 --stride 60 --require-stable-draws --progress-every 0 --release`
+
+**Goal:** Let stable variant BG effect packets participate in the same
+main/sub/final color-math resolve used by the non-variant GPU renderer, so the
+variant path can draw the 1,861 currently rejected sub-screen-dependent packets
+without losing final-pixel parity.
+
+**Approach:** Stop treating sub-screen color math as a late-RGBA overlay problem.
+Instead, render accepted variant effect packets into a pre-final main-screen
+intermediate with the same layer-bit alpha contract used by
+`post_process.wgsl`, render or reuse a matching sub-screen intermediate, and run
+the finalizer/post-process after those packets are present. Keep fixed-color and
+clip subtype counters in place so future routes can prove whether additional
+math cases remain after sub-screen support lands.

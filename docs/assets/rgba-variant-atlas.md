@@ -289,6 +289,14 @@ renderer/oracle. Verification must report:
 - `mixed_overlay_bg_effect_reject_complex_color_math`: complex-frame rejects
   blocked because color math would change at least one nontransparent candidate
   pixel and the current overlay shader writes final RGB directly.
+- `mixed_overlay_bg_effect_reject_complex_color_math_clip`: color-math rejects
+  caused by color-window clipping that would black out at least one
+  nontransparent candidate pixel.
+- `mixed_overlay_bg_effect_reject_complex_color_math_subscreen`: color-math
+  rejects caused by sub-screen addition/subtraction, where the final candidate
+  RGB depends on another composited screen pixel.
+- `mixed_overlay_bg_effect_reject_complex_color_math_fixed_color`: color-math
+  rejects caused by fixed-color addition/subtraction or half-color math.
 - `mixed_overlay_bg_effect_reject_cgram_mismatch`: candidates blocked because
   neither the extracted stable effect LUT nor the live-CGRAM LUT can represent
   the packet's source indices.
@@ -330,12 +338,17 @@ proof reports `stable_effect_draws=21038`,
 `mixed_overlay_bg_effect_reject_complex_frame=3402`,
 `mixed_overlay_bg_effect_reject_complex_scanline_main=1541`,
 `mixed_overlay_bg_effect_reject_complex_color_math=1861`,
+`mixed_overlay_bg_effect_reject_complex_color_math_clip=0`,
+`mixed_overlay_bg_effect_reject_complex_color_math_subscreen=1861`,
+`mixed_overlay_bg_effect_reject_complex_color_math_fixed_color=0`,
 `mixed_overlay_bg_effect_reject_cgram_mismatch=0`, and
 `mixed_overlay_bg_effect_reject_overlap=0` over 17 sampled compares from the
 checkpointed opening route tail. That means most stable BG opportunities in
 this sampled mixed window now execute through the GPU overlay path with exact
 final-pixel parity; the remaining blockers are per-scanline layer visibility
-and color-math-aware final RGB generation.
+and sub-screen color-math composition. A fixed-color-only overlay shader would
+not reduce this representative route because the current color-math rejects are
+all sub-screen dependent.
 
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay
