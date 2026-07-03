@@ -1149,8 +1149,11 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                         let id = *cell_ids
                             .entry((0x8000_0000 | u32::from(pattern_key), false, false))
                             .or_insert_with(|| {
-                                let indices =
-                                    decode_snes_4bpp_tile_indices(frame.vram, chr_base, pattern_key);
+                                let indices = decode_snes_4bpp_tile_indices(
+                                    frame.vram,
+                                    chr_base,
+                                    pattern_key,
+                                );
                                 let id = cells.len() as u32;
                                 cells.push(ModernIndexTile {
                                     id,
@@ -1163,92 +1166,95 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                             });
                         (id, pal)
                     } else {
-                    if dbg && layer_index < 2 {
-                        dbg_total += 1;
-                        let live = decode_snes_4bpp_tile_indices(
-                            frame.vram,
-                            frame.bg[layer_index].tile_adr as usize,
-                            tile_number as u16,
-                        );
-                        match source_cell(atlas, kind, pack, tile_off) {
-                            None => {
-                                dbg_gap += 1;
-                                if dbg_samples.len() < 24 {
-                                    dbg_samples.push((slot, tile_number, kind, pack, tile_off));
+                        if dbg && layer_index < 2 {
+                            dbg_total += 1;
+                            let live = decode_snes_4bpp_tile_indices(
+                                frame.vram,
+                                frame.bg[layer_index].tile_adr as usize,
+                                tile_number as u16,
+                            );
+                            match source_cell(atlas, kind, pack, tile_off) {
+                                None => {
+                                    dbg_gap += 1;
+                                    if dbg_samples.len() < 24 {
+                                        dbg_samples.push((slot, tile_number, kind, pack, tile_off));
+                                    }
                                 }
-                            }
-                            Some(s) if s.indices != live => {
-                                dbg_mismatch += 1;
-                                // Classify: STALE TAG (the source-table hash doesn't match
-                                // the LIVE pixels — the slot was re-loaded without re-tagging)
-                                // vs COLLISION (tag matches live, but the atlas stored another
-                                // area's cell under the same hash). Only meaningful for the
-                                // content-hash kind (6). FNV-1a 24-bit over the 16 live words.
-                                if kind == 6 {
-                                    let mut h: u32 = 0x811c_9dc5;
-                                    for off in 0..16 {
-                                        let w = *frame.vram.get(slot * 16 + off).unwrap_or(&0);
-                                        for b in [(w & 0xff) as u8, (w >> 8) as u8] {
-                                            h ^= b as u32;
-                                            h = h.wrapping_mul(0x0100_0193);
+                                Some(s) if s.indices != live => {
+                                    dbg_mismatch += 1;
+                                    // Classify: STALE TAG (the source-table hash doesn't match
+                                    // the LIVE pixels — the slot was re-loaded without re-tagging)
+                                    // vs COLLISION (tag matches live, but the atlas stored another
+                                    // area's cell under the same hash). Only meaningful for the
+                                    // content-hash kind (6). FNV-1a 24-bit over the 16 live words.
+                                    if kind == 6 {
+                                        let mut h: u32 = 0x811c_9dc5;
+                                        for off in 0..16 {
+                                            let w = *frame.vram.get(slot * 16 + off).unwrap_or(&0);
+                                            for b in [(w & 0xff) as u8, (w >> 8) as u8] {
+                                                h ^= b as u32;
+                                                h = h.wrapping_mul(0x0100_0193);
+                                            }
+                                        }
+                                        let live_hash = h;
+                                        let tag_hash = ((pack as u32) << 16) | (tile_off as u32);
+                                        if live_hash != tag_hash {
+                                            dbg_stale += 1;
                                         }
                                     }
-                                    let live_hash = h;
-                                    let tag_hash = ((pack as u32) << 16) | (tile_off as u32);
-                                    if live_hash != tag_hash {
-                                        dbg_stale += 1;
+                                    if dbg_samples.len() < 24 {
+                                        dbg_samples.push((slot, tile_number, kind, pack, tile_off));
                                     }
                                 }
-                                if dbg_samples.len() < 24 {
-                                    dbg_samples.push((slot, tile_number, kind, pack, tile_off));
-                                }
+                                _ => {}
                             }
-                            _ => {}
                         }
-                    }
-                    match source_cell(atlas, kind, pack, tile_off) {
-                        Some(src) => {
-                            let id = *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
-                                let indices = flip_index_pattern(&src.indices, hflip, vflip);
-                                let id = cells.len() as u32;
-                                cells.push(ModernIndexTile {
-                                    id,
-                                    indices,
-                                    source_key: crate::modern_source_atlas::modern_source_key(
-                                        kind, pack, tile_off,
-                                    ),
-                                    hflip,
-                                    vflip,
-                                });
-                                id
-                            });
-                            (id, ((entry_word >> 10) & 7) as u8)
-                        }
-                        None => {
-                            let pal = ((entry_word >> 10) & 7) as u8;
-                            let chr_base = frame.bg[layer_index].tile_adr as usize;
-                            let pattern_key = entry_word & 0xC3FF;
-                            let id = *cell_ids
-                                .entry((0x9000_0000 | u32::from(pattern_key), false, false))
-                                .or_insert_with(|| {
-                                    let indices = decode_snes_4bpp_tile_indices(
-                                        frame.vram,
-                                        chr_base,
-                                        pattern_key,
-                                    );
-                                    let id = cells.len() as u32;
-                                    cells.push(ModernIndexTile {
-                                        id,
-                                        indices,
-                                        source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
-                                        hflip: false,
-                                        vflip: false,
+                        match source_cell(atlas, kind, pack, tile_off) {
+                            Some(src) => {
+                                let id =
+                                    *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
+                                        let indices =
+                                            flip_index_pattern(&src.indices, hflip, vflip);
+                                        let id = cells.len() as u32;
+                                        cells.push(ModernIndexTile {
+                                            id,
+                                            indices,
+                                            source_key:
+                                                crate::modern_source_atlas::modern_source_key(
+                                                    kind, pack, tile_off,
+                                                ),
+                                            hflip,
+                                            vflip,
+                                        });
+                                        id
                                     });
-                                    id
-                                });
-                            (id, pal)
+                                (id, ((entry_word >> 10) & 7) as u8)
+                            }
+                            None => {
+                                let pal = ((entry_word >> 10) & 7) as u8;
+                                let chr_base = frame.bg[layer_index].tile_adr as usize;
+                                let pattern_key = entry_word & 0xC3FF;
+                                let id = *cell_ids
+                                    .entry((0x9000_0000 | u32::from(pattern_key), false, false))
+                                    .or_insert_with(|| {
+                                        let indices = decode_snes_4bpp_tile_indices(
+                                            frame.vram,
+                                            chr_base,
+                                            pattern_key,
+                                        );
+                                        let id = cells.len() as u32;
+                                        cells.push(ModernIndexTile {
+                                            id,
+                                            indices,
+                                            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                            hflip: false,
+                                            vflip: false,
+                                        });
+                                        id
+                                    });
+                                (id, pal)
+                            }
                         }
-                    }
                     }
                 };
 
@@ -2398,7 +2404,11 @@ mod tests {
         let frame = test_gpu_frame(&vram, &cgram, &oam, 15, false); // obj_size 0 → 8×8
         let drawn = compute_obj_drawn_tiles(&frame);
         // Line 11 (out_y=10) is where all 33 sprites are visible; only 32 survive.
-        assert_eq!(drawn[10].len(), 32, "per-scanline sprite limit should keep 32");
+        assert_eq!(
+            drawn[10].len(),
+            32,
+            "per-scanline sprite limit should keep 32"
+        );
         assert!(
             drawn[10].iter().all(|&(sn, _)| sn < 32),
             "the 33rd sprite (num 32) must be dropped"

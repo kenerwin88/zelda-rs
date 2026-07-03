@@ -3122,8 +3122,7 @@ mod tests {
             "palette_dung_bg_main",
             "palette_main_spr",
         );
-        let fallback =
-            ModernGpuHeadless::new().render_rgba(&fallback_frame, &fallback_cells, &[]);
+        let fallback = ModernGpuHeadless::new().render_rgba(&fallback_frame, &fallback_cells, &[]);
 
         assert_eq!(stats.stable_draws, 1);
         assert_eq!(stats.effect_draws, 1);

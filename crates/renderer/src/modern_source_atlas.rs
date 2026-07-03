@@ -100,7 +100,10 @@ pub fn load_modern_source_atlas(repo_root: &Path) -> Result<ModernSourceAtlas, S
     let width = info.width as usize;
     let cols = width / 8;
     if cols == 0 {
-        return Err(format!("{}: PNG width {width} is less than one 8px cell", png_path.display()));
+        return Err(format!(
+            "{}: PNG width {width} is less than one 8px cell",
+            png_path.display()
+        ));
     }
     let data = &buf[..info.buffer_size()];
 

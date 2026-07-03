@@ -195,8 +195,10 @@ mod bg_stream_tests {
     fn content_hash_is_deterministic_and_distinguishes_patterns() {
         let a = [0x1234u16; 16];
         let b = [0x1234u16; 16];
-        let c = [0x1235u16, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234,
-                 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234];
+        let c = [
+            0x1235u16, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234,
+            0x1234, 0x1234, 0x1234, 0x1234, 0x1234, 0x1234,
+        ];
         assert_eq!(chr_content_hash32(&a), chr_content_hash32(&b));
         assert_ne!(chr_content_hash32(&a), chr_content_hash32(&c));
     }

@@ -373,9 +373,7 @@ impl ZeldaState {
             const TILES: usize = 0x80;
             for t in 0..TILES {
                 let word0 = BASE + t * 16;
-                let hash = crate::chr_source::chr_content_hash32(
-                    &self.ppu.vram[word0..word0 + 16],
-                );
+                let hash = crate::chr_source::chr_content_hash32(&self.ppu.vram[word0..word0 + 16]);
                 self.vram_chr_source.record_tile_content_hash(
                     BASE / 16 + t,
                     crate::chr_source::CHR_KIND_BG_STREAM,
@@ -424,9 +422,7 @@ impl ZeldaState {
             const TILES: usize = 0x80;
             for t in 0..TILES {
                 let word0 = 0x3400 + t * 16;
-                let hash = crate::chr_source::chr_content_hash32(
-                    &self.ppu.vram[word0..word0 + 16],
-                );
+                let hash = crate::chr_source::chr_content_hash32(&self.ppu.vram[word0..word0 + 16]);
                 self.vram_chr_source.record_tile_content_hash(
                     0x3400 / 16 + t,
                     crate::chr_source::CHR_KIND_BG_STREAM,
@@ -487,8 +483,7 @@ impl ZeldaState {
         for t in 0..tiles {
             let word0 = dst_word + t * 16;
             if word0 + 16 <= self.ppu.vram.len() {
-                let hash =
-                    crate::chr_source::chr_content_hash32(&self.ppu.vram[word0..word0 + 16]);
+                let hash = crate::chr_source::chr_content_hash32(&self.ppu.vram[word0..word0 + 16]);
                 self.vram_chr_source.record_tile_content_hash(
                     dst_word / 16 + t,
                     crate::chr_source::CHR_KIND_BG_STREAM,
@@ -802,9 +797,8 @@ impl ZeldaState {
                 const TILES: usize = 0x20; // 0x200 words / 16
                 for t in 0..TILES {
                     let word0 = dst + t * 16;
-                    let hash = crate::chr_source::chr_content_hash32(
-                        &self.ppu.vram[word0..word0 + 16],
-                    );
+                    let hash =
+                        crate::chr_source::chr_content_hash32(&self.ppu.vram[word0..word0 + 16]);
                     self.vram_chr_source.record_tile_content_hash(
                         dst / 16 + t,
                         crate::chr_source::CHR_KIND_BG_STREAM,

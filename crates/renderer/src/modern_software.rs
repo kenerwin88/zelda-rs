@@ -191,8 +191,7 @@ fn draw_variant_bg_instance(
             let atlas_x = entry.rect[0] as usize + src_x;
             let atlas_y = entry.rect[1] as usize + src_y;
             if let Some(effect) = stable_effect {
-                if let Some(color) =
-                    effect_color_for_index(effect, cell.indices[src_y * 8 + src_x])
+                if let Some(color) = effect_color_for_index(effect, cell.indices[src_y * 8 + src_x])
                 {
                     let dst_x = inst.screen_x + sx as i16;
                     let dst_y = inst.screen_y + sy as i16;
@@ -276,8 +275,7 @@ fn draw_variant_sprite_instance(
             let atlas_x = entry.rect[0] as usize + src_x;
             let atlas_y = entry.rect[1] as usize + src_y;
             if let Some(effect) = stable_effect {
-                if let Some(color) =
-                    effect_color_for_index(effect, cell.indices[src_y * 8 + src_x])
+                if let Some(color) = effect_color_for_index(effect, cell.indices[src_y * 8 + src_x])
                 {
                     let dst_x = inst.screen_x + x as i16;
                     let dst_y = inst.screen_y + y as i16;
@@ -574,7 +572,14 @@ fn composite_mode1(
     if mosaic_active {
         // Native-only path (reached only at scale == 1).
         composite_mode1_mosaic(
-            screen, frame, bg_cells, sprite_cells, enabled, main_tm, windowed, ctx,
+            screen,
+            frame,
+            bg_cells,
+            sprite_cells,
+            enabled,
+            main_tm,
+            windowed,
+            ctx,
         );
         return;
     }
@@ -609,7 +614,14 @@ fn composite_mode1(
     // against each other. Compositing in priority passes (as before) wrongly let a
     // higher-priority-attr but higher-index sprite overwrite a lower-index one.
     let obj = if obj_on {
-        Some(resolve_obj_layer(frame, sprite_cells, screen.c5.len(), ctx, out_width, scale))
+        Some(resolve_obj_layer(
+            frame,
+            sprite_cells,
+            screen.c5.len(),
+            ctx,
+            out_width,
+            scale,
+        ))
     } else {
         None
     };
@@ -841,7 +853,14 @@ fn composite_mode1_mosaic(
     // Mosaic is a native-only path (scale == 1), so OBJ uses native dims.
     let native_w = usize::from(MODERN_FRAME_WIDTH);
     let obj = if obj_on {
-        Some(resolve_obj_layer(frame, sprite_cells, len, ctx, native_w, 1))
+        Some(resolve_obj_layer(
+            frame,
+            sprite_cells,
+            len,
+            ctx,
+            native_w,
+            1,
+        ))
     } else {
         None
     };
@@ -1059,7 +1078,14 @@ fn composite_mode1_scanline_scroll(
     // Per-scanline-scroll is a native-only path (scale == 1); OBJ uses native dims.
     let native_w = usize::from(MODERN_FRAME_WIDTH);
     let obj = if obj_on {
-        Some(resolve_obj_layer(frame, sprite_cells, len, ctx, native_w, 1))
+        Some(resolve_obj_layer(
+            frame,
+            sprite_cells,
+            len,
+            ctx,
+            native_w,
+            1,
+        ))
     } else {
         None
     };
@@ -1139,8 +1165,8 @@ fn resolve_obj_layer(
             }
             for ox in 0..(8 * scale) {
                 let nx = ox / scale; // native texel column 0..8
-                // Sprites are NOT flip-baked: read the index at the un-flipped source
-                // texel, exactly as the native path did.
+                                     // Sprites are NOT flip-baked: read the index at the un-flipped source
+                                     // texel, exactly as the native path did.
                 let src_x = if inst.hflip { 7 - nx } else { nx };
                 let src_y = if inst.vflip { 7 - ny } else { ny };
                 let index = cell.indices[src_y * 8 + src_x];
@@ -1302,7 +1328,7 @@ fn composite_index_tiles_c5(
 ) {
     let bit = layer.index;
     let tm_bit = 1u8 << bit; // TM enable bit for this BG layer
-    // Per-tile output footprint in pixels (`8 * scale`); at scale == 1 this is 8.
+                             // Per-tile output footprint in pixels (`8 * scale`); at scale == 1 this is 8.
     let fp = (8 * scale) as u32;
     for inst in &layer.index_tiles {
         if inst.priority != hi_priority {
@@ -1690,7 +1716,11 @@ fn finalize_pixel(
     let layer_math_on = (frame.math_enabled >> main.bit[i]) & 1 != 0;
     // Color-window membership for this pixel, then gate clip + color-math exactly
     // like the classic post-process shader.
-    let win = frame.window_scanlines.get(nrow).copied().unwrap_or([0u8; 4]);
+    let win = frame
+        .window_scanlines
+        .get(nrow)
+        .copied()
+        .unwrap_or([0u8; 4]);
     let cm_window = in_cm_window(ncol as u32, win, frame.windowsel_cm);
     let not_clipped = cw_bit(cm_window, frame.clip_mode);
     let math_window_ok = cw_bit(cm_window, frame.prevent_math_mode);
@@ -1796,8 +1826,16 @@ fn finalize_frame(
                         let y = row0 + lr;
                         let base = y * width;
                         for x in 0..width {
-                            let px =
-                                finalize_pixel(base + x, main, sub, frame, width, scale, fixed, no_effect_math);
+                            let px = finalize_pixel(
+                                base + x,
+                                main,
+                                sub,
+                                frame,
+                                width,
+                                scale,
+                                fixed,
+                                no_effect_math,
+                            );
                             let o = lr * width * 4 + x * 4;
                             chunk[o..o + 4].copy_from_slice(&px);
                         }
@@ -1853,7 +1891,11 @@ fn mode7_bg_index(frame: &crate::gpu_frame::GpuFrame<'_>, sx: usize, sy: usize) 
         (m0 * clipped_h & -64) + (m1 * ry & -64) + (m1 * clipped_v & -64) + (x_center << 8);
     let start_y =
         (m2 * clipped_h & -64) + (m3 * ry & -64) + (m3 * clipped_v & -64) + (y_center << 8);
-    let rx = if m7.x_flip { 255 - sx as i32 } else { sx as i32 };
+    let rx = if m7.x_flip {
+        255 - sx as i32
+    } else {
+        sx as i32
+    };
 
     let mut x_pos = (start_x + m0 * rx) >> 8;
     let mut y_pos = (start_y + m2 * rx) >> 8;
@@ -2054,8 +2096,22 @@ mod tests {
 
         // W1 enabled but W1inv set (nibble 0 = 0b0011 = 0x3): masking INVERTED.
         let windowsel_w1_inv = 0x0000_0003u32;
-        assert!(!layer_window_masks(0, windowsel_w1_inv, windowed, 15, 5, &scan));
-        assert!(layer_window_masks(0, windowsel_w1_inv, windowed, 9, 5, &scan));
+        assert!(!layer_window_masks(
+            0,
+            windowsel_w1_inv,
+            windowed,
+            15,
+            5,
+            &scan
+        ));
+        assert!(layer_window_masks(
+            0,
+            windowsel_w1_inv,
+            windowed,
+            9,
+            5,
+            &scan
+        ));
 
         // W1 region set but neither W1en nor W2en → no masking (flags 0x0).
         assert!(!layer_window_masks(0, 0x0000_0000, windowed, 15, 5, &scan));
@@ -2074,7 +2130,13 @@ mod tests {
     ) -> (ModernFrame, Vec<ModernIndexTile>) {
         let mut indices = [0u8; 64];
         indices[0] = 1; // pixel (0,0)
-        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
         // Use palette `layer_index` so the two layers in the half-add test don't share a slot.
@@ -2106,12 +2168,18 @@ mod tests {
         for v in indices.iter_mut() {
             *v = 1; // fully opaque 8x8 tile
         }
-        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
         frame.brightness = 15;
         frame.screen_enabled_main = 0x01; // BG1 on main, no color math
-        // A = red (palette 0), B = green (palette 1).
+                                          // A = red (palette 0), B = green (palette 1).
         frame.cgram_rgba[1] = [20 << 3, 0, 0, 0xff];
         frame.cgram_rgba[16 + 1] = [0, 20 << 3, 0, 0xff];
         let bg1 = &mut frame.bg_layers[0];
@@ -2209,7 +2277,13 @@ mod tests {
     fn obj_vs_obj_priority_is_by_index_not_attribute() {
         let mut indices = [0u8; 64];
         indices[0] = 1; // pixel (0,0) opaque for both
-        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
         // A = palette 4 (red), B = palette 5 (green). Distinct colors.
@@ -2232,7 +2306,11 @@ mod tests {
         frame.screen_enabled_main = 0x10; // OBJ on main
         frame.brightness = 15;
         let out = render_modern_frame_full(&frame, &[], &cells);
-        assert_eq!(&out[0..3], &[255, 0, 0], "lower-index A (red) wins, not higher-prio B");
+        assert_eq!(
+            &out[0..3],
+            &[255, 0, 0],
+            "lower-index A (red) wins, not higher-prio B"
+        );
     }
 
     /// OBJ color-math is gated by palette: OBJ palettes 0-3 use a non-math layer
@@ -2242,7 +2320,13 @@ mod tests {
     fn obj_color_math_only_applies_to_palettes_4_to_7() {
         let mut indices = [0u8; 64];
         indices[0] = 1;
-        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
         let make = |pal: u8| {
             let mut frame = ModernFrame::empty();
             frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -2268,10 +2352,18 @@ mod tests {
         };
         // palette 2 (<4): unmathed → 5-bit 20 → (20<<3)|(20>>2) = 165.
         let out_lo = render_modern_frame_full(&make(2), &[], &cells);
-        assert_eq!(&out_lo[0..3], &[165, 165, 165], "palette<4 sprite must not be mathed");
+        assert_eq!(
+            &out_lo[0..3],
+            &[165, 165, 165],
+            "palette<4 sprite must not be mathed"
+        );
         // palette 5 (>=4): subtracted by 4 → 5-bit 16 → (16<<3)|(16>>2) = 132.
         let out_hi = render_modern_frame_full(&make(5), &[], &cells);
-        assert_eq!(&out_hi[0..3], &[132, 132, 132], "palette>=4 sprite must be subtracted");
+        assert_eq!(
+            &out_hi[0..3],
+            &[132, 132, 132],
+            "palette>=4 sprite must be subtracted"
+        );
     }
 
     #[test]
@@ -2449,7 +2541,13 @@ mod tests {
         for (k, slot) in indices.iter_mut().enumerate() {
             *slot = (k + 1) as u8;
         }
-        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
 
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -2457,22 +2555,20 @@ mod tests {
         // bits so the compositor's `>>3` (8-bit → 5-bit) keeps them distinct.
         for k in 1..=64usize {
             let k = k as u8;
-            frame.cgram_rgba[k as usize] = [
-                (k & 7) << 5,
-                ((k >> 3) & 7) << 5,
-                ((k >> 6) & 3) << 6,
-                0xff,
-            ];
+            frame.cgram_rgba[k as usize] =
+                [(k & 7) << 5, ((k >> 3) & 7) << 5, ((k >> 6) & 3) << 6, 0xff];
         }
-        frame.bg_layers[0].index_tiles.push(ModernIndexTileInstance {
-            cell_id: 0,
-            screen_x: 0,
-            screen_y: 0,
-            palette: 0,
-            hflip: false,
-            vflip: false,
-            priority: false,
-        });
+        frame.bg_layers[0]
+            .index_tiles
+            .push(ModernIndexTileInstance {
+                cell_id: 0,
+                screen_x: 0,
+                screen_y: 0,
+                palette: 0,
+                hflip: false,
+                vflip: false,
+                priority: false,
+            });
         frame.screen_enabled_main = 0x01; // BG1 on main
         frame.brightness = 15;
         frame.mosaic_enabled = 0x01; // BG1 mosaiced
@@ -2514,7 +2610,13 @@ mod tests {
         // Sprite cell 0: only pixel (0,0) is index 1; everything else transparent.
         let mut indices = [0u8; 64];
         indices[0] = 1;
-        let sprite_cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
+        let sprite_cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
 
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -2547,7 +2649,13 @@ mod tests {
         // Sprite cell 0: only pixel (7,0) is index 2.
         let mut indices = [0u8; 64];
         indices[7] = 2;
-        let sprite_cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
+        let sprite_cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
 
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
@@ -2581,7 +2689,13 @@ mod tests {
         let mut indices = [0u8; 64];
         indices[0] = 1; // pixel (0,0): sx=0, sy=0 → indices[sy*8+sx]=indices[0]
         indices[1] = 2; // pixel (1,0): sx=1, sy=0 → indices[sy*8+sx]=indices[1]
-        let cells = vec![ModernIndexTile { id: 0, indices, source_key: crate::modern_hd_overrides::NO_SOURCE_KEY, hflip: false, vflip: false }];
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
 
         // Frame: palette P=3 so that the palette offset (not P=0) is exercised.
         let mut frame = ModernFrame::empty();
@@ -2750,15 +2864,17 @@ mod tests {
         }];
         let bg_cgram_idx = 3 * 16 + 1;
         frame.cgram_rgba[bg_cgram_idx] = [16, 32, 48, 0xff];
-        frame.bg_layers[0].index_tiles.push(ModernIndexTileInstance {
-            cell_id: 0,
-            screen_x: 0,
-            screen_y: 0,
-            palette: 3,
-            hflip: false,
-            vflip: false,
-            priority: false,
-        });
+        frame.bg_layers[0]
+            .index_tiles
+            .push(ModernIndexTileInstance {
+                cell_id: 0,
+                screen_x: 0,
+                screen_y: 0,
+                palette: 3,
+                hflip: false,
+                vflip: false,
+                priority: false,
+            });
         let bg_probe = (0usize, bg_cgram_idx, 1u8); // screen (0,0) -> byte offset 0
 
         // Sprite: one opaque index-1 pixel at screen (50,60), palette 5.
@@ -2814,7 +2930,11 @@ mod tests {
         }
         let hd_identity = |cgram_idx: usize| {
             let c = ref_pal[cgram_idx];
-            HdCell { width: 8, height: 8, rgba: vec![c[0], c[1], c[2], 0xff].repeat(64) }
+            HdCell {
+                width: 8,
+                height: 8,
+                rgba: vec![c[0], c[1], c[2], 0xff].repeat(64),
+            }
         };
         let mut by_key = HashMap::new();
         by_key.insert(bg_key, hd_identity(bg_probe.1));
@@ -2826,12 +2946,19 @@ mod tests {
             &sprite_cells,
             &HdOverrideCtx::new(&store_identity),
         );
-        assert_eq!(identity, plain, "detail=1 override must match no-override render");
+        assert_eq!(
+            identity, plain,
+            "detail=1 override must match no-override render"
+        );
 
         // (b) HD art = half the reference -> live halved at the probed pixels.
         let hd_half = |cgram_idx: usize| {
             let c = ref_pal[cgram_idx];
-            HdCell { width: 8, height: 8, rgba: vec![c[0] / 2, c[1] / 2, c[2] / 2, 0xff].repeat(64) }
+            HdCell {
+                width: 8,
+                height: 8,
+                rgba: vec![c[0] / 2, c[1] / 2, c[2] / 2, 0xff].repeat(64),
+            }
         };
         let mut by_key2 = HashMap::new();
         by_key2.insert(bg_key, hd_half(bg_probe.1));
@@ -2849,30 +2976,34 @@ mod tests {
             let live = ref_pal[cgram_idx];
             let expected = [live[0] / 2, live[1] / 2, live[2] / 2];
             assert_eq!(&recolored[off..off + 3], &expected, "recolor at {off}");
-            assert_ne!(&recolored[off..off + 3], &plain[off..off + 3], "must differ from plain");
+            assert_ne!(
+                &recolored[off..off + 3],
+                &plain[off..off + 3],
+                "must differ from plain"
+            );
         }
     }
 
     #[test]
     fn variant_atlas_software_matches_indexed_bg_tile() {
         use crate::modern_source_atlas::modern_source_key;
-        use crate::modern_variant_atlas::{
-            ModernVariantAtlas, VariantAtlasEntry, VariantAtlasKey,
-        };
+        use crate::modern_variant_atlas::{ModernVariantAtlas, VariantAtlasEntry, VariantAtlasKey};
 
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
         frame.bg_layers[0].enabled_main = true;
         frame.cgram_rgba[3 * 16 + 1] = [16, 32, 48, 0xff];
-        frame.bg_layers[0].index_tiles.push(ModernIndexTileInstance {
-            cell_id: 0,
-            screen_x: 0,
-            screen_y: 0,
-            palette: 3,
-            hflip: false,
-            vflip: false,
-            priority: false,
-        });
+        frame.bg_layers[0]
+            .index_tiles
+            .push(ModernIndexTileInstance {
+                cell_id: 0,
+                screen_x: 0,
+                screen_y: 0,
+                palette: 3,
+                hflip: false,
+                vflip: false,
+                priority: false,
+            });
         let mut indices = [0u8; 64];
         indices[0] = 1;
         let cells = vec![ModernIndexTile {
@@ -2937,15 +3068,17 @@ mod tests {
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
         frame.bg_layers[0].enabled_main = true;
         frame.cgram_rgba[3 * 16 + 2] = [11, 22, 33, 0xff];
-        frame.bg_layers[0].index_tiles.push(ModernIndexTileInstance {
-            cell_id: 0,
-            screen_x: 0,
-            screen_y: 0,
-            palette: 3,
-            hflip: false,
-            vflip: false,
-            priority: false,
-        });
+        frame.bg_layers[0]
+            .index_tiles
+            .push(ModernIndexTileInstance {
+                cell_id: 0,
+                screen_x: 0,
+                screen_y: 0,
+                palette: 3,
+                hflip: false,
+                vflip: false,
+                priority: false,
+            });
         let mut indices = [0u8; 64];
         indices[0] = 2;
         let cells = vec![ModernIndexTile {
@@ -3152,16 +3285,18 @@ mod tests {
             hflip: true,
             vflip: false,
         }];
-        frame.bg_layers[0].index_tiles.push(ModernIndexTileInstance {
-            cell_id: 0,
-            screen_x: 0,
-            screen_y: 0,
-            palette: 2,
-            // BG instance flip is always false; the CELL carries the baked flip.
-            hflip: false,
-            vflip: false,
-            priority: false,
-        });
+        frame.bg_layers[0]
+            .index_tiles
+            .push(ModernIndexTileInstance {
+                cell_id: 0,
+                screen_x: 0,
+                screen_y: 0,
+                palette: 2,
+                // BG instance flip is always false; the CELL carries the baked flip.
+                hflip: false,
+                vflip: false,
+                priority: false,
+            });
 
         // Spatially-varying HD source art (unflipped orientation): r=x*32, g=y*32, b=128.
         let mut hd_rgba = vec![0u8; 8 * 8 * 4];
@@ -3174,7 +3309,11 @@ mod tests {
                 hd_rgba[o + 3] = 0xff;
             }
         }
-        let hd_cell = HdCell { width: 8, height: 8, rgba: hd_rgba };
+        let hd_cell = HdCell {
+            width: 8,
+            height: 8,
+            rgba: hd_rgba,
+        };
 
         let mut reference = [[0u8; 4]; 256];
         reference[CGRAM_IDX] = [224, 128, 128, 0xff];
@@ -3230,15 +3369,17 @@ mod tests {
         frame.brightness = 15;
         frame.screen_enabled_main = 0x01; // BG1
         frame.cgram_rgba[1] = [20 << 3, 10 << 3, 5 << 3, 0xff];
-        frame.bg_layers[0].index_tiles.push(ModernIndexTileInstance {
-            cell_id: 0,
-            screen_x: 0,
-            screen_y: 0,
-            palette: 0,
-            hflip: false,
-            vflip: false,
-            priority: false,
-        });
+        frame.bg_layers[0]
+            .index_tiles
+            .push(ModernIndexTileInstance {
+                cell_id: 0,
+                screen_x: 0,
+                screen_y: 0,
+                palette: 0,
+                hflip: false,
+                vflip: false,
+                priority: false,
+            });
         (frame, cells)
     }
 
@@ -3248,7 +3389,7 @@ mod tests {
         let (frame, bg_cells) = tiny_simple_bg_fixture();
         // Native reference.
         let native = render_modern_frame_full(&frame, &bg_cells, &[]); // 256×224×4
-        // scale=2 via the new entry: every native pixel must equal its 2×2 block.
+                                                                       // scale=2 via the new entry: every native pixel must equal its 2×2 block.
         let hd = render_modern_frame_full_scaled(
             &frame,
             &bg_cells,
@@ -3333,15 +3474,17 @@ mod tests {
             hflip: false,
             vflip: false,
         }];
-        frame.bg_layers[0].index_tiles.push(ModernIndexTileInstance {
-            cell_id: 0,
-            screen_x: 0,
-            screen_y: 0,
-            palette: 0,
-            hflip: false,
-            vflip: false,
-            priority: false,
-        });
+        frame.bg_layers[0]
+            .index_tiles
+            .push(ModernIndexTileInstance {
+                cell_id: 0,
+                screen_x: 0,
+                screen_y: 0,
+                palette: 0,
+                hflip: false,
+                vflip: false,
+                priority: false,
+            });
 
         // 16×16 (2×) HD art: red encodes the HD column (x·16), g/b constant 128.
         let mut hd_rgba = vec![0u8; 16 * 16 * 4];
@@ -3354,7 +3497,11 @@ mod tests {
                 hd_rgba[o + 3] = 0xff;
             }
         }
-        let hd_cell = HdCell { width: 16, height: 16, rgba: hd_rgba };
+        let hd_cell = HdCell {
+            width: 16,
+            height: 16,
+            rgba: hd_rgba,
+        };
 
         let mut reference = [[0u8; 4]; 256];
         reference[CGRAM_IDX] = [128, 128, 128, 0xff]; // detail baseline == live
@@ -3370,13 +3517,22 @@ mod tests {
         let p00 = 0usize; // (0,0)
         let p10 = 4usize; // (1,0)
         assert_eq!(hd2[p00], 0, "output (0,0) red from HD texel col 0");
-        assert_eq!(hd2[p10], 16, "output (1,0) red from HD texel col 1 (sub-pixel)");
-        assert_ne!(hd2[p00], hd2[p10], "adjacent output pixels must sample adjacent HD texels");
+        assert_eq!(
+            hd2[p10], 16,
+            "output (1,0) red from HD texel col 1 (sub-pixel)"
+        );
+        assert_ne!(
+            hd2[p00], hd2[p10],
+            "adjacent output pixels must sample adjacent HD texels"
+        );
 
         // A block-upscale of the scale=1 render CANNOT reproduce the sub-pixel detail:
         // the N× output must differ from a nearest-upscale of the native render.
         let native1 = render_modern_frame_full_scaled(&frame, &bg_cells, &[], &ctx, 1);
         let block = upscale_rgba_nearest(&native1, 256, 224, 2);
-        assert_ne!(hd2, block, "sub-pixel HD sampling must differ from a block upscale");
+        assert_ne!(
+            hd2, block,
+            "sub-pixel HD sampling must differ from a block upscale"
+        );
     }
 }

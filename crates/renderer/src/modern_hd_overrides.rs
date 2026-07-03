@@ -215,16 +215,22 @@ fn decode_rgba_cell(path: &Path) -> Option<HdCell> {
         );
         return None;
     }
-    Some(HdCell { width, height, rgba })
+    Some(HdCell {
+        width,
+        height,
+        rgba,
+    })
 }
 
 /// Decode a 256×1 RGBA PNG into a `[[u8;4];256]` reference palette. `None` if not 256 px.
 fn decode_reference(path: &Path) -> Option<[[u8; 4]; 256]> {
-    let (width, height, rgba) = decode_rgba_png(path)
-        .or_else(|| {
-            eprintln!("ZELDA3_MODERN_HD_OVERRIDES reference {} unreadable", path.display());
-            None
-        })?;
+    let (width, height, rgba) = decode_rgba_png(path).or_else(|| {
+        eprintln!(
+            "ZELDA3_MODERN_HD_OVERRIDES reference {} unreadable",
+            path.display()
+        );
+        None
+    })?;
     if (width * height) as usize != 256 || rgba.len() != 256 * 4 {
         eprintln!(
             "ZELDA3_MODERN_HD_OVERRIDES reference {} must be 256 RGBA px (got {width}×{height})",
@@ -328,7 +334,8 @@ mod tests {
 
     fn unique_dir(tag: &str) -> PathBuf {
         // No Date/random needed: process id + tag is unique enough per test run.
-        let dir = std::env::temp_dir().join(format!("zelda3_hd_ovr_{}_{}", std::process::id(), tag));
+        let dir =
+            std::env::temp_dir().join(format!("zelda3_hd_ovr_{}_{}", std::process::id(), tag));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -379,7 +386,11 @@ mod tests {
         let mut rgba = vec![0u8; 16 * 16 * 4];
         let idx = ((0 * 16 + 2) * 4) as usize;
         rgba[idx..idx + 4].copy_from_slice(&[9, 8, 7, 0xff]);
-        let cell = HdCell { width: 16, height: 16, rgba };
+        let cell = HdCell {
+            width: 16,
+            height: 16,
+            rgba,
+        };
         assert_eq!(cell.sample_native(1, 0), [9, 8, 7]);
     }
 
@@ -405,10 +416,23 @@ mod tests {
     fn resolve_detail_modulates_with_override() {
         let mut reference = [[0u8; 4]; 256];
         reference[5] = [128, 128, 128, 0xff];
-        let cell = HdCell { width: 8, height: 8, rgba: vec![64u8; 8 * 8 * 4] };
+        let cell = HdCell {
+            width: 8,
+            height: 8,
+            rgba: vec![64u8; 8 * 8 * 4],
+        };
         // live 100 * (hd 64 / ref 128) = 50.
         assert_eq!(
-            resolve_pixel_color(1, 5, [100, 100, 100, 0xff], Some(&cell), &reference, 0, 0, 8),
+            resolve_pixel_color(
+                1,
+                5,
+                [100, 100, 100, 0xff],
+                Some(&cell),
+                &reference,
+                0,
+                0,
+                8
+            ),
             Some([50, 50, 50, 0xff])
         );
     }
@@ -423,7 +447,14 @@ mod tests {
     #[test]
     fn store_get_ignores_no_source_key() {
         let mut by_key = HashMap::new();
-        by_key.insert(NO_SOURCE_KEY, HdCell { width: 8, height: 8, rgba: vec![0; 256] });
+        by_key.insert(
+            NO_SOURCE_KEY,
+            HdCell {
+                width: 8,
+                height: 8,
+                rgba: vec![0; 256],
+            },
+        );
         let store = ModernHdOverrides::from_parts(by_key, [[0u8; 4]; 256]);
         assert!(store.get(NO_SOURCE_KEY).is_none());
     }
@@ -492,11 +523,11 @@ mod tests {
 
     #[test]
     fn hd_scale_parses_and_clamps() {
-        assert_eq!(HdScale::from_str_opt(None).get(), 2);        // default
+        assert_eq!(HdScale::from_str_opt(None).get(), 2); // default
         assert_eq!(HdScale::from_str_opt(Some("1")).get(), 1);
         assert_eq!(HdScale::from_str_opt(Some("4")).get(), 4);
-        assert_eq!(HdScale::from_str_opt(Some("0")).get(), 1);   // clamp low
-        assert_eq!(HdScale::from_str_opt(Some("9")).get(), 4);   // clamp high
+        assert_eq!(HdScale::from_str_opt(Some("0")).get(), 1); // clamp low
+        assert_eq!(HdScale::from_str_opt(Some("9")).get(), 4); // clamp high
         assert_eq!(HdScale::from_str_opt(Some("xyz")).get(), 2); // invalid → default
     }
 
@@ -509,9 +540,13 @@ mod tests {
             r[i..i + 4].copy_from_slice(&c);
         };
         put(&mut rgba, 9, 3, [7, 8, 9, 0xff]);
-        let cell = HdCell { width: 16, height: 16, rgba };
+        let cell = HdCell {
+            width: 16,
+            height: 16,
+            rgba,
+        };
         assert_eq!(cell.sample_scaled(9, 3, 16), [7, 8, 9]); // 9*16/16=9, 3*16/16=3
-        // footprint 8 (scale 1) == native top-left of the whole cell region.
+                                                             // footprint 8 (scale 1) == native top-left of the whole cell region.
         assert_eq!(cell.sample_scaled(0, 0, 8), cell.sample_native(0, 0));
     }
 
@@ -519,10 +554,23 @@ mod tests {
     fn resolve_pixel_color_footprint_8_matches_phase1() {
         let mut reference = [[0u8; 4]; 256];
         reference[5] = [128, 128, 128, 0xff];
-        let cell = HdCell { width: 8, height: 8, rgba: vec![64u8; 8 * 8 * 4] };
+        let cell = HdCell {
+            width: 8,
+            height: 8,
+            rgba: vec![64u8; 8 * 8 * 4],
+        };
         // Same as the Phase 1 test, now with explicit footprint 8.
         assert_eq!(
-            resolve_pixel_color(1, 5, [100, 100, 100, 0xff], Some(&cell), &reference, 0, 0, 8),
+            resolve_pixel_color(
+                1,
+                5,
+                [100, 100, 100, 0xff],
+                Some(&cell),
+                &reference,
+                0,
+                0,
+                8
+            ),
             Some([50, 50, 50, 0xff])
         );
     }
