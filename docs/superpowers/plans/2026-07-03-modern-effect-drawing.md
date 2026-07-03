@@ -142,7 +142,8 @@ Run: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-var
 
 Expected: no new mismatches from effect-backed draws; remaining fallbacks are documented dynamic/missing cases. The wrapper now uses the existing oracle checkpoint ledger by default for routine tail validation; pass `--cold` when the proof must replay every selected window from frame 0.
 
-Current evidence: `title-start` and `file-select-new-game` passed with
+Historical evidence before the default-art/effect-loader fixes: `title-start`
+and `file-select-new-game` passed with
 `mismatched_pixels=0` under `assets-variant-gpu`. The progress-friendly wrapper
 also proved the longer `file-select-enter-game` window:
 `compared=107000`, `mismatched_pixels=0`, `variant_draws=0`,
@@ -209,3 +210,12 @@ execution. A real `--jobs 2` rerun of `file-select-button-taps` and
 `opening-uncle-extended-move` passed with `compared=22000`,
 `mismatched_pixels=0`, `fallback_draws=216038244`,
 `dynamic_palette_draws=0`, and `missing_variant_draws=2088816`.
+
+Current implementation evidence after the default-art/effect-loader and live
+present work: `art_tiles.*` source-kind-default refs can resolve as stable when
+`tile_effects.json` has a stable LUT; mixed fallback/effect frames overlay
+effect-backed stable cells through the LUT shader; and live
+`assets-variant-gpu` presents on the window renderer's GPU device without
+headless readback or CPU RGBA upload. Use `ZELDA3_VARIANT_LIVE_STATS=1` for a
+cheap live draw-mix check; representative oracle windows should be rerun when a
+fresh route-wide proof is required.

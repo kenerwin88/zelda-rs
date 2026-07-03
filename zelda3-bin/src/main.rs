@@ -1431,7 +1431,7 @@ fn effective_play_renderer() -> String {
 /// is `None` for explicit `modern`/`modern-compare`/`classic`, so those keep
 /// rendering (VRAM-decoded, no HD overrides) through
 /// `FrameRenderer::render_modern_frame`'s fallback. If the atlas fails to load it
-/// falls back gracefully to the classic path.
+/// falls back to the live indexed GPU atlas path for GPU asset modes.
 struct GpuPlayRenderer {
     source_atlas: Option<renderer::modern_source_atlas::ModernSourceAtlas>,
     hd_overrides: Option<renderer::modern_hd_overrides::ModernHdOverrides>,
@@ -1557,7 +1557,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
         // zelda3 `GameState`) can see — `FrameRenderer` only gets `GpuFrame`.
         // Mode 7 isn't a Mode-1 tilemap the sources extractor can render, so
         // GPU atlas modes route it through `present_modern_mode7_gpu` above.
-        // CPU/debug modes fall through to the frontend's modern fallback.
+        // CPU/debug modes fall through to the frontend's modern fallback below.
         if let Some(atlas) = self.source_atlas.as_ref().filter(|_| gpu_frame.mode != 7) {
             let src_slice: Vec<(u8, u16, u16)> = game
                 .vram_chr_source()
@@ -1615,6 +1615,15 @@ impl PlayRendererBackend for GpuPlayRenderer {
             frontend.present_modern_rgba(&rgba, 256 * scale, 224 * scale);
             return;
         }
+        if gpu_frame.mode != 7 && (self.variant_atlas.is_some() || self.atlas_gpu) {
+            let (mut modern, bg_cells) =
+                renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
+            let (sprite_cells, sprites) =
+                renderer::modern_extract::extract_modern_sprites_from_vram(&gpu_frame);
+            modern.index_sprites = sprites;
+            frontend.present_modern_gpu(&modern, &bg_cells, &sprite_cells);
+            return;
+        }
         let presentation = PresentationContext {
             in_dungeon: game.ram[PLAYER_IS_INDOORS] != 0,
         };
@@ -1663,10 +1672,11 @@ fn run_play_with_state(mut game: ZeldaState) {
     // selects the older `assets-anim-gpu` path, and `ZELDA3_RENDERER=classic` opts
     // back into the wgpu PPU. `ZELDA3_RENDERER=modern`/`modern-compare` route
     // through the modern (software) live-VRAM path. The assets modes map to Modern
-    // here: `RendererMode::parse` only recognizes "modern"/"modern-compare" (it's
-    // shared with the offline compare harness, which tracks assets modes separately),
-    // but live present still needs Modern's fallback (`FrameRenderer::render_modern_frame`,
-    // N× VRAM-decode) for Mode-7 frames and for any frame the atlas doesn't cover.
+    // here because `RendererMode::parse` only recognizes "modern"/"modern-compare"
+    // (it's shared with the offline compare harness, which tracks assets modes
+    // separately). GPU asset modes intercept Mode 7 and source-atlas misses in
+    // `GpuPlayRenderer::present_frame`, so the default path does not need
+    // `FrameRenderer::render_modern_frame`'s CPU compositor.
     let renderer_env = effective_play_renderer();
     let renderer_mode = if renderer_env == "assets-anim"
         || renderer_env == "assets-anim-gpu"
@@ -3790,8 +3800,8 @@ fn run_replay_save(args: &[String]) {
     // Off-VRAM atlas paths: unset now uses `assets-variant-gpu`; `assets-anim-gpu`
     // remains the full indexed GPU fallback when `ZELDA3_VARIANT_ATLAS=off` or an
     // explicit renderer env selects it. Explicit `assets-anim` keeps the CPU atlas
-    // compositor as an opt-out/debug oracle. `assets-variant-gpu` uses pre-colored
-    // RGBA variant atlas entries for stable draws and reports fallback counts.
+    // compositor as an opt-out/debug oracle. `assets-variant-gpu` uses compact
+    // base art plus LUT effects for stable draws and reports fallback counts.
     let replay_renderer_env = std::env::var("ZELDA3_RENDERER").ok();
     let replay_renderer_mode = renderer_env_or_default(replay_renderer_env.as_deref());
     let assets_anim_mode = replay_renderer_mode == "assets-anim";
