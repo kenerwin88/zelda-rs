@@ -154,6 +154,11 @@ The extended saved-slot gameplay route also passes under `assets-variant-gpu`:
 `mismatched_pixels=0`, `variant_draws=0`, `fallback_draws=1363234978`,
 `dynamic_palette_draws=0`, `missing_variant_draws=554171`.
 
+The diagonal indoor movement route also passes under `assets-variant-gpu`:
+`file-select-diagonal-sweeps` completed `compared=116000`,
+`mismatched_pixels=0`, `variant_draws=0`, `fallback_draws=1295572978`,
+`dynamic_palette_draws=0`, `missing_variant_draws=542171`.
+
 `no-input-intro` is now included in dry-runs after fixing the empty-input SRAM
 sidecar filter. That exposed a real modern compositor gap: the first mismatch
 was frame `1954`, `ppumode=1`, `via=vram`/`variant-gpu`, with a far-left
