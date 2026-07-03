@@ -42,6 +42,7 @@ class VariantAtlasSummaryTests(unittest.TestCase):
                         {
                             "art_id": "art:a",
                             "bpp": 3,
+                            "rect": [0, 0, 8, 8],
                             "preview_palette": "palette_main_spr",
                             "preview_palette_row": 0,
                             "preview_source": "source_kind_default",
@@ -65,6 +66,7 @@ class VariantAtlasSummaryTests(unittest.TestCase):
                         {
                             "art_id": "art:b",
                             "bpp": 2,
+                            "rect": [8, 0, 8, 8],
                             "preview_palette": "palette_bg",
                             "preview_palette_row": 1,
                             "preview_source": "palette_usage",
@@ -106,6 +108,7 @@ class VariantAtlasSummaryTests(unittest.TestCase):
             summary = summarize_variant_atlas(atlas_dir)
 
             self.assertEqual(summary["source_refs"], 3)
+            self.assertEqual(summary["counted_art_entries"], 2)
             self.assertEqual(summary["manifest_width"], 16)
             self.assertEqual(summary["manifest_height"], 8)
             self.assertEqual(summary["art_png_width"], 16)
@@ -113,6 +116,8 @@ class VariantAtlasSummaryTests(unittest.TestCase):
             self.assertEqual(summary["manifest_source_refs"], 3)
             self.assertEqual(summary["stable_by_loader_rule"], 2)
             self.assertEqual(summary["missing_effect_refs"], 1)
+            self.assertEqual(summary["invalid_rect_count"], 0)
+            self.assertEqual(summary["invalid_rects"], [])
             self.assertEqual(summary["stable_by_kind"], {"bg": 1, "sprite": 1})
             self.assertEqual(summary["source_refs_by_kind"], {"bg": 1, "sprite": 2})
             self.assertEqual(
@@ -124,6 +129,7 @@ class VariantAtlasSummaryTests(unittest.TestCase):
         text = format_summary(
             {
                 "art_count": 2,
+                "counted_art_entries": 2,
                 "manifest_width": 16,
                 "manifest_height": 8,
                 "art_png_width": 16,
@@ -132,14 +138,17 @@ class VariantAtlasSummaryTests(unittest.TestCase):
                 "manifest_source_refs": 3,
                 "stable_by_loader_rule": 2,
                 "missing_effect_refs": 1,
+                "invalid_rect_count": 0,
                 "stable_by_kind": {"bg": 1, "sprite": 1},
                 "source_refs_by_kind": {"bg": 1, "sprite": 2},
                 "preview_sources": {"palette_usage": 1, "source_kind_default": 2},
             }
         )
 
+        self.assertIn("counted_art_entries=2", text)
         self.assertIn("manifest_size=16x8", text)
         self.assertIn("art_png_size=16x8", text)
+        self.assertIn("invalid_rect_count=0", text)
         self.assertIn("source_refs=3", text)
         self.assertIn("stable_by_kind bg=1 sprite=1", text)
         self.assertIn("preview_sources palette_usage=1 source_kind_default=2", text)
@@ -149,12 +158,16 @@ class VariantAtlasSummaryTests(unittest.TestCase):
             coverage_errors(
                 {
                     "source_refs": 3,
+                    "art_count": 2,
+                    "counted_art_entries": 2,
                     "manifest_width": 16,
                     "manifest_height": 8,
                     "art_png_width": 16,
                     "art_png_height": 8,
                     "manifest_source_refs": 3,
                     "missing_effect_refs": 0,
+                    "invalid_rect_count": 0,
+                    "invalid_rects": [],
                 }
             ),
             [],
@@ -163,16 +176,22 @@ class VariantAtlasSummaryTests(unittest.TestCase):
             coverage_errors(
                 {
                     "source_refs": 3,
+                    "art_count": 2,
+                    "counted_art_entries": 1,
                     "manifest_width": 16,
                     "manifest_height": 8,
                     "art_png_width": 24,
                     "art_png_height": 8,
                     "manifest_source_refs": 4,
                     "missing_effect_refs": 1,
+                    "invalid_rect_count": 2,
+                    "invalid_rects": ["art:a:[12, 0, 8, 8]", "art:b:['bad']"],
                 }
             ),
             [
                 "art_tiles.png size does not match art_tiles.json: 24x8 != 16x8",
+                "manifest art_count does not match counted arts: 2 != 1",
+                "art rects outside art_tiles.png bounds or malformed: 2 example(s): art:a:[12, 0, 8, 8], art:b:['bad']",
                 "manifest source_ref_count does not match counted source_refs: 4 != 3",
                 "canonical source refs without stable preview/effect coverage: 1",
             ],

@@ -69,10 +69,17 @@ def summarize_variant_atlas(atlas_dir: Path) -> dict[str, Any]:
     stable_by_kind: Counter[str] = Counter()
     source_refs_by_kind: Counter[str] = Counter()
     preview_sources: Counter[str] = Counter()
+    counted_art_entries = 0
+    invalid_rects: list[str] = []
 
     for art in art_manifest.get("arts", []):
         if not isinstance(art, dict):
             continue
+        counted_art_entries += 1
+        art_id = str(art.get("art_id", f"art_index:{counted_art_entries - 1}"))
+        rect = art.get("rect")
+        if not _rect_is_valid(rect, art_png_width, art_png_height):
+            invalid_rects.append(f"{art_id}:{rect!r}")
         for ref in art.get("source_refs", []):
             if not isinstance(ref, dict):
                 continue
@@ -97,6 +104,7 @@ def summarize_variant_atlas(atlas_dir: Path) -> dict[str, Any]:
     manifest_source_refs = art_manifest.get("source_ref_count")
     return {
         "art_count": art_manifest.get("art_count", len(art_manifest.get("arts", []))),
+        "counted_art_entries": counted_art_entries,
         "manifest_width": art_manifest.get("width"),
         "manifest_height": art_manifest.get("height"),
         "art_png_width": art_png_width,
@@ -105,6 +113,8 @@ def summarize_variant_atlas(atlas_dir: Path) -> dict[str, Any]:
         "manifest_source_refs": manifest_source_refs,
         "stable_by_loader_rule": stable_by_loader_rule,
         "missing_effect_refs": missing_effect_refs,
+        "invalid_rect_count": len(invalid_rects),
+        "invalid_rects": invalid_rects[:5],
         "stable_by_kind": dict(sorted(stable_by_kind.items())),
         "source_refs_by_kind": dict(sorted(source_refs_by_kind.items())),
         "preview_sources": dict(sorted(preview_sources.items())),
@@ -117,15 +127,28 @@ def _format_counts(prefix: str, counts: dict[str, int]) -> str:
     return f"{prefix} " + " ".join(f"{key}={value}" for key, value in counts.items())
 
 
+def _rect_is_valid(rect: Any, width: int, height: int) -> bool:
+    if not isinstance(rect, list) or len(rect) != 4:
+        return False
+    if not all(isinstance(value, int) for value in rect):
+        return False
+    x, y, w, h = rect
+    if w <= 0 or h <= 0 or x < 0 or y < 0:
+        return False
+    return x + w <= width and y + h <= height
+
+
 def format_summary(summary: dict[str, Any]) -> str:
     lines = [
         f"art_count={summary['art_count']}",
+        f"counted_art_entries={summary['counted_art_entries']}",
         f"manifest_size={summary['manifest_width']}x{summary['manifest_height']}",
         f"art_png_size={summary['art_png_width']}x{summary['art_png_height']}",
         f"source_refs={summary['source_refs']}",
         f"manifest_source_refs={summary['manifest_source_refs']}",
         f"stable_by_loader_rule={summary['stable_by_loader_rule']}",
         f"missing_effect_refs={summary['missing_effect_refs']}",
+        f"invalid_rect_count={summary['invalid_rect_count']}",
         _format_counts("stable_by_kind", summary["stable_by_kind"]),
         _format_counts("source_refs_by_kind", summary["source_refs_by_kind"]),
         _format_counts("preview_sources", summary["preview_sources"]),
@@ -143,6 +166,17 @@ def coverage_errors(summary: dict[str, Any]) -> list[str]:
             "art_tiles.png size does not match art_tiles.json: "
             f"{summary['art_png_width']}x{summary['art_png_height']} != "
             f"{summary['manifest_width']}x{summary['manifest_height']}"
+        )
+    if summary["art_count"] != summary["counted_art_entries"]:
+        errors.append(
+            "manifest art_count does not match counted arts: "
+            f"{summary['art_count']} != {summary['counted_art_entries']}"
+        )
+    if summary["invalid_rect_count"] != 0:
+        examples = ", ".join(summary["invalid_rects"])
+        errors.append(
+            "art rects outside art_tiles.png bounds or malformed: "
+            f"{summary['invalid_rect_count']} example(s): {examples}"
         )
     if summary["manifest_source_refs"] != summary["source_refs"]:
         errors.append(
