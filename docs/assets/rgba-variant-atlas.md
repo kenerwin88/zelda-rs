@@ -276,6 +276,11 @@ readback or CPU RGBA upload. Use `ZELDA3_VARIANT_ATLAS=off` to keep the older
 indexed GPU atlas path, or `ZELDA3_RENDERER=assets-anim` for the CPU atlas
 compositor oracle.
 
+If optional `art_tiles.*` / `base_tiles.*` variant art fails to load, the
+selected default mode still stays on the live indexed GPU atlas fallback. The
+CPU atlas compositor is only used for the explicit `ZELDA3_RENDERER=assets-anim`
+oracle/debug mode.
+
 For a cheap live coverage check without a replay scan, set
 `ZELDA3_VARIANT_LIVE_STATS=1`. The play loop prints aggregate
 `variant_live_summary` lines every 300 presented variant frames by default; use

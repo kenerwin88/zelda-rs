@@ -1429,6 +1429,14 @@ fn gpu_asset_renderer_mode(mode: &str) -> bool {
     mode == "assets-anim-gpu" || mode == "assets-variant-gpu"
 }
 
+fn source_atlas_renderer_mode(mode: &str) -> bool {
+    mode == "assets-anim" || gpu_asset_renderer_mode(mode)
+}
+
+fn variant_atlas_renderer_mode(mode: &str) -> bool {
+    mode == "assets-variant-gpu"
+}
+
 /// Off-VRAM source atlas + HD override store for the live modern present path,
 /// loaded once. The atlas loads for the default (unset) and explicit `assets-anim`
 /// interactive modes (see `effective_play_renderer`) — `source_atlas`
@@ -1495,10 +1503,8 @@ impl VariantLiveStats {
 impl GpuPlayRenderer {
     fn new() -> Self {
         let mode = effective_play_renderer();
-        let assets_anim_mode =
-            mode == "assets-anim" || mode == "assets-anim-gpu" || mode == "assets-variant-gpu";
         let gpu_asset_mode = gpu_asset_renderer_mode(&mode);
-        let variant_atlas = if mode == "assets-variant-gpu" {
+        let variant_atlas = if variant_atlas_renderer_mode(&mode) {
             match renderer::modern_variant_atlas::load_modern_base_art_atlas(Path::new(".")) {
                 Ok(atlas) => Some(atlas),
                 Err(e) => {
@@ -1511,7 +1517,7 @@ impl GpuPlayRenderer {
         } else {
             None
         };
-        let source_atlas = if assets_anim_mode {
+        let source_atlas = if source_atlas_renderer_mode(&mode) {
             match renderer::modern_source_atlas::load_modern_source_atlas(Path::new(".")) {
                 Ok(atlas) => Some(atlas),
                 Err(e) => {
@@ -14760,6 +14766,13 @@ mod tests {
         ));
         assert!(gpu_asset_renderer_mode("assets-anim-gpu"));
         assert!(!gpu_asset_renderer_mode("assets-anim"));
+        assert!(source_atlas_renderer_mode("assets-variant-gpu"));
+        assert!(source_atlas_renderer_mode("assets-anim-gpu"));
+        assert!(source_atlas_renderer_mode("assets-anim"));
+        assert!(!source_atlas_renderer_mode("classic"));
+        assert!(variant_atlas_renderer_mode("assets-variant-gpu"));
+        assert!(!variant_atlas_renderer_mode("assets-anim-gpu"));
+        assert!(!variant_atlas_renderer_mode("assets-anim"));
         assert_eq!(
             default_renderer_env_for_variant_setting(Some("off")),
             "assets-anim-gpu",
