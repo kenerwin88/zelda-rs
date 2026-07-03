@@ -431,15 +431,23 @@ summaries. Document the counter meanings in `docs/assets/rgba-variant-atlas.md`.
 ### Task 7: Compile Variant Draws Into Backend-Neutral Draw Packets
 
 **Files:**
-- Create: `crates/renderer/src/modern_variant_draw.rs`
-- Modify: `crates/renderer/src/lib.rs`
-- Modify: `crates/renderer/src/modern_software.rs`
-- Modify: `crates/renderer/src/modern_gpu.rs`
-- Test: `cargo test -p renderer modern_variant_draw`
+- [x] Create: `crates/renderer/src/modern_variant_draw.rs`
+- [x] Modify: `crates/renderer/src/lib.rs`
+- [x] Modify: `crates/renderer/src/modern_software.rs`
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Test: `cargo test -p renderer modern_variant_draw -- --nocapture`
+- [x] Test: `cargo test -p renderer variant_atlas_software -- --nocapture`
+- [x] Test: `cargo test -p renderer modern_gpu_variant_headless -- --nocapture`
 
 **Goal:** Build one backend-neutral list of source-art/effect/indexed-fallback
 draw packets per `ModernFrame`. Software and GPU renderers consume the same
 packet list, which is the next clean break from the old CPU composition shape.
+
+**Done:** `modern_variant_draw::compile_variant_draws` now emits BG and sprite
+draw packets plus shared `VariantAtlasRenderStats`. The software variant path,
+live GPU variant path, GPU stable-overlay frame builder, and GPU effect overlay
+all consume that plan instead of independently resolving atlas keys and draw
+policies.
 
 ### Task 8: Add A Route-Window Proof For Nonzero Variant Draws
 

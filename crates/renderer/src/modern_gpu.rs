@@ -406,31 +406,32 @@ impl ModernGpuVariantRenderer {
         sprite_palette_name: &str,
         output_view: &wgpu::TextureView,
     ) -> crate::modern_software::VariantAtlasRenderStats {
-        let (variant_frame, stats) = self.build_variant_frame(
+        let plan = crate::modern_variant_draw::compile_variant_draws(
             frame,
             bg_cells,
             sprite_cells,
+            &self.atlas,
             bg_palette_name,
             sprite_palette_name,
         );
+        let variant_frame = self.build_variant_frame_from_plan(frame, &plan);
+        let stats = plan.stats;
         if stats.fallback_draws == 0 && stats.effect_draws == stats.stable_draws {
             self.effect_renderer.render_bg(
                 device,
                 queue,
-                frame,
                 bg_cells,
                 &self.atlas,
-                bg_palette_name,
+                &plan.bg,
                 output_view,
                 modern_frame_clear_op(frame),
             );
             self.effect_renderer.render_sprites(
                 device,
                 queue,
-                frame,
                 sprite_cells,
                 &self.atlas,
-                sprite_palette_name,
+                &plan.sprites,
                 output_view,
             );
             return stats;
@@ -444,20 +445,18 @@ impl ModernGpuVariantRenderer {
                 self.effect_renderer.render_bg(
                     device,
                     queue,
-                    frame,
                     bg_cells,
                     &self.atlas,
-                    bg_palette_name,
+                    &plan.bg,
                     output_view,
                     wgpu::LoadOp::Load,
                 );
                 self.effect_renderer.render_sprites(
                     device,
                     queue,
-                    frame,
                     sprite_cells,
                     &self.atlas,
-                    sprite_palette_name,
+                    &plan.sprites,
                     output_view,
                 );
             }
@@ -469,20 +468,18 @@ impl ModernGpuVariantRenderer {
             self.effect_renderer.render_bg(
                 device,
                 queue,
-                frame,
                 bg_cells,
                 &self.atlas,
-                bg_palette_name,
+                &plan.bg,
                 output_view,
                 modern_frame_clear_op(frame),
             );
             self.effect_renderer.render_sprites(
                 device,
                 queue,
-                frame,
                 sprite_cells,
                 &self.atlas,
-                sprite_palette_name,
+                &plan.sprites,
                 output_view,
             );
             if stats.stable_draws != stats.effect_draws {
@@ -496,89 +493,35 @@ impl ModernGpuVariantRenderer {
         stats
     }
 
-    fn build_variant_frame(
+    fn build_variant_frame_from_plan(
         &self,
         frame: &ModernFrame,
-        bg_cells: &[ModernIndexTile],
-        sprite_cells: &[ModernIndexTile],
-        bg_palette_name: &str,
-        sprite_palette_name: &str,
-    ) -> (ModernFrame, crate::modern_software::VariantAtlasRenderStats) {
+        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+    ) -> ModernFrame {
         let mut out = ModernFrame::empty();
         out.backdrop_color_rgba = frame.backdrop_color_rgba;
         out.forced_blank = frame.forced_blank;
-        let mut stats = crate::modern_software::VariantAtlasRenderStats::default();
-
         if frame.forced_blank {
-            return (out, stats);
+            return out;
         }
 
         out.bg_layers[0].enabled_main = true;
-        for layer in &frame.bg_layers {
-            if !layer.enabled_main {
-                continue;
-            }
-            for inst in &layer.index_tiles {
-                let Some(cell) = bg_cells.get(inst.cell_id as usize) else {
-                    continue;
-                };
-                let key = crate::modern_variant_atlas::variant_key_for_index_tile(
-                    cell,
-                    bg_palette_name,
-                    inst.palette,
-                );
-                let draw = self.atlas.resolve_draw(key.as_ref());
-                stats.record_draw(&draw);
-                match draw {
-                    crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
-                        if effect.is_none() {
-                            out.bg_layers[0].tiles.push(variant_tile_instance(
-                                entry,
-                                inst.screen_x,
-                                inst.screen_y,
-                                cell.hflip ^ entry.source_hflip,
-                                cell.vflip ^ entry.source_vflip,
-                            ));
-                        }
-                    }
-                    crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {}
-                    crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
-                        if let Some(key) = key.as_ref() {
-                            debug_variant_missing_key(key);
-                        }
-                    }
-                    crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {}
-                }
-            }
-        }
-
-        out.bg_layers[1].enabled_main = true;
-        for inst in frame.index_sprites.iter().rev() {
-            let Some(cell) = sprite_cells.get(inst.cell_id as usize) else {
-                continue;
-            };
-            let key = crate::modern_variant_atlas::variant_key_for_index_tile(
-                cell,
-                sprite_palette_name,
-                inst.palette,
-            );
-            let draw = self.atlas.resolve_draw(key.as_ref());
-            stats.record_draw(&draw);
-            match draw {
+        for packet in &plan.bg {
+            match packet.draw {
                 crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
                     if effect.is_none() {
-                        out.bg_layers[1].tiles.push(variant_tile_instance(
+                        out.bg_layers[0].tiles.push(variant_tile_instance(
                             entry,
-                            inst.screen_x,
-                            inst.screen_y,
-                            inst.hflip ^ entry.source_hflip,
-                            inst.vflip ^ entry.source_vflip,
+                            packet.inst.screen_x,
+                            packet.inst.screen_y,
+                            packet.cell.hflip ^ entry.source_hflip,
+                            packet.cell.vflip ^ entry.source_vflip,
                         ));
                     }
                 }
                 crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {}
                 crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
-                    if let Some(key) = key.as_ref() {
+                    if let Some(key) = packet.key.as_ref() {
                         debug_variant_missing_key(key);
                     }
                 }
@@ -586,7 +529,31 @@ impl ModernGpuVariantRenderer {
             }
         }
 
-        (out, stats)
+        out.bg_layers[1].enabled_main = true;
+        for packet in &plan.sprites {
+            match packet.draw {
+                crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
+                    if effect.is_none() {
+                        out.bg_layers[1].tiles.push(variant_tile_instance(
+                            entry,
+                            packet.inst.screen_x,
+                            packet.inst.screen_y,
+                            packet.inst.hflip ^ entry.source_hflip,
+                            packet.inst.vflip ^ entry.source_vflip,
+                        ));
+                    }
+                }
+                crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {}
+                crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
+                    if let Some(key) = packet.key.as_ref() {
+                        debug_variant_missing_key(key);
+                    }
+                }
+                crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {}
+            }
+        }
+
+        out
     }
 }
 
@@ -752,10 +719,9 @@ impl ModernGpuVariantEffectRenderer {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        frame: &ModernFrame,
         bg_cells: &[ModernIndexTile],
         atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
-        bg_palette_name: &str,
+        packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
         output_view: &wgpu::TextureView,
         load: wgpu::LoadOp<wgpu::Color>,
     ) {
@@ -763,50 +729,33 @@ impl ModernGpuVariantEffectRenderer {
             build_index_atlas(device, queue, bg_cells, "modern_variant_effect_index_atlas");
         let mut instance_bytes = Vec::new();
         let mut instance_count = 0u32;
-        if !frame.forced_blank {
-            for layer in &frame.bg_layers {
-                if !layer.enabled_main {
-                    continue;
-                }
-                for inst in &layer.index_tiles {
-                    let Some(cell) = bg_cells.get(inst.cell_id as usize) else {
-                        continue;
-                    };
-                    let Some(key) = crate::modern_variant_atlas::variant_key_for_index_tile(
-                        cell,
-                        bg_palette_name,
-                        inst.palette,
-                    ) else {
-                        continue;
-                    };
-                    let (entry, effect) = match atlas.resolve_draw(Some(&key)) {
-                        crate::modern_variant_atlas::VariantAtlasDraw::Stable {
-                            entry,
-                            effect: Some(effect),
-                        } => (entry, effect),
-                        _ => continue,
-                    };
-                    let Some(effect_row) = atlas.effect_row_for_effect(effect) else {
-                        continue;
-                    };
-                    let col = inst.cell_id % INDEX_GRID_COLS;
-                    let row = inst.cell_id / INDEX_GRID_COLS;
-                    instance_bytes.extend_from_slice(&(col * 8).to_le_bytes());
-                    instance_bytes.extend_from_slice(&(row * 8).to_le_bytes());
-                    instance_bytes.extend_from_slice(&(i32::from(inst.screen_x)).to_le_bytes());
-                    instance_bytes.extend_from_slice(&(i32::from(inst.screen_y)).to_le_bytes());
-                    let mut flags = 0xffu32 << 8;
-                    if cell.hflip ^ entry.source_hflip {
-                        flags |= 0b001;
-                    }
-                    if cell.vflip ^ entry.source_vflip {
-                        flags |= 0b010;
-                    }
-                    instance_bytes.extend_from_slice(&flags.to_le_bytes());
-                    instance_bytes.extend_from_slice(&effect_row.to_le_bytes());
-                    instance_count += 1;
-                }
+        for packet in packets {
+            let (entry, effect) = match packet.draw {
+                crate::modern_variant_atlas::VariantAtlasDraw::Stable {
+                    entry,
+                    effect: Some(effect),
+                } => (entry, effect),
+                _ => continue,
+            };
+            let Some(effect_row) = atlas.effect_row_for_effect(effect) else {
+                continue;
+            };
+            let col = packet.inst.cell_id % INDEX_GRID_COLS;
+            let row = packet.inst.cell_id / INDEX_GRID_COLS;
+            instance_bytes.extend_from_slice(&(col * 8).to_le_bytes());
+            instance_bytes.extend_from_slice(&(row * 8).to_le_bytes());
+            instance_bytes.extend_from_slice(&(i32::from(packet.inst.screen_x)).to_le_bytes());
+            instance_bytes.extend_from_slice(&(i32::from(packet.inst.screen_y)).to_le_bytes());
+            let mut flags = 0xffu32 << 8;
+            if packet.cell.hflip ^ entry.source_hflip {
+                flags |= 0b001;
             }
+            if packet.cell.vflip ^ entry.source_vflip {
+                flags |= 0b010;
+            }
+            instance_bytes.extend_from_slice(&flags.to_le_bytes());
+            instance_bytes.extend_from_slice(&effect_row.to_le_bytes());
+            instance_count += 1;
         }
         debug_assert_eq!(
             instance_bytes.len() as u64,
@@ -873,53 +822,40 @@ impl ModernGpuVariantEffectRenderer {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        frame: &ModernFrame,
         sprite_cells: &[ModernIndexTile],
         atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
-        sprite_palette_name: &str,
+        packets: &[crate::modern_variant_draw::VariantSpriteDrawPacket<'_>],
         output_view: &wgpu::TextureView,
     ) {
         let mut instance_bytes = Vec::new();
         let mut instance_count = 0u32;
-        if !frame.forced_blank {
-            for inst in frame.index_sprites.iter().rev() {
-                let Some(cell) = sprite_cells.get(inst.cell_id as usize) else {
-                    continue;
-                };
-                let Some(key) = crate::modern_variant_atlas::variant_key_for_index_tile(
-                    cell,
-                    sprite_palette_name,
-                    inst.palette,
-                ) else {
-                    continue;
-                };
-                let (entry, effect) = match atlas.resolve_draw(Some(&key)) {
-                    crate::modern_variant_atlas::VariantAtlasDraw::Stable {
-                        entry,
-                        effect: Some(effect),
-                    } => (entry, effect),
-                    _ => continue,
-                };
-                let Some(effect_row) = atlas.effect_row_for_effect(effect) else {
-                    continue;
-                };
-                let col = inst.cell_id % INDEX_GRID_COLS;
-                let row = inst.cell_id / INDEX_GRID_COLS;
-                instance_bytes.extend_from_slice(&(col * 8).to_le_bytes());
-                instance_bytes.extend_from_slice(&(row * 8).to_le_bytes());
-                instance_bytes.extend_from_slice(&(i32::from(inst.screen_x)).to_le_bytes());
-                instance_bytes.extend_from_slice(&(i32::from(inst.screen_y)).to_le_bytes());
-                let mut flags = u32::from(inst.row_mask) << 8;
-                if inst.hflip ^ entry.source_hflip {
-                    flags |= 0b001;
-                }
-                if inst.vflip ^ entry.source_vflip {
-                    flags |= 0b010;
-                }
-                instance_bytes.extend_from_slice(&flags.to_le_bytes());
-                instance_bytes.extend_from_slice(&effect_row.to_le_bytes());
-                instance_count += 1;
+        for packet in packets {
+            let (entry, effect) = match packet.draw {
+                crate::modern_variant_atlas::VariantAtlasDraw::Stable {
+                    entry,
+                    effect: Some(effect),
+                } => (entry, effect),
+                _ => continue,
+            };
+            let Some(effect_row) = atlas.effect_row_for_effect(effect) else {
+                continue;
+            };
+            let col = packet.inst.cell_id % INDEX_GRID_COLS;
+            let row = packet.inst.cell_id / INDEX_GRID_COLS;
+            instance_bytes.extend_from_slice(&(col * 8).to_le_bytes());
+            instance_bytes.extend_from_slice(&(row * 8).to_le_bytes());
+            instance_bytes.extend_from_slice(&(i32::from(packet.inst.screen_x)).to_le_bytes());
+            instance_bytes.extend_from_slice(&(i32::from(packet.inst.screen_y)).to_le_bytes());
+            let mut flags = u32::from(packet.inst.row_mask) << 8;
+            if packet.inst.hflip ^ entry.source_hflip {
+                flags |= 0b001;
             }
+            if packet.inst.vflip ^ entry.source_vflip {
+                flags |= 0b010;
+            }
+            instance_bytes.extend_from_slice(&flags.to_le_bytes());
+            instance_bytes.extend_from_slice(&effect_row.to_le_bytes());
+            instance_count += 1;
         }
         debug_assert_eq!(
             instance_bytes.len() as u64,
@@ -2119,13 +2055,16 @@ impl ModernGpuVariantHeadless {
         bg_palette_name: &str,
         sprite_palette_name: &str,
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
-        let (variant_frame, stats) = self.renderer.build_variant_frame(
+        let plan = crate::modern_variant_draw::compile_variant_draws(
             frame,
             bg_cells,
             sprite_cells,
+            &self.renderer.atlas,
             bg_palette_name,
             sprite_palette_name,
         );
+        let variant_frame = self.renderer.build_variant_frame_from_plan(frame, &plan);
+        let stats = plan.stats;
         if stats.fallback_draws != 0 {
             self.compositor.render(
                 &self.device,
@@ -2139,20 +2078,18 @@ impl ModernGpuVariantHeadless {
                 self.renderer.effect_renderer.render_bg(
                     &self.device,
                     &self.queue,
-                    frame,
                     bg_cells,
                     &self.renderer.atlas,
-                    bg_palette_name,
+                    &plan.bg,
                     &self.target_view,
                     wgpu::LoadOp::Load,
                 );
                 self.renderer.effect_renderer.render_sprites(
                     &self.device,
                     &self.queue,
-                    frame,
                     sprite_cells,
                     &self.renderer.atlas,
-                    sprite_palette_name,
+                    &plan.sprites,
                     &self.target_view,
                 );
             }
@@ -2168,20 +2105,18 @@ impl ModernGpuVariantHeadless {
             self.renderer.effect_renderer.render_bg(
                 &self.device,
                 &self.queue,
-                frame,
                 bg_cells,
                 &self.renderer.atlas,
-                bg_palette_name,
+                &plan.bg,
                 &self.target_view,
                 modern_frame_clear_op(frame),
             );
             self.renderer.effect_renderer.render_sprites(
                 &self.device,
                 &self.queue,
-                frame,
                 sprite_cells,
                 &self.renderer.atlas,
-                sprite_palette_name,
+                &plan.sprites,
                 &self.target_view,
             );
             if stats.stable_draws != stats.effect_draws {

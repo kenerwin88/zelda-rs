@@ -124,67 +124,56 @@ pub fn render_modern_frame_software_variant_atlas(
         return (out, VariantAtlasRenderStats::default());
     }
 
-    let mut stats = VariantAtlasRenderStats::default();
-    for layer in &frame.bg_layers {
-        if !layer.enabled_main {
-            continue;
-        }
-        for inst in &layer.index_tiles {
-            let Some(cell) = bg_cells.get(inst.cell_id as usize) else {
-                continue;
-            };
-            let key = crate::modern_variant_atlas::variant_key_for_index_tile(
-                cell,
-                bg_palette_name,
-                inst.palette,
-            );
-            let draw = atlas.resolve_draw(key.as_ref());
-            stats.record_draw(&draw);
-            match draw {
-                crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
-                    draw_variant_bg_instance(&mut out, frame, atlas, entry, effect, cell, inst);
-                }
-                crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {
-                    draw_indexed_bg_instance(&mut out, frame, cell, inst);
-                }
-                crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
-                    draw_indexed_bg_instance(&mut out, frame, cell, inst);
-                }
-                crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {
-                    draw_indexed_bg_instance(&mut out, frame, cell, inst);
-                }
-            }
-        }
-    }
-
-    for inst in frame.index_sprites.iter().rev() {
-        let Some(cell) = sprite_cells.get(inst.cell_id as usize) else {
-            continue;
-        };
-        let key = crate::modern_variant_atlas::variant_key_for_index_tile(
-            cell,
-            sprite_palette_name,
-            inst.palette,
-        );
-        let draw = atlas.resolve_draw(key.as_ref());
-        stats.record_draw(&draw);
-        match draw {
+    let plan = crate::modern_variant_draw::compile_variant_draws(
+        frame,
+        bg_cells,
+        sprite_cells,
+        atlas,
+        bg_palette_name,
+        sprite_palette_name,
+    );
+    for packet in &plan.bg {
+        match packet.draw {
             crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
-                draw_variant_sprite_instance(&mut out, atlas, entry, effect, cell, inst);
+                draw_variant_bg_instance(
+                    &mut out,
+                    frame,
+                    atlas,
+                    entry,
+                    effect,
+                    packet.cell,
+                    packet.inst,
+                );
             }
-            crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {
-                draw_indexed_sprite_instance(&mut out, frame, cell, inst);
-            }
-            crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
-                draw_indexed_sprite_instance(&mut out, frame, cell, inst);
-            }
-            crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {
-                draw_indexed_sprite_instance(&mut out, frame, cell, inst);
+            crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. }
+            | crate::modern_variant_atlas::VariantAtlasDraw::MissingArt
+            | crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {
+                draw_indexed_bg_instance(&mut out, frame, packet.cell, packet.inst);
             }
         }
     }
 
-    (out, stats)
+    for packet in &plan.sprites {
+        match packet.draw {
+            crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
+                draw_variant_sprite_instance(
+                    &mut out,
+                    atlas,
+                    entry,
+                    effect,
+                    packet.cell,
+                    packet.inst,
+                );
+            }
+            crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. }
+            | crate::modern_variant_atlas::VariantAtlasDraw::MissingArt
+            | crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {
+                draw_indexed_sprite_instance(&mut out, frame, packet.cell, packet.inst);
+            }
+        }
+    }
+
+    (out, plan.stats)
 }
 
 fn draw_variant_bg_instance(
