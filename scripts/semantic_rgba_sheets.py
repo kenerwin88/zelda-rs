@@ -35,6 +35,7 @@ class AtlasVariantEntry:
     palette: str
     palette_row: int
     rect: tuple[int, int, int, int]
+    dynamic_policy: str
 
 
 class SemanticCoverageError(Exception):
@@ -79,6 +80,7 @@ def _read_variant_entries(asset_dir: Path) -> list[AtlasVariantEntry]:
                 palette=str(entry["palette"]),
                 palette_row=int(entry["palette_row"]),
                 rect=(int(rect[0]), int(rect[1]), int(rect[2]), int(rect[3])),
+                dynamic_policy=str(entry.get("dynamic_policy", "stable")),
             )
         )
     return entries
@@ -188,7 +190,10 @@ def write_initial_semantic_sheets(asset_dir: Path, out_dir: Path | None = None) 
         return written
 
 
-def compile_semantic_sheets(asset_dir: Path, semantic_dir: Path) -> list[RgbaVariant]:
+def _scan_semantic_coverage(
+    asset_dir: Path,
+    semantic_dir: Path,
+) -> tuple[list[AtlasVariantEntry], dict[str, bytes], list[str], list[str]]:
     from PIL import Image
 
     entries = _read_variant_entries(asset_dir)
@@ -228,11 +233,23 @@ def compile_semantic_sheets(asset_dir: Path, semantic_dir: Path) -> list[RgbaVar
                         continue
                     pixels_by_variant_id[variant_id] = pixels
 
+    return (
+        entries,
+        pixels_by_variant_id,
+        sorted(duplicate_variant_ids),
+        rect_out_of_bounds,
+    )
+
+
+def compile_semantic_sheets(asset_dir: Path, semantic_dir: Path) -> list[RgbaVariant]:
+    entries, pixels_by_variant_id, duplicate_variant_ids, rect_out_of_bounds = (
+        _scan_semantic_coverage(asset_dir, semantic_dir)
+    )
     missing_variant_ids = [entry.id for entry in entries if entry.id not in pixels_by_variant_id]
     if missing_variant_ids or duplicate_variant_ids or rect_out_of_bounds:
         raise SemanticCoverageError(
             missing_variant_ids,
-            sorted(duplicate_variant_ids),
+            duplicate_variant_ids,
             rect_out_of_bounds,
         )
 
@@ -240,6 +257,40 @@ def compile_semantic_sheets(asset_dir: Path, semantic_dir: Path) -> list[RgbaVar
         RgbaVariant(_variant_key(entry), pixels_by_variant_id[entry.id])
         for entry in entries
     ]
+
+
+def validate_semantic_sheets(
+    asset_dir: Path,
+    semantic_dir: Path | None = None,
+) -> dict[str, object]:
+    source_dir = semantic_dir or asset_dir / "assets_src/semantic"
+    entries, pixels_by_variant_id, duplicate_variant_ids, rect_out_of_bounds = (
+        _scan_semantic_coverage(asset_dir, source_dir)
+    )
+    stable_entries = [entry for entry in entries if entry.dynamic_policy == "stable"]
+    dynamic_entries = [entry for entry in entries if entry.dynamic_policy != "stable"]
+    missing_variant_ids = [
+        entry.id for entry in stable_entries if entry.id not in pixels_by_variant_id
+    ]
+    dynamic_fallback = [
+        entry.id for entry in dynamic_entries if entry.id not in pixels_by_variant_id
+    ]
+    report: dict[str, object] = {
+        "format": "zelda3_semantic_coverage_report_v1",
+        "stable_total": len(stable_entries),
+        "stable_covered": len(stable_entries) - len(missing_variant_ids),
+        "dynamic_total": len(dynamic_entries),
+        "dynamic_covered": len(dynamic_entries) - len(dynamic_fallback),
+        "missing_variant_ids": missing_variant_ids,
+        "duplicate_variant_ids": duplicate_variant_ids,
+        "rect_out_of_bounds": rect_out_of_bounds,
+        "dynamic_fallback": dynamic_fallback,
+    }
+    source_dir.mkdir(parents=True, exist_ok=True)
+    (source_dir / "coverage_report.json").write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n"
+    )
+    return report
 
 
 def _atlas_entry_to_json(entry) -> dict[str, object]:
@@ -326,11 +377,29 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Compile semantic sheets back into atlas/tile_variants.png and .json",
     )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Validate semantic sheet coverage and write assets_src/semantic/coverage_report.json",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.validate:
+        report = validate_semantic_sheets(args.asset_dir, semantic_dir=args.semantic_dir)
+        report_path = (
+            args.semantic_dir or args.asset_dir / "assets_src/semantic"
+        ) / "coverage_report.json"
+        print(report_path)
+        if (
+            report["missing_variant_ids"]
+            or report["duplicate_variant_ids"]
+            or report["rect_out_of_bounds"]
+        ):
+            raise SystemExit(1)
+        return
     if args.compile:
         written = write_compiled_semantic_atlas(
             args.asset_dir,

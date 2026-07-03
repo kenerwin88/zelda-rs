@@ -298,6 +298,137 @@ class SemanticRgbaSheetsTests(unittest.TestCase):
                     (123, 45, 67, 255),
                 )
 
+    def test_cli_validate_writes_report_for_missing_stable_variant(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            write_test_atlas(asset_dir, entry_count=3)
+            semantic_dir = asset_dir / "assets_src/semantic"
+            sheet_dir = semantic_dir / "sprites"
+            sheet_dir.mkdir(parents=True)
+            Image.new("RGBA", (16, 8), (90, 80, 70, 255)).save(
+                sheet_dir / "sprite_kSprGfx_pack12.png"
+            )
+            (sheet_dir / "sprite_kSprGfx_pack12.json").write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_semantic_rgba_sheet_v1",
+                        "source_kind": "sprite",
+                        "asset": "kSprGfx",
+                        "pack": 12,
+                        "tile_width": 8,
+                        "tile_height": 8,
+                        "image_file": "sprite_kSprGfx_pack12.png",
+                        "frames": [
+                            {
+                                "id": "first",
+                                "source_rect": [0, 0, 8, 8],
+                                "emits": [
+                                    "sprite:kSprGfx:pack12:tile3:3bpp:palette_main_spr:row0"
+                                ],
+                            },
+                            {
+                                "id": "second",
+                                "source_rect": [8, 0, 8, 8],
+                                "emits": [
+                                    "sprite:kSprGfx:pack12:tile4:3bpp:palette_main_spr:row1"
+                                ],
+                            },
+                        ],
+                    }
+                )
+                + "\n"
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/semantic_rgba_sheets.py",
+                    "--asset-dir",
+                    str(asset_dir),
+                    "--validate",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            report = json.loads((semantic_dir / "coverage_report.json").read_text())
+            self.assertEqual(report["stable_total"], 3)
+            self.assertEqual(report["stable_covered"], 2)
+            self.assertEqual(
+                report["missing_variant_ids"],
+                ["sprite:kSprGfx:pack12:tile5:3bpp:palette_main_spr:row2"],
+            )
+
+    def test_cli_validate_allows_missing_dynamic_variant_as_fallback(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            write_test_atlas(asset_dir, entry_count=3)
+            atlas_json = asset_dir / "atlas/tile_variants.json"
+            atlas = json.loads(atlas_json.read_text())
+            atlas["entries"][2]["dynamic_policy"] = "requires_live_palette"
+            atlas_json.write_text(json.dumps(atlas) + "\n")
+            semantic_dir = asset_dir / "assets_src/semantic"
+            sheet_dir = semantic_dir / "sprites"
+            sheet_dir.mkdir(parents=True)
+            Image.new("RGBA", (16, 8), (90, 80, 70, 255)).save(
+                sheet_dir / "sprite_kSprGfx_pack12.png"
+            )
+            (sheet_dir / "sprite_kSprGfx_pack12.json").write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_semantic_rgba_sheet_v1",
+                        "source_kind": "sprite",
+                        "asset": "kSprGfx",
+                        "pack": 12,
+                        "tile_width": 8,
+                        "tile_height": 8,
+                        "image_file": "sprite_kSprGfx_pack12.png",
+                        "frames": [
+                            {
+                                "id": "first",
+                                "source_rect": [0, 0, 8, 8],
+                                "emits": [
+                                    "sprite:kSprGfx:pack12:tile3:3bpp:palette_main_spr:row0"
+                                ],
+                            },
+                            {
+                                "id": "second",
+                                "source_rect": [8, 0, 8, 8],
+                                "emits": [
+                                    "sprite:kSprGfx:pack12:tile4:3bpp:palette_main_spr:row1"
+                                ],
+                            },
+                        ],
+                    }
+                )
+                + "\n"
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/semantic_rgba_sheets.py",
+                    "--asset-dir",
+                    str(asset_dir),
+                    "--validate",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads((semantic_dir / "coverage_report.json").read_text())
+            self.assertEqual(report["missing_variant_ids"], [])
+            self.assertEqual(
+                report["dynamic_fallback"],
+                ["sprite:kSprGfx:pack12:tile5:3bpp:palette_main_spr:row2"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
