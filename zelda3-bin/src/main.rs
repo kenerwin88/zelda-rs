@@ -1437,13 +1437,25 @@ fn variant_atlas_renderer_mode(mode: &str) -> bool {
     mode == "assets-variant-gpu"
 }
 
+fn load_variant_atlas_for_mode(
+    mode: &str,
+    root: &Path,
+) -> Result<Option<renderer::modern_variant_atlas::ModernVariantAtlas>, String> {
+    if !variant_atlas_renderer_mode(mode) {
+        return Ok(None);
+    }
+    renderer::modern_variant_atlas::load_modern_canonical_art_atlas(root).map(Some)
+}
+
 /// Off-VRAM source atlas + HD override store for the live modern present path,
 /// loaded once. The atlas loads for the default (unset) and explicit `assets-anim`
 /// interactive modes (see `effective_play_renderer`) — `source_atlas`
 /// is `None` for explicit `modern`/`modern-compare`/`classic`, so those keep
 /// rendering (VRAM-decoded, no HD overrides) through
-/// `FrameRenderer::render_modern_frame`'s fallback. If the atlas fails to load it
-/// falls back to the live indexed GPU atlas path for GPU asset modes.
+/// `FrameRenderer::render_modern_frame`'s fallback. If the source atlas fails to
+/// load it falls back to the live indexed GPU atlas path for GPU asset modes; the
+/// default variant atlas mode requires the canonical art atlas and exits if it is
+/// unavailable.
 struct GpuPlayRenderer {
     source_atlas: Option<renderer::modern_source_atlas::ModernSourceAtlas>,
     hd_overrides: Option<renderer::modern_hd_overrides::ModernHdOverrides>,
@@ -1504,19 +1516,11 @@ impl GpuPlayRenderer {
     fn new() -> Self {
         let mode = effective_play_renderer();
         let gpu_asset_mode = gpu_asset_renderer_mode(&mode);
-        let variant_atlas = if variant_atlas_renderer_mode(&mode) {
-            match renderer::modern_variant_atlas::load_modern_base_art_atlas(Path::new(".")) {
-                Ok(atlas) => Some(atlas),
-                Err(e) => {
-                    eprintln!(
-                        "base art atlas load failed: {e}; live present falls back to the indexed GPU atlas path"
-                    );
-                    None
-                }
-            }
-        } else {
-            None
-        };
+        let variant_atlas =
+            load_variant_atlas_for_mode(&mode, Path::new(".")).unwrap_or_else(|e| {
+                eprintln!("canonical art atlas load failed: {e}");
+                process::exit(2);
+            });
         let source_atlas = if source_atlas_renderer_mode(&mode) {
             match renderer::modern_source_atlas::load_modern_source_atlas(Path::new(".")) {
                 Ok(atlas) => Some(atlas),
@@ -3825,11 +3829,13 @@ fn run_replay_save(args: &[String]) {
         };
     let variant_atlas = if modern_index_compare != 0 && variant_gpu_compare {
         Some(
-            renderer::modern_variant_atlas::load_modern_base_art_atlas(std::path::Path::new("."))
-                .unwrap_or_else(|e| {
-                    eprintln!("base art atlas load failed: {e}");
-                    process::exit(2);
-                }),
+            renderer::modern_variant_atlas::load_modern_canonical_art_atlas(std::path::Path::new(
+                ".",
+            ))
+            .unwrap_or_else(|e| {
+                eprintln!("canonical art atlas load failed: {e}");
+                process::exit(2);
+            }),
         )
     } else {
         None
@@ -12445,9 +12451,9 @@ fn run_play_gpu_render_compare(args: &[String]) {
         };
     let variant_atlas = if modern_index_compare != 0 && variant_gpu_compare {
         Some(
-            renderer::modern_variant_atlas::load_modern_base_art_atlas(Path::new("."))
+            renderer::modern_variant_atlas::load_modern_canonical_art_atlas(Path::new("."))
                 .unwrap_or_else(|e| {
-                    eprintln!("base art atlas load failed: {e}");
+                    eprintln!("canonical art atlas load failed: {e}");
                     process::exit(2);
                 }),
         )
@@ -14788,6 +14794,23 @@ mod tests {
             "classic",
             "explicit classic mode remains an opt-out"
         );
+    }
+
+    #[test]
+    fn variant_gpu_mode_requires_canonical_art_atlas() {
+        let root = env::temp_dir().join(format!("z3rs-variant-atlas-missing-{}", process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create temp root");
+
+        assert!(load_variant_atlas_for_mode("classic", &root)
+            .expect("classic does not load variant atlas")
+            .is_none());
+        let err = load_variant_atlas_for_mode("assets-variant-gpu", &root)
+            .expect_err("variant GPU requires canonical art atlas");
+
+        assert!(err.contains("canonical art atlas missing"), "{err}");
+
+        fs::remove_dir_all(root).expect("remove temp root");
     }
 
     #[test]

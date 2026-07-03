@@ -35,7 +35,7 @@ Add a `tile_effects.json` fixture beside a base/art atlas fixture and assert tha
 
 - [x] **Step 2: Verify red**
 
-Run: `cargo test -p renderer modern_base_art_atlas_loads_preview_keys_from_base_tiles_manifest`
+Run: `cargo test -p renderer modern_canonical_art_atlas_loads_source_refs`
 
 Expected: fail because `effect_for_entry` does not exist.
 
@@ -45,7 +45,7 @@ Parse `zelda3_tile_effect_table_v1`, accept `palette_lut`, convert `index_to_rgb
 
 - [x] **Step 4: Verify green**
 
-Run: `cargo test -p renderer modern_base_art_atlas_loads_preview_keys_from_base_tiles_manifest`
+Run: `cargo test -p renderer modern_canonical_art_atlas_loads_source_refs`
 
 Expected: pass.
 

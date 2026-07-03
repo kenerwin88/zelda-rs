@@ -152,7 +152,7 @@ pub fn load_modern_variant_atlas(root: &Path) -> Result<ModernVariantAtlas, Stri
     })
 }
 
-pub fn load_modern_base_art_atlas(root: &Path) -> Result<ModernVariantAtlas, String> {
+pub fn load_modern_canonical_art_atlas(root: &Path) -> Result<ModernVariantAtlas, String> {
     let root_atlas_dir = root.join("atlas");
     let atlas_dir = if root_atlas_dir.join("art_tiles.json").is_file() {
         root.join("atlas")
@@ -567,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    fn modern_base_art_atlas_requires_canonical_art_tiles() {
+    fn modern_canonical_art_atlas_requires_art_tiles() {
         let root = unique_temp_root();
         let atlas_dir = root.join("atlas");
         std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
@@ -600,7 +600,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let err = load_modern_base_art_atlas(&root).expect_err("reject base fallback");
+        let err = load_modern_canonical_art_atlas(&root).expect_err("reject base fallback");
 
         assert!(
             err.contains("canonical art atlas missing: expected"),
@@ -611,7 +611,7 @@ mod tests {
     }
 
     #[test]
-    fn modern_base_art_atlas_prefers_canonical_art_source_refs() {
+    fn modern_canonical_art_atlas_loads_source_refs() {
         let root = unique_temp_root();
         let atlas_dir = root.join("atlas");
         std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
@@ -652,7 +652,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let atlas = load_modern_base_art_atlas(&root).expect("load art atlas");
+        let atlas = load_modern_canonical_art_atlas(&root).expect("load art atlas");
 
         assert_eq!(atlas.width, 8);
         assert_eq!(atlas.height, 8);
@@ -741,7 +741,7 @@ mod tests {
         )
         .expect("write effects");
 
-        let atlas = load_modern_base_art_atlas(&root).expect("load art atlas");
+        let atlas = load_modern_canonical_art_atlas(&root).expect("load art atlas");
 
         assert_eq!(atlas.entries.len(), 1);
         assert_eq!(atlas.entries[0].dynamic_policy, "stable");
@@ -798,7 +798,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let err = load_modern_base_art_atlas(&root).expect_err("reject count drift");
+        let err = load_modern_canonical_art_atlas(&root).expect_err("reject count drift");
 
         assert!(err.contains("art_count 2 does not match 1 arts"), "{err}");
 
@@ -847,7 +847,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let err = load_modern_base_art_atlas(&root).expect_err("reject bad rect");
+        let err = load_modern_canonical_art_atlas(&root).expect_err("reject bad rect");
 
         assert!(
             err.contains("art rect [4, 0, 8, 8] for art:abc is outside PNG bounds 8x8"),

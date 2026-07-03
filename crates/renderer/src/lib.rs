@@ -2495,7 +2495,7 @@ impl FrameRenderer {
         self.render()
     }
 
-    /// Live GPU present of the compact RGBA base-art/effect atlas path
+    /// Live GPU present of the compact RGBA canonical-art/effect atlas path
     /// (`ZELDA3_RENDERER=assets-variant-gpu`, also the default). This keeps the
     /// variant render and final presentation on the live renderer's GPU device:
     /// no headless readback and no CPU RGBA upload.
