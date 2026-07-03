@@ -251,7 +251,7 @@ python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zel
 python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets
 # edit generated/zelda3_assets/assets_src/semantic/**/*.png
 python3 scripts/semantic_rgba_sheets.py --asset-dir generated/zelda3_assets --compile
-ZELDA3_RENDERER=assets-variant-gpu cargo run --profile parity -p zelda3-bin
+cargo run --profile parity -p zelda3-bin
 ```
 
 Compilation fails if a required variant ID is missing, emitted more than once,
@@ -259,3 +259,7 @@ or referenced by a frame rectangle outside its PNG bounds. Dynamic-palette
 fallback remains a runtime parity concern: a PNG can be useful for editing while
 the renderer still uses live palette fallback for rows that are not stable final
 pixels.
+
+Unset `ZELDA3_RENDERER` now chooses the variant atlas GPU path. Use
+`ZELDA3_VARIANT_ATLAS=off` to keep the older indexed GPU atlas path, or
+`ZELDA3_RENDERER=assets-anim` for the CPU atlas compositor oracle.

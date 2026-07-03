@@ -1396,23 +1396,38 @@ impl PlayRendererBackend for CpuPlayRenderer {
     }
 }
 
-const DEFAULT_RENDERER_ENV: &str = "assets-anim-gpu";
+const DEFAULT_RENDERER_ENV: &str = "assets-variant-gpu";
+const DEFAULT_VARIANT_ATLAS_OFF_RENDERER_ENV: &str = "assets-anim-gpu";
 
 /// Effective renderer for paths that honor `ZELDA3_RENDERER`. Unset defaults to
-/// `assets-anim-gpu` so Mode-1 atlas composition and Mode-7 frames both use GPU
-/// rendering by default. Explicit `assets-anim` keeps the CPU atlas compositor,
-/// and `classic` opts back into the wgpu PPU path.
+/// `assets-variant-gpu` so stable base-art draws use the RGBA variant atlas and
+/// dynamic rows fall back to the indexed GPU compositor. Set
+/// `ZELDA3_VARIANT_ATLAS=off` to keep the old full indexed GPU path. Explicit
+/// `assets-anim` keeps the CPU atlas compositor, and `classic` opts back into
+/// the wgpu PPU path.
+fn default_renderer_env_for_variant_setting(value: Option<&str>) -> &'static str {
+    match value {
+        Some(value) if value.eq_ignore_ascii_case("off") => DEFAULT_VARIANT_ATLAS_OFF_RENDERER_ENV,
+        _ => DEFAULT_RENDERER_ENV,
+    }
+}
+
 fn renderer_env_or_default(value: Option<&str>) -> &str {
-    value.unwrap_or(DEFAULT_RENDERER_ENV)
+    match value {
+        Some(value) => value,
+        None => default_renderer_env_for_variant_setting(
+            env::var("ZELDA3_VARIANT_ATLAS").ok().as_deref(),
+        ),
+    }
 }
 
 fn effective_play_renderer() -> String {
     renderer_env_or_default(env::var("ZELDA3_RENDERER").ok().as_deref()).to_string()
 }
 
-/// Off-VRAM (assets-anim) source atlas + HD override store for the live modern
-/// present path, loaded once. The atlas loads for the default (unset) and explicit
-/// `assets-anim` interactive modes (see `effective_play_renderer`) — `source_atlas`
+/// Off-VRAM source atlas + HD override store for the live modern present path,
+/// loaded once. The atlas loads for the default (unset) and explicit `assets-anim`
+/// interactive modes (see `effective_play_renderer`) — `source_atlas`
 /// is `None` for explicit `modern`/`modern-compare`/`classic`, so those keep
 /// rendering (VRAM-decoded, no HD overrides) through
 /// `FrameRenderer::render_modern_frame`'s fallback. If the atlas fails to load it
@@ -1586,14 +1601,14 @@ fn run_play_with_state(mut game: ZeldaState) {
             process::exit(1);
         }
     };
-    // Default (unset) now selects `assets-anim` (the off-VRAM PNG-atlas path
-    // `GpuPlayRenderer` builds above); `ZELDA3_RENDERER=classic` opts back into the
-    // wgpu PPU. `ZELDA3_RENDERER=modern`/`modern-compare` route through the modern
-    // (software) live-VRAM path. `assets-anim` maps to Modern here: `RendererMode::
-    // parse` only recognizes "modern"/"modern-compare" (it's shared with the offline
-    // compare harness, which tracks assets-anim separately), but the live present
-    // still needs Modern's fallback (`FrameRenderer::render_modern_frame`, N×
-    // VRAM-decode) for Mode-7 frames and for any frame the atlas doesn't cover.
+    // Default (unset) now selects `assets-variant-gpu`; `ZELDA3_VARIANT_ATLAS=off`
+    // selects the older `assets-anim-gpu` path, and `ZELDA3_RENDERER=classic` opts
+    // back into the wgpu PPU. `ZELDA3_RENDERER=modern`/`modern-compare` route
+    // through the modern (software) live-VRAM path. The assets modes map to Modern
+    // here: `RendererMode::parse` only recognizes "modern"/"modern-compare" (it's
+    // shared with the offline compare harness, which tracks assets modes separately),
+    // but live present still needs Modern's fallback (`FrameRenderer::render_modern_frame`,
+    // N× VRAM-decode) for Mode-7 frames and for any frame the atlas doesn't cover.
     let renderer_env = effective_play_renderer();
     let renderer_mode = if renderer_env == "assets-anim"
         || renderer_env == "assets-anim-gpu"
@@ -3714,11 +3729,11 @@ fn run_replay_save(args: &[String]) {
     // (extract_modern_sprites_from_vram); the static sprite atlas is no longer
     // loaded for rendering.
     //
-    // Off-VRAM atlas paths: unset and `assets-anim-gpu` make the modern compare
-    // render through the full indexed GPU path. Explicit `assets-anim` keeps the
-    // CPU atlas compositor as an opt-out/debug oracle. `assets-variant-gpu` uses
-    // pre-colored RGBA variant atlas entries for stable draws and reports fallback
-    // counts.
+    // Off-VRAM atlas paths: unset now uses `assets-variant-gpu`; `assets-anim-gpu`
+    // remains the full indexed GPU fallback when `ZELDA3_VARIANT_ATLAS=off` or an
+    // explicit renderer env selects it. Explicit `assets-anim` keeps the CPU atlas
+    // compositor as an opt-out/debug oracle. `assets-variant-gpu` uses pre-colored
+    // RGBA variant atlas entries for stable draws and reports fallback counts.
     let replay_renderer_env = std::env::var("ZELDA3_RENDERER").ok();
     let replay_renderer_mode = renderer_env_or_default(replay_renderer_env.as_deref());
     let assets_anim_mode = replay_renderer_mode == "assets-anim";
@@ -14581,7 +14596,12 @@ mod tests {
 
     #[test]
     fn unset_renderer_defaults_to_full_gpu_path() {
-        assert_eq!(renderer_env_or_default(None), "assets-anim-gpu");
+        assert_eq!(default_renderer_env_for_variant_setting(None), "assets-variant-gpu");
+        assert_eq!(
+            default_renderer_env_for_variant_setting(Some("off")),
+            "assets-anim-gpu",
+            "explicit variant-atlas opt-out keeps the old full indexed GPU path"
+        );
         assert_eq!(
             renderer_env_or_default(Some("assets-anim")),
             "assets-anim",
