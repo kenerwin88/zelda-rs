@@ -270,6 +270,40 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             self.assertEqual(entries[0]["palette_usage_evidence_count"], 7)
             self.assertEqual(list(pixels[:4]), [0xA0, 0xB0, 0xC0, 255])
 
+    def test_base_effect_atlas_marks_source_default_stable_for_known_palette(self) -> None:
+        raw_pack = bytearray(1536)
+        raw_pack[16] = 0x80
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [
+            "#000000",
+            "#102030",
+            "#203040",
+            "#304050",
+            "#405060",
+            "#506070",
+            "#607080",
+            "#708090",
+        ] * 16
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+
+            _width, _height, _pixels, entries, _effects = build_base_effect_atlas(asset_dir)
+
+            self.assertEqual(entries[0]["preview_palette"], "palette_main_spr")
+            self.assertEqual(entries[0]["preview_source"], "source_kind_default")
+            self.assertEqual(entries[0]["dynamic_policy"], "stable")
+
     def test_base_effect_atlas_ingests_source_key_tiles_with_usage_palette(self) -> None:
         import json
         from PIL import Image

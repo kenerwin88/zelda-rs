@@ -517,11 +517,7 @@ def build_base_effect_atlas(
         }
         if usage is not None and "evidence_count" in usage:
             json_entry["palette_usage_evidence_count"] = int(usage["evidence_count"])
-        json_entry["dynamic_policy"] = (
-            classify_palette_policy(preview_palette)
-            if preview_source == "palette_usage"
-            else "requires_live_palette"
-        )
+        json_entry["dynamic_policy"] = classify_palette_policy(preview_palette)
         entries.append(json_entry)
 
     effects_by_id: dict[str, dict[str, object]] = {}

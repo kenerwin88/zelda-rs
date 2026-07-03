@@ -128,7 +128,7 @@ generated/zelda3_assets/assets_src/palette_usage.json
 ```
 
 Refresh the usage file from the combined-route replay before regenerating the
-atlas:
+atlas when you want the editable PNG preview to use the most human-expected row:
 
 ```bash
 cargo run --profile parity -p zelda3-bin -- --dump-assets-by-source 2000000
@@ -138,8 +138,10 @@ python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zel
 The source walk stops at replay end; the current combined route reaches frame
 `1073092`. Its usage map covers observed raw BG and sprite pack tiles. Tiles not
 drawn during the route, Link-specific sources, BG3/HUD cells, and content-hashed
-streamed BG sources remain on fallback preview colors until they get their own
-stable semantic source IDs or additional evidence.
+streamed BG sources may still use source-kind default preview colors in the
+editable PNG. Runtime drawing can still use stable `tile_effects.json` LUTs for
+those defaults when the live draw key names a modeled stable palette row; unknown
+or runtime-derived palettes remain on the live indexed fallback.
 
 Usage entries are keyed by the same ROM-derived source identity used by
 `base_tiles.json`:

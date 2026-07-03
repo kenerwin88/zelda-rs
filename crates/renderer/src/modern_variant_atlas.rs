@@ -318,10 +318,13 @@ fn load_modern_canonical_art_atlas_from_dir(
         ));
     }
 
+    let effects = load_tile_effects_from_dir(atlas_dir)?;
     let mut entries = Vec::new();
     for art in manifest.arts {
         for source_ref in art.source_refs {
-            let dynamic_policy = if source_ref.preview_source == "palette_usage" {
+            let dynamic_policy = if source_ref.preview_source == "palette_usage"
+                || has_stable_effect_for_source_ref(&effects, &source_ref)
+            {
                 "stable"
             } else {
                 "requires_live_palette"
@@ -360,7 +363,19 @@ fn load_modern_canonical_art_atlas_from_dir(
         height: info.height,
         rgba: buf[..info.buffer_size()].to_vec(),
         entries,
-        effects: load_tile_effects_from_dir(atlas_dir)?,
+        effects,
+    })
+}
+
+fn has_stable_effect_for_source_ref(effects: &[TileEffect], source_ref: &ArtSourceRefJson) -> bool {
+    let Some(colors_per_row) = 1u8.checked_shl(u32::from(source_ref.bpp)) else {
+        return false;
+    };
+    effects.iter().any(|effect| {
+        effect.dynamic_policy == "stable"
+            && effect.palette == source_ref.preview_palette
+            && effect.palette_row == source_ref.preview_palette_row
+            && effect.colors_per_row == colors_per_row
     })
 }
 
@@ -740,6 +755,90 @@ mod tests {
         assert!(atlas.entries[0].source_hflip);
         assert!(!atlas.entries[0].source_vflip);
         assert_eq!(atlas.entries[0].dynamic_policy, "stable");
+
+        std::fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn canonical_art_source_kind_default_is_stable_when_effect_backed() {
+        let root = unique_temp_root();
+        let atlas_dir = root.join("atlas");
+        std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
+        let rgba = vec![1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255];
+        write_rgba_png(&atlas_dir.join("art_tiles.png"), 2, 2, &rgba);
+        std::fs::write(
+            atlas_dir.join("art_tiles.json"),
+            r#"{
+              "format": "zelda3_canonical_art_atlas_v1",
+              "tile_width": 8,
+              "tile_height": 8,
+              "width": 2,
+              "height": 2,
+              "art_count": 1,
+              "source_ref_count": 1,
+              "arts": [{
+                "art_id": "art:abc",
+                "bpp": 3,
+                "rect": [0, 0, 8, 8],
+                "sha1_indices": "abc",
+                "preview_palette": "palette_main_spr",
+                "preview_palette_row": 0,
+                "preview_source": "source_kind_default",
+                "source_refs": [{
+                  "source_kind": "sprite",
+                  "asset": "kSprGfx",
+                  "pack": 0,
+                  "tile": 7,
+                  "bpp": 3,
+                  "hflip": false,
+                  "vflip": false,
+                  "preview_palette": "palette_main_spr",
+                  "preview_palette_row": 0,
+                  "preview_source": "source_kind_default"
+                }]
+              }]
+            }"#,
+        )
+        .expect("write manifest");
+        std::fs::write(
+            atlas_dir.join("tile_effects.json"),
+            r#"{
+              "format": "zelda3_tile_effect_table_v1",
+              "strategy": "base_art_plus_shader_effects",
+              "effects": [{
+                "id": "palette_main_spr:8color:row0",
+                "type": "palette_lut",
+                "palette": "palette_main_spr",
+                "palette_row": 0,
+                "colors_per_row": 8,
+                "index_to_rgb": [
+                  [0, 0, 0],
+                  [10, 20, 30],
+                  [40, 50, 60],
+                  [70, 80, 90],
+                  [100, 110, 120],
+                  [130, 140, 150],
+                  [160, 170, 180],
+                  [190, 200, 210]
+                ],
+                "dynamic_policy": "stable",
+                "runtime": "shader_effect"
+              }]
+            }"#,
+        )
+        .expect("write effects");
+
+        let atlas = load_modern_base_art_atlas(&root).expect("load art atlas");
+
+        assert_eq!(atlas.entries.len(), 1);
+        assert_eq!(atlas.entries[0].dynamic_policy, "stable");
+        assert_eq!(
+            atlas
+                .effect_for_entry(&atlas.entries[0])
+                .expect("resolve source-kind default effect")
+                .id,
+            "palette_main_spr:8color:row0"
+        );
 
         std::fs::remove_dir_all(root).expect("remove temp root");
     }
