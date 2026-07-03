@@ -77,11 +77,25 @@ impl ModernVariantAtlas {
         self.entries.iter().find(|entry| entry.key == *key)
     }
 
+    pub fn entry_for_source_key(&self, key: &VariantAtlasKey) -> Option<&VariantAtlasEntry> {
+        self.entries.iter().find(|entry| {
+            entry.key.source_kind == key.source_kind
+                && entry.key.asset == key.asset
+                && entry.key.pack == key.pack
+                && entry.key.tile == key.tile
+                && entry.key.bpp == key.bpp
+        })
+    }
+
     pub fn effect_for_entry(&self, entry: &VariantAtlasEntry) -> Option<&TileEffect> {
-        let colors_per_row = 1u8.checked_shl(u32::from(entry.key.bpp))?;
+        self.effect_for_key(&entry.key)
+    }
+
+    pub fn effect_for_key(&self, key: &VariantAtlasKey) -> Option<&TileEffect> {
+        let colors_per_row = 1u8.checked_shl(u32::from(key.bpp))?;
         self.effects.iter().find(|effect| {
-            effect.palette == entry.key.palette
-                && effect.palette_row == entry.key.palette_row
+            effect.palette == key.palette
+                && effect.palette_row == key.palette_row
                 && effect.colors_per_row == colors_per_row
         })
     }
@@ -670,6 +684,111 @@ mod tests {
         assert_eq!(atlas.entries[0].dynamic_policy, "stable");
 
         std::fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn source_entry_lookup_ignores_live_palette_material() {
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: solid_rgba(8, 8, [1, 2, 3, 255]),
+            entries: vec![VariantAtlasEntry {
+                id: "bg:kBgGfx:pack5:tile17:3bpp".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "bg".to_string(),
+                    asset: "kBgGfx".to_string(),
+                    pack: 5,
+                    tile: 17,
+                    bpp: 3,
+                    palette: "palette_dung_bg_main".to_string(),
+                    palette_row: 2,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "abc".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                source_hflip: false,
+                source_vflip: false,
+            }],
+            effects: Vec::new(),
+        };
+        let live_key = VariantAtlasKey {
+            source_kind: "bg".to_string(),
+            asset: "kBgGfx".to_string(),
+            pack: 5,
+            tile: 17,
+            bpp: 3,
+            palette: "palette_dung_bg_main".to_string(),
+            palette_row: 6,
+        };
+
+        assert!(
+            atlas.entry_for_key(&live_key).is_none(),
+            "strict variant lookup still includes palette material"
+        );
+        assert_eq!(
+            atlas
+                .entry_for_source_key(&live_key)
+                .expect("source art should ignore palette row")
+                .id,
+            "bg:kBgGfx:pack5:tile17:3bpp"
+        );
+    }
+
+    #[test]
+    fn effect_lookup_uses_live_palette_material() {
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: solid_rgba(8, 8, [1, 2, 3, 255]),
+            entries: vec![VariantAtlasEntry {
+                id: "sprite:kSprGfx:pack0:tile7:3bpp".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "sprite".to_string(),
+                    asset: "kSprGfx".to_string(),
+                    pack: 0,
+                    tile: 7,
+                    bpp: 3,
+                    palette: "palette_main_spr".to_string(),
+                    palette_row: 0,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "abc".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                source_hflip: false,
+                source_vflip: false,
+            }],
+            effects: vec![TileEffect {
+                id: "palette_main_spr:8color:row4".to_string(),
+                palette: "palette_main_spr".to_string(),
+                palette_row: 4,
+                colors_per_row: 8,
+                index_to_rgba: vec![[0, 0, 0, 255]; 8],
+                dynamic_policy: "stable".to_string(),
+            }],
+        };
+        let live_key = VariantAtlasKey {
+            source_kind: "sprite".to_string(),
+            asset: "kSprGfx".to_string(),
+            pack: 0,
+            tile: 7,
+            bpp: 3,
+            palette: "palette_main_spr".to_string(),
+            palette_row: 4,
+        };
+
+        assert!(
+            atlas.effect_for_entry(&atlas.entries[0]).is_none(),
+            "entry effect lookup still uses preview material"
+        );
+        assert_eq!(
+            atlas
+                .effect_for_key(&live_key)
+                .expect("effect should use live palette row")
+                .id,
+            "palette_main_spr:8color:row4"
+        );
     }
 
     #[test]
