@@ -61,6 +61,7 @@ pub fn draw_modern_sprites_indexed(
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct VariantAtlasRenderStats {
     pub stable_draws: u32,
+    pub effect_draws: u32,
     pub fallback_draws: u32,
     pub dynamic_palette_draws: u32,
     pub missing_variant_draws: u32,
@@ -107,6 +108,9 @@ pub fn render_modern_frame_software_variant_atlas(
                 Some(entry) if entry.dynamic_policy == "stable" => {
                     draw_variant_bg_instance(&mut out, frame, atlas, entry, cell, inst);
                     stats.stable_draws += 1;
+                    if entry_has_stable_effect(atlas, entry) {
+                        stats.effect_draws += 1;
+                    }
                 }
                 Some(_) => {
                     draw_indexed_bg_instance(&mut out, frame, cell, inst);
@@ -136,8 +140,11 @@ pub fn render_modern_frame_software_variant_atlas(
         let entry = key.as_ref().and_then(|key| atlas.entry_for_key(key));
         match entry {
             Some(entry) if entry.dynamic_policy == "stable" => {
-                draw_variant_sprite_instance(&mut out, atlas, entry, inst);
+                draw_variant_sprite_instance(&mut out, atlas, entry, cell, inst);
                 stats.stable_draws += 1;
+                if entry_has_stable_effect(atlas, entry) {
+                    stats.effect_draws += 1;
+                }
             }
             Some(_) => {
                 draw_indexed_sprite_instance(&mut out, frame, cell, inst);
@@ -166,6 +173,9 @@ fn draw_variant_bg_instance(
     inst: &crate::modern_frame::ModernIndexTileInstance,
 ) {
     let width = usize::from(MODERN_FRAME_WIDTH);
+    let stable_effect = atlas
+        .effect_for_entry(entry)
+        .filter(|effect| effect.dynamic_policy == "stable");
     for sy in 0..8usize {
         for sx in 0..8usize {
             let src_x = if cell.hflip ^ entry.source_hflip {
@@ -180,6 +190,18 @@ fn draw_variant_bg_instance(
             };
             let atlas_x = entry.rect[0] as usize + src_x;
             let atlas_y = entry.rect[1] as usize + src_y;
+            if let Some(color) = stable_effect
+                .and_then(|effect| effect_color_for_index(effect, cell.indices[src_y * 8 + src_x]))
+            {
+                let dst_x = inst.screen_x + sx as i16;
+                let dst_y = inst.screen_y + sy as i16;
+                if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                    continue;
+                }
+                let dst = (dst_y as usize * width + dst_x as usize) * 4;
+                out[dst..dst + 4].copy_from_slice(&color);
+                continue;
+            }
             if atlas_x >= atlas.width as usize || atlas_y >= atlas.height as usize {
                 continue;
             }
@@ -227,9 +249,13 @@ fn draw_variant_sprite_instance(
     out: &mut [u8],
     atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
     entry: &crate::modern_variant_atlas::VariantAtlasEntry,
+    cell: &ModernIndexTile,
     inst: &crate::modern_frame::ModernIndexSpriteInstance,
 ) {
     let width = usize::from(MODERN_FRAME_WIDTH);
+    let stable_effect = atlas
+        .effect_for_entry(entry)
+        .filter(|effect| effect.dynamic_policy == "stable");
     for y in 0..8usize {
         if inst.row_mask & (1 << y) == 0 {
             continue;
@@ -247,6 +273,18 @@ fn draw_variant_sprite_instance(
             };
             let atlas_x = entry.rect[0] as usize + src_x;
             let atlas_y = entry.rect[1] as usize + src_y;
+            if let Some(color) = stable_effect
+                .and_then(|effect| effect_color_for_index(effect, cell.indices[src_y * 8 + src_x]))
+            {
+                let dst_x = inst.screen_x + x as i16;
+                let dst_y = inst.screen_y + y as i16;
+                if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                    continue;
+                }
+                let dst = (dst_y as usize * width + dst_x as usize) * 4;
+                out[dst..dst + 4].copy_from_slice(&color);
+                continue;
+            }
             if atlas_x >= atlas.width as usize || atlas_y >= atlas.height as usize {
                 continue;
             }
@@ -263,6 +301,25 @@ fn draw_variant_sprite_instance(
             out[dst..dst + 4].copy_from_slice(&atlas.rgba[src..src + 4]);
         }
     }
+}
+
+fn entry_has_stable_effect(
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
+) -> bool {
+    atlas
+        .effect_for_entry(entry)
+        .is_some_and(|effect| effect.dynamic_policy == "stable")
+}
+
+fn effect_color_for_index(
+    effect: &crate::modern_variant_atlas::TileEffect,
+    index: u8,
+) -> Option<[u8; 4]> {
+    if index == 0 {
+        return None;
+    }
+    effect.index_to_rgba.get(index as usize).copied()
 }
 
 fn draw_indexed_sprite_instance(
@@ -2793,6 +2850,7 @@ mod tests {
                 source_hflip: false,
                 source_vflip: false,
             }],
+            effects: Vec::new(),
         };
 
         let indexed = render_modern_frame_software_indexed(&frame, &cells);
@@ -2810,6 +2868,180 @@ mod tests {
         assert_eq!(stats.fallback_draws, 0);
         assert_eq!(stats.missing_variant_draws, 0);
         assert_eq!(stats.dynamic_palette_draws, 0);
+    }
+
+    #[test]
+    fn variant_atlas_software_uses_palette_effect_for_bg_color() {
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, TileEffect, VariantAtlasEntry, VariantAtlasKey,
+        };
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.bg_layers[0].enabled_main = true;
+        frame.cgram_rgba[3 * 16 + 2] = [11, 22, 33, 0xff];
+        frame.bg_layers[0].index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 3,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        let mut indices = [0u8; 64];
+        indices[0] = 2;
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+        let mut atlas_rgba = vec![0u8; 8 * 8 * 4];
+        atlas_rgba[0..4].copy_from_slice(&[200, 1, 1, 0xff]);
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: atlas_rgba,
+            entries: vec![VariantAtlasEntry {
+                id: "bg:kBgGfx:pack0:tile0:3bpp".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "bg".to_string(),
+                    asset: "kBgGfx".to_string(),
+                    pack: 0,
+                    tile: 0,
+                    bpp: 3,
+                    palette: "palette_main_spr".to_string(),
+                    palette_row: 3,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "test".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                source_hflip: false,
+                source_vflip: false,
+            }],
+            effects: vec![TileEffect {
+                id: "palette_main_spr:8color:row3".to_string(),
+                palette: "palette_main_spr".to_string(),
+                palette_row: 3,
+                colors_per_row: 8,
+                index_to_rgba: vec![
+                    [0, 0, 0, 0xff],
+                    [1, 1, 1, 0xff],
+                    [11, 22, 33, 0xff],
+                    [3, 3, 3, 0xff],
+                    [4, 4, 4, 0xff],
+                    [5, 5, 5, 0xff],
+                    [6, 6, 6, 0xff],
+                    [7, 7, 7, 0xff],
+                ],
+                dynamic_policy: "stable".to_string(),
+            }],
+        };
+
+        let (variant, stats) = render_modern_frame_software_variant_atlas(
+            &frame,
+            &cells,
+            &[],
+            &atlas,
+            "palette_main_spr",
+            "palette_main_spr",
+        );
+
+        assert_eq!(&variant[0..4], &[11, 22, 33, 0xff]);
+        assert_eq!(stats.stable_draws, 1);
+        assert_eq!(stats.effect_draws, 1);
+        assert_eq!(stats.fallback_draws, 0);
+    }
+
+    #[test]
+    fn variant_atlas_software_uses_palette_effect_for_sprite_color() {
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, TileEffect, VariantAtlasEntry, VariantAtlasKey,
+        };
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.cgram_rgba[0x80 + 4 * 16 + 3] = [21, 31, 41, 0xff];
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 4,
+            hflip: false,
+            vflip: false,
+            priority: 0,
+            row_mask: 0xff,
+        });
+        let mut indices = [0u8; 64];
+        indices[0] = 3;
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: modern_source_key(2, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+        let mut atlas_rgba = vec![0u8; 8 * 8 * 4];
+        atlas_rgba[0..4].copy_from_slice(&[210, 2, 2, 0xff]);
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: atlas_rgba,
+            entries: vec![VariantAtlasEntry {
+                id: "sprite:kSprGfx:pack0:tile0:3bpp".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "sprite".to_string(),
+                    asset: "kSprGfx".to_string(),
+                    pack: 0,
+                    tile: 0,
+                    bpp: 3,
+                    palette: "palette_main_spr".to_string(),
+                    palette_row: 4,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "test".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                source_hflip: false,
+                source_vflip: false,
+            }],
+            effects: vec![TileEffect {
+                id: "palette_main_spr:8color:row4".to_string(),
+                palette: "palette_main_spr".to_string(),
+                palette_row: 4,
+                colors_per_row: 8,
+                index_to_rgba: vec![
+                    [0, 0, 0, 0xff],
+                    [1, 1, 1, 0xff],
+                    [2, 2, 2, 0xff],
+                    [21, 31, 41, 0xff],
+                    [4, 4, 4, 0xff],
+                    [5, 5, 5, 0xff],
+                    [6, 6, 6, 0xff],
+                    [7, 7, 7, 0xff],
+                ],
+                dynamic_policy: "stable".to_string(),
+            }],
+        };
+
+        let (variant, stats) = render_modern_frame_software_variant_atlas(
+            &frame,
+            &[],
+            &cells,
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(&variant[0..4], &[21, 31, 41, 0xff]);
+        assert_eq!(stats.stable_draws, 1);
+        assert_eq!(stats.effect_draws, 1);
+        assert_eq!(stats.fallback_draws, 0);
     }
 
     /// Regression test for the BG-flip HD-sampling fix: a BG cell baked with

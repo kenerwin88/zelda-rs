@@ -25,11 +25,22 @@ pub struct VariantAtlasEntry {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TileEffect {
+    pub id: String,
+    pub palette: String,
+    pub palette_row: u8,
+    pub colors_per_row: u8,
+    pub index_to_rgba: Vec<[u8; 4]>,
+    pub dynamic_policy: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModernVariantAtlas {
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u8>,
     pub entries: Vec<VariantAtlasEntry>,
+    pub effects: Vec<TileEffect>,
 }
 
 pub fn variant_key_for_index_tile(
@@ -64,6 +75,15 @@ pub fn variant_key_for_index_tile(
 impl ModernVariantAtlas {
     pub fn entry_for_key(&self, key: &VariantAtlasKey) -> Option<&VariantAtlasEntry> {
         self.entries.iter().find(|entry| entry.key == *key)
+    }
+
+    pub fn effect_for_entry(&self, entry: &VariantAtlasEntry) -> Option<&TileEffect> {
+        let colors_per_row = 1u8.checked_shl(u32::from(entry.key.bpp))?;
+        self.effects.iter().find(|effect| {
+            effect.palette == entry.key.palette
+                && effect.palette_row == entry.key.palette_row
+                && effect.colors_per_row == colors_per_row
+        })
     }
 }
 
@@ -128,6 +148,7 @@ pub fn load_modern_variant_atlas(root: &Path) -> Result<ModernVariantAtlas, Stri
         height: info.height,
         rgba,
         entries,
+        effects: load_tile_effects_from_dir(&atlas_dir)?,
     })
 }
 
@@ -198,6 +219,7 @@ pub fn load_modern_base_art_atlas(root: &Path) -> Result<ModernVariantAtlas, Str
         height: info.height,
         rgba,
         entries,
+        effects: load_tile_effects_from_dir(&atlas_dir)?,
     })
 }
 
@@ -338,7 +360,51 @@ fn load_modern_canonical_art_atlas_from_dir(
         height: info.height,
         rgba: buf[..info.buffer_size()].to_vec(),
         entries,
+        effects: load_tile_effects_from_dir(atlas_dir)?,
     })
+}
+
+fn load_tile_effects_from_dir(atlas_dir: &Path) -> Result<Vec<TileEffect>, String> {
+    let json_path = atlas_dir.join("tile_effects.json");
+    if !json_path.is_file() {
+        return Ok(Vec::new());
+    }
+    let manifest_bytes = std::fs::read(&json_path)
+        .map_err(|e| format!("failed to read {}: {e}", json_path.display()))?;
+    let manifest: EffectsManifestJson = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| format!("failed to parse {}: {e}", json_path.display()))?;
+    if manifest.format != "zelda3_tile_effects_v1" {
+        return Err(format!(
+            "{}: unsupported format {:?}",
+            json_path.display(),
+            manifest.format
+        ));
+    }
+    manifest
+        .effects
+        .into_iter()
+        .map(|effect| {
+            if effect.effect_type != "palette_lut" {
+                return Err(format!(
+                    "{}: unsupported effect type {:?}",
+                    json_path.display(),
+                    effect.effect_type
+                ));
+            }
+            let mut index_to_rgba = Vec::with_capacity(effect.index_to_rgb.len());
+            for rgb in effect.index_to_rgb {
+                index_to_rgba.push([rgb[0], rgb[1], rgb[2], 0xff]);
+            }
+            Ok(TileEffect {
+                id: effect.id,
+                palette: effect.palette,
+                palette_row: effect.palette_row,
+                colors_per_row: effect.colors_per_row,
+                index_to_rgba,
+                dynamic_policy: effect.dynamic_policy,
+            })
+        })
+        .collect()
 }
 
 #[derive(Deserialize)]
@@ -416,6 +482,24 @@ struct ArtSourceRefJson {
     preview_palette: String,
     preview_palette_row: u8,
     preview_source: String,
+}
+
+#[derive(Deserialize)]
+struct EffectsManifestJson {
+    format: String,
+    effects: Vec<EffectJson>,
+}
+
+#[derive(Deserialize)]
+struct EffectJson {
+    id: String,
+    #[serde(rename = "type")]
+    effect_type: String,
+    palette: String,
+    palette_row: u8,
+    colors_per_row: u8,
+    index_to_rgb: Vec<[u8; 3]>,
+    dynamic_policy: String,
 }
 
 #[cfg(test)]
@@ -528,6 +612,33 @@ mod tests {
             }"#,
         )
         .expect("write manifest");
+        std::fs::write(
+            atlas_dir.join("tile_effects.json"),
+            r#"{
+              "format": "zelda3_tile_effects_v1",
+              "strategy": "base_art_plus_shader_effects",
+              "effects": [{
+                "id": "palette_dung_bg_main:8color:row2",
+                "type": "palette_lut",
+                "palette": "palette_dung_bg_main",
+                "palette_row": 2,
+                "colors_per_row": 8,
+                "index_to_rgb": [
+                  [0, 0, 0],
+                  [10, 20, 30],
+                  [40, 50, 60],
+                  [70, 80, 90],
+                  [100, 110, 120],
+                  [130, 140, 150],
+                  [160, 170, 180],
+                  [190, 200, 210]
+                ],
+                "dynamic_policy": "stable",
+                "runtime": "shader_effect"
+              }]
+            }"#,
+        )
+        .expect("write effects");
 
         let atlas = load_modern_base_art_atlas(&root).expect("load base atlas");
 
@@ -542,6 +653,11 @@ mod tests {
         assert_eq!(atlas.entries[0].key.palette, "palette_dung_bg_main");
         assert_eq!(atlas.entries[0].key.palette_row, 2);
         assert_eq!(atlas.entries[0].dynamic_policy, "stable");
+        let effect = atlas
+            .effect_for_entry(&atlas.entries[0])
+            .expect("resolve palette effect");
+        assert_eq!(effect.id, "palette_dung_bg_main:8color:row2");
+        assert_eq!(effect.index_to_rgba[2], [40, 50, 60, 0xff]);
 
         std::fs::remove_dir_all(root).expect("remove temp root");
     }

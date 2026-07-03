@@ -2364,6 +2364,7 @@ mod tests {
             height: 8,
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
+            effects: Vec::new(),
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
             &frame,
@@ -2445,6 +2446,7 @@ mod tests {
             height: 8,
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
+            effects: Vec::new(),
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
             &source_frame,
@@ -2503,6 +2505,7 @@ mod tests {
             height: 8,
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
+            effects: Vec::new(),
         };
         let (_variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
             &frame,
@@ -2693,6 +2696,7 @@ mod tests {
                     source_hflip: false,
                     source_vflip: false,
                 }],
+                effects: Vec::new(),
             };
 
             let cells = vec![ModernIndexTile {

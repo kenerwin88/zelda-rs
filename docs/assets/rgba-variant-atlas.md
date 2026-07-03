@@ -213,6 +213,14 @@ and other temporary visual treatments. Separate RGBA base art should be authored
 only for true semantic variants: different materials, different costumes,
 different objects, or intentionally changed art.
 
+The Rust atlas loader reads `tile_effects.json` alongside `art_tiles.*` or
+`base_tiles.*`. The software variant renderer uses a stable matching
+`palette_lut` effect by sampling the live source tile index and looking up the
+final RGB in `index_to_rgb`; if no matching stable effect exists, it keeps the
+older preview-RGBA atlas sampling behavior. The GPU variant path still uses the
+preview-RGBA overlay for stable atlas draws; moving this LUT application into a
+GPU shader is the next drawing-modernization step.
+
 `dynamic_policy` remains conservative:
 
 - `stable`: extracted static palette effect can be represented by the effect
