@@ -398,7 +398,7 @@ def write_chr_source_sheets(out_dir: Path) -> list[dict[str, str]]:
 def write_rgba_variant_atlas(
     out_dir: Path,
     *,
-    write_diagnostic_variants: bool = True,
+    write_diagnostic_variants: bool = False,
 ) -> list[dict[str, str]]:
     if not write_diagnostic_variants:
         return []

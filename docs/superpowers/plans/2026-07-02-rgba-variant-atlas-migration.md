@@ -355,12 +355,15 @@ Run:
 PYTHONPATH=scripts python3 scripts/test_rgba_variant_atlas.py
 PYTHONPATH=scripts python3 scripts/test_extract_asset_sources.py
 python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zelda3_assets
+python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zelda3_assets --write-diagnostic-variants
 ```
 
 Expected:
 - tests pass
-- extraction prints that `atlas/tile_variants.png` and `atlas/tile_variants.json` were written
-- `generated/zelda3_assets/atlas/tile_variants.png` is RGBA
+- default extraction writes compact `art_tiles.*`, `base_tiles.*`, and `tile_effects.json`
+- diagnostic extraction with `--write-diagnostic-variants` prints that
+  `atlas/tile_variants.png` and `atlas/tile_variants.json` were written
+- `generated/zelda3_assets/atlas/tile_variants.png` is RGBA after the diagnostic run
 
 - [ ] **Step 6: Commit**
 

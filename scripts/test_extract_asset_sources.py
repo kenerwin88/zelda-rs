@@ -302,7 +302,10 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 )
             )
 
-            atlas = extract_assets.write_rgba_variant_atlas(out_dir)
+            atlas = extract_assets.write_rgba_variant_atlas(
+                out_dir,
+                write_diagnostic_variants=True,
+            )
 
             self.assertEqual(
                 atlas,
@@ -345,10 +348,7 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 )
             )
 
-            atlas = extract_assets.write_rgba_variant_atlas(
-                out_dir,
-                write_diagnostic_variants=False,
-            )
+            atlas = extract_assets.write_rgba_variant_atlas(out_dir)
 
             self.assertEqual(atlas, [])
             self.assertFalse((out_dir / "atlas/tile_variants.png").exists())
