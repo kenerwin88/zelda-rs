@@ -13,6 +13,7 @@ from tempfile import TemporaryDirectory
 from PIL import Image
 
 from semantic_rgba_sheets import compile_semantic_sheets
+from semantic_rgba_sheets import compiled_atlas_columns_for_variant_count
 from semantic_rgba_sheets import SemanticCoverageError
 from semantic_rgba_sheets import write_initial_semantic_sheets
 
@@ -65,6 +66,12 @@ def write_test_atlas(asset_dir: Path, entry_count: int = 2) -> None:
 
 
 class SemanticRgbaSheetsTests(unittest.TestCase):
+    def test_compiled_atlas_columns_keep_large_outputs_under_texture_height_limit(self) -> None:
+        self.assertEqual(compiled_atlas_columns_for_variant_count(1), 32)
+        self.assertEqual(compiled_atlas_columns_for_variant_count(65_536), 32)
+        self.assertEqual(compiled_atlas_columns_for_variant_count(65_537), 64)
+        self.assertEqual(compiled_atlas_columns_for_variant_count(1_662_720), 832)
+
     def test_write_initial_semantic_sheets_groups_sprite_variants_with_emits(self) -> None:
         with TemporaryDirectory() as temp_dir:
             asset_dir = Path(temp_dir)
@@ -251,6 +258,45 @@ class SemanticRgbaSheetsTests(unittest.TestCase):
                 raised.exception.rect_out_of_bounds,
                 ["sprite:kSprGfx:pack12:tile4:3bpp:palette_main_spr:row1"],
             )
+
+    def test_cli_compile_writes_modified_semantic_pixels_to_variant_atlas(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            write_test_atlas(asset_dir, entry_count=1)
+            write_initial_semantic_sheets(asset_dir)
+            semantic_png = (
+                asset_dir / "assets_src/semantic/sprites/sprite_kSprGfx_pack12.png"
+            )
+            with Image.open(semantic_png) as image:
+                edited = image.convert("RGBA")
+            edited.putpixel((0, 0), (123, 45, 67, 255))
+            edited.save(semantic_png)
+
+            out_dir = asset_dir / "compiled_atlas"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/semantic_rgba_sheets.py",
+                    "--asset-dir",
+                    str(asset_dir),
+                    "--compile",
+                    "--out-dir",
+                    str(out_dir),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            manifest = json.loads((out_dir / "tile_variants.json").read_text())
+            rect = manifest["entries"][0]["rect"]
+            with Image.open(out_dir / "tile_variants.png") as image:
+                self.assertEqual(
+                    image.convert("RGBA").getpixel((rect[0], rect[1])),
+                    (123, 45, 67, 255),
+                )
 
 
 if __name__ == "__main__":

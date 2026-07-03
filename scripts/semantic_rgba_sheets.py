@@ -10,9 +10,11 @@ from pathlib import Path
 
 from rgba_variant_atlas import RgbaVariant
 from rgba_variant_atlas import VariantKey
+from rgba_variant_atlas import pack_rgba_variants
 
 
 SEMANTIC_SHEET_COLUMNS = 128
+MAX_GPU_TEXTURE_HEIGHT = 16_384
 
 
 @dataclass(frozen=True)
@@ -240,6 +242,62 @@ def compile_semantic_sheets(asset_dir: Path, semantic_dir: Path) -> list[RgbaVar
     ]
 
 
+def _atlas_entry_to_json(entry) -> dict[str, object]:
+    key = entry.key
+    return {
+        "id": entry.id,
+        "source_kind": key.source_kind,
+        "asset": key.asset,
+        "pack": key.pack,
+        "tile": key.tile,
+        "bpp": key.bpp,
+        "palette": key.palette,
+        "palette_row": key.palette_row,
+        "rect": list(entry.rect),
+        "sha1": entry.sha1,
+        "duplicate_of": entry.duplicate_of,
+        "dynamic_policy": entry.dynamic_policy,
+    }
+
+
+def compiled_atlas_columns_for_variant_count(variant_count: int) -> int:
+    rows_limit = MAX_GPU_TEXTURE_HEIGHT // 8
+    needed_columns = max(1, (variant_count + rows_limit - 1) // rows_limit)
+    rounded_columns = ((needed_columns + 31) // 32) * 32
+    return max(32, rounded_columns)
+
+
+def write_compiled_semantic_atlas(
+    asset_dir: Path,
+    semantic_dir: Path | None = None,
+    out_dir: Path | None = None,
+) -> list[Path]:
+    from PIL import Image
+
+    source_dir = semantic_dir or asset_dir / "assets_src/semantic"
+    destination = out_dir or asset_dir / "atlas"
+    variants = compile_semantic_sheets(asset_dir, source_dir)
+    width, height, pixels, entries = pack_rgba_variants(
+        variants,
+        columns=compiled_atlas_columns_for_variant_count(len(variants)),
+    )
+    destination.mkdir(parents=True, exist_ok=True)
+    png_path = destination / "tile_variants.png"
+    json_path = destination / "tile_variants.json"
+    Image.frombytes("RGBA", (width, height), pixels).save(png_path)
+    manifest = {
+        "format": "zelda3_rgba_variant_atlas_v1",
+        "tile_width": 8,
+        "tile_height": 8,
+        "width": width,
+        "height": height,
+        "entry_count": len(entries),
+        "entries": [_atlas_entry_to_json(entry) for entry in entries],
+    }
+    json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    return [png_path, json_path]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -252,14 +310,35 @@ def parse_args() -> argparse.Namespace:
         "--out-dir",
         type=Path,
         default=None,
-        help="Semantic sheet output directory; defaults to ASSET_DIR/assets_src/semantic",
+        help=(
+            "Output directory. Export defaults to ASSET_DIR/assets_src/semantic; "
+            "compile defaults to ASSET_DIR/atlas."
+        ),
+    )
+    parser.add_argument(
+        "--semantic-dir",
+        type=Path,
+        default=None,
+        help="Semantic sheet input directory for --compile; defaults to ASSET_DIR/assets_src/semantic",
+    )
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        help="Compile semantic sheets back into atlas/tile_variants.png and .json",
     )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    written = write_initial_semantic_sheets(args.asset_dir, out_dir=args.out_dir)
+    if args.compile:
+        written = write_compiled_semantic_atlas(
+            args.asset_dir,
+            semantic_dir=args.semantic_dir,
+            out_dir=args.out_dir,
+        )
+    else:
+        written = write_initial_semantic_sheets(args.asset_dir, out_dir=args.out_dir)
     for path in written:
         print(path)
 
