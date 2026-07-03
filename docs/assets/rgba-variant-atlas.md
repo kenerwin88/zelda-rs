@@ -310,6 +310,16 @@ renderer/oracle. Verification must report:
 - `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj`:
   pre-final overlap rejects caused by an OBJ pixel at one of the candidate's
   nontransparent pixels.
+- `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain`:
+  BG overlap rejects where the front/same-order BG packet has another front BG
+  packet at the same pixel, so a two-packet terminal group is not enough.
+- `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front`:
+  BG overlap rejects where the front/same-order BG packet is not currently
+  representable by the pre-final static-effect or live-CGRAM paths.
+- `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order`:
+  BG overlap rejects where both packets are representable, but the current
+  static-then-live pre-final overlay batches would not preserve original packet
+  order.
 - `mixed_overlay_bg_effect_reject_cgram_mismatch`: candidates blocked because
   neither the extracted stable effect LUT nor the live-CGRAM LUT can represent
   the packet's source indices.
@@ -384,9 +394,10 @@ front/same-order BG overlaps and 207 OBJ overlaps. The next useful renderer lane
 is therefore an ordered pre-final BG group path before OBJ-aware composition.
 The first ordered BG group slice admits terminal two-packet BG groups, where the
 front overlapping packet is itself representable and has no further front BG at
-that pixel; the opening route counters did not move, so its 703 BG overlaps are
-deeper chains, front packets with their own blockers, or mixed static/live
-ordering cases.
+that pixel. Splitting the remaining BG overlap rejects shows the opening route's
+703 BG blockers are all `unrepresentable_front`, with `deeper_chain=0` and
+`mixed_static_live_order=0`, so the next useful lane is making those front BG
+packets representable in the pre-final path before broadening group ordering.
 
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay

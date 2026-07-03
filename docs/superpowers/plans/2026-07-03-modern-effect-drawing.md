@@ -793,3 +793,37 @@ counters stay at `prefinal_overlap=910`, `prefinal_overlap_bg=703`, and
 terminal two-packet groups; the next useful step is to split `prefinal_overlap_bg`
 into terminal, deeper-chain, unrepresentable-front, and mixed static/live order
 subreasons before broadening the group renderer.
+
+### Task 20: Split Remaining Pre-Final BG Overlap Reasons
+
+**Files:**
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Modify: `crates/renderer/src/modern_software.rs`
+- [x] Modify: `zelda3-bin/src/main.rs`
+- [x] Modify: `scripts/gpu_render_compare_oracle_windows.py`
+- [x] Modify: `scripts/gpu_render_compare_windows.py`
+- [x] Test: focused renderer units for deeper-chain and mixed static/live order
+- [x] Test: parser summary regex
+- [x] Test: focused opening-route oracle window
+
+**Goal:** Turn the 703 remaining BG overlap rejects into implementation targets
+instead of running broader scans. The classifier separates front-BG blockers
+into deeper chains, currently unrepresentable front packets, and mixed
+static/live ordering cases that the current two-batch overlay would draw in the
+wrong order.
+
+**Done:** The pre-final BG overlap classifier now records
+`prefinal_overlap_bg_deeper_chain`,
+`prefinal_overlap_bg_unrepresentable_front`, and
+`prefinal_overlap_bg_mixed_static_live_order` while preserving the existing BG,
+OBJ, and total overlap counters. The renderer tests guard the new deeper-chain
+and mixed static/live paths, and the compare wrappers parse and summarize the
+new fields.
+
+**Route result:** The opening tail remains `mismatched_pixels=0`. The BG split
+is decisive: `prefinal_overlap_bg=703`,
+`prefinal_overlap_bg_deeper_chain=0`,
+`prefinal_overlap_bg_unrepresentable_front=703`, and
+`prefinal_overlap_bg_mixed_static_live_order=0`. The next build target is the
+front packet representation gap, not deeper group ordering or mixed static/live
+batch ordering.

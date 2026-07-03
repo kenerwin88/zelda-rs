@@ -88,6 +88,11 @@ pub struct VariantAtlasRenderStats {
     pub mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap: u32,
     pub mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg: u32,
     pub mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj: u32,
+    pub mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain: u32,
+    pub mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front:
+        u32,
+    pub mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order:
+        u32,
     pub mixed_overlay_bg_effect_reject_cgram_mismatch: u32,
     pub mixed_overlay_bg_effect_reject_overlap: u32,
 }
