@@ -31,7 +31,11 @@ MODERN_INDEX_SUMMARY_RE = re.compile(
     r"variant_draws=(\d+) fallback_draws=(\d+) dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
     r"(?: stable_preview_draws=(\d+) stable_effect_draws=(\d+) dynamic_material_draws=(\d+) "
     r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+)"
-    r"(?: mixed_overlay_bg_effect_draws=(\d+))?)?"
+    r"(?: mixed_overlay_bg_effect_draws=(\d+)"
+    r"(?: mixed_overlay_bg_effect_candidates=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_frame=(\d+) "
+    r"mixed_overlay_bg_effect_reject_cgram_mismatch=(\d+) "
+    r"mixed_overlay_bg_effect_reject_overlap=(\d+))?)?)?"
 )
 MODERN_INDEX_PROGRESS_RE = re.compile(
     r"modern_index_compare_progress compare_count=(\d+) frame=(\d+) bad_count=(\d+)"
@@ -394,7 +398,7 @@ def run_window(
         )
     if mismatched_pixels != 0:
         raise SystemExit(f"{window.name}: reported {mismatched_pixels} mismatched pixels")
-    variant_stats = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    variant_stats = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
     modern_match = MODERN_INDEX_SUMMARY_RE.search(result.stdout)
     if renderer == "assets-variant-gpu":
         if not modern_match:
@@ -415,6 +419,10 @@ def run_window(
             int(modern_match.group(14) or 0),
             int(modern_match.group(15) or 0),
             int(modern_match.group(16) or 0),
+            int(modern_match.group(17) or 0),
+            int(modern_match.group(18) or 0),
+            int(modern_match.group(19) or 0),
+            int(modern_match.group(20) or 0),
         )
     print(
         f"{window.name}: compared={compared} frames={window.frames} "
@@ -429,7 +437,11 @@ def run_window(
         f"dynamic_material_draws={variant_stats[6]} "
         f"missing_art_draws={variant_stats[7]} "
         f"unkeyed_fallback_draws={variant_stats[8]} "
-        f"mixed_overlay_bg_effect_draws={variant_stats[9]}"
+        f"mixed_overlay_bg_effect_draws={variant_stats[9]} "
+        f"mixed_overlay_bg_effect_candidates={variant_stats[10]} "
+        f"mixed_overlay_bg_effect_reject_complex_frame={variant_stats[11]} "
+        f"mixed_overlay_bg_effect_reject_cgram_mismatch={variant_stats[12]} "
+        f"mixed_overlay_bg_effect_reject_overlap={variant_stats[13]}"
     )
     return compared, last_hash, mismatched_pixels, variant_stats
 
@@ -549,6 +561,10 @@ def main() -> None:
     total_missing_art_draws = 0
     total_unkeyed_fallback_draws = 0
     total_mixed_overlay_bg_effect_draws = 0
+    total_mixed_overlay_bg_effect_candidates = 0
+    total_mixed_overlay_bg_effect_reject_complex_frame = 0
+    total_mixed_overlay_bg_effect_reject_cgram_mismatch = 0
+    total_mixed_overlay_bg_effect_reject_overlap = 0
     if args.dry_run:
         for item in run_items:
             prefix = f"ZELDA3_RENDERER={args.renderer} " if args.renderer else ""
@@ -599,6 +615,10 @@ def main() -> None:
         total_missing_art_draws += variant_stats[7]
         total_unkeyed_fallback_draws += variant_stats[8]
         total_mixed_overlay_bg_effect_draws += variant_stats[9]
+        total_mixed_overlay_bg_effect_candidates += variant_stats[10]
+        total_mixed_overlay_bg_effect_reject_complex_frame += variant_stats[11]
+        total_mixed_overlay_bg_effect_reject_cgram_mismatch += variant_stats[12]
+        total_mixed_overlay_bg_effect_reject_overlap += variant_stats[13]
 
     if args.require_stable_draws:
         ensure_required_stable_draws(
@@ -619,7 +639,11 @@ def main() -> None:
         f"dynamic_material_draws={total_dynamic_material_draws} "
         f"missing_art_draws={total_missing_art_draws} "
         f"unkeyed_fallback_draws={total_unkeyed_fallback_draws} "
-        f"mixed_overlay_bg_effect_draws={total_mixed_overlay_bg_effect_draws}"
+        f"mixed_overlay_bg_effect_draws={total_mixed_overlay_bg_effect_draws} "
+        f"mixed_overlay_bg_effect_candidates={total_mixed_overlay_bg_effect_candidates} "
+        f"mixed_overlay_bg_effect_reject_complex_frame={total_mixed_overlay_bg_effect_reject_complex_frame} "
+        f"mixed_overlay_bg_effect_reject_cgram_mismatch={total_mixed_overlay_bg_effect_reject_cgram_mismatch} "
+        f"mixed_overlay_bg_effect_reject_overlap={total_mixed_overlay_bg_effect_reject_overlap}"
     )
 
 

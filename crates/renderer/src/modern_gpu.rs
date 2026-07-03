@@ -441,15 +441,19 @@ impl ModernGpuVariantRenderer {
             let spr = ModernGpuSpriteRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
             bg.render(device, queue, bg_cells, frame, output_view);
             spr.render(device, queue, sprite_cells, frame, output_view);
-            let overlay_bg = mixed_variant_overlay_bg_packets(frame, &plan);
-            stats.mixed_overlay_bg_effect_draws += overlay_bg.len() as u32;
-            if !overlay_bg.is_empty() {
+            let overlay = mixed_variant_overlay_bg_packets(frame, &plan);
+            stats.mixed_overlay_bg_effect_draws += overlay.bg.len() as u32;
+            stats.mixed_overlay_bg_effect_candidates += overlay.candidates;
+            stats.mixed_overlay_bg_effect_reject_complex_frame += overlay.reject_complex_frame;
+            stats.mixed_overlay_bg_effect_reject_cgram_mismatch += overlay.reject_cgram_mismatch;
+            stats.mixed_overlay_bg_effect_reject_overlap += overlay.reject_overlap;
+            if !overlay.bg.is_empty() {
                 self.effect_renderer.render_bg(
                     device,
                     queue,
                     bg_cells,
                     &self.atlas,
-                    &overlay_bg,
+                    &overlay.bg,
                     output_view,
                     wgpu::LoadOp::Load,
                 );
@@ -555,15 +559,40 @@ struct ModernGpuVariantEffectRenderer {
     effect_lut_view: wgpu::TextureView,
 }
 
+#[derive(Default)]
+struct MixedVariantOverlayBgSelection<'a> {
+    bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
+    candidates: u32,
+    reject_complex_frame: u32,
+    reject_cgram_mismatch: u32,
+    reject_overlap: u32,
+}
+
 fn mixed_variant_overlay_bg_packets<'a>(
     frame: &ModernFrame,
     plan: &crate::modern_variant_draw::VariantDrawPlan<'a>,
-) -> Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>> {
+) -> MixedVariantOverlayBgSelection<'a> {
+    let mut out = MixedVariantOverlayBgSelection::default();
+    let candidates = plan
+        .bg
+        .iter()
+        .filter(|packet| {
+            matches!(
+                packet.draw,
+                crate::modern_variant_atlas::VariantAtlasDraw::Stable {
+                    effect: Some(_),
+                    ..
+                }
+            )
+        })
+        .count() as u32;
+    out.candidates = candidates;
+
     if !frame_allows_simple_mixed_variant_overlay(frame) {
-        return Vec::new();
+        out.reject_complex_frame = candidates;
+        return out;
     }
 
-    let mut out = Vec::new();
     for (packet_index, packet) in plan.bg.iter().enumerate() {
         let crate::modern_variant_atlas::VariantAtlasDraw::Stable {
             effect: Some(effect),
@@ -573,12 +602,14 @@ fn mixed_variant_overlay_bg_packets<'a>(
             continue;
         };
         if !bg_effect_matches_live_cgram(packet.cell, packet.inst.palette, effect, frame) {
+            out.reject_cgram_mismatch += 1;
             continue;
         }
         if bg_packet_overlaps_other_packets(packet_index, packet, plan) {
+            out.reject_overlap += 1;
             continue;
         }
-        out.push(packet.clone());
+        out.bg.push(packet.clone());
     }
     out
 }
@@ -2163,15 +2194,19 @@ impl ModernGpuVariantHeadless {
                 fallback_sprite_cells,
                 &self.target,
             );
-            let overlay_bg = mixed_variant_overlay_bg_packets(frame, &plan);
-            stats.mixed_overlay_bg_effect_draws += overlay_bg.len() as u32;
-            if !overlay_bg.is_empty() {
+            let overlay = mixed_variant_overlay_bg_packets(frame, &plan);
+            stats.mixed_overlay_bg_effect_draws += overlay.bg.len() as u32;
+            stats.mixed_overlay_bg_effect_candidates += overlay.candidates;
+            stats.mixed_overlay_bg_effect_reject_complex_frame += overlay.reject_complex_frame;
+            stats.mixed_overlay_bg_effect_reject_cgram_mismatch += overlay.reject_cgram_mismatch;
+            stats.mixed_overlay_bg_effect_reject_overlap += overlay.reject_overlap;
+            if !overlay.bg.is_empty() {
                 self.renderer.effect_renderer.render_bg(
                     &self.device,
                     &self.queue,
                     bg_cells,
                     &self.renderer.atlas,
-                    &overlay_bg,
+                    &overlay.bg,
                     &self.target_view,
                     wgpu::LoadOp::Load,
                 );
@@ -3280,10 +3315,14 @@ mod tests {
             "palette_main_spr",
         );
 
-        let bg = mixed_variant_overlay_bg_packets(&frame, &plan);
+        let selection = mixed_variant_overlay_bg_packets(&frame, &plan);
 
-        assert_eq!(bg.len(), 1);
-        assert_eq!(bg[0].inst.cell_id, 0);
+        assert_eq!(selection.bg.len(), 1);
+        assert_eq!(selection.bg[0].inst.cell_id, 0);
+        assert_eq!(selection.candidates, 2);
+        assert_eq!(selection.reject_complex_frame, 0);
+        assert_eq!(selection.reject_cgram_mismatch, 1);
+        assert_eq!(selection.reject_overlap, 0);
 
         let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
             &frame,
@@ -3297,6 +3336,10 @@ mod tests {
         );
 
         assert_eq!(stats.mixed_overlay_bg_effect_draws, 1);
+        assert_eq!(stats.mixed_overlay_bg_effect_candidates, 2);
+        assert_eq!(stats.mixed_overlay_bg_effect_reject_complex_frame, 0);
+        assert_eq!(stats.mixed_overlay_bg_effect_reject_cgram_mismatch, 1);
+        assert_eq!(stats.mixed_overlay_bg_effect_reject_overlap, 0);
     }
 
     #[test]

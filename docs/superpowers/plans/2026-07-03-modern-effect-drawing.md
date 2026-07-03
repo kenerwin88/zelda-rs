@@ -512,3 +512,31 @@ wrappers parse and aggregate it. The representative route proof remains
 `mismatched_pixels=0` and reports `mixed_overlay_bg_effect_draws=0`, which
 shows the current safe selector is parity-clean but too conservative for that
 route tail.
+
+### Task 11: Report Why Mixed Overlay Packets Are Rejected
+
+**Files:**
+- [x] Modify: `crates/renderer/src/modern_software.rs`
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Modify: `zelda3-bin/src/main.rs`
+- [x] Modify: `scripts/gpu_render_compare_oracle_windows.py`
+- [x] Modify: `scripts/gpu_render_compare_windows.py`
+- [x] Modify: `scripts/test_gpu_render_compare_oracle_windows.py`
+- [x] Modify: `docs/assets/rgba-variant-atlas.md`
+- [x] Test: `python3 scripts/test_gpu_render_compare_oracle_windows.py`
+- [x] Test: `cargo test -p renderer mixed_variant_overlay_selects_only_cgram_matching_disjoint_effect_bg_packets -- --nocapture`
+- [x] Test: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --only opening-uncle-dismiss-and-move --fast --frames 1000 --stride 60 --require-stable-draws --progress-every 0 --release`
+
+**Goal:** Turn `mixed_overlay_bg_effect_draws=0` from a dead end into an
+actionable blocker report by counting stable BG effect candidates and the
+specific guard that rejected them.
+
+**Done:** Mixed overlay stats now include total candidates plus complex-frame,
+CGRAM-mismatch, and overlap rejection buckets in live, replay, and wrapper
+summaries. The focused proof remains `mismatched_pixels=0` and reports
+`mixed_overlay_bg_effect_candidates=20674`,
+`mixed_overlay_bg_effect_reject_complex_frame=20674`,
+`mixed_overlay_bg_effect_reject_cgram_mismatch=0`, and
+`mixed_overlay_bg_effect_reject_overlap=0`. The next best modernization step is
+therefore to replace the broad complex-frame guard with explicit modeled
+composition state for these sampled mixed frames.

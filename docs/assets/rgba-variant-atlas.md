@@ -258,6 +258,17 @@ renderer/oracle. Verification must report:
   on the live indexed path.
 - `mixed_overlay_bg_effect_draws`: stable BG effect packets actually overlaid
   on top of a mixed fallback frame by the conservative safe-packet selector.
+- `mixed_overlay_bg_effect_candidates`: stable BG effect packets seen in mixed
+  fallback frames before the conservative overlay guards are applied.
+- `mixed_overlay_bg_effect_reject_complex_frame`: candidates blocked because
+  the frame still uses composition features the overlay path does not model yet
+  such as color math, windows, mosaic, or non-simple layer state.
+- `mixed_overlay_bg_effect_reject_cgram_mismatch`: candidates blocked because
+  the extracted stable effect LUT does not exactly match the live CGRAM colors
+  used by the source tile indices.
+- `mixed_overlay_bg_effect_reject_overlap`: candidates blocked because their
+  screen footprint overlaps another BG or OBJ packet, so a late overlay could
+  disturb final priority/composition.
 - final mismatched pixels
 
 Legacy log names remain available for compatibility: `variant_draws` is the
@@ -287,10 +298,15 @@ python3 scripts/gpu_render_compare_oracle_windows.py \
 
 Expected output includes `mismatched_pixels=0` and nonzero
 `stable_preview_draws` or `stable_effect_draws`. The current representative
-proof reports `stable_effect_draws=21038` and
-`mixed_overlay_bg_effect_draws=0` over 17 sampled compares from the checkpointed
-opening route tail. That means this route has stable effect opportunities, but
-none pass the current conservative mixed-frame overlay selector yet.
+proof reports `stable_effect_draws=21038`,
+`mixed_overlay_bg_effect_candidates=20674`,
+`mixed_overlay_bg_effect_draws=0`,
+`mixed_overlay_bg_effect_reject_complex_frame=20674`,
+`mixed_overlay_bg_effect_reject_cgram_mismatch=0`, and
+`mixed_overlay_bg_effect_reject_overlap=0` over 17 sampled compares from the
+checkpointed opening route tail. That means this route has stable effect
+opportunities and no palette/overlap blocker in the sampled window; the next
+modernization target is the frame-composition guard.
 
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay

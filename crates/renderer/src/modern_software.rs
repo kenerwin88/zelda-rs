@@ -71,6 +71,10 @@ pub struct VariantAtlasRenderStats {
     pub missing_art_draws: u32,
     pub unkeyed_fallback_draws: u32,
     pub mixed_overlay_bg_effect_draws: u32,
+    pub mixed_overlay_bg_effect_candidates: u32,
+    pub mixed_overlay_bg_effect_reject_complex_frame: u32,
+    pub mixed_overlay_bg_effect_reject_cgram_mismatch: u32,
+    pub mixed_overlay_bg_effect_reject_overlap: u32,
 }
 
 impl VariantAtlasRenderStats {
