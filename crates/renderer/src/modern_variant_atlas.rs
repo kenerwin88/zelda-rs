@@ -43,6 +43,19 @@ pub struct ModernVariantAtlas {
     pub effects: Vec<TileEffect>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum VariantAtlasDraw<'a> {
+    Stable {
+        entry: &'a VariantAtlasEntry,
+        effect: Option<&'a TileEffect>,
+    },
+    DynamicPalette {
+        entry: &'a VariantAtlasEntry,
+    },
+    MissingArt,
+    Unkeyed,
+}
+
 pub fn variant_key_for_index_tile(
     cell: &crate::modern_index_atlas::ModernIndexTile,
     palette_name: &str,
@@ -99,6 +112,45 @@ impl ModernVariantAtlas {
                 && effect.colors_per_row == colors_per_row
         })
     }
+
+    pub fn effect_row_for_effect(&self, effect: &TileEffect) -> Option<u32> {
+        self.effects
+            .iter()
+            .position(|candidate| candidate == effect)
+            .map(|row| row as u32)
+    }
+
+    pub fn resolve_draw<'a>(&'a self, key: Option<&VariantAtlasKey>) -> VariantAtlasDraw<'a> {
+        let Some(key) = key else {
+            return VariantAtlasDraw::Unkeyed;
+        };
+        let Some(entry) = self.entry_for_source_key(key) else {
+            return VariantAtlasDraw::MissingArt;
+        };
+        if entry.dynamic_policy != "stable" {
+            return VariantAtlasDraw::DynamicPalette { entry };
+        }
+        let stable_effect = self
+            .effect_for_key(key)
+            .filter(|effect| effect.dynamic_policy == "stable");
+        if let Some(effect) = stable_effect {
+            return VariantAtlasDraw::Stable {
+                entry,
+                effect: Some(effect),
+            };
+        }
+        if entry_matches_material(entry, key) {
+            return VariantAtlasDraw::Stable {
+                entry,
+                effect: None,
+            };
+        }
+        VariantAtlasDraw::DynamicPalette { entry }
+    }
+}
+
+fn entry_matches_material(entry: &VariantAtlasEntry, key: &VariantAtlasKey) -> bool {
+    entry.key.palette == key.palette && entry.key.palette_row == key.palette_row
 }
 
 pub fn load_modern_variant_atlas(root: &Path) -> Result<ModernVariantAtlas, String> {
@@ -528,6 +580,52 @@ mod tests {
         pixels
     }
 
+    fn bg_test_key_with_palette_row(palette_row: u8) -> VariantAtlasKey {
+        VariantAtlasKey {
+            source_kind: "bg".to_string(),
+            asset: "kBgGfx".to_string(),
+            pack: 0,
+            tile: 0,
+            bpp: 3,
+            palette: "palette_dung_bg_main".to_string(),
+            palette_row,
+        }
+    }
+
+    fn bg_test_entry_with_palette_row(palette_row: u8) -> VariantAtlasEntry {
+        VariantAtlasEntry {
+            id: "bg:kBgGfx:pack0:tile0:3bpp".to_string(),
+            key: bg_test_key_with_palette_row(palette_row),
+            rect: [0, 0, 8, 8],
+            sha1: "test".to_string(),
+            duplicate_of: None,
+            dynamic_policy: "stable".to_string(),
+            source_hflip: false,
+            source_vflip: false,
+        }
+    }
+
+    fn bg_test_effect_with_palette_row(palette_row: u8) -> TileEffect {
+        TileEffect {
+            id: format!("palette_dung_bg_main:8color:row{palette_row}"),
+            palette: "palette_dung_bg_main".to_string(),
+            palette_row,
+            colors_per_row: 8,
+            index_to_rgba: vec![[0, 0, 0, 255]; 8],
+            dynamic_policy: "stable".to_string(),
+        }
+    }
+
+    fn bg_test_atlas(entry_row: u8, effects: Vec<TileEffect>) -> ModernVariantAtlas {
+        ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: solid_rgba(8, 8, [1, 2, 3, 255]),
+            entries: vec![bg_test_entry_with_palette_row(entry_row)],
+            effects,
+        }
+    }
+
     #[test]
     fn modern_variant_atlas_loads_rgba_png_and_manifest_entries() {
         let root = unique_temp_root();
@@ -789,6 +887,74 @@ mod tests {
                 .id,
             "palette_main_spr:8color:row4"
         );
+    }
+
+    #[test]
+    fn resolve_draw_returns_live_effect_for_source_art() {
+        let atlas = bg_test_atlas(0, vec![bg_test_effect_with_palette_row(3)]);
+        let live_key = bg_test_key_with_palette_row(3);
+
+        match atlas.resolve_draw(Some(&live_key)) {
+            VariantAtlasDraw::Stable {
+                entry,
+                effect: Some(effect),
+            } => {
+                assert_eq!(entry.id, "bg:kBgGfx:pack0:tile0:3bpp");
+                assert_eq!(effect.id, "palette_dung_bg_main:8color:row3");
+                assert_eq!(
+                    atlas
+                        .effect_row_for_effect(effect)
+                        .expect("effect row should be resolvable"),
+                    0
+                );
+            }
+            other => panic!("expected stable effect-backed draw, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_draw_keeps_unmodeled_material_on_dynamic_fallback() {
+        let atlas = bg_test_atlas(0, Vec::new());
+        let live_key = bg_test_key_with_palette_row(3);
+
+        match atlas.resolve_draw(Some(&live_key)) {
+            VariantAtlasDraw::DynamicPalette { entry } => {
+                assert_eq!(entry.id, "bg:kBgGfx:pack0:tile0:3bpp");
+            }
+            other => panic!("expected dynamic fallback, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_draw_preserves_preview_material_fast_path() {
+        let atlas = bg_test_atlas(3, Vec::new());
+        let live_key = bg_test_key_with_palette_row(3);
+
+        match atlas.resolve_draw(Some(&live_key)) {
+            VariantAtlasDraw::Stable {
+                entry,
+                effect: None,
+            } => {
+                assert_eq!(entry.id, "bg:kBgGfx:pack0:tile0:3bpp");
+            }
+            other => panic!("expected preview-backed stable draw, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_draw_reports_missing_and_unkeyed_separately() {
+        let atlas = bg_test_atlas(0, Vec::new());
+        let mut missing_key = bg_test_key_with_palette_row(0);
+        missing_key.tile = 999;
+
+        assert!(matches!(
+            atlas.resolve_draw(Some(&missing_key)),
+            VariantAtlasDraw::MissingArt
+        ));
+        assert!(matches!(
+            atlas.resolve_draw(None),
+            VariantAtlasDraw::Unkeyed
+        ));
     }
 
     #[test]

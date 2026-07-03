@@ -103,26 +103,28 @@ pub fn render_modern_frame_software_variant_atlas(
                 bg_palette_name,
                 inst.palette,
             );
-            let entry = key.as_ref().and_then(|key| atlas.entry_for_source_key(key));
-            match (key.as_ref(), entry) {
-                (Some(key), Some(entry)) if entry_can_render_stable(atlas, entry, key) => {
-                    draw_variant_bg_instance(&mut out, frame, atlas, entry, key, cell, inst);
+            let draw = atlas.resolve_draw(key.as_ref());
+            match draw {
+                crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
+                    draw_variant_bg_instance(&mut out, frame, atlas, entry, effect, cell, inst);
                     stats.stable_draws += 1;
-                    if key_has_stable_effect(atlas, key) {
+                    if effect.is_some() {
                         stats.effect_draws += 1;
                     }
                 }
-                (Some(_), Some(_)) => {
+                crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {
                     draw_indexed_bg_instance(&mut out, frame, cell, inst);
                     stats.fallback_draws += 1;
                     stats.dynamic_palette_draws += 1;
                 }
-                _ => {
+                crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
                     draw_indexed_bg_instance(&mut out, frame, cell, inst);
                     stats.fallback_draws += 1;
-                    if key.is_some() {
-                        stats.missing_variant_draws += 1;
-                    }
+                    stats.missing_variant_draws += 1;
+                }
+                crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {
+                    draw_indexed_bg_instance(&mut out, frame, cell, inst);
+                    stats.fallback_draws += 1;
                 }
             }
         }
@@ -137,26 +139,28 @@ pub fn render_modern_frame_software_variant_atlas(
             sprite_palette_name,
             inst.palette,
         );
-        let entry = key.as_ref().and_then(|key| atlas.entry_for_source_key(key));
-        match (key.as_ref(), entry) {
-            (Some(key), Some(entry)) if entry_can_render_stable(atlas, entry, key) => {
-                draw_variant_sprite_instance(&mut out, atlas, entry, key, cell, inst);
+        let draw = atlas.resolve_draw(key.as_ref());
+        match draw {
+            crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
+                draw_variant_sprite_instance(&mut out, atlas, entry, effect, cell, inst);
                 stats.stable_draws += 1;
-                if key_has_stable_effect(atlas, key) {
+                if effect.is_some() {
                     stats.effect_draws += 1;
                 }
             }
-            (Some(_), Some(_)) => {
+            crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {
                 draw_indexed_sprite_instance(&mut out, frame, cell, inst);
                 stats.fallback_draws += 1;
                 stats.dynamic_palette_draws += 1;
             }
-            _ => {
+            crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
                 draw_indexed_sprite_instance(&mut out, frame, cell, inst);
                 stats.fallback_draws += 1;
-                if key.is_some() {
-                    stats.missing_variant_draws += 1;
-                }
+                stats.missing_variant_draws += 1;
+            }
+            crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {
+                draw_indexed_sprite_instance(&mut out, frame, cell, inst);
+                stats.fallback_draws += 1;
             }
         }
     }
@@ -169,14 +173,11 @@ fn draw_variant_bg_instance(
     _frame: &ModernFrame,
     atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
     entry: &crate::modern_variant_atlas::VariantAtlasEntry,
-    key: &crate::modern_variant_atlas::VariantAtlasKey,
+    stable_effect: Option<&crate::modern_variant_atlas::TileEffect>,
     cell: &ModernIndexTile,
     inst: &crate::modern_frame::ModernIndexTileInstance,
 ) {
     let width = usize::from(MODERN_FRAME_WIDTH);
-    let stable_effect = atlas
-        .effect_for_key(key)
-        .filter(|effect| effect.dynamic_policy == "stable");
     for sy in 0..8usize {
         for sx in 0..8usize {
             let src_x = if cell.hflip ^ entry.source_hflip {
@@ -251,14 +252,11 @@ fn draw_variant_sprite_instance(
     out: &mut [u8],
     atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
     entry: &crate::modern_variant_atlas::VariantAtlasEntry,
-    key: &crate::modern_variant_atlas::VariantAtlasKey,
+    stable_effect: Option<&crate::modern_variant_atlas::TileEffect>,
     cell: &ModernIndexTile,
     inst: &crate::modern_frame::ModernIndexSpriteInstance,
 ) {
     let width = usize::from(MODERN_FRAME_WIDTH);
-    let stable_effect = atlas
-        .effect_for_key(key)
-        .filter(|effect| effect.dynamic_policy == "stable");
     for y in 0..8usize {
         if inst.row_mask & (1 << y) == 0 {
             continue;
@@ -305,31 +303,6 @@ fn draw_variant_sprite_instance(
             out[dst..dst + 4].copy_from_slice(&atlas.rgba[src..src + 4]);
         }
     }
-}
-
-fn entry_can_render_stable(
-    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
-    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
-    key: &crate::modern_variant_atlas::VariantAtlasKey,
-) -> bool {
-    entry.dynamic_policy == "stable"
-        && (key_has_stable_effect(atlas, key) || entry_matches_material(entry, key))
-}
-
-fn entry_matches_material(
-    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
-    key: &crate::modern_variant_atlas::VariantAtlasKey,
-) -> bool {
-    entry.key.palette == key.palette && entry.key.palette_row == key.palette_row
-}
-
-fn key_has_stable_effect(
-    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
-    key: &crate::modern_variant_atlas::VariantAtlasKey,
-) -> bool {
-    atlas
-        .effect_for_key(key)
-        .is_some_and(|effect| effect.dynamic_policy == "stable")
 }
 
 fn effect_color_for_index(

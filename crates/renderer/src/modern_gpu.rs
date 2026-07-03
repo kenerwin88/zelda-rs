@@ -527,15 +527,10 @@ impl ModernGpuVariantRenderer {
                     bg_palette_name,
                     inst.palette,
                 );
-                let entry = key
-                    .as_ref()
-                    .and_then(|key| self.atlas.entry_for_source_key(key));
-                match (key.as_ref(), entry) {
-                    (Some(key), Some(entry))
-                        if entry_can_render_stable(&self.atlas, entry, key) =>
-                    {
-                        let has_stable_effect = key_has_stable_effect(&self.atlas, key);
-                        if !has_stable_effect {
+                let draw = self.atlas.resolve_draw(key.as_ref());
+                match draw {
+                    crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
+                        if effect.is_none() {
                             out.bg_layers[0].tiles.push(variant_tile_instance(
                                 entry,
                                 inst.screen_x,
@@ -545,20 +540,23 @@ impl ModernGpuVariantRenderer {
                             ));
                         }
                         stats.stable_draws += 1;
-                        if has_stable_effect {
+                        if effect.is_some() {
                             stats.effect_draws += 1;
                         }
                     }
-                    (Some(_), Some(_)) => {
+                    crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {
                         stats.fallback_draws += 1;
                         stats.dynamic_palette_draws += 1;
                     }
-                    _ => {
+                    crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
                         stats.fallback_draws += 1;
                         if let Some(key) = key.as_ref() {
                             debug_variant_missing_key(key);
                             stats.missing_variant_draws += 1;
                         }
+                    }
+                    crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {
+                        stats.fallback_draws += 1;
                     }
                 }
             }
@@ -574,13 +572,10 @@ impl ModernGpuVariantRenderer {
                 sprite_palette_name,
                 inst.palette,
             );
-            let entry = key
-                .as_ref()
-                .and_then(|key| self.atlas.entry_for_source_key(key));
-            match (key.as_ref(), entry) {
-                (Some(key), Some(entry)) if entry_can_render_stable(&self.atlas, entry, key) => {
-                    let has_stable_effect = key_has_stable_effect(&self.atlas, key);
-                    if !has_stable_effect {
+            let draw = self.atlas.resolve_draw(key.as_ref());
+            match draw {
+                crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
+                    if effect.is_none() {
                         out.bg_layers[1].tiles.push(variant_tile_instance(
                             entry,
                             inst.screen_x,
@@ -590,20 +585,23 @@ impl ModernGpuVariantRenderer {
                         ));
                     }
                     stats.stable_draws += 1;
-                    if has_stable_effect {
+                    if effect.is_some() {
                         stats.effect_draws += 1;
                     }
                 }
-                (Some(_), Some(_)) => {
+                crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {
                     stats.fallback_draws += 1;
                     stats.dynamic_palette_draws += 1;
                 }
-                _ => {
+                crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
                     stats.fallback_draws += 1;
                     if let Some(key) = key.as_ref() {
                         debug_variant_missing_key(key);
                         stats.missing_variant_draws += 1;
                     }
+                }
+                crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {
+                    stats.fallback_draws += 1;
                 }
             }
         }
@@ -801,10 +799,14 @@ impl ModernGpuVariantEffectRenderer {
                     ) else {
                         continue;
                     };
-                    let Some(entry) = atlas.entry_for_source_key(&key) else {
-                        continue;
+                    let (entry, effect) = match atlas.resolve_draw(Some(&key)) {
+                        crate::modern_variant_atlas::VariantAtlasDraw::Stable {
+                            entry,
+                            effect: Some(effect),
+                        } => (entry, effect),
+                        _ => continue,
                     };
-                    let Some(effect_row) = effect_row_for_key(atlas, &key) else {
+                    let Some(effect_row) = atlas.effect_row_for_effect(effect) else {
                         continue;
                     };
                     let col = inst.cell_id % INDEX_GRID_COLS;
@@ -911,10 +913,14 @@ impl ModernGpuVariantEffectRenderer {
                 ) else {
                     continue;
                 };
-                let Some(entry) = atlas.entry_for_source_key(&key) else {
-                    continue;
+                let (entry, effect) = match atlas.resolve_draw(Some(&key)) {
+                    crate::modern_variant_atlas::VariantAtlasDraw::Stable {
+                        entry,
+                        effect: Some(effect),
+                    } => (entry, effect),
+                    _ => continue,
                 };
-                let Some(effect_row) = effect_row_for_key(atlas, &key) else {
+                let Some(effect_row) = atlas.effect_row_for_effect(effect) else {
                     continue;
                 };
                 let col = inst.cell_id % INDEX_GRID_COLS;
@@ -997,46 +1003,6 @@ impl ModernGpuVariantEffectRenderer {
         }
         queue.submit([encoder.finish()]);
     }
-}
-
-fn entry_can_render_stable(
-    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
-    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
-    key: &crate::modern_variant_atlas::VariantAtlasKey,
-) -> bool {
-    entry.dynamic_policy == "stable"
-        && (key_has_stable_effect(atlas, key) || entry_matches_material(entry, key))
-}
-
-fn entry_matches_material(
-    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
-    key: &crate::modern_variant_atlas::VariantAtlasKey,
-) -> bool {
-    entry.key.palette == key.palette && entry.key.palette_row == key.palette_row
-}
-
-fn key_has_stable_effect(
-    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
-    key: &crate::modern_variant_atlas::VariantAtlasKey,
-) -> bool {
-    atlas
-        .effect_for_key(key)
-        .is_some_and(|effect| effect.dynamic_policy == "stable")
-}
-
-fn effect_row_for_key(
-    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
-    key: &crate::modern_variant_atlas::VariantAtlasKey,
-) -> Option<u32> {
-    let effect = atlas.effect_for_key(key)?;
-    if effect.dynamic_policy != "stable" {
-        return None;
-    }
-    atlas
-        .effects
-        .iter()
-        .position(|candidate| candidate == effect)
-        .map(|row| row as u32)
 }
 
 fn variant_tile_instance(

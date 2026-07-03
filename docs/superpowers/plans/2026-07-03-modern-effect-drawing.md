@@ -8,6 +8,21 @@
 
 **Tech Stack:** Rust renderer crate, serde JSON loaders, existing `ModernFrame`/`ModernIndexTile` draw data, wgpu, Python extractor-generated `tile_effects.json`, existing replay/oracle parity scripts.
 
+## Current State After Source-Key Material Split
+
+The default `assets-variant-gpu` path now loads `art_tiles.*` as the runtime
+source atlas and resolves atlas art by ROM/source identity rather than by
+preview palette. Live palette/material selection is resolved separately through
+`tile_effects.json`. This means a source tile drawn with a different live
+palette row should no longer be classified as missing art.
+
+The next modernization step is a shared draw resolver: one small layer in
+`modern_variant_atlas.rs` should classify each live draw as stable preview art,
+stable effect-backed art, dynamic/live-indexed fallback, missing art, or unkeyed
+fallback. The software oracle, GPU overlay builder, and GPU effect instance
+builder should consume that resolver instead of duplicating the classification
+rules.
+
 ## Global Constraints
 
 - Do not reintroduce default `tile_variants.*` generation.
@@ -219,3 +234,177 @@ effect-backed stable cells through the LUT shader; and live
 headless readback or CPU RGBA upload. Use `ZELDA3_VARIANT_LIVE_STATS=1` for a
 cheap live draw-mix check; representative oracle windows should be rerun when a
 fresh route-wide proof is required.
+
+### Task 5: Share Variant Draw Classification Across Render Backends
+
+**Files:**
+- Modify: `crates/renderer/src/modern_variant_atlas.rs`
+- Modify: `crates/renderer/src/modern_software.rs`
+- Modify: `crates/renderer/src/modern_gpu.rs`
+- Test: `cargo test -p renderer modern_variant_atlas`
+- Test: `cargo test -p renderer variant_atlas_software`
+- Test: `cargo test -p renderer modern_gpu`
+
+**Interfaces:**
+- Produces: `VariantAtlasDraw<'a>` with these cases:
+  `Stable { entry, effect }`, `DynamicPalette { entry }`, `MissingArt`,
+  and `Unkeyed`.
+- Produces: `ModernVariantAtlas::resolve_draw(Option<&VariantAtlasKey>)`.
+- Produces: `ModernVariantAtlas::effect_row_for_effect(&TileEffect)`.
+- Consumes: existing `entry_for_source_key`, `effect_for_key`, and preview
+  material matching.
+
+- [x] **Step 1: Write failing resolver tests**
+
+Add tests in `crates/renderer/src/modern_variant_atlas.rs`:
+
+```rust
+#[test]
+fn resolve_draw_returns_live_effect_for_source_art() {
+    let atlas = bg_test_atlas(0, vec![bg_test_effect_with_palette_row(3)]);
+    let live_key = bg_test_key_with_palette_row(3);
+
+    match atlas.resolve_draw(Some(&live_key)) {
+        VariantAtlasDraw::Stable { entry, effect: Some(effect) } => {
+            assert_eq!(entry.id, "bg:kBgGfx:pack0:tile0:3bpp");
+            assert_eq!(effect.id, "palette_dung_bg_main:8color:row3");
+        }
+        other => panic!("expected stable effect-backed draw, got {other:?}"),
+    }
+}
+
+#[test]
+fn resolve_draw_keeps_unmodeled_material_on_dynamic_fallback() {
+    let atlas = bg_test_atlas(0, Vec::new());
+    let live_key = bg_test_key_with_palette_row(3);
+
+    match atlas.resolve_draw(Some(&live_key)) {
+        VariantAtlasDraw::DynamicPalette { entry } => {
+            assert_eq!(entry.id, "bg:kBgGfx:pack0:tile0:3bpp");
+        }
+        other => panic!("expected dynamic fallback, got {other:?}"),
+    }
+}
+```
+
+Run:
+
+```bash
+cargo test -p renderer modern_variant_atlas -- --nocapture
+```
+
+Expected: fail because `VariantAtlasDraw` and `resolve_draw` do not exist.
+
+- [x] **Step 2: Implement `VariantAtlasDraw` and resolver**
+
+Add this API in `crates/renderer/src/modern_variant_atlas.rs`:
+
+```rust
+#[derive(Clone, Copy, Debug)]
+pub enum VariantAtlasDraw<'a> {
+    Stable {
+        entry: &'a VariantAtlasEntry,
+        effect: Option<&'a TileEffect>,
+    },
+    DynamicPalette {
+        entry: &'a VariantAtlasEntry,
+    },
+    MissingArt,
+    Unkeyed,
+}
+```
+
+`resolve_draw(None)` returns `Unkeyed`. `resolve_draw(Some(key))` resolves the
+entry by source key only. If no entry exists, it returns `MissingArt`. If the
+entry is stable and a stable effect exists for the live key, it returns
+`Stable { effect: Some(effect) }`. If the entry is stable and its preview
+material exactly matches the live key, it returns `Stable { effect: None }`.
+Otherwise it returns `DynamicPalette { entry }`.
+
+Run:
+
+```bash
+cargo test -p renderer modern_variant_atlas -- --nocapture
+```
+
+Expected: pass.
+
+- [x] **Step 3: Route software variant draws through the resolver**
+
+Replace the local `entry_can_render_stable`, `entry_matches_material`, and
+`key_has_stable_effect` helpers in `crates/renderer/src/modern_software.rs`
+with one `match atlas.resolve_draw(key.as_ref())`. Pass the returned `effect`
+directly into the BG and sprite variant draw helpers.
+
+Run:
+
+```bash
+cargo test -p renderer variant_atlas_software -- --nocapture
+```
+
+Expected: pass, including
+`variant_atlas_software_resolves_art_by_source_and_effect_by_live_palette`.
+
+- [x] **Step 4: Route GPU variant draws through the resolver**
+
+Replace the duplicated classification in `ModernGpuVariantRenderer::build_variant_frame`
+and `ModernGpuVariantEffectRenderer::{render_bg, render_sprites}` with
+`atlas.resolve_draw(Some(&key))`. The GPU effect renderer should only emit
+effect instances for `VariantAtlasDraw::Stable { effect: Some(effect), .. }`.
+Use `ModernVariantAtlas::effect_row_for_effect(effect)` to encode the LUT row.
+
+Run:
+
+```bash
+cargo test -p renderer modern_gpu -- --nocapture
+```
+
+Expected: pass, including mixed fallback/effect overlay tests.
+
+- [x] **Step 5: Commit**
+
+```bash
+git add crates/renderer/src/modern_variant_atlas.rs \
+  crates/renderer/src/modern_software.rs \
+  crates/renderer/src/modern_gpu.rs \
+  docs/superpowers/plans/2026-07-03-modern-effect-drawing.md
+git commit -m "refactor(renderer): share variant draw resolution"
+```
+
+### Task 6: Expose Draw-Mix Stats Around the Shared Resolver
+
+**Files:**
+- Modify: `crates/renderer/src/modern_software.rs`
+- Modify: `crates/renderer/src/modern_gpu.rs`
+- Modify: `docs/assets/rgba-variant-atlas.md`
+- Test: `cargo test -p renderer variant_atlas_software modern_gpu_variant_headless_mixed_fallback_uses_effect_overlay`
+
+**Goal:** Make live and oracle logs report the modern draw mix in source terms:
+stable preview draws, stable effect draws, dynamic material fallback draws,
+missing source-art draws, and unkeyed live draws. This replaces ambiguous
+legacy wording where all non-preview draws could appear as generic fallback.
+
+### Task 7: Compile Variant Draws Into Backend-Neutral Draw Packets
+
+**Files:**
+- Create: `crates/renderer/src/modern_variant_draw.rs`
+- Modify: `crates/renderer/src/lib.rs`
+- Modify: `crates/renderer/src/modern_software.rs`
+- Modify: `crates/renderer/src/modern_gpu.rs`
+- Test: `cargo test -p renderer modern_variant_draw`
+
+**Goal:** Build one backend-neutral list of source-art/effect/indexed-fallback
+draw packets per `ModernFrame`. Software and GPU renderers consume the same
+packet list, which is the next clean break from the old CPU composition shape.
+
+### Task 8: Add A Route-Window Proof For Nonzero Variant Draws
+
+**Files:**
+- Modify: `scripts/gpu_render_compare_oracle_windows.py` only if stats parsing
+  needs the Task 6 names.
+- Modify: `docs/assets/rgba-variant-atlas.md`
+- Test: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv --cold --limit 1`
+
+**Goal:** Prove at least one representative oracle window has nonzero stable
+source-art/effect draws and zero mismatched pixels. Keep this as a focused
+window proof, not a full route scan.
