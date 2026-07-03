@@ -373,38 +373,47 @@ fn load_tile_effects_from_dir(atlas_dir: &Path) -> Result<Vec<TileEffect>, Strin
         .map_err(|e| format!("failed to read {}: {e}", json_path.display()))?;
     let manifest: EffectsManifestJson = serde_json::from_slice(&manifest_bytes)
         .map_err(|e| format!("failed to parse {}: {e}", json_path.display()))?;
-    if manifest.format != "zelda3_tile_effects_v1" {
+    if !matches!(
+        manifest.format.as_str(),
+        "zelda3_tile_effects_v1" | "zelda3_tile_effect_table_v1"
+    ) {
         return Err(format!(
             "{}: unsupported format {:?}",
             json_path.display(),
             manifest.format
         ));
     }
-    manifest
-        .effects
-        .into_iter()
-        .map(|effect| {
-            if effect.effect_type != "palette_lut" {
-                return Err(format!(
-                    "{}: unsupported effect type {:?}",
-                    json_path.display(),
-                    effect.effect_type
-                ));
-            }
-            let mut index_to_rgba = Vec::with_capacity(effect.index_to_rgb.len());
-            for rgb in effect.index_to_rgb {
-                index_to_rgba.push([rgb[0], rgb[1], rgb[2], 0xff]);
-            }
-            Ok(TileEffect {
-                id: effect.id,
-                palette: effect.palette,
-                palette_row: effect.palette_row,
-                colors_per_row: effect.colors_per_row,
-                index_to_rgba,
-                dynamic_policy: effect.dynamic_policy,
-            })
-        })
-        .collect()
+    let mut effects = Vec::with_capacity(manifest.effects.len());
+    for effect in manifest.effects {
+        if effect.effect_type != "palette_lut" {
+            return Err(format!(
+                "{}: unsupported effect type {:?}",
+                json_path.display(),
+                effect.effect_type
+            ));
+        }
+        let Ok(palette_row) = u8::try_from(effect.palette_row) else {
+            continue;
+        };
+        let mut index_to_rgba = Vec::with_capacity(effect.index_to_rgb.len());
+        for rgb in effect.index_to_rgb {
+            index_to_rgba.push([
+                rgb[0].min(u8::MAX.into()) as u8,
+                rgb[1].min(u8::MAX.into()) as u8,
+                rgb[2].min(u8::MAX.into()) as u8,
+                0xff,
+            ]);
+        }
+        effects.push(TileEffect {
+            id: effect.id,
+            palette: effect.palette,
+            palette_row,
+            colors_per_row: effect.colors_per_row,
+            index_to_rgba,
+            dynamic_policy: effect.dynamic_policy,
+        });
+    }
+    Ok(effects)
 }
 
 #[derive(Deserialize)]
@@ -496,9 +505,9 @@ struct EffectJson {
     #[serde(rename = "type")]
     effect_type: String,
     palette: String,
-    palette_row: u8,
+    palette_row: u16,
     colors_per_row: u8,
-    index_to_rgb: Vec<[u8; 3]>,
+    index_to_rgb: Vec<[u16; 3]>,
     dynamic_policy: String,
 }
 
@@ -625,7 +634,7 @@ mod tests {
                 "colors_per_row": 8,
                 "index_to_rgb": [
                   [0, 0, 0],
-                  [10, 20, 30],
+                  [256, 20, 30],
                   [40, 50, 60],
                   [70, 80, 90],
                   [100, 110, 120],
@@ -633,6 +642,15 @@ mod tests {
                   [160, 170, 180],
                   [190, 200, 210]
                 ],
+                "dynamic_policy": "stable",
+                "runtime": "shader_effect"
+              }, {
+                "id": "palette_dung_bg_main:8color:row256",
+                "type": "palette_lut",
+                "palette": "palette_dung_bg_main",
+                "palette_row": 256,
+                "colors_per_row": 8,
+                "index_to_rgb": [[0, 0, 0]],
                 "dynamic_policy": "stable",
                 "runtime": "shader_effect"
               }]
@@ -656,7 +674,9 @@ mod tests {
         let effect = atlas
             .effect_for_entry(&atlas.entries[0])
             .expect("resolve palette effect");
+        assert_eq!(atlas.effects.len(), 1);
         assert_eq!(effect.id, "palette_dung_bg_main:8color:row2");
+        assert_eq!(effect.index_to_rgba[1], [255, 20, 30, 0xff]);
         assert_eq!(effect.index_to_rgba[2], [40, 50, 60, 0xff]);
 
         std::fs::remove_dir_all(root).expect("remove temp root");

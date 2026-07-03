@@ -190,16 +190,18 @@ fn draw_variant_bg_instance(
             };
             let atlas_x = entry.rect[0] as usize + src_x;
             let atlas_y = entry.rect[1] as usize + src_y;
-            if let Some(color) = stable_effect
-                .and_then(|effect| effect_color_for_index(effect, cell.indices[src_y * 8 + src_x]))
-            {
-                let dst_x = inst.screen_x + sx as i16;
-                let dst_y = inst.screen_y + sy as i16;
-                if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
-                    continue;
+            if let Some(effect) = stable_effect {
+                if let Some(color) =
+                    effect_color_for_index(effect, cell.indices[src_y * 8 + src_x])
+                {
+                    let dst_x = inst.screen_x + sx as i16;
+                    let dst_y = inst.screen_y + sy as i16;
+                    if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                        continue;
+                    }
+                    let dst = (dst_y as usize * width + dst_x as usize) * 4;
+                    out[dst..dst + 4].copy_from_slice(&color);
                 }
-                let dst = (dst_y as usize * width + dst_x as usize) * 4;
-                out[dst..dst + 4].copy_from_slice(&color);
                 continue;
             }
             if atlas_x >= atlas.width as usize || atlas_y >= atlas.height as usize {
@@ -273,16 +275,18 @@ fn draw_variant_sprite_instance(
             };
             let atlas_x = entry.rect[0] as usize + src_x;
             let atlas_y = entry.rect[1] as usize + src_y;
-            if let Some(color) = stable_effect
-                .and_then(|effect| effect_color_for_index(effect, cell.indices[src_y * 8 + src_x]))
-            {
-                let dst_x = inst.screen_x + x as i16;
-                let dst_y = inst.screen_y + y as i16;
-                if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
-                    continue;
+            if let Some(effect) = stable_effect {
+                if let Some(color) =
+                    effect_color_for_index(effect, cell.indices[src_y * 8 + src_x])
+                {
+                    let dst_x = inst.screen_x + x as i16;
+                    let dst_y = inst.screen_y + y as i16;
+                    if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                        continue;
+                    }
+                    let dst = (dst_y as usize * width + dst_x as usize) * 4;
+                    out[dst..dst + 4].copy_from_slice(&color);
                 }
-                let dst = (dst_y as usize * width + dst_x as usize) * 4;
-                out[dst..dst + 4].copy_from_slice(&color);
                 continue;
             }
             if atlas_x >= atlas.width as usize || atlas_y >= atlas.height as usize {

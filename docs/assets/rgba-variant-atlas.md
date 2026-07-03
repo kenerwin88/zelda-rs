@@ -216,10 +216,13 @@ different objects, or intentionally changed art.
 The Rust atlas loader reads `tile_effects.json` alongside `art_tiles.*` or
 `base_tiles.*`. The software variant renderer uses a stable matching
 `palette_lut` effect by sampling the live source tile index and looking up the
-final RGB in `index_to_rgb`; if no matching stable effect exists, it keeps the
-older preview-RGBA atlas sampling behavior. The GPU variant path still uses the
-preview-RGBA overlay for stable atlas draws; moving this LUT application into a
-GPU shader is the next drawing-modernization step.
+final RGB in `index_to_rgb`; index zero remains transparent. If no matching
+stable effect exists, it keeps the older preview-RGBA atlas sampling behavior.
+The GPU variant path now has a LUT-backed shader/material route for all-stable
+effect-backed BG and sprite draws, including source/draw flips and OBJ row
+masks. Mixed preview/effect/fallback frames continue through the existing
+preview-RGBA or live indexed fallback paths until those material cases are
+modeled.
 
 `dynamic_policy` remains conservative:
 

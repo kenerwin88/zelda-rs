@@ -244,3 +244,77 @@ fn fs_sprite(in: VsSpriteOut) -> @location(0) vec4<f32> {
     let cx = 128 + i32(in.palette) * 16 + i32(index);
     return textureLoad(cgram_tex, vec2<i32>(cx, 0), 0);
 }
+
+// ── Variant effect path ─────────────────────────────────────────────────────
+//
+// Source tile indices are sampled from an R8Uint atlas, then mapped through a
+// compact palette/effect LUT texture. This is the GPU equivalent of
+// `render_modern_frame_software_variant_atlas`'s stable `palette_lut` path.
+
+@group(0) @binding(4) var effect_lut_tex: texture_2d<f32>;
+
+struct VsEffectOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) local: vec2<f32>,
+    @location(1) @interpolate(flat) cell_origin: vec2<u32>,
+    // bit0 = hflip, bit1 = vflip, bits 8..15 = row mask.
+    @location(2) @interpolate(flat) flags: u32,
+    @location(3) @interpolate(flat) effect_row: u32,
+};
+
+@vertex
+fn vs_effect(
+    @builtin(vertex_index) vi: u32,
+    @location(0) cell_origin: vec2<u32>,
+    @location(1) screen_xy: vec2<i32>,
+    @location(2) flags: u32,
+    @location(3) effect_row: u32,
+) -> VsEffectOut {
+    var corners = array<vec2<f32>, 6>(
+        vec2<f32>(0.0, 0.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(1.0, 1.0),
+    );
+    let c = corners[vi];
+    let local = c * 8.0;
+    let screen = vec2<f32>(f32(screen_xy.x), f32(screen_xy.y)) + local;
+
+    let ndc_x = screen.x / 256.0 * 2.0 - 1.0;
+    let ndc_y = 1.0 - screen.y / 224.0 * 2.0;
+
+    var out: VsEffectOut;
+    out.pos = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
+    out.local = local;
+    out.cell_origin = cell_origin;
+    out.flags = flags;
+    out.effect_row = effect_row;
+    return out;
+}
+
+@fragment
+fn fs_effect(in: VsEffectOut) -> @location(0) vec4<f32> {
+    var lx = u32(floor(in.local.x));
+    var ly = u32(floor(in.local.y));
+    if (lx >= 8u) { lx = 7u; }
+    if (ly >= 8u) { ly = 7u; }
+
+    var sx = lx;
+    var sy = ly;
+    if ((in.flags & 1u) != 0u) { sx = 7u - lx; }
+    if ((in.flags & 2u) != 0u) { sy = 7u - ly; }
+    if (((in.flags >> (8u + ly)) & 1u) == 0u) {
+        discard;
+    }
+
+    let ax = i32(in.cell_origin.x + sx);
+    let ay = i32(in.cell_origin.y + sy);
+    let index = textureLoad(index_atlas, vec2<i32>(ax, ay), 0).r;
+    if (index == 0u) {
+        discard;
+    }
+
+    return textureLoad(effect_lut_tex, vec2<i32>(i32(index), i32(in.effect_row)), 0);
+}

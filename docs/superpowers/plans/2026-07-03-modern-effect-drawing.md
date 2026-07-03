@@ -41,7 +41,7 @@ Expected: fail because `effect_for_entry` does not exist.
 
 - [x] **Step 3: Implement loader and lookup**
 
-Parse `zelda3_tile_effects_v1`, accept `palette_lut`, convert `index_to_rgb` to opaque RGBA, and return an empty effect list when the file is absent.
+Parse `zelda3_tile_effect_table_v1`, accept `palette_lut`, convert `index_to_rgb` to opaque RGBA, and return an empty effect list when the file is absent.
 
 - [x] **Step 4: Verify green**
 
@@ -95,19 +95,19 @@ Expected: pass.
 - Consumes: `ModernVariantAtlas.effects`
 - Produces: GPU draw path that resolves the same LUT color as `render_modern_frame_software_variant_atlas`.
 
-- [ ] **Step 1: Add a failing GPU/software effect comparison**
+- [x] **Step 1: Add a failing GPU/software effect comparison**
 
 Construct a `ModernVariantAtlas` with wrong preview RGBA and a correct LUT, then assert the GPU variant renderer matches the software variant renderer.
 
-- [ ] **Step 2: Add effect material upload**
+- [x] **Step 2: Add effect material upload**
 
 Upload compact LUT data and per-instance effect selection to the GPU variant renderer. Keep fallback behavior for missing/dynamic effects.
 
-- [ ] **Step 3: Apply LUT in shader**
+- [x] **Step 3: Apply LUT in shader**
 
 Use source tile index plus effect LUT color instead of preview RGBA for effect-backed stable draws.
 
-- [ ] **Step 4: Verify GPU/software parity**
+- [x] **Step 4: Verify GPU/software parity**
 
 Run: `cargo test -p renderer modern_gpu_variant_atlas_bg_tile_matches_software_variant`
 
@@ -120,13 +120,17 @@ Expected: pass with effect-backed draw cases.
 - Test: `cargo test -p renderer`
 - Test: `cargo build --profile parity -p zelda3-bin`
 
-- [ ] **Step 1: Run renderer tests**
+- [x] **Step 1: Run renderer tests**
 
 Run: `cargo test -p renderer`
 
 Expected: all renderer tests pass.
 
-- [ ] **Step 2: Run parity build**
+Current evidence: `cargo test -p renderer --lib -- --skip perf_render_modern_frame_scaled`
+passes the renderer functional suite. The unfiltered perf threshold test remains
+separate from functional parity.
+
+- [x] **Step 2: Run parity build**
 
 Run: `cargo build --profile parity -p zelda3-bin`
 
@@ -137,3 +141,9 @@ Expected: build succeeds.
 Run: `python3 scripts/gpu_render_compare_oracle_windows.py --renderer assets-variant-gpu --windows docs/porting/oracle_windows.tsv`
 
 Expected: no new mismatches from effect-backed draws; remaining fallbacks are documented dynamic/missing cases.
+
+Current evidence: `title-start` and `file-select-new-game` passed with
+`mismatched_pixels=0` under `assets-variant-gpu`. The longer
+`file-select-enter-game` window was stopped after an interactive direct release
+run remained active for roughly nineteen minutes without a progress summary; it
+needs a separate progress-friendly or overnight verification pass.
