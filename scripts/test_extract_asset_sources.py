@@ -459,6 +459,16 @@ class ExtractAssetSourcesTests(unittest.TestCase):
             self.assertFalse((out_dir / "atlas/base_tiles.png").exists())
             self.assertFalse((out_dir / "atlas/base_tiles.json").exists())
 
+    def test_tile_effect_table_is_required_for_default_extraction(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "required tile effect table input missing",
+            ):
+                extract_assets.write_tile_effect_table(out_dir)
+
     def test_writes_canonical_art_atlas_from_extracted_graphics_assets(self) -> None:
         raw_pack = bytes([0] * 1536)
         sprite_items = [raw_pack] * 12 + [compressed_literal(raw_pack)]
@@ -501,6 +511,26 @@ class ExtractAssetSourcesTests(unittest.TestCase):
             )
             self.assertTrue((out_dir / "atlas/art_tiles.png").is_file())
             self.assertTrue((out_dir / "atlas/art_tiles.json").is_file())
+
+    def test_canonical_art_atlas_is_required_for_default_extraction(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "required canonical art atlas input missing",
+            ):
+                extract_assets.write_canonical_art_atlas(out_dir)
+
+    def test_canonical_art_validation_requires_default_outputs(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "required canonical art atlas missing",
+            ):
+                extract_assets.validate_canonical_art_atlas(out_dir)
 
     def test_validates_canonical_art_atlas_for_manifest_summary(self) -> None:
         raw_pack = bytes([0] * 1536)

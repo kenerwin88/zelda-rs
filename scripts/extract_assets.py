@@ -460,11 +460,12 @@ def write_tile_effect_table(out_dir: Path) -> list[dict[str, str]]:
     try:
         written = rgba_variant_atlas.write_tile_effect_table(out_dir)
     except FileNotFoundError as exc:
-        print(f"skipping tile effect table: missing {exc.filename}", file=sys.stderr)
-        return []
+        raise RuntimeError(
+            f"required tile effect table input missing: {exc.filename}"
+        ) from exc
 
     if not written:
-        return []
+        raise RuntimeError("required tile effect table was not written")
     return [
         {
             "effects_file": "atlas/tile_effects.json",
@@ -482,11 +483,12 @@ def write_canonical_art_atlas(out_dir: Path) -> list[dict[str, str]]:
             source_tiles_dir=REPO_ROOT / "zelda3-bin/developer_tilesets",
         )
     except FileNotFoundError as exc:
-        print(f"skipping canonical art atlas: missing {exc.filename}", file=sys.stderr)
-        return []
+        raise RuntimeError(
+            f"required canonical art atlas input missing: {exc.filename}"
+        ) from exc
 
     if not written:
-        return []
+        raise RuntimeError("required canonical art atlas was not written")
     return [
         {
             "image_file": "atlas/art_tiles.png",
@@ -501,9 +503,13 @@ def validate_canonical_art_atlas(out_dir: Path) -> dict[str, object]:
 
     atlas_dir = out_dir / "atlas"
     if not (atlas_dir / "art_tiles.json").is_file():
-        return {}
+        raise RuntimeError(
+            f"required canonical art atlas missing: {atlas_dir / 'art_tiles.json'}"
+        )
     if not (atlas_dir / "tile_effects.json").is_file():
-        return {}
+        raise RuntimeError(
+            f"required tile effect table missing: {atlas_dir / 'tile_effects.json'}"
+        )
 
     summary = variant_atlas_summary.summarize_variant_atlas(atlas_dir)
     errors = variant_atlas_summary.coverage_errors(summary)
