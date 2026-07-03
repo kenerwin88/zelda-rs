@@ -115,8 +115,10 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
             "mixed_overlay_bg_effect_reject_complex_color_math_clip=57 "
             "mixed_overlay_bg_effect_reject_complex_color_math_subscreen=58 "
             "mixed_overlay_bg_effect_reject_complex_color_math_fixed_color=59 "
-            "mixed_overlay_bg_effect_reject_cgram_mismatch=61 "
-            "mixed_overlay_bg_effect_reject_overlap=67"
+            "mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch=61 "
+            "mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=67 "
+            "mixed_overlay_bg_effect_reject_cgram_mismatch=71 "
+            "mixed_overlay_bg_effect_reject_overlap=73"
         )
 
         match = MODERN_INDEX_SUMMARY_RE.search(line)
@@ -137,6 +139,8 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         self.assertEqual(match.group(29), "59")
         self.assertEqual(match.group(30), "61")
         self.assertEqual(match.group(31), "67")
+        self.assertEqual(match.group(32), "71")
+        self.assertEqual(match.group(33), "73")
 
     def test_modern_index_summary_regex_accepts_legacy_draw_mix(self) -> None:
         line = (

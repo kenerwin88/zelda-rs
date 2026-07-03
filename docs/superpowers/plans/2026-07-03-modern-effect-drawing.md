@@ -676,15 +676,32 @@ final-pixel parity.
 ### Task 16: Classify the Remaining Sub-Screen Rejects
 
 **Files:**
-- [ ] Modify: `crates/renderer/src/modern_gpu.rs`
-- [ ] Modify: `zelda3-bin/src/main.rs`
-- [ ] Modify: `scripts/gpu_render_compare_oracle_windows.py`
-- [ ] Modify: `scripts/gpu_render_compare_windows.py`
-- [ ] Test: focused renderer unit for the next remaining subtype
-- [ ] Test: focused opening-route oracle window
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Modify: `zelda3-bin/src/main.rs`
+- [x] Modify: `scripts/gpu_render_compare_oracle_windows.py`
+- [x] Modify: `scripts/gpu_render_compare_windows.py`
+- [x] Test: focused renderer unit for the next remaining subtype
+- [x] Test: focused opening-route oracle window
 
 **Goal:** Explain and reduce the remaining 910 sub-screen color-math rejects
 without guessing. These packets are no longer the obvious static-effect or
 live-CGRAM cases covered by Tasks 14 and 15, so the next step is to split the
 remaining reject path into actionable reasons before adding another renderer
 lane.
+
+**Done:** Added pre-final color-math reject counters for CGRAM mismatch and
+packet overlap, threaded them through renderer stats, `variant_live_summary`,
+`modern_index_compare` lines, both compare wrappers, and the parser tests. The
+focused unit
+`modern_gpu_variant_headless_counts_prefinal_overlap_color_math_reject` guards
+that a sub-screen color-math packet which reaches the pre-final policy but
+overlaps another packet is counted in
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap`.
+
+**Route result:** The opening tail remains `mismatched_pixels=0`. The route now
+reports `mixed_overlay_bg_effect_reject_complex_color_math_subscreen=910`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch=0`,
+and `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=910`.
+That makes the next best modernization target explicit: handle overlapped
+pre-final BG effect packets in the packed composition buffer before GPU final
+color math, rather than building another palette or fixed-color lane.

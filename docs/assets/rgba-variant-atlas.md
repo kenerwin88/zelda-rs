@@ -297,6 +297,13 @@ renderer/oracle. Verification must report:
   RGB depends on another composited screen pixel.
 - `mixed_overlay_bg_effect_reject_complex_color_math_fixed_color`: color-math
   rejects caused by fixed-color addition/subtraction or half-color math.
+- `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch`:
+  packets accepted by the color-math pre-final policy but still blocked because
+  neither the static effect LUT nor the live-CGRAM LUT can represent the source
+  indices.
+- `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap`: packets
+  accepted by the color-math pre-final policy but still blocked because their
+  nontransparent pixels overlap another BG or OBJ packet before finalization.
 - `mixed_overlay_bg_effect_reject_cgram_mismatch`: candidates blocked because
   neither the extracted stable effect LUT nor the live-CGRAM LUT can represent
   the packet's source indices.
@@ -341,14 +348,17 @@ proof reports `stable_effect_draws=21038`,
 `mixed_overlay_bg_effect_reject_complex_color_math_clip=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_subscreen=910`,
 `mixed_overlay_bg_effect_reject_complex_color_math_fixed_color=0`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch=0`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=910`,
 `mixed_overlay_bg_effect_reject_cgram_mismatch=0`, and
 `mixed_overlay_bg_effect_reject_overlap=0` over 17 sampled compares from the
 checkpointed opening route tail. That means most stable BG opportunities in
 this sampled mixed window now execute through the GPU overlay path with exact
 final-pixel parity; the remaining blockers are per-scanline layer visibility
-and sub-screen color-math composition. A fixed-color-only overlay shader would
-not reduce this representative route because the current remaining color-math
-rejects are all sub-screen dependent.
+and overlapped pre-final sub-screen composition. A fixed-color-only overlay
+shader would not reduce this representative route because the current remaining
+color-math rejects are all sub-screen dependent, and the pre-final classifier
+shows they all overlap another packet before finalization.
 
 The first pre-final sub-screen implementation supports static variant-effect BG
 packets: those pixels can be written into the packed main-screen buffer before
@@ -357,7 +367,9 @@ The native live-CGRAM pre-final lane uses the fallback compositor's direct
 indexed sampling rules (`cell.indices[y*8+x]`, `palette*16+index`) and writes
 packed 5-bit RGB plus the layer math bit before the finalizer runs. This reduces
 the representative sub-screen reject bucket from 1,861 to 910 with
-`mismatched_pixels=0`.
+`mismatched_pixels=0`. The next useful lane is not more palette handling; it is
+ordering/merging overlapped pre-final BG packets into the packed composition
+buffer before final color math.
 
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay

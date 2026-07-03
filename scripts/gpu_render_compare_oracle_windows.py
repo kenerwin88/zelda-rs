@@ -44,7 +44,9 @@ MODERN_INDEX_SUMMARY_RE = re.compile(
     r"mixed_overlay_bg_effect_reject_complex_color_math=(\d+) "
     r"(?:mixed_overlay_bg_effect_reject_complex_color_math_clip=(\d+) "
     r"mixed_overlay_bg_effect_reject_complex_color_math_subscreen=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_color_math_fixed_color=(\d+) )?)?"
+    r"mixed_overlay_bg_effect_reject_complex_color_math_fixed_color=(\d+) "
+    r"(?:mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=(\d+) )?)?)?"
     r"mixed_overlay_bg_effect_reject_cgram_mismatch=(\d+) "
     r"mixed_overlay_bg_effect_reject_overlap=(\d+))?)?)?"
 )
@@ -409,7 +411,35 @@ def run_window(
         )
     if mismatched_pixels != 0:
         raise SystemExit(f"{window.name}: reported {mismatched_pixels} mismatched pixels")
-    variant_stats = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    variant_stats = (
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    )
     modern_match = MODERN_INDEX_SUMMARY_RE.search(result.stdout)
     if renderer == "assets-variant-gpu":
         if not modern_match:
@@ -445,6 +475,8 @@ def run_window(
             int(modern_match.group(29) or 0),
             int(modern_match.group(30) or 0),
             int(modern_match.group(31) or 0),
+            int(modern_match.group(32) or 0),
+            int(modern_match.group(33) or 0),
         )
     print(
         f"{window.name}: compared={compared} frames={window.frames} "
@@ -473,8 +505,10 @@ def run_window(
         f"mixed_overlay_bg_effect_reject_complex_color_math_clip={variant_stats[20]} "
         f"mixed_overlay_bg_effect_reject_complex_color_math_subscreen={variant_stats[21]} "
         f"mixed_overlay_bg_effect_reject_complex_color_math_fixed_color={variant_stats[22]} "
-        f"mixed_overlay_bg_effect_reject_cgram_mismatch={variant_stats[23]} "
-        f"mixed_overlay_bg_effect_reject_overlap={variant_stats[24]}"
+        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch={variant_stats[23]} "
+        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap={variant_stats[24]} "
+        f"mixed_overlay_bg_effect_reject_cgram_mismatch={variant_stats[25]} "
+        f"mixed_overlay_bg_effect_reject_overlap={variant_stats[26]}"
     )
     return compared, last_hash, mismatched_pixels, variant_stats
 
@@ -607,6 +641,8 @@ def main() -> None:
     total_mixed_overlay_bg_effect_reject_complex_color_math_clip = 0
     total_mixed_overlay_bg_effect_reject_complex_color_math_subscreen = 0
     total_mixed_overlay_bg_effect_reject_complex_color_math_fixed_color = 0
+    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch = 0
+    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap = 0
     total_mixed_overlay_bg_effect_reject_cgram_mismatch = 0
     total_mixed_overlay_bg_effect_reject_overlap = 0
     if args.dry_run:
@@ -672,8 +708,14 @@ def main() -> None:
         total_mixed_overlay_bg_effect_reject_complex_color_math_clip += variant_stats[20]
         total_mixed_overlay_bg_effect_reject_complex_color_math_subscreen += variant_stats[21]
         total_mixed_overlay_bg_effect_reject_complex_color_math_fixed_color += variant_stats[22]
-        total_mixed_overlay_bg_effect_reject_cgram_mismatch += variant_stats[23]
-        total_mixed_overlay_bg_effect_reject_overlap += variant_stats[24]
+        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch += (
+            variant_stats[23]
+        )
+        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap += variant_stats[
+            24
+        ]
+        total_mixed_overlay_bg_effect_reject_cgram_mismatch += variant_stats[25]
+        total_mixed_overlay_bg_effect_reject_overlap += variant_stats[26]
 
     if args.require_stable_draws:
         ensure_required_stable_draws(
@@ -708,6 +750,8 @@ def main() -> None:
         f"mixed_overlay_bg_effect_reject_complex_color_math_clip={total_mixed_overlay_bg_effect_reject_complex_color_math_clip} "
         f"mixed_overlay_bg_effect_reject_complex_color_math_subscreen={total_mixed_overlay_bg_effect_reject_complex_color_math_subscreen} "
         f"mixed_overlay_bg_effect_reject_complex_color_math_fixed_color={total_mixed_overlay_bg_effect_reject_complex_color_math_fixed_color} "
+        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch} "
+        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap} "
         f"mixed_overlay_bg_effect_reject_cgram_mismatch={total_mixed_overlay_bg_effect_reject_cgram_mismatch} "
         f"mixed_overlay_bg_effect_reject_overlap={total_mixed_overlay_bg_effect_reject_overlap}"
     )
