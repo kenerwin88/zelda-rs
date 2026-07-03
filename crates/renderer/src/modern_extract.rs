@@ -1206,25 +1206,49 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                             _ => {}
                         }
                     }
-                    let Some(src) = source_cell(atlas, kind, pack, tile_off) else {
-                        // No recorded source / not in atlas → leave a gap.
-                        continue;
-                    };
-                    let id = *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
-                        let indices = flip_index_pattern(&src.indices, hflip, vflip);
-                        let id = cells.len() as u32;
-                        cells.push(ModernIndexTile {
-                            id,
-                            indices,
-                            source_key: crate::modern_source_atlas::modern_source_key(
-                                kind, pack, tile_off,
-                            ),
-                            hflip,
-                            vflip,
-                        });
-                        id
-                    });
-                    (id, ((entry_word >> 10) & 7) as u8)
+                    match source_cell(atlas, kind, pack, tile_off) {
+                        Some(src) => {
+                            let id = *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
+                                let indices = flip_index_pattern(&src.indices, hflip, vflip);
+                                let id = cells.len() as u32;
+                                cells.push(ModernIndexTile {
+                                    id,
+                                    indices,
+                                    source_key: crate::modern_source_atlas::modern_source_key(
+                                        kind, pack, tile_off,
+                                    ),
+                                    hflip,
+                                    vflip,
+                                });
+                                id
+                            });
+                            (id, ((entry_word >> 10) & 7) as u8)
+                        }
+                        None => {
+                            let pal = ((entry_word >> 10) & 7) as u8;
+                            let chr_base = frame.bg[layer_index].tile_adr as usize;
+                            let pattern_key = entry_word & 0xC3FF;
+                            let id = *cell_ids
+                                .entry((0x9000_0000 | u32::from(pattern_key), false, false))
+                                .or_insert_with(|| {
+                                    let indices = decode_snes_4bpp_tile_indices(
+                                        frame.vram,
+                                        chr_base,
+                                        pattern_key,
+                                    );
+                                    let id = cells.len() as u32;
+                                    cells.push(ModernIndexTile {
+                                        id,
+                                        indices,
+                                        source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                        hflip: false,
+                                        vflip: false,
+                                    });
+                                    id
+                                });
+                            (id, pal)
+                        }
+                    }
                     }
                 };
 
@@ -1515,8 +1539,9 @@ mod tests {
         // The CELL pixels came from the atlas (7,9), not the VRAM tile pixels; only the
         // KEY was derived from VRAM (the frame-end content hash).
 
-        // A BG_STREAM tile whose content hash is NOT in the atlas → skipped (gap). Use a
-        // different tile with distinct pixels (slot 0x209) so its hash misses.
+        // A BG_STREAM tile whose content hash is NOT in the atlas must remain visible
+        // by falling back to a live-VRAM indexed cell. This keeps existing assets
+        // correct while regenerated source atlases catch up to new hash keys.
         let table_miss = |slot: usize| -> (u8, u16, u16) {
             if slot == 0x200 + 9 {
                 (CHR_KIND_BG_STREAM, 5, 99)
@@ -1534,11 +1559,13 @@ mod tests {
         frame2.bg[0].tile_adr = 0x2000;
         frame2.screen_enabled = [0x01, 0x00];
         let (modern2, cells2) = extract_modern_frame_from_sources(&frame2, &table_miss, &atlas);
-        assert!(cells2.is_empty(), "content hash absent from atlas → no cell");
-        assert!(
-            modern2.bg_layers[0].index_tiles.is_empty(),
-            "missing injective source leaves a gap"
+        assert_eq!(cells2.len(), 1, "missing hash falls back to live VRAM");
+        assert_eq!(
+            cells2[0].source_key,
+            crate::modern_hd_overrides::NO_SOURCE_KEY,
+            "live fallback cells remain unkeyed until the source atlas is regenerated"
         );
+        assert_eq!(modern2.bg_layers[0].index_tiles.len(), 1);
     }
 
     #[test]
