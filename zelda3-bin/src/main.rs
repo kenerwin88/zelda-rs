@@ -1497,11 +1497,17 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let scanlines_raw = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
         let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+        if gpu_frame.mode == 7 && (self.variant_gpu.is_some() || self.atlas_gpu) {
+            frontend.present_modern_mode7_gpu(&gpu_frame);
+            return;
+        }
+
         // Off-VRAM sources+overrides path: needs the CHR-source table
         // (`game.vram_chr_source()`), which only this binary (holding the
         // zelda3 `GameState`) can see — `FrameRenderer` only gets `GpuFrame`.
-        // Mode 7 isn't a Mode-1 tilemap the sources extractor can render; fall
-        // through to the frontend's VRAM-decoded Mode-7 compositor instead.
+        // Mode 7 isn't a Mode-1 tilemap the sources extractor can render, so
+        // GPU atlas modes route it through `present_modern_mode7_gpu` above.
+        // CPU/debug modes fall through to the frontend's modern fallback.
         if let Some(atlas) = self.source_atlas.as_ref().filter(|_| gpu_frame.mode != 7) {
             let src_slice: Vec<(u8, u16, u16)> = game
                 .vram_chr_source()

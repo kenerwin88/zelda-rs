@@ -2489,6 +2489,76 @@ impl FrameRenderer {
         self.render()
     }
 
+    /// Present a Mode-7 frame through the live GPU PPU path, then GPU-copy the
+    /// native 256x224 result into the standard presentation texture. This is
+    /// used by GPU atlas modes because Mode 7 is not a Mode-1 source-atlas
+    /// tilemap, but it still has a real GPU renderer.
+    pub fn present_modern_mode7_gpu(&mut self, frame: &GpuFrame<'_>) -> Result<(), RenderError> {
+        debug_assert_eq!(frame.mode, 7);
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        if self.modern_gpu_target.is_none() {
+            let target = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("modern_gpu_live_target"),
+                size: wgpu::Extent3d {
+                    width: 256,
+                    height: 224,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::COPY_SRC
+                    | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = target.create_view(&wgpu::TextureViewDescriptor::default());
+            self.modern_gpu_target = Some((target, view));
+        }
+
+        self.game_texture.ensure_size(
+            &self.device,
+            &self.bind_group_layout,
+            &self.presentation_buf,
+            self.presentation_params.presentation,
+            256,
+            224,
+        );
+
+        let (target_texture, target_view) =
+            self.modern_gpu_target.as_ref().expect("target built above");
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("modern_gpu_mode7_live"),
+            });
+        self.gpu_renderer
+            .render_frame(&mut encoder, &self.queue, frame, target_view);
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: target_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.game_texture.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: 256,
+                height: 224,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([encoder.finish()]);
+
+        self.render()
+    }
+
     pub fn render(&mut self) -> Result<(), RenderError> {
         self.maybe_log_viewport();
         if self.presentation_notice.frames_remaining() > 0 {

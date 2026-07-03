@@ -309,6 +309,23 @@ impl NativeFrontend {
         self.sleep_after_present();
     }
 
+    pub fn present_modern_mode7_gpu(&mut self, frame: &GpuFrame<'_>) {
+        if let Some(renderer) = &mut self.handler.renderer {
+            let result = renderer.present_modern_mode7_gpu(frame);
+            match result {
+                Ok(()) => {}
+                Err(RenderError::SurfaceReconfigureNeeded) => {
+                    if let Some(window) = &self.handler.window {
+                        renderer.resize(window.inner_size());
+                    }
+                }
+                Err(RenderError::SurfaceSkipped) => {}
+                Err(RenderError::Fatal(e)) => eprintln!("render error: {e}"),
+            }
+        }
+        self.sleep_after_present();
+    }
+
     pub fn set_menu_open(&mut self, open: bool) {
         self.handler.menu_open = open;
         if open {
