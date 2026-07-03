@@ -9,7 +9,12 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from variant_atlas_summary import coverage_errors, format_summary, summarize_variant_atlas
+from variant_atlas_summary import (
+    coverage_errors,
+    format_summary,
+    load_manifest_summary,
+    summarize_variant_atlas,
+)
 
 
 def write_json(path: Path, data: object) -> None:
@@ -154,22 +159,21 @@ class VariantAtlasSummaryTests(unittest.TestCase):
         self.assertIn("preview_sources palette_usage=1 source_kind_default=2", text)
 
     def test_coverage_errors_require_manifest_match_and_full_stable_coverage(self) -> None:
+        valid_summary = {
+            "source_refs": 3,
+            "art_count": 2,
+            "counted_art_entries": 2,
+            "manifest_width": 16,
+            "manifest_height": 8,
+            "art_png_width": 16,
+            "art_png_height": 8,
+            "manifest_source_refs": 3,
+            "missing_effect_refs": 0,
+            "invalid_rect_count": 0,
+            "invalid_rects": [],
+        }
         self.assertEqual(
-            coverage_errors(
-                {
-                    "source_refs": 3,
-                    "art_count": 2,
-                    "counted_art_entries": 2,
-                    "manifest_width": 16,
-                    "manifest_height": 8,
-                    "art_png_width": 16,
-                    "art_png_height": 8,
-                    "manifest_source_refs": 3,
-                    "missing_effect_refs": 0,
-                    "invalid_rect_count": 0,
-                    "invalid_rects": [],
-                }
-            ),
+            coverage_errors(valid_summary, manifest_summary=valid_summary.copy()),
             [],
         )
         self.assertEqual(
@@ -196,6 +200,31 @@ class VariantAtlasSummaryTests(unittest.TestCase):
                 "canonical source refs without stable preview/effect coverage: 1",
             ],
         )
+        manifest_summary = valid_summary.copy()
+        manifest_summary["source_refs"] = 4
+        self.assertEqual(
+            coverage_errors(valid_summary, manifest_summary=manifest_summary),
+            ["manifest canonical_art_atlas_summary does not match recomputed summary"],
+        )
+
+    def test_load_manifest_summary_reads_extraction_summary(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            manifest_path = Path(temp_dir) / "manifest.json"
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "canonical_art_atlas_summary": {
+                            "art_count": 2,
+                            "source_refs": 3,
+                        }
+                    }
+                )
+            )
+
+            self.assertEqual(
+                load_manifest_summary(manifest_path),
+                {"art_count": 2, "source_refs": 3},
+            )
 
 
 if __name__ == "__main__":

@@ -56,7 +56,9 @@ into runtime draw entries, and keeps palette/effect behavior in metadata.
 Run the manifest gate after extractor changes or art-sheet edits:
 
 ```bash
-python3 scripts/variant_atlas_summary.py --require-full-stable generated/zelda3_assets/atlas
+python3 scripts/variant_atlas_summary.py --require-full-stable \
+  --manifest generated/zelda3_assets/manifest.json \
+  generated/zelda3_assets/atlas
 ```
 
 The gate checks the editable PNG dimensions and art rects against
@@ -64,7 +66,9 @@ The gate checks the editable PNG dimensions and art rects against
 loader coverage.
 
 Default extraction runs the same gate after writing compact atlases and records
-the result as `canonical_art_atlas_summary` in `generated/zelda3_assets/manifest.json`.
+the result as `canonical_art_atlas_summary` in
+`generated/zelda3_assets/manifest.json`; the `--manifest` check verifies that
+stored summary against the current atlas files.
 
 ## Run
 

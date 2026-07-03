@@ -27,6 +27,14 @@ def _load_json(path: Path) -> dict[str, Any]:
     return data
 
 
+def load_manifest_summary(path: Path) -> dict[str, Any]:
+    manifest = _load_json(path)
+    summary = manifest.get("canonical_art_atlas_summary")
+    if not isinstance(summary, dict):
+        raise SystemExit(f"{path}: missing canonical_art_atlas_summary object")
+    return summary
+
+
 def _png_dimensions(path: Path) -> tuple[int, int]:
     try:
         header = path.read_bytes()[:24]
@@ -156,7 +164,11 @@ def format_summary(summary: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def coverage_errors(summary: dict[str, Any]) -> list[str]:
+def coverage_errors(
+    summary: dict[str, Any],
+    *,
+    manifest_summary: dict[str, Any] | None = None,
+) -> list[str]:
     errors = []
     if (
         summary["manifest_width"] != summary["art_png_width"]
@@ -188,6 +200,8 @@ def coverage_errors(summary: dict[str, Any]) -> list[str]:
             "canonical source refs without stable preview/effect coverage: "
             f"{summary['missing_effect_refs']}"
         )
+    if manifest_summary is not None and manifest_summary != summary:
+        errors.append("manifest canonical_art_atlas_summary does not match recomputed summary")
     return errors
 
 
@@ -206,15 +220,21 @@ def main() -> None:
         action="store_true",
         help="exit nonzero unless every canonical source ref is stable-covered",
     )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        help="also compare against manifest.json canonical_art_atlas_summary",
+    )
     args = parser.parse_args()
 
     summary = summarize_variant_atlas(args.atlas_dir)
+    manifest_summary = load_manifest_summary(args.manifest) if args.manifest else None
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:
         print(format_summary(summary))
     if args.require_full_stable:
-        errors = coverage_errors(summary)
+        errors = coverage_errors(summary, manifest_summary=manifest_summary)
         if errors:
             for error in errors:
                 print(f"error: {error}", file=sys.stderr)

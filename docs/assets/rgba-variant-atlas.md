@@ -290,7 +290,9 @@ For a cheap live coverage check without a replay scan, set
 For an even cheaper generated-asset check that does not start the emulator, run:
 
 ```bash
-python3 scripts/variant_atlas_summary.py --require-full-stable generated/zelda3_assets/atlas
+python3 scripts/variant_atlas_summary.py --require-full-stable \
+  --manifest generated/zelda3_assets/manifest.json \
+  generated/zelda3_assets/atlas
 ```
 
 That command reads `art_tiles.json` and `tile_effects.json` and reports how many
@@ -303,4 +305,5 @@ canonical source ref lacks stable coverage.
 
 `scripts/extract_assets.py` runs this gate for the default compact atlas output
 and writes the resulting counts to `manifest.json` as
-`canonical_art_atlas_summary`.
+`canonical_art_atlas_summary`. Passing `--manifest` verifies that the stored
+summary still matches the current atlas files.
