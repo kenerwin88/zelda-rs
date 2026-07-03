@@ -1553,6 +1553,7 @@ impl ModernGpuHeadless {
 pub struct ModernGpuVariantHeadless {
     device: wgpu::Device,
     queue: wgpu::Queue,
+    compositor: ModernGpuCompositor,
     renderer: ModernGpuVariantRenderer,
     target: wgpu::Texture,
     target_view: wgpu::TextureView,
@@ -1564,6 +1565,7 @@ impl ModernGpuVariantHeadless {
         let (_adapter, device, queue) =
             pollster::block_on(crate::create_device_queue(&instance, None));
         let format = wgpu::TextureFormat::Rgba8Unorm;
+        let compositor = ModernGpuCompositor::new(&device, &queue, format);
         let renderer = ModernGpuVariantRenderer::new(&device, &queue, atlas, format);
         let target = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("modern_gpu_variant_headless_target"),
@@ -1576,13 +1578,16 @@ impl ModernGpuVariantHeadless {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
         Self {
             device,
             queue,
+            compositor,
             renderer,
             target,
             target_view,
@@ -1597,16 +1602,38 @@ impl ModernGpuVariantHeadless {
         bg_palette_name: &str,
         sprite_palette_name: &str,
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
-        let stats = self.renderer.render(
-            &self.device,
-            &self.queue,
+        let (variant_frame, stats) = self.renderer.build_variant_frame(
             frame,
             bg_cells,
             sprite_cells,
             bg_palette_name,
             sprite_palette_name,
-            &self.target_view,
         );
+        if stats.dynamic_palette_draws != 0 || stats.missing_variant_draws != 0 {
+            self.compositor.render(
+                &self.device,
+                &self.queue,
+                frame,
+                bg_cells,
+                sprite_cells,
+                &self.target,
+            );
+            if stats.stable_draws != 0 {
+                self.renderer.renderer.render_overlay(
+                    &self.device,
+                    &self.queue,
+                    &variant_frame,
+                    &self.target_view,
+                );
+            }
+        } else {
+            self.renderer.renderer.render(
+                &self.device,
+                &self.queue,
+                &variant_frame,
+                &self.target_view,
+            );
+        }
         (self.read_target_rgba(), stats)
     }
 
@@ -2220,6 +2247,81 @@ mod tests {
             "first pixel exercises sub-screen half-add plus brightness"
         );
         assert_eq!(gpu, software);
+    }
+
+    #[test]
+    fn modern_gpu_variant_headless_missing_tiles_fallback_matches_full_compositor() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::ModernVariantAtlas;
+
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.cgram_rgba[1] = [20 << 3, 18 << 3, 16 << 3, 0xff];
+        frame.cgram_rgba[16 + 1] = [10 << 3, 8 << 3, 6 << 3, 0xff];
+
+        let mut main = ModernBgLayer::new(0);
+        main.enabled_main = true;
+        main.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = main;
+
+        let mut sub = ModernBgLayer::new(1);
+        sub.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 1,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[1] = sub;
+
+        frame.screen_enabled_main = 0x01;
+        frame.screen_enabled_sub = 0x02;
+        frame.math_enabled = 0x01;
+        frame.add_subscreen = true;
+        frame.half_color = true;
+        frame.brightness = 11;
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: Vec::new(),
+        };
+        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
+            &frame,
+            &cells,
+            &[],
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+        let full = ModernGpuHeadless::new().render_rgba(&frame, &cells, &[]);
+
+        assert_eq!(stats.stable_draws, 0);
+        assert_eq!(stats.dynamic_palette_draws, 0);
+        assert_eq!(stats.missing_variant_draws, 1);
+        assert_eq!(variant, full);
     }
 
     #[test]
