@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import struct
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,6 +16,16 @@ def write_json(path: Path, data: object) -> None:
     path.write_text(json.dumps(data))
 
 
+def write_png_header(path: Path, width: int, height: int) -> None:
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + struct.pack(">I", 13)
+        + b"IHDR"
+        + struct.pack(">II", width, height)
+        + b"\x08\x06\x00\x00\x00"
+    )
+
+
 class VariantAtlasSummaryTests(unittest.TestCase):
     def test_summary_matches_loader_stable_effect_rule(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -23,6 +34,8 @@ class VariantAtlasSummaryTests(unittest.TestCase):
                 atlas_dir / "art_tiles.json",
                 {
                     "format": "zelda3_canonical_art_atlas_v1",
+                    "width": 16,
+                    "height": 8,
                     "art_count": 2,
                     "source_ref_count": 3,
                     "arts": [
@@ -68,6 +81,7 @@ class VariantAtlasSummaryTests(unittest.TestCase):
                     ],
                 },
             )
+            write_png_header(atlas_dir / "art_tiles.png", 16, 8)
             write_json(
                 atlas_dir / "tile_effects.json",
                 {
@@ -92,6 +106,10 @@ class VariantAtlasSummaryTests(unittest.TestCase):
             summary = summarize_variant_atlas(atlas_dir)
 
             self.assertEqual(summary["source_refs"], 3)
+            self.assertEqual(summary["manifest_width"], 16)
+            self.assertEqual(summary["manifest_height"], 8)
+            self.assertEqual(summary["art_png_width"], 16)
+            self.assertEqual(summary["art_png_height"], 8)
             self.assertEqual(summary["manifest_source_refs"], 3)
             self.assertEqual(summary["stable_by_loader_rule"], 2)
             self.assertEqual(summary["missing_effect_refs"], 1)
@@ -106,6 +124,10 @@ class VariantAtlasSummaryTests(unittest.TestCase):
         text = format_summary(
             {
                 "art_count": 2,
+                "manifest_width": 16,
+                "manifest_height": 8,
+                "art_png_width": 16,
+                "art_png_height": 8,
                 "source_refs": 3,
                 "manifest_source_refs": 3,
                 "stable_by_loader_rule": 2,
@@ -116,6 +138,8 @@ class VariantAtlasSummaryTests(unittest.TestCase):
             }
         )
 
+        self.assertIn("manifest_size=16x8", text)
+        self.assertIn("art_png_size=16x8", text)
         self.assertIn("source_refs=3", text)
         self.assertIn("stable_by_kind bg=1 sprite=1", text)
         self.assertIn("preview_sources palette_usage=1 source_kind_default=2", text)
@@ -125,6 +149,10 @@ class VariantAtlasSummaryTests(unittest.TestCase):
             coverage_errors(
                 {
                     "source_refs": 3,
+                    "manifest_width": 16,
+                    "manifest_height": 8,
+                    "art_png_width": 16,
+                    "art_png_height": 8,
                     "manifest_source_refs": 3,
                     "missing_effect_refs": 0,
                 }
@@ -135,11 +163,16 @@ class VariantAtlasSummaryTests(unittest.TestCase):
             coverage_errors(
                 {
                     "source_refs": 3,
+                    "manifest_width": 16,
+                    "manifest_height": 8,
+                    "art_png_width": 24,
+                    "art_png_height": 8,
                     "manifest_source_refs": 4,
                     "missing_effect_refs": 1,
                 }
             ),
             [
+                "art_tiles.png size does not match art_tiles.json: 24x8 != 16x8",
                 "manifest source_ref_count does not match counted source_refs: 4 != 3",
                 "canonical source refs without stable preview/effect coverage: 1",
             ],

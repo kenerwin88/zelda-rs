@@ -59,6 +59,9 @@ Run the manifest gate after extractor changes or art-sheet edits:
 python3 scripts/variant_atlas_summary.py --require-full-stable generated/zelda3_assets/atlas
 ```
 
+The gate checks the editable PNG dimensions against `art_tiles.json` and verifies
+that every canonical source ref has stable loader coverage.
+
 ## Run
 
 The default renderer now uses the variant atlas GPU path and presents it through

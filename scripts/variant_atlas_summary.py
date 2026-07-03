@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import struct
 import sys
 from collections import Counter
 from pathlib import Path
@@ -24,6 +25,17 @@ def _load_json(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise SystemExit(f"manifest is not a JSON object: {path}")
     return data
+
+
+def _png_dimensions(path: Path) -> tuple[int, int]:
+    try:
+        header = path.read_bytes()[:24]
+    except FileNotFoundError as exc:
+        raise SystemExit(f"missing required PNG: {path}") from exc
+    if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+        raise SystemExit(f"not a PNG with an IHDR header: {path}")
+    width, height = struct.unpack(">II", header[16:24])
+    return width, height
 
 
 def _effect_policy_by_key(effects: dict[str, Any]) -> dict[tuple[str, int, int], str]:
@@ -48,6 +60,7 @@ def _effect_policy_by_key(effects: dict[str, Any]) -> dict[tuple[str, int, int],
 def summarize_variant_atlas(atlas_dir: Path) -> dict[str, Any]:
     art_manifest = _load_json(atlas_dir / "art_tiles.json")
     effects_manifest = _load_json(atlas_dir / "tile_effects.json")
+    art_png_width, art_png_height = _png_dimensions(atlas_dir / "art_tiles.png")
     effect_policies = _effect_policy_by_key(effects_manifest)
 
     source_refs = 0
@@ -84,6 +97,10 @@ def summarize_variant_atlas(atlas_dir: Path) -> dict[str, Any]:
     manifest_source_refs = art_manifest.get("source_ref_count")
     return {
         "art_count": art_manifest.get("art_count", len(art_manifest.get("arts", []))),
+        "manifest_width": art_manifest.get("width"),
+        "manifest_height": art_manifest.get("height"),
+        "art_png_width": art_png_width,
+        "art_png_height": art_png_height,
         "source_refs": source_refs,
         "manifest_source_refs": manifest_source_refs,
         "stable_by_loader_rule": stable_by_loader_rule,
@@ -103,6 +120,8 @@ def _format_counts(prefix: str, counts: dict[str, int]) -> str:
 def format_summary(summary: dict[str, Any]) -> str:
     lines = [
         f"art_count={summary['art_count']}",
+        f"manifest_size={summary['manifest_width']}x{summary['manifest_height']}",
+        f"art_png_size={summary['art_png_width']}x{summary['art_png_height']}",
         f"source_refs={summary['source_refs']}",
         f"manifest_source_refs={summary['manifest_source_refs']}",
         f"stable_by_loader_rule={summary['stable_by_loader_rule']}",
@@ -116,6 +135,15 @@ def format_summary(summary: dict[str, Any]) -> str:
 
 def coverage_errors(summary: dict[str, Any]) -> list[str]:
     errors = []
+    if (
+        summary["manifest_width"] != summary["art_png_width"]
+        or summary["manifest_height"] != summary["art_png_height"]
+    ):
+        errors.append(
+            "art_tiles.png size does not match art_tiles.json: "
+            f"{summary['art_png_width']}x{summary['art_png_height']} != "
+            f"{summary['manifest_width']}x{summary['manifest_height']}"
+        )
     if summary["manifest_source_refs"] != summary["source_refs"]:
         errors.append(
             "manifest source_ref_count does not match counted source_refs: "

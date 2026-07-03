@@ -295,5 +295,7 @@ python3 scripts/variant_atlas_summary.py --require-full-stable generated/zelda3_
 
 That command reads `art_tiles.json` and `tile_effects.json` and reports how many
 canonical source refs are covered by the same stable preview/effect rule used by
-the variant atlas loader. `--require-full-stable` makes it fail if the manifest
-count drifts or any canonical source ref lacks stable coverage.
+the variant atlas loader, while also checking that `art_tiles.png` exists and
+matches the manifest dimensions. `--require-full-stable` makes it fail if the
+PNG/manifest size drifts, the source-ref count drifts, or any canonical source
+ref lacks stable coverage.
