@@ -7,6 +7,32 @@ pub(crate) struct GpuFrameWindowSelector {
     pub(crate) flags_shift: u32,
 }
 
+impl GpuFrameWindowSelector {
+    pub(crate) fn main(layer_bit: u8, flags_shift: u32) -> Self {
+        Self {
+            screen_idx: 0,
+            layer_bit,
+            flags_shift,
+        }
+    }
+
+    pub(crate) fn sub(layer_bit: u8, flags_shift: u32) -> Self {
+        Self {
+            screen_idx: 1,
+            layer_bit,
+            flags_shift,
+        }
+    }
+
+    pub(crate) fn flags(self, windowsel: u32) -> u32 {
+        (windowsel >> self.flags_shift) & 0x0f
+    }
+
+    pub(crate) fn is_windowed(self, screen_windowed: [u8; 2]) -> bool {
+        screen_windowed[self.screen_idx] & self.layer_bit != 0
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuFrameMainWorkCommand {
     ClearBackdrop,
@@ -126,4 +152,22 @@ pub(crate) fn sub_frame_work_command(command: GpuFrameSubWorkCommand) -> GpuFram
 
 pub(crate) fn post_process_frame_work_command() -> GpuFrameWorkCommand {
     GpuFrameWorkCommand::PostProcess
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn window_selector_reads_shifted_flags_and_screen_layer_bits() {
+        let main_bg3 = GpuFrameWindowSelector::main(0x04, 8);
+        assert_eq!(main_bg3.flags(0x0000_0a00), 0x0a);
+        assert!(main_bg3.is_windowed([0x04, 0x00]));
+        assert!(!main_bg3.is_windowed([0x00, 0x04]));
+
+        let sub_obj = GpuFrameWindowSelector::sub(0x10, 16);
+        assert_eq!(sub_obj.flags(0x000b_0000), 0x0b);
+        assert!(sub_obj.is_windowed([0x00, 0x10]));
+        assert!(!sub_obj.is_windowed([0x10, 0x00]));
+    }
 }

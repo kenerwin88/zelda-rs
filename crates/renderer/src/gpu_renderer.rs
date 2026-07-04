@@ -381,8 +381,8 @@ impl GpuFrameRenderer {
             math_bit_pos,
             window.screen_idx,
             priority,
-            (frame.windowsel >> window.flags_shift) & 0x0f,
-            frame.screen_windowed[window.screen_idx] & window.layer_bit != 0,
+            window.flags(frame.windowsel),
+            window.is_windowed(frame.screen_windowed),
             &frame.scanlines,
         );
     }
@@ -403,8 +403,8 @@ impl GpuFrameRenderer {
             math_bit_pos,
             window.screen_idx,
             priority,
-            (frame.windowsel >> window.flags_shift) & 0x0f,
-            frame.screen_windowed[window.screen_idx] & window.layer_bit != 0,
+            window.flags(frame.windowsel),
+            window.is_windowed(frame.screen_windowed),
             &frame.scanlines,
         );
     }
@@ -436,8 +436,6 @@ fn render_bg_pass(
     mosaic_layer_bit: u8,
     window: GpuFrameWindowSelector,
 ) {
-    let windowed = frame.screen_windowed[window.screen_idx] & window.layer_bit != 0;
-    let window_flags = (frame.windowsel >> window.flags_shift) & 0x0f;
     bg.render(
         encoder,
         queue,
@@ -451,8 +449,8 @@ fn render_bg_pass(
         layer_bit,
         math_bit_pos,
         window.screen_idx,
-        window_flags,
-        windowed,
+        window.flags(frame.windowsel),
+        window.is_windowed(frame.screen_windowed),
         frame.mosaic_enabled & mosaic_layer_bit != 0,
         frame.mosaic_size,
         &frame.scanlines,
