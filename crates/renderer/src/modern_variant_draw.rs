@@ -64,11 +64,7 @@ pub fn compile_variant_draws<'a>(
                 cell.source_key
             };
             let key = variant_key_for_source_key(source_key, bg_palette_name, inst.palette);
-            let draw = if uses_instance_source_key {
-                atlas.resolve_dynamic_draw(key.as_ref())
-            } else {
-                atlas.resolve_draw(key.as_ref())
-            };
+            let draw = resolve_draw_for_frame(atlas, key.as_ref(), uses_instance_source_key, frame);
             plan.stats.record_bg_draw(&draw);
             plan.bg.push(VariantBgDrawPacket {
                 layer_index,
@@ -85,7 +81,7 @@ pub fn compile_variant_draws<'a>(
             continue;
         };
         let key = variant_key_for_index_tile(cell, sprite_palette_name, inst.palette);
-        let draw = atlas.resolve_draw(key.as_ref());
+        let draw = resolve_draw_for_frame(atlas, key.as_ref(), false, frame);
         plan.stats.record_sprite_draw(&draw);
         plan.sprites.push(VariantSpriteDrawPacket {
             cell,
@@ -96,6 +92,19 @@ pub fn compile_variant_draws<'a>(
     }
 
     plan
+}
+
+fn resolve_draw_for_frame<'a>(
+    atlas: &'a ModernVariantAtlas,
+    key: Option<&VariantAtlasKey>,
+    force_dynamic: bool,
+    frame: &ModernFrame,
+) -> VariantAtlasDraw<'a> {
+    if force_dynamic || frame.brightness != 15 {
+        atlas.resolve_dynamic_draw(key)
+    } else {
+        atlas.resolve_draw(key)
+    }
 }
 
 #[cfg(test)]
@@ -136,10 +145,46 @@ mod tests {
         }
     }
 
+    fn sprite_key(pack: u16, tile: u16, palette_row: u8) -> VariantAtlasKey {
+        VariantAtlasKey {
+            source_kind: "sprite".to_string(),
+            asset: "kSprGfx".to_string(),
+            pack,
+            tile,
+            bpp: 3,
+            palette: "palette_main_spr".to_string(),
+            palette_row,
+        }
+    }
+
+    fn sprite_entry(pack: u16, tile: u16, palette_row: u8) -> VariantAtlasEntry {
+        VariantAtlasEntry {
+            id: format!("sprite:kSprGfx:pack{pack}:tile{tile}:3bpp"),
+            key: sprite_key(pack, tile, palette_row),
+            rect: [0, 0, 8, 8],
+            sha1: "test".to_string(),
+            duplicate_of: None,
+            dynamic_policy: "stable".to_string(),
+            source_hflip: false,
+            source_vflip: false,
+        }
+    }
+
     fn effect(palette_row: u8) -> TileEffect {
         TileEffect {
             id: format!("palette_dung_bg_main:8color:row{palette_row}"),
             palette: "palette_dung_bg_main".to_string(),
+            palette_row,
+            colors_per_row: 8,
+            index_to_rgba: vec![[0, 0, 0, 0xff]; 8],
+            dynamic_policy: "stable".to_string(),
+        }
+    }
+
+    fn sprite_effect(palette_row: u8) -> TileEffect {
+        TileEffect {
+            id: format!("palette_main_spr:8color:row{palette_row}"),
+            palette: "palette_main_spr".to_string(),
             palette_row,
             colors_per_row: 8,
             index_to_rgba: vec![[0, 0, 0, 0xff]; 8],
@@ -325,6 +370,48 @@ mod tests {
         assert_eq!(plan.stats.dynamic_palette_draws, 1);
         assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
+    }
+
+    #[test]
+    fn non_full_brightness_keeps_stable_sprite_art_on_dynamic_fallback() {
+        let mut frame = ModernFrame::empty();
+        frame.brightness = 14;
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 20,
+            screen_y: 24,
+            palette: 4,
+            priority: 0,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        });
+        let sprite_cells = vec![index_cell(0, modern_source_key(2, 3, 5))];
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![sprite_entry(3, 5, 4)],
+            effects: vec![sprite_effect(4)],
+        };
+
+        let plan = compile_variant_draws(
+            &frame,
+            &[],
+            &sprite_cells,
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(plan.sprites.len(), 1);
+        assert!(matches!(
+            plan.sprites[0].draw,
+            VariantAtlasDraw::DynamicPalette { .. }
+        ));
+        assert_eq!(plan.stats.dynamic_palette_draws, 1);
+        assert_eq!(plan.stats.stable_effect_draws, 0);
+        assert_eq!(plan.stats.unkeyed_sprite_fallback_draws, 0);
     }
 
     #[test]
