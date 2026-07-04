@@ -710,6 +710,11 @@ struct OverlayBgEffectDispatch<'a> {
     live_cgram_bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
 }
 
+struct OverlayBgEffectMaterialGroup<'dispatch, 'packet> {
+    material: EffectMaterial,
+    packets: &'dispatch [crate::modern_variant_draw::VariantBgDrawPacket<'packet>],
+}
+
 impl OverlayBgEffectDispatch<'_> {
     fn len(&self) -> usize {
         self.static_bg.len() + self.live_cgram_bg.len()
@@ -721,32 +726,79 @@ impl OverlayBgEffectDispatch<'_> {
 }
 
 impl<'a> OverlayBgEffectDispatch<'a> {
+    fn material_groups(&self) -> impl Iterator<Item = OverlayBgEffectMaterialGroup<'_, 'a>> {
+        [
+            OverlayBgEffectMaterialGroup {
+                material: EffectMaterial::StaticEffect,
+                packets: &self.static_bg,
+            },
+            OverlayBgEffectMaterialGroup {
+                material: EffectMaterial::LiveCgram,
+                packets: &self.live_cgram_bg,
+            },
+        ]
+        .into_iter()
+        .filter(|group| !group.packets.is_empty())
+    }
+
+    #[cfg(test)]
+    fn static_bg_len(&self) -> usize {
+        self.material_group_len(EffectMaterial::StaticEffect)
+    }
+
+    #[cfg(test)]
+    fn live_cgram_bg_len(&self) -> usize {
+        self.material_group_len(EffectMaterial::LiveCgram)
+    }
+
+    #[cfg(test)]
+    fn static_bg_packets(&self) -> &[crate::modern_variant_draw::VariantBgDrawPacket<'a>] {
+        self.material_group_packets(EffectMaterial::StaticEffect)
+    }
+
+    #[cfg(test)]
+    fn material_group_len(&self, material: EffectMaterial) -> usize {
+        self.material_groups()
+            .find(|group| group.material == material)
+            .map_or(0, |group| group.packets.len())
+    }
+
+    #[cfg(test)]
+    fn material_group_packets(
+        &self,
+        material: EffectMaterial,
+    ) -> &[crate::modern_variant_draw::VariantBgDrawPacket<'a>] {
+        self.material_groups()
+            .find(|group| group.material == material)
+            .map_or(&[], |group| group.packets)
+    }
+
     fn prefinal_bg_packets(
         &self,
         mut include: impl FnMut(&crate::modern_variant_draw::VariantBgDrawPacket<'a>) -> bool,
     ) -> Vec<MixedVariantPrefinalBgPacket<'a>> {
         let mut packets = Vec::new();
-        packets.extend(
-            self.static_bg
-                .iter()
-                .filter(|packet| include(packet))
-                .cloned()
-                .map(|packet| MixedVariantPrefinalBgPacket {
-                    material: PrefinalBgMaterial::StaticEffect,
-                    packet,
-                }),
-        );
-        packets.extend(
-            self.live_cgram_bg
-                .iter()
-                .filter(|packet| include(packet))
-                .cloned()
-                .map(|packet| MixedVariantPrefinalBgPacket {
-                    material: PrefinalBgMaterial::LiveCgram,
-                    packet,
-                }),
-        );
+        for group in self.material_groups() {
+            let material = PrefinalBgMaterial::from_effect_material(group.material);
+            packets.extend(
+                group
+                    .packets
+                    .iter()
+                    .filter(|packet| include(packet))
+                    .cloned()
+                    .map(|packet| MixedVariantPrefinalBgPacket { material, packet }),
+            );
+        }
         packets
+    }
+}
+
+impl PrefinalBgMaterial {
+    fn from_effect_material(material: EffectMaterial) -> Self {
+        match material {
+            EffectMaterial::StaticEffect => Self::StaticEffect,
+            EffectMaterial::LiveCgram => Self::LiveCgram,
+        }
     }
 }
 
@@ -2190,27 +2242,27 @@ impl ModernGpuVariantEffectRenderer {
         overlay: &MixedVariantOverlayBgSelection<'_>,
         output_view: &wgpu::TextureView,
     ) {
-        if !overlay.effects.static_bg.is_empty() {
-            self.render_bg(
-                device,
-                queue,
-                bg_cells,
-                atlas,
-                &overlay.effects.static_bg,
-                output_view,
-                wgpu::LoadOp::Load,
-            );
-        }
-        if !overlay.effects.live_cgram_bg.is_empty() {
-            self.render_bg_with_live_cgram(
-                device,
-                queue,
-                bg_cells,
-                frame,
-                &overlay.effects.live_cgram_bg,
-                output_view,
-                wgpu::LoadOp::Load,
-            );
+        for group in overlay.effects.material_groups() {
+            match group.material {
+                EffectMaterial::StaticEffect => self.render_bg(
+                    device,
+                    queue,
+                    bg_cells,
+                    atlas,
+                    group.packets,
+                    output_view,
+                    wgpu::LoadOp::Load,
+                ),
+                EffectMaterial::LiveCgram => self.render_bg_with_live_cgram(
+                    device,
+                    queue,
+                    bg_cells,
+                    frame,
+                    group.packets,
+                    output_view,
+                    wgpu::LoadOp::Load,
+                ),
+            }
         }
     }
 
@@ -6211,6 +6263,63 @@ mod tests {
     }
 
     #[test]
+    fn overlay_bg_effect_dispatch_exposes_material_groups_in_render_order() {
+        use crate::modern_frame::ModernIndexTileInstance;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::VariantAtlasDraw;
+        use crate::modern_variant_draw::VariantBgDrawPacket;
+
+        let cell = ModernIndexTile {
+            id: 0,
+            indices: [1u8; 64],
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        };
+        let static_inst = ModernIndexTileInstance {
+            cell_id: 7,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        };
+        let live_inst = ModernIndexTileInstance {
+            cell_id: 9,
+            ..static_inst
+        };
+        let static_packet = VariantBgDrawPacket {
+            layer_index: 0,
+            cell: &cell,
+            inst: &static_inst,
+            key: None,
+            draw: VariantAtlasDraw::MissingArt,
+        };
+        let live_packet = VariantBgDrawPacket {
+            layer_index: 0,
+            cell: &cell,
+            inst: &live_inst,
+            key: None,
+            draw: VariantAtlasDraw::MissingArt,
+        };
+        let dispatch = OverlayBgEffectDispatch {
+            static_bg: vec![static_packet],
+            live_cgram_bg: vec![live_packet],
+        };
+
+        let groups = dispatch.material_groups().collect::<Vec<_>>();
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].material, EffectMaterial::StaticEffect);
+        assert_eq!(groups[0].packets[0].inst.cell_id, 7);
+        assert_eq!(groups[1].material, EffectMaterial::LiveCgram);
+        assert_eq!(groups[1].packets[0].inst.cell_id, 9);
+    }
+
+    #[test]
     fn bg_effect_material_packet_selects_static_or_live_rows() {
         use crate::modern_frame::ModernIndexTileInstance;
         use crate::modern_index_atlas::ModernIndexTile;
@@ -7155,8 +7264,8 @@ mod tests {
 
         let selection = mixed_variant_overlay_bg_packets(&frame, &plan);
 
-        assert_eq!(selection.effects.static_bg.len(), 1);
-        assert_eq!(selection.effects.static_bg[0].inst.cell_id, 0);
+        assert_eq!(selection.effects.static_bg_len(), 1);
+        assert_eq!(selection.effects.static_bg_packets()[0].inst.cell_id, 0);
         assert_eq!(selection.candidates, 2);
         assert_eq!(selection.reject_complex_frame, 0);
         assert_eq!(selection.reject_cgram_mismatch, 0);
@@ -7528,7 +7637,7 @@ mod tests {
 
         let selection = mixed_variant_overlay_bg_packets(&frame, &plan);
 
-        assert_eq!(selection.effects.static_bg.len(), 1);
+        assert_eq!(selection.effects.static_bg_len(), 1);
         assert_eq!(selection.candidates, 1);
         assert_eq!(selection.reject_complex_frame, 0);
         assert_eq!(selection.reject_cgram_mismatch, 0);
@@ -7624,8 +7733,8 @@ mod tests {
 
         let selection = mixed_variant_overlay_bg_packets(&frame, &plan);
 
-        assert_eq!(selection.effects.static_bg.len(), 0);
-        assert_eq!(selection.effects.live_cgram_bg.len(), 0);
+        assert_eq!(selection.effects.static_bg_len(), 0);
+        assert_eq!(selection.effects.live_cgram_bg_len(), 0);
         assert_eq!(selection.candidates, 1);
         assert_eq!(selection.reject_complex_frame, 1);
         assert_eq!(selection.reject_complex_brightness, 1);
@@ -7806,8 +7915,8 @@ mod tests {
 
         let selection = mixed_variant_overlay_bg_packets(&frame, &plan);
 
-        assert_eq!(selection.effects.static_bg.len(), 0);
-        assert_eq!(selection.effects.live_cgram_bg.len(), 1);
+        assert_eq!(selection.effects.static_bg_len(), 0);
+        assert_eq!(selection.effects.live_cgram_bg_len(), 1);
         assert_eq!(selection.candidates, 1);
         assert_eq!(selection.reject_complex_frame, 0);
         assert_eq!(selection.reject_cgram_mismatch, 0);
@@ -7923,7 +8032,7 @@ mod tests {
 
         let selection = mixed_variant_overlay_bg_packets(&frame, &plan);
 
-        assert_eq!(selection.effects.static_bg.len(), 1);
+        assert_eq!(selection.effects.static_bg_len(), 1);
         assert_eq!(selection.candidates, 1);
         assert_eq!(selection.reject_overlap, 0);
     }
