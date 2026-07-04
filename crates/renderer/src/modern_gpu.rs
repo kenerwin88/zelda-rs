@@ -361,19 +361,22 @@ pub struct ModernGpuVariantRenderer {
 struct PreparedModernVariantFrame<'a> {
     plan: crate::modern_variant_draw::VariantDrawPlan<'a>,
     variant_frame: ModernFrame,
+    stats: crate::modern_software::VariantAtlasRenderStats,
+    live_render_path: ModernVariantRenderPath,
+    headless_render_path: ModernVariantRenderPath,
 }
 
 impl PreparedModernVariantFrame<'_> {
     fn initial_stats(&self) -> crate::modern_software::VariantAtlasRenderStats {
-        self.plan.stats
+        self.stats
     }
 
     fn live_render_path(&self) -> ModernVariantRenderPath {
-        live_variant_render_path(&self.plan.stats)
+        self.live_render_path
     }
 
     fn headless_render_path(&self) -> ModernVariantRenderPath {
-        headless_variant_render_path(&self.plan.stats)
+        self.headless_render_path
     }
 }
 
@@ -556,9 +559,13 @@ impl ModernGpuVariantRenderer {
             sprite_palette_name,
         );
         let variant_frame = self.build_variant_frame_from_plan(frame, &plan);
+        let stats = plan.stats;
         PreparedModernVariantFrame {
             plan,
             variant_frame,
+            stats,
+            live_render_path: live_variant_render_path(&stats),
+            headless_render_path: headless_variant_render_path(&stats),
         }
     }
 
