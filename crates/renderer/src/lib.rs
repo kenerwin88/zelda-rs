@@ -36,6 +36,7 @@ pub mod modern_index_atlas;
 mod modern_index_renderer;
 mod modern_mode1_effect_plan;
 pub mod modern_palette;
+mod modern_screen_builder;
 pub mod modern_software;
 pub mod modern_source_atlas;
 pub mod modern_sprite_atlas;
