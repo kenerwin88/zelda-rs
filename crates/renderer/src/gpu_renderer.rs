@@ -57,6 +57,8 @@ enum GpuFrameWorkItem {
     PostProcess,
 }
 
+type GpuFrameRenderPlan = GpuRenderPlan<GpuFrameWorkItem>;
+
 impl GpuWorkItem for GpuFrameWorkItem {
     fn kind(&self) -> GpuWorkItemKind {
         match self {
@@ -224,11 +226,9 @@ impl GpuFrameRenderer {
             return;
         }
 
-        mode1_render_plan(has_main_bg, has_main_sprites, has_sub_bg, has_sub_sprites).execute_with(
-            |work_item| {
-                self.render_gpu_work_item(encoder, queue, frame, output_view, work_item);
-            },
-        );
+        let render_plan =
+            build_mode1_render_plan(has_main_bg, has_main_sprites, has_sub_bg, has_sub_sprites);
+        self.execute_render_plan(encoder, queue, frame, output_view, render_plan);
     }
 
     fn render_mode7_frame(
@@ -241,11 +241,22 @@ impl GpuFrameRenderer {
         has_sub_sprites: bool,
     ) {
         let has_sub_mode7_bg = frame.screen_enabled[1] & 1 != 0;
-        mode7_render_plan(has_main_sprites, has_sub_mode7_bg, has_sub_sprites).execute_with(
-            |work_item| {
-                self.render_gpu_work_item(encoder, queue, frame, output_view, work_item);
-            },
-        );
+        let render_plan =
+            build_mode7_render_plan(has_main_sprites, has_sub_mode7_bg, has_sub_sprites);
+        self.execute_render_plan(encoder, queue, frame, output_view, render_plan);
+    }
+
+    fn execute_render_plan(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        queue: &wgpu::Queue,
+        frame: &GpuFrame<'_>,
+        output_view: &wgpu::TextureView,
+        render_plan: GpuFrameRenderPlan,
+    ) {
+        render_plan.execute_with(|work_item| {
+            self.render_gpu_work_item(encoder, queue, frame, output_view, work_item);
+        });
     }
 
     fn render_gpu_work_item(
@@ -381,12 +392,12 @@ impl GpuFrameRenderer {
     }
 }
 
-fn mode1_render_plan(
+fn build_mode1_render_plan(
     has_main_bg: bool,
     has_main_sprites: bool,
     has_sub_bg: bool,
     has_sub_sprites: bool,
-) -> GpuRenderPlan<GpuFrameWorkItem> {
+) -> GpuFrameRenderPlan {
     let mut work_items = Vec::new();
     if has_main_sprites && !has_main_bg {
         work_items.extend((0..=3).map(GpuFrameWorkItem::MainSpritePriority));
@@ -466,11 +477,11 @@ fn main_bg_work_item(layer_idx: usize, hi_priority: bool, math_bit_pos: u32) -> 
     }
 }
 
-fn mode7_render_plan(
+fn build_mode7_render_plan(
     has_main_sprites: bool,
     has_sub_mode7_bg: bool,
     has_sub_sprites: bool,
-) -> GpuRenderPlan<GpuFrameWorkItem> {
+) -> GpuFrameRenderPlan {
     let mut work_items = Vec::new();
     if has_main_sprites {
         work_items.push(GpuFrameWorkItem::MainSpritePriority(0));
@@ -611,8 +622,8 @@ mod tests {
     }
 
     #[test]
-    fn mode1_render_plan_preserves_full_gpu_draw_order() {
-        let plan = mode1_render_plan(true, true, true, true);
+    fn build_mode1_render_plan_preserves_full_gpu_draw_order() {
+        let plan = build_mode1_render_plan(true, true, true, true);
 
         assert_eq!(
             plan.kinds(),
@@ -689,8 +700,8 @@ mod tests {
     }
 
     #[test]
-    fn mode1_render_plan_preserves_sprite_only_draw_order() {
-        let plan = mode1_render_plan(false, true, false, true);
+    fn build_mode1_render_plan_preserves_sprite_only_draw_order() {
+        let plan = build_mode1_render_plan(false, true, false, true);
 
         assert_eq!(
             plan.work_items(),
@@ -734,8 +745,8 @@ mod tests {
     }
 
     #[test]
-    fn mode7_render_plan_preserves_full_gpu_draw_order() {
-        let plan = mode7_render_plan(true, true, true);
+    fn build_mode7_render_plan_preserves_full_gpu_draw_order() {
+        let plan = build_mode7_render_plan(true, true, true);
 
         assert_eq!(
             plan.kinds(),
@@ -774,8 +785,8 @@ mod tests {
     }
 
     #[test]
-    fn mode7_render_plan_skips_disabled_surfaces_without_skipping_clears() {
-        let plan = mode7_render_plan(false, false, false);
+    fn build_mode7_render_plan_skips_disabled_surfaces_without_skipping_clears() {
+        let plan = build_mode7_render_plan(false, false, false);
 
         assert_eq!(
             plan.work_items(),
