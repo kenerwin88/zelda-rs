@@ -542,50 +542,25 @@ impl ModernGpuVariantRenderer {
     ) -> bool {
         let mut rendered_any = rendered_any;
         for work_item in rank_plan {
-            let _ = work_item.kind();
-            match work_item {
-                ModernGpuWorkItem::ClearBackdrop => {
-                    self.effect_renderer.render_bg(
-                        device,
-                        queue,
-                        bg_cells,
-                        &self.atlas,
-                        &[],
-                        output_view,
-                        modern_frame_clear_op(frame),
-                    );
-                    rendered_any = true;
-                }
-                ModernGpuWorkItem::BgEffect(group) => {
-                    self.effect_renderer.render_bg_material_group(
-                        device,
-                        queue,
-                        bg_cells,
-                        None,
-                        &self.atlas,
-                        group,
-                        output_view,
-                        if rendered_any {
-                            wgpu::LoadOp::Load
-                        } else {
-                            modern_frame_clear_op(frame)
-                        },
-                    );
-                    rendered_any = true;
-                }
-                ModernGpuWorkItem::SpriteEffects(sprite_groups) => {
-                    self.effect_renderer.render_sprite_material_groups(
-                        device,
-                        queue,
-                        sprite_cells,
-                        frame,
-                        &self.atlas,
-                        &sprite_groups,
-                        output_view,
-                    );
-                    rendered_any = true;
-                }
-            }
+            let bg_load = if rendered_any {
+                wgpu::LoadOp::Load
+            } else {
+                modern_frame_clear_op(frame)
+            };
+            render_modern_gpu_work_item(
+                &self.effect_renderer,
+                device,
+                queue,
+                frame,
+                bg_cells,
+                sprite_cells,
+                &self.atlas,
+                None,
+                output_view,
+                work_item,
+                bg_load,
+            );
+            rendered_any = true;
         }
         rendered_any
     }
@@ -631,6 +606,59 @@ impl ModernGpuVariantRenderer {
         }
 
         out
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_modern_gpu_work_item(
+    effect_renderer: &ModernGpuVariantEffectRenderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+    sprite_cells: &[ModernIndexTile],
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+    bg_effect_frame: Option<&ModernFrame>,
+    output_view: &wgpu::TextureView,
+    work_item: ModernGpuWorkItem<'_, '_>,
+    bg_load: wgpu::LoadOp<wgpu::Color>,
+) {
+    let _ = work_item.kind();
+    match work_item {
+        ModernGpuWorkItem::ClearBackdrop => {
+            effect_renderer.render_bg(
+                device,
+                queue,
+                bg_cells,
+                atlas,
+                &[],
+                output_view,
+                modern_frame_clear_op(frame),
+            );
+        }
+        ModernGpuWorkItem::BgEffect(group) => {
+            effect_renderer.render_bg_material_group(
+                device,
+                queue,
+                bg_cells,
+                bg_effect_frame,
+                atlas,
+                group,
+                output_view,
+                bg_load,
+            );
+        }
+        ModernGpuWorkItem::SpriteEffects(sprite_groups) => {
+            effect_renderer.render_sprite_material_groups(
+                device,
+                queue,
+                sprite_cells,
+                frame,
+                atlas,
+                &sprite_groups,
+                output_view,
+            );
+        }
     }
 }
 
@@ -2324,23 +2352,24 @@ impl ModernGpuVariantEffectRenderer {
         overlay: &MixedVariantOverlayBgSelection<'_>,
         output_view: &wgpu::TextureView,
     ) {
+        let empty_sprite_cells = [];
         for work_item in overlay.effects.render_plan() {
-            let _ = work_item.kind();
-            match work_item {
-                ModernGpuWorkItem::BgEffect(group) => self.render_bg_material_group(
-                    device,
-                    queue,
-                    bg_cells,
-                    Some(frame),
-                    atlas,
-                    group,
-                    output_view,
-                    wgpu::LoadOp::Load,
-                ),
-                ModernGpuWorkItem::ClearBackdrop | ModernGpuWorkItem::SpriteEffects(_) => {
-                    unreachable!("overlay BG dispatch only emits BG effect work items")
-                }
+            if work_item.kind() != GpuWorkItemKind::BgEffect {
+                unreachable!("overlay BG dispatch only emits BG effect work items");
             }
+            render_modern_gpu_work_item(
+                self,
+                device,
+                queue,
+                frame,
+                bg_cells,
+                &empty_sprite_cells,
+                atlas,
+                Some(frame),
+                output_view,
+                work_item,
+                wgpu::LoadOp::Load,
+            );
         }
     }
 
