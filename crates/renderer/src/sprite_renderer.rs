@@ -268,6 +268,7 @@ impl SpriteRenderer {
     ///
     /// `math_bit_pos`: 4 for main-screen OBJ, 255 for sub-screen (no TM check,
     ///   output alpha=1.0 marks real pixels for sub-screen backdrop detection).
+    /// `screen_idx`: command-selected target screen buffer (0=main, 1=sub).
     /// `priority_filter`: sprite priority band to draw (0..3), or 255 for all.
     /// `scanlines`: per-scanline HDMA snapshot used for the per-row TM check.
     pub fn render(
@@ -276,6 +277,7 @@ impl SpriteRenderer {
         queue: &wgpu::Queue,
         output_view: &wgpu::TextureView,
         math_bit_pos: u32,
+        screen_idx: usize,
         priority_filter: u32,
         window_flags: u32,
         windowed: bool,
@@ -285,10 +287,9 @@ impl SpriteRenderer {
             return;
         }
 
-        let screen_idx = if math_bit_pos == 255 { 1 } else { 0 };
         let pass_idx = priority_pass_index(priority_filter);
 
-        // Write math_bit_pos and scanline TM into the correct buffer.
+        // Write math_bit_pos and scanline TM into the command-selected buffer.
         // Tile data was already written to both buffers in prepare().
         let mut hdr = [0u8; UNIFORM_BYTES];
         hdr[4..8].copy_from_slice(&math_bit_pos.to_le_bytes());

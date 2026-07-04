@@ -235,6 +235,7 @@ impl BgLayerRenderer {
     ///   skip the per-scanline TM check (used for sub-screen renders).
     /// `math_bit_pos`: SNES math_enabled bit position (0=BG1, 2=BG3, etc.).
     ///   Pass 255 for sub-screen renders where alpha=1.0 marks real pixels.
+    /// `screen_idx`: command-selected target screen buffer (0=main, 1=sub).
     /// `scanlines`: per-scanline HDMA register snapshot from `ppu_scanline_windows`.
     #[allow(clippy::too_many_arguments)]
     pub fn render(
@@ -250,13 +251,13 @@ impl BgLayerRenderer {
         hi_priority_only: bool,
         layer_bit: u32,
         math_bit_pos: u32,
+        screen_idx: usize,
         window_flags: u32,
         windowed: bool,
         mosaic_enabled: bool,
         mosaic_size: u8,
         scanlines: &[ScanlineRegs; 224],
     ) {
-        let screen_idx = usize::from(math_bit_pos >= 255);
         let buf_idx = usize::from(hi_priority_only);
         self.write_uniforms(
             queue,
