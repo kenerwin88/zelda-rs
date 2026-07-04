@@ -518,10 +518,10 @@ impl ModernGpuVariantRenderer {
         let mut rendered_any = false;
         for rank in 0..=9 {
             let bg_packets: Vec<_> = plan
-                .bg
-                .iter()
-                .filter(|packet| bg_packet_mode1_rank(packet) == Some(rank))
-                .cloned()
+                .material_packets()
+                .filter_map(|packet| packet.as_bg())
+                .filter(|(_, packet)| bg_packet_mode1_rank(packet) == Some(rank))
+                .map(|(_, packet)| packet.clone())
                 .collect();
             if !bg_packets.is_empty() {
                 self.effect_renderer.render_bg(
@@ -541,10 +541,10 @@ impl ModernGpuVariantRenderer {
             }
 
             let sprite_packets: Vec<_> = plan
-                .sprites
-                .iter()
-                .filter(|packet| sprite_packet_mode1_rank(packet) == Some(rank))
-                .cloned()
+                .material_packets()
+                .filter_map(|packet| packet.as_sprite())
+                .filter(|(_, packet)| sprite_packet_mode1_rank(packet) == Some(rank))
+                .map(|(_, packet)| packet.clone())
                 .collect();
             if !sprite_packets.is_empty() {
                 if !rendered_any {
