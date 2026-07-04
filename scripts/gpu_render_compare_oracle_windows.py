@@ -361,6 +361,14 @@ def ensure_required_stable_draws(
         )
 
 
+def ensure_no_unsupported_material_draws(unsupported_material_draws: int) -> None:
+    if unsupported_material_draws != 0:
+        raise SystemExit(
+            "variant GPU proof hit unsupported runtime material fallback draws: "
+            f"{unsupported_material_draws}"
+        )
+
+
 def run_window(
     window: OracleWindow,
     rom: Path,
@@ -774,6 +782,8 @@ def main() -> None:
             stable_preview_draws=total_stable_preview_draws,
             stable_effect_draws=total_stable_effect_draws,
         )
+    if args.renderer == "assets-variant-gpu":
+        ensure_no_unsupported_material_draws(total_unsupported_material_draws)
 
     print(
         "gpu-render-oracle-windows completed "

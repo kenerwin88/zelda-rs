@@ -103,6 +103,14 @@ def int_stat(text: str, name: str) -> int:
     return int(match.group(1)) if match else 0
 
 
+def ensure_no_unsupported_material_draws(unsupported_material_draws: int) -> None:
+    if unsupported_material_draws != 0:
+        raise SystemExit(
+            "variant GPU proof hit unsupported runtime material fallback draws: "
+            f"{unsupported_material_draws}"
+        )
+
+
 def print_success_summary(output: str) -> None:
     for line in output.splitlines():
         if line.startswith(SUMMARY_PREFIXES):
@@ -767,6 +775,8 @@ def main() -> None:
         total_mixed_overlay_bg_effect_reject_overlap += variant_stats[34]
 
     if not args.dry_run:
+        if args.renderer == "assets-variant-gpu":
+            ensure_no_unsupported_material_draws(total_unsupported_material_draws)
         print(
             "gpu-render-window-compare completed "
             f"start={args.start} end={args.end} stride={args.stride} "

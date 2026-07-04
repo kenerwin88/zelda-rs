@@ -22,6 +22,7 @@ from gpu_render_compare_oracle_windows import (
     command_for,
     command_for_run_item,
     env_for_renderer,
+    ensure_no_unsupported_material_draws,
     ensure_required_stable_draws,
     int_stat,
     run_items_for_windows,
@@ -231,6 +232,11 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
     def test_required_stable_draws_accepts_preview_or_effect_art(self) -> None:
         ensure_required_stable_draws(stable_preview_draws=1, stable_effect_draws=0)
         ensure_required_stable_draws(stable_preview_draws=0, stable_effect_draws=1)
+
+    def test_unsupported_material_draws_are_not_valid_gpu_proof(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "unsupported runtime material"):
+            ensure_no_unsupported_material_draws(1)
+        ensure_no_unsupported_material_draws(0)
 
     def test_command_for_checkpoint_uses_tail_frames_and_load_state(self) -> None:
         window = OracleWindow(
