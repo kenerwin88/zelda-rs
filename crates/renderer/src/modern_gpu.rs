@@ -529,6 +529,7 @@ impl<'frame> PreparedMode1EffectDrawWork<'frame> {
             }
             rank_plans.push(PreparedMode1EffectRankRenderPlan {
                 rank_index,
+                #[cfg(test)]
                 rendered_before,
                 render_plan,
             });
@@ -564,25 +565,15 @@ impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
             .flat_map(|rank_plan| {
                 let PreparedMode1EffectRankRenderPlan {
                     rank_index,
-                    rendered_before,
                     render_plan,
+                    ..
                 } = rank_plan;
-                let mut rendered_any = rendered_before;
-                render_plan.into_iter().map(move |work_item| {
-                    let target_load = if rendered_any {
-                        ModernGpuCommandLoad::Load
-                    } else {
-                        ModernGpuCommandLoad::ClearFrame
-                    };
-                    rendered_any = true;
-                    PreparedMode1EffectRenderCommand {
+                render_plan
+                    .into_iter()
+                    .map(move |command| PreparedMode1EffectRenderCommand {
                         source: Mode1EffectCommandSource::Rank(rank_index),
-                        command: ModernGpuWorkCommand {
-                            target_load,
-                            work_item,
-                        },
-                    }
-                })
+                        command,
+                    })
             })
             .chain(
                 needs_empty_frame_fallback.then_some(PreparedMode1EffectRenderCommand {
@@ -727,6 +718,7 @@ struct ModernGpuWorkCommandKind {
 
 struct PreparedMode1EffectRankRenderPlan<'rank, 'frame> {
     rank_index: usize,
+    #[cfg(test)]
     rendered_before: bool,
     render_plan: Mode1EffectRankRenderPlan<'rank, 'frame>,
 }
@@ -1221,11 +1213,17 @@ struct Mode1EffectRankDispatch<'a> {
     sprites: Vec<crate::modern_variant_draw::VariantSpriteDrawPacket<'a>>,
 }
 
-type Mode1EffectRankRenderPlan<'rank, 'frame> = GpuRenderPlan<ModernGpuWorkItem<'rank, 'frame>>;
+type Mode1EffectRankRenderPlan<'rank, 'frame> = GpuRenderPlan<ModernGpuWorkCommand<'rank, 'frame>>;
 
 struct ModernGpuWorkCommand<'rank, 'frame> {
     target_load: ModernGpuCommandLoad,
     work_item: ModernGpuWorkItem<'rank, 'frame>,
+}
+
+impl GpuWorkItem for ModernGpuWorkCommand<'_, '_> {
+    fn kind(&self) -> GpuWorkItemKind {
+        self.work_item.kind()
+    }
 }
 
 #[cfg(test)]
@@ -1295,7 +1293,23 @@ impl<'a> Mode1EffectRankDispatch<'a> {
         if !sprite_groups.is_empty() {
             work_items.push(ModernGpuWorkItem::SpriteEffects(sprite_groups));
         }
-        GpuRenderPlan::new(work_items)
+        let mut rendered_any = rendered_any;
+        let commands = work_items
+            .into_iter()
+            .map(|work_item| {
+                let target_load = if rendered_any {
+                    ModernGpuCommandLoad::Load
+                } else {
+                    ModernGpuCommandLoad::ClearFrame
+                };
+                rendered_any = true;
+                ModernGpuWorkCommand {
+                    target_load,
+                    work_item,
+                }
+            })
+            .collect();
+        GpuRenderPlan::new(commands)
     }
 }
 
@@ -7962,10 +7976,16 @@ mod tests {
         );
         assert!(matches!(
             first_rank_plan.work_items().first(),
-            Some(ModernGpuWorkItem::ClearBackdrop)
+            Some(ModernGpuWorkCommand {
+                work_item: ModernGpuWorkItem::ClearBackdrop,
+                ..
+            })
         ));
         match &first_rank_plan.work_items()[1] {
-            ModernGpuWorkItem::SpriteEffects(groups) => assert_eq!(groups.len(), 3),
+            ModernGpuWorkCommand {
+                work_item: ModernGpuWorkItem::SpriteEffects(groups),
+                ..
+            } => assert_eq!(groups.len(), 3),
             _ => panic!("sprite-only rank should submit sprite groups after clear"),
         }
         let prepared_first_rank = PreparedMode1EffectRenderPlan {
@@ -8003,7 +8023,10 @@ mod tests {
         );
         assert!(matches!(
             later_rank_plan.work_items().first(),
-            Some(ModernGpuWorkItem::SpriteEffects(_))
+            Some(ModernGpuWorkCommand {
+                work_item: ModernGpuWorkItem::SpriteEffects(_),
+                ..
+            })
         ));
     }
 
