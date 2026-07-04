@@ -416,7 +416,7 @@ impl ModernGpuVariantRenderer {
         );
         let variant_frame = self.build_variant_frame_from_plan(frame, &plan);
         let mut stats = plan.stats;
-        if stats.fallback_draws == 0 && stats.effect_draws == stats.stable_draws {
+        if !stats.needs_live_index_base() && stats.effect_draws == stats.stable_draws {
             self.render_effect_material_mode1_order(
                 device,
                 queue,
@@ -428,7 +428,7 @@ impl ModernGpuVariantRenderer {
             );
             return stats;
         }
-        if stats.fallback_draws != 0 {
+        if stats.needs_live_index_base() {
             let bg = ModernGpuIndexRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
             let spr = ModernGpuSpriteRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
             bg.render(device, queue, bg_cells, frame, output_view);
@@ -4538,7 +4538,7 @@ impl ModernGpuVariantHeadless {
         );
         let variant_frame = self.renderer.build_variant_frame_from_plan(frame, &plan);
         let mut stats = plan.stats;
-        if stats.fallback_draws != 0 {
+        if stats.needs_live_index_base() {
             let overlay = mixed_variant_prefinal_bg_packets(frame, &plan);
             let final_overlay = mixed_variant_overlay_bg_packets(frame, &plan);
             let prefinal_bg: Vec<_> = overlay
@@ -7100,7 +7100,7 @@ mod tests {
     }
 
     #[test]
-    fn modern_gpu_variant_headless_unkeyed_tiles_are_fallback_not_missing() {
+    fn modern_gpu_variant_headless_unkeyed_tiles_are_live_index_not_missing() {
         use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
         use crate::modern_hd_overrides::NO_SOURCE_KEY;
         use crate::modern_index_atlas::ModernIndexTile;
@@ -7149,7 +7149,8 @@ mod tests {
         );
 
         assert_eq!(stats.stable_draws, 0);
-        assert_eq!(stats.fallback_draws, 1);
+        assert_eq!(stats.fallback_draws, 0);
+        assert_eq!(stats.live_index_draws, 1);
         assert_eq!(stats.dynamic_palette_draws, 0);
         assert_eq!(stats.missing_variant_draws, 0);
         assert_eq!(stats.stable_preview_draws, 0);
@@ -7307,7 +7308,8 @@ mod tests {
             "palette_main_spr",
         );
 
-        assert_eq!(stats.fallback_draws, 1);
+        assert_eq!(stats.fallback_draws, 0);
+        assert_eq!(stats.live_index_draws, 1);
         assert_eq!(stats.direct_gpu_fallback_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(&variant[0..4], &[0, 0, 0, 0xff]);
@@ -7366,7 +7368,8 @@ mod tests {
         );
         let fallback = ModernGpuHeadless::new().render_rgba(&frame, &cells, &[]);
 
-        assert_eq!(stats.fallback_draws, 2);
+        assert_eq!(stats.fallback_draws, 0);
+        assert_eq!(stats.live_index_draws, 2);
         assert_eq!(stats.direct_gpu_fallback_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(variant, fallback);

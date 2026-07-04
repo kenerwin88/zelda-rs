@@ -19,7 +19,7 @@ pub enum ModernDrawMaterial {
     PaletteEffect,
     DynamicPalette(DynamicFallbackReason),
     MissingArt,
-    Unkeyed,
+    LiveIndex,
 }
 
 impl ModernDrawMaterial {
@@ -29,7 +29,7 @@ impl ModernDrawMaterial {
             Self::PaletteEffect => "palette_effect",
             Self::DynamicPalette(_) => "dynamic_palette",
             Self::MissingArt => "missing_art",
-            Self::Unkeyed => "unkeyed",
+            Self::LiveIndex => "live_index",
         }
     }
 }
@@ -71,7 +71,7 @@ pub fn material_for_draw(draw: VariantAtlasDraw<'_>) -> ModernDrawMaterial {
             ModernDrawMaterial::DynamicPalette(reason)
         }
         VariantAtlasDraw::MissingArt => ModernDrawMaterial::MissingArt,
-        VariantAtlasDraw::Unkeyed => ModernDrawMaterial::Unkeyed,
+        VariantAtlasDraw::Unkeyed => ModernDrawMaterial::LiveIndex,
     }
 }
 
@@ -752,19 +752,21 @@ mod tests {
         assert_eq!(plan.sprites.len(), 1);
         assert_eq!(plan.sprites[0].inst.screen_y, 24);
         assert!(matches!(plan.sprites[0].draw, VariantAtlasDraw::Unkeyed));
-        assert_eq!(plan.sprites[0].material(), ModernDrawMaterial::Unkeyed);
+        assert_eq!(plan.sprites[0].material(), ModernDrawMaterial::LiveIndex);
         assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.effect_material_draws, 1);
         assert_eq!(plan.stats.dynamic_material_draws, 1);
         assert_eq!(plan.stats.dynamic_material_fallback_draws, 0);
         assert_eq!(plan.stats.missing_art_draws, 1);
+        assert_eq!(plan.stats.fallback_draws, 1);
+        assert_eq!(plan.stats.live_index_draws, 1);
         assert_eq!(plan.stats.unkeyed_fallback_draws, 1);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
         assert_eq!(plan.stats.unkeyed_sprite_fallback_draws, 1);
     }
 
     #[test]
-    fn classifies_unkeyed_bg_fallbacks_by_layer_group() {
+    fn classifies_unkeyed_bg_live_index_draws_by_layer_group() {
         let mut frame = ModernFrame::empty();
         for layer_index in [0usize, 2] {
             let mut layer = ModernBgLayer::new(layer_index as u8);
@@ -800,6 +802,8 @@ mod tests {
             "palette_main_spr",
         );
 
+        assert_eq!(plan.stats.fallback_draws, 0);
+        assert_eq!(plan.stats.live_index_draws, 2);
         assert_eq!(plan.stats.unkeyed_fallback_draws, 2);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 2);
         assert_eq!(plan.stats.unkeyed_bg12_fallback_draws, 1);

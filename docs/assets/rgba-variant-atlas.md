@@ -262,6 +262,9 @@ renderer/oracle. Verification must report:
   true dynamic fallback draws.
 - `effect_material_draws`: source art drawn through a modeled stable effect
   material. This is already on the modern material path.
+- `live_index_draws`: GPU live-index material draws. These are first-class
+  indexed draws sourced from the current frame's tile data; they still preserve
+  dynamic SNES VRAM behavior, but they are not CPU fallback.
 - `dynamic_material_fallback_draws`: source art exists, but the live material
   has no modeled stable effect, so the renderer uses the live indexed fallback.
 - `dynamic_material_fallback_instance_source_draws`: fallback draws forced by
@@ -283,7 +286,8 @@ renderer/oracle. Verification must report:
 - `missing_art_draws`: the live draw has a source key but no canonical art
   entry.
 - `unkeyed_fallback_draws`: the live draw has no ROM/source key and must stay
-  on the live indexed path.
+  on the live indexed path. This is a legacy reason bucket; these draws also
+  count as `live_index_draws`, not `fallback_draws`.
 - `unkeyed_bg_fallback_draws`: unkeyed fallback draws that came from BG tile
   packets.
 - `unkeyed_bg12_fallback_draws`: BG1/BG2 unkeyed fallback draws. These are
@@ -374,7 +378,8 @@ renderer/oracle. Verification must report:
 
 Legacy log names remain available for compatibility: `variant_draws` is the
 sum of stable preview and stable effect draws, `fallback_draws` is the sum of
-dynamic material fallback, missing art, and unkeyed fallback draws.
+dynamic material fallback and missing art draws, while `live_index_draws`
+tracks unkeyed/live-index material draws separately.
 `dynamic_palette_draws` mirrors `dynamic_material_fallback_draws`,
 `dynamic_material_draws` remains the aggregate of `effect_material_draws` and
 `dynamic_material_fallback_draws`, `dynamic_material_fallback_draws` is the sum
@@ -405,6 +410,7 @@ python3 scripts/gpu_render_compare_oracle_windows.py \
 Expected output includes `mismatched_pixels=0` and nonzero
 `stable_preview_draws` or `stable_effect_draws`. The current representative
 proof reports `stable_effect_draws=21038`,
+`live_index_draws=133112`,
 `unkeyed_fallback_draws=133112`,
 `unkeyed_bg_fallback_draws=132912`,
 `unkeyed_bg12_fallback_draws=<BG1/BG2 subset>`,

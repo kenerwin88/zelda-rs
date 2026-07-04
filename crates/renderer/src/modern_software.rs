@@ -63,6 +63,7 @@ pub struct VariantAtlasRenderStats {
     pub stable_draws: u32,
     pub effect_draws: u32,
     pub fallback_draws: u32,
+    pub live_index_draws: u32,
     pub direct_gpu_fallback_frames: u32,
     pub gpu_screen_builder_frames: u32,
     pub cpu_prefinal_composite_frames: u32,
@@ -127,6 +128,10 @@ pub struct VariantAtlasRenderStats {
 }
 
 impl VariantAtlasRenderStats {
+    pub fn needs_live_index_base(&self) -> bool {
+        self.fallback_draws != 0 || self.live_index_draws != 0
+    }
+
     pub fn record_draw(&mut self, draw: &crate::modern_variant_atlas::VariantAtlasDraw<'_>) {
         match draw {
             crate::modern_variant_atlas::VariantAtlasDraw::Stable { .. } => {
@@ -170,7 +175,7 @@ impl VariantAtlasRenderStats {
                 self.missing_art_draws += 1;
             }
             crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {
-                self.fallback_draws += 1;
+                self.live_index_draws += 1;
                 self.unkeyed_fallback_draws += 1;
             }
         }
