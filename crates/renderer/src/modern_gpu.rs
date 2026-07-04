@@ -1,4 +1,4 @@
-use crate::gpu_work_item::{GpuWorkItem, GpuWorkItemKind};
+use crate::gpu_work_item::{GpuRenderPlan, GpuWorkItem, GpuWorkItemKind};
 use crate::modern_assets::ModernTileAtlasAsset;
 use crate::modern_frame::ModernFrame;
 use crate::modern_index_atlas::ModernIndexTile;
@@ -541,7 +541,7 @@ impl ModernGpuVariantRenderer {
     ) -> bool {
         let mut rendered_any = rendered_any;
         let rank_plan = rank_dispatch.render_plan(&self.atlas, rendered_any);
-        for work_item in rank_plan.work_items {
+        for work_item in rank_plan {
             let _ = work_item.kind();
             match work_item {
                 ModernGpuWorkItem::ClearBackdrop => {
@@ -681,9 +681,7 @@ struct Mode1EffectRankDispatch<'a> {
     sprites: Vec<crate::modern_variant_draw::VariantSpriteDrawPacket<'a>>,
 }
 
-struct Mode1EffectRankRenderPlan<'rank, 'frame> {
-    work_items: Vec<ModernGpuWorkItem<'rank, 'frame>>,
-}
+type Mode1EffectRankRenderPlan<'rank, 'frame> = GpuRenderPlan<ModernGpuWorkItem<'rank, 'frame>>;
 
 enum ModernGpuWorkItem<'rank, 'frame> {
     ClearBackdrop,
@@ -742,7 +740,7 @@ impl<'a> Mode1EffectRankDispatch<'a> {
         if !sprite_groups.is_empty() {
             work_items.push(ModernGpuWorkItem::SpriteEffects(sprite_groups));
         }
-        Mode1EffectRankRenderPlan { work_items }
+        GpuRenderPlan::new(work_items)
     }
 }
 
@@ -811,10 +809,12 @@ impl<'a> OverlayBgEffectDispatch<'a> {
         .filter(|group| !group.packets.is_empty())
     }
 
-    fn work_items(&self) -> Vec<ModernGpuWorkItem<'_, 'a>> {
-        self.material_groups()
-            .map(ModernGpuWorkItem::BgEffect)
-            .collect()
+    fn work_items(&self) -> GpuRenderPlan<ModernGpuWorkItem<'_, 'a>> {
+        GpuRenderPlan::new(
+            self.material_groups()
+                .map(ModernGpuWorkItem::BgEffect)
+                .collect(),
+        )
     }
 
     #[cfg(test)]
@@ -6459,17 +6459,17 @@ mod tests {
         let work_items = dispatch.work_items();
         assert_eq!(work_items.len(), 2);
         assert_eq!(
-            crate::gpu_work_item::work_item_kinds(&work_items),
+            work_items.kinds(),
             vec![GpuWorkItemKind::BgEffect, GpuWorkItemKind::BgEffect]
         );
         assert!(matches!(
-            &work_items[0],
+            &work_items.work_items()[0],
             ModernGpuWorkItem::BgEffect(group)
                 if group.material == EffectMaterial::StaticEffect
                     && group.packets[0].inst.cell_id == 7
         ));
         assert!(matches!(
-            &work_items[1],
+            &work_items.work_items()[1],
             ModernGpuWorkItem::BgEffect(group)
                 if group.material == EffectMaterial::LiveCgram
                     && group.packets[0].inst.cell_id == 9
@@ -6887,31 +6887,31 @@ mod tests {
             sprites: packets.clone(),
         };
         let first_rank_plan = sprite_only_rank.render_plan(&atlas, false);
-        assert_eq!(first_rank_plan.work_items.len(), 2);
+        assert_eq!(first_rank_plan.len(), 2);
         assert_eq!(
-            crate::gpu_work_item::work_item_kinds(&first_rank_plan.work_items),
+            first_rank_plan.kinds(),
             vec![
                 GpuWorkItemKind::ClearBackdrop,
                 GpuWorkItemKind::SpriteEffects
             ]
         );
         assert!(matches!(
-            first_rank_plan.work_items[0],
-            ModernGpuWorkItem::ClearBackdrop
+            first_rank_plan.work_items().first(),
+            Some(ModernGpuWorkItem::ClearBackdrop)
         ));
-        match &first_rank_plan.work_items[1] {
+        match &first_rank_plan.work_items()[1] {
             ModernGpuWorkItem::SpriteEffects(groups) => assert_eq!(groups.len(), 3),
             _ => panic!("sprite-only rank should submit sprite groups after clear"),
         }
         let later_rank_plan = sprite_only_rank.render_plan(&atlas, true);
-        assert_eq!(later_rank_plan.work_items.len(), 1);
+        assert_eq!(later_rank_plan.len(), 1);
         assert_eq!(
-            crate::gpu_work_item::work_item_kinds(&later_rank_plan.work_items),
+            later_rank_plan.kinds(),
             vec![GpuWorkItemKind::SpriteEffects]
         );
         assert!(matches!(
-            later_rank_plan.work_items[0],
-            ModernGpuWorkItem::SpriteEffects(_)
+            later_rank_plan.work_items().first(),
+            Some(ModernGpuWorkItem::SpriteEffects(_))
         ));
     }
 

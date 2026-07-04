@@ -12,7 +12,7 @@
 /// After compositing, a post-process pass applies SNES color math and brightness.
 use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
-use crate::gpu_work_item::{GpuWorkItem, GpuWorkItemKind};
+use crate::gpu_work_item::{GpuRenderPlan, GpuWorkItem, GpuWorkItemKind};
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
 use crate::sprite_renderer::SpriteRenderer;
@@ -225,7 +225,7 @@ impl GpuFrameRenderer {
         }
 
         for work_item in
-            mode1_work_items(has_main_bg, has_main_sprites, has_sub_bg, has_sub_sprites)
+            mode1_render_plan(has_main_bg, has_main_sprites, has_sub_bg, has_sub_sprites)
         {
             self.render_gpu_work_item(encoder, queue, frame, output_view, work_item);
         }
@@ -241,7 +241,7 @@ impl GpuFrameRenderer {
         has_sub_sprites: bool,
     ) {
         let has_sub_mode7_bg = frame.screen_enabled[1] & 1 != 0;
-        for work_item in mode7_work_items(has_main_sprites, has_sub_mode7_bg, has_sub_sprites) {
+        for work_item in mode7_render_plan(has_main_sprites, has_sub_mode7_bg, has_sub_sprites) {
             self.render_gpu_work_item(encoder, queue, frame, output_view, work_item);
         }
     }
@@ -380,12 +380,12 @@ impl GpuFrameRenderer {
     }
 }
 
-fn mode1_work_items(
+fn mode1_render_plan(
     has_main_bg: bool,
     has_main_sprites: bool,
     has_sub_bg: bool,
     has_sub_sprites: bool,
-) -> Vec<GpuFrameWorkItem> {
+) -> GpuRenderPlan<GpuFrameWorkItem> {
     let mut work_items = Vec::new();
     if has_main_sprites && !has_main_bg {
         work_items.extend((0..=3).map(GpuFrameWorkItem::MainSpritePriority));
@@ -453,7 +453,7 @@ fn mode1_work_items(
     });
 
     work_items.push(GpuFrameWorkItem::PostProcess);
-    work_items
+    GpuRenderPlan::new(work_items)
 }
 
 fn main_bg_work_item(layer_idx: usize, hi_priority: bool, math_bit_pos: u32) -> GpuFrameWorkItem {
@@ -465,11 +465,11 @@ fn main_bg_work_item(layer_idx: usize, hi_priority: bool, math_bit_pos: u32) -> 
     }
 }
 
-fn mode7_work_items(
+fn mode7_render_plan(
     has_main_sprites: bool,
     has_sub_mode7_bg: bool,
     has_sub_sprites: bool,
-) -> Vec<GpuFrameWorkItem> {
+) -> GpuRenderPlan<GpuFrameWorkItem> {
     let mut work_items = Vec::new();
     if has_main_sprites {
         work_items.push(GpuFrameWorkItem::MainSpritePriority(0));
@@ -487,7 +487,7 @@ fn mode7_work_items(
         work_items.extend((0..=3).map(GpuFrameWorkItem::SubSpritePriority));
     }
     work_items.push(GpuFrameWorkItem::PostProcess);
-    work_items
+    GpuRenderPlan::new(work_items)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -610,11 +610,11 @@ mod tests {
     }
 
     #[test]
-    fn mode1_work_items_preserve_full_gpu_draw_order() {
-        let work_items = mode1_work_items(true, true, true, true);
+    fn mode1_render_plan_preserves_full_gpu_draw_order() {
+        let plan = mode1_render_plan(true, true, true, true);
 
         assert_eq!(
-            crate::gpu_work_item::work_item_kinds(&work_items),
+            plan.kinds(),
             vec![
                 GpuWorkItemKind::MainBgLayer,
                 GpuWorkItemKind::MainSpritePriority,
@@ -641,8 +641,8 @@ mod tests {
             ]
         );
         assert_eq!(
-            work_items,
-            vec![
+            plan.work_items(),
+            &[
                 main_bg_work_item(2, false, 2),
                 GpuFrameWorkItem::MainSpritePriority(0),
                 GpuFrameWorkItem::MainSpritePriority(1),
@@ -688,12 +688,12 @@ mod tests {
     }
 
     #[test]
-    fn mode1_work_items_preserve_sprite_only_draw_order() {
-        let work_items = mode1_work_items(false, true, false, true);
+    fn mode1_render_plan_preserves_sprite_only_draw_order() {
+        let plan = mode1_render_plan(false, true, false, true);
 
         assert_eq!(
-            work_items,
-            vec![
+            plan.work_items(),
+            &[
                 GpuFrameWorkItem::MainSpritePriority(0),
                 GpuFrameWorkItem::MainSpritePriority(1),
                 GpuFrameWorkItem::MainSpritePriority(2),
@@ -733,11 +733,11 @@ mod tests {
     }
 
     #[test]
-    fn mode7_work_items_preserve_full_gpu_draw_order() {
-        let work_items = mode7_work_items(true, true, true);
+    fn mode7_render_plan_preserves_full_gpu_draw_order() {
+        let plan = mode7_render_plan(true, true, true);
 
         assert_eq!(
-            crate::gpu_work_item::work_item_kinds(&work_items),
+            plan.kinds(),
             vec![
                 GpuWorkItemKind::MainSpritePriority,
                 GpuWorkItemKind::Mode7MainBg,
@@ -754,8 +754,8 @@ mod tests {
             ]
         );
         assert_eq!(
-            work_items,
-            vec![
+            plan.work_items(),
+            &[
                 GpuFrameWorkItem::MainSpritePriority(0),
                 GpuFrameWorkItem::Mode7MainBg,
                 GpuFrameWorkItem::MainSpritePriority(1),
@@ -773,12 +773,12 @@ mod tests {
     }
 
     #[test]
-    fn mode7_work_items_skip_disabled_surfaces_without_skipping_clears() {
-        let work_items = mode7_work_items(false, false, false);
+    fn mode7_render_plan_skips_disabled_surfaces_without_skipping_clears() {
+        let plan = mode7_render_plan(false, false, false);
 
         assert_eq!(
-            work_items,
-            vec![
+            plan.work_items(),
+            &[
                 GpuFrameWorkItem::Mode7MainBg,
                 GpuFrameWorkItem::ClearSubBackdrop,
                 GpuFrameWorkItem::PostProcess,
