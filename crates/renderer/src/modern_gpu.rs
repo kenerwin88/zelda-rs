@@ -5182,34 +5182,14 @@ impl ModernGpuVariantHeadless {
                 );
             }
             ModernVariantRenderPath::LiveIndexBaseWithOverlay => {
-                let overlay = mixed_variant_prefinal_bg_packets(frame, &plan);
-                let final_overlay = mixed_variant_overlay_bg_packets(frame, &plan);
-                let prefinal_packets =
-                    MixedVariantPrefinalPackets::from_overlay(frame, &overlay, &plan);
-                record_headless_live_index_overlay_stats(
-                    &mut stats,
+                self.render_live_index_with_overlay(
                     frame,
-                    &overlay,
-                    &final_overlay,
-                    &prefinal_packets,
-                );
-                self.render_live_index_prefinal_base(
-                    frame,
+                    bg_cells,
                     live_index_frame,
                     live_index_bg_cells,
                     live_index_sprite_cells,
-                    &final_overlay,
-                    &prefinal_packets,
+                    &plan,
                     &mut stats,
-                );
-                self.renderer.effect_renderer.render_overlay_bg_effects(
-                    &self.device,
-                    &self.queue,
-                    bg_cells,
-                    frame,
-                    &self.renderer.atlas,
-                    &final_overlay,
-                    &self.target_view,
                 );
             }
             ModernVariantRenderPath::EffectMaterialWithStableOverlay => {
@@ -5235,6 +5215,47 @@ impl ModernGpuVariantHeadless {
             }
         }
         (self.read_target_rgba(), stats)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_live_index_with_overlay(
+        &self,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        live_index_frame: &ModernFrame,
+        live_index_bg_cells: &[ModernIndexTile],
+        live_index_sprite_cells: &[ModernIndexTile],
+        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+        stats: &mut crate::modern_software::VariantAtlasRenderStats,
+    ) {
+        let overlay = mixed_variant_prefinal_bg_packets(frame, plan);
+        let final_overlay = mixed_variant_overlay_bg_packets(frame, plan);
+        let prefinal_packets = MixedVariantPrefinalPackets::from_overlay(frame, &overlay, plan);
+        record_headless_live_index_overlay_stats(
+            stats,
+            frame,
+            &overlay,
+            &final_overlay,
+            &prefinal_packets,
+        );
+        self.render_live_index_prefinal_base(
+            frame,
+            live_index_frame,
+            live_index_bg_cells,
+            live_index_sprite_cells,
+            &final_overlay,
+            &prefinal_packets,
+            stats,
+        );
+        self.renderer.effect_renderer.render_overlay_bg_effects(
+            &self.device,
+            &self.queue,
+            bg_cells,
+            frame,
+            &self.renderer.atlas,
+            &final_overlay,
+            &self.target_view,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
