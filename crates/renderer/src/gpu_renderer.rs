@@ -36,6 +36,16 @@ pub struct GpuFrameRenderer {
     sub_comp_view: wgpu::TextureView,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GpuFrameWorkItem {
+    MainSpritePriority(u32),
+    Mode7MainBg,
+    ClearSubBackdrop,
+    Mode7SubBg,
+    SubSpritePriority(u32),
+    PostProcess,
+}
+
 const COMP_WIDTH: u32 = 256;
 const COMP_HEIGHT: u32 = 224;
 
@@ -392,46 +402,50 @@ impl GpuFrameRenderer {
         has_main_sprites: bool,
         has_sub_sprites: bool,
     ) {
-        if has_main_sprites {
-            self.render_main_sprites(encoder, queue, frame, 0);
-        }
-        self.mode7
-            .render(encoder, queue, frame, &self.comp_view, 0, 1);
-        if has_main_sprites {
-            for priority in 1..=3 {
-                self.render_main_sprites(encoder, queue, frame, priority);
+        let has_sub_mode7_bg = frame.screen_enabled[1] & 1 != 0;
+        for work_item in mode7_work_items(has_main_sprites, has_sub_mode7_bg, has_sub_sprites) {
+            match work_item {
+                GpuFrameWorkItem::MainSpritePriority(priority) => {
+                    self.render_main_sprites(encoder, queue, frame, priority);
+                }
+                GpuFrameWorkItem::Mode7MainBg => {
+                    self.mode7
+                        .render(encoder, queue, frame, &self.comp_view, 0, 1);
+                }
+                GpuFrameWorkItem::ClearSubBackdrop => {
+                    self.clear_sub_backdrop(encoder);
+                }
+                GpuFrameWorkItem::Mode7SubBg => {
+                    self.mode7
+                        .render(encoder, queue, frame, &self.sub_comp_view, 255, 0);
+                }
+                GpuFrameWorkItem::SubSpritePriority(priority) => {
+                    self.render_sub_sprites(encoder, queue, frame, priority);
+                }
+                GpuFrameWorkItem::PostProcess => {
+                    self.post_process.render(encoder, queue, frame, output_view);
+                }
             }
         }
+    }
 
-        {
-            let _clear = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("sub_backdrop_clear"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.sub_comp_view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-        }
-        if frame.screen_enabled[1] & 1 != 0 {
-            self.mode7
-                .render(encoder, queue, frame, &self.sub_comp_view, 255, 0);
-        }
-        if has_sub_sprites {
-            for priority in 0..=3 {
-                self.render_sub_sprites(encoder, queue, frame, priority);
-            }
-        }
-
-        self.post_process.render(encoder, queue, frame, output_view);
+    fn clear_sub_backdrop(&self, encoder: &mut wgpu::CommandEncoder) {
+        let _clear = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("sub_backdrop_clear"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &self.sub_comp_view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
     }
 
     fn render_main_sprites(
@@ -482,6 +496,31 @@ impl GpuFrameRenderer {
     ) {
         let _ = (encoder, queue, frame, output_view);
     }
+}
+
+fn mode7_work_items(
+    has_main_sprites: bool,
+    has_sub_mode7_bg: bool,
+    has_sub_sprites: bool,
+) -> Vec<GpuFrameWorkItem> {
+    let mut work_items = Vec::new();
+    if has_main_sprites {
+        work_items.push(GpuFrameWorkItem::MainSpritePriority(0));
+    }
+    work_items.push(GpuFrameWorkItem::Mode7MainBg);
+    if has_main_sprites {
+        work_items.extend((1..=3).map(GpuFrameWorkItem::MainSpritePriority));
+    }
+
+    work_items.push(GpuFrameWorkItem::ClearSubBackdrop);
+    if has_sub_mode7_bg {
+        work_items.push(GpuFrameWorkItem::Mode7SubBg);
+    }
+    if has_sub_sprites {
+        work_items.extend((0..=3).map(GpuFrameWorkItem::SubSpritePriority));
+    }
+    work_items.push(GpuFrameWorkItem::PostProcess);
+    work_items
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -601,5 +640,42 @@ mod tests {
         assert!(c.r.abs() < 1e-10);
         assert!(c.g.abs() < 1e-10);
         assert!((c.b - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn mode7_work_items_preserve_full_gpu_draw_order() {
+        let work_items = mode7_work_items(true, true, true);
+
+        assert_eq!(
+            work_items,
+            vec![
+                GpuFrameWorkItem::MainSpritePriority(0),
+                GpuFrameWorkItem::Mode7MainBg,
+                GpuFrameWorkItem::MainSpritePriority(1),
+                GpuFrameWorkItem::MainSpritePriority(2),
+                GpuFrameWorkItem::MainSpritePriority(3),
+                GpuFrameWorkItem::ClearSubBackdrop,
+                GpuFrameWorkItem::Mode7SubBg,
+                GpuFrameWorkItem::SubSpritePriority(0),
+                GpuFrameWorkItem::SubSpritePriority(1),
+                GpuFrameWorkItem::SubSpritePriority(2),
+                GpuFrameWorkItem::SubSpritePriority(3),
+                GpuFrameWorkItem::PostProcess,
+            ]
+        );
+    }
+
+    #[test]
+    fn mode7_work_items_skip_disabled_surfaces_without_skipping_clears() {
+        let work_items = mode7_work_items(false, false, false);
+
+        assert_eq!(
+            work_items,
+            vec![
+                GpuFrameWorkItem::Mode7MainBg,
+                GpuFrameWorkItem::ClearSubBackdrop,
+                GpuFrameWorkItem::PostProcess,
+            ]
+        );
     }
 }
