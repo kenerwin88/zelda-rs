@@ -471,36 +471,7 @@ impl ModernGpuVariantRenderer {
                 bg.render(device, queue, bg_cells, frame, output_view);
                 spr.render(device, queue, sprite_cells, frame, output_view);
                 let overlay = mixed_variant_overlay_bg_packets(frame, &plan);
-                stats.mixed_overlay_bg_effect_draws += overlay.effects.len() as u32;
-                stats.mixed_overlay_bg_effect_candidates += overlay.candidates;
-                stats.mixed_overlay_bg_effect_culled_invisible_main +=
-                    overlay.culled_invisible_main;
-                stats.mixed_overlay_bg_effect_reject_complex_frame += overlay.reject_complex_frame;
-                stats.mixed_overlay_bg_effect_reject_complex_brightness +=
-                    overlay.reject_complex_brightness;
-                stats.mixed_overlay_bg_effect_reject_complex_invalid_layer +=
-                    overlay.reject_complex_invalid_layer;
-                stats.mixed_overlay_bg_effect_reject_complex_mosaic +=
-                    overlay.reject_complex_mosaic;
-                stats.mixed_overlay_bg_effect_reject_complex_sub_window +=
-                    overlay.reject_complex_sub_window;
-                stats.mixed_overlay_bg_effect_reject_complex_effect_bounds +=
-                    overlay.reject_complex_effect_bounds;
-                stats.mixed_overlay_bg_effect_reject_complex_scanline_main +=
-                    overlay.reject_complex_scanline_main;
-                stats.mixed_overlay_bg_effect_reject_complex_layer_window +=
-                    overlay.reject_complex_layer_window;
-                stats.mixed_overlay_bg_effect_reject_complex_color_math +=
-                    overlay.reject_complex_color_math;
-                stats.mixed_overlay_bg_effect_reject_complex_color_math_clip +=
-                    overlay.reject_complex_color_math_clip;
-                stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen +=
-                    overlay.reject_complex_color_math_subscreen;
-                stats.mixed_overlay_bg_effect_reject_complex_color_math_fixed_color +=
-                    overlay.reject_complex_color_math_fixed_color;
-                stats.mixed_overlay_bg_effect_reject_cgram_mismatch +=
-                    overlay.reject_cgram_mismatch;
-                stats.mixed_overlay_bg_effect_reject_overlap += overlay.reject_overlap;
+                record_live_mixed_overlay_bg_effect_stats(&mut stats, &overlay);
                 self.effect_renderer.render_overlay_bg_effects(
                     device,
                     queue,
@@ -974,6 +945,36 @@ struct MixedVariantOverlayBgSelection<'a> {
     reject_overlap_bg_unrepresentable_front_no_effect: u32,
     reject_overlap_bg_unrepresentable_front_complex: u32,
     reject_overlap_bg_unrepresentable_front_cgram_mismatch: u32,
+}
+
+fn record_live_mixed_overlay_bg_effect_stats(
+    stats: &mut crate::modern_software::VariantAtlasRenderStats,
+    overlay: &MixedVariantOverlayBgSelection<'_>,
+) {
+    stats.mixed_overlay_bg_effect_draws += overlay.effects.len() as u32;
+    stats.mixed_overlay_bg_effect_candidates += overlay.candidates;
+    stats.mixed_overlay_bg_effect_culled_invisible_main += overlay.culled_invisible_main;
+    stats.mixed_overlay_bg_effect_reject_complex_frame += overlay.reject_complex_frame;
+    stats.mixed_overlay_bg_effect_reject_complex_brightness += overlay.reject_complex_brightness;
+    stats.mixed_overlay_bg_effect_reject_complex_invalid_layer +=
+        overlay.reject_complex_invalid_layer;
+    stats.mixed_overlay_bg_effect_reject_complex_mosaic += overlay.reject_complex_mosaic;
+    stats.mixed_overlay_bg_effect_reject_complex_sub_window += overlay.reject_complex_sub_window;
+    stats.mixed_overlay_bg_effect_reject_complex_effect_bounds +=
+        overlay.reject_complex_effect_bounds;
+    stats.mixed_overlay_bg_effect_reject_complex_scanline_main +=
+        overlay.reject_complex_scanline_main;
+    stats.mixed_overlay_bg_effect_reject_complex_layer_window +=
+        overlay.reject_complex_layer_window;
+    stats.mixed_overlay_bg_effect_reject_complex_color_math += overlay.reject_complex_color_math;
+    stats.mixed_overlay_bg_effect_reject_complex_color_math_clip +=
+        overlay.reject_complex_color_math_clip;
+    stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen +=
+        overlay.reject_complex_color_math_subscreen;
+    stats.mixed_overlay_bg_effect_reject_complex_color_math_fixed_color +=
+        overlay.reject_complex_color_math_fixed_color;
+    stats.mixed_overlay_bg_effect_reject_cgram_mismatch += overlay.reject_cgram_mismatch;
+    stats.mixed_overlay_bg_effect_reject_overlap += overlay.reject_overlap;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -5388,6 +5389,71 @@ mod tests {
             headless_variant_render_path(&live_index),
             ModernVariantRenderPath::LiveIndexBaseWithOverlay
         );
+    }
+
+    #[test]
+    fn live_overlay_stats_helper_records_final_overlay_counters() {
+        let mut stats = VariantAtlasRenderStats {
+            mixed_overlay_bg_effect_draws: 3,
+            ..Default::default()
+        };
+        let overlay = MixedVariantOverlayBgSelection {
+            candidates: 4,
+            culled_invisible_main: 1,
+            reject_complex_frame: 2,
+            reject_complex_brightness: 3,
+            reject_complex_invalid_layer: 4,
+            reject_complex_mosaic: 5,
+            reject_complex_sub_window: 6,
+            reject_complex_effect_bounds: 7,
+            reject_complex_scanline_main: 8,
+            reject_complex_layer_window: 9,
+            reject_complex_color_math: 10,
+            reject_complex_color_math_clip: 11,
+            reject_complex_color_math_subscreen: 12,
+            reject_complex_color_math_fixed_color: 13,
+            reject_cgram_mismatch: 14,
+            reject_overlap: 15,
+            ..Default::default()
+        };
+
+        record_live_mixed_overlay_bg_effect_stats(&mut stats, &overlay);
+
+        assert_eq!(stats.mixed_overlay_bg_effect_draws, 3);
+        assert_eq!(stats.mixed_overlay_bg_effect_candidates, 4);
+        assert_eq!(stats.mixed_overlay_bg_effect_culled_invisible_main, 1);
+        assert_eq!(stats.mixed_overlay_bg_effect_reject_complex_frame, 2);
+        assert_eq!(stats.mixed_overlay_bg_effect_reject_complex_brightness, 3);
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_invalid_layer,
+            4
+        );
+        assert_eq!(stats.mixed_overlay_bg_effect_reject_complex_mosaic, 5);
+        assert_eq!(stats.mixed_overlay_bg_effect_reject_complex_sub_window, 6);
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_effect_bounds,
+            7
+        );
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_scanline_main,
+            8
+        );
+        assert_eq!(stats.mixed_overlay_bg_effect_reject_complex_layer_window, 9);
+        assert_eq!(stats.mixed_overlay_bg_effect_reject_complex_color_math, 10);
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_clip,
+            11
+        );
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen,
+            12
+        );
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_fixed_color,
+            13
+        );
+        assert_eq!(stats.mixed_overlay_bg_effect_reject_cgram_mismatch, 14);
+        assert_eq!(stats.mixed_overlay_bg_effect_reject_overlap, 15);
     }
 
     #[test]
