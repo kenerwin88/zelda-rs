@@ -224,11 +224,11 @@ impl GpuFrameRenderer {
             return;
         }
 
-        for work_item in
-            mode1_render_plan(has_main_bg, has_main_sprites, has_sub_bg, has_sub_sprites)
-        {
-            self.render_gpu_work_item(encoder, queue, frame, output_view, work_item);
-        }
+        mode1_render_plan(has_main_bg, has_main_sprites, has_sub_bg, has_sub_sprites).execute_with(
+            |work_item| {
+                self.render_gpu_work_item(encoder, queue, frame, output_view, work_item);
+            },
+        );
     }
 
     fn render_mode7_frame(
@@ -241,9 +241,11 @@ impl GpuFrameRenderer {
         has_sub_sprites: bool,
     ) {
         let has_sub_mode7_bg = frame.screen_enabled[1] & 1 != 0;
-        for work_item in mode7_render_plan(has_main_sprites, has_sub_mode7_bg, has_sub_sprites) {
-            self.render_gpu_work_item(encoder, queue, frame, output_view, work_item);
-        }
+        mode7_render_plan(has_main_sprites, has_sub_mode7_bg, has_sub_sprites).execute_with(
+            |work_item| {
+                self.render_gpu_work_item(encoder, queue, frame, output_view, work_item);
+            },
+        );
     }
 
     fn render_gpu_work_item(
@@ -254,7 +256,6 @@ impl GpuFrameRenderer {
         output_view: &wgpu::TextureView,
         work_item: GpuFrameWorkItem,
     ) {
-        let _ = work_item.kind();
         match work_item {
             GpuFrameWorkItem::MainSpritePriority(priority) => {
                 self.render_main_sprites(encoder, queue, frame, priority);

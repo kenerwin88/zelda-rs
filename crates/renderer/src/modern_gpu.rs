@@ -541,7 +541,7 @@ impl ModernGpuVariantRenderer {
         rendered_any: bool,
     ) -> bool {
         let mut rendered_any = rendered_any;
-        for work_item in rank_plan {
+        rank_plan.execute_with(|work_item| {
             let bg_load = if rendered_any {
                 wgpu::LoadOp::Load
             } else {
@@ -561,7 +561,7 @@ impl ModernGpuVariantRenderer {
                 bg_load,
             );
             rendered_any = true;
-        }
+        });
         rendered_any
     }
 
@@ -623,7 +623,6 @@ fn render_modern_gpu_work_item(
     work_item: ModernGpuWorkItem<'_, '_>,
     bg_load: wgpu::LoadOp<wgpu::Color>,
 ) {
-    let _ = work_item.kind();
     match work_item {
         ModernGpuWorkItem::ClearBackdrop => {
             effect_renderer.render_bg(
@@ -2353,7 +2352,7 @@ impl ModernGpuVariantEffectRenderer {
         output_view: &wgpu::TextureView,
     ) {
         let empty_sprite_cells = [];
-        for work_item in overlay.effects.render_plan() {
+        overlay.effects.render_plan().execute_with(|work_item| {
             if work_item.kind() != GpuWorkItemKind::BgEffect {
                 unreachable!("overlay BG dispatch only emits BG effect work items");
             }
@@ -2370,7 +2369,7 @@ impl ModernGpuVariantEffectRenderer {
                 work_item,
                 wgpu::LoadOp::Load,
             );
-        }
+        });
     }
 
     fn render_bg_effect_batch(
