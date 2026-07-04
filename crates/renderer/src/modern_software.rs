@@ -68,6 +68,8 @@ pub struct VariantAtlasRenderStats {
     pub stable_preview_draws: u32,
     pub stable_effect_draws: u32,
     pub dynamic_material_draws: u32,
+    pub effect_material_draws: u32,
+    pub dynamic_material_fallback_draws: u32,
     pub unsupported_material_draws: u32,
     pub missing_art_draws: u32,
     pub unkeyed_fallback_draws: u32,
@@ -117,11 +119,13 @@ impl VariantAtlasRenderStats {
             crate::modern_variant_atlas::VariantAtlasDraw::MaterialEffect { .. } => {
                 self.effect_draws += 1;
                 self.dynamic_material_draws += 1;
+                self.effect_material_draws += 1;
             }
             crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {
                 self.fallback_draws += 1;
                 self.dynamic_palette_draws += 1;
                 self.dynamic_material_draws += 1;
+                self.dynamic_material_fallback_draws += 1;
                 if draw.is_unsupported_material_fallback() {
                     self.unsupported_material_draws += 1;
                 }

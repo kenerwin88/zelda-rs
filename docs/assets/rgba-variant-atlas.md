@@ -257,8 +257,13 @@ renderer/oracle. Verification must report:
   because the live draw material matches the entry preview material.
 - `stable_effect_draws`: source art drawn through a stable `tile_effects.json`
   palette/effect LUT.
-- `dynamic_material_draws`: source art exists, but the live material has no
-  modeled stable effect, so the renderer uses the live indexed fallback.
+- `dynamic_material_draws`: compatibility aggregate for source-art draws that
+  need a runtime material decision. This includes both modeled effect draws and
+  true dynamic fallback draws.
+- `effect_material_draws`: source art drawn through a modeled stable effect
+  material. This is already on the modern material path.
+- `dynamic_material_fallback_draws`: source art exists, but the live material
+  has no modeled stable effect, so the renderer uses the live indexed fallback.
 - `unsupported_material_draws`: the fallback subset caused by an explicit
   runtime material the renderer does not model yet.
 - `missing_art_draws`: the live draw has a source key but no canonical art
@@ -350,10 +355,12 @@ renderer/oracle. Verification must report:
 
 Legacy log names remain available for compatibility: `variant_draws` is the
 sum of stable preview and stable effect draws, `fallback_draws` is the sum of
-dynamic material, missing art, and unkeyed fallback draws,
-`dynamic_palette_draws` mirrors `dynamic_material_draws`,
-`unsupported_material_draws` is a subset of `dynamic_material_draws`, and
-`missing_variant_draws` mirrors `missing_art_draws`.
+dynamic material fallback, missing art, and unkeyed fallback draws.
+`dynamic_palette_draws` mirrors `dynamic_material_fallback_draws`,
+`dynamic_material_draws` remains the aggregate of `effect_material_draws` and
+`dynamic_material_fallback_draws`, `unsupported_material_draws` is a subset of
+`dynamic_material_fallback_draws`, and `missing_variant_draws` mirrors
+`missing_art_draws`.
 
 The CHR/palette-index path remains the oracle until representative replay and
 oracle-window comparisons prove the base/effect path.

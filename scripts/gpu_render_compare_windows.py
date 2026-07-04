@@ -23,6 +23,7 @@ MODERN_INDEX_SUMMARY_RE = re.compile(
     r"gpu_count=(\d+) mode7_gpu_count=(\d+) cpu_count=(\d+)"
     r"(?: variant_draws=(\d+)(?: fallback_draws=(\d+))? dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
     r"(?: stable_preview_draws=(\d+) stable_effect_draws=(\d+) dynamic_material_draws=(\d+) "
+    r"(?:(?:effect_material_draws=\d+ dynamic_material_fallback_draws=\d+) )?"
     r"(?:unsupported_material_draws=\d+ )?"
     r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+)"
     r"(?: unkeyed_bg_fallback_draws=\d+ unkeyed_sprite_fallback_draws=\d+)?"
@@ -58,6 +59,7 @@ MODERN_INDEX_VARIANT_RE = re.compile(
     r"modern_index_compare frame=(\d+) .* via=variant-gpu "
     r"variant_draws=(\d+)(?: fallback_draws=(\d+))? dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
     r"(?: stable_preview_draws=(\d+) stable_effect_draws=(\d+) dynamic_material_draws=(\d+) "
+    r"(?:(?:effect_material_draws=\d+ dynamic_material_fallback_draws=\d+) )?"
     r"(?:unsupported_material_draws=\d+ )?"
     r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+)"
     r"(?: unkeyed_bg_fallback_draws=\d+ unkeyed_sprite_fallback_draws=\d+)?"
@@ -296,6 +298,10 @@ def compare_window(
             stable_preview_draws = int(match.group(11) or 0)
             stable_effect_draws = int(match.group(12) or 0)
             dynamic_material_draws = int(match.group(13) or 0)
+            effect_material_draws = int_stat(match.group(0), "effect_material_draws")
+            dynamic_material_fallback_draws = int_stat(
+                match.group(0), "dynamic_material_fallback_draws"
+            )
             unsupported_material_draws = int_stat(match.group(0), "unsupported_material_draws")
             missing_art_draws = int(match.group(14) or 0)
             unkeyed_fallback_draws = int(match.group(15) or 0)
@@ -362,6 +368,8 @@ def compare_window(
             stable_preview_draws = 0
             stable_effect_draws = 0
             dynamic_material_draws = 0
+            effect_material_draws = 0
+            dynamic_material_fallback_draws = 0
             unsupported_material_draws = 0
             missing_art_draws = 0
             unkeyed_fallback_draws = 0
@@ -402,6 +410,10 @@ def compare_window(
                 stable_preview_draws += int(frame_match.group(6) or 0)
                 stable_effect_draws += int(frame_match.group(7) or 0)
                 dynamic_material_draws += int(frame_match.group(8) or 0)
+                effect_material_draws += int_stat(frame_match.group(0), "effect_material_draws")
+                dynamic_material_fallback_draws += int_stat(
+                    frame_match.group(0), "dynamic_material_fallback_draws"
+                )
                 unsupported_material_draws += int_stat(
                     frame_match.group(0), "unsupported_material_draws"
                 )
@@ -477,6 +489,8 @@ def compare_window(
             f"stable_preview_draws={stable_preview_draws} "
             f"stable_effect_draws={stable_effect_draws} "
             f"dynamic_material_draws={dynamic_material_draws} "
+            f"effect_material_draws={effect_material_draws} "
+            f"dynamic_material_fallback_draws={dynamic_material_fallback_draws} "
             f"unsupported_material_draws={unsupported_material_draws} "
             f"missing_art_draws={missing_art_draws} "
             f"unkeyed_fallback_draws={unkeyed_fallback_draws} "
@@ -557,6 +571,8 @@ def compare_window(
                 unkeyed_bg_fallback_draws,
                 unkeyed_sprite_fallback_draws,
                 unsupported_material_draws,
+                effect_material_draws,
+                dynamic_material_fallback_draws,
             ),
         )
     match = COMPARE_RE.search(output)
@@ -628,6 +644,8 @@ def main() -> None:
     total_stable_preview_draws = 0
     total_stable_effect_draws = 0
     total_dynamic_material_draws = 0
+    total_effect_material_draws = 0
+    total_dynamic_material_fallback_draws = 0
     total_unsupported_material_draws = 0
     total_missing_art_draws = 0
     total_unkeyed_fallback_draws = 0
@@ -721,6 +739,8 @@ def main() -> None:
         total_stable_preview_draws += variant_stats[4]
         total_stable_effect_draws += variant_stats[5]
         total_dynamic_material_draws += variant_stats[6]
+        total_effect_material_draws += variant_stats[39]
+        total_dynamic_material_fallback_draws += variant_stats[40]
         total_unsupported_material_draws += variant_stats[38]
         total_missing_art_draws += variant_stats[7]
         total_unkeyed_fallback_draws += variant_stats[8]
@@ -789,6 +809,8 @@ def main() -> None:
             f"stable_preview_draws={total_stable_preview_draws} "
             f"stable_effect_draws={total_stable_effect_draws} "
             f"dynamic_material_draws={total_dynamic_material_draws} "
+            f"effect_material_draws={total_effect_material_draws} "
+            f"dynamic_material_fallback_draws={total_dynamic_material_fallback_draws} "
             f"unsupported_material_draws={total_unsupported_material_draws} "
             f"missing_art_draws={total_missing_art_draws} "
             f"unkeyed_fallback_draws={total_unkeyed_fallback_draws} "

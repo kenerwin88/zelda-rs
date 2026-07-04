@@ -277,7 +277,9 @@ mod tests {
         assert_eq!(plan.sprites[0].inst.screen_y, 24);
         assert!(matches!(plan.sprites[0].draw, VariantAtlasDraw::Unkeyed));
         assert_eq!(plan.stats.stable_effect_draws, 0);
+        assert_eq!(plan.stats.effect_material_draws, 1);
         assert_eq!(plan.stats.dynamic_material_draws, 1);
+        assert_eq!(plan.stats.dynamic_material_fallback_draws, 0);
         assert_eq!(plan.stats.missing_art_draws, 1);
         assert_eq!(plan.stats.unkeyed_fallback_draws, 1);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
@@ -324,6 +326,8 @@ mod tests {
             VariantAtlasDraw::DynamicPalette { .. }
         ));
         assert_eq!(plan.stats.dynamic_palette_draws, 1);
+        assert_eq!(plan.stats.effect_material_draws, 0);
+        assert_eq!(plan.stats.dynamic_material_fallback_draws, 1);
         assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.unkeyed_fallback_draws, 0);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
@@ -369,7 +373,9 @@ mod tests {
             VariantAtlasDraw::MaterialEffect { .. }
         ));
         assert_eq!(plan.stats.effect_draws, 1);
+        assert_eq!(plan.stats.effect_material_draws, 1);
         assert_eq!(plan.stats.dynamic_material_draws, 1);
+        assert_eq!(plan.stats.dynamic_material_fallback_draws, 0);
         assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.stable_preview_draws, 0);
     }
@@ -415,6 +421,8 @@ mod tests {
             VariantAtlasDraw::DynamicPalette { .. }
         ));
         assert_eq!(plan.stats.dynamic_palette_draws, 1);
+        assert_eq!(plan.stats.effect_material_draws, 0);
+        assert_eq!(plan.stats.dynamic_material_fallback_draws, 1);
         assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
     }
@@ -457,6 +465,7 @@ mod tests {
             VariantAtlasDraw::DynamicPalette { .. }
         ));
         assert_eq!(plan.stats.dynamic_palette_draws, 1);
+        assert_eq!(plan.stats.dynamic_material_fallback_draws, 1);
         assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.unkeyed_sprite_fallback_draws, 0);
     }
