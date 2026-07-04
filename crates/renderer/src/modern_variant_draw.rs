@@ -570,7 +570,12 @@ fn resolve_draw_for_frame<'a>(
     force_dynamic: bool,
 ) -> VariantAtlasDraw<'a> {
     if force_dynamic {
-        atlas.resolve_dynamic_draw(key, DynamicFallbackReason::InstanceSourceKey)
+        let draw = atlas.resolve_draw(key);
+        if matches!(draw, VariantAtlasDraw::MaterialEffect { .. }) {
+            draw
+        } else {
+            atlas.resolve_dynamic_draw(key, DynamicFallbackReason::InstanceSourceKey)
+        }
     } else {
         atlas.resolve_draw(key)
     }
@@ -586,8 +591,7 @@ mod tests {
     use crate::modern_index_atlas::ModernIndexTile;
     use crate::modern_source_atlas::modern_source_key;
     use crate::modern_variant_atlas::{
-        DynamicFallbackReason, ModernVariantAtlas, TileEffect, VariantAtlasDraw, VariantAtlasEntry,
-        VariantAtlasKey,
+        ModernVariantAtlas, TileEffect, VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
     };
 
     fn bg_key(pack: u16, tile: u16, palette_row: u8) -> VariantAtlasKey {
@@ -760,7 +764,7 @@ mod tests {
     }
 
     #[test]
-    fn bg_instance_source_key_resolves_deduped_cell_as_dynamic_fallback() {
+    fn bg_instance_source_key_resolves_deduped_cell_as_material_effect() {
         let mut frame = ModernFrame::empty();
         let mut bg0 = ModernBgLayer::new(0);
         bg0.enabled_main = true;
@@ -796,17 +800,14 @@ mod tests {
         assert_eq!(plan.bg.len(), 1);
         assert!(matches!(
             plan.bg[0].draw,
-            VariantAtlasDraw::DynamicPalette {
-                reason: DynamicFallbackReason::InstanceSourceKey,
-                ..
-            }
+            VariantAtlasDraw::MaterialEffect { .. }
         ));
-        assert_eq!(plan.stats.dynamic_palette_draws, 1);
-        assert_eq!(plan.stats.effect_material_draws, 0);
-        assert_eq!(plan.stats.dynamic_material_fallback_draws, 1);
+        assert_eq!(plan.stats.dynamic_palette_draws, 0);
+        assert_eq!(plan.stats.effect_material_draws, 1);
+        assert_eq!(plan.stats.dynamic_material_fallback_draws, 0);
         assert_eq!(
             plan.stats.dynamic_material_fallback_instance_source_draws,
-            1
+            0
         );
         assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.unkeyed_fallback_draws, 0);
@@ -861,7 +862,7 @@ mod tests {
     }
 
     #[test]
-    fn bg_instance_source_key_keeps_keyed_cell_on_dynamic_fallback() {
+    fn bg_instance_source_key_keeps_keyed_cell_on_material_effect_path() {
         let mut frame = ModernFrame::empty();
         let mut bg0 = ModernBgLayer::new(0);
         bg0.enabled_main = true;
@@ -898,17 +899,14 @@ mod tests {
         assert_eq!(plan.bg.len(), 1);
         assert!(matches!(
             plan.bg[0].draw,
-            VariantAtlasDraw::DynamicPalette {
-                reason: DynamicFallbackReason::InstanceSourceKey,
-                ..
-            }
+            VariantAtlasDraw::MaterialEffect { .. }
         ));
-        assert_eq!(plan.stats.dynamic_palette_draws, 1);
-        assert_eq!(plan.stats.effect_material_draws, 0);
-        assert_eq!(plan.stats.dynamic_material_fallback_draws, 1);
+        assert_eq!(plan.stats.dynamic_palette_draws, 0);
+        assert_eq!(plan.stats.effect_material_draws, 1);
+        assert_eq!(plan.stats.dynamic_material_fallback_draws, 0);
         assert_eq!(
             plan.stats.dynamic_material_fallback_instance_source_draws,
-            1
+            0
         );
         assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
