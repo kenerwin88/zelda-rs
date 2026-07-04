@@ -27,6 +27,7 @@ pub mod modern_assets;
 mod modern_bg_renderer;
 pub mod modern_dungeon_atlas;
 pub mod modern_extract;
+mod modern_finalizer;
 pub mod modern_frame;
 pub mod modern_gpu;
 mod modern_gpu_work_command;
