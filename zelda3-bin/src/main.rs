@@ -3652,7 +3652,7 @@ fn run_replay_save(args: &[String]) {
         (Some(rom), Some(replay)) => (rom, replay),
         _ => {
             eprintln!(
-                "usage: zelda3 --replay-save <path-to-rom.sfc> <replay.sav> [frames] [--dump-frame <out.png>] [--render-hash-log <stride>] [--audio-trace-log <stride>] [--gpu-render-compare <stride>] [--gpu-render-compare-quiet] [--render-hash-dump-frame <frame> <out.png>] [--input-script <path>] [--input-script-overlay <path>] [--stop-replay-after-load] [--save-state <checkpoint.sav>] [--load-state <checkpoint.sav>] [--load-sram <path>] [--fingerprint-log <path>] [--fingerprint-frame <frame>] [--coverage-log <path>]"
+                "usage: zelda3 --replay-save <path-to-rom.sfc> <replay.sav> [frames] [--dump-frame <out.png>] [--render-hash-log <stride>] [--audio-trace-log <stride>] [--gpu-render-compare <stride>] [--gpu-render-compare-quiet] [--modern-index-compare <stride>] [--require-full-gpu-path] [--render-hash-dump-frame <frame> <out.png>] [--input-script <path>] [--input-script-overlay <path>] [--stop-replay-after-load] [--save-state <checkpoint.sav>] [--load-state <checkpoint.sav>] [--load-sram <path>] [--fingerprint-log <path>] [--fingerprint-frame <frame>] [--coverage-log <path>]"
             );
             process::exit(2);
         }
@@ -3670,6 +3670,7 @@ fn run_replay_save(args: &[String]) {
     let mut gpu_render_compare_last_frame = 0u32;
     let mut gpu_render_compare_last_hash = 0u32;
     let mut modern_index_compare = 0u32;
+    let mut require_full_gpu_path = false;
     let modern_index_compare_summary = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_SUMMARY").is_ok();
     let modern_index_compare_progress = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_PROGRESS")
         .ok()
@@ -3849,6 +3850,10 @@ fn run_replay_save(args: &[String]) {
                 }
                 i += 2;
             }
+            "--require-full-gpu-path" => {
+                require_full_gpu_path = true;
+                i += 1;
+            }
             "--render-hash-dump-frame" => {
                 let frame = args.get(i + 1).unwrap_or_else(|| {
                     eprintln!("--render-hash-dump-frame requires a frame");
@@ -3969,6 +3974,11 @@ fn run_replay_save(args: &[String]) {
                 process::exit(2);
             }
         }
+    }
+
+    if require_full_gpu_path && modern_index_compare == 0 {
+        eprintln!("--require-full-gpu-path requires --modern-index-compare");
+        process::exit(2);
     }
 
     if load_state_path.is_some() && load_sram_path.is_some() {
@@ -6108,6 +6118,17 @@ fn run_replay_save(args: &[String]) {
                 if mismatch != 0 {
                     modern_index_compare_bad_count += 1;
                     modern_index_compare_bad_pixels += mismatch as u64;
+                }
+                if require_full_gpu_path {
+                    if let Some(fallback) =
+                        first_cpu_render_fallback_reason(via, variant_stats.as_ref())
+                    {
+                        eprintln!(
+                            "gpu_path_unsupported frame={frames} mode={mode_label} ppumode={} via={via} reason={} count={} mismatch_px={mismatch}",
+                            gpu_frame.mode, fallback.reason, fallback.count
+                        );
+                        process::exit(1);
+                    }
                 }
                 if let Some(stats) = variant_stats {
                     modern_index_compare_variant_draws += u64::from(stats.stable_draws);
