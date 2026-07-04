@@ -539,13 +539,14 @@ impl ModernGpuVariantRenderer {
         rendered_any: bool,
     ) -> bool {
         let mut rendered_any = rendered_any;
-        if !rank_packets.bg.is_empty() {
-            self.effect_renderer.render_bg(
+        for group in rank_packets.bg_material_groups() {
+            self.effect_renderer.render_bg_material_group(
                 device,
                 queue,
                 bg_cells,
+                None,
                 &self.atlas,
-                &rank_packets.bg,
+                group,
                 output_view,
                 if rendered_any {
                     wgpu::LoadOp::Load
@@ -556,7 +557,8 @@ impl ModernGpuVariantRenderer {
             rendered_any = true;
         }
 
-        if !rank_packets.sprites.is_empty() {
+        let sprite_groups = rank_packets.sprite_material_groups(&self.atlas);
+        if !sprite_groups.is_empty() {
             if !rendered_any {
                 self.effect_renderer.render_bg(
                     device,
@@ -569,13 +571,13 @@ impl ModernGpuVariantRenderer {
                 );
                 rendered_any = true;
             }
-            self.effect_renderer.render_sprites(
+            self.effect_renderer.render_sprite_material_groups(
                 device,
                 queue,
                 sprite_cells,
                 frame,
                 &self.atlas,
-                &rank_packets.sprites,
+                &sprite_groups,
                 output_view,
             );
         }
@@ -679,6 +681,22 @@ impl<'a> Mode1EffectMaterialRankPackets<'a> {
             bg: Vec::new(),
             sprites: Vec::new(),
         }
+    }
+
+    fn bg_material_groups(&self) -> impl Iterator<Item = BgEffectMaterialGroup<'_, 'a>> {
+        [EffectMaterialGroup {
+            material: EffectMaterial::StaticEffect,
+            packets: self.bg.as_slice(),
+        }]
+        .into_iter()
+        .filter(|group| !group.packets.is_empty())
+    }
+
+    fn sprite_material_groups(
+        &self,
+        atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+    ) -> Vec<SpriteEffectMaterialGroup<'_, 'a>> {
+        sprite_effect_material_groups(atlas, &self.sprites)
     }
 }
 
@@ -2369,14 +2387,14 @@ impl ModernGpuVariantEffectRenderer {
         queue.submit([encoder.finish()]);
     }
 
-    fn render_sprites(
+    fn render_sprite_material_groups(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         sprite_cells: &[ModernIndexTile],
         frame: &ModernFrame,
         atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
-        packets: &[crate::modern_variant_draw::VariantSpriteDrawPacket<'_>],
+        groups: &[SpriteEffectMaterialGroup<'_, '_>],
         output_view: &wgpu::TextureView,
     ) {
         let (_index_atlas_texture, index_atlas_view) = build_index_atlas(
@@ -2386,7 +2404,7 @@ impl ModernGpuVariantEffectRenderer {
             "modern_variant_effect_sprite_index_atlas",
         );
         let mut live_lut: Option<(wgpu::Texture, wgpu::TextureView)> = None;
-        for group in sprite_effect_material_groups(atlas, packets) {
+        for group in groups {
             let mut batch = EffectMaterialBatch::default();
             for packet in group.packets {
                 let Some(material_packet) = sprite_effect_material_packet(atlas, packet) else {
@@ -2578,7 +2596,7 @@ fn bg_effect_material_batch(
 }
 
 fn sprite_effect_material_groups<'dispatch, 'frame>(
-    atlas: &'frame crate::modern_variant_atlas::ModernVariantAtlas,
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
     packets: &'dispatch [crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>],
 ) -> Vec<SpriteEffectMaterialGroup<'dispatch, 'frame>> {
     let mut groups = Vec::new();
@@ -6299,15 +6317,26 @@ mod tests {
         };
 
         let ranks = mode1_effect_material_rank_packets(&plan);
+        let rank0_bg_groups = ranks[0].bg_material_groups().collect::<Vec<_>>();
+        let rank7_bg_groups = ranks[7].bg_material_groups().collect::<Vec<_>>();
 
         assert_eq!(ranks.len(), 10);
-        assert_eq!(ranks[0].bg.len(), 1);
-        assert_eq!(ranks[0].bg[0].layer_index, 2);
+        assert_eq!(rank0_bg_groups.len(), 1);
+        assert_eq!(rank0_bg_groups[0].material, EffectMaterial::StaticEffect);
+        assert_eq!(rank0_bg_groups[0].packets[0].layer_index, 2);
         assert_eq!(ranks[5].sprites.len(), 1);
         assert_eq!(ranks[5].sprites[0].inst.priority, 2);
-        assert_eq!(ranks[7].bg.len(), 1);
-        assert_eq!(ranks[7].bg[0].layer_index, 0);
-        assert_eq!(ranks.iter().map(|rank| rank.bg.len()).sum::<usize>(), 2);
+        assert_eq!(rank7_bg_groups.len(), 1);
+        assert_eq!(rank7_bg_groups[0].material, EffectMaterial::StaticEffect);
+        assert_eq!(rank7_bg_groups[0].packets[0].layer_index, 0);
+        assert_eq!(
+            ranks
+                .iter()
+                .flat_map(|rank| rank.bg_material_groups())
+                .map(|group| group.packets.len())
+                .sum::<usize>(),
+            2
+        );
         assert_eq!(
             ranks.iter().map(|rank| rank.sprites.len()).sum::<usize>(),
             1
