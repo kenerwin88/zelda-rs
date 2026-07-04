@@ -464,22 +464,15 @@ impl ModernGpuVariantRenderer {
                 );
             }
             ModernVariantRenderPath::LiveIndexBaseWithOverlay => {
-                let bg =
-                    ModernGpuIndexRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
-                let spr =
-                    ModernGpuSpriteRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
-                bg.render(device, queue, bg_cells, frame, output_view);
-                spr.render(device, queue, sprite_cells, frame, output_view);
-                let overlay = mixed_variant_overlay_bg_packets(frame, &plan);
-                record_live_mixed_overlay_bg_effect_stats(&mut stats, &overlay);
-                self.effect_renderer.render_overlay_bg_effects(
+                self.render_live_index_base_with_overlay(
                     device,
                     queue,
-                    bg_cells,
                     frame,
-                    &self.atlas,
-                    &overlay,
+                    bg_cells,
+                    sprite_cells,
+                    &plan,
                     output_view,
+                    &mut stats,
                 );
             }
             ModernVariantRenderPath::EffectMaterialWithStableOverlay => {
@@ -503,6 +496,35 @@ impl ModernGpuVariantRenderer {
             }
         }
         stats
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_live_index_base_with_overlay(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+        output_view: &wgpu::TextureView,
+        stats: &mut crate::modern_software::VariantAtlasRenderStats,
+    ) {
+        let bg = ModernGpuIndexRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
+        let spr = ModernGpuSpriteRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
+        bg.render(device, queue, bg_cells, frame, output_view);
+        spr.render(device, queue, sprite_cells, frame, output_view);
+        let overlay = mixed_variant_overlay_bg_packets(frame, plan);
+        record_live_mixed_overlay_bg_effect_stats(stats, &overlay);
+        self.effect_renderer.render_overlay_bg_effects(
+            device,
+            queue,
+            bg_cells,
+            frame,
+            &self.atlas,
+            &overlay,
+            output_view,
+        );
     }
 
     fn render_effect_material_mode1_order(
