@@ -474,8 +474,16 @@ impl<'p, 'frame> PreparedModernVariantExecution<'p, 'frame> {
         self.render_path
     }
 
+    #[cfg(test)]
     fn mode1_effect_rank_dispatches(&self) -> &[Mode1EffectRankDispatch<'frame>] {
         self.mode1_effect_draw_work.rank_dispatches()
+    }
+
+    fn mode1_effect_rank_render_plans<'work>(
+        &'work self,
+        atlas: &'work crate::modern_variant_atlas::ModernVariantAtlas,
+    ) -> impl Iterator<Item = PreparedMode1EffectRankRenderPlan<'work, 'frame>> + 'work {
+        self.mode1_effect_draw_work.rank_render_plans(atlas)
     }
 
     fn stats(&self) -> &PreparedModernVariantStats {
@@ -502,8 +510,61 @@ impl<'frame> PreparedMode1EffectDrawWork<'frame> {
         }
     }
 
+    #[cfg(test)]
     fn rank_dispatches(&self) -> &[Mode1EffectRankDispatch<'frame>] {
         &self.rank_dispatches
+    }
+
+    fn rank_render_plans<'work>(
+        &'work self,
+        atlas: &'work crate::modern_variant_atlas::ModernVariantAtlas,
+    ) -> impl Iterator<Item = PreparedMode1EffectRankRenderPlan<'work, 'frame>> + 'work {
+        let mut rendered_any = false;
+        self.rank_dispatches
+            .iter()
+            .enumerate()
+            .map(move |(rank_index, rank_dispatch)| {
+                let rendered_before = rendered_any;
+                let render_plan = rank_dispatch.render_plan(atlas, rendered_before);
+                if !render_plan.is_empty() {
+                    rendered_any = true;
+                }
+                PreparedMode1EffectRankRenderPlan {
+                    rank_index,
+                    rendered_before,
+                    render_plan,
+                }
+            })
+    }
+}
+
+struct PreparedMode1EffectRankRenderPlan<'rank, 'frame> {
+    rank_index: usize,
+    rendered_before: bool,
+    render_plan: Mode1EffectRankRenderPlan<'rank, 'frame>,
+}
+
+impl<'rank, 'frame> PreparedMode1EffectRankRenderPlan<'rank, 'frame> {
+    fn rank_index(&self) -> usize {
+        self.rank_index
+    }
+
+    fn rendered_before(&self) -> bool {
+        self.rendered_before
+    }
+
+    fn into_render_plan(self) -> Mode1EffectRankRenderPlan<'rank, 'frame> {
+        self.render_plan
+    }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.render_plan.is_empty()
+    }
+
+    #[cfg(test)]
+    fn kinds(&self) -> Vec<GpuWorkItemKind> {
+        self.render_plan.kinds()
     }
 }
 
@@ -759,17 +820,18 @@ impl ModernGpuVariantRenderer {
         let bg_cells = execution.bg_cells();
         let sprite_cells = execution.sprite_cells();
         let mut rendered_any = false;
-        for rank_dispatch in execution.mode1_effect_rank_dispatches() {
-            let rank_plan = rank_dispatch.render_plan(&self.atlas, rendered_any);
+        for rank_plan in execution.mode1_effect_rank_render_plans(&self.atlas) {
+            debug_assert!(rank_plan.rank_index() <= 9);
+            let rendered_before_rank = rank_plan.rendered_before();
             rendered_any = self.render_effect_rank_plan(
                 device,
                 queue,
                 frame,
                 bg_cells,
                 sprite_cells,
-                rank_plan,
+                rank_plan.into_render_plan(),
                 output_view,
-                rendered_any,
+                rendered_before_rank,
             );
         }
         if !rendered_any {
@@ -5769,7 +5831,7 @@ mod tests {
         use crate::modern_frame::{ModernIndexSpriteInstance, ModernIndexTileInstance};
         use crate::modern_index_atlas::ModernIndexTile;
         use crate::modern_source_atlas::modern_source_key;
-        use crate::modern_variant_atlas::VariantAtlasDraw;
+        use crate::modern_variant_atlas::{ModernVariantAtlas, VariantAtlasDraw};
         use crate::modern_variant_draw::{
             VariantBgDrawPacket, VariantDrawPlan, VariantSpriteDrawPacket,
         };
@@ -5846,6 +5908,28 @@ mod tests {
             ranks.iter().map(|rank| rank.sprites.len()).sum::<usize>(),
             1
         );
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: Vec::new(),
+            effects: Vec::new(),
+        };
+        let rank_plans = execution
+            .mode1_effect_rank_render_plans(&atlas)
+            .collect::<Vec<_>>();
+
+        assert_eq!(rank_plans.len(), 10);
+        assert_eq!(rank_plans[0].rank_index(), 0);
+        assert!(!rank_plans[0].rendered_before());
+        assert_eq!(rank_plans[0].kinds(), vec![GpuWorkItemKind::BgEffect]);
+        assert_eq!(rank_plans[1].rank_index(), 1);
+        assert!(rank_plans[1].rendered_before());
+        assert!(rank_plans[1].is_empty());
+        assert_eq!(rank_plans[5].rank_index(), 5);
+        assert!(rank_plans[5].rendered_before());
+        assert!(rank_plans[5].is_empty());
     }
 
     #[test]

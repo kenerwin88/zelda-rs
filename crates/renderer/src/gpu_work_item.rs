@@ -31,6 +31,10 @@ impl<T> GpuRenderPlan<T> {
         &self.work_items
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        self.work_items.is_empty()
+    }
+
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.work_items.len()
