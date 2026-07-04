@@ -678,6 +678,12 @@ struct MixedVariantPrefinalPackets<'a> {
     sprites: Vec<crate::modern_variant_draw::VariantSpriteDrawPacket<'a>>,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct MixedVariantPrefinalBgPacket<'packet, 'frame> {
+    material: PrefinalBgMaterial,
+    packet: &'packet crate::modern_variant_draw::VariantBgDrawPacket<'frame>,
+}
+
 impl<'a> MixedVariantPrefinalPackets<'a> {
     fn from_overlay(
         frame: &ModernFrame,
@@ -724,6 +730,23 @@ impl<'a> MixedVariantPrefinalPackets<'a> {
         &self,
     ) -> impl Iterator<Item = &crate::modern_variant_draw::VariantBgDrawPacket<'a>> {
         self.static_bg.iter().chain(self.live_cgram_bg.iter())
+    }
+
+    fn bg_material_packets(&self) -> impl Iterator<Item = MixedVariantPrefinalBgPacket<'_, 'a>> {
+        self.static_bg
+            .iter()
+            .map(|packet| MixedVariantPrefinalBgPacket {
+                material: PrefinalBgMaterial::StaticEffect,
+                packet,
+            })
+            .chain(
+                self.live_cgram_bg
+                    .iter()
+                    .map(|packet| MixedVariantPrefinalBgPacket {
+                        material: PrefinalBgMaterial::LiveCgram,
+                        packet,
+                    }),
+            )
     }
 }
 
@@ -1290,27 +1313,29 @@ fn overlay_mixed_variant_bg_packets_on_main_screen(
 ) {
     debug_assert_eq!(screens.scale, 1);
     let mut bg_overlay_ranks = vec![u8::MAX; screens.main.len()];
-    for packet in &packets.static_bg {
-        overlay_mixed_variant_bg_packet_on_main_screen(
-            screens,
-            frame,
-            packet,
-            &mut bg_overlay_ranks,
-            |index| {
-                let Some((_, effect)) = packet.draw.material_effect() else {
-                    return None;
-                };
-                effect.index_to_rgba.get(usize::from(index)).copied()
-            },
-        );
-    }
-    for packet in &packets.live_cgram_bg {
-        overlay_mixed_variant_live_cgram_bg_packet_on_main_screen(
-            screens,
-            frame,
-            packet,
-            &mut bg_overlay_ranks,
-        );
+    for bg_packet in packets.bg_material_packets() {
+        match bg_packet.material {
+            PrefinalBgMaterial::StaticEffect => overlay_mixed_variant_bg_packet_on_main_screen(
+                screens,
+                frame,
+                bg_packet.packet,
+                &mut bg_overlay_ranks,
+                |index| {
+                    let Some((_, effect)) = bg_packet.packet.draw.material_effect() else {
+                        return None;
+                    };
+                    effect.index_to_rgba.get(usize::from(index)).copied()
+                },
+            ),
+            PrefinalBgMaterial::LiveCgram => {
+                overlay_mixed_variant_live_cgram_bg_packet_on_main_screen(
+                    screens,
+                    frame,
+                    bg_packet.packet,
+                    &mut bg_overlay_ranks,
+                )
+            }
+        }
     }
     overlay_front_variant_sprite_packets_on_main_screen(
         screens,
@@ -3816,21 +3841,10 @@ fn modern_prefinal_overlay_data_words(
     let mut bg_packet_words = Vec::new();
     let mut sprite_packet_words = Vec::new();
 
-    for packet in &packets.static_bg {
+    for bg_packet in packets.bg_material_packets() {
+        let packet = bg_packet.packet;
         let cell_offset = data.len() as u32;
-        data.extend_from_slice(&modern_prefinal_overlay_static_bg_pixels(frame, packet));
-        if let Some(rank) = packet.mode1_rank() {
-            bg_packet_words.extend_from_slice(&[
-                i32::from(packet.inst.screen_x) as u32,
-                i32::from(packet.inst.screen_y) as u32,
-                u32::from(rank),
-                cell_offset,
-            ]);
-        }
-    }
-    for packet in &packets.live_cgram_bg {
-        let cell_offset = data.len() as u32;
-        data.extend_from_slice(&modern_prefinal_overlay_live_bg_pixels(frame, packet));
+        data.extend_from_slice(&modern_prefinal_overlay_bg_packet_pixels(frame, bg_packet));
         if let Some(rank) = packet.mode1_rank() {
             bg_packet_words.extend_from_slice(&[
                 i32::from(packet.inst.screen_x) as u32,
@@ -3887,6 +3901,20 @@ fn modern_prefinal_overlay_data_words(
             sprite_packets_offset,
         ],
     )
+}
+
+fn modern_prefinal_overlay_bg_packet_pixels(
+    frame: &ModernFrame,
+    packet: MixedVariantPrefinalBgPacket<'_, '_>,
+) -> [u32; 64] {
+    match packet.material {
+        PrefinalBgMaterial::StaticEffect => {
+            modern_prefinal_overlay_static_bg_pixels(frame, packet.packet)
+        }
+        PrefinalBgMaterial::LiveCgram => {
+            modern_prefinal_overlay_live_bg_pixels(frame, packet.packet)
+        }
+    }
 }
 
 fn modern_prefinal_overlay_static_bg_pixels(
@@ -6590,6 +6618,143 @@ mod tests {
         );
 
         assert_eq!(screens.main[0], replacement);
+    }
+
+    #[test]
+    fn prefinal_overlay_data_words_preserve_material_packet_sources() {
+        use crate::modern_frame::{ModernFrame, ModernIndexTileInstance};
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            TileEffect, VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
+        };
+        use crate::modern_variant_draw::VariantBgDrawPacket;
+
+        fn entry(id: &str, row: u8) -> VariantAtlasEntry {
+            VariantAtlasEntry {
+                id: id.to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "bg".to_string(),
+                    asset: "kBgGfx".to_string(),
+                    pack: 0,
+                    tile: u16::from(row),
+                    bpp: 3,
+                    palette: "palette_dung_bg_main".to_string(),
+                    palette_row: row,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: id.to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                runtime_material: Some("palette_lut".to_string()),
+                runtime_colors_per_row: None,
+                source_hflip: false,
+                source_vflip: false,
+            }
+        }
+
+        fn effect(id: &str, row: u8, rgba: [u8; 4]) -> TileEffect {
+            TileEffect {
+                id: id.to_string(),
+                palette: "palette_dung_bg_main".to_string(),
+                palette_row: row,
+                colors_per_row: 8,
+                index_to_rgba: vec![[0, 0, 0, 0xff], rgba],
+                dynamic_policy: "stable".to_string(),
+            }
+        }
+
+        let mut static_indices = [0u8; 64];
+        static_indices[0] = 1;
+        let static_cell = ModernIndexTile {
+            id: 0,
+            indices: static_indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        };
+        let static_inst = ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        };
+        let static_entry = entry("static-bg", 0);
+        let static_effect = effect("static-effect", 0, [248, 0, 0, 0xff]);
+        let static_packet = VariantBgDrawPacket {
+            layer_index: 0,
+            cell: &static_cell,
+            inst: &static_inst,
+            key: None,
+            draw: VariantAtlasDraw::MaterialEffect {
+                entry: &static_entry,
+                effect: &static_effect,
+            },
+        };
+
+        let mut live_indices = [0u8; 64];
+        live_indices[0] = 1;
+        let live_cell = ModernIndexTile {
+            id: 1,
+            indices: live_indices,
+            source_key: modern_source_key(1, 0, 1),
+            hflip: false,
+            vflip: false,
+        };
+        let live_inst = ModernIndexTileInstance {
+            cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            screen_x: 8,
+            screen_y: 0,
+            palette: 1,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        };
+        let live_entry = entry("live-bg", 1);
+        let live_effect = effect("live-effect", 1, [0, 0, 248, 0xff]);
+        let live_packet = VariantBgDrawPacket {
+            layer_index: 1,
+            cell: &live_cell,
+            inst: &live_inst,
+            key: None,
+            draw: VariantAtlasDraw::MaterialEffect {
+                entry: &live_entry,
+                effect: &live_effect,
+            },
+        };
+
+        let mut frame = ModernFrame::empty();
+        frame.cgram_rgba[17] = [0, 248, 0, 0xff];
+        let packets = MixedVariantPrefinalPackets {
+            static_bg: vec![static_packet],
+            live_cgram_bg: vec![live_packet],
+            sprites: Vec::new(),
+        };
+
+        let (data_words, params) = modern_prefinal_overlay_data_words(&frame, &packets);
+
+        assert_eq!(params[1], 2);
+        assert_eq!(params[2], 0);
+        assert_eq!(params[6], 128);
+        assert_eq!(params[7], 136);
+        assert_eq!(
+            data_words[0],
+            pack_variant_prefinal_pixel([248, 0, 0, 0xff], 0)
+        );
+        assert_eq!(
+            data_words[64],
+            pack_variant_prefinal_pixel([0, 248, 0, 0xff], 1)
+        );
+        assert_eq!(
+            &data_words[params[6] as usize..params[6] as usize + 8],
+            &[0, 0, 4, 0, 8, 0, 3, 64]
+        );
+        assert_eq!(data_words[params[7] as usize], 0);
     }
 
     #[test]
