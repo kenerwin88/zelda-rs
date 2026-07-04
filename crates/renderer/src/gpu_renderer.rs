@@ -39,9 +39,19 @@ pub struct GpuFrameRenderer {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GpuFrameWorkItem {
     MainSpritePriority(u32),
+    MainBgLayer {
+        layer_idx: usize,
+        hi_priority: bool,
+        layer_bit: u32,
+        math_bit_pos: u32,
+    },
     Mode7MainBg,
     ClearSubBackdrop,
     Mode7SubBg,
+    SubBgLayer {
+        layer_idx: usize,
+        hi_priority: bool,
+    },
     SubSpritePriority(u32),
     PostProcess,
 }
@@ -198,199 +208,11 @@ impl GpuFrameRenderer {
             return;
         }
 
-        if has_main_sprites && !has_main_bg {
-            for priority in 0..=3 {
-                self.render_main_sprites(encoder, queue, frame, priority);
-            }
-        }
-
-        // CPU Mode 1 z-order:
-        //   BG3-lo(0x1200), OBJ0(0x2400/0x2600),
-        //   OBJ1(0x6400/0x6600), BG2-lo(0x7100), BG1-lo(0x8000),
-        //   OBJ2(0xa400/0xa600), BG2-hi(0xb100), BG1-hi(0xc000),
-        //   OBJ3(0xe400/0xe600),
-        //   BG3-hi(0xf200).
-        if has_main_bg {
-            render_bg_pass(
-                &mut self.bg[2],
-                encoder,
-                queue,
-                frame,
-                2,
-                false,
-                &self.comp_view,
-                1u32 << 2,
-                2,
-            );
-        }
-        if has_main_sprites && has_main_bg {
-            self.render_main_sprites(encoder, queue, frame, 0);
-            self.render_main_sprites(encoder, queue, frame, 1);
-        }
-        if has_main_bg {
-            render_bg_pass(
-                &mut self.bg[1],
-                encoder,
-                queue,
-                frame,
-                1,
-                false,
-                &self.comp_view,
-                1u32 << 1,
-                1,
-            );
-            render_bg_pass(
-                &mut self.bg[0],
-                encoder,
-                queue,
-                frame,
-                0,
-                false,
-                &self.comp_view,
-                1u32,
-                0,
-            );
-        }
-        if has_main_sprites && has_main_bg {
-            self.render_main_sprites(encoder, queue, frame, 2);
-        }
-        if has_main_bg {
-            render_bg_pass(
-                &mut self.bg[1],
-                encoder,
-                queue,
-                frame,
-                1,
-                true,
-                &self.comp_view,
-                1u32 << 1,
-                1,
-            );
-            render_bg_pass(
-                &mut self.bg[0],
-                encoder,
-                queue,
-                frame,
-                0,
-                true,
-                &self.comp_view,
-                1u32,
-                0,
-            );
-        }
-        if has_main_sprites && has_main_bg {
-            self.render_main_sprites(encoder, queue, frame, 3);
-        }
-        if has_main_bg {
-            render_bg_pass(
-                &mut self.bg[2],
-                encoder,
-                queue,
-                frame,
-                2,
-                true,
-                &self.comp_view,
-                1u32 << 2,
-                2,
-            );
-        }
-
-        // Sub-screen composite: rendered into sub_comp_tex for color math blending.
-        // Cleared to transparent black (a=0.0) so the post-process shader can
-        // distinguish backdrop pixels (a=0) from real BG/sprite pixels (a=1).
-        // Sub-screen BG renders use math_bit_pos=255 (sentinel) so the shader
-        // outputs alpha=1.0 for real pixels, preserving the backdrop-detection scheme.
-        // Sub-screen renders skip the per-scanline TM check (layer_bit=0).
+        for work_item in
+            mode1_work_items(has_main_bg, has_main_sprites, has_sub_bg, has_sub_sprites)
         {
-            let _clear = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("sub_backdrop_clear"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.sub_comp_view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
+            self.render_gpu_work_item(encoder, queue, frame, output_view, work_item);
         }
-        render_sub_bg_pass(
-            &mut self.bg[2],
-            encoder,
-            queue,
-            frame,
-            2,
-            false,
-            &self.sub_comp_view,
-        );
-        if has_sub_sprites && !has_sub_bg {
-            for priority in 0..=3 {
-                self.render_sub_sprites(encoder, queue, frame, priority);
-            }
-        }
-        if has_sub_sprites && has_sub_bg {
-            self.render_sub_sprites(encoder, queue, frame, 0);
-            self.render_sub_sprites(encoder, queue, frame, 1);
-        }
-        render_sub_bg_pass(
-            &mut self.bg[1],
-            encoder,
-            queue,
-            frame,
-            1,
-            false,
-            &self.sub_comp_view,
-        );
-        render_sub_bg_pass(
-            &mut self.bg[0],
-            encoder,
-            queue,
-            frame,
-            0,
-            false,
-            &self.sub_comp_view,
-        );
-        if has_sub_sprites && has_sub_bg {
-            self.render_sub_sprites(encoder, queue, frame, 2);
-        }
-        render_sub_bg_pass(
-            &mut self.bg[1],
-            encoder,
-            queue,
-            frame,
-            1,
-            true,
-            &self.sub_comp_view,
-        );
-        render_sub_bg_pass(
-            &mut self.bg[0],
-            encoder,
-            queue,
-            frame,
-            0,
-            true,
-            &self.sub_comp_view,
-        );
-        if has_sub_sprites && has_sub_bg {
-            self.render_sub_sprites(encoder, queue, frame, 3);
-        }
-        render_sub_bg_pass(
-            &mut self.bg[2],
-            encoder,
-            queue,
-            frame,
-            2,
-            true,
-            &self.sub_comp_view,
-        );
-
-        // Post-process: apply color math + brightness to the composite, write to output.
-        self.post_process.render(encoder, queue, frame, output_view);
     }
 
     fn render_mode7_frame(
@@ -404,27 +226,70 @@ impl GpuFrameRenderer {
     ) {
         let has_sub_mode7_bg = frame.screen_enabled[1] & 1 != 0;
         for work_item in mode7_work_items(has_main_sprites, has_sub_mode7_bg, has_sub_sprites) {
-            match work_item {
-                GpuFrameWorkItem::MainSpritePriority(priority) => {
-                    self.render_main_sprites(encoder, queue, frame, priority);
-                }
-                GpuFrameWorkItem::Mode7MainBg => {
-                    self.mode7
-                        .render(encoder, queue, frame, &self.comp_view, 0, 1);
-                }
-                GpuFrameWorkItem::ClearSubBackdrop => {
-                    self.clear_sub_backdrop(encoder);
-                }
-                GpuFrameWorkItem::Mode7SubBg => {
-                    self.mode7
-                        .render(encoder, queue, frame, &self.sub_comp_view, 255, 0);
-                }
-                GpuFrameWorkItem::SubSpritePriority(priority) => {
-                    self.render_sub_sprites(encoder, queue, frame, priority);
-                }
-                GpuFrameWorkItem::PostProcess => {
-                    self.post_process.render(encoder, queue, frame, output_view);
-                }
+            self.render_gpu_work_item(encoder, queue, frame, output_view, work_item);
+        }
+    }
+
+    fn render_gpu_work_item(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        queue: &wgpu::Queue,
+        frame: &GpuFrame<'_>,
+        output_view: &wgpu::TextureView,
+        work_item: GpuFrameWorkItem,
+    ) {
+        match work_item {
+            GpuFrameWorkItem::MainSpritePriority(priority) => {
+                self.render_main_sprites(encoder, queue, frame, priority);
+            }
+            GpuFrameWorkItem::MainBgLayer {
+                layer_idx,
+                hi_priority,
+                layer_bit,
+                math_bit_pos,
+            } => {
+                render_bg_pass(
+                    &mut self.bg[layer_idx],
+                    encoder,
+                    queue,
+                    frame,
+                    layer_idx,
+                    hi_priority,
+                    &self.comp_view,
+                    layer_bit,
+                    math_bit_pos,
+                );
+            }
+            GpuFrameWorkItem::Mode7MainBg => {
+                self.mode7
+                    .render(encoder, queue, frame, &self.comp_view, 0, 1);
+            }
+            GpuFrameWorkItem::ClearSubBackdrop => {
+                self.clear_sub_backdrop(encoder);
+            }
+            GpuFrameWorkItem::Mode7SubBg => {
+                self.mode7
+                    .render(encoder, queue, frame, &self.sub_comp_view, 255, 0);
+            }
+            GpuFrameWorkItem::SubBgLayer {
+                layer_idx,
+                hi_priority,
+            } => {
+                render_sub_bg_pass(
+                    &mut self.bg[layer_idx],
+                    encoder,
+                    queue,
+                    frame,
+                    layer_idx,
+                    hi_priority,
+                    &self.sub_comp_view,
+                );
+            }
+            GpuFrameWorkItem::SubSpritePriority(priority) => {
+                self.render_sub_sprites(encoder, queue, frame, priority);
+            }
+            GpuFrameWorkItem::PostProcess => {
+                self.post_process.render(encoder, queue, frame, output_view);
             }
         }
     }
@@ -495,6 +360,91 @@ impl GpuFrameRenderer {
         output_view: &wgpu::TextureView,
     ) {
         let _ = (encoder, queue, frame, output_view);
+    }
+}
+
+fn mode1_work_items(
+    has_main_bg: bool,
+    has_main_sprites: bool,
+    has_sub_bg: bool,
+    has_sub_sprites: bool,
+) -> Vec<GpuFrameWorkItem> {
+    let mut work_items = Vec::new();
+    if has_main_sprites && !has_main_bg {
+        work_items.extend((0..=3).map(GpuFrameWorkItem::MainSpritePriority));
+    }
+
+    if has_main_bg {
+        // CPU Mode 1 z-order:
+        //   BG3-lo, OBJ0, OBJ1, BG2-lo, BG1-lo, OBJ2,
+        //   BG2-hi, BG1-hi, OBJ3, BG3-hi.
+        work_items.push(main_bg_work_item(2, false, 2));
+        if has_main_sprites {
+            work_items.push(GpuFrameWorkItem::MainSpritePriority(0));
+            work_items.push(GpuFrameWorkItem::MainSpritePriority(1));
+        }
+        work_items.push(main_bg_work_item(1, false, 1));
+        work_items.push(main_bg_work_item(0, false, 0));
+        if has_main_sprites {
+            work_items.push(GpuFrameWorkItem::MainSpritePriority(2));
+        }
+        work_items.push(main_bg_work_item(1, true, 1));
+        work_items.push(main_bg_work_item(0, true, 0));
+        if has_main_sprites {
+            work_items.push(GpuFrameWorkItem::MainSpritePriority(3));
+        }
+        work_items.push(main_bg_work_item(2, true, 2));
+    }
+
+    work_items.push(GpuFrameWorkItem::ClearSubBackdrop);
+    work_items.push(GpuFrameWorkItem::SubBgLayer {
+        layer_idx: 2,
+        hi_priority: false,
+    });
+    if has_sub_sprites && !has_sub_bg {
+        work_items.extend((0..=3).map(GpuFrameWorkItem::SubSpritePriority));
+    }
+    if has_sub_sprites && has_sub_bg {
+        work_items.push(GpuFrameWorkItem::SubSpritePriority(0));
+        work_items.push(GpuFrameWorkItem::SubSpritePriority(1));
+    }
+    work_items.push(GpuFrameWorkItem::SubBgLayer {
+        layer_idx: 1,
+        hi_priority: false,
+    });
+    work_items.push(GpuFrameWorkItem::SubBgLayer {
+        layer_idx: 0,
+        hi_priority: false,
+    });
+    if has_sub_sprites && has_sub_bg {
+        work_items.push(GpuFrameWorkItem::SubSpritePriority(2));
+    }
+    work_items.push(GpuFrameWorkItem::SubBgLayer {
+        layer_idx: 1,
+        hi_priority: true,
+    });
+    work_items.push(GpuFrameWorkItem::SubBgLayer {
+        layer_idx: 0,
+        hi_priority: true,
+    });
+    if has_sub_sprites && has_sub_bg {
+        work_items.push(GpuFrameWorkItem::SubSpritePriority(3));
+    }
+    work_items.push(GpuFrameWorkItem::SubBgLayer {
+        layer_idx: 2,
+        hi_priority: true,
+    });
+
+    work_items.push(GpuFrameWorkItem::PostProcess);
+    work_items
+}
+
+fn main_bg_work_item(layer_idx: usize, hi_priority: bool, math_bit_pos: u32) -> GpuFrameWorkItem {
+    GpuFrameWorkItem::MainBgLayer {
+        layer_idx,
+        hi_priority,
+        layer_bit: 1u32 << layer_idx,
+        math_bit_pos,
     }
 }
 
@@ -640,6 +590,102 @@ mod tests {
         assert!(c.r.abs() < 1e-10);
         assert!(c.g.abs() < 1e-10);
         assert!((c.b - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn mode1_work_items_preserve_full_gpu_draw_order() {
+        let work_items = mode1_work_items(true, true, true, true);
+
+        assert_eq!(
+            work_items,
+            vec![
+                main_bg_work_item(2, false, 2),
+                GpuFrameWorkItem::MainSpritePriority(0),
+                GpuFrameWorkItem::MainSpritePriority(1),
+                main_bg_work_item(1, false, 1),
+                main_bg_work_item(0, false, 0),
+                GpuFrameWorkItem::MainSpritePriority(2),
+                main_bg_work_item(1, true, 1),
+                main_bg_work_item(0, true, 0),
+                GpuFrameWorkItem::MainSpritePriority(3),
+                main_bg_work_item(2, true, 2),
+                GpuFrameWorkItem::ClearSubBackdrop,
+                GpuFrameWorkItem::SubBgLayer {
+                    layer_idx: 2,
+                    hi_priority: false,
+                },
+                GpuFrameWorkItem::SubSpritePriority(0),
+                GpuFrameWorkItem::SubSpritePriority(1),
+                GpuFrameWorkItem::SubBgLayer {
+                    layer_idx: 1,
+                    hi_priority: false,
+                },
+                GpuFrameWorkItem::SubBgLayer {
+                    layer_idx: 0,
+                    hi_priority: false,
+                },
+                GpuFrameWorkItem::SubSpritePriority(2),
+                GpuFrameWorkItem::SubBgLayer {
+                    layer_idx: 1,
+                    hi_priority: true,
+                },
+                GpuFrameWorkItem::SubBgLayer {
+                    layer_idx: 0,
+                    hi_priority: true,
+                },
+                GpuFrameWorkItem::SubSpritePriority(3),
+                GpuFrameWorkItem::SubBgLayer {
+                    layer_idx: 2,
+                    hi_priority: true,
+                },
+                GpuFrameWorkItem::PostProcess,
+            ]
+        );
+    }
+
+    #[test]
+    fn mode1_work_items_preserve_sprite_only_draw_order() {
+        let work_items = mode1_work_items(false, true, false, true);
+
+        assert_eq!(
+            work_items,
+            vec![
+                GpuFrameWorkItem::MainSpritePriority(0),
+                GpuFrameWorkItem::MainSpritePriority(1),
+                GpuFrameWorkItem::MainSpritePriority(2),
+                GpuFrameWorkItem::MainSpritePriority(3),
+                GpuFrameWorkItem::ClearSubBackdrop,
+                GpuFrameWorkItem::SubBgLayer {
+                    layer_idx: 2,
+                    hi_priority: false,
+                },
+                GpuFrameWorkItem::SubSpritePriority(0),
+                GpuFrameWorkItem::SubSpritePriority(1),
+                GpuFrameWorkItem::SubSpritePriority(2),
+                GpuFrameWorkItem::SubSpritePriority(3),
+                GpuFrameWorkItem::SubBgLayer {
+                    layer_idx: 1,
+                    hi_priority: false,
+                },
+                GpuFrameWorkItem::SubBgLayer {
+                    layer_idx: 0,
+                    hi_priority: false,
+                },
+                GpuFrameWorkItem::SubBgLayer {
+                    layer_idx: 1,
+                    hi_priority: true,
+                },
+                GpuFrameWorkItem::SubBgLayer {
+                    layer_idx: 0,
+                    hi_priority: true,
+                },
+                GpuFrameWorkItem::SubBgLayer {
+                    layer_idx: 2,
+                    hi_priority: true,
+                },
+                GpuFrameWorkItem::PostProcess,
+            ]
+        );
     }
 
     #[test]
