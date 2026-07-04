@@ -560,20 +560,18 @@ impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
                 } = rank_plan;
                 render_plan
                     .into_iter()
-                    .map(move |command| PreparedMode1EffectRenderCommand {
+                    .map(move |command| SourcedGpuWorkCommand {
                         source: Mode1EffectCommandSource::Rank(rank_index),
                         command,
                     })
             })
-            .chain(
-                needs_empty_frame_fallback.then_some(PreparedMode1EffectRenderCommand {
-                    source: Mode1EffectCommandSource::EmptyFrameFallback,
-                    command: ModernGpuWorkCommand {
-                        target_load: ModernGpuCommandLoad::ClearFrame,
-                        work_item: ModernGpuWorkItem::ClearBackdrop,
-                    },
-                }),
-            )
+            .chain(needs_empty_frame_fallback.then_some(SourcedGpuWorkCommand {
+                source: Mode1EffectCommandSource::EmptyFrameFallback,
+                command: ModernGpuWorkCommand {
+                    target_load: ModernGpuCommandLoad::ClearFrame,
+                    work_item: ModernGpuWorkItem::ClearBackdrop,
+                },
+            }))
             .collect();
         GpuRenderPlan::new(commands)
     }
@@ -620,7 +618,7 @@ impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
     fn into_command_kinds(self) -> Vec<PreparedMode1EffectRenderCommandKind> {
         let mut commands = Vec::new();
         self.into_command_plan()
-            .execute_with(|command| commands.push(command.kind()));
+            .execute_with(|command| commands.push(command.mode1_kind()));
         commands
     }
 
@@ -641,15 +639,20 @@ enum PreparedMode1EffectRenderStep<'rank, 'frame> {
     EmptyFrameFallback,
 }
 
-struct PreparedMode1EffectRenderCommand<'rank, 'frame> {
-    source: Mode1EffectCommandSource,
-    command: ModernGpuWorkCommand<'rank, 'frame>,
+struct SourcedGpuWorkCommand<Source, Command> {
+    source: Source,
+    command: Command,
 }
 
+type PreparedMode1EffectRenderCommand<'rank, 'frame> =
+    SourcedGpuWorkCommand<Mode1EffectCommandSource, ModernGpuWorkCommand<'rank, 'frame>>;
 type Mode1EffectCommandPlan<'rank, 'frame> =
     GpuRenderPlan<PreparedMode1EffectRenderCommand<'rank, 'frame>>;
 
-impl GpuWorkItem for PreparedMode1EffectRenderCommand<'_, '_> {
+impl<Source, Command> GpuWorkItem for SourcedGpuWorkCommand<Source, Command>
+where
+    Command: GpuWorkItem,
+{
     fn kind(&self) -> GpuWorkItemKind {
         GpuWorkItem::kind(&self.command)
     }
@@ -668,8 +671,8 @@ enum ModernGpuCommandLoad {
 }
 
 #[cfg(test)]
-impl PreparedMode1EffectRenderCommand<'_, '_> {
-    fn kind(&self) -> PreparedMode1EffectRenderCommandKind {
+impl SourcedGpuWorkCommand<Mode1EffectCommandSource, ModernGpuWorkCommand<'_, '_>> {
+    fn mode1_kind(&self) -> PreparedMode1EffectRenderCommandKind {
         PreparedMode1EffectRenderCommandKind::Work {
             source: self.source,
             command: self.command.kind(),
