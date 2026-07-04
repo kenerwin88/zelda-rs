@@ -137,10 +137,11 @@ impl GpuFrameRenderer {
         frame: &GpuFrame<'_>,
         output_view: &wgpu::TextureView,
     ) {
-        self.cgram_palette.update(queue, frame.cgram);
-
         let render_plan = GpuFrameRenderPlan::from_frame(frame);
         let resource_requirements = render_plan.resource_requirements();
+        if resource_requirements.uses_cgram_palette() {
+            self.cgram_palette.update(queue, frame.cgram);
+        }
         if resource_requirements.uses_tile_atlas() {
             self.tile_atlas.update(queue, frame.vram);
         }
