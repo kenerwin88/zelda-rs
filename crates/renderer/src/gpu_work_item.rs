@@ -69,6 +69,12 @@ impl<T> GpuRenderPlan<T> {
     }
 }
 
+impl<T> FromIterator<T> for GpuRenderPlan<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        Self::new(iter.into_iter().collect())
+    }
+}
+
 impl<T: GpuWorkItem> GpuRenderPlan<T> {
     pub(crate) fn execute_with<F>(self, mut execute: F)
     where
@@ -129,6 +135,22 @@ mod tests {
         plan.execute_with(|work_item| executed.push(work_item));
 
         assert_eq!(executed, vec![TestWorkItem::Clear, TestWorkItem::Draw]);
+    }
+
+    #[test]
+    fn render_plan_collect_preserves_work_item_order() {
+        let plan = [TestWorkItem::Clear, TestWorkItem::Draw]
+            .into_iter()
+            .collect::<GpuRenderPlan<_>>();
+
+        assert_eq!(
+            plan.work_items(),
+            &[TestWorkItem::Clear, TestWorkItem::Draw]
+        );
+        assert_eq!(
+            plan.kinds(),
+            vec![GpuWorkItemKind::ClearBackdrop, GpuWorkItemKind::BgEffect]
+        );
     }
 
     #[test]

@@ -551,8 +551,7 @@ struct PreparedMode1EffectRenderPlan<'rank, 'frame> {
 impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
     fn into_command_plan(self) -> Mode1EffectCommandPlan<'rank, 'frame> {
         let needs_empty_frame_fallback = self.needs_empty_frame_fallback;
-        let commands = self
-            .rank_plans
+        self.rank_plans
             .into_iter()
             .flat_map(|rank_plan| {
                 let PreparedMode1EffectRankRenderPlan {
@@ -574,8 +573,7 @@ impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
                     work_item: ModernGpuWorkItem::ClearBackdrop,
                 },
             }))
-            .collect();
-        GpuRenderPlan::new(commands)
+            .collect()
     }
 
     #[cfg(test)]
