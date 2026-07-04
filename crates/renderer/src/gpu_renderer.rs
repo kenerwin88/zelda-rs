@@ -141,8 +141,12 @@ impl GpuFrameRenderer {
         self.tile_atlas.update(queue, frame.vram);
         self.cgram_palette.update(queue, frame.cgram);
 
-        let render_plan_context = GpuFrameRenderPlanContext::from_frame(frame);
-        if render_plan_context.uses_sprites() {
+        let render_plan = GpuFrameRenderPlanContext::from_frame(frame).render_plan();
+        if render_plan
+            .work_items()
+            .iter()
+            .any(GpuFrameWorkCommand::uses_sprites)
+        {
             self.sprites.prepare(
                 queue,
                 frame.vram,
@@ -152,7 +156,6 @@ impl GpuFrameRenderer {
             );
         }
 
-        let render_plan = render_plan_context.render_plan();
         self.execute_render_plan(encoder, queue, frame, output_view, render_plan);
     }
 

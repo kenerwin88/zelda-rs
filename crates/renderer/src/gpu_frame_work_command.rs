@@ -213,8 +213,18 @@ impl GpuFrameRenderScreen {
     }
 }
 
-#[cfg(test)]
 impl GpuFrameWorkCommand {
+    pub(crate) fn uses_sprites(&self) -> bool {
+        matches!(
+            self,
+            Self::Screen {
+                command: GpuFrameScreenWorkCommand::SpritePriority(_),
+                ..
+            }
+        )
+    }
+
+    #[cfg(test)]
     pub(crate) fn phase(&self) -> GpuFrameRenderPhase {
         match self {
             Self::Screen { screen, .. } => screen.phase(),
@@ -337,5 +347,21 @@ mod tests {
             post_process_frame_work_command(),
             GpuFrameWorkCommand::PostProcess(GpuFramePostProcessPass::final_output())
         );
+    }
+
+    #[test]
+    fn frame_work_command_reports_sprite_usage_from_command_kind() {
+        assert!(
+            main_frame_work_command(GpuFrameScreenWorkCommand::SpritePriority(
+                GpuFrameSpritePass::new(0, 4, GpuFrameWindowSelector::main(0x10, 16))
+            ))
+            .uses_sprites()
+        );
+
+        assert!(!main_frame_work_command(GpuFrameScreenWorkCommand::BgLayer(
+            GpuFrameBgPass::mode1_main(0, false, 0)
+        ))
+        .uses_sprites());
+        assert!(!post_process_frame_work_command().uses_sprites());
     }
 }

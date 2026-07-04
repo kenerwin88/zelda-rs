@@ -65,7 +65,6 @@ impl<T> GpuRenderPlan<T> {
         self.work_items.extend(iter);
     }
 
-    #[cfg(test)]
     pub(crate) fn work_items(&self) -> &[T] {
         &self.work_items
     }

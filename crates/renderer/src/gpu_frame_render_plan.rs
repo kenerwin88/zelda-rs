@@ -47,21 +47,6 @@ impl GpuFrameRenderPlanContext {
         }
     }
 
-    pub(crate) fn uses_sprites(&self) -> bool {
-        match self {
-            Self::Mode1 {
-                has_main_sprites,
-                has_sub_sprites,
-                ..
-            }
-            | Self::Mode7 {
-                has_main_sprites,
-                has_sub_sprites,
-                ..
-            } => *has_main_sprites || *has_sub_sprites,
-        }
-    }
-
     pub(crate) fn render_plan(&self) -> GpuFrameRenderPlan {
         match *self {
             Self::Mode1 {
@@ -286,6 +271,12 @@ mod tests {
         plan.work_items().to_vec()
     }
 
+    fn frame_plan_uses_sprites(plan: &GpuFrameRenderPlan) -> bool {
+        plan.work_items()
+            .iter()
+            .any(GpuFrameWorkCommand::uses_sprites)
+    }
+
     fn test_frame(mode: u8, screen_enabled: [u8; 2]) -> GpuFrame<'static> {
         GpuFrame {
             vram: &[],
@@ -333,7 +324,7 @@ mod tests {
                 has_sub_sprites: true,
             }
         );
-        assert!(context.uses_sprites());
+        assert!(frame_plan_uses_sprites(&context.render_plan()));
     }
 
     #[test]
@@ -351,7 +342,7 @@ mod tests {
                 has_sub_sprites: true,
             }
         );
-        assert!(context.uses_sprites());
+        assert!(frame_plan_uses_sprites(&context.render_plan()));
     }
 
     #[test]
@@ -368,7 +359,7 @@ mod tests {
                 has_sub_sprites: false,
             }
         );
-        assert!(!context.uses_sprites());
+        assert!(!frame_plan_uses_sprites(&context.render_plan()));
     }
 
     #[test]
