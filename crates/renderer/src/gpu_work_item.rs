@@ -21,6 +21,20 @@ pub(crate) struct GpuRenderPlan<T> {
     work_items: Vec<T>,
 }
 
+pub(crate) struct SourcedGpuWorkCommand<Source, Command> {
+    pub(crate) source: Source,
+    pub(crate) command: Command,
+}
+
+impl<Source, Command> GpuWorkItem for SourcedGpuWorkCommand<Source, Command>
+where
+    Command: GpuWorkItem,
+{
+    fn kind(&self) -> GpuWorkItemKind {
+        GpuWorkItem::kind(&self.command)
+    }
+}
+
 impl<T> GpuRenderPlan<T> {
     pub(crate) fn new(work_items: Vec<T>) -> Self {
         Self { work_items }

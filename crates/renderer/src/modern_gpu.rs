@@ -1,4 +1,4 @@
-use crate::gpu_work_item::{GpuRenderPlan, GpuWorkItem, GpuWorkItemKind};
+use crate::gpu_work_item::{GpuRenderPlan, GpuWorkItem, GpuWorkItemKind, SourcedGpuWorkCommand};
 use crate::modern_assets::ModernTileAtlasAsset;
 use crate::modern_frame::ModernFrame;
 use crate::modern_index_atlas::ModernIndexTile;
@@ -639,24 +639,10 @@ enum PreparedMode1EffectRenderStep<'rank, 'frame> {
     EmptyFrameFallback,
 }
 
-struct SourcedGpuWorkCommand<Source, Command> {
-    source: Source,
-    command: Command,
-}
-
 type PreparedMode1EffectRenderCommand<'rank, 'frame> =
     SourcedGpuWorkCommand<Mode1EffectCommandSource, ModernGpuWorkCommand<'rank, 'frame>>;
 type Mode1EffectCommandPlan<'rank, 'frame> =
     GpuRenderPlan<PreparedMode1EffectRenderCommand<'rank, 'frame>>;
-
-impl<Source, Command> GpuWorkItem for SourcedGpuWorkCommand<Source, Command>
-where
-    Command: GpuWorkItem,
-{
-    fn kind(&self) -> GpuWorkItemKind {
-        GpuWorkItem::kind(&self.command)
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode1EffectCommandSource {
