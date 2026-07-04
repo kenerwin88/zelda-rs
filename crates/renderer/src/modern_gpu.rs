@@ -527,24 +527,13 @@ impl ModernGpuVariantRenderer {
         let mut stats = prepared.initial_stats();
         match prepared.live_render_path() {
             ModernVariantRenderPath::EffectMaterialMode1Order => {
-                self.render_effect_material_mode1_order(
-                    device,
-                    queue,
-                    prepared.frame(),
-                    prepared.bg_cells(),
-                    prepared.sprite_cells(),
-                    prepared.plan(),
-                    output_view,
-                );
+                self.render_effect_material_mode1_order(device, queue, prepared, output_view);
             }
             ModernVariantRenderPath::LiveIndexBaseWithOverlay => {
                 self.render_live_index_base_with_overlay(
                     device,
                     queue,
-                    prepared.frame(),
-                    prepared.bg_cells(),
-                    prepared.sprite_cells(),
-                    prepared.plan(),
+                    prepared,
                     output_view,
                     &mut stats,
                 );
@@ -553,22 +542,13 @@ impl ModernGpuVariantRenderer {
                 self.render_effect_material_with_stable_overlay(
                     device,
                     queue,
-                    prepared.frame(),
-                    prepared.bg_cells(),
-                    prepared.sprite_cells(),
-                    prepared.plan(),
-                    prepared.variant_frame(),
+                    prepared,
                     &stats,
                     output_view,
                 );
             }
             ModernVariantRenderPath::StableVariantFrame => {
-                self.render_stable_variant_frame(
-                    device,
-                    queue,
-                    prepared.variant_frame(),
-                    output_view,
-                );
+                self.render_stable_variant_frame(device, queue, prepared, output_view);
             }
         }
         stats
@@ -604,23 +584,21 @@ impl ModernGpuVariantRenderer {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_live_index_base_with_overlay(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        frame: &ModernFrame,
-        bg_cells: &[ModernIndexTile],
-        sprite_cells: &[ModernIndexTile],
-        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+        prepared: &PreparedModernVariantRender<'_>,
         output_view: &wgpu::TextureView,
         stats: &mut crate::modern_software::VariantAtlasRenderStats,
     ) {
+        let frame = prepared.frame();
+        let bg_cells = prepared.bg_cells();
         let bg = ModernGpuIndexRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
         let spr = ModernGpuSpriteRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
         bg.render(device, queue, bg_cells, frame, output_view);
-        spr.render(device, queue, sprite_cells, frame, output_view);
-        let overlay = mixed_variant_overlay_bg_packets(frame, plan);
+        spr.render(device, queue, prepared.sprite_cells(), frame, output_view);
+        let overlay = mixed_variant_overlay_bg_packets(frame, prepared.plan());
         record_live_mixed_overlay_bg_effect_stats(stats, &overlay);
         self.effect_renderer.render_overlay_bg_effects(
             device,
@@ -633,31 +611,18 @@ impl ModernGpuVariantRenderer {
         );
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_effect_material_with_stable_overlay(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        frame: &ModernFrame,
-        bg_cells: &[ModernIndexTile],
-        sprite_cells: &[ModernIndexTile],
-        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
-        variant_frame: &ModernFrame,
+        prepared: &PreparedModernVariantRender<'_>,
         stats: &crate::modern_software::VariantAtlasRenderStats,
         output_view: &wgpu::TextureView,
     ) {
-        self.render_effect_material_mode1_order(
-            device,
-            queue,
-            frame,
-            bg_cells,
-            sprite_cells,
-            plan,
-            output_view,
-        );
+        self.render_effect_material_mode1_order(device, queue, prepared, output_view);
         if stats.stable_preview_draws != 0 {
             self.renderer
-                .render_overlay(device, queue, variant_frame, output_view);
+                .render_overlay(device, queue, prepared.variant_frame(), output_view);
         }
     }
 
@@ -665,25 +630,25 @@ impl ModernGpuVariantRenderer {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        variant_frame: &ModernFrame,
+        prepared: &PreparedModernVariantRender<'_>,
         output_view: &wgpu::TextureView,
     ) {
         self.renderer
-            .render(device, queue, variant_frame, output_view);
+            .render(device, queue, prepared.variant_frame(), output_view);
     }
 
     fn render_effect_material_mode1_order(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        frame: &ModernFrame,
-        bg_cells: &[ModernIndexTile],
-        sprite_cells: &[ModernIndexTile],
-        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+        prepared: &PreparedModernVariantRender<'_>,
         output_view: &wgpu::TextureView,
     ) {
+        let frame = prepared.frame();
+        let bg_cells = prepared.bg_cells();
+        let sprite_cells = prepared.sprite_cells();
         let mut rendered_any = false;
-        for rank_dispatch in mode1_effect_rank_dispatches(plan) {
+        for rank_dispatch in mode1_effect_rank_dispatches(prepared.plan()) {
             let rank_plan = rank_dispatch.render_plan(&self.atlas, rendered_any);
             rendered_any = self.render_effect_rank_plan(
                 device,
@@ -5291,72 +5256,51 @@ impl ModernGpuVariantHeadless {
         let mut stats = prepared.initial_stats();
         match prepared.headless_render_path() {
             ModernVariantRenderPath::EffectMaterialMode1Order => {
-                self.render_effect_material_mode1_order(
-                    prepared.frame(),
-                    prepared.bg_cells(),
-                    prepared.sprite_cells(),
-                    prepared.plan(),
-                );
+                self.render_effect_material_mode1_order(prepared);
             }
             ModernVariantRenderPath::LiveIndexBaseWithOverlay => {
-                self.render_live_index_with_overlay(
-                    prepared.frame(),
-                    prepared.bg_cells(),
-                    live_index_base,
-                    prepared.plan(),
-                    &mut stats,
-                );
+                self.render_live_index_with_overlay(live_index_base, prepared, &mut stats);
             }
             ModernVariantRenderPath::EffectMaterialWithStableOverlay => {
                 self.render_effect_material_with_stable_overlay(
-                    prepared.frame(),
-                    prepared.bg_cells(),
-                    prepared.sprite_cells(),
                     live_index_base,
-                    prepared.plan(),
-                    prepared.variant_frame(),
+                    prepared,
                     &mut stats,
                 );
             }
             ModernVariantRenderPath::StableVariantFrame => {
-                self.render_stable_variant_frame(prepared.variant_frame());
+                self.render_stable_variant_frame(prepared);
             }
         }
         (self.read_target_rgba(), stats)
     }
 
-    fn render_effect_material_mode1_order(
-        &self,
-        frame: &ModernFrame,
-        bg_cells: &[ModernIndexTile],
-        sprite_cells: &[ModernIndexTile],
-        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
-    ) {
+    fn render_effect_material_mode1_order(&self, prepared: &PreparedModernVariantRender<'_>) {
         self.renderer.render_effect_material_mode1_order(
             &self.device,
             &self.queue,
-            frame,
-            bg_cells,
-            sprite_cells,
-            plan,
+            prepared,
             &self.target_view,
         );
     }
 
-    fn render_stable_variant_frame(&self, variant_frame: &ModernFrame) {
-        self.renderer
-            .renderer
-            .render(&self.device, &self.queue, variant_frame, &self.target_view);
+    fn render_stable_variant_frame(&self, prepared: &PreparedModernVariantRender<'_>) {
+        self.renderer.renderer.render(
+            &self.device,
+            &self.queue,
+            prepared.variant_frame(),
+            &self.target_view,
+        );
     }
 
     fn render_live_index_with_overlay(
         &self,
-        frame: &ModernFrame,
-        bg_cells: &[ModernIndexTile],
         live_index_base: &LiveIndexVariantBase<'_>,
-        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+        prepared: &PreparedModernVariantRender<'_>,
         stats: &mut crate::modern_software::VariantAtlasRenderStats,
     ) {
+        let frame = prepared.frame();
+        let plan = prepared.plan();
         let overlay = mixed_variant_prefinal_bg_packets(frame, plan);
         let final_overlay = mixed_variant_overlay_bg_packets(frame, plan);
         let prefinal_packets = MixedVariantPrefinalPackets::from_overlay(frame, &overlay, plan);
@@ -5368,7 +5312,7 @@ impl ModernGpuVariantHeadless {
             &prefinal_packets,
         );
         self.render_live_index_prefinal_base(
-            frame,
+            prepared,
             live_index_base,
             &final_overlay,
             &prefinal_packets,
@@ -5377,7 +5321,7 @@ impl ModernGpuVariantHeadless {
         self.renderer.effect_renderer.render_overlay_bg_effects(
             &self.device,
             &self.queue,
-            bg_cells,
+            prepared.bg_cells(),
             frame,
             &self.renderer.atlas,
             &final_overlay,
@@ -5387,7 +5331,7 @@ impl ModernGpuVariantHeadless {
 
     fn render_live_index_prefinal_base(
         &self,
-        frame: &ModernFrame,
+        prepared: &PreparedModernVariantRender<'_>,
         live_index_base: &LiveIndexVariantBase<'_>,
         final_overlay: &MixedVariantOverlayBgSelection<'_>,
         prefinal_packets: &MixedVariantPrefinalPackets<'_>,
@@ -5433,7 +5377,7 @@ impl ModernGpuVariantHeadless {
                     &self.queue,
                     live_index_base.frame(),
                     live_index_base.frame(),
-                    frame,
+                    prepared.frame(),
                     live_index_base.bg_cells(),
                     live_index_base.sprite_cells(),
                     prefinal_packets,
@@ -5443,29 +5387,22 @@ impl ModernGpuVariantHeadless {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_effect_material_with_stable_overlay(
         &self,
-        frame: &ModernFrame,
-        bg_cells: &[ModernIndexTile],
-        sprite_cells: &[ModernIndexTile],
         live_index_base: &LiveIndexVariantBase<'_>,
-        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
-        variant_frame: &ModernFrame,
+        prepared: &PreparedModernVariantRender<'_>,
         stats: &mut crate::modern_software::VariantAtlasRenderStats,
     ) {
+        let frame = prepared.frame();
         if frame_needs_material_prefinal_finalizer(frame) {
             let build_result =
-                self.render_effect_material_with_prefinal_base(frame, live_index_base, plan);
+                self.render_effect_material_with_prefinal_base(live_index_base, prepared);
             record_screen_builder_result(stats, build_result);
         } else {
             self.renderer.render_effect_material_mode1_order(
                 &self.device,
                 &self.queue,
-                frame,
-                bg_cells,
-                sprite_cells,
-                plan,
+                prepared,
                 &self.target_view,
             );
         }
@@ -5473,7 +5410,7 @@ impl ModernGpuVariantHeadless {
             self.renderer.renderer.render_overlay(
                 &self.device,
                 &self.queue,
-                variant_frame,
+                prepared.variant_frame(),
                 &self.target_view,
             );
         }
@@ -5481,10 +5418,11 @@ impl ModernGpuVariantHeadless {
 
     fn render_effect_material_with_prefinal_base(
         &self,
-        frame: &ModernFrame,
         live_index_base: &LiveIndexVariantBase<'_>,
-        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+        prepared: &PreparedModernVariantRender<'_>,
     ) -> ModernScreenBuilderResult {
+        let frame = prepared.frame();
+        let plan = prepared.plan();
         let overlay = mixed_variant_prefinal_bg_packets(frame, plan);
         let prefinal_packets = MixedVariantPrefinalPackets::from_all_overlay(&overlay, plan);
         if prefinal_packets.is_bg_empty() {
