@@ -383,6 +383,12 @@ impl PreparedModernVariantRender<'_> {
     }
 }
 
+struct LiveIndexVariantBase<'a> {
+    frame: &'a ModernFrame,
+    bg_cells: &'a [ModernIndexTile],
+    sprite_cells: &'a [ModernIndexTile],
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ModernVariantRenderPath {
     EffectMaterialMode1Order,
@@ -5235,20 +5241,17 @@ impl ModernGpuVariantHeadless {
             bg_palette_name,
             sprite_palette_name,
         );
-        self.render_prepared_variant_rgba(
-            live_index_frame,
-            live_index_bg_cells,
-            live_index_sprite_cells,
-            &prepared,
-        )
+        let live_index_base = LiveIndexVariantBase {
+            frame: live_index_frame,
+            bg_cells: live_index_bg_cells,
+            sprite_cells: live_index_sprite_cells,
+        };
+        self.render_prepared_variant_rgba(&live_index_base, &prepared)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_prepared_variant_rgba(
         &self,
-        live_index_frame: &ModernFrame,
-        live_index_bg_cells: &[ModernIndexTile],
-        live_index_sprite_cells: &[ModernIndexTile],
+        live_index_base: &LiveIndexVariantBase<'_>,
         prepared: &PreparedModernVariantRender<'_>,
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
         let mut stats = prepared.initial_stats();
@@ -5265,9 +5268,7 @@ impl ModernGpuVariantHeadless {
                 self.render_live_index_with_overlay(
                     prepared.frame,
                     prepared.bg_cells,
-                    live_index_frame,
-                    live_index_bg_cells,
-                    live_index_sprite_cells,
+                    live_index_base,
                     &prepared.plan,
                     &mut stats,
                 );
@@ -5277,9 +5278,7 @@ impl ModernGpuVariantHeadless {
                     prepared.frame,
                     prepared.bg_cells,
                     prepared.sprite_cells,
-                    live_index_frame,
-                    live_index_bg_cells,
-                    live_index_sprite_cells,
+                    live_index_base,
                     &prepared.plan,
                     &prepared.variant_frame,
                     &mut stats,
@@ -5316,14 +5315,11 @@ impl ModernGpuVariantHeadless {
             .render(&self.device, &self.queue, variant_frame, &self.target_view);
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_live_index_with_overlay(
         &self,
         frame: &ModernFrame,
         bg_cells: &[ModernIndexTile],
-        live_index_frame: &ModernFrame,
-        live_index_bg_cells: &[ModernIndexTile],
-        live_index_sprite_cells: &[ModernIndexTile],
+        live_index_base: &LiveIndexVariantBase<'_>,
         plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
         stats: &mut crate::modern_software::VariantAtlasRenderStats,
     ) {
@@ -5339,9 +5335,7 @@ impl ModernGpuVariantHeadless {
         );
         self.render_live_index_prefinal_base(
             frame,
-            live_index_frame,
-            live_index_bg_cells,
-            live_index_sprite_cells,
+            live_index_base,
             &final_overlay,
             &prefinal_packets,
             stats,
@@ -5357,20 +5351,17 @@ impl ModernGpuVariantHeadless {
         );
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_live_index_prefinal_base(
         &self,
         frame: &ModernFrame,
-        live_index_frame: &ModernFrame,
-        live_index_bg_cells: &[ModernIndexTile],
-        live_index_sprite_cells: &[ModernIndexTile],
+        live_index_base: &LiveIndexVariantBase<'_>,
         final_overlay: &MixedVariantOverlayBgSelection<'_>,
         prefinal_packets: &MixedVariantPrefinalPackets<'_>,
         stats: &mut crate::modern_software::VariantAtlasRenderStats,
     ) {
         if prefinal_packets.is_bg_empty()
-            && (can_render_forced_blank_base_directly(live_index_frame, final_overlay)
-                || can_render_final_index_base_gpu(live_index_frame, live_index_bg_cells))
+            && (can_render_forced_blank_base_directly(live_index_base.frame, final_overlay)
+                || can_render_final_index_base_gpu(live_index_base.frame, live_index_base.bg_cells))
         {
             stats.gpu_prefinal_base_frames += 1;
             let bg = ModernGpuIndexRenderer::new(
@@ -5378,12 +5369,12 @@ impl ModernGpuVariantHeadless {
                 &self.queue,
                 wgpu::TextureFormat::Rgba8Unorm,
             );
-            let mut final_live_index_frame = live_index_frame.clone();
+            let mut final_live_index_frame = live_index_base.frame.clone();
             finalize_modern_frame_colors_for_direct_index(&mut final_live_index_frame);
             bg.render(
                 &self.device,
                 &self.queue,
-                live_index_bg_cells,
+                live_index_base.bg_cells,
                 &final_live_index_frame,
                 &self.target_view,
             );
@@ -5391,9 +5382,9 @@ impl ModernGpuVariantHeadless {
             let build_result = self.compositor.render_with_screen_builder_status(
                 &self.device,
                 &self.queue,
-                live_index_frame,
-                live_index_bg_cells,
-                live_index_sprite_cells,
+                live_index_base.frame,
+                live_index_base.bg_cells,
+                live_index_base.sprite_cells,
                 &self.target,
             );
             record_screen_builder_result(stats, build_result);
@@ -5403,11 +5394,11 @@ impl ModernGpuVariantHeadless {
                 .render_prefinal_overlay_screens_with_final_frame(
                     &self.device,
                     &self.queue,
-                    live_index_frame,
-                    live_index_frame,
+                    live_index_base.frame,
+                    live_index_base.frame,
                     frame,
-                    live_index_bg_cells,
-                    live_index_sprite_cells,
+                    live_index_base.bg_cells,
+                    live_index_base.sprite_cells,
                     prefinal_packets,
                     &self.target,
                 );
@@ -5421,21 +5412,14 @@ impl ModernGpuVariantHeadless {
         frame: &ModernFrame,
         bg_cells: &[ModernIndexTile],
         sprite_cells: &[ModernIndexTile],
-        live_index_frame: &ModernFrame,
-        live_index_bg_cells: &[ModernIndexTile],
-        live_index_sprite_cells: &[ModernIndexTile],
+        live_index_base: &LiveIndexVariantBase<'_>,
         plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
         variant_frame: &ModernFrame,
         stats: &mut crate::modern_software::VariantAtlasRenderStats,
     ) {
         if frame_needs_material_prefinal_finalizer(frame) {
-            let build_result = self.render_effect_material_with_prefinal_base(
-                frame,
-                live_index_frame,
-                live_index_bg_cells,
-                live_index_sprite_cells,
-                plan,
-            );
+            let build_result =
+                self.render_effect_material_with_prefinal_base(frame, live_index_base, plan);
             record_screen_builder_result(stats, build_result);
         } else {
             self.renderer.render_effect_material_mode1_order(
@@ -5461,9 +5445,7 @@ impl ModernGpuVariantHeadless {
     fn render_effect_material_with_prefinal_base(
         &self,
         frame: &ModernFrame,
-        live_index_frame: &ModernFrame,
-        live_index_bg_cells: &[ModernIndexTile],
-        live_index_sprite_cells: &[ModernIndexTile],
+        live_index_base: &LiveIndexVariantBase<'_>,
         plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
     ) -> ModernScreenBuilderResult {
         let overlay = mixed_variant_prefinal_bg_packets(frame, plan);
@@ -5472,10 +5454,10 @@ impl ModernGpuVariantHeadless {
             return self.compositor.render_prefinal_screens_with_final_frame(
                 &self.device,
                 &self.queue,
-                live_index_frame,
+                live_index_base.frame,
                 frame,
-                live_index_bg_cells,
-                live_index_sprite_cells,
+                live_index_base.bg_cells,
+                live_index_base.sprite_cells,
                 &self.target,
             );
         }
@@ -5483,11 +5465,11 @@ impl ModernGpuVariantHeadless {
             .render_prefinal_overlay_screens_with_final_frame(
                 &self.device,
                 &self.queue,
-                live_index_frame,
+                live_index_base.frame,
                 frame,
                 frame,
-                live_index_bg_cells,
-                live_index_sprite_cells,
+                live_index_base.bg_cells,
+                live_index_base.sprite_cells,
                 &prefinal_packets,
                 &self.target,
             )
