@@ -358,6 +358,40 @@ pub struct ModernGpuVariantRenderer {
     effect_renderer: ModernGpuVariantEffectRenderer,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ModernVariantRenderPath {
+    EffectMaterialMode1Order,
+    LiveIndexBaseWithOverlay,
+    EffectMaterialWithStableOverlay,
+    StableVariantFrame,
+}
+
+fn live_variant_render_path(
+    stats: &crate::modern_software::VariantAtlasRenderStats,
+) -> ModernVariantRenderPath {
+    if !stats.needs_live_index_base() && stats.effect_draws == stats.stable_draws {
+        ModernVariantRenderPath::EffectMaterialMode1Order
+    } else if stats.needs_live_index_base() {
+        ModernVariantRenderPath::LiveIndexBaseWithOverlay
+    } else if stats.effect_draws != 0 {
+        ModernVariantRenderPath::EffectMaterialWithStableOverlay
+    } else {
+        ModernVariantRenderPath::StableVariantFrame
+    }
+}
+
+fn headless_variant_render_path(
+    stats: &crate::modern_software::VariantAtlasRenderStats,
+) -> ModernVariantRenderPath {
+    if stats.needs_live_index_base() {
+        ModernVariantRenderPath::LiveIndexBaseWithOverlay
+    } else if stats.effect_draws != 0 {
+        ModernVariantRenderPath::EffectMaterialWithStableOverlay
+    } else {
+        ModernVariantRenderPath::StableVariantFrame
+    }
+}
+
 fn debug_variant_missing_key(key: &crate::modern_variant_atlas::VariantAtlasKey) {
     static PRINTED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let Ok(limit) = std::env::var("ZELDA3_VARIANT_DEBUG_MISSING") else {
@@ -417,77 +451,85 @@ impl ModernGpuVariantRenderer {
         );
         let variant_frame = self.build_variant_frame_from_plan(frame, &plan);
         let mut stats = plan.stats;
-        if !stats.needs_live_index_base() && stats.effect_draws == stats.stable_draws {
-            self.render_effect_material_mode1_order(
-                device,
-                queue,
-                frame,
-                bg_cells,
-                sprite_cells,
-                &plan,
-                output_view,
-            );
-            return stats;
-        }
-        if stats.needs_live_index_base() {
-            let bg = ModernGpuIndexRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
-            let spr = ModernGpuSpriteRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
-            bg.render(device, queue, bg_cells, frame, output_view);
-            spr.render(device, queue, sprite_cells, frame, output_view);
-            let overlay = mixed_variant_overlay_bg_packets(frame, &plan);
-            stats.mixed_overlay_bg_effect_draws += overlay.effects.len() as u32;
-            stats.mixed_overlay_bg_effect_candidates += overlay.candidates;
-            stats.mixed_overlay_bg_effect_culled_invisible_main += overlay.culled_invisible_main;
-            stats.mixed_overlay_bg_effect_reject_complex_frame += overlay.reject_complex_frame;
-            stats.mixed_overlay_bg_effect_reject_complex_brightness +=
-                overlay.reject_complex_brightness;
-            stats.mixed_overlay_bg_effect_reject_complex_invalid_layer +=
-                overlay.reject_complex_invalid_layer;
-            stats.mixed_overlay_bg_effect_reject_complex_mosaic += overlay.reject_complex_mosaic;
-            stats.mixed_overlay_bg_effect_reject_complex_sub_window +=
-                overlay.reject_complex_sub_window;
-            stats.mixed_overlay_bg_effect_reject_complex_effect_bounds +=
-                overlay.reject_complex_effect_bounds;
-            stats.mixed_overlay_bg_effect_reject_complex_scanline_main +=
-                overlay.reject_complex_scanline_main;
-            stats.mixed_overlay_bg_effect_reject_complex_layer_window +=
-                overlay.reject_complex_layer_window;
-            stats.mixed_overlay_bg_effect_reject_complex_color_math +=
-                overlay.reject_complex_color_math;
-            stats.mixed_overlay_bg_effect_reject_complex_color_math_clip +=
-                overlay.reject_complex_color_math_clip;
-            stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen +=
-                overlay.reject_complex_color_math_subscreen;
-            stats.mixed_overlay_bg_effect_reject_complex_color_math_fixed_color +=
-                overlay.reject_complex_color_math_fixed_color;
-            stats.mixed_overlay_bg_effect_reject_cgram_mismatch += overlay.reject_cgram_mismatch;
-            stats.mixed_overlay_bg_effect_reject_overlap += overlay.reject_overlap;
-            self.effect_renderer.render_overlay_bg_effects(
-                device,
-                queue,
-                bg_cells,
-                frame,
-                &self.atlas,
-                &overlay,
-                output_view,
-            );
-        } else if stats.effect_draws != 0 {
-            self.render_effect_material_mode1_order(
-                device,
-                queue,
-                frame,
-                bg_cells,
-                sprite_cells,
-                &plan,
-                output_view,
-            );
-            if stats.stable_preview_draws != 0 {
-                self.renderer
-                    .render_overlay(device, queue, &variant_frame, output_view);
+        match live_variant_render_path(&stats) {
+            ModernVariantRenderPath::EffectMaterialMode1Order => {
+                self.render_effect_material_mode1_order(
+                    device,
+                    queue,
+                    frame,
+                    bg_cells,
+                    sprite_cells,
+                    &plan,
+                    output_view,
+                );
             }
-        } else {
-            self.renderer
-                .render(device, queue, &variant_frame, output_view);
+            ModernVariantRenderPath::LiveIndexBaseWithOverlay => {
+                let bg =
+                    ModernGpuIndexRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
+                let spr =
+                    ModernGpuSpriteRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
+                bg.render(device, queue, bg_cells, frame, output_view);
+                spr.render(device, queue, sprite_cells, frame, output_view);
+                let overlay = mixed_variant_overlay_bg_packets(frame, &plan);
+                stats.mixed_overlay_bg_effect_draws += overlay.effects.len() as u32;
+                stats.mixed_overlay_bg_effect_candidates += overlay.candidates;
+                stats.mixed_overlay_bg_effect_culled_invisible_main +=
+                    overlay.culled_invisible_main;
+                stats.mixed_overlay_bg_effect_reject_complex_frame += overlay.reject_complex_frame;
+                stats.mixed_overlay_bg_effect_reject_complex_brightness +=
+                    overlay.reject_complex_brightness;
+                stats.mixed_overlay_bg_effect_reject_complex_invalid_layer +=
+                    overlay.reject_complex_invalid_layer;
+                stats.mixed_overlay_bg_effect_reject_complex_mosaic +=
+                    overlay.reject_complex_mosaic;
+                stats.mixed_overlay_bg_effect_reject_complex_sub_window +=
+                    overlay.reject_complex_sub_window;
+                stats.mixed_overlay_bg_effect_reject_complex_effect_bounds +=
+                    overlay.reject_complex_effect_bounds;
+                stats.mixed_overlay_bg_effect_reject_complex_scanline_main +=
+                    overlay.reject_complex_scanline_main;
+                stats.mixed_overlay_bg_effect_reject_complex_layer_window +=
+                    overlay.reject_complex_layer_window;
+                stats.mixed_overlay_bg_effect_reject_complex_color_math +=
+                    overlay.reject_complex_color_math;
+                stats.mixed_overlay_bg_effect_reject_complex_color_math_clip +=
+                    overlay.reject_complex_color_math_clip;
+                stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen +=
+                    overlay.reject_complex_color_math_subscreen;
+                stats.mixed_overlay_bg_effect_reject_complex_color_math_fixed_color +=
+                    overlay.reject_complex_color_math_fixed_color;
+                stats.mixed_overlay_bg_effect_reject_cgram_mismatch +=
+                    overlay.reject_cgram_mismatch;
+                stats.mixed_overlay_bg_effect_reject_overlap += overlay.reject_overlap;
+                self.effect_renderer.render_overlay_bg_effects(
+                    device,
+                    queue,
+                    bg_cells,
+                    frame,
+                    &self.atlas,
+                    &overlay,
+                    output_view,
+                );
+            }
+            ModernVariantRenderPath::EffectMaterialWithStableOverlay => {
+                self.render_effect_material_mode1_order(
+                    device,
+                    queue,
+                    frame,
+                    bg_cells,
+                    sprite_cells,
+                    &plan,
+                    output_view,
+                );
+                if stats.stable_preview_draws != 0 {
+                    self.renderer
+                        .render_overlay(device, queue, &variant_frame, output_view);
+                }
+            }
+            ModernVariantRenderPath::StableVariantFrame => {
+                self.renderer
+                    .render(device, queue, &variant_frame, output_view);
+            }
         }
         stats
     }
@@ -4962,7 +5004,8 @@ impl ModernGpuVariantHeadless {
         );
         let variant_frame = self.renderer.build_variant_frame_from_plan(frame, &plan);
         let mut stats = plan.stats;
-        if stats.needs_live_index_base() {
+        let render_path = headless_variant_render_path(&stats);
+        if render_path == ModernVariantRenderPath::LiveIndexBaseWithOverlay {
             let overlay = mixed_variant_prefinal_bg_packets(frame, &plan);
             let final_overlay = mixed_variant_overlay_bg_packets(frame, &plan);
             let prefinal_packets =
@@ -5129,7 +5172,7 @@ impl ModernGpuVariantHeadless {
                 &final_overlay,
                 &self.target_view,
             );
-        } else if stats.effect_draws != 0 {
+        } else if render_path == ModernVariantRenderPath::EffectMaterialWithStableOverlay {
             if frame_needs_material_prefinal_finalizer(frame) {
                 let build_result = self.render_effect_material_with_prefinal_base(
                     frame,
@@ -5270,7 +5313,82 @@ impl ModernGpuVariantHeadless {
 mod tests {
     use super::*;
     use crate::modern_frame::{ModernBgLayer, ModernFrame, ModernTileInstance};
-    use crate::modern_software::render_modern_frame_software;
+    use crate::modern_software::{render_modern_frame_software, VariantAtlasRenderStats};
+
+    #[test]
+    fn variant_render_path_names_live_renderer_fallback_choices() {
+        let empty = VariantAtlasRenderStats::default();
+        assert_eq!(
+            live_variant_render_path(&empty),
+            ModernVariantRenderPath::EffectMaterialMode1Order
+        );
+
+        let stable_only = VariantAtlasRenderStats {
+            stable_draws: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            live_variant_render_path(&stable_only),
+            ModernVariantRenderPath::StableVariantFrame
+        );
+
+        let all_effect = VariantAtlasRenderStats {
+            stable_draws: 1,
+            effect_draws: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            live_variant_render_path(&all_effect),
+            ModernVariantRenderPath::EffectMaterialMode1Order
+        );
+
+        let mixed_stable_effect = VariantAtlasRenderStats {
+            stable_draws: 2,
+            effect_draws: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            live_variant_render_path(&mixed_stable_effect),
+            ModernVariantRenderPath::EffectMaterialWithStableOverlay
+        );
+
+        let live_index = VariantAtlasRenderStats {
+            fallback_draws: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            live_variant_render_path(&live_index),
+            ModernVariantRenderPath::LiveIndexBaseWithOverlay
+        );
+    }
+
+    #[test]
+    fn variant_render_path_preserves_headless_empty_frame_path() {
+        let empty = VariantAtlasRenderStats::default();
+        assert_eq!(
+            headless_variant_render_path(&empty),
+            ModernVariantRenderPath::StableVariantFrame
+        );
+
+        let all_effect = VariantAtlasRenderStats {
+            stable_draws: 1,
+            effect_draws: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            headless_variant_render_path(&all_effect),
+            ModernVariantRenderPath::EffectMaterialWithStableOverlay
+        );
+
+        let live_index = VariantAtlasRenderStats {
+            live_index_draws: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            headless_variant_render_path(&live_index),
+            ModernVariantRenderPath::LiveIndexBaseWithOverlay
+        );
+    }
 
     #[test]
     fn modern_gpu_one_tile_matches_software() {
