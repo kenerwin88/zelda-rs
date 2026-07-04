@@ -14,8 +14,8 @@ use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_work_command::{
     GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMode7Pass, GpuFramePlan,
-    GpuFramePostProcessPass, GpuFramePrepareCommand, GpuFramePreparePlan, GpuFrameRenderPlan,
-    GpuFrameRenderScreen, GpuFrameScreenWorkCommand, GpuFrameSpritePass, GpuFrameWorkCommand,
+    GpuFramePlanCommand, GpuFramePostProcessPass, GpuFramePrepareCommand, GpuFrameRenderScreen,
+    GpuFrameScreenWorkCommand, GpuFrameSpritePass, GpuFrameWorkCommand,
 };
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
@@ -137,20 +137,30 @@ impl GpuFrameRenderer {
         frame: &GpuFrame<'_>,
         output_view: &wgpu::TextureView,
     ) {
-        let (prepare_plan, render_plan) = GpuFramePlan::from_frame(frame).into_parts();
-        self.execute_prepare_plan(queue, frame, prepare_plan);
-
-        self.execute_render_plan(encoder, queue, frame, output_view, render_plan);
+        self.execute_frame_plan(
+            encoder,
+            queue,
+            frame,
+            output_view,
+            GpuFramePlan::from_frame(frame),
+        );
     }
 
-    fn execute_prepare_plan(
+    fn execute_frame_plan(
         &mut self,
+        encoder: &mut wgpu::CommandEncoder,
         queue: &wgpu::Queue,
         frame: &GpuFrame<'_>,
-        prepare_plan: GpuFramePreparePlan,
+        output_view: &wgpu::TextureView,
+        frame_plan: GpuFramePlan,
     ) {
-        prepare_plan.execute_with(|command| {
-            self.prepare_gpu_work_command(queue, frame, command);
+        frame_plan.execute_with(|command| match command {
+            GpuFramePlanCommand::Prepare(command) => {
+                self.prepare_gpu_work_command(queue, frame, command);
+            }
+            GpuFramePlanCommand::Render(command) => {
+                self.render_gpu_work_command(encoder, queue, frame, output_view, command);
+            }
         });
     }
 
@@ -180,19 +190,6 @@ impl GpuFrameRenderer {
                 );
             }
         }
-    }
-
-    fn execute_render_plan(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        queue: &wgpu::Queue,
-        frame: &GpuFrame<'_>,
-        output_view: &wgpu::TextureView,
-        render_plan: GpuFrameRenderPlan,
-    ) {
-        render_plan.execute_with(|command| {
-            self.render_gpu_work_command(encoder, queue, frame, output_view, command);
-        });
     }
 
     fn render_gpu_work_command(

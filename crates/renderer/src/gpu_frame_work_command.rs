@@ -190,6 +190,12 @@ pub(crate) struct GpuFramePlan {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GpuFramePlanCommand {
+    Prepare(GpuFramePrepareCommand),
+    Render(GpuFrameWorkCommand),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuFramePrepareCommand {
     CgramPalette,
     TileAtlas,
@@ -244,8 +250,14 @@ impl GpuFramePlan {
         }
     }
 
-    pub(crate) fn into_parts(self) -> (GpuFramePreparePlan, GpuFrameRenderPlan) {
-        (self.prepare_plan, self.render_plan)
+    pub(crate) fn execute_with<F>(self, mut execute: F)
+    where
+        F: FnMut(GpuFramePlanCommand),
+    {
+        self.prepare_plan
+            .execute_with(|command| execute(GpuFramePlanCommand::Prepare(command)));
+        self.render_plan
+            .execute_with(|command| execute(GpuFramePlanCommand::Render(command)));
     }
 
     #[cfg(test)]
@@ -839,6 +851,46 @@ mod tests {
         assert_eq!(
             frame_plan.render_plan().work_items(),
             &[bg, sprite, post_process]
+        );
+    }
+
+    #[test]
+    fn frame_plan_executes_prepare_phase_before_render_phase() {
+        let bg = main_frame_work_command(GpuFrameScreenWorkCommand::BgLayer(
+            GpuFrameBgPass::mode1_main(0, false, 0),
+        ));
+        let sprite = main_frame_work_command(GpuFrameScreenWorkCommand::SpritePriority(
+            GpuFrameSpritePass::new(0, 4, GpuFrameWindowSelector::main(0x10, 16)),
+        ));
+        let post_process = post_process_frame_work_command();
+        let frame_plan = GpuFramePlan::from_render_plan(GpuFrameRenderPlan::from_iter([
+            bg,
+            sprite,
+            post_process,
+        ]));
+        let trace = std::cell::RefCell::new(Vec::new());
+
+        frame_plan.execute_with(|command| match command {
+            GpuFramePlanCommand::Prepare(command) => {
+                trace.borrow_mut().push(format!("prepare:{command:?}"));
+            }
+            GpuFramePlanCommand::Render(command) => {
+                trace
+                    .borrow_mut()
+                    .push(format!("render:{:?}", command.kind()));
+            }
+        });
+
+        assert_eq!(
+            trace.into_inner(),
+            vec![
+                "prepare:CgramPalette",
+                "prepare:TileAtlas",
+                "prepare:Sprites",
+                "render:MainBgLayer",
+                "render:MainSpritePriority",
+                "render:PostProcess",
+            ]
         );
     }
 }
