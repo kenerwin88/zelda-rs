@@ -570,23 +570,27 @@ impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
                 let mut rendered_any = rendered_before;
                 render_plan.into_iter().map(move |work_item| {
                     let target_load = if rendered_any {
-                        Mode1EffectCommandLoad::Load
+                        ModernGpuCommandLoad::Load
                     } else {
-                        Mode1EffectCommandLoad::ClearFrame
+                        ModernGpuCommandLoad::ClearFrame
                     };
                     rendered_any = true;
                     PreparedMode1EffectRenderCommand {
                         source: Mode1EffectCommandSource::Rank(rank_index),
-                        target_load,
-                        work_item,
+                        command: ModernGpuWorkCommand {
+                            target_load,
+                            work_item,
+                        },
                     }
                 })
             })
             .chain(
                 needs_empty_frame_fallback.then_some(PreparedMode1EffectRenderCommand {
                     source: Mode1EffectCommandSource::EmptyFrameFallback,
-                    target_load: Mode1EffectCommandLoad::ClearFrame,
-                    work_item: ModernGpuWorkItem::ClearBackdrop,
+                    command: ModernGpuWorkCommand {
+                        target_load: ModernGpuCommandLoad::ClearFrame,
+                        work_item: ModernGpuWorkItem::ClearBackdrop,
+                    },
                 }),
             )
     }
@@ -655,8 +659,7 @@ enum PreparedMode1EffectRenderStep<'rank, 'frame> {
 
 struct PreparedMode1EffectRenderCommand<'rank, 'frame> {
     source: Mode1EffectCommandSource,
-    target_load: Mode1EffectCommandLoad,
-    work_item: ModernGpuWorkItem<'rank, 'frame>,
+    command: ModernGpuWorkCommand<'rank, 'frame>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -666,7 +669,7 @@ enum Mode1EffectCommandSource {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Mode1EffectCommandLoad {
+enum ModernGpuCommandLoad {
     ClearFrame,
     Load,
 }
@@ -676,8 +679,7 @@ impl PreparedMode1EffectRenderCommand<'_, '_> {
     fn kind(&self) -> PreparedMode1EffectRenderCommandKind {
         PreparedMode1EffectRenderCommandKind::Work {
             source: self.source,
-            target_load: self.target_load,
-            work_item: self.work_item.kind(),
+            command: self.command.kind(),
         }
     }
 }
@@ -712,9 +714,15 @@ enum PreparedMode1EffectRenderStepKind {
 enum PreparedMode1EffectRenderCommandKind {
     Work {
         source: Mode1EffectCommandSource,
-        target_load: Mode1EffectCommandLoad,
-        work_item: GpuWorkItemKind,
+        command: ModernGpuWorkCommandKind,
     },
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ModernGpuWorkCommandKind {
+    target_load: ModernGpuCommandLoad,
+    work_item: GpuWorkItemKind,
 }
 
 struct PreparedMode1EffectRankRenderPlan<'rank, 'frame> {
@@ -1024,11 +1032,7 @@ impl ModernGpuVariantRenderer {
         if let Mode1EffectCommandSource::Rank(rank_index) = command.source {
             debug_assert!(rank_index <= 9);
         }
-        let bg_load = match command.target_load {
-            Mode1EffectCommandLoad::ClearFrame => modern_frame_clear_op(frame),
-            Mode1EffectCommandLoad::Load => wgpu::LoadOp::Load,
-        };
-        render_modern_gpu_work_item(
+        render_modern_gpu_work_command(
             &self.effect_renderer,
             device,
             queue,
@@ -1038,8 +1042,7 @@ impl ModernGpuVariantRenderer {
             &self.atlas,
             None,
             output_view,
-            command.work_item,
-            bg_load,
+            command.command,
         );
     }
 
@@ -1139,6 +1142,38 @@ fn render_modern_gpu_work_item(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn render_modern_gpu_work_command(
+    effect_renderer: &ModernGpuVariantEffectRenderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+    sprite_cells: &[ModernIndexTile],
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+    bg_effect_frame: Option<&ModernFrame>,
+    output_view: &wgpu::TextureView,
+    command: ModernGpuWorkCommand<'_, '_>,
+) {
+    let bg_load = match command.target_load {
+        ModernGpuCommandLoad::ClearFrame => modern_frame_clear_op(frame),
+        ModernGpuCommandLoad::Load => wgpu::LoadOp::Load,
+    };
+    render_modern_gpu_work_item(
+        effect_renderer,
+        device,
+        queue,
+        frame,
+        bg_cells,
+        sprite_cells,
+        atlas,
+        bg_effect_frame,
+        output_view,
+        command.work_item,
+        bg_load,
+    );
+}
+
 struct ModernGpuVariantEffectRenderer {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
@@ -1187,6 +1222,21 @@ struct Mode1EffectRankDispatch<'a> {
 }
 
 type Mode1EffectRankRenderPlan<'rank, 'frame> = GpuRenderPlan<ModernGpuWorkItem<'rank, 'frame>>;
+
+struct ModernGpuWorkCommand<'rank, 'frame> {
+    target_load: ModernGpuCommandLoad,
+    work_item: ModernGpuWorkItem<'rank, 'frame>,
+}
+
+#[cfg(test)]
+impl ModernGpuWorkCommand<'_, '_> {
+    fn kind(&self) -> ModernGpuWorkCommandKind {
+        ModernGpuWorkCommandKind {
+            target_load: self.target_load,
+            work_item: self.work_item.kind(),
+        }
+    }
+}
 
 enum ModernGpuWorkItem<'rank, 'frame> {
     ClearBackdrop,
@@ -6122,8 +6172,10 @@ mod tests {
                 .into_command_kinds(),
             vec![PreparedMode1EffectRenderCommandKind::Work {
                 source: Mode1EffectCommandSource::Rank(0),
-                target_load: Mode1EffectCommandLoad::ClearFrame,
-                work_item: GpuWorkItemKind::BgEffect,
+                command: ModernGpuWorkCommandKind {
+                    target_load: ModernGpuCommandLoad::ClearFrame,
+                    work_item: GpuWorkItemKind::BgEffect,
+                },
             }]
         );
     }
@@ -6184,8 +6236,10 @@ mod tests {
                 .into_command_kinds(),
             vec![PreparedMode1EffectRenderCommandKind::Work {
                 source: Mode1EffectCommandSource::EmptyFrameFallback,
-                target_load: Mode1EffectCommandLoad::ClearFrame,
-                work_item: GpuWorkItemKind::ClearBackdrop,
+                command: ModernGpuWorkCommandKind {
+                    target_load: ModernGpuCommandLoad::ClearFrame,
+                    work_item: GpuWorkItemKind::ClearBackdrop,
+                },
             }]
         );
     }
@@ -7927,13 +7981,17 @@ mod tests {
             vec![
                 PreparedMode1EffectRenderCommandKind::Work {
                     source: Mode1EffectCommandSource::Rank(0),
-                    target_load: Mode1EffectCommandLoad::ClearFrame,
-                    work_item: GpuWorkItemKind::ClearBackdrop,
+                    command: ModernGpuWorkCommandKind {
+                        target_load: ModernGpuCommandLoad::ClearFrame,
+                        work_item: GpuWorkItemKind::ClearBackdrop,
+                    },
                 },
                 PreparedMode1EffectRenderCommandKind::Work {
                     source: Mode1EffectCommandSource::Rank(0),
-                    target_load: Mode1EffectCommandLoad::Load,
-                    work_item: GpuWorkItemKind::SpriteEffects,
+                    command: ModernGpuWorkCommandKind {
+                        target_load: ModernGpuCommandLoad::Load,
+                        work_item: GpuWorkItemKind::SpriteEffects,
+                    },
                 },
             ]
         );
