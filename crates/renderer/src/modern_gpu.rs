@@ -476,23 +476,20 @@ impl ModernGpuVariantRenderer {
                 );
             }
             ModernVariantRenderPath::EffectMaterialWithStableOverlay => {
-                self.render_effect_material_mode1_order(
+                self.render_effect_material_with_stable_overlay(
                     device,
                     queue,
                     frame,
                     bg_cells,
                     sprite_cells,
                     &plan,
+                    &variant_frame,
+                    &stats,
                     output_view,
                 );
-                if stats.stable_preview_draws != 0 {
-                    self.renderer
-                        .render_overlay(device, queue, &variant_frame, output_view);
-                }
             }
             ModernVariantRenderPath::StableVariantFrame => {
-                self.renderer
-                    .render(device, queue, &variant_frame, output_view);
+                self.render_stable_variant_frame(device, queue, &variant_frame, output_view);
             }
         }
         stats
@@ -525,6 +522,45 @@ impl ModernGpuVariantRenderer {
             &overlay,
             output_view,
         );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_effect_material_with_stable_overlay(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+        variant_frame: &ModernFrame,
+        stats: &crate::modern_software::VariantAtlasRenderStats,
+        output_view: &wgpu::TextureView,
+    ) {
+        self.render_effect_material_mode1_order(
+            device,
+            queue,
+            frame,
+            bg_cells,
+            sprite_cells,
+            plan,
+            output_view,
+        );
+        if stats.stable_preview_draws != 0 {
+            self.renderer
+                .render_overlay(device, queue, variant_frame, output_view);
+        }
+    }
+
+    fn render_stable_variant_frame(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        variant_frame: &ModernFrame,
+        output_view: &wgpu::TextureView,
+    ) {
+        self.renderer
+            .render(device, queue, variant_frame, output_view);
     }
 
     fn render_effect_material_mode1_order(
