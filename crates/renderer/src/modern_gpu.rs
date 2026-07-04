@@ -809,7 +809,7 @@ impl<'a> OverlayBgEffectDispatch<'a> {
         .filter(|group| !group.packets.is_empty())
     }
 
-    fn work_items(&self) -> GpuRenderPlan<ModernGpuWorkItem<'_, 'a>> {
+    fn render_plan(&self) -> GpuRenderPlan<ModernGpuWorkItem<'_, 'a>> {
         GpuRenderPlan::new(
             self.material_groups()
                 .map(ModernGpuWorkItem::BgEffect)
@@ -2324,7 +2324,7 @@ impl ModernGpuVariantEffectRenderer {
         overlay: &MixedVariantOverlayBgSelection<'_>,
         output_view: &wgpu::TextureView,
     ) {
-        for work_item in overlay.effects.work_items() {
+        for work_item in overlay.effects.render_plan() {
             let _ = work_item.kind();
             match work_item {
                 ModernGpuWorkItem::BgEffect(group) => self.render_bg_material_group(
@@ -6456,20 +6456,20 @@ mod tests {
         assert_eq!(groups[0].packets[0].inst.cell_id, 7);
         assert_eq!(groups[1].material, EffectMaterial::LiveCgram);
         assert_eq!(groups[1].packets[0].inst.cell_id, 9);
-        let work_items = dispatch.work_items();
-        assert_eq!(work_items.len(), 2);
+        let render_plan = dispatch.render_plan();
+        assert_eq!(render_plan.len(), 2);
         assert_eq!(
-            work_items.kinds(),
+            render_plan.kinds(),
             vec![GpuWorkItemKind::BgEffect, GpuWorkItemKind::BgEffect]
         );
         assert!(matches!(
-            &work_items.work_items()[0],
+            &render_plan.work_items()[0],
             ModernGpuWorkItem::BgEffect(group)
                 if group.material == EffectMaterial::StaticEffect
                     && group.packets[0].inst.cell_id == 7
         ));
         assert!(matches!(
-            &work_items.work_items()[1],
+            &render_plan.work_items()[1],
             ModernGpuWorkItem::BgEffect(group)
                 if group.material == EffectMaterial::LiveCgram
                     && group.packets[0].inst.cell_id == 9
