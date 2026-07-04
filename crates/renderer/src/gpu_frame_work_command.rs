@@ -2,6 +2,7 @@ use crate::gpu_work_item::{GpuRenderPlan, GpuWorkItem, GpuWorkItemKind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuFrameMainWorkCommand {
+    ClearBackdrop,
     SpritePriority(u32),
     BgLayer {
         layer_idx: usize,
@@ -51,6 +52,7 @@ impl GpuFrameWorkCommand {
 impl GpuWorkItem for GpuFrameMainWorkCommand {
     fn kind(&self) -> GpuWorkItemKind {
         match self {
+            Self::ClearBackdrop => GpuWorkItemKind::ClearBackdrop,
             Self::SpritePriority(_) => GpuWorkItemKind::MainSpritePriority,
             Self::BgLayer { .. } => GpuWorkItemKind::MainBgLayer,
             Self::Mode7Bg => GpuWorkItemKind::Mode7MainBg,

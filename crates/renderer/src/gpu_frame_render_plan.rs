@@ -87,6 +87,9 @@ fn build_mode1_render_plan(
     has_sub_sprites: bool,
 ) -> GpuFrameRenderPlan {
     let mut render_plan = GpuFrameRenderPlan::default();
+    render_plan.push(main_frame_work_command(
+        GpuFrameMainWorkCommand::ClearBackdrop,
+    ));
     render_plan.extend(build_mode1_main_render_plan(has_main_bg, has_main_sprites));
     render_plan.extend(build_mode1_sub_render_plan(has_sub_bg, has_sub_sprites));
     render_plan.extend(build_post_process_render_plan());
@@ -213,6 +216,9 @@ fn build_mode7_render_plan(
     has_sub_sprites: bool,
 ) -> GpuFrameRenderPlan {
     let mut render_plan = GpuFrameRenderPlan::default();
+    render_plan.push(main_frame_work_command(
+        GpuFrameMainWorkCommand::ClearBackdrop,
+    ));
     render_plan.extend(build_mode7_main_render_plan(has_main_sprites));
     render_plan.extend(build_mode7_sub_render_plan(
         has_sub_mode7_bg,
@@ -380,6 +386,7 @@ mod tests {
         assert_eq!(
             plan.kinds(),
             vec![
+                GpuWorkItemKind::ClearBackdrop,
                 GpuWorkItemKind::MainBgLayer,
                 GpuWorkItemKind::MainSpritePriority,
                 GpuWorkItemKind::MainSpritePriority,
@@ -417,6 +424,7 @@ mod tests {
                 GpuFrameRenderPhase::Main,
                 GpuFrameRenderPhase::Main,
                 GpuFrameRenderPhase::Main,
+                GpuFrameRenderPhase::Main,
                 GpuFrameRenderPhase::Sub,
                 GpuFrameRenderPhase::Sub,
                 GpuFrameRenderPhase::Sub,
@@ -434,6 +442,7 @@ mod tests {
         assert_eq!(
             frame_plan_commands(&plan),
             vec![
+                main_frame_work_command(GpuFrameMainWorkCommand::ClearBackdrop),
                 main_frame_work_command(main_bg_work_item(2, false, 2)),
                 main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(0)),
                 main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(1)),
@@ -485,6 +494,7 @@ mod tests {
         assert_eq!(
             frame_plan_commands(&plan),
             vec![
+                main_frame_work_command(GpuFrameMainWorkCommand::ClearBackdrop),
                 main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(0)),
                 main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(1)),
                 main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(2)),
@@ -530,6 +540,7 @@ mod tests {
         assert_eq!(
             plan.kinds(),
             vec![
+                GpuWorkItemKind::ClearBackdrop,
                 GpuWorkItemKind::MainSpritePriority,
                 GpuWorkItemKind::Mode7MainBg,
                 GpuWorkItemKind::MainSpritePriority,
@@ -552,6 +563,7 @@ mod tests {
                 GpuFrameRenderPhase::Main,
                 GpuFrameRenderPhase::Main,
                 GpuFrameRenderPhase::Main,
+                GpuFrameRenderPhase::Main,
                 GpuFrameRenderPhase::Sub,
                 GpuFrameRenderPhase::Sub,
                 GpuFrameRenderPhase::Sub,
@@ -564,6 +576,7 @@ mod tests {
         assert_eq!(
             frame_plan_commands(&plan),
             vec![
+                main_frame_work_command(GpuFrameMainWorkCommand::ClearBackdrop),
                 main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(0)),
                 main_frame_work_command(GpuFrameMainWorkCommand::Mode7Bg),
                 main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(1)),
@@ -587,6 +600,7 @@ mod tests {
         assert_eq!(
             frame_plan_commands(&plan),
             vec![
+                main_frame_work_command(GpuFrameMainWorkCommand::ClearBackdrop),
                 main_frame_work_command(GpuFrameMainWorkCommand::Mode7Bg),
                 sub_frame_work_command(GpuFrameSubWorkCommand::ClearBackdrop),
                 post_process_frame_work_command(),

@@ -139,27 +139,6 @@ impl GpuFrameRenderer {
         self.tile_atlas.update(queue, frame.vram);
         self.cgram_palette.update(queue, frame.cgram);
 
-        // Clear intermediate texture to CGRAM[0] (raw backdrop colour, pre-brightness).
-        let backdrop = cgram_to_wgpu_color(frame.cgram.first().copied().unwrap_or(0));
-        {
-            let _clear = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("backdrop_clear"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.comp_view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(backdrop),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-        }
-
         let render_plan_context = GpuFrameRenderPlanContext::from_frame(frame);
         if render_plan_context.uses_sprites() {
             self.sprites.prepare(
@@ -217,6 +196,9 @@ impl GpuFrameRenderer {
         command: GpuFrameMainWorkCommand,
     ) {
         match command {
+            GpuFrameMainWorkCommand::ClearBackdrop => {
+                self.clear_main_backdrop(encoder, frame);
+            }
             GpuFrameMainWorkCommand::SpritePriority(priority) => {
                 self.render_main_sprites(encoder, queue, frame, priority);
             }
@@ -288,6 +270,27 @@ impl GpuFrameRenderer {
         output_view: &wgpu::TextureView,
     ) {
         self.post_process.render(encoder, queue, frame, output_view);
+    }
+
+    fn clear_main_backdrop(&self, encoder: &mut wgpu::CommandEncoder, frame: &GpuFrame<'_>) {
+        // Clear intermediate texture to CGRAM[0] (raw backdrop colour, pre-brightness).
+        let backdrop = cgram_to_wgpu_color(frame.cgram.first().copied().unwrap_or(0));
+        let _clear = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("backdrop_clear"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &self.comp_view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(backdrop),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
     }
 
     fn clear_sub_backdrop(&self, encoder: &mut wgpu::CommandEncoder) {
