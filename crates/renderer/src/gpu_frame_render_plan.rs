@@ -1,8 +1,8 @@
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_work_command::{
     main_frame_work_command, post_process_frame_work_command, sub_frame_work_command,
-    GpuFrameBgPass, GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSpritePass,
-    GpuFrameSubWorkCommand, GpuFrameWindowSelector,
+    GpuFrameBgPass, GpuFrameMainWorkCommand, GpuFrameMode7Pass, GpuFrameRenderPlan,
+    GpuFrameSpritePass, GpuFrameSubWorkCommand, GpuFrameWindowSelector,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -197,19 +197,11 @@ fn sub_sprite_work_item(priority: u32) -> GpuFrameSubWorkCommand {
 }
 
 fn main_mode7_bg_work_item() -> GpuFrameMainWorkCommand {
-    GpuFrameMainWorkCommand::Mode7Bg {
-        math_bit_pos: 0,
-        layer_bit: 1,
-        window: GpuFrameWindowSelector::main(0x01, 0),
-    }
+    GpuFrameMainWorkCommand::Mode7Bg(GpuFrameMode7Pass::main_bg())
 }
 
 fn sub_mode7_bg_work_item() -> GpuFrameSubWorkCommand {
-    GpuFrameSubWorkCommand::Mode7Bg {
-        math_bit_pos: 255,
-        layer_bit: 0,
-        window: GpuFrameWindowSelector::sub(0x01, 0),
-    }
+    GpuFrameSubWorkCommand::Mode7Bg(GpuFrameMode7Pass::sub_bg())
 }
 
 fn build_mode7_render_plan(
@@ -399,19 +391,11 @@ mod tests {
     fn mode7_work_items_carry_render_metadata() {
         assert_eq!(
             main_mode7_bg_work_item(),
-            GpuFrameMainWorkCommand::Mode7Bg {
-                math_bit_pos: 0,
-                layer_bit: 1,
-                window: GpuFrameWindowSelector::main(0x01, 0),
-            }
+            GpuFrameMainWorkCommand::Mode7Bg(GpuFrameMode7Pass::main_bg())
         );
         assert_eq!(
             sub_mode7_bg_work_item(),
-            GpuFrameSubWorkCommand::Mode7Bg {
-                math_bit_pos: 255,
-                layer_bit: 0,
-                window: GpuFrameWindowSelector::sub(0x01, 0),
-            }
+            GpuFrameSubWorkCommand::Mode7Bg(GpuFrameMode7Pass::sub_bg())
         );
     }
 

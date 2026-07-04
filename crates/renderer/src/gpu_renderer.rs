@@ -14,8 +14,8 @@ use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_render_plan::GpuFrameRenderPlanContext;
 use crate::gpu_frame_work_command::{
-    GpuFrameBgPass, GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSpritePass,
-    GpuFrameSubWorkCommand, GpuFrameWorkCommand,
+    GpuFrameBgPass, GpuFrameMainWorkCommand, GpuFrameMode7Pass, GpuFrameRenderPlan,
+    GpuFrameSpritePass, GpuFrameSubWorkCommand, GpuFrameWorkCommand,
 };
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
@@ -220,21 +220,14 @@ impl GpuFrameRenderer {
                     pass,
                 );
             }
-            GpuFrameMainWorkCommand::Mode7Bg {
-                math_bit_pos,
-                layer_bit,
-                window,
-            } => {
-                self.mode7.render(
+            GpuFrameMainWorkCommand::Mode7Bg(pass) => {
+                render_mode7_pass(
+                    &mut self.mode7,
                     encoder,
                     queue,
                     frame,
                     &self.comp_view,
-                    math_bit_pos,
-                    layer_bit,
-                    window.screen_idx,
-                    window.layer_bit,
-                    window.flags_shift,
+                    pass,
                 );
             }
         }
@@ -251,21 +244,14 @@ impl GpuFrameRenderer {
             GpuFrameSubWorkCommand::ClearBackdrop => {
                 self.clear_sub_backdrop(encoder);
             }
-            GpuFrameSubWorkCommand::Mode7Bg {
-                math_bit_pos,
-                layer_bit,
-                window,
-            } => {
-                self.mode7.render(
+            GpuFrameSubWorkCommand::Mode7Bg(pass) => {
+                render_mode7_pass(
+                    &mut self.mode7,
                     encoder,
                     queue,
                     frame,
                     &self.sub_comp_view,
-                    math_bit_pos,
-                    layer_bit,
-                    window.screen_idx,
-                    window.layer_bit,
-                    window.flags_shift,
+                    pass,
                 );
             }
             GpuFrameSubWorkCommand::BgLayer(pass) => {
@@ -372,6 +358,28 @@ fn render_sprite_pass(
         window.flags(frame.windowsel),
         window.is_windowed(frame.screen_windowed),
         &frame.scanlines,
+    );
+}
+
+fn render_mode7_pass(
+    mode7: &mut Mode7Renderer,
+    encoder: &mut wgpu::CommandEncoder,
+    queue: &wgpu::Queue,
+    frame: &GpuFrame<'_>,
+    output_view: &wgpu::TextureView,
+    pass: GpuFrameMode7Pass,
+) {
+    let window = pass.window;
+    mode7.render(
+        encoder,
+        queue,
+        frame,
+        output_view,
+        pass.math_bit_pos,
+        pass.layer_bit,
+        window.screen_idx,
+        window.layer_bit,
+        window.flags_shift,
     );
 }
 

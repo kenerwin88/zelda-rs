@@ -100,25 +100,42 @@ impl GpuFrameBgPass {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct GpuFrameMode7Pass {
+    pub(crate) math_bit_pos: u32,
+    pub(crate) layer_bit: u32,
+    pub(crate) window: GpuFrameWindowSelector,
+}
+
+impl GpuFrameMode7Pass {
+    pub(crate) fn main_bg() -> Self {
+        Self {
+            math_bit_pos: 0,
+            layer_bit: 1,
+            window: GpuFrameWindowSelector::main(0x01, 0),
+        }
+    }
+
+    pub(crate) fn sub_bg() -> Self {
+        Self {
+            math_bit_pos: 255,
+            layer_bit: 0,
+            window: GpuFrameWindowSelector::sub(0x01, 0),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuFrameMainWorkCommand {
     ClearBackdrop,
     SpritePriority(GpuFrameSpritePass),
     BgLayer(GpuFrameBgPass),
-    Mode7Bg {
-        math_bit_pos: u32,
-        layer_bit: u32,
-        window: GpuFrameWindowSelector,
-    },
+    Mode7Bg(GpuFrameMode7Pass),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuFrameSubWorkCommand {
     ClearBackdrop,
-    Mode7Bg {
-        math_bit_pos: u32,
-        layer_bit: u32,
-        window: GpuFrameWindowSelector,
-    },
+    Mode7Bg(GpuFrameMode7Pass),
     BgLayer(GpuFrameBgPass),
     SpritePriority(GpuFrameSpritePass),
 }
@@ -157,7 +174,7 @@ impl GpuWorkItem for GpuFrameMainWorkCommand {
             Self::ClearBackdrop => GpuWorkItemKind::ClearBackdrop,
             Self::SpritePriority(_) => GpuWorkItemKind::MainSpritePriority,
             Self::BgLayer(_) => GpuWorkItemKind::MainBgLayer,
-            Self::Mode7Bg { .. } => GpuWorkItemKind::Mode7MainBg,
+            Self::Mode7Bg(_) => GpuWorkItemKind::Mode7MainBg,
         }
     }
 }
@@ -166,7 +183,7 @@ impl GpuWorkItem for GpuFrameSubWorkCommand {
     fn kind(&self) -> GpuWorkItemKind {
         match self {
             Self::ClearBackdrop => GpuWorkItemKind::ClearSubBackdrop,
-            Self::Mode7Bg { .. } => GpuWorkItemKind::Mode7SubBg,
+            Self::Mode7Bg(_) => GpuWorkItemKind::Mode7SubBg,
             Self::BgLayer(_) => GpuWorkItemKind::SubBgLayer,
             Self::SpritePriority(_) => GpuWorkItemKind::SubSpritePriority,
         }
@@ -245,5 +262,18 @@ mod tests {
         assert_eq!(sub_bg3.window, GpuFrameWindowSelector::sub(0x04, 8));
         assert!(sub_bg3.is_screen_enabled([0x00, 0x04]));
         assert!(!sub_bg3.is_screen_enabled([0x04, 0x00]));
+    }
+
+    #[test]
+    fn mode7_pass_groups_main_and_subscreen_render_metadata() {
+        let main = GpuFrameMode7Pass::main_bg();
+        assert_eq!(main.math_bit_pos, 0);
+        assert_eq!(main.layer_bit, 1);
+        assert_eq!(main.window, GpuFrameWindowSelector::main(0x01, 0));
+
+        let sub = GpuFrameMode7Pass::sub_bg();
+        assert_eq!(sub.math_bit_pos, 255);
+        assert_eq!(sub.layer_bit, 0);
+        assert_eq!(sub.window, GpuFrameWindowSelector::sub(0x01, 0));
     }
 }
