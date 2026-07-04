@@ -1,8 +1,8 @@
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_work_command::{
     main_frame_work_command, post_process_frame_work_command, sub_frame_work_command,
-    GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMainWorkCommand, GpuFrameMode7Pass,
-    GpuFrameRenderPlan, GpuFrameSpritePass, GpuFrameSubWorkCommand, GpuFrameWindowSelector,
+    GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMode7Pass, GpuFrameRenderPlan,
+    GpuFrameScreenWorkCommand, GpuFrameSpritePass, GpuFrameWindowSelector,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -164,48 +164,48 @@ fn main_bg_work_item(
     layer_idx: usize,
     hi_priority: bool,
     math_bit_pos: u32,
-) -> GpuFrameMainWorkCommand {
-    GpuFrameMainWorkCommand::BgLayer(GpuFrameBgPass::mode1_main(
+) -> GpuFrameScreenWorkCommand {
+    GpuFrameScreenWorkCommand::BgLayer(GpuFrameBgPass::mode1_main(
         layer_idx,
         hi_priority,
         math_bit_pos,
     ))
 }
 
-fn main_backdrop_clear_work_item() -> GpuFrameMainWorkCommand {
-    GpuFrameMainWorkCommand::ClearBackdrop(GpuFrameBackdropClearPass::main_cgram())
+fn main_backdrop_clear_work_item() -> GpuFrameScreenWorkCommand {
+    GpuFrameScreenWorkCommand::ClearBackdrop(GpuFrameBackdropClearPass::main_cgram())
 }
 
-fn main_sprite_work_item(priority: u32) -> GpuFrameMainWorkCommand {
-    GpuFrameMainWorkCommand::SpritePriority(GpuFrameSpritePass::new(
+fn main_sprite_work_item(priority: u32) -> GpuFrameScreenWorkCommand {
+    GpuFrameScreenWorkCommand::SpritePriority(GpuFrameSpritePass::new(
         priority,
         4,
         GpuFrameWindowSelector::main(0x10, 16),
     ))
 }
 
-fn sub_backdrop_clear_work_item() -> GpuFrameSubWorkCommand {
-    GpuFrameSubWorkCommand::ClearBackdrop(GpuFrameBackdropClearPass::sub_transparent())
+fn sub_backdrop_clear_work_item() -> GpuFrameScreenWorkCommand {
+    GpuFrameScreenWorkCommand::ClearBackdrop(GpuFrameBackdropClearPass::sub_transparent())
 }
 
-fn sub_bg_work_item(layer_idx: usize, hi_priority: bool) -> GpuFrameSubWorkCommand {
-    GpuFrameSubWorkCommand::BgLayer(GpuFrameBgPass::mode1_sub(layer_idx, hi_priority))
+fn sub_bg_work_item(layer_idx: usize, hi_priority: bool) -> GpuFrameScreenWorkCommand {
+    GpuFrameScreenWorkCommand::BgLayer(GpuFrameBgPass::mode1_sub(layer_idx, hi_priority))
 }
 
-fn sub_sprite_work_item(priority: u32) -> GpuFrameSubWorkCommand {
-    GpuFrameSubWorkCommand::SpritePriority(GpuFrameSpritePass::new(
+fn sub_sprite_work_item(priority: u32) -> GpuFrameScreenWorkCommand {
+    GpuFrameScreenWorkCommand::SpritePriority(GpuFrameSpritePass::new(
         priority,
         255,
         GpuFrameWindowSelector::sub(0x10, 16),
     ))
 }
 
-fn main_mode7_bg_work_item() -> GpuFrameMainWorkCommand {
-    GpuFrameMainWorkCommand::Mode7Bg(GpuFrameMode7Pass::main_bg())
+fn main_mode7_bg_work_item() -> GpuFrameScreenWorkCommand {
+    GpuFrameScreenWorkCommand::Mode7Bg(GpuFrameMode7Pass::main_bg())
 }
 
-fn sub_mode7_bg_work_item() -> GpuFrameSubWorkCommand {
-    GpuFrameSubWorkCommand::Mode7Bg(GpuFrameMode7Pass::sub_bg())
+fn sub_mode7_bg_work_item() -> GpuFrameScreenWorkCommand {
+    GpuFrameScreenWorkCommand::Mode7Bg(GpuFrameMode7Pass::sub_bg())
 }
 
 fn build_mode7_render_plan(
@@ -375,7 +375,7 @@ mod tests {
     fn main_bg_work_item_carries_main_screen_render_metadata() {
         assert_eq!(
             main_bg_work_item(2, true, 2),
-            GpuFrameMainWorkCommand::BgLayer(GpuFrameBgPass::mode1_main(2, true, 2))
+            GpuFrameScreenWorkCommand::BgLayer(GpuFrameBgPass::mode1_main(2, true, 2))
         );
     }
 
@@ -383,7 +383,7 @@ mod tests {
     fn sub_bg_work_item_carries_subscreen_render_metadata() {
         assert_eq!(
             sub_bg_work_item(2, true),
-            GpuFrameSubWorkCommand::BgLayer(GpuFrameBgPass::mode1_sub(2, true))
+            GpuFrameScreenWorkCommand::BgLayer(GpuFrameBgPass::mode1_sub(2, true))
         );
     }
 
@@ -391,11 +391,11 @@ mod tests {
     fn mode7_work_items_carry_render_metadata() {
         assert_eq!(
             main_mode7_bg_work_item(),
-            GpuFrameMainWorkCommand::Mode7Bg(GpuFrameMode7Pass::main_bg())
+            GpuFrameScreenWorkCommand::Mode7Bg(GpuFrameMode7Pass::main_bg())
         );
         assert_eq!(
             sub_mode7_bg_work_item(),
-            GpuFrameSubWorkCommand::Mode7Bg(GpuFrameMode7Pass::sub_bg())
+            GpuFrameScreenWorkCommand::Mode7Bg(GpuFrameMode7Pass::sub_bg())
         );
     }
 
@@ -403,7 +403,7 @@ mod tests {
     fn sprite_work_items_carry_render_metadata() {
         assert_eq!(
             main_sprite_work_item(2),
-            GpuFrameMainWorkCommand::SpritePriority(GpuFrameSpritePass::new(
+            GpuFrameScreenWorkCommand::SpritePriority(GpuFrameSpritePass::new(
                 2,
                 4,
                 GpuFrameWindowSelector::main(0x10, 16),
@@ -411,7 +411,7 @@ mod tests {
         );
         assert_eq!(
             sub_sprite_work_item(2),
-            GpuFrameSubWorkCommand::SpritePriority(GpuFrameSpritePass::new(
+            GpuFrameScreenWorkCommand::SpritePriority(GpuFrameSpritePass::new(
                 2,
                 255,
                 GpuFrameWindowSelector::sub(0x10, 16),

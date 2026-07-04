@@ -14,8 +14,8 @@ use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_render_plan::GpuFrameRenderPlanContext;
 use crate::gpu_frame_work_command::{
-    GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMainWorkCommand, GpuFrameMode7Pass,
-    GpuFrameRenderPlan, GpuFrameSpritePass, GpuFrameSubWorkCommand, GpuFrameWorkCommand,
+    GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMode7Pass, GpuFrameRenderPlan,
+    GpuFrameRenderScreen, GpuFrameScreenWorkCommand, GpuFrameSpritePass, GpuFrameWorkCommand,
 };
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
@@ -177,11 +177,8 @@ impl GpuFrameRenderer {
         command: GpuFrameWorkCommand,
     ) {
         match command {
-            GpuFrameWorkCommand::Main(command) => {
-                self.render_main_gpu_work_item(encoder, queue, frame, command);
-            }
-            GpuFrameWorkCommand::Sub(command) => {
-                self.render_sub_gpu_work_item(encoder, queue, frame, command);
+            GpuFrameWorkCommand::Screen { screen, command } => {
+                self.render_screen_gpu_work_item(encoder, queue, frame, screen, command);
             }
             GpuFrameWorkCommand::PostProcess => {
                 self.render_post_process_gpu_work_item(encoder, queue, frame, output_view);
@@ -189,90 +186,38 @@ impl GpuFrameRenderer {
         }
     }
 
-    fn render_main_gpu_work_item(
+    fn render_screen_gpu_work_item(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         queue: &wgpu::Queue,
         frame: &GpuFrame<'_>,
-        command: GpuFrameMainWorkCommand,
+        screen: GpuFrameRenderScreen,
+        command: GpuFrameScreenWorkCommand,
     ) {
-        match command {
-            GpuFrameMainWorkCommand::ClearBackdrop(pass) => {
-                render_backdrop_clear_pass(encoder, frame, &self.comp_view, pass);
-            }
-            GpuFrameMainWorkCommand::SpritePriority(pass) => {
-                render_sprite_pass(
-                    &mut self.sprites,
-                    encoder,
-                    queue,
-                    frame,
-                    &self.comp_view,
-                    pass,
-                );
-            }
-            GpuFrameMainWorkCommand::BgLayer(pass) => {
-                render_bg_pass(
-                    &mut self.bg[pass.layer_idx],
-                    encoder,
-                    queue,
-                    frame,
-                    &self.comp_view,
-                    pass,
-                );
-            }
-            GpuFrameMainWorkCommand::Mode7Bg(pass) => {
-                render_mode7_pass(
-                    &mut self.mode7,
-                    encoder,
-                    queue,
-                    frame,
-                    &self.comp_view,
-                    pass,
-                );
-            }
-        }
-    }
+        let output_view = match screen {
+            GpuFrameRenderScreen::Main => &self.comp_view,
+            GpuFrameRenderScreen::Sub => &self.sub_comp_view,
+        };
 
-    fn render_sub_gpu_work_item(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        queue: &wgpu::Queue,
-        frame: &GpuFrame<'_>,
-        command: GpuFrameSubWorkCommand,
-    ) {
         match command {
-            GpuFrameSubWorkCommand::ClearBackdrop(pass) => {
-                render_backdrop_clear_pass(encoder, frame, &self.sub_comp_view, pass);
+            GpuFrameScreenWorkCommand::ClearBackdrop(pass) => {
+                render_backdrop_clear_pass(encoder, frame, output_view, pass);
             }
-            GpuFrameSubWorkCommand::Mode7Bg(pass) => {
-                render_mode7_pass(
-                    &mut self.mode7,
-                    encoder,
-                    queue,
-                    frame,
-                    &self.sub_comp_view,
-                    pass,
-                );
+            GpuFrameScreenWorkCommand::SpritePriority(pass) => {
+                render_sprite_pass(&mut self.sprites, encoder, queue, frame, output_view, pass);
             }
-            GpuFrameSubWorkCommand::BgLayer(pass) => {
+            GpuFrameScreenWorkCommand::BgLayer(pass) => {
                 render_bg_pass(
                     &mut self.bg[pass.layer_idx],
                     encoder,
                     queue,
                     frame,
-                    &self.sub_comp_view,
+                    output_view,
                     pass,
                 );
             }
-            GpuFrameSubWorkCommand::SpritePriority(pass) => {
-                render_sprite_pass(
-                    &mut self.sprites,
-                    encoder,
-                    queue,
-                    frame,
-                    &self.sub_comp_view,
-                    pass,
-                );
+            GpuFrameScreenWorkCommand::Mode7Bg(pass) => {
+                render_mode7_pass(&mut self.mode7, encoder, queue, frame, output_view, pass);
             }
         }
     }

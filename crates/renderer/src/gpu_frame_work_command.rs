@@ -140,29 +140,6 @@ impl GpuFrameBackdropClearPass {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum GpuFrameMainWorkCommand {
-    ClearBackdrop(GpuFrameBackdropClearPass),
-    SpritePriority(GpuFrameSpritePass),
-    BgLayer(GpuFrameBgPass),
-    Mode7Bg(GpuFrameMode7Pass),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum GpuFrameSubWorkCommand {
-    ClearBackdrop(GpuFrameBackdropClearPass),
-    Mode7Bg(GpuFrameMode7Pass),
-    BgLayer(GpuFrameBgPass),
-    SpritePriority(GpuFrameSpritePass),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum GpuFrameWorkCommand {
-    Main(GpuFrameMainWorkCommand),
-    Sub(GpuFrameSubWorkCommand),
-    PostProcess,
-}
-
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuFrameRenderPhase {
@@ -171,37 +148,68 @@ pub(crate) enum GpuFrameRenderPhase {
     PostProcess,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GpuFrameRenderScreen {
+    Main,
+    Sub,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GpuFrameScreenWorkCommand {
+    ClearBackdrop(GpuFrameBackdropClearPass),
+    SpritePriority(GpuFrameSpritePass),
+    BgLayer(GpuFrameBgPass),
+    Mode7Bg(GpuFrameMode7Pass),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GpuFrameWorkCommand {
+    Screen {
+        screen: GpuFrameRenderScreen,
+        command: GpuFrameScreenWorkCommand,
+    },
+    PostProcess,
+}
+
 pub(crate) type GpuFrameRenderPlan = GpuRenderPlan<GpuFrameWorkCommand>;
+
+impl GpuFrameRenderScreen {
+    #[cfg(test)]
+    pub(crate) fn phase(self) -> GpuFrameRenderPhase {
+        match self {
+            Self::Main => GpuFrameRenderPhase::Main,
+            Self::Sub => GpuFrameRenderPhase::Sub,
+        }
+    }
+
+    pub(crate) fn work_item_kind(self, command: GpuFrameScreenWorkCommand) -> GpuWorkItemKind {
+        match (self, command) {
+            (Self::Main, GpuFrameScreenWorkCommand::ClearBackdrop(_)) => {
+                GpuWorkItemKind::ClearBackdrop
+            }
+            (Self::Main, GpuFrameScreenWorkCommand::SpritePriority(_)) => {
+                GpuWorkItemKind::MainSpritePriority
+            }
+            (Self::Main, GpuFrameScreenWorkCommand::BgLayer(_)) => GpuWorkItemKind::MainBgLayer,
+            (Self::Main, GpuFrameScreenWorkCommand::Mode7Bg(_)) => GpuWorkItemKind::Mode7MainBg,
+            (Self::Sub, GpuFrameScreenWorkCommand::ClearBackdrop(_)) => {
+                GpuWorkItemKind::ClearSubBackdrop
+            }
+            (Self::Sub, GpuFrameScreenWorkCommand::SpritePriority(_)) => {
+                GpuWorkItemKind::SubSpritePriority
+            }
+            (Self::Sub, GpuFrameScreenWorkCommand::BgLayer(_)) => GpuWorkItemKind::SubBgLayer,
+            (Self::Sub, GpuFrameScreenWorkCommand::Mode7Bg(_)) => GpuWorkItemKind::Mode7SubBg,
+        }
+    }
+}
 
 #[cfg(test)]
 impl GpuFrameWorkCommand {
     pub(crate) fn phase(&self) -> GpuFrameRenderPhase {
         match self {
-            Self::Main(_) => GpuFrameRenderPhase::Main,
-            Self::Sub(_) => GpuFrameRenderPhase::Sub,
+            Self::Screen { screen, .. } => screen.phase(),
             Self::PostProcess => GpuFrameRenderPhase::PostProcess,
-        }
-    }
-}
-
-impl GpuWorkItem for GpuFrameMainWorkCommand {
-    fn kind(&self) -> GpuWorkItemKind {
-        match self {
-            Self::ClearBackdrop(_) => GpuWorkItemKind::ClearBackdrop,
-            Self::SpritePriority(_) => GpuWorkItemKind::MainSpritePriority,
-            Self::BgLayer(_) => GpuWorkItemKind::MainBgLayer,
-            Self::Mode7Bg(_) => GpuWorkItemKind::Mode7MainBg,
-        }
-    }
-}
-
-impl GpuWorkItem for GpuFrameSubWorkCommand {
-    fn kind(&self) -> GpuWorkItemKind {
-        match self {
-            Self::ClearBackdrop(_) => GpuWorkItemKind::ClearSubBackdrop,
-            Self::Mode7Bg(_) => GpuWorkItemKind::Mode7SubBg,
-            Self::BgLayer(_) => GpuWorkItemKind::SubBgLayer,
-            Self::SpritePriority(_) => GpuWorkItemKind::SubSpritePriority,
         }
     }
 }
@@ -209,19 +217,24 @@ impl GpuWorkItem for GpuFrameSubWorkCommand {
 impl GpuWorkItem for GpuFrameWorkCommand {
     fn kind(&self) -> GpuWorkItemKind {
         match self {
-            Self::Main(command) => command.kind(),
-            Self::Sub(command) => command.kind(),
+            Self::Screen { screen, command } => screen.work_item_kind(*command),
             Self::PostProcess => GpuWorkItemKind::PostProcess,
         }
     }
 }
 
-pub(crate) fn main_frame_work_command(command: GpuFrameMainWorkCommand) -> GpuFrameWorkCommand {
-    GpuFrameWorkCommand::Main(command)
+pub(crate) fn main_frame_work_command(command: GpuFrameScreenWorkCommand) -> GpuFrameWorkCommand {
+    GpuFrameWorkCommand::Screen {
+        screen: GpuFrameRenderScreen::Main,
+        command,
+    }
 }
 
-pub(crate) fn sub_frame_work_command(command: GpuFrameSubWorkCommand) -> GpuFrameWorkCommand {
-    GpuFrameWorkCommand::Sub(command)
+pub(crate) fn sub_frame_work_command(command: GpuFrameScreenWorkCommand) -> GpuFrameWorkCommand {
+    GpuFrameWorkCommand::Screen {
+        screen: GpuFrameRenderScreen::Sub,
+        command,
+    }
 }
 
 pub(crate) fn post_process_frame_work_command() -> GpuFrameWorkCommand {
