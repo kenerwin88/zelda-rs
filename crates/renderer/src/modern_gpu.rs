@@ -3177,7 +3177,6 @@ fn modern_prefinal_overlay_sprite_pixels(
 enum ModernScreenBuilderBlocker {
     Mosaic,
     Bg4,
-    ShortBgLayers,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3194,9 +3193,6 @@ fn modern_screen_builder_blocker(frame: &ModernFrame) -> Option<ModernScreenBuil
     if (frame.screen_enabled_main | frame.screen_enabled_sub) & 0x08 != 0 {
         return Some(ModernScreenBuilderBlocker::Bg4);
     }
-    if frame.bg_layers.len() < 3 {
-        return Some(ModernScreenBuilderBlocker::ShortBgLayers);
-    }
     None
 }
 
@@ -3207,9 +3203,6 @@ fn record_screen_builder_blocker(
     match blocker {
         ModernScreenBuilderBlocker::Mosaic => stats.cpu_screen_builder_block_mosaic += 1,
         ModernScreenBuilderBlocker::Bg4 => stats.cpu_screen_builder_block_bg4 += 1,
-        ModernScreenBuilderBlocker::ShortBgLayers => {
-            stats.cpu_screen_builder_block_short_bg_layers += 1;
-        }
     }
 }
 
@@ -7720,6 +7713,66 @@ mod tests {
         assert_eq!(stats.gpu_screen_builder_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(variant, cpu);
+    }
+
+    #[test]
+    fn modern_gpu_variant_headless_short_bg_layers_stays_on_gpu() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+
+        pollster::block_on(async {
+            let instance = crate::create_wgpu_instance();
+            let (_adapter, device, queue) = crate::create_device_queue(&instance, None).await;
+            let compositor =
+                ModernGpuCompositor::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm);
+
+            let indices = [1u8; 64];
+            let cells = vec![ModernIndexTile {
+                id: 0,
+                indices,
+                source_key: NO_SOURCE_KEY,
+                hflip: false,
+                vflip: false,
+            }];
+
+            let mut frame = ModernFrame::empty();
+            frame.screen_enabled_main = 0x01;
+            frame.brightness = 15;
+            frame.cgram_rgba[1] = [160, 0, 0, 0xff];
+
+            let mut bg1 = ModernBgLayer::new(0);
+            bg1.enabled_main = true;
+            bg1.index_tiles.push(ModernIndexTileInstance {
+                cell_id: 0,
+                source_key: NO_SOURCE_KEY,
+                screen_x: 0,
+                screen_y: 0,
+                palette: 0,
+                hflip: false,
+                vflip: false,
+                priority: false,
+            });
+            frame.bg_layers = vec![bg1];
+            let target = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("modern_gpu_short_bg_layers_screen_builder_test_target"),
+                size: wgpu::Extent3d {
+                    width: 256,
+                    height: 224,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::COPY_SRC
+                    | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+
+            assert!(compositor.render(&device, &queue, &frame, &cells, &[], &target));
+        });
     }
 
     #[test]

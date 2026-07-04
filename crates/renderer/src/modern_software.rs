@@ -74,7 +74,6 @@ pub struct VariantAtlasRenderStats {
     pub cpu_prefinal_overlay_frames: u32,
     pub cpu_screen_builder_block_mosaic: u32,
     pub cpu_screen_builder_block_bg4: u32,
-    pub cpu_screen_builder_block_short_bg_layers: u32,
     pub dynamic_palette_draws: u32,
     pub missing_variant_draws: u32,
     pub stable_preview_draws: u32,
