@@ -3481,6 +3481,110 @@ impl ModernGpuScreenBuilder {
     }
 }
 
+struct ModernGpuPrefinalOverlay {
+    pipeline: wgpu::ComputePipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
+}
+
+impl ModernGpuPrefinalOverlay {
+    fn new(device: &wgpu::Device) -> Self {
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("modern_prefinal_overlay"),
+            entries: &[
+                storage_entry(0, false),
+                storage_entry(1, true),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("modern_prefinal_overlay"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("modern_prefinal_overlay.wgsl").into()),
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("modern_prefinal_overlay"),
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("modern_prefinal_overlay"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("cs_main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        Self {
+            pipeline,
+            bind_group_layout,
+        }
+    }
+
+    fn render_into(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        main_buffer: &wgpu::Buffer,
+        frame: &ModernFrame,
+        static_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
+        live_cgram_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
+        sprite_packets: &[crate::modern_variant_draw::VariantSpriteDrawPacket<'_>],
+    ) {
+        let (data_words, params) = modern_prefinal_overlay_data_words(
+            frame,
+            static_packets,
+            live_cgram_packets,
+            sprite_packets,
+        );
+        let data_buffer =
+            storage_buffer_with_words(device, queue, "modern_prefinal_overlay_data", &data_words);
+        let params_buffer =
+            uniform_buffer_with_words(device, queue, "modern_prefinal_overlay_params", &params);
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("modern_prefinal_overlay"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: main_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: data_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        let pixel_count = u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
+            * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT);
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("modern_prefinal_overlay"),
+        });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("modern_prefinal_overlay"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.dispatch_workgroups(pixel_count.div_ceil(64), 1, 1);
+        }
+        queue.submit([encoder.finish()]);
+    }
+}
+
 fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
@@ -3677,6 +3781,190 @@ fn modern_screen_builder_data_words(
     )
 }
 
+fn modern_prefinal_overlay_data_words(
+    frame: &ModernFrame,
+    static_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
+    live_cgram_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
+    sprite_packets: &[crate::modern_variant_draw::VariantSpriteDrawPacket<'_>],
+) -> (Vec<u32>, [u32; 8]) {
+    let mut data = Vec::new();
+    let mut bg_packet_words = Vec::new();
+    let mut sprite_packet_words = Vec::new();
+
+    for packet in static_packets {
+        let cell_offset = data.len() as u32;
+        data.extend_from_slice(&modern_prefinal_overlay_static_bg_pixels(frame, packet));
+        if let Some(rank) = bg_packet_mode1_rank(packet) {
+            bg_packet_words.extend_from_slice(&[
+                i32::from(packet.inst.screen_x) as u32,
+                i32::from(packet.inst.screen_y) as u32,
+                u32::from(rank),
+                cell_offset,
+            ]);
+        }
+    }
+    for packet in live_cgram_packets {
+        let cell_offset = data.len() as u32;
+        data.extend_from_slice(&modern_prefinal_overlay_live_bg_pixels(frame, packet));
+        if let Some(rank) = bg_packet_mode1_rank(packet) {
+            bg_packet_words.extend_from_slice(&[
+                i32::from(packet.inst.screen_x) as u32,
+                i32::from(packet.inst.screen_y) as u32,
+                u32::from(rank),
+                cell_offset,
+            ]);
+        }
+    }
+    for priority in 0..=3u8 {
+        for packet in sprite_packets
+            .iter()
+            .filter(|packet| packet.inst.priority == priority)
+        {
+            let Some(rank) = sprite_packet_mode1_rank(packet) else {
+                continue;
+            };
+            let cell_offset = data.len() as u32;
+            data.extend_from_slice(&modern_prefinal_overlay_sprite_pixels(frame, packet));
+            sprite_packet_words.extend_from_slice(&[
+                i32::from(packet.inst.screen_x) as u32,
+                i32::from(packet.inst.screen_y) as u32,
+                u32::from(rank),
+                cell_offset,
+            ]);
+        }
+    }
+
+    let bg_packets_offset = data.len() as u32;
+    data.extend_from_slice(if bg_packet_words.is_empty() {
+        &[0]
+    } else {
+        &bg_packet_words
+    });
+    let sprite_packets_offset = data.len() as u32;
+    data.extend_from_slice(if sprite_packet_words.is_empty() {
+        &[0]
+    } else {
+        &sprite_packet_words
+    });
+
+    (
+        data,
+        [
+            u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
+                * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT),
+            (bg_packet_words.len() / 4) as u32,
+            (sprite_packet_words.len() / 4) as u32,
+            0,
+            0,
+            0,
+            bg_packets_offset,
+            sprite_packets_offset,
+        ],
+    )
+}
+
+fn modern_prefinal_overlay_static_bg_pixels(
+    frame: &ModernFrame,
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+) -> [u32; 64] {
+    let Some((entry, effect)) = packet.draw.material_effect() else {
+        return [0xffffffff; 64];
+    };
+    modern_prefinal_overlay_bg_pixels(frame, packet, |x, y| {
+        let index = bg_effect_packet_index_at_local(packet, entry, x, y);
+        if index == 0 {
+            return None;
+        }
+        effect.index_to_rgba.get(usize::from(index)).copied()
+    })
+}
+
+fn modern_prefinal_overlay_live_bg_pixels(
+    frame: &ModernFrame,
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+) -> [u32; 64] {
+    let palette_base = usize::from(packet.inst.palette) * 16;
+    modern_prefinal_overlay_bg_pixels(frame, packet, |x, y| {
+        let index = packet.cell.indices[y * 8 + x];
+        if index == 0 {
+            return None;
+        }
+        frame
+            .cgram_rgba
+            .get(palette_base + usize::from(index))
+            .copied()
+    })
+}
+
+fn modern_prefinal_overlay_bg_pixels(
+    frame: &ModernFrame,
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+    color_for_local: impl Fn(usize, usize) -> Option<[u8; 4]>,
+) -> [u32; 64] {
+    let mut pixels = [0xffffffffu32; 64];
+    let Ok(math_bit) = u8::try_from(packet.layer_index) else {
+        return pixels;
+    };
+    if math_bit >= 4 {
+        return pixels;
+    }
+    for y in 0..8usize {
+        for x in 0..8usize {
+            let Some(rgba) = color_for_local(x, y) else {
+                continue;
+            };
+            if rgba[3] == 0 {
+                continue;
+            }
+            let dst_x = packet.inst.screen_x + x as i16;
+            let dst_y = packet.inst.screen_y + y as i16;
+            if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                continue;
+            }
+            if !bg_packet_visible_on_main_at_pixel(frame, packet, dst_x as u32, dst_y as usize) {
+                continue;
+            }
+            pixels[y * 8 + x] = pack_variant_prefinal_pixel(rgba, math_bit);
+        }
+    }
+    pixels
+}
+
+fn modern_prefinal_overlay_sprite_pixels(
+    frame: &ModernFrame,
+    packet: &crate::modern_variant_draw::VariantSpriteDrawPacket<'_>,
+) -> [u32; 64] {
+    let mut pixels = [0xffffffffu32; 64];
+    let palette_base = 0x80 + usize::from(packet.inst.palette) * 16;
+    let math_bit = if packet.inst.palette < 4 { 6 } else { 4 };
+    for y in 0..8usize {
+        if packet.inst.row_mask & (1 << y) == 0 {
+            continue;
+        }
+        for x in 0..8usize {
+            let src_x = if packet.inst.hflip { 7 - x } else { x };
+            let src_y = if packet.inst.vflip { 7 - y } else { y };
+            let index = packet.cell.indices[src_y * 8 + src_x];
+            if index == 0 {
+                continue;
+            }
+            let dst_x = packet.inst.screen_x + x as i16;
+            let dst_y = packet.inst.screen_y + y as i16;
+            if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                continue;
+            }
+            if !sprite_packet_visible_on_main_at_pixel(frame, dst_x as u32, dst_y as usize) {
+                continue;
+            }
+            let Some(rgba) = frame.cgram_rgba.get(palette_base + usize::from(index)) else {
+                continue;
+            };
+            pixels[y * 8 + x] = pack_variant_prefinal_pixel(*rgba, math_bit);
+        }
+    }
+    pixels
+}
+
 fn modern_screen_builder_params(
     frame: &ModernFrame,
     bg_cells: &[ModernIndexTile],
@@ -3770,7 +4058,7 @@ enum ModernScreenBuilderBlocker {
 enum ModernScreenBuilderResult {
     Gpu,
     Cpu(ModernScreenBuilderBlocker),
-    CpuOverlay,
+    CpuOverlay(ModernScreenBuilderBlocker),
 }
 
 fn modern_screen_builder_blocker(frame: &ModernFrame) -> Option<ModernScreenBuilderBlocker> {
@@ -3820,6 +4108,7 @@ fn record_screen_builder_blocker(
 pub struct ModernGpuCompositor {
     finalizer: ModernGpuFinalizer,
     screen_builder: ModernGpuScreenBuilder,
+    prefinal_overlay: ModernGpuPrefinalOverlay,
 }
 
 impl ModernGpuCompositor {
@@ -3827,6 +4116,7 @@ impl ModernGpuCompositor {
         Self {
             finalizer: ModernGpuFinalizer::new(device),
             screen_builder: ModernGpuScreenBuilder::new(device),
+            prefinal_overlay: ModernGpuPrefinalOverlay::new(device),
         }
     }
 
@@ -3923,6 +4213,69 @@ impl ModernGpuCompositor {
             sprite_cells,
             &self.finalizer.main_buffer,
             &self.finalizer.sub_buffer,
+        );
+        self.finalizer.render_current_buffers_to_texture(
+            device,
+            queue,
+            final_frame,
+            u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
+                * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT),
+            u32::from(crate::modern_frame::MODERN_FRAME_WIDTH),
+            1,
+            output_texture,
+        );
+        ModernScreenBuilderResult::Gpu
+    }
+
+    fn render_prefinal_overlay_screens_with_final_frame(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        screen_frame: &ModernFrame,
+        final_frame: &ModernFrame,
+        overlay_frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        static_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
+        live_cgram_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
+        sprite_packets: &[crate::modern_variant_draw::VariantSpriteDrawPacket<'_>],
+        output_texture: &wgpu::Texture,
+    ) -> ModernScreenBuilderResult {
+        if let Some(blocker) = modern_screen_builder_blocker(screen_frame) {
+            let mut screens = crate::modern_software::build_modern_composited_screens(
+                screen_frame,
+                bg_cells,
+                sprite_cells,
+            );
+            overlay_mixed_variant_bg_packets_on_main_screen(
+                &mut screens,
+                overlay_frame,
+                static_packets,
+                live_cgram_packets,
+                sprite_packets,
+            );
+            self.finalizer
+                .render_to_texture(device, queue, final_frame, &screens, output_texture);
+            return ModernScreenBuilderResult::CpuOverlay(blocker);
+        }
+
+        self.screen_builder.render_into(
+            device,
+            queue,
+            screen_frame,
+            bg_cells,
+            sprite_cells,
+            &self.finalizer.main_buffer,
+            &self.finalizer.sub_buffer,
+        );
+        self.prefinal_overlay.render_into(
+            device,
+            queue,
+            &self.finalizer.main_buffer,
+            overlay_frame,
+            static_packets,
+            live_cgram_packets,
+            sprite_packets,
         );
         self.finalizer.render_current_buffers_to_texture(
             device,
@@ -4291,33 +4644,43 @@ impl ModernGpuVariantHeadless {
                         stats.cpu_prefinal_composite_frames += 1;
                         record_screen_builder_blocker(&mut stats, blocker);
                     }
-                    ModernScreenBuilderResult::CpuOverlay => {
+                    ModernScreenBuilderResult::CpuOverlay(blocker) => {
                         stats.cpu_prefinal_composite_frames += 1;
                         stats.cpu_prefinal_overlay_frames += 1;
+                        record_screen_builder_blocker(&mut stats, blocker);
                     }
                 }
             } else {
-                stats.cpu_prefinal_composite_frames += 1;
-                stats.cpu_prefinal_overlay_frames += 1;
-                let mut screens = crate::modern_software::build_modern_composited_screens(
-                    fallback_frame,
-                    fallback_bg_cells,
-                    fallback_sprite_cells,
-                );
-                overlay_mixed_variant_bg_packets_on_main_screen(
-                    &mut screens,
-                    frame,
-                    &prefinal_bg,
-                    &prefinal_live_cgram_bg,
-                    &plan.sprites,
-                );
-                self.compositor.finalizer.render_to_texture(
-                    &self.device,
-                    &self.queue,
-                    fallback_frame,
-                    &screens,
-                    &self.target,
-                );
+                let build_result = self
+                    .compositor
+                    .render_prefinal_overlay_screens_with_final_frame(
+                        &self.device,
+                        &self.queue,
+                        fallback_frame,
+                        fallback_frame,
+                        frame,
+                        fallback_bg_cells,
+                        fallback_sprite_cells,
+                        &prefinal_bg,
+                        &prefinal_live_cgram_bg,
+                        &plan.sprites,
+                        &self.target,
+                    );
+                match build_result {
+                    ModernScreenBuilderResult::Gpu => {
+                        stats.direct_gpu_fallback_frames += 1;
+                        stats.gpu_screen_builder_frames += 1;
+                    }
+                    ModernScreenBuilderResult::Cpu(blocker) => {
+                        stats.cpu_prefinal_composite_frames += 1;
+                        record_screen_builder_blocker(&mut stats, blocker);
+                    }
+                    ModernScreenBuilderResult::CpuOverlay(blocker) => {
+                        stats.cpu_prefinal_composite_frames += 1;
+                        stats.cpu_prefinal_overlay_frames += 1;
+                        record_screen_builder_blocker(&mut stats, blocker);
+                    }
+                }
             }
             if !final_overlay.bg.is_empty() {
                 self.renderer.effect_renderer.render_bg(
@@ -4359,9 +4722,10 @@ impl ModernGpuVariantHeadless {
                         stats.cpu_prefinal_composite_frames += 1;
                         record_screen_builder_blocker(&mut stats, blocker);
                     }
-                    ModernScreenBuilderResult::CpuOverlay => {
+                    ModernScreenBuilderResult::CpuOverlay(blocker) => {
                         stats.cpu_prefinal_composite_frames += 1;
                         stats.cpu_prefinal_overlay_frames += 1;
+                        record_screen_builder_blocker(&mut stats, blocker);
                     }
                 }
             } else {
@@ -4414,26 +4778,20 @@ impl ModernGpuVariantHeadless {
                 &self.target,
             );
         }
-        let mut screens = crate::modern_software::build_modern_composited_screens(
-            fallback_frame,
-            fallback_bg_cells,
-            fallback_sprite_cells,
-        );
-        overlay_mixed_variant_bg_packets_on_main_screen(
-            &mut screens,
-            frame,
-            &overlay.bg,
-            &overlay.live_cgram_bg,
-            &plan.sprites,
-        );
-        self.compositor.finalizer.render_to_texture(
-            &self.device,
-            &self.queue,
-            frame,
-            &screens,
-            &self.target,
-        );
-        ModernScreenBuilderResult::CpuOverlay
+        self.compositor
+            .render_prefinal_overlay_screens_with_final_frame(
+                &self.device,
+                &self.queue,
+                fallback_frame,
+                frame,
+                frame,
+                fallback_bg_cells,
+                fallback_sprite_cells,
+                &overlay.bg,
+                &overlay.live_cgram_bg,
+                &plan.sprites,
+                &self.target,
+            )
     }
 
     fn read_target_rgba(&self) -> Vec<u8> {
@@ -7683,6 +8041,9 @@ mod tests {
             stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap,
             0
         );
+        assert_eq!(stats.gpu_screen_builder_frames, 1);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 0);
+        assert_eq!(stats.cpu_prefinal_overlay_frames, 0);
     }
 
     #[test]
@@ -7884,6 +8245,9 @@ mod tests {
             stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg,
             0
         );
+        assert_eq!(stats.gpu_screen_builder_frames, 1);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 0);
+        assert_eq!(stats.cpu_prefinal_overlay_frames, 0);
     }
 
     #[test]
@@ -8748,6 +9112,9 @@ mod tests {
             stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj,
             0
         );
+        assert_eq!(stats.gpu_screen_builder_frames, 1);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 0);
+        assert_eq!(stats.cpu_prefinal_overlay_frames, 0);
     }
 
     #[test]
@@ -8891,6 +9258,9 @@ mod tests {
             stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj,
             0
         );
+        assert_eq!(stats.gpu_screen_builder_frames, 1);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 0);
+        assert_eq!(stats.cpu_prefinal_overlay_frames, 0);
     }
 
     #[test]
