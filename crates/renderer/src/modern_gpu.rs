@@ -358,6 +358,11 @@ pub struct ModernGpuVariantRenderer {
     effect_renderer: ModernGpuVariantEffectRenderer,
 }
 
+struct PreparedModernVariantFrame<'a> {
+    plan: crate::modern_variant_draw::VariantDrawPlan<'a>,
+    variant_frame: ModernFrame,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ModernVariantRenderPath {
     EffectMaterialMode1Order,
@@ -441,16 +446,14 @@ impl ModernGpuVariantRenderer {
         sprite_palette_name: &str,
         output_view: &wgpu::TextureView,
     ) -> crate::modern_software::VariantAtlasRenderStats {
-        let plan = crate::modern_variant_draw::compile_variant_draws(
+        let prepared = self.prepare_variant_frame(
             frame,
             bg_cells,
             sprite_cells,
-            &self.atlas,
             bg_palette_name,
             sprite_palette_name,
         );
-        let variant_frame = self.build_variant_frame_from_plan(frame, &plan);
-        let mut stats = plan.stats;
+        let mut stats = prepared.plan.stats;
         match live_variant_render_path(&stats) {
             ModernVariantRenderPath::EffectMaterialMode1Order => {
                 self.render_effect_material_mode1_order(
@@ -459,7 +462,7 @@ impl ModernGpuVariantRenderer {
                     frame,
                     bg_cells,
                     sprite_cells,
-                    &plan,
+                    &prepared.plan,
                     output_view,
                 );
             }
@@ -470,7 +473,7 @@ impl ModernGpuVariantRenderer {
                     frame,
                     bg_cells,
                     sprite_cells,
-                    &plan,
+                    &prepared.plan,
                     output_view,
                     &mut stats,
                 );
@@ -482,17 +485,45 @@ impl ModernGpuVariantRenderer {
                     frame,
                     bg_cells,
                     sprite_cells,
-                    &plan,
-                    &variant_frame,
+                    &prepared.plan,
+                    &prepared.variant_frame,
                     &stats,
                     output_view,
                 );
             }
             ModernVariantRenderPath::StableVariantFrame => {
-                self.render_stable_variant_frame(device, queue, &variant_frame, output_view);
+                self.render_stable_variant_frame(
+                    device,
+                    queue,
+                    &prepared.variant_frame,
+                    output_view,
+                );
             }
         }
         stats
+    }
+
+    fn prepare_variant_frame<'a>(
+        &'a self,
+        frame: &'a ModernFrame,
+        bg_cells: &'a [ModernIndexTile],
+        sprite_cells: &'a [ModernIndexTile],
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+    ) -> PreparedModernVariantFrame<'a> {
+        let plan = crate::modern_variant_draw::compile_variant_draws(
+            frame,
+            bg_cells,
+            sprite_cells,
+            &self.atlas,
+            bg_palette_name,
+            sprite_palette_name,
+        );
+        let variant_frame = self.build_variant_frame_from_plan(frame, &plan);
+        PreparedModernVariantFrame {
+            plan,
+            variant_frame,
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -5159,19 +5190,22 @@ impl ModernGpuVariantHeadless {
         bg_palette_name: &str,
         sprite_palette_name: &str,
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
-        let plan = crate::modern_variant_draw::compile_variant_draws(
+        let prepared = self.renderer.prepare_variant_frame(
             frame,
             bg_cells,
             sprite_cells,
-            &self.renderer.atlas,
             bg_palette_name,
             sprite_palette_name,
         );
-        let variant_frame = self.renderer.build_variant_frame_from_plan(frame, &plan);
-        let mut stats = plan.stats;
+        let mut stats = prepared.plan.stats;
         match headless_variant_render_path(&stats) {
             ModernVariantRenderPath::EffectMaterialMode1Order => {
-                self.render_effect_material_mode1_order(frame, bg_cells, sprite_cells, &plan);
+                self.render_effect_material_mode1_order(
+                    frame,
+                    bg_cells,
+                    sprite_cells,
+                    &prepared.plan,
+                );
             }
             ModernVariantRenderPath::LiveIndexBaseWithOverlay => {
                 self.render_live_index_with_overlay(
@@ -5180,7 +5214,7 @@ impl ModernGpuVariantHeadless {
                     live_index_frame,
                     live_index_bg_cells,
                     live_index_sprite_cells,
-                    &plan,
+                    &prepared.plan,
                     &mut stats,
                 );
             }
@@ -5192,13 +5226,13 @@ impl ModernGpuVariantHeadless {
                     live_index_frame,
                     live_index_bg_cells,
                     live_index_sprite_cells,
-                    &plan,
-                    &variant_frame,
+                    &prepared.plan,
+                    &prepared.variant_frame,
                     &mut stats,
                 );
             }
             ModernVariantRenderPath::StableVariantFrame => {
-                self.render_stable_variant_frame(&variant_frame);
+                self.render_stable_variant_frame(&prepared.variant_frame);
             }
         }
         (self.read_target_rgba(), stats)
