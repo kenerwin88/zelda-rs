@@ -575,16 +575,19 @@ impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
                         Mode1EffectCommandLoad::ClearFrame
                     };
                     rendered_any = true;
-                    PreparedMode1EffectRenderCommand::RankWork {
-                        rank_index,
+                    PreparedMode1EffectRenderCommand {
+                        source: Mode1EffectCommandSource::Rank(rank_index),
                         target_load,
                         work_item,
                     }
                 })
             })
             .chain(
-                needs_empty_frame_fallback
-                    .then_some(PreparedMode1EffectRenderCommand::EmptyFrameFallback),
+                needs_empty_frame_fallback.then_some(PreparedMode1EffectRenderCommand {
+                    source: Mode1EffectCommandSource::EmptyFrameFallback,
+                    target_load: Mode1EffectCommandLoad::ClearFrame,
+                    work_item: ModernGpuWorkItem::ClearBackdrop,
+                }),
             )
     }
 
@@ -650,12 +653,15 @@ enum PreparedMode1EffectRenderStep<'rank, 'frame> {
     EmptyFrameFallback,
 }
 
-enum PreparedMode1EffectRenderCommand<'rank, 'frame> {
-    RankWork {
-        rank_index: usize,
-        target_load: Mode1EffectCommandLoad,
-        work_item: ModernGpuWorkItem<'rank, 'frame>,
-    },
+struct PreparedMode1EffectRenderCommand<'rank, 'frame> {
+    source: Mode1EffectCommandSource,
+    target_load: Mode1EffectCommandLoad,
+    work_item: ModernGpuWorkItem<'rank, 'frame>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mode1EffectCommandSource {
+    Rank(usize),
     EmptyFrameFallback,
 }
 
@@ -668,17 +674,10 @@ enum Mode1EffectCommandLoad {
 #[cfg(test)]
 impl PreparedMode1EffectRenderCommand<'_, '_> {
     fn kind(&self) -> PreparedMode1EffectRenderCommandKind {
-        match self {
-            Self::RankWork {
-                rank_index,
-                target_load,
-                work_item,
-            } => PreparedMode1EffectRenderCommandKind::RankWork {
-                rank_index: *rank_index,
-                target_load: *target_load,
-                work_item: work_item.kind(),
-            },
-            Self::EmptyFrameFallback => PreparedMode1EffectRenderCommandKind::EmptyFrameFallback,
+        PreparedMode1EffectRenderCommandKind::Work {
+            source: self.source,
+            target_load: self.target_load,
+            work_item: self.work_item.kind(),
         }
     }
 }
@@ -711,12 +710,11 @@ enum PreparedMode1EffectRenderStepKind {
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PreparedMode1EffectRenderCommandKind {
-    RankWork {
-        rank_index: usize,
+    Work {
+        source: Mode1EffectCommandSource,
         target_load: Mode1EffectCommandLoad,
         work_item: GpuWorkItemKind,
     },
-    EmptyFrameFallback,
 }
 
 struct PreparedMode1EffectRankRenderPlan<'rank, 'frame> {
@@ -1023,43 +1021,26 @@ impl ModernGpuVariantRenderer {
         output_view: &wgpu::TextureView,
         command: PreparedMode1EffectRenderCommand<'_, '_>,
     ) {
-        match command {
-            PreparedMode1EffectRenderCommand::RankWork {
-                rank_index,
-                target_load,
-                work_item,
-            } => {
-                debug_assert!(rank_index <= 9);
-                let bg_load = match target_load {
-                    Mode1EffectCommandLoad::ClearFrame => modern_frame_clear_op(frame),
-                    Mode1EffectCommandLoad::Load => wgpu::LoadOp::Load,
-                };
-                render_modern_gpu_work_item(
-                    &self.effect_renderer,
-                    device,
-                    queue,
-                    frame,
-                    bg_cells,
-                    sprite_cells,
-                    &self.atlas,
-                    None,
-                    output_view,
-                    work_item,
-                    bg_load,
-                );
-            }
-            PreparedMode1EffectRenderCommand::EmptyFrameFallback => {
-                self.effect_renderer.render_bg(
-                    device,
-                    queue,
-                    bg_cells,
-                    &self.atlas,
-                    &[],
-                    output_view,
-                    modern_frame_clear_op(frame),
-                );
-            }
+        if let Mode1EffectCommandSource::Rank(rank_index) = command.source {
+            debug_assert!(rank_index <= 9);
         }
+        let bg_load = match command.target_load {
+            Mode1EffectCommandLoad::ClearFrame => modern_frame_clear_op(frame),
+            Mode1EffectCommandLoad::Load => wgpu::LoadOp::Load,
+        };
+        render_modern_gpu_work_item(
+            &self.effect_renderer,
+            device,
+            queue,
+            frame,
+            bg_cells,
+            sprite_cells,
+            &self.atlas,
+            None,
+            output_view,
+            command.work_item,
+            bg_load,
+        );
     }
 
     fn build_variant_frame_from_plan(
@@ -6139,8 +6120,8 @@ mod tests {
             execution
                 .mode1_effect_render_plan(&atlas)
                 .into_command_kinds(),
-            vec![PreparedMode1EffectRenderCommandKind::RankWork {
-                rank_index: 0,
+            vec![PreparedMode1EffectRenderCommandKind::Work {
+                source: Mode1EffectCommandSource::Rank(0),
                 target_load: Mode1EffectCommandLoad::ClearFrame,
                 work_item: GpuWorkItemKind::BgEffect,
             }]
@@ -6201,7 +6182,11 @@ mod tests {
             execution
                 .mode1_effect_render_plan(&atlas)
                 .into_command_kinds(),
-            vec![PreparedMode1EffectRenderCommandKind::EmptyFrameFallback]
+            vec![PreparedMode1EffectRenderCommandKind::Work {
+                source: Mode1EffectCommandSource::EmptyFrameFallback,
+                target_load: Mode1EffectCommandLoad::ClearFrame,
+                work_item: GpuWorkItemKind::ClearBackdrop,
+            }]
         );
     }
 
@@ -7940,13 +7925,13 @@ mod tests {
         assert_eq!(
             prepared_first_rank.into_command_kinds(),
             vec![
-                PreparedMode1EffectRenderCommandKind::RankWork {
-                    rank_index: 0,
+                PreparedMode1EffectRenderCommandKind::Work {
+                    source: Mode1EffectCommandSource::Rank(0),
                     target_load: Mode1EffectCommandLoad::ClearFrame,
                     work_item: GpuWorkItemKind::ClearBackdrop,
                 },
-                PreparedMode1EffectRenderCommandKind::RankWork {
-                    rank_index: 0,
+                PreparedMode1EffectRenderCommandKind::Work {
+                    source: Mode1EffectCommandSource::Rank(0),
                     target_load: Mode1EffectCommandLoad::Load,
                     work_item: GpuWorkItemKind::SpriteEffects,
                 },
