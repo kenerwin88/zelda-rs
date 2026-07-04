@@ -12,7 +12,14 @@
 /// After compositing, a post-process pass applies SNES color math and brightness.
 use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
-use crate::gpu_work_item::{GpuRenderPlan, GpuWorkItem, GpuWorkItemKind};
+#[cfg(test)]
+use crate::gpu_frame_work_command::GpuFrameRenderPhase;
+use crate::gpu_frame_work_command::{
+    main_frame_work_command, post_process_frame_work_command, sub_frame_work_command,
+    GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSubWorkCommand, GpuFrameWorkCommand,
+};
+#[cfg(test)]
+use crate::gpu_work_item::GpuWorkItemKind;
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
 use crate::sprite_renderer::SpriteRenderer;
@@ -35,85 +42,6 @@ pub struct GpuFrameRenderer {
     #[allow(dead_code)]
     sub_comp_tex: wgpu::Texture,
     sub_comp_view: wgpu::TextureView,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum GpuFrameMainWorkCommand {
-    SpritePriority(u32),
-    BgLayer {
-        layer_idx: usize,
-        hi_priority: bool,
-        layer_bit: u32,
-        math_bit_pos: u32,
-    },
-    Mode7Bg,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum GpuFrameSubWorkCommand {
-    ClearBackdrop,
-    Mode7Bg,
-    BgLayer { layer_idx: usize, hi_priority: bool },
-    SpritePriority(u32),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum GpuFrameWorkCommand {
-    Main(GpuFrameMainWorkCommand),
-    Sub(GpuFrameSubWorkCommand),
-    PostProcess,
-}
-
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum GpuFrameRenderPhase {
-    Main,
-    Sub,
-    PostProcess,
-}
-
-type GpuFrameRenderPlan = GpuRenderPlan<GpuFrameWorkCommand>;
-
-#[cfg(test)]
-impl GpuFrameWorkCommand {
-    fn phase(&self) -> GpuFrameRenderPhase {
-        match self {
-            Self::Main(_) => GpuFrameRenderPhase::Main,
-            Self::Sub(_) => GpuFrameRenderPhase::Sub,
-            Self::PostProcess => GpuFrameRenderPhase::PostProcess,
-        }
-    }
-}
-
-impl GpuWorkItem for GpuFrameMainWorkCommand {
-    fn kind(&self) -> GpuWorkItemKind {
-        match self {
-            Self::SpritePriority(_) => GpuWorkItemKind::MainSpritePriority,
-            Self::BgLayer { .. } => GpuWorkItemKind::MainBgLayer,
-            Self::Mode7Bg => GpuWorkItemKind::Mode7MainBg,
-        }
-    }
-}
-
-impl GpuWorkItem for GpuFrameSubWorkCommand {
-    fn kind(&self) -> GpuWorkItemKind {
-        match self {
-            Self::ClearBackdrop => GpuWorkItemKind::ClearSubBackdrop,
-            Self::Mode7Bg => GpuWorkItemKind::Mode7SubBg,
-            Self::BgLayer { .. } => GpuWorkItemKind::SubBgLayer,
-            Self::SpritePriority(_) => GpuWorkItemKind::SubSpritePriority,
-        }
-    }
-}
-
-impl GpuWorkItem for GpuFrameWorkCommand {
-    fn kind(&self) -> GpuWorkItemKind {
-        match self {
-            Self::Main(command) => command.kind(),
-            Self::Sub(command) => command.kind(),
-            Self::PostProcess => GpuWorkItemKind::PostProcess,
-        }
-    }
 }
 
 const COMP_WIDTH: u32 = 256;
@@ -478,7 +406,7 @@ fn build_mode1_render_plan(
     has_sub_bg: bool,
     has_sub_sprites: bool,
 ) -> GpuFrameRenderPlan {
-    let mut render_plan = GpuRenderPlan::default();
+    let mut render_plan = GpuFrameRenderPlan::default();
     render_plan.extend(build_mode1_main_render_plan(has_main_bg, has_main_sprites));
     render_plan.extend(build_mode1_sub_render_plan(has_sub_bg, has_sub_sprites));
     render_plan.extend(build_post_process_render_plan());
@@ -486,7 +414,7 @@ fn build_mode1_render_plan(
 }
 
 fn build_mode1_main_render_plan(has_main_bg: bool, has_main_sprites: bool) -> GpuFrameRenderPlan {
-    let mut render_plan = GpuRenderPlan::default();
+    let mut render_plan = GpuFrameRenderPlan::default();
     if has_main_sprites && !has_main_bg {
         render_plan.extend(
             (0..=3)
@@ -529,7 +457,7 @@ fn build_mode1_main_render_plan(has_main_bg: bool, has_main_sprites: bool) -> Gp
 }
 
 fn build_mode1_sub_render_plan(has_sub_bg: bool, has_sub_sprites: bool) -> GpuFrameRenderPlan {
-    let mut render_plan = GpuRenderPlan::default();
+    let mut render_plan = GpuFrameRenderPlan::default();
     render_plan.push(sub_frame_work_command(
         GpuFrameSubWorkCommand::ClearBackdrop,
     ));
@@ -604,7 +532,7 @@ fn build_mode7_render_plan(
     has_sub_mode7_bg: bool,
     has_sub_sprites: bool,
 ) -> GpuFrameRenderPlan {
-    let mut render_plan = GpuRenderPlan::default();
+    let mut render_plan = GpuFrameRenderPlan::default();
     render_plan.extend(build_mode7_main_render_plan(has_main_sprites));
     render_plan.extend(build_mode7_sub_render_plan(
         has_sub_mode7_bg,
@@ -615,7 +543,7 @@ fn build_mode7_render_plan(
 }
 
 fn build_mode7_main_render_plan(has_main_sprites: bool) -> GpuFrameRenderPlan {
-    let mut render_plan = GpuRenderPlan::default();
+    let mut render_plan = GpuFrameRenderPlan::default();
     if has_main_sprites {
         render_plan.push(main_frame_work_command(
             GpuFrameMainWorkCommand::SpritePriority(0),
@@ -637,7 +565,7 @@ fn build_mode7_sub_render_plan(
     has_sub_mode7_bg: bool,
     has_sub_sprites: bool,
 ) -> GpuFrameRenderPlan {
-    let mut render_plan = GpuRenderPlan::default();
+    let mut render_plan = GpuFrameRenderPlan::default();
     render_plan.push(sub_frame_work_command(
         GpuFrameSubWorkCommand::ClearBackdrop,
     ));
@@ -655,21 +583,9 @@ fn build_mode7_sub_render_plan(
 }
 
 fn build_post_process_render_plan() -> GpuFrameRenderPlan {
-    let mut render_plan = GpuRenderPlan::default();
+    let mut render_plan = GpuFrameRenderPlan::default();
     render_plan.push(post_process_frame_work_command());
     render_plan
-}
-
-fn main_frame_work_command(command: GpuFrameMainWorkCommand) -> GpuFrameWorkCommand {
-    GpuFrameWorkCommand::Main(command)
-}
-
-fn sub_frame_work_command(command: GpuFrameSubWorkCommand) -> GpuFrameWorkCommand {
-    GpuFrameWorkCommand::Sub(command)
-}
-
-fn post_process_frame_work_command() -> GpuFrameWorkCommand {
-    GpuFrameWorkCommand::PostProcess
 }
 
 #[allow(clippy::too_many_arguments)]
