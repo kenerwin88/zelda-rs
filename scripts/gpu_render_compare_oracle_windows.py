@@ -31,6 +31,7 @@ MODERN_INDEX_SUMMARY_RE = re.compile(
     r"variant_draws=(\d+) fallback_draws=(\d+) dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
     r"(?: stable_preview_draws=(\d+) stable_effect_draws=(\d+) dynamic_material_draws=(\d+) "
     r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+)"
+    r"(?: unkeyed_bg_fallback_draws=\d+ unkeyed_sprite_fallback_draws=\d+)?"
     r"(?: mixed_overlay_bg_effect_draws=(\d+)"
     r"(?: mixed_overlay_bg_effect_candidates=(\d+) "
     r"(?:mixed_overlay_bg_effect_culled_invisible_main=\d+ )?"
@@ -425,7 +426,7 @@ def run_window(
         )
     if mismatched_pixels != 0:
         raise SystemExit(f"{window.name}: reported {mismatched_pixels} mismatched pixels")
-    variant_stats = (0,) * 36
+    variant_stats = (0,) * 38
     modern_match = MODERN_INDEX_SUMMARY_RE.search(result.stdout)
     if renderer == "assets-variant-gpu":
         if not modern_match:
@@ -472,6 +473,8 @@ def run_window(
             int(modern_match.group(40) or 0),
             int(modern_match.group(41) or 0),
             int_stat(modern_match.group(0), "mixed_overlay_bg_effect_culled_invisible_main"),
+            int_stat(modern_match.group(0), "unkeyed_bg_fallback_draws"),
+            int_stat(modern_match.group(0), "unkeyed_sprite_fallback_draws"),
         )
     print(
         f"{window.name}: compared={compared} frames={window.frames} "
@@ -486,6 +489,8 @@ def run_window(
         f"dynamic_material_draws={variant_stats[6]} "
         f"missing_art_draws={variant_stats[7]} "
         f"unkeyed_fallback_draws={variant_stats[8]} "
+        f"unkeyed_bg_fallback_draws={variant_stats[36]} "
+        f"unkeyed_sprite_fallback_draws={variant_stats[37]} "
         f"mixed_overlay_bg_effect_draws={variant_stats[9]} "
         f"mixed_overlay_bg_effect_candidates={variant_stats[10]} "
         f"mixed_overlay_bg_effect_culled_invisible_main={variant_stats[35]} "
@@ -631,6 +636,8 @@ def main() -> None:
     total_dynamic_material_draws = 0
     total_missing_art_draws = 0
     total_unkeyed_fallback_draws = 0
+    total_unkeyed_bg_fallback_draws = 0
+    total_unkeyed_sprite_fallback_draws = 0
     total_mixed_overlay_bg_effect_draws = 0
     total_mixed_overlay_bg_effect_candidates = 0
     total_mixed_overlay_bg_effect_culled_invisible_main = 0
@@ -707,6 +714,8 @@ def main() -> None:
         total_dynamic_material_draws += variant_stats[6]
         total_missing_art_draws += variant_stats[7]
         total_unkeyed_fallback_draws += variant_stats[8]
+        total_unkeyed_bg_fallback_draws += variant_stats[36]
+        total_unkeyed_sprite_fallback_draws += variant_stats[37]
         total_mixed_overlay_bg_effect_draws += variant_stats[9]
         total_mixed_overlay_bg_effect_candidates += variant_stats[10]
         total_mixed_overlay_bg_effect_culled_invisible_main += variant_stats[35]
@@ -774,6 +783,8 @@ def main() -> None:
         f"dynamic_material_draws={total_dynamic_material_draws} "
         f"missing_art_draws={total_missing_art_draws} "
         f"unkeyed_fallback_draws={total_unkeyed_fallback_draws} "
+        f"unkeyed_bg_fallback_draws={total_unkeyed_bg_fallback_draws} "
+        f"unkeyed_sprite_fallback_draws={total_unkeyed_sprite_fallback_draws} "
         f"mixed_overlay_bg_effect_draws={total_mixed_overlay_bg_effect_draws} "
         f"mixed_overlay_bg_effect_candidates={total_mixed_overlay_bg_effect_candidates} "
         f"mixed_overlay_bg_effect_culled_invisible_main={total_mixed_overlay_bg_effect_culled_invisible_main} "

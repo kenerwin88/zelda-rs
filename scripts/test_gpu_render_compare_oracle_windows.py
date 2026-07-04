@@ -102,7 +102,9 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
             "gpu_count=5 mode7_gpu_count=1 cpu_count=1 variant_draws=11 "
             "fallback_draws=13 dynamic_palette_draws=17 missing_variant_draws=19 "
             "stable_preview_draws=2 stable_effect_draws=3 dynamic_material_draws=5 "
-            "missing_art_draws=7 unkeyed_fallback_draws=11 mixed_overlay_bg_effect_draws=13 "
+            "missing_art_draws=7 unkeyed_fallback_draws=11 "
+            "unkeyed_bg_fallback_draws=4 unkeyed_sprite_fallback_draws=7 "
+            "mixed_overlay_bg_effect_draws=13 "
             "mixed_overlay_bg_effect_candidates=17 "
             "mixed_overlay_bg_effect_culled_invisible_main=18 "
             "mixed_overlay_bg_effect_reject_complex_frame=19 "
@@ -159,6 +161,8 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         self.assertEqual(match.group(39), "80")
         self.assertEqual(match.group(40), "79")
         self.assertEqual(match.group(41), "83")
+        self.assertEqual(int_stat(match.group(0), "unkeyed_bg_fallback_draws"), 4)
+        self.assertEqual(int_stat(match.group(0), "unkeyed_sprite_fallback_draws"), 7)
         self.assertEqual(
             int_stat(match.group(0), "mixed_overlay_bg_effect_culled_invisible_main"),
             18,

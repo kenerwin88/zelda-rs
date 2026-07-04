@@ -948,3 +948,32 @@ the cull count.
 `mixed_overlay_bg_effect_culled_invisible_main=1541`, with
 `mixed_overlay_bg_effect_reject_complex_frame=0` and
 `mixed_overlay_bg_effect_reject_complex_scanline_main=0`.
+
+### Task 25: Split Unkeyed Fallback By BG vs OBJ Source
+
+**Files:**
+- [x] Modify: `crates/renderer/src/modern_software.rs`
+- [x] Modify: `crates/renderer/src/modern_variant_draw.rs`
+- [x] Modify: `zelda3-bin/src/main.rs`
+- [x] Modify: `scripts/gpu_render_compare_oracle_windows.py`
+- [x] Modify: `scripts/gpu_render_compare_windows.py`
+- [x] Modify: `docs/assets/rgba-variant-atlas.md`
+- [x] Test: focused draw-plan unit for BG/OBJ unkeyed split
+- [x] Test: parser compatibility for the split stats
+
+**Goal:** Turn the remaining large `unkeyed_fallback_draws` bucket into an
+actionable source-keying target instead of treating all live indexed fallback
+as one opaque renderer category.
+
+**Done:** Variant draw stats now split unkeyed fallback into
+`unkeyed_bg_fallback_draws` and `unkeyed_sprite_fallback_draws`, while keeping
+the aggregate `unkeyed_fallback_draws` field for compatibility. Live summaries,
+modern-index summaries, and oracle/window wrappers surface both split counters.
+
+**Route result:** The opening tail remains `mismatched_pixels=0`. The remaining
+unkeyed fallback is overwhelmingly BG: `unkeyed_fallback_draws=133112`,
+`unkeyed_bg_fallback_draws=132912`, and
+`unkeyed_sprite_fallback_draws=200`. Current committed overworld/dungeon index
+atlas loaders still initialize BG index cells with `NO_SOURCE_KEY`, so the next
+high-value modernization lane is adding source identity/source refs to those BG
+index manifests or switching this path to source-keyed BG cells.

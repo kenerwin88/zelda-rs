@@ -24,6 +24,7 @@ MODERN_INDEX_SUMMARY_RE = re.compile(
     r"(?: variant_draws=(\d+)(?: fallback_draws=(\d+))? dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
     r"(?: stable_preview_draws=(\d+) stable_effect_draws=(\d+) dynamic_material_draws=(\d+) "
     r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+)"
+    r"(?: unkeyed_bg_fallback_draws=\d+ unkeyed_sprite_fallback_draws=\d+)?"
     r"(?: mixed_overlay_bg_effect_draws=(\d+)"
     r"(?: mixed_overlay_bg_effect_candidates=(\d+) "
     r"(?:mixed_overlay_bg_effect_culled_invisible_main=\d+ )?"
@@ -57,6 +58,7 @@ MODERN_INDEX_VARIANT_RE = re.compile(
     r"variant_draws=(\d+)(?: fallback_draws=(\d+))? dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
     r"(?: stable_preview_draws=(\d+) stable_effect_draws=(\d+) dynamic_material_draws=(\d+) "
     r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+)"
+    r"(?: unkeyed_bg_fallback_draws=\d+ unkeyed_sprite_fallback_draws=\d+)?"
     r"(?: mixed_overlay_bg_effect_draws=(\d+)"
     r"(?: mixed_overlay_bg_effect_candidates=(\d+) "
     r"(?:mixed_overlay_bg_effect_culled_invisible_main=\d+ )?"
@@ -286,6 +288,10 @@ def compare_window(
             dynamic_material_draws = int(match.group(13) or 0)
             missing_art_draws = int(match.group(14) or 0)
             unkeyed_fallback_draws = int(match.group(15) or 0)
+            unkeyed_bg_fallback_draws = int_stat(match.group(0), "unkeyed_bg_fallback_draws")
+            unkeyed_sprite_fallback_draws = int_stat(
+                match.group(0), "unkeyed_sprite_fallback_draws"
+            )
             mixed_overlay_bg_effect_draws = int(match.group(16) or 0)
             mixed_overlay_bg_effect_candidates = int(match.group(17) or 0)
             mixed_overlay_bg_effect_culled_invisible_main = int_stat(
@@ -347,6 +353,8 @@ def compare_window(
             dynamic_material_draws = 0
             missing_art_draws = 0
             unkeyed_fallback_draws = 0
+            unkeyed_bg_fallback_draws = 0
+            unkeyed_sprite_fallback_draws = 0
             mixed_overlay_bg_effect_draws = 0
             mixed_overlay_bg_effect_candidates = 0
             mixed_overlay_bg_effect_culled_invisible_main = 0
@@ -384,6 +392,12 @@ def compare_window(
                 dynamic_material_draws += int(frame_match.group(8) or 0)
                 missing_art_draws += int(frame_match.group(9) or 0)
                 unkeyed_fallback_draws += int(frame_match.group(10) or 0)
+                unkeyed_bg_fallback_draws += int_stat(
+                    frame_match.group(0), "unkeyed_bg_fallback_draws"
+                )
+                unkeyed_sprite_fallback_draws += int_stat(
+                    frame_match.group(0), "unkeyed_sprite_fallback_draws"
+                )
                 mixed_overlay_bg_effect_draws += int(frame_match.group(11) or 0)
                 mixed_overlay_bg_effect_candidates += int(frame_match.group(12) or 0)
                 mixed_overlay_bg_effect_culled_invisible_main += int_stat(
@@ -450,6 +464,8 @@ def compare_window(
             f"dynamic_material_draws={dynamic_material_draws} "
             f"missing_art_draws={missing_art_draws} "
             f"unkeyed_fallback_draws={unkeyed_fallback_draws} "
+            f"unkeyed_bg_fallback_draws={unkeyed_bg_fallback_draws} "
+            f"unkeyed_sprite_fallback_draws={unkeyed_sprite_fallback_draws} "
             f"mixed_overlay_bg_effect_draws={mixed_overlay_bg_effect_draws} "
             f"mixed_overlay_bg_effect_candidates={mixed_overlay_bg_effect_candidates} "
             f"mixed_overlay_bg_effect_culled_invisible_main={mixed_overlay_bg_effect_culled_invisible_main} "
@@ -522,6 +538,8 @@ def compare_window(
                 mixed_overlay_bg_effect_reject_cgram_mismatch,
                 mixed_overlay_bg_effect_reject_overlap,
                 mixed_overlay_bg_effect_culled_invisible_main,
+                unkeyed_bg_fallback_draws,
+                unkeyed_sprite_fallback_draws,
             ),
         )
     match = COMPARE_RE.search(output)
@@ -595,6 +613,8 @@ def main() -> None:
     total_dynamic_material_draws = 0
     total_missing_art_draws = 0
     total_unkeyed_fallback_draws = 0
+    total_unkeyed_bg_fallback_draws = 0
+    total_unkeyed_sprite_fallback_draws = 0
     total_mixed_overlay_bg_effect_draws = 0
     total_mixed_overlay_bg_effect_candidates = 0
     total_mixed_overlay_bg_effect_culled_invisible_main = 0
@@ -685,6 +705,8 @@ def main() -> None:
         total_dynamic_material_draws += variant_stats[6]
         total_missing_art_draws += variant_stats[7]
         total_unkeyed_fallback_draws += variant_stats[8]
+        total_unkeyed_bg_fallback_draws += variant_stats[36]
+        total_unkeyed_sprite_fallback_draws += variant_stats[37]
         total_mixed_overlay_bg_effect_draws += variant_stats[9]
         total_mixed_overlay_bg_effect_candidates += variant_stats[10]
         total_mixed_overlay_bg_effect_culled_invisible_main += variant_stats[35]
@@ -748,6 +770,8 @@ def main() -> None:
             f"dynamic_material_draws={total_dynamic_material_draws} "
             f"missing_art_draws={total_missing_art_draws} "
             f"unkeyed_fallback_draws={total_unkeyed_fallback_draws} "
+            f"unkeyed_bg_fallback_draws={total_unkeyed_bg_fallback_draws} "
+            f"unkeyed_sprite_fallback_draws={total_unkeyed_sprite_fallback_draws} "
             f"mixed_overlay_bg_effect_draws={total_mixed_overlay_bg_effect_draws} "
             f"mixed_overlay_bg_effect_candidates={total_mixed_overlay_bg_effect_candidates} "
             f"mixed_overlay_bg_effect_culled_invisible_main={total_mixed_overlay_bg_effect_culled_invisible_main} "

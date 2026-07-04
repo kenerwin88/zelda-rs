@@ -57,7 +57,7 @@ pub fn compile_variant_draws<'a>(
             };
             let key = variant_key_for_index_tile(cell, bg_palette_name, inst.palette);
             let draw = atlas.resolve_draw(key.as_ref());
-            plan.stats.record_draw(&draw);
+            plan.stats.record_bg_draw(&draw);
             plan.bg.push(VariantBgDrawPacket {
                 layer_index,
                 cell,
@@ -74,7 +74,7 @@ pub fn compile_variant_draws<'a>(
         };
         let key = variant_key_for_index_tile(cell, sprite_palette_name, inst.palette);
         let draw = atlas.resolve_draw(key.as_ref());
-        plan.stats.record_draw(&draw);
+        plan.stats.record_sprite_draw(&draw);
         plan.sprites.push(VariantSpriteDrawPacket {
             cell,
             inst,
@@ -219,6 +219,8 @@ mod tests {
         assert_eq!(plan.stats.stable_effect_draws, 1);
         assert_eq!(plan.stats.missing_art_draws, 1);
         assert_eq!(plan.stats.unkeyed_fallback_draws, 1);
+        assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
+        assert_eq!(plan.stats.unkeyed_sprite_fallback_draws, 1);
     }
 
     #[test]
