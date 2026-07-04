@@ -2193,6 +2193,7 @@ mod tests {
             .index_tiles
             .push(ModernIndexTileInstance {
                 cell_id: 0,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 0,
                 screen_y: 0,
                 palette: layer_index,
@@ -2236,6 +2237,7 @@ mod tests {
         bg1.wrap_h = 256;
         bg1.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -2245,6 +2247,7 @@ mod tests {
         });
         bg1.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 8,
             screen_y: 0,
             palette: 1,
@@ -2299,6 +2302,7 @@ mod tests {
         bg1.wrap_h = 256;
         bg1.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 250,
             screen_y: 0,
             palette: 0,
@@ -2609,6 +2613,7 @@ mod tests {
             .index_tiles
             .push(ModernIndexTileInstance {
                 cell_id: 0,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 0,
                 screen_y: 0,
                 palette: 0,
@@ -2754,6 +2759,7 @@ mod tests {
         layer.enabled_main = true;
         layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 3,
@@ -2915,6 +2921,7 @@ mod tests {
             .index_tiles
             .push(ModernIndexTileInstance {
                 cell_id: 0,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 0,
                 screen_y: 0,
                 palette: 3,
@@ -3044,6 +3051,7 @@ mod tests {
             .index_tiles
             .push(ModernIndexTileInstance {
                 cell_id: 0,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 0,
                 screen_y: 0,
                 palette: 3,
@@ -3124,6 +3132,7 @@ mod tests {
             .index_tiles
             .push(ModernIndexTileInstance {
                 cell_id: 0,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 0,
                 screen_y: 0,
                 palette: 3,
@@ -3214,6 +3223,7 @@ mod tests {
             .index_tiles
             .push(ModernIndexTileInstance {
                 cell_id: 0,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 0,
                 screen_y: 0,
                 palette: 3,
@@ -3307,6 +3317,7 @@ mod tests {
             .index_tiles
             .push(ModernIndexTileInstance {
                 cell_id: 0,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 0,
                 screen_y: 0,
                 palette: 3,
@@ -3513,6 +3524,7 @@ mod tests {
             .index_tiles
             .push(ModernIndexTileInstance {
                 cell_id: 0,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 0,
                 screen_y: 0,
                 palette: 2,
@@ -3597,6 +3609,7 @@ mod tests {
             .index_tiles
             .push(ModernIndexTileInstance {
                 cell_id: 0,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 0,
                 screen_y: 0,
                 palette: 0,
@@ -3702,6 +3715,7 @@ mod tests {
             .index_tiles
             .push(ModernIndexTileInstance {
                 cell_id: 0,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 0,
                 screen_y: 0,
                 palette: 0,

@@ -150,6 +150,11 @@ impl ModernBgLayer {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ModernIndexTileInstance {
     pub cell_id: u32,
+    /// Logical source key for this draw instance when it is known.
+    ///
+    /// Cleaned/deduped BG cells can be shared by multiple ROM source tiles, so the
+    /// source identity may need to live on the instance instead of the cell.
+    pub source_key: u64,
     pub screen_x: i16,
     pub screen_y: i16,
     pub palette: u8,
@@ -252,6 +257,7 @@ mod tests {
     fn modern_index_tile_instance_fields() {
         let inst = ModernIndexTileInstance {
             cell_id: 42,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: -8,
             screen_y: 16,
             palette: 3,
@@ -260,6 +266,7 @@ mod tests {
             priority: false,
         };
         assert_eq!(inst.cell_id, 42);
+        assert_eq!(inst.source_key, crate::modern_hd_overrides::NO_SOURCE_KEY);
         assert_eq!(inst.screen_x, -8);
         assert_eq!(inst.palette, 3);
         assert!(inst.hflip);

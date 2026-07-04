@@ -3831,6 +3831,7 @@ mod tests {
             layer.enabled_main = true;
             layer.index_tiles.push(ModernIndexTileInstance {
                 cell_id: 0,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 0,
                 screen_y: 0,
                 palette: 3,
@@ -3976,6 +3977,7 @@ mod tests {
         layer.enabled_main = true;
         layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 3,
@@ -3985,6 +3987,7 @@ mod tests {
         });
         layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 16,
             screen_y: 8,
             palette: 3,
@@ -4052,6 +4055,7 @@ mod tests {
         let mut main = ModernBgLayer::new(0);
         main.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -4064,6 +4068,7 @@ mod tests {
         let mut sub = ModernBgLayer::new(1);
         sub.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 1,
@@ -4118,6 +4123,7 @@ mod tests {
         main.enabled_main = true;
         main.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -4130,6 +4136,7 @@ mod tests {
         let mut sub = ModernBgLayer::new(1);
         sub.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 1,
@@ -4208,6 +4215,7 @@ mod tests {
         source_layer.enabled_main = true;
         source_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -4224,6 +4232,7 @@ mod tests {
         fallback_layer.enabled_main = true;
         fallback_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -4301,6 +4310,7 @@ mod tests {
         source_layer.enabled_main = true;
         source_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -4310,6 +4320,7 @@ mod tests {
         });
         source_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 8,
             screen_y: 0,
             palette: 0,
@@ -4441,6 +4452,7 @@ mod tests {
         layer.enabled_main = true;
         layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -4450,6 +4462,7 @@ mod tests {
         });
         layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 16,
             screen_y: 0,
             palette: 0,
@@ -4459,6 +4472,7 @@ mod tests {
         });
         layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 2,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 16,
             screen_y: 0,
             palette: 3,
@@ -4600,6 +4614,7 @@ mod tests {
         layer.enabled_main = true;
         layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -4693,6 +4708,7 @@ mod tests {
         layer.enabled_main = true;
         layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -4787,6 +4803,7 @@ mod tests {
         layer.enabled_main = true;
         layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -4878,6 +4895,7 @@ mod tests {
         layer.enabled_main = true;
         layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -4973,6 +4991,7 @@ mod tests {
         layer.enabled_main = true;
         layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -4982,6 +5001,7 @@ mod tests {
         });
         layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 1,
             screen_y: 0,
             palette: 0,
@@ -5071,6 +5091,7 @@ mod tests {
         layer.enabled_main = true;
         layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -5161,6 +5182,7 @@ mod tests {
         main_layer.enabled_main = true;
         main_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -5174,6 +5196,7 @@ mod tests {
         sub_layer.enabled_sub = true;
         sub_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -5314,6 +5337,7 @@ mod tests {
         main_layer.enabled_main = true;
         main_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -5327,6 +5351,7 @@ mod tests {
         sub_layer.enabled_sub = true;
         sub_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -5452,6 +5477,7 @@ mod tests {
         main_layer.enabled_main = true;
         main_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -5597,6 +5623,7 @@ mod tests {
         main_layer.enabled_main = true;
         main_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -5610,6 +5637,7 @@ mod tests {
         sub_layer.enabled_sub = true;
         sub_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -5734,6 +5762,7 @@ mod tests {
         main_layer.enabled_main = true;
         main_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -5743,6 +5772,7 @@ mod tests {
         });
         main_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -5756,6 +5786,7 @@ mod tests {
         sub_layer.enabled_sub = true;
         sub_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -5888,6 +5919,7 @@ mod tests {
         main_layer.enabled_main = true;
         main_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -5897,6 +5929,7 @@ mod tests {
         });
         main_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -5910,6 +5943,7 @@ mod tests {
         sub_layer.enabled_sub = true;
         sub_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -6051,6 +6085,7 @@ mod tests {
         main_layer.enabled_main = true;
         main_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -6060,6 +6095,7 @@ mod tests {
         });
         main_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -6073,6 +6109,7 @@ mod tests {
         sub_layer.enabled_sub = true;
         sub_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 2,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -6246,6 +6283,7 @@ mod tests {
         front_layer.enabled_main = true;
         front_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -6259,6 +6297,7 @@ mod tests {
         target_layer.enabled_main = true;
         target_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -6272,6 +6311,7 @@ mod tests {
         sub_layer.enabled_sub = true;
         sub_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 2,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -6457,6 +6497,7 @@ mod tests {
         for cell_id in 0..3 {
             main_layer.index_tiles.push(ModernIndexTileInstance {
                 cell_id,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 0,
                 screen_y: 0,
                 palette: 2,
@@ -6471,6 +6512,7 @@ mod tests {
         sub_layer.enabled_sub = true;
         sub_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 3,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -6656,6 +6698,7 @@ mod tests {
         main_layer.enabled_main = true;
         main_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -6665,6 +6708,7 @@ mod tests {
         });
         main_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -6678,6 +6722,7 @@ mod tests {
         sub_layer.enabled_sub = true;
         sub_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 2,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -6800,6 +6845,7 @@ mod tests {
         };
         let inst = ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 16,
@@ -6906,6 +6952,7 @@ mod tests {
         main_layer.enabled_main = true;
         main_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -6919,6 +6966,7 @@ mod tests {
         sub_layer.enabled_sub = true;
         sub_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -7059,6 +7107,7 @@ mod tests {
         main_layer.enabled_main = true;
         main_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 2,
@@ -7072,6 +7121,7 @@ mod tests {
         sub_layer.enabled_sub = true;
         sub_layer.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -7411,6 +7461,7 @@ mod tests {
             layer.enabled_main = true;
             layer.index_tiles.push(ModernIndexTileInstance {
                 cell_id: 0,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 3,
                 screen_y: 5,
                 palette: 2,

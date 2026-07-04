@@ -117,6 +117,7 @@ mod tests {
             .index_tiles
             .push(ModernIndexTileInstance {
                 cell_id: 0,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 16,
                 screen_y: 24,
                 palette: 0,
@@ -128,6 +129,7 @@ mod tests {
             .index_tiles
             .push(ModernIndexTileInstance {
                 cell_id: 1,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 screen_x: 0,
                 screen_y: 0,
                 palette: 0,

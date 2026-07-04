@@ -61,12 +61,20 @@ pub fn variant_key_for_index_tile(
     palette_name: &str,
     palette_row: u8,
 ) -> Option<VariantAtlasKey> {
-    if cell.source_key == crate::modern_hd_overrides::NO_SOURCE_KEY {
+    variant_key_for_source_key(cell.source_key, palette_name, palette_row)
+}
+
+pub fn variant_key_for_source_key(
+    source_key: u64,
+    palette_name: &str,
+    palette_row: u8,
+) -> Option<VariantAtlasKey> {
+    if source_key == crate::modern_hd_overrides::NO_SOURCE_KEY {
         return None;
     }
-    let kind = (cell.source_key >> 32) as u8;
-    let pack = ((cell.source_key >> 16) & 0xffff) as u16;
-    let tile = (cell.source_key & 0xffff) as u16;
+    let kind = (source_key >> 32) as u8;
+    let pack = ((source_key >> 16) & 0xffff) as u16;
+    let tile = (source_key & 0xffff) as u16;
     let (source_kind, asset) = match kind {
         1 | 5 | 6 => ("bg", "kBgGfx"),
         2 => ("sprite", "kSprGfx"),

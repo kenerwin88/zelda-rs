@@ -429,6 +429,7 @@ pub fn extract_modern_dungeon_frame_from_vram(
                     .index_tiles
                     .push(ModernIndexTileInstance {
                         cell_id,
+                        source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                         screen_x: sx as i16,
                         screen_y: sy as i16,
                         // 2bpp BG3 bakes the CGRAM index into the cell → palette 0.
@@ -713,6 +714,7 @@ pub fn extract_modern_frame_with_index_atlas(
                     .index_tiles
                     .push(ModernIndexTileInstance {
                         cell_id: cell.id,
+                        source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                         screen_x: (col * 8) as i16 - h_scroll as i16,
                         screen_y: (row * 8) as i16 - v_scroll as i16,
                         palette: ((entry_word >> 10) & 7) as u8,
@@ -795,6 +797,7 @@ pub fn extract_modern_frame_with_dungeon_atlas(
                     .index_tiles
                     .push(ModernIndexTileInstance {
                         cell_id: cell.id,
+                        source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                         screen_x: (tx * 8) as i16 - h_scroll as i16,
                         screen_y: (ty * 8) as i16 - v_scroll as i16,
                         palette: ((entry_word >> 10) & 7) as u8,
@@ -1272,6 +1275,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                     .index_tiles
                     .push(ModernIndexTileInstance {
                         cell_id,
+                        source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                         screen_x: sx as i16,
                         screen_y: sy as i16,
                         palette,

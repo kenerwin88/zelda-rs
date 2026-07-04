@@ -2,7 +2,8 @@ use crate::modern_frame::{ModernFrame, ModernIndexSpriteInstance, ModernIndexTil
 use crate::modern_index_atlas::ModernIndexTile;
 use crate::modern_software::VariantAtlasRenderStats;
 use crate::modern_variant_atlas::{
-    variant_key_for_index_tile, ModernVariantAtlas, VariantAtlasDraw, VariantAtlasKey,
+    variant_key_for_index_tile, variant_key_for_source_key, ModernVariantAtlas, VariantAtlasDraw,
+    VariantAtlasKey,
 };
 
 #[derive(Clone, Debug)]
@@ -55,7 +56,12 @@ pub fn compile_variant_draws<'a>(
             let Some(cell) = bg_cells.get(inst.cell_id as usize) else {
                 continue;
             };
-            let key = variant_key_for_index_tile(cell, bg_palette_name, inst.palette);
+            let source_key = if inst.source_key != crate::modern_hd_overrides::NO_SOURCE_KEY {
+                inst.source_key
+            } else {
+                cell.source_key
+            };
+            let key = variant_key_for_source_key(source_key, bg_palette_name, inst.palette);
             let draw = atlas.resolve_draw(key.as_ref());
             plan.stats.record_bg_draw(&draw);
             plan.bg.push(VariantBgDrawPacket {
@@ -152,6 +158,7 @@ mod tests {
         bg0.enabled_main = true;
         bg0.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 4,
             screen_y: 8,
             palette: 2,
@@ -161,6 +168,7 @@ mod tests {
         });
         bg0.index_tiles.push(ModernIndexTileInstance {
             cell_id: 1,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 12,
             screen_y: 8,
             palette: 0,
@@ -224,12 +232,59 @@ mod tests {
     }
 
     #[test]
+    fn bg_instance_source_key_resolves_deduped_unkeyed_cell() {
+        let mut frame = ModernFrame::empty();
+        let mut bg0 = ModernBgLayer::new(0);
+        bg0.enabled_main = true;
+        bg0.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: modern_source_key(1, 3, 5),
+            screen_x: 4,
+            screen_y: 8,
+            palette: 2,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = bg0;
+        let bg_cells = vec![index_cell(0, NO_SOURCE_KEY)];
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![bg_entry(3, 5, 2)],
+            effects: vec![effect(2)],
+        };
+
+        let plan = compile_variant_draws(
+            &frame,
+            &bg_cells,
+            &[],
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(plan.bg.len(), 1);
+        assert!(matches!(
+            plan.bg[0].draw,
+            VariantAtlasDraw::Stable {
+                effect: Some(_),
+                ..
+            }
+        ));
+        assert_eq!(plan.stats.stable_effect_draws, 1);
+        assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
+    }
+
+    #[test]
     fn skips_disabled_layers_and_out_of_range_cells() {
         let mut frame = ModernFrame::empty();
         let mut disabled = ModernBgLayer::new(0);
         disabled.enabled_main = false;
         disabled.index_tiles.push(ModernIndexTileInstance {
             cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 0,
             screen_y: 0,
             palette: 0,
@@ -242,6 +297,7 @@ mod tests {
         enabled.enabled_main = true;
         enabled.index_tiles.push(ModernIndexTileInstance {
             cell_id: 99,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             screen_x: 8,
             screen_y: 8,
             palette: 0,
