@@ -12766,7 +12766,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
         Some(p) => p,
         None => {
             eprintln!(
-                "usage: zelda3 --play-gpu-render-compare <path-to-rom.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--load-state <path>] [--stride <n>] [--modern-index-compare <n>]"
+                "usage: zelda3 --play-gpu-render-compare <path-to-rom.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--load-state <path>] [--stride <n>] [--modern-index-compare <n>] [--require-full-gpu-path]"
             );
             process::exit(2);
         }
@@ -12788,6 +12788,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
     let mut stride = 1u32;
     let mut modern_render_compare = 0u32;
     let mut modern_index_compare = 0u32;
+    let mut require_full_gpu_path = false;
     let modern_index_compare_summary = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_SUMMARY").is_ok();
     let modern_index_compare_progress = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_PROGRESS")
         .ok()
@@ -12952,11 +12953,19 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 }
                 i += 2;
             }
+            "--require-full-gpu-path" => {
+                require_full_gpu_path = true;
+                i += 1;
+            }
             flag => {
                 eprintln!("unknown --play-gpu-render-compare option: {flag}");
                 process::exit(2);
             }
         }
+    }
+    if require_full_gpu_path && modern_index_compare == 0 {
+        eprintln!("--require-full-gpu-path requires --modern-index-compare");
+        process::exit(2);
     }
     if renderer_mode == renderer::RendererMode::ModernCompare
         || renderer_mode == renderer::RendererMode::Modern
@@ -13258,6 +13267,17 @@ fn run_play_gpu_render_compare(args: &[String]) {
             if mismatch != 0 {
                 modern_index_compare_bad_count += 1;
                 modern_index_compare_bad_pixels += mismatch as u64;
+            }
+            if require_full_gpu_path {
+                if let Some(fallback) =
+                    first_cpu_render_fallback_reason(via, variant_stats.as_ref())
+                {
+                    eprintln!(
+                        "gpu_path_unsupported frame={completed_frame} mode={mode_label} ppumode={} via={via} reason={} count={} mismatch_px={mismatch}",
+                        gpu_frame.mode, fallback.reason, fallback.count
+                    );
+                    process::exit(1);
+                }
             }
             if let Some(stats) = variant_stats {
                 modern_index_compare_variant_draws += u64::from(stats.stable_draws);
@@ -13687,6 +13707,73 @@ fn parse_variant_trace_pixel(value: &str) -> Option<(u32, i16, i16)> {
         return None;
     }
     Some((frame, x, y))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CpuRenderFallback {
+    reason: &'static str,
+    count: u32,
+}
+
+fn first_cpu_render_fallback_reason(
+    via: &str,
+    stats: Option<&renderer::modern_software::VariantAtlasRenderStats>,
+) -> Option<CpuRenderFallback> {
+    match via {
+        "mode7-cpu" => {
+            return Some(CpuRenderFallback {
+                reason: "mode7-cpu",
+                count: 1,
+            });
+        }
+        "sources" => {
+            return Some(CpuRenderFallback {
+                reason: "sources-cpu",
+                count: 1,
+            });
+        }
+        "vram" => {
+            return Some(CpuRenderFallback {
+                reason: "vram-cpu",
+                count: 1,
+            });
+        }
+        _ => {}
+    }
+
+    let stats = stats?;
+    let checks = [
+        (
+            "screen-builder-forced-blank",
+            stats.cpu_screen_builder_block_forced_blank,
+        ),
+        (
+            "screen-builder-window",
+            stats.cpu_screen_builder_block_window,
+        ),
+        (
+            "screen-builder-mosaic",
+            stats.cpu_screen_builder_block_mosaic,
+        ),
+        ("screen-builder-bg4", stats.cpu_screen_builder_block_bg4),
+        (
+            "screen-builder-short-bg-layers",
+            stats.cpu_screen_builder_block_short_bg_layers,
+        ),
+        (
+            "screen-builder-scroll",
+            stats.cpu_screen_builder_block_scroll,
+        ),
+        ("prefinal-overlay-cpu", stats.cpu_prefinal_overlay_frames),
+        (
+            "prefinal-composite-cpu",
+            stats.cpu_prefinal_composite_frames,
+        ),
+    ];
+    checks
+        .into_iter()
+        .find(|(_, count)| *count != 0)
+        .map(|(reason, count)| CpuRenderFallback { reason, count })
 }
 
 fn render_frame_rgb_hash_rgba(frame: &[u8]) -> u32 {
@@ -15710,6 +15797,47 @@ mod tests {
         );
         assert_eq!(parse_variant_trace_pixel("175:102"), None);
         assert_eq!(parse_variant_trace_pixel("175:102:104:1"), None);
+    }
+
+    #[test]
+    fn full_gpu_path_classifier_accepts_gpu_routes() {
+        assert_eq!(first_cpu_render_fallback_reason("mode7-gpu", None), None);
+
+        let stats = renderer::modern_software::VariantAtlasRenderStats {
+            direct_gpu_fallback_frames: 1,
+            gpu_screen_builder_frames: 1,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            first_cpu_render_fallback_reason("variant-gpu", Some(&stats)),
+            None
+        );
+    }
+
+    #[test]
+    fn full_gpu_path_classifier_reports_first_cpu_route_or_blocker() {
+        assert_eq!(
+            first_cpu_render_fallback_reason("mode7-cpu", None),
+            Some(CpuRenderFallback {
+                reason: "mode7-cpu",
+                count: 1,
+            })
+        );
+
+        let stats = renderer::modern_software::VariantAtlasRenderStats {
+            cpu_prefinal_composite_frames: 1,
+            cpu_screen_builder_block_mosaic: 1,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            first_cpu_render_fallback_reason("variant-gpu", Some(&stats)),
+            Some(CpuRenderFallback {
+                reason: "screen-builder-mosaic",
+                count: 1,
+            })
+        );
     }
 
     #[test]
