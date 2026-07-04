@@ -1,9 +1,86 @@
+use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_work_command::{
     main_frame_work_command, post_process_frame_work_command, sub_frame_work_command,
     GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSubWorkCommand,
 };
 
-pub(crate) fn build_mode1_render_plan(
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GpuFrameRenderPlanContext {
+    Mode1 {
+        has_main_bg: bool,
+        has_main_sprites: bool,
+        has_sub_bg: bool,
+        has_sub_sprites: bool,
+    },
+    Mode7 {
+        has_main_sprites: bool,
+        has_sub_mode7_bg: bool,
+        has_sub_sprites: bool,
+    },
+}
+
+impl GpuFrameRenderPlanContext {
+    pub(crate) fn from_frame(frame: &GpuFrame<'_>) -> Self {
+        let has_main_sprites = frame
+            .scanlines
+            .iter()
+            .any(|scanline| scanline.screen_enabled_main & 0x10 != 0);
+        let has_sub_sprites = frame.screen_enabled[1] & 0x10 != 0;
+
+        if frame.mode == 7 {
+            return Self::Mode7 {
+                has_main_sprites,
+                has_sub_mode7_bg: frame.screen_enabled[1] & 1 != 0,
+                has_sub_sprites,
+            };
+        }
+
+        Self::Mode1 {
+            has_main_bg: frame
+                .scanlines
+                .iter()
+                .any(|scanline| scanline.screen_enabled_main & 0x07 != 0),
+            has_main_sprites,
+            has_sub_bg: frame.screen_enabled[1] & 0x07 != 0,
+            has_sub_sprites,
+        }
+    }
+
+    pub(crate) fn uses_sprites(&self) -> bool {
+        match self {
+            Self::Mode1 {
+                has_main_sprites,
+                has_sub_sprites,
+                ..
+            }
+            | Self::Mode7 {
+                has_main_sprites,
+                has_sub_sprites,
+                ..
+            } => *has_main_sprites || *has_sub_sprites,
+        }
+    }
+
+    pub(crate) fn render_plan(&self) -> GpuFrameRenderPlan {
+        match *self {
+            Self::Mode1 {
+                has_main_bg,
+                has_main_sprites,
+                has_sub_bg,
+                has_sub_sprites,
+            } => {
+                build_mode1_render_plan(has_main_bg, has_main_sprites, has_sub_bg, has_sub_sprites)
+            }
+            Self::Mode7 {
+                has_main_sprites,
+                has_sub_mode7_bg,
+                has_sub_sprites,
+            } => build_mode7_render_plan(has_main_sprites, has_sub_mode7_bg, has_sub_sprites),
+        }
+    }
+}
+
+fn build_mode1_render_plan(
     has_main_bg: bool,
     has_main_sprites: bool,
     has_sub_bg: bool,
@@ -130,7 +207,7 @@ fn main_bg_work_item(
     }
 }
 
-pub(crate) fn build_mode7_render_plan(
+fn build_mode7_render_plan(
     has_main_sprites: bool,
     has_sub_mode7_bg: bool,
     has_sub_sprites: bool,
@@ -194,6 +271,7 @@ fn build_post_process_render_plan() -> GpuFrameRenderPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gpu_frame::{BgLayerRegs, Mode7Regs, ObjRegs, ScanlineRegs};
     use crate::gpu_frame_work_command::{
         post_process_frame_work_command, GpuFrameRenderPhase, GpuFrameWorkCommand,
     };
@@ -208,6 +286,91 @@ mod tests {
 
     fn frame_plan_commands(plan: &GpuFrameRenderPlan) -> Vec<GpuFrameWorkCommand> {
         plan.work_items().to_vec()
+    }
+
+    fn test_frame(mode: u8, screen_enabled: [u8; 2]) -> GpuFrame<'static> {
+        GpuFrame {
+            vram: &[],
+            cgram: &[],
+            oam: &[],
+            mode,
+            bg: [BgLayerRegs::default(); 4],
+            obj: ObjRegs::default(),
+            mosaic_enabled: 0,
+            mosaic_size: 0,
+            extra_left_right: 0,
+            mode7: Mode7Regs::default(),
+            screen_enabled,
+            screen_windowed: [0; 2],
+            brightness: 15,
+            forced_blank: false,
+            math_enabled: 0,
+            subtract_color: false,
+            half_color: false,
+            fixed_color_r: 0,
+            fixed_color_g: 0,
+            fixed_color_b: 0,
+            add_subscreen: false,
+            clip_mode: 0,
+            prevent_math_mode: 0,
+            windowsel_cm: 0,
+            windowsel: 0,
+            scanlines: Box::new([ScanlineRegs::default(); 224]),
+        }
+    }
+
+    #[test]
+    fn render_plan_context_detects_mode1_surface_activity() {
+        let mut frame = test_frame(1, [0, 0x17]);
+        frame.scanlines[7].screen_enabled_main = 0x12;
+
+        let context = GpuFrameRenderPlanContext::from_frame(&frame);
+
+        assert_eq!(
+            context,
+            GpuFrameRenderPlanContext::Mode1 {
+                has_main_bg: true,
+                has_main_sprites: true,
+                has_sub_bg: true,
+                has_sub_sprites: true,
+            }
+        );
+        assert!(context.uses_sprites());
+    }
+
+    #[test]
+    fn render_plan_context_detects_mode7_surface_activity() {
+        let mut frame = test_frame(7, [0, 0x11]);
+        frame.scanlines[7].screen_enabled_main = 0x10;
+
+        let context = GpuFrameRenderPlanContext::from_frame(&frame);
+
+        assert_eq!(
+            context,
+            GpuFrameRenderPlanContext::Mode7 {
+                has_main_sprites: true,
+                has_sub_mode7_bg: true,
+                has_sub_sprites: true,
+            }
+        );
+        assert!(context.uses_sprites());
+    }
+
+    #[test]
+    fn render_plan_context_reports_sprite_free_frames() {
+        let frame = test_frame(1, [0, 0]);
+        let context = GpuFrameRenderPlanContext::from_frame(&frame);
+
+        assert_eq!(
+            context,
+            GpuFrameRenderPlanContext::Mode1 {
+                has_main_bg: false,
+                has_main_sprites: false,
+                has_sub_bg: false,
+                has_sub_sprites: false,
+            }
+        );
+        assert!(!context.uses_sprites());
     }
 
     #[test]

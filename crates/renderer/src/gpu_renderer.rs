@@ -12,7 +12,7 @@
 /// After compositing, a post-process pass applies SNES color math and brightness.
 use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
-use crate::gpu_frame_render_plan::{build_mode1_render_plan, build_mode7_render_plan};
+use crate::gpu_frame_render_plan::GpuFrameRenderPlanContext;
 use crate::gpu_frame_work_command::{
     GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSubWorkCommand, GpuFrameWorkCommand,
 };
@@ -160,17 +160,8 @@ impl GpuFrameRenderer {
             });
         }
 
-        let has_main_sprites = frame
-            .scanlines
-            .iter()
-            .any(|scanline| scanline.screen_enabled_main & 0x10 != 0);
-        let has_sub_sprites = frame.screen_enabled[1] & 0x10 != 0;
-        let has_main_bg = frame
-            .scanlines
-            .iter()
-            .any(|scanline| scanline.screen_enabled_main & 0x07 != 0);
-        let has_sub_bg = frame.screen_enabled[1] & 0x07 != 0;
-        if has_main_sprites || has_sub_sprites {
+        let render_plan_context = GpuFrameRenderPlanContext::from_frame(frame);
+        if render_plan_context.uses_sprites() {
             self.sprites.prepare(
                 queue,
                 frame.vram,
@@ -180,35 +171,7 @@ impl GpuFrameRenderer {
             );
         }
 
-        if frame.mode == 7 {
-            self.render_mode7_frame(
-                encoder,
-                queue,
-                frame,
-                output_view,
-                has_main_sprites,
-                has_sub_sprites,
-            );
-            return;
-        }
-
-        let render_plan =
-            build_mode1_render_plan(has_main_bg, has_main_sprites, has_sub_bg, has_sub_sprites);
-        self.execute_render_plan(encoder, queue, frame, output_view, render_plan);
-    }
-
-    fn render_mode7_frame(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        queue: &wgpu::Queue,
-        frame: &GpuFrame<'_>,
-        output_view: &wgpu::TextureView,
-        has_main_sprites: bool,
-        has_sub_sprites: bool,
-    ) {
-        let has_sub_mode7_bg = frame.screen_enabled[1] & 1 != 0;
-        let render_plan =
-            build_mode7_render_plan(has_main_sprites, has_sub_mode7_bg, has_sub_sprites);
+        let render_plan = render_plan_context.render_plan();
         self.execute_render_plan(encoder, queue, frame, output_view, render_plan);
     }
 
