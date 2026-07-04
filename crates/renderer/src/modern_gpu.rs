@@ -1,8 +1,12 @@
-use crate::gpu_work_item::{
-    GpuRenderPlan, GpuWorkItem, GpuWorkItemKind, LoadedGpuWorkCommand, SourcedGpuWorkCommand,
-};
+use crate::gpu_work_item::{GpuRenderPlan, GpuWorkItem, GpuWorkItemKind, SourcedGpuWorkCommand};
 use crate::modern_assets::ModernTileAtlasAsset;
 use crate::modern_frame::ModernFrame;
+#[cfg(test)]
+use crate::modern_gpu_work_command::ModernGpuWorkCommandKind;
+use crate::modern_gpu_work_command::{
+    BgEffectMaterialGroup, EffectMaterial, EffectMaterialGroup, ModernGpuCommandLoad,
+    ModernGpuWorkCommand, ModernGpuWorkItem, SpriteEffectMaterialGroup,
+};
 use crate::modern_index_atlas::ModernIndexTile;
 #[cfg(test)]
 use crate::modern_variant_render_plan::{headless_variant_render_path, live_variant_render_path};
@@ -584,12 +588,6 @@ enum Mode1EffectCommandSource {
     EmptyFrameFallback,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ModernGpuCommandLoad {
-    ClearFrame,
-    Load,
-}
-
 #[cfg(test)]
 impl SourcedGpuWorkCommand<Mode1EffectCommandSource, ModernGpuWorkCommand<'_, '_>> {
     fn mode1_kind(&self) -> PreparedMode1EffectRenderCommandKind {
@@ -632,13 +630,6 @@ enum PreparedMode1EffectRenderCommandKind {
         source: Mode1EffectCommandSource,
         command: ModernGpuWorkCommandKind,
     },
-}
-
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct ModernGpuWorkCommandKind {
-    target_load: ModernGpuCommandLoad,
-    work_item: GpuWorkItemKind,
 }
 
 struct PreparedMode1EffectRankRenderPlan<'rank, 'frame> {
@@ -1052,12 +1043,6 @@ struct ModernGpuVariantEffectRenderer {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum EffectMaterial {
-    StaticEffect,
-    LiveCgram,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EffectSurface {
     Bg,
     Sprite,
@@ -1091,35 +1076,6 @@ struct Mode1EffectRankDispatch<'a> {
 }
 
 type Mode1EffectRankRenderPlan<'rank, 'frame> = GpuRenderPlan<ModernGpuWorkCommand<'rank, 'frame>>;
-
-type ModernGpuWorkCommand<'rank, 'frame> =
-    LoadedGpuWorkCommand<ModernGpuCommandLoad, ModernGpuWorkItem<'rank, 'frame>>;
-
-#[cfg(test)]
-impl LoadedGpuWorkCommand<ModernGpuCommandLoad, ModernGpuWorkItem<'_, '_>> {
-    fn kind(&self) -> ModernGpuWorkCommandKind {
-        ModernGpuWorkCommandKind {
-            target_load: self.target_load,
-            work_item: self.work_item.kind(),
-        }
-    }
-}
-
-enum ModernGpuWorkItem<'rank, 'frame> {
-    ClearBackdrop,
-    BgEffect(BgEffectMaterialGroup<'rank, 'frame>),
-    SpriteEffects(Vec<SpriteEffectMaterialGroup<'rank, 'frame>>),
-}
-
-impl GpuWorkItem for ModernGpuWorkItem<'_, '_> {
-    fn kind(&self) -> GpuWorkItemKind {
-        match self {
-            Self::ClearBackdrop => GpuWorkItemKind::ClearBackdrop,
-            Self::BgEffect(_) => GpuWorkItemKind::BgEffect,
-            Self::SpriteEffects(_) => GpuWorkItemKind::SpriteEffects,
-        }
-    }
-}
 
 impl<'a> Mode1EffectRankDispatch<'a> {
     fn empty() -> Self {
@@ -1209,17 +1165,6 @@ struct OverlayBgEffectDispatch<'a> {
     static_bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
     live_cgram_bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
 }
-
-#[derive(Clone, Copy)]
-struct EffectMaterialGroup<'dispatch, Packet> {
-    material: EffectMaterial,
-    packets: &'dispatch [Packet],
-}
-
-type BgEffectMaterialGroup<'dispatch, 'frame> =
-    EffectMaterialGroup<'dispatch, crate::modern_variant_draw::VariantBgDrawPacket<'frame>>;
-type SpriteEffectMaterialGroup<'dispatch, 'frame> =
-    EffectMaterialGroup<'dispatch, crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>>;
 
 impl OverlayBgEffectDispatch<'_> {
     fn len(&self) -> usize {

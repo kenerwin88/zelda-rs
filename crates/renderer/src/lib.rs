@@ -28,6 +28,7 @@ pub mod modern_dungeon_atlas;
 pub mod modern_extract;
 pub mod modern_frame;
 pub mod modern_gpu;
+mod modern_gpu_work_command;
 pub mod modern_hd_overrides;
 pub mod modern_index_atlas;
 pub mod modern_palette;
