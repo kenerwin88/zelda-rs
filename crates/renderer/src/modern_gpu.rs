@@ -434,8 +434,7 @@ impl ModernGpuVariantRenderer {
             bg.render(device, queue, bg_cells, frame, output_view);
             spr.render(device, queue, sprite_cells, frame, output_view);
             let overlay = mixed_variant_overlay_bg_packets(frame, &plan);
-            stats.mixed_overlay_bg_effect_draws +=
-                (overlay.bg.len() + overlay.live_cgram_bg.len()) as u32;
+            stats.mixed_overlay_bg_effect_draws += overlay.effects.len() as u32;
             stats.mixed_overlay_bg_effect_candidates += overlay.candidates;
             stats.mixed_overlay_bg_effect_culled_invisible_main += overlay.culled_invisible_main;
             stats.mixed_overlay_bg_effect_reject_complex_frame += overlay.reject_complex_frame;
@@ -706,9 +705,24 @@ fn mode1_effect_material_rank_packets<'a>(
 }
 
 #[derive(Default)]
-struct MixedVariantOverlayBgSelection<'a> {
-    bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
+struct OverlayBgEffectDispatch<'a> {
+    static_bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
     live_cgram_bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
+}
+
+impl OverlayBgEffectDispatch<'_> {
+    fn len(&self) -> usize {
+        self.static_bg.len() + self.live_cgram_bg.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.static_bg.is_empty() && self.live_cgram_bg.is_empty()
+    }
+}
+
+#[derive(Default)]
+struct MixedVariantOverlayBgSelection<'a> {
+    effects: OverlayBgEffectDispatch<'a>,
     candidates: u32,
     culled_invisible_main: u32,
     reject_complex_frame: u32,
@@ -755,7 +769,8 @@ impl<'a> MixedVariantPrefinalPackets<'a> {
     ) -> Self {
         Self {
             bg: overlay
-                .bg
+                .effects
+                .static_bg
                 .iter()
                 .filter(|packet| bg_packet_needs_prefinal_color_math(frame, packet))
                 .cloned()
@@ -765,6 +780,7 @@ impl<'a> MixedVariantPrefinalPackets<'a> {
                 })
                 .chain(
                     overlay
+                        .effects
                         .live_cgram_bg
                         .iter()
                         .filter(|packet| bg_packet_needs_prefinal_color_math(frame, packet))
@@ -785,14 +801,15 @@ impl<'a> MixedVariantPrefinalPackets<'a> {
     ) -> Self {
         Self {
             bg: overlay
-                .bg
+                .effects
+                .static_bg
                 .iter()
                 .cloned()
                 .map(|packet| MixedVariantPrefinalBgPacket {
                     material: PrefinalBgMaterial::StaticEffect,
                     packet,
                 })
-                .chain(overlay.live_cgram_bg.iter().cloned().map(|packet| {
+                .chain(overlay.effects.live_cgram_bg.iter().cloned().map(|packet| {
                     MixedVariantPrefinalBgPacket {
                         material: PrefinalBgMaterial::LiveCgram,
                         packet,
@@ -996,11 +1013,11 @@ fn mixed_variant_overlay_bg_packets_with_policy<'a>(
             continue;
         }
         if bg_effect_matches_live_cgram(packet.cell, packet.inst.palette, effect, frame) {
-            out.bg.push(packet.clone());
+            out.effects.static_bg.push(packet.clone());
             continue;
         }
         if bg_packet_can_use_live_cgram(packet, frame) {
-            out.live_cgram_bg.push(packet.clone());
+            out.effects.live_cgram_bg.push(packet.clone());
             continue;
         } else {
             out.reject_cgram_mismatch += 1;
@@ -1283,7 +1300,7 @@ fn can_render_forced_blank_base_directly(
     frame: &ModernFrame,
     overlay: &MixedVariantOverlayBgSelection<'_>,
 ) -> bool {
-    frame.forced_blank && overlay.bg.is_empty() && overlay.live_cgram_bg.is_empty()
+    frame.forced_blank && overlay.effects.is_empty()
 }
 
 fn bg_layers_have_no_opaque_overlap(
@@ -2178,24 +2195,24 @@ impl ModernGpuVariantEffectRenderer {
         overlay: &MixedVariantOverlayBgSelection<'_>,
         output_view: &wgpu::TextureView,
     ) {
-        if !overlay.bg.is_empty() {
+        if !overlay.effects.static_bg.is_empty() {
             self.render_bg(
                 device,
                 queue,
                 bg_cells,
                 atlas,
-                &overlay.bg,
+                &overlay.effects.static_bg,
                 output_view,
                 wgpu::LoadOp::Load,
             );
         }
-        if !overlay.live_cgram_bg.is_empty() {
+        if !overlay.effects.live_cgram_bg.is_empty() {
             self.render_bg_with_live_cgram(
                 device,
                 queue,
                 bg_cells,
                 frame,
-                &overlay.live_cgram_bg,
+                &overlay.effects.live_cgram_bg,
                 output_view,
                 wgpu::LoadOp::Load,
             );
@@ -4764,10 +4781,8 @@ impl ModernGpuVariantHeadless {
                 .iter()
                 .filter(|reason| **reason == MixedOverlayComplexRejectReason::ColorMathFixedColor)
                 .count() as u32;
-            stats.mixed_overlay_bg_effect_draws += (final_overlay.bg.len()
-                + final_overlay.live_cgram_bg.len()
-                + prefinal_packets.bg_len())
-                as u32;
+            stats.mixed_overlay_bg_effect_draws +=
+                (final_overlay.effects.len() + prefinal_packets.bg_len()) as u32;
             stats.mixed_overlay_bg_effect_candidates += final_overlay.candidates;
             stats.mixed_overlay_bg_effect_culled_invisible_main +=
                 final_overlay.culled_invisible_main;
@@ -7145,8 +7160,8 @@ mod tests {
 
         let selection = mixed_variant_overlay_bg_packets(&frame, &plan);
 
-        assert_eq!(selection.bg.len(), 1);
-        assert_eq!(selection.bg[0].inst.cell_id, 0);
+        assert_eq!(selection.effects.static_bg.len(), 1);
+        assert_eq!(selection.effects.static_bg[0].inst.cell_id, 0);
         assert_eq!(selection.candidates, 2);
         assert_eq!(selection.reject_complex_frame, 0);
         assert_eq!(selection.reject_cgram_mismatch, 0);
@@ -7518,7 +7533,7 @@ mod tests {
 
         let selection = mixed_variant_overlay_bg_packets(&frame, &plan);
 
-        assert_eq!(selection.bg.len(), 1);
+        assert_eq!(selection.effects.static_bg.len(), 1);
         assert_eq!(selection.candidates, 1);
         assert_eq!(selection.reject_complex_frame, 0);
         assert_eq!(selection.reject_cgram_mismatch, 0);
@@ -7614,8 +7629,8 @@ mod tests {
 
         let selection = mixed_variant_overlay_bg_packets(&frame, &plan);
 
-        assert_eq!(selection.bg.len(), 0);
-        assert_eq!(selection.live_cgram_bg.len(), 0);
+        assert_eq!(selection.effects.static_bg.len(), 0);
+        assert_eq!(selection.effects.live_cgram_bg.len(), 0);
         assert_eq!(selection.candidates, 1);
         assert_eq!(selection.reject_complex_frame, 1);
         assert_eq!(selection.reject_complex_brightness, 1);
@@ -7796,8 +7811,8 @@ mod tests {
 
         let selection = mixed_variant_overlay_bg_packets(&frame, &plan);
 
-        assert_eq!(selection.bg.len(), 0);
-        assert_eq!(selection.live_cgram_bg.len(), 1);
+        assert_eq!(selection.effects.static_bg.len(), 0);
+        assert_eq!(selection.effects.live_cgram_bg.len(), 1);
         assert_eq!(selection.candidates, 1);
         assert_eq!(selection.reject_complex_frame, 0);
         assert_eq!(selection.reject_cgram_mismatch, 0);
@@ -7913,7 +7928,7 @@ mod tests {
 
         let selection = mixed_variant_overlay_bg_packets(&frame, &plan);
 
-        assert_eq!(selection.bg.len(), 1);
+        assert_eq!(selection.effects.static_bg.len(), 1);
         assert_eq!(selection.candidates, 1);
         assert_eq!(selection.reject_overlap, 0);
     }
