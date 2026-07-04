@@ -340,6 +340,7 @@ def _source_ref(
     pack: int,
     tile: int,
     bpp: int,
+    colors_per_row: int,
     preview_palette: str,
     preview_row: int,
     preview_source: str,
@@ -358,6 +359,9 @@ def _source_ref(
         "preview_palette": preview_palette,
         "preview_palette_row": preview_row,
         "preview_source": preview_source,
+        "runtime_material": "palette_lut",
+        "runtime_material_policy": classify_palette_policy(preview_palette),
+        "runtime_colors_per_row": colors_per_row,
     }
     if usage is not None and "evidence_count" in usage:
         ref["palette_usage_evidence_count"] = int(usage["evidence_count"])
@@ -658,6 +662,7 @@ def build_canonical_art_atlas(
             pack,
             tile,
             bpp,
+            colors_per_row,
             preview_palette,
             preview_row,
             preview_source,

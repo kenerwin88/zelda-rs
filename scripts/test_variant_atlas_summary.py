@@ -120,6 +120,9 @@ class VariantAtlasSummaryTests(unittest.TestCase):
             self.assertEqual(summary["art_png_height"], 8)
             self.assertEqual(summary["manifest_source_refs"], 3)
             self.assertEqual(summary["stable_by_loader_rule"], 2)
+            self.assertEqual(summary["material_effect_refs"], 1)
+            self.assertEqual(summary["stable_preview_refs"], 1)
+            self.assertEqual(summary["requires_live_material_refs"], 1)
             self.assertEqual(summary["missing_effect_refs"], 1)
             self.assertEqual(summary["invalid_rect_count"], 0)
             self.assertEqual(summary["invalid_rects"], [])
@@ -142,6 +145,9 @@ class VariantAtlasSummaryTests(unittest.TestCase):
                 "source_refs": 3,
                 "manifest_source_refs": 3,
                 "stable_by_loader_rule": 2,
+                "material_effect_refs": 1,
+                "stable_preview_refs": 1,
+                "requires_live_material_refs": 1,
                 "missing_effect_refs": 1,
                 "invalid_rect_count": 0,
                 "stable_by_kind": {"bg": 1, "sprite": 1},
@@ -155,6 +161,9 @@ class VariantAtlasSummaryTests(unittest.TestCase):
         self.assertIn("art_png_size=16x8", text)
         self.assertIn("invalid_rect_count=0", text)
         self.assertIn("source_refs=3", text)
+        self.assertIn("material_effect_refs=1", text)
+        self.assertIn("stable_preview_refs=1", text)
+        self.assertIn("requires_live_material_refs=1", text)
         self.assertIn("stable_by_kind bg=1 sprite=1", text)
         self.assertIn("preview_sources palette_usage=1 source_kind_default=2", text)
 

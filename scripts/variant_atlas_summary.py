@@ -73,6 +73,9 @@ def summarize_variant_atlas(atlas_dir: Path) -> dict[str, Any]:
 
     source_refs = 0
     stable_by_loader_rule = 0
+    material_effect_refs = 0
+    stable_preview_refs = 0
+    requires_live_material_refs = 0
     missing_effect_refs = 0
     stable_by_kind: Counter[str] = Counter()
     source_refs_by_kind: Counter[str] = Counter()
@@ -103,10 +106,22 @@ def summarize_variant_atlas(atlas_dir: Path) -> dict[str, Any]:
 
             effect_policy = effect_policies.get((palette, palette_row, colors_per_row))
             stable = preview_source == "palette_usage" or effect_policy == "stable"
+            runtime_material = str(
+                ref.get(
+                    "runtime_material",
+                    "palette_lut" if effect_policy is not None else "unknown",
+                )
+            )
             if stable:
                 stable_by_loader_rule += 1
                 stable_by_kind[source_kind] += 1
+                if runtime_material == "palette_lut" and effect_policy == "stable":
+                    material_effect_refs += 1
+                else:
+                    stable_preview_refs += 1
             else:
+                if runtime_material == "palette_lut":
+                    requires_live_material_refs += 1
                 missing_effect_refs += 1
 
     manifest_source_refs = art_manifest.get("source_ref_count")
@@ -120,6 +135,9 @@ def summarize_variant_atlas(atlas_dir: Path) -> dict[str, Any]:
         "source_refs": source_refs,
         "manifest_source_refs": manifest_source_refs,
         "stable_by_loader_rule": stable_by_loader_rule,
+        "material_effect_refs": material_effect_refs,
+        "stable_preview_refs": stable_preview_refs,
+        "requires_live_material_refs": requires_live_material_refs,
         "missing_effect_refs": missing_effect_refs,
         "invalid_rect_count": len(invalid_rects),
         "invalid_rects": invalid_rects[:5],
@@ -155,6 +173,9 @@ def format_summary(summary: dict[str, Any]) -> str:
         f"source_refs={summary['source_refs']}",
         f"manifest_source_refs={summary['manifest_source_refs']}",
         f"stable_by_loader_rule={summary['stable_by_loader_rule']}",
+        f"material_effect_refs={summary['material_effect_refs']}",
+        f"stable_preview_refs={summary['stable_preview_refs']}",
+        f"requires_live_material_refs={summary['requires_live_material_refs']}",
         f"missing_effect_refs={summary['missing_effect_refs']}",
         f"invalid_rect_count={summary['invalid_rect_count']}",
         _format_counts("stable_by_kind", summary["stable_by_kind"]),

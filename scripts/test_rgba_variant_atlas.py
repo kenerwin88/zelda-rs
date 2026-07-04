@@ -836,6 +836,141 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             pixel_offset = (y * width + x) * 4
             self.assertEqual(list(pixels[pixel_offset : pixel_offset + 4]), [0xA0, 0xB0, 0xC0, 255])
 
+    def test_canonical_art_atlas_tracks_palette_rows_as_material_refs(self) -> None:
+        import json
+        from PIL import Image
+
+        raw_pack = bytearray(1536)
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [
+            "#000000",
+            "#101010",
+            "#202020",
+            "#303030",
+            "#404040",
+            "#505050",
+            "#606060",
+            "#707070",
+            "#000000",
+            "#A0A0A0",
+            "#A1A1A1",
+            "#A2A2A2",
+            "#A3A3A3",
+            "#A4A4A4",
+            "#A5A5A5",
+            "#A6A6A6",
+            "#000000",
+            "#B0B0B0",
+            "#B1B1B1",
+            "#B2B2B2",
+            "#B3B3B3",
+            "#B4B4B4",
+            "#B5B5B5",
+            "#B6B6B6",
+        ] * 6
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+            usage_path = asset_dir / "atlas/palette_usage.json"
+            usage_path.parent.mkdir(parents=True, exist_ok=True)
+            usage_path.write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_palette_usage_v1",
+                        "entries": [
+                            {
+                                "source_kind": "bg",
+                                "asset": "kBgGfx",
+                                "pack": 32800,
+                                "tile": 7,
+                                "bpp": 3,
+                                "preview_palette": "palette_main_spr",
+                                "preview_palette_row": 1,
+                                "evidence_count": 3,
+                            },
+                            {
+                                "source_kind": "bg",
+                                "asset": "kBgGfx",
+                                "pack": 32801,
+                                "tile": 9,
+                                "bpp": 3,
+                                "preview_palette": "palette_main_spr",
+                                "preview_palette_row": 2,
+                                "evidence_count": 2,
+                            },
+                        ],
+                    }
+                )
+            )
+            source_dir = asset_dir / "developer_tilesets"
+            source_dir.mkdir()
+            (source_dir / "assets_by_source.json").write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_assets_by_source_v2_png",
+                        "cell_count": 2,
+                        "cells": [
+                            {
+                                "id": 0,
+                                "key": (6 << 32) | (32800 << 16) | 7,
+                                "kind": 6,
+                                "pack": 32800,
+                                "tile_off": 7,
+                            },
+                            {
+                                "id": 1,
+                                "key": (6 << 32) | (32801 << 16) | 9,
+                                "kind": 6,
+                                "pack": 32801,
+                                "tile_off": 9,
+                            },
+                        ],
+                    }
+                )
+            )
+            image = Image.new("P", (16, 8))
+            image.putdata(([1] + [0] * 7 + [1] + [0] * 7) * 8)
+            image.save(source_dir / "assets_by_source.png")
+
+            _width, _height, _pixels, arts = build_canonical_art_atlas(
+                asset_dir,
+                source_tiles_dir=source_dir,
+            )
+
+            matching = [
+                (art["art_id"], source)
+                for art in arts
+                for source in art["source_refs"]
+                if source["pack"] in {32800, 32801}
+            ]
+            self.assertEqual(len(matching), 2)
+            self.assertEqual({art_id for art_id, _source in matching}, {matching[0][0]})
+            self.assertEqual(
+                {
+                    (
+                        source["preview_palette_row"],
+                        source["runtime_material"],
+                        source["runtime_material_policy"],
+                        source["runtime_colors_per_row"],
+                    )
+                    for _art_id, source in matching
+                },
+                {
+                    (1, "palette_lut", "stable", 8),
+                    (2, "palette_lut", "stable", 8),
+                },
+            )
+
     def test_write_canonical_art_atlas_emits_art_tiles_manifest(self) -> None:
         import json
         from PIL import Image
