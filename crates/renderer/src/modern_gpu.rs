@@ -5201,34 +5201,17 @@ impl ModernGpuVariantHeadless {
                 &self.target_view,
             );
         } else if render_path == ModernVariantRenderPath::EffectMaterialWithStableOverlay {
-            if frame_needs_material_prefinal_finalizer(frame) {
-                let build_result = self.render_effect_material_with_prefinal_base(
-                    frame,
-                    live_index_frame,
-                    live_index_bg_cells,
-                    live_index_sprite_cells,
-                    &plan,
-                );
-                record_screen_builder_result(&mut stats, build_result);
-            } else {
-                self.renderer.render_effect_material_mode1_order(
-                    &self.device,
-                    &self.queue,
-                    frame,
-                    bg_cells,
-                    sprite_cells,
-                    &plan,
-                    &self.target_view,
-                );
-            }
-            if stats.stable_draws != stats.effect_draws {
-                self.renderer.renderer.render_overlay(
-                    &self.device,
-                    &self.queue,
-                    &variant_frame,
-                    &self.target_view,
-                );
-            }
+            self.render_effect_material_with_stable_overlay(
+                frame,
+                bg_cells,
+                sprite_cells,
+                live_index_frame,
+                live_index_bg_cells,
+                live_index_sprite_cells,
+                &plan,
+                &variant_frame,
+                &mut stats,
+            );
         } else {
             self.renderer.renderer.render(
                 &self.device,
@@ -5295,6 +5278,49 @@ impl ModernGpuVariantHeadless {
                     &self.target,
                 );
             record_screen_builder_result(stats, build_result);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_effect_material_with_stable_overlay(
+        &self,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        live_index_frame: &ModernFrame,
+        live_index_bg_cells: &[ModernIndexTile],
+        live_index_sprite_cells: &[ModernIndexTile],
+        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+        variant_frame: &ModernFrame,
+        stats: &mut crate::modern_software::VariantAtlasRenderStats,
+    ) {
+        if frame_needs_material_prefinal_finalizer(frame) {
+            let build_result = self.render_effect_material_with_prefinal_base(
+                frame,
+                live_index_frame,
+                live_index_bg_cells,
+                live_index_sprite_cells,
+                plan,
+            );
+            record_screen_builder_result(stats, build_result);
+        } else {
+            self.renderer.render_effect_material_mode1_order(
+                &self.device,
+                &self.queue,
+                frame,
+                bg_cells,
+                sprite_cells,
+                plan,
+                &self.target_view,
+            );
+        }
+        if stats.stable_draws != stats.effect_draws {
+            self.renderer.renderer.render_overlay(
+                &self.device,
+                &self.queue,
+                variant_frame,
+                &self.target_view,
+            );
         }
     }
 
