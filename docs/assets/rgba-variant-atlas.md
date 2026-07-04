@@ -265,6 +265,9 @@ renderer/oracle. Verification must report:
 - `live_index_draws`: GPU live-index material draws. These are first-class
   indexed draws sourced from the current frame's tile data; they still preserve
   dynamic SNES VRAM behavior, but they are not CPU fallback.
+- `gpu_prefinal_base_frames`: frames where the live-index/prefinal base stayed
+  on the GPU. This replaces the misleading internal name
+  `direct_gpu_fallback_frames`.
 - `dynamic_material_fallback_draws`: source art exists, but the live material
   has no modeled stable effect, so the renderer uses the live indexed fallback.
 - `dynamic_material_fallback_instance_source_draws`: fallback draws forced by
@@ -386,7 +389,8 @@ tracks unkeyed/live-index material draws separately.
 of the five `dynamic_material_fallback_*` reason buckets above,
 `unsupported_material_draws` is a subset of
 `dynamic_material_fallback_unsupported_draws`, and `missing_variant_draws`
-mirrors `missing_art_draws`.
+mirrors `missing_art_draws`. Logs still print `direct_gpu_fallback_frames` as
+a legacy alias for `gpu_prefinal_base_frames`.
 
 The CHR/palette-index path remains the oracle until representative replay and
 oracle-window comparisons prove the base/effect path.
@@ -411,6 +415,7 @@ Expected output includes `mismatched_pixels=0` and nonzero
 `stable_preview_draws` or `stable_effect_draws`. The current representative
 proof reports `stable_effect_draws=21038`,
 `live_index_draws=133112`,
+`gpu_prefinal_base_frames=<GPU base/prefinal frames>`,
 `unkeyed_fallback_draws=133112`,
 `unkeyed_bg_fallback_draws=132912`,
 `unkeyed_bg12_fallback_draws=<BG1/BG2 subset>`,

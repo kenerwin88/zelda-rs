@@ -1088,10 +1088,7 @@ fn frame_uses_direct_final_index_math(frame: &ModernFrame) -> bool {
         && frame.windowsel_cm == 0
 }
 
-fn can_render_fallback_with_final_index_gpu(
-    frame: &ModernFrame,
-    bg_cells: &[ModernIndexTile],
-) -> bool {
+fn can_render_final_index_base_gpu(frame: &ModernFrame, bg_cells: &[ModernIndexTile]) -> bool {
     if frame.forced_blank
         || !frame_uses_direct_final_index_math(frame)
         || frame.windowsel != 0
@@ -1133,7 +1130,7 @@ fn can_render_fallback_with_final_index_gpu(
         && bg_layers_have_no_opaque_overlap(&enabled_layers, bg_cells)
 }
 
-fn can_render_forced_blank_fallback_directly(
+fn can_render_forced_blank_base_directly(
     frame: &ModernFrame,
     overlay: &MixedVariantOverlayBgSelection<'_>,
 ) -> bool {
@@ -4505,7 +4502,7 @@ impl ModernGpuVariantHeadless {
         bg_palette_name: &str,
         sprite_palette_name: &str,
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
-        self.render_rgba_with_fallback(
+        self.render_rgba_with_live_index_base(
             frame,
             bg_cells,
             sprite_cells,
@@ -4517,14 +4514,14 @@ impl ModernGpuVariantHeadless {
         )
     }
 
-    pub fn render_rgba_with_fallback(
+    pub fn render_rgba_with_live_index_base(
         &self,
         frame: &ModernFrame,
         bg_cells: &[ModernIndexTile],
         sprite_cells: &[ModernIndexTile],
-        fallback_frame: &ModernFrame,
-        fallback_bg_cells: &[ModernIndexTile],
-        fallback_sprite_cells: &[ModernIndexTile],
+        live_index_frame: &ModernFrame,
+        live_index_bg_cells: &[ModernIndexTile],
+        live_index_sprite_cells: &[ModernIndexTile],
         bg_palette_name: &str,
         sprite_palette_name: &str,
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
@@ -4639,36 +4636,36 @@ impl ModernGpuVariantHeadless {
             stats.mixed_overlay_bg_effect_reject_overlap += final_overlay.reject_overlap;
             if prefinal_bg.is_empty()
                 && prefinal_live_cgram_bg.is_empty()
-                && (can_render_forced_blank_fallback_directly(fallback_frame, &final_overlay)
-                    || can_render_fallback_with_final_index_gpu(fallback_frame, fallback_bg_cells))
+                && (can_render_forced_blank_base_directly(live_index_frame, &final_overlay)
+                    || can_render_final_index_base_gpu(live_index_frame, live_index_bg_cells))
             {
-                stats.direct_gpu_fallback_frames += 1;
+                stats.gpu_prefinal_base_frames += 1;
                 let bg = ModernGpuIndexRenderer::new(
                     &self.device,
                     &self.queue,
                     wgpu::TextureFormat::Rgba8Unorm,
                 );
-                let mut final_fallback_frame = fallback_frame.clone();
-                finalize_modern_frame_colors_for_direct_index(&mut final_fallback_frame);
+                let mut final_live_index_frame = live_index_frame.clone();
+                finalize_modern_frame_colors_for_direct_index(&mut final_live_index_frame);
                 bg.render(
                     &self.device,
                     &self.queue,
-                    fallback_bg_cells,
-                    &final_fallback_frame,
+                    live_index_bg_cells,
+                    &final_live_index_frame,
                     &self.target_view,
                 );
             } else if prefinal_bg.is_empty() && prefinal_live_cgram_bg.is_empty() {
                 let build_result = self.compositor.render_with_screen_builder_status(
                     &self.device,
                     &self.queue,
-                    fallback_frame,
-                    fallback_bg_cells,
-                    fallback_sprite_cells,
+                    live_index_frame,
+                    live_index_bg_cells,
+                    live_index_sprite_cells,
                     &self.target,
                 );
                 match build_result {
                     ModernScreenBuilderResult::Gpu => {
-                        stats.direct_gpu_fallback_frames += 1;
+                        stats.gpu_prefinal_base_frames += 1;
                         stats.gpu_screen_builder_frames += 1;
                     }
                     ModernScreenBuilderResult::Cpu(blocker) => {
@@ -4687,11 +4684,11 @@ impl ModernGpuVariantHeadless {
                     .render_prefinal_overlay_screens_with_final_frame(
                         &self.device,
                         &self.queue,
-                        fallback_frame,
-                        fallback_frame,
+                        live_index_frame,
+                        live_index_frame,
                         frame,
-                        fallback_bg_cells,
-                        fallback_sprite_cells,
+                        live_index_bg_cells,
+                        live_index_sprite_cells,
                         &prefinal_bg,
                         &prefinal_live_cgram_bg,
                         &plan.sprites,
@@ -4699,7 +4696,7 @@ impl ModernGpuVariantHeadless {
                     );
                 match build_result {
                     ModernScreenBuilderResult::Gpu => {
-                        stats.direct_gpu_fallback_frames += 1;
+                        stats.gpu_prefinal_base_frames += 1;
                         stats.gpu_screen_builder_frames += 1;
                     }
                     ModernScreenBuilderResult::Cpu(blocker) => {
@@ -4737,16 +4734,16 @@ impl ModernGpuVariantHeadless {
             }
         } else if stats.effect_draws != 0 {
             if frame_needs_material_prefinal_finalizer(frame) {
-                let build_result = self.render_effect_material_with_prefinal_fallback(
+                let build_result = self.render_effect_material_with_prefinal_base(
                     frame,
-                    fallback_frame,
-                    fallback_bg_cells,
-                    fallback_sprite_cells,
+                    live_index_frame,
+                    live_index_bg_cells,
+                    live_index_sprite_cells,
                     &plan,
                 );
                 match build_result {
                     ModernScreenBuilderResult::Gpu => {
-                        stats.direct_gpu_fallback_frames += 1;
+                        stats.gpu_prefinal_base_frames += 1;
                         stats.gpu_screen_builder_frames += 1;
                     }
                     ModernScreenBuilderResult::Cpu(blocker) => {
@@ -4789,12 +4786,12 @@ impl ModernGpuVariantHeadless {
         (self.read_target_rgba(), stats)
     }
 
-    fn render_effect_material_with_prefinal_fallback(
+    fn render_effect_material_with_prefinal_base(
         &self,
         frame: &ModernFrame,
-        fallback_frame: &ModernFrame,
-        fallback_bg_cells: &[ModernIndexTile],
-        fallback_sprite_cells: &[ModernIndexTile],
+        live_index_frame: &ModernFrame,
+        live_index_bg_cells: &[ModernIndexTile],
+        live_index_sprite_cells: &[ModernIndexTile],
         plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
     ) -> ModernScreenBuilderResult {
         let overlay = mixed_variant_prefinal_bg_packets(frame, plan);
@@ -4802,10 +4799,10 @@ impl ModernGpuVariantHeadless {
             return self.compositor.render_prefinal_screens_with_final_frame(
                 &self.device,
                 &self.queue,
-                fallback_frame,
+                live_index_frame,
                 frame,
-                fallback_bg_cells,
-                fallback_sprite_cells,
+                live_index_bg_cells,
+                live_index_sprite_cells,
                 &self.target,
             );
         }
@@ -4813,11 +4810,11 @@ impl ModernGpuVariantHeadless {
             .render_prefinal_overlay_screens_with_final_frame(
                 &self.device,
                 &self.queue,
-                fallback_frame,
+                live_index_frame,
                 frame,
                 frame,
-                fallback_bg_cells,
-                fallback_sprite_cells,
+                live_index_bg_cells,
+                live_index_sprite_cells,
                 &overlay.bg,
                 &overlay.live_cgram_bg,
                 &plan.sprites,
@@ -5786,22 +5783,23 @@ mod tests {
             }],
         };
 
-        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
-            &frame,
-            &[],
-            &sprite_cells,
-            &frame,
-            &[],
-            &sprite_cells,
-            "palette_dung_bg_main",
-            "palette_main_spr",
-        );
+        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas)
+            .render_rgba_with_live_index_base(
+                &frame,
+                &[],
+                &sprite_cells,
+                &frame,
+                &[],
+                &sprite_cells,
+                "palette_dung_bg_main",
+                "palette_main_spr",
+            );
 
         assert_eq!(stats.effect_draws, 1);
         assert_eq!(stats.effect_material_draws, 1);
         assert_eq!(stats.dynamic_material_draws, 1);
         assert_eq!(stats.fallback_draws, 0);
-        assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.gpu_prefinal_base_frames, 1);
         assert_eq!(stats.gpu_screen_builder_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(&variant[0..4], &[0, 0, 0, 0xff]);
@@ -6164,16 +6162,17 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
         };
-        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
-            &source_frame,
-            &source_cells,
-            &[],
-            &fallback_frame,
-            &fallback_cells,
-            &[],
-            "palette_dung_bg_main",
-            "palette_main_spr",
-        );
+        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas)
+            .render_rgba_with_live_index_base(
+                &source_frame,
+                &source_cells,
+                &[],
+                &fallback_frame,
+                &fallback_cells,
+                &[],
+                "palette_dung_bg_main",
+                "palette_main_spr",
+            );
         let fallback = ModernGpuHeadless::new().render_rgba(&fallback_frame, &fallback_cells, &[]);
 
         assert_eq!(stats.stable_draws, 0);
@@ -6185,7 +6184,7 @@ mod tests {
         assert_eq!(stats.dynamic_material_draws, 0);
         assert_eq!(stats.missing_art_draws, 1);
         assert_eq!(stats.unkeyed_fallback_draws, 0);
-        assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.gpu_prefinal_base_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(variant, fallback);
     }
@@ -6297,16 +6296,17 @@ mod tests {
             }],
         };
 
-        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
-            &source_frame,
-            &source_cells,
-            &[],
-            &fallback_frame,
-            &fallback_cells,
-            &[],
-            "palette_dung_bg_main",
-            "palette_main_spr",
-        );
+        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas)
+            .render_rgba_with_live_index_base(
+                &source_frame,
+                &source_cells,
+                &[],
+                &fallback_frame,
+                &fallback_cells,
+                &[],
+                "palette_dung_bg_main",
+                "palette_main_spr",
+            );
         let fallback = ModernGpuHeadless::new().render_rgba(&fallback_frame, &fallback_cells, &[]);
 
         assert_eq!(stats.stable_draws, 0);
@@ -6493,16 +6493,17 @@ mod tests {
         assert_eq!(selection.reject_cgram_mismatch, 0);
         assert_eq!(selection.reject_overlap, 1);
 
-        let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
-            &frame,
-            &bg_cells,
-            &[],
-            &frame,
-            &bg_cells,
-            &[],
-            "palette_dung_bg_main",
-            "palette_main_spr",
-        );
+        let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
+            .render_rgba_with_live_index_base(
+                &frame,
+                &bg_cells,
+                &[],
+                &frame,
+                &bg_cells,
+                &[],
+                "palette_dung_bg_main",
+                "palette_main_spr",
+            );
 
         assert_eq!(stats.mixed_overlay_bg_effect_draws, 1);
         assert_eq!(stats.mixed_overlay_bg_effect_candidates, 2);
@@ -7158,7 +7159,7 @@ mod tests {
         assert_eq!(stats.dynamic_material_draws, 0);
         assert_eq!(stats.missing_art_draws, 0);
         assert_eq!(stats.unkeyed_fallback_draws, 1);
-        assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.gpu_prefinal_base_frames, 1);
         assert_eq!(stats.gpu_screen_builder_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
     }
@@ -7247,7 +7248,7 @@ mod tests {
         let cpu =
             crate::modern_software::render_modern_frame_full(&frame, &bg_cells, &sprite_cells);
 
-        assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.gpu_prefinal_base_frames, 1);
         assert_eq!(stats.gpu_screen_builder_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(variant, cpu);
@@ -7297,20 +7298,21 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
         };
-        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
-            &source_frame,
-            &cells,
-            &[],
-            &fallback_frame,
-            &cells,
-            &[],
-            "palette_dung_bg_main",
-            "palette_main_spr",
-        );
+        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas)
+            .render_rgba_with_live_index_base(
+                &source_frame,
+                &cells,
+                &[],
+                &fallback_frame,
+                &cells,
+                &[],
+                "palette_dung_bg_main",
+                "palette_main_spr",
+            );
 
         assert_eq!(stats.fallback_draws, 0);
         assert_eq!(stats.live_index_draws, 1);
-        assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.gpu_prefinal_base_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(&variant[0..4], &[0, 0, 0, 0xff]);
     }
@@ -7370,7 +7372,7 @@ mod tests {
 
         assert_eq!(stats.fallback_draws, 0);
         assert_eq!(stats.live_index_draws, 2);
-        assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.gpu_prefinal_base_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(variant, fallback);
     }
@@ -7510,7 +7512,7 @@ mod tests {
             }],
         };
 
-        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
             &frame,
             &bg_cells,
             &sprite_cells,
@@ -7667,7 +7669,7 @@ mod tests {
             }],
         };
 
-        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
             &frame,
             &bg_cells,
             &sprite_cells,
@@ -7793,16 +7795,17 @@ mod tests {
             }],
         };
 
-        let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
-            &frame,
-            &bg_cells,
-            &sprite_cells,
-            &fallback_frame,
-            &bg_cells,
-            &sprite_cells,
-            "palette_dung_bg_main",
-            "palette_main_spr",
-        );
+        let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
+            .render_rgba_with_live_index_base(
+                &frame,
+                &bg_cells,
+                &sprite_cells,
+                &fallback_frame,
+                &bg_cells,
+                &sprite_cells,
+                "palette_dung_bg_main",
+                "palette_main_spr",
+            );
 
         assert_eq!(stats.mixed_overlay_bg_effect_candidates, 1, "{stats:?}");
         assert_eq!(
@@ -7957,7 +7960,7 @@ mod tests {
             }],
         };
 
-        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
             &frame,
             &bg_cells,
             &sprite_cells,
@@ -8095,16 +8098,17 @@ mod tests {
             }],
         };
 
-        let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
-            &frame,
-            &bg_cells,
-            &[],
-            &frame,
-            &bg_cells,
-            &[],
-            "palette_dung_bg_main",
-            "palette_main_spr",
-        );
+        let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
+            .render_rgba_with_live_index_base(
+                &frame,
+                &bg_cells,
+                &[],
+                &frame,
+                &bg_cells,
+                &[],
+                "palette_dung_bg_main",
+                "palette_main_spr",
+            );
 
         assert_eq!(stats.mixed_overlay_bg_effect_candidates, 1);
         assert_eq!(
@@ -8257,7 +8261,7 @@ mod tests {
             }],
         };
 
-        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
             &frame,
             &bg_cells,
             &[],
@@ -8461,7 +8465,7 @@ mod tests {
             }],
         };
 
-        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
             &frame,
             &bg_cells,
             &sprite_cells,
@@ -8670,7 +8674,7 @@ mod tests {
             }],
         };
 
-        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
             &frame,
             &bg_cells,
             &sprite_cells,
@@ -8891,16 +8895,17 @@ mod tests {
             }],
         };
 
-        let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
-            &frame,
-            &bg_cells,
-            &sprite_cells,
-            &frame,
-            &bg_cells,
-            &sprite_cells,
-            "palette_dung_bg_main",
-            "palette_main_spr",
-        );
+        let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
+            .render_rgba_with_live_index_base(
+                &frame,
+                &bg_cells,
+                &sprite_cells,
+                &frame,
+                &bg_cells,
+                &sprite_cells,
+                "palette_dung_bg_main",
+                "palette_main_spr",
+            );
 
         assert_eq!(
             stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg, 1,
@@ -9087,16 +9092,17 @@ mod tests {
             }],
         };
 
-        let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
-            &frame,
-            &bg_cells,
-            &sprite_cells,
-            &frame,
-            &bg_cells,
-            &sprite_cells,
-            "palette_dung_bg_main",
-            "palette_main_spr",
-        );
+        let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
+            .render_rgba_with_live_index_base(
+                &frame,
+                &bg_cells,
+                &sprite_cells,
+                &frame,
+                &bg_cells,
+                &sprite_cells,
+                "palette_dung_bg_main",
+                "palette_main_spr",
+            );
 
         assert_eq!(
             stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg,
@@ -9319,7 +9325,7 @@ mod tests {
             }],
         };
 
-        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
             &frame,
             &bg_cells,
             &sprite_cells,
@@ -9478,7 +9484,7 @@ mod tests {
             }],
         };
 
-        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
             &frame,
             &bg_cells,
             &sprite_cells,
