@@ -710,9 +710,9 @@ struct OverlayBgEffectDispatch<'a> {
     live_cgram_bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
 }
 
-struct OverlayBgEffectMaterialGroup<'dispatch, 'packet> {
+struct EffectMaterialGroup<'dispatch, Packet> {
     material: EffectMaterial,
-    packets: &'dispatch [crate::modern_variant_draw::VariantBgDrawPacket<'packet>],
+    packets: &'dispatch [Packet],
 }
 
 impl OverlayBgEffectDispatch<'_> {
@@ -726,13 +726,16 @@ impl OverlayBgEffectDispatch<'_> {
 }
 
 impl<'a> OverlayBgEffectDispatch<'a> {
-    fn material_groups(&self) -> impl Iterator<Item = OverlayBgEffectMaterialGroup<'_, 'a>> {
+    fn material_groups(
+        &self,
+    ) -> impl Iterator<Item = EffectMaterialGroup<'_, crate::modern_variant_draw::VariantBgDrawPacket<'a>>>
+    {
         [
-            OverlayBgEffectMaterialGroup {
+            EffectMaterialGroup {
                 material: EffectMaterial::StaticEffect,
                 packets: &self.static_bg,
             },
-            OverlayBgEffectMaterialGroup {
+            EffectMaterialGroup {
                 material: EffectMaterial::LiveCgram,
                 packets: &self.live_cgram_bg,
             },
@@ -2384,12 +2387,16 @@ impl ModernGpuVariantEffectRenderer {
             "modern_variant_effect_sprite_index_atlas",
         );
         let mut live_lut: Option<(wgpu::Texture, wgpu::TextureView)> = None;
-        let mut batch = EffectMaterialBatch::default();
-        for packet in packets {
-            let Some(material_packet) = sprite_effect_material_packet(atlas, packet) else {
-                continue;
-            };
-            if batch.needs_flush_for(material_packet.material) {
+        for group in sprite_effect_material_groups(atlas, packets) {
+            let mut batch = EffectMaterialBatch::default();
+            for packet in group.packets {
+                let Some(material_packet) = sprite_effect_material_packet(atlas, packet) else {
+                    continue;
+                };
+                debug_assert_eq!(material_packet.material, group.material);
+                batch.push(material_packet, EffectSurface::Sprite);
+            }
+            if batch.material().is_some() {
                 self.render_sprite_effect_batch(
                     device,
                     queue,
@@ -2399,20 +2406,7 @@ impl ModernGpuVariantEffectRenderer {
                     &batch,
                     output_view,
                 );
-                batch.clear();
             }
-            batch.push(material_packet, EffectSurface::Sprite);
-        }
-        if batch.material().is_some() {
-            self.render_sprite_effect_batch(
-                device,
-                queue,
-                frame,
-                &index_atlas_view,
-                &mut live_lut,
-                &batch,
-                output_view,
-            );
         }
     }
 
@@ -2484,6 +2478,7 @@ impl EffectMaterialBatch {
         );
     }
 
+    #[cfg(test)]
     fn clear(&mut self) {
         self.material = None;
         self.instance_bytes.clear();
@@ -2562,6 +2557,46 @@ fn live_cgram_bg_effect_material_packet<'packet, 'frame>(
             source_vflip: entry.source_vflip,
         },
     ))
+}
+
+fn sprite_effect_material_groups<'dispatch, 'frame>(
+    atlas: &'frame crate::modern_variant_atlas::ModernVariantAtlas,
+    packets: &'dispatch [crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>],
+) -> Vec<EffectMaterialGroup<'dispatch, crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>>>
+{
+    let mut groups = Vec::new();
+    let mut current_material = None;
+    let mut current_start = 0;
+
+    for (index, packet) in packets.iter().enumerate() {
+        let Some(material_packet) = sprite_effect_material_packet(atlas, packet) else {
+            continue;
+        };
+        match current_material {
+            None => {
+                current_material = Some(material_packet.material);
+                current_start = index;
+            }
+            Some(material) if material == material_packet.material => {}
+            Some(material) => {
+                groups.push(EffectMaterialGroup {
+                    material,
+                    packets: &packets[current_start..index],
+                });
+                current_material = Some(material_packet.material);
+                current_start = index;
+            }
+        }
+    }
+
+    if let Some(material) = current_material {
+        groups.push(EffectMaterialGroup {
+            material,
+            packets: &packets[current_start..],
+        });
+    }
+
+    groups
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -6581,6 +6616,129 @@ mod tests {
         assert_eq!(live_material.material, EffectMaterial::LiveCgram);
         assert_eq!(live_material.surface, EffectSurface::Sprite);
         assert_eq!(live_material.effect_row, 9);
+    }
+
+    #[test]
+    fn sprite_effect_material_groups_preserve_contiguous_material_runs() {
+        use crate::modern_frame::ModernIndexSpriteInstance;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, TileEffect, VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
+        };
+        use crate::modern_variant_draw::VariantSpriteDrawPacket;
+
+        let entry = VariantAtlasEntry {
+            id: "sprite:kSprGfx:pack0:tile0:3bpp:palette_main_spr:row1".to_string(),
+            key: VariantAtlasKey {
+                source_kind: "sprite".to_string(),
+                asset: "kSprGfx".to_string(),
+                pack: 0,
+                tile: 0,
+                bpp: 3,
+                palette: "palette_main_spr".to_string(),
+                palette_row: 1,
+            },
+            rect: [0, 0, 8, 8],
+            sha1: "static".to_string(),
+            duplicate_of: None,
+            dynamic_policy: "stable".to_string(),
+            runtime_material: Some("palette_lut".to_string()),
+            runtime_colors_per_row: None,
+            source_hflip: false,
+            source_vflip: false,
+        };
+        let effect = TileEffect {
+            id: "palette_main_spr:8color:row1".to_string(),
+            palette: "palette_main_spr".to_string(),
+            palette_row: 1,
+            colors_per_row: 8,
+            index_to_rgba: vec![[0, 0, 0, 0xff]; 8],
+            dynamic_policy: "stable".to_string(),
+        };
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![entry.clone()],
+            effects: vec![effect.clone()],
+        };
+
+        let mut static_indices = [0u8; 64];
+        static_indices[0] = 1;
+        let static_cell = ModernIndexTile {
+            id: 0,
+            indices: static_indices,
+            source_key: modern_source_key(2, 0, 0),
+            hflip: false,
+            vflip: false,
+        };
+        let mut live_indices = [0u8; 64];
+        live_indices[0] = 9;
+        let live_cell = ModernIndexTile {
+            id: 1,
+            indices: live_indices,
+            source_key: modern_source_key(2, 0, 1),
+            hflip: false,
+            vflip: false,
+        };
+        let static_a = ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 1,
+            priority: 0,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        };
+        let live = ModernIndexSpriteInstance {
+            cell_id: 1,
+            ..static_a
+        };
+        let static_b = ModernIndexSpriteInstance {
+            cell_id: 2,
+            ..static_a
+        };
+        let packets = vec![
+            VariantSpriteDrawPacket {
+                cell: &static_cell,
+                inst: &static_a,
+                key: None,
+                draw: VariantAtlasDraw::MaterialEffect {
+                    entry: &entry,
+                    effect: &effect,
+                },
+            },
+            VariantSpriteDrawPacket {
+                cell: &live_cell,
+                inst: &live,
+                key: None,
+                draw: VariantAtlasDraw::MaterialEffect {
+                    entry: &entry,
+                    effect: &effect,
+                },
+            },
+            VariantSpriteDrawPacket {
+                cell: &static_cell,
+                inst: &static_b,
+                key: None,
+                draw: VariantAtlasDraw::MaterialEffect {
+                    entry: &entry,
+                    effect: &effect,
+                },
+            },
+        ];
+
+        let groups = sprite_effect_material_groups(&atlas, &packets);
+
+        assert_eq!(groups.len(), 3);
+        assert_eq!(groups[0].material, EffectMaterial::StaticEffect);
+        assert_eq!(groups[0].packets[0].inst.cell_id, 0);
+        assert_eq!(groups[1].material, EffectMaterial::LiveCgram);
+        assert_eq!(groups[1].packets[0].inst.cell_id, 1);
+        assert_eq!(groups[2].material, EffectMaterial::StaticEffect);
+        assert_eq!(groups[2].packets[0].inst.cell_id, 2);
     }
 
     #[test]
