@@ -540,47 +540,50 @@ impl ModernGpuVariantRenderer {
     ) -> bool {
         let mut rendered_any = rendered_any;
         let rank_plan = rank_dispatch.render_plan(&self.atlas, rendered_any);
-        for group in rank_plan.bg_groups {
-            self.effect_renderer.render_bg_material_group(
-                device,
-                queue,
-                bg_cells,
-                None,
-                &self.atlas,
-                group,
-                output_view,
-                if rendered_any {
-                    wgpu::LoadOp::Load
-                } else {
-                    modern_frame_clear_op(frame)
-                },
-            );
-            rendered_any = true;
-        }
-
-        if rank_plan.clear_before_sprites {
-            self.effect_renderer.render_bg(
-                device,
-                queue,
-                bg_cells,
-                &self.atlas,
-                &[],
-                output_view,
-                modern_frame_clear_op(frame),
-            );
-            rendered_any = true;
-        }
-
-        if !rank_plan.sprite_groups.is_empty() {
-            self.effect_renderer.render_sprite_material_groups(
-                device,
-                queue,
-                sprite_cells,
-                frame,
-                &self.atlas,
-                &rank_plan.sprite_groups,
-                output_view,
-            );
+        for work_item in rank_plan.work_items {
+            match work_item {
+                Mode1EffectRankWorkItem::ClearBackdrop => {
+                    self.effect_renderer.render_bg(
+                        device,
+                        queue,
+                        bg_cells,
+                        &self.atlas,
+                        &[],
+                        output_view,
+                        modern_frame_clear_op(frame),
+                    );
+                    rendered_any = true;
+                }
+                Mode1EffectRankWorkItem::Bg(group) => {
+                    self.effect_renderer.render_bg_material_group(
+                        device,
+                        queue,
+                        bg_cells,
+                        None,
+                        &self.atlas,
+                        group,
+                        output_view,
+                        if rendered_any {
+                            wgpu::LoadOp::Load
+                        } else {
+                            modern_frame_clear_op(frame)
+                        },
+                    );
+                    rendered_any = true;
+                }
+                Mode1EffectRankWorkItem::Sprites(sprite_groups) => {
+                    self.effect_renderer.render_sprite_material_groups(
+                        device,
+                        queue,
+                        sprite_cells,
+                        frame,
+                        &self.atlas,
+                        &sprite_groups,
+                        output_view,
+                    );
+                    rendered_any = true;
+                }
+            }
         }
         rendered_any
     }
@@ -677,9 +680,13 @@ struct Mode1EffectRankDispatch<'a> {
 }
 
 struct Mode1EffectRankRenderPlan<'rank, 'frame> {
-    bg_groups: Vec<BgEffectMaterialGroup<'rank, 'frame>>,
-    sprite_groups: Vec<SpriteEffectMaterialGroup<'rank, 'frame>>,
-    clear_before_sprites: bool,
+    work_items: Vec<Mode1EffectRankWorkItem<'rank, 'frame>>,
+}
+
+enum Mode1EffectRankWorkItem<'rank, 'frame> {
+    ClearBackdrop,
+    Bg(BgEffectMaterialGroup<'rank, 'frame>),
+    Sprites(Vec<SpriteEffectMaterialGroup<'rank, 'frame>>),
 }
 
 impl<'a> Mode1EffectRankDispatch<'a> {
@@ -715,11 +722,15 @@ impl<'a> Mode1EffectRankDispatch<'a> {
         let sprite_groups = self.sprite_material_groups(atlas);
         let clear_before_sprites =
             !rendered_any && bg_groups.is_empty() && !sprite_groups.is_empty();
-        Mode1EffectRankRenderPlan {
-            bg_groups,
-            sprite_groups,
-            clear_before_sprites,
+        let mut work_items = Vec::new();
+        if clear_before_sprites {
+            work_items.push(Mode1EffectRankWorkItem::ClearBackdrop);
         }
+        work_items.extend(bg_groups.into_iter().map(Mode1EffectRankWorkItem::Bg));
+        if !sprite_groups.is_empty() {
+            work_items.push(Mode1EffectRankWorkItem::Sprites(sprite_groups));
+        }
+        Mode1EffectRankRenderPlan { work_items }
     }
 }
 
@@ -6834,10 +6845,21 @@ mod tests {
             sprites: packets.clone(),
         };
         let first_rank_plan = sprite_only_rank.render_plan(&atlas, false);
-        assert!(first_rank_plan.clear_before_sprites);
-        assert_eq!(first_rank_plan.sprite_groups.len(), 3);
+        assert_eq!(first_rank_plan.work_items.len(), 2);
+        assert!(matches!(
+            first_rank_plan.work_items[0],
+            Mode1EffectRankWorkItem::ClearBackdrop
+        ));
+        match &first_rank_plan.work_items[1] {
+            Mode1EffectRankWorkItem::Sprites(groups) => assert_eq!(groups.len(), 3),
+            _ => panic!("sprite-only rank should submit sprite groups after clear"),
+        }
         let later_rank_plan = sprite_only_rank.render_plan(&atlas, true);
-        assert!(!later_rank_plan.clear_before_sprites);
+        assert_eq!(later_rank_plan.work_items.len(), 1);
+        assert!(matches!(
+            later_rank_plan.work_items[0],
+            Mode1EffectRankWorkItem::Sprites(_)
+        ));
     }
 
     #[test]
