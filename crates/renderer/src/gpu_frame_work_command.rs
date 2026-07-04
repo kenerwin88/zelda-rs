@@ -17,7 +17,13 @@ pub(crate) enum GpuFrameMainWorkCommand {
 pub(crate) enum GpuFrameSubWorkCommand {
     ClearBackdrop,
     Mode7Bg,
-    BgLayer { layer_idx: usize, hi_priority: bool },
+    BgLayer {
+        layer_idx: usize,
+        hi_priority: bool,
+        screen_layer_bit: u8,
+        render_layer_bit: u32,
+        math_bit_pos: u32,
+    },
     SpritePriority(u32),
 }
 

@@ -245,6 +245,9 @@ impl GpuFrameRenderer {
             GpuFrameSubWorkCommand::BgLayer {
                 layer_idx,
                 hi_priority,
+                screen_layer_bit,
+                render_layer_bit,
+                math_bit_pos,
             } => {
                 render_sub_bg_pass(
                     &mut self.bg[layer_idx],
@@ -254,6 +257,9 @@ impl GpuFrameRenderer {
                     layer_idx,
                     hi_priority,
                     &self.sub_comp_view,
+                    screen_layer_bit,
+                    render_layer_bit,
+                    math_bit_pos,
                 );
             }
             GpuFrameSubWorkCommand::SpritePriority(priority) => {
@@ -406,9 +412,11 @@ fn render_sub_bg_pass(
     layer_idx: usize,
     hi_priority: bool,
     output_view: &wgpu::TextureView,
+    screen_layer_bit: u8,
+    render_layer_bit: u32,
+    math_bit_pos: u32,
 ) {
-    let layer_bit = 1u8 << layer_idx;
-    if frame.screen_enabled[1] & layer_bit == 0 {
+    if frame.screen_enabled[1] & screen_layer_bit == 0 {
         return;
     }
     render_bg_pass(
@@ -419,8 +427,8 @@ fn render_sub_bg_pass(
         layer_idx,
         hi_priority,
         output_view,
-        0,   // layer_bit=0: skip per-scanline TM check for sub-screen
-        255, // math_bit_pos=255: output alpha=1.0 (real pixel marker)
+        render_layer_bit,
+        math_bit_pos,
     );
 }
 

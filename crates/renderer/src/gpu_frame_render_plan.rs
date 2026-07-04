@@ -144,10 +144,7 @@ fn build_mode1_sub_render_plan(has_sub_bg: bool, has_sub_sprites: bool) -> GpuFr
     render_plan.push(sub_frame_work_command(
         GpuFrameSubWorkCommand::ClearBackdrop,
     ));
-    render_plan.push(sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-        layer_idx: 2,
-        hi_priority: false,
-    }));
+    render_plan.push(sub_frame_work_command(sub_bg_work_item(2, false)));
     if has_sub_sprites && !has_sub_bg {
         render_plan.extend(
             (0..=3)
@@ -163,36 +160,21 @@ fn build_mode1_sub_render_plan(has_sub_bg: bool, has_sub_sprites: bool) -> GpuFr
             GpuFrameSubWorkCommand::SpritePriority(1),
         ));
     }
-    render_plan.push(sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-        layer_idx: 1,
-        hi_priority: false,
-    }));
-    render_plan.push(sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-        layer_idx: 0,
-        hi_priority: false,
-    }));
+    render_plan.push(sub_frame_work_command(sub_bg_work_item(1, false)));
+    render_plan.push(sub_frame_work_command(sub_bg_work_item(0, false)));
     if has_sub_sprites && has_sub_bg {
         render_plan.push(sub_frame_work_command(
             GpuFrameSubWorkCommand::SpritePriority(2),
         ));
     }
-    render_plan.push(sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-        layer_idx: 1,
-        hi_priority: true,
-    }));
-    render_plan.push(sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-        layer_idx: 0,
-        hi_priority: true,
-    }));
+    render_plan.push(sub_frame_work_command(sub_bg_work_item(1, true)));
+    render_plan.push(sub_frame_work_command(sub_bg_work_item(0, true)));
     if has_sub_sprites && has_sub_bg {
         render_plan.push(sub_frame_work_command(
             GpuFrameSubWorkCommand::SpritePriority(3),
         ));
     }
-    render_plan.push(sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-        layer_idx: 2,
-        hi_priority: true,
-    }));
+    render_plan.push(sub_frame_work_command(sub_bg_work_item(2, true)));
 
     render_plan
 }
@@ -207,6 +189,16 @@ fn main_bg_work_item(
         hi_priority,
         layer_bit: 1u32 << layer_idx,
         math_bit_pos,
+    }
+}
+
+fn sub_bg_work_item(layer_idx: usize, hi_priority: bool) -> GpuFrameSubWorkCommand {
+    GpuFrameSubWorkCommand::BgLayer {
+        layer_idx,
+        hi_priority,
+        screen_layer_bit: 1u8 << layer_idx,
+        render_layer_bit: 0, // skip per-scanline TM check for sub-screen
+        math_bit_pos: 255,   // output alpha=1.0 (real pixel marker)
     }
 }
 
@@ -380,6 +372,20 @@ mod tests {
     }
 
     #[test]
+    fn sub_bg_work_item_carries_subscreen_render_metadata() {
+        assert_eq!(
+            sub_bg_work_item(2, true),
+            GpuFrameSubWorkCommand::BgLayer {
+                layer_idx: 2,
+                hi_priority: true,
+                screen_layer_bit: 0x04,
+                render_layer_bit: 0,
+                math_bit_pos: 255,
+            }
+        );
+    }
+
+    #[test]
     fn build_mode1_render_plan_preserves_full_gpu_draw_order() {
         let plan = build_mode1_render_plan(true, true, true, true);
 
@@ -454,34 +460,16 @@ mod tests {
                 main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(3)),
                 main_frame_work_command(main_bg_work_item(2, true, 2)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::ClearBackdrop),
-                sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-                    layer_idx: 2,
-                    hi_priority: false,
-                }),
+                sub_frame_work_command(sub_bg_work_item(2, false)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(0)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(1)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-                    layer_idx: 1,
-                    hi_priority: false,
-                }),
-                sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-                    layer_idx: 0,
-                    hi_priority: false,
-                }),
+                sub_frame_work_command(sub_bg_work_item(1, false)),
+                sub_frame_work_command(sub_bg_work_item(0, false)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(2)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-                    layer_idx: 1,
-                    hi_priority: true,
-                }),
-                sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-                    layer_idx: 0,
-                    hi_priority: true,
-                }),
+                sub_frame_work_command(sub_bg_work_item(1, true)),
+                sub_frame_work_command(sub_bg_work_item(0, true)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(3)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-                    layer_idx: 2,
-                    hi_priority: true,
-                }),
+                sub_frame_work_command(sub_bg_work_item(2, true)),
                 post_process_frame_work_command(),
             ]
         );
@@ -500,34 +488,16 @@ mod tests {
                 main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(2)),
                 main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(3)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::ClearBackdrop),
-                sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-                    layer_idx: 2,
-                    hi_priority: false,
-                }),
+                sub_frame_work_command(sub_bg_work_item(2, false)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(0)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(1)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(2)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(3)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-                    layer_idx: 1,
-                    hi_priority: false,
-                }),
-                sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-                    layer_idx: 0,
-                    hi_priority: false,
-                }),
-                sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-                    layer_idx: 1,
-                    hi_priority: true,
-                }),
-                sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-                    layer_idx: 0,
-                    hi_priority: true,
-                }),
-                sub_frame_work_command(GpuFrameSubWorkCommand::BgLayer {
-                    layer_idx: 2,
-                    hi_priority: true,
-                }),
+                sub_frame_work_command(sub_bg_work_item(1, false)),
+                sub_frame_work_command(sub_bg_work_item(0, false)),
+                sub_frame_work_command(sub_bg_work_item(1, true)),
+                sub_frame_work_command(sub_bg_work_item(0, true)),
+                sub_frame_work_command(sub_bg_work_item(2, true)),
                 post_process_frame_work_command(),
             ]
         );
