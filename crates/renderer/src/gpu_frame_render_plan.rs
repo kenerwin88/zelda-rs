@@ -173,6 +173,9 @@ fn main_bg_work_item(
         hi_priority,
         layer_bit: 1u32 << layer_idx,
         math_bit_pos,
+        screen_idx: 0,
+        window_layer_bit: 1u8 << layer_idx,
+        window_flags_shift: (layer_idx as u32) * 4,
     }
 }
 
@@ -193,6 +196,9 @@ fn sub_bg_work_item(layer_idx: usize, hi_priority: bool) -> GpuFrameSubWorkComma
         screen_layer_bit: 1u8 << layer_idx,
         render_layer_bit: 0, // skip per-scanline TM check for sub-screen
         math_bit_pos: 255,   // output alpha=1.0 (real pixel marker)
+        screen_idx: 1,
+        window_layer_bit: 1u8 << layer_idx,
+        window_flags_shift: (layer_idx as u32) * 4,
     }
 }
 
@@ -388,6 +394,22 @@ mod tests {
     }
 
     #[test]
+    fn main_bg_work_item_carries_main_screen_render_metadata() {
+        assert_eq!(
+            main_bg_work_item(2, true, 2),
+            GpuFrameMainWorkCommand::BgLayer {
+                layer_idx: 2,
+                hi_priority: true,
+                layer_bit: 0x04,
+                math_bit_pos: 2,
+                screen_idx: 0,
+                window_layer_bit: 0x04,
+                window_flags_shift: 8,
+            }
+        );
+    }
+
+    #[test]
     fn sub_bg_work_item_carries_subscreen_render_metadata() {
         assert_eq!(
             sub_bg_work_item(2, true),
@@ -397,6 +419,9 @@ mod tests {
                 screen_layer_bit: 0x04,
                 render_layer_bit: 0,
                 math_bit_pos: 255,
+                screen_idx: 1,
+                window_layer_bit: 0x04,
+                window_flags_shift: 8,
             }
         );
     }

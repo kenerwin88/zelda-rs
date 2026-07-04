@@ -15,6 +15,9 @@ pub(crate) enum GpuFrameMainWorkCommand {
         hi_priority: bool,
         layer_bit: u32,
         math_bit_pos: u32,
+        screen_idx: usize,
+        window_layer_bit: u8,
+        window_flags_shift: u32,
     },
     Mode7Bg {
         math_bit_pos: u32,
@@ -35,6 +38,9 @@ pub(crate) enum GpuFrameSubWorkCommand {
         screen_layer_bit: u8,
         render_layer_bit: u32,
         math_bit_pos: u32,
+        screen_idx: usize,
+        window_layer_bit: u8,
+        window_flags_shift: u32,
     },
     SpritePriority {
         priority: u32,

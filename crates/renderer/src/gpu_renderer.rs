@@ -222,6 +222,9 @@ impl GpuFrameRenderer {
                 hi_priority,
                 layer_bit,
                 math_bit_pos,
+                screen_idx,
+                window_layer_bit,
+                window_flags_shift,
             } => {
                 render_bg_pass(
                     &mut self.bg[layer_idx],
@@ -233,6 +236,9 @@ impl GpuFrameRenderer {
                     &self.comp_view,
                     layer_bit,
                     math_bit_pos,
+                    screen_idx,
+                    window_layer_bit,
+                    window_flags_shift,
                 );
             }
             GpuFrameMainWorkCommand::Mode7Bg {
@@ -281,6 +287,9 @@ impl GpuFrameRenderer {
                 screen_layer_bit,
                 render_layer_bit,
                 math_bit_pos,
+                screen_idx,
+                window_layer_bit,
+                window_flags_shift,
             } => {
                 render_sub_bg_pass(
                     &mut self.bg[layer_idx],
@@ -293,6 +302,9 @@ impl GpuFrameRenderer {
                     screen_layer_bit,
                     render_layer_bit,
                     math_bit_pos,
+                    screen_idx,
+                    window_layer_bit,
+                    window_flags_shift,
                 );
             }
             GpuFrameSubWorkCommand::SpritePriority {
@@ -435,11 +447,13 @@ fn render_bg_pass(
     output_view: &wgpu::TextureView,
     layer_bit: u32,
     math_bit_pos: u32,
+    screen_idx: usize,
+    window_layer_bit: u8,
+    window_flags_shift: u32,
 ) {
     let is_2bpp = frame.mode == 1 && layer_idx == 2;
-    let screen_idx = usize::from(math_bit_pos >= 255);
-    let windowed = frame.screen_windowed[screen_idx] & (1u8 << layer_idx) != 0;
-    let window_flags = (frame.windowsel >> (layer_idx * 4)) & 0x0f;
+    let windowed = frame.screen_windowed[screen_idx] & window_layer_bit != 0;
+    let window_flags = (frame.windowsel >> window_flags_shift) & 0x0f;
     bg.render(
         encoder,
         queue,
@@ -471,6 +485,9 @@ fn render_sub_bg_pass(
     screen_layer_bit: u8,
     render_layer_bit: u32,
     math_bit_pos: u32,
+    screen_idx: usize,
+    window_layer_bit: u8,
+    window_flags_shift: u32,
 ) {
     if frame.screen_enabled[1] & screen_layer_bit == 0 {
         return;
@@ -485,6 +502,9 @@ fn render_sub_bg_pass(
         output_view,
         render_layer_bit,
         math_bit_pos,
+        screen_idx,
+        window_layer_bit,
+        window_flags_shift,
     );
 }
 
