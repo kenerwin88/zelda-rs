@@ -398,74 +398,74 @@ fn build_mode1_render_plan(
     has_sub_bg: bool,
     has_sub_sprites: bool,
 ) -> GpuFrameRenderPlan {
-    let mut work_items = Vec::new();
+    let mut render_plan = GpuRenderPlan::default();
     if has_main_sprites && !has_main_bg {
-        work_items.extend((0..=3).map(GpuFrameWorkItem::MainSpritePriority));
+        render_plan.extend((0..=3).map(GpuFrameWorkItem::MainSpritePriority));
     }
 
     if has_main_bg {
         // CPU Mode 1 z-order:
         //   BG3-lo, OBJ0, OBJ1, BG2-lo, BG1-lo, OBJ2,
         //   BG2-hi, BG1-hi, OBJ3, BG3-hi.
-        work_items.push(main_bg_work_item(2, false, 2));
+        render_plan.push(main_bg_work_item(2, false, 2));
         if has_main_sprites {
-            work_items.push(GpuFrameWorkItem::MainSpritePriority(0));
-            work_items.push(GpuFrameWorkItem::MainSpritePriority(1));
+            render_plan.push(GpuFrameWorkItem::MainSpritePriority(0));
+            render_plan.push(GpuFrameWorkItem::MainSpritePriority(1));
         }
-        work_items.push(main_bg_work_item(1, false, 1));
-        work_items.push(main_bg_work_item(0, false, 0));
+        render_plan.push(main_bg_work_item(1, false, 1));
+        render_plan.push(main_bg_work_item(0, false, 0));
         if has_main_sprites {
-            work_items.push(GpuFrameWorkItem::MainSpritePriority(2));
+            render_plan.push(GpuFrameWorkItem::MainSpritePriority(2));
         }
-        work_items.push(main_bg_work_item(1, true, 1));
-        work_items.push(main_bg_work_item(0, true, 0));
+        render_plan.push(main_bg_work_item(1, true, 1));
+        render_plan.push(main_bg_work_item(0, true, 0));
         if has_main_sprites {
-            work_items.push(GpuFrameWorkItem::MainSpritePriority(3));
+            render_plan.push(GpuFrameWorkItem::MainSpritePriority(3));
         }
-        work_items.push(main_bg_work_item(2, true, 2));
+        render_plan.push(main_bg_work_item(2, true, 2));
     }
 
-    work_items.push(GpuFrameWorkItem::ClearSubBackdrop);
-    work_items.push(GpuFrameWorkItem::SubBgLayer {
+    render_plan.push(GpuFrameWorkItem::ClearSubBackdrop);
+    render_plan.push(GpuFrameWorkItem::SubBgLayer {
         layer_idx: 2,
         hi_priority: false,
     });
     if has_sub_sprites && !has_sub_bg {
-        work_items.extend((0..=3).map(GpuFrameWorkItem::SubSpritePriority));
+        render_plan.extend((0..=3).map(GpuFrameWorkItem::SubSpritePriority));
     }
     if has_sub_sprites && has_sub_bg {
-        work_items.push(GpuFrameWorkItem::SubSpritePriority(0));
-        work_items.push(GpuFrameWorkItem::SubSpritePriority(1));
+        render_plan.push(GpuFrameWorkItem::SubSpritePriority(0));
+        render_plan.push(GpuFrameWorkItem::SubSpritePriority(1));
     }
-    work_items.push(GpuFrameWorkItem::SubBgLayer {
+    render_plan.push(GpuFrameWorkItem::SubBgLayer {
         layer_idx: 1,
         hi_priority: false,
     });
-    work_items.push(GpuFrameWorkItem::SubBgLayer {
+    render_plan.push(GpuFrameWorkItem::SubBgLayer {
         layer_idx: 0,
         hi_priority: false,
     });
     if has_sub_sprites && has_sub_bg {
-        work_items.push(GpuFrameWorkItem::SubSpritePriority(2));
+        render_plan.push(GpuFrameWorkItem::SubSpritePriority(2));
     }
-    work_items.push(GpuFrameWorkItem::SubBgLayer {
+    render_plan.push(GpuFrameWorkItem::SubBgLayer {
         layer_idx: 1,
         hi_priority: true,
     });
-    work_items.push(GpuFrameWorkItem::SubBgLayer {
+    render_plan.push(GpuFrameWorkItem::SubBgLayer {
         layer_idx: 0,
         hi_priority: true,
     });
     if has_sub_sprites && has_sub_bg {
-        work_items.push(GpuFrameWorkItem::SubSpritePriority(3));
+        render_plan.push(GpuFrameWorkItem::SubSpritePriority(3));
     }
-    work_items.push(GpuFrameWorkItem::SubBgLayer {
+    render_plan.push(GpuFrameWorkItem::SubBgLayer {
         layer_idx: 2,
         hi_priority: true,
     });
 
-    work_items.push(GpuFrameWorkItem::PostProcess);
-    GpuRenderPlan::new(work_items)
+    render_plan.push(GpuFrameWorkItem::PostProcess);
+    render_plan
 }
 
 fn main_bg_work_item(layer_idx: usize, hi_priority: bool, math_bit_pos: u32) -> GpuFrameWorkItem {
@@ -482,24 +482,24 @@ fn build_mode7_render_plan(
     has_sub_mode7_bg: bool,
     has_sub_sprites: bool,
 ) -> GpuFrameRenderPlan {
-    let mut work_items = Vec::new();
+    let mut render_plan = GpuRenderPlan::default();
     if has_main_sprites {
-        work_items.push(GpuFrameWorkItem::MainSpritePriority(0));
+        render_plan.push(GpuFrameWorkItem::MainSpritePriority(0));
     }
-    work_items.push(GpuFrameWorkItem::Mode7MainBg);
+    render_plan.push(GpuFrameWorkItem::Mode7MainBg);
     if has_main_sprites {
-        work_items.extend((1..=3).map(GpuFrameWorkItem::MainSpritePriority));
+        render_plan.extend((1..=3).map(GpuFrameWorkItem::MainSpritePriority));
     }
 
-    work_items.push(GpuFrameWorkItem::ClearSubBackdrop);
+    render_plan.push(GpuFrameWorkItem::ClearSubBackdrop);
     if has_sub_mode7_bg {
-        work_items.push(GpuFrameWorkItem::Mode7SubBg);
+        render_plan.push(GpuFrameWorkItem::Mode7SubBg);
     }
     if has_sub_sprites {
-        work_items.extend((0..=3).map(GpuFrameWorkItem::SubSpritePriority));
+        render_plan.extend((0..=3).map(GpuFrameWorkItem::SubSpritePriority));
     }
-    work_items.push(GpuFrameWorkItem::PostProcess);
-    GpuRenderPlan::new(work_items)
+    render_plan.push(GpuFrameWorkItem::PostProcess);
+    render_plan
 }
 
 #[allow(clippy::too_many_arguments)]

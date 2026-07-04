@@ -54,6 +54,17 @@ impl<T> GpuRenderPlan<T> {
         Self { work_items }
     }
 
+    pub(crate) fn push(&mut self, work_item: T) {
+        self.work_items.push(work_item);
+    }
+
+    pub(crate) fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = T>,
+    {
+        self.work_items.extend(iter);
+    }
+
     #[cfg(test)]
     pub(crate) fn work_items(&self) -> &[T] {
         &self.work_items
@@ -66,6 +77,12 @@ impl<T> GpuRenderPlan<T> {
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.work_items.len()
+    }
+}
+
+impl<T> Default for GpuRenderPlan<T> {
+    fn default() -> Self {
+        Self::new(Vec::new())
     }
 }
 
@@ -150,6 +167,27 @@ mod tests {
         assert_eq!(
             plan.kinds(),
             vec![GpuWorkItemKind::ClearBackdrop, GpuWorkItemKind::BgEffect]
+        );
+    }
+
+    #[test]
+    fn render_plan_builder_preserves_pushed_and_extended_order() {
+        let mut plan = GpuRenderPlan::default();
+
+        plan.push(TestWorkItem::Clear);
+        plan.extend([TestWorkItem::Draw, TestWorkItem::Clear]);
+
+        assert_eq!(
+            plan.work_items(),
+            &[TestWorkItem::Clear, TestWorkItem::Draw, TestWorkItem::Clear]
+        );
+        assert_eq!(
+            plan.kinds(),
+            vec![
+                GpuWorkItemKind::ClearBackdrop,
+                GpuWorkItemKind::BgEffect,
+                GpuWorkItemKind::ClearBackdrop
+            ]
         );
     }
 
