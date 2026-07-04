@@ -5171,15 +5171,7 @@ impl ModernGpuVariantHeadless {
         let mut stats = plan.stats;
         match headless_variant_render_path(&stats) {
             ModernVariantRenderPath::EffectMaterialMode1Order => {
-                self.renderer.render_effect_material_mode1_order(
-                    &self.device,
-                    &self.queue,
-                    frame,
-                    bg_cells,
-                    sprite_cells,
-                    &plan,
-                    &self.target_view,
-                );
+                self.render_effect_material_mode1_order(frame, bg_cells, sprite_cells, &plan);
             }
             ModernVariantRenderPath::LiveIndexBaseWithOverlay => {
                 self.render_live_index_with_overlay(
@@ -5206,15 +5198,34 @@ impl ModernGpuVariantHeadless {
                 );
             }
             ModernVariantRenderPath::StableVariantFrame => {
-                self.renderer.renderer.render(
-                    &self.device,
-                    &self.queue,
-                    &variant_frame,
-                    &self.target_view,
-                );
+                self.render_stable_variant_frame(&variant_frame);
             }
         }
         (self.read_target_rgba(), stats)
+    }
+
+    fn render_effect_material_mode1_order(
+        &self,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+    ) {
+        self.renderer.render_effect_material_mode1_order(
+            &self.device,
+            &self.queue,
+            frame,
+            bg_cells,
+            sprite_cells,
+            plan,
+            &self.target_view,
+        );
+    }
+
+    fn render_stable_variant_frame(&self, variant_frame: &ModernFrame) {
+        self.renderer
+            .renderer
+            .render(&self.device, &self.queue, variant_frame, &self.target_view);
     }
 
     #[allow(clippy::too_many_arguments)]
