@@ -184,6 +184,18 @@ pub(crate) struct GpuFrameRenderPlan {
     work_items: GpuRenderPlan<GpuFrameWorkCommand>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GpuFramePrepareCommand {
+    CgramPalette,
+    TileAtlas,
+    Mode7Vram,
+    Sprites,
+}
+
+pub(crate) struct GpuFramePreparePlan {
+    work_items: GpuRenderPlan<GpuFramePrepareCommand>,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct GpuFrameRenderResourceRequirements {
     uses_cgram_palette: bool,
@@ -238,6 +250,10 @@ impl GpuFrameRenderPlan {
         )
     }
 
+    pub(crate) fn prepare_plan(&self) -> GpuFramePreparePlan {
+        GpuFramePreparePlan::from_resource_requirements(self.resource_requirements())
+    }
+
     #[cfg(test)]
     pub(crate) fn uses_sprites(&self) -> bool {
         self.resource_requirements().uses_sprites()
@@ -283,6 +299,49 @@ impl IntoIterator for GpuFrameRenderPlan {
 
     fn into_iter(self) -> Self::IntoIter {
         self.work_items.into_iter()
+    }
+}
+
+impl GpuFramePreparePlan {
+    fn from_resource_requirements(requirements: GpuFrameRenderResourceRequirements) -> Self {
+        let mut prepare_plan = Self::default();
+        if requirements.uses_cgram_palette() {
+            prepare_plan.push(GpuFramePrepareCommand::CgramPalette);
+        }
+        if requirements.uses_tile_atlas() {
+            prepare_plan.push(GpuFramePrepareCommand::TileAtlas);
+        }
+        if requirements.uses_mode7_vram() {
+            prepare_plan.push(GpuFramePrepareCommand::Mode7Vram);
+        }
+        if requirements.uses_sprites() {
+            prepare_plan.push(GpuFramePrepareCommand::Sprites);
+        }
+        prepare_plan
+    }
+
+    fn push(&mut self, work_item: GpuFramePrepareCommand) {
+        self.work_items.push(work_item);
+    }
+
+    pub(crate) fn execute_with<F>(self, execute: F)
+    where
+        F: FnMut(GpuFramePrepareCommand),
+    {
+        self.work_items.execute_with(execute);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn work_items(&self) -> &[GpuFramePrepareCommand] {
+        self.work_items.work_items()
+    }
+}
+
+impl Default for GpuFramePreparePlan {
+    fn default() -> Self {
+        Self {
+            work_items: GpuRenderPlan::default(),
+        }
     }
 }
 
@@ -679,5 +738,50 @@ mod tests {
                 uses_sprites: false
             }
         );
+    }
+
+    #[test]
+    fn frame_render_plan_builds_prepare_plan_from_resource_requirements() {
+        let bg_sprite_plan = GpuFrameRenderPlan::from_iter([
+            main_frame_work_command(GpuFrameScreenWorkCommand::BgLayer(
+                GpuFrameBgPass::mode1_main(0, false, 0),
+            )),
+            main_frame_work_command(GpuFrameScreenWorkCommand::SpritePriority(
+                GpuFrameSpritePass::new(0, 4, GpuFrameWindowSelector::main(0x10, 16)),
+            )),
+        ]);
+        assert_eq!(
+            bg_sprite_plan.prepare_plan().work_items(),
+            &[
+                GpuFramePrepareCommand::CgramPalette,
+                GpuFramePrepareCommand::TileAtlas,
+                GpuFramePrepareCommand::Sprites,
+            ]
+        );
+
+        let mode7_sprite_plan = GpuFrameRenderPlan::from_iter([
+            main_frame_work_command(GpuFrameScreenWorkCommand::Mode7Bg(
+                GpuFrameMode7Pass::main_bg(),
+            )),
+            main_frame_work_command(GpuFrameScreenWorkCommand::SpritePriority(
+                GpuFrameSpritePass::new(0, 4, GpuFrameWindowSelector::main(0x10, 16)),
+            )),
+        ]);
+        assert_eq!(
+            mode7_sprite_plan.prepare_plan().work_items(),
+            &[
+                GpuFramePrepareCommand::CgramPalette,
+                GpuFramePrepareCommand::Mode7Vram,
+                GpuFramePrepareCommand::Sprites,
+            ]
+        );
+
+        let clear_only_plan = GpuFrameRenderPlan::from_iter([
+            main_frame_work_command(GpuFrameScreenWorkCommand::ClearBackdrop(
+                GpuFrameBackdropClearPass::main_cgram(),
+            )),
+            post_process_frame_work_command(),
+        ]);
+        assert_eq!(clear_only_plan.prepare_plan().work_items(), &[]);
     }
 }

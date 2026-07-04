@@ -14,8 +14,8 @@ use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_work_command::{
     GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMode7Pass, GpuFramePostProcessPass,
-    GpuFrameRenderPlan, GpuFrameRenderScreen, GpuFrameScreenWorkCommand, GpuFrameSpritePass,
-    GpuFrameWorkCommand,
+    GpuFramePrepareCommand, GpuFramePreparePlan, GpuFrameRenderPlan, GpuFrameRenderScreen,
+    GpuFrameScreenWorkCommand, GpuFrameSpritePass, GpuFrameWorkCommand,
 };
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
@@ -138,27 +138,48 @@ impl GpuFrameRenderer {
         output_view: &wgpu::TextureView,
     ) {
         let render_plan = GpuFrameRenderPlan::from_frame(frame);
-        let resource_requirements = render_plan.resource_requirements();
-        if resource_requirements.uses_cgram_palette() {
-            self.cgram_palette.update(queue, frame.cgram);
-        }
-        if resource_requirements.uses_tile_atlas() {
-            self.tile_atlas.update(queue, frame.vram);
-        }
-        if resource_requirements.uses_mode7_vram() {
-            self.mode7.prepare_vram(queue, frame.vram);
-        }
-        if resource_requirements.uses_sprites() {
-            self.sprites.prepare(
-                queue,
-                frame.vram,
-                frame.oam,
-                &frame.obj,
-                frame.extra_left_right,
-            );
-        }
+        self.execute_prepare_plan(queue, frame, render_plan.prepare_plan());
 
         self.execute_render_plan(encoder, queue, frame, output_view, render_plan);
+    }
+
+    fn execute_prepare_plan(
+        &mut self,
+        queue: &wgpu::Queue,
+        frame: &GpuFrame<'_>,
+        prepare_plan: GpuFramePreparePlan,
+    ) {
+        prepare_plan.execute_with(|command| {
+            self.prepare_gpu_work_command(queue, frame, command);
+        });
+    }
+
+    fn prepare_gpu_work_command(
+        &mut self,
+        queue: &wgpu::Queue,
+        frame: &GpuFrame<'_>,
+        command: GpuFramePrepareCommand,
+    ) {
+        match command {
+            GpuFramePrepareCommand::CgramPalette => {
+                self.cgram_palette.update(queue, frame.cgram);
+            }
+            GpuFramePrepareCommand::TileAtlas => {
+                self.tile_atlas.update(queue, frame.vram);
+            }
+            GpuFramePrepareCommand::Mode7Vram => {
+                self.mode7.prepare_vram(queue, frame.vram);
+            }
+            GpuFramePrepareCommand::Sprites => {
+                self.sprites.prepare(
+                    queue,
+                    frame.vram,
+                    frame.oam,
+                    &frame.obj,
+                    frame.extra_left_right,
+                );
+            }
+        }
     }
 
     fn execute_render_plan(
