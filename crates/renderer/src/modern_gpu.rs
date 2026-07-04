@@ -547,20 +547,17 @@ struct PreparedMode1EffectRenderPlan<'rank, 'frame> {
 }
 
 impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
-    fn execute_with<F>(self, mut execute: F)
+    fn execute_with<F>(self, execute: F)
     where
         F: FnMut(PreparedMode1EffectRenderCommand<'rank, 'frame>),
     {
-        for command in self.into_commands() {
-            execute(command);
-        }
+        self.into_command_plan().execute_with(execute);
     }
 
-    fn into_commands(
-        self,
-    ) -> impl Iterator<Item = PreparedMode1EffectRenderCommand<'rank, 'frame>> {
+    fn into_command_plan(self) -> Mode1EffectCommandPlan<'rank, 'frame> {
         let needs_empty_frame_fallback = self.needs_empty_frame_fallback;
-        self.rank_plans
+        let commands = self
+            .rank_plans
             .into_iter()
             .flat_map(|rank_plan| {
                 let PreparedMode1EffectRankRenderPlan {
@@ -584,6 +581,8 @@ impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
                     },
                 }),
             )
+            .collect();
+        GpuRenderPlan::new(commands)
     }
 
     #[cfg(test)]
@@ -651,6 +650,15 @@ enum PreparedMode1EffectRenderStep<'rank, 'frame> {
 struct PreparedMode1EffectRenderCommand<'rank, 'frame> {
     source: Mode1EffectCommandSource,
     command: ModernGpuWorkCommand<'rank, 'frame>,
+}
+
+type Mode1EffectCommandPlan<'rank, 'frame> =
+    GpuRenderPlan<PreparedMode1EffectRenderCommand<'rank, 'frame>>;
+
+impl GpuWorkItem for PreparedMode1EffectRenderCommand<'_, '_> {
+    fn kind(&self) -> GpuWorkItemKind {
+        GpuWorkItem::kind(&self.command)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
