@@ -671,6 +671,62 @@ struct MixedVariantOverlayBgSelection<'a> {
     reject_overlap_bg_unrepresentable_front_cgram_mismatch: u32,
 }
 
+#[derive(Clone, Debug, Default)]
+struct MixedVariantPrefinalPackets<'a> {
+    static_bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
+    live_cgram_bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
+    sprites: Vec<crate::modern_variant_draw::VariantSpriteDrawPacket<'a>>,
+}
+
+impl<'a> MixedVariantPrefinalPackets<'a> {
+    fn from_overlay(
+        frame: &ModernFrame,
+        overlay: &MixedVariantOverlayBgSelection<'a>,
+        plan: &crate::modern_variant_draw::VariantDrawPlan<'a>,
+    ) -> Self {
+        Self {
+            static_bg: overlay
+                .bg
+                .iter()
+                .filter(|packet| bg_packet_needs_prefinal_color_math(frame, packet))
+                .cloned()
+                .collect(),
+            live_cgram_bg: overlay
+                .live_cgram_bg
+                .iter()
+                .filter(|packet| bg_packet_needs_prefinal_color_math(frame, packet))
+                .cloned()
+                .collect(),
+            sprites: plan.sprites.clone(),
+        }
+    }
+
+    fn from_all_overlay(
+        overlay: &MixedVariantOverlayBgSelection<'a>,
+        plan: &crate::modern_variant_draw::VariantDrawPlan<'a>,
+    ) -> Self {
+        Self {
+            static_bg: overlay.bg.clone(),
+            live_cgram_bg: overlay.live_cgram_bg.clone(),
+            sprites: plan.sprites.clone(),
+        }
+    }
+
+    fn is_bg_empty(&self) -> bool {
+        self.static_bg.is_empty() && self.live_cgram_bg.is_empty()
+    }
+
+    fn bg_len(&self) -> usize {
+        self.static_bg.len() + self.live_cgram_bg.len()
+    }
+
+    fn bg_packets(
+        &self,
+    ) -> impl Iterator<Item = &crate::modern_variant_draw::VariantBgDrawPacket<'a>> {
+        self.static_bg.iter().chain(self.live_cgram_bg.iter())
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MixedOverlayComplexRejectReason {
     Brightness,
@@ -1230,13 +1286,11 @@ fn bg_packet_can_use_live_cgram(
 fn overlay_mixed_variant_bg_packets_on_main_screen(
     screens: &mut crate::modern_software::ModernCompositedScreens,
     frame: &ModernFrame,
-    static_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
-    live_cgram_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
-    sprite_packets: &[crate::modern_variant_draw::VariantSpriteDrawPacket<'_>],
+    packets: &MixedVariantPrefinalPackets<'_>,
 ) {
     debug_assert_eq!(screens.scale, 1);
     let mut bg_overlay_ranks = vec![u8::MAX; screens.main.len()];
-    for packet in static_packets {
+    for packet in &packets.static_bg {
         overlay_mixed_variant_bg_packet_on_main_screen(
             screens,
             frame,
@@ -1250,7 +1304,7 @@ fn overlay_mixed_variant_bg_packets_on_main_screen(
             },
         );
     }
-    for packet in live_cgram_packets {
+    for packet in &packets.live_cgram_bg {
         overlay_mixed_variant_live_cgram_bg_packet_on_main_screen(
             screens,
             frame,
@@ -1261,7 +1315,7 @@ fn overlay_mixed_variant_bg_packets_on_main_screen(
     overlay_front_variant_sprite_packets_on_main_screen(
         screens,
         frame,
-        sprite_packets,
+        &packets.sprites,
         &bg_overlay_ranks,
     );
 }
@@ -3494,16 +3548,9 @@ impl ModernGpuPrefinalOverlay {
         queue: &wgpu::Queue,
         main_buffer: &wgpu::Buffer,
         frame: &ModernFrame,
-        static_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
-        live_cgram_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
-        sprite_packets: &[crate::modern_variant_draw::VariantSpriteDrawPacket<'_>],
+        packets: &MixedVariantPrefinalPackets<'_>,
     ) {
-        let (data_words, params) = modern_prefinal_overlay_data_words(
-            frame,
-            static_packets,
-            live_cgram_packets,
-            sprite_packets,
-        );
+        let (data_words, params) = modern_prefinal_overlay_data_words(frame, packets);
         let data_buffer =
             storage_buffer_with_words(device, queue, "modern_prefinal_overlay_data", &data_words);
         let params_buffer =
@@ -3763,15 +3810,13 @@ fn modern_screen_builder_data_words(
 
 fn modern_prefinal_overlay_data_words(
     frame: &ModernFrame,
-    static_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
-    live_cgram_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
-    sprite_packets: &[crate::modern_variant_draw::VariantSpriteDrawPacket<'_>],
+    packets: &MixedVariantPrefinalPackets<'_>,
 ) -> (Vec<u32>, [u32; 8]) {
     let mut data = Vec::new();
     let mut bg_packet_words = Vec::new();
     let mut sprite_packet_words = Vec::new();
 
-    for packet in static_packets {
+    for packet in &packets.static_bg {
         let cell_offset = data.len() as u32;
         data.extend_from_slice(&modern_prefinal_overlay_static_bg_pixels(frame, packet));
         if let Some(rank) = packet.mode1_rank() {
@@ -3783,7 +3828,7 @@ fn modern_prefinal_overlay_data_words(
             ]);
         }
     }
-    for packet in live_cgram_packets {
+    for packet in &packets.live_cgram_bg {
         let cell_offset = data.len() as u32;
         data.extend_from_slice(&modern_prefinal_overlay_live_bg_pixels(frame, packet));
         if let Some(rank) = packet.mode1_rank() {
@@ -3796,7 +3841,8 @@ fn modern_prefinal_overlay_data_words(
         }
     }
     for priority in 0..=3u8 {
-        for packet in sprite_packets
+        for packet in packets
+            .sprites
             .iter()
             .filter(|packet| packet.inst.priority == priority)
         {
@@ -4215,9 +4261,7 @@ impl ModernGpuCompositor {
         overlay_frame: &ModernFrame,
         bg_cells: &[ModernIndexTile],
         sprite_cells: &[ModernIndexTile],
-        static_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
-        live_cgram_packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
-        sprite_packets: &[crate::modern_variant_draw::VariantSpriteDrawPacket<'_>],
+        packets: &MixedVariantPrefinalPackets<'_>,
         output_texture: &wgpu::Texture,
     ) -> ModernScreenBuilderResult {
         if let Some(blocker) = modern_screen_builder_blocker(screen_frame) {
@@ -4226,13 +4270,7 @@ impl ModernGpuCompositor {
                 bg_cells,
                 sprite_cells,
             );
-            overlay_mixed_variant_bg_packets_on_main_screen(
-                &mut screens,
-                overlay_frame,
-                static_packets,
-                live_cgram_packets,
-                sprite_packets,
-            );
+            overlay_mixed_variant_bg_packets_on_main_screen(&mut screens, overlay_frame, packets);
             self.finalizer
                 .render_to_texture(device, queue, final_frame, &screens, output_texture);
             return ModernScreenBuilderResult::CpuOverlay(blocker);
@@ -4252,9 +4290,7 @@ impl ModernGpuCompositor {
             queue,
             &self.finalizer.main_buffer,
             overlay_frame,
-            static_packets,
-            live_cgram_packets,
-            sprite_packets,
+            packets,
         );
         self.finalizer.render_current_buffers_to_texture(
             device,
@@ -4489,21 +4525,10 @@ impl ModernGpuVariantHeadless {
         if stats.needs_live_index_base() {
             let overlay = mixed_variant_prefinal_bg_packets(frame, &plan);
             let final_overlay = mixed_variant_overlay_bg_packets(frame, &plan);
-            let prefinal_bg: Vec<_> = overlay
-                .bg
-                .iter()
-                .filter(|packet| bg_packet_needs_prefinal_color_math(frame, packet))
-                .cloned()
-                .collect();
-            let prefinal_live_cgram_bg: Vec<_> = overlay
-                .live_cgram_bg
-                .iter()
-                .filter(|packet| bg_packet_needs_prefinal_color_math(frame, packet))
-                .cloned()
-                .collect();
-            let prefinal_color_math = prefinal_bg
-                .iter()
-                .chain(prefinal_live_cgram_bg.iter())
+            let prefinal_packets =
+                MixedVariantPrefinalPackets::from_overlay(frame, &overlay, &plan);
+            let prefinal_color_math = prefinal_packets
+                .bg_packets()
                 .filter_map(|packet| bg_packet_prefinal_color_math_reason(frame, packet))
                 .collect::<Vec<_>>();
             let accepted_prefinal_color_math = prefinal_color_math.len() as u32;
@@ -4521,8 +4546,7 @@ impl ModernGpuVariantHeadless {
                 .count() as u32;
             stats.mixed_overlay_bg_effect_draws += (final_overlay.bg.len()
                 + final_overlay.live_cgram_bg.len()
-                + prefinal_bg.len()
-                + prefinal_live_cgram_bg.len())
+                + prefinal_packets.bg_len())
                 as u32;
             stats.mixed_overlay_bg_effect_candidates += final_overlay.candidates;
             stats.mixed_overlay_bg_effect_culled_invisible_main +=
@@ -4585,8 +4609,7 @@ impl ModernGpuVariantHeadless {
             stats.mixed_overlay_bg_effect_reject_cgram_mismatch +=
                 final_overlay.reject_cgram_mismatch;
             stats.mixed_overlay_bg_effect_reject_overlap += final_overlay.reject_overlap;
-            if prefinal_bg.is_empty()
-                && prefinal_live_cgram_bg.is_empty()
+            if prefinal_packets.is_bg_empty()
                 && (can_render_forced_blank_base_directly(live_index_frame, &final_overlay)
                     || can_render_final_index_base_gpu(live_index_frame, live_index_bg_cells))
             {
@@ -4605,7 +4628,7 @@ impl ModernGpuVariantHeadless {
                     &final_live_index_frame,
                     &self.target_view,
                 );
-            } else if prefinal_bg.is_empty() && prefinal_live_cgram_bg.is_empty() {
+            } else if prefinal_packets.is_bg_empty() {
                 let build_result = self.compositor.render_with_screen_builder_status(
                     &self.device,
                     &self.queue,
@@ -4640,9 +4663,7 @@ impl ModernGpuVariantHeadless {
                         frame,
                         live_index_bg_cells,
                         live_index_sprite_cells,
-                        &prefinal_bg,
-                        &prefinal_live_cgram_bg,
-                        &plan.sprites,
+                        &prefinal_packets,
                         &self.target,
                     );
                 match build_result {
@@ -4746,7 +4767,8 @@ impl ModernGpuVariantHeadless {
         plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
     ) -> ModernScreenBuilderResult {
         let overlay = mixed_variant_prefinal_bg_packets(frame, plan);
-        if overlay.bg.is_empty() && overlay.live_cgram_bg.is_empty() {
+        let prefinal_packets = MixedVariantPrefinalPackets::from_all_overlay(&overlay, plan);
+        if prefinal_packets.is_bg_empty() {
             return self.compositor.render_prefinal_screens_with_final_frame(
                 &self.device,
                 &self.queue,
@@ -4766,9 +4788,7 @@ impl ModernGpuVariantHeadless {
                 frame,
                 live_index_bg_cells,
                 live_index_sprite_cells,
-                &overlay.bg,
-                &overlay.live_cgram_bg,
-                &plan.sprites,
+                &prefinal_packets,
                 &self.target,
             )
     }
@@ -6444,6 +6464,12 @@ mod tests {
         assert_eq!(selection.reject_cgram_mismatch, 0);
         assert_eq!(selection.reject_overlap, 1);
 
+        let prefinal_packets = MixedVariantPrefinalPackets::from_all_overlay(&selection, &plan);
+        assert_eq!(prefinal_packets.static_bg.len(), 1);
+        assert_eq!(prefinal_packets.live_cgram_bg.len(), 0);
+        assert_eq!(prefinal_packets.sprites.len(), 0);
+        assert_eq!(prefinal_packets.bg_len(), 1);
+
         let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
             .render_rgba_with_live_index_base(
                 &frame,
@@ -6544,9 +6570,11 @@ mod tests {
         overlay_mixed_variant_bg_packets_on_main_screen(
             &mut screens,
             &frame,
-            std::slice::from_ref(&packet),
-            &[],
-            &[],
+            &MixedVariantPrefinalPackets {
+                static_bg: vec![packet.clone()],
+                live_cgram_bg: Vec::new(),
+                sprites: Vec::new(),
+            },
         );
 
         assert_eq!(screens.main[0], original);
@@ -6554,9 +6582,11 @@ mod tests {
         overlay_mixed_variant_bg_packets_on_main_screen(
             &mut screens,
             &frame,
-            std::slice::from_ref(&packet),
-            &[],
-            &[],
+            &MixedVariantPrefinalPackets {
+                static_bg: vec![packet.clone()],
+                live_cgram_bg: Vec::new(),
+                sprites: Vec::new(),
+            },
         );
 
         assert_eq!(screens.main[0], replacement);
