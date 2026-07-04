@@ -396,13 +396,7 @@ fn load_modern_canonical_art_atlas_from_dir(
     let mut entries = Vec::new();
     for art in manifest.arts {
         for source_ref in art.source_refs {
-            let dynamic_policy = if source_ref.preview_source == "palette_usage"
-                || has_stable_effect_for_source_ref(&effects, &source_ref)
-            {
-                "stable"
-            } else {
-                "requires_live_palette"
-            };
+            let dynamic_policy = dynamic_policy_for_source_ref(&effects, &source_ref);
             let id = format!(
                 "{}:{}:pack{}:tile{}:{}bpp",
                 source_ref.source_kind,
@@ -425,7 +419,7 @@ fn load_modern_canonical_art_atlas_from_dir(
                 rect: art.rect,
                 sha1: art.sha1_indices.clone(),
                 duplicate_of: None,
-                dynamic_policy: dynamic_policy.to_string(),
+                dynamic_policy,
                 source_hflip: source_ref.hflip,
                 source_vflip: source_ref.vflip,
             });
@@ -441,6 +435,23 @@ fn load_modern_canonical_art_atlas_from_dir(
     })
 }
 
+fn dynamic_policy_for_source_ref(effects: &[TileEffect], source_ref: &ArtSourceRefJson) -> String {
+    if source_ref.runtime_material.as_deref() == Some("palette_lut") {
+        match source_ref.runtime_material_policy.as_deref() {
+            Some("stable") => return "stable".to_string(),
+            Some("requires_live_palette") => return "requires_live_palette".to_string(),
+            _ => {}
+        }
+    }
+    if source_ref.preview_source == "palette_usage"
+        || has_stable_effect_for_source_ref(effects, source_ref)
+    {
+        "stable".to_string()
+    } else {
+        "requires_live_palette".to_string()
+    }
+}
+
 fn has_stable_effect_for_source_ref(effects: &[TileEffect], source_ref: &ArtSourceRefJson) -> bool {
     let key = VariantAtlasKey {
         source_kind: source_ref.source_kind.clone(),
@@ -451,9 +462,7 @@ fn has_stable_effect_for_source_ref(effects: &[TileEffect], source_ref: &ArtSour
         palette: source_ref.preview_palette.clone(),
         palette_row: source_ref.preview_palette_row,
     };
-    let Some(colors_per_rows) = runtime_effect_color_rows(&key) else {
-        return false;
-    };
+    let colors_per_rows = source_ref_effect_color_rows(source_ref, &key);
     colors_per_rows.into_iter().any(|colors_per_row| {
         effects.iter().any(|effect| {
             effect.dynamic_policy == "stable"
@@ -462,6 +471,13 @@ fn has_stable_effect_for_source_ref(effects: &[TileEffect], source_ref: &ArtSour
                 && effect.colors_per_row == colors_per_row
         })
     })
+}
+
+fn source_ref_effect_color_rows(source_ref: &ArtSourceRefJson, key: &VariantAtlasKey) -> Vec<u8> {
+    if let Some(colors_per_row) = source_ref.runtime_colors_per_row {
+        return vec![colors_per_row];
+    }
+    runtime_effect_color_rows(key).unwrap_or_default()
 }
 
 fn rect_within_atlas(rect: [u32; 4], width: u32, height: u32) -> bool {
@@ -584,6 +600,12 @@ struct ArtSourceRefJson {
     preview_palette: String,
     preview_palette_row: u8,
     preview_source: String,
+    #[serde(default)]
+    runtime_material: Option<String>,
+    #[serde(default)]
+    runtime_material_policy: Option<String>,
+    #[serde(default)]
+    runtime_colors_per_row: Option<u8>,
 }
 
 #[derive(Deserialize)]
@@ -1119,6 +1141,101 @@ mod tests {
                 .id,
             "palette_main_spr:8color:row0"
         );
+
+        std::fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn canonical_art_runtime_material_policy_can_force_live_palette() {
+        let root = unique_temp_root();
+        let atlas_dir = root.join("atlas");
+        std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
+        let rgba = solid_rgba(8, 8, [1, 2, 3, 255]);
+        write_rgba_png(&atlas_dir.join("art_tiles.png"), 8, 8, &rgba);
+        std::fs::write(
+            atlas_dir.join("art_tiles.json"),
+            r#"{
+              "format": "zelda3_canonical_art_atlas_v1",
+              "tile_width": 8,
+              "tile_height": 8,
+              "width": 8,
+              "height": 8,
+              "art_count": 1,
+              "source_ref_count": 1,
+              "arts": [{
+                "art_id": "art:abc",
+                "bpp": 3,
+                "rect": [0, 0, 8, 8],
+                "sha1_indices": "abc",
+                "preview_palette": "palette_main_spr",
+                "preview_palette_row": 0,
+                "preview_source": "source_kind_default",
+                "source_refs": [{
+                  "source_kind": "sprite",
+                  "asset": "kSprGfx",
+                  "pack": 0,
+                  "tile": 7,
+                  "bpp": 3,
+                  "hflip": false,
+                  "vflip": false,
+                  "preview_palette": "palette_main_spr",
+                  "preview_palette_row": 0,
+                  "preview_source": "source_kind_default",
+                  "runtime_material": "palette_lut",
+                  "runtime_material_policy": "requires_live_palette",
+                  "runtime_colors_per_row": 8
+                }]
+              }]
+            }"#,
+        )
+        .expect("write manifest");
+        std::fs::write(
+            atlas_dir.join("tile_effects.json"),
+            r#"{
+              "format": "zelda3_tile_effect_table_v1",
+              "strategy": "base_art_plus_shader_effects",
+              "effects": [{
+                "id": "palette_main_spr:8color:row0",
+                "type": "palette_lut",
+                "palette": "palette_main_spr",
+                "palette_row": 0,
+                "colors_per_row": 8,
+                "index_to_rgb": [
+                  [0, 0, 0],
+                  [10, 20, 30],
+                  [40, 50, 60],
+                  [70, 80, 90],
+                  [100, 110, 120],
+                  [130, 140, 150],
+                  [160, 170, 180],
+                  [190, 200, 210]
+                ],
+                "dynamic_policy": "stable",
+                "runtime": "shader_effect"
+              }]
+            }"#,
+        )
+        .expect("write effects");
+
+        let atlas = load_modern_canonical_art_atlas(&root).expect("load art atlas");
+        let live_key = VariantAtlasKey {
+            source_kind: "sprite".to_string(),
+            asset: "kSprGfx".to_string(),
+            pack: 0,
+            tile: 7,
+            bpp: 3,
+            palette: "palette_main_spr".to_string(),
+            palette_row: 0,
+        };
+
+        assert_eq!(atlas.entries.len(), 1);
+        assert_eq!(atlas.entries[0].dynamic_policy, "requires_live_palette");
+        match atlas.resolve_draw(Some(&live_key)) {
+            VariantAtlasDraw::DynamicPalette { entry } => {
+                assert_eq!(entry.id, "sprite:kSprGfx:pack0:tile7:3bpp");
+            }
+            other => panic!("expected runtime policy to force dynamic draw, got {other:?}"),
+        }
 
         std::fs::remove_dir_all(root).expect("remove temp root");
     }
