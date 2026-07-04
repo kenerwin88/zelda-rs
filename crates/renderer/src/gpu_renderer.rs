@@ -14,8 +14,9 @@ use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_render_plan::GpuFrameRenderPlanContext;
 use crate::gpu_frame_work_command::{
-    GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMode7Pass, GpuFrameRenderPlan,
-    GpuFrameRenderScreen, GpuFrameScreenWorkCommand, GpuFrameSpritePass, GpuFrameWorkCommand,
+    GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMode7Pass, GpuFramePostProcessPass,
+    GpuFrameRenderPlan, GpuFrameRenderScreen, GpuFrameScreenWorkCommand, GpuFrameSpritePass,
+    GpuFrameWorkCommand,
 };
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
@@ -180,8 +181,8 @@ impl GpuFrameRenderer {
             GpuFrameWorkCommand::Screen { screen, command } => {
                 self.render_screen_gpu_work_item(encoder, queue, frame, screen, command);
             }
-            GpuFrameWorkCommand::PostProcess => {
-                self.render_post_process_gpu_work_item(encoder, queue, frame, output_view);
+            GpuFrameWorkCommand::PostProcess(pass) => {
+                self.render_post_process_gpu_work_item(encoder, queue, frame, output_view, pass);
             }
         }
     }
@@ -228,7 +229,9 @@ impl GpuFrameRenderer {
         queue: &wgpu::Queue,
         frame: &GpuFrame<'_>,
         output_view: &wgpu::TextureView,
+        pass: GpuFramePostProcessPass,
     ) {
+        let _ = pass;
         self.post_process.render(encoder, queue, frame, output_view);
     }
 

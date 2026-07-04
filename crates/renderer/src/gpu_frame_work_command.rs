@@ -149,6 +149,15 @@ pub(crate) enum GpuFrameRenderPhase {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct GpuFramePostProcessPass;
+
+impl GpuFramePostProcessPass {
+    pub(crate) fn final_output() -> Self {
+        Self
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuFrameRenderScreen {
     Main,
     Sub,
@@ -168,7 +177,7 @@ pub(crate) enum GpuFrameWorkCommand {
         screen: GpuFrameRenderScreen,
         command: GpuFrameScreenWorkCommand,
     },
-    PostProcess,
+    PostProcess(GpuFramePostProcessPass),
 }
 
 pub(crate) type GpuFrameRenderPlan = GpuRenderPlan<GpuFrameWorkCommand>;
@@ -209,7 +218,7 @@ impl GpuFrameWorkCommand {
     pub(crate) fn phase(&self) -> GpuFrameRenderPhase {
         match self {
             Self::Screen { screen, .. } => screen.phase(),
-            Self::PostProcess => GpuFrameRenderPhase::PostProcess,
+            Self::PostProcess(_) => GpuFrameRenderPhase::PostProcess,
         }
     }
 }
@@ -218,7 +227,7 @@ impl GpuWorkItem for GpuFrameWorkCommand {
     fn kind(&self) -> GpuWorkItemKind {
         match self {
             Self::Screen { screen, command } => screen.work_item_kind(*command),
-            Self::PostProcess => GpuWorkItemKind::PostProcess,
+            Self::PostProcess(_) => GpuWorkItemKind::PostProcess,
         }
     }
 }
@@ -238,7 +247,7 @@ pub(crate) fn sub_frame_work_command(command: GpuFrameScreenWorkCommand) -> GpuF
 }
 
 pub(crate) fn post_process_frame_work_command() -> GpuFrameWorkCommand {
-    GpuFrameWorkCommand::PostProcess
+    GpuFrameWorkCommand::PostProcess(GpuFramePostProcessPass::final_output())
 }
 
 #[cfg(test)]
@@ -315,6 +324,18 @@ mod tests {
         assert_eq!(
             GpuFrameBackdropClearPass::sub_transparent(),
             GpuFrameBackdropClearPass::SubTransparent
+        );
+    }
+
+    #[test]
+    fn post_process_pass_names_final_output_target() {
+        assert_eq!(
+            GpuFramePostProcessPass::final_output(),
+            GpuFramePostProcessPass
+        );
+        assert_eq!(
+            post_process_frame_work_command(),
+            GpuFrameWorkCommand::PostProcess(GpuFramePostProcessPass::final_output())
         );
     }
 }
