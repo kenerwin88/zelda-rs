@@ -516,20 +516,14 @@ impl ModernGpuVariantRenderer {
         output_view: &wgpu::TextureView,
     ) {
         let mut rendered_any = false;
-        for rank in 0..=9 {
-            let bg_packets: Vec<_> = plan
-                .material_packets()
-                .filter(|packet| packet.mode1_rank() == Some(rank))
-                .filter_map(|packet| packet.as_bg())
-                .map(|(_, packet)| packet.clone())
-                .collect();
-            if !bg_packets.is_empty() {
+        for rank_packets in mode1_effect_material_rank_packets(plan) {
+            if !rank_packets.bg.is_empty() {
                 self.effect_renderer.render_bg(
                     device,
                     queue,
                     bg_cells,
                     &self.atlas,
-                    &bg_packets,
+                    &rank_packets.bg,
                     output_view,
                     if rendered_any {
                         wgpu::LoadOp::Load
@@ -540,13 +534,7 @@ impl ModernGpuVariantRenderer {
                 rendered_any = true;
             }
 
-            let sprite_packets: Vec<_> = plan
-                .material_packets()
-                .filter(|packet| packet.mode1_rank() == Some(rank))
-                .filter_map(|packet| packet.as_sprite())
-                .map(|(_, packet)| packet.clone())
-                .collect();
-            if !sprite_packets.is_empty() {
+            if !rank_packets.sprites.is_empty() {
                 if !rendered_any {
                     self.effect_renderer.render_bg(
                         device,
@@ -565,7 +553,7 @@ impl ModernGpuVariantRenderer {
                     sprite_cells,
                     frame,
                     &self.atlas,
-                    &sprite_packets,
+                    &rank_packets.sprites,
                     output_view,
                 );
             }
@@ -666,6 +654,43 @@ struct EffectInstancePacket {
     source_hflip: bool,
     source_vflip: bool,
     effect_row: u32,
+}
+
+#[derive(Clone, Debug)]
+struct Mode1EffectMaterialRankPackets<'a> {
+    bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
+    sprites: Vec<crate::modern_variant_draw::VariantSpriteDrawPacket<'a>>,
+}
+
+impl<'a> Mode1EffectMaterialRankPackets<'a> {
+    fn empty() -> Self {
+        Self {
+            bg: Vec::new(),
+            sprites: Vec::new(),
+        }
+    }
+}
+
+fn mode1_effect_material_rank_packets<'a>(
+    plan: &crate::modern_variant_draw::VariantDrawPlan<'a>,
+) -> Vec<Mode1EffectMaterialRankPackets<'a>> {
+    let mut ranks = (0..=9)
+        .map(|_| Mode1EffectMaterialRankPackets::empty())
+        .collect::<Vec<_>>();
+    for packet in plan.material_packets() {
+        let Some(rank) = packet.mode1_rank() else {
+            continue;
+        };
+        match packet {
+            crate::modern_variant_draw::VariantDrawPacket::Bg { packet, .. } => {
+                ranks[usize::from(rank)].bg.push(packet.clone());
+            }
+            crate::modern_variant_draw::VariantDrawPacket::Sprite { packet, .. } => {
+                ranks[usize::from(rank)].sprites.push(packet.clone());
+            }
+        }
+    }
+    ranks
 }
 
 #[derive(Default)]
@@ -6046,6 +6071,100 @@ mod tests {
         assert_eq!(batch.material(), Some(EffectMaterial::LiveCgram));
         assert_eq!(batch.instance_count(), 1);
         assert_eq!(batch.instance_bytes().len() as u64, INDEX_INSTANCE_STRIDE);
+    }
+
+    #[test]
+    fn mode1_effect_material_rank_packets_partitions_bg_and_sprites_once() {
+        use crate::modern_frame::{ModernIndexSpriteInstance, ModernIndexTileInstance};
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::VariantAtlasDraw;
+        use crate::modern_variant_draw::{
+            VariantBgDrawPacket, VariantDrawPlan, VariantSpriteDrawPacket,
+        };
+
+        let cell = ModernIndexTile {
+            id: 0,
+            indices: [1u8; 64],
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        };
+        let bg3_low = ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        };
+        let bg1_high = ModernIndexTileInstance {
+            priority: true,
+            ..bg3_low
+        };
+        let unsupported_bg = ModernIndexTileInstance {
+            priority: false,
+            ..bg3_low
+        };
+        let sprite_priority_two = ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            priority: 2,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        };
+        let plan = VariantDrawPlan {
+            bg: vec![
+                VariantBgDrawPacket {
+                    layer_index: 2,
+                    cell: &cell,
+                    inst: &bg3_low,
+                    key: None,
+                    draw: VariantAtlasDraw::MissingArt,
+                },
+                VariantBgDrawPacket {
+                    layer_index: 0,
+                    cell: &cell,
+                    inst: &bg1_high,
+                    key: None,
+                    draw: VariantAtlasDraw::MissingArt,
+                },
+                VariantBgDrawPacket {
+                    layer_index: 3,
+                    cell: &cell,
+                    inst: &unsupported_bg,
+                    key: None,
+                    draw: VariantAtlasDraw::MissingArt,
+                },
+            ],
+            sprites: vec![VariantSpriteDrawPacket {
+                cell: &cell,
+                inst: &sprite_priority_two,
+                key: None,
+                draw: VariantAtlasDraw::MissingArt,
+            }],
+            stats: Default::default(),
+        };
+
+        let ranks = mode1_effect_material_rank_packets(&plan);
+
+        assert_eq!(ranks.len(), 10);
+        assert_eq!(ranks[0].bg.len(), 1);
+        assert_eq!(ranks[0].bg[0].layer_index, 2);
+        assert_eq!(ranks[5].sprites.len(), 1);
+        assert_eq!(ranks[5].sprites[0].inst.priority, 2);
+        assert_eq!(ranks[7].bg.len(), 1);
+        assert_eq!(ranks[7].bg[0].layer_index, 0);
+        assert_eq!(ranks.iter().map(|rank| rank.bg.len()).sum::<usize>(), 2);
+        assert_eq!(
+            ranks.iter().map(|rank| rank.sprites.len()).sum::<usize>(),
+            1
+        );
     }
 
     #[test]
