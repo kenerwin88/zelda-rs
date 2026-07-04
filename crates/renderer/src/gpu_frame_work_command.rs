@@ -188,6 +188,7 @@ pub(crate) struct GpuFrameRenderPlan {
 pub(crate) struct GpuFrameRenderResourceRequirements {
     uses_cgram_palette: bool,
     uses_tile_atlas: bool,
+    uses_mode7_vram: bool,
     uses_sprites: bool,
 }
 
@@ -198,6 +199,10 @@ impl GpuFrameRenderResourceRequirements {
 
     pub(crate) fn uses_tile_atlas(self) -> bool {
         self.uses_tile_atlas
+    }
+
+    pub(crate) fn uses_mode7_vram(self) -> bool {
+        self.uses_mode7_vram
     }
 
     pub(crate) fn uses_sprites(self) -> bool {
@@ -225,6 +230,7 @@ impl GpuFrameRenderPlan {
         GpuFrameRenderResourceRequirements {
             uses_cgram_palette: self.work_items.any(GpuFrameWorkCommand::uses_cgram_palette),
             uses_tile_atlas: self.work_items.any(GpuFrameWorkCommand::uses_tile_atlas),
+            uses_mode7_vram: self.work_items.any(GpuFrameWorkCommand::uses_mode7_vram),
             uses_sprites: self.uses_sprites(),
         }
     }
@@ -321,6 +327,16 @@ impl GpuFrameWorkCommand {
             self,
             Self::Screen {
                 command: GpuFrameScreenWorkCommand::BgLayer(_),
+                ..
+            }
+        )
+    }
+
+    pub(crate) fn uses_mode7_vram(&self) -> bool {
+        matches!(
+            self,
+            Self::Screen {
+                command: GpuFrameScreenWorkCommand::Mode7Bg(_),
                 ..
             }
         )
@@ -524,6 +540,26 @@ mod tests {
     }
 
     #[test]
+    fn frame_work_command_reports_mode7_vram_usage_from_command_kind() {
+        assert!(main_frame_work_command(GpuFrameScreenWorkCommand::Mode7Bg(
+            GpuFrameMode7Pass::main_bg()
+        ))
+        .uses_mode7_vram());
+
+        assert!(!main_frame_work_command(GpuFrameScreenWorkCommand::BgLayer(
+            GpuFrameBgPass::mode1_main(0, false, 0)
+        ))
+        .uses_mode7_vram());
+        assert!(
+            !main_frame_work_command(GpuFrameScreenWorkCommand::SpritePriority(
+                GpuFrameSpritePass::new(0, 4, GpuFrameWindowSelector::main(0x10, 16))
+            ))
+            .uses_mode7_vram()
+        );
+        assert!(!post_process_frame_work_command().uses_mode7_vram());
+    }
+
+    #[test]
     fn frame_render_plan_reports_sprite_usage_from_work_items() {
         let sprite_free_plan = GpuFrameRenderPlan::from_iter([
             main_frame_work_command(GpuFrameScreenWorkCommand::BgLayer(
@@ -557,6 +593,7 @@ mod tests {
             GpuFrameRenderResourceRequirements {
                 uses_cgram_palette: true,
                 uses_tile_atlas: true,
+                uses_mode7_vram: false,
                 uses_sprites: false
             }
         );
@@ -583,7 +620,24 @@ mod tests {
             GpuFrameRenderResourceRequirements {
                 uses_cgram_palette: true,
                 uses_tile_atlas: false,
+                uses_mode7_vram: false,
                 uses_sprites: true
+            }
+        );
+
+        let mode7_plan = GpuFrameRenderPlan::from_iter([
+            main_frame_work_command(GpuFrameScreenWorkCommand::Mode7Bg(
+                GpuFrameMode7Pass::main_bg(),
+            )),
+            post_process_frame_work_command(),
+        ]);
+        assert_eq!(
+            mode7_plan.resource_requirements(),
+            GpuFrameRenderResourceRequirements {
+                uses_cgram_palette: true,
+                uses_tile_atlas: false,
+                uses_mode7_vram: true,
+                uses_sprites: false
             }
         );
 
@@ -598,6 +652,7 @@ mod tests {
             GpuFrameRenderResourceRequirements {
                 uses_cgram_palette: false,
                 uses_tile_atlas: false,
+                uses_mode7_vram: false,
                 uses_sprites: false
             }
         );

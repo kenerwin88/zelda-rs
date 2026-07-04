@@ -145,6 +145,9 @@ impl GpuFrameRenderer {
         if resource_requirements.uses_tile_atlas() {
             self.tile_atlas.update(queue, frame.vram);
         }
+        if resource_requirements.uses_mode7_vram() {
+            self.mode7.prepare_vram(queue, frame.vram);
+        }
         if resource_requirements.uses_sprites() {
             self.sprites.prepare(
                 queue,
@@ -315,7 +318,7 @@ fn render_mode7_pass(
     pass: GpuFrameMode7Pass,
 ) {
     let window = pass.window;
-    mode7.render(
+    mode7.render_prepared(
         encoder,
         queue,
         frame,

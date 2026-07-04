@@ -160,7 +160,46 @@ impl Mode7Renderer {
         window_layer_bit: u8,
         window_flags_shift: u32,
     ) {
-        self.write_vram(queue, frame.vram);
+        self.prepare_vram(queue, frame.vram);
+        self.render_prepared(
+            encoder,
+            queue,
+            frame,
+            output_view,
+            math_bit_pos,
+            layer_bit,
+            screen_idx,
+            window_layer_bit,
+            window_flags_shift,
+        );
+    }
+
+    /// Upload Mode 7 VRAM once before one or more prepared render passes.
+    pub fn prepare_vram(&mut self, queue: &wgpu::Queue, vram: &[u16]) {
+        let hash = fnv32_u16(vram);
+        if hash == self.last_vram_hash {
+            return;
+        }
+        self.last_vram_hash = hash;
+        for (i, &word) in vram.iter().take(VRAM_WORDS).enumerate() {
+            self.vram_bytes[i * 4..i * 4 + 4].copy_from_slice(&u32::from(word).to_le_bytes());
+        }
+        queue.write_buffer(&self.vram_buf, 0, &self.vram_bytes);
+    }
+
+    /// Render using the Mode 7 VRAM buffer last supplied to `prepare_vram`.
+    pub fn render_prepared(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        queue: &wgpu::Queue,
+        frame: &GpuFrame<'_>,
+        output_view: &wgpu::TextureView,
+        math_bit_pos: u32,
+        layer_bit: u32,
+        screen_idx: usize,
+        window_layer_bit: u8,
+        window_flags_shift: u32,
+    ) {
         queue.write_buffer(
             &self.uniform_buf[screen_idx],
             0,
@@ -194,18 +233,6 @@ impl Mode7Renderer {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group[screen_idx], &[]);
         pass.draw(0..3, 0..1);
-    }
-
-    fn write_vram(&mut self, queue: &wgpu::Queue, vram: &[u16]) {
-        let hash = fnv32_u16(vram);
-        if hash == self.last_vram_hash {
-            return;
-        }
-        self.last_vram_hash = hash;
-        for (i, &word) in vram.iter().take(VRAM_WORDS).enumerate() {
-            self.vram_bytes[i * 4..i * 4 + 4].copy_from_slice(&u32::from(word).to_le_bytes());
-        }
-        queue.write_buffer(&self.vram_buf, 0, &self.vram_bytes);
     }
 }
 
