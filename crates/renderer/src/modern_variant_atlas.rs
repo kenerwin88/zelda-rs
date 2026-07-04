@@ -20,6 +20,7 @@ pub struct VariantAtlasEntry {
     pub sha1: String,
     pub duplicate_of: Option<String>,
     pub dynamic_policy: String,
+    pub runtime_colors_per_row: Option<u8>,
     pub source_hflip: bool,
     pub source_vflip: bool,
 }
@@ -133,11 +134,29 @@ impl ModernVariantAtlas {
     }
 
     pub fn effect_for_entry(&self, entry: &VariantAtlasEntry) -> Option<&TileEffect> {
-        self.effect_for_key(&entry.key)
+        self.effect_for_entry_and_key(entry, &entry.key)
     }
 
     pub fn effect_for_key(&self, key: &VariantAtlasKey) -> Option<&TileEffect> {
-        let colors_per_row = runtime_effect_color_rows(key)?;
+        let colors_per_row = runtime_effect_color_rows(key);
+        self.effect_for_key_with_color_rows(key, colors_per_row)
+    }
+
+    fn effect_for_entry_and_key(
+        &self,
+        entry: &VariantAtlasEntry,
+        key: &VariantAtlasKey,
+    ) -> Option<&TileEffect> {
+        let colors_per_row = entry_runtime_effect_color_rows(entry, key);
+        self.effect_for_key_with_color_rows(key, colors_per_row)
+    }
+
+    fn effect_for_key_with_color_rows(
+        &self,
+        key: &VariantAtlasKey,
+        colors_per_row: Option<Vec<u8>>,
+    ) -> Option<&TileEffect> {
+        let colors_per_row = colors_per_row?;
         colors_per_row.into_iter().find_map(|colors_per_row| {
             self.effects.iter().find(|effect| {
                 effect.palette == key.palette
@@ -165,7 +184,7 @@ impl ModernVariantAtlas {
             return VariantAtlasDraw::DynamicPalette { entry };
         }
         let stable_effect = self
-            .effect_for_key(key)
+            .effect_for_entry_and_key(entry, key)
             .filter(|effect| effect.dynamic_policy == "stable");
         if let Some(effect) = stable_effect {
             return VariantAtlasDraw::MaterialEffect { entry, effect };
@@ -204,6 +223,16 @@ fn runtime_effect_color_rows(key: &VariantAtlasKey) -> Option<Vec<u8>> {
         rows.push(source_stride);
     }
     Some(rows)
+}
+
+fn entry_runtime_effect_color_rows(
+    entry: &VariantAtlasEntry,
+    key: &VariantAtlasKey,
+) -> Option<Vec<u8>> {
+    if let Some(colors_per_row) = entry.runtime_colors_per_row {
+        return Some(vec![colors_per_row]);
+    }
+    runtime_effect_color_rows(key)
 }
 
 pub fn load_modern_variant_atlas(root: &Path) -> Result<ModernVariantAtlas, String> {
@@ -306,6 +335,7 @@ impl From<EntryJson> for VariantAtlasEntry {
             sha1: entry.sha1,
             duplicate_of: entry.duplicate_of,
             dynamic_policy: entry.dynamic_policy,
+            runtime_colors_per_row: entry.runtime_colors_per_row,
             source_hflip: false,
             source_vflip: false,
         }
@@ -420,6 +450,7 @@ fn load_modern_canonical_art_atlas_from_dir(
                 sha1: art.sha1_indices.clone(),
                 duplicate_of: None,
                 dynamic_policy,
+                runtime_colors_per_row: source_ref.runtime_colors_per_row,
                 source_hflip: source_ref.hflip,
                 source_vflip: source_ref.vflip,
             });
@@ -568,6 +599,8 @@ struct EntryJson {
     sha1: String,
     duplicate_of: Option<String>,
     dynamic_policy: String,
+    #[serde(default)]
+    runtime_colors_per_row: Option<u8>,
 }
 
 #[derive(Deserialize)]
@@ -686,6 +719,7 @@ mod tests {
             sha1: "test".to_string(),
             duplicate_of: None,
             dynamic_policy: "stable".to_string(),
+            runtime_colors_per_row: None,
             source_hflip: false,
             source_vflip: false,
         }
@@ -902,6 +936,7 @@ mod tests {
                 sha1: "abc".to_string(),
                 duplicate_of: None,
                 dynamic_policy: "stable".to_string(),
+                runtime_colors_per_row: None,
                 source_hflip: false,
                 source_vflip: false,
             }],
@@ -951,6 +986,7 @@ mod tests {
                 sha1: "abc".to_string(),
                 duplicate_of: None,
                 dynamic_policy: "stable".to_string(),
+                runtime_colors_per_row: None,
                 source_hflip: false,
                 source_vflip: false,
             }],
@@ -1235,6 +1271,117 @@ mod tests {
                 assert_eq!(entry.id, "sprite:kSprGfx:pack0:tile7:3bpp");
             }
             other => panic!("expected runtime policy to force dynamic draw, got {other:?}"),
+        }
+
+        std::fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn canonical_art_runtime_colors_per_row_drives_draw_effect_lookup() {
+        let root = unique_temp_root();
+        let atlas_dir = root.join("atlas");
+        std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
+        let rgba = solid_rgba(8, 8, [1, 2, 3, 255]);
+        write_rgba_png(&atlas_dir.join("art_tiles.png"), 8, 8, &rgba);
+        std::fs::write(
+            atlas_dir.join("art_tiles.json"),
+            r#"{
+              "format": "zelda3_canonical_art_atlas_v1",
+              "tile_width": 8,
+              "tile_height": 8,
+              "width": 8,
+              "height": 8,
+              "art_count": 1,
+              "source_ref_count": 1,
+              "arts": [{
+                "art_id": "art:abc",
+                "bpp": 3,
+                "rect": [0, 0, 8, 8],
+                "sha1_indices": "abc",
+                "preview_palette": "palette_dung_bg_main",
+                "preview_palette_row": 3,
+                "preview_source": "source_kind_default",
+                "source_refs": [{
+                  "source_kind": "bg",
+                  "asset": "kBgGfx",
+                  "pack": 0,
+                  "tile": 0,
+                  "bpp": 3,
+                  "hflip": false,
+                  "vflip": false,
+                  "preview_palette": "palette_dung_bg_main",
+                  "preview_palette_row": 3,
+                  "preview_source": "source_kind_default",
+                  "runtime_material": "palette_lut",
+                  "runtime_material_policy": "stable",
+                  "runtime_colors_per_row": 8
+                }]
+              }]
+            }"#,
+        )
+        .expect("write manifest");
+        std::fs::write(
+            atlas_dir.join("tile_effects.json"),
+            r#"{
+              "format": "zelda3_tile_effect_table_v1",
+              "strategy": "base_art_plus_shader_effects",
+              "effects": [{
+                "id": "palette_dung_bg_main:16color:row3",
+                "type": "palette_lut",
+                "palette": "palette_dung_bg_main",
+                "palette_row": 3,
+                "colors_per_row": 16,
+                "index_to_rgb": [
+                  [0, 0, 0],
+                  [1, 1, 1],
+                  [2, 2, 2],
+                  [3, 3, 3],
+                  [4, 4, 4],
+                  [5, 5, 5],
+                  [6, 6, 6],
+                  [7, 7, 7],
+                  [8, 8, 8],
+                  [9, 9, 9],
+                  [10, 10, 10],
+                  [11, 11, 11],
+                  [12, 12, 12],
+                  [13, 13, 13],
+                  [14, 14, 14],
+                  [15, 15, 15]
+                ],
+                "dynamic_policy": "stable",
+                "runtime": "shader_effect"
+              }, {
+                "id": "palette_dung_bg_main:8color:row3",
+                "type": "palette_lut",
+                "palette": "palette_dung_bg_main",
+                "palette_row": 3,
+                "colors_per_row": 8,
+                "index_to_rgb": [
+                  [0, 0, 0],
+                  [10, 20, 30],
+                  [40, 50, 60],
+                  [70, 80, 90],
+                  [100, 110, 120],
+                  [130, 140, 150],
+                  [160, 170, 180],
+                  [190, 200, 210]
+                ],
+                "dynamic_policy": "stable",
+                "runtime": "shader_effect"
+              }]
+            }"#,
+        )
+        .expect("write effects");
+
+        let atlas = load_modern_canonical_art_atlas(&root).expect("load art atlas");
+        let live_key = bg_test_key_with_palette_row(3);
+
+        match atlas.resolve_draw(Some(&live_key)) {
+            VariantAtlasDraw::MaterialEffect { effect, .. } => {
+                assert_eq!(effect.id, "palette_dung_bg_main:8color:row3");
+            }
+            other => panic!("expected declared material stride effect, got {other:?}"),
         }
 
         std::fs::remove_dir_all(root).expect("remove temp root");
