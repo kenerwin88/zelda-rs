@@ -180,7 +180,68 @@ pub(crate) enum GpuFrameWorkCommand {
     PostProcess(GpuFramePostProcessPass),
 }
 
-pub(crate) type GpuFrameRenderPlan = GpuRenderPlan<GpuFrameWorkCommand>;
+pub(crate) struct GpuFrameRenderPlan {
+    work_items: GpuRenderPlan<GpuFrameWorkCommand>,
+}
+
+impl GpuFrameRenderPlan {
+    pub(crate) fn push(&mut self, work_item: GpuFrameWorkCommand) {
+        self.work_items.push(work_item);
+    }
+
+    pub(crate) fn extend<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = GpuFrameWorkCommand>,
+    {
+        self.work_items.extend(iter);
+    }
+
+    pub(crate) fn uses_sprites(&self) -> bool {
+        self.work_items.any(GpuFrameWorkCommand::uses_sprites)
+    }
+
+    pub(crate) fn execute_with<F>(self, execute: F)
+    where
+        F: FnMut(GpuFrameWorkCommand),
+    {
+        self.work_items.execute_with(execute);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn work_items(&self) -> &[GpuFrameWorkCommand] {
+        self.work_items.work_items()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn kinds(&self) -> Vec<GpuWorkItemKind> {
+        self.work_items.kinds()
+    }
+}
+
+impl Default for GpuFrameRenderPlan {
+    fn default() -> Self {
+        Self {
+            work_items: GpuRenderPlan::default(),
+        }
+    }
+}
+
+impl FromIterator<GpuFrameWorkCommand> for GpuFrameRenderPlan {
+    fn from_iter<I: IntoIterator<Item = GpuFrameWorkCommand>>(iter: I) -> Self {
+        Self {
+            work_items: GpuRenderPlan::from_iter(iter),
+        }
+    }
+}
+
+impl IntoIterator for GpuFrameRenderPlan {
+    type Item = GpuFrameWorkCommand;
+    type IntoIter = <GpuRenderPlan<GpuFrameWorkCommand> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.work_items.into_iter()
+    }
+}
 
 impl GpuFrameRenderScreen {
     #[cfg(test)]
@@ -363,5 +424,26 @@ mod tests {
         ))
         .uses_sprites());
         assert!(!post_process_frame_work_command().uses_sprites());
+    }
+
+    #[test]
+    fn frame_render_plan_reports_sprite_usage_from_work_items() {
+        let sprite_free_plan = GpuFrameRenderPlan::from_iter([
+            main_frame_work_command(GpuFrameScreenWorkCommand::BgLayer(
+                GpuFrameBgPass::mode1_main(0, false, 0),
+            )),
+            post_process_frame_work_command(),
+        ]);
+        assert!(!sprite_free_plan.uses_sprites());
+
+        let sprite_plan = GpuFrameRenderPlan::from_iter([
+            main_frame_work_command(GpuFrameScreenWorkCommand::BgLayer(
+                GpuFrameBgPass::mode1_main(0, false, 0),
+            )),
+            main_frame_work_command(GpuFrameScreenWorkCommand::SpritePriority(
+                GpuFrameSpritePass::new(0, 4, GpuFrameWindowSelector::main(0x10, 16)),
+            )),
+        ]);
+        assert!(sprite_plan.uses_sprites());
     }
 }

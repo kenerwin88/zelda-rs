@@ -271,12 +271,6 @@ mod tests {
         plan.work_items().to_vec()
     }
 
-    fn frame_plan_uses_sprites(plan: &GpuFrameRenderPlan) -> bool {
-        plan.work_items()
-            .iter()
-            .any(GpuFrameWorkCommand::uses_sprites)
-    }
-
     fn test_frame(mode: u8, screen_enabled: [u8; 2]) -> GpuFrame<'static> {
         GpuFrame {
             vram: &[],
@@ -324,7 +318,7 @@ mod tests {
                 has_sub_sprites: true,
             }
         );
-        assert!(frame_plan_uses_sprites(&context.render_plan()));
+        assert!(context.render_plan().uses_sprites());
     }
 
     #[test]
@@ -342,7 +336,7 @@ mod tests {
                 has_sub_sprites: true,
             }
         );
-        assert!(frame_plan_uses_sprites(&context.render_plan()));
+        assert!(context.render_plan().uses_sprites());
     }
 
     #[test]
@@ -359,7 +353,7 @@ mod tests {
                 has_sub_sprites: false,
             }
         );
-        assert!(!frame_plan_uses_sprites(&context.render_plan()));
+        assert!(!context.render_plan().uses_sprites());
     }
 
     #[test]

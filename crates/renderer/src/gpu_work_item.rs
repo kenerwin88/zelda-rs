@@ -65,6 +65,14 @@ impl<T> GpuRenderPlan<T> {
         self.work_items.extend(iter);
     }
 
+    pub(crate) fn any<F>(&self, predicate: F) -> bool
+    where
+        F: FnMut(&T) -> bool,
+    {
+        self.work_items.iter().any(predicate)
+    }
+
+    #[cfg(test)]
     pub(crate) fn work_items(&self) -> &[T] {
         &self.work_items
     }

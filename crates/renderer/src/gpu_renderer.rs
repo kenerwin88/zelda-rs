@@ -142,11 +142,7 @@ impl GpuFrameRenderer {
         self.cgram_palette.update(queue, frame.cgram);
 
         let render_plan = GpuFrameRenderPlanContext::from_frame(frame).render_plan();
-        if render_plan
-            .work_items()
-            .iter()
-            .any(GpuFrameWorkCommand::uses_sprites)
-        {
+        if render_plan.uses_sprites() {
             self.sprites.prepare(
                 queue,
                 frame.vram,
