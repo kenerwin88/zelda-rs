@@ -63,6 +63,8 @@ pub struct VariantAtlasRenderStats {
     pub stable_draws: u32,
     pub effect_draws: u32,
     pub fallback_draws: u32,
+    pub direct_gpu_fallback_frames: u32,
+    pub cpu_prefinal_composite_frames: u32,
     pub dynamic_palette_draws: u32,
     pub missing_variant_draws: u32,
     pub stable_preview_draws: u32,

@@ -3460,19 +3460,7 @@ impl ModernGpuVariantHeadless {
         let variant_frame = self.renderer.build_variant_frame_from_plan(frame, &plan);
         let mut stats = plan.stats;
         if stats.fallback_draws != 0 {
-            if !frame_needs_material_prefinal_finalizer(frame) {
-                stats = self.renderer.render(
-                    &self.device,
-                    &self.queue,
-                    frame,
-                    bg_cells,
-                    sprite_cells,
-                    bg_palette_name,
-                    sprite_palette_name,
-                    &self.target_view,
-                );
-                return (self.read_target_rgba(), stats);
-            }
+            stats.cpu_prefinal_composite_frames += 1;
             let overlay = mixed_variant_prefinal_bg_packets(frame, &plan);
             let final_overlay = mixed_variant_overlay_bg_packets(frame, &plan);
             let prefinal_bg: Vec<_> = overlay
@@ -3625,6 +3613,7 @@ impl ModernGpuVariantHeadless {
             }
         } else if stats.effect_draws != 0 {
             if frame_needs_material_prefinal_finalizer(frame) {
+                stats.cpu_prefinal_composite_frames += 1;
                 self.render_effect_material_with_prefinal_fallback(
                     frame,
                     fallback_frame,
@@ -4564,6 +4553,8 @@ mod tests {
         assert_eq!(stats.effect_material_draws, 1);
         assert_eq!(stats.dynamic_material_draws, 1);
         assert_eq!(stats.fallback_draws, 0);
+        assert_eq!(stats.direct_gpu_fallback_frames, 0);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 1);
         assert_eq!(&variant[0..4], &[0, 0, 0, 0xff]);
     }
 
@@ -5813,6 +5804,8 @@ mod tests {
         assert_eq!(stats.dynamic_material_draws, 0);
         assert_eq!(stats.missing_art_draws, 0);
         assert_eq!(stats.unkeyed_fallback_draws, 1);
+        assert_eq!(stats.direct_gpu_fallback_frames, 0);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 1);
     }
 
     #[test]
