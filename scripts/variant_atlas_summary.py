@@ -100,7 +100,7 @@ def summarize_variant_atlas(atlas_dir: Path) -> dict[str, Any]:
             palette = str(ref.get("preview_palette", art.get("preview_palette", "")))
             palette_row = int(ref.get("preview_palette_row", art.get("preview_palette_row", 0)))
             bpp = int(ref.get("bpp", art.get("bpp", 0)))
-            colors_per_row = 1 << bpp if bpp >= 0 else 0
+            colors_per_row = int(ref.get("runtime_colors_per_row", 1 << bpp if bpp >= 0 else 0))
             source_refs_by_kind[source_kind] += 1
             preview_sources[preview_source] += 1
 

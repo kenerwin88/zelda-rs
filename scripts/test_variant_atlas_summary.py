@@ -167,6 +167,63 @@ class VariantAtlasSummaryTests(unittest.TestCase):
         self.assertIn("stable_by_kind bg=1 sprite=1", text)
         self.assertIn("preview_sources palette_usage=1 source_kind_default=2", text)
 
+    def test_summary_uses_runtime_colors_per_row_metadata(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            atlas_dir = Path(temp_dir)
+            write_json(
+                atlas_dir / "art_tiles.json",
+                {
+                    "format": "zelda3_canonical_art_atlas_v1",
+                    "width": 8,
+                    "height": 8,
+                    "art_count": 1,
+                    "source_ref_count": 1,
+                    "arts": [
+                        {
+                            "art_id": "art:bg",
+                            "bpp": 3,
+                            "rect": [0, 0, 8, 8],
+                            "preview_palette": "palette_dung_bg_main",
+                            "preview_palette_row": 2,
+                            "preview_source": "source_kind_default",
+                            "source_refs": [
+                                {
+                                    "source_kind": "bg",
+                                    "bpp": 3,
+                                    "preview_palette": "palette_dung_bg_main",
+                                    "preview_palette_row": 2,
+                                    "preview_source": "source_kind_default",
+                                    "runtime_material": "palette_lut",
+                                    "runtime_material_policy": "stable",
+                                    "runtime_colors_per_row": 16,
+                                }
+                            ],
+                        }
+                    ],
+                },
+            )
+            write_png_header(atlas_dir / "art_tiles.png", 8, 8)
+            write_json(
+                atlas_dir / "tile_effects.json",
+                {
+                    "format": "zelda3_tile_effect_table_v1",
+                    "effects": [
+                        {
+                            "palette": "palette_dung_bg_main",
+                            "palette_row": 2,
+                            "colors_per_row": 16,
+                            "dynamic_policy": "stable",
+                        }
+                    ],
+                },
+            )
+
+            summary = summarize_variant_atlas(atlas_dir)
+
+            self.assertEqual(summary["stable_by_loader_rule"], 1)
+            self.assertEqual(summary["material_effect_refs"], 1)
+            self.assertEqual(summary["missing_effect_refs"], 0)
+
     def test_coverage_errors_require_manifest_match_and_full_stable_coverage(self) -> None:
         valid_summary = {
             "source_refs": 3,
