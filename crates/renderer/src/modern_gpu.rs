@@ -801,13 +801,13 @@ fn mixed_variant_overlay_bg_packets_with_policy<'a>(
 ) -> MixedVariantOverlayBgSelection<'a> {
     let mut out = MixedVariantOverlayBgSelection::default();
     let candidates = plan
-        .bg
-        .iter()
-        .filter(|packet| packet.draw.material_effect().is_some())
+        .material_packets()
+        .filter_map(|packet| packet.as_bg())
+        .filter(|(_, packet)| packet.draw.material_effect().is_some())
         .count() as u32;
     out.candidates = candidates;
 
-    for (packet_index, packet) in plan.bg.iter().enumerate() {
+    for (packet_index, packet) in plan.material_packets().filter_map(|packet| packet.as_bg()) {
         let Some((entry, effect)) = packet.draw.material_effect() else {
             continue;
         };
@@ -1576,7 +1576,7 @@ fn front_or_same_bg_packet_has_opaque_pixel(
     let Some(packet_rank) = bg_packet_mode1_rank(packet) else {
         return true;
     };
-    for (other_index, other) in plan.bg.iter().enumerate() {
+    for (other_index, other) in plan.material_packets().filter_map(|packet| packet.as_bg()) {
         if other_index == packet_index {
             continue;
         }
@@ -1611,7 +1611,7 @@ fn front_or_same_bg_packet_blocks_prefinal_group(
         return Some(MixedOverlayOverlapRejectReason::BgUnrepresentableFront);
     };
     let packet_material = bg_packet_prefinal_material(frame, packet).ok();
-    for (other_index, other) in plan.bg.iter().enumerate() {
+    for (other_index, other) in plan.material_packets().filter_map(|packet| packet.as_bg()) {
         if other_index == packet_index {
             continue;
         }
@@ -1758,7 +1758,7 @@ fn other_packet_has_opaque_bg_pixel(
     screen_x: i16,
     screen_y: i16,
 ) -> bool {
-    for (other_index, other) in plan.bg.iter().enumerate() {
+    for (other_index, other) in plan.material_packets().filter_map(|packet| packet.as_bg()) {
         if other_index == packet_index {
             continue;
         }
@@ -1788,7 +1788,10 @@ fn front_sprite_packet_blocks_bg_packet(
     if frame.screen_enabled_main != 0 && frame.screen_enabled_main & 0x10 == 0 {
         return false;
     }
-    for other in &plan.sprites {
+    for (_, other) in plan
+        .material_packets()
+        .filter_map(|packet| packet.as_sprite())
+    {
         let Some(sprite_rank) = sprite_packet_mode1_rank(other) else {
             return true;
         };

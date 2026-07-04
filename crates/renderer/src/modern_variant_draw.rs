@@ -104,6 +104,26 @@ impl<'plan, 'frame> VariantDrawPacket<'plan, 'frame> {
         }
     }
 
+    pub fn as_bg(self) -> Option<(usize, &'plan VariantBgDrawPacket<'frame>)> {
+        match self {
+            Self::Bg {
+                packet_index,
+                packet,
+            } => Some((packet_index, packet)),
+            Self::Sprite { .. } => None,
+        }
+    }
+
+    pub fn as_sprite(self) -> Option<(usize, &'plan VariantSpriteDrawPacket<'frame>)> {
+        match self {
+            Self::Bg { .. } => None,
+            Self::Sprite {
+                packet_index,
+                packet,
+            } => Some((packet_index, packet)),
+        }
+    }
+
     pub fn packet_index(self) -> usize {
         match self {
             Self::Bg { packet_index, .. } | Self::Sprite { packet_index, .. } => packet_index,
