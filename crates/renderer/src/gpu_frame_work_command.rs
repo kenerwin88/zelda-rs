@@ -10,13 +10,19 @@ pub(crate) enum GpuFrameMainWorkCommand {
         layer_bit: u32,
         math_bit_pos: u32,
     },
-    Mode7Bg,
+    Mode7Bg {
+        math_bit_pos: u32,
+        layer_bit: u32,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuFrameSubWorkCommand {
     ClearBackdrop,
-    Mode7Bg,
+    Mode7Bg {
+        math_bit_pos: u32,
+        layer_bit: u32,
+    },
     BgLayer {
         layer_idx: usize,
         hi_priority: bool,
@@ -61,7 +67,7 @@ impl GpuWorkItem for GpuFrameMainWorkCommand {
             Self::ClearBackdrop => GpuWorkItemKind::ClearBackdrop,
             Self::SpritePriority(_) => GpuWorkItemKind::MainSpritePriority,
             Self::BgLayer { .. } => GpuWorkItemKind::MainBgLayer,
-            Self::Mode7Bg => GpuWorkItemKind::Mode7MainBg,
+            Self::Mode7Bg { .. } => GpuWorkItemKind::Mode7MainBg,
         }
     }
 }
@@ -70,7 +76,7 @@ impl GpuWorkItem for GpuFrameSubWorkCommand {
     fn kind(&self) -> GpuWorkItemKind {
         match self {
             Self::ClearBackdrop => GpuWorkItemKind::ClearSubBackdrop,
-            Self::Mode7Bg => GpuWorkItemKind::Mode7SubBg,
+            Self::Mode7Bg { .. } => GpuWorkItemKind::Mode7SubBg,
             Self::BgLayer { .. } => GpuWorkItemKind::SubBgLayer,
             Self::SpritePriority(_) => GpuWorkItemKind::SubSpritePriority,
         }

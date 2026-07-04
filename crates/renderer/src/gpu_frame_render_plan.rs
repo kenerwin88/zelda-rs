@@ -202,6 +202,20 @@ fn sub_bg_work_item(layer_idx: usize, hi_priority: bool) -> GpuFrameSubWorkComma
     }
 }
 
+fn main_mode7_bg_work_item() -> GpuFrameMainWorkCommand {
+    GpuFrameMainWorkCommand::Mode7Bg {
+        math_bit_pos: 0,
+        layer_bit: 1,
+    }
+}
+
+fn sub_mode7_bg_work_item() -> GpuFrameSubWorkCommand {
+    GpuFrameSubWorkCommand::Mode7Bg {
+        math_bit_pos: 255,
+        layer_bit: 0,
+    }
+}
+
 fn build_mode7_render_plan(
     has_main_sprites: bool,
     has_sub_mode7_bg: bool,
@@ -227,7 +241,7 @@ fn build_mode7_main_render_plan(has_main_sprites: bool) -> GpuFrameRenderPlan {
             GpuFrameMainWorkCommand::SpritePriority(0),
         ));
     }
-    render_plan.push(main_frame_work_command(GpuFrameMainWorkCommand::Mode7Bg));
+    render_plan.push(main_frame_work_command(main_mode7_bg_work_item()));
     if has_main_sprites {
         render_plan.extend(
             (1..=3)
@@ -248,7 +262,7 @@ fn build_mode7_sub_render_plan(
         GpuFrameSubWorkCommand::ClearBackdrop,
     ));
     if has_sub_mode7_bg {
-        render_plan.push(sub_frame_work_command(GpuFrameSubWorkCommand::Mode7Bg));
+        render_plan.push(sub_frame_work_command(sub_mode7_bg_work_item()));
     }
     if has_sub_sprites {
         render_plan.extend(
@@ -381,6 +395,24 @@ mod tests {
                 screen_layer_bit: 0x04,
                 render_layer_bit: 0,
                 math_bit_pos: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn mode7_work_items_carry_render_metadata() {
+        assert_eq!(
+            main_mode7_bg_work_item(),
+            GpuFrameMainWorkCommand::Mode7Bg {
+                math_bit_pos: 0,
+                layer_bit: 1,
+            }
+        );
+        assert_eq!(
+            sub_mode7_bg_work_item(),
+            GpuFrameSubWorkCommand::Mode7Bg {
+                math_bit_pos: 255,
+                layer_bit: 0,
             }
         );
     }
@@ -548,12 +580,12 @@ mod tests {
             vec![
                 main_frame_work_command(GpuFrameMainWorkCommand::ClearBackdrop),
                 main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(0)),
-                main_frame_work_command(GpuFrameMainWorkCommand::Mode7Bg),
+                main_frame_work_command(main_mode7_bg_work_item()),
                 main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(1)),
                 main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(2)),
                 main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(3)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::ClearBackdrop),
-                sub_frame_work_command(GpuFrameSubWorkCommand::Mode7Bg),
+                sub_frame_work_command(sub_mode7_bg_work_item()),
                 sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(0)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(1)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(2)),
@@ -571,7 +603,7 @@ mod tests {
             frame_plan_commands(&plan),
             vec![
                 main_frame_work_command(GpuFrameMainWorkCommand::ClearBackdrop),
-                main_frame_work_command(GpuFrameMainWorkCommand::Mode7Bg),
+                main_frame_work_command(main_mode7_bg_work_item()),
                 sub_frame_work_command(GpuFrameSubWorkCommand::ClearBackdrop),
                 post_process_frame_work_command(),
             ]

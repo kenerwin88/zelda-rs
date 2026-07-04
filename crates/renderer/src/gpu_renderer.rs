@@ -220,9 +220,18 @@ impl GpuFrameRenderer {
                     math_bit_pos,
                 );
             }
-            GpuFrameMainWorkCommand::Mode7Bg => {
-                self.mode7
-                    .render(encoder, queue, frame, &self.comp_view, 0, 1);
+            GpuFrameMainWorkCommand::Mode7Bg {
+                math_bit_pos,
+                layer_bit,
+            } => {
+                self.mode7.render(
+                    encoder,
+                    queue,
+                    frame,
+                    &self.comp_view,
+                    math_bit_pos,
+                    layer_bit,
+                );
             }
         }
     }
@@ -238,9 +247,18 @@ impl GpuFrameRenderer {
             GpuFrameSubWorkCommand::ClearBackdrop => {
                 self.clear_sub_backdrop(encoder);
             }
-            GpuFrameSubWorkCommand::Mode7Bg => {
-                self.mode7
-                    .render(encoder, queue, frame, &self.sub_comp_view, 255, 0);
+            GpuFrameSubWorkCommand::Mode7Bg {
+                math_bit_pos,
+                layer_bit,
+            } => {
+                self.mode7.render(
+                    encoder,
+                    queue,
+                    frame,
+                    &self.sub_comp_view,
+                    math_bit_pos,
+                    layer_bit,
+                );
             }
             GpuFrameSubWorkCommand::BgLayer {
                 layer_idx,
