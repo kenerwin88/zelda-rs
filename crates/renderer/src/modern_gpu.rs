@@ -1,3 +1,4 @@
+use crate::gpu_work_item::GpuWorkItemKind;
 use crate::modern_assets::ModernTileAtlasAsset;
 use crate::modern_frame::ModernFrame;
 use crate::modern_index_atlas::ModernIndexTile;
@@ -541,6 +542,7 @@ impl ModernGpuVariantRenderer {
         let mut rendered_any = rendered_any;
         let rank_plan = rank_dispatch.render_plan(&self.atlas, rendered_any);
         for work_item in rank_plan.work_items {
+            let _ = work_item.kind();
             match work_item {
                 ModernGpuWorkItem::ClearBackdrop => {
                     self.effect_renderer.render_bg(
@@ -687,6 +689,16 @@ enum ModernGpuWorkItem<'rank, 'frame> {
     ClearBackdrop,
     BgEffect(BgEffectMaterialGroup<'rank, 'frame>),
     SpriteEffects(Vec<SpriteEffectMaterialGroup<'rank, 'frame>>),
+}
+
+impl ModernGpuWorkItem<'_, '_> {
+    fn kind(&self) -> GpuWorkItemKind {
+        match self {
+            Self::ClearBackdrop => GpuWorkItemKind::ClearBackdrop,
+            Self::BgEffect(_) => GpuWorkItemKind::BgEffect,
+            Self::SpriteEffects(_) => GpuWorkItemKind::SpriteEffects,
+        }
+    }
 }
 
 impl<'a> Mode1EffectRankDispatch<'a> {
@@ -2313,6 +2325,7 @@ impl ModernGpuVariantEffectRenderer {
         output_view: &wgpu::TextureView,
     ) {
         for work_item in overlay.effects.work_items() {
+            let _ = work_item.kind();
             match work_item {
                 ModernGpuWorkItem::BgEffect(group) => self.render_bg_material_group(
                     device,
@@ -6445,6 +6458,13 @@ mod tests {
         assert_eq!(groups[1].packets[0].inst.cell_id, 9);
         let work_items = dispatch.work_items();
         assert_eq!(work_items.len(), 2);
+        assert_eq!(
+            work_items
+                .iter()
+                .map(ModernGpuWorkItem::kind)
+                .collect::<Vec<_>>(),
+            vec![GpuWorkItemKind::BgEffect, GpuWorkItemKind::BgEffect]
+        );
         assert!(matches!(
             &work_items[0],
             ModernGpuWorkItem::BgEffect(group)
@@ -6871,6 +6891,17 @@ mod tests {
         };
         let first_rank_plan = sprite_only_rank.render_plan(&atlas, false);
         assert_eq!(first_rank_plan.work_items.len(), 2);
+        assert_eq!(
+            first_rank_plan
+                .work_items
+                .iter()
+                .map(ModernGpuWorkItem::kind)
+                .collect::<Vec<_>>(),
+            vec![
+                GpuWorkItemKind::ClearBackdrop,
+                GpuWorkItemKind::SpriteEffects
+            ]
+        );
         assert!(matches!(
             first_rank_plan.work_items[0],
             ModernGpuWorkItem::ClearBackdrop
@@ -6881,6 +6912,14 @@ mod tests {
         }
         let later_rank_plan = sprite_only_rank.render_plan(&atlas, true);
         assert_eq!(later_rank_plan.work_items.len(), 1);
+        assert_eq!(
+            later_rank_plan
+                .work_items
+                .iter()
+                .map(ModernGpuWorkItem::kind)
+                .collect::<Vec<_>>(),
+            vec![GpuWorkItemKind::SpriteEffects]
+        );
         assert!(matches!(
             later_rank_plan.work_items[0],
             ModernGpuWorkItem::SpriteEffects(_)

@@ -16,6 +16,7 @@
 pub mod bg_layer;
 pub mod gpu_frame;
 pub mod gpu_renderer;
+mod gpu_work_item;
 pub mod hd_authoring;
 pub mod mode7_renderer;
 pub mod modern_assets;
