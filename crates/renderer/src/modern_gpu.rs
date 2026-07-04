@@ -3175,7 +3175,6 @@ fn modern_prefinal_overlay_sprite_pixels(
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ModernScreenBuilderBlocker {
-    ForcedBlank,
     Mosaic,
     Bg4,
     ShortBgLayers,
@@ -3190,9 +3189,6 @@ enum ModernScreenBuilderResult {
 }
 
 fn modern_screen_builder_blocker(frame: &ModernFrame) -> Option<ModernScreenBuilderBlocker> {
-    if frame.forced_blank {
-        return Some(ModernScreenBuilderBlocker::ForcedBlank);
-    }
     if frame.mosaic_size > 1 && (frame.mosaic_enabled & 0x07) != 0 {
         return Some(ModernScreenBuilderBlocker::Mosaic);
     }
@@ -3215,7 +3211,6 @@ fn record_screen_builder_blocker(
     blocker: ModernScreenBuilderBlocker,
 ) {
     match blocker {
-        ModernScreenBuilderBlocker::ForcedBlank => stats.cpu_screen_builder_block_forced_blank += 1,
         ModernScreenBuilderBlocker::Mosaic => stats.cpu_screen_builder_block_mosaic += 1,
         ModernScreenBuilderBlocker::Bg4 => stats.cpu_screen_builder_block_bg4 += 1,
         ModernScreenBuilderBlocker::ShortBgLayers => {
@@ -4434,6 +4429,36 @@ mod tests {
             let software_rgba = render_modern_frame_software(&frame, &atlas_rgba, 8, 8);
 
             assert_eq!(gpu_rgba, software_rgba);
+        });
+    }
+
+    #[test]
+    fn modern_gpu_compositor_forced_blank_uses_screen_builder() {
+        pollster::block_on(async {
+            let instance = crate::create_wgpu_instance();
+            let (_adapter, device, queue) = crate::create_device_queue(&instance, None).await;
+            let compositor =
+                ModernGpuCompositor::new(&device, &queue, wgpu::TextureFormat::Rgba8Unorm);
+            let target = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("modern_gpu_forced_blank_screen_builder_test_target"),
+                size: wgpu::Extent3d {
+                    width: 256,
+                    height: 224,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::COPY_SRC
+                    | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let mut frame = ModernFrame::empty();
+            frame.forced_blank = true;
+
+            assert!(compositor.render(&device, &queue, &frame, &[], &[], &target));
         });
     }
 
