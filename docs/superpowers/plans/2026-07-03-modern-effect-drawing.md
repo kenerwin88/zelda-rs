@@ -827,3 +827,38 @@ is decisive: `prefinal_overlap_bg=703`,
 `prefinal_overlap_bg_mixed_static_live_order=0`. The next build target is the
 front packet representation gap, not deeper group ordering or mixed static/live
 batch ordering.
+
+### Task 21: Split Unrepresentable Front BG Packets
+
+**Files:**
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Modify: `crates/renderer/src/modern_software.rs`
+- [x] Modify: `zelda3-bin/src/main.rs`
+- [x] Modify: `scripts/gpu_render_compare_oracle_windows.py`
+- [x] Modify: `scripts/gpu_render_compare_windows.py`
+- [x] Test: focused renderer units for no-effect and cgram-mismatch
+  representation reasons
+- [x] Test: parser summary regex
+- [x] Test: focused opening-route oracle window
+
+**Goal:** Stop treating `prefinal_overlap_bg_unrepresentable_front` as one
+opaque blocker. The next renderer work should be driven by whether the front BG
+packet lacks a stable effect, is blocked by complex composition state, or cannot
+map to static/live cgram.
+
+**Done:** The pre-final BG material classifier now returns exact reject reasons
+for front/same-order BG packets and the overlap stats expose
+`prefinal_overlap_bg_unrepresentable_front_no_effect`,
+`prefinal_overlap_bg_unrepresentable_front_complex`, and
+`prefinal_overlap_bg_unrepresentable_front_cgram_mismatch`. The route parsers,
+live summaries, and compare summaries carry those fields. Focused renderer tests
+cover the route-level no-effect case and the direct cgram-mismatch classifier.
+
+**Route result:** The opening tail remains `mismatched_pixels=0`. The 703
+front-packet representation blockers split into
+`prefinal_overlap_bg_unrepresentable_front_no_effect=39`,
+`prefinal_overlap_bg_unrepresentable_front_complex=664`, and
+`prefinal_overlap_bg_unrepresentable_front_cgram_mismatch=0`. The next useful
+drawing modernization is pre-final support for front BG packets that are stable
+effects but currently fail the complex-frame guards, not palette/cgram storage
+or broader route scans.

@@ -320,6 +320,17 @@ renderer/oracle. Verification must report:
   BG overlap rejects where both packets are representable, but the current
   static-then-live pre-final overlay batches would not preserve original packet
   order.
+- `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect`:
+  unrepresentable-front BG rejects where the front/same-order BG packet is not
+  a stable effect packet.
+- `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex`:
+  unrepresentable-front BG rejects where the front/same-order BG packet is a
+  stable effect packet but is blocked by the same complex-frame guards as a
+  primary candidate.
+- `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch`:
+  unrepresentable-front BG rejects where the front/same-order BG packet is a
+  stable effect packet but neither the static effect LUT nor the live-CGRAM LUT
+  can represent its source indices.
 - `mixed_overlay_bg_effect_reject_cgram_mismatch`: candidates blocked because
   neither the extracted stable effect LUT nor the live-CGRAM LUT can represent
   the packet's source indices.
@@ -368,6 +379,9 @@ proof reports `stable_effect_draws=21038`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=910`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg=703`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj=207`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect=39`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex=664`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch=0`,
 `mixed_overlay_bg_effect_reject_cgram_mismatch=0`, and
 `mixed_overlay_bg_effect_reject_overlap=0` over 17 sampled compares from the
 checkpointed opening route tail. That means most stable BG opportunities in
@@ -396,8 +410,12 @@ The first ordered BG group slice admits terminal two-packet BG groups, where the
 front overlapping packet is itself representable and has no further front BG at
 that pixel. Splitting the remaining BG overlap rejects shows the opening route's
 703 BG blockers are all `unrepresentable_front`, with `deeper_chain=0` and
-`mixed_static_live_order=0`, so the next useful lane is making those front BG
-packets representable in the pre-final path before broadening group ordering.
+`mixed_static_live_order=0`. Splitting that bucket again shows 39 front packets
+have no stable effect and 664 are stable-effect packets still blocked by complex
+frame state, with no cgram-mismatch blockers. The next useful lane is therefore
+pre-final support for complex front BG packets, especially the existing
+scanline-main and sub-screen color-math guards, before broadening group
+ordering.
 
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay

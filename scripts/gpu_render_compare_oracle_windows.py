@@ -51,7 +51,10 @@ MODERN_INDEX_SUMMARY_RE = re.compile(
     r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj=(\d+) "
     r"(?:mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain=(\d+) "
     r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order=(\d+) )?)?)?)?)?"
+    r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order=(\d+) "
+    r"(?:mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex=(\d+) "
+    r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch=(\d+) )?)?)?)?)?)?"
     r"mixed_overlay_bg_effect_reject_cgram_mismatch=(\d+) "
     r"mixed_overlay_bg_effect_reject_overlap=(\d+))?)?)?"
 )
@@ -489,6 +492,9 @@ def run_window(
             int(modern_match.group(36) or 0),
             int(modern_match.group(37) or 0),
             int(modern_match.group(38) or 0),
+            int(modern_match.group(39) or 0),
+            int(modern_match.group(40) or 0),
+            int(modern_match.group(41) or 0),
         )
     print(
         f"{window.name}: compared={compared} frames={window.frames} "
@@ -524,8 +530,11 @@ def run_window(
         f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain={variant_stats[27]} "
         f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front={variant_stats[28]} "
         f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order={variant_stats[29]} "
-        f"mixed_overlay_bg_effect_reject_cgram_mismatch={variant_stats[30]} "
-        f"mixed_overlay_bg_effect_reject_overlap={variant_stats[31]}"
+        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect={variant_stats[30]} "
+        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex={variant_stats[31]} "
+        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch={variant_stats[32]} "
+        f"mixed_overlay_bg_effect_reject_cgram_mismatch={variant_stats[33]} "
+        f"mixed_overlay_bg_effect_reject_overlap={variant_stats[34]}"
     )
     return compared, last_hash, mismatched_pixels, variant_stats
 
@@ -665,6 +674,9 @@ def main() -> None:
     total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain = 0
     total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front = 0
     total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order = 0
+    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect = 0
+    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex = 0
+    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch = 0
     total_mixed_overlay_bg_effect_reject_cgram_mismatch = 0
     total_mixed_overlay_bg_effect_reject_overlap = 0
     if args.dry_run:
@@ -751,8 +763,17 @@ def main() -> None:
         total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order += (
             variant_stats[29]
         )
-        total_mixed_overlay_bg_effect_reject_cgram_mismatch += variant_stats[30]
-        total_mixed_overlay_bg_effect_reject_overlap += variant_stats[31]
+        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect += (
+            variant_stats[30]
+        )
+        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex += (
+            variant_stats[31]
+        )
+        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch += (
+            variant_stats[32]
+        )
+        total_mixed_overlay_bg_effect_reject_cgram_mismatch += variant_stats[33]
+        total_mixed_overlay_bg_effect_reject_overlap += variant_stats[34]
 
     if args.require_stable_draws:
         ensure_required_stable_draws(
@@ -794,6 +815,9 @@ def main() -> None:
         f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain} "
         f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front} "
         f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order} "
+        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect} "
+        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex} "
+        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch} "
         f"mixed_overlay_bg_effect_reject_cgram_mismatch={total_mixed_overlay_bg_effect_reject_cgram_mismatch} "
         f"mixed_overlay_bg_effect_reject_overlap={total_mixed_overlay_bg_effect_reject_overlap}"
     )

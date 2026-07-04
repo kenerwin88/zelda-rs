@@ -616,6 +616,9 @@ struct MixedVariantOverlayBgSelection<'a> {
     reject_overlap_bg_deeper_chain: u32,
     reject_overlap_bg_unrepresentable_front: u32,
     reject_overlap_bg_mixed_static_live_order: u32,
+    reject_overlap_bg_unrepresentable_front_no_effect: u32,
+    reject_overlap_bg_unrepresentable_front_complex: u32,
+    reject_overlap_bg_unrepresentable_front_cgram_mismatch: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -638,6 +641,9 @@ enum MixedOverlayOverlapRejectReason {
     Obj,
     BgDeeperChain,
     BgUnrepresentableFront,
+    BgUnrepresentableFrontNoEffect,
+    BgUnrepresentableFrontComplex,
+    BgUnrepresentableFrontCgramMismatch,
     BgMixedStaticLiveOrder,
 }
 
@@ -645,6 +651,13 @@ enum MixedOverlayOverlapRejectReason {
 enum PrefinalBgMaterial {
     StaticEffect,
     LiveCgram,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PrefinalBgMaterialRejectReason {
+    NoEffect,
+    Complex,
+    CgramMismatch,
 }
 
 impl<'a> MixedVariantOverlayBgSelection<'a> {
@@ -693,6 +706,21 @@ impl<'a> MixedVariantOverlayBgSelection<'a> {
             MixedOverlayOverlapRejectReason::BgUnrepresentableFront => {
                 self.reject_overlap_bg += 1;
                 self.reject_overlap_bg_unrepresentable_front += 1;
+            }
+            MixedOverlayOverlapRejectReason::BgUnrepresentableFrontNoEffect => {
+                self.reject_overlap_bg += 1;
+                self.reject_overlap_bg_unrepresentable_front += 1;
+                self.reject_overlap_bg_unrepresentable_front_no_effect += 1;
+            }
+            MixedOverlayOverlapRejectReason::BgUnrepresentableFrontComplex => {
+                self.reject_overlap_bg += 1;
+                self.reject_overlap_bg_unrepresentable_front += 1;
+                self.reject_overlap_bg_unrepresentable_front_complex += 1;
+            }
+            MixedOverlayOverlapRejectReason::BgUnrepresentableFrontCgramMismatch => {
+                self.reject_overlap_bg += 1;
+                self.reject_overlap_bg_unrepresentable_front += 1;
+                self.reject_overlap_bg_unrepresentable_front_cgram_mismatch += 1;
             }
             MixedOverlayOverlapRejectReason::BgMixedStaticLiveOrder => {
                 self.reject_overlap_bg += 1;
@@ -1288,7 +1316,7 @@ fn front_or_same_bg_packet_blocks_prefinal_group(
     let Some(packet_rank) = bg_packet_mode1_rank(packet) else {
         return Some(MixedOverlayOverlapRejectReason::BgUnrepresentableFront);
     };
-    let packet_material = bg_packet_prefinal_material(frame, packet);
+    let packet_material = bg_packet_prefinal_material(frame, packet).ok();
     for (other_index, other) in plan.bg.iter().enumerate() {
         if other_index == packet_index {
             continue;
@@ -1311,8 +1339,21 @@ fn front_or_same_bg_packet_blocks_prefinal_group(
         if front_or_same_bg_packet_has_opaque_pixel(other_index, other, plan, screen_x, screen_y) {
             return Some(MixedOverlayOverlapRejectReason::BgDeeperChain);
         }
-        let Some(other_material) = bg_packet_prefinal_material(frame, other) else {
-            return Some(MixedOverlayOverlapRejectReason::BgUnrepresentableFront);
+        let other_material = match bg_packet_prefinal_material(frame, other) {
+            Ok(material) => material,
+            Err(reason) => {
+                return Some(match reason {
+                    PrefinalBgMaterialRejectReason::NoEffect => {
+                        MixedOverlayOverlapRejectReason::BgUnrepresentableFrontNoEffect
+                    }
+                    PrefinalBgMaterialRejectReason::Complex => {
+                        MixedOverlayOverlapRejectReason::BgUnrepresentableFrontComplex
+                    }
+                    PrefinalBgMaterialRejectReason::CgramMismatch => {
+                        MixedOverlayOverlapRejectReason::BgUnrepresentableFrontCgramMismatch
+                    }
+                });
+            }
         };
         if matches!(
             (packet_material, other_material),
@@ -1331,22 +1372,26 @@ fn front_or_same_bg_packet_blocks_prefinal_group(
 fn bg_packet_prefinal_material(
     frame: &ModernFrame,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
-) -> Option<PrefinalBgMaterial> {
+) -> Result<PrefinalBgMaterial, PrefinalBgMaterialRejectReason> {
     let crate::modern_variant_atlas::VariantAtlasDraw::Stable {
         entry,
         effect: Some(effect),
         ..
     } = packet.draw
     else {
-        return None;
+        return Err(PrefinalBgMaterialRejectReason::NoEffect);
     };
     if bg_effect_packet_complex_reject_reason(frame, packet, entry, effect, true).is_some() {
-        return None;
+        return Err(PrefinalBgMaterialRejectReason::Complex);
     }
     if bg_effect_matches_live_cgram(packet.cell, packet.inst.palette, effect, frame) {
-        return Some(PrefinalBgMaterial::StaticEffect);
+        return Ok(PrefinalBgMaterial::StaticEffect);
     }
-    bg_packet_can_use_live_cgram(packet, frame).then_some(PrefinalBgMaterial::LiveCgram)
+    if bg_packet_can_use_live_cgram(packet, frame) {
+        Ok(PrefinalBgMaterial::LiveCgram)
+    } else {
+        Err(PrefinalBgMaterialRejectReason::CgramMismatch)
+    }
 }
 
 fn bg_packet_mode1_rank(
@@ -3144,6 +3189,15 @@ impl ModernGpuVariantHeadless {
             stats
                 .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order +=
                 overlay.reject_overlap_bg_mixed_static_live_order;
+            stats
+                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect +=
+                overlay.reject_overlap_bg_unrepresentable_front_no_effect;
+            stats
+                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex +=
+                overlay.reject_overlap_bg_unrepresentable_front_complex;
+            stats
+                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch +=
+                overlay.reject_overlap_bg_unrepresentable_front_cgram_mismatch;
             stats.mixed_overlay_bg_effect_reject_cgram_mismatch +=
                 final_overlay.reject_cgram_mismatch;
             stats.mixed_overlay_bg_effect_reject_overlap += final_overlay.reject_overlap;
@@ -5307,6 +5361,11 @@ mod tests {
             1
         );
         assert_eq!(
+            stats
+                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect,
+            1
+        );
+        assert_eq!(
             stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj,
             0
         );
@@ -5846,8 +5905,8 @@ mod tests {
         );
 
         assert_eq!(
-            stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg,
-            1
+            stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg, 1,
+            "{stats:?}"
         );
         assert_eq!(
             stats
@@ -6042,6 +6101,88 @@ mod tests {
             stats
                 .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order,
             1
+        );
+    }
+
+    #[test]
+    fn bg_packet_prefinal_material_classifies_cgram_mismatch() {
+        use crate::modern_frame::ModernIndexTileInstance;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            TileEffect, VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
+        };
+
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        let cell = ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        };
+        let inst = ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 16,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        };
+        let entry = VariantAtlasEntry {
+            id: "bg:kBgGfx:pack0:tile0:3bpp".to_string(),
+            key: VariantAtlasKey {
+                source_kind: "bg".to_string(),
+                asset: "kBgGfx".to_string(),
+                pack: 0,
+                tile: 0,
+                bpp: 3,
+                palette: "palette_dung_bg_main".to_string(),
+                palette_row: 2,
+            },
+            rect: [0, 0, 8, 8],
+            sha1: "stable-effect".to_string(),
+            duplicate_of: None,
+            dynamic_policy: "stable".to_string(),
+            source_hflip: false,
+            source_vflip: false,
+        };
+        let effect = TileEffect {
+            id: "palette_dung_bg_main:8color:row2".to_string(),
+            palette: "palette_dung_bg_main".to_string(),
+            palette_row: 2,
+            colors_per_row: 8,
+            index_to_rgba: vec![
+                [0, 0, 0, 0xff],
+                [40, 0, 0, 0xff],
+                [80, 0, 0, 0xff],
+                [3, 3, 3, 0xff],
+                [4, 4, 4, 0xff],
+                [5, 5, 5, 0xff],
+                [6, 6, 6, 0xff],
+                [7, 7, 7, 0xff],
+            ],
+            dynamic_policy: "stable".to_string(),
+        };
+        let packet = crate::modern_variant_draw::VariantBgDrawPacket {
+            layer_index: 0,
+            cell: &cell,
+            inst: &inst,
+            key: None,
+            draw: VariantAtlasDraw::Stable {
+                entry: &entry,
+                effect: Some(&effect),
+            },
+        };
+
+        let mut frame = ModernFrame::empty();
+        frame.cgram_rgba[1] = [40, 0, 0, 0xff];
+
+        assert_eq!(
+            bg_packet_prefinal_material(&frame, &packet),
+            Err(PrefinalBgMaterialRejectReason::CgramMismatch)
         );
     }
 
