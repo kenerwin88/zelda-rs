@@ -14,8 +14,8 @@ use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_render_plan::GpuFrameRenderPlanContext;
 use crate::gpu_frame_work_command::{
-    GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSpritePass, GpuFrameSubWorkCommand,
-    GpuFrameWindowSelector, GpuFrameWorkCommand,
+    GpuFrameBgPass, GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSpritePass,
+    GpuFrameSubWorkCommand, GpuFrameWorkCommand,
 };
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
@@ -210,28 +210,14 @@ impl GpuFrameRenderer {
                     pass,
                 );
             }
-            GpuFrameMainWorkCommand::BgLayer {
-                layer_idx,
-                hi_priority,
-                is_2bpp,
-                layer_bit,
-                math_bit_pos,
-                mosaic_layer_bit,
-                window,
-            } => {
+            GpuFrameMainWorkCommand::BgLayer(pass) => {
                 render_bg_pass(
-                    &mut self.bg[layer_idx],
+                    &mut self.bg[pass.layer_idx],
                     encoder,
                     queue,
                     frame,
-                    layer_idx,
-                    hi_priority,
                     &self.comp_view,
-                    is_2bpp,
-                    layer_bit,
-                    math_bit_pos,
-                    mosaic_layer_bit,
-                    window,
+                    pass,
                 );
             }
             GpuFrameMainWorkCommand::Mode7Bg {
@@ -282,30 +268,14 @@ impl GpuFrameRenderer {
                     window.flags_shift,
                 );
             }
-            GpuFrameSubWorkCommand::BgLayer {
-                layer_idx,
-                hi_priority,
-                is_2bpp,
-                screen_layer_bit,
-                render_layer_bit,
-                math_bit_pos,
-                mosaic_layer_bit,
-                window,
-            } => {
-                render_sub_bg_pass(
-                    &mut self.bg[layer_idx],
+            GpuFrameSubWorkCommand::BgLayer(pass) => {
+                render_bg_pass(
+                    &mut self.bg[pass.layer_idx],
                     encoder,
                     queue,
                     frame,
-                    layer_idx,
-                    hi_priority,
                     &self.sub_comp_view,
-                    is_2bpp,
-                    screen_layer_bit,
-                    render_layer_bit,
-                    math_bit_pos,
-                    mosaic_layer_bit,
-                    window,
+                    pass,
                 );
             }
             GpuFrameSubWorkCommand::SpritePriority(pass) => {
@@ -405,73 +375,37 @@ fn render_sprite_pass(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn render_bg_pass(
     bg: &mut BgLayerRenderer,
     encoder: &mut wgpu::CommandEncoder,
     queue: &wgpu::Queue,
     frame: &GpuFrame<'_>,
-    layer_idx: usize,
-    hi_priority: bool,
     output_view: &wgpu::TextureView,
-    is_2bpp: bool,
-    layer_bit: u32,
-    math_bit_pos: u32,
-    mosaic_layer_bit: u8,
-    window: GpuFrameWindowSelector,
+    pass: GpuFrameBgPass,
 ) {
+    if !pass.is_screen_enabled(frame.screen_enabled) {
+        return;
+    }
+
+    let window = pass.window;
     bg.render(
         encoder,
         queue,
         frame.vram,
-        layer_idx,
-        &frame.bg[layer_idx],
+        pass.layer_idx,
+        &frame.bg[pass.layer_idx],
         output_view,
         wgpu::LoadOp::Load,
-        is_2bpp,
-        hi_priority,
-        layer_bit,
-        math_bit_pos,
+        pass.is_2bpp,
+        pass.hi_priority,
+        pass.render_layer_bit,
+        pass.math_bit_pos,
         window.screen_idx,
         window.flags(frame.windowsel),
         window.is_windowed(frame.screen_windowed),
-        frame.mosaic_enabled & mosaic_layer_bit != 0,
+        frame.mosaic_enabled & pass.mosaic_layer_bit != 0,
         frame.mosaic_size,
         &frame.scanlines,
-    );
-}
-
-fn render_sub_bg_pass(
-    bg: &mut BgLayerRenderer,
-    encoder: &mut wgpu::CommandEncoder,
-    queue: &wgpu::Queue,
-    frame: &GpuFrame<'_>,
-    layer_idx: usize,
-    hi_priority: bool,
-    output_view: &wgpu::TextureView,
-    is_2bpp: bool,
-    screen_layer_bit: u8,
-    render_layer_bit: u32,
-    math_bit_pos: u32,
-    mosaic_layer_bit: u8,
-    window: GpuFrameWindowSelector,
-) {
-    if frame.screen_enabled[1] & screen_layer_bit == 0 {
-        return;
-    }
-    render_bg_pass(
-        bg,
-        encoder,
-        queue,
-        frame,
-        layer_idx,
-        hi_priority,
-        output_view,
-        is_2bpp,
-        render_layer_bit,
-        math_bit_pos,
-        mosaic_layer_bit,
-        window,
     );
 }
 

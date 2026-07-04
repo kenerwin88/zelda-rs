@@ -1,8 +1,8 @@
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_work_command::{
     main_frame_work_command, post_process_frame_work_command, sub_frame_work_command,
-    GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSpritePass, GpuFrameSubWorkCommand,
-    GpuFrameWindowSelector,
+    GpuFrameBgPass, GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSpritePass,
+    GpuFrameSubWorkCommand, GpuFrameWindowSelector,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -169,15 +169,11 @@ fn main_bg_work_item(
     hi_priority: bool,
     math_bit_pos: u32,
 ) -> GpuFrameMainWorkCommand {
-    GpuFrameMainWorkCommand::BgLayer {
+    GpuFrameMainWorkCommand::BgLayer(GpuFrameBgPass::mode1_main(
         layer_idx,
         hi_priority,
-        is_2bpp: layer_idx == 2,
-        layer_bit: 1u32 << layer_idx,
         math_bit_pos,
-        mosaic_layer_bit: 1u8 << layer_idx,
-        window: GpuFrameWindowSelector::main(1u8 << layer_idx, (layer_idx as u32) * 4),
-    }
+    ))
 }
 
 fn main_sprite_work_item(priority: u32) -> GpuFrameMainWorkCommand {
@@ -189,16 +185,7 @@ fn main_sprite_work_item(priority: u32) -> GpuFrameMainWorkCommand {
 }
 
 fn sub_bg_work_item(layer_idx: usize, hi_priority: bool) -> GpuFrameSubWorkCommand {
-    GpuFrameSubWorkCommand::BgLayer {
-        layer_idx,
-        hi_priority,
-        is_2bpp: layer_idx == 2,
-        screen_layer_bit: 1u8 << layer_idx,
-        render_layer_bit: 0, // skip per-scanline TM check for sub-screen
-        math_bit_pos: 255,   // output alpha=1.0 (real pixel marker)
-        mosaic_layer_bit: 1u8 << layer_idx,
-        window: GpuFrameWindowSelector::sub(1u8 << layer_idx, (layer_idx as u32) * 4),
-    }
+    GpuFrameSubWorkCommand::BgLayer(GpuFrameBgPass::mode1_sub(layer_idx, hi_priority))
 }
 
 fn sub_sprite_work_item(priority: u32) -> GpuFrameSubWorkCommand {
@@ -396,15 +383,7 @@ mod tests {
     fn main_bg_work_item_carries_main_screen_render_metadata() {
         assert_eq!(
             main_bg_work_item(2, true, 2),
-            GpuFrameMainWorkCommand::BgLayer {
-                layer_idx: 2,
-                hi_priority: true,
-                is_2bpp: true,
-                layer_bit: 0x04,
-                math_bit_pos: 2,
-                mosaic_layer_bit: 0x04,
-                window: GpuFrameWindowSelector::main(0x04, 8),
-            }
+            GpuFrameMainWorkCommand::BgLayer(GpuFrameBgPass::mode1_main(2, true, 2))
         );
     }
 
@@ -412,16 +391,7 @@ mod tests {
     fn sub_bg_work_item_carries_subscreen_render_metadata() {
         assert_eq!(
             sub_bg_work_item(2, true),
-            GpuFrameSubWorkCommand::BgLayer {
-                layer_idx: 2,
-                hi_priority: true,
-                is_2bpp: true,
-                screen_layer_bit: 0x04,
-                render_layer_bit: 0,
-                math_bit_pos: 255,
-                mosaic_layer_bit: 0x04,
-                window: GpuFrameWindowSelector::sub(0x04, 8),
-            }
+            GpuFrameSubWorkCommand::BgLayer(GpuFrameBgPass::mode1_sub(2, true))
         );
     }
 

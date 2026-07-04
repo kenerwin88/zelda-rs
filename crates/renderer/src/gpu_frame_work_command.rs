@@ -51,18 +51,59 @@ impl GpuFrameSpritePass {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct GpuFrameBgPass {
+    pub(crate) layer_idx: usize,
+    pub(crate) hi_priority: bool,
+    pub(crate) is_2bpp: bool,
+    pub(crate) screen_enabled_layer_bit: Option<u8>,
+    pub(crate) render_layer_bit: u32,
+    pub(crate) math_bit_pos: u32,
+    pub(crate) mosaic_layer_bit: u8,
+    pub(crate) window: GpuFrameWindowSelector,
+}
+
+impl GpuFrameBgPass {
+    pub(crate) fn mode1_main(layer_idx: usize, hi_priority: bool, math_bit_pos: u32) -> Self {
+        let layer_bit = 1u8 << layer_idx;
+        Self {
+            layer_idx,
+            hi_priority,
+            is_2bpp: layer_idx == 2,
+            screen_enabled_layer_bit: None,
+            render_layer_bit: u32::from(layer_bit),
+            math_bit_pos,
+            mosaic_layer_bit: layer_bit,
+            window: GpuFrameWindowSelector::main(layer_bit, (layer_idx as u32) * 4),
+        }
+    }
+
+    pub(crate) fn mode1_sub(layer_idx: usize, hi_priority: bool) -> Self {
+        let layer_bit = 1u8 << layer_idx;
+        Self {
+            layer_idx,
+            hi_priority,
+            is_2bpp: layer_idx == 2,
+            screen_enabled_layer_bit: Some(layer_bit),
+            render_layer_bit: 0,
+            math_bit_pos: 255,
+            mosaic_layer_bit: layer_bit,
+            window: GpuFrameWindowSelector::sub(layer_bit, (layer_idx as u32) * 4),
+        }
+    }
+
+    pub(crate) fn is_screen_enabled(self, screen_enabled: [u8; 2]) -> bool {
+        match self.screen_enabled_layer_bit {
+            Some(layer_bit) => screen_enabled[self.window.screen_idx] & layer_bit != 0,
+            None => true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuFrameMainWorkCommand {
     ClearBackdrop,
     SpritePriority(GpuFrameSpritePass),
-    BgLayer {
-        layer_idx: usize,
-        hi_priority: bool,
-        is_2bpp: bool,
-        layer_bit: u32,
-        math_bit_pos: u32,
-        mosaic_layer_bit: u8,
-        window: GpuFrameWindowSelector,
-    },
+    BgLayer(GpuFrameBgPass),
     Mode7Bg {
         math_bit_pos: u32,
         layer_bit: u32,
@@ -78,16 +119,7 @@ pub(crate) enum GpuFrameSubWorkCommand {
         layer_bit: u32,
         window: GpuFrameWindowSelector,
     },
-    BgLayer {
-        layer_idx: usize,
-        hi_priority: bool,
-        is_2bpp: bool,
-        screen_layer_bit: u8,
-        render_layer_bit: u32,
-        math_bit_pos: u32,
-        mosaic_layer_bit: u8,
-        window: GpuFrameWindowSelector,
-    },
+    BgLayer(GpuFrameBgPass),
     SpritePriority(GpuFrameSpritePass),
 }
 
@@ -124,7 +156,7 @@ impl GpuWorkItem for GpuFrameMainWorkCommand {
         match self {
             Self::ClearBackdrop => GpuWorkItemKind::ClearBackdrop,
             Self::SpritePriority(_) => GpuWorkItemKind::MainSpritePriority,
-            Self::BgLayer { .. } => GpuWorkItemKind::MainBgLayer,
+            Self::BgLayer(_) => GpuWorkItemKind::MainBgLayer,
             Self::Mode7Bg { .. } => GpuWorkItemKind::Mode7MainBg,
         }
     }
@@ -135,7 +167,7 @@ impl GpuWorkItem for GpuFrameSubWorkCommand {
         match self {
             Self::ClearBackdrop => GpuWorkItemKind::ClearSubBackdrop,
             Self::Mode7Bg { .. } => GpuWorkItemKind::Mode7SubBg,
-            Self::BgLayer { .. } => GpuWorkItemKind::SubBgLayer,
+            Self::BgLayer(_) => GpuWorkItemKind::SubBgLayer,
             Self::SpritePriority(_) => GpuWorkItemKind::SubSpritePriority,
         }
     }
@@ -187,5 +219,31 @@ mod tests {
         assert_eq!(pass.priority, 3);
         assert_eq!(pass.math_bit_pos, 4);
         assert_eq!(pass.window, GpuFrameWindowSelector::main(0x10, 16));
+    }
+
+    #[test]
+    fn bg_pass_groups_main_and_subscreen_render_metadata() {
+        let main_bg3 = GpuFrameBgPass::mode1_main(2, true, 2);
+        assert_eq!(main_bg3.layer_idx, 2);
+        assert!(main_bg3.hi_priority);
+        assert!(main_bg3.is_2bpp);
+        assert_eq!(main_bg3.screen_enabled_layer_bit, None);
+        assert_eq!(main_bg3.render_layer_bit, 0x04);
+        assert_eq!(main_bg3.math_bit_pos, 2);
+        assert_eq!(main_bg3.mosaic_layer_bit, 0x04);
+        assert_eq!(main_bg3.window, GpuFrameWindowSelector::main(0x04, 8));
+        assert!(main_bg3.is_screen_enabled([0x00, 0x00]));
+
+        let sub_bg3 = GpuFrameBgPass::mode1_sub(2, true);
+        assert_eq!(sub_bg3.layer_idx, 2);
+        assert!(sub_bg3.hi_priority);
+        assert!(sub_bg3.is_2bpp);
+        assert_eq!(sub_bg3.screen_enabled_layer_bit, Some(0x04));
+        assert_eq!(sub_bg3.render_layer_bit, 0);
+        assert_eq!(sub_bg3.math_bit_pos, 255);
+        assert_eq!(sub_bg3.mosaic_layer_bit, 0x04);
+        assert_eq!(sub_bg3.window, GpuFrameWindowSelector::sub(0x04, 8));
+        assert!(sub_bg3.is_screen_enabled([0x00, 0x04]));
+        assert!(!sub_bg3.is_screen_enabled([0x04, 0x00]));
     }
 }
