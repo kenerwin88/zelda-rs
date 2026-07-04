@@ -101,7 +101,7 @@ fn build_mode1_main_render_plan(has_main_bg: bool, has_main_sprites: bool) -> Gp
     if has_main_sprites && !has_main_bg {
         render_plan.extend(
             (0..=3)
-                .map(GpuFrameMainWorkCommand::SpritePriority)
+                .map(main_sprite_work_item)
                 .map(main_frame_work_command),
         );
     }
@@ -112,26 +112,18 @@ fn build_mode1_main_render_plan(has_main_bg: bool, has_main_sprites: bool) -> Gp
         //   BG2-hi, BG1-hi, OBJ3, BG3-hi.
         render_plan.push(main_frame_work_command(main_bg_work_item(2, false, 2)));
         if has_main_sprites {
-            render_plan.push(main_frame_work_command(
-                GpuFrameMainWorkCommand::SpritePriority(0),
-            ));
-            render_plan.push(main_frame_work_command(
-                GpuFrameMainWorkCommand::SpritePriority(1),
-            ));
+            render_plan.push(main_frame_work_command(main_sprite_work_item(0)));
+            render_plan.push(main_frame_work_command(main_sprite_work_item(1)));
         }
         render_plan.push(main_frame_work_command(main_bg_work_item(1, false, 1)));
         render_plan.push(main_frame_work_command(main_bg_work_item(0, false, 0)));
         if has_main_sprites {
-            render_plan.push(main_frame_work_command(
-                GpuFrameMainWorkCommand::SpritePriority(2),
-            ));
+            render_plan.push(main_frame_work_command(main_sprite_work_item(2)));
         }
         render_plan.push(main_frame_work_command(main_bg_work_item(1, true, 1)));
         render_plan.push(main_frame_work_command(main_bg_work_item(0, true, 0)));
         if has_main_sprites {
-            render_plan.push(main_frame_work_command(
-                GpuFrameMainWorkCommand::SpritePriority(3),
-            ));
+            render_plan.push(main_frame_work_command(main_sprite_work_item(3)));
         }
         render_plan.push(main_frame_work_command(main_bg_work_item(2, true, 2)));
     }
@@ -148,31 +140,23 @@ fn build_mode1_sub_render_plan(has_sub_bg: bool, has_sub_sprites: bool) -> GpuFr
     if has_sub_sprites && !has_sub_bg {
         render_plan.extend(
             (0..=3)
-                .map(GpuFrameSubWorkCommand::SpritePriority)
+                .map(sub_sprite_work_item)
                 .map(sub_frame_work_command),
         );
     }
     if has_sub_sprites && has_sub_bg {
-        render_plan.push(sub_frame_work_command(
-            GpuFrameSubWorkCommand::SpritePriority(0),
-        ));
-        render_plan.push(sub_frame_work_command(
-            GpuFrameSubWorkCommand::SpritePriority(1),
-        ));
+        render_plan.push(sub_frame_work_command(sub_sprite_work_item(0)));
+        render_plan.push(sub_frame_work_command(sub_sprite_work_item(1)));
     }
     render_plan.push(sub_frame_work_command(sub_bg_work_item(1, false)));
     render_plan.push(sub_frame_work_command(sub_bg_work_item(0, false)));
     if has_sub_sprites && has_sub_bg {
-        render_plan.push(sub_frame_work_command(
-            GpuFrameSubWorkCommand::SpritePriority(2),
-        ));
+        render_plan.push(sub_frame_work_command(sub_sprite_work_item(2)));
     }
     render_plan.push(sub_frame_work_command(sub_bg_work_item(1, true)));
     render_plan.push(sub_frame_work_command(sub_bg_work_item(0, true)));
     if has_sub_sprites && has_sub_bg {
-        render_plan.push(sub_frame_work_command(
-            GpuFrameSubWorkCommand::SpritePriority(3),
-        ));
+        render_plan.push(sub_frame_work_command(sub_sprite_work_item(3)));
     }
     render_plan.push(sub_frame_work_command(sub_bg_work_item(2, true)));
 
@@ -192,6 +176,16 @@ fn main_bg_work_item(
     }
 }
 
+fn main_sprite_work_item(priority: u32) -> GpuFrameMainWorkCommand {
+    GpuFrameMainWorkCommand::SpritePriority {
+        priority,
+        math_bit_pos: 4,
+        screen_idx: 0,
+        window_layer_bit: 0x10,
+        window_flags_shift: 16,
+    }
+}
+
 fn sub_bg_work_item(layer_idx: usize, hi_priority: bool) -> GpuFrameSubWorkCommand {
     GpuFrameSubWorkCommand::BgLayer {
         layer_idx,
@@ -199,6 +193,16 @@ fn sub_bg_work_item(layer_idx: usize, hi_priority: bool) -> GpuFrameSubWorkComma
         screen_layer_bit: 1u8 << layer_idx,
         render_layer_bit: 0, // skip per-scanline TM check for sub-screen
         math_bit_pos: 255,   // output alpha=1.0 (real pixel marker)
+    }
+}
+
+fn sub_sprite_work_item(priority: u32) -> GpuFrameSubWorkCommand {
+    GpuFrameSubWorkCommand::SpritePriority {
+        priority,
+        math_bit_pos: 255,
+        screen_idx: 1,
+        window_layer_bit: 0x10,
+        window_flags_shift: 16,
     }
 }
 
@@ -237,15 +241,13 @@ fn build_mode7_render_plan(
 fn build_mode7_main_render_plan(has_main_sprites: bool) -> GpuFrameRenderPlan {
     let mut render_plan = GpuFrameRenderPlan::default();
     if has_main_sprites {
-        render_plan.push(main_frame_work_command(
-            GpuFrameMainWorkCommand::SpritePriority(0),
-        ));
+        render_plan.push(main_frame_work_command(main_sprite_work_item(0)));
     }
     render_plan.push(main_frame_work_command(main_mode7_bg_work_item()));
     if has_main_sprites {
         render_plan.extend(
             (1..=3)
-                .map(GpuFrameMainWorkCommand::SpritePriority)
+                .map(main_sprite_work_item)
                 .map(main_frame_work_command),
         );
     }
@@ -267,7 +269,7 @@ fn build_mode7_sub_render_plan(
     if has_sub_sprites {
         render_plan.extend(
             (0..=3)
-                .map(GpuFrameSubWorkCommand::SpritePriority)
+                .map(sub_sprite_work_item)
                 .map(sub_frame_work_command),
         );
     }
@@ -418,6 +420,30 @@ mod tests {
     }
 
     #[test]
+    fn sprite_work_items_carry_render_metadata() {
+        assert_eq!(
+            main_sprite_work_item(2),
+            GpuFrameMainWorkCommand::SpritePriority {
+                priority: 2,
+                math_bit_pos: 4,
+                screen_idx: 0,
+                window_layer_bit: 0x10,
+                window_flags_shift: 16,
+            }
+        );
+        assert_eq!(
+            sub_sprite_work_item(2),
+            GpuFrameSubWorkCommand::SpritePriority {
+                priority: 2,
+                math_bit_pos: 255,
+                screen_idx: 1,
+                window_layer_bit: 0x10,
+                window_flags_shift: 16,
+            }
+        );
+    }
+
+    #[test]
     fn build_mode1_render_plan_preserves_full_gpu_draw_order() {
         let plan = build_mode1_render_plan(true, true, true, true);
 
@@ -482,25 +508,25 @@ mod tests {
             vec![
                 main_frame_work_command(GpuFrameMainWorkCommand::ClearBackdrop),
                 main_frame_work_command(main_bg_work_item(2, false, 2)),
-                main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(0)),
-                main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(1)),
+                main_frame_work_command(main_sprite_work_item(0)),
+                main_frame_work_command(main_sprite_work_item(1)),
                 main_frame_work_command(main_bg_work_item(1, false, 1)),
                 main_frame_work_command(main_bg_work_item(0, false, 0)),
-                main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(2)),
+                main_frame_work_command(main_sprite_work_item(2)),
                 main_frame_work_command(main_bg_work_item(1, true, 1)),
                 main_frame_work_command(main_bg_work_item(0, true, 0)),
-                main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(3)),
+                main_frame_work_command(main_sprite_work_item(3)),
                 main_frame_work_command(main_bg_work_item(2, true, 2)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::ClearBackdrop),
                 sub_frame_work_command(sub_bg_work_item(2, false)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(0)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(1)),
+                sub_frame_work_command(sub_sprite_work_item(0)),
+                sub_frame_work_command(sub_sprite_work_item(1)),
                 sub_frame_work_command(sub_bg_work_item(1, false)),
                 sub_frame_work_command(sub_bg_work_item(0, false)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(2)),
+                sub_frame_work_command(sub_sprite_work_item(2)),
                 sub_frame_work_command(sub_bg_work_item(1, true)),
                 sub_frame_work_command(sub_bg_work_item(0, true)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(3)),
+                sub_frame_work_command(sub_sprite_work_item(3)),
                 sub_frame_work_command(sub_bg_work_item(2, true)),
                 post_process_frame_work_command(),
             ]
@@ -515,16 +541,16 @@ mod tests {
             frame_plan_commands(&plan),
             vec![
                 main_frame_work_command(GpuFrameMainWorkCommand::ClearBackdrop),
-                main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(0)),
-                main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(1)),
-                main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(2)),
-                main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(3)),
+                main_frame_work_command(main_sprite_work_item(0)),
+                main_frame_work_command(main_sprite_work_item(1)),
+                main_frame_work_command(main_sprite_work_item(2)),
+                main_frame_work_command(main_sprite_work_item(3)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::ClearBackdrop),
                 sub_frame_work_command(sub_bg_work_item(2, false)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(0)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(1)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(2)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(3)),
+                sub_frame_work_command(sub_sprite_work_item(0)),
+                sub_frame_work_command(sub_sprite_work_item(1)),
+                sub_frame_work_command(sub_sprite_work_item(2)),
+                sub_frame_work_command(sub_sprite_work_item(3)),
                 sub_frame_work_command(sub_bg_work_item(1, false)),
                 sub_frame_work_command(sub_bg_work_item(0, false)),
                 sub_frame_work_command(sub_bg_work_item(1, true)),
@@ -579,17 +605,17 @@ mod tests {
             frame_plan_commands(&plan),
             vec![
                 main_frame_work_command(GpuFrameMainWorkCommand::ClearBackdrop),
-                main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(0)),
+                main_frame_work_command(main_sprite_work_item(0)),
                 main_frame_work_command(main_mode7_bg_work_item()),
-                main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(1)),
-                main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(2)),
-                main_frame_work_command(GpuFrameMainWorkCommand::SpritePriority(3)),
+                main_frame_work_command(main_sprite_work_item(1)),
+                main_frame_work_command(main_sprite_work_item(2)),
+                main_frame_work_command(main_sprite_work_item(3)),
                 sub_frame_work_command(GpuFrameSubWorkCommand::ClearBackdrop),
                 sub_frame_work_command(sub_mode7_bg_work_item()),
-                sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(0)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(1)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(2)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::SpritePriority(3)),
+                sub_frame_work_command(sub_sprite_work_item(0)),
+                sub_frame_work_command(sub_sprite_work_item(1)),
+                sub_frame_work_command(sub_sprite_work_item(2)),
+                sub_frame_work_command(sub_sprite_work_item(3)),
                 post_process_frame_work_command(),
             ]
         );

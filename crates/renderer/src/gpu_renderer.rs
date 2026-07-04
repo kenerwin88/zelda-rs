@@ -199,8 +199,23 @@ impl GpuFrameRenderer {
             GpuFrameMainWorkCommand::ClearBackdrop => {
                 self.clear_main_backdrop(encoder, frame);
             }
-            GpuFrameMainWorkCommand::SpritePriority(priority) => {
-                self.render_main_sprites(encoder, queue, frame, priority);
+            GpuFrameMainWorkCommand::SpritePriority {
+                priority,
+                math_bit_pos,
+                screen_idx,
+                window_layer_bit,
+                window_flags_shift,
+            } => {
+                self.render_main_sprites(
+                    encoder,
+                    queue,
+                    frame,
+                    priority,
+                    math_bit_pos,
+                    screen_idx,
+                    window_layer_bit,
+                    window_flags_shift,
+                );
             }
             GpuFrameMainWorkCommand::BgLayer {
                 layer_idx,
@@ -280,8 +295,23 @@ impl GpuFrameRenderer {
                     math_bit_pos,
                 );
             }
-            GpuFrameSubWorkCommand::SpritePriority(priority) => {
-                self.render_sub_sprites(encoder, queue, frame, priority);
+            GpuFrameSubWorkCommand::SpritePriority {
+                priority,
+                math_bit_pos,
+                screen_idx,
+                window_layer_bit,
+                window_flags_shift,
+            } => {
+                self.render_sub_sprites(
+                    encoder,
+                    queue,
+                    frame,
+                    priority,
+                    math_bit_pos,
+                    screen_idx,
+                    window_layer_bit,
+                    window_flags_shift,
+                );
             }
         }
     }
@@ -342,15 +372,19 @@ impl GpuFrameRenderer {
         queue: &wgpu::Queue,
         frame: &GpuFrame<'_>,
         priority: u32,
+        math_bit_pos: u32,
+        screen_idx: usize,
+        window_layer_bit: u8,
+        window_flags_shift: u32,
     ) {
         self.sprites.render(
             encoder,
             queue,
             &self.comp_view,
-            4,
+            math_bit_pos,
             priority,
-            (frame.windowsel >> 16) & 0x0f,
-            frame.screen_windowed[0] & 0x10 != 0,
+            (frame.windowsel >> window_flags_shift) & 0x0f,
+            frame.screen_windowed[screen_idx] & window_layer_bit != 0,
             &frame.scanlines,
         );
     }
@@ -361,15 +395,19 @@ impl GpuFrameRenderer {
         queue: &wgpu::Queue,
         frame: &GpuFrame<'_>,
         priority: u32,
+        math_bit_pos: u32,
+        screen_idx: usize,
+        window_layer_bit: u8,
+        window_flags_shift: u32,
     ) {
         self.sprites.render(
             encoder,
             queue,
             &self.sub_comp_view,
-            255,
+            math_bit_pos,
             priority,
-            (frame.windowsel >> 16) & 0x0f,
-            frame.screen_windowed[1] & 0x10 != 0,
+            (frame.windowsel >> window_flags_shift) & 0x0f,
+            frame.screen_windowed[screen_idx] & window_layer_bit != 0,
             &frame.scanlines,
         );
     }
