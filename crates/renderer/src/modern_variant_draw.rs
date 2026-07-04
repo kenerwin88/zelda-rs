@@ -56,13 +56,19 @@ pub fn compile_variant_draws<'a>(
             let Some(cell) = bg_cells.get(inst.cell_id as usize) else {
                 continue;
             };
-            let source_key = if inst.source_key != crate::modern_hd_overrides::NO_SOURCE_KEY {
+            let uses_instance_source_key =
+                inst.source_key != crate::modern_hd_overrides::NO_SOURCE_KEY;
+            let source_key = if uses_instance_source_key {
                 inst.source_key
             } else {
                 cell.source_key
             };
             let key = variant_key_for_source_key(source_key, bg_palette_name, inst.palette);
-            let draw = atlas.resolve_draw(key.as_ref());
+            let draw = if uses_instance_source_key {
+                atlas.resolve_dynamic_draw(key.as_ref())
+            } else {
+                atlas.resolve_draw(key.as_ref())
+            };
             plan.stats.record_bg_draw(&draw);
             plan.bg.push(VariantBgDrawPacket {
                 layer_index,
@@ -232,7 +238,7 @@ mod tests {
     }
 
     #[test]
-    fn bg_instance_source_key_resolves_deduped_unkeyed_cell() {
+    fn bg_instance_source_key_resolves_deduped_cell_as_dynamic_fallback() {
         let mut frame = ModernFrame::empty();
         let mut bg0 = ModernBgLayer::new(0);
         bg0.enabled_main = true;
@@ -268,12 +274,56 @@ mod tests {
         assert_eq!(plan.bg.len(), 1);
         assert!(matches!(
             plan.bg[0].draw,
-            VariantAtlasDraw::Stable {
-                effect: Some(_),
-                ..
-            }
+            VariantAtlasDraw::DynamicPalette { .. }
         ));
-        assert_eq!(plan.stats.stable_effect_draws, 1);
+        assert_eq!(plan.stats.dynamic_palette_draws, 1);
+        assert_eq!(plan.stats.stable_effect_draws, 0);
+        assert_eq!(plan.stats.unkeyed_fallback_draws, 0);
+        assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
+    }
+
+    #[test]
+    fn bg_instance_source_key_keeps_keyed_cell_on_dynamic_fallback() {
+        let mut frame = ModernFrame::empty();
+        let mut bg0 = ModernBgLayer::new(0);
+        bg0.enabled_main = true;
+        let source_key = modern_source_key(1, 3, 5);
+        bg0.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key,
+            screen_x: 4,
+            screen_y: 8,
+            palette: 2,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = bg0;
+        let bg_cells = vec![index_cell(0, source_key)];
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![bg_entry(3, 5, 2)],
+            effects: vec![effect(2)],
+        };
+
+        let plan = compile_variant_draws(
+            &frame,
+            &bg_cells,
+            &[],
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(plan.bg.len(), 1);
+        assert!(matches!(
+            plan.bg[0].draw,
+            VariantAtlasDraw::DynamicPalette { .. }
+        ));
+        assert_eq!(plan.stats.dynamic_palette_draws, 1);
+        assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
     }
 

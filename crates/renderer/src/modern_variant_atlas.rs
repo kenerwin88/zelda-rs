@@ -157,6 +157,19 @@ impl ModernVariantAtlas {
         }
         VariantAtlasDraw::DynamicPalette { entry }
     }
+
+    pub fn resolve_dynamic_draw<'a>(
+        &'a self,
+        key: Option<&VariantAtlasKey>,
+    ) -> VariantAtlasDraw<'a> {
+        let Some(key) = key else {
+            return VariantAtlasDraw::Unkeyed;
+        };
+        let Some(entry) = self.entry_for_source_key(key) else {
+            return VariantAtlasDraw::MissingArt;
+        };
+        VariantAtlasDraw::DynamicPalette { entry }
+    }
 }
 
 fn entry_matches_material(entry: &VariantAtlasEntry, key: &VariantAtlasKey) -> bool {

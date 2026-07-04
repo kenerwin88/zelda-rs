@@ -1082,7 +1082,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                 // palette. The BG3 cell bakes the BG3->CGRAM palette + flip, so its
                 // instance renders with palette 0 and no flip.
                 let is_bg3 = layer_index == 2;
-                let (cell_id, palette) = if is_bg3 {
+                let (cell_id, palette, source_key) = if is_bg3 {
                     let pal = ((entry_word >> 10) & 7) as u8;
                     let chr_base = frame.bg[layer_index].tile_adr as usize;
                     // dedup key: chr_base + tile# + flip + palette (priority bit dropped)
@@ -1109,7 +1109,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                         });
                         id
                     });
-                    (id, 0u8)
+                    (id, 0u8, crate::modern_hd_overrides::NO_SOURCE_KEY)
                 } else {
                     let slot = chr_slot_base + tile_number;
                     let (kind, mut pack, mut tile_off) = src_table.get(slot);
@@ -1167,7 +1167,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                 });
                                 id
                             });
-                        (id, pal)
+                        (id, pal, crate::modern_hd_overrides::NO_SOURCE_KEY)
                     } else {
                         if dbg && layer_index < 2 {
                             dbg_total += 1;
@@ -1214,6 +1214,9 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                         }
                         match source_cell(atlas, kind, pack, tile_off) {
                             Some(src) => {
+                                let source_key = crate::modern_source_atlas::modern_source_key(
+                                    kind, pack, tile_off,
+                                );
                                 let id =
                                     *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
                                         let indices =
@@ -1222,16 +1225,13 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                         cells.push(ModernIndexTile {
                                             id,
                                             indices,
-                                            source_key:
-                                                crate::modern_source_atlas::modern_source_key(
-                                                    kind, pack, tile_off,
-                                                ),
+                                            source_key,
                                             hflip,
                                             vflip,
                                         });
                                         id
                                     });
-                                (id, ((entry_word >> 10) & 7) as u8)
+                                (id, ((entry_word >> 10) & 7) as u8, source_key)
                             }
                             None => {
                                 let pal = ((entry_word >> 10) & 7) as u8;
@@ -1255,7 +1255,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                         });
                                         id
                                     });
-                                (id, pal)
+                                (id, pal, crate::modern_hd_overrides::NO_SOURCE_KEY)
                             }
                         }
                     }
@@ -1275,7 +1275,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                     .index_tiles
                     .push(ModernIndexTileInstance {
                         cell_id,
-                        source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                        source_key,
                         screen_x: sx as i16,
                         screen_y: sy as i16,
                         palette,
@@ -1542,6 +1542,15 @@ mod tests {
         let tiles = &modern.bg_layers[0].index_tiles;
         assert_eq!(tiles.len(), 1);
         assert_eq!(tiles[0].cell_id, 0);
+        assert_eq!(
+            tiles[0].source_key,
+            crate::modern_source_atlas::modern_source_key(
+                CHR_KIND_BG_STREAM,
+                (h >> 16) as u16,
+                (h & 0xffff) as u16,
+            ),
+            "atlas-backed BG draw instances carry their logical source key"
+        );
         assert_eq!(tiles[0].screen_x, 0);
         // +1 vertical fetch offset, no scroll: (0-0-1).rem_euclid(256)=255 → -=256 → -1.
         assert_eq!(tiles[0].screen_y, -1);
