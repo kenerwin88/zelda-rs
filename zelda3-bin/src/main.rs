@@ -3652,7 +3652,7 @@ fn run_replay_save(args: &[String]) {
         (Some(rom), Some(replay)) => (rom, replay),
         _ => {
             eprintln!(
-                "usage: zelda3 --replay-save <path-to-rom.sfc> <replay.sav> [frames] [--dump-frame <out.png>] [--render-hash-log <stride>] [--audio-trace-log <stride>] [--gpu-render-compare <stride>] [--gpu-render-compare-quiet] [--modern-index-compare <stride>] [--require-full-gpu-path] [--render-hash-dump-frame <frame> <out.png>] [--input-script <path>] [--input-script-overlay <path>] [--stop-replay-after-load] [--save-state <checkpoint.sav>] [--load-state <checkpoint.sav>] [--load-sram <path>] [--fingerprint-log <path>] [--fingerprint-frame <frame>] [--coverage-log <path>]"
+                "usage: zelda3 --replay-save <path-to-rom.sfc> <replay.sav> [frames] [--dump-frame <out.png>] [--render-hash-log <stride>] [--audio-trace-log <stride>] [--gpu-render-compare <stride>] [--gpu-render-compare-quiet] [--modern-index-compare <stride>] [--require-full-gpu-path] [--require-modern-index-parity] [--render-hash-dump-frame <frame> <out.png>] [--input-script <path>] [--input-script-overlay <path>] [--stop-replay-after-load] [--save-state <checkpoint.sav>] [--load-state <checkpoint.sav>] [--load-sram <path>] [--fingerprint-log <path>] [--fingerprint-frame <frame>] [--coverage-log <path>]"
             );
             process::exit(2);
         }
@@ -3671,6 +3671,7 @@ fn run_replay_save(args: &[String]) {
     let mut gpu_render_compare_last_hash = 0u32;
     let mut modern_index_compare = 0u32;
     let mut require_full_gpu_path = false;
+    let mut require_modern_index_parity = false;
     let modern_index_compare_summary = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_SUMMARY").is_ok();
     let modern_index_compare_progress = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_PROGRESS")
         .ok()
@@ -3854,6 +3855,10 @@ fn run_replay_save(args: &[String]) {
                 require_full_gpu_path = true;
                 i += 1;
             }
+            "--require-modern-index-parity" => {
+                require_modern_index_parity = true;
+                i += 1;
+            }
             "--render-hash-dump-frame" => {
                 let frame = args.get(i + 1).unwrap_or_else(|| {
                     eprintln!("--render-hash-dump-frame requires a frame");
@@ -3978,6 +3983,10 @@ fn run_replay_save(args: &[String]) {
 
     if require_full_gpu_path && modern_index_compare == 0 {
         eprintln!("--require-full-gpu-path requires --modern-index-compare");
+        process::exit(2);
+    }
+    if require_modern_index_parity && modern_index_compare == 0 {
+        eprintln!("--require-modern-index-parity requires --modern-index-compare");
         process::exit(2);
     }
 
@@ -6098,15 +6107,11 @@ fn run_replay_save(args: &[String]) {
                         "vram",
                     )
                 };
-                let mut mismatch = 0usize;
-                for (c, m) in classic_rgba
-                    .chunks_exact(4)
-                    .zip(modern_rgba.chunks_exact(4))
-                {
-                    if c[0] != m[0] || c[1] != m[1] || c[2] != m[2] {
-                        mismatch += 1;
-                    }
-                }
+                let modern_diff = compare_rgba_to_rgba(&classic_rgba, &modern_rgba);
+                let mismatch = modern_diff
+                    .as_ref()
+                    .map(|diff| diff.mismatched_pixels)
+                    .unwrap_or(0);
                 modern_index_compare_count += 1;
                 match via {
                     "gpu" => modern_index_compare_gpu_count += 1,
@@ -6118,6 +6123,28 @@ fn run_replay_save(args: &[String]) {
                 if mismatch != 0 {
                     modern_index_compare_bad_count += 1;
                     modern_index_compare_bad_pixels += mismatch as u64;
+                }
+                if require_modern_index_parity && mismatch != 0 {
+                    if let Some(diff) = modern_diff.as_ref() {
+                        eprintln!(
+                            "modern_index_mismatch frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} first_mismatch=({}, {}) classic_rgb=({},{},{}) modern_rgb=({},{},{})",
+                            gpu_frame.mode,
+                            diff.first_x,
+                            diff.first_y,
+                            diff.cpu_rgb.0,
+                            diff.cpu_rgb.1,
+                            diff.cpu_rgb.2,
+                            diff.gpu_rgb.0,
+                            diff.gpu_rgb.1,
+                            diff.gpu_rgb.2
+                        );
+                    } else {
+                        eprintln!(
+                            "modern_index_mismatch frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via}",
+                            gpu_frame.mode
+                        );
+                    }
+                    process::exit(1);
                 }
                 if require_full_gpu_path {
                     if let Some(fallback) =
@@ -12787,7 +12814,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
         Some(p) => p,
         None => {
             eprintln!(
-                "usage: zelda3 --play-gpu-render-compare <path-to-rom.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--load-state <path>] [--stride <n>] [--modern-index-compare <n>] [--require-full-gpu-path]"
+                "usage: zelda3 --play-gpu-render-compare <path-to-rom.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--load-state <path>] [--stride <n>] [--modern-index-compare <n>] [--require-full-gpu-path] [--require-modern-index-parity]"
             );
             process::exit(2);
         }
@@ -12810,6 +12837,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
     let mut modern_render_compare = 0u32;
     let mut modern_index_compare = 0u32;
     let mut require_full_gpu_path = false;
+    let mut require_modern_index_parity = false;
     let modern_index_compare_summary = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_SUMMARY").is_ok();
     let modern_index_compare_progress = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_PROGRESS")
         .ok()
@@ -12978,6 +13006,10 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 require_full_gpu_path = true;
                 i += 1;
             }
+            "--require-modern-index-parity" => {
+                require_modern_index_parity = true;
+                i += 1;
+            }
             flag => {
                 eprintln!("unknown --play-gpu-render-compare option: {flag}");
                 process::exit(2);
@@ -12986,6 +13018,10 @@ fn run_play_gpu_render_compare(args: &[String]) {
     }
     if require_full_gpu_path && modern_index_compare == 0 {
         eprintln!("--require-full-gpu-path requires --modern-index-compare");
+        process::exit(2);
+    }
+    if require_modern_index_parity && modern_index_compare == 0 {
+        eprintln!("--require-modern-index-parity requires --modern-index-compare");
         process::exit(2);
     }
     if renderer_mode == renderer::RendererMode::ModernCompare
@@ -13288,6 +13324,28 @@ fn run_play_gpu_render_compare(args: &[String]) {
             if mismatch != 0 {
                 modern_index_compare_bad_count += 1;
                 modern_index_compare_bad_pixels += mismatch as u64;
+            }
+            if require_modern_index_parity && mismatch != 0 {
+                if let Some(diff) = modern_diff.as_ref() {
+                    eprintln!(
+                        "modern_index_mismatch frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} first_mismatch=({}, {}) classic_rgb=({},{},{}) modern_rgb=({},{},{})",
+                        gpu_frame.mode,
+                        diff.first_x,
+                        diff.first_y,
+                        diff.cpu_rgb.0,
+                        diff.cpu_rgb.1,
+                        diff.cpu_rgb.2,
+                        diff.gpu_rgb.0,
+                        diff.gpu_rgb.1,
+                        diff.gpu_rgb.2
+                    );
+                } else {
+                    eprintln!(
+                        "modern_index_mismatch frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via}",
+                        gpu_frame.mode
+                    );
+                }
+                process::exit(1);
             }
             if require_full_gpu_path {
                 if let Some(fallback) =
