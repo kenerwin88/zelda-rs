@@ -663,6 +663,19 @@ struct BgEffectMaterialPacket<'packet, 'frame> {
     effect_row: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct EffectInstancePacket {
+    cell_id: u32,
+    screen_x: i16,
+    screen_y: i16,
+    row_mask: u8,
+    hflip: bool,
+    vflip: bool,
+    source_hflip: bool,
+    source_vflip: bool,
+    effect_row: u32,
+}
+
 #[derive(Default)]
 struct MixedVariantOverlayBgSelection<'a> {
     bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
@@ -2438,21 +2451,38 @@ fn append_bg_effect_instance_words(
     material_packet: BgEffectMaterialPacket<'_, '_>,
 ) {
     let packet = material_packet.packet;
-    let col = packet.inst.cell_id % INDEX_GRID_COLS;
-    let row = packet.inst.cell_id / INDEX_GRID_COLS;
+    append_effect_instance_words(
+        out,
+        EffectInstancePacket {
+            cell_id: packet.inst.cell_id,
+            screen_x: packet.inst.screen_x,
+            screen_y: packet.inst.screen_y,
+            row_mask: 0xff,
+            hflip: packet.cell.hflip,
+            vflip: packet.cell.vflip,
+            source_hflip: material_packet.entry.source_hflip,
+            source_vflip: material_packet.entry.source_vflip,
+            effect_row: material_packet.effect_row,
+        },
+    );
+}
+
+fn append_effect_instance_words(out: &mut Vec<u8>, packet: EffectInstancePacket) {
+    let col = packet.cell_id % INDEX_GRID_COLS;
+    let row = packet.cell_id / INDEX_GRID_COLS;
     out.extend_from_slice(&(col * 8).to_le_bytes());
     out.extend_from_slice(&(row * 8).to_le_bytes());
-    out.extend_from_slice(&(i32::from(packet.inst.screen_x)).to_le_bytes());
-    out.extend_from_slice(&(i32::from(packet.inst.screen_y)).to_le_bytes());
-    let mut flags = 0xffu32 << 8;
-    if packet.cell.hflip ^ material_packet.entry.source_hflip {
+    out.extend_from_slice(&(i32::from(packet.screen_x)).to_le_bytes());
+    out.extend_from_slice(&(i32::from(packet.screen_y)).to_le_bytes());
+    let mut flags = u32::from(packet.row_mask) << 8;
+    if packet.hflip ^ packet.source_hflip {
         flags |= 0b001;
     }
-    if packet.cell.vflip ^ material_packet.entry.source_vflip {
+    if packet.vflip ^ packet.source_vflip {
         flags |= 0b010;
     }
     out.extend_from_slice(&flags.to_le_bytes());
-    out.extend_from_slice(&material_packet.effect_row.to_le_bytes());
+    out.extend_from_slice(&packet.effect_row.to_le_bytes());
 }
 
 fn sprite_effect_material_packet<'packet, 'frame>(
@@ -2489,21 +2519,20 @@ fn append_sprite_effect_instance_words(
     material_packet: SpriteEffectMaterialPacket<'_, '_>,
 ) {
     let packet = material_packet.packet;
-    let col = packet.inst.cell_id % INDEX_GRID_COLS;
-    let row = packet.inst.cell_id / INDEX_GRID_COLS;
-    out.extend_from_slice(&(col * 8).to_le_bytes());
-    out.extend_from_slice(&(row * 8).to_le_bytes());
-    out.extend_from_slice(&(i32::from(packet.inst.screen_x)).to_le_bytes());
-    out.extend_from_slice(&(i32::from(packet.inst.screen_y)).to_le_bytes());
-    let mut flags = u32::from(packet.inst.row_mask) << 8;
-    if packet.inst.hflip ^ material_packet.entry.source_hflip {
-        flags |= 0b001;
-    }
-    if packet.inst.vflip ^ material_packet.entry.source_vflip {
-        flags |= 0b010;
-    }
-    out.extend_from_slice(&flags.to_le_bytes());
-    out.extend_from_slice(&material_packet.effect_row.to_le_bytes());
+    append_effect_instance_words(
+        out,
+        EffectInstancePacket {
+            cell_id: packet.inst.cell_id,
+            screen_x: packet.inst.screen_x,
+            screen_y: packet.inst.screen_y,
+            row_mask: packet.inst.row_mask,
+            hflip: packet.inst.hflip,
+            vflip: packet.inst.vflip,
+            source_hflip: material_packet.entry.source_hflip,
+            source_vflip: material_packet.entry.source_vflip,
+            effect_row: material_packet.effect_row,
+        },
+    );
 }
 
 fn variant_tile_instance(
@@ -5893,6 +5922,32 @@ mod tests {
         assert_eq!(stats.gpu_screen_builder_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(&variant[0..4], &[0, 0, 0, 0xff]);
+    }
+
+    #[test]
+    fn effect_instance_packet_encodes_shared_gpu_layout() {
+        let mut words = Vec::new();
+        append_effect_instance_words(
+            &mut words,
+            EffectInstancePacket {
+                cell_id: 2,
+                screen_x: 12,
+                screen_y: 20,
+                row_mask: 0x7f,
+                hflip: true,
+                vflip: false,
+                source_hflip: false,
+                source_vflip: true,
+                effect_row: 9,
+            },
+        );
+
+        assert_eq!(words.len() as u64, INDEX_INSTANCE_STRIDE);
+        let encoded: Vec<u32> = words
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
+        assert_eq!(encoded, vec![16, 0, 12, 20, 0x7f00 | 0b011, 9]);
     }
 
     #[test]
