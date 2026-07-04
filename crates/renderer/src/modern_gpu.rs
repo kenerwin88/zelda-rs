@@ -3245,8 +3245,30 @@ impl ModernGpuFinalizer {
         screens: &crate::modern_software::ModernCompositedScreens,
         output_texture: &wgpu::Texture,
     ) {
-        let len = screens.main.len() as u32;
         debug_assert_eq!(screens.sub.len(), screens.main.len());
+        queue.write_buffer(&self.main_buffer, 0, &u32s_to_le_bytes(&screens.main));
+        queue.write_buffer(&self.sub_buffer, 0, &u32s_to_le_bytes(&screens.sub));
+        self.render_current_buffers_to_texture(
+            device,
+            queue,
+            frame,
+            screens.main.len() as u32,
+            screens.width as u32,
+            screens.scale as u32,
+            output_texture,
+        );
+    }
+
+    fn render_current_buffers_to_texture(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        len: u32,
+        width: u32,
+        scale: u32,
+        output_texture: &wgpu::Texture,
+    ) {
         debug_assert!(
             len <= u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
                 * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT)
@@ -3279,8 +3301,8 @@ impl ModernGpuFinalizer {
             | (u32::from(frame.fixed_color_b) << 16);
         let params = [
             len,
-            screens.width as u32,
-            screens.scale as u32,
+            width,
+            scale,
             u32::from(frame.brightness),
             u32::from(frame.math_enabled),
             flags,
@@ -3292,8 +3314,6 @@ impl ModernGpuFinalizer {
             0,
         ];
 
-        queue.write_buffer(&self.main_buffer, 0, &u32s_to_le_bytes(&screens.main));
-        queue.write_buffer(&self.sub_buffer, 0, &u32s_to_le_bytes(&screens.sub));
         queue.write_buffer(&self.window_buffer, 0, &u32s_to_le_bytes(&windows));
         queue.write_buffer(&self.params_buffer, 0, &u32s_to_le_bytes(&params));
 
@@ -3314,7 +3334,7 @@ impl ModernGpuFinalizer {
                 buffer: &self.out_buffer,
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some((screens.width * 4) as u32),
+                    bytes_per_row: Some(width * 4),
                     rows_per_image: None,
                 },
             },
@@ -3325,13 +3345,430 @@ impl ModernGpuFinalizer {
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::Extent3d {
-                width: screens.width as u32,
-                height: (len / screens.width as u32),
+                width,
+                height: len / width,
                 depth_or_array_layers: 1,
             },
         );
         queue.submit([encoder.finish()]);
     }
+}
+
+pub(crate) struct ModernGpuScreenBuilder {
+    pipeline: wgpu::ComputePipeline,
+    bind_group_layout: wgpu::BindGroupLayout,
+}
+
+impl ModernGpuScreenBuilder {
+    pub(crate) fn new(device: &wgpu::Device) -> Self {
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("modern_screen_builder"),
+            entries: &[
+                storage_entry(0, false),
+                storage_entry(1, false),
+                storage_entry(2, true),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("modern_screen_builder"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("modern_screen_builder.wgsl").into()),
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("modern_screen_builder"),
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("modern_screen_builder"),
+            layout: Some(&pipeline_layout),
+            module: &shader,
+            entry_point: Some("cs_main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        Self {
+            pipeline,
+            bind_group_layout,
+        }
+    }
+
+    fn render_into(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        main_buffer: &wgpu::Buffer,
+        sub_buffer: &wgpu::Buffer,
+    ) {
+        let cell_words = modern_screen_builder_cell_words(bg_cells, sprite_cells);
+        let bg_instance_words = modern_screen_builder_bg_instance_words(frame, bg_cells.len());
+        let sprite_instance_words =
+            modern_screen_builder_sprite_instance_words(frame, sprite_cells.len());
+        let cgram_words = modern_screen_builder_cgram_words(frame);
+        let scroll_words = modern_screen_builder_scroll_words(frame);
+        let main_tm_words = modern_screen_builder_main_tm_words(frame);
+        let (data_words, offsets) = modern_screen_builder_data_words(
+            &cell_words,
+            &bg_instance_words,
+            &sprite_instance_words,
+            &cgram_words,
+            &scroll_words,
+            &main_tm_words,
+        );
+        let params = modern_screen_builder_params(
+            frame,
+            bg_cells,
+            &bg_instance_words,
+            &sprite_instance_words,
+            offsets,
+        );
+
+        let data_buffer =
+            storage_buffer_with_words(device, queue, "modern_screen_data", &data_words);
+        let params_buffer =
+            uniform_buffer_with_words(device, queue, "modern_screen_params", &params);
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("modern_screen_builder"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: main_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: sub_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: data_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        let pixel_count = u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
+            * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT);
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("modern_screen_builder"),
+        });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("modern_screen_builder"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.dispatch_workgroups(pixel_count.div_ceil(64), 1, 1);
+        }
+        queue.submit([encoder.finish()]);
+    }
+}
+
+fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
+}
+
+fn storage_buffer_with_words(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    words: &[u32],
+) -> wgpu::Buffer {
+    let bytes = u32s_to_le_bytes(if words.is_empty() { &[0] } else { words });
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: bytes.len() as u64,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&buffer, 0, &bytes);
+    buffer
+}
+
+fn uniform_buffer_with_words(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    words: &[u32],
+) -> wgpu::Buffer {
+    let bytes = u32s_to_le_bytes(words);
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: bytes.len() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&buffer, 0, &bytes);
+    buffer
+}
+
+fn modern_screen_builder_cell_words(
+    bg_cells: &[ModernIndexTile],
+    sprite_cells: &[ModernIndexTile],
+) -> Vec<u32> {
+    let mut words = Vec::with_capacity((bg_cells.len() + sprite_cells.len()).max(1) * 64);
+    for cell in bg_cells.iter().chain(sprite_cells.iter()) {
+        words.extend(cell.indices.iter().map(|&index| u32::from(index)));
+    }
+    if words.is_empty() {
+        words.push(0);
+    }
+    words
+}
+
+fn modern_screen_builder_bg_instance_words(frame: &ModernFrame, bg_cell_count: usize) -> Vec<u32> {
+    let mut words = Vec::new();
+    for layer in frame.bg_layers.iter().take(3) {
+        for inst in &layer.index_tiles {
+            if inst.cell_id as usize >= bg_cell_count {
+                continue;
+            }
+            words.extend_from_slice(&[
+                inst.cell_id,
+                i32::from(inst.screen_x) as u32,
+                i32::from(inst.screen_y) as u32,
+                u32::from(inst.palette),
+                u32::from(inst.priority),
+                u32::from(layer.index),
+                0,
+                0,
+            ]);
+        }
+    }
+    words
+}
+
+fn modern_screen_builder_sprite_instance_words(
+    frame: &ModernFrame,
+    sprite_cell_count: usize,
+) -> Vec<u32> {
+    let mut words = Vec::new();
+    for inst in &frame.index_sprites {
+        if inst.cell_id as usize >= sprite_cell_count {
+            continue;
+        }
+        let mut flags = 0u32;
+        if inst.hflip {
+            flags |= 0x1;
+        }
+        if inst.vflip {
+            flags |= 0x2;
+        }
+        words.extend_from_slice(&[
+            inst.cell_id,
+            i32::from(inst.screen_x) as u32,
+            i32::from(inst.screen_y) as u32,
+            u32::from(inst.palette),
+            u32::from(inst.priority),
+            flags,
+            u32::from(inst.row_mask),
+            0,
+        ]);
+    }
+    words
+}
+
+fn modern_screen_builder_cgram_words(frame: &ModernFrame) -> Vec<u32> {
+    frame
+        .cgram_rgba
+        .iter()
+        .map(|px| u32::from(px[0]) | (u32::from(px[1]) << 8) | (u32::from(px[2]) << 16))
+        .collect()
+}
+
+fn modern_screen_builder_scroll_words(frame: &ModernFrame) -> Vec<u32> {
+    let mut words = Vec::with_capacity(usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT) * 8);
+    for row in 0..usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT) {
+        let scanline = frame.bg_scroll_scanlines.get(row);
+        for layer in 0..4usize {
+            let base = [
+                frame.bg_layers.get(layer).map_or(0, |bg| bg.scroll_x),
+                frame.bg_layers.get(layer).map_or(0, |bg| bg.scroll_y),
+            ];
+            let scroll = scanline.map_or(base, |sl| sl[layer]);
+            words.push(u32::from(scroll[0]));
+            words.push(u32::from(scroll[1]));
+        }
+    }
+    words
+}
+
+fn modern_screen_builder_main_tm_words(frame: &ModernFrame) -> Vec<u32> {
+    (0..usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT))
+        .map(|row| u32::from(frame.main_tm_scanlines.get(row).copied().unwrap_or(0xff)))
+        .collect()
+}
+
+#[derive(Clone, Copy)]
+struct ModernScreenBuilderOffsets {
+    cells: u32,
+    bg_instances: u32,
+    sprite_instances: u32,
+    cgram: u32,
+    scroll: u32,
+    main_tm: u32,
+}
+
+fn modern_screen_builder_data_words(
+    cell_words: &[u32],
+    bg_instance_words: &[u32],
+    sprite_instance_words: &[u32],
+    cgram_words: &[u32],
+    scroll_words: &[u32],
+    main_tm_words: &[u32],
+) -> (Vec<u32>, ModernScreenBuilderOffsets) {
+    let mut data = Vec::new();
+    let cells = data.len() as u32;
+    data.extend_from_slice(cell_words);
+    let bg_instances = data.len() as u32;
+    data.extend_from_slice(if bg_instance_words.is_empty() {
+        &[0]
+    } else {
+        bg_instance_words
+    });
+    let sprite_instances = data.len() as u32;
+    data.extend_from_slice(if sprite_instance_words.is_empty() {
+        &[0]
+    } else {
+        sprite_instance_words
+    });
+    let cgram = data.len() as u32;
+    data.extend_from_slice(cgram_words);
+    let scroll = data.len() as u32;
+    data.extend_from_slice(scroll_words);
+    let main_tm = data.len() as u32;
+    data.extend_from_slice(main_tm_words);
+    (
+        data,
+        ModernScreenBuilderOffsets {
+            cells,
+            bg_instances,
+            sprite_instances,
+            cgram,
+            scroll,
+            main_tm,
+        },
+    )
+}
+
+fn modern_screen_builder_params(
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+    bg_instance_words: &[u32],
+    sprite_instance_words: &[u32],
+    offsets: ModernScreenBuilderOffsets,
+) -> [u32; 28] {
+    let backdrop = frame.backdrop_color_rgba;
+    let backdrop_c5 = [
+        u32::from(backdrop[0] >> 3),
+        u32::from(backdrop[1] >> 3),
+        u32::from(backdrop[2] >> 3),
+    ];
+    let backdrop_word = backdrop_c5[0] | (backdrop_c5[1] << 5) | (backdrop_c5[2] << 10) | (5 << 15);
+    let scroll_mask = (0..3usize).fold(0u32, |mask, layer| {
+        if modern_screen_builder_layer_needs_scroll(frame, layer) {
+            mask | (1u32 << layer)
+        } else {
+            mask
+        }
+    });
+    let layer_params = |layer: usize| -> [u32; 4] {
+        let Some(bg) = frame.bg_layers.get(layer) else {
+            return [0, 0, 256, 224];
+        };
+        [
+            u32::from(bg.scroll_x),
+            u32::from(bg.scroll_y),
+            u32::from(bg.wrap_w).max(256),
+            u32::from(bg.wrap_h).max(224),
+        ]
+    };
+    let p2 = layer_params(0);
+    let p3 = layer_params(1);
+    let p4 = layer_params(2);
+    [
+        u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
+            * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT),
+        bg_cells.len() as u32,
+        (bg_instance_words.len() / 8) as u32,
+        (sprite_instance_words.len() / 8) as u32,
+        backdrop_word,
+        u32::from(frame.screen_enabled_main),
+        u32::from(frame.screen_enabled_sub),
+        scroll_mask,
+        p2[0],
+        p2[1],
+        p2[2],
+        p2[3],
+        p3[0],
+        p3[1],
+        p3[2],
+        p3[3],
+        p4[0],
+        p4[1],
+        p4[2],
+        p4[3],
+        offsets.cells,
+        offsets.bg_instances,
+        offsets.sprite_instances,
+        offsets.cgram,
+        offsets.scroll,
+        offsets.main_tm,
+        0,
+        0,
+    ]
+}
+
+fn modern_screen_builder_layer_needs_scroll(frame: &ModernFrame, layer: usize) -> bool {
+    let Some(bg) = frame.bg_layers.get(layer) else {
+        return false;
+    };
+    let varies = frame
+        .bg_scroll_scanlines
+        .iter()
+        .any(|sl| sl[layer][0] != bg.scroll_x || sl[layer][1] != bg.scroll_y);
+    varies || bg.scroll_x != 0 || bg.scroll_y != 0
+}
+
+fn can_build_modern_screens_on_gpu(frame: &ModernFrame) -> bool {
+    if frame.forced_blank
+        || frame.windowsel != 0
+        || frame.screen_windowed_main != 0
+        || frame.screen_windowed_sub != 0
+        || (frame.mosaic_size > 1 && (frame.mosaic_enabled & 0x07) != 0)
+        || (frame.screen_enabled_main | frame.screen_enabled_sub) & 0x08 != 0
+        || frame.bg_layers.len() < 3
+    {
+        return false;
+    }
+    frame.bg_scroll_scanlines.is_empty()
+        || frame.bg_scroll_scanlines.len() >= usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT)
 }
 
 /// GPU finalizer compositor for the PNG index-atlas path. The Mode-1 priority
@@ -3340,12 +3777,14 @@ impl ModernGpuFinalizer {
 /// resolve runs as a compute pass into the caller's `Rgba8Unorm` texture.
 pub struct ModernGpuCompositor {
     finalizer: ModernGpuFinalizer,
+    screen_builder: ModernGpuScreenBuilder,
 }
 
 impl ModernGpuCompositor {
     pub fn new(device: &wgpu::Device, _queue: &wgpu::Queue, _format: wgpu::TextureFormat) -> Self {
         Self {
             finalizer: ModernGpuFinalizer::new(device),
+            screen_builder: ModernGpuScreenBuilder::new(device),
         }
     }
 
@@ -3359,11 +3798,34 @@ impl ModernGpuCompositor {
         bg_cells: &[ModernIndexTile],
         sprite_cells: &[ModernIndexTile],
         output_texture: &wgpu::Texture,
-    ) {
+    ) -> bool {
+        if can_build_modern_screens_on_gpu(frame) {
+            self.screen_builder.render_into(
+                device,
+                queue,
+                frame,
+                bg_cells,
+                sprite_cells,
+                &self.finalizer.main_buffer,
+                &self.finalizer.sub_buffer,
+            );
+            self.finalizer.render_current_buffers_to_texture(
+                device,
+                queue,
+                frame,
+                u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
+                    * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT),
+                u32::from(crate::modern_frame::MODERN_FRAME_WIDTH),
+                1,
+                output_texture,
+            );
+            return true;
+        }
         let screens =
             crate::modern_software::build_modern_composited_screens(frame, bg_cells, sprite_cells);
         self.finalizer
             .render_to_texture(device, queue, frame, &screens, output_texture);
+        false
     }
 }
 
@@ -3421,7 +3883,7 @@ impl ModernGpuHeadless {
         bg_cells: &[ModernIndexTile],
         sprite_cells: &[ModernIndexTile],
     ) -> Vec<u8> {
-        self.compositor.render(
+        let _ = self.compositor.render(
             &self.device,
             &self.queue,
             frame,
@@ -3703,8 +4165,7 @@ impl ModernGpuVariantHeadless {
                     &self.target_view,
                 );
             } else if prefinal_bg.is_empty() && prefinal_live_cgram_bg.is_empty() {
-                stats.cpu_prefinal_composite_frames += 1;
-                self.compositor.render(
+                let built_on_gpu = self.compositor.render(
                     &self.device,
                     &self.queue,
                     fallback_frame,
@@ -3712,6 +4173,11 @@ impl ModernGpuVariantHeadless {
                     fallback_sprite_cells,
                     &self.target,
                 );
+                if built_on_gpu {
+                    stats.direct_gpu_fallback_frames += 1;
+                } else {
+                    stats.cpu_prefinal_composite_frames += 1;
+                }
             } else {
                 stats.cpu_prefinal_composite_frames += 1;
                 let mut screens = crate::modern_software::build_modern_composited_screens(
@@ -5954,8 +6420,97 @@ mod tests {
         assert_eq!(stats.dynamic_material_draws, 0);
         assert_eq!(stats.missing_art_draws, 0);
         assert_eq!(stats.unkeyed_fallback_draws, 1);
-        assert_eq!(stats.direct_gpu_fallback_frames, 0);
-        assert_eq!(stats.cpu_prefinal_composite_frames, 1);
+        assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 0);
+    }
+
+    #[test]
+    fn modern_gpu_variant_headless_builds_prefinal_main_obj_sub_bg_on_gpu() {
+        use crate::modern_frame::{
+            ModernBgLayer, ModernIndexSpriteInstance, ModernIndexTileInstance,
+        };
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::ModernVariantAtlas;
+
+        let mut bg_indices = [0u8; 64];
+        bg_indices[0] = 1;
+        let bg_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: bg_indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+        let mut sprite_indices = [0u8; 64];
+        sprite_indices[0] = 1;
+        let sprite_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: sprite_indices,
+            source_key: NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.screen_enabled_main = 0x10;
+        frame.screen_enabled_sub = 0x01;
+        frame.math_enabled = 0x10;
+        frame.add_subscreen = true;
+        frame.cgram_rgba[1] = [0, 80, 0, 0xff];
+        frame.cgram_rgba[0x80 + 4 * 16 + 1] = [80, 0, 0, 0xff];
+
+        let mut sub_layer = ModernBgLayer::new(0);
+        sub_layer.enabled_sub = true;
+        sub_layer.scroll_x = 1;
+        sub_layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: NO_SOURCE_KEY,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = sub_layer;
+        frame.bg_scroll_scanlines =
+            vec![[[0u16; 2]; 4]; usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT)];
+        for row in &mut frame.bg_scroll_scanlines {
+            row[0] = [1, 0];
+        }
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 4,
+            priority: 3,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        });
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: Vec::new(),
+            effects: Vec::new(),
+        };
+        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
+            &frame,
+            &bg_cells,
+            &sprite_cells,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+        let cpu =
+            crate::modern_software::render_modern_frame_full(&frame, &bg_cells, &sprite_cells);
+
+        assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 0);
+        assert_eq!(variant, cpu);
     }
 
     #[test]
