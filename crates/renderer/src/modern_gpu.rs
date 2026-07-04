@@ -1058,6 +1058,22 @@ fn bg_packet_in_color_math_window(sx: u32, win: [u8; 4], windowsel_cm: u8) -> bo
     inside
 }
 
+fn frame_needs_material_prefinal_finalizer(frame: &ModernFrame) -> bool {
+    if frame.brightness != 15 || frame.clip_mode != 0 {
+        return true;
+    }
+    if frame.math_enabled == 0 {
+        return false;
+    }
+    frame.add_subscreen
+        || frame.half_color
+        || frame.fixed_color_r != 0
+        || frame.fixed_color_g != 0
+        || frame.fixed_color_b != 0
+        || frame.windowsel_cm != 0
+        || frame.prevent_math_mode != 3
+}
+
 fn bg_effect_matches_live_cgram(
     cell: &ModernIndexTile,
     palette: u8,
@@ -3595,15 +3611,25 @@ impl ModernGpuVariantHeadless {
                 );
             }
         } else if stats.effect_draws != 0 {
-            self.renderer.render_effect_material_mode1_order(
-                &self.device,
-                &self.queue,
-                frame,
-                bg_cells,
-                sprite_cells,
-                &plan,
-                &self.target_view,
-            );
+            if frame_needs_material_prefinal_finalizer(frame) {
+                self.render_effect_material_with_prefinal_fallback(
+                    frame,
+                    fallback_frame,
+                    fallback_bg_cells,
+                    fallback_sprite_cells,
+                    &plan,
+                );
+            } else {
+                self.renderer.render_effect_material_mode1_order(
+                    &self.device,
+                    &self.queue,
+                    frame,
+                    bg_cells,
+                    sprite_cells,
+                    &plan,
+                    &self.target_view,
+                );
+            }
             if stats.stable_draws != stats.effect_draws {
                 self.renderer.renderer.render_overlay(
                     &self.device,
@@ -3621,6 +3647,36 @@ impl ModernGpuVariantHeadless {
             );
         }
         (self.read_target_rgba(), stats)
+    }
+
+    fn render_effect_material_with_prefinal_fallback(
+        &self,
+        frame: &ModernFrame,
+        fallback_frame: &ModernFrame,
+        fallback_bg_cells: &[ModernIndexTile],
+        fallback_sprite_cells: &[ModernIndexTile],
+        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+    ) {
+        let overlay = mixed_variant_prefinal_bg_packets(frame, plan);
+        let mut screens = crate::modern_software::build_modern_composited_screens(
+            fallback_frame,
+            fallback_bg_cells,
+            fallback_sprite_cells,
+        );
+        overlay_mixed_variant_bg_packets_on_main_screen(
+            &mut screens,
+            frame,
+            &overlay.bg,
+            &overlay.live_cgram_bg,
+            &plan.sprites,
+        );
+        self.compositor.finalizer.render_to_texture(
+            &self.device,
+            &self.queue,
+            frame,
+            &screens,
+            &self.target,
+        );
     }
 
     fn read_target_rgba(&self) -> Vec<u8> {
@@ -4402,6 +4458,100 @@ mod tests {
         assert_eq!(stats.dynamic_material_draws, 1);
         assert_eq!(stats.fallback_draws, 0);
         assert_eq!(&variant[0..4], &[255, 255, 255, 0xff]);
+    }
+
+    #[test]
+    fn modern_gpu_variant_headless_finalizes_all_material_sprite_pixels_when_color_window_clips() {
+        use crate::modern_frame::ModernIndexSpriteInstance;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, TileEffect, VariantAtlasEntry, VariantAtlasKey,
+        };
+
+        let mut sprite_indices = [0u8; 64];
+        sprite_indices[0] = 1;
+        let sprite_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: sprite_indices,
+            source_key: modern_source_key(2, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.screen_enabled_main = 0x10;
+        frame.clip_mode = 3;
+        frame.cgram_rgba[0x80 + 16 + 1] = [40, 180, 40, 0xff];
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 1,
+            priority: 0,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        });
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![VariantAtlasEntry {
+                id: "sprite:kSprGfx:pack0:tile0:3bpp:palette_main_spr:row1".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "sprite".to_string(),
+                    asset: "kSprGfx".to_string(),
+                    pack: 0,
+                    tile: 0,
+                    bpp: 3,
+                    palette: "palette_main_spr".to_string(),
+                    palette_row: 1,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "test".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                runtime_material: Some("palette_lut".to_string()),
+                runtime_colors_per_row: None,
+                source_hflip: false,
+                source_vflip: false,
+            }],
+            effects: vec![TileEffect {
+                id: "palette_main_spr:8color:row1".to_string(),
+                palette: "palette_main_spr".to_string(),
+                palette_row: 1,
+                colors_per_row: 8,
+                index_to_rgba: vec![
+                    [0, 0, 0, 0xff],
+                    [200, 20, 20, 0xff],
+                    [2, 2, 2, 0xff],
+                    [3, 3, 3, 0xff],
+                    [4, 4, 4, 0xff],
+                    [5, 5, 5, 0xff],
+                    [6, 6, 6, 0xff],
+                    [7, 7, 7, 0xff],
+                ],
+                dynamic_policy: "stable".to_string(),
+            }],
+        };
+
+        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+            &frame,
+            &[],
+            &sprite_cells,
+            &frame,
+            &[],
+            &sprite_cells,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(stats.effect_draws, 1);
+        assert_eq!(stats.effect_material_draws, 1);
+        assert_eq!(stats.dynamic_material_draws, 1);
+        assert_eq!(stats.fallback_draws, 0);
+        assert_eq!(&variant[0..4], &[0, 0, 0, 0xff]);
     }
 
     #[test]

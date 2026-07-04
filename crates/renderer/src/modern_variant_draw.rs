@@ -106,6 +106,10 @@ pub struct VariantPixelTrace {
     pub palette_row: u8,
     pub palette_index: u8,
     pub output_rgba: Option<[u8; 4]>,
+    pub live_cgram_rgba: Option<[u8; 4]>,
+    pub main_screen_enabled: bool,
+    pub main_scanline_enabled: bool,
+    pub main_window_masked: bool,
     pub key: Option<VariantAtlasKey>,
     pub entry_id: Option<String>,
     pub effect_id: Option<String>,
@@ -114,6 +118,10 @@ pub struct VariantPixelTrace {
 impl VariantPixelTrace {
     pub fn describe(&self) -> String {
         let rgba = self.output_rgba.map_or_else(
+            || "none".to_string(),
+            |rgba| format!("{},{},{},{}", rgba[0], rgba[1], rgba[2], rgba[3]),
+        );
+        let live_rgba = self.live_cgram_rgba.map_or_else(
             || "none".to_string(),
             |rgba| format!("{},{},{},{}", rgba[0], rgba[1], rgba[2], rgba[3]),
         );
@@ -133,7 +141,7 @@ impl VariantPixelTrace {
             },
         );
         format!(
-            "surface={} packet={} layer={} material={} cell={} screen=({}, {}) local=({}, {}) source=({}, {}) palette_row={} index={} rgba={} key={} entry={} effect={}",
+            "surface={} packet={} layer={} material={} cell={} screen=({}, {}) local=({}, {}) source=({}, {}) palette_row={} index={} rgba={} live_cgram_rgba={} main_screen_enabled={} main_scanline_enabled={} main_window_masked={} key={} entry={} effect={}",
             self.surface.name(),
             self.packet_index,
             self.layer_index
@@ -150,6 +158,10 @@ impl VariantPixelTrace {
             self.palette_row,
             self.palette_index,
             rgba,
+            live_rgba,
+            self.main_screen_enabled,
+            self.main_scanline_enabled,
+            self.main_window_masked,
             key,
             self.entry_id.as_deref().unwrap_or("none"),
             self.effect_id.as_deref().unwrap_or("none"),
@@ -290,6 +302,12 @@ fn trace_bg_packet_pixel(
         local_y
     };
     let palette_index = packet.cell.indices[usize::from(source_y) * 8 + usize::from(source_x)];
+    let (main_screen_enabled, main_scanline_enabled, main_window_masked) = main_visibility_trace(
+        frame,
+        packet.layer_index as u8,
+        packet.inst.screen_x + local_x as i16,
+        packet.inst.screen_y + local_y as i16,
+    );
     let output_rgba = bg_output_rgba(frame, atlas, packet, source_x, source_y, palette_index);
     Some(VariantPixelTrace {
         surface: VariantDrawSurface::Bg,
@@ -306,6 +324,10 @@ fn trace_bg_packet_pixel(
         palette_row: packet.inst.palette,
         palette_index,
         output_rgba,
+        live_cgram_rgba: bg_live_cgram_rgba(frame, packet, palette_index),
+        main_screen_enabled,
+        main_scanline_enabled,
+        main_window_masked,
         key: packet.key.clone(),
         entry_id: entry.map(|entry| entry.id.clone()),
         effect_id: packet
@@ -337,6 +359,12 @@ fn trace_sprite_packet_pixel(
         local_y
     };
     let palette_index = packet.cell.indices[usize::from(source_y) * 8 + usize::from(source_x)];
+    let (main_screen_enabled, main_scanline_enabled, main_window_masked) = main_visibility_trace(
+        frame,
+        4,
+        packet.inst.screen_x + local_x as i16,
+        packet.inst.screen_y + local_y as i16,
+    );
     VariantPixelTrace {
         surface: VariantDrawSurface::Sprite,
         packet_index,
@@ -352,12 +380,68 @@ fn trace_sprite_packet_pixel(
         palette_row: packet.inst.palette,
         palette_index,
         output_rgba: sprite_output_rgba(frame, atlas, packet, source_x, source_y, palette_index),
+        live_cgram_rgba: sprite_live_cgram_rgba(frame, packet, palette_index),
+        main_screen_enabled,
+        main_scanline_enabled,
+        main_window_masked,
         key: packet.key.clone(),
         entry_id: entry.map(|entry| entry.id.clone()),
         effect_id: packet
             .draw
             .material_effect()
             .map(|(_, effect)| effect.id.clone()),
+    }
+}
+
+fn main_visibility_trace(frame: &ModernFrame, layer: u8, sx: i16, sy: i16) -> (bool, bool, bool) {
+    let layer_bit = 1u8 << layer;
+    let screen_enabled =
+        frame.screen_enabled_main == 0 || frame.screen_enabled_main & layer_bit != 0;
+    let scanline_enabled = if (0..224).contains(&sy) {
+        frame
+            .main_tm_scanlines
+            .get(sy as usize)
+            .is_none_or(|tm| tm & layer_bit != 0)
+    } else {
+        false
+    };
+    let window_masked = if (0..256).contains(&sx) && (0..224).contains(&sy) {
+        main_layer_window_masks_pixel(frame, layer, sx as u32, sy as usize)
+    } else {
+        false
+    };
+    (screen_enabled, scanline_enabled, window_masked)
+}
+
+fn main_layer_window_masks_pixel(frame: &ModernFrame, layer: u8, sx: u32, sy: usize) -> bool {
+    if frame.screen_windowed_main & (1u8 << layer) == 0 {
+        return false;
+    }
+    let window_flags = (frame.windowsel >> (u32::from(layer) * 4)) & 0x0f;
+    let w1_enabled = window_flags & 0x2 != 0;
+    let w2_enabled = window_flags & 0x8 != 0;
+    if !w1_enabled && !w2_enabled {
+        return false;
+    }
+    let [w1l, w1r, w2l, w2r] = frame
+        .window_scanlines
+        .get(sy)
+        .copied()
+        .unwrap_or([0u8; 4])
+        .map(u32::from);
+    let mut test1 = sx >= w1l && sx <= w1r;
+    let mut test2 = sx >= w2l && sx <= w2r;
+    if window_flags & 0x1 != 0 {
+        test1 = !test1;
+    }
+    if window_flags & 0x4 != 0 {
+        test2 = !test2;
+    }
+    match (w1_enabled, w2_enabled) {
+        (true, false) => test1,
+        (false, true) => test2,
+        (true, true) => test1 || test2,
+        (false, false) => false,
     }
 }
 
@@ -396,6 +480,20 @@ fn bg_output_rgba(
     }
 }
 
+fn bg_live_cgram_rgba(
+    frame: &ModernFrame,
+    packet: &VariantBgDrawPacket<'_>,
+    palette_index: u8,
+) -> Option<[u8; 4]> {
+    if palette_index == 0 {
+        return None;
+    }
+    frame
+        .cgram_rgba
+        .get(usize::from(packet.inst.palette) * 16 + usize::from(palette_index))
+        .copied()
+}
+
 fn sprite_output_rgba(
     frame: &ModernFrame,
     atlas: &ModernVariantAtlas,
@@ -429,6 +527,20 @@ fn sprite_output_rgba(
             }
         }
     }
+}
+
+fn sprite_live_cgram_rgba(
+    frame: &ModernFrame,
+    packet: &VariantSpriteDrawPacket<'_>,
+    palette_index: u8,
+) -> Option<[u8; 4]> {
+    if palette_index == 0 {
+        return None;
+    }
+    frame
+        .cgram_rgba
+        .get(0x80 + usize::from(packet.inst.palette) * 16 + usize::from(palette_index))
+        .copied()
 }
 
 fn atlas_entry_rgba(
