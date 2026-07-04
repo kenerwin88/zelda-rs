@@ -25,57 +25,77 @@ SUMMARY_RE = re.compile(
     r"play-gpu-render-compare completed compared=(\d+) start_frame=(\d+) "
     r"last_frame=(\d+) last_hash=(0x[0-9a-fA-F]{8}) mismatched_pixels=(\d+)"
 )
-MODERN_INDEX_SUMMARY_RE = re.compile(
-    r"modern_index_compare_summary compare_count=(\d+) bad_count=(\d+) bad_pixels=(\d+) "
-    r"gpu_count=(\d+) mode7_gpu_count=(\d+) cpu_count=(\d+) "
-    r"variant_draws=(\d+) fallback_draws=(\d+) dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
-    r"(?: stable_preview_draws=(\d+) stable_effect_draws=(\d+) dynamic_material_draws=(\d+) "
-    r"(?:(?:effect_material_draws=\d+ dynamic_material_fallback_draws=\d+"
-    r"(?: dynamic_material_fallback_instance_source_draws=\d+"
-    r" dynamic_material_fallback_brightness_draws=\d+"
-    r" dynamic_material_fallback_policy_draws=\d+"
-    r" dynamic_material_fallback_missing_effect_draws=\d+"
-    r" dynamic_material_fallback_unsupported_draws=\d+)?"
-    r") )?"
-    r"(?:unsupported_material_draws=\d+ )?"
-    r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+)"
-    r"(?: unkeyed_bg_fallback_draws=\d+ unkeyed_sprite_fallback_draws=\d+)?"
-    r"(?: mixed_overlay_bg_effect_draws=(\d+)"
-    r"(?: mixed_overlay_bg_effect_candidates=(\d+) "
-    r"(?:mixed_overlay_bg_effect_culled_invisible_main=\d+ )?"
-    r"mixed_overlay_bg_effect_reject_complex_frame=(\d+) "
-    r"(?:mixed_overlay_bg_effect_reject_complex_brightness=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_invalid_layer=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_mosaic=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_sub_window=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_effect_bounds=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_scanline_main=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_layer_window=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_color_math=(\d+) "
-    r"(?:mixed_overlay_bg_effect_reject_complex_color_math_clip=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_color_math_subscreen=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_color_math_fixed_color=(\d+) "
-    r"(?:mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=(\d+) "
-    r"(?:mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj=(\d+) "
-    r"(?:mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order=(\d+) "
-    r"(?:mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex=(\d+) "
-    r"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch=(\d+) )?)?)?)?)?)?"
-    r"mixed_overlay_bg_effect_reject_cgram_mismatch=(\d+) "
-    r"mixed_overlay_bg_effect_reject_overlap=(\d+))?)?)?"
-)
+MODERN_INDEX_SUMMARY_LINE_RE = re.compile(r"^modern_index_compare_summary\b.*$", re.MULTILINE)
 MODERN_INDEX_PROGRESS_RE = re.compile(
     r"modern_index_compare_progress compare_count=(\d+) frame=(\d+) bad_count=(\d+)"
 )
 
+VARIANT_STAT_NAMES = (
+    "variant_draws",
+    "fallback_draws",
+    "dynamic_palette_draws",
+    "missing_variant_draws",
+    "stable_preview_draws",
+    "stable_effect_draws",
+    "dynamic_material_draws",
+    "missing_art_draws",
+    "unkeyed_fallback_draws",
+    "mixed_overlay_bg_effect_draws",
+    "mixed_overlay_bg_effect_candidates",
+    "mixed_overlay_bg_effect_reject_complex_frame",
+    "mixed_overlay_bg_effect_reject_complex_brightness",
+    "mixed_overlay_bg_effect_reject_complex_invalid_layer",
+    "mixed_overlay_bg_effect_reject_complex_mosaic",
+    "mixed_overlay_bg_effect_reject_complex_sub_window",
+    "mixed_overlay_bg_effect_reject_complex_effect_bounds",
+    "mixed_overlay_bg_effect_reject_complex_scanline_main",
+    "mixed_overlay_bg_effect_reject_complex_layer_window",
+    "mixed_overlay_bg_effect_reject_complex_color_math",
+    "mixed_overlay_bg_effect_reject_complex_color_math_clip",
+    "mixed_overlay_bg_effect_reject_complex_color_math_subscreen",
+    "mixed_overlay_bg_effect_reject_complex_color_math_fixed_color",
+    "mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch",
+    "mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap",
+    "mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg",
+    "mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj",
+    "mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain",
+    "mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front",
+    "mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order",
+    "mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect",
+    "mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex",
+    "mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch",
+    "mixed_overlay_bg_effect_reject_cgram_mismatch",
+    "mixed_overlay_bg_effect_reject_overlap",
+    "mixed_overlay_bg_effect_culled_invisible_main",
+    "unkeyed_bg_fallback_draws",
+    "unkeyed_sprite_fallback_draws",
+    "unsupported_material_draws",
+    "effect_material_draws",
+    "dynamic_material_fallback_draws",
+    "dynamic_material_fallback_instance_source_draws",
+    "dynamic_material_fallback_brightness_draws",
+    "dynamic_material_fallback_policy_draws",
+    "dynamic_material_fallback_missing_effect_draws",
+    "dynamic_material_fallback_unsupported_draws",
+)
 
-def int_stat(text: str, name: str) -> int:
-    match = re.search(rf"\b{re.escape(name)}=(\d+)", text)
-    return int(match.group(1)) if match else 0
+
+def parse_key_value_stats(line: str) -> dict[str, int]:
+    stats: dict[str, int] = {}
+    for token in line.split():
+        if "=" not in token:
+            continue
+        key, value = token.split("=", 1)
+        if value.isdigit():
+            stats[key] = int(value)
+    return stats
+
+
+def modern_index_summary_stats(output: str) -> dict[str, int] | None:
+    match = MODERN_INDEX_SUMMARY_LINE_RE.search(output)
+    if match is None:
+        return None
+    return parse_key_value_stats(match.group(0))
 
 
 @dataclass(frozen=True)
@@ -312,6 +332,7 @@ def command_for(
     )
     if renderer == "assets-variant-gpu":
         command.extend(["--modern-index-compare", str(stride)])
+        command.extend(["--require-full-gpu-path", "--require-modern-index-parity"])
     if window.input_script:
         command.extend(["--input-script", window.input_script])
         sidecar = sram_sidecar(window)
@@ -385,7 +406,7 @@ def run_window(
     progress_every: int,
     checkpoint: OracleCheckpoint | None,
     tail_frames: int | None = None,
-) -> tuple[int, str, int, tuple[int, int, int, int]]:
+) -> tuple[int, str, int, tuple[int, ...]]:
     run_frames = window.frames
     load_state = None
     if checkpoint is not None:
@@ -443,63 +464,28 @@ def run_window(
     if mismatched_pixels != 0:
         raise SystemExit(f"{window.name}: reported {mismatched_pixels} mismatched pixels")
     variant_stats = (0,) * 46
-    modern_match = MODERN_INDEX_SUMMARY_RE.search(result.stdout)
+    modern_stats = modern_index_summary_stats(result.stdout)
     if renderer == "assets-variant-gpu":
-        if not modern_match:
+        if modern_stats is None:
             if result.stdout:
                 print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
             raise SystemExit(f"{window.name}: missing modern-index compare summary")
-        modern_bad_pixels = int(modern_match.group(3))
-        if modern_bad_pixels != 0:
+        modern_bad_count = modern_stats.get("bad_count", 0)
+        modern_bad_pixels = modern_stats.get("bad_pixels", 0)
+        if modern_bad_count != 0 or modern_bad_pixels != 0:
             raise SystemExit(f"{window.name}: reported {modern_bad_pixels} modern-index bad pixels")
-        variant_stats = (
-            int(modern_match.group(7)),
-            int(modern_match.group(8)),
-            int(modern_match.group(9)),
-            int(modern_match.group(10)),
-            int(modern_match.group(11) or 0),
-            int(modern_match.group(12) or 0),
-            int(modern_match.group(13) or 0),
-            int(modern_match.group(14) or 0),
-            int(modern_match.group(15) or 0),
-            int(modern_match.group(16) or 0),
-            int(modern_match.group(17) or 0),
-            int(modern_match.group(18) or 0),
-            int(modern_match.group(19) or 0),
-            int(modern_match.group(20) or 0),
-            int(modern_match.group(21) or 0),
-            int(modern_match.group(22) or 0),
-            int(modern_match.group(23) or 0),
-            int(modern_match.group(24) or 0),
-            int(modern_match.group(25) or 0),
-            int(modern_match.group(26) or 0),
-            int(modern_match.group(27) or 0),
-            int(modern_match.group(28) or 0),
-            int(modern_match.group(29) or 0),
-            int(modern_match.group(30) or 0),
-            int(modern_match.group(31) or 0),
-            int(modern_match.group(32) or 0),
-            int(modern_match.group(33) or 0),
-            int(modern_match.group(34) or 0),
-            int(modern_match.group(35) or 0),
-            int(modern_match.group(36) or 0),
-            int(modern_match.group(37) or 0),
-            int(modern_match.group(38) or 0),
-            int(modern_match.group(39) or 0),
-            int(modern_match.group(40) or 0),
-            int(modern_match.group(41) or 0),
-            int_stat(modern_match.group(0), "mixed_overlay_bg_effect_culled_invisible_main"),
-            int_stat(modern_match.group(0), "unkeyed_bg_fallback_draws"),
-            int_stat(modern_match.group(0), "unkeyed_sprite_fallback_draws"),
-            int_stat(modern_match.group(0), "unsupported_material_draws"),
-            int_stat(modern_match.group(0), "effect_material_draws"),
-            int_stat(modern_match.group(0), "dynamic_material_fallback_draws"),
-            int_stat(modern_match.group(0), "dynamic_material_fallback_instance_source_draws"),
-            int_stat(modern_match.group(0), "dynamic_material_fallback_brightness_draws"),
-            int_stat(modern_match.group(0), "dynamic_material_fallback_policy_draws"),
-            int_stat(modern_match.group(0), "dynamic_material_fallback_missing_effect_draws"),
-            int_stat(modern_match.group(0), "dynamic_material_fallback_unsupported_draws"),
-        )
+        if modern_stats.get("cpu_count", 0) != 0:
+            raise SystemExit(
+                f"{window.name}: reported {modern_stats['cpu_count']} modern-index CPU frames"
+            )
+        cpu_prefinal_composite_frames = modern_stats.get("cpu_prefinal_composite_frames", 0)
+        cpu_prefinal_overlay_frames = modern_stats.get("cpu_prefinal_overlay_frames", 0)
+        if cpu_prefinal_composite_frames != 0 or cpu_prefinal_overlay_frames != 0:
+            raise SystemExit(
+                f"{window.name}: reported CPU prefinal frames "
+                f"composite={cpu_prefinal_composite_frames} overlay={cpu_prefinal_overlay_frames}"
+            )
+        variant_stats = tuple(modern_stats.get(name, 0) for name in VARIANT_STAT_NAMES)
     print(
         f"{window.name}: compared={compared} frames={window.frames} "
         f"start_frame={start_frame} "

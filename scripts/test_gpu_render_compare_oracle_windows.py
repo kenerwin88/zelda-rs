@@ -14,7 +14,6 @@ from io import StringIO
 
 from gpu_render_compare_oracle_windows import (
     MODERN_INDEX_PROGRESS_RE,
-    MODERN_INDEX_SUMMARY_RE,
     OracleCheckpoint,
     RunItem,
     OracleWindow,
@@ -24,7 +23,8 @@ from gpu_render_compare_oracle_windows import (
     env_for_renderer,
     ensure_no_unsupported_material_draws,
     ensure_required_stable_draws,
-    int_stat,
+    modern_index_summary_stats,
+    parse_key_value_stats,
     run_items_for_windows,
     run_command_capture_output,
     selected_windows,
@@ -97,7 +97,18 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         self.assertEqual(env["ZELDA3_MODERN_INDEX_COMPARE_SUMMARY"], "1")
         self.assertNotIn("ZELDA3_MODERN_INDEX_COMPARE_PROGRESS", env)
 
-    def test_modern_index_summary_regex_accepts_modern_draw_mix(self) -> None:
+    def test_parse_key_value_stats_ignores_labels_and_non_numeric_values(self) -> None:
+        stats = parse_key_value_stats(
+            "modern_index_compare_summary compare_count=7 via=variant-gpu "
+            "bad_pixels=0 first_mismatch=(1,"
+        )
+
+        self.assertEqual(stats["compare_count"], 7)
+        self.assertEqual(stats["bad_pixels"], 0)
+        self.assertNotIn("via", stats)
+        self.assertNotIn("first_mismatch", stats)
+
+    def test_modern_index_summary_parser_accepts_modern_draw_mix(self) -> None:
         line = (
             "modern_index_compare_summary compare_count=7 bad_count=0 bad_pixels=0 "
             "gpu_count=5 mode7_gpu_count=1 cpu_count=1 variant_draws=11 "
@@ -141,76 +152,42 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
             "mixed_overlay_bg_effect_reject_overlap=83"
         )
 
-        match = MODERN_INDEX_SUMMARY_RE.search(line)
+        stats = modern_index_summary_stats(line)
 
-        self.assertIsNotNone(match)
-        self.assertEqual(match.group(7), "11")
-        self.assertEqual(match.group(11), "2")
-        self.assertEqual(match.group(15), "11")
-        self.assertEqual(match.group(16), "13")
-        self.assertEqual(match.group(17), "17")
-        self.assertEqual(match.group(18), "19")
-        self.assertEqual(match.group(19), "23")
-        self.assertEqual(match.group(20), "29")
-        self.assertEqual(match.group(21), "31")
-        self.assertEqual(match.group(26), "53")
-        self.assertEqual(match.group(27), "57")
-        self.assertEqual(match.group(28), "58")
-        self.assertEqual(match.group(29), "59")
-        self.assertEqual(match.group(30), "61")
-        self.assertEqual(match.group(31), "67")
-        self.assertEqual(match.group(32), "71")
-        self.assertEqual(match.group(33), "73")
-        self.assertEqual(match.group(34), "74")
-        self.assertEqual(match.group(35), "75")
-        self.assertEqual(match.group(36), "76")
-        self.assertEqual(match.group(37), "77")
-        self.assertEqual(match.group(38), "78")
-        self.assertEqual(match.group(39), "80")
-        self.assertEqual(match.group(40), "79")
-        self.assertEqual(match.group(41), "83")
-        self.assertEqual(int_stat(match.group(0), "unsupported_material_draws"), 6)
-        self.assertEqual(int_stat(match.group(0), "effect_material_draws"), 4)
-        self.assertEqual(int_stat(match.group(0), "dynamic_material_fallback_draws"), 1)
+        self.assertIsNotNone(stats)
+        assert stats is not None
+        self.assertEqual(stats["variant_draws"], 11)
+        self.assertEqual(stats["stable_preview_draws"], 2)
+        self.assertEqual(stats["dynamic_material_fallback_unsupported_draws"], 11)
+        self.assertEqual(stats["unsupported_material_draws"], 6)
+        self.assertEqual(stats["effect_material_draws"], 4)
+        self.assertEqual(stats["unkeyed_bg_fallback_draws"], 4)
+        self.assertEqual(stats["unkeyed_sprite_fallback_draws"], 7)
+        self.assertEqual(stats["mixed_overlay_bg_effect_draws"], 13)
+        self.assertEqual(stats["mixed_overlay_bg_effect_candidates"], 17)
+        self.assertEqual(stats["mixed_overlay_bg_effect_culled_invisible_main"], 18)
+        self.assertEqual(stats["mixed_overlay_bg_effect_reject_complex_color_math"], 53)
         self.assertEqual(
-            int_stat(match.group(0), "dynamic_material_fallback_instance_source_draws"),
-            2,
+            stats[
+                "mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch"
+            ],
+            80,
         )
-        self.assertEqual(
-            int_stat(match.group(0), "dynamic_material_fallback_brightness_draws"),
-            3,
-        )
-        self.assertEqual(
-            int_stat(match.group(0), "dynamic_material_fallback_policy_draws"),
-            5,
-        )
-        self.assertEqual(
-            int_stat(match.group(0), "dynamic_material_fallback_missing_effect_draws"),
-            7,
-        )
-        self.assertEqual(
-            int_stat(match.group(0), "dynamic_material_fallback_unsupported_draws"),
-            11,
-        )
-        self.assertEqual(int_stat(match.group(0), "unkeyed_bg_fallback_draws"), 4)
-        self.assertEqual(int_stat(match.group(0), "unkeyed_sprite_fallback_draws"), 7)
-        self.assertEqual(
-            int_stat(match.group(0), "mixed_overlay_bg_effect_culled_invisible_main"),
-            18,
-        )
+        self.assertEqual(stats["mixed_overlay_bg_effect_reject_overlap"], 83)
 
-    def test_modern_index_summary_regex_accepts_legacy_draw_mix(self) -> None:
+    def test_modern_index_summary_parser_accepts_legacy_draw_mix(self) -> None:
         line = (
             "modern_index_compare_summary compare_count=7 bad_count=0 bad_pixels=0 "
             "gpu_count=5 mode7_gpu_count=1 cpu_count=1 variant_draws=11 "
             "fallback_draws=13 dynamic_palette_draws=17 missing_variant_draws=19"
         )
 
-        match = MODERN_INDEX_SUMMARY_RE.search(line)
+        stats = modern_index_summary_stats(line)
 
-        self.assertIsNotNone(match)
-        self.assertEqual(match.group(7), "11")
-        self.assertIsNone(match.group(11))
+        self.assertIsNotNone(stats)
+        assert stats is not None
+        self.assertEqual(stats["variant_draws"], 11)
+        self.assertNotIn("stable_preview_draws", stats)
 
     def test_no_input_windows_are_not_treated_as_sram_windows(self) -> None:
         windows = [
@@ -301,6 +278,8 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         )
         self.assertEqual(command[8:10], ["/rom.sfc", "5000"])
         self.assertIn("--modern-index-compare", command)
+        self.assertIn("--require-full-gpu-path", command)
+        self.assertIn("--require-modern-index-parity", command)
         self.assertIn("--load-state", command)
         self.assertEqual(
             command[command.index("--load-state") + 1],
