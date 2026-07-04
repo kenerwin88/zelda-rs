@@ -613,31 +613,36 @@ impl ModernGpuVariantRenderer {
     ) -> crate::modern_software::VariantAtlasRenderStats {
         let mut execution =
             PreparedModernVariantExecution::new(prepared, PreparedModernVariantOutput::Live);
+        self.render_live_execution(device, queue, output_view, &mut execution);
+        execution.finish()
+    }
+
+    fn render_live_execution(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        output_view: &wgpu::TextureView,
+        execution: &mut PreparedModernVariantExecution<'_, '_>,
+    ) {
         match execution.render_path() {
             ModernVariantRenderPath::EffectMaterialMode1Order => {
-                self.render_effect_material_mode1_order(device, queue, &execution, output_view);
+                self.render_effect_material_mode1_order(device, queue, execution, output_view);
             }
             ModernVariantRenderPath::LiveIndexBaseWithOverlay => {
-                self.render_live_index_base_with_overlay(
-                    device,
-                    queue,
-                    output_view,
-                    &mut execution,
-                );
+                self.render_live_index_base_with_overlay(device, queue, output_view, execution);
             }
             ModernVariantRenderPath::EffectMaterialWithStableOverlay => {
                 self.render_effect_material_with_stable_overlay(
                     device,
                     queue,
-                    &execution,
+                    execution,
                     output_view,
                 );
             }
             ModernVariantRenderPath::StableVariantFrame => {
-                self.render_stable_variant_frame(device, queue, &execution, output_view);
+                self.render_stable_variant_frame(device, queue, execution, output_view);
             }
         }
-        execution.finish()
     }
 
     fn prepare_variant_render<'a>(
@@ -5339,21 +5344,29 @@ impl ModernGpuVariantHeadless {
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
         let mut execution =
             PreparedModernVariantExecution::new(prepared, PreparedModernVariantOutput::Headless);
+        self.render_headless_execution(live_index_base, &mut execution);
+        (self.read_target_rgba(), execution.finish())
+    }
+
+    fn render_headless_execution(
+        &self,
+        live_index_base: &LiveIndexVariantBase<'_>,
+        execution: &mut PreparedModernVariantExecution<'_, '_>,
+    ) {
         match execution.render_path() {
             ModernVariantRenderPath::EffectMaterialMode1Order => {
-                self.render_effect_material_mode1_order(&execution);
+                self.render_effect_material_mode1_order(execution);
             }
             ModernVariantRenderPath::LiveIndexBaseWithOverlay => {
-                self.render_live_index_with_overlay(live_index_base, &mut execution);
+                self.render_live_index_with_overlay(live_index_base, execution);
             }
             ModernVariantRenderPath::EffectMaterialWithStableOverlay => {
-                self.render_effect_material_with_stable_overlay(live_index_base, &mut execution);
+                self.render_effect_material_with_stable_overlay(live_index_base, execution);
             }
             ModernVariantRenderPath::StableVariantFrame => {
-                self.render_stable_variant_frame(&execution);
+                self.render_stable_variant_frame(execution);
             }
         }
-        (self.read_target_rgba(), execution.finish())
     }
 
     fn render_effect_material_mode1_order(
