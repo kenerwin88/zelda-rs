@@ -3827,6 +3827,48 @@ impl ModernGpuCompositor {
             .render_to_texture(device, queue, frame, &screens, output_texture);
         false
     }
+
+    fn render_prefinal_screens_with_final_frame(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        screen_frame: &ModernFrame,
+        final_frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        output_texture: &wgpu::Texture,
+    ) -> bool {
+        if can_build_modern_screens_on_gpu(screen_frame) {
+            self.screen_builder.render_into(
+                device,
+                queue,
+                screen_frame,
+                bg_cells,
+                sprite_cells,
+                &self.finalizer.main_buffer,
+                &self.finalizer.sub_buffer,
+            );
+            self.finalizer.render_current_buffers_to_texture(
+                device,
+                queue,
+                final_frame,
+                u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
+                    * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT),
+                u32::from(crate::modern_frame::MODERN_FRAME_WIDTH),
+                1,
+                output_texture,
+            );
+            return true;
+        }
+        let screens = crate::modern_software::build_modern_composited_screens(
+            screen_frame,
+            bg_cells,
+            sprite_cells,
+        );
+        self.finalizer
+            .render_to_texture(device, queue, final_frame, &screens, output_texture);
+        false
+    }
 }
 
 /// Owns a headless wgpu device + a 256x224 offscreen `Rgba8Unorm` target + the
@@ -4224,14 +4266,18 @@ impl ModernGpuVariantHeadless {
             }
         } else if stats.effect_draws != 0 {
             if frame_needs_material_prefinal_finalizer(frame) {
-                stats.cpu_prefinal_composite_frames += 1;
-                self.render_effect_material_with_prefinal_fallback(
+                let built_on_gpu = self.render_effect_material_with_prefinal_fallback(
                     frame,
                     fallback_frame,
                     fallback_bg_cells,
                     fallback_sprite_cells,
                     &plan,
                 );
+                if built_on_gpu {
+                    stats.direct_gpu_fallback_frames += 1;
+                } else {
+                    stats.cpu_prefinal_composite_frames += 1;
+                }
             } else {
                 self.renderer.render_effect_material_mode1_order(
                     &self.device,
@@ -4269,8 +4315,19 @@ impl ModernGpuVariantHeadless {
         fallback_bg_cells: &[ModernIndexTile],
         fallback_sprite_cells: &[ModernIndexTile],
         plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
-    ) {
+    ) -> bool {
         let overlay = mixed_variant_prefinal_bg_packets(frame, plan);
+        if overlay.bg.is_empty() && overlay.live_cgram_bg.is_empty() {
+            return self.compositor.render_prefinal_screens_with_final_frame(
+                &self.device,
+                &self.queue,
+                fallback_frame,
+                frame,
+                fallback_bg_cells,
+                fallback_sprite_cells,
+                &self.target,
+            );
+        }
         let mut screens = crate::modern_software::build_modern_composited_screens(
             fallback_frame,
             fallback_bg_cells,
@@ -4290,6 +4347,7 @@ impl ModernGpuVariantHeadless {
             &screens,
             &self.target,
         );
+        false
     }
 
     fn read_target_rgba(&self) -> Vec<u8> {
@@ -5164,8 +5222,8 @@ mod tests {
         assert_eq!(stats.effect_material_draws, 1);
         assert_eq!(stats.dynamic_material_draws, 1);
         assert_eq!(stats.fallback_draws, 0);
-        assert_eq!(stats.direct_gpu_fallback_frames, 0);
-        assert_eq!(stats.cpu_prefinal_composite_frames, 1);
+        assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(&variant[0..4], &[0, 0, 0, 0xff]);
     }
 
