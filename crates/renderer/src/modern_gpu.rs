@@ -2084,10 +2084,13 @@ impl ModernGpuVariantEffectRenderer {
             let Some(material_packet) = static_bg_effect_material_packet(atlas, packet) else {
                 continue;
             };
-            debug_assert_eq!(material_packet.material, EffectMaterial::StaticEffect);
-            debug_assert_eq!(material_packet.surface, EffectSurface::Bg);
-            append_effect_instance_words(&mut instance_bytes, material_packet.instance);
-            instance_count += 1;
+            append_effect_material_packet_instance(
+                &mut instance_bytes,
+                &mut instance_count,
+                material_packet,
+                EffectSurface::Bg,
+                Some(EffectMaterial::StaticEffect),
+            );
         }
         debug_assert_eq!(
             instance_bytes.len() as u64,
@@ -2131,10 +2134,13 @@ impl ModernGpuVariantEffectRenderer {
             let Some(material_packet) = live_cgram_bg_effect_material_packet(packet) else {
                 continue;
             };
-            debug_assert_eq!(material_packet.material, EffectMaterial::LiveCgram);
-            debug_assert_eq!(material_packet.surface, EffectSurface::Bg);
-            append_effect_instance_words(&mut instance_bytes, material_packet.instance);
-            instance_count += 1;
+            append_effect_material_packet_instance(
+                &mut instance_bytes,
+                &mut instance_count,
+                material_packet,
+                EffectSurface::Bg,
+                Some(EffectMaterial::LiveCgram),
+            );
         }
         debug_assert_eq!(
             instance_bytes.len() as u64,
@@ -2267,9 +2273,13 @@ impl ModernGpuVariantEffectRenderer {
                 batch_count = 0;
             }
             batch_material = Some(material_packet.material);
-            debug_assert_eq!(material_packet.surface, EffectSurface::Sprite);
-            append_effect_instance_words(&mut batch_bytes, material_packet.instance);
-            batch_count += 1;
+            append_effect_material_packet_instance(
+                &mut batch_bytes,
+                &mut batch_count,
+                material_packet,
+                EffectSurface::Sprite,
+                Some(material_packet.material),
+            );
         }
         if let Some(material) = batch_material {
             self.render_sprite_effect_batch(
@@ -2389,6 +2399,21 @@ fn live_cgram_bg_effect_material_packet<'packet, 'frame>(
             effect_row,
         },
     })
+}
+
+fn append_effect_material_packet_instance(
+    out: &mut Vec<u8>,
+    count: &mut u32,
+    material_packet: EffectMaterialPacket,
+    expected_surface: EffectSurface,
+    expected_material: Option<EffectMaterial>,
+) {
+    debug_assert_eq!(material_packet.surface, expected_surface);
+    if let Some(expected_material) = expected_material {
+        debug_assert_eq!(material_packet.material, expected_material);
+    }
+    append_effect_instance_words(out, material_packet.instance);
+    *count += 1;
 }
 
 fn append_effect_instance_words(out: &mut Vec<u8>, packet: EffectInstancePacket) {
@@ -5855,6 +5880,42 @@ mod tests {
             },
         );
 
+        assert_eq!(words.len() as u64, INDEX_INSTANCE_STRIDE);
+        let encoded: Vec<u32> = words
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
+        assert_eq!(encoded, vec![16, 0, 12, 20, 0x7f00 | 0b011, 9]);
+    }
+
+    #[test]
+    fn effect_material_packet_appends_instance_and_count() {
+        let mut words = Vec::new();
+        let mut count = 0;
+        append_effect_material_packet_instance(
+            &mut words,
+            &mut count,
+            EffectMaterialPacket {
+                surface: EffectSurface::Sprite,
+                material: EffectMaterial::LiveCgram,
+                effect_row: 9,
+                instance: EffectInstancePacket {
+                    cell_id: 2,
+                    screen_x: 12,
+                    screen_y: 20,
+                    row_mask: 0x7f,
+                    hflip: true,
+                    vflip: false,
+                    source_hflip: false,
+                    source_vflip: true,
+                    effect_row: 9,
+                },
+            },
+            EffectSurface::Sprite,
+            Some(EffectMaterial::LiveCgram),
+        );
+
+        assert_eq!(count, 1);
         assert_eq!(words.len() as u64, INDEX_INSTANCE_STRIDE);
         let encoded: Vec<u32> = words
             .chunks_exact(4)
