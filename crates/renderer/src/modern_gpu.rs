@@ -1074,6 +1074,130 @@ fn frame_needs_material_prefinal_finalizer(frame: &ModernFrame) -> bool {
         || frame.prevent_math_mode != 3
 }
 
+fn frame_uses_direct_final_index_math(frame: &ModernFrame) -> bool {
+    frame.screen_enabled_sub == 0
+        && frame.math_enabled == 0
+        && !frame.subtract_color
+        && !frame.half_color
+        && frame.fixed_color_r == 0
+        && frame.fixed_color_g == 0
+        && frame.fixed_color_b == 0
+        && !frame.add_subscreen
+        && frame.clip_mode == 0
+        && frame.prevent_math_mode == 0
+        && frame.windowsel_cm == 0
+}
+
+fn can_render_fallback_with_final_index_gpu(
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+) -> bool {
+    if frame.forced_blank
+        || !frame_uses_direct_final_index_math(frame)
+        || frame.windowsel != 0
+        || frame.screen_windowed_main != 0
+        || frame.screen_windowed_sub != 0
+        || frame.mosaic_enabled != 0
+        || frame.mosaic_size > 1
+        || !frame.bg_scroll_scanlines.is_empty()
+        || !frame.index_sprites.is_empty()
+    {
+        return false;
+    }
+
+    let enabled_layers = frame
+        .bg_layers
+        .iter()
+        .filter(|layer| layer.enabled_main)
+        .collect::<Vec<_>>();
+    if enabled_layers.is_empty() {
+        return false;
+    }
+    let enabled_mask = enabled_layers
+        .iter()
+        .fold(0u8, |mask, layer| mask | (1u8 << layer.index));
+    if frame.screen_enabled_main != enabled_mask {
+        return false;
+    }
+    if frame
+        .main_tm_scanlines
+        .iter()
+        .any(|tm| (tm & enabled_mask) != enabled_mask)
+    {
+        return false;
+    }
+
+    enabled_layers
+        .iter()
+        .all(|layer| layer.scroll_x == 0 && layer.scroll_y == 0)
+        && bg_layers_have_no_opaque_overlap(&enabled_layers, bg_cells)
+}
+
+fn can_render_forced_blank_fallback_directly(
+    frame: &ModernFrame,
+    overlay: &MixedVariantOverlayBgSelection<'_>,
+) -> bool {
+    frame.forced_blank && overlay.bg.is_empty() && overlay.live_cgram_bg.is_empty()
+}
+
+fn bg_layers_have_no_opaque_overlap(
+    layers: &[&crate::modern_frame::ModernBgLayer],
+    bg_cells: &[ModernIndexTile],
+) -> bool {
+    let mut occupied = vec![
+        false;
+        usize::from(crate::modern_frame::MODERN_FRAME_WIDTH)
+            * usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT)
+    ];
+    let width = usize::from(crate::modern_frame::MODERN_FRAME_WIDTH);
+    for layer in layers {
+        for inst in &layer.index_tiles {
+            let Some(cell) = bg_cells.get(inst.cell_id as usize) else {
+                continue;
+            };
+            for y in 0..8usize {
+                for x in 0..8usize {
+                    if cell.indices[y * 8 + x] == 0 {
+                        continue;
+                    }
+                    let dst_x = inst.screen_x + x as i16;
+                    let dst_y = inst.screen_y + y as i16;
+                    if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                        continue;
+                    }
+                    let offset = dst_y as usize * width + dst_x as usize;
+                    if occupied[offset] {
+                        return false;
+                    }
+                    occupied[offset] = true;
+                }
+            }
+        }
+    }
+    true
+}
+
+fn finalize_snes_5bit_channel(channel: u8, brightness: u8) -> u8 {
+    let c5 = channel >> 3;
+    let expanded = (c5 << 3) | (c5 >> 2);
+    ((u32::from(expanded) * u32::from(brightness)) / 15) as u8
+}
+
+fn finalize_modern_frame_colors_for_direct_index(frame: &mut ModernFrame) {
+    for color in &mut frame.cgram_rgba {
+        color[0] = finalize_snes_5bit_channel(color[0], frame.brightness);
+        color[1] = finalize_snes_5bit_channel(color[1], frame.brightness);
+        color[2] = finalize_snes_5bit_channel(color[2], frame.brightness);
+    }
+    frame.backdrop_color_rgba[0] =
+        finalize_snes_5bit_channel(frame.backdrop_color_rgba[0], frame.brightness);
+    frame.backdrop_color_rgba[1] =
+        finalize_snes_5bit_channel(frame.backdrop_color_rgba[1], frame.brightness);
+    frame.backdrop_color_rgba[2] =
+        finalize_snes_5bit_channel(frame.backdrop_color_rgba[2], frame.brightness);
+    frame.brightness = 15;
+}
+
 fn bg_effect_matches_live_cgram(
     cell: &ModernIndexTile,
     palette: u8,
@@ -3460,7 +3584,6 @@ impl ModernGpuVariantHeadless {
         let variant_frame = self.renderer.build_variant_frame_from_plan(frame, &plan);
         let mut stats = plan.stats;
         if stats.fallback_draws != 0 {
-            stats.cpu_prefinal_composite_frames += 1;
             let overlay = mixed_variant_prefinal_bg_packets(frame, &plan);
             let final_overlay = mixed_variant_overlay_bg_packets(frame, &plan);
             let prefinal_bg: Vec<_> = overlay
@@ -3559,7 +3682,28 @@ impl ModernGpuVariantHeadless {
             stats.mixed_overlay_bg_effect_reject_cgram_mismatch +=
                 final_overlay.reject_cgram_mismatch;
             stats.mixed_overlay_bg_effect_reject_overlap += final_overlay.reject_overlap;
-            if prefinal_bg.is_empty() && prefinal_live_cgram_bg.is_empty() {
+            if prefinal_bg.is_empty()
+                && prefinal_live_cgram_bg.is_empty()
+                && (can_render_forced_blank_fallback_directly(fallback_frame, &final_overlay)
+                    || can_render_fallback_with_final_index_gpu(fallback_frame, fallback_bg_cells))
+            {
+                stats.direct_gpu_fallback_frames += 1;
+                let bg = ModernGpuIndexRenderer::new(
+                    &self.device,
+                    &self.queue,
+                    wgpu::TextureFormat::Rgba8Unorm,
+                );
+                let mut final_fallback_frame = fallback_frame.clone();
+                finalize_modern_frame_colors_for_direct_index(&mut final_fallback_frame);
+                bg.render(
+                    &self.device,
+                    &self.queue,
+                    fallback_bg_cells,
+                    &final_fallback_frame,
+                    &self.target_view,
+                );
+            } else if prefinal_bg.is_empty() && prefinal_live_cgram_bg.is_empty() {
+                stats.cpu_prefinal_composite_frames += 1;
                 self.compositor.render(
                     &self.device,
                     &self.queue,
@@ -3569,6 +3713,7 @@ impl ModernGpuVariantHeadless {
                     &self.target,
                 );
             } else {
+                stats.cpu_prefinal_composite_frames += 1;
                 let mut screens = crate::modern_software::build_modern_composited_screens(
                     fallback_frame,
                     fallback_bg_cells,
@@ -4887,9 +5032,11 @@ mod tests {
             priority: false,
         });
         source_frame.bg_layers[0] = source_layer;
+        source_frame.screen_enabled_main = 0x01;
 
         let mut fallback_frame = ModernFrame::empty();
         fallback_frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        fallback_frame.brightness = 11;
         fallback_frame.cgram_rgba[1] = [0, 160, 80, 0xff];
         let mut fallback_layer = ModernBgLayer::new(0);
         fallback_layer.enabled_main = true;
@@ -4904,6 +5051,7 @@ mod tests {
             priority: false,
         });
         fallback_frame.bg_layers[0] = fallback_layer;
+        fallback_frame.screen_enabled_main = 0x01;
 
         let atlas = ModernVariantAtlas {
             width: 8,
@@ -4933,6 +5081,8 @@ mod tests {
         assert_eq!(stats.dynamic_material_draws, 0);
         assert_eq!(stats.missing_art_draws, 1);
         assert_eq!(stats.unkeyed_fallback_draws, 0);
+        assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(variant, fallback);
     }
 
@@ -5806,6 +5956,126 @@ mod tests {
         assert_eq!(stats.unkeyed_fallback_draws, 1);
         assert_eq!(stats.direct_gpu_fallback_frames, 0);
         assert_eq!(stats.cpu_prefinal_composite_frames, 1);
+    }
+
+    #[test]
+    fn modern_gpu_variant_headless_forced_blank_fallback_stays_direct_gpu() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_variant_atlas::ModernVariantAtlas;
+
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut source_frame = ModernFrame::empty();
+        source_frame.cgram_rgba[1] = [248, 248, 248, 0xff];
+        let mut layer = ModernBgLayer::new(0);
+        layer.enabled_main = true;
+        layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: NO_SOURCE_KEY,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        source_frame.bg_layers[0] = layer;
+        source_frame.screen_enabled_main = 0x01;
+
+        let mut fallback_frame = source_frame.clone();
+        fallback_frame.forced_blank = true;
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: Vec::new(),
+            effects: Vec::new(),
+        };
+        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+            &source_frame,
+            &cells,
+            &[],
+            &fallback_frame,
+            &cells,
+            &[],
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(stats.fallback_draws, 1);
+        assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 0);
+        assert_eq!(&variant[0..4], &[0, 0, 0, 0xff]);
+    }
+
+    #[test]
+    fn modern_gpu_variant_headless_nonoverlapping_bg_layers_stay_direct_gpu() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_variant_atlas::ModernVariantAtlas;
+
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.cgram_rgba[1] = [80, 120, 160, 0xff];
+        frame.brightness = 9;
+        for layer_index in 0..2u8 {
+            let mut layer = ModernBgLayer::new(layer_index);
+            layer.enabled_main = true;
+            layer.index_tiles.push(ModernIndexTileInstance {
+                cell_id: 0,
+                source_key: NO_SOURCE_KEY,
+                screen_x: i16::from(layer_index) * 8,
+                screen_y: 0,
+                palette: 0,
+                hflip: false,
+                vflip: false,
+                priority: layer_index == 1,
+            });
+            frame.bg_layers[layer_index as usize] = layer;
+        }
+        frame.screen_enabled_main = 0x03;
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: Vec::new(),
+            effects: Vec::new(),
+        };
+        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
+            &frame,
+            &cells,
+            &[],
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+        let fallback = ModernGpuHeadless::new().render_rgba(&frame, &cells, &[]);
+
+        assert_eq!(stats.fallback_draws, 2);
+        assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 0);
+        assert_eq!(variant, fallback);
     }
 
     #[test]
