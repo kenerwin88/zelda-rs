@@ -2360,11 +2360,11 @@ fn static_bg_effect_material_packet<'packet, 'frame>(
         return None;
     };
     let effect_row = atlas.effect_row_for_effect(effect)?;
-    Some(EffectMaterialPacket {
-        surface: EffectSurface::Bg,
-        material: EffectMaterial::StaticEffect,
+    Some(effect_material_packet(
+        EffectSurface::Bg,
+        EffectMaterial::StaticEffect,
         effect_row,
-        instance: EffectInstancePacket {
+        EffectInstanceSource {
             cell_id: packet.inst.cell_id,
             screen_x: packet.inst.screen_x,
             screen_y: packet.inst.screen_y,
@@ -2373,9 +2373,8 @@ fn static_bg_effect_material_packet<'packet, 'frame>(
             vflip: packet.cell.vflip,
             source_hflip: entry.source_hflip,
             source_vflip: entry.source_vflip,
-            effect_row,
         },
-    })
+    ))
 }
 
 fn live_cgram_bg_effect_material_packet<'packet, 'frame>(
@@ -2383,11 +2382,11 @@ fn live_cgram_bg_effect_material_packet<'packet, 'frame>(
 ) -> Option<EffectMaterialPacket> {
     let entry = packet.draw.entry()?;
     let effect_row = u32::from(packet.inst.palette);
-    Some(EffectMaterialPacket {
-        surface: EffectSurface::Bg,
-        material: EffectMaterial::LiveCgram,
+    Some(effect_material_packet(
+        EffectSurface::Bg,
+        EffectMaterial::LiveCgram,
         effect_row,
-        instance: EffectInstancePacket {
+        EffectInstanceSource {
             cell_id: packet.inst.cell_id,
             screen_x: packet.inst.screen_x,
             screen_y: packet.inst.screen_y,
@@ -2396,9 +2395,44 @@ fn live_cgram_bg_effect_material_packet<'packet, 'frame>(
             vflip: packet.cell.vflip,
             source_hflip: entry.source_hflip,
             source_vflip: entry.source_vflip,
+        },
+    ))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct EffectInstanceSource {
+    cell_id: u32,
+    screen_x: i16,
+    screen_y: i16,
+    row_mask: u8,
+    hflip: bool,
+    vflip: bool,
+    source_hflip: bool,
+    source_vflip: bool,
+}
+
+fn effect_material_packet(
+    surface: EffectSurface,
+    material: EffectMaterial,
+    effect_row: u32,
+    source: EffectInstanceSource,
+) -> EffectMaterialPacket {
+    EffectMaterialPacket {
+        surface,
+        material,
+        effect_row,
+        instance: EffectInstancePacket {
+            cell_id: source.cell_id,
+            screen_x: source.screen_x,
+            screen_y: source.screen_y,
+            row_mask: source.row_mask,
+            hflip: source.hflip,
+            vflip: source.vflip,
+            source_hflip: source.source_hflip,
+            source_vflip: source.source_vflip,
             effect_row,
         },
-    })
+    }
 }
 
 fn append_effect_material_packet_instance(
@@ -2455,11 +2489,11 @@ fn sprite_effect_material_packet<'packet, 'frame>(
             8 + u32::from(packet.inst.palette),
         )
     };
-    Some(EffectMaterialPacket {
-        surface: EffectSurface::Sprite,
+    Some(effect_material_packet(
+        EffectSurface::Sprite,
         material,
         effect_row,
-        instance: EffectInstancePacket {
+        EffectInstanceSource {
             cell_id: packet.inst.cell_id,
             screen_x: packet.inst.screen_x,
             screen_y: packet.inst.screen_y,
@@ -2468,9 +2502,8 @@ fn sprite_effect_material_packet<'packet, 'frame>(
             vflip: packet.inst.vflip,
             source_hflip: entry.source_hflip,
             source_vflip: entry.source_vflip,
-            effect_row,
         },
-    })
+    ))
 }
 
 fn variant_tile_instance(
