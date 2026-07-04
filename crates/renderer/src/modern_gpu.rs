@@ -649,6 +649,20 @@ struct SpriteEffectMaterialPacket<'packet, 'frame> {
     effect_row: u32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BgEffectMaterial {
+    StaticEffect,
+    LiveCgram,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct BgEffectMaterialPacket<'packet, 'frame> {
+    material: BgEffectMaterial,
+    packet: &'packet crate::modern_variant_draw::VariantBgDrawPacket<'frame>,
+    entry: &'frame crate::modern_variant_atlas::VariantAtlasEntry,
+    effect_row: u32,
+}
+
 #[derive(Default)]
 struct MixedVariantOverlayBgSelection<'a> {
     bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
@@ -2062,27 +2076,11 @@ impl ModernGpuVariantEffectRenderer {
         let mut instance_bytes = Vec::new();
         let mut instance_count = 0u32;
         for packet in packets {
-            let Some((entry, effect)) = packet.draw.material_effect() else {
+            let Some(material_packet) = static_bg_effect_material_packet(atlas, packet) else {
                 continue;
             };
-            let Some(effect_row) = atlas.effect_row_for_effect(effect) else {
-                continue;
-            };
-            let col = packet.inst.cell_id % INDEX_GRID_COLS;
-            let row = packet.inst.cell_id / INDEX_GRID_COLS;
-            instance_bytes.extend_from_slice(&(col * 8).to_le_bytes());
-            instance_bytes.extend_from_slice(&(row * 8).to_le_bytes());
-            instance_bytes.extend_from_slice(&(i32::from(packet.inst.screen_x)).to_le_bytes());
-            instance_bytes.extend_from_slice(&(i32::from(packet.inst.screen_y)).to_le_bytes());
-            let mut flags = 0xffu32 << 8;
-            if packet.cell.hflip ^ entry.source_hflip {
-                flags |= 0b001;
-            }
-            if packet.cell.vflip ^ entry.source_vflip {
-                flags |= 0b010;
-            }
-            instance_bytes.extend_from_slice(&flags.to_le_bytes());
-            instance_bytes.extend_from_slice(&effect_row.to_le_bytes());
+            debug_assert_eq!(material_packet.material, BgEffectMaterial::StaticEffect);
+            append_bg_effect_instance_words(&mut instance_bytes, material_packet);
             instance_count += 1;
         }
         debug_assert_eq!(
@@ -2166,24 +2164,11 @@ impl ModernGpuVariantEffectRenderer {
         let mut instance_bytes = Vec::new();
         let mut instance_count = 0u32;
         for packet in packets {
-            let Some(entry) = packet.draw.entry() else {
+            let Some(material_packet) = live_cgram_bg_effect_material_packet(packet) else {
                 continue;
             };
-            let col = packet.inst.cell_id % INDEX_GRID_COLS;
-            let row = packet.inst.cell_id / INDEX_GRID_COLS;
-            instance_bytes.extend_from_slice(&(col * 8).to_le_bytes());
-            instance_bytes.extend_from_slice(&(row * 8).to_le_bytes());
-            instance_bytes.extend_from_slice(&(i32::from(packet.inst.screen_x)).to_le_bytes());
-            instance_bytes.extend_from_slice(&(i32::from(packet.inst.screen_y)).to_le_bytes());
-            let mut flags = 0xffu32 << 8;
-            if packet.cell.hflip ^ entry.source_hflip {
-                flags |= 0b001;
-            }
-            if packet.cell.vflip ^ entry.source_vflip {
-                flags |= 0b010;
-            }
-            instance_bytes.extend_from_slice(&flags.to_le_bytes());
-            instance_bytes.extend_from_slice(&(u32::from(packet.inst.palette)).to_le_bytes());
+            debug_assert_eq!(material_packet.material, BgEffectMaterial::LiveCgram);
+            append_bg_effect_instance_words(&mut instance_bytes, material_packet);
             instance_count += 1;
         }
         debug_assert_eq!(
@@ -2418,6 +2403,56 @@ fn sprite_effect_covers_cell(
             usize::from(index) < effect.colors_per_row as usize
                 && usize::from(index) < effect.index_to_rgba.len()
         })
+}
+
+fn static_bg_effect_material_packet<'packet, 'frame>(
+    atlas: &'frame crate::modern_variant_atlas::ModernVariantAtlas,
+    packet: &'packet crate::modern_variant_draw::VariantBgDrawPacket<'frame>,
+) -> Option<BgEffectMaterialPacket<'packet, 'frame>> {
+    let Some((entry, effect)) = packet.draw.material_effect() else {
+        return None;
+    };
+    let effect_row = atlas.effect_row_for_effect(effect)?;
+    Some(BgEffectMaterialPacket {
+        material: BgEffectMaterial::StaticEffect,
+        packet,
+        entry,
+        effect_row,
+    })
+}
+
+fn live_cgram_bg_effect_material_packet<'packet, 'frame>(
+    packet: &'packet crate::modern_variant_draw::VariantBgDrawPacket<'frame>,
+) -> Option<BgEffectMaterialPacket<'packet, 'frame>> {
+    let entry = packet.draw.entry()?;
+    Some(BgEffectMaterialPacket {
+        material: BgEffectMaterial::LiveCgram,
+        packet,
+        entry,
+        effect_row: u32::from(packet.inst.palette),
+    })
+}
+
+fn append_bg_effect_instance_words(
+    out: &mut Vec<u8>,
+    material_packet: BgEffectMaterialPacket<'_, '_>,
+) {
+    let packet = material_packet.packet;
+    let col = packet.inst.cell_id % INDEX_GRID_COLS;
+    let row = packet.inst.cell_id / INDEX_GRID_COLS;
+    out.extend_from_slice(&(col * 8).to_le_bytes());
+    out.extend_from_slice(&(row * 8).to_le_bytes());
+    out.extend_from_slice(&(i32::from(packet.inst.screen_x)).to_le_bytes());
+    out.extend_from_slice(&(i32::from(packet.inst.screen_y)).to_le_bytes());
+    let mut flags = 0xffu32 << 8;
+    if packet.cell.hflip ^ material_packet.entry.source_hflip {
+        flags |= 0b001;
+    }
+    if packet.cell.vflip ^ material_packet.entry.source_vflip {
+        flags |= 0b010;
+    }
+    out.extend_from_slice(&flags.to_le_bytes());
+    out.extend_from_slice(&material_packet.effect_row.to_le_bytes());
 }
 
 fn sprite_effect_material_packet<'packet, 'frame>(
@@ -5858,6 +5893,106 @@ mod tests {
         assert_eq!(stats.gpu_screen_builder_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(&variant[0..4], &[0, 0, 0, 0xff]);
+    }
+
+    #[test]
+    fn bg_effect_material_packet_selects_static_or_live_rows() {
+        use crate::modern_frame::ModernIndexTileInstance;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, TileEffect, VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
+        };
+        use crate::modern_variant_draw::VariantBgDrawPacket;
+
+        let entry = VariantAtlasEntry {
+            id: "bg:kBgGfx:pack0:tile0:3bpp:palette_dung_bg_main:row2".to_string(),
+            key: VariantAtlasKey {
+                source_kind: "bg".to_string(),
+                asset: "kBgGfx".to_string(),
+                pack: 0,
+                tile: 0,
+                bpp: 3,
+                palette: "palette_dung_bg_main".to_string(),
+                palette_row: 2,
+            },
+            rect: [0, 0, 8, 8],
+            sha1: "static".to_string(),
+            duplicate_of: None,
+            dynamic_policy: "stable".to_string(),
+            runtime_material: Some("palette_lut".to_string()),
+            runtime_colors_per_row: None,
+            source_hflip: false,
+            source_vflip: true,
+        };
+        let effect = TileEffect {
+            id: "palette_dung_bg_main:8color:row2".to_string(),
+            palette: "palette_dung_bg_main".to_string(),
+            palette_row: 2,
+            colors_per_row: 8,
+            index_to_rgba: vec![[0, 0, 0, 0xff], [80, 0, 0, 0xff]],
+            dynamic_policy: "stable".to_string(),
+        };
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![entry.clone()],
+            effects: vec![effect.clone()],
+        };
+        let cell = ModernIndexTile {
+            id: 0,
+            indices: [1u8; 64],
+            source_key: modern_source_key(1, 0, 0),
+            hflip: true,
+            vflip: false,
+        };
+        let inst = ModernIndexTileInstance {
+            cell_id: 2,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            screen_x: 12,
+            screen_y: 20,
+            palette: 3,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        };
+        let static_packet = VariantBgDrawPacket {
+            layer_index: 0,
+            cell: &cell,
+            inst: &inst,
+            key: None,
+            draw: VariantAtlasDraw::MaterialEffect {
+                entry: &entry,
+                effect: &effect,
+            },
+        };
+        let static_material = static_bg_effect_material_packet(&atlas, &static_packet)
+            .expect("static BG should produce a material packet");
+
+        assert_eq!(static_material.material, BgEffectMaterial::StaticEffect);
+        assert_eq!(static_material.effect_row, 0);
+        let mut static_words = Vec::new();
+        append_bg_effect_instance_words(&mut static_words, static_material);
+        assert_eq!(static_words.len() as u64, INDEX_INSTANCE_STRIDE);
+        let static_encoded: Vec<u32> = static_words
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
+        assert_eq!(static_encoded, vec![16, 0, 12, 20, 0xff00 | 0b011, 0]);
+
+        let live_packet = VariantBgDrawPacket {
+            layer_index: 0,
+            cell: &cell,
+            inst: &inst,
+            key: None,
+            draw: VariantAtlasDraw::Stable { entry: &entry },
+        };
+        let live_material = live_cgram_bg_effect_material_packet(&live_packet)
+            .expect("live BG should produce a material packet");
+
+        assert_eq!(live_material.material, BgEffectMaterial::LiveCgram);
+        assert_eq!(live_material.effect_row, 3);
     }
 
     #[test]
