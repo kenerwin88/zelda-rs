@@ -2076,36 +2076,23 @@ impl ModernGpuVariantEffectRenderer {
         output_view: &wgpu::TextureView,
         load: wgpu::LoadOp<wgpu::Color>,
     ) {
-        let (_index_atlas_texture, index_atlas_view) =
-            build_index_atlas(device, queue, bg_cells, "modern_variant_effect_index_atlas");
-        let mut instance_bytes = Vec::new();
-        let mut instance_count = 0u32;
+        let mut batch = EffectMaterialBatch::default();
         for packet in packets {
             let Some(material_packet) = static_bg_effect_material_packet(atlas, packet) else {
                 continue;
             };
-            append_effect_material_packet_instance(
-                &mut instance_bytes,
-                &mut instance_count,
-                material_packet,
-                EffectSurface::Bg,
-                Some(EffectMaterial::StaticEffect),
-            );
+            batch.push(material_packet, EffectSurface::Bg);
         }
-        debug_assert_eq!(
-            instance_bytes.len() as u64,
-            u64::from(instance_count) * INDEX_INSTANCE_STRIDE
-        );
 
-        self.render_effect_instances(
+        self.render_bg_effect_batch(
             device,
             queue,
-            &index_atlas_view,
+            bg_cells,
             &self.effect_lut_view,
-            &instance_bytes,
-            instance_count,
+            &batch,
             output_view,
             load,
+            "modern_variant_effect_index_atlas",
             "modern_variant_effect",
             "modern_variant_effect_instances",
         );
@@ -2121,43 +2108,55 @@ impl ModernGpuVariantEffectRenderer {
         output_view: &wgpu::TextureView,
         load: wgpu::LoadOp<wgpu::Color>,
     ) {
-        let (_index_atlas_texture, index_atlas_view) = build_index_atlas(
-            device,
-            queue,
-            bg_cells,
-            "modern_variant_live_cgram_index_atlas",
-        );
         let (_live_lut_texture, live_lut_view) = build_live_effect_lut(device, queue, frame);
-        let mut instance_bytes = Vec::new();
-        let mut instance_count = 0u32;
+        let mut batch = EffectMaterialBatch::default();
         for packet in packets {
             let Some(material_packet) = live_cgram_bg_effect_material_packet(packet) else {
                 continue;
             };
-            append_effect_material_packet_instance(
-                &mut instance_bytes,
-                &mut instance_count,
-                material_packet,
-                EffectSurface::Bg,
-                Some(EffectMaterial::LiveCgram),
-            );
+            batch.push(material_packet, EffectSurface::Bg);
         }
-        debug_assert_eq!(
-            instance_bytes.len() as u64,
-            u64::from(instance_count) * INDEX_INSTANCE_STRIDE
-        );
 
+        self.render_bg_effect_batch(
+            device,
+            queue,
+            bg_cells,
+            &live_lut_view,
+            &batch,
+            output_view,
+            load,
+            "modern_variant_live_cgram_index_atlas",
+            "modern_variant_live_cgram_effect",
+            "modern_variant_live_cgram_effect_instances",
+        );
+    }
+
+    fn render_bg_effect_batch(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bg_cells: &[ModernIndexTile],
+        effect_lut_view: &wgpu::TextureView,
+        batch: &EffectMaterialBatch,
+        output_view: &wgpu::TextureView,
+        load: wgpu::LoadOp<wgpu::Color>,
+        index_atlas_label: &'static str,
+        label: &'static str,
+        instance_label: &'static str,
+    ) {
+        let (_index_atlas_texture, index_atlas_view) =
+            build_index_atlas(device, queue, bg_cells, index_atlas_label);
         self.render_effect_instances(
             device,
             queue,
             &index_atlas_view,
-            &live_lut_view,
-            &instance_bytes,
-            instance_count,
+            effect_lut_view,
+            batch.instance_bytes(),
+            batch.instance_count(),
             output_view,
             load,
-            "modern_variant_live_cgram_effect",
-            "modern_variant_live_cgram_effect_instances",
+            label,
+            instance_label,
         );
     }
 
@@ -6026,6 +6025,30 @@ mod tests {
         assert_eq!(batch.instance_count(), 0);
         assert!(batch.instance_bytes().is_empty());
         assert!(!batch.needs_flush_for(EffectMaterial::LiveCgram));
+
+        batch.push(
+            EffectMaterialPacket {
+                surface: EffectSurface::Bg,
+                material: EffectMaterial::LiveCgram,
+                effect_row: 4,
+                instance: EffectInstancePacket {
+                    cell_id: 2,
+                    screen_x: 5,
+                    screen_y: 6,
+                    row_mask: 0xff,
+                    hflip: true,
+                    vflip: false,
+                    source_hflip: true,
+                    source_vflip: false,
+                    effect_row: 4,
+                },
+            },
+            EffectSurface::Bg,
+        );
+
+        assert_eq!(batch.material(), Some(EffectMaterial::LiveCgram));
+        assert_eq!(batch.instance_count(), 1);
+        assert_eq!(batch.instance_bytes().len() as u64, INDEX_INSTANCE_STRIDE);
     }
 
     #[test]
