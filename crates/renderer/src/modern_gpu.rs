@@ -636,28 +636,22 @@ struct ModernGpuVariantEffectRenderer {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SpriteEffectMaterial {
+enum EffectMaterial {
     StaticEffect,
     LiveCgram,
 }
 
 #[derive(Clone, Copy, Debug)]
 struct SpriteEffectMaterialPacket<'packet, 'frame> {
-    material: SpriteEffectMaterial,
+    material: EffectMaterial,
     packet: &'packet crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>,
     entry: &'frame crate::modern_variant_atlas::VariantAtlasEntry,
     effect_row: u32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum BgEffectMaterial {
-    StaticEffect,
-    LiveCgram,
-}
-
 #[derive(Clone, Copy, Debug)]
 struct BgEffectMaterialPacket<'packet, 'frame> {
-    material: BgEffectMaterial,
+    material: EffectMaterial,
     packet: &'packet crate::modern_variant_draw::VariantBgDrawPacket<'frame>,
     entry: &'frame crate::modern_variant_atlas::VariantAtlasEntry,
     effect_row: u32,
@@ -2092,7 +2086,7 @@ impl ModernGpuVariantEffectRenderer {
             let Some(material_packet) = static_bg_effect_material_packet(atlas, packet) else {
                 continue;
             };
-            debug_assert_eq!(material_packet.material, BgEffectMaterial::StaticEffect);
+            debug_assert_eq!(material_packet.material, EffectMaterial::StaticEffect);
             append_bg_effect_instance_words(&mut instance_bytes, material_packet);
             instance_count += 1;
         }
@@ -2180,7 +2174,7 @@ impl ModernGpuVariantEffectRenderer {
             let Some(material_packet) = live_cgram_bg_effect_material_packet(packet) else {
                 continue;
             };
-            debug_assert_eq!(material_packet.material, BgEffectMaterial::LiveCgram);
+            debug_assert_eq!(material_packet.material, EffectMaterial::LiveCgram);
             append_bg_effect_instance_words(&mut instance_bytes, material_packet);
             instance_count += 1;
         }
@@ -2262,7 +2256,7 @@ impl ModernGpuVariantEffectRenderer {
             "modern_variant_effect_sprite_index_atlas",
         );
         let mut live_lut: Option<(wgpu::Texture, wgpu::TextureView)> = None;
-        let mut batch_material: Option<SpriteEffectMaterial> = None;
+        let mut batch_material: Option<EffectMaterial> = None;
         let mut batch_bytes = Vec::new();
         let mut batch_count = 0u32;
         for packet in packets {
@@ -2310,7 +2304,7 @@ impl ModernGpuVariantEffectRenderer {
         frame: &ModernFrame,
         index_atlas_view: &wgpu::TextureView,
         live_lut: &mut Option<(wgpu::Texture, wgpu::TextureView)>,
-        material: SpriteEffectMaterial,
+        material: EffectMaterial,
         instance_bytes: &[u8],
         instance_count: u32,
         output_view: &wgpu::TextureView,
@@ -2323,10 +2317,8 @@ impl ModernGpuVariantEffectRenderer {
             u64::from(instance_count) * INDEX_INSTANCE_STRIDE
         );
         let (effect_lut_view, label) = match material {
-            SpriteEffectMaterial::StaticEffect => {
-                (&self.effect_lut_view, "modern_variant_effect_sprite")
-            }
-            SpriteEffectMaterial::LiveCgram => {
+            EffectMaterial::StaticEffect => (&self.effect_lut_view, "modern_variant_effect_sprite"),
+            EffectMaterial::LiveCgram => {
                 let (_, view) =
                     live_lut.get_or_insert_with(|| build_live_effect_lut(device, queue, frame));
                 (&*view, "modern_variant_live_cgram_sprite")
@@ -2427,7 +2419,7 @@ fn static_bg_effect_material_packet<'packet, 'frame>(
     };
     let effect_row = atlas.effect_row_for_effect(effect)?;
     Some(BgEffectMaterialPacket {
-        material: BgEffectMaterial::StaticEffect,
+        material: EffectMaterial::StaticEffect,
         packet,
         entry,
         effect_row,
@@ -2439,7 +2431,7 @@ fn live_cgram_bg_effect_material_packet<'packet, 'frame>(
 ) -> Option<BgEffectMaterialPacket<'packet, 'frame>> {
     let entry = packet.draw.entry()?;
     Some(BgEffectMaterialPacket {
-        material: BgEffectMaterial::LiveCgram,
+        material: EffectMaterial::LiveCgram,
         packet,
         entry,
         effect_row: u32::from(packet.inst.palette),
@@ -2497,12 +2489,12 @@ fn sprite_effect_material_packet<'packet, 'frame>(
         static_effect_row.is_some_and(|_| sprite_effect_covers_cell(packet.cell, effect));
     let (material, effect_row) = if uses_static_effect {
         (
-            SpriteEffectMaterial::StaticEffect,
+            EffectMaterial::StaticEffect,
             static_effect_row.expect("checked above"),
         )
     } else {
         (
-            SpriteEffectMaterial::LiveCgram,
+            EffectMaterial::LiveCgram,
             8 + u32::from(packet.inst.palette),
         )
     };
@@ -6025,7 +6017,7 @@ mod tests {
         let static_material = static_bg_effect_material_packet(&atlas, &static_packet)
             .expect("static BG should produce a material packet");
 
-        assert_eq!(static_material.material, BgEffectMaterial::StaticEffect);
+        assert_eq!(static_material.material, EffectMaterial::StaticEffect);
         assert_eq!(static_material.effect_row, 0);
         let mut static_words = Vec::new();
         append_bg_effect_instance_words(&mut static_words, static_material);
@@ -6046,7 +6038,7 @@ mod tests {
         let live_material = live_cgram_bg_effect_material_packet(&live_packet)
             .expect("live BG should produce a material packet");
 
-        assert_eq!(live_material.material, BgEffectMaterial::LiveCgram);
+        assert_eq!(live_material.material, EffectMaterial::LiveCgram);
         assert_eq!(live_material.effect_row, 3);
     }
 
@@ -6136,7 +6128,7 @@ mod tests {
         let static_material = sprite_effect_material_packet(&atlas, &static_packet)
             .expect("static sprite should produce a material packet");
 
-        assert_eq!(static_material.material, SpriteEffectMaterial::StaticEffect);
+        assert_eq!(static_material.material, EffectMaterial::StaticEffect);
         assert_eq!(static_material.effect_row, 0);
         let mut static_words = Vec::new();
         append_sprite_effect_instance_words(&mut static_words, static_material);
@@ -6178,7 +6170,7 @@ mod tests {
         let live_material = sprite_effect_material_packet(&atlas, &live_packet)
             .expect("live sprite should produce a material packet");
 
-        assert_eq!(live_material.material, SpriteEffectMaterial::LiveCgram);
+        assert_eq!(live_material.material, EffectMaterial::LiveCgram);
         assert_eq!(live_material.effect_row, 9);
     }
 
