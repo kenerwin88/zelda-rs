@@ -358,7 +358,7 @@ pub struct ModernGpuVariantRenderer {
     effect_renderer: ModernGpuVariantEffectRenderer,
 }
 
-struct PreparedModernVariantFrame<'a> {
+struct PreparedModernVariantRender<'a> {
     plan: crate::modern_variant_draw::VariantDrawPlan<'a>,
     variant_frame: ModernFrame,
     stats: crate::modern_software::VariantAtlasRenderStats,
@@ -366,7 +366,7 @@ struct PreparedModernVariantFrame<'a> {
     headless_render_path: ModernVariantRenderPath,
 }
 
-impl PreparedModernVariantFrame<'_> {
+impl PreparedModernVariantRender<'_> {
     fn initial_stats(&self) -> crate::modern_software::VariantAtlasRenderStats {
         self.stats
     }
@@ -463,14 +463,14 @@ impl ModernGpuVariantRenderer {
         sprite_palette_name: &str,
         output_view: &wgpu::TextureView,
     ) -> crate::modern_software::VariantAtlasRenderStats {
-        let prepared = self.prepare_variant_frame(
+        let prepared = self.prepare_variant_render(
             frame,
             bg_cells,
             sprite_cells,
             bg_palette_name,
             sprite_palette_name,
         );
-        self.render_prepared_variant_frame(
+        self.render_prepared_variant(
             device,
             queue,
             frame,
@@ -482,14 +482,14 @@ impl ModernGpuVariantRenderer {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn render_prepared_variant_frame(
+    fn render_prepared_variant(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         frame: &ModernFrame,
         bg_cells: &[ModernIndexTile],
         sprite_cells: &[ModernIndexTile],
-        prepared: &PreparedModernVariantFrame<'_>,
+        prepared: &PreparedModernVariantRender<'_>,
         output_view: &wgpu::TextureView,
     ) -> crate::modern_software::VariantAtlasRenderStats {
         let mut stats = prepared.initial_stats();
@@ -542,14 +542,14 @@ impl ModernGpuVariantRenderer {
         stats
     }
 
-    fn prepare_variant_frame<'a>(
+    fn prepare_variant_render<'a>(
         &'a self,
         frame: &'a ModernFrame,
         bg_cells: &'a [ModernIndexTile],
         sprite_cells: &'a [ModernIndexTile],
         bg_palette_name: &str,
         sprite_palette_name: &str,
-    ) -> PreparedModernVariantFrame<'a> {
+    ) -> PreparedModernVariantRender<'a> {
         let plan = crate::modern_variant_draw::compile_variant_draws(
             frame,
             bg_cells,
@@ -560,7 +560,7 @@ impl ModernGpuVariantRenderer {
         );
         let variant_frame = self.build_variant_frame_from_plan(frame, &plan);
         let stats = plan.stats;
-        PreparedModernVariantFrame {
+        PreparedModernVariantRender {
             plan,
             variant_frame,
             stats,
@@ -5233,7 +5233,7 @@ impl ModernGpuVariantHeadless {
         bg_palette_name: &str,
         sprite_palette_name: &str,
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
-        let prepared = self.renderer.prepare_variant_frame(
+        let prepared = self.renderer.prepare_variant_render(
             frame,
             bg_cells,
             sprite_cells,
@@ -5260,7 +5260,7 @@ impl ModernGpuVariantHeadless {
         live_index_frame: &ModernFrame,
         live_index_bg_cells: &[ModernIndexTile],
         live_index_sprite_cells: &[ModernIndexTile],
-        prepared: &PreparedModernVariantFrame<'_>,
+        prepared: &PreparedModernVariantRender<'_>,
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
         let mut stats = prepared.initial_stats();
         match prepared.headless_render_path() {
