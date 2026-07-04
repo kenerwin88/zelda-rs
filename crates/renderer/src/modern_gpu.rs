@@ -546,6 +546,15 @@ struct PreparedMode1EffectRenderPlan<'rank, 'frame> {
 }
 
 impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
+    fn execute_with<F>(self, mut execute: F)
+    where
+        F: FnMut(PreparedMode1EffectRenderStep<'rank, 'frame>),
+    {
+        for step in self.into_steps() {
+            execute(step);
+        }
+    }
+
     fn into_steps(self) -> impl Iterator<Item = PreparedMode1EffectRenderStep<'rank, 'frame>> {
         let needs_empty_frame_fallback = self.needs_empty_frame_fallback;
         self.rank_plans
@@ -575,6 +584,13 @@ impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
     }
 
     #[cfg(test)]
+    fn into_step_kinds(self) -> Vec<PreparedMode1EffectRenderStepKind> {
+        let mut steps = Vec::new();
+        self.execute_with(|step| steps.push(step.kind()));
+        steps
+    }
+
+    #[cfg(test)]
     fn needs_empty_frame_fallback(&self) -> bool {
         self.needs_empty_frame_fallback
     }
@@ -588,6 +604,20 @@ impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
 enum PreparedMode1EffectRenderStep<'rank, 'frame> {
     Rank(PreparedMode1EffectRankRenderPlan<'rank, 'frame>),
     EmptyFrameFallback,
+}
+
+#[cfg(test)]
+impl PreparedMode1EffectRenderStep<'_, '_> {
+    fn kind(&self) -> PreparedMode1EffectRenderStepKind {
+        match self {
+            Self::Rank(rank_plan) => PreparedMode1EffectRenderStepKind::Rank {
+                rank_index: rank_plan.rank_index(),
+                is_empty: rank_plan.is_empty(),
+                rendered_before: rank_plan.rendered_before(),
+            },
+            Self::EmptyFrameFallback => PreparedMode1EffectRenderStepKind::EmptyFrameFallback,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -883,33 +913,55 @@ impl ModernGpuVariantRenderer {
         let bg_cells = execution.bg_cells();
         let sprite_cells = execution.sprite_cells();
         let render_plan = execution.mode1_effect_render_plan(&self.atlas);
-        for step in render_plan.into_steps() {
-            match step {
-                PreparedMode1EffectRenderStep::Rank(rank_plan) => {
-                    debug_assert!(rank_plan.rank_index() <= 9);
-                    let rendered_before_rank = rank_plan.rendered_before();
-                    self.render_effect_rank_plan(
-                        device,
-                        queue,
-                        frame,
-                        bg_cells,
-                        sprite_cells,
-                        rank_plan.into_render_plan(),
-                        output_view,
-                        rendered_before_rank,
-                    );
-                }
-                PreparedMode1EffectRenderStep::EmptyFrameFallback => {
-                    self.effect_renderer.render_bg(
-                        device,
-                        queue,
-                        bg_cells,
-                        &self.atlas,
-                        &[],
-                        output_view,
-                        modern_frame_clear_op(frame),
-                    );
-                }
+        render_plan.execute_with(|step| {
+            self.render_mode1_effect_step(
+                device,
+                queue,
+                frame,
+                bg_cells,
+                sprite_cells,
+                output_view,
+                step,
+            );
+        });
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_mode1_effect_step(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        output_view: &wgpu::TextureView,
+        step: PreparedMode1EffectRenderStep<'_, '_>,
+    ) {
+        match step {
+            PreparedMode1EffectRenderStep::Rank(rank_plan) => {
+                debug_assert!(rank_plan.rank_index() <= 9);
+                let rendered_before_rank = rank_plan.rendered_before();
+                self.render_effect_rank_plan(
+                    device,
+                    queue,
+                    frame,
+                    bg_cells,
+                    sprite_cells,
+                    rank_plan.into_render_plan(),
+                    output_view,
+                    rendered_before_rank,
+                );
+            }
+            PreparedMode1EffectRenderStep::EmptyFrameFallback => {
+                self.effect_renderer.render_bg(
+                    device,
+                    queue,
+                    bg_cells,
+                    &self.atlas,
+                    &[],
+                    output_view,
+                    modern_frame_clear_op(frame),
+                );
             }
         }
     }
@@ -6019,6 +6071,10 @@ mod tests {
         assert!(!steps
             .iter()
             .any(|step| matches!(step, PreparedMode1EffectRenderStepKind::EmptyFrameFallback)));
+        assert_eq!(
+            execution.mode1_effect_render_plan(&atlas).into_step_kinds(),
+            steps
+        );
     }
 
     #[test]
@@ -6066,6 +6122,10 @@ mod tests {
         assert_eq!(
             steps.last(),
             Some(&PreparedMode1EffectRenderStepKind::EmptyFrameFallback)
+        );
+        assert_eq!(
+            execution.mode1_effect_render_plan(&atlas).into_step_kinds(),
+            steps
         );
     }
 
