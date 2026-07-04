@@ -13,6 +13,27 @@ pub struct VariantDrawPlan<'a> {
     pub stats: VariantAtlasRenderStats,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModernDrawMaterial {
+    RgbaAtlas,
+    PaletteEffect,
+    DynamicPalette(DynamicFallbackReason),
+    MissingArt,
+    Unkeyed,
+}
+
+impl ModernDrawMaterial {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::RgbaAtlas => "rgba_atlas",
+            Self::PaletteEffect => "palette_effect",
+            Self::DynamicPalette(_) => "dynamic_palette",
+            Self::MissingArt => "missing_art",
+            Self::Unkeyed => "unkeyed",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct VariantBgDrawPacket<'a> {
     pub layer_index: usize,
@@ -28,6 +49,112 @@ pub struct VariantSpriteDrawPacket<'a> {
     pub inst: &'a ModernIndexSpriteInstance,
     pub key: Option<VariantAtlasKey>,
     pub draw: VariantAtlasDraw<'a>,
+}
+
+impl<'a> VariantBgDrawPacket<'a> {
+    pub fn material(&self) -> ModernDrawMaterial {
+        material_for_draw(self.draw)
+    }
+}
+
+impl<'a> VariantSpriteDrawPacket<'a> {
+    pub fn material(&self) -> ModernDrawMaterial {
+        material_for_draw(self.draw)
+    }
+}
+
+pub fn material_for_draw(draw: VariantAtlasDraw<'_>) -> ModernDrawMaterial {
+    match draw {
+        VariantAtlasDraw::Stable { .. } => ModernDrawMaterial::RgbaAtlas,
+        VariantAtlasDraw::MaterialEffect { .. } => ModernDrawMaterial::PaletteEffect,
+        VariantAtlasDraw::DynamicPalette { reason, .. } => {
+            ModernDrawMaterial::DynamicPalette(reason)
+        }
+        VariantAtlasDraw::MissingArt => ModernDrawMaterial::MissingArt,
+        VariantAtlasDraw::Unkeyed => ModernDrawMaterial::Unkeyed,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VariantDrawSurface {
+    Bg,
+    Sprite,
+}
+
+impl VariantDrawSurface {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Bg => "bg",
+            Self::Sprite => "sprite",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VariantPixelTrace {
+    pub surface: VariantDrawSurface,
+    pub packet_index: usize,
+    pub layer_index: Option<usize>,
+    pub material: ModernDrawMaterial,
+    pub cell_id: u32,
+    pub screen_x: i16,
+    pub screen_y: i16,
+    pub local_x: u8,
+    pub local_y: u8,
+    pub source_x: u8,
+    pub source_y: u8,
+    pub palette_row: u8,
+    pub palette_index: u8,
+    pub output_rgba: Option<[u8; 4]>,
+    pub key: Option<VariantAtlasKey>,
+    pub entry_id: Option<String>,
+    pub effect_id: Option<String>,
+}
+
+impl VariantPixelTrace {
+    pub fn describe(&self) -> String {
+        let rgba = self.output_rgba.map_or_else(
+            || "none".to_string(),
+            |rgba| format!("{},{},{},{}", rgba[0], rgba[1], rgba[2], rgba[3]),
+        );
+        let key = self.key.as_ref().map_or_else(
+            || "none".to_string(),
+            |key| {
+                format!(
+                    "{}:{}:pack{}:tile{}:{}bpp:{}:row{}",
+                    key.source_kind,
+                    key.asset,
+                    key.pack,
+                    key.tile,
+                    key.bpp,
+                    key.palette,
+                    key.palette_row
+                )
+            },
+        );
+        format!(
+            "surface={} packet={} layer={} material={} cell={} screen=({}, {}) local=({}, {}) source=({}, {}) palette_row={} index={} rgba={} key={} entry={} effect={}",
+            self.surface.name(),
+            self.packet_index,
+            self.layer_index
+                .map(|layer| layer.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+            self.material.name(),
+            self.cell_id,
+            self.screen_x,
+            self.screen_y,
+            self.local_x,
+            self.local_y,
+            self.source_x,
+            self.source_y,
+            self.palette_row,
+            self.palette_index,
+            rgba,
+            key,
+            self.entry_id.as_deref().unwrap_or("none"),
+            self.effect_id.as_deref().unwrap_or("none"),
+        )
+    }
 }
 
 pub fn compile_variant_draws<'a>(
@@ -92,6 +219,237 @@ pub fn compile_variant_draws<'a>(
     }
 
     plan
+}
+
+pub fn trace_variant_plan_pixel(
+    frame: &ModernFrame,
+    atlas: &ModernVariantAtlas,
+    plan: &VariantDrawPlan<'_>,
+    screen_x: i16,
+    screen_y: i16,
+) -> Vec<VariantPixelTrace> {
+    let mut traces = Vec::new();
+    for (packet_index, packet) in plan.bg.iter().enumerate() {
+        let local_x = screen_x - packet.inst.screen_x;
+        let local_y = screen_y - packet.inst.screen_y;
+        if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
+            continue;
+        }
+        let Some(trace) = trace_bg_packet_pixel(
+            frame,
+            atlas,
+            packet_index,
+            packet,
+            local_x as u8,
+            local_y as u8,
+        ) else {
+            continue;
+        };
+        traces.push(trace);
+    }
+    for (packet_index, packet) in plan.sprites.iter().enumerate() {
+        let local_x = screen_x - packet.inst.screen_x;
+        let local_y = screen_y - packet.inst.screen_y;
+        if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
+            continue;
+        }
+        if packet.inst.row_mask & (1 << local_y) == 0 {
+            continue;
+        }
+        traces.push(trace_sprite_packet_pixel(
+            frame,
+            atlas,
+            packet_index,
+            packet,
+            local_x as u8,
+            local_y as u8,
+        ));
+    }
+    traces
+}
+
+fn trace_bg_packet_pixel(
+    frame: &ModernFrame,
+    atlas: &ModernVariantAtlas,
+    packet_index: usize,
+    packet: &VariantBgDrawPacket<'_>,
+    local_x: u8,
+    local_y: u8,
+) -> Option<VariantPixelTrace> {
+    let entry = packet.draw.entry();
+    let source_hflip = entry.is_some_and(|entry| entry.source_hflip);
+    let source_vflip = entry.is_some_and(|entry| entry.source_vflip);
+    let source_x = if packet.cell.hflip ^ source_hflip {
+        7 - local_x
+    } else {
+        local_x
+    };
+    let source_y = if packet.cell.vflip ^ source_vflip {
+        7 - local_y
+    } else {
+        local_y
+    };
+    let palette_index = packet.cell.indices[usize::from(source_y) * 8 + usize::from(source_x)];
+    let output_rgba = bg_output_rgba(frame, atlas, packet, source_x, source_y, palette_index);
+    Some(VariantPixelTrace {
+        surface: VariantDrawSurface::Bg,
+        packet_index,
+        layer_index: Some(packet.layer_index),
+        material: packet.material(),
+        cell_id: packet.cell.id,
+        screen_x: packet.inst.screen_x,
+        screen_y: packet.inst.screen_y,
+        local_x,
+        local_y,
+        source_x,
+        source_y,
+        palette_row: packet.inst.palette,
+        palette_index,
+        output_rgba,
+        key: packet.key.clone(),
+        entry_id: entry.map(|entry| entry.id.clone()),
+        effect_id: packet
+            .draw
+            .material_effect()
+            .map(|(_, effect)| effect.id.clone()),
+    })
+}
+
+fn trace_sprite_packet_pixel(
+    frame: &ModernFrame,
+    atlas: &ModernVariantAtlas,
+    packet_index: usize,
+    packet: &VariantSpriteDrawPacket<'_>,
+    local_x: u8,
+    local_y: u8,
+) -> VariantPixelTrace {
+    let entry = packet.draw.entry();
+    let source_hflip = entry.is_some_and(|entry| entry.source_hflip);
+    let source_vflip = entry.is_some_and(|entry| entry.source_vflip);
+    let source_x = if packet.inst.hflip ^ source_hflip {
+        7 - local_x
+    } else {
+        local_x
+    };
+    let source_y = if packet.inst.vflip ^ source_vflip {
+        7 - local_y
+    } else {
+        local_y
+    };
+    let palette_index = packet.cell.indices[usize::from(source_y) * 8 + usize::from(source_x)];
+    VariantPixelTrace {
+        surface: VariantDrawSurface::Sprite,
+        packet_index,
+        layer_index: None,
+        material: packet.material(),
+        cell_id: packet.cell.id,
+        screen_x: packet.inst.screen_x,
+        screen_y: packet.inst.screen_y,
+        local_x,
+        local_y,
+        source_x,
+        source_y,
+        palette_row: packet.inst.palette,
+        palette_index,
+        output_rgba: sprite_output_rgba(frame, atlas, packet, source_x, source_y, palette_index),
+        key: packet.key.clone(),
+        entry_id: entry.map(|entry| entry.id.clone()),
+        effect_id: packet
+            .draw
+            .material_effect()
+            .map(|(_, effect)| effect.id.clone()),
+    }
+}
+
+fn bg_output_rgba(
+    frame: &ModernFrame,
+    atlas: &ModernVariantAtlas,
+    packet: &VariantBgDrawPacket<'_>,
+    source_x: u8,
+    source_y: u8,
+    palette_index: u8,
+) -> Option<[u8; 4]> {
+    match packet.draw {
+        VariantAtlasDraw::Stable { entry } => atlas_entry_rgba(atlas, entry, source_x, source_y),
+        VariantAtlasDraw::MaterialEffect { effect, .. } => {
+            if palette_index == 0 {
+                None
+            } else {
+                effect
+                    .index_to_rgba
+                    .get(usize::from(palette_index))
+                    .copied()
+            }
+        }
+        VariantAtlasDraw::DynamicPalette { .. }
+        | VariantAtlasDraw::MissingArt
+        | VariantAtlasDraw::Unkeyed => {
+            if palette_index == 0 {
+                None
+            } else {
+                frame
+                    .cgram_rgba
+                    .get(usize::from(packet.inst.palette) * 16 + usize::from(palette_index))
+                    .copied()
+            }
+        }
+    }
+}
+
+fn sprite_output_rgba(
+    frame: &ModernFrame,
+    atlas: &ModernVariantAtlas,
+    packet: &VariantSpriteDrawPacket<'_>,
+    source_x: u8,
+    source_y: u8,
+    palette_index: u8,
+) -> Option<[u8; 4]> {
+    match packet.draw {
+        VariantAtlasDraw::Stable { entry } => atlas_entry_rgba(atlas, entry, source_x, source_y),
+        VariantAtlasDraw::MaterialEffect { effect, .. } => {
+            if palette_index == 0 {
+                None
+            } else {
+                effect
+                    .index_to_rgba
+                    .get(usize::from(palette_index))
+                    .copied()
+            }
+        }
+        VariantAtlasDraw::DynamicPalette { .. }
+        | VariantAtlasDraw::MissingArt
+        | VariantAtlasDraw::Unkeyed => {
+            if palette_index == 0 {
+                None
+            } else {
+                frame
+                    .cgram_rgba
+                    .get(0x80 + usize::from(packet.inst.palette) * 16 + usize::from(palette_index))
+                    .copied()
+            }
+        }
+    }
+}
+
+fn atlas_entry_rgba(
+    atlas: &ModernVariantAtlas,
+    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
+    source_x: u8,
+    source_y: u8,
+) -> Option<[u8; 4]> {
+    let atlas_x = entry.rect[0] + u32::from(source_x);
+    let atlas_y = entry.rect[1] + u32::from(source_y);
+    if atlas_x >= atlas.width || atlas_y >= atlas.height {
+        return None;
+    }
+    let offset = (atlas_y as usize * atlas.width as usize + atlas_x as usize) * 4;
+    let rgba = [
+        atlas.rgba[offset],
+        atlas.rgba[offset + 1],
+        atlas.rgba[offset + 2],
+        atlas.rgba[offset + 3],
+    ];
+    (rgba[3] != 0).then_some(rgba)
 }
 
 fn resolve_draw_for_frame<'a>(
@@ -271,11 +629,14 @@ mod tests {
             plan.bg[0].draw,
             VariantAtlasDraw::MaterialEffect { .. }
         ));
+        assert_eq!(plan.bg[0].material(), ModernDrawMaterial::PaletteEffect);
         assert_eq!(plan.bg[1].cell.id, 1);
         assert!(matches!(plan.bg[1].draw, VariantAtlasDraw::MissingArt));
+        assert_eq!(plan.bg[1].material(), ModernDrawMaterial::MissingArt);
         assert_eq!(plan.sprites.len(), 1);
         assert_eq!(plan.sprites[0].inst.screen_y, 24);
         assert!(matches!(plan.sprites[0].draw, VariantAtlasDraw::Unkeyed));
+        assert_eq!(plan.sprites[0].material(), ModernDrawMaterial::Unkeyed);
         assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.effect_material_draws, 1);
         assert_eq!(plan.stats.dynamic_material_draws, 1);
@@ -484,6 +845,56 @@ mod tests {
         assert_eq!(plan.stats.dynamic_material_fallback_brightness_draws, 0);
         assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.unkeyed_sprite_fallback_draws, 0);
+    }
+
+    #[test]
+    fn traces_material_packet_covering_a_pixel() {
+        let mut frame = ModernFrame::empty();
+        let mut bg0 = ModernBgLayer::new(0);
+        bg0.enabled_main = true;
+        bg0.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            screen_x: 10,
+            screen_y: 20,
+            palette: 2,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = bg0;
+        let mut cell = index_cell(0, modern_source_key(1, 3, 5));
+        cell.indices[2 * 8 + 3] = 4;
+        let mut effect = effect(2);
+        effect.index_to_rgba[4] = [40, 50, 60, 0xff];
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![bg_entry(3, 5, 0)],
+            effects: vec![effect],
+        };
+        let bg_cells = vec![cell];
+        let plan = compile_variant_draws(
+            &frame,
+            &bg_cells,
+            &[],
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        let traces = trace_variant_plan_pixel(&frame, &atlas, &plan, 13, 22);
+
+        assert_eq!(traces.len(), 1);
+        let trace = &traces[0];
+        assert_eq!(trace.surface, VariantDrawSurface::Bg);
+        assert_eq!(trace.material, ModernDrawMaterial::PaletteEffect);
+        assert_eq!(trace.local_x, 3);
+        assert_eq!(trace.local_y, 2);
+        assert_eq!(trace.palette_index, 4);
+        assert_eq!(trace.output_rgba, Some([40, 50, 60, 0xff]));
+        assert!(trace.describe().contains("material=palette_effect"));
     }
 
     #[test]

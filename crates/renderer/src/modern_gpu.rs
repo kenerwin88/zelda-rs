@@ -430,6 +430,7 @@ impl ModernGpuVariantRenderer {
                 device,
                 queue,
                 sprite_cells,
+                frame,
                 &self.atlas,
                 &plan.sprites,
                 output_view,
@@ -506,6 +507,7 @@ impl ModernGpuVariantRenderer {
                 device,
                 queue,
                 sprite_cells,
+                frame,
                 &self.atlas,
                 &plan.sprites,
                 output_view,
@@ -1975,21 +1977,34 @@ impl ModernGpuVariantEffectRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         sprite_cells: &[ModernIndexTile],
+        frame: &ModernFrame,
         atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
         packets: &[crate::modern_variant_draw::VariantSpriteDrawPacket<'_>],
         output_view: &wgpu::TextureView,
     ) {
-        let mut instance_bytes = Vec::new();
-        let mut instance_count = 0u32;
+        let mut static_instance_bytes = Vec::new();
+        let mut static_instance_count = 0u32;
+        let mut live_instance_bytes = Vec::new();
+        let mut live_instance_count = 0u32;
         for packet in packets {
             let Some((entry, effect)) = packet.draw.material_effect() else {
                 continue;
             };
-            let Some(effect_row) = atlas.effect_row_for_effect(effect) else {
-                continue;
+            let static_effect_row = atlas.effect_row_for_effect(effect);
+            let uses_static_effect =
+                static_effect_row.is_some_and(|_| sprite_effect_covers_cell(packet.cell, effect));
+            let effect_row = if uses_static_effect {
+                static_effect_row.expect("checked above")
+            } else {
+                8 + u32::from(packet.inst.palette)
             };
             let col = packet.inst.cell_id % INDEX_GRID_COLS;
             let row = packet.inst.cell_id / INDEX_GRID_COLS;
+            let instance_bytes = if uses_static_effect {
+                &mut static_instance_bytes
+            } else {
+                &mut live_instance_bytes
+            };
             instance_bytes.extend_from_slice(&(col * 8).to_le_bytes());
             instance_bytes.extend_from_slice(&(row * 8).to_le_bytes());
             instance_bytes.extend_from_slice(&(i32::from(packet.inst.screen_x)).to_le_bytes());
@@ -2003,13 +2018,21 @@ impl ModernGpuVariantEffectRenderer {
             }
             instance_bytes.extend_from_slice(&flags.to_le_bytes());
             instance_bytes.extend_from_slice(&effect_row.to_le_bytes());
-            instance_count += 1;
+            if uses_static_effect {
+                static_instance_count += 1;
+            } else {
+                live_instance_count += 1;
+            }
         }
         debug_assert_eq!(
-            instance_bytes.len() as u64,
-            u64::from(instance_count) * INDEX_INSTANCE_STRIDE
+            static_instance_bytes.len() as u64,
+            u64::from(static_instance_count) * INDEX_INSTANCE_STRIDE
         );
-        if instance_count == 0 {
+        debug_assert_eq!(
+            live_instance_bytes.len() as u64,
+            u64::from(live_instance_count) * INDEX_INSTANCE_STRIDE
+        );
+        if static_instance_count == 0 && live_instance_count == 0 {
             return;
         }
 
@@ -2019,33 +2042,70 @@ impl ModernGpuVariantEffectRenderer {
             sprite_cells,
             "modern_variant_effect_sprite_index_atlas",
         );
+        if static_instance_count != 0 {
+            self.render_sprite_effect_instances(
+                device,
+                queue,
+                &index_atlas_view,
+                &self.effect_lut_view,
+                &static_instance_bytes,
+                static_instance_count,
+                output_view,
+                "modern_variant_effect_sprite",
+            );
+        }
+        if live_instance_count != 0 {
+            let (_live_lut_texture, live_lut_view) = build_live_effect_lut(device, queue, frame);
+            self.render_sprite_effect_instances(
+                device,
+                queue,
+                &index_atlas_view,
+                &live_lut_view,
+                &live_instance_bytes,
+                live_instance_count,
+                output_view,
+                "modern_variant_live_cgram_sprite",
+            );
+        }
+    }
+
+    fn render_sprite_effect_instances(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        index_atlas_view: &wgpu::TextureView,
+        effect_lut_view: &wgpu::TextureView,
+        instance_bytes: &[u8],
+        instance_count: u32,
+        output_view: &wgpu::TextureView,
+        label: &'static str,
+    ) {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("modern_variant_effect_sprite"),
+            label: Some(label),
             layout: &self.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&index_atlas_view),
+                    resource: wgpu::BindingResource::TextureView(index_atlas_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: wgpu::BindingResource::TextureView(&self.effect_lut_view),
+                    resource: wgpu::BindingResource::TextureView(effect_lut_view),
                 },
             ],
         });
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("modern_variant_effect_sprite_instances"),
+            label: Some(label),
             size: instance_bytes.len() as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        queue.write_buffer(&instance_buffer, 0, &instance_bytes);
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("modern_variant_effect_sprite"),
-        });
+        queue.write_buffer(&instance_buffer, 0, instance_bytes);
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("modern_variant_effect_sprite"),
+                label: Some(label),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: output_view,
                     resolve_target: None,
@@ -2067,6 +2127,20 @@ impl ModernGpuVariantEffectRenderer {
         }
         queue.submit([encoder.finish()]);
     }
+}
+
+fn sprite_effect_covers_cell(
+    cell: &ModernIndexTile,
+    effect: &crate::modern_variant_atlas::TileEffect,
+) -> bool {
+    cell.indices
+        .iter()
+        .copied()
+        .filter(|index| *index != 0)
+        .all(|index| {
+            usize::from(index) < effect.colors_per_row as usize
+                && usize::from(index) < effect.index_to_rgba.len()
+        })
 }
 
 fn variant_tile_instance(
@@ -2187,7 +2261,7 @@ fn build_live_effect_lut(
     });
     let mut lut_bytes = Vec::with_capacity(16 * EFFECT_LUT_WIDTH as usize * 4);
     for color in &frame.cgram_rgba {
-        lut_bytes.extend_from_slice(color);
+        lut_bytes.extend_from_slice(&final_live_cgram_rgba(*color, frame.brightness));
     }
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
@@ -2210,6 +2284,21 @@ fn build_live_effect_lut(
     );
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
     (texture, view)
+}
+
+fn final_live_cgram_rgba(color: [u8; 4], brightness: u8) -> [u8; 4] {
+    [
+        expand_live_cgram_channel(color[0], brightness),
+        expand_live_cgram_channel(color[1], brightness),
+        expand_live_cgram_channel(color[2], brightness),
+        color[3],
+    ]
+}
+
+fn expand_live_cgram_channel(component: u8, brightness: u8) -> u8 {
+    let c5 = u32::from(component >> 3).min(31);
+    let v8 = (c5 << 3) | (c5 >> 2);
+    ((v8 * u32::from(brightness)) / 15) as u8
 }
 
 /// GPU renderer for the palette-index path: an `R8Uint` atlas of 8x8 index
@@ -3424,6 +3513,7 @@ impl ModernGpuVariantHeadless {
                 &self.device,
                 &self.queue,
                 sprite_cells,
+                frame,
                 &self.renderer.atlas,
                 &plan.sprites,
                 &self.target_view,
@@ -4146,6 +4236,86 @@ mod tests {
         assert_eq!(stats.missing_art_draws, 1);
         assert_eq!(stats.unkeyed_fallback_draws, 0);
         assert_eq!(variant, full);
+    }
+
+    #[test]
+    fn modern_gpu_variant_headless_uses_live_cgram_for_sprite_effect_indices_outside_static_row() {
+        use crate::modern_frame::ModernIndexSpriteInstance;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, TileEffect, VariantAtlasEntry, VariantAtlasKey,
+        };
+
+        let mut sprite_indices = [0u8; 64];
+        sprite_indices[0] = 9;
+        let sprite_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: sprite_indices,
+            source_key: modern_source_key(2, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.cgram_rgba[0x80 + 16 + 9] = [248, 248, 248, 0xff];
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 1,
+            priority: 0,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        });
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![VariantAtlasEntry {
+                id: "sprite:kSprGfx:pack0:tile0:3bpp:palette_main_spr:row1".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "sprite".to_string(),
+                    asset: "kSprGfx".to_string(),
+                    pack: 0,
+                    tile: 0,
+                    bpp: 3,
+                    palette: "palette_main_spr".to_string(),
+                    palette_row: 1,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "test".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                runtime_material: Some("palette_lut".to_string()),
+                runtime_colors_per_row: None,
+                source_hflip: false,
+                source_vflip: false,
+            }],
+            effects: vec![TileEffect {
+                id: "palette_main_spr:8color:row1".to_string(),
+                palette: "palette_main_spr".to_string(),
+                palette_row: 1,
+                colors_per_row: 8,
+                index_to_rgba: vec![[0, 0, 0, 0xff]; 8],
+                dynamic_policy: "stable".to_string(),
+            }],
+        };
+
+        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
+            &frame,
+            &[],
+            &sprite_cells,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(stats.effect_draws, 1);
+        assert_eq!(stats.effect_material_draws, 1);
+        assert_eq!(stats.dynamic_material_draws, 1);
+        assert_eq!(stats.fallback_draws, 0);
+        assert_eq!(&variant[0..4], &[255, 255, 255, 0xff]);
     }
 
     #[test]

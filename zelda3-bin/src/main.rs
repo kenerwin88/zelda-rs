@@ -5916,6 +5916,41 @@ fn run_replay_save(args: &[String]) {
                         } else {
                             "palette_overworld_bg_main"
                         };
+                        if let Some((trace_frame, trace_x, trace_y)) = variant_trace_pixel_env() {
+                            if frames == trace_frame {
+                                let variant_atlas = variant_atlas
+                                    .as_ref()
+                                    .expect("variant atlas loaded for variant compare");
+                                let plan = renderer::modern_variant_draw::compile_variant_draws(
+                                    &modern,
+                                    &bg_cells,
+                                    &sprite_cells,
+                                    variant_atlas,
+                                    bg_palette_name,
+                                    "palette_main_spr",
+                                );
+                                let traces =
+                                    renderer::modern_variant_draw::trace_variant_plan_pixel(
+                                        &modern,
+                                        variant_atlas,
+                                        &plan,
+                                        trace_x,
+                                        trace_y,
+                                    );
+                                if traces.is_empty() {
+                                    eprintln!(
+                                        "variant_pixel_trace frame={frames} pixel=({trace_x}, {trace_y}) hits=0"
+                                    );
+                                } else {
+                                    for trace in traces {
+                                        eprintln!(
+                                            "variant_pixel_trace frame={frames} pixel=({trace_x}, {trace_y}) {}",
+                                            trace.describe()
+                                        );
+                                    }
+                                }
+                            }
+                        }
                         let (mut fallback_modern, fallback_bg_cells) =
                             renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
                         let (fallback_sprite_cells, fallback_sprites) =
@@ -13000,97 +13035,132 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
 
             let mut variant_stats = None;
-            let (modern_rgba, via) =
-                if let Some(variant_headless) = modern_variant_headless.as_ref() {
-                    if gpu_frame.mode == 7 {
-                        let headless = modern_gpu_headless
-                            .as_ref()
-                            .expect("mode7 helper allocated for variant compare");
-                        (headless.render_mode7_rgba(&gpu_frame), "mode7-gpu")
-                    } else {
-                        let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
-                        let src_slice: Vec<(u8, u16, u16)> = game
-                            .vram_chr_source()
-                            .as_slice()
-                            .iter()
-                            .map(|s| (s.kind, s.pack, s.tile_off))
-                            .collect();
-                        let (mut modern, bg_cells) =
-                            renderer::modern_extract::extract_modern_frame_from_sources(
-                                &gpu_frame,
-                                &src_slice[..],
-                                atlas,
-                            );
-                        let (sprite_cells, sprites) =
-                            renderer::modern_extract::extract_modern_sprites_from_sources(
-                                &gpu_frame,
-                                &src_slice[..],
-                                atlas,
-                            );
-                        modern.index_sprites = sprites;
-                        let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
-                            "palette_dung_bg_main"
-                        } else {
-                            "palette_overworld_bg_main"
-                        };
-                        let (mut fallback_modern, fallback_bg_cells) =
-                            renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
-                        let (fallback_sprite_cells, fallback_sprites) =
-                            renderer::modern_extract::extract_modern_sprites_from_vram(&gpu_frame);
-                        fallback_modern.index_sprites = fallback_sprites;
-                        let (rgba, stats) = variant_headless.render_rgba_with_fallback(
-                            &modern,
-                            &bg_cells,
-                            &sprite_cells,
-                            &fallback_modern,
-                            &fallback_bg_cells,
-                            &fallback_sprite_cells,
-                            bg_palette_name,
-                            "palette_main_spr",
-                        );
-                        variant_stats = Some(stats);
-                        (rgba, "variant-gpu")
-                    }
-                } else if let Some(headless) = modern_gpu_headless.as_ref() {
-                    if gpu_frame.mode == 7 {
-                        (headless.render_mode7_rgba(&gpu_frame), "mode7-gpu")
-                    } else {
-                        let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
-                        let src_slice: Vec<(u8, u16, u16)> = game
-                            .vram_chr_source()
-                            .as_slice()
-                            .iter()
-                            .map(|s| (s.kind, s.pack, s.tile_off))
-                            .collect();
-                        let (mut modern, bg_cells) =
-                            renderer::modern_extract::extract_modern_frame_from_sources(
-                                &gpu_frame,
-                                &src_slice[..],
-                                atlas,
-                            );
-                        let (sprite_cells, sprites) =
-                            renderer::modern_extract::extract_modern_sprites_from_sources(
-                                &gpu_frame,
-                                &src_slice[..],
-                                atlas,
-                            );
-                        modern.index_sprites = sprites;
-                        (
-                            headless.render_rgba(&modern, &bg_cells, &sprite_cells),
-                            "gpu",
-                        )
-                    }
-                } else if gpu_frame.mode == 7 {
-                    (
-                        renderer::modern_software::render_modern_mode7_frame(&gpu_frame),
-                        "mode7-cpu",
-                    )
+            let (modern_rgba, via) = if let Some(variant_headless) =
+                modern_variant_headless.as_ref()
+            {
+                if gpu_frame.mode == 7 {
+                    let headless = modern_gpu_headless
+                        .as_ref()
+                        .expect("mode7 helper allocated for variant compare");
+                    (headless.render_mode7_rgba(&gpu_frame), "mode7-gpu")
                 } else {
+                    let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
+                    let src_slice: Vec<(u8, u16, u16)> = game
+                        .vram_chr_source()
+                        .as_slice()
+                        .iter()
+                        .map(|s| (s.kind, s.pack, s.tile_off))
+                        .collect();
+                    let (mut modern, bg_cells) =
+                        renderer::modern_extract::extract_modern_frame_from_sources(
+                            &gpu_frame,
+                            &src_slice[..],
+                            atlas,
+                        );
+                    let (sprite_cells, sprites) =
+                        renderer::modern_extract::extract_modern_sprites_from_sources(
+                            &gpu_frame,
+                            &src_slice[..],
+                            atlas,
+                        );
+                    modern.index_sprites = sprites;
+                    let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
+                        "palette_dung_bg_main"
+                    } else {
+                        "palette_overworld_bg_main"
+                    };
+                    if let Some((trace_frame, trace_x, trace_y)) = variant_trace_pixel_env() {
+                        if completed_frame == trace_frame {
+                            let variant_atlas = variant_atlas
+                                .as_ref()
+                                .expect("variant atlas loaded for variant compare");
+                            let plan = renderer::modern_variant_draw::compile_variant_draws(
+                                &modern,
+                                &bg_cells,
+                                &sprite_cells,
+                                variant_atlas,
+                                bg_palette_name,
+                                "palette_main_spr",
+                            );
+                            let traces = renderer::modern_variant_draw::trace_variant_plan_pixel(
+                                &modern,
+                                variant_atlas,
+                                &plan,
+                                trace_x,
+                                trace_y,
+                            );
+                            if traces.is_empty() {
+                                eprintln!(
+                                        "variant_pixel_trace frame={completed_frame} pixel=({trace_x}, {trace_y}) hits=0"
+                                    );
+                            } else {
+                                for trace in traces {
+                                    eprintln!(
+                                            "variant_pixel_trace frame={completed_frame} pixel=({trace_x}, {trace_y}) {}",
+                                            trace.describe()
+                                        );
+                                }
+                            }
+                        }
+                    }
+                    let (mut fallback_modern, fallback_bg_cells) =
+                        renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
+                    let (fallback_sprite_cells, fallback_sprites) =
+                        renderer::modern_extract::extract_modern_sprites_from_vram(&gpu_frame);
+                    fallback_modern.index_sprites = fallback_sprites;
+                    let (rgba, stats) = variant_headless.render_rgba_with_fallback(
+                        &modern,
+                        &bg_cells,
+                        &sprite_cells,
+                        &fallback_modern,
+                        &fallback_bg_cells,
+                        &fallback_sprite_cells,
+                        bg_palette_name,
+                        "palette_main_spr",
+                    );
+                    variant_stats = Some(stats);
+                    (rgba, "variant-gpu")
+                }
+            } else if let Some(headless) = modern_gpu_headless.as_ref() {
+                if gpu_frame.mode == 7 {
+                    (headless.render_mode7_rgba(&gpu_frame), "mode7-gpu")
+                } else {
+                    let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
+                    let src_slice: Vec<(u8, u16, u16)> = game
+                        .vram_chr_source()
+                        .as_slice()
+                        .iter()
+                        .map(|s| (s.kind, s.pack, s.tile_off))
+                        .collect();
+                    let (mut modern, bg_cells) =
+                        renderer::modern_extract::extract_modern_frame_from_sources(
+                            &gpu_frame,
+                            &src_slice[..],
+                            atlas,
+                        );
+                    let (sprite_cells, sprites) =
+                        renderer::modern_extract::extract_modern_sprites_from_sources(
+                            &gpu_frame,
+                            &src_slice[..],
+                            atlas,
+                        );
+                    modern.index_sprites = sprites;
                     (
-                        renderer::modern_extract::render_modern_frame_full_from_vram(&gpu_frame),
-                        "vram",
+                        headless.render_rgba(&modern, &bg_cells, &sprite_cells),
+                        "gpu",
                     )
-                };
+                }
+            } else if gpu_frame.mode == 7 {
+                (
+                    renderer::modern_software::render_modern_mode7_frame(&gpu_frame),
+                    "mode7-cpu",
+                )
+            } else {
+                (
+                    renderer::modern_extract::render_modern_frame_full_from_vram(&gpu_frame),
+                    "vram",
+                )
+            };
             let modern_diff = compare_rgba_to_rgba(&classic_rgba, &modern_rgba);
             let mismatch = modern_diff
                 .as_ref()
@@ -13480,6 +13550,23 @@ fn write_assets_index_png(path: &str, bin: &[u8], cell_count: usize) -> Result<(
 ///
 /// Produces the same hash value as the C oracle's RGB hash for identical pixel
 /// data, enabling direct comparison of render-hash lines in the parity gate.
+fn variant_trace_pixel_env() -> Option<(u32, i16, i16)> {
+    std::env::var("ZELDA3_VARIANT_TRACE_PIXEL")
+        .ok()
+        .and_then(|value| parse_variant_trace_pixel(&value))
+}
+
+fn parse_variant_trace_pixel(value: &str) -> Option<(u32, i16, i16)> {
+    let mut parts = value.split([':', ',']);
+    let frame = parts.next()?.parse().ok()?;
+    let x = parts.next()?.parse().ok()?;
+    let y = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((frame, x, y))
+}
+
 fn render_frame_rgb_hash_rgba(frame: &[u8]) -> u32 {
     let mut hash = 2166136261u32;
     for pixel in frame.chunks_exact(4) {
@@ -15487,6 +15574,20 @@ mod tests {
         assert_eq!(diff.first_y, 0);
         assert_eq!(diff.cpu_rgb, (4, 5, 6));
         assert_eq!(diff.gpu_rgb, (4, 7, 6));
+    }
+
+    #[test]
+    fn parses_variant_trace_pixel_env_value() {
+        assert_eq!(
+            parse_variant_trace_pixel("175:102:104"),
+            Some((175, 102, 104))
+        );
+        assert_eq!(
+            parse_variant_trace_pixel("175,102,104"),
+            Some((175, 102, 104))
+        );
+        assert_eq!(parse_variant_trace_pixel("175:102"), None);
+        assert_eq!(parse_variant_trace_pixel("175:102:104:1"), None);
     }
 
     #[test]
