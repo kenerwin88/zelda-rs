@@ -517,46 +517,16 @@ impl ModernGpuVariantRenderer {
     ) {
         let mut rendered_any = false;
         for rank_packets in mode1_effect_material_rank_packets(plan) {
-            if !rank_packets.bg.is_empty() {
-                self.effect_renderer.render_bg(
-                    device,
-                    queue,
-                    bg_cells,
-                    &self.atlas,
-                    &rank_packets.bg,
-                    output_view,
-                    if rendered_any {
-                        wgpu::LoadOp::Load
-                    } else {
-                        modern_frame_clear_op(frame)
-                    },
-                );
-                rendered_any = true;
-            }
-
-            if !rank_packets.sprites.is_empty() {
-                if !rendered_any {
-                    self.effect_renderer.render_bg(
-                        device,
-                        queue,
-                        bg_cells,
-                        &self.atlas,
-                        &[],
-                        output_view,
-                        modern_frame_clear_op(frame),
-                    );
-                    rendered_any = true;
-                }
-                self.effect_renderer.render_sprites(
-                    device,
-                    queue,
-                    sprite_cells,
-                    frame,
-                    &self.atlas,
-                    &rank_packets.sprites,
-                    output_view,
-                );
-            }
+            rendered_any = self.render_effect_material_rank_packets(
+                device,
+                queue,
+                frame,
+                bg_cells,
+                sprite_cells,
+                &rank_packets,
+                output_view,
+                rendered_any,
+            );
         }
         if !rendered_any {
             self.effect_renderer.render_bg(
@@ -569,6 +539,61 @@ impl ModernGpuVariantRenderer {
                 modern_frame_clear_op(frame),
             );
         }
+    }
+
+    fn render_effect_material_rank_packets(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        rank_packets: &Mode1EffectMaterialRankPackets<'_>,
+        output_view: &wgpu::TextureView,
+        rendered_any: bool,
+    ) -> bool {
+        let mut rendered_any = rendered_any;
+        if !rank_packets.bg.is_empty() {
+            self.effect_renderer.render_bg(
+                device,
+                queue,
+                bg_cells,
+                &self.atlas,
+                &rank_packets.bg,
+                output_view,
+                if rendered_any {
+                    wgpu::LoadOp::Load
+                } else {
+                    modern_frame_clear_op(frame)
+                },
+            );
+            rendered_any = true;
+        }
+
+        if !rank_packets.sprites.is_empty() {
+            if !rendered_any {
+                self.effect_renderer.render_bg(
+                    device,
+                    queue,
+                    bg_cells,
+                    &self.atlas,
+                    &[],
+                    output_view,
+                    modern_frame_clear_op(frame),
+                );
+                rendered_any = true;
+            }
+            self.effect_renderer.render_sprites(
+                device,
+                queue,
+                sprite_cells,
+                frame,
+                &self.atlas,
+                &rank_packets.sprites,
+                output_view,
+            );
+        }
+        rendered_any
     }
 
     fn build_variant_frame_from_plan(
