@@ -13,8 +13,10 @@ pub(crate) enum GpuFrameMainWorkCommand {
     BgLayer {
         layer_idx: usize,
         hi_priority: bool,
+        is_2bpp: bool,
         layer_bit: u32,
         math_bit_pos: u32,
+        mosaic_layer_bit: u8,
         screen_idx: usize,
         window_layer_bit: u8,
         window_flags_shift: u32,
@@ -35,9 +37,11 @@ pub(crate) enum GpuFrameSubWorkCommand {
     BgLayer {
         layer_idx: usize,
         hi_priority: bool,
+        is_2bpp: bool,
         screen_layer_bit: u8,
         render_layer_bit: u32,
         math_bit_pos: u32,
+        mosaic_layer_bit: u8,
         screen_idx: usize,
         window_layer_bit: u8,
         window_flags_shift: u32,

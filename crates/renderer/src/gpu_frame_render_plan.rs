@@ -171,8 +171,10 @@ fn main_bg_work_item(
     GpuFrameMainWorkCommand::BgLayer {
         layer_idx,
         hi_priority,
+        is_2bpp: layer_idx == 2,
         layer_bit: 1u32 << layer_idx,
         math_bit_pos,
+        mosaic_layer_bit: 1u8 << layer_idx,
         screen_idx: 0,
         window_layer_bit: 1u8 << layer_idx,
         window_flags_shift: (layer_idx as u32) * 4,
@@ -193,9 +195,11 @@ fn sub_bg_work_item(layer_idx: usize, hi_priority: bool) -> GpuFrameSubWorkComma
     GpuFrameSubWorkCommand::BgLayer {
         layer_idx,
         hi_priority,
+        is_2bpp: layer_idx == 2,
         screen_layer_bit: 1u8 << layer_idx,
         render_layer_bit: 0, // skip per-scanline TM check for sub-screen
         math_bit_pos: 255,   // output alpha=1.0 (real pixel marker)
+        mosaic_layer_bit: 1u8 << layer_idx,
         screen_idx: 1,
         window_layer_bit: 1u8 << layer_idx,
         window_flags_shift: (layer_idx as u32) * 4,
@@ -400,8 +404,10 @@ mod tests {
             GpuFrameMainWorkCommand::BgLayer {
                 layer_idx: 2,
                 hi_priority: true,
+                is_2bpp: true,
                 layer_bit: 0x04,
                 math_bit_pos: 2,
+                mosaic_layer_bit: 0x04,
                 screen_idx: 0,
                 window_layer_bit: 0x04,
                 window_flags_shift: 8,
@@ -416,9 +422,11 @@ mod tests {
             GpuFrameSubWorkCommand::BgLayer {
                 layer_idx: 2,
                 hi_priority: true,
+                is_2bpp: true,
                 screen_layer_bit: 0x04,
                 render_layer_bit: 0,
                 math_bit_pos: 255,
+                mosaic_layer_bit: 0x04,
                 screen_idx: 1,
                 window_layer_bit: 0x04,
                 window_flags_shift: 8,
