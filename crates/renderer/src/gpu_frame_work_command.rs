@@ -186,10 +186,15 @@ pub(crate) struct GpuFrameRenderPlan {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct GpuFrameRenderResourceRequirements {
+    uses_tile_atlas: bool,
     uses_sprites: bool,
 }
 
 impl GpuFrameRenderResourceRequirements {
+    pub(crate) fn uses_tile_atlas(self) -> bool {
+        self.uses_tile_atlas
+    }
+
     pub(crate) fn uses_sprites(self) -> bool {
         self.uses_sprites
     }
@@ -213,6 +218,7 @@ impl GpuFrameRenderPlan {
 
     pub(crate) fn resource_requirements(&self) -> GpuFrameRenderResourceRequirements {
         GpuFrameRenderResourceRequirements {
+            uses_tile_atlas: self.work_items.any(GpuFrameWorkCommand::uses_tile_atlas),
             uses_sprites: self.uses_sprites(),
         }
     }
@@ -292,6 +298,16 @@ impl GpuFrameRenderScreen {
 }
 
 impl GpuFrameWorkCommand {
+    pub(crate) fn uses_tile_atlas(&self) -> bool {
+        matches!(
+            self,
+            Self::Screen {
+                command: GpuFrameScreenWorkCommand::BgLayer(_),
+                ..
+            }
+        )
+    }
+
     pub(crate) fn uses_sprites(&self) -> bool {
         matches!(
             self,
@@ -444,6 +460,26 @@ mod tests {
     }
 
     #[test]
+    fn frame_work_command_reports_tile_atlas_usage_from_command_kind() {
+        assert!(main_frame_work_command(GpuFrameScreenWorkCommand::BgLayer(
+            GpuFrameBgPass::mode1_main(0, false, 0)
+        ))
+        .uses_tile_atlas());
+
+        assert!(
+            !main_frame_work_command(GpuFrameScreenWorkCommand::SpritePriority(
+                GpuFrameSpritePass::new(0, 4, GpuFrameWindowSelector::main(0x10, 16))
+            ))
+            .uses_tile_atlas()
+        );
+        assert!(!main_frame_work_command(GpuFrameScreenWorkCommand::Mode7Bg(
+            GpuFrameMode7Pass::main_bg()
+        ))
+        .uses_tile_atlas());
+        assert!(!post_process_frame_work_command().uses_tile_atlas());
+    }
+
+    #[test]
     fn frame_render_plan_reports_sprite_usage_from_work_items() {
         let sprite_free_plan = GpuFrameRenderPlan::from_iter([
             main_frame_work_command(GpuFrameScreenWorkCommand::BgLayer(
@@ -475,6 +511,7 @@ mod tests {
         assert_eq!(
             sprite_free_plan.resource_requirements(),
             GpuFrameRenderResourceRequirements {
+                uses_tile_atlas: true,
                 uses_sprites: false
             }
         );
@@ -488,5 +525,20 @@ mod tests {
             )),
         ]);
         assert!(sprite_plan.resource_requirements().uses_sprites());
+        assert!(sprite_plan.resource_requirements().uses_tile_atlas());
+
+        let sprite_only_plan = GpuFrameRenderPlan::from_iter([
+            main_frame_work_command(GpuFrameScreenWorkCommand::SpritePriority(
+                GpuFrameSpritePass::new(0, 4, GpuFrameWindowSelector::main(0x10, 16)),
+            )),
+            post_process_frame_work_command(),
+        ]);
+        assert_eq!(
+            sprite_only_plan.resource_requirements(),
+            GpuFrameRenderResourceRequirements {
+                uses_tile_atlas: false,
+                uses_sprites: true
+            }
+        );
     }
 }
