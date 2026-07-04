@@ -2094,7 +2094,7 @@ impl ModernGpuVariantEffectRenderer {
             u64::from(instance_count) * INDEX_INSTANCE_STRIDE
         );
 
-        self.render_bg_effect_instances(
+        self.render_effect_instances(
             device,
             queue,
             &index_atlas_view,
@@ -2141,7 +2141,7 @@ impl ModernGpuVariantEffectRenderer {
             u64::from(instance_count) * INDEX_INSTANCE_STRIDE
         );
 
-        self.render_bg_effect_instances(
+        self.render_effect_instances(
             device,
             queue,
             &index_atlas_view,
@@ -2155,7 +2155,7 @@ impl ModernGpuVariantEffectRenderer {
         );
     }
 
-    fn render_bg_effect_instances(
+    fn render_effect_instances(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -2313,7 +2313,7 @@ impl ModernGpuVariantEffectRenderer {
                 (&*view, "modern_variant_live_cgram_sprite")
             }
         };
-        self.render_sprite_effect_instances(
+        self.render_effect_instances(
             device,
             queue,
             index_atlas_view,
@@ -2321,67 +2321,10 @@ impl ModernGpuVariantEffectRenderer {
             instance_bytes,
             instance_count,
             output_view,
+            wgpu::LoadOp::Load,
+            label,
             label,
         );
-    }
-
-    fn render_sprite_effect_instances(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        index_atlas_view: &wgpu::TextureView,
-        effect_lut_view: &wgpu::TextureView,
-        instance_bytes: &[u8],
-        instance_count: u32,
-        output_view: &wgpu::TextureView,
-        label: &'static str,
-    ) {
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some(label),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(index_atlas_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::TextureView(effect_lut_view),
-                },
-            ],
-        });
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some(label),
-            size: instance_bytes.len() as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&instance_buffer, 0, instance_bytes);
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some(label),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: output_view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
-            pass.set_vertex_buffer(0, instance_buffer.slice(..));
-            pass.draw(0..6, 0..instance_count);
-        }
-        queue.submit([encoder.finish()]);
     }
 }
 
