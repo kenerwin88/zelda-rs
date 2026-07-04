@@ -3756,19 +3756,61 @@ fn modern_screen_builder_layer_needs_scroll(frame: &ModernFrame, layer: usize) -
     varies || bg.scroll_x != 0 || bg.scroll_y != 0
 }
 
-fn can_build_modern_screens_on_gpu(frame: &ModernFrame) -> bool {
-    if frame.forced_blank
-        || frame.windowsel != 0
-        || frame.screen_windowed_main != 0
-        || frame.screen_windowed_sub != 0
-        || (frame.mosaic_size > 1 && (frame.mosaic_enabled & 0x07) != 0)
-        || (frame.screen_enabled_main | frame.screen_enabled_sub) & 0x08 != 0
-        || frame.bg_layers.len() < 3
-    {
-        return false;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ModernScreenBuilderBlocker {
+    ForcedBlank,
+    Window,
+    Mosaic,
+    Bg4,
+    ShortBgLayers,
+    Scroll,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ModernScreenBuilderResult {
+    Gpu,
+    Cpu(ModernScreenBuilderBlocker),
+    CpuOverlay,
+}
+
+fn modern_screen_builder_blocker(frame: &ModernFrame) -> Option<ModernScreenBuilderBlocker> {
+    if frame.forced_blank {
+        return Some(ModernScreenBuilderBlocker::ForcedBlank);
     }
-    frame.bg_scroll_scanlines.is_empty()
-        || frame.bg_scroll_scanlines.len() >= usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT)
+    if frame.windowsel != 0 || frame.screen_windowed_main != 0 || frame.screen_windowed_sub != 0 {
+        return Some(ModernScreenBuilderBlocker::Window);
+    }
+    if frame.mosaic_size > 1 && (frame.mosaic_enabled & 0x07) != 0 {
+        return Some(ModernScreenBuilderBlocker::Mosaic);
+    }
+    if (frame.screen_enabled_main | frame.screen_enabled_sub) & 0x08 != 0 {
+        return Some(ModernScreenBuilderBlocker::Bg4);
+    }
+    if frame.bg_layers.len() < 3 {
+        return Some(ModernScreenBuilderBlocker::ShortBgLayers);
+    }
+    if !frame.bg_scroll_scanlines.is_empty()
+        && frame.bg_scroll_scanlines.len() < usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT)
+    {
+        return Some(ModernScreenBuilderBlocker::Scroll);
+    }
+    None
+}
+
+fn record_screen_builder_blocker(
+    stats: &mut crate::modern_software::VariantAtlasRenderStats,
+    blocker: ModernScreenBuilderBlocker,
+) {
+    match blocker {
+        ModernScreenBuilderBlocker::ForcedBlank => stats.cpu_screen_builder_block_forced_blank += 1,
+        ModernScreenBuilderBlocker::Window => stats.cpu_screen_builder_block_window += 1,
+        ModernScreenBuilderBlocker::Mosaic => stats.cpu_screen_builder_block_mosaic += 1,
+        ModernScreenBuilderBlocker::Bg4 => stats.cpu_screen_builder_block_bg4 += 1,
+        ModernScreenBuilderBlocker::ShortBgLayers => {
+            stats.cpu_screen_builder_block_short_bg_layers += 1;
+        }
+        ModernScreenBuilderBlocker::Scroll => stats.cpu_screen_builder_block_scroll += 1,
+    }
 }
 
 /// GPU finalizer compositor for the PNG index-atlas path. The Mode-1 priority
@@ -3799,33 +3841,58 @@ impl ModernGpuCompositor {
         sprite_cells: &[ModernIndexTile],
         output_texture: &wgpu::Texture,
     ) -> bool {
-        if can_build_modern_screens_on_gpu(frame) {
-            self.screen_builder.render_into(
+        matches!(
+            self.render_with_screen_builder_status(
                 device,
                 queue,
                 frame,
                 bg_cells,
                 sprite_cells,
-                &self.finalizer.main_buffer,
-                &self.finalizer.sub_buffer,
-            );
-            self.finalizer.render_current_buffers_to_texture(
-                device,
-                queue,
-                frame,
-                u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
-                    * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT),
-                u32::from(crate::modern_frame::MODERN_FRAME_WIDTH),
-                1,
                 output_texture,
+            ),
+            ModernScreenBuilderResult::Gpu
+        )
+    }
+
+    fn render_with_screen_builder_status(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        output_texture: &wgpu::Texture,
+    ) -> ModernScreenBuilderResult {
+        if let Some(blocker) = modern_screen_builder_blocker(frame) {
+            let screens = crate::modern_software::build_modern_composited_screens(
+                frame,
+                bg_cells,
+                sprite_cells,
             );
-            return true;
+            self.finalizer
+                .render_to_texture(device, queue, frame, &screens, output_texture);
+            return ModernScreenBuilderResult::Cpu(blocker);
         }
-        let screens =
-            crate::modern_software::build_modern_composited_screens(frame, bg_cells, sprite_cells);
-        self.finalizer
-            .render_to_texture(device, queue, frame, &screens, output_texture);
-        false
+        self.screen_builder.render_into(
+            device,
+            queue,
+            frame,
+            bg_cells,
+            sprite_cells,
+            &self.finalizer.main_buffer,
+            &self.finalizer.sub_buffer,
+        );
+        self.finalizer.render_current_buffers_to_texture(
+            device,
+            queue,
+            frame,
+            u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
+                * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT),
+            u32::from(crate::modern_frame::MODERN_FRAME_WIDTH),
+            1,
+            output_texture,
+        );
+        ModernScreenBuilderResult::Gpu
     }
 
     fn render_prefinal_screens_with_final_frame(
@@ -3837,37 +3904,37 @@ impl ModernGpuCompositor {
         bg_cells: &[ModernIndexTile],
         sprite_cells: &[ModernIndexTile],
         output_texture: &wgpu::Texture,
-    ) -> bool {
-        if can_build_modern_screens_on_gpu(screen_frame) {
-            self.screen_builder.render_into(
-                device,
-                queue,
+    ) -> ModernScreenBuilderResult {
+        if let Some(blocker) = modern_screen_builder_blocker(screen_frame) {
+            let screens = crate::modern_software::build_modern_composited_screens(
                 screen_frame,
                 bg_cells,
                 sprite_cells,
-                &self.finalizer.main_buffer,
-                &self.finalizer.sub_buffer,
             );
-            self.finalizer.render_current_buffers_to_texture(
-                device,
-                queue,
-                final_frame,
-                u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
-                    * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT),
-                u32::from(crate::modern_frame::MODERN_FRAME_WIDTH),
-                1,
-                output_texture,
-            );
-            return true;
+            self.finalizer
+                .render_to_texture(device, queue, final_frame, &screens, output_texture);
+            return ModernScreenBuilderResult::Cpu(blocker);
         }
-        let screens = crate::modern_software::build_modern_composited_screens(
+        self.screen_builder.render_into(
+            device,
+            queue,
             screen_frame,
             bg_cells,
             sprite_cells,
+            &self.finalizer.main_buffer,
+            &self.finalizer.sub_buffer,
         );
-        self.finalizer
-            .render_to_texture(device, queue, final_frame, &screens, output_texture);
-        false
+        self.finalizer.render_current_buffers_to_texture(
+            device,
+            queue,
+            final_frame,
+            u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
+                * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT),
+            u32::from(crate::modern_frame::MODERN_FRAME_WIDTH),
+            1,
+            output_texture,
+        );
+        ModernScreenBuilderResult::Gpu
     }
 }
 
@@ -4207,7 +4274,7 @@ impl ModernGpuVariantHeadless {
                     &self.target_view,
                 );
             } else if prefinal_bg.is_empty() && prefinal_live_cgram_bg.is_empty() {
-                let built_on_gpu = self.compositor.render(
+                let build_result = self.compositor.render_with_screen_builder_status(
                     &self.device,
                     &self.queue,
                     fallback_frame,
@@ -4215,13 +4282,23 @@ impl ModernGpuVariantHeadless {
                     fallback_sprite_cells,
                     &self.target,
                 );
-                if built_on_gpu {
-                    stats.direct_gpu_fallback_frames += 1;
-                } else {
-                    stats.cpu_prefinal_composite_frames += 1;
+                match build_result {
+                    ModernScreenBuilderResult::Gpu => {
+                        stats.direct_gpu_fallback_frames += 1;
+                        stats.gpu_screen_builder_frames += 1;
+                    }
+                    ModernScreenBuilderResult::Cpu(blocker) => {
+                        stats.cpu_prefinal_composite_frames += 1;
+                        record_screen_builder_blocker(&mut stats, blocker);
+                    }
+                    ModernScreenBuilderResult::CpuOverlay => {
+                        stats.cpu_prefinal_composite_frames += 1;
+                        stats.cpu_prefinal_overlay_frames += 1;
+                    }
                 }
             } else {
                 stats.cpu_prefinal_composite_frames += 1;
+                stats.cpu_prefinal_overlay_frames += 1;
                 let mut screens = crate::modern_software::build_modern_composited_screens(
                     fallback_frame,
                     fallback_bg_cells,
@@ -4266,17 +4343,26 @@ impl ModernGpuVariantHeadless {
             }
         } else if stats.effect_draws != 0 {
             if frame_needs_material_prefinal_finalizer(frame) {
-                let built_on_gpu = self.render_effect_material_with_prefinal_fallback(
+                let build_result = self.render_effect_material_with_prefinal_fallback(
                     frame,
                     fallback_frame,
                     fallback_bg_cells,
                     fallback_sprite_cells,
                     &plan,
                 );
-                if built_on_gpu {
-                    stats.direct_gpu_fallback_frames += 1;
-                } else {
-                    stats.cpu_prefinal_composite_frames += 1;
+                match build_result {
+                    ModernScreenBuilderResult::Gpu => {
+                        stats.direct_gpu_fallback_frames += 1;
+                        stats.gpu_screen_builder_frames += 1;
+                    }
+                    ModernScreenBuilderResult::Cpu(blocker) => {
+                        stats.cpu_prefinal_composite_frames += 1;
+                        record_screen_builder_blocker(&mut stats, blocker);
+                    }
+                    ModernScreenBuilderResult::CpuOverlay => {
+                        stats.cpu_prefinal_composite_frames += 1;
+                        stats.cpu_prefinal_overlay_frames += 1;
+                    }
                 }
             } else {
                 self.renderer.render_effect_material_mode1_order(
@@ -4315,7 +4401,7 @@ impl ModernGpuVariantHeadless {
         fallback_bg_cells: &[ModernIndexTile],
         fallback_sprite_cells: &[ModernIndexTile],
         plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
-    ) -> bool {
+    ) -> ModernScreenBuilderResult {
         let overlay = mixed_variant_prefinal_bg_packets(frame, plan);
         if overlay.bg.is_empty() && overlay.live_cgram_bg.is_empty() {
             return self.compositor.render_prefinal_screens_with_final_frame(
@@ -4347,7 +4433,7 @@ impl ModernGpuVariantHeadless {
             &screens,
             &self.target,
         );
-        false
+        ModernScreenBuilderResult::CpuOverlay
     }
 
     fn read_target_rgba(&self) -> Vec<u8> {
@@ -5223,6 +5309,7 @@ mod tests {
         assert_eq!(stats.dynamic_material_draws, 1);
         assert_eq!(stats.fallback_draws, 0);
         assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.gpu_screen_builder_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(&variant[0..4], &[0, 0, 0, 0xff]);
     }
@@ -6479,6 +6566,7 @@ mod tests {
         assert_eq!(stats.missing_art_draws, 0);
         assert_eq!(stats.unkeyed_fallback_draws, 1);
         assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.gpu_screen_builder_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
     }
 
@@ -6567,6 +6655,7 @@ mod tests {
             crate::modern_software::render_modern_frame_full(&frame, &bg_cells, &sprite_cells);
 
         assert_eq!(stats.direct_gpu_fallback_frames, 1);
+        assert_eq!(stats.gpu_screen_builder_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(variant, cpu);
     }
