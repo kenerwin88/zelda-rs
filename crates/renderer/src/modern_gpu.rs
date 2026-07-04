@@ -3460,6 +3460,19 @@ impl ModernGpuVariantHeadless {
         let variant_frame = self.renderer.build_variant_frame_from_plan(frame, &plan);
         let mut stats = plan.stats;
         if stats.fallback_draws != 0 {
+            if !frame_needs_material_prefinal_finalizer(frame) {
+                stats = self.renderer.render(
+                    &self.device,
+                    &self.queue,
+                    frame,
+                    bg_cells,
+                    sprite_cells,
+                    bg_palette_name,
+                    sprite_palette_name,
+                    &self.target_view,
+                );
+                return (self.read_target_rgba(), stats);
+            }
             let overlay = mixed_variant_prefinal_bg_packets(frame, &plan);
             let final_overlay = mixed_variant_overlay_bg_packets(frame, &plan);
             let prefinal_bg: Vec<_> = overlay
