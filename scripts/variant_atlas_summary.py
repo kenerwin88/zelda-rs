@@ -105,13 +105,20 @@ def summarize_variant_atlas(atlas_dir: Path) -> dict[str, Any]:
             preview_sources[preview_source] += 1
 
             effect_policy = effect_policies.get((palette, palette_row, colors_per_row))
-            stable = preview_source == "palette_usage" or effect_policy == "stable"
             runtime_material = str(
                 ref.get(
                     "runtime_material",
                     "palette_lut" if effect_policy is not None else "unknown",
                 )
             )
+            runtime_material_policy = ref.get("runtime_material_policy")
+            if runtime_material == "palette_lut" and runtime_material_policy in {
+                "stable",
+                "requires_live_palette",
+            }:
+                stable = runtime_material_policy == "stable"
+            else:
+                stable = preview_source == "palette_usage" or effect_policy == "stable"
             if stable:
                 stable_by_loader_rule += 1
                 stable_by_kind[source_kind] += 1

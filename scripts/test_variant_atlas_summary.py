@@ -224,6 +224,64 @@ class VariantAtlasSummaryTests(unittest.TestCase):
             self.assertEqual(summary["material_effect_refs"], 1)
             self.assertEqual(summary["missing_effect_refs"], 0)
 
+    def test_summary_honors_runtime_material_policy_override(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            atlas_dir = Path(temp_dir)
+            write_json(
+                atlas_dir / "art_tiles.json",
+                {
+                    "format": "zelda3_canonical_art_atlas_v1",
+                    "width": 8,
+                    "height": 8,
+                    "art_count": 1,
+                    "source_ref_count": 1,
+                    "arts": [
+                        {
+                            "art_id": "art:live",
+                            "bpp": 3,
+                            "rect": [0, 0, 8, 8],
+                            "preview_palette": "palette_live_flash",
+                            "preview_palette_row": 0,
+                            "preview_source": "source_kind_default",
+                            "source_refs": [
+                                {
+                                    "source_kind": "sprite",
+                                    "bpp": 3,
+                                    "preview_palette": "palette_live_flash",
+                                    "preview_palette_row": 0,
+                                    "preview_source": "source_kind_default",
+                                    "runtime_material": "palette_lut",
+                                    "runtime_material_policy": "requires_live_palette",
+                                    "runtime_colors_per_row": 8,
+                                }
+                            ],
+                        }
+                    ],
+                },
+            )
+            write_png_header(atlas_dir / "art_tiles.png", 8, 8)
+            write_json(
+                atlas_dir / "tile_effects.json",
+                {
+                    "format": "zelda3_tile_effect_table_v1",
+                    "effects": [
+                        {
+                            "palette": "palette_live_flash",
+                            "palette_row": 0,
+                            "colors_per_row": 8,
+                            "dynamic_policy": "stable",
+                        }
+                    ],
+                },
+            )
+
+            summary = summarize_variant_atlas(atlas_dir)
+
+            self.assertEqual(summary["stable_by_loader_rule"], 0)
+            self.assertEqual(summary["material_effect_refs"], 0)
+            self.assertEqual(summary["requires_live_material_refs"], 1)
+            self.assertEqual(summary["missing_effect_refs"], 1)
+
     def test_coverage_errors_require_manifest_match_and_full_stable_coverage(self) -> None:
         valid_summary = {
             "source_refs": 3,
