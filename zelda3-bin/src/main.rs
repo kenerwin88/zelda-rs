@@ -1425,6 +1425,20 @@ fn effective_play_renderer() -> String {
     renderer_env_or_default(env::var("ZELDA3_RENDERER").ok().as_deref()).to_string()
 }
 
+fn env_flag_default_true(value: Option<&str>) -> bool {
+    match value.map(str::trim) {
+        Some("0") => false,
+        Some(value)
+            if value.eq_ignore_ascii_case("false")
+                || value.eq_ignore_ascii_case("off")
+                || value.eq_ignore_ascii_case("no") =>
+        {
+            false
+        }
+        _ => true,
+    }
+}
+
 fn gpu_asset_renderer_mode(mode: &str) -> bool {
     mode == "assets-anim-gpu" || mode == "assets-variant-gpu"
 }
@@ -1478,6 +1492,7 @@ struct GpuPlayRenderer {
 #[derive(Default)]
 struct VariantLiveStats {
     enabled: bool,
+    require_full_gpu_path: bool,
     log_every_frames: u64,
     frames: u64,
     stable_draws: u64,
@@ -1558,14 +1573,24 @@ impl VariantLiveStats {
             .and_then(|value| value.parse::<u64>().ok())
             .filter(|value| *value != 0)
             .unwrap_or(300);
+        let require_full_gpu_path =
+            env_flag_default_true(env::var("ZELDA3_REQUIRE_FULL_GPU_PATH").ok().as_deref());
         Self {
             enabled,
+            require_full_gpu_path,
             log_every_frames,
             ..Self::default()
         }
     }
 
     fn record(&mut self, stats: renderer::modern_software::VariantAtlasRenderStats) {
+        if let Some(fallback) = self.full_gpu_violation(&stats) {
+            eprintln!(
+                "gpu_path_unsupported_live reason={} count={}",
+                fallback.reason, fallback.count
+            );
+            process::exit(2);
+        }
         if !self.enabled {
             return;
         }
@@ -1743,6 +1768,15 @@ impl VariantLiveStats {
                 self.mixed_overlay_bg_effect_reject_overlap
             );
         }
+    }
+
+    fn full_gpu_violation(
+        &self,
+        stats: &renderer::modern_software::VariantAtlasRenderStats,
+    ) -> Option<CpuRenderFallback> {
+        self.require_full_gpu_path
+            .then(|| first_cpu_render_fallback_reason("variant-gpu", Some(stats)))
+            .flatten()
     }
 }
 
@@ -15890,6 +15924,44 @@ mod tests {
             "classic",
             "explicit classic mode remains an opt-out"
         );
+    }
+
+    #[test]
+    fn full_gpu_live_guard_defaults_on_with_explicit_opt_out() {
+        assert!(env_flag_default_true(None));
+        assert!(env_flag_default_true(Some("1")));
+        assert!(env_flag_default_true(Some("true")));
+        assert!(env_flag_default_true(Some("yes")));
+        assert!(!env_flag_default_true(Some("0")));
+        assert!(!env_flag_default_true(Some("false")));
+        assert!(!env_flag_default_true(Some("OFF")));
+        assert!(!env_flag_default_true(Some(" no ")));
+    }
+
+    #[test]
+    fn full_gpu_live_guard_reports_cpu_prefinal_violation() {
+        let stats = renderer::modern_software::VariantAtlasRenderStats {
+            cpu_prefinal_composite_frames: 1,
+            cpu_screen_builder_block_window: 1,
+            ..Default::default()
+        };
+        let strict = VariantLiveStats {
+            require_full_gpu_path: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            strict.full_gpu_violation(&stats),
+            Some(CpuRenderFallback {
+                reason: "screen-builder-window",
+                count: 1,
+            })
+        );
+
+        let opt_out = VariantLiveStats {
+            require_full_gpu_path: false,
+            ..Default::default()
+        };
+        assert_eq!(opt_out.full_gpu_violation(&stats), None);
     }
 
     #[test]

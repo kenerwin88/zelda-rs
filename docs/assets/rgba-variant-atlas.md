@@ -404,6 +404,11 @@ a legacy alias for `gpu_prefinal_base_frames`.
 The CHR/palette-index path remains the oracle until representative replay and
 oracle-window comparisons prove the base/effect path.
 
+In live play, the default `assets-variant-gpu` path requires full GPU rendering
+and exits with `gpu_path_unsupported_live` if variant stats report CPU-prefinal
+composition. Set `ZELDA3_REQUIRE_FULL_GPU_PATH=0` only for explicit debugging of
+unsupported CPU escape hatches.
+
 For a focused route-window proof that avoids a broad scan while still requiring
 nonzero stable source-art/effect coverage, run:
 
