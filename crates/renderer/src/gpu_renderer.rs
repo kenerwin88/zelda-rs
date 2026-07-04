@@ -141,7 +141,8 @@ impl GpuFrameRenderer {
         self.cgram_palette.update(queue, frame.cgram);
 
         let render_plan = GpuFrameRenderPlan::from_frame(frame);
-        if render_plan.uses_sprites() {
+        let resource_requirements = render_plan.resource_requirements();
+        if resource_requirements.uses_sprites() {
             self.sprites.prepare(
                 queue,
                 frame.vram,
