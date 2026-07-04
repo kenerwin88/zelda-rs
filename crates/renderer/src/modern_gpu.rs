@@ -2250,38 +2250,28 @@ impl ModernGpuVariantEffectRenderer {
             "modern_variant_effect_sprite_index_atlas",
         );
         let mut live_lut: Option<(wgpu::Texture, wgpu::TextureView)> = None;
-        let mut batch_material: Option<EffectMaterial> = None;
-        let mut batch_bytes = Vec::new();
-        let mut batch_count = 0u32;
+        let mut batch = EffectMaterialBatch::default();
         for packet in packets {
             let Some(material_packet) = sprite_effect_material_packet(atlas, packet) else {
                 continue;
             };
-            if batch_material.is_some_and(|current| current != material_packet.material) {
+            if batch.needs_flush_for(material_packet.material) {
                 self.render_sprite_effect_batch(
                     device,
                     queue,
                     frame,
                     &index_atlas_view,
                     &mut live_lut,
-                    batch_material.expect("checked above"),
-                    &batch_bytes,
-                    batch_count,
+                    batch.material().expect("checked above"),
+                    batch.instance_bytes(),
+                    batch.instance_count(),
                     output_view,
                 );
-                batch_bytes.clear();
-                batch_count = 0;
+                batch.clear();
             }
-            batch_material = Some(material_packet.material);
-            append_effect_material_packet_instance(
-                &mut batch_bytes,
-                &mut batch_count,
-                material_packet,
-                EffectSurface::Sprite,
-                Some(material_packet.material),
-            );
+            batch.push(material_packet, EffectSurface::Sprite);
         }
-        if let Some(material) = batch_material {
+        if let Some(material) = batch.material() {
             self.render_sprite_effect_batch(
                 device,
                 queue,
@@ -2289,8 +2279,8 @@ impl ModernGpuVariantEffectRenderer {
                 &index_atlas_view,
                 &mut live_lut,
                 material,
-                &batch_bytes,
-                batch_count,
+                batch.instance_bytes(),
+                batch.instance_count(),
                 output_view,
             );
         }
@@ -2335,6 +2325,50 @@ impl ModernGpuVariantEffectRenderer {
             label,
             label,
         );
+    }
+}
+
+#[derive(Default)]
+struct EffectMaterialBatch {
+    material: Option<EffectMaterial>,
+    instance_bytes: Vec<u8>,
+    instance_count: u32,
+}
+
+impl EffectMaterialBatch {
+    fn needs_flush_for(&self, material: EffectMaterial) -> bool {
+        self.material.is_some_and(|current| current != material)
+    }
+
+    fn push(&mut self, material_packet: EffectMaterialPacket, expected_surface: EffectSurface) {
+        let material = material_packet.material;
+        debug_assert!(!self.needs_flush_for(material));
+        self.material = Some(material);
+        append_effect_material_packet_instance(
+            &mut self.instance_bytes,
+            &mut self.instance_count,
+            material_packet,
+            expected_surface,
+            Some(material),
+        );
+    }
+
+    fn clear(&mut self) {
+        self.material = None;
+        self.instance_bytes.clear();
+        self.instance_count = 0;
+    }
+
+    fn material(&self) -> Option<EffectMaterial> {
+        self.material
+    }
+
+    fn instance_bytes(&self) -> &[u8] {
+        &self.instance_bytes
+    }
+
+    fn instance_count(&self) -> u32 {
+        self.instance_count
     }
 }
 
@@ -5955,6 +5989,43 @@ mod tests {
             .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
             .collect();
         assert_eq!(encoded, vec![16, 0, 12, 20, 0x7f00 | 0b011, 9]);
+    }
+
+    #[test]
+    fn effect_material_batch_tracks_flush_boundary() {
+        let mut batch = EffectMaterialBatch::default();
+        let static_packet = EffectMaterialPacket {
+            surface: EffectSurface::Sprite,
+            material: EffectMaterial::StaticEffect,
+            effect_row: 2,
+            instance: EffectInstancePacket {
+                cell_id: 1,
+                screen_x: 3,
+                screen_y: 4,
+                row_mask: 0xff,
+                hflip: false,
+                vflip: true,
+                source_hflip: false,
+                source_vflip: false,
+                effect_row: 2,
+            },
+        };
+
+        assert!(!batch.needs_flush_for(EffectMaterial::StaticEffect));
+        batch.push(static_packet, EffectSurface::Sprite);
+
+        assert_eq!(batch.material(), Some(EffectMaterial::StaticEffect));
+        assert_eq!(batch.instance_count(), 1);
+        assert_eq!(batch.instance_bytes().len() as u64, INDEX_INSTANCE_STRIDE);
+        assert!(!batch.needs_flush_for(EffectMaterial::StaticEffect));
+        assert!(batch.needs_flush_for(EffectMaterial::LiveCgram));
+
+        batch.clear();
+
+        assert_eq!(batch.material(), None);
+        assert_eq!(batch.instance_count(), 0);
+        assert!(batch.instance_bytes().is_empty());
+        assert!(!batch.needs_flush_for(EffectMaterial::LiveCgram));
     }
 
     #[test]
