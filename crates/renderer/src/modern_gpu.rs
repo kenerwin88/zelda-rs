@@ -542,7 +542,7 @@ impl ModernGpuVariantRenderer {
         let rank_plan = rank_dispatch.render_plan(&self.atlas, rendered_any);
         for work_item in rank_plan.work_items {
             match work_item {
-                Mode1EffectRankWorkItem::ClearBackdrop => {
+                ModernGpuWorkItem::ClearBackdrop => {
                     self.effect_renderer.render_bg(
                         device,
                         queue,
@@ -554,7 +554,7 @@ impl ModernGpuVariantRenderer {
                     );
                     rendered_any = true;
                 }
-                Mode1EffectRankWorkItem::Bg(group) => {
+                ModernGpuWorkItem::BgEffect(group) => {
                     self.effect_renderer.render_bg_material_group(
                         device,
                         queue,
@@ -571,7 +571,7 @@ impl ModernGpuVariantRenderer {
                     );
                     rendered_any = true;
                 }
-                Mode1EffectRankWorkItem::Sprites(sprite_groups) => {
+                ModernGpuWorkItem::SpriteEffects(sprite_groups) => {
                     self.effect_renderer.render_sprite_material_groups(
                         device,
                         queue,
@@ -680,13 +680,13 @@ struct Mode1EffectRankDispatch<'a> {
 }
 
 struct Mode1EffectRankRenderPlan<'rank, 'frame> {
-    work_items: Vec<Mode1EffectRankWorkItem<'rank, 'frame>>,
+    work_items: Vec<ModernGpuWorkItem<'rank, 'frame>>,
 }
 
-enum Mode1EffectRankWorkItem<'rank, 'frame> {
+enum ModernGpuWorkItem<'rank, 'frame> {
     ClearBackdrop,
-    Bg(BgEffectMaterialGroup<'rank, 'frame>),
-    Sprites(Vec<SpriteEffectMaterialGroup<'rank, 'frame>>),
+    BgEffect(BgEffectMaterialGroup<'rank, 'frame>),
+    SpriteEffects(Vec<SpriteEffectMaterialGroup<'rank, 'frame>>),
 }
 
 impl<'a> Mode1EffectRankDispatch<'a> {
@@ -724,11 +724,11 @@ impl<'a> Mode1EffectRankDispatch<'a> {
             !rendered_any && bg_groups.is_empty() && !sprite_groups.is_empty();
         let mut work_items = Vec::new();
         if clear_before_sprites {
-            work_items.push(Mode1EffectRankWorkItem::ClearBackdrop);
+            work_items.push(ModernGpuWorkItem::ClearBackdrop);
         }
-        work_items.extend(bg_groups.into_iter().map(Mode1EffectRankWorkItem::Bg));
+        work_items.extend(bg_groups.into_iter().map(ModernGpuWorkItem::BgEffect));
         if !sprite_groups.is_empty() {
-            work_items.push(Mode1EffectRankWorkItem::Sprites(sprite_groups));
+            work_items.push(ModernGpuWorkItem::SpriteEffects(sprite_groups));
         }
         Mode1EffectRankRenderPlan { work_items }
     }
@@ -797,6 +797,12 @@ impl<'a> OverlayBgEffectDispatch<'a> {
         ]
         .into_iter()
         .filter(|group| !group.packets.is_empty())
+    }
+
+    fn work_items(&self) -> Vec<ModernGpuWorkItem<'_, 'a>> {
+        self.material_groups()
+            .map(ModernGpuWorkItem::BgEffect)
+            .collect()
     }
 
     #[cfg(test)]
@@ -2306,17 +2312,22 @@ impl ModernGpuVariantEffectRenderer {
         overlay: &MixedVariantOverlayBgSelection<'_>,
         output_view: &wgpu::TextureView,
     ) {
-        for group in overlay.effects.material_groups() {
-            self.render_bg_material_group(
-                device,
-                queue,
-                bg_cells,
-                Some(frame),
-                atlas,
-                group,
-                output_view,
-                wgpu::LoadOp::Load,
-            );
+        for work_item in overlay.effects.work_items() {
+            match work_item {
+                ModernGpuWorkItem::BgEffect(group) => self.render_bg_material_group(
+                    device,
+                    queue,
+                    bg_cells,
+                    Some(frame),
+                    atlas,
+                    group,
+                    output_view,
+                    wgpu::LoadOp::Load,
+                ),
+                ModernGpuWorkItem::ClearBackdrop | ModernGpuWorkItem::SpriteEffects(_) => {
+                    unreachable!("overlay BG dispatch only emits BG effect work items")
+                }
+            }
         }
     }
 
@@ -6432,6 +6443,20 @@ mod tests {
         assert_eq!(groups[0].packets[0].inst.cell_id, 7);
         assert_eq!(groups[1].material, EffectMaterial::LiveCgram);
         assert_eq!(groups[1].packets[0].inst.cell_id, 9);
+        let work_items = dispatch.work_items();
+        assert_eq!(work_items.len(), 2);
+        assert!(matches!(
+            &work_items[0],
+            ModernGpuWorkItem::BgEffect(group)
+                if group.material == EffectMaterial::StaticEffect
+                    && group.packets[0].inst.cell_id == 7
+        ));
+        assert!(matches!(
+            &work_items[1],
+            ModernGpuWorkItem::BgEffect(group)
+                if group.material == EffectMaterial::LiveCgram
+                    && group.packets[0].inst.cell_id == 9
+        ));
     }
 
     #[test]
@@ -6848,17 +6873,17 @@ mod tests {
         assert_eq!(first_rank_plan.work_items.len(), 2);
         assert!(matches!(
             first_rank_plan.work_items[0],
-            Mode1EffectRankWorkItem::ClearBackdrop
+            ModernGpuWorkItem::ClearBackdrop
         ));
         match &first_rank_plan.work_items[1] {
-            Mode1EffectRankWorkItem::Sprites(groups) => assert_eq!(groups.len(), 3),
+            ModernGpuWorkItem::SpriteEffects(groups) => assert_eq!(groups.len(), 3),
             _ => panic!("sprite-only rank should submit sprite groups after clear"),
         }
         let later_rank_plan = sprite_only_rank.render_plan(&atlas, true);
         assert_eq!(later_rank_plan.work_items.len(), 1);
         assert!(matches!(
             later_rank_plan.work_items[0],
-            Mode1EffectRankWorkItem::Sprites(_)
+            ModernGpuWorkItem::SpriteEffects(_)
         ));
     }
 
