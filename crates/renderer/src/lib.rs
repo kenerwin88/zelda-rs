@@ -24,6 +24,7 @@ mod gpu_work_item;
 pub mod hd_authoring;
 pub mod mode7_renderer;
 pub mod modern_assets;
+mod modern_bg_renderer;
 pub mod modern_dungeon_atlas;
 pub mod modern_extract;
 pub mod modern_frame;
