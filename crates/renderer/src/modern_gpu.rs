@@ -569,11 +569,15 @@ impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
                 } = rank_plan;
                 let mut rendered_any = rendered_before;
                 render_plan.into_iter().map(move |work_item| {
-                    let rendered_before_command = rendered_any;
+                    let target_load = if rendered_any {
+                        Mode1EffectCommandLoad::Load
+                    } else {
+                        Mode1EffectCommandLoad::ClearFrame
+                    };
                     rendered_any = true;
                     PreparedMode1EffectRenderCommand::RankWork {
                         rank_index,
-                        rendered_before_command,
+                        target_load,
                         work_item,
                     }
                 })
@@ -649,10 +653,16 @@ enum PreparedMode1EffectRenderStep<'rank, 'frame> {
 enum PreparedMode1EffectRenderCommand<'rank, 'frame> {
     RankWork {
         rank_index: usize,
-        rendered_before_command: bool,
+        target_load: Mode1EffectCommandLoad,
         work_item: ModernGpuWorkItem<'rank, 'frame>,
     },
     EmptyFrameFallback,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mode1EffectCommandLoad {
+    ClearFrame,
+    Load,
 }
 
 #[cfg(test)]
@@ -661,11 +671,11 @@ impl PreparedMode1EffectRenderCommand<'_, '_> {
         match self {
             Self::RankWork {
                 rank_index,
-                rendered_before_command,
+                target_load,
                 work_item,
             } => PreparedMode1EffectRenderCommandKind::RankWork {
                 rank_index: *rank_index,
-                rendered_before_command: *rendered_before_command,
+                target_load: *target_load,
                 work_item: work_item.kind(),
             },
             Self::EmptyFrameFallback => PreparedMode1EffectRenderCommandKind::EmptyFrameFallback,
@@ -703,7 +713,7 @@ enum PreparedMode1EffectRenderStepKind {
 enum PreparedMode1EffectRenderCommandKind {
     RankWork {
         rank_index: usize,
-        rendered_before_command: bool,
+        target_load: Mode1EffectCommandLoad,
         work_item: GpuWorkItemKind,
     },
     EmptyFrameFallback,
@@ -1016,14 +1026,13 @@ impl ModernGpuVariantRenderer {
         match command {
             PreparedMode1EffectRenderCommand::RankWork {
                 rank_index,
-                rendered_before_command,
+                target_load,
                 work_item,
             } => {
                 debug_assert!(rank_index <= 9);
-                let bg_load = if rendered_before_command {
-                    wgpu::LoadOp::Load
-                } else {
-                    modern_frame_clear_op(frame)
+                let bg_load = match target_load {
+                    Mode1EffectCommandLoad::ClearFrame => modern_frame_clear_op(frame),
+                    Mode1EffectCommandLoad::Load => wgpu::LoadOp::Load,
                 };
                 render_modern_gpu_work_item(
                     &self.effect_renderer,
@@ -6132,7 +6141,7 @@ mod tests {
                 .into_command_kinds(),
             vec![PreparedMode1EffectRenderCommandKind::RankWork {
                 rank_index: 0,
-                rendered_before_command: false,
+                target_load: Mode1EffectCommandLoad::ClearFrame,
                 work_item: GpuWorkItemKind::BgEffect,
             }]
         );
@@ -7920,6 +7929,29 @@ mod tests {
             ModernGpuWorkItem::SpriteEffects(groups) => assert_eq!(groups.len(), 3),
             _ => panic!("sprite-only rank should submit sprite groups after clear"),
         }
+        let prepared_first_rank = PreparedMode1EffectRenderPlan {
+            rank_plans: vec![PreparedMode1EffectRankRenderPlan {
+                rank_index: 0,
+                rendered_before: false,
+                render_plan: sprite_only_rank.render_plan(&atlas, false),
+            }],
+            needs_empty_frame_fallback: false,
+        };
+        assert_eq!(
+            prepared_first_rank.into_command_kinds(),
+            vec![
+                PreparedMode1EffectRenderCommandKind::RankWork {
+                    rank_index: 0,
+                    target_load: Mode1EffectCommandLoad::ClearFrame,
+                    work_item: GpuWorkItemKind::ClearBackdrop,
+                },
+                PreparedMode1EffectRenderCommandKind::RankWork {
+                    rank_index: 0,
+                    target_load: Mode1EffectCommandLoad::Load,
+                    work_item: GpuWorkItemKind::SpriteEffects,
+                },
+            ]
+        );
         let later_rank_plan = sprite_only_rank.render_plan(&atlas, true);
         assert_eq!(later_rank_plan.len(), 1);
         assert_eq!(
