@@ -24,6 +24,9 @@ pub(crate) enum GpuFrameMainWorkCommand {
     Mode7Bg {
         math_bit_pos: u32,
         layer_bit: u32,
+        screen_idx: usize,
+        window_layer_bit: u8,
+        window_flags_shift: u32,
     },
 }
 
@@ -33,6 +36,9 @@ pub(crate) enum GpuFrameSubWorkCommand {
     Mode7Bg {
         math_bit_pos: u32,
         layer_bit: u32,
+        screen_idx: usize,
+        window_layer_bit: u8,
+        window_flags_shift: u32,
     },
     BgLayer {
         layer_idx: usize,

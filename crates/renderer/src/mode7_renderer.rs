@@ -156,13 +156,23 @@ impl Mode7Renderer {
         output_view: &wgpu::TextureView,
         math_bit_pos: u32,
         layer_bit: u32,
+        screen_idx: usize,
+        window_layer_bit: u8,
+        window_flags_shift: u32,
     ) {
         self.write_vram(queue, frame.vram);
-        let screen_idx = usize::from(math_bit_pos >= 255);
         queue.write_buffer(
             &self.uniform_buf[screen_idx],
             0,
-            &build_uniform_bytes(frame, math_bit_pos, layer_bit, screen_idx, &frame.scanlines),
+            &build_uniform_bytes(
+                frame,
+                math_bit_pos,
+                layer_bit,
+                screen_idx,
+                window_layer_bit,
+                window_flags_shift,
+                &frame.scanlines,
+            ),
         );
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -204,6 +214,8 @@ fn build_uniform_bytes(
     math_bit_pos: u32,
     layer_bit: u32,
     screen_idx: usize,
+    window_layer_bit: u8,
+    window_flags_shift: u32,
     scanlines: &[ScanlineRegs; 224],
 ) -> Vec<u8> {
     let mut bytes = vec![0u8; UNIFORM_BYTES];
@@ -218,8 +230,8 @@ fn build_uniform_bytes(
     bytes[32..36].copy_from_slice(&flags.to_le_bytes());
     bytes[36..40].copy_from_slice(&layer_bit.to_le_bytes());
     bytes[40..44].copy_from_slice(&math_bit_pos.to_le_bytes());
-    let window_flags = (frame.windowsel & 0x0f) as u32;
-    let windowed = u32::from(frame.screen_windowed[screen_idx] & 1 != 0);
+    let window_flags = (frame.windowsel >> window_flags_shift) & 0x0f;
+    let windowed = u32::from(frame.screen_windowed[screen_idx] & window_layer_bit != 0);
     bytes[44..48].copy_from_slice(&window_flags.to_le_bytes());
     bytes[48..52].copy_from_slice(&windowed.to_le_bytes());
 

@@ -220,6 +220,9 @@ fn main_mode7_bg_work_item() -> GpuFrameMainWorkCommand {
     GpuFrameMainWorkCommand::Mode7Bg {
         math_bit_pos: 0,
         layer_bit: 1,
+        screen_idx: 0,
+        window_layer_bit: 0x01,
+        window_flags_shift: 0,
     }
 }
 
@@ -227,6 +230,9 @@ fn sub_mode7_bg_work_item() -> GpuFrameSubWorkCommand {
     GpuFrameSubWorkCommand::Mode7Bg {
         math_bit_pos: 255,
         layer_bit: 0,
+        screen_idx: 1,
+        window_layer_bit: 0x01,
+        window_flags_shift: 0,
     }
 }
 
@@ -441,6 +447,9 @@ mod tests {
             GpuFrameMainWorkCommand::Mode7Bg {
                 math_bit_pos: 0,
                 layer_bit: 1,
+                screen_idx: 0,
+                window_layer_bit: 0x01,
+                window_flags_shift: 0,
             }
         );
         assert_eq!(
@@ -448,6 +457,9 @@ mod tests {
             GpuFrameSubWorkCommand::Mode7Bg {
                 math_bit_pos: 255,
                 layer_bit: 0,
+                screen_idx: 1,
+                window_layer_bit: 0x01,
+                window_flags_shift: 0,
             }
         );
     }

@@ -248,6 +248,9 @@ impl GpuFrameRenderer {
             GpuFrameMainWorkCommand::Mode7Bg {
                 math_bit_pos,
                 layer_bit,
+                screen_idx,
+                window_layer_bit,
+                window_flags_shift,
             } => {
                 self.mode7.render(
                     encoder,
@@ -256,6 +259,9 @@ impl GpuFrameRenderer {
                     &self.comp_view,
                     math_bit_pos,
                     layer_bit,
+                    screen_idx,
+                    window_layer_bit,
+                    window_flags_shift,
                 );
             }
         }
@@ -275,6 +281,9 @@ impl GpuFrameRenderer {
             GpuFrameSubWorkCommand::Mode7Bg {
                 math_bit_pos,
                 layer_bit,
+                screen_idx,
+                window_layer_bit,
+                window_flags_shift,
             } => {
                 self.mode7.render(
                     encoder,
@@ -283,6 +292,9 @@ impl GpuFrameRenderer {
                     &self.sub_comp_view,
                     math_bit_pos,
                     layer_bit,
+                    screen_idx,
+                    window_layer_bit,
+                    window_flags_shift,
                 );
             }
             GpuFrameSubWorkCommand::BgLayer {
