@@ -394,12 +394,11 @@ impl<'a> PreparedModernVariantRender<'a> {
         self.stats
     }
 
-    fn live_render_path(&self) -> ModernVariantRenderPath {
-        self.live_render_path
-    }
-
-    fn headless_render_path(&self) -> ModernVariantRenderPath {
-        self.headless_render_path
+    fn render_path(&self, output: PreparedModernVariantOutput) -> ModernVariantRenderPath {
+        match output {
+            PreparedModernVariantOutput::Live => self.live_render_path,
+            PreparedModernVariantOutput::Headless => self.headless_render_path,
+        }
     }
 }
 
@@ -449,6 +448,12 @@ impl<'a> LiveIndexVariantBase<'a> {
     fn sprite_cells(&self) -> &'a [ModernIndexTile] {
         self.sprite_cells
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreparedModernVariantOutput {
+    Live,
+    Headless,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -552,7 +557,7 @@ impl ModernGpuVariantRenderer {
         output_view: &wgpu::TextureView,
     ) -> crate::modern_software::VariantAtlasRenderStats {
         let mut stats = PreparedModernVariantStats::new(prepared);
-        match prepared.live_render_path() {
+        match prepared.render_path(PreparedModernVariantOutput::Live) {
             ModernVariantRenderPath::EffectMaterialMode1Order => {
                 self.render_effect_material_mode1_order(device, queue, prepared, output_view);
             }
@@ -5281,7 +5286,7 @@ impl ModernGpuVariantHeadless {
         prepared: &PreparedModernVariantRender<'_>,
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
         let mut stats = PreparedModernVariantStats::new(prepared);
-        match prepared.headless_render_path() {
+        match prepared.render_path(PreparedModernVariantOutput::Headless) {
             ModernVariantRenderPath::EffectMaterialMode1Order => {
                 self.render_effect_material_mode1_order(prepared);
             }
@@ -5603,6 +5608,39 @@ mod tests {
         assert_eq!(
             headless_variant_render_path(&live_index),
             ModernVariantRenderPath::LiveIndexBaseWithOverlay
+        );
+    }
+
+    #[test]
+    fn prepared_variant_render_selects_output_specific_path() {
+        let frame = ModernFrame::empty();
+        let stats = VariantAtlasRenderStats {
+            stable_draws: 1,
+            effect_draws: 1,
+            ..Default::default()
+        };
+        let prepared = PreparedModernVariantRender {
+            frame: &frame,
+            bg_cells: &[],
+            sprite_cells: &[],
+            plan: crate::modern_variant_draw::VariantDrawPlan {
+                bg: Vec::new(),
+                sprites: Vec::new(),
+                stats,
+            },
+            variant_frame: ModernFrame::empty(),
+            stats,
+            live_render_path: live_variant_render_path(&stats),
+            headless_render_path: headless_variant_render_path(&stats),
+        };
+
+        assert_eq!(
+            prepared.render_path(PreparedModernVariantOutput::Live),
+            ModernVariantRenderPath::EffectMaterialMode1Order
+        );
+        assert_eq!(
+            prepared.render_path(PreparedModernVariantOutput::Headless),
+            ModernVariantRenderPath::EffectMaterialWithStableOverlay
         );
     }
 
