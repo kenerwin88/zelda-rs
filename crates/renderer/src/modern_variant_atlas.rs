@@ -20,6 +20,7 @@ pub struct VariantAtlasEntry {
     pub sha1: String,
     pub duplicate_of: Option<String>,
     pub dynamic_policy: String,
+    pub runtime_material: Option<String>,
     pub runtime_colors_per_row: Option<u8>,
     pub source_hflip: bool,
     pub source_vflip: bool,
@@ -183,13 +184,17 @@ impl ModernVariantAtlas {
         if entry.dynamic_policy != "stable" {
             return VariantAtlasDraw::DynamicPalette { entry };
         }
-        let stable_effect = self
-            .effect_for_entry_and_key(entry, key)
-            .filter(|effect| effect.dynamic_policy == "stable");
-        if let Some(effect) = stable_effect {
-            return VariantAtlasDraw::MaterialEffect { entry, effect };
-        }
-        if entry_matches_material(entry, key) {
+        if entry_uses_palette_lut_material(entry) || !entry_matches_material(entry, key) {
+            let stable_effect = self
+                .effect_for_entry_and_key(entry, key)
+                .filter(|effect| effect.dynamic_policy == "stable");
+            if let Some(effect) = stable_effect {
+                return VariantAtlasDraw::MaterialEffect { entry, effect };
+            }
+            if entry_matches_material(entry, key) {
+                return VariantAtlasDraw::Stable { entry };
+            }
+        } else if entry_matches_material(entry, key) {
             return VariantAtlasDraw::Stable { entry };
         }
         VariantAtlasDraw::DynamicPalette { entry }
@@ -211,6 +216,10 @@ impl ModernVariantAtlas {
 
 fn entry_matches_material(entry: &VariantAtlasEntry, key: &VariantAtlasKey) -> bool {
     entry.key.palette == key.palette && entry.key.palette_row == key.palette_row
+}
+
+fn entry_uses_palette_lut_material(entry: &VariantAtlasEntry) -> bool {
+    entry.runtime_material.as_deref() == Some("palette_lut")
 }
 
 fn runtime_effect_color_rows(key: &VariantAtlasKey) -> Option<Vec<u8>> {
@@ -335,6 +344,7 @@ impl From<EntryJson> for VariantAtlasEntry {
             sha1: entry.sha1,
             duplicate_of: entry.duplicate_of,
             dynamic_policy: entry.dynamic_policy,
+            runtime_material: entry.runtime_material,
             runtime_colors_per_row: entry.runtime_colors_per_row,
             source_hflip: false,
             source_vflip: false,
@@ -427,6 +437,7 @@ fn load_modern_canonical_art_atlas_from_dir(
     for art in manifest.arts {
         for source_ref in art.source_refs {
             let dynamic_policy = dynamic_policy_for_source_ref(&effects, &source_ref);
+            let runtime_material = runtime_material_for_source_ref(&effects, &source_ref);
             let id = format!(
                 "{}:{}:pack{}:tile{}:{}bpp",
                 source_ref.source_kind,
@@ -450,6 +461,7 @@ fn load_modern_canonical_art_atlas_from_dir(
                 sha1: art.sha1_indices.clone(),
                 duplicate_of: None,
                 dynamic_policy,
+                runtime_material,
                 runtime_colors_per_row: source_ref.runtime_colors_per_row,
                 source_hflip: source_ref.hflip,
                 source_vflip: source_ref.vflip,
@@ -481,6 +493,19 @@ fn dynamic_policy_for_source_ref(effects: &[TileEffect], source_ref: &ArtSourceR
     } else {
         "requires_live_palette".to_string()
     }
+}
+
+fn runtime_material_for_source_ref(
+    effects: &[TileEffect],
+    source_ref: &ArtSourceRefJson,
+) -> Option<String> {
+    if let Some(runtime_material) = &source_ref.runtime_material {
+        return Some(runtime_material.clone());
+    }
+    if has_stable_effect_for_source_ref(effects, source_ref) {
+        return Some("palette_lut".to_string());
+    }
+    None
 }
 
 fn has_stable_effect_for_source_ref(effects: &[TileEffect], source_ref: &ArtSourceRefJson) -> bool {
@@ -599,6 +624,8 @@ struct EntryJson {
     sha1: String,
     duplicate_of: Option<String>,
     dynamic_policy: String,
+    #[serde(default)]
+    runtime_material: Option<String>,
     #[serde(default)]
     runtime_colors_per_row: Option<u8>,
 }
@@ -719,6 +746,7 @@ mod tests {
             sha1: "test".to_string(),
             duplicate_of: None,
             dynamic_policy: "stable".to_string(),
+            runtime_material: Some("palette_lut".to_string()),
             runtime_colors_per_row: None,
             source_hflip: false,
             source_vflip: false,
@@ -936,6 +964,7 @@ mod tests {
                 sha1: "abc".to_string(),
                 duplicate_of: None,
                 dynamic_policy: "stable".to_string(),
+                runtime_material: None,
                 runtime_colors_per_row: None,
                 source_hflip: false,
                 source_vflip: false,
@@ -986,6 +1015,7 @@ mod tests {
                 sha1: "abc".to_string(),
                 duplicate_of: None,
                 dynamic_policy: "stable".to_string(),
+                runtime_material: None,
                 runtime_colors_per_row: None,
                 source_hflip: false,
                 source_vflip: false,
@@ -1078,6 +1108,27 @@ mod tests {
                 assert_eq!(entry.id, "bg:kBgGfx:pack0:tile0:3bpp");
             }
             other => panic!("expected preview-backed stable draw, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_draw_prefers_matching_stable_art_over_untyped_effect() {
+        let mut entry = bg_test_entry_with_palette_row(3);
+        entry.runtime_material = None;
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: solid_rgba(8, 8, [1, 2, 3, 255]),
+            entries: vec![entry],
+            effects: vec![bg_test_effect_with_palette_row(3)],
+        };
+        let live_key = bg_test_key_with_palette_row(3);
+
+        match atlas.resolve_draw(Some(&live_key)) {
+            VariantAtlasDraw::Stable { entry } => {
+                assert_eq!(entry.id, "bg:kBgGfx:pack0:tile0:3bpp");
+            }
+            other => panic!("expected matching stable art draw, got {other:?}"),
         }
     }
 
