@@ -64,6 +64,10 @@ fn overlay_sprite_pixel(current: u32, bg_rank: u32, sx: u32, sy: u32) -> u32 {
     return out;
 }
 
+fn math_bit(pixel: u32) -> u32 {
+    return (pixel >> 15u) & 7u;
+}
+
 @compute @workgroup_size(64)
 fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x;
@@ -74,7 +78,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let sy = i / 256u;
     let bg = overlay_bg_pixel(sx, sy);
     var px = main_screen[i];
-    if (bg.x != transparent()) {
+    if (bg.x != transparent() && math_bit(px) == math_bit(bg.x)) {
         px = bg.x;
     }
     main_screen[i] = overlay_sprite_pixel(px, bg.y, sx, sy);

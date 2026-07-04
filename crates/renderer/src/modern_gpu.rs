@@ -1375,6 +1375,9 @@ fn overlay_mixed_variant_bg_packet_on_main_screen(
             }
             let offset = dst_y as usize * screens.width + dst_x as usize;
             if let Some(pixel) = screens.main.get_mut(offset) {
+                if packed_variant_prefinal_math_bit(*pixel) != math_bit {
+                    continue;
+                }
                 *pixel = pack_variant_prefinal_pixel(rgba, math_bit);
                 if let Some(rank) = bg_overlay_ranks.get_mut(offset) {
                     *rank = bg_rank;
@@ -1419,6 +1422,9 @@ fn overlay_mixed_variant_live_cgram_bg_packet_on_main_screen(
             }
             let offset = dst_y as usize * screens.width + dst_x as usize;
             if let Some(pixel) = screens.main.get_mut(offset) {
+                if packed_variant_prefinal_math_bit(*pixel) != math_bit {
+                    continue;
+                }
                 *pixel = pack_variant_prefinal_pixel(*rgba, math_bit);
                 if let Some(rank) = bg_overlay_ranks.get_mut(offset) {
                     *rank = bg_rank;
@@ -1493,6 +1499,10 @@ fn pack_variant_prefinal_pixel(rgba: [u8; 4], math_bit: u8) -> u32 {
         | (u32::from(rgba[2] >> 3) << 10)
         | (u32::from(math_bit) << 15)
         | (1u32 << 18)
+}
+
+fn packed_variant_prefinal_math_bit(pixel: u32) -> u8 {
+    ((pixel >> 15) & 0x07) as u8
 }
 
 fn bg_packet_overlaps_other_packets(
@@ -6499,6 +6509,105 @@ mod tests {
         assert_eq!(stats.mixed_overlay_bg_effect_reject_complex_frame, 0);
         assert_eq!(stats.mixed_overlay_bg_effect_reject_cgram_mismatch, 0);
         assert_eq!(stats.mixed_overlay_bg_effect_reject_overlap, 1);
+    }
+
+    #[test]
+    fn prefinal_bg_overlay_only_recolors_the_winning_layer() {
+        use crate::modern_frame::{ModernFrame, ModernIndexTileInstance};
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_software::ModernCompositedScreens;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            TileEffect, VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
+        };
+        use crate::modern_variant_draw::VariantBgDrawPacket;
+
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        let cell = ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        };
+        let inst = ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        };
+        let entry = VariantAtlasEntry {
+            id: "bg:kBgGfx:pack0:tile0:3bpp".to_string(),
+            key: VariantAtlasKey {
+                source_kind: "bg".to_string(),
+                asset: "kBgGfx".to_string(),
+                pack: 0,
+                tile: 0,
+                bpp: 3,
+                palette: "palette_dung_bg_main".to_string(),
+                palette_row: 0,
+            },
+            rect: [0, 0, 8, 8],
+            sha1: "stable".to_string(),
+            duplicate_of: None,
+            dynamic_policy: "stable".to_string(),
+            runtime_material: Some("palette_lut".to_string()),
+            runtime_colors_per_row: None,
+            source_hflip: false,
+            source_vflip: false,
+        };
+        let effect = TileEffect {
+            id: "palette_dung_bg_main:8color:row0".to_string(),
+            palette: "palette_dung_bg_main".to_string(),
+            palette_row: 0,
+            colors_per_row: 8,
+            index_to_rgba: vec![[0, 0, 0, 0xff], [248, 0, 0, 0xff]],
+            dynamic_policy: "stable".to_string(),
+        };
+        let packet = VariantBgDrawPacket {
+            layer_index: 0,
+            cell: &cell,
+            inst: &inst,
+            key: None,
+            draw: VariantAtlasDraw::MaterialEffect {
+                entry: &entry,
+                effect: &effect,
+            },
+        };
+        let frame = ModernFrame::empty();
+        let original = pack_variant_prefinal_pixel([0, 0, 248, 0xff], 2);
+        let replacement = pack_variant_prefinal_pixel([248, 0, 0, 0xff], 0);
+        let mut screens = ModernCompositedScreens {
+            width: 256,
+            scale: 1,
+            main: vec![original; 256 * 224],
+            sub: vec![0; 256 * 224],
+        };
+
+        overlay_mixed_variant_bg_packets_on_main_screen(
+            &mut screens,
+            &frame,
+            std::slice::from_ref(&packet),
+            &[],
+            &[],
+        );
+
+        assert_eq!(screens.main[0], original);
+        screens.main[0] = pack_variant_prefinal_pixel([0, 0, 248, 0xff], 0);
+        overlay_mixed_variant_bg_packets_on_main_screen(
+            &mut screens,
+            &frame,
+            std::slice::from_ref(&packet),
+            &[],
+            &[],
+        );
+
+        assert_eq!(screens.main[0], replacement);
     }
 
     #[test]
