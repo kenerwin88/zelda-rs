@@ -862,3 +862,32 @@ front-packet representation blockers split into
 drawing modernization is pre-final support for front BG packets that are stable
 effects but currently fail the complex-frame guards, not palette/cgram storage
 or broader route scans.
+
+### Task 22: Ignore Invisible Front BG Pixels In Pre-Final Groups
+
+**Files:**
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Modify: `docs/assets/rgba-variant-atlas.md`
+- [x] Test: focused renderer unit for a scanline-disabled front BG overlap
+- [x] Test: focused opening-route oracle window
+
+**Goal:** Convert the front-BG complex bucket into real GPU draws where the
+front/same-order BG packet is complex only because it is not visible at the
+overlapped main-screen pixel. Such a pixel should not block the behind packet's
+pre-final overlay.
+
+**Done:** The pre-final BG overlap check now skips front/same-order BG packets
+whose pixel is disabled by raw main-screen enable, per-scanline main-screen
+masking, or layer window masking. The new renderer unit proves a BG2 target can
+still be promoted when an overlapping BG1 packet is masked off for that
+scanline, while the masked front packet remains counted as its own
+`scanline_main` complex reject.
+
+**Route result:** The opening tail remains `mismatched_pixels=0`. GPU overlay
+draws rise from `18223` to `18783`. The pre-final BG overlap blocker is gone:
+`prefinal_overlap_bg=0`, `prefinal_overlap_bg_unrepresentable_front=0`, and
+`prefinal_overlap_bg_unrepresentable_front_complex=0`. Remaining color-math
+pre-final overlap is now all OBJ overlap:
+`prefinal_overlap=350`, `prefinal_overlap_obj=350`. The next useful drawing
+modernization lanes are primary candidate `scanline_main=1541` and
+OBJ-aware pre-final composition.

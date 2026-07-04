@@ -368,29 +368,29 @@ Expected output includes `mismatched_pixels=0` and nonzero
 `stable_preview_draws` or `stable_effect_draws`. The current representative
 proof reports `stable_effect_draws=21038`,
 `mixed_overlay_bg_effect_candidates=20674`,
-`mixed_overlay_bg_effect_draws=18223`,
-`mixed_overlay_bg_effect_reject_complex_frame=2451`,
+`mixed_overlay_bg_effect_draws=18783`,
+`mixed_overlay_bg_effect_reject_complex_frame=1891`,
 `mixed_overlay_bg_effect_reject_complex_scanline_main=1541`,
-`mixed_overlay_bg_effect_reject_complex_color_math=910`,
+`mixed_overlay_bg_effect_reject_complex_color_math=350`,
 `mixed_overlay_bg_effect_reject_complex_color_math_clip=0`,
-`mixed_overlay_bg_effect_reject_complex_color_math_subscreen=910`,
+`mixed_overlay_bg_effect_reject_complex_color_math_subscreen=350`,
 `mixed_overlay_bg_effect_reject_complex_color_math_fixed_color=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch=0`,
-`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=910`,
-`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg=703`,
-`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj=207`,
-`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect=39`,
-`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex=664`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=350`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg=0`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj=350`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect=0`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch=0`,
 `mixed_overlay_bg_effect_reject_cgram_mismatch=0`, and
 `mixed_overlay_bg_effect_reject_overlap=0` over 17 sampled compares from the
 checkpointed opening route tail. That means most stable BG opportunities in
 this sampled mixed window now execute through the GPU overlay path with exact
 final-pixel parity; the remaining blockers are per-scanline layer visibility
-and overlapped pre-final sub-screen composition. A fixed-color-only overlay
+and OBJ-overlapped pre-final sub-screen composition. A fixed-color-only overlay
 shader would not reduce this representative route because the current remaining
 color-math rejects are all sub-screen dependent, and the pre-final classifier
-shows they all overlap another packet before finalization.
+shows the remaining pre-final overlaps are all OBJ overlaps.
 
 The first pre-final sub-screen implementation supports static variant-effect BG
 packets: those pixels can be written into the packed main-screen buffer before
@@ -415,7 +415,12 @@ have no stable effect and 664 are stable-effect packets still blocked by complex
 frame state, with no cgram-mismatch blockers. The next useful lane is therefore
 pre-final support for complex front BG packets, especially the existing
 scanline-main and sub-screen color-math guards, before broadening group
-ordering.
+ordering. The front-BG visibility slice now ignores front/same-order BG pixels
+that are disabled by the per-scanline main-screen mask at the overlapped pixel.
+That removes the representative BG-overlap blocker (`prefinal_overlap_bg=0`)
+with `mismatched_pixels=0`; the next useful lanes are the primary
+`scanline_main=1541` bucket and the remaining OBJ pre-final overlap bucket
+(`prefinal_overlap_obj=350`).
 
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay
