@@ -548,13 +548,43 @@ struct PreparedMode1EffectRenderPlan<'rank, 'frame> {
 impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
     fn execute_with<F>(self, mut execute: F)
     where
-        F: FnMut(PreparedMode1EffectRenderStep<'rank, 'frame>),
+        F: FnMut(PreparedMode1EffectRenderCommand<'rank, 'frame>),
     {
-        for step in self.into_steps() {
-            execute(step);
+        for command in self.into_commands() {
+            execute(command);
         }
     }
 
+    fn into_commands(
+        self,
+    ) -> impl Iterator<Item = PreparedMode1EffectRenderCommand<'rank, 'frame>> {
+        let needs_empty_frame_fallback = self.needs_empty_frame_fallback;
+        self.rank_plans
+            .into_iter()
+            .flat_map(|rank_plan| {
+                let PreparedMode1EffectRankRenderPlan {
+                    rank_index,
+                    rendered_before,
+                    render_plan,
+                } = rank_plan;
+                let mut rendered_any = rendered_before;
+                render_plan.into_iter().map(move |work_item| {
+                    let rendered_before_command = rendered_any;
+                    rendered_any = true;
+                    PreparedMode1EffectRenderCommand::RankWork {
+                        rank_index,
+                        rendered_before_command,
+                        work_item,
+                    }
+                })
+            })
+            .chain(
+                needs_empty_frame_fallback
+                    .then_some(PreparedMode1EffectRenderCommand::EmptyFrameFallback),
+            )
+    }
+
+    #[cfg(test)]
     fn into_steps(self) -> impl Iterator<Item = PreparedMode1EffectRenderStep<'rank, 'frame>> {
         let needs_empty_frame_fallback = self.needs_empty_frame_fallback;
         self.rank_plans
@@ -586,8 +616,17 @@ impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
     #[cfg(test)]
     fn into_step_kinds(self) -> Vec<PreparedMode1EffectRenderStepKind> {
         let mut steps = Vec::new();
-        self.execute_with(|step| steps.push(step.kind()));
+        for step in self.into_steps() {
+            steps.push(step.kind());
+        }
         steps
+    }
+
+    #[cfg(test)]
+    fn into_command_kinds(self) -> Vec<PreparedMode1EffectRenderCommandKind> {
+        let mut commands = Vec::new();
+        self.execute_with(|command| commands.push(command.kind()));
+        commands
     }
 
     #[cfg(test)]
@@ -601,9 +640,37 @@ impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
     }
 }
 
+#[cfg(test)]
 enum PreparedMode1EffectRenderStep<'rank, 'frame> {
     Rank(PreparedMode1EffectRankRenderPlan<'rank, 'frame>),
     EmptyFrameFallback,
+}
+
+enum PreparedMode1EffectRenderCommand<'rank, 'frame> {
+    RankWork {
+        rank_index: usize,
+        rendered_before_command: bool,
+        work_item: ModernGpuWorkItem<'rank, 'frame>,
+    },
+    EmptyFrameFallback,
+}
+
+#[cfg(test)]
+impl PreparedMode1EffectRenderCommand<'_, '_> {
+    fn kind(&self) -> PreparedMode1EffectRenderCommandKind {
+        match self {
+            Self::RankWork {
+                rank_index,
+                rendered_before_command,
+                work_item,
+            } => PreparedMode1EffectRenderCommandKind::RankWork {
+                rank_index: *rank_index,
+                rendered_before_command: *rendered_before_command,
+                work_item: work_item.kind(),
+            },
+            Self::EmptyFrameFallback => PreparedMode1EffectRenderCommandKind::EmptyFrameFallback,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -631,6 +698,17 @@ enum PreparedMode1EffectRenderStepKind {
     EmptyFrameFallback,
 }
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreparedMode1EffectRenderCommandKind {
+    RankWork {
+        rank_index: usize,
+        rendered_before_command: bool,
+        work_item: GpuWorkItemKind,
+    },
+    EmptyFrameFallback,
+}
+
 struct PreparedMode1EffectRankRenderPlan<'rank, 'frame> {
     rank_index: usize,
     rendered_before: bool,
@@ -638,16 +716,14 @@ struct PreparedMode1EffectRankRenderPlan<'rank, 'frame> {
 }
 
 impl<'rank, 'frame> PreparedMode1EffectRankRenderPlan<'rank, 'frame> {
+    #[cfg(test)]
     fn rank_index(&self) -> usize {
         self.rank_index
     }
 
+    #[cfg(test)]
     fn rendered_before(&self) -> bool {
         self.rendered_before
-    }
-
-    fn into_render_plan(self) -> Mode1EffectRankRenderPlan<'rank, 'frame> {
-        self.render_plan
     }
 
     #[cfg(test)]
@@ -913,21 +989,21 @@ impl ModernGpuVariantRenderer {
         let bg_cells = execution.bg_cells();
         let sprite_cells = execution.sprite_cells();
         let render_plan = execution.mode1_effect_render_plan(&self.atlas);
-        render_plan.execute_with(|step| {
-            self.render_mode1_effect_step(
+        render_plan.execute_with(|command| {
+            self.render_mode1_effect_command(
                 device,
                 queue,
                 frame,
                 bg_cells,
                 sprite_cells,
                 output_view,
-                step,
+                command,
             );
         });
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn render_mode1_effect_step(
+    fn render_mode1_effect_command(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -935,24 +1011,35 @@ impl ModernGpuVariantRenderer {
         bg_cells: &[ModernIndexTile],
         sprite_cells: &[ModernIndexTile],
         output_view: &wgpu::TextureView,
-        step: PreparedMode1EffectRenderStep<'_, '_>,
+        command: PreparedMode1EffectRenderCommand<'_, '_>,
     ) {
-        match step {
-            PreparedMode1EffectRenderStep::Rank(rank_plan) => {
-                debug_assert!(rank_plan.rank_index() <= 9);
-                let rendered_before_rank = rank_plan.rendered_before();
-                self.render_effect_rank_plan(
+        match command {
+            PreparedMode1EffectRenderCommand::RankWork {
+                rank_index,
+                rendered_before_command,
+                work_item,
+            } => {
+                debug_assert!(rank_index <= 9);
+                let bg_load = if rendered_before_command {
+                    wgpu::LoadOp::Load
+                } else {
+                    modern_frame_clear_op(frame)
+                };
+                render_modern_gpu_work_item(
+                    &self.effect_renderer,
                     device,
                     queue,
                     frame,
                     bg_cells,
                     sprite_cells,
-                    rank_plan.into_render_plan(),
+                    &self.atlas,
+                    None,
                     output_view,
-                    rendered_before_rank,
+                    work_item,
+                    bg_load,
                 );
             }
-            PreparedMode1EffectRenderStep::EmptyFrameFallback => {
+            PreparedMode1EffectRenderCommand::EmptyFrameFallback => {
                 self.effect_renderer.render_bg(
                     device,
                     queue,
@@ -964,41 +1051,6 @@ impl ModernGpuVariantRenderer {
                 );
             }
         }
-    }
-
-    fn render_effect_rank_plan(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        frame: &ModernFrame,
-        bg_cells: &[ModernIndexTile],
-        sprite_cells: &[ModernIndexTile],
-        rank_plan: Mode1EffectRankRenderPlan<'_, '_>,
-        output_view: &wgpu::TextureView,
-        rendered_before_rank: bool,
-    ) {
-        let mut rendered_any = rendered_before_rank;
-        rank_plan.execute_with(|work_item| {
-            let bg_load = if rendered_any {
-                wgpu::LoadOp::Load
-            } else {
-                modern_frame_clear_op(frame)
-            };
-            render_modern_gpu_work_item(
-                &self.effect_renderer,
-                device,
-                queue,
-                frame,
-                bg_cells,
-                sprite_cells,
-                &self.atlas,
-                None,
-                output_view,
-                work_item,
-                bg_load,
-            );
-            rendered_any = true;
-        });
     }
 
     fn build_variant_frame_from_plan(
@@ -6074,6 +6126,16 @@ mod tests {
             execution.mode1_effect_render_plan(&atlas).into_step_kinds(),
             steps
         );
+        assert_eq!(
+            execution
+                .mode1_effect_render_plan(&atlas)
+                .into_command_kinds(),
+            vec![PreparedMode1EffectRenderCommandKind::RankWork {
+                rank_index: 0,
+                rendered_before_command: false,
+                work_item: GpuWorkItemKind::BgEffect,
+            }]
+        );
     }
 
     #[test]
@@ -6125,6 +6187,12 @@ mod tests {
         assert_eq!(
             execution.mode1_effect_render_plan(&atlas).into_step_kinds(),
             steps
+        );
+        assert_eq!(
+            execution
+                .mode1_effect_render_plan(&atlas)
+                .into_command_kinds(),
+            vec![PreparedMode1EffectRenderCommandKind::EmptyFrameFallback]
         );
     }
 
