@@ -207,6 +207,24 @@ pub(crate) struct GpuFramePreparePlan {
     work_items: GpuRenderPlan<GpuFramePrepareCommand>,
 }
 
+pub(crate) trait GpuFramePlanBackend {
+    fn prepare_cgram_palette(&mut self);
+    fn prepare_tile_atlas(&mut self);
+    fn prepare_mode7_vram(&mut self);
+    fn prepare_sprites(&mut self);
+    fn render_backdrop_clear(
+        &mut self,
+        screen: GpuFrameRenderScreen,
+        pass: GpuFrameBackdropClearPass,
+    );
+    fn render_sprite_priority(&mut self, screen: GpuFrameRenderScreen, pass: GpuFrameSpritePass);
+    fn render_bg_layer(&mut self, screen: GpuFrameRenderScreen, pass: GpuFrameBgPass);
+    fn render_mode7_bg(&mut self, screen: GpuFrameRenderScreen, pass: GpuFrameMode7Pass);
+    fn render_post_process(&mut self, pass: GpuFramePostProcessPass);
+}
+
+pub(crate) struct GpuFramePlanExecutor;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct GpuFrameRenderResourceRequirements {
     uses_cgram_palette: bool,
@@ -239,6 +257,76 @@ impl GpuFrameRenderResourceRequirements {
 
     pub(crate) fn uses_sprites(self) -> bool {
         self.uses_sprites
+    }
+}
+
+impl GpuFramePlanExecutor {
+    pub(crate) fn execute<B>(frame_plan: GpuFramePlan, backend: &mut B)
+    where
+        B: GpuFramePlanBackend,
+    {
+        frame_plan.execute_with(|command| Self::execute_command(command, backend));
+    }
+
+    fn execute_command<B>(command: GpuFramePlanCommand, backend: &mut B)
+    where
+        B: GpuFramePlanBackend,
+    {
+        match command {
+            GpuFramePlanCommand::Prepare(command) => {
+                Self::execute_prepare_command(command, backend);
+            }
+            GpuFramePlanCommand::Render(command) => {
+                Self::execute_render_command(command, backend);
+            }
+        }
+    }
+
+    fn execute_prepare_command<B>(command: GpuFramePrepareCommand, backend: &mut B)
+    where
+        B: GpuFramePlanBackend,
+    {
+        match command {
+            GpuFramePrepareCommand::CgramPalette => backend.prepare_cgram_palette(),
+            GpuFramePrepareCommand::TileAtlas => backend.prepare_tile_atlas(),
+            GpuFramePrepareCommand::Mode7Vram => backend.prepare_mode7_vram(),
+            GpuFramePrepareCommand::Sprites => backend.prepare_sprites(),
+        }
+    }
+
+    fn execute_render_command<B>(command: GpuFrameWorkCommand, backend: &mut B)
+    where
+        B: GpuFramePlanBackend,
+    {
+        match command {
+            GpuFrameWorkCommand::Screen { screen, command } => {
+                Self::execute_screen_command(screen, command, backend);
+            }
+            GpuFrameWorkCommand::PostProcess(pass) => backend.render_post_process(pass),
+        }
+    }
+
+    fn execute_screen_command<B>(
+        screen: GpuFrameRenderScreen,
+        command: GpuFrameScreenWorkCommand,
+        backend: &mut B,
+    ) where
+        B: GpuFramePlanBackend,
+    {
+        match command {
+            GpuFrameScreenWorkCommand::ClearBackdrop(pass) => {
+                backend.render_backdrop_clear(screen, pass);
+            }
+            GpuFrameScreenWorkCommand::SpritePriority(pass) => {
+                backend.render_sprite_priority(screen, pass);
+            }
+            GpuFrameScreenWorkCommand::BgLayer(pass) => {
+                backend.render_bg_layer(screen, pass);
+            }
+            GpuFrameScreenWorkCommand::Mode7Bg(pass) => {
+                backend.render_mode7_bg(screen, pass);
+            }
+        }
     }
 }
 
@@ -513,6 +601,82 @@ pub(crate) fn post_process_frame_work_command() -> GpuFrameWorkCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Default)]
+    struct RecordingFramePlanBackend {
+        trace: Vec<String>,
+    }
+
+    impl RecordingFramePlanBackend {
+        fn screen_name(screen: GpuFrameRenderScreen) -> &'static str {
+            match screen {
+                GpuFrameRenderScreen::Main => "main",
+                GpuFrameRenderScreen::Sub => "sub",
+            }
+        }
+    }
+
+    impl GpuFramePlanBackend for RecordingFramePlanBackend {
+        fn prepare_cgram_palette(&mut self) {
+            self.trace.push("prepare:cgram".to_string());
+        }
+
+        fn prepare_tile_atlas(&mut self) {
+            self.trace.push("prepare:tile_atlas".to_string());
+        }
+
+        fn prepare_mode7_vram(&mut self) {
+            self.trace.push("prepare:mode7_vram".to_string());
+        }
+
+        fn prepare_sprites(&mut self) {
+            self.trace.push("prepare:sprites".to_string());
+        }
+
+        fn render_backdrop_clear(
+            &mut self,
+            screen: GpuFrameRenderScreen,
+            pass: GpuFrameBackdropClearPass,
+        ) {
+            self.trace.push(format!(
+                "render:{}:clear:{pass:?}",
+                Self::screen_name(screen)
+            ));
+        }
+
+        fn render_sprite_priority(
+            &mut self,
+            screen: GpuFrameRenderScreen,
+            pass: GpuFrameSpritePass,
+        ) {
+            self.trace.push(format!(
+                "render:{}:sprite:{}",
+                Self::screen_name(screen),
+                pass.priority
+            ));
+        }
+
+        fn render_bg_layer(&mut self, screen: GpuFrameRenderScreen, pass: GpuFrameBgPass) {
+            self.trace.push(format!(
+                "render:{}:bg:{}:{}",
+                Self::screen_name(screen),
+                pass.layer_idx,
+                pass.hi_priority
+            ));
+        }
+
+        fn render_mode7_bg(&mut self, screen: GpuFrameRenderScreen, pass: GpuFrameMode7Pass) {
+            self.trace.push(format!(
+                "render:{}:mode7:{}",
+                Self::screen_name(screen),
+                pass.layer_bit
+            ));
+        }
+
+        fn render_post_process(&mut self, _pass: GpuFramePostProcessPass) {
+            self.trace.push("render:post_process".to_string());
+        }
+    }
 
     #[test]
     fn window_selector_reads_shifted_flags_and_screen_layer_bits() {
@@ -890,6 +1054,43 @@ mod tests {
                 "render:MainBgLayer",
                 "render:MainSpritePriority",
                 "render:PostProcess",
+            ]
+        );
+    }
+
+    #[test]
+    fn frame_plan_executor_dispatches_commands_to_backend() {
+        let frame_plan = GpuFramePlan::from_render_plan(GpuFrameRenderPlan::from_iter([
+            main_frame_work_command(GpuFrameScreenWorkCommand::ClearBackdrop(
+                GpuFrameBackdropClearPass::main_cgram(),
+            )),
+            main_frame_work_command(GpuFrameScreenWorkCommand::BgLayer(
+                GpuFrameBgPass::mode1_main(1, true, 1),
+            )),
+            sub_frame_work_command(GpuFrameScreenWorkCommand::Mode7Bg(
+                GpuFrameMode7Pass::sub_bg(),
+            )),
+            main_frame_work_command(GpuFrameScreenWorkCommand::SpritePriority(
+                GpuFrameSpritePass::new(2, 4, GpuFrameWindowSelector::main(0x10, 16)),
+            )),
+            post_process_frame_work_command(),
+        ]));
+        let mut backend = RecordingFramePlanBackend::default();
+
+        GpuFramePlanExecutor::execute(frame_plan, &mut backend);
+
+        assert_eq!(
+            backend.trace,
+            vec![
+                "prepare:cgram",
+                "prepare:tile_atlas",
+                "prepare:mode7_vram",
+                "prepare:sprites",
+                "render:main:clear:MainCgram",
+                "render:main:bg:1:true",
+                "render:sub:mode7:0",
+                "render:main:sprite:2",
+                "render:post_process",
             ]
         );
     }

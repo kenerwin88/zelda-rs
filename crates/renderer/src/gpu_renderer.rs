@@ -14,8 +14,8 @@ use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_work_command::{
     GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMode7Pass, GpuFramePlan,
-    GpuFramePlanCommand, GpuFramePostProcessPass, GpuFramePrepareCommand, GpuFrameRenderScreen,
-    GpuFrameScreenWorkCommand, GpuFrameSpritePass, GpuFrameWorkCommand,
+    GpuFramePlanBackend, GpuFramePlanExecutor, GpuFramePostProcessPass, GpuFrameRenderScreen,
+    GpuFrameSpritePass,
 };
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
@@ -154,108 +154,14 @@ impl GpuFrameRenderer {
         output_view: &wgpu::TextureView,
         frame_plan: GpuFramePlan,
     ) {
-        frame_plan.execute_with(|command| match command {
-            GpuFramePlanCommand::Prepare(command) => {
-                self.prepare_gpu_work_command(queue, frame, command);
-            }
-            GpuFramePlanCommand::Render(command) => {
-                self.render_gpu_work_command(encoder, queue, frame, output_view, command);
-            }
-        });
-    }
-
-    fn prepare_gpu_work_command(
-        &mut self,
-        queue: &wgpu::Queue,
-        frame: &GpuFrame<'_>,
-        command: GpuFramePrepareCommand,
-    ) {
-        match command {
-            GpuFramePrepareCommand::CgramPalette => {
-                self.cgram_palette.update(queue, frame.cgram);
-            }
-            GpuFramePrepareCommand::TileAtlas => {
-                self.tile_atlas.update(queue, frame.vram);
-            }
-            GpuFramePrepareCommand::Mode7Vram => {
-                self.mode7.prepare_vram(queue, frame.vram);
-            }
-            GpuFramePrepareCommand::Sprites => {
-                self.sprites.prepare(
-                    queue,
-                    frame.vram,
-                    frame.oam,
-                    &frame.obj,
-                    frame.extra_left_right,
-                );
-            }
-        }
-    }
-
-    fn render_gpu_work_command(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        queue: &wgpu::Queue,
-        frame: &GpuFrame<'_>,
-        output_view: &wgpu::TextureView,
-        command: GpuFrameWorkCommand,
-    ) {
-        match command {
-            GpuFrameWorkCommand::Screen { screen, command } => {
-                self.render_screen_gpu_work_item(encoder, queue, frame, screen, command);
-            }
-            GpuFrameWorkCommand::PostProcess(pass) => {
-                self.render_post_process_gpu_work_item(encoder, queue, frame, output_view, pass);
-            }
-        }
-    }
-
-    fn render_screen_gpu_work_item(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        queue: &wgpu::Queue,
-        frame: &GpuFrame<'_>,
-        screen: GpuFrameRenderScreen,
-        command: GpuFrameScreenWorkCommand,
-    ) {
-        let output_view = match screen {
-            GpuFrameRenderScreen::Main => &self.comp_view,
-            GpuFrameRenderScreen::Sub => &self.sub_comp_view,
+        let mut backend = GpuFrameRendererBackend {
+            renderer: self,
+            encoder,
+            queue,
+            frame,
+            output_view,
         };
-
-        match command {
-            GpuFrameScreenWorkCommand::ClearBackdrop(pass) => {
-                render_backdrop_clear_pass(encoder, frame, output_view, pass);
-            }
-            GpuFrameScreenWorkCommand::SpritePriority(pass) => {
-                render_sprite_pass(&mut self.sprites, encoder, queue, frame, output_view, pass);
-            }
-            GpuFrameScreenWorkCommand::BgLayer(pass) => {
-                render_bg_pass(
-                    &mut self.bg[pass.layer_idx],
-                    encoder,
-                    queue,
-                    frame,
-                    output_view,
-                    pass,
-                );
-            }
-            GpuFrameScreenWorkCommand::Mode7Bg(pass) => {
-                render_mode7_pass(&mut self.mode7, encoder, queue, frame, output_view, pass);
-            }
-        }
-    }
-
-    fn render_post_process_gpu_work_item(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        queue: &wgpu::Queue,
-        frame: &GpuFrame<'_>,
-        output_view: &wgpu::TextureView,
-        pass: GpuFramePostProcessPass,
-    ) {
-        let _ = pass;
-        self.post_process.render(encoder, queue, frame, output_view);
+        GpuFramePlanExecutor::execute(frame_plan, &mut backend);
     }
 
     /// Placeholder for the modern GPU BG renderer comparison pass (Task 9 implements this).
@@ -267,6 +173,124 @@ impl GpuFrameRenderer {
         output_view: &wgpu::TextureView,
     ) {
         let _ = (encoder, queue, frame, output_view);
+    }
+}
+
+struct GpuFrameRendererBackend<'a, 'frame> {
+    renderer: &'a mut GpuFrameRenderer,
+    encoder: &'a mut wgpu::CommandEncoder,
+    queue: &'a wgpu::Queue,
+    frame: &'a GpuFrame<'frame>,
+    output_view: &'a wgpu::TextureView,
+}
+
+impl GpuFramePlanBackend for GpuFrameRendererBackend<'_, '_> {
+    fn prepare_cgram_palette(&mut self) {
+        self.renderer
+            .cgram_palette
+            .update(self.queue, self.frame.cgram);
+    }
+
+    fn prepare_tile_atlas(&mut self) {
+        self.renderer.tile_atlas.update(self.queue, self.frame.vram);
+    }
+
+    fn prepare_mode7_vram(&mut self) {
+        self.renderer
+            .mode7
+            .prepare_vram(self.queue, self.frame.vram);
+    }
+
+    fn prepare_sprites(&mut self) {
+        self.renderer.sprites.prepare(
+            self.queue,
+            self.frame.vram,
+            self.frame.oam,
+            &self.frame.obj,
+            self.frame.extra_left_right,
+        );
+    }
+
+    fn render_backdrop_clear(
+        &mut self,
+        screen: GpuFrameRenderScreen,
+        pass: GpuFrameBackdropClearPass,
+    ) {
+        let output_view = match screen {
+            GpuFrameRenderScreen::Main => &self.renderer.comp_view,
+            GpuFrameRenderScreen::Sub => &self.renderer.sub_comp_view,
+        };
+        render_backdrop_clear_pass(self.encoder, self.frame, output_view, pass);
+    }
+
+    fn render_sprite_priority(&mut self, screen: GpuFrameRenderScreen, pass: GpuFrameSpritePass) {
+        match screen {
+            GpuFrameRenderScreen::Main => render_sprite_pass(
+                &mut self.renderer.sprites,
+                self.encoder,
+                self.queue,
+                self.frame,
+                &self.renderer.comp_view,
+                pass,
+            ),
+            GpuFrameRenderScreen::Sub => render_sprite_pass(
+                &mut self.renderer.sprites,
+                self.encoder,
+                self.queue,
+                self.frame,
+                &self.renderer.sub_comp_view,
+                pass,
+            ),
+        }
+    }
+
+    fn render_bg_layer(&mut self, screen: GpuFrameRenderScreen, pass: GpuFrameBgPass) {
+        match screen {
+            GpuFrameRenderScreen::Main => render_bg_pass(
+                &mut self.renderer.bg[pass.layer_idx],
+                self.encoder,
+                self.queue,
+                self.frame,
+                &self.renderer.comp_view,
+                pass,
+            ),
+            GpuFrameRenderScreen::Sub => render_bg_pass(
+                &mut self.renderer.bg[pass.layer_idx],
+                self.encoder,
+                self.queue,
+                self.frame,
+                &self.renderer.sub_comp_view,
+                pass,
+            ),
+        }
+    }
+
+    fn render_mode7_bg(&mut self, screen: GpuFrameRenderScreen, pass: GpuFrameMode7Pass) {
+        match screen {
+            GpuFrameRenderScreen::Main => render_mode7_pass(
+                &mut self.renderer.mode7,
+                self.encoder,
+                self.queue,
+                self.frame,
+                &self.renderer.comp_view,
+                pass,
+            ),
+            GpuFrameRenderScreen::Sub => render_mode7_pass(
+                &mut self.renderer.mode7,
+                self.encoder,
+                self.queue,
+                self.frame,
+                &self.renderer.sub_comp_view,
+                pass,
+            ),
+        }
+    }
+
+    fn render_post_process(&mut self, pass: GpuFramePostProcessPass) {
+        let _ = pass;
+        self.renderer
+            .post_process
+            .render(self.encoder, self.queue, self.frame, self.output_view);
     }
 }
 
