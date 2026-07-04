@@ -13,9 +13,9 @@
 use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_work_command::{
-    GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMode7Pass, GpuFramePostProcessPass,
-    GpuFramePrepareCommand, GpuFramePreparePlan, GpuFrameRenderPlan, GpuFrameRenderScreen,
-    GpuFrameScreenWorkCommand, GpuFrameSpritePass, GpuFrameWorkCommand,
+    GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMode7Pass, GpuFramePlan,
+    GpuFramePostProcessPass, GpuFramePrepareCommand, GpuFramePreparePlan, GpuFrameRenderPlan,
+    GpuFrameRenderScreen, GpuFrameScreenWorkCommand, GpuFrameSpritePass, GpuFrameWorkCommand,
 };
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
@@ -137,8 +137,8 @@ impl GpuFrameRenderer {
         frame: &GpuFrame<'_>,
         output_view: &wgpu::TextureView,
     ) {
-        let render_plan = GpuFrameRenderPlan::from_frame(frame);
-        self.execute_prepare_plan(queue, frame, render_plan.prepare_plan());
+        let (prepare_plan, render_plan) = GpuFramePlan::from_frame(frame).into_parts();
+        self.execute_prepare_plan(queue, frame, prepare_plan);
 
         self.execute_render_plan(encoder, queue, frame, output_view, render_plan);
     }

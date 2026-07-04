@@ -1,7 +1,7 @@
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_work_command::{
     main_frame_work_command, post_process_frame_work_command, sub_frame_work_command,
-    GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMode7Pass, GpuFrameRenderPlan,
+    GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMode7Pass, GpuFramePlan, GpuFrameRenderPlan,
     GpuFrameScreenWorkCommand, GpuFrameSpritePass, GpuFrameWindowSelector,
 };
 
@@ -69,6 +69,12 @@ impl GpuFrameRenderPlanContext {
 impl GpuFrameRenderPlan {
     pub(crate) fn from_frame(frame: &GpuFrame<'_>) -> Self {
         GpuFrameRenderPlanContext::from_frame(frame).render_plan()
+    }
+}
+
+impl GpuFramePlan {
+    pub(crate) fn from_frame(frame: &GpuFrame<'_>) -> Self {
+        Self::from_render_plan(GpuFrameRenderPlan::from_frame(frame))
     }
 }
 
@@ -262,7 +268,8 @@ mod tests {
     use super::*;
     use crate::gpu_frame::{BgLayerRegs, Mode7Regs, ObjRegs, ScanlineRegs};
     use crate::gpu_frame_work_command::{
-        post_process_frame_work_command, GpuFrameRenderPhase, GpuFrameWorkCommand,
+        post_process_frame_work_command, GpuFramePrepareCommand, GpuFrameRenderPhase,
+        GpuFrameWorkCommand,
     };
     use crate::gpu_work_item::GpuWorkItemKind;
 
@@ -372,6 +379,42 @@ mod tests {
         let sprite_free_frame = test_frame(1, [0, 0]);
 
         assert!(!GpuFrameRenderPlan::from_frame(&sprite_free_frame).uses_sprites());
+    }
+
+    #[test]
+    fn frame_plan_builds_prepare_and_render_phases_from_frame() {
+        let mut frame = test_frame(7, [0, 0x11]);
+        frame.scanlines[7].screen_enabled_main = 0x10;
+
+        let frame_plan = GpuFramePlan::from_frame(&frame);
+
+        assert_eq!(
+            frame_plan.prepare_plan().work_items(),
+            &[
+                GpuFramePrepareCommand::CgramPalette,
+                GpuFramePrepareCommand::Mode7Vram,
+                GpuFramePrepareCommand::Sprites,
+            ]
+        );
+        assert!(frame_plan.render_plan().uses_sprites());
+        assert_eq!(
+            frame_plan.render_plan().kinds(),
+            vec![
+                GpuWorkItemKind::ClearBackdrop,
+                GpuWorkItemKind::MainSpritePriority,
+                GpuWorkItemKind::Mode7MainBg,
+                GpuWorkItemKind::MainSpritePriority,
+                GpuWorkItemKind::MainSpritePriority,
+                GpuWorkItemKind::MainSpritePriority,
+                GpuWorkItemKind::ClearSubBackdrop,
+                GpuWorkItemKind::Mode7SubBg,
+                GpuWorkItemKind::SubSpritePriority,
+                GpuWorkItemKind::SubSpritePriority,
+                GpuWorkItemKind::SubSpritePriority,
+                GpuWorkItemKind::SubSpritePriority,
+                GpuWorkItemKind::PostProcess,
+            ]
+        );
     }
 
     #[test]

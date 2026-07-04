@@ -184,6 +184,11 @@ pub(crate) struct GpuFrameRenderPlan {
     work_items: GpuRenderPlan<GpuFrameWorkCommand>,
 }
 
+pub(crate) struct GpuFramePlan {
+    prepare_plan: GpuFramePreparePlan,
+    render_plan: GpuFrameRenderPlan,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuFramePrepareCommand {
     CgramPalette,
@@ -228,6 +233,29 @@ impl GpuFrameRenderResourceRequirements {
 
     pub(crate) fn uses_sprites(self) -> bool {
         self.uses_sprites
+    }
+}
+
+impl GpuFramePlan {
+    pub(crate) fn from_render_plan(render_plan: GpuFrameRenderPlan) -> Self {
+        Self {
+            prepare_plan: render_plan.prepare_plan(),
+            render_plan,
+        }
+    }
+
+    pub(crate) fn into_parts(self) -> (GpuFramePreparePlan, GpuFrameRenderPlan) {
+        (self.prepare_plan, self.render_plan)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn prepare_plan(&self) -> &GpuFramePreparePlan {
+        &self.prepare_plan
+    }
+
+    #[cfg(test)]
+    pub(crate) fn render_plan(&self) -> &GpuFrameRenderPlan {
+        &self.render_plan
     }
 }
 
@@ -783,5 +811,34 @@ mod tests {
             post_process_frame_work_command(),
         ]);
         assert_eq!(clear_only_plan.prepare_plan().work_items(), &[]);
+    }
+
+    #[test]
+    fn frame_plan_carries_prepare_and_render_plans() {
+        let bg = main_frame_work_command(GpuFrameScreenWorkCommand::BgLayer(
+            GpuFrameBgPass::mode1_main(0, false, 0),
+        ));
+        let sprite = main_frame_work_command(GpuFrameScreenWorkCommand::SpritePriority(
+            GpuFrameSpritePass::new(0, 4, GpuFrameWindowSelector::main(0x10, 16)),
+        ));
+        let post_process = post_process_frame_work_command();
+        let frame_plan = GpuFramePlan::from_render_plan(GpuFrameRenderPlan::from_iter([
+            bg,
+            sprite,
+            post_process,
+        ]));
+
+        assert_eq!(
+            frame_plan.prepare_plan().work_items(),
+            &[
+                GpuFramePrepareCommand::CgramPalette,
+                GpuFramePrepareCommand::TileAtlas,
+                GpuFramePrepareCommand::Sprites,
+            ]
+        );
+        assert_eq!(
+            frame_plan.render_plan().work_items(),
+            &[bg, sprite, post_process]
+        );
     }
 }
