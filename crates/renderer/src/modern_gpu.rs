@@ -504,13 +504,14 @@ impl ModernGpuVariantRenderer {
     ) {
         let mut rendered_any = false;
         for rank_dispatch in mode1_effect_rank_dispatches(plan) {
-            rendered_any = self.render_effect_rank_dispatch(
+            let rank_plan = rank_dispatch.render_plan(&self.atlas, rendered_any);
+            rendered_any = self.render_effect_rank_plan(
                 device,
                 queue,
                 frame,
                 bg_cells,
                 sprite_cells,
-                &rank_dispatch,
+                rank_plan,
                 output_view,
                 rendered_any,
             );
@@ -528,19 +529,18 @@ impl ModernGpuVariantRenderer {
         }
     }
 
-    fn render_effect_rank_dispatch(
+    fn render_effect_rank_plan(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         frame: &ModernFrame,
         bg_cells: &[ModernIndexTile],
         sprite_cells: &[ModernIndexTile],
-        rank_dispatch: &Mode1EffectRankDispatch<'_>,
+        rank_plan: Mode1EffectRankRenderPlan<'_, '_>,
         output_view: &wgpu::TextureView,
         rendered_any: bool,
     ) -> bool {
         let mut rendered_any = rendered_any;
-        let rank_plan = rank_dispatch.render_plan(&self.atlas, rendered_any);
         for work_item in rank_plan {
             let _ = work_item.kind();
             match work_item {
