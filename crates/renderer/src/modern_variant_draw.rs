@@ -88,11 +88,27 @@ impl<'a> VariantBgDrawPacket<'a> {
     pub fn material(&self) -> ModernDrawMaterial {
         material_for_draw(self.draw)
     }
+
+    pub fn mode1_rank(&self) -> Option<u8> {
+        VariantDrawPacket::Bg {
+            packet_index: 0,
+            packet: self,
+        }
+        .mode1_rank()
+    }
 }
 
 impl<'a> VariantSpriteDrawPacket<'a> {
     pub fn material(&self) -> ModernDrawMaterial {
         material_for_draw(self.draw)
+    }
+
+    pub fn mode1_rank(&self) -> Option<u8> {
+        VariantDrawPacket::Sprite {
+            packet_index: 0,
+            packet: self,
+        }
+        .mode1_rank()
     }
 }
 
@@ -189,6 +205,60 @@ impl<'plan, 'frame> VariantDrawPacket<'plan, 'frame> {
         }
     }
 
+    pub fn mode1_rank(self) -> Option<u8> {
+        match self {
+            Self::Bg { packet, .. } => match (packet.layer_index, packet.inst.priority) {
+                (2, false) => Some(0), // BG3-lo
+                (1, false) => Some(3), // BG2-lo
+                (0, false) => Some(4), // BG1-lo
+                (1, true) => Some(6),  // BG2-hi
+                (0, true) => Some(7),  // BG1-hi
+                (2, true) => Some(9),  // BG3-hi
+                _ => None,
+            },
+            Self::Sprite { packet, .. } => match packet.inst.priority {
+                0 => Some(1), // OBJ0
+                1 => Some(2), // OBJ1
+                2 => Some(5), // OBJ2
+                3 => Some(8), // OBJ3
+                _ => None,
+            },
+        }
+    }
+
+    pub fn local_xy(self, screen_x: i16, screen_y: i16) -> Option<(usize, usize)> {
+        let (origin_x, origin_y) = self.screen_origin();
+        let local_x = screen_x - origin_x;
+        let local_y = screen_y - origin_y;
+        if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
+            return None;
+        }
+        Some((local_x as usize, local_y as usize))
+    }
+
+    pub fn overlap_index_at_screen(self, screen_x: i16, screen_y: i16) -> Option<u8> {
+        let (local_x, local_y) = self.local_xy(screen_x, screen_y)?;
+        match self {
+            Self::Bg { packet, .. } => Some(packet.cell.indices[local_y * 8 + local_x]),
+            Self::Sprite { packet, .. } => {
+                if packet.inst.row_mask & (1 << local_y) == 0 {
+                    return None;
+                }
+                let source_x = if packet.inst.hflip {
+                    7 - local_x
+                } else {
+                    local_x
+                };
+                let source_y = if packet.inst.vflip {
+                    7 - local_y
+                } else {
+                    local_y
+                };
+                Some(packet.cell.indices[source_y * 8 + source_x])
+            }
+        }
+    }
+
     fn trace_pixel(
         self,
         frame: &ModernFrame,
@@ -196,12 +266,7 @@ impl<'plan, 'frame> VariantDrawPacket<'plan, 'frame> {
         screen_x: i16,
         screen_y: i16,
     ) -> Option<VariantPixelTrace> {
-        let (origin_x, origin_y) = self.screen_origin();
-        let local_x = screen_x - origin_x;
-        let local_y = screen_y - origin_y;
-        if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
-            return None;
-        }
+        let (local_x, local_y) = self.local_xy(screen_x, screen_y)?;
         match self {
             Self::Bg {
                 packet_index,
@@ -975,11 +1040,14 @@ mod tests {
         assert_eq!(packets[0].screen_origin(), (4, 8));
         assert_eq!(packets[0].palette_row(), 2);
         assert_eq!(packets[0].material(), ModernDrawMaterial::PaletteEffect);
+        assert_eq!(packets[0].mode1_rank(), Some(4));
+        assert_eq!(packets[0].local_xy(6, 11), Some((2, 3)));
 
         assert_eq!(packets[1].surface(), VariantDrawSurface::Bg);
         assert_eq!(packets[1].packet_index(), 1);
         assert_eq!(packets[1].cell_id(), 1);
         assert_eq!(packets[1].material(), ModernDrawMaterial::MissingArt);
+        assert_eq!(packets[1].mode1_rank(), Some(4));
 
         assert_eq!(packets[2].surface(), VariantDrawSurface::Sprite);
         assert_eq!(packets[2].packet_index(), 0);
@@ -988,6 +1056,65 @@ mod tests {
         assert_eq!(packets[2].screen_origin(), (20, 24));
         assert_eq!(packets[2].palette_row(), 0);
         assert_eq!(packets[2].material(), ModernDrawMaterial::LiveIndex);
+        assert_eq!(packets[2].mode1_rank(), Some(1));
+    }
+
+    #[test]
+    fn material_packets_resolve_overlap_indices_for_bg_and_sprite_rules() {
+        let mut frame = ModernFrame::empty();
+        let mut bg0 = ModernBgLayer::new(0);
+        bg0.enabled_main = true;
+        bg0.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: NO_SOURCE_KEY,
+            screen_x: 4,
+            screen_y: 8,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: true,
+        });
+        frame.bg_layers[0] = bg0;
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 20,
+            screen_y: 24,
+            palette: 0,
+            priority: 2,
+            hflip: true,
+            vflip: true,
+            row_mask: 0b0000_0010,
+        });
+        let mut bg_cell = index_cell(0, modern_source_key(1, 0, 0));
+        bg_cell.indices[3 * 8 + 2] = 5;
+        let mut sprite_cell = index_cell(1, NO_SOURCE_KEY);
+        sprite_cell.indices[6 * 8 + 5] = 7;
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![],
+            effects: vec![],
+        };
+        let bg_cells = vec![bg_cell];
+        let sprite_cells = vec![sprite_cell];
+
+        let plan = compile_variant_draws(
+            &frame,
+            &bg_cells,
+            &sprite_cells,
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+        let packets: Vec<_> = plan.material_packets().collect();
+
+        assert_eq!(packets[0].mode1_rank(), Some(7));
+        assert_eq!(packets[0].overlap_index_at_screen(6, 11), Some(5));
+        assert_eq!(packets[0].overlap_index_at_screen(3, 11), None);
+        assert_eq!(packets[1].mode1_rank(), Some(5));
+        assert_eq!(packets[1].overlap_index_at_screen(22, 25), Some(7));
+        assert_eq!(packets[1].overlap_index_at_screen(22, 24), None);
     }
 
     #[test]

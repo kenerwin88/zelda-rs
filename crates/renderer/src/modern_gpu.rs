@@ -519,8 +519,8 @@ impl ModernGpuVariantRenderer {
         for rank in 0..=9 {
             let bg_packets: Vec<_> = plan
                 .material_packets()
+                .filter(|packet| packet.mode1_rank() == Some(rank))
                 .filter_map(|packet| packet.as_bg())
-                .filter(|(_, packet)| bg_packet_mode1_rank(packet) == Some(rank))
                 .map(|(_, packet)| packet.clone())
                 .collect();
             if !bg_packets.is_empty() {
@@ -542,8 +542,8 @@ impl ModernGpuVariantRenderer {
 
             let sprite_packets: Vec<_> = plan
                 .material_packets()
+                .filter(|packet| packet.mode1_rank() == Some(rank))
                 .filter_map(|packet| packet.as_sprite())
-                .filter(|(_, packet)| sprite_packet_mode1_rank(packet) == Some(rank))
                 .map(|(_, packet)| packet.clone())
                 .collect();
             if !sprite_packets.is_empty() {
@@ -1323,7 +1323,7 @@ fn overlay_mixed_variant_bg_packet_on_main_screen(
     let Some(entry) = packet.draw.entry() else {
         return;
     };
-    let Some(bg_rank) = bg_packet_mode1_rank(packet) else {
+    let Some(bg_rank) = packet.mode1_rank() else {
         return;
     };
     let Ok(math_bit) = u8::try_from(packet.layer_index) else {
@@ -1372,7 +1372,7 @@ fn overlay_mixed_variant_live_cgram_bg_packet_on_main_screen(
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     bg_overlay_ranks: &mut [u8],
 ) {
-    let Some(bg_rank) = bg_packet_mode1_rank(packet) else {
+    let Some(bg_rank) = packet.mode1_rank() else {
         return;
     };
     let Ok(math_bit) = u8::try_from(packet.layer_index) else {
@@ -1428,7 +1428,7 @@ fn overlay_front_variant_sprite_packets_on_main_screen(
             .iter()
             .filter(|packet| packet.inst.priority == priority)
         {
-            let Some(sprite_rank) = sprite_packet_mode1_rank(packet) else {
+            let Some(sprite_rank) = packet.mode1_rank() else {
                 continue;
             };
             let palette_base = 0x80 + usize::from(packet.inst.palette) * 16;
@@ -1573,25 +1573,25 @@ fn front_or_same_bg_packet_has_opaque_pixel(
     screen_x: i16,
     screen_y: i16,
 ) -> bool {
-    let Some(packet_rank) = bg_packet_mode1_rank(packet) else {
+    let Some(packet_rank) = packet.mode1_rank() else {
         return true;
     };
-    for (other_index, other) in plan.material_packets().filter_map(|packet| packet.as_bg()) {
+    for other_packet in plan.material_packets() {
+        let Some((other_index, _other)) = other_packet.as_bg() else {
+            continue;
+        };
         if other_index == packet_index {
             continue;
         }
-        let Some(other_rank) = bg_packet_mode1_rank(other) else {
+        let Some(other_rank) = other_packet.mode1_rank() else {
             continue;
         };
         if other_rank < packet_rank || (other_rank == packet_rank && other_index < packet_index) {
             continue;
         }
-        let local_x = screen_x - other.inst.screen_x;
-        let local_y = screen_y - other.inst.screen_y;
-        if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
+        let Some(index) = other_packet.overlap_index_at_screen(screen_x, screen_y) else {
             continue;
-        }
-        let index = other.cell.indices[local_y as usize * 8 + local_x as usize];
+        };
         if index != 0 {
             return true;
         }
@@ -1607,26 +1607,26 @@ fn front_or_same_bg_packet_blocks_prefinal_group(
     screen_x: i16,
     screen_y: i16,
 ) -> Option<MixedOverlayOverlapRejectReason> {
-    let Some(packet_rank) = bg_packet_mode1_rank(packet) else {
+    let Some(packet_rank) = packet.mode1_rank() else {
         return Some(MixedOverlayOverlapRejectReason::BgUnrepresentableFront);
     };
     let packet_material = bg_packet_prefinal_material(frame, packet).ok();
-    for (other_index, other) in plan.material_packets().filter_map(|packet| packet.as_bg()) {
+    for other_packet in plan.material_packets() {
+        let Some((other_index, other)) = other_packet.as_bg() else {
+            continue;
+        };
         if other_index == packet_index {
             continue;
         }
-        let Some(other_rank) = bg_packet_mode1_rank(other) else {
+        let Some(other_rank) = other_packet.mode1_rank() else {
             continue;
         };
         if other_rank < packet_rank || (other_rank == packet_rank && other_index < packet_index) {
             continue;
         }
-        let local_x = screen_x - other.inst.screen_x;
-        let local_y = screen_y - other.inst.screen_y;
-        if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
+        let Some(index) = other_packet.overlap_index_at_screen(screen_x, screen_y) else {
             continue;
-        }
-        let index = other.cell.indices[local_y as usize * 8 + local_x as usize];
+        };
         if index == 0 {
             continue;
         }
@@ -1726,48 +1726,22 @@ fn bg_packet_prefinal_material(
     }
 }
 
-fn bg_packet_mode1_rank(
-    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
-) -> Option<u8> {
-    match (packet.layer_index, packet.inst.priority) {
-        (2, false) => Some(0), // BG3-lo
-        (1, false) => Some(3), // BG2-lo
-        (0, false) => Some(4), // BG1-lo
-        (1, true) => Some(6),  // BG2-hi
-        (0, true) => Some(7),  // BG1-hi
-        (2, true) => Some(9),  // BG3-hi
-        _ => None,
-    }
-}
-
-fn sprite_packet_mode1_rank(
-    packet: &crate::modern_variant_draw::VariantSpriteDrawPacket<'_>,
-) -> Option<u8> {
-    match packet.inst.priority {
-        0 => Some(1), // OBJ0
-        1 => Some(2), // OBJ1
-        2 => Some(5), // OBJ2
-        3 => Some(8), // OBJ3
-        _ => None,
-    }
-}
-
 fn other_packet_has_opaque_bg_pixel(
     packet_index: usize,
     plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
     screen_x: i16,
     screen_y: i16,
 ) -> bool {
-    for (other_index, other) in plan.material_packets().filter_map(|packet| packet.as_bg()) {
+    for other_packet in plan.material_packets() {
+        let Some((other_index, _other)) = other_packet.as_bg() else {
+            continue;
+        };
         if other_index == packet_index {
             continue;
         }
-        let local_x = screen_x - other.inst.screen_x;
-        let local_y = screen_y - other.inst.screen_y;
-        if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
+        let Some(index) = other_packet.overlap_index_at_screen(screen_x, screen_y) else {
             continue;
-        }
-        let index = other.cell.indices[local_y as usize * 8 + local_x as usize];
+        };
         if index != 0 {
             return true;
         }
@@ -1782,40 +1756,32 @@ fn front_sprite_packet_blocks_bg_packet(
     screen_x: i16,
     screen_y: i16,
 ) -> bool {
-    let Some(bg_rank) = bg_packet_mode1_rank(packet) else {
+    let Some(bg_rank) = packet.mode1_rank() else {
         return true;
     };
     if frame.screen_enabled_main != 0 && frame.screen_enabled_main & 0x10 == 0 {
         return false;
     }
-    for (_, other) in plan
-        .material_packets()
-        .filter_map(|packet| packet.as_sprite())
-    {
-        let Some(sprite_rank) = sprite_packet_mode1_rank(other) else {
+    for other_packet in plan.material_packets() {
+        let Some((_, _other)) = other_packet.as_sprite() else {
+            continue;
+        };
+        let Some(sprite_rank) = other_packet.mode1_rank() else {
             return true;
         };
         if sprite_rank < bg_rank {
             continue;
         }
-        let local_x = screen_x - other.inst.screen_x;
-        let local_y = screen_y - other.inst.screen_y;
-        if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
+        if other_packet
+            .overlap_index_at_screen(screen_x, screen_y)
+            .is_none_or(|index| index == 0)
+        {
             continue;
         }
         if !sprite_packet_visible_on_main_at_pixel(frame, screen_x as u32, screen_y as usize) {
             continue;
         }
-        let y = local_y as usize;
-        if other.inst.row_mask & (1 << y) == 0 {
-            continue;
-        }
-        let x = local_x as usize;
-        let src_x = if other.inst.hflip { 7 - x } else { x };
-        let src_y = if other.inst.vflip { 7 - y } else { y };
-        if other.cell.indices[src_y * 8 + src_x] != 0 {
-            return true;
-        }
+        return true;
     }
     false
 }
@@ -3808,7 +3774,7 @@ fn modern_prefinal_overlay_data_words(
     for packet in static_packets {
         let cell_offset = data.len() as u32;
         data.extend_from_slice(&modern_prefinal_overlay_static_bg_pixels(frame, packet));
-        if let Some(rank) = bg_packet_mode1_rank(packet) {
+        if let Some(rank) = packet.mode1_rank() {
             bg_packet_words.extend_from_slice(&[
                 i32::from(packet.inst.screen_x) as u32,
                 i32::from(packet.inst.screen_y) as u32,
@@ -3820,7 +3786,7 @@ fn modern_prefinal_overlay_data_words(
     for packet in live_cgram_packets {
         let cell_offset = data.len() as u32;
         data.extend_from_slice(&modern_prefinal_overlay_live_bg_pixels(frame, packet));
-        if let Some(rank) = bg_packet_mode1_rank(packet) {
+        if let Some(rank) = packet.mode1_rank() {
             bg_packet_words.extend_from_slice(&[
                 i32::from(packet.inst.screen_x) as u32,
                 i32::from(packet.inst.screen_y) as u32,
@@ -3834,7 +3800,7 @@ fn modern_prefinal_overlay_data_words(
             .iter()
             .filter(|packet| packet.inst.priority == priority)
         {
-            let Some(rank) = sprite_packet_mode1_rank(packet) else {
+            let Some(rank) = packet.mode1_rank() else {
                 continue;
             };
             let cell_offset = data.len() as u32;
