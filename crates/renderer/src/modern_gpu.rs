@@ -510,7 +510,7 @@ impl ModernGpuVariantRenderer {
                 &plan.sprites,
                 output_view,
             );
-            if stats.stable_draws != stats.effect_draws {
+            if stats.stable_preview_draws != 0 {
                 self.renderer
                     .render_overlay(device, queue, &variant_frame, output_view);
             }
@@ -536,17 +536,16 @@ impl ModernGpuVariantRenderer {
         out.bg_layers[0].enabled_main = true;
         for packet in &plan.bg {
             match packet.draw {
-                crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
-                    if effect.is_none() {
-                        out.bg_layers[0].tiles.push(variant_tile_instance(
-                            entry,
-                            packet.inst.screen_x,
-                            packet.inst.screen_y,
-                            packet.cell.hflip ^ entry.source_hflip,
-                            packet.cell.vflip ^ entry.source_vflip,
-                        ));
-                    }
+                crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry } => {
+                    out.bg_layers[0].tiles.push(variant_tile_instance(
+                        entry,
+                        packet.inst.screen_x,
+                        packet.inst.screen_y,
+                        packet.cell.hflip ^ entry.source_hflip,
+                        packet.cell.vflip ^ entry.source_vflip,
+                    ));
                 }
+                crate::modern_variant_atlas::VariantAtlasDraw::MaterialEffect { .. } => {}
                 crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {}
                 crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
                     if let Some(key) = packet.key.as_ref() {
@@ -560,17 +559,16 @@ impl ModernGpuVariantRenderer {
         out.bg_layers[1].enabled_main = true;
         for packet in &plan.sprites {
             match packet.draw {
-                crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
-                    if effect.is_none() {
-                        out.bg_layers[1].tiles.push(variant_tile_instance(
-                            entry,
-                            packet.inst.screen_x,
-                            packet.inst.screen_y,
-                            packet.inst.hflip ^ entry.source_hflip,
-                            packet.inst.vflip ^ entry.source_vflip,
-                        ));
-                    }
+                crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry } => {
+                    out.bg_layers[1].tiles.push(variant_tile_instance(
+                        entry,
+                        packet.inst.screen_x,
+                        packet.inst.screen_y,
+                        packet.inst.hflip ^ entry.source_hflip,
+                        packet.inst.vflip ^ entry.source_vflip,
+                    ));
                 }
+                crate::modern_variant_atlas::VariantAtlasDraw::MaterialEffect { .. } => {}
                 crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {}
                 crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
                     if let Some(key) = packet.key.as_ref() {
@@ -755,25 +753,12 @@ fn mixed_variant_overlay_bg_packets_with_policy<'a>(
     let candidates = plan
         .bg
         .iter()
-        .filter(|packet| {
-            matches!(
-                packet.draw,
-                crate::modern_variant_atlas::VariantAtlasDraw::Stable {
-                    effect: Some(_),
-                    ..
-                }
-            )
-        })
+        .filter(|packet| packet.draw.material_effect().is_some())
         .count() as u32;
     out.candidates = candidates;
 
     for (packet_index, packet) in plan.bg.iter().enumerate() {
-        let crate::modern_variant_atlas::VariantAtlasDraw::Stable {
-            entry,
-            effect: Some(effect),
-            ..
-        } = packet.draw
-        else {
+        let Some((entry, effect)) = packet.draw.material_effect() else {
             continue;
         };
         if let Some(reason) =
@@ -1071,11 +1056,7 @@ fn overlay_mixed_variant_bg_packets_on_main_screen(
             packet,
             &mut bg_overlay_ranks,
             |index| {
-                let crate::modern_variant_atlas::VariantAtlasDraw::Stable {
-                    effect: Some(effect),
-                    ..
-                } = packet.draw
-                else {
+                let Some((_, effect)) = packet.draw.material_effect() else {
                     return None;
                 };
                 effect.index_to_rgba.get(usize::from(index)).copied()
@@ -1109,7 +1090,7 @@ fn bg_packet_prefinal_color_math_reason(
     frame: &ModernFrame,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
 ) -> Option<MixedOverlayComplexRejectReason> {
-    let crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, .. } = packet.draw else {
+    let Some((entry, _)) = packet.draw.material_effect() else {
         return None;
     };
     let Ok(layer) = u8::try_from(packet.layer_index) else {
@@ -1152,7 +1133,7 @@ fn overlay_mixed_variant_bg_packet_on_main_screen(
     bg_overlay_ranks: &mut [u8],
     color_for_index: impl Fn(u8) -> Option<[u8; 4]>,
 ) {
-    let crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, .. } = packet.draw else {
+    let Some(entry) = packet.draw.entry() else {
         return;
     };
     let Some(bg_rank) = bg_packet_mode1_rank(packet) else {
@@ -1312,7 +1293,7 @@ fn bg_packet_overlaps_other_packets(
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
 ) -> bool {
-    let crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, .. } = packet.draw else {
+    let Some(entry) = packet.draw.entry() else {
         return false;
     };
     for y in 0..8usize {
@@ -1341,7 +1322,7 @@ fn bg_packet_prefinal_overlap_reject_reason(
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
 ) -> Option<MixedOverlayOverlapRejectReason> {
-    let crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, .. } = packet.draw else {
+    let Some(entry) = packet.draw.entry() else {
         return None;
     };
     for y in 0..8usize {
@@ -1532,12 +1513,7 @@ fn bg_packet_prefinal_material(
     frame: &ModernFrame,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
 ) -> Result<PrefinalBgMaterial, PrefinalBgMaterialRejectReason> {
-    let crate::modern_variant_atlas::VariantAtlasDraw::Stable {
-        entry,
-        effect: Some(effect),
-        ..
-    } = packet.draw
-    else {
+    let Some((entry, effect)) = packet.draw.material_effect() else {
         return Err(PrefinalBgMaterialRejectReason::NoEffect);
     };
     if bg_effect_packet_complex_reject_reason(frame, packet, entry, effect, true).is_some() {
@@ -1809,12 +1785,8 @@ impl ModernGpuVariantEffectRenderer {
         let mut instance_bytes = Vec::new();
         let mut instance_count = 0u32;
         for packet in packets {
-            let (entry, effect) = match packet.draw {
-                crate::modern_variant_atlas::VariantAtlasDraw::Stable {
-                    entry,
-                    effect: Some(effect),
-                } => (entry, effect),
-                _ => continue,
+            let Some((entry, effect)) = packet.draw.material_effect() else {
+                continue;
             };
             let Some(effect_row) = atlas.effect_row_for_effect(effect) else {
                 continue;
@@ -1917,9 +1889,8 @@ impl ModernGpuVariantEffectRenderer {
         let mut instance_bytes = Vec::new();
         let mut instance_count = 0u32;
         for packet in packets {
-            let entry = match packet.draw {
-                crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, .. } => entry,
-                _ => continue,
+            let Some(entry) = packet.draw.entry() else {
+                continue;
             };
             let col = packet.inst.cell_id % INDEX_GRID_COLS;
             let row = packet.inst.cell_id / INDEX_GRID_COLS;
@@ -2011,12 +1982,8 @@ impl ModernGpuVariantEffectRenderer {
         let mut instance_bytes = Vec::new();
         let mut instance_count = 0u32;
         for packet in packets {
-            let (entry, effect) = match packet.draw {
-                crate::modern_variant_atlas::VariantAtlasDraw::Stable {
-                    entry,
-                    effect: Some(effect),
-                } => (entry, effect),
-                _ => continue,
+            let Some((entry, effect)) = packet.draw.material_effect() else {
+                continue;
             };
             let Some(effect_row) = atlas.effect_row_for_effect(effect) else {
                 continue;
@@ -4390,14 +4357,14 @@ mod tests {
         );
         let fallback = ModernGpuHeadless::new().render_rgba(&fallback_frame, &fallback_cells, &[]);
 
-        assert_eq!(stats.stable_draws, 1);
+        assert_eq!(stats.stable_draws, 0);
         assert_eq!(stats.effect_draws, 1);
         assert_eq!(stats.fallback_draws, 1);
         assert_eq!(stats.dynamic_palette_draws, 0);
         assert_eq!(stats.missing_variant_draws, 1);
         assert_eq!(stats.stable_preview_draws, 0);
-        assert_eq!(stats.stable_effect_draws, 1);
-        assert_eq!(stats.dynamic_material_draws, 0);
+        assert_eq!(stats.stable_effect_draws, 0);
+        assert_eq!(stats.dynamic_material_draws, 1);
         assert_eq!(stats.missing_art_draws, 1);
         assert_eq!(stats.unkeyed_fallback_draws, 0);
         assert_eq!(&variant[0..4], &fallback[0..4]);
@@ -6893,9 +6860,9 @@ mod tests {
             cell: &cell,
             inst: &inst,
             key: None,
-            draw: VariantAtlasDraw::Stable {
+            draw: VariantAtlasDraw::MaterialEffect {
                 entry: &entry,
-                effect: Some(&effect),
+                effect: &effect,
             },
         };
 
@@ -7569,8 +7536,9 @@ mod tests {
                 "palette_main_spr",
             );
 
-            assert_eq!(stats.stable_draws, 2);
+            assert_eq!(stats.stable_draws, 0);
             assert_eq!(stats.effect_draws, 2);
+            assert_eq!(stats.dynamic_material_draws, 2);
             assert_eq!(stats.fallback_draws, 0);
             assert_eq!(stats, software_stats);
             if gpu_rgba != software_rgba {

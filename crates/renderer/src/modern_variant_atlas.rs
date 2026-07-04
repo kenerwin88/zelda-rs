@@ -47,13 +47,37 @@ pub struct ModernVariantAtlas {
 pub enum VariantAtlasDraw<'a> {
     Stable {
         entry: &'a VariantAtlasEntry,
-        effect: Option<&'a TileEffect>,
+    },
+    MaterialEffect {
+        entry: &'a VariantAtlasEntry,
+        effect: &'a TileEffect,
     },
     DynamicPalette {
         entry: &'a VariantAtlasEntry,
     },
     MissingArt,
     Unkeyed,
+}
+
+impl<'a> VariantAtlasDraw<'a> {
+    pub fn entry(self) -> Option<&'a VariantAtlasEntry> {
+        match self {
+            Self::Stable { entry }
+            | Self::MaterialEffect { entry, .. }
+            | Self::DynamicPalette { entry } => Some(entry),
+            Self::MissingArt | Self::Unkeyed => None,
+        }
+    }
+
+    pub fn material_effect(self) -> Option<(&'a VariantAtlasEntry, &'a TileEffect)> {
+        match self {
+            Self::MaterialEffect { entry, effect } => Some((entry, effect)),
+            Self::Stable { .. }
+            | Self::DynamicPalette { .. }
+            | Self::MissingArt
+            | Self::Unkeyed => None,
+        }
+    }
 }
 
 pub fn variant_key_for_index_tile(
@@ -144,16 +168,10 @@ impl ModernVariantAtlas {
             .effect_for_key(key)
             .filter(|effect| effect.dynamic_policy == "stable");
         if let Some(effect) = stable_effect {
-            return VariantAtlasDraw::Stable {
-                entry,
-                effect: Some(effect),
-            };
+            return VariantAtlasDraw::MaterialEffect { entry, effect };
         }
         if entry_matches_material(entry, key) {
-            return VariantAtlasDraw::Stable {
-                entry,
-                effect: None,
-            };
+            return VariantAtlasDraw::Stable { entry };
         }
         VariantAtlasDraw::DynamicPalette { entry }
     }
@@ -965,10 +983,7 @@ mod tests {
         let live_key = bg_test_key_with_palette_row(3);
 
         match atlas.resolve_draw(Some(&live_key)) {
-            VariantAtlasDraw::Stable {
-                entry,
-                effect: Some(effect),
-            } => {
+            VariantAtlasDraw::MaterialEffect { entry, effect } => {
                 assert_eq!(entry.id, "bg:kBgGfx:pack0:tile0:3bpp");
                 assert_eq!(effect.id, "palette_dung_bg_main:8color:row3");
                 assert_eq!(
@@ -978,7 +993,7 @@ mod tests {
                     0
                 );
             }
-            other => panic!("expected stable effect-backed draw, got {other:?}"),
+            other => panic!("expected material effect draw, got {other:?}"),
         }
     }
 
@@ -1001,10 +1016,7 @@ mod tests {
         let live_key = bg_test_key_with_palette_row(3);
 
         match atlas.resolve_draw(Some(&live_key)) {
-            VariantAtlasDraw::Stable {
-                entry,
-                effect: None,
-            } => {
+            VariantAtlasDraw::Stable { entry } => {
                 assert_eq!(entry.id, "bg:kBgGfx:pack0:tile0:3bpp");
             }
             other => panic!("expected preview-backed stable draw, got {other:?}"),

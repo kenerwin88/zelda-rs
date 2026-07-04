@@ -109,14 +109,13 @@ pub struct VariantAtlasRenderStats {
 impl VariantAtlasRenderStats {
     pub fn record_draw(&mut self, draw: &crate::modern_variant_atlas::VariantAtlasDraw<'_>) {
         match draw {
-            crate::modern_variant_atlas::VariantAtlasDraw::Stable { effect, .. } => {
+            crate::modern_variant_atlas::VariantAtlasDraw::Stable { .. } => {
                 self.stable_draws += 1;
-                if effect.is_some() {
-                    self.effect_draws += 1;
-                    self.stable_effect_draws += 1;
-                } else {
-                    self.stable_preview_draws += 1;
-                }
+                self.stable_preview_draws += 1;
+            }
+            crate::modern_variant_atlas::VariantAtlasDraw::MaterialEffect { .. } => {
+                self.effect_draws += 1;
+                self.dynamic_material_draws += 1;
             }
             crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {
                 self.fallback_draws += 1;
@@ -182,13 +181,24 @@ pub fn render_modern_frame_software_variant_atlas(
     );
     for packet in &plan.bg {
         match packet.draw {
-            crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
+            crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry } => {
                 draw_variant_bg_instance(
                     &mut out,
                     frame,
                     atlas,
                     entry,
-                    effect,
+                    None,
+                    packet.cell,
+                    packet.inst,
+                );
+            }
+            crate::modern_variant_atlas::VariantAtlasDraw::MaterialEffect { entry, effect } => {
+                draw_variant_bg_instance(
+                    &mut out,
+                    frame,
+                    atlas,
+                    entry,
+                    Some(effect),
                     packet.cell,
                     packet.inst,
                 );
@@ -203,12 +213,22 @@ pub fn render_modern_frame_software_variant_atlas(
 
     for packet in &plan.sprites {
         match packet.draw {
-            crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry, effect } => {
+            crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry } => {
                 draw_variant_sprite_instance(
                     &mut out,
                     atlas,
                     entry,
-                    effect,
+                    None,
+                    packet.cell,
+                    packet.inst,
+                );
+            }
+            crate::modern_variant_atlas::VariantAtlasDraw::MaterialEffect { entry, effect } => {
+                draw_variant_sprite_instance(
+                    &mut out,
+                    atlas,
+                    entry,
+                    Some(effect),
                     packet.cell,
                     packet.inst,
                 );
@@ -3202,11 +3222,12 @@ mod tests {
         );
 
         assert_eq!(&variant[0..4], &[11, 22, 33, 0xff]);
-        assert_eq!(stats.stable_draws, 1);
+        assert_eq!(stats.stable_draws, 0);
         assert_eq!(stats.effect_draws, 1);
         assert_eq!(stats.fallback_draws, 0);
         assert_eq!(stats.stable_preview_draws, 0);
-        assert_eq!(stats.stable_effect_draws, 1);
+        assert_eq!(stats.stable_effect_draws, 0);
+        assert_eq!(stats.dynamic_material_draws, 1);
     }
 
     #[test]
@@ -3293,13 +3314,13 @@ mod tests {
         );
 
         assert_eq!(&variant[0..4], &[31, 41, 51, 0xff]);
-        assert_eq!(stats.stable_draws, 1);
+        assert_eq!(stats.stable_draws, 0);
         assert_eq!(stats.effect_draws, 1);
         assert_eq!(stats.fallback_draws, 0);
         assert_eq!(stats.missing_variant_draws, 0);
         assert_eq!(stats.stable_preview_draws, 0);
-        assert_eq!(stats.stable_effect_draws, 1);
-        assert_eq!(stats.dynamic_material_draws, 0);
+        assert_eq!(stats.stable_effect_draws, 0);
+        assert_eq!(stats.dynamic_material_draws, 1);
         assert_eq!(stats.missing_art_draws, 0);
         assert_eq!(stats.unkeyed_fallback_draws, 0);
     }
@@ -3461,11 +3482,12 @@ mod tests {
         );
 
         assert_eq!(&variant[0..4], &[21, 31, 41, 0xff]);
-        assert_eq!(stats.stable_draws, 1);
+        assert_eq!(stats.stable_draws, 0);
         assert_eq!(stats.effect_draws, 1);
         assert_eq!(stats.fallback_draws, 0);
         assert_eq!(stats.stable_preview_draws, 0);
-        assert_eq!(stats.stable_effect_draws, 1);
+        assert_eq!(stats.stable_effect_draws, 0);
+        assert_eq!(stats.dynamic_material_draws, 1);
     }
 
     /// Regression test for the BG-flip HD-sampling fix: a BG cell baked with

@@ -265,17 +265,15 @@ mod tests {
         assert_eq!(plan.bg[0].inst.screen_x, 4);
         assert!(matches!(
             plan.bg[0].draw,
-            VariantAtlasDraw::Stable {
-                effect: Some(_),
-                ..
-            }
+            VariantAtlasDraw::MaterialEffect { .. }
         ));
         assert_eq!(plan.bg[1].cell.id, 1);
         assert!(matches!(plan.bg[1].draw, VariantAtlasDraw::MissingArt));
         assert_eq!(plan.sprites.len(), 1);
         assert_eq!(plan.sprites[0].inst.screen_y, 24);
         assert!(matches!(plan.sprites[0].draw, VariantAtlasDraw::Unkeyed));
-        assert_eq!(plan.stats.stable_effect_draws, 1);
+        assert_eq!(plan.stats.stable_effect_draws, 0);
+        assert_eq!(plan.stats.dynamic_material_draws, 1);
         assert_eq!(plan.stats.missing_art_draws, 1);
         assert_eq!(plan.stats.unkeyed_fallback_draws, 1);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
@@ -325,6 +323,51 @@ mod tests {
         assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.unkeyed_fallback_draws, 0);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
+    }
+
+    #[test]
+    fn stable_effect_art_is_classified_as_material_draw_not_baked_art() {
+        let mut frame = ModernFrame::empty();
+        let mut bg0 = ModernBgLayer::new(0);
+        bg0.enabled_main = true;
+        bg0.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: NO_SOURCE_KEY,
+            screen_x: 4,
+            screen_y: 8,
+            palette: 2,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = bg0;
+        let bg_cells = vec![index_cell(0, modern_source_key(1, 3, 5))];
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![bg_entry(3, 5, 0)],
+            effects: vec![effect(2)],
+        };
+
+        let plan = compile_variant_draws(
+            &frame,
+            &bg_cells,
+            &[],
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(plan.bg.len(), 1);
+        assert!(matches!(
+            plan.bg[0].draw,
+            VariantAtlasDraw::MaterialEffect { .. }
+        ));
+        assert_eq!(plan.stats.effect_draws, 1);
+        assert_eq!(plan.stats.dynamic_material_draws, 1);
+        assert_eq!(plan.stats.stable_effect_draws, 0);
+        assert_eq!(plan.stats.stable_preview_draws, 0);
     }
 
     #[test]
