@@ -453,6 +453,28 @@ impl ModernGpuVariantRenderer {
             bg_palette_name,
             sprite_palette_name,
         );
+        self.render_prepared_variant_frame(
+            device,
+            queue,
+            frame,
+            bg_cells,
+            sprite_cells,
+            &prepared,
+            output_view,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_prepared_variant_frame(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        prepared: &PreparedModernVariantFrame<'_>,
+        output_view: &wgpu::TextureView,
+    ) -> crate::modern_software::VariantAtlasRenderStats {
         let mut stats = prepared.plan.stats;
         match live_variant_render_path(&stats) {
             ModernVariantRenderPath::EffectMaterialMode1Order => {
@@ -5197,6 +5219,28 @@ impl ModernGpuVariantHeadless {
             bg_palette_name,
             sprite_palette_name,
         );
+        self.render_prepared_variant_rgba(
+            frame,
+            bg_cells,
+            sprite_cells,
+            live_index_frame,
+            live_index_bg_cells,
+            live_index_sprite_cells,
+            &prepared,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_prepared_variant_rgba(
+        &self,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        live_index_frame: &ModernFrame,
+        live_index_bg_cells: &[ModernIndexTile],
+        live_index_sprite_cells: &[ModernIndexTile],
+        prepared: &PreparedModernVariantFrame<'_>,
+    ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
         let mut stats = prepared.plan.stats;
         match headless_variant_render_path(&stats) {
             ModernVariantRenderPath::EffectMaterialMode1Order => {
