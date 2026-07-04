@@ -14,8 +14,8 @@ use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_render_plan::GpuFrameRenderPlanContext;
 use crate::gpu_frame_work_command::{
-    GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSubWorkCommand, GpuFrameWindowSelector,
-    GpuFrameWorkCommand,
+    GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSpritePass, GpuFrameSubWorkCommand,
+    GpuFrameWindowSelector, GpuFrameWorkCommand,
 };
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
@@ -200,12 +200,15 @@ impl GpuFrameRenderer {
             GpuFrameMainWorkCommand::ClearBackdrop => {
                 self.clear_main_backdrop(encoder, frame);
             }
-            GpuFrameMainWorkCommand::SpritePriority {
-                priority,
-                math_bit_pos,
-                window,
-            } => {
-                self.render_main_sprites(encoder, queue, frame, priority, math_bit_pos, window);
+            GpuFrameMainWorkCommand::SpritePriority(pass) => {
+                render_sprite_pass(
+                    &mut self.sprites,
+                    encoder,
+                    queue,
+                    frame,
+                    &self.comp_view,
+                    pass,
+                );
             }
             GpuFrameMainWorkCommand::BgLayer {
                 layer_idx,
@@ -305,12 +308,15 @@ impl GpuFrameRenderer {
                     window,
                 );
             }
-            GpuFrameSubWorkCommand::SpritePriority {
-                priority,
-                math_bit_pos,
-                window,
-            } => {
-                self.render_sub_sprites(encoder, queue, frame, priority, math_bit_pos, window);
+            GpuFrameSubWorkCommand::SpritePriority(pass) => {
+                render_sprite_pass(
+                    &mut self.sprites,
+                    encoder,
+                    queue,
+                    frame,
+                    &self.sub_comp_view,
+                    pass,
+                );
             }
         }
     }
@@ -365,50 +371,6 @@ impl GpuFrameRenderer {
         });
     }
 
-    fn render_main_sprites(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        queue: &wgpu::Queue,
-        frame: &GpuFrame<'_>,
-        priority: u32,
-        math_bit_pos: u32,
-        window: GpuFrameWindowSelector,
-    ) {
-        self.sprites.render(
-            encoder,
-            queue,
-            &self.comp_view,
-            math_bit_pos,
-            window.screen_idx,
-            priority,
-            window.flags(frame.windowsel),
-            window.is_windowed(frame.screen_windowed),
-            &frame.scanlines,
-        );
-    }
-
-    fn render_sub_sprites(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        queue: &wgpu::Queue,
-        frame: &GpuFrame<'_>,
-        priority: u32,
-        math_bit_pos: u32,
-        window: GpuFrameWindowSelector,
-    ) {
-        self.sprites.render(
-            encoder,
-            queue,
-            &self.sub_comp_view,
-            math_bit_pos,
-            window.screen_idx,
-            priority,
-            window.flags(frame.windowsel),
-            window.is_windowed(frame.screen_windowed),
-            &frame.scanlines,
-        );
-    }
-
     /// Placeholder for the modern GPU BG renderer comparison pass (Task 9 implements this).
     pub fn render_modern_frame_for_compare(
         &mut self,
@@ -419,6 +381,28 @@ impl GpuFrameRenderer {
     ) {
         let _ = (encoder, queue, frame, output_view);
     }
+}
+
+fn render_sprite_pass(
+    sprites: &mut SpriteRenderer,
+    encoder: &mut wgpu::CommandEncoder,
+    queue: &wgpu::Queue,
+    frame: &GpuFrame<'_>,
+    output_view: &wgpu::TextureView,
+    pass: GpuFrameSpritePass,
+) {
+    let window = pass.window;
+    sprites.render(
+        encoder,
+        queue,
+        output_view,
+        pass.math_bit_pos,
+        window.screen_idx,
+        pass.priority,
+        window.flags(frame.windowsel),
+        window.is_windowed(frame.screen_windowed),
+        &frame.scanlines,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]

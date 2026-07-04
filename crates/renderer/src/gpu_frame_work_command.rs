@@ -34,13 +34,26 @@ impl GpuFrameWindowSelector {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct GpuFrameSpritePass {
+    pub(crate) priority: u32,
+    pub(crate) math_bit_pos: u32,
+    pub(crate) window: GpuFrameWindowSelector,
+}
+
+impl GpuFrameSpritePass {
+    pub(crate) fn new(priority: u32, math_bit_pos: u32, window: GpuFrameWindowSelector) -> Self {
+        Self {
+            priority,
+            math_bit_pos,
+            window,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuFrameMainWorkCommand {
     ClearBackdrop,
-    SpritePriority {
-        priority: u32,
-        math_bit_pos: u32,
-        window: GpuFrameWindowSelector,
-    },
+    SpritePriority(GpuFrameSpritePass),
     BgLayer {
         layer_idx: usize,
         hi_priority: bool,
@@ -75,11 +88,7 @@ pub(crate) enum GpuFrameSubWorkCommand {
         mosaic_layer_bit: u8,
         window: GpuFrameWindowSelector,
     },
-    SpritePriority {
-        priority: u32,
-        math_bit_pos: u32,
-        window: GpuFrameWindowSelector,
-    },
+    SpritePriority(GpuFrameSpritePass),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -114,7 +123,7 @@ impl GpuWorkItem for GpuFrameMainWorkCommand {
     fn kind(&self) -> GpuWorkItemKind {
         match self {
             Self::ClearBackdrop => GpuWorkItemKind::ClearBackdrop,
-            Self::SpritePriority { .. } => GpuWorkItemKind::MainSpritePriority,
+            Self::SpritePriority(_) => GpuWorkItemKind::MainSpritePriority,
             Self::BgLayer { .. } => GpuWorkItemKind::MainBgLayer,
             Self::Mode7Bg { .. } => GpuWorkItemKind::Mode7MainBg,
         }
@@ -127,7 +136,7 @@ impl GpuWorkItem for GpuFrameSubWorkCommand {
             Self::ClearBackdrop => GpuWorkItemKind::ClearSubBackdrop,
             Self::Mode7Bg { .. } => GpuWorkItemKind::Mode7SubBg,
             Self::BgLayer { .. } => GpuWorkItemKind::SubBgLayer,
-            Self::SpritePriority { .. } => GpuWorkItemKind::SubSpritePriority,
+            Self::SpritePriority(_) => GpuWorkItemKind::SubSpritePriority,
         }
     }
 }
@@ -169,5 +178,14 @@ mod tests {
         assert_eq!(sub_obj.flags(0x000b_0000), 0x0b);
         assert!(sub_obj.is_windowed([0x00, 0x10]));
         assert!(!sub_obj.is_windowed([0x10, 0x00]));
+    }
+
+    #[test]
+    fn sprite_pass_groups_priority_math_and_window_metadata() {
+        let pass = GpuFrameSpritePass::new(3, 4, GpuFrameWindowSelector::main(0x10, 16));
+
+        assert_eq!(pass.priority, 3);
+        assert_eq!(pass.math_bit_pos, 4);
+        assert_eq!(pass.window, GpuFrameWindowSelector::main(0x10, 16));
     }
 }

@@ -1,7 +1,8 @@
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_work_command::{
     main_frame_work_command, post_process_frame_work_command, sub_frame_work_command,
-    GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSubWorkCommand, GpuFrameWindowSelector,
+    GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSpritePass, GpuFrameSubWorkCommand,
+    GpuFrameWindowSelector,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -180,11 +181,11 @@ fn main_bg_work_item(
 }
 
 fn main_sprite_work_item(priority: u32) -> GpuFrameMainWorkCommand {
-    GpuFrameMainWorkCommand::SpritePriority {
+    GpuFrameMainWorkCommand::SpritePriority(GpuFrameSpritePass::new(
         priority,
-        math_bit_pos: 4,
-        window: GpuFrameWindowSelector::main(0x10, 16),
-    }
+        4,
+        GpuFrameWindowSelector::main(0x10, 16),
+    ))
 }
 
 fn sub_bg_work_item(layer_idx: usize, hi_priority: bool) -> GpuFrameSubWorkCommand {
@@ -201,11 +202,11 @@ fn sub_bg_work_item(layer_idx: usize, hi_priority: bool) -> GpuFrameSubWorkComma
 }
 
 fn sub_sprite_work_item(priority: u32) -> GpuFrameSubWorkCommand {
-    GpuFrameSubWorkCommand::SpritePriority {
+    GpuFrameSubWorkCommand::SpritePriority(GpuFrameSpritePass::new(
         priority,
-        math_bit_pos: 255,
-        window: GpuFrameWindowSelector::sub(0x10, 16),
-    }
+        255,
+        GpuFrameWindowSelector::sub(0x10, 16),
+    ))
 }
 
 fn main_mode7_bg_work_item() -> GpuFrameMainWorkCommand {
@@ -448,19 +449,19 @@ mod tests {
     fn sprite_work_items_carry_render_metadata() {
         assert_eq!(
             main_sprite_work_item(2),
-            GpuFrameMainWorkCommand::SpritePriority {
-                priority: 2,
-                math_bit_pos: 4,
-                window: GpuFrameWindowSelector::main(0x10, 16),
-            }
+            GpuFrameMainWorkCommand::SpritePriority(GpuFrameSpritePass::new(
+                2,
+                4,
+                GpuFrameWindowSelector::main(0x10, 16),
+            ))
         );
         assert_eq!(
             sub_sprite_work_item(2),
-            GpuFrameSubWorkCommand::SpritePriority {
-                priority: 2,
-                math_bit_pos: 255,
-                window: GpuFrameWindowSelector::sub(0x10, 16),
-            }
+            GpuFrameSubWorkCommand::SpritePriority(GpuFrameSpritePass::new(
+                2,
+                255,
+                GpuFrameWindowSelector::sub(0x10, 16),
+            ))
         );
     }
 
