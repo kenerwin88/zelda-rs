@@ -12,7 +12,6 @@
 /// After compositing, a post-process pass applies SNES color math and brightness.
 use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
-use crate::gpu_frame_render_plan::GpuFrameRenderPlanContext;
 use crate::gpu_frame_work_command::{
     GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMode7Pass, GpuFramePostProcessPass,
     GpuFrameRenderPlan, GpuFrameRenderScreen, GpuFrameScreenWorkCommand, GpuFrameSpritePass,
@@ -141,7 +140,7 @@ impl GpuFrameRenderer {
         self.tile_atlas.update(queue, frame.vram);
         self.cgram_palette.update(queue, frame.cgram);
 
-        let render_plan = GpuFrameRenderPlanContext::from_frame(frame).render_plan();
+        let render_plan = GpuFrameRenderPlan::from_frame(frame);
         if render_plan.uses_sprites() {
             self.sprites.prepare(
                 queue,

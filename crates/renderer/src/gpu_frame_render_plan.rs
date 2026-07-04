@@ -6,7 +6,7 @@ use crate::gpu_frame_work_command::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum GpuFrameRenderPlanContext {
+enum GpuFrameRenderPlanContext {
     Mode1 {
         has_main_bg: bool,
         has_main_sprites: bool,
@@ -21,7 +21,7 @@ pub(crate) enum GpuFrameRenderPlanContext {
 }
 
 impl GpuFrameRenderPlanContext {
-    pub(crate) fn from_frame(frame: &GpuFrame<'_>) -> Self {
+    fn from_frame(frame: &GpuFrame<'_>) -> Self {
         let has_main_sprites = frame
             .scanlines
             .iter()
@@ -47,7 +47,7 @@ impl GpuFrameRenderPlanContext {
         }
     }
 
-    pub(crate) fn render_plan(&self) -> GpuFrameRenderPlan {
+    fn render_plan(&self) -> GpuFrameRenderPlan {
         match *self {
             Self::Mode1 {
                 has_main_bg,
@@ -63,6 +63,12 @@ impl GpuFrameRenderPlanContext {
                 has_sub_sprites,
             } => build_mode7_render_plan(has_main_sprites, has_sub_mode7_bg, has_sub_sprites),
         }
+    }
+}
+
+impl GpuFrameRenderPlan {
+    pub(crate) fn from_frame(frame: &GpuFrame<'_>) -> Self {
+        GpuFrameRenderPlanContext::from_frame(frame).render_plan()
     }
 }
 
@@ -354,6 +360,18 @@ mod tests {
             }
         );
         assert!(!context.render_plan().uses_sprites());
+    }
+
+    #[test]
+    fn frame_render_plan_builds_directly_from_frame() {
+        let mut sprite_frame = test_frame(1, [0, 0]);
+        sprite_frame.scanlines[7].screen_enabled_main = 0x10;
+
+        assert!(GpuFrameRenderPlan::from_frame(&sprite_frame).uses_sprites());
+
+        let sprite_free_frame = test_frame(1, [0, 0]);
+
+        assert!(!GpuFrameRenderPlan::from_frame(&sprite_free_frame).uses_sprites());
     }
 
     #[test]
