@@ -3178,7 +3178,6 @@ enum ModernScreenBuilderBlocker {
     Mosaic,
     Bg4,
     ShortBgLayers,
-    Scroll,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3198,11 +3197,6 @@ fn modern_screen_builder_blocker(frame: &ModernFrame) -> Option<ModernScreenBuil
     if frame.bg_layers.len() < 3 {
         return Some(ModernScreenBuilderBlocker::ShortBgLayers);
     }
-    if !frame.bg_scroll_scanlines.is_empty()
-        && frame.bg_scroll_scanlines.len() < usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT)
-    {
-        return Some(ModernScreenBuilderBlocker::Scroll);
-    }
     None
 }
 
@@ -3216,7 +3210,6 @@ fn record_screen_builder_blocker(
         ModernScreenBuilderBlocker::ShortBgLayers => {
             stats.cpu_screen_builder_block_short_bg_layers += 1;
         }
-        ModernScreenBuilderBlocker::Scroll => stats.cpu_screen_builder_block_scroll += 1,
     }
 }
 
@@ -7650,6 +7643,78 @@ mod tests {
         );
         let cpu =
             crate::modern_software::render_modern_frame_full(&frame, &bg_cells, &sprite_cells);
+
+        assert_eq!(stats.gpu_prefinal_base_frames, 1);
+        assert_eq!(stats.gpu_screen_builder_frames, 1);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 0);
+        assert_eq!(variant, cpu);
+    }
+
+    #[test]
+    fn modern_gpu_variant_headless_short_scroll_table_stays_on_gpu() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_variant_atlas::ModernVariantAtlas;
+
+        let indices = [1u8; 64];
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.screen_enabled_main = 0x01;
+        frame.brightness = 15;
+        frame.cgram_rgba[1] = [160, 0, 0, 0xff];
+        frame.cgram_rgba[16 + 1] = [0, 160, 0, 0xff];
+
+        let mut bg1 = ModernBgLayer::new(0);
+        bg1.enabled_main = true;
+        bg1.wrap_w = 256;
+        bg1.wrap_h = 256;
+        bg1.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: NO_SOURCE_KEY,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        bg1.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: NO_SOURCE_KEY,
+            screen_x: 8,
+            screen_y: 0,
+            palette: 1,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = bg1;
+        frame.bg_scroll_scanlines = vec![[[0u16; 2]; 4]];
+        frame.bg_scroll_scanlines[0][0] = [8, 0];
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: Vec::new(),
+            effects: Vec::new(),
+        };
+        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
+            &frame,
+            &cells,
+            &[],
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+        let cpu = crate::modern_software::render_modern_frame_full(&frame, &cells, &[]);
 
         assert_eq!(stats.gpu_prefinal_base_frames, 1);
         assert_eq!(stats.gpu_screen_builder_frames, 1);
