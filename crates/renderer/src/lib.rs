@@ -32,6 +32,7 @@ pub mod modern_gpu;
 mod modern_gpu_work_command;
 pub mod modern_hd_overrides;
 pub mod modern_index_atlas;
+mod modern_index_renderer;
 mod modern_mode1_effect_plan;
 pub mod modern_palette;
 pub mod modern_software;
