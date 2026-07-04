@@ -61,6 +61,38 @@ pub enum VariantAtlasDraw<'a> {
     Unkeyed,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DynamicPolicy {
+    Stable,
+    RequiresLivePalette,
+}
+
+impl DynamicPolicy {
+    fn from_manifest(value: &str) -> Self {
+        match value {
+            "stable" => Self::Stable,
+            _ => Self::RequiresLivePalette,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RuntimeMaterial {
+    LegacyPreview,
+    PaletteLut,
+    Unsupported,
+}
+
+impl RuntimeMaterial {
+    fn from_manifest(value: Option<&str>) -> Self {
+        match value {
+            None => Self::LegacyPreview,
+            Some("palette_lut") => Self::PaletteLut,
+            Some(_) => Self::Unsupported,
+        }
+    }
+}
+
 impl<'a> VariantAtlasDraw<'a> {
     pub fn entry(self) -> Option<&'a VariantAtlasEntry> {
         match self {
@@ -181,21 +213,33 @@ impl ModernVariantAtlas {
         let Some(entry) = self.entry_for_source_key(key) else {
             return VariantAtlasDraw::MissingArt;
         };
-        if entry.dynamic_policy != "stable" {
+        if entry_dynamic_policy(entry) != DynamicPolicy::Stable {
             return VariantAtlasDraw::DynamicPalette { entry };
         }
-        if entry_uses_palette_lut_material(entry) || !entry_matches_material(entry, key) {
-            let stable_effect = self
-                .effect_for_entry_and_key(entry, key)
-                .filter(|effect| effect.dynamic_policy == "stable");
-            if let Some(effect) = stable_effect {
-                return VariantAtlasDraw::MaterialEffect { entry, effect };
+        match entry_runtime_material(entry) {
+            RuntimeMaterial::Unsupported => return VariantAtlasDraw::DynamicPalette { entry },
+            RuntimeMaterial::PaletteLut => {
+                let stable_effect = self
+                    .effect_for_entry_and_key(entry, key)
+                    .filter(|effect| effect_dynamic_policy(effect) == DynamicPolicy::Stable);
+                if let Some(effect) = stable_effect {
+                    return VariantAtlasDraw::MaterialEffect { entry, effect };
+                }
+                if entry_matches_material(entry, key) {
+                    return VariantAtlasDraw::Stable { entry };
+                }
             }
-            if entry_matches_material(entry, key) {
+            RuntimeMaterial::LegacyPreview if !entry_matches_material(entry, key) => {
+                let stable_effect = self
+                    .effect_for_entry_and_key(entry, key)
+                    .filter(|effect| effect_dynamic_policy(effect) == DynamicPolicy::Stable);
+                if let Some(effect) = stable_effect {
+                    return VariantAtlasDraw::MaterialEffect { entry, effect };
+                }
+            }
+            RuntimeMaterial::LegacyPreview => {
                 return VariantAtlasDraw::Stable { entry };
             }
-        } else if entry_matches_material(entry, key) {
-            return VariantAtlasDraw::Stable { entry };
         }
         VariantAtlasDraw::DynamicPalette { entry }
     }
@@ -214,12 +258,20 @@ impl ModernVariantAtlas {
     }
 }
 
-fn entry_matches_material(entry: &VariantAtlasEntry, key: &VariantAtlasKey) -> bool {
-    entry.key.palette == key.palette && entry.key.palette_row == key.palette_row
+fn entry_dynamic_policy(entry: &VariantAtlasEntry) -> DynamicPolicy {
+    DynamicPolicy::from_manifest(&entry.dynamic_policy)
 }
 
-fn entry_uses_palette_lut_material(entry: &VariantAtlasEntry) -> bool {
-    entry.runtime_material.as_deref() == Some("palette_lut")
+fn effect_dynamic_policy(effect: &TileEffect) -> DynamicPolicy {
+    DynamicPolicy::from_manifest(&effect.dynamic_policy)
+}
+
+fn entry_runtime_material(entry: &VariantAtlasEntry) -> RuntimeMaterial {
+    RuntimeMaterial::from_manifest(entry.runtime_material.as_deref())
+}
+
+fn entry_matches_material(entry: &VariantAtlasEntry, key: &VariantAtlasKey) -> bool {
+    entry.key.palette == key.palette && entry.key.palette_row == key.palette_row
 }
 
 fn runtime_effect_color_rows(key: &VariantAtlasKey) -> Option<Vec<u8>> {
@@ -1129,6 +1181,27 @@ mod tests {
                 assert_eq!(entry.id, "bg:kBgGfx:pack0:tile0:3bpp");
             }
             other => panic!("expected matching stable art draw, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_draw_keeps_unknown_runtime_material_dynamic() {
+        let mut entry = bg_test_entry_with_palette_row(3);
+        entry.runtime_material = Some("shader_magic".to_string());
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: solid_rgba(8, 8, [1, 2, 3, 255]),
+            entries: vec![entry],
+            effects: Vec::new(),
+        };
+        let live_key = bg_test_key_with_palette_row(3);
+
+        match atlas.resolve_draw(Some(&live_key)) {
+            VariantAtlasDraw::DynamicPalette { entry } => {
+                assert_eq!(entry.id, "bg:kBgGfx:pack0:tile0:3bpp");
+            }
+            other => panic!("expected unknown material to stay dynamic, got {other:?}"),
         }
     }
 
