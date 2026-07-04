@@ -89,6 +89,8 @@ pub struct VariantAtlasRenderStats {
     pub missing_art_draws: u32,
     pub unkeyed_fallback_draws: u32,
     pub unkeyed_bg_fallback_draws: u32,
+    pub unkeyed_bg12_fallback_draws: u32,
+    pub unkeyed_bg3_fallback_draws: u32,
     pub unkeyed_sprite_fallback_draws: u32,
     pub mixed_overlay_bg_effect_draws: u32,
     pub mixed_overlay_bg_effect_candidates: u32,
@@ -174,10 +176,19 @@ impl VariantAtlasRenderStats {
         }
     }
 
-    pub fn record_bg_draw(&mut self, draw: &crate::modern_variant_atlas::VariantAtlasDraw<'_>) {
+    pub fn record_bg_draw(
+        &mut self,
+        layer_index: usize,
+        draw: &crate::modern_variant_atlas::VariantAtlasDraw<'_>,
+    ) {
         self.record_draw(draw);
         if matches!(draw, crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed) {
             self.unkeyed_bg_fallback_draws += 1;
+            if layer_index == 2 {
+                self.unkeyed_bg3_fallback_draws += 1;
+            } else {
+                self.unkeyed_bg12_fallback_draws += 1;
+            }
         }
     }
 

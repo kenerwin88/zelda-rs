@@ -204,7 +204,7 @@ pub fn compile_variant_draws<'a>(
             };
             let key = variant_key_for_source_key(source_key, bg_palette_name, inst.palette);
             let draw = resolve_draw_for_frame(atlas, key.as_ref(), uses_instance_source_key);
-            plan.stats.record_bg_draw(&draw);
+            plan.stats.record_bg_draw(layer_index, &draw);
             plan.bg.push(VariantBgDrawPacket {
                 layer_index,
                 cell,
@@ -761,6 +761,50 @@ mod tests {
         assert_eq!(plan.stats.unkeyed_fallback_draws, 1);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
         assert_eq!(plan.stats.unkeyed_sprite_fallback_draws, 1);
+    }
+
+    #[test]
+    fn classifies_unkeyed_bg_fallbacks_by_layer_group() {
+        let mut frame = ModernFrame::empty();
+        for layer_index in [0usize, 2] {
+            let mut layer = ModernBgLayer::new(layer_index as u8);
+            layer.enabled_main = true;
+            let cell_id = if layer_index == 2 { 1 } else { 0 };
+            layer.index_tiles.push(ModernIndexTileInstance {
+                cell_id,
+                source_key: NO_SOURCE_KEY,
+                screen_x: (layer_index * 8) as i16,
+                screen_y: 0,
+                palette: 0,
+                hflip: false,
+                vflip: false,
+                priority: false,
+            });
+            frame.bg_layers[layer_index] = layer;
+        }
+        let bg_cells = vec![index_cell(0, NO_SOURCE_KEY), index_cell(1, NO_SOURCE_KEY)];
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![],
+            effects: vec![],
+        };
+
+        let plan = compile_variant_draws(
+            &frame,
+            &bg_cells,
+            &[],
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(plan.stats.unkeyed_fallback_draws, 2);
+        assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 2);
+        assert_eq!(plan.stats.unkeyed_bg12_fallback_draws, 1);
+        assert_eq!(plan.stats.unkeyed_bg3_fallback_draws, 1);
+        assert_eq!(plan.stats.unkeyed_sprite_fallback_draws, 0);
     }
 
     #[test]

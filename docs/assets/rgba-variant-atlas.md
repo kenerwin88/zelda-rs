@@ -286,6 +286,11 @@ renderer/oracle. Verification must report:
   on the live indexed path.
 - `unkeyed_bg_fallback_draws`: unkeyed fallback draws that came from BG tile
   packets.
+- `unkeyed_bg12_fallback_draws`: BG1/BG2 unkeyed fallback draws. These are
+  live-indexed because their current source identity is not injective enough for
+  canonical art selection.
+- `unkeyed_bg3_fallback_draws`: BG3/HUD/message-layer unkeyed fallback draws.
+  These are live-indexed because the layer is procedurally composed in VRAM.
 - `unkeyed_sprite_fallback_draws`: unkeyed fallback draws that came from OBJ
   packets.
 - `mixed_overlay_bg_effect_draws`: stable BG effect packets actually overlaid
@@ -402,6 +407,8 @@ Expected output includes `mismatched_pixels=0` and nonzero
 proof reports `stable_effect_draws=21038`,
 `unkeyed_fallback_draws=133112`,
 `unkeyed_bg_fallback_draws=132912`,
+`unkeyed_bg12_fallback_draws=<BG1/BG2 subset>`,
+`unkeyed_bg3_fallback_draws=<BG3 subset>`,
 `unkeyed_sprite_fallback_draws=200`,
 `mixed_overlay_bg_effect_candidates=20674`,
 `mixed_overlay_bg_effect_draws=19133`,
