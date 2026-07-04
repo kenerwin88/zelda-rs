@@ -363,6 +363,20 @@ struct PreparedModernVariantFrame<'a> {
     variant_frame: ModernFrame,
 }
 
+impl PreparedModernVariantFrame<'_> {
+    fn initial_stats(&self) -> crate::modern_software::VariantAtlasRenderStats {
+        self.plan.stats
+    }
+
+    fn live_render_path(&self) -> ModernVariantRenderPath {
+        live_variant_render_path(&self.plan.stats)
+    }
+
+    fn headless_render_path(&self) -> ModernVariantRenderPath {
+        headless_variant_render_path(&self.plan.stats)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ModernVariantRenderPath {
     EffectMaterialMode1Order,
@@ -475,8 +489,8 @@ impl ModernGpuVariantRenderer {
         prepared: &PreparedModernVariantFrame<'_>,
         output_view: &wgpu::TextureView,
     ) -> crate::modern_software::VariantAtlasRenderStats {
-        let mut stats = prepared.plan.stats;
-        match live_variant_render_path(&stats) {
+        let mut stats = prepared.initial_stats();
+        match prepared.live_render_path() {
             ModernVariantRenderPath::EffectMaterialMode1Order => {
                 self.render_effect_material_mode1_order(
                     device,
@@ -5241,8 +5255,8 @@ impl ModernGpuVariantHeadless {
         live_index_sprite_cells: &[ModernIndexTile],
         prepared: &PreparedModernVariantFrame<'_>,
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
-        let mut stats = prepared.plan.stats;
-        match headless_variant_render_path(&stats) {
+        let mut stats = prepared.initial_stats();
+        match prepared.headless_render_path() {
             ModernVariantRenderPath::EffectMaterialMode1Order => {
                 self.render_effect_material_mode1_order(
                     frame,
