@@ -641,20 +641,18 @@ enum EffectMaterial {
     LiveCgram,
 }
 
-#[derive(Clone, Copy, Debug)]
-struct SpriteEffectMaterialPacket<'packet, 'frame> {
-    material: EffectMaterial,
-    packet: &'packet crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>,
-    entry: &'frame crate::modern_variant_atlas::VariantAtlasEntry,
-    effect_row: u32,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EffectSurface {
+    Bg,
+    Sprite,
 }
 
-#[derive(Clone, Copy, Debug)]
-struct BgEffectMaterialPacket<'packet, 'frame> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct EffectMaterialPacket {
+    surface: EffectSurface,
     material: EffectMaterial,
-    packet: &'packet crate::modern_variant_draw::VariantBgDrawPacket<'frame>,
-    entry: &'frame crate::modern_variant_atlas::VariantAtlasEntry,
     effect_row: u32,
+    instance: EffectInstancePacket,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2087,7 +2085,8 @@ impl ModernGpuVariantEffectRenderer {
                 continue;
             };
             debug_assert_eq!(material_packet.material, EffectMaterial::StaticEffect);
-            append_bg_effect_instance_words(&mut instance_bytes, material_packet);
+            debug_assert_eq!(material_packet.surface, EffectSurface::Bg);
+            append_effect_instance_words(&mut instance_bytes, material_packet.instance);
             instance_count += 1;
         }
         debug_assert_eq!(
@@ -2175,7 +2174,8 @@ impl ModernGpuVariantEffectRenderer {
                 continue;
             };
             debug_assert_eq!(material_packet.material, EffectMaterial::LiveCgram);
-            append_bg_effect_instance_words(&mut instance_bytes, material_packet);
+            debug_assert_eq!(material_packet.surface, EffectSurface::Bg);
+            append_effect_instance_words(&mut instance_bytes, material_packet.instance);
             instance_count += 1;
         }
         debug_assert_eq!(
@@ -2279,7 +2279,8 @@ impl ModernGpuVariantEffectRenderer {
                 batch_count = 0;
             }
             batch_material = Some(material_packet.material);
-            append_sprite_effect_instance_words(&mut batch_bytes, material_packet);
+            debug_assert_eq!(material_packet.surface, EffectSurface::Sprite);
+            append_effect_instance_words(&mut batch_bytes, material_packet.instance);
             batch_count += 1;
         }
         if let Some(material) = batch_material {
@@ -2413,50 +2414,50 @@ fn sprite_effect_covers_cell(
 fn static_bg_effect_material_packet<'packet, 'frame>(
     atlas: &'frame crate::modern_variant_atlas::ModernVariantAtlas,
     packet: &'packet crate::modern_variant_draw::VariantBgDrawPacket<'frame>,
-) -> Option<BgEffectMaterialPacket<'packet, 'frame>> {
+) -> Option<EffectMaterialPacket> {
     let Some((entry, effect)) = packet.draw.material_effect() else {
         return None;
     };
     let effect_row = atlas.effect_row_for_effect(effect)?;
-    Some(BgEffectMaterialPacket {
+    Some(EffectMaterialPacket {
+        surface: EffectSurface::Bg,
         material: EffectMaterial::StaticEffect,
-        packet,
-        entry,
         effect_row,
-    })
-}
-
-fn live_cgram_bg_effect_material_packet<'packet, 'frame>(
-    packet: &'packet crate::modern_variant_draw::VariantBgDrawPacket<'frame>,
-) -> Option<BgEffectMaterialPacket<'packet, 'frame>> {
-    let entry = packet.draw.entry()?;
-    Some(BgEffectMaterialPacket {
-        material: EffectMaterial::LiveCgram,
-        packet,
-        entry,
-        effect_row: u32::from(packet.inst.palette),
-    })
-}
-
-fn append_bg_effect_instance_words(
-    out: &mut Vec<u8>,
-    material_packet: BgEffectMaterialPacket<'_, '_>,
-) {
-    let packet = material_packet.packet;
-    append_effect_instance_words(
-        out,
-        EffectInstancePacket {
+        instance: EffectInstancePacket {
             cell_id: packet.inst.cell_id,
             screen_x: packet.inst.screen_x,
             screen_y: packet.inst.screen_y,
             row_mask: 0xff,
             hflip: packet.cell.hflip,
             vflip: packet.cell.vflip,
-            source_hflip: material_packet.entry.source_hflip,
-            source_vflip: material_packet.entry.source_vflip,
-            effect_row: material_packet.effect_row,
+            source_hflip: entry.source_hflip,
+            source_vflip: entry.source_vflip,
+            effect_row,
         },
-    );
+    })
+}
+
+fn live_cgram_bg_effect_material_packet<'packet, 'frame>(
+    packet: &'packet crate::modern_variant_draw::VariantBgDrawPacket<'frame>,
+) -> Option<EffectMaterialPacket> {
+    let entry = packet.draw.entry()?;
+    let effect_row = u32::from(packet.inst.palette);
+    Some(EffectMaterialPacket {
+        surface: EffectSurface::Bg,
+        material: EffectMaterial::LiveCgram,
+        effect_row,
+        instance: EffectInstancePacket {
+            cell_id: packet.inst.cell_id,
+            screen_x: packet.inst.screen_x,
+            screen_y: packet.inst.screen_y,
+            row_mask: 0xff,
+            hflip: packet.cell.hflip,
+            vflip: packet.cell.vflip,
+            source_hflip: entry.source_hflip,
+            source_vflip: entry.source_vflip,
+            effect_row,
+        },
+    })
 }
 
 fn append_effect_instance_words(out: &mut Vec<u8>, packet: EffectInstancePacket) {
@@ -2480,7 +2481,7 @@ fn append_effect_instance_words(out: &mut Vec<u8>, packet: EffectInstancePacket)
 fn sprite_effect_material_packet<'packet, 'frame>(
     atlas: &'frame crate::modern_variant_atlas::ModernVariantAtlas,
     packet: &'packet crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>,
-) -> Option<SpriteEffectMaterialPacket<'packet, 'frame>> {
+) -> Option<EffectMaterialPacket> {
     let Some((entry, effect)) = packet.draw.material_effect() else {
         return None;
     };
@@ -2498,33 +2499,22 @@ fn sprite_effect_material_packet<'packet, 'frame>(
             8 + u32::from(packet.inst.palette),
         )
     };
-    Some(SpriteEffectMaterialPacket {
+    Some(EffectMaterialPacket {
+        surface: EffectSurface::Sprite,
         material,
-        packet,
-        entry,
         effect_row,
-    })
-}
-
-fn append_sprite_effect_instance_words(
-    out: &mut Vec<u8>,
-    material_packet: SpriteEffectMaterialPacket<'_, '_>,
-) {
-    let packet = material_packet.packet;
-    append_effect_instance_words(
-        out,
-        EffectInstancePacket {
+        instance: EffectInstancePacket {
             cell_id: packet.inst.cell_id,
             screen_x: packet.inst.screen_x,
             screen_y: packet.inst.screen_y,
             row_mask: packet.inst.row_mask,
             hflip: packet.inst.hflip,
             vflip: packet.inst.vflip,
-            source_hflip: material_packet.entry.source_hflip,
-            source_vflip: material_packet.entry.source_vflip,
-            effect_row: material_packet.effect_row,
+            source_hflip: entry.source_hflip,
+            source_vflip: entry.source_vflip,
+            effect_row,
         },
-    );
+    })
 }
 
 fn variant_tile_instance(
@@ -6018,9 +6008,24 @@ mod tests {
             .expect("static BG should produce a material packet");
 
         assert_eq!(static_material.material, EffectMaterial::StaticEffect);
+        assert_eq!(static_material.surface, EffectSurface::Bg);
         assert_eq!(static_material.effect_row, 0);
+        assert_eq!(
+            static_material.instance,
+            EffectInstancePacket {
+                cell_id: 2,
+                screen_x: 12,
+                screen_y: 20,
+                row_mask: 0xff,
+                hflip: true,
+                vflip: false,
+                source_hflip: false,
+                source_vflip: true,
+                effect_row: 0,
+            }
+        );
         let mut static_words = Vec::new();
-        append_bg_effect_instance_words(&mut static_words, static_material);
+        append_effect_instance_words(&mut static_words, static_material.instance);
         assert_eq!(static_words.len() as u64, INDEX_INSTANCE_STRIDE);
         let static_encoded: Vec<u32> = static_words
             .chunks_exact(4)
@@ -6039,6 +6044,7 @@ mod tests {
             .expect("live BG should produce a material packet");
 
         assert_eq!(live_material.material, EffectMaterial::LiveCgram);
+        assert_eq!(live_material.surface, EffectSurface::Bg);
         assert_eq!(live_material.effect_row, 3);
     }
 
@@ -6129,9 +6135,24 @@ mod tests {
             .expect("static sprite should produce a material packet");
 
         assert_eq!(static_material.material, EffectMaterial::StaticEffect);
+        assert_eq!(static_material.surface, EffectSurface::Sprite);
         assert_eq!(static_material.effect_row, 0);
+        assert_eq!(
+            static_material.instance,
+            EffectInstancePacket {
+                cell_id: 0,
+                screen_x: 12,
+                screen_y: 20,
+                row_mask: 0x7f,
+                hflip: false,
+                vflip: true,
+                source_hflip: true,
+                source_vflip: false,
+                effect_row: 0,
+            }
+        );
         let mut static_words = Vec::new();
-        append_sprite_effect_instance_words(&mut static_words, static_material);
+        append_effect_instance_words(&mut static_words, static_material.instance);
         assert_eq!(static_words.len() as u64, INDEX_INSTANCE_STRIDE);
         let static_encoded: Vec<u32> = static_words
             .chunks_exact(4)
@@ -6171,6 +6192,7 @@ mod tests {
             .expect("live sprite should produce a material packet");
 
         assert_eq!(live_material.material, EffectMaterial::LiveCgram);
+        assert_eq!(live_material.surface, EffectSurface::Sprite);
         assert_eq!(live_material.effect_row, 9);
     }
 
