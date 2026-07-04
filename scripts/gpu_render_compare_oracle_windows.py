@@ -21,6 +21,7 @@ DEFAULT_WINDOWS = REPO_ROOT / "docs" / "porting" / "oracle_windows.tsv"
 DEFAULT_CHECKPOINTS = REPO_ROOT / "docs" / "porting" / "oracle_checkpoints.tsv"
 DEFAULT_ROM = Path(os.environ.get("ZELDA3_ROM", str(REPO_ROOT.parent / "zelda3" / "zelda3.sfc")))
 DEFAULT_PROGRESS_EVERY = 10_000
+DEFAULT_VARIANT_GPU_FAILURE_RETRIES = 1
 SUMMARY_RE = re.compile(
     r"play-gpu-render-compare completed compared=(\d+) start_frame=(\d+) "
     r"last_frame=(\d+) last_hash=(0x[0-9a-fA-F]{8}) mismatched_pixels=(\d+)"
@@ -167,6 +168,36 @@ def run_command_capture_output(
             returncode=process.returncode,
             stdout=stdout.read(),
         )
+
+
+def run_command_capture_output_with_retries(
+    command: list[str],
+    cwd: Path,
+    env: dict[str, str],
+    retries: int,
+    live_patterns: tuple[Pattern[str], ...] = (),
+) -> subprocess.CompletedProcess[str]:
+    result = run_command_capture_output(
+        command,
+        cwd=cwd,
+        env=env,
+        live_patterns=live_patterns,
+    )
+    for attempt in range(1, retries + 1):
+        if result.returncode == 0:
+            break
+        print(
+            f"retrying failed GPU oracle command attempt={attempt} "
+            f"returncode={result.returncode}",
+            flush=True,
+        )
+        result = run_command_capture_output(
+            command,
+            cwd=cwd,
+            env=env,
+            live_patterns=live_patterns,
+        )
+    return result
 
 
 def print_matching_live_lines(
@@ -438,10 +469,12 @@ def run_window(
         if renderer == "assets-variant-gpu" and progress_every > 0
         else ()
     )
-    result = run_command_capture_output(
+    retries = DEFAULT_VARIANT_GPU_FAILURE_RETRIES if renderer == "assets-variant-gpu" else 0
+    result = run_command_capture_output_with_retries(
         command,
         cwd=REPO_ROOT,
         env=env,
+        retries=retries,
         live_patterns=live_patterns,
     )
     if result.returncode != 0:
@@ -616,6 +649,11 @@ def parse_args() -> argparse.Namespace:
         raise SystemExit("--require-stable-draws requires --renderer assets-variant-gpu")
     if args.jobs <= 0:
         raise SystemExit("--jobs must be greater than zero")
+    if args.renderer == "assets-variant-gpu" and args.jobs != 1:
+        raise SystemExit(
+            "--renderer assets-variant-gpu requires --jobs 1; concurrent GPU proof "
+            "runs can produce false modern-index mismatches"
+        )
     if not args.rom.exists():
         raise SystemExit(f"ROM does not exist: {args.rom}")
     if not args.windows.exists():

@@ -24,9 +24,11 @@ from gpu_render_compare_oracle_windows import (
     ensure_no_unsupported_material_draws,
     ensure_required_stable_draws,
     modern_index_summary_stats,
+    parse_args,
     parse_key_value_stats,
     run_items_for_windows,
     run_command_capture_output,
+    run_command_capture_output_with_retries,
     selected_windows,
 )
 
@@ -74,6 +76,30 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         self.assertIn("modern_index_compare_progress compare_count=10", live.getvalue())
         self.assertNotIn("hidden noise", live.getvalue())
 
+    def test_capture_output_with_retries_reruns_failed_command(self) -> None:
+        marker = Path("target/test-gpu-oracle-retry-marker")
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.unlink(missing_ok=True)
+        self.addCleanup(lambda: marker.unlink(missing_ok=True))
+        code = (
+            "from pathlib import Path; import sys; "
+            "p = Path(sys.argv[1]); "
+            "exists = p.exists(); "
+            "p.write_text('seen'); "
+            "print('retry-ok' if exists else 'retry-fail'); "
+            "sys.exit(0 if exists else 7)"
+        )
+
+        result = run_command_capture_output_with_retries(
+            [sys.executable, "-c", code, str(marker)],
+            cwd=Path.cwd(),
+            env=os.environ.copy(),
+            retries=1,
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("retry-ok", result.stdout)
+
     def test_variant_gpu_env_enables_summary_and_progress(self) -> None:
         env = env_for_renderer(
             {"KEEP": "1"},
@@ -96,6 +122,20 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         self.assertEqual(env["ZELDA3_RENDERER"], "assets-variant-gpu")
         self.assertEqual(env["ZELDA3_MODERN_INDEX_COMPARE_SUMMARY"], "1")
         self.assertNotIn("ZELDA3_MODERN_INDEX_COMPARE_PROGRESS", env)
+
+    def test_variant_gpu_rejects_parallel_jobs(self) -> None:
+        old_argv = sys.argv
+        sys.argv = [
+            "gpu_render_compare_oracle_windows.py",
+            "--renderer",
+            "assets-variant-gpu",
+            "--jobs",
+            "2",
+        ]
+        self.addCleanup(lambda: setattr(sys, "argv", old_argv))
+
+        with self.assertRaisesRegex(SystemExit, "requires --jobs 1"):
+            parse_args()
 
     def test_parse_key_value_stats_ignores_labels_and_non_numeric_values(self) -> None:
         stats = parse_key_value_stats(
