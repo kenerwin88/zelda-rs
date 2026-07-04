@@ -720,6 +720,36 @@ impl OverlayBgEffectDispatch<'_> {
     }
 }
 
+impl<'a> OverlayBgEffectDispatch<'a> {
+    fn prefinal_bg_packets(
+        &self,
+        mut include: impl FnMut(&crate::modern_variant_draw::VariantBgDrawPacket<'a>) -> bool,
+    ) -> Vec<MixedVariantPrefinalBgPacket<'a>> {
+        let mut packets = Vec::new();
+        packets.extend(
+            self.static_bg
+                .iter()
+                .filter(|packet| include(packet))
+                .cloned()
+                .map(|packet| MixedVariantPrefinalBgPacket {
+                    material: PrefinalBgMaterial::StaticEffect,
+                    packet,
+                }),
+        );
+        packets.extend(
+            self.live_cgram_bg
+                .iter()
+                .filter(|packet| include(packet))
+                .cloned()
+                .map(|packet| MixedVariantPrefinalBgPacket {
+                    material: PrefinalBgMaterial::LiveCgram,
+                    packet,
+                }),
+        );
+        packets
+    }
+}
+
 #[derive(Default)]
 struct MixedVariantOverlayBgSelection<'a> {
     effects: OverlayBgEffectDispatch<'a>,
@@ -770,27 +800,7 @@ impl<'a> MixedVariantPrefinalPackets<'a> {
         Self {
             bg: overlay
                 .effects
-                .static_bg
-                .iter()
-                .filter(|packet| bg_packet_needs_prefinal_color_math(frame, packet))
-                .cloned()
-                .map(|packet| MixedVariantPrefinalBgPacket {
-                    material: PrefinalBgMaterial::StaticEffect,
-                    packet,
-                })
-                .chain(
-                    overlay
-                        .effects
-                        .live_cgram_bg
-                        .iter()
-                        .filter(|packet| bg_packet_needs_prefinal_color_math(frame, packet))
-                        .cloned()
-                        .map(|packet| MixedVariantPrefinalBgPacket {
-                            material: PrefinalBgMaterial::LiveCgram,
-                            packet,
-                        }),
-                )
-                .collect(),
+                .prefinal_bg_packets(|packet| bg_packet_needs_prefinal_color_math(frame, packet)),
             sprites: plan.sprites.clone(),
         }
     }
@@ -800,22 +810,7 @@ impl<'a> MixedVariantPrefinalPackets<'a> {
         plan: &crate::modern_variant_draw::VariantDrawPlan<'a>,
     ) -> Self {
         Self {
-            bg: overlay
-                .effects
-                .static_bg
-                .iter()
-                .cloned()
-                .map(|packet| MixedVariantPrefinalBgPacket {
-                    material: PrefinalBgMaterial::StaticEffect,
-                    packet,
-                })
-                .chain(overlay.effects.live_cgram_bg.iter().cloned().map(|packet| {
-                    MixedVariantPrefinalBgPacket {
-                        material: PrefinalBgMaterial::LiveCgram,
-                        packet,
-                    }
-                }))
-                .collect(),
+            bg: overlay.effects.prefinal_bg_packets(|_| true),
             sprites: plan.sprites.clone(),
         }
     }
