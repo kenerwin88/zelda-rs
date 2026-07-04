@@ -433,6 +433,7 @@ impl PreparedModernVariantStats {
 struct PreparedModernVariantExecution<'p, 'frame> {
     prepared: &'p PreparedModernVariantRender<'frame>,
     render_path: ModernVariantRenderPath,
+    mode1_effect_draw_work: PreparedMode1EffectDrawWork<'frame>,
     stats: PreparedModernVariantStats,
 }
 
@@ -444,6 +445,7 @@ impl<'p, 'frame> PreparedModernVariantExecution<'p, 'frame> {
         Self {
             prepared,
             render_path: prepared.render_path(output),
+            mode1_effect_draw_work: PreparedMode1EffectDrawWork::from_plan(prepared.plan()),
             stats: PreparedModernVariantStats::new(prepared),
         }
     }
@@ -472,6 +474,10 @@ impl<'p, 'frame> PreparedModernVariantExecution<'p, 'frame> {
         self.render_path
     }
 
+    fn mode1_effect_rank_dispatches(&self) -> &[Mode1EffectRankDispatch<'frame>] {
+        self.mode1_effect_draw_work.rank_dispatches()
+    }
+
     fn stats(&self) -> &PreparedModernVariantStats {
         &self.stats
     }
@@ -482,6 +488,22 @@ impl<'p, 'frame> PreparedModernVariantExecution<'p, 'frame> {
 
     fn finish(self) -> crate::modern_software::VariantAtlasRenderStats {
         self.stats.finish()
+    }
+}
+
+struct PreparedMode1EffectDrawWork<'frame> {
+    rank_dispatches: Vec<Mode1EffectRankDispatch<'frame>>,
+}
+
+impl<'frame> PreparedMode1EffectDrawWork<'frame> {
+    fn from_plan(plan: &crate::modern_variant_draw::VariantDrawPlan<'frame>) -> Self {
+        Self {
+            rank_dispatches: mode1_effect_rank_dispatches(plan),
+        }
+    }
+
+    fn rank_dispatches(&self) -> &[Mode1EffectRankDispatch<'frame>] {
+        &self.rank_dispatches
     }
 }
 
@@ -737,7 +759,7 @@ impl ModernGpuVariantRenderer {
         let bg_cells = execution.bg_cells();
         let sprite_cells = execution.sprite_cells();
         let mut rendered_any = false;
-        for rank_dispatch in mode1_effect_rank_dispatches(execution.plan()) {
+        for rank_dispatch in execution.mode1_effect_rank_dispatches() {
             let rank_plan = rank_dispatch.render_plan(&self.atlas, rendered_any);
             rendered_any = self.render_effect_rank_plan(
                 device,
@@ -5740,6 +5762,90 @@ mod tests {
         assert_eq!(finished.stable_draws, 1);
         assert_eq!(finished.effect_draws, 1);
         assert_eq!(finished.gpu_prefinal_base_frames, 1);
+    }
+
+    #[test]
+    fn prepared_variant_execution_prepares_mode1_effect_rank_dispatches() {
+        use crate::modern_frame::{ModernIndexSpriteInstance, ModernIndexTileInstance};
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::VariantAtlasDraw;
+        use crate::modern_variant_draw::{
+            VariantBgDrawPacket, VariantDrawPlan, VariantSpriteDrawPacket,
+        };
+
+        let frame = ModernFrame::empty();
+        let cell = ModernIndexTile {
+            id: 0,
+            indices: [1u8; 64],
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        };
+        let bg3_low = ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        };
+        let sprite_priority_two = ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            priority: 2,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        };
+        let stats = VariantAtlasRenderStats {
+            effect_draws: 2,
+            ..Default::default()
+        };
+        let prepared = PreparedModernVariantRender {
+            frame: &frame,
+            bg_cells: &[],
+            sprite_cells: &[],
+            plan: VariantDrawPlan {
+                bg: vec![VariantBgDrawPacket {
+                    layer_index: 2,
+                    cell: &cell,
+                    inst: &bg3_low,
+                    key: None,
+                    draw: VariantAtlasDraw::MissingArt,
+                }],
+                sprites: vec![VariantSpriteDrawPacket {
+                    cell: &cell,
+                    inst: &sprite_priority_two,
+                    key: None,
+                    draw: VariantAtlasDraw::MissingArt,
+                }],
+                stats,
+            },
+            variant_frame: ModernFrame::empty(),
+            stats,
+            live_render_path: live_variant_render_path(&stats),
+            headless_render_path: headless_variant_render_path(&stats),
+        };
+
+        let execution =
+            PreparedModernVariantExecution::new(&prepared, PreparedModernVariantOutput::Live);
+        let ranks = execution.mode1_effect_rank_dispatches();
+
+        assert_eq!(ranks.len(), 10);
+        assert_eq!(ranks[0].bg.len(), 1);
+        assert_eq!(ranks[0].bg[0].layer_index, 2);
+        assert_eq!(ranks[5].sprites.len(), 1);
+        assert_eq!(ranks[5].sprites[0].inst.priority, 2);
+        assert_eq!(ranks.iter().map(|rank| rank.bg.len()).sum::<usize>(), 1);
+        assert_eq!(
+            ranks.iter().map(|rank| rank.sprites.len()).sum::<usize>(),
+            1
+        );
     }
 
     #[test]
