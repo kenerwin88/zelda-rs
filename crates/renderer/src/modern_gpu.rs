@@ -479,11 +479,11 @@ impl<'p, 'frame> PreparedModernVariantExecution<'p, 'frame> {
         self.mode1_effect_draw_work.rank_dispatches()
     }
 
-    fn mode1_effect_rank_render_plans<'work>(
+    fn mode1_effect_render_plan<'work>(
         &'work self,
         atlas: &'work crate::modern_variant_atlas::ModernVariantAtlas,
-    ) -> impl Iterator<Item = PreparedMode1EffectRankRenderPlan<'work, 'frame>> + 'work {
-        self.mode1_effect_draw_work.rank_render_plans(atlas)
+    ) -> PreparedMode1EffectRenderPlan<'work, 'frame> {
+        self.mode1_effect_draw_work.render_plan(atlas)
     }
 
     fn stats(&self) -> &PreparedModernVariantStats {
@@ -515,26 +515,50 @@ impl<'frame> PreparedMode1EffectDrawWork<'frame> {
         &self.rank_dispatches
     }
 
-    fn rank_render_plans<'work>(
+    fn render_plan<'work>(
         &'work self,
         atlas: &'work crate::modern_variant_atlas::ModernVariantAtlas,
-    ) -> impl Iterator<Item = PreparedMode1EffectRankRenderPlan<'work, 'frame>> + 'work {
+    ) -> PreparedMode1EffectRenderPlan<'work, 'frame> {
         let mut rendered_any = false;
-        self.rank_dispatches
-            .iter()
-            .enumerate()
-            .map(move |(rank_index, rank_dispatch)| {
-                let rendered_before = rendered_any;
-                let render_plan = rank_dispatch.render_plan(atlas, rendered_before);
-                if !render_plan.is_empty() {
-                    rendered_any = true;
-                }
-                PreparedMode1EffectRankRenderPlan {
-                    rank_index,
-                    rendered_before,
-                    render_plan,
-                }
-            })
+        let mut rank_plans = Vec::with_capacity(self.rank_dispatches.len());
+        for (rank_index, rank_dispatch) in self.rank_dispatches.iter().enumerate() {
+            let rendered_before = rendered_any;
+            let render_plan = rank_dispatch.render_plan(atlas, rendered_before);
+            if !render_plan.is_empty() {
+                rendered_any = true;
+            }
+            rank_plans.push(PreparedMode1EffectRankRenderPlan {
+                rank_index,
+                rendered_before,
+                render_plan,
+            });
+        }
+        PreparedMode1EffectRenderPlan {
+            rank_plans,
+            needs_empty_frame_fallback: !rendered_any,
+        }
+    }
+}
+
+struct PreparedMode1EffectRenderPlan<'rank, 'frame> {
+    rank_plans: Vec<PreparedMode1EffectRankRenderPlan<'rank, 'frame>>,
+    needs_empty_frame_fallback: bool,
+}
+
+impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
+    fn needs_empty_frame_fallback(&self) -> bool {
+        self.needs_empty_frame_fallback
+    }
+
+    fn into_rank_plans(
+        self,
+    ) -> impl Iterator<Item = PreparedMode1EffectRankRenderPlan<'rank, 'frame>> {
+        self.rank_plans.into_iter()
+    }
+
+    #[cfg(test)]
+    fn rank_plans(&self) -> &[PreparedMode1EffectRankRenderPlan<'rank, 'frame>] {
+        &self.rank_plans
     }
 }
 
@@ -819,11 +843,12 @@ impl ModernGpuVariantRenderer {
         let frame = execution.frame();
         let bg_cells = execution.bg_cells();
         let sprite_cells = execution.sprite_cells();
-        let mut rendered_any = false;
-        for rank_plan in execution.mode1_effect_rank_render_plans(&self.atlas) {
+        let render_plan = execution.mode1_effect_render_plan(&self.atlas);
+        let needs_empty_frame_fallback = render_plan.needs_empty_frame_fallback();
+        for rank_plan in render_plan.into_rank_plans() {
             debug_assert!(rank_plan.rank_index() <= 9);
             let rendered_before_rank = rank_plan.rendered_before();
-            rendered_any = self.render_effect_rank_plan(
+            self.render_effect_rank_plan(
                 device,
                 queue,
                 frame,
@@ -834,7 +859,7 @@ impl ModernGpuVariantRenderer {
                 rendered_before_rank,
             );
         }
-        if !rendered_any {
+        if needs_empty_frame_fallback {
             self.effect_renderer.render_bg(
                 device,
                 queue,
@@ -5916,10 +5941,10 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
         };
-        let rank_plans = execution
-            .mode1_effect_rank_render_plans(&atlas)
-            .collect::<Vec<_>>();
+        let render_plan = execution.mode1_effect_render_plan(&atlas);
+        let rank_plans = render_plan.rank_plans();
 
+        assert!(!render_plan.needs_empty_frame_fallback());
         assert_eq!(rank_plans.len(), 10);
         assert_eq!(rank_plans[0].rank_index(), 0);
         assert!(!rank_plans[0].rendered_before());
@@ -5930,6 +5955,48 @@ mod tests {
         assert_eq!(rank_plans[5].rank_index(), 5);
         assert!(rank_plans[5].rendered_before());
         assert!(rank_plans[5].is_empty());
+    }
+
+    #[test]
+    fn prepared_variant_execution_prepares_mode1_empty_frame_fallback() {
+        use crate::modern_variant_atlas::ModernVariantAtlas;
+        use crate::modern_variant_draw::VariantDrawPlan;
+
+        let frame = ModernFrame::empty();
+        let stats = VariantAtlasRenderStats::default();
+        let prepared = PreparedModernVariantRender {
+            frame: &frame,
+            bg_cells: &[],
+            sprite_cells: &[],
+            plan: VariantDrawPlan {
+                bg: Vec::new(),
+                sprites: Vec::new(),
+                stats,
+            },
+            variant_frame: ModernFrame::empty(),
+            stats,
+            live_render_path: live_variant_render_path(&stats),
+            headless_render_path: headless_variant_render_path(&stats),
+        };
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: Vec::new(),
+            effects: Vec::new(),
+        };
+
+        let execution =
+            PreparedModernVariantExecution::new(&prepared, PreparedModernVariantOutput::Live);
+        let render_plan = execution.mode1_effect_render_plan(&atlas);
+
+        assert!(render_plan.needs_empty_frame_fallback());
+        assert_eq!(render_plan.rank_plans().len(), 10);
+        assert!(render_plan.rank_plans().iter().all(|rank| rank.is_empty()));
+        assert!(render_plan
+            .rank_plans()
+            .iter()
+            .all(|rank| !rank.rendered_before()));
     }
 
     #[test]
