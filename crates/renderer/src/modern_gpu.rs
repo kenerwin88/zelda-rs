@@ -462,28 +462,15 @@ impl ModernGpuVariantRenderer {
                 overlay.reject_complex_color_math_fixed_color;
             stats.mixed_overlay_bg_effect_reject_cgram_mismatch += overlay.reject_cgram_mismatch;
             stats.mixed_overlay_bg_effect_reject_overlap += overlay.reject_overlap;
-            if !overlay.bg.is_empty() {
-                self.effect_renderer.render_bg(
-                    device,
-                    queue,
-                    bg_cells,
-                    &self.atlas,
-                    &overlay.bg,
-                    output_view,
-                    wgpu::LoadOp::Load,
-                );
-            }
-            if !overlay.live_cgram_bg.is_empty() {
-                self.effect_renderer.render_bg_with_live_cgram(
-                    device,
-                    queue,
-                    bg_cells,
-                    frame,
-                    &overlay.live_cgram_bg,
-                    output_view,
-                    wgpu::LoadOp::Load,
-                );
-            }
+            self.effect_renderer.render_overlay_bg_effects(
+                device,
+                queue,
+                bg_cells,
+                frame,
+                &self.atlas,
+                &overlay,
+                output_view,
+            );
         } else if stats.effect_draws != 0 {
             self.render_effect_material_mode1_order(
                 device,
@@ -2179,6 +2166,40 @@ impl ModernGpuVariantEffectRenderer {
             "modern_variant_live_cgram_effect",
             "modern_variant_live_cgram_effect_instances",
         );
+    }
+
+    fn render_overlay_bg_effects(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bg_cells: &[ModernIndexTile],
+        frame: &ModernFrame,
+        atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+        overlay: &MixedVariantOverlayBgSelection<'_>,
+        output_view: &wgpu::TextureView,
+    ) {
+        if !overlay.bg.is_empty() {
+            self.render_bg(
+                device,
+                queue,
+                bg_cells,
+                atlas,
+                &overlay.bg,
+                output_view,
+                wgpu::LoadOp::Load,
+            );
+        }
+        if !overlay.live_cgram_bg.is_empty() {
+            self.render_bg_with_live_cgram(
+                device,
+                queue,
+                bg_cells,
+                frame,
+                &overlay.live_cgram_bg,
+                output_view,
+                wgpu::LoadOp::Load,
+            );
+        }
     }
 
     fn render_bg_effect_batch(
@@ -4881,28 +4902,15 @@ impl ModernGpuVariantHeadless {
                     }
                 }
             }
-            if !final_overlay.bg.is_empty() {
-                self.renderer.effect_renderer.render_bg(
-                    &self.device,
-                    &self.queue,
-                    bg_cells,
-                    &self.renderer.atlas,
-                    &final_overlay.bg,
-                    &self.target_view,
-                    wgpu::LoadOp::Load,
-                );
-            }
-            if !final_overlay.live_cgram_bg.is_empty() {
-                self.renderer.effect_renderer.render_bg_with_live_cgram(
-                    &self.device,
-                    &self.queue,
-                    bg_cells,
-                    frame,
-                    &final_overlay.live_cgram_bg,
-                    &self.target_view,
-                    wgpu::LoadOp::Load,
-                );
-            }
+            self.renderer.effect_renderer.render_overlay_bg_effects(
+                &self.device,
+                &self.queue,
+                bg_cells,
+                frame,
+                &self.renderer.atlas,
+                &final_overlay,
+                &self.target_view,
+            );
         } else if stats.effect_draws != 0 {
             if frame_needs_material_prefinal_finalizer(frame) {
                 let build_result = self.render_effect_material_with_prefinal_base(
