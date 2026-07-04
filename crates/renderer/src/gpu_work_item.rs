@@ -26,12 +26,26 @@ pub(crate) struct SourcedGpuWorkCommand<Source, Command> {
     pub(crate) command: Command,
 }
 
+pub(crate) struct LoadedGpuWorkCommand<Load, WorkItem> {
+    pub(crate) target_load: Load,
+    pub(crate) work_item: WorkItem,
+}
+
 impl<Source, Command> GpuWorkItem for SourcedGpuWorkCommand<Source, Command>
 where
     Command: GpuWorkItem,
 {
     fn kind(&self) -> GpuWorkItemKind {
         GpuWorkItem::kind(&self.command)
+    }
+}
+
+impl<Load, WorkItem> GpuWorkItem for LoadedGpuWorkCommand<Load, WorkItem>
+where
+    WorkItem: GpuWorkItem,
+{
+    fn kind(&self) -> GpuWorkItemKind {
+        GpuWorkItem::kind(&self.work_item)
     }
 }
 
@@ -88,7 +102,9 @@ pub(crate) fn work_item_kinds<T: GpuWorkItem>(items: &[T]) -> Vec<GpuWorkItemKin
 
 #[cfg(test)]
 mod tests {
-    use super::{GpuRenderPlan, GpuWorkItem, GpuWorkItemKind};
+    use super::{
+        GpuRenderPlan, GpuWorkItem, GpuWorkItemKind, LoadedGpuWorkCommand, SourcedGpuWorkCommand,
+    };
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum TestWorkItem {
@@ -113,5 +129,20 @@ mod tests {
         plan.execute_with(|work_item| executed.push(work_item));
 
         assert_eq!(executed, vec![TestWorkItem::Clear, TestWorkItem::Draw]);
+    }
+
+    #[test]
+    fn command_wrappers_forward_inner_work_item_kind() {
+        let sourced = SourcedGpuWorkCommand {
+            source: "rank-0",
+            command: TestWorkItem::Draw,
+        };
+        let loaded = LoadedGpuWorkCommand {
+            target_load: "clear",
+            work_item: TestWorkItem::Clear,
+        };
+
+        assert_eq!(sourced.kind(), GpuWorkItemKind::BgEffect);
+        assert_eq!(loaded.kind(), GpuWorkItemKind::ClearBackdrop);
     }
 }

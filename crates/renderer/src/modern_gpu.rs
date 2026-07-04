@@ -1,4 +1,6 @@
-use crate::gpu_work_item::{GpuRenderPlan, GpuWorkItem, GpuWorkItemKind, SourcedGpuWorkCommand};
+use crate::gpu_work_item::{
+    GpuRenderPlan, GpuWorkItem, GpuWorkItemKind, LoadedGpuWorkCommand, SourcedGpuWorkCommand,
+};
 use crate::modern_assets::ModernTileAtlasAsset;
 use crate::modern_frame::ModernFrame;
 use crate::modern_index_atlas::ModernIndexTile;
@@ -1208,19 +1210,11 @@ struct Mode1EffectRankDispatch<'a> {
 
 type Mode1EffectRankRenderPlan<'rank, 'frame> = GpuRenderPlan<ModernGpuWorkCommand<'rank, 'frame>>;
 
-struct ModernGpuWorkCommand<'rank, 'frame> {
-    target_load: ModernGpuCommandLoad,
-    work_item: ModernGpuWorkItem<'rank, 'frame>,
-}
-
-impl GpuWorkItem for ModernGpuWorkCommand<'_, '_> {
-    fn kind(&self) -> GpuWorkItemKind {
-        self.work_item.kind()
-    }
-}
+type ModernGpuWorkCommand<'rank, 'frame> =
+    LoadedGpuWorkCommand<ModernGpuCommandLoad, ModernGpuWorkItem<'rank, 'frame>>;
 
 #[cfg(test)]
-impl ModernGpuWorkCommand<'_, '_> {
+impl LoadedGpuWorkCommand<ModernGpuCommandLoad, ModernGpuWorkItem<'_, '_>> {
     fn kind(&self) -> ModernGpuWorkCommandKind {
         ModernGpuWorkCommandKind {
             target_load: self.target_load,
