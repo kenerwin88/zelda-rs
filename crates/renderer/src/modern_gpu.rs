@@ -596,44 +596,26 @@ impl ModernGpuVariantRenderer {
         }
 
         out.bg_layers[0].enabled_main = true;
-        for packet in &plan.bg {
-            match packet.draw {
-                crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry } => {
-                    out.bg_layers[0].tiles.push(variant_tile_instance(
-                        entry,
-                        packet.inst.screen_x,
-                        packet.inst.screen_y,
-                        packet.cell.hflip ^ entry.source_hflip,
-                        packet.cell.vflip ^ entry.source_vflip,
-                    ));
-                }
-                crate::modern_variant_atlas::VariantAtlasDraw::MaterialEffect { .. } => {}
-                crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {}
-                crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
-                    if let Some(key) = packet.key.as_ref() {
-                        debug_variant_missing_key(key);
-                    }
-                }
-                crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {}
-            }
-        }
-
         out.bg_layers[1].enabled_main = true;
-        for packet in &plan.sprites {
-            match packet.draw {
+        for packet in plan.material_packets() {
+            match packet.draw() {
                 crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry } => {
-                    out.bg_layers[1].tiles.push(variant_tile_instance(
-                        entry,
-                        packet.inst.screen_x,
-                        packet.inst.screen_y,
-                        packet.inst.hflip ^ entry.source_hflip,
-                        packet.inst.vflip ^ entry.source_vflip,
-                    ));
+                    let target_layer = match packet.surface() {
+                        crate::modern_variant_draw::VariantDrawSurface::Bg => 0,
+                        crate::modern_variant_draw::VariantDrawSurface::Sprite => 1,
+                    };
+                    let (screen_x, screen_y) = packet.screen_origin();
+                    let (hflip, vflip) = packet.source_flip_with_entry(entry);
+                    out.bg_layers[target_layer]
+                        .tiles
+                        .push(variant_tile_instance(
+                            entry, screen_x, screen_y, hflip, vflip,
+                        ));
                 }
                 crate::modern_variant_atlas::VariantAtlasDraw::MaterialEffect { .. } => {}
                 crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {}
                 crate::modern_variant_atlas::VariantAtlasDraw::MissingArt => {
-                    if let Some(key) = packet.key.as_ref() {
+                    if let Some(key) = packet.key() {
                         debug_variant_missing_key(key);
                     }
                 }

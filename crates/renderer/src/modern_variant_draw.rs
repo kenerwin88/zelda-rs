@@ -3,7 +3,7 @@ use crate::modern_index_atlas::ModernIndexTile;
 use crate::modern_software::VariantAtlasRenderStats;
 use crate::modern_variant_atlas::{
     variant_key_for_index_tile, variant_key_for_source_key, DynamicFallbackReason,
-    ModernVariantAtlas, VariantAtlasDraw, VariantAtlasKey,
+    ModernVariantAtlas, VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
 };
 
 #[derive(Clone, Debug)]
@@ -11,6 +11,27 @@ pub struct VariantDrawPlan<'a> {
     pub bg: Vec<VariantBgDrawPacket<'a>>,
     pub sprites: Vec<VariantSpriteDrawPacket<'a>>,
     pub stats: VariantAtlasRenderStats,
+}
+
+impl<'a> VariantDrawPlan<'a> {
+    pub fn material_packets(&self) -> impl Iterator<Item = VariantDrawPacket<'_, 'a>> {
+        self.bg
+            .iter()
+            .enumerate()
+            .map(|(packet_index, packet)| VariantDrawPacket::Bg {
+                packet_index,
+                packet,
+            })
+            .chain(
+                self.sprites
+                    .iter()
+                    .enumerate()
+                    .map(|(packet_index, packet)| VariantDrawPacket::Sprite {
+                        packet_index,
+                        packet,
+                    }),
+            )
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,6 +72,18 @@ pub struct VariantSpriteDrawPacket<'a> {
     pub draw: VariantAtlasDraw<'a>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum VariantDrawPacket<'plan, 'frame> {
+    Bg {
+        packet_index: usize,
+        packet: &'plan VariantBgDrawPacket<'frame>,
+    },
+    Sprite {
+        packet_index: usize,
+        packet: &'plan VariantSpriteDrawPacket<'frame>,
+    },
+}
+
 impl<'a> VariantBgDrawPacket<'a> {
     pub fn material(&self) -> ModernDrawMaterial {
         material_for_draw(self.draw)
@@ -60,6 +93,124 @@ impl<'a> VariantBgDrawPacket<'a> {
 impl<'a> VariantSpriteDrawPacket<'a> {
     pub fn material(&self) -> ModernDrawMaterial {
         material_for_draw(self.draw)
+    }
+}
+
+impl<'plan, 'frame> VariantDrawPacket<'plan, 'frame> {
+    pub fn surface(self) -> VariantDrawSurface {
+        match self {
+            Self::Bg { .. } => VariantDrawSurface::Bg,
+            Self::Sprite { .. } => VariantDrawSurface::Sprite,
+        }
+    }
+
+    pub fn packet_index(self) -> usize {
+        match self {
+            Self::Bg { packet_index, .. } | Self::Sprite { packet_index, .. } => packet_index,
+        }
+    }
+
+    pub fn layer_index(self) -> Option<usize> {
+        match self {
+            Self::Bg { packet, .. } => Some(packet.layer_index),
+            Self::Sprite { .. } => None,
+        }
+    }
+
+    pub fn material(self) -> ModernDrawMaterial {
+        material_for_draw(self.draw())
+    }
+
+    pub fn draw(self) -> VariantAtlasDraw<'frame> {
+        match self {
+            Self::Bg { packet, .. } => packet.draw,
+            Self::Sprite { packet, .. } => packet.draw,
+        }
+    }
+
+    pub fn key(self) -> Option<&'plan VariantAtlasKey> {
+        match self {
+            Self::Bg { packet, .. } => packet.key.as_ref(),
+            Self::Sprite { packet, .. } => packet.key.as_ref(),
+        }
+    }
+
+    pub fn cell_id(self) -> u32 {
+        match self {
+            Self::Bg { packet, .. } => packet.cell.id,
+            Self::Sprite { packet, .. } => packet.cell.id,
+        }
+    }
+
+    pub fn screen_origin(self) -> (i16, i16) {
+        match self {
+            Self::Bg { packet, .. } => (packet.inst.screen_x, packet.inst.screen_y),
+            Self::Sprite { packet, .. } => (packet.inst.screen_x, packet.inst.screen_y),
+        }
+    }
+
+    pub fn palette_row(self) -> u8 {
+        match self {
+            Self::Bg { packet, .. } => packet.inst.palette,
+            Self::Sprite { packet, .. } => packet.inst.palette,
+        }
+    }
+
+    pub fn source_flip_with_entry(self, entry: &VariantAtlasEntry) -> (bool, bool) {
+        match self {
+            Self::Bg { packet, .. } => (
+                packet.cell.hflip ^ entry.source_hflip,
+                packet.cell.vflip ^ entry.source_vflip,
+            ),
+            Self::Sprite { packet, .. } => (
+                packet.inst.hflip ^ entry.source_hflip,
+                packet.inst.vflip ^ entry.source_vflip,
+            ),
+        }
+    }
+
+    fn trace_pixel(
+        self,
+        frame: &ModernFrame,
+        atlas: &ModernVariantAtlas,
+        screen_x: i16,
+        screen_y: i16,
+    ) -> Option<VariantPixelTrace> {
+        let (origin_x, origin_y) = self.screen_origin();
+        let local_x = screen_x - origin_x;
+        let local_y = screen_y - origin_y;
+        if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
+            return None;
+        }
+        match self {
+            Self::Bg {
+                packet_index,
+                packet,
+            } => trace_bg_packet_pixel(
+                frame,
+                atlas,
+                packet_index,
+                packet,
+                local_x as u8,
+                local_y as u8,
+            ),
+            Self::Sprite {
+                packet_index,
+                packet,
+            } => {
+                if packet.inst.row_mask & (1 << local_y) == 0 {
+                    return None;
+                }
+                Some(trace_sprite_packet_pixel(
+                    frame,
+                    atlas,
+                    packet_index,
+                    packet,
+                    local_x as u8,
+                    local_y as u8,
+                ))
+            }
+        }
     }
 }
 
@@ -241,41 +392,11 @@ pub fn trace_variant_plan_pixel(
     screen_y: i16,
 ) -> Vec<VariantPixelTrace> {
     let mut traces = Vec::new();
-    for (packet_index, packet) in plan.bg.iter().enumerate() {
-        let local_x = screen_x - packet.inst.screen_x;
-        let local_y = screen_y - packet.inst.screen_y;
-        if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
-            continue;
-        }
-        let Some(trace) = trace_bg_packet_pixel(
-            frame,
-            atlas,
-            packet_index,
-            packet,
-            local_x as u8,
-            local_y as u8,
-        ) else {
+    for packet in plan.material_packets() {
+        let Some(trace) = packet.trace_pixel(frame, atlas, screen_x, screen_y) else {
             continue;
         };
         traces.push(trace);
-    }
-    for (packet_index, packet) in plan.sprites.iter().enumerate() {
-        let local_x = screen_x - packet.inst.screen_x;
-        let local_y = screen_y - packet.inst.screen_y;
-        if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
-            continue;
-        }
-        if packet.inst.row_mask & (1 << local_y) == 0 {
-            continue;
-        }
-        traces.push(trace_sprite_packet_pixel(
-            frame,
-            atlas,
-            packet_index,
-            packet,
-            local_x as u8,
-            local_y as u8,
-        ));
     }
     traces
 }
@@ -765,6 +886,88 @@ mod tests {
         assert_eq!(plan.stats.unkeyed_fallback_draws, 1);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
         assert_eq!(plan.stats.unkeyed_sprite_fallback_draws, 1);
+    }
+
+    #[test]
+    fn material_packets_expose_single_ordered_gpu_packet_stream() {
+        let mut frame = ModernFrame::empty();
+        let mut bg0 = ModernBgLayer::new(0);
+        bg0.enabled_main = true;
+        bg0.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: NO_SOURCE_KEY,
+            screen_x: 4,
+            screen_y: 8,
+            palette: 2,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        bg0.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 1,
+            source_key: NO_SOURCE_KEY,
+            screen_x: 12,
+            screen_y: 8,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = bg0;
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 20,
+            screen_y: 24,
+            palette: 0,
+            priority: 0,
+            hflip: false,
+            vflip: true,
+            row_mask: 0xff,
+        });
+        let bg_cells = vec![
+            index_cell(0, modern_source_key(1, 0, 0)),
+            index_cell(1, modern_source_key(1, 9, 9)),
+        ];
+        let sprite_cells = vec![index_cell(2, NO_SOURCE_KEY)];
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![bg_entry(0, 0, 0)],
+            effects: vec![effect(2)],
+        };
+
+        let plan = compile_variant_draws(
+            &frame,
+            &bg_cells,
+            &sprite_cells,
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+        let packets: Vec<_> = plan.material_packets().collect();
+
+        assert_eq!(packets.len(), 3);
+        assert_eq!(packets[0].surface(), VariantDrawSurface::Bg);
+        assert_eq!(packets[0].packet_index(), 0);
+        assert_eq!(packets[0].layer_index(), Some(0));
+        assert_eq!(packets[0].cell_id(), 0);
+        assert_eq!(packets[0].screen_origin(), (4, 8));
+        assert_eq!(packets[0].palette_row(), 2);
+        assert_eq!(packets[0].material(), ModernDrawMaterial::PaletteEffect);
+
+        assert_eq!(packets[1].surface(), VariantDrawSurface::Bg);
+        assert_eq!(packets[1].packet_index(), 1);
+        assert_eq!(packets[1].cell_id(), 1);
+        assert_eq!(packets[1].material(), ModernDrawMaterial::MissingArt);
+
+        assert_eq!(packets[2].surface(), VariantDrawSurface::Sprite);
+        assert_eq!(packets[2].packet_index(), 0);
+        assert_eq!(packets[2].layer_index(), None);
+        assert_eq!(packets[2].cell_id(), 2);
+        assert_eq!(packets[2].screen_origin(), (20, 24));
+        assert_eq!(packets[2].palette_row(), 0);
+        assert_eq!(packets[2].material(), ModernDrawMaterial::LiveIndex);
     }
 
     #[test]
