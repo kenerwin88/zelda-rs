@@ -547,13 +547,6 @@ struct PreparedMode1EffectRenderPlan<'rank, 'frame> {
 }
 
 impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
-    fn execute_with<F>(self, execute: F)
-    where
-        F: FnMut(PreparedMode1EffectRenderCommand<'rank, 'frame>),
-    {
-        self.into_command_plan().execute_with(execute);
-    }
-
     fn into_command_plan(self) -> Mode1EffectCommandPlan<'rank, 'frame> {
         let needs_empty_frame_fallback = self.needs_empty_frame_fallback;
         let commands = self
@@ -626,7 +619,8 @@ impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
     #[cfg(test)]
     fn into_command_kinds(self) -> Vec<PreparedMode1EffectRenderCommandKind> {
         let mut commands = Vec::new();
-        self.execute_with(|command| commands.push(command.kind()));
+        self.into_command_plan()
+            .execute_with(|command| commands.push(command.kind()));
         commands
     }
 
@@ -1004,8 +998,10 @@ impl ModernGpuVariantRenderer {
         let frame = execution.frame();
         let bg_cells = execution.bg_cells();
         let sprite_cells = execution.sprite_cells();
-        let render_plan = execution.mode1_effect_render_plan(&self.atlas);
-        render_plan.execute_with(|command| {
+        let command_plan = execution
+            .mode1_effect_render_plan(&self.atlas)
+            .into_command_plan();
+        command_plan.execute_with(|command| {
             self.render_mode1_effect_command(
                 device,
                 queue,
