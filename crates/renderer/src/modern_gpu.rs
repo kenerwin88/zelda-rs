@@ -502,14 +502,14 @@ impl ModernGpuVariantRenderer {
         output_view: &wgpu::TextureView,
     ) {
         let mut rendered_any = false;
-        for rank_packets in mode1_effect_material_rank_packets(plan) {
-            rendered_any = self.render_effect_material_rank_packets(
+        for rank_dispatch in mode1_effect_rank_dispatches(plan) {
+            rendered_any = self.render_effect_rank_dispatch(
                 device,
                 queue,
                 frame,
                 bg_cells,
                 sprite_cells,
-                &rank_packets,
+                &rank_dispatch,
                 output_view,
                 rendered_any,
             );
@@ -527,19 +527,20 @@ impl ModernGpuVariantRenderer {
         }
     }
 
-    fn render_effect_material_rank_packets(
+    fn render_effect_rank_dispatch(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         frame: &ModernFrame,
         bg_cells: &[ModernIndexTile],
         sprite_cells: &[ModernIndexTile],
-        rank_packets: &Mode1EffectMaterialRankPackets<'_>,
+        rank_dispatch: &Mode1EffectRankDispatch<'_>,
         output_view: &wgpu::TextureView,
         rendered_any: bool,
     ) -> bool {
         let mut rendered_any = rendered_any;
-        for group in rank_packets.bg_material_groups() {
+        let rank_plan = rank_dispatch.render_plan(&self.atlas, rendered_any);
+        for group in rank_plan.bg_groups {
             self.effect_renderer.render_bg_material_group(
                 device,
                 queue,
@@ -557,27 +558,27 @@ impl ModernGpuVariantRenderer {
             rendered_any = true;
         }
 
-        let sprite_groups = rank_packets.sprite_material_groups(&self.atlas);
-        if !sprite_groups.is_empty() {
-            if !rendered_any {
-                self.effect_renderer.render_bg(
-                    device,
-                    queue,
-                    bg_cells,
-                    &self.atlas,
-                    &[],
-                    output_view,
-                    modern_frame_clear_op(frame),
-                );
-                rendered_any = true;
-            }
+        if rank_plan.clear_before_sprites {
+            self.effect_renderer.render_bg(
+                device,
+                queue,
+                bg_cells,
+                &self.atlas,
+                &[],
+                output_view,
+                modern_frame_clear_op(frame),
+            );
+            rendered_any = true;
+        }
+
+        if !rank_plan.sprite_groups.is_empty() {
             self.effect_renderer.render_sprite_material_groups(
                 device,
                 queue,
                 sprite_cells,
                 frame,
                 &self.atlas,
-                &sprite_groups,
+                &rank_plan.sprite_groups,
                 output_view,
             );
         }
@@ -670,12 +671,18 @@ struct EffectInstancePacket {
 }
 
 #[derive(Clone, Debug)]
-struct Mode1EffectMaterialRankPackets<'a> {
+struct Mode1EffectRankDispatch<'a> {
     bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
     sprites: Vec<crate::modern_variant_draw::VariantSpriteDrawPacket<'a>>,
 }
 
-impl<'a> Mode1EffectMaterialRankPackets<'a> {
+struct Mode1EffectRankRenderPlan<'rank, 'frame> {
+    bg_groups: Vec<BgEffectMaterialGroup<'rank, 'frame>>,
+    sprite_groups: Vec<SpriteEffectMaterialGroup<'rank, 'frame>>,
+    clear_before_sprites: bool,
+}
+
+impl<'a> Mode1EffectRankDispatch<'a> {
     fn empty() -> Self {
         Self {
             bg: Vec::new(),
@@ -698,13 +705,29 @@ impl<'a> Mode1EffectMaterialRankPackets<'a> {
     ) -> Vec<SpriteEffectMaterialGroup<'_, 'a>> {
         sprite_effect_material_groups(atlas, &self.sprites)
     }
+
+    fn render_plan(
+        &self,
+        atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+        rendered_any: bool,
+    ) -> Mode1EffectRankRenderPlan<'_, 'a> {
+        let bg_groups = self.bg_material_groups().collect::<Vec<_>>();
+        let sprite_groups = self.sprite_material_groups(atlas);
+        let clear_before_sprites =
+            !rendered_any && bg_groups.is_empty() && !sprite_groups.is_empty();
+        Mode1EffectRankRenderPlan {
+            bg_groups,
+            sprite_groups,
+            clear_before_sprites,
+        }
+    }
 }
 
-fn mode1_effect_material_rank_packets<'a>(
+fn mode1_effect_rank_dispatches<'a>(
     plan: &crate::modern_variant_draw::VariantDrawPlan<'a>,
-) -> Vec<Mode1EffectMaterialRankPackets<'a>> {
+) -> Vec<Mode1EffectRankDispatch<'a>> {
     let mut ranks = (0..=9)
-        .map(|_| Mode1EffectMaterialRankPackets::empty())
+        .map(|_| Mode1EffectRankDispatch::empty())
         .collect::<Vec<_>>();
     for packet in plan.material_packets() {
         let Some(rank) = packet.mode1_rank() else {
@@ -6239,7 +6262,7 @@ mod tests {
     }
 
     #[test]
-    fn mode1_effect_material_rank_packets_partitions_bg_and_sprites_once() {
+    fn mode1_effect_rank_dispatches_partition_bg_and_sprites_once() {
         use crate::modern_frame::{ModernIndexSpriteInstance, ModernIndexTileInstance};
         use crate::modern_index_atlas::ModernIndexTile;
         use crate::modern_source_atlas::modern_source_key;
@@ -6316,7 +6339,7 @@ mod tests {
             stats: Default::default(),
         };
 
-        let ranks = mode1_effect_material_rank_packets(&plan);
+        let ranks = mode1_effect_rank_dispatches(&plan);
         let rank0_bg_groups = ranks[0].bg_material_groups().collect::<Vec<_>>();
         let rank7_bg_groups = ranks[7].bg_material_groups().collect::<Vec<_>>();
 
@@ -6805,6 +6828,16 @@ mod tests {
         assert_eq!(groups[1].packets[0].inst.cell_id, 1);
         assert_eq!(groups[2].material, EffectMaterial::StaticEffect);
         assert_eq!(groups[2].packets[0].inst.cell_id, 2);
+
+        let sprite_only_rank = Mode1EffectRankDispatch {
+            bg: Vec::new(),
+            sprites: packets.clone(),
+        };
+        let first_rank_plan = sprite_only_rank.render_plan(&atlas, false);
+        assert!(first_rank_plan.clear_before_sprites);
+        assert_eq!(first_rank_plan.sprite_groups.len(), 3);
+        let later_rank_plan = sprite_only_rank.render_plan(&atlas, true);
+        assert!(!later_rank_plan.clear_before_sprites);
     }
 
     #[test]
