@@ -14,8 +14,8 @@ use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_render_plan::GpuFrameRenderPlanContext;
 use crate::gpu_frame_work_command::{
-    GpuFrameBgPass, GpuFrameMainWorkCommand, GpuFrameMode7Pass, GpuFrameRenderPlan,
-    GpuFrameSpritePass, GpuFrameSubWorkCommand, GpuFrameWorkCommand,
+    GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMainWorkCommand, GpuFrameMode7Pass,
+    GpuFrameRenderPlan, GpuFrameSpritePass, GpuFrameSubWorkCommand, GpuFrameWorkCommand,
 };
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
@@ -197,8 +197,8 @@ impl GpuFrameRenderer {
         command: GpuFrameMainWorkCommand,
     ) {
         match command {
-            GpuFrameMainWorkCommand::ClearBackdrop => {
-                self.clear_main_backdrop(encoder, frame);
+            GpuFrameMainWorkCommand::ClearBackdrop(pass) => {
+                render_backdrop_clear_pass(encoder, frame, &self.comp_view, pass);
             }
             GpuFrameMainWorkCommand::SpritePriority(pass) => {
                 render_sprite_pass(
@@ -241,8 +241,8 @@ impl GpuFrameRenderer {
         command: GpuFrameSubWorkCommand,
     ) {
         match command {
-            GpuFrameSubWorkCommand::ClearBackdrop => {
-                self.clear_sub_backdrop(encoder);
+            GpuFrameSubWorkCommand::ClearBackdrop(pass) => {
+                render_backdrop_clear_pass(encoder, frame, &self.sub_comp_view, pass);
             }
             GpuFrameSubWorkCommand::Mode7Bg(pass) => {
                 render_mode7_pass(
@@ -287,46 +287,6 @@ impl GpuFrameRenderer {
         self.post_process.render(encoder, queue, frame, output_view);
     }
 
-    fn clear_main_backdrop(&self, encoder: &mut wgpu::CommandEncoder, frame: &GpuFrame<'_>) {
-        // Clear intermediate texture to CGRAM[0] (raw backdrop colour, pre-brightness).
-        let backdrop = cgram_to_wgpu_color(frame.cgram.first().copied().unwrap_or(0));
-        let _clear = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("backdrop_clear"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &self.comp_view,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(backdrop),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-    }
-
-    fn clear_sub_backdrop(&self, encoder: &mut wgpu::CommandEncoder) {
-        let _clear = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("sub_backdrop_clear"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &self.sub_comp_view,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-    }
-
     /// Placeholder for the modern GPU BG renderer comparison pass (Task 9 implements this).
     pub fn render_modern_frame_for_compare(
         &mut self,
@@ -337,6 +297,41 @@ impl GpuFrameRenderer {
     ) {
         let _ = (encoder, queue, frame, output_view);
     }
+}
+
+fn render_backdrop_clear_pass(
+    encoder: &mut wgpu::CommandEncoder,
+    frame: &GpuFrame<'_>,
+    output_view: &wgpu::TextureView,
+    pass: GpuFrameBackdropClearPass,
+) {
+    let clear_color = match pass {
+        GpuFrameBackdropClearPass::MainCgram => {
+            cgram_to_wgpu_color(frame.cgram.first().copied().unwrap_or(0))
+        }
+        GpuFrameBackdropClearPass::SubTransparent => wgpu::Color::TRANSPARENT,
+    };
+    let label = match pass {
+        GpuFrameBackdropClearPass::MainCgram => "backdrop_clear",
+        GpuFrameBackdropClearPass::SubTransparent => "sub_backdrop_clear",
+    };
+
+    let _clear = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some(label),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: output_view,
+            resolve_target: None,
+            depth_slice: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(clear_color),
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
 }
 
 fn render_sprite_pass(

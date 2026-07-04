@@ -125,8 +125,24 @@ impl GpuFrameMode7Pass {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GpuFrameBackdropClearPass {
+    MainCgram,
+    SubTransparent,
+}
+
+impl GpuFrameBackdropClearPass {
+    pub(crate) fn main_cgram() -> Self {
+        Self::MainCgram
+    }
+
+    pub(crate) fn sub_transparent() -> Self {
+        Self::SubTransparent
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuFrameMainWorkCommand {
-    ClearBackdrop,
+    ClearBackdrop(GpuFrameBackdropClearPass),
     SpritePriority(GpuFrameSpritePass),
     BgLayer(GpuFrameBgPass),
     Mode7Bg(GpuFrameMode7Pass),
@@ -134,7 +150,7 @@ pub(crate) enum GpuFrameMainWorkCommand {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuFrameSubWorkCommand {
-    ClearBackdrop,
+    ClearBackdrop(GpuFrameBackdropClearPass),
     Mode7Bg(GpuFrameMode7Pass),
     BgLayer(GpuFrameBgPass),
     SpritePriority(GpuFrameSpritePass),
@@ -171,7 +187,7 @@ impl GpuFrameWorkCommand {
 impl GpuWorkItem for GpuFrameMainWorkCommand {
     fn kind(&self) -> GpuWorkItemKind {
         match self {
-            Self::ClearBackdrop => GpuWorkItemKind::ClearBackdrop,
+            Self::ClearBackdrop(_) => GpuWorkItemKind::ClearBackdrop,
             Self::SpritePriority(_) => GpuWorkItemKind::MainSpritePriority,
             Self::BgLayer(_) => GpuWorkItemKind::MainBgLayer,
             Self::Mode7Bg(_) => GpuWorkItemKind::Mode7MainBg,
@@ -182,7 +198,7 @@ impl GpuWorkItem for GpuFrameMainWorkCommand {
 impl GpuWorkItem for GpuFrameSubWorkCommand {
     fn kind(&self) -> GpuWorkItemKind {
         match self {
-            Self::ClearBackdrop => GpuWorkItemKind::ClearSubBackdrop,
+            Self::ClearBackdrop(_) => GpuWorkItemKind::ClearSubBackdrop,
             Self::Mode7Bg(_) => GpuWorkItemKind::Mode7SubBg,
             Self::BgLayer(_) => GpuWorkItemKind::SubBgLayer,
             Self::SpritePriority(_) => GpuWorkItemKind::SubSpritePriority,
@@ -275,5 +291,17 @@ mod tests {
         assert_eq!(sub.math_bit_pos, 255);
         assert_eq!(sub.layer_bit, 0);
         assert_eq!(sub.window, GpuFrameWindowSelector::sub(0x01, 0));
+    }
+
+    #[test]
+    fn backdrop_clear_pass_names_main_and_subscreen_clear_modes() {
+        assert_eq!(
+            GpuFrameBackdropClearPass::main_cgram(),
+            GpuFrameBackdropClearPass::MainCgram
+        );
+        assert_eq!(
+            GpuFrameBackdropClearPass::sub_transparent(),
+            GpuFrameBackdropClearPass::SubTransparent
+        );
     }
 }

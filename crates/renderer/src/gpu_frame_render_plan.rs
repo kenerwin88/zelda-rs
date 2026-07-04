@@ -1,8 +1,8 @@
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_work_command::{
     main_frame_work_command, post_process_frame_work_command, sub_frame_work_command,
-    GpuFrameBgPass, GpuFrameMainWorkCommand, GpuFrameMode7Pass, GpuFrameRenderPlan,
-    GpuFrameSpritePass, GpuFrameSubWorkCommand, GpuFrameWindowSelector,
+    GpuFrameBackdropClearPass, GpuFrameBgPass, GpuFrameMainWorkCommand, GpuFrameMode7Pass,
+    GpuFrameRenderPlan, GpuFrameSpritePass, GpuFrameSubWorkCommand, GpuFrameWindowSelector,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,9 +88,7 @@ fn build_mode1_render_plan(
     has_sub_sprites: bool,
 ) -> GpuFrameRenderPlan {
     let mut render_plan = GpuFrameRenderPlan::default();
-    render_plan.push(main_frame_work_command(
-        GpuFrameMainWorkCommand::ClearBackdrop,
-    ));
+    render_plan.push(main_frame_work_command(main_backdrop_clear_work_item()));
     render_plan.extend(build_mode1_main_render_plan(has_main_bg, has_main_sprites));
     render_plan.extend(build_mode1_sub_render_plan(has_sub_bg, has_sub_sprites));
     render_plan.extend(build_post_process_render_plan());
@@ -134,9 +132,7 @@ fn build_mode1_main_render_plan(has_main_bg: bool, has_main_sprites: bool) -> Gp
 
 fn build_mode1_sub_render_plan(has_sub_bg: bool, has_sub_sprites: bool) -> GpuFrameRenderPlan {
     let mut render_plan = GpuFrameRenderPlan::default();
-    render_plan.push(sub_frame_work_command(
-        GpuFrameSubWorkCommand::ClearBackdrop,
-    ));
+    render_plan.push(sub_frame_work_command(sub_backdrop_clear_work_item()));
     render_plan.push(sub_frame_work_command(sub_bg_work_item(2, false)));
     if has_sub_sprites && !has_sub_bg {
         render_plan.extend(
@@ -176,12 +172,20 @@ fn main_bg_work_item(
     ))
 }
 
+fn main_backdrop_clear_work_item() -> GpuFrameMainWorkCommand {
+    GpuFrameMainWorkCommand::ClearBackdrop(GpuFrameBackdropClearPass::main_cgram())
+}
+
 fn main_sprite_work_item(priority: u32) -> GpuFrameMainWorkCommand {
     GpuFrameMainWorkCommand::SpritePriority(GpuFrameSpritePass::new(
         priority,
         4,
         GpuFrameWindowSelector::main(0x10, 16),
     ))
+}
+
+fn sub_backdrop_clear_work_item() -> GpuFrameSubWorkCommand {
+    GpuFrameSubWorkCommand::ClearBackdrop(GpuFrameBackdropClearPass::sub_transparent())
 }
 
 fn sub_bg_work_item(layer_idx: usize, hi_priority: bool) -> GpuFrameSubWorkCommand {
@@ -210,9 +214,7 @@ fn build_mode7_render_plan(
     has_sub_sprites: bool,
 ) -> GpuFrameRenderPlan {
     let mut render_plan = GpuFrameRenderPlan::default();
-    render_plan.push(main_frame_work_command(
-        GpuFrameMainWorkCommand::ClearBackdrop,
-    ));
+    render_plan.push(main_frame_work_command(main_backdrop_clear_work_item()));
     render_plan.extend(build_mode7_main_render_plan(has_main_sprites));
     render_plan.extend(build_mode7_sub_render_plan(
         has_sub_mode7_bg,
@@ -244,9 +246,7 @@ fn build_mode7_sub_render_plan(
     has_sub_sprites: bool,
 ) -> GpuFrameRenderPlan {
     let mut render_plan = GpuFrameRenderPlan::default();
-    render_plan.push(sub_frame_work_command(
-        GpuFrameSubWorkCommand::ClearBackdrop,
-    ));
+    render_plan.push(sub_frame_work_command(sub_backdrop_clear_work_item()));
     if has_sub_mode7_bg {
         render_plan.push(sub_frame_work_command(sub_mode7_bg_work_item()));
     }
@@ -482,7 +482,7 @@ mod tests {
         assert_eq!(
             frame_plan_commands(&plan),
             vec![
-                main_frame_work_command(GpuFrameMainWorkCommand::ClearBackdrop),
+                main_frame_work_command(main_backdrop_clear_work_item()),
                 main_frame_work_command(main_bg_work_item(2, false, 2)),
                 main_frame_work_command(main_sprite_work_item(0)),
                 main_frame_work_command(main_sprite_work_item(1)),
@@ -493,7 +493,7 @@ mod tests {
                 main_frame_work_command(main_bg_work_item(0, true, 0)),
                 main_frame_work_command(main_sprite_work_item(3)),
                 main_frame_work_command(main_bg_work_item(2, true, 2)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::ClearBackdrop),
+                sub_frame_work_command(sub_backdrop_clear_work_item()),
                 sub_frame_work_command(sub_bg_work_item(2, false)),
                 sub_frame_work_command(sub_sprite_work_item(0)),
                 sub_frame_work_command(sub_sprite_work_item(1)),
@@ -516,12 +516,12 @@ mod tests {
         assert_eq!(
             frame_plan_commands(&plan),
             vec![
-                main_frame_work_command(GpuFrameMainWorkCommand::ClearBackdrop),
+                main_frame_work_command(main_backdrop_clear_work_item()),
                 main_frame_work_command(main_sprite_work_item(0)),
                 main_frame_work_command(main_sprite_work_item(1)),
                 main_frame_work_command(main_sprite_work_item(2)),
                 main_frame_work_command(main_sprite_work_item(3)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::ClearBackdrop),
+                sub_frame_work_command(sub_backdrop_clear_work_item()),
                 sub_frame_work_command(sub_bg_work_item(2, false)),
                 sub_frame_work_command(sub_sprite_work_item(0)),
                 sub_frame_work_command(sub_sprite_work_item(1)),
@@ -580,13 +580,13 @@ mod tests {
         assert_eq!(
             frame_plan_commands(&plan),
             vec![
-                main_frame_work_command(GpuFrameMainWorkCommand::ClearBackdrop),
+                main_frame_work_command(main_backdrop_clear_work_item()),
                 main_frame_work_command(main_sprite_work_item(0)),
                 main_frame_work_command(main_mode7_bg_work_item()),
                 main_frame_work_command(main_sprite_work_item(1)),
                 main_frame_work_command(main_sprite_work_item(2)),
                 main_frame_work_command(main_sprite_work_item(3)),
-                sub_frame_work_command(GpuFrameSubWorkCommand::ClearBackdrop),
+                sub_frame_work_command(sub_backdrop_clear_work_item()),
                 sub_frame_work_command(sub_mode7_bg_work_item()),
                 sub_frame_work_command(sub_sprite_work_item(0)),
                 sub_frame_work_command(sub_sprite_work_item(1)),
@@ -604,9 +604,9 @@ mod tests {
         assert_eq!(
             frame_plan_commands(&plan),
             vec![
-                main_frame_work_command(GpuFrameMainWorkCommand::ClearBackdrop),
+                main_frame_work_command(main_backdrop_clear_work_item()),
                 main_frame_work_command(main_mode7_bg_work_item()),
-                sub_frame_work_command(GpuFrameSubWorkCommand::ClearBackdrop),
+                sub_frame_work_command(sub_backdrop_clear_work_item()),
                 post_process_frame_work_command(),
             ]
         );
