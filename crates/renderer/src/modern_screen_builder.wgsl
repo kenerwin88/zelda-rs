@@ -10,6 +10,7 @@ struct Params {
     p4: vec4<u32>,
     p5: vec4<u32>,
     p6: vec4<u32>,
+    p7: vec4<u32>,
 };
 @group(0) @binding(3) var<uniform> params: Params;
 
@@ -39,6 +40,40 @@ fn layer_param(layer: u32) -> vec4<u32> {
         return params.p3;
     }
     return params.p4;
+}
+
+fn layer_window_masks(layer: u32, sx: u32, sy: u32, is_main: bool) -> bool {
+    let windowed = select(params.p7.y, params.p7.x, is_main);
+    if ((windowed & (1u << layer)) == 0u) {
+        return false;
+    }
+    let window_flags = (params.p6.w >> (layer * 4u)) & 0x0fu;
+    let w1_enabled = (window_flags & 0x2u) != 0u;
+    let w2_enabled = (window_flags & 0x8u) != 0u;
+    if (!w1_enabled && !w2_enabled) {
+        return false;
+    }
+
+    let window_base = params.p6.z + sy * 4u;
+    let w1l = data[window_base + 0u];
+    let w1r = data[window_base + 1u];
+    let w2l = data[window_base + 2u];
+    let w2r = data[window_base + 3u];
+    var test1 = sx >= w1l && sx <= w1r;
+    var test2 = sx >= w2l && sx <= w2r;
+    if ((window_flags & 0x1u) != 0u) {
+        test1 = !test1;
+    }
+    if ((window_flags & 0x4u) != 0u) {
+        test2 = !test2;
+    }
+    if (w1_enabled && !w2_enabled) {
+        return test1;
+    }
+    if (!w1_enabled && w2_enabled) {
+        return test2;
+    }
+    return test1 || test2;
 }
 
 fn bg_instance_pixel(inst_base: u32, layer: u32, sx: u32, sy: u32, hi_priority: bool) -> u32 {
@@ -96,6 +131,9 @@ fn bg_pixel(layer: u32, sx: u32, sy: u32, hi_priority: bool, is_main: bool) -> u
     if (is_main && ((data[params.p6.y + sy] & (1u << layer)) == 0u)) {
         return 0xffffffffu;
     }
+    if (layer_window_masks(layer, sx, sy, is_main)) {
+        return 0xffffffffu;
+    }
     var out = 0xffffffffu;
     let count = params.p0.z;
     for (var i = 0u; i < count; i = i + 1u) {
@@ -139,6 +177,9 @@ fn sprite_instance_pixel(inst_base: u32, sx: u32, sy: u32, prio: u32) -> u32 {
 
 fn obj_pixel(sx: u32, sy: u32, prio: u32, is_main: bool) -> u32 {
     if (is_main && ((data[params.p6.y + sy] & 0x10u) == 0u)) {
+        return 0xffffffffu;
+    }
+    if (layer_window_masks(4u, sx, sy, is_main)) {
         return 0xffffffffu;
     }
     let count = params.p0.w;

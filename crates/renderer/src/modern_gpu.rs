@@ -3419,6 +3419,7 @@ impl ModernGpuScreenBuilder {
         let cgram_words = modern_screen_builder_cgram_words(frame);
         let scroll_words = modern_screen_builder_scroll_words(frame);
         let main_tm_words = modern_screen_builder_main_tm_words(frame);
+        let window_words = modern_screen_builder_window_words(frame);
         let (data_words, offsets) = modern_screen_builder_data_words(
             &cell_words,
             &bg_instance_words,
@@ -3426,6 +3427,7 @@ impl ModernGpuScreenBuilder {
             &cgram_words,
             &scroll_words,
             &main_tm_words,
+            &window_words,
         );
         let params = modern_screen_builder_params(
             frame,
@@ -3729,6 +3731,21 @@ fn modern_screen_builder_main_tm_words(frame: &ModernFrame) -> Vec<u32> {
         .collect()
 }
 
+fn modern_screen_builder_window_words(frame: &ModernFrame) -> Vec<u32> {
+    let mut words = Vec::with_capacity(usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT) * 4);
+    for row in 0..usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT) {
+        words.extend(
+            frame
+                .window_scanlines
+                .get(row)
+                .copied()
+                .unwrap_or([0u8; 4])
+                .map(u32::from),
+        );
+    }
+    words
+}
+
 #[derive(Clone, Copy)]
 struct ModernScreenBuilderOffsets {
     cells: u32,
@@ -3737,6 +3754,7 @@ struct ModernScreenBuilderOffsets {
     cgram: u32,
     scroll: u32,
     main_tm: u32,
+    window: u32,
 }
 
 fn modern_screen_builder_data_words(
@@ -3746,6 +3764,7 @@ fn modern_screen_builder_data_words(
     cgram_words: &[u32],
     scroll_words: &[u32],
     main_tm_words: &[u32],
+    window_words: &[u32],
 ) -> (Vec<u32>, ModernScreenBuilderOffsets) {
     let mut data = Vec::new();
     let cells = data.len() as u32;
@@ -3768,6 +3787,8 @@ fn modern_screen_builder_data_words(
     data.extend_from_slice(scroll_words);
     let main_tm = data.len() as u32;
     data.extend_from_slice(main_tm_words);
+    let window = data.len() as u32;
+    data.extend_from_slice(window_words);
     (
         data,
         ModernScreenBuilderOffsets {
@@ -3777,6 +3798,7 @@ fn modern_screen_builder_data_words(
             cgram,
             scroll,
             main_tm,
+            window,
         },
     )
 }
@@ -3971,7 +3993,7 @@ fn modern_screen_builder_params(
     bg_instance_words: &[u32],
     sprite_instance_words: &[u32],
     offsets: ModernScreenBuilderOffsets,
-) -> [u32; 28] {
+) -> [u32; 32] {
     let backdrop = frame.backdrop_color_rgba;
     let backdrop_c5 = [
         u32::from(backdrop[0] >> 3),
@@ -4028,6 +4050,10 @@ fn modern_screen_builder_params(
         offsets.cgram,
         offsets.scroll,
         offsets.main_tm,
+        offsets.window,
+        frame.windowsel,
+        u32::from(frame.screen_windowed_main),
+        u32::from(frame.screen_windowed_sub),
         0,
         0,
     ]
@@ -4047,7 +4073,6 @@ fn modern_screen_builder_layer_needs_scroll(frame: &ModernFrame, layer: usize) -
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ModernScreenBuilderBlocker {
     ForcedBlank,
-    Window,
     Mosaic,
     Bg4,
     ShortBgLayers,
@@ -4064,9 +4089,6 @@ enum ModernScreenBuilderResult {
 fn modern_screen_builder_blocker(frame: &ModernFrame) -> Option<ModernScreenBuilderBlocker> {
     if frame.forced_blank {
         return Some(ModernScreenBuilderBlocker::ForcedBlank);
-    }
-    if frame.windowsel != 0 || frame.screen_windowed_main != 0 || frame.screen_windowed_sub != 0 {
-        return Some(ModernScreenBuilderBlocker::Window);
     }
     if frame.mosaic_size > 1 && (frame.mosaic_enabled & 0x07) != 0 {
         return Some(ModernScreenBuilderBlocker::Mosaic);
@@ -4091,7 +4113,6 @@ fn record_screen_builder_blocker(
 ) {
     match blocker {
         ModernScreenBuilderBlocker::ForcedBlank => stats.cpu_screen_builder_block_forced_blank += 1,
-        ModernScreenBuilderBlocker::Window => stats.cpu_screen_builder_block_window += 1,
         ModernScreenBuilderBlocker::Mosaic => stats.cpu_screen_builder_block_mosaic += 1,
         ModernScreenBuilderBlocker::Bg4 => stats.cpu_screen_builder_block_bg4 += 1,
         ModernScreenBuilderBlocker::ShortBgLayers => {
@@ -5407,6 +5428,110 @@ mod tests {
             &gpu[0..4],
             &software[0..4],
             "first pixel exercises sub-screen half-add plus brightness"
+        );
+        assert_eq!(gpu, software);
+    }
+
+    #[test]
+    fn modern_gpu_compositor_matches_full_software_layer_windows() {
+        use crate::modern_frame::{
+            ModernBgLayer, ModernIndexSpriteInstance, ModernIndexTileInstance,
+        };
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_software::render_modern_frame_full;
+
+        let mut bg_indices = [0u8; 64];
+        bg_indices[0] = 1;
+        bg_indices[1] = 1;
+        let bg_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: bg_indices,
+            source_key: NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut sprite_indices = [0u8; 64];
+        sprite_indices[0] = 1;
+        sprite_indices[1] = 1;
+        let sprite_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: sprite_indices,
+            source_key: NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.cgram_rgba[1] = [80, 0, 0, 0xff];
+        frame.cgram_rgba[16 + 1] = [0, 80, 0, 0xff];
+        frame.cgram_rgba[0x80 + 16 + 1] = [0, 0, 80, 0xff];
+
+        let mut main = ModernBgLayer::new(0);
+        main.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: NO_SOURCE_KEY,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = main;
+
+        let mut sub = ModernBgLayer::new(1);
+        sub.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: NO_SOURCE_KEY,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 1,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[1] = sub;
+
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 8,
+            palette: 1,
+            priority: 0,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        });
+
+        frame.screen_enabled_main = 0x11; // BG1 + OBJ.
+        frame.screen_enabled_sub = 0x02; // BG2.
+        frame.math_enabled = 0x01;
+        frame.add_subscreen = true;
+        frame.brightness = 15;
+        frame.windowsel = (0x2 << 4) | (0x2 << 16); // BG2 + OBJ W1 enabled.
+        frame.screen_windowed_sub = 0x02;
+        frame.screen_windowed_main = 0x10;
+        frame.window_scanlines =
+            vec![[0, 0, 0, 0]; usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT)];
+
+        let gpu = ModernGpuHeadless::new().render_rgba(&frame, &bg_cells, &sprite_cells);
+        let software = render_modern_frame_full(&frame, &bg_cells, &sprite_cells);
+
+        assert_eq!(&gpu[0..4], &software[0..4], "sub BG2 is masked at x=0");
+        assert_eq!(&gpu[4..8], &software[4..8], "sub BG2 contributes at x=1");
+        let sprite_row = 8usize * 256 * 4;
+        assert_eq!(
+            &gpu[sprite_row..sprite_row + 4],
+            &software[sprite_row..sprite_row + 4],
+            "OBJ is masked at x=0"
+        );
+        assert_eq!(
+            &gpu[sprite_row + 4..sprite_row + 8],
+            &software[sprite_row + 4..sprite_row + 8],
+            "OBJ draws at x=1"
         );
         assert_eq!(gpu, software);
     }
