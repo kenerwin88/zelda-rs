@@ -546,20 +546,59 @@ struct PreparedMode1EffectRenderPlan<'rank, 'frame> {
 }
 
 impl<'rank, 'frame> PreparedMode1EffectRenderPlan<'rank, 'frame> {
-    fn needs_empty_frame_fallback(&self) -> bool {
-        self.needs_empty_frame_fallback
+    fn into_steps(self) -> impl Iterator<Item = PreparedMode1EffectRenderStep<'rank, 'frame>> {
+        let needs_empty_frame_fallback = self.needs_empty_frame_fallback;
+        self.rank_plans
+            .into_iter()
+            .map(PreparedMode1EffectRenderStep::Rank)
+            .chain(
+                needs_empty_frame_fallback
+                    .then_some(PreparedMode1EffectRenderStep::EmptyFrameFallback),
+            )
     }
 
-    fn into_rank_plans(
-        self,
-    ) -> impl Iterator<Item = PreparedMode1EffectRankRenderPlan<'rank, 'frame>> {
-        self.rank_plans.into_iter()
+    #[cfg(test)]
+    fn steps(&self) -> Vec<PreparedMode1EffectRenderStepKind> {
+        let mut steps = self
+            .rank_plans
+            .iter()
+            .map(|rank_plan| PreparedMode1EffectRenderStepKind::Rank {
+                rank_index: rank_plan.rank_index(),
+                is_empty: rank_plan.is_empty(),
+                rendered_before: rank_plan.rendered_before(),
+            })
+            .collect::<Vec<_>>();
+        if self.needs_empty_frame_fallback {
+            steps.push(PreparedMode1EffectRenderStepKind::EmptyFrameFallback);
+        }
+        steps
+    }
+
+    #[cfg(test)]
+    fn needs_empty_frame_fallback(&self) -> bool {
+        self.needs_empty_frame_fallback
     }
 
     #[cfg(test)]
     fn rank_plans(&self) -> &[PreparedMode1EffectRankRenderPlan<'rank, 'frame>] {
         &self.rank_plans
     }
+}
+
+enum PreparedMode1EffectRenderStep<'rank, 'frame> {
+    Rank(PreparedMode1EffectRankRenderPlan<'rank, 'frame>),
+    EmptyFrameFallback,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreparedMode1EffectRenderStepKind {
+    Rank {
+        rank_index: usize,
+        is_empty: bool,
+        rendered_before: bool,
+    },
+    EmptyFrameFallback,
 }
 
 struct PreparedMode1EffectRankRenderPlan<'rank, 'frame> {
@@ -844,31 +883,34 @@ impl ModernGpuVariantRenderer {
         let bg_cells = execution.bg_cells();
         let sprite_cells = execution.sprite_cells();
         let render_plan = execution.mode1_effect_render_plan(&self.atlas);
-        let needs_empty_frame_fallback = render_plan.needs_empty_frame_fallback();
-        for rank_plan in render_plan.into_rank_plans() {
-            debug_assert!(rank_plan.rank_index() <= 9);
-            let rendered_before_rank = rank_plan.rendered_before();
-            self.render_effect_rank_plan(
-                device,
-                queue,
-                frame,
-                bg_cells,
-                sprite_cells,
-                rank_plan.into_render_plan(),
-                output_view,
-                rendered_before_rank,
-            );
-        }
-        if needs_empty_frame_fallback {
-            self.effect_renderer.render_bg(
-                device,
-                queue,
-                bg_cells,
-                &self.atlas,
-                &[],
-                output_view,
-                modern_frame_clear_op(frame),
-            );
+        for step in render_plan.into_steps() {
+            match step {
+                PreparedMode1EffectRenderStep::Rank(rank_plan) => {
+                    debug_assert!(rank_plan.rank_index() <= 9);
+                    let rendered_before_rank = rank_plan.rendered_before();
+                    self.render_effect_rank_plan(
+                        device,
+                        queue,
+                        frame,
+                        bg_cells,
+                        sprite_cells,
+                        rank_plan.into_render_plan(),
+                        output_view,
+                        rendered_before_rank,
+                    );
+                }
+                PreparedMode1EffectRenderStep::EmptyFrameFallback => {
+                    self.effect_renderer.render_bg(
+                        device,
+                        queue,
+                        bg_cells,
+                        &self.atlas,
+                        &[],
+                        output_view,
+                        modern_frame_clear_op(frame),
+                    );
+                }
+            }
         }
     }
 
@@ -5955,6 +5997,28 @@ mod tests {
         assert_eq!(rank_plans[5].rank_index(), 5);
         assert!(rank_plans[5].rendered_before());
         assert!(rank_plans[5].is_empty());
+
+        let steps = render_plan.steps();
+        assert_eq!(steps.len(), 10);
+        assert_eq!(
+            steps[0],
+            PreparedMode1EffectRenderStepKind::Rank {
+                rank_index: 0,
+                is_empty: false,
+                rendered_before: false,
+            }
+        );
+        assert_eq!(
+            steps[1],
+            PreparedMode1EffectRenderStepKind::Rank {
+                rank_index: 1,
+                is_empty: true,
+                rendered_before: true,
+            }
+        );
+        assert!(!steps
+            .iter()
+            .any(|step| matches!(step, PreparedMode1EffectRenderStepKind::EmptyFrameFallback)));
     }
 
     #[test]
@@ -5997,6 +6061,12 @@ mod tests {
             .rank_plans()
             .iter()
             .all(|rank| !rank.rendered_before()));
+        let steps = render_plan.steps();
+        assert_eq!(steps.len(), 11);
+        assert_eq!(
+            steps.last(),
+            Some(&PreparedMode1EffectRenderStepKind::EmptyFrameFallback)
+        );
     }
 
     #[test]
