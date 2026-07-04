@@ -2261,25 +2261,21 @@ impl ModernGpuVariantEffectRenderer {
                     frame,
                     &index_atlas_view,
                     &mut live_lut,
-                    batch.material().expect("checked above"),
-                    batch.instance_bytes(),
-                    batch.instance_count(),
+                    &batch,
                     output_view,
                 );
                 batch.clear();
             }
             batch.push(material_packet, EffectSurface::Sprite);
         }
-        if let Some(material) = batch.material() {
+        if batch.material().is_some() {
             self.render_sprite_effect_batch(
                 device,
                 queue,
                 frame,
                 &index_atlas_view,
                 &mut live_lut,
-                material,
-                batch.instance_bytes(),
-                batch.instance_count(),
+                &batch,
                 output_view,
             );
         }
@@ -2292,18 +2288,19 @@ impl ModernGpuVariantEffectRenderer {
         frame: &ModernFrame,
         index_atlas_view: &wgpu::TextureView,
         live_lut: &mut Option<(wgpu::Texture, wgpu::TextureView)>,
-        material: EffectMaterial,
-        instance_bytes: &[u8],
-        instance_count: u32,
+        batch: &EffectMaterialBatch,
         output_view: &wgpu::TextureView,
     ) {
-        if instance_count == 0 {
+        if batch.instance_count() == 0 {
             return;
         }
         debug_assert_eq!(
-            instance_bytes.len() as u64,
-            u64::from(instance_count) * INDEX_INSTANCE_STRIDE
+            batch.instance_bytes().len() as u64,
+            u64::from(batch.instance_count()) * INDEX_INSTANCE_STRIDE
         );
+        let material = batch
+            .material()
+            .expect("non-empty effect batch has material");
         let (effect_lut_view, label) = match material {
             EffectMaterial::StaticEffect => (&self.effect_lut_view, "modern_variant_effect_sprite"),
             EffectMaterial::LiveCgram => {
@@ -2317,8 +2314,8 @@ impl ModernGpuVariantEffectRenderer {
             queue,
             index_atlas_view,
             effect_lut_view,
-            instance_bytes,
-            instance_count,
+            batch.instance_bytes(),
+            batch.instance_count(),
             output_view,
             wgpu::LoadOp::Load,
             label,
