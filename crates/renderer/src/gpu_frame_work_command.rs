@@ -1,14 +1,19 @@
 use crate::gpu_work_item::{GpuRenderPlan, GpuWorkItem, GpuWorkItemKind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct GpuFrameWindowSelector {
+    pub(crate) screen_idx: usize,
+    pub(crate) layer_bit: u8,
+    pub(crate) flags_shift: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuFrameMainWorkCommand {
     ClearBackdrop,
     SpritePriority {
         priority: u32,
         math_bit_pos: u32,
-        screen_idx: usize,
-        window_layer_bit: u8,
-        window_flags_shift: u32,
+        window: GpuFrameWindowSelector,
     },
     BgLayer {
         layer_idx: usize,
@@ -17,16 +22,12 @@ pub(crate) enum GpuFrameMainWorkCommand {
         layer_bit: u32,
         math_bit_pos: u32,
         mosaic_layer_bit: u8,
-        screen_idx: usize,
-        window_layer_bit: u8,
-        window_flags_shift: u32,
+        window: GpuFrameWindowSelector,
     },
     Mode7Bg {
         math_bit_pos: u32,
         layer_bit: u32,
-        screen_idx: usize,
-        window_layer_bit: u8,
-        window_flags_shift: u32,
+        window: GpuFrameWindowSelector,
     },
 }
 
@@ -36,9 +37,7 @@ pub(crate) enum GpuFrameSubWorkCommand {
     Mode7Bg {
         math_bit_pos: u32,
         layer_bit: u32,
-        screen_idx: usize,
-        window_layer_bit: u8,
-        window_flags_shift: u32,
+        window: GpuFrameWindowSelector,
     },
     BgLayer {
         layer_idx: usize,
@@ -48,16 +47,12 @@ pub(crate) enum GpuFrameSubWorkCommand {
         render_layer_bit: u32,
         math_bit_pos: u32,
         mosaic_layer_bit: u8,
-        screen_idx: usize,
-        window_layer_bit: u8,
-        window_flags_shift: u32,
+        window: GpuFrameWindowSelector,
     },
     SpritePriority {
         priority: u32,
         math_bit_pos: u32,
-        screen_idx: usize,
-        window_layer_bit: u8,
-        window_flags_shift: u32,
+        window: GpuFrameWindowSelector,
     },
 }
 

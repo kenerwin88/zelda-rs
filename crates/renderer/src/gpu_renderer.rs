@@ -14,7 +14,8 @@ use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_render_plan::GpuFrameRenderPlanContext;
 use crate::gpu_frame_work_command::{
-    GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSubWorkCommand, GpuFrameWorkCommand,
+    GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSubWorkCommand, GpuFrameWindowSelector,
+    GpuFrameWorkCommand,
 };
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
@@ -202,20 +203,9 @@ impl GpuFrameRenderer {
             GpuFrameMainWorkCommand::SpritePriority {
                 priority,
                 math_bit_pos,
-                screen_idx,
-                window_layer_bit,
-                window_flags_shift,
+                window,
             } => {
-                self.render_main_sprites(
-                    encoder,
-                    queue,
-                    frame,
-                    priority,
-                    math_bit_pos,
-                    screen_idx,
-                    window_layer_bit,
-                    window_flags_shift,
-                );
+                self.render_main_sprites(encoder, queue, frame, priority, math_bit_pos, window);
             }
             GpuFrameMainWorkCommand::BgLayer {
                 layer_idx,
@@ -224,9 +214,7 @@ impl GpuFrameRenderer {
                 layer_bit,
                 math_bit_pos,
                 mosaic_layer_bit,
-                screen_idx,
-                window_layer_bit,
-                window_flags_shift,
+                window,
             } => {
                 render_bg_pass(
                     &mut self.bg[layer_idx],
@@ -240,17 +228,13 @@ impl GpuFrameRenderer {
                     layer_bit,
                     math_bit_pos,
                     mosaic_layer_bit,
-                    screen_idx,
-                    window_layer_bit,
-                    window_flags_shift,
+                    window,
                 );
             }
             GpuFrameMainWorkCommand::Mode7Bg {
                 math_bit_pos,
                 layer_bit,
-                screen_idx,
-                window_layer_bit,
-                window_flags_shift,
+                window,
             } => {
                 self.mode7.render(
                     encoder,
@@ -259,9 +243,9 @@ impl GpuFrameRenderer {
                     &self.comp_view,
                     math_bit_pos,
                     layer_bit,
-                    screen_idx,
-                    window_layer_bit,
-                    window_flags_shift,
+                    window.screen_idx,
+                    window.layer_bit,
+                    window.flags_shift,
                 );
             }
         }
@@ -281,9 +265,7 @@ impl GpuFrameRenderer {
             GpuFrameSubWorkCommand::Mode7Bg {
                 math_bit_pos,
                 layer_bit,
-                screen_idx,
-                window_layer_bit,
-                window_flags_shift,
+                window,
             } => {
                 self.mode7.render(
                     encoder,
@@ -292,9 +274,9 @@ impl GpuFrameRenderer {
                     &self.sub_comp_view,
                     math_bit_pos,
                     layer_bit,
-                    screen_idx,
-                    window_layer_bit,
-                    window_flags_shift,
+                    window.screen_idx,
+                    window.layer_bit,
+                    window.flags_shift,
                 );
             }
             GpuFrameSubWorkCommand::BgLayer {
@@ -305,9 +287,7 @@ impl GpuFrameRenderer {
                 render_layer_bit,
                 math_bit_pos,
                 mosaic_layer_bit,
-                screen_idx,
-                window_layer_bit,
-                window_flags_shift,
+                window,
             } => {
                 render_sub_bg_pass(
                     &mut self.bg[layer_idx],
@@ -322,28 +302,15 @@ impl GpuFrameRenderer {
                     render_layer_bit,
                     math_bit_pos,
                     mosaic_layer_bit,
-                    screen_idx,
-                    window_layer_bit,
-                    window_flags_shift,
+                    window,
                 );
             }
             GpuFrameSubWorkCommand::SpritePriority {
                 priority,
                 math_bit_pos,
-                screen_idx,
-                window_layer_bit,
-                window_flags_shift,
+                window,
             } => {
-                self.render_sub_sprites(
-                    encoder,
-                    queue,
-                    frame,
-                    priority,
-                    math_bit_pos,
-                    screen_idx,
-                    window_layer_bit,
-                    window_flags_shift,
-                );
+                self.render_sub_sprites(encoder, queue, frame, priority, math_bit_pos, window);
             }
         }
     }
@@ -405,19 +372,17 @@ impl GpuFrameRenderer {
         frame: &GpuFrame<'_>,
         priority: u32,
         math_bit_pos: u32,
-        screen_idx: usize,
-        window_layer_bit: u8,
-        window_flags_shift: u32,
+        window: GpuFrameWindowSelector,
     ) {
         self.sprites.render(
             encoder,
             queue,
             &self.comp_view,
             math_bit_pos,
-            screen_idx,
+            window.screen_idx,
             priority,
-            (frame.windowsel >> window_flags_shift) & 0x0f,
-            frame.screen_windowed[screen_idx] & window_layer_bit != 0,
+            (frame.windowsel >> window.flags_shift) & 0x0f,
+            frame.screen_windowed[window.screen_idx] & window.layer_bit != 0,
             &frame.scanlines,
         );
     }
@@ -429,19 +394,17 @@ impl GpuFrameRenderer {
         frame: &GpuFrame<'_>,
         priority: u32,
         math_bit_pos: u32,
-        screen_idx: usize,
-        window_layer_bit: u8,
-        window_flags_shift: u32,
+        window: GpuFrameWindowSelector,
     ) {
         self.sprites.render(
             encoder,
             queue,
             &self.sub_comp_view,
             math_bit_pos,
-            screen_idx,
+            window.screen_idx,
             priority,
-            (frame.windowsel >> window_flags_shift) & 0x0f,
-            frame.screen_windowed[screen_idx] & window_layer_bit != 0,
+            (frame.windowsel >> window.flags_shift) & 0x0f,
+            frame.screen_windowed[window.screen_idx] & window.layer_bit != 0,
             &frame.scanlines,
         );
     }
@@ -471,12 +434,10 @@ fn render_bg_pass(
     layer_bit: u32,
     math_bit_pos: u32,
     mosaic_layer_bit: u8,
-    screen_idx: usize,
-    window_layer_bit: u8,
-    window_flags_shift: u32,
+    window: GpuFrameWindowSelector,
 ) {
-    let windowed = frame.screen_windowed[screen_idx] & window_layer_bit != 0;
-    let window_flags = (frame.windowsel >> window_flags_shift) & 0x0f;
+    let windowed = frame.screen_windowed[window.screen_idx] & window.layer_bit != 0;
+    let window_flags = (frame.windowsel >> window.flags_shift) & 0x0f;
     bg.render(
         encoder,
         queue,
@@ -489,7 +450,7 @@ fn render_bg_pass(
         hi_priority,
         layer_bit,
         math_bit_pos,
-        screen_idx,
+        window.screen_idx,
         window_flags,
         windowed,
         frame.mosaic_enabled & mosaic_layer_bit != 0,
@@ -511,9 +472,7 @@ fn render_sub_bg_pass(
     render_layer_bit: u32,
     math_bit_pos: u32,
     mosaic_layer_bit: u8,
-    screen_idx: usize,
-    window_layer_bit: u8,
-    window_flags_shift: u32,
+    window: GpuFrameWindowSelector,
 ) {
     if frame.screen_enabled[1] & screen_layer_bit == 0 {
         return;
@@ -530,9 +489,7 @@ fn render_sub_bg_pass(
         render_layer_bit,
         math_bit_pos,
         mosaic_layer_bit,
-        screen_idx,
-        window_layer_bit,
-        window_flags_shift,
+        window,
     );
 }
 

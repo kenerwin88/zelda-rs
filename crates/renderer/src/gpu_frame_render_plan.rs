@@ -1,7 +1,7 @@
 use crate::gpu_frame::GpuFrame;
 use crate::gpu_frame_work_command::{
     main_frame_work_command, post_process_frame_work_command, sub_frame_work_command,
-    GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSubWorkCommand,
+    GpuFrameMainWorkCommand, GpuFrameRenderPlan, GpuFrameSubWorkCommand, GpuFrameWindowSelector,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,9 +175,7 @@ fn main_bg_work_item(
         layer_bit: 1u32 << layer_idx,
         math_bit_pos,
         mosaic_layer_bit: 1u8 << layer_idx,
-        screen_idx: 0,
-        window_layer_bit: 1u8 << layer_idx,
-        window_flags_shift: (layer_idx as u32) * 4,
+        window: main_window_selector(1u8 << layer_idx, (layer_idx as u32) * 4),
     }
 }
 
@@ -185,9 +183,7 @@ fn main_sprite_work_item(priority: u32) -> GpuFrameMainWorkCommand {
     GpuFrameMainWorkCommand::SpritePriority {
         priority,
         math_bit_pos: 4,
-        screen_idx: 0,
-        window_layer_bit: 0x10,
-        window_flags_shift: 16,
+        window: main_window_selector(0x10, 16),
     }
 }
 
@@ -200,9 +196,7 @@ fn sub_bg_work_item(layer_idx: usize, hi_priority: bool) -> GpuFrameSubWorkComma
         render_layer_bit: 0, // skip per-scanline TM check for sub-screen
         math_bit_pos: 255,   // output alpha=1.0 (real pixel marker)
         mosaic_layer_bit: 1u8 << layer_idx,
-        screen_idx: 1,
-        window_layer_bit: 1u8 << layer_idx,
-        window_flags_shift: (layer_idx as u32) * 4,
+        window: sub_window_selector(1u8 << layer_idx, (layer_idx as u32) * 4),
     }
 }
 
@@ -210,9 +204,7 @@ fn sub_sprite_work_item(priority: u32) -> GpuFrameSubWorkCommand {
     GpuFrameSubWorkCommand::SpritePriority {
         priority,
         math_bit_pos: 255,
-        screen_idx: 1,
-        window_layer_bit: 0x10,
-        window_flags_shift: 16,
+        window: sub_window_selector(0x10, 16),
     }
 }
 
@@ -220,9 +212,7 @@ fn main_mode7_bg_work_item() -> GpuFrameMainWorkCommand {
     GpuFrameMainWorkCommand::Mode7Bg {
         math_bit_pos: 0,
         layer_bit: 1,
-        screen_idx: 0,
-        window_layer_bit: 0x01,
-        window_flags_shift: 0,
+        window: main_window_selector(0x01, 0),
     }
 }
 
@@ -230,9 +220,23 @@ fn sub_mode7_bg_work_item() -> GpuFrameSubWorkCommand {
     GpuFrameSubWorkCommand::Mode7Bg {
         math_bit_pos: 255,
         layer_bit: 0,
+        window: sub_window_selector(0x01, 0),
+    }
+}
+
+fn main_window_selector(layer_bit: u8, flags_shift: u32) -> GpuFrameWindowSelector {
+    GpuFrameWindowSelector {
+        screen_idx: 0,
+        layer_bit,
+        flags_shift,
+    }
+}
+
+fn sub_window_selector(layer_bit: u8, flags_shift: u32) -> GpuFrameWindowSelector {
+    GpuFrameWindowSelector {
         screen_idx: 1,
-        window_layer_bit: 0x01,
-        window_flags_shift: 0,
+        layer_bit,
+        flags_shift,
     }
 }
 
@@ -414,9 +418,7 @@ mod tests {
                 layer_bit: 0x04,
                 math_bit_pos: 2,
                 mosaic_layer_bit: 0x04,
-                screen_idx: 0,
-                window_layer_bit: 0x04,
-                window_flags_shift: 8,
+                window: main_window_selector(0x04, 8),
             }
         );
     }
@@ -433,9 +435,7 @@ mod tests {
                 render_layer_bit: 0,
                 math_bit_pos: 255,
                 mosaic_layer_bit: 0x04,
-                screen_idx: 1,
-                window_layer_bit: 0x04,
-                window_flags_shift: 8,
+                window: sub_window_selector(0x04, 8),
             }
         );
     }
@@ -447,9 +447,7 @@ mod tests {
             GpuFrameMainWorkCommand::Mode7Bg {
                 math_bit_pos: 0,
                 layer_bit: 1,
-                screen_idx: 0,
-                window_layer_bit: 0x01,
-                window_flags_shift: 0,
+                window: main_window_selector(0x01, 0),
             }
         );
         assert_eq!(
@@ -457,9 +455,7 @@ mod tests {
             GpuFrameSubWorkCommand::Mode7Bg {
                 math_bit_pos: 255,
                 layer_bit: 0,
-                screen_idx: 1,
-                window_layer_bit: 0x01,
-                window_flags_shift: 0,
+                window: sub_window_selector(0x01, 0),
             }
         );
     }
@@ -471,9 +467,7 @@ mod tests {
             GpuFrameMainWorkCommand::SpritePriority {
                 priority: 2,
                 math_bit_pos: 4,
-                screen_idx: 0,
-                window_layer_bit: 0x10,
-                window_flags_shift: 16,
+                window: main_window_selector(0x10, 16),
             }
         );
         assert_eq!(
@@ -481,9 +475,7 @@ mod tests {
             GpuFrameSubWorkCommand::SpritePriority {
                 priority: 2,
                 math_bit_pos: 255,
-                screen_idx: 1,
-                window_layer_bit: 0x10,
-                window_flags_shift: 16,
+                window: sub_window_selector(0x10, 16),
             }
         );
     }
