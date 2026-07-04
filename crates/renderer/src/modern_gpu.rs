@@ -4752,6 +4752,27 @@ fn record_screen_builder_blocker(
     }
 }
 
+fn record_screen_builder_result(
+    stats: &mut crate::modern_software::VariantAtlasRenderStats,
+    result: ModernScreenBuilderResult,
+) {
+    match result {
+        ModernScreenBuilderResult::Gpu => {
+            stats.gpu_prefinal_base_frames += 1;
+            stats.gpu_screen_builder_frames += 1;
+        }
+        ModernScreenBuilderResult::Cpu(blocker) => {
+            stats.cpu_prefinal_composite_frames += 1;
+            record_screen_builder_blocker(stats, blocker);
+        }
+        ModernScreenBuilderResult::CpuOverlay(blocker) => {
+            stats.cpu_prefinal_composite_frames += 1;
+            stats.cpu_prefinal_overlay_frames += 1;
+            record_screen_builder_blocker(stats, blocker);
+        }
+    }
+}
+
 /// GPU finalizer compositor for the PNG index-atlas path. The Mode-1 priority
 /// MAIN/SUB screens are built through the same packed intermediate as the
 /// byte-exact CPU renderer; the final color-math, windows, and master brightness
@@ -5161,79 +5182,15 @@ impl ModernGpuVariantHeadless {
                 &final_overlay,
                 &prefinal_packets,
             );
-            if prefinal_packets.is_bg_empty()
-                && (can_render_forced_blank_base_directly(live_index_frame, &final_overlay)
-                    || can_render_final_index_base_gpu(live_index_frame, live_index_bg_cells))
-            {
-                stats.gpu_prefinal_base_frames += 1;
-                let bg = ModernGpuIndexRenderer::new(
-                    &self.device,
-                    &self.queue,
-                    wgpu::TextureFormat::Rgba8Unorm,
-                );
-                let mut final_live_index_frame = live_index_frame.clone();
-                finalize_modern_frame_colors_for_direct_index(&mut final_live_index_frame);
-                bg.render(
-                    &self.device,
-                    &self.queue,
-                    live_index_bg_cells,
-                    &final_live_index_frame,
-                    &self.target_view,
-                );
-            } else if prefinal_packets.is_bg_empty() {
-                let build_result = self.compositor.render_with_screen_builder_status(
-                    &self.device,
-                    &self.queue,
-                    live_index_frame,
-                    live_index_bg_cells,
-                    live_index_sprite_cells,
-                    &self.target,
-                );
-                match build_result {
-                    ModernScreenBuilderResult::Gpu => {
-                        stats.gpu_prefinal_base_frames += 1;
-                        stats.gpu_screen_builder_frames += 1;
-                    }
-                    ModernScreenBuilderResult::Cpu(blocker) => {
-                        stats.cpu_prefinal_composite_frames += 1;
-                        record_screen_builder_blocker(&mut stats, blocker);
-                    }
-                    ModernScreenBuilderResult::CpuOverlay(blocker) => {
-                        stats.cpu_prefinal_composite_frames += 1;
-                        stats.cpu_prefinal_overlay_frames += 1;
-                        record_screen_builder_blocker(&mut stats, blocker);
-                    }
-                }
-            } else {
-                let build_result = self
-                    .compositor
-                    .render_prefinal_overlay_screens_with_final_frame(
-                        &self.device,
-                        &self.queue,
-                        live_index_frame,
-                        live_index_frame,
-                        frame,
-                        live_index_bg_cells,
-                        live_index_sprite_cells,
-                        &prefinal_packets,
-                        &self.target,
-                    );
-                match build_result {
-                    ModernScreenBuilderResult::Gpu => {
-                        stats.gpu_prefinal_base_frames += 1;
-                        stats.gpu_screen_builder_frames += 1;
-                    }
-                    ModernScreenBuilderResult::Cpu(blocker) => {
-                        stats.cpu_prefinal_composite_frames += 1;
-                        record_screen_builder_blocker(&mut stats, blocker);
-                    }
-                    ModernScreenBuilderResult::CpuOverlay(blocker) => {
-                        stats.cpu_prefinal_composite_frames += 1;
-                        stats.cpu_prefinal_overlay_frames += 1;
-                        record_screen_builder_blocker(&mut stats, blocker);
-                    }
-                }
-            }
+            self.render_live_index_prefinal_base(
+                frame,
+                live_index_frame,
+                live_index_bg_cells,
+                live_index_sprite_cells,
+                &final_overlay,
+                &prefinal_packets,
+                &mut stats,
+            );
             self.renderer.effect_renderer.render_overlay_bg_effects(
                 &self.device,
                 &self.queue,
@@ -5252,21 +5209,7 @@ impl ModernGpuVariantHeadless {
                     live_index_sprite_cells,
                     &plan,
                 );
-                match build_result {
-                    ModernScreenBuilderResult::Gpu => {
-                        stats.gpu_prefinal_base_frames += 1;
-                        stats.gpu_screen_builder_frames += 1;
-                    }
-                    ModernScreenBuilderResult::Cpu(blocker) => {
-                        stats.cpu_prefinal_composite_frames += 1;
-                        record_screen_builder_blocker(&mut stats, blocker);
-                    }
-                    ModernScreenBuilderResult::CpuOverlay(blocker) => {
-                        stats.cpu_prefinal_composite_frames += 1;
-                        stats.cpu_prefinal_overlay_frames += 1;
-                        record_screen_builder_blocker(&mut stats, blocker);
-                    }
-                }
+                record_screen_builder_result(&mut stats, build_result);
             } else {
                 self.renderer.render_effect_material_mode1_order(
                     &self.device,
@@ -5295,6 +5238,64 @@ impl ModernGpuVariantHeadless {
             );
         }
         (self.read_target_rgba(), stats)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_live_index_prefinal_base(
+        &self,
+        frame: &ModernFrame,
+        live_index_frame: &ModernFrame,
+        live_index_bg_cells: &[ModernIndexTile],
+        live_index_sprite_cells: &[ModernIndexTile],
+        final_overlay: &MixedVariantOverlayBgSelection<'_>,
+        prefinal_packets: &MixedVariantPrefinalPackets<'_>,
+        stats: &mut crate::modern_software::VariantAtlasRenderStats,
+    ) {
+        if prefinal_packets.is_bg_empty()
+            && (can_render_forced_blank_base_directly(live_index_frame, final_overlay)
+                || can_render_final_index_base_gpu(live_index_frame, live_index_bg_cells))
+        {
+            stats.gpu_prefinal_base_frames += 1;
+            let bg = ModernGpuIndexRenderer::new(
+                &self.device,
+                &self.queue,
+                wgpu::TextureFormat::Rgba8Unorm,
+            );
+            let mut final_live_index_frame = live_index_frame.clone();
+            finalize_modern_frame_colors_for_direct_index(&mut final_live_index_frame);
+            bg.render(
+                &self.device,
+                &self.queue,
+                live_index_bg_cells,
+                &final_live_index_frame,
+                &self.target_view,
+            );
+        } else if prefinal_packets.is_bg_empty() {
+            let build_result = self.compositor.render_with_screen_builder_status(
+                &self.device,
+                &self.queue,
+                live_index_frame,
+                live_index_bg_cells,
+                live_index_sprite_cells,
+                &self.target,
+            );
+            record_screen_builder_result(stats, build_result);
+        } else {
+            let build_result = self
+                .compositor
+                .render_prefinal_overlay_screens_with_final_frame(
+                    &self.device,
+                    &self.queue,
+                    live_index_frame,
+                    live_index_frame,
+                    frame,
+                    live_index_bg_cells,
+                    live_index_sprite_cells,
+                    prefinal_packets,
+                    &self.target,
+                );
+            record_screen_builder_result(stats, build_result);
+        }
     }
 
     fn render_effect_material_with_prefinal_base(
