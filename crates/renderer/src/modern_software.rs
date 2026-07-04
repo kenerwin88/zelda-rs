@@ -64,6 +64,10 @@ pub struct VariantAtlasRenderStats {
     pub effect_draws: u32,
     pub fallback_draws: u32,
     pub live_index_draws: u32,
+    pub live_index_bg_draws: u32,
+    pub live_index_bg12_draws: u32,
+    pub live_index_bg3_draws: u32,
+    pub live_index_sprite_draws: u32,
     pub gpu_prefinal_base_frames: u32,
     pub gpu_screen_builder_frames: u32,
     pub cpu_prefinal_composite_frames: u32,
@@ -188,10 +192,13 @@ impl VariantAtlasRenderStats {
     ) {
         self.record_draw(draw);
         if matches!(draw, crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed) {
+            self.live_index_bg_draws += 1;
             self.unkeyed_bg_fallback_draws += 1;
             if layer_index == 2 {
+                self.live_index_bg3_draws += 1;
                 self.unkeyed_bg3_fallback_draws += 1;
             } else {
+                self.live_index_bg12_draws += 1;
                 self.unkeyed_bg12_fallback_draws += 1;
             }
         }
@@ -200,6 +207,7 @@ impl VariantAtlasRenderStats {
     pub fn record_sprite_draw(&mut self, draw: &crate::modern_variant_atlas::VariantAtlasDraw<'_>) {
         self.record_draw(draw);
         if matches!(draw, crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed) {
+            self.live_index_sprite_draws += 1;
             self.unkeyed_sprite_fallback_draws += 1;
         }
     }

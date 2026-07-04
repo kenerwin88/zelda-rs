@@ -760,6 +760,8 @@ mod tests {
         assert_eq!(plan.stats.missing_art_draws, 1);
         assert_eq!(plan.stats.fallback_draws, 1);
         assert_eq!(plan.stats.live_index_draws, 1);
+        assert_eq!(plan.stats.live_index_bg_draws, 0);
+        assert_eq!(plan.stats.live_index_sprite_draws, 1);
         assert_eq!(plan.stats.unkeyed_fallback_draws, 1);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
         assert_eq!(plan.stats.unkeyed_sprite_fallback_draws, 1);
@@ -804,6 +806,10 @@ mod tests {
 
         assert_eq!(plan.stats.fallback_draws, 0);
         assert_eq!(plan.stats.live_index_draws, 2);
+        assert_eq!(plan.stats.live_index_bg_draws, 2);
+        assert_eq!(plan.stats.live_index_bg12_draws, 1);
+        assert_eq!(plan.stats.live_index_bg3_draws, 1);
+        assert_eq!(plan.stats.live_index_sprite_draws, 0);
         assert_eq!(plan.stats.unkeyed_fallback_draws, 2);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 2);
         assert_eq!(plan.stats.unkeyed_bg12_fallback_draws, 1);

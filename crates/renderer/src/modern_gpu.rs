@@ -7152,6 +7152,10 @@ mod tests {
         assert_eq!(stats.stable_draws, 0);
         assert_eq!(stats.fallback_draws, 0);
         assert_eq!(stats.live_index_draws, 1);
+        assert_eq!(stats.live_index_bg_draws, 1);
+        assert_eq!(stats.live_index_bg12_draws, 1);
+        assert_eq!(stats.live_index_bg3_draws, 0);
+        assert_eq!(stats.live_index_sprite_draws, 0);
         assert_eq!(stats.dynamic_palette_draws, 0);
         assert_eq!(stats.missing_variant_draws, 0);
         assert_eq!(stats.stable_preview_draws, 0);
@@ -7312,6 +7316,10 @@ mod tests {
 
         assert_eq!(stats.fallback_draws, 0);
         assert_eq!(stats.live_index_draws, 1);
+        assert_eq!(stats.live_index_bg_draws, 1);
+        assert_eq!(stats.live_index_bg12_draws, 1);
+        assert_eq!(stats.live_index_bg3_draws, 0);
+        assert_eq!(stats.live_index_sprite_draws, 0);
         assert_eq!(stats.gpu_prefinal_base_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(&variant[0..4], &[0, 0, 0, 0xff]);
@@ -7372,6 +7380,10 @@ mod tests {
 
         assert_eq!(stats.fallback_draws, 0);
         assert_eq!(stats.live_index_draws, 2);
+        assert_eq!(stats.live_index_bg_draws, 2);
+        assert_eq!(stats.live_index_bg12_draws, 2);
+        assert_eq!(stats.live_index_bg3_draws, 0);
+        assert_eq!(stats.live_index_sprite_draws, 0);
         assert_eq!(stats.gpu_prefinal_base_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(variant, fallback);

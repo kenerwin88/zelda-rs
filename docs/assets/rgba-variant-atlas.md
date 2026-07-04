@@ -265,6 +265,11 @@ renderer/oracle. Verification must report:
 - `live_index_draws`: GPU live-index material draws. These are first-class
   indexed draws sourced from the current frame's tile data; they still preserve
   dynamic SNES VRAM behavior, but they are not CPU fallback.
+- `live_index_bg_draws`: live-index draws from BG tile packets.
+- `live_index_bg12_draws`: live-index draws from BG1/BG2 tile packets.
+- `live_index_bg3_draws`: live-index draws from BG3/HUD/message-layer tile
+  packets.
+- `live_index_sprite_draws`: live-index draws from OBJ packets.
 - `gpu_prefinal_base_frames`: frames where the live-index/prefinal base stayed
   on the GPU. This replaces the misleading internal name
   `direct_gpu_fallback_frames`.
@@ -292,14 +297,15 @@ renderer/oracle. Verification must report:
   on the live indexed path. This is a legacy reason bucket; these draws also
   count as `live_index_draws`, not `fallback_draws`.
 - `unkeyed_bg_fallback_draws`: unkeyed fallback draws that came from BG tile
-  packets.
+  packets. Legacy alias for `live_index_bg_draws`.
 - `unkeyed_bg12_fallback_draws`: BG1/BG2 unkeyed fallback draws. These are
   live-indexed because their current source identity is not injective enough for
-  canonical art selection.
+  canonical art selection. Legacy alias for `live_index_bg12_draws`.
 - `unkeyed_bg3_fallback_draws`: BG3/HUD/message-layer unkeyed fallback draws.
   These are live-indexed because the layer is procedurally composed in VRAM.
+  Legacy alias for `live_index_bg3_draws`.
 - `unkeyed_sprite_fallback_draws`: unkeyed fallback draws that came from OBJ
-  packets.
+  packets. Legacy alias for `live_index_sprite_draws`.
 - `mixed_overlay_bg_effect_draws`: stable BG effect packets actually overlaid
   on top of a mixed fallback frame by the conservative safe-packet selector.
 - `mixed_overlay_bg_effect_candidates`: stable BG effect packets seen in mixed
@@ -383,6 +389,9 @@ Legacy log names remain available for compatibility: `variant_draws` is the
 sum of stable preview and stable effect draws, `fallback_draws` is the sum of
 dynamic material fallback and missing art draws, while `live_index_draws`
 tracks unkeyed/live-index material draws separately.
+`live_index_bg_draws`, `live_index_bg12_draws`, `live_index_bg3_draws`, and
+`live_index_sprite_draws` are the preferred reason buckets for live-index
+material.
 `dynamic_palette_draws` mirrors `dynamic_material_fallback_draws`,
 `dynamic_material_draws` remains the aggregate of `effect_material_draws` and
 `dynamic_material_fallback_draws`, `dynamic_material_fallback_draws` is the sum
@@ -415,6 +424,8 @@ Expected output includes `mismatched_pixels=0` and nonzero
 `stable_preview_draws` or `stable_effect_draws`. The current representative
 proof reports `stable_effect_draws=21038`,
 `live_index_draws=133112`,
+`live_index_bg_draws=132912`,
+`live_index_sprite_draws=200`,
 `gpu_prefinal_base_frames=<GPU base/prefinal frames>`,
 `unkeyed_fallback_draws=133112`,
 `unkeyed_bg_fallback_draws=132912`,
