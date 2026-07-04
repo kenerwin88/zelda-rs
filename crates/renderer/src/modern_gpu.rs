@@ -1481,6 +1481,7 @@ fn bg_packet_can_use_live_cgram(
     true
 }
 
+#[cfg(test)]
 fn overlay_mixed_variant_bg_packets_on_main_screen(
     screens: &mut crate::modern_software::ModernCompositedScreens,
     frame: &ModernFrame,
@@ -1567,6 +1568,7 @@ fn bg_packet_prefinal_color_math_reason(
     None
 }
 
+#[cfg(test)]
 fn overlay_mixed_variant_bg_packet_on_main_screen(
     screens: &mut crate::modern_software::ModernCompositedScreens,
     frame: &ModernFrame,
@@ -1620,6 +1622,7 @@ fn overlay_mixed_variant_bg_packet_on_main_screen(
     }
 }
 
+#[cfg(test)]
 fn overlay_mixed_variant_live_cgram_bg_packet_on_main_screen(
     screens: &mut crate::modern_software::ModernCompositedScreens,
     frame: &ModernFrame,
@@ -1667,6 +1670,7 @@ fn overlay_mixed_variant_live_cgram_bg_packet_on_main_screen(
     }
 }
 
+#[cfg(test)]
 fn overlay_front_variant_sprite_packets_on_main_screen(
     screens: &mut crate::modern_software::ModernCompositedScreens,
     frame: &ModernFrame,
@@ -1734,6 +1738,7 @@ fn pack_variant_prefinal_pixel(rgba: [u8; 4], math_bit: u8) -> u32 {
         | (1u32 << 18)
 }
 
+#[cfg(test)]
 fn packed_variant_prefinal_math_bit(pixel: u32) -> u8 {
     ((pixel >> 15) & 0x07) as u8
 }
@@ -3174,31 +3179,8 @@ fn modern_prefinal_overlay_sprite_pixels(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ModernScreenBuilderBlocker {
-    Mosaic,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ModernScreenBuilderResult {
     Gpu,
-    Cpu(ModernScreenBuilderBlocker),
-    CpuOverlay(ModernScreenBuilderBlocker),
-}
-
-fn modern_screen_builder_blocker(frame: &ModernFrame) -> Option<ModernScreenBuilderBlocker> {
-    if frame.mosaic_size > 1 && (frame.mosaic_enabled & 0x07) != 0 {
-        return Some(ModernScreenBuilderBlocker::Mosaic);
-    }
-    None
-}
-
-fn record_screen_builder_blocker(
-    stats: &mut crate::modern_software::VariantAtlasRenderStats,
-    blocker: ModernScreenBuilderBlocker,
-) {
-    match blocker {
-        ModernScreenBuilderBlocker::Mosaic => stats.cpu_screen_builder_block_mosaic += 1,
-    }
 }
 
 fn record_screen_builder_result(
@@ -3209,15 +3191,6 @@ fn record_screen_builder_result(
         ModernScreenBuilderResult::Gpu => {
             stats.gpu_prefinal_base_frames += 1;
             stats.gpu_screen_builder_frames += 1;
-        }
-        ModernScreenBuilderResult::Cpu(blocker) => {
-            stats.cpu_prefinal_composite_frames += 1;
-            record_screen_builder_blocker(stats, blocker);
-        }
-        ModernScreenBuilderResult::CpuOverlay(blocker) => {
-            stats.cpu_prefinal_composite_frames += 1;
-            stats.cpu_prefinal_overlay_frames += 1;
-            record_screen_builder_blocker(stats, blocker);
         }
     }
 }
@@ -3274,16 +3247,6 @@ impl ModernGpuCompositor {
         sprite_cells: &[ModernIndexTile],
         output_texture: &wgpu::Texture,
     ) -> ModernScreenBuilderResult {
-        if let Some(blocker) = modern_screen_builder_blocker(frame) {
-            let screens = crate::modern_software::build_modern_composited_screens(
-                frame,
-                bg_cells,
-                sprite_cells,
-            );
-            self.finalizer
-                .render_to_texture(device, queue, frame, &screens, output_texture);
-            return ModernScreenBuilderResult::Cpu(blocker);
-        }
         self.screen_builder.render_into(
             device,
             queue,
@@ -3316,16 +3279,6 @@ impl ModernGpuCompositor {
         sprite_cells: &[ModernIndexTile],
         output_texture: &wgpu::Texture,
     ) -> ModernScreenBuilderResult {
-        if let Some(blocker) = modern_screen_builder_blocker(screen_frame) {
-            let screens = crate::modern_software::build_modern_composited_screens(
-                screen_frame,
-                bg_cells,
-                sprite_cells,
-            );
-            self.finalizer
-                .render_to_texture(device, queue, final_frame, &screens, output_texture);
-            return ModernScreenBuilderResult::Cpu(blocker);
-        }
         self.screen_builder.render_into(
             device,
             queue,
@@ -3360,18 +3313,6 @@ impl ModernGpuCompositor {
         packets: &MixedVariantPrefinalPackets<'_>,
         output_texture: &wgpu::Texture,
     ) -> ModernScreenBuilderResult {
-        if let Some(blocker) = modern_screen_builder_blocker(screen_frame) {
-            let mut screens = crate::modern_software::build_modern_composited_screens(
-                screen_frame,
-                bg_cells,
-                sprite_cells,
-            );
-            overlay_mixed_variant_bg_packets_on_main_screen(&mut screens, overlay_frame, packets);
-            self.finalizer
-                .render_to_texture(device, queue, final_frame, &screens, output_texture);
-            return ModernScreenBuilderResult::CpuOverlay(blocker);
-        }
-
         self.screen_builder.render_into(
             device,
             queue,
@@ -6814,7 +6755,6 @@ mod tests {
             width: 256,
             scale: 1,
             main: vec![original; 256 * 224],
-            sub: vec![0; 256 * 224],
         };
 
         overlay_mixed_variant_bg_packets_on_main_screen(
@@ -7687,6 +7627,71 @@ mod tests {
         frame.bg_layers[0] = bg1;
         frame.bg_scroll_scanlines = vec![[[0u16; 2]; 4]];
         frame.bg_scroll_scanlines[0][0] = [8, 0];
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: Vec::new(),
+            effects: Vec::new(),
+        };
+        let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
+            &frame,
+            &cells,
+            &[],
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+        let cpu = crate::modern_software::render_modern_frame_full(&frame, &cells, &[]);
+
+        assert_eq!(stats.gpu_prefinal_base_frames, 1);
+        assert_eq!(stats.gpu_screen_builder_frames, 1);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 0);
+        assert_eq!(variant, cpu);
+    }
+
+    #[test]
+    fn modern_gpu_variant_headless_mosaic_stays_on_gpu() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_variant_atlas::ModernVariantAtlas;
+
+        let mut indices = [0u8; 64];
+        for (i, index) in indices.iter_mut().enumerate() {
+            *index = (i + 1) as u8;
+        }
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.screen_enabled_main = 0x01;
+        frame.brightness = 15;
+        frame.mosaic_enabled = 0x01;
+        frame.mosaic_size = 4;
+        for i in 1..=64usize {
+            let k = i as u8;
+            frame.cgram_rgba[i] = [(k & 7) << 5, ((k >> 3) & 7) << 5, ((k >> 6) & 3) << 6, 0xff];
+        }
+
+        let mut bg1 = ModernBgLayer::new(0);
+        bg1.enabled_main = true;
+        bg1.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: NO_SOURCE_KEY,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = bg1;
 
         let atlas = ModernVariantAtlas {
             width: 8,

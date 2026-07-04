@@ -419,8 +419,8 @@ fn modern_screen_builder_params(
         frame.windowsel,
         u32::from(frame.screen_windowed_main),
         u32::from(frame.screen_windowed_sub),
-        0,
-        0,
+        u32::from(frame.mosaic_enabled),
+        u32::from(frame.mosaic_size),
     ]
 }
 

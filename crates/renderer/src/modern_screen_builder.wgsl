@@ -32,6 +32,19 @@ fn wrap_i32(value: i32, period: i32) -> i32 {
     return select(r + period, r, r >= 0);
 }
 
+fn mosaic_active() -> bool {
+    return params.p7.w > 1u && (params.p7.z & 0x07u) != 0u;
+}
+
+fn layer_mosaic_enabled(layer: u32) -> bool {
+    return params.p7.w > 1u && ((params.p7.z & (1u << layer)) != 0u);
+}
+
+fn mosaic_snap(value: u32) -> u32 {
+    let size = params.p7.w;
+    return value - (value % size);
+}
+
 fn layer_param(layer: u32) -> vec4<u32> {
     if (layer == 0u) {
         return params.p2;
@@ -91,7 +104,7 @@ fn bg_instance_pixel(inst_base: u32, layer: u32, sx: u32, sy: u32, hi_priority: 
     let scroll_mask = params.p1.w;
     var local_x: i32;
     var local_y: i32;
-    if (((scroll_mask >> layer) & 1u) != 0u) {
+    if (!mosaic_active() && ((scroll_mask >> layer) & 1u) != 0u) {
         let base_h = i32(lp.x);
         let base_v = i32(lp.y);
         let bg_w = i32(max(lp.z, 256u));
@@ -134,10 +147,16 @@ fn bg_pixel(layer: u32, sx: u32, sy: u32, hi_priority: bool, is_main: bool) -> u
     if (layer_window_masks(layer, sx, sy, is_main)) {
         return 0xffffffffu;
     }
+    var sample_sx = sx;
+    var sample_sy = sy;
+    if (layer_mosaic_enabled(layer)) {
+        sample_sx = mosaic_snap(sx);
+        sample_sy = mosaic_snap(sy);
+    }
     var out = 0xffffffffu;
     let count = params.p0.z;
     for (var i = 0u; i < count; i = i + 1u) {
-        let px = bg_instance_pixel(params.p5.y + i * 8u, layer, sx, sy, hi_priority);
+        let px = bg_instance_pixel(params.p5.y + i * 8u, layer, sample_sx, sample_sy, hi_priority);
         if (px != 0xffffffffu) {
             out = px;
         }

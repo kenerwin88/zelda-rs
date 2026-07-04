@@ -173,28 +173,6 @@ impl ModernGpuFinalizer {
         }
     }
 
-    pub(crate) fn render_to_texture(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        frame: &ModernFrame,
-        screens: &crate::modern_software::ModernCompositedScreens,
-        output_texture: &wgpu::Texture,
-    ) {
-        debug_assert_eq!(screens.sub.len(), screens.main.len());
-        queue.write_buffer(&self.main_buffer, 0, &u32s_to_le_bytes(&screens.main));
-        queue.write_buffer(&self.sub_buffer, 0, &u32s_to_le_bytes(&screens.sub));
-        self.render_current_buffers_to_texture(
-            device,
-            queue,
-            frame,
-            screens.main.len() as u32,
-            screens.width as u32,
-            screens.scale as u32,
-            output_texture,
-        );
-    }
-
     pub(crate) fn render_current_buffers_to_texture(
         &self,
         device: &wgpu::Device,

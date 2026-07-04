@@ -72,7 +72,6 @@ pub struct VariantAtlasRenderStats {
     pub gpu_screen_builder_frames: u32,
     pub cpu_prefinal_composite_frames: u32,
     pub cpu_prefinal_overlay_frames: u32,
-    pub cpu_screen_builder_block_mosaic: u32,
     pub dynamic_palette_draws: u32,
     pub missing_variant_draws: u32,
     pub stable_preview_draws: u32,
@@ -636,27 +635,11 @@ impl Screen {
 /// Each `u32` stores the 5-bit color channels, winning color-math layer bit, and
 /// whether a real BG/OBJ pixel covered the backdrop:
 /// bits 0..4 = R, 5..9 = G, 10..14 = B, 15..17 = math bit, 18 = real.
+#[cfg(test)]
 pub(crate) struct ModernCompositedScreens {
     pub(crate) width: usize,
     pub(crate) scale: usize,
     pub(crate) main: Vec<u32>,
-    pub(crate) sub: Vec<u32>,
-}
-
-fn pack_screen(screen: &Screen) -> Vec<u32> {
-    screen
-        .c5
-        .iter()
-        .zip(screen.bit.iter())
-        .zip(screen.real.iter())
-        .map(|((c5, bit), real)| {
-            u32::from(c5[0])
-                | (u32::from(c5[1]) << 5)
-                | (u32::from(c5[2]) << 10)
-                | (u32::from(*bit) << 15)
-                | ((if *real { 1u32 } else { 0u32 }) << 18)
-        })
-        .collect()
 }
 
 /// Composite one screen (main or sub) in SNES Mode 1 z-order, back → front:
@@ -1673,25 +1656,6 @@ fn build_modern_screens_with_overrides(
     );
 
     (main, sub)
-}
-
-pub(crate) fn build_modern_composited_screens(
-    frame: &ModernFrame,
-    bg_cells: &[ModernIndexTile],
-    sprite_cells: &[ModernIndexTile],
-) -> ModernCompositedScreens {
-    let (main, sub) = build_modern_screens_with_overrides(
-        frame,
-        bg_cells,
-        sprite_cells,
-        &crate::modern_hd_overrides::HdOverrideCtx::disabled(),
-    );
-    ModernCompositedScreens {
-        width: usize::from(MODERN_FRAME_WIDTH),
-        scale: 1,
-        main: pack_screen(&main),
-        sub: pack_screen(&sub),
-    }
 }
 
 /// True if the frame would take the mosaic OR torus-scroll composite path on
