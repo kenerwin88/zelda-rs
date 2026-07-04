@@ -636,9 +636,17 @@ struct ModernGpuVariantEffectRenderer {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SpriteEffectBatchKind {
-    Static,
+enum SpriteEffectMaterial {
+    StaticEffect,
     LiveCgram,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SpriteEffectMaterialPacket<'packet, 'frame> {
+    material: SpriteEffectMaterial,
+    packet: &'packet crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>,
+    entry: &'frame crate::modern_variant_atlas::VariantAtlasEntry,
+    effect_row: u32,
 }
 
 #[derive(Default)]
@@ -2256,29 +2264,21 @@ impl ModernGpuVariantEffectRenderer {
             "modern_variant_effect_sprite_index_atlas",
         );
         let mut live_lut: Option<(wgpu::Texture, wgpu::TextureView)> = None;
-        let mut batch_kind: Option<SpriteEffectBatchKind> = None;
+        let mut batch_material: Option<SpriteEffectMaterial> = None;
         let mut batch_bytes = Vec::new();
         let mut batch_count = 0u32;
         for packet in packets {
-            let Some((entry, effect)) = packet.draw.material_effect() else {
+            let Some(material_packet) = sprite_effect_material_packet(atlas, packet) else {
                 continue;
             };
-            let static_effect_row = atlas.effect_row_for_effect(effect);
-            let uses_static_effect =
-                static_effect_row.is_some_and(|_| sprite_effect_covers_cell(packet.cell, effect));
-            let kind = if uses_static_effect {
-                SpriteEffectBatchKind::Static
-            } else {
-                SpriteEffectBatchKind::LiveCgram
-            };
-            if batch_kind.is_some_and(|current| current != kind) {
+            if batch_material.is_some_and(|current| current != material_packet.material) {
                 self.render_sprite_effect_batch(
                     device,
                     queue,
                     frame,
                     &index_atlas_view,
                     &mut live_lut,
-                    batch_kind.expect("checked above"),
+                    batch_material.expect("checked above"),
                     &batch_bytes,
                     batch_count,
                     output_view,
@@ -2286,37 +2286,18 @@ impl ModernGpuVariantEffectRenderer {
                 batch_bytes.clear();
                 batch_count = 0;
             }
-            batch_kind = Some(kind);
-            let effect_row = if uses_static_effect {
-                static_effect_row.expect("checked above")
-            } else {
-                8 + u32::from(packet.inst.palette)
-            };
-            let col = packet.inst.cell_id % INDEX_GRID_COLS;
-            let row = packet.inst.cell_id / INDEX_GRID_COLS;
-            batch_bytes.extend_from_slice(&(col * 8).to_le_bytes());
-            batch_bytes.extend_from_slice(&(row * 8).to_le_bytes());
-            batch_bytes.extend_from_slice(&(i32::from(packet.inst.screen_x)).to_le_bytes());
-            batch_bytes.extend_from_slice(&(i32::from(packet.inst.screen_y)).to_le_bytes());
-            let mut flags = u32::from(packet.inst.row_mask) << 8;
-            if packet.inst.hflip ^ entry.source_hflip {
-                flags |= 0b001;
-            }
-            if packet.inst.vflip ^ entry.source_vflip {
-                flags |= 0b010;
-            }
-            batch_bytes.extend_from_slice(&flags.to_le_bytes());
-            batch_bytes.extend_from_slice(&effect_row.to_le_bytes());
+            batch_material = Some(material_packet.material);
+            append_sprite_effect_instance_words(&mut batch_bytes, material_packet);
             batch_count += 1;
         }
-        if let Some(kind) = batch_kind {
+        if let Some(material) = batch_material {
             self.render_sprite_effect_batch(
                 device,
                 queue,
                 frame,
                 &index_atlas_view,
                 &mut live_lut,
-                kind,
+                material,
                 &batch_bytes,
                 batch_count,
                 output_view,
@@ -2331,7 +2312,7 @@ impl ModernGpuVariantEffectRenderer {
         frame: &ModernFrame,
         index_atlas_view: &wgpu::TextureView,
         live_lut: &mut Option<(wgpu::Texture, wgpu::TextureView)>,
-        kind: SpriteEffectBatchKind,
+        material: SpriteEffectMaterial,
         instance_bytes: &[u8],
         instance_count: u32,
         output_view: &wgpu::TextureView,
@@ -2343,11 +2324,11 @@ impl ModernGpuVariantEffectRenderer {
             instance_bytes.len() as u64,
             u64::from(instance_count) * INDEX_INSTANCE_STRIDE
         );
-        let (effect_lut_view, label) = match kind {
-            SpriteEffectBatchKind::Static => {
+        let (effect_lut_view, label) = match material {
+            SpriteEffectMaterial::StaticEffect => {
                 (&self.effect_lut_view, "modern_variant_effect_sprite")
             }
-            SpriteEffectBatchKind::LiveCgram => {
+            SpriteEffectMaterial::LiveCgram => {
                 let (_, view) =
                     live_lut.get_or_insert_with(|| build_live_effect_lut(device, queue, frame));
                 (&*view, "modern_variant_live_cgram_sprite")
@@ -2437,6 +2418,57 @@ fn sprite_effect_covers_cell(
             usize::from(index) < effect.colors_per_row as usize
                 && usize::from(index) < effect.index_to_rgba.len()
         })
+}
+
+fn sprite_effect_material_packet<'packet, 'frame>(
+    atlas: &'frame crate::modern_variant_atlas::ModernVariantAtlas,
+    packet: &'packet crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>,
+) -> Option<SpriteEffectMaterialPacket<'packet, 'frame>> {
+    let Some((entry, effect)) = packet.draw.material_effect() else {
+        return None;
+    };
+    let static_effect_row = atlas.effect_row_for_effect(effect);
+    let uses_static_effect =
+        static_effect_row.is_some_and(|_| sprite_effect_covers_cell(packet.cell, effect));
+    let (material, effect_row) = if uses_static_effect {
+        (
+            SpriteEffectMaterial::StaticEffect,
+            static_effect_row.expect("checked above"),
+        )
+    } else {
+        (
+            SpriteEffectMaterial::LiveCgram,
+            8 + u32::from(packet.inst.palette),
+        )
+    };
+    Some(SpriteEffectMaterialPacket {
+        material,
+        packet,
+        entry,
+        effect_row,
+    })
+}
+
+fn append_sprite_effect_instance_words(
+    out: &mut Vec<u8>,
+    material_packet: SpriteEffectMaterialPacket<'_, '_>,
+) {
+    let packet = material_packet.packet;
+    let col = packet.inst.cell_id % INDEX_GRID_COLS;
+    let row = packet.inst.cell_id / INDEX_GRID_COLS;
+    out.extend_from_slice(&(col * 8).to_le_bytes());
+    out.extend_from_slice(&(row * 8).to_le_bytes());
+    out.extend_from_slice(&(i32::from(packet.inst.screen_x)).to_le_bytes());
+    out.extend_from_slice(&(i32::from(packet.inst.screen_y)).to_le_bytes());
+    let mut flags = u32::from(packet.inst.row_mask) << 8;
+    if packet.inst.hflip ^ material_packet.entry.source_hflip {
+        flags |= 0b001;
+    }
+    if packet.inst.vflip ^ material_packet.entry.source_vflip {
+        flags |= 0b010;
+    }
+    out.extend_from_slice(&flags.to_le_bytes());
+    out.extend_from_slice(&material_packet.effect_row.to_le_bytes());
 }
 
 fn variant_tile_instance(
@@ -5826,6 +5858,138 @@ mod tests {
         assert_eq!(stats.gpu_screen_builder_frames, 1);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(&variant[0..4], &[0, 0, 0, 0xff]);
+    }
+
+    #[test]
+    fn sprite_effect_material_packet_selects_static_or_live_rows() {
+        use crate::modern_frame::ModernIndexSpriteInstance;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, TileEffect, VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
+        };
+        use crate::modern_variant_draw::VariantSpriteDrawPacket;
+
+        let entry = VariantAtlasEntry {
+            id: "sprite:kSprGfx:pack0:tile0:3bpp:palette_main_spr:row1".to_string(),
+            key: VariantAtlasKey {
+                source_kind: "sprite".to_string(),
+                asset: "kSprGfx".to_string(),
+                pack: 0,
+                tile: 0,
+                bpp: 3,
+                palette: "palette_main_spr".to_string(),
+                palette_row: 1,
+            },
+            rect: [0, 0, 8, 8],
+            sha1: "static".to_string(),
+            duplicate_of: None,
+            dynamic_policy: "stable".to_string(),
+            runtime_material: Some("palette_lut".to_string()),
+            runtime_colors_per_row: None,
+            source_hflip: true,
+            source_vflip: false,
+        };
+        let effect = TileEffect {
+            id: "palette_main_spr:8color:row1".to_string(),
+            palette: "palette_main_spr".to_string(),
+            palette_row: 1,
+            colors_per_row: 8,
+            index_to_rgba: vec![
+                [0, 0, 0, 0xff],
+                [200, 20, 20, 0xff],
+                [2, 2, 2, 0xff],
+                [3, 3, 3, 0xff],
+                [4, 4, 4, 0xff],
+                [5, 5, 5, 0xff],
+                [6, 6, 6, 0xff],
+                [7, 7, 7, 0xff],
+            ],
+            dynamic_policy: "stable".to_string(),
+        };
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![entry.clone()],
+            effects: vec![effect.clone()],
+        };
+
+        let mut static_indices = [0u8; 64];
+        static_indices[0] = 1;
+        let static_cell = ModernIndexTile {
+            id: 0,
+            indices: static_indices,
+            source_key: modern_source_key(2, 0, 0),
+            hflip: false,
+            vflip: false,
+        };
+        let static_inst = ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 12,
+            screen_y: 20,
+            palette: 1,
+            priority: 0,
+            hflip: false,
+            vflip: true,
+            row_mask: 0x7f,
+        };
+        let static_packet = VariantSpriteDrawPacket {
+            cell: &static_cell,
+            inst: &static_inst,
+            key: None,
+            draw: VariantAtlasDraw::MaterialEffect {
+                entry: &entry,
+                effect: &effect,
+            },
+        };
+        let static_material = sprite_effect_material_packet(&atlas, &static_packet)
+            .expect("static sprite should produce a material packet");
+
+        assert_eq!(static_material.material, SpriteEffectMaterial::StaticEffect);
+        assert_eq!(static_material.effect_row, 0);
+        let mut static_words = Vec::new();
+        append_sprite_effect_instance_words(&mut static_words, static_material);
+        assert_eq!(static_words.len() as u64, INDEX_INSTANCE_STRIDE);
+        let static_encoded: Vec<u32> = static_words
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
+        assert_eq!(static_encoded, vec![0, 0, 12, 20, 0x7f00 | 0b011, 0]);
+
+        let mut live_indices = [0u8; 64];
+        live_indices[0] = 9;
+        let live_cell = ModernIndexTile {
+            id: 1,
+            indices: live_indices,
+            source_key: modern_source_key(2, 0, 1),
+            hflip: false,
+            vflip: false,
+        };
+        let live_inst = ModernIndexSpriteInstance {
+            cell_id: 1,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 1,
+            priority: 0,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        };
+        let live_packet = VariantSpriteDrawPacket {
+            cell: &live_cell,
+            inst: &live_inst,
+            key: None,
+            draw: VariantAtlasDraw::MaterialEffect {
+                entry: &entry,
+                effect: &effect,
+            },
+        };
+        let live_material = sprite_effect_material_packet(&atlas, &live_packet)
+            .expect("live sprite should produce a material packet");
+
+        assert_eq!(live_material.material, SpriteEffectMaterial::LiveCgram);
+        assert_eq!(live_material.effect_row, 9);
     }
 
     #[test]
