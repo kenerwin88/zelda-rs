@@ -65,11 +65,11 @@ impl<T> GpuRenderPlan<T> {
         self.work_items.extend(iter);
     }
 
-    pub(crate) fn any<F>(&self, predicate: F) -> bool
+    pub(crate) fn fold<R, F>(&self, init: R, f: F) -> R
     where
-        F: FnMut(&T) -> bool,
+        F: FnMut(R, &T) -> R,
     {
-        self.work_items.iter().any(predicate)
+        self.work_items.iter().fold(init, f)
     }
 
     #[cfg(test)]
@@ -227,6 +227,27 @@ mod tests {
         assert_eq!(
             plan.work_items(),
             &[TestWorkItem::Clear, TestWorkItem::Draw, TestWorkItem::Clear]
+        );
+    }
+
+    #[test]
+    fn render_plan_fold_visits_work_items_in_order() {
+        let plan = [TestWorkItem::Clear, TestWorkItem::Draw, TestWorkItem::Clear]
+            .into_iter()
+            .collect::<GpuRenderPlan<_>>();
+
+        let kinds = plan.fold(Vec::new(), |mut kinds, work_item| {
+            kinds.push(work_item.kind());
+            kinds
+        });
+
+        assert_eq!(
+            kinds,
+            vec![
+                GpuWorkItemKind::ClearBackdrop,
+                GpuWorkItemKind::BgEffect,
+                GpuWorkItemKind::ClearBackdrop
+            ]
         );
     }
 

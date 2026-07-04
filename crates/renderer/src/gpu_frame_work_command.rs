@@ -193,6 +193,15 @@ pub(crate) struct GpuFrameRenderResourceRequirements {
 }
 
 impl GpuFrameRenderResourceRequirements {
+    pub(crate) fn include(self, other: Self) -> Self {
+        Self {
+            uses_cgram_palette: self.uses_cgram_palette || other.uses_cgram_palette,
+            uses_tile_atlas: self.uses_tile_atlas || other.uses_tile_atlas,
+            uses_mode7_vram: self.uses_mode7_vram || other.uses_mode7_vram,
+            uses_sprites: self.uses_sprites || other.uses_sprites,
+        }
+    }
+
     pub(crate) fn uses_cgram_palette(self) -> bool {
         self.uses_cgram_palette
     }
@@ -222,17 +231,16 @@ impl GpuFrameRenderPlan {
         self.work_items.extend(iter);
     }
 
-    pub(crate) fn uses_sprites(&self) -> bool {
-        self.work_items.any(GpuFrameWorkCommand::uses_sprites)
+    pub(crate) fn resource_requirements(&self) -> GpuFrameRenderResourceRequirements {
+        self.work_items.fold(
+            GpuFrameRenderResourceRequirements::default(),
+            |requirements, work_item| requirements.include(work_item.resource_requirements()),
+        )
     }
 
-    pub(crate) fn resource_requirements(&self) -> GpuFrameRenderResourceRequirements {
-        GpuFrameRenderResourceRequirements {
-            uses_cgram_palette: self.work_items.any(GpuFrameWorkCommand::uses_cgram_palette),
-            uses_tile_atlas: self.work_items.any(GpuFrameWorkCommand::uses_tile_atlas),
-            uses_mode7_vram: self.work_items.any(GpuFrameWorkCommand::uses_mode7_vram),
-            uses_sprites: self.uses_sprites(),
-        }
+    #[cfg(test)]
+    pub(crate) fn uses_sprites(&self) -> bool {
+        self.resource_requirements().uses_sprites()
     }
 
     pub(crate) fn execute_with<F>(self, execute: F)
@@ -310,46 +318,41 @@ impl GpuFrameRenderScreen {
 }
 
 impl GpuFrameWorkCommand {
-    pub(crate) fn uses_cgram_palette(&self) -> bool {
-        matches!(
-            self,
-            Self::Screen {
-                command: GpuFrameScreenWorkCommand::BgLayer(_)
-                    | GpuFrameScreenWorkCommand::Mode7Bg(_)
-                    | GpuFrameScreenWorkCommand::SpritePriority(_),
-                ..
-            }
-        )
-    }
-
-    pub(crate) fn uses_tile_atlas(&self) -> bool {
-        matches!(
-            self,
+    pub(crate) fn resource_requirements(&self) -> GpuFrameRenderResourceRequirements {
+        match self {
             Self::Screen {
                 command: GpuFrameScreenWorkCommand::BgLayer(_),
                 ..
-            }
-        )
-    }
-
-    pub(crate) fn uses_mode7_vram(&self) -> bool {
-        matches!(
-            self,
+            } => GpuFrameRenderResourceRequirements {
+                uses_cgram_palette: true,
+                uses_tile_atlas: true,
+                uses_mode7_vram: false,
+                uses_sprites: false,
+            },
             Self::Screen {
                 command: GpuFrameScreenWorkCommand::Mode7Bg(_),
                 ..
-            }
-        )
-    }
-
-    pub(crate) fn uses_sprites(&self) -> bool {
-        matches!(
-            self,
+            } => GpuFrameRenderResourceRequirements {
+                uses_cgram_palette: true,
+                uses_tile_atlas: false,
+                uses_mode7_vram: true,
+                uses_sprites: false,
+            },
             Self::Screen {
                 command: GpuFrameScreenWorkCommand::SpritePriority(_),
                 ..
+            } => GpuFrameRenderResourceRequirements {
+                uses_cgram_palette: true,
+                uses_tile_atlas: false,
+                uses_mode7_vram: false,
+                uses_sprites: true,
+            },
+            Self::Screen {
+                command: GpuFrameScreenWorkCommand::ClearBackdrop(_),
+                ..
             }
-        )
+            | Self::PostProcess(_) => GpuFrameRenderResourceRequirements::default(),
+        }
     }
 
     #[cfg(test)]
@@ -358,6 +361,26 @@ impl GpuFrameWorkCommand {
             Self::Screen { screen, .. } => screen.phase(),
             Self::PostProcess(_) => GpuFrameRenderPhase::PostProcess,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn uses_cgram_palette(&self) -> bool {
+        self.resource_requirements().uses_cgram_palette()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn uses_tile_atlas(&self) -> bool {
+        self.resource_requirements().uses_tile_atlas()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn uses_mode7_vram(&self) -> bool {
+        self.resource_requirements().uses_mode7_vram()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn uses_sprites(&self) -> bool {
+        self.resource_requirements().uses_sprites()
     }
 }
 
