@@ -81,6 +81,15 @@ impl<T> GpuRenderPlan<T> {
         self.work_items.is_empty()
     }
 
+    pub(crate) fn execute_with<F>(self, mut execute: F)
+    where
+        F: FnMut(T),
+    {
+        for work_item in self.work_items {
+            execute(work_item);
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.work_items.len()
@@ -100,16 +109,6 @@ impl<T> FromIterator<T> for GpuRenderPlan<T> {
 }
 
 impl<T: GpuWorkItem> GpuRenderPlan<T> {
-    pub(crate) fn execute_with<F>(self, mut execute: F)
-    where
-        F: FnMut(T),
-    {
-        for work_item in self.work_items {
-            let _ = work_item.kind();
-            execute(work_item);
-        }
-    }
-
     #[cfg(test)]
     pub(crate) fn kinds(&self) -> Vec<GpuWorkItemKind> {
         work_item_kinds(&self.work_items)
@@ -142,6 +141,12 @@ mod tests {
         Draw,
     }
 
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum TestPlainItem {
+        Upload,
+        Render,
+    }
+
     impl GpuWorkItem for TestWorkItem {
         fn kind(&self) -> GpuWorkItemKind {
             match self {
@@ -159,6 +164,16 @@ mod tests {
         plan.execute_with(|work_item| executed.push(work_item));
 
         assert_eq!(executed, vec![TestWorkItem::Clear, TestWorkItem::Draw]);
+    }
+
+    #[test]
+    fn render_plan_execute_with_does_not_require_work_item_classification() {
+        let plan = GpuRenderPlan::new(vec![TestPlainItem::Upload, TestPlainItem::Render]);
+        let mut executed = Vec::new();
+
+        plan.execute_with(|work_item| executed.push(work_item));
+
+        assert_eq!(executed, vec![TestPlainItem::Upload, TestPlainItem::Render]);
     }
 
     #[test]
