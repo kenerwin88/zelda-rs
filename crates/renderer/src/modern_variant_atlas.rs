@@ -112,6 +112,14 @@ impl<'a> VariantAtlasDraw<'a> {
             | Self::Unkeyed => None,
         }
     }
+
+    pub fn is_unsupported_material_fallback(self) -> bool {
+        matches!(
+            self,
+            Self::DynamicPalette { entry }
+                if entry_runtime_material(entry) == RuntimeMaterial::Unsupported
+        )
+    }
 }
 
 pub fn variant_key_for_index_tile(

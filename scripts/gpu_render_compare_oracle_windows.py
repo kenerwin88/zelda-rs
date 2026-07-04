@@ -30,6 +30,7 @@ MODERN_INDEX_SUMMARY_RE = re.compile(
     r"gpu_count=(\d+) mode7_gpu_count=(\d+) cpu_count=(\d+) "
     r"variant_draws=(\d+) fallback_draws=(\d+) dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
     r"(?: stable_preview_draws=(\d+) stable_effect_draws=(\d+) dynamic_material_draws=(\d+) "
+    r"(?:unsupported_material_draws=\d+ )?"
     r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+)"
     r"(?: unkeyed_bg_fallback_draws=\d+ unkeyed_sprite_fallback_draws=\d+)?"
     r"(?: mixed_overlay_bg_effect_draws=(\d+)"
@@ -426,7 +427,7 @@ def run_window(
         )
     if mismatched_pixels != 0:
         raise SystemExit(f"{window.name}: reported {mismatched_pixels} mismatched pixels")
-    variant_stats = (0,) * 38
+    variant_stats = (0,) * 39
     modern_match = MODERN_INDEX_SUMMARY_RE.search(result.stdout)
     if renderer == "assets-variant-gpu":
         if not modern_match:
@@ -475,6 +476,7 @@ def run_window(
             int_stat(modern_match.group(0), "mixed_overlay_bg_effect_culled_invisible_main"),
             int_stat(modern_match.group(0), "unkeyed_bg_fallback_draws"),
             int_stat(modern_match.group(0), "unkeyed_sprite_fallback_draws"),
+            int_stat(modern_match.group(0), "unsupported_material_draws"),
         )
     print(
         f"{window.name}: compared={compared} frames={window.frames} "
@@ -487,6 +489,7 @@ def run_window(
         f"stable_preview_draws={variant_stats[4]} "
         f"stable_effect_draws={variant_stats[5]} "
         f"dynamic_material_draws={variant_stats[6]} "
+        f"unsupported_material_draws={variant_stats[38]} "
         f"missing_art_draws={variant_stats[7]} "
         f"unkeyed_fallback_draws={variant_stats[8]} "
         f"unkeyed_bg_fallback_draws={variant_stats[36]} "
@@ -634,6 +637,7 @@ def main() -> None:
     total_stable_preview_draws = 0
     total_stable_effect_draws = 0
     total_dynamic_material_draws = 0
+    total_unsupported_material_draws = 0
     total_missing_art_draws = 0
     total_unkeyed_fallback_draws = 0
     total_unkeyed_bg_fallback_draws = 0
@@ -712,6 +716,7 @@ def main() -> None:
         total_stable_preview_draws += variant_stats[4]
         total_stable_effect_draws += variant_stats[5]
         total_dynamic_material_draws += variant_stats[6]
+        total_unsupported_material_draws += variant_stats[38]
         total_missing_art_draws += variant_stats[7]
         total_unkeyed_fallback_draws += variant_stats[8]
         total_unkeyed_bg_fallback_draws += variant_stats[36]
@@ -781,6 +786,7 @@ def main() -> None:
         f"stable_preview_draws={total_stable_preview_draws} "
         f"stable_effect_draws={total_stable_effect_draws} "
         f"dynamic_material_draws={total_dynamic_material_draws} "
+        f"unsupported_material_draws={total_unsupported_material_draws} "
         f"missing_art_draws={total_missing_art_draws} "
         f"unkeyed_fallback_draws={total_unkeyed_fallback_draws} "
         f"unkeyed_bg_fallback_draws={total_unkeyed_bg_fallback_draws} "

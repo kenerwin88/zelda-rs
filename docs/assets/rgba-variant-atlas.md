@@ -259,6 +259,8 @@ renderer/oracle. Verification must report:
   palette/effect LUT.
 - `dynamic_material_draws`: source art exists, but the live material has no
   modeled stable effect, so the renderer uses the live indexed fallback.
+- `unsupported_material_draws`: the fallback subset caused by an explicit
+  runtime material the renderer does not model yet.
 - `missing_art_draws`: the live draw has a source key but no canonical art
   entry.
 - `unkeyed_fallback_draws`: the live draw has no ROM/source key and must stay
@@ -349,7 +351,8 @@ renderer/oracle. Verification must report:
 Legacy log names remain available for compatibility: `variant_draws` is the
 sum of stable preview and stable effect draws, `fallback_draws` is the sum of
 dynamic material, missing art, and unkeyed fallback draws,
-`dynamic_palette_draws` mirrors `dynamic_material_draws`, and
+`dynamic_palette_draws` mirrors `dynamic_material_draws`,
+`unsupported_material_draws` is a subset of `dynamic_material_draws`, and
 `missing_variant_draws` mirrors `missing_art_draws`.
 
 The CHR/palette-index path remains the oracle until representative replay and
