@@ -1,4 +1,4 @@
-use crate::gpu_work_item::GpuWorkItemKind;
+use crate::gpu_work_item::{GpuWorkItem, GpuWorkItemKind};
 use crate::modern_assets::ModernTileAtlasAsset;
 use crate::modern_frame::ModernFrame;
 use crate::modern_index_atlas::ModernIndexTile;
@@ -691,7 +691,7 @@ enum ModernGpuWorkItem<'rank, 'frame> {
     SpriteEffects(Vec<SpriteEffectMaterialGroup<'rank, 'frame>>),
 }
 
-impl ModernGpuWorkItem<'_, '_> {
+impl GpuWorkItem for ModernGpuWorkItem<'_, '_> {
     fn kind(&self) -> GpuWorkItemKind {
         match self {
             Self::ClearBackdrop => GpuWorkItemKind::ClearBackdrop,
@@ -6459,10 +6459,7 @@ mod tests {
         let work_items = dispatch.work_items();
         assert_eq!(work_items.len(), 2);
         assert_eq!(
-            work_items
-                .iter()
-                .map(ModernGpuWorkItem::kind)
-                .collect::<Vec<_>>(),
+            crate::gpu_work_item::work_item_kinds(&work_items),
             vec![GpuWorkItemKind::BgEffect, GpuWorkItemKind::BgEffect]
         );
         assert!(matches!(
@@ -6892,11 +6889,7 @@ mod tests {
         let first_rank_plan = sprite_only_rank.render_plan(&atlas, false);
         assert_eq!(first_rank_plan.work_items.len(), 2);
         assert_eq!(
-            first_rank_plan
-                .work_items
-                .iter()
-                .map(ModernGpuWorkItem::kind)
-                .collect::<Vec<_>>(),
+            crate::gpu_work_item::work_item_kinds(&first_rank_plan.work_items),
             vec![
                 GpuWorkItemKind::ClearBackdrop,
                 GpuWorkItemKind::SpriteEffects
@@ -6913,11 +6906,7 @@ mod tests {
         let later_rank_plan = sprite_only_rank.render_plan(&atlas, true);
         assert_eq!(later_rank_plan.work_items.len(), 1);
         assert_eq!(
-            later_rank_plan
-                .work_items
-                .iter()
-                .map(ModernGpuWorkItem::kind)
-                .collect::<Vec<_>>(),
+            crate::gpu_work_item::work_item_kinds(&later_rank_plan.work_items),
             vec![GpuWorkItemKind::SpriteEffects]
         );
         assert!(matches!(

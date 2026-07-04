@@ -12,7 +12,7 @@
 /// After compositing, a post-process pass applies SNES color math and brightness.
 use crate::bg_layer::BgLayerRenderer;
 use crate::gpu_frame::GpuFrame;
-use crate::gpu_work_item::GpuWorkItemKind;
+use crate::gpu_work_item::{GpuWorkItem, GpuWorkItemKind};
 use crate::mode7_renderer::Mode7Renderer;
 use crate::post_process::PostProcessRenderer;
 use crate::sprite_renderer::SpriteRenderer;
@@ -57,7 +57,7 @@ enum GpuFrameWorkItem {
     PostProcess,
 }
 
-impl GpuFrameWorkItem {
+impl GpuWorkItem for GpuFrameWorkItem {
     fn kind(&self) -> GpuWorkItemKind {
         match self {
             Self::MainSpritePriority(_) => GpuWorkItemKind::MainSpritePriority,
@@ -614,10 +614,7 @@ mod tests {
         let work_items = mode1_work_items(true, true, true, true);
 
         assert_eq!(
-            work_items
-                .iter()
-                .map(GpuFrameWorkItem::kind)
-                .collect::<Vec<_>>(),
+            crate::gpu_work_item::work_item_kinds(&work_items),
             vec![
                 GpuWorkItemKind::MainBgLayer,
                 GpuWorkItemKind::MainSpritePriority,
@@ -740,10 +737,7 @@ mod tests {
         let work_items = mode7_work_items(true, true, true);
 
         assert_eq!(
-            work_items
-                .iter()
-                .map(GpuFrameWorkItem::kind)
-                .collect::<Vec<_>>(),
+            crate::gpu_work_item::work_item_kinds(&work_items),
             vec![
                 GpuWorkItemKind::MainSpritePriority,
                 GpuWorkItemKind::Mode7MainBg,

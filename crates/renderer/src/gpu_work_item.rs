@@ -12,3 +12,12 @@ pub(crate) enum GpuWorkItemKind {
     SpriteEffects,
     PostProcess,
 }
+
+pub(crate) trait GpuWorkItem {
+    fn kind(&self) -> GpuWorkItemKind;
+}
+
+#[cfg(test)]
+pub(crate) fn work_item_kinds<T: GpuWorkItem>(items: &[T]) -> Vec<GpuWorkItemKind> {
+    items.iter().map(GpuWorkItem::kind).collect()
+}
