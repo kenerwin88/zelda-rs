@@ -399,6 +399,14 @@ fn build_mode1_render_plan(
     has_sub_sprites: bool,
 ) -> GpuFrameRenderPlan {
     let mut render_plan = GpuRenderPlan::default();
+    render_plan.extend(build_mode1_main_render_plan(has_main_bg, has_main_sprites));
+    render_plan.extend(build_mode1_sub_render_plan(has_sub_bg, has_sub_sprites));
+    render_plan.extend(build_post_process_render_plan());
+    render_plan
+}
+
+fn build_mode1_main_render_plan(has_main_bg: bool, has_main_sprites: bool) -> GpuFrameRenderPlan {
+    let mut render_plan = GpuRenderPlan::default();
     if has_main_sprites && !has_main_bg {
         render_plan.extend((0..=3).map(GpuFrameWorkItem::MainSpritePriority));
     }
@@ -425,6 +433,11 @@ fn build_mode1_render_plan(
         render_plan.push(main_bg_work_item(2, true, 2));
     }
 
+    render_plan
+}
+
+fn build_mode1_sub_render_plan(has_sub_bg: bool, has_sub_sprites: bool) -> GpuFrameRenderPlan {
+    let mut render_plan = GpuRenderPlan::default();
     render_plan.push(GpuFrameWorkItem::ClearSubBackdrop);
     render_plan.push(GpuFrameWorkItem::SubBgLayer {
         layer_idx: 2,
@@ -464,7 +477,6 @@ fn build_mode1_render_plan(
         hi_priority: true,
     });
 
-    render_plan.push(GpuFrameWorkItem::PostProcess);
     render_plan
 }
 
@@ -483,6 +495,17 @@ fn build_mode7_render_plan(
     has_sub_sprites: bool,
 ) -> GpuFrameRenderPlan {
     let mut render_plan = GpuRenderPlan::default();
+    render_plan.extend(build_mode7_main_render_plan(has_main_sprites));
+    render_plan.extend(build_mode7_sub_render_plan(
+        has_sub_mode7_bg,
+        has_sub_sprites,
+    ));
+    render_plan.extend(build_post_process_render_plan());
+    render_plan
+}
+
+fn build_mode7_main_render_plan(has_main_sprites: bool) -> GpuFrameRenderPlan {
+    let mut render_plan = GpuRenderPlan::default();
     if has_main_sprites {
         render_plan.push(GpuFrameWorkItem::MainSpritePriority(0));
     }
@@ -491,6 +514,14 @@ fn build_mode7_render_plan(
         render_plan.extend((1..=3).map(GpuFrameWorkItem::MainSpritePriority));
     }
 
+    render_plan
+}
+
+fn build_mode7_sub_render_plan(
+    has_sub_mode7_bg: bool,
+    has_sub_sprites: bool,
+) -> GpuFrameRenderPlan {
+    let mut render_plan = GpuRenderPlan::default();
     render_plan.push(GpuFrameWorkItem::ClearSubBackdrop);
     if has_sub_mode7_bg {
         render_plan.push(GpuFrameWorkItem::Mode7SubBg);
@@ -498,6 +529,11 @@ fn build_mode7_render_plan(
     if has_sub_sprites {
         render_plan.extend((0..=3).map(GpuFrameWorkItem::SubSpritePriority));
     }
+    render_plan
+}
+
+fn build_post_process_render_plan() -> GpuFrameRenderPlan {
+    let mut render_plan = GpuRenderPlan::default();
     render_plan.push(GpuFrameWorkItem::PostProcess);
     render_plan
 }

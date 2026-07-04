@@ -192,6 +192,23 @@ mod tests {
     }
 
     #[test]
+    fn render_plan_builder_extends_another_plan() {
+        let mut plan = [TestWorkItem::Clear]
+            .into_iter()
+            .collect::<GpuRenderPlan<_>>();
+        let phase = [TestWorkItem::Draw, TestWorkItem::Clear]
+            .into_iter()
+            .collect::<GpuRenderPlan<_>>();
+
+        plan.extend(phase);
+
+        assert_eq!(
+            plan.work_items(),
+            &[TestWorkItem::Clear, TestWorkItem::Draw, TestWorkItem::Clear]
+        );
+    }
+
+    #[test]
     fn command_wrappers_forward_inner_work_item_kind() {
         let sourced = SourcedGpuWorkCommand {
             source: "rank-0",
