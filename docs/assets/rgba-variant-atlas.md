@@ -267,9 +267,10 @@ renderer/oracle. Verification must report:
 - `dynamic_material_fallback_instance_source_draws`: fallback draws forced by
   instance source-key identity. These still use source art, but the draw needs
   live indexed pixels to preserve the exact source instance.
-- `dynamic_material_fallback_brightness_draws`: fallback draws forced by
-  non-full master brightness until the material path can represent that frame
-  brightness.
+- `dynamic_material_fallback_brightness_draws`: regression counter for fallback
+  draws forced by non-full master brightness. Stable material/effect draws are
+  expected to stay on the material path and let the final compositor apply
+  frame brightness; this counter should remain zero.
 - `dynamic_material_fallback_policy_draws`: fallback draws whose atlas entry is
   explicitly marked `requires_live_palette`.
 - `dynamic_material_fallback_missing_effect_draws`: fallback draws where the

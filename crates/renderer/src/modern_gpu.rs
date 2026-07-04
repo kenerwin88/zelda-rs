@@ -4748,9 +4748,9 @@ mod tests {
 
         assert_eq!(selection.bg.len(), 0);
         assert_eq!(selection.live_cgram_bg.len(), 0);
-        assert_eq!(selection.candidates, 0);
-        assert_eq!(selection.reject_complex_frame, 0);
-        assert_eq!(selection.reject_complex_brightness, 0);
+        assert_eq!(selection.candidates, 1);
+        assert_eq!(selection.reject_complex_frame, 1);
+        assert_eq!(selection.reject_complex_brightness, 1);
     }
 
     #[test]
