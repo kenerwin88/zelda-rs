@@ -5169,56 +5169,70 @@ impl ModernGpuVariantHeadless {
         );
         let variant_frame = self.renderer.build_variant_frame_from_plan(frame, &plan);
         let mut stats = plan.stats;
-        let render_path = headless_variant_render_path(&stats);
-        if render_path == ModernVariantRenderPath::LiveIndexBaseWithOverlay {
-            let overlay = mixed_variant_prefinal_bg_packets(frame, &plan);
-            let final_overlay = mixed_variant_overlay_bg_packets(frame, &plan);
-            let prefinal_packets =
-                MixedVariantPrefinalPackets::from_overlay(frame, &overlay, &plan);
-            record_headless_live_index_overlay_stats(
-                &mut stats,
-                frame,
-                &overlay,
-                &final_overlay,
-                &prefinal_packets,
-            );
-            self.render_live_index_prefinal_base(
-                frame,
-                live_index_frame,
-                live_index_bg_cells,
-                live_index_sprite_cells,
-                &final_overlay,
-                &prefinal_packets,
-                &mut stats,
-            );
-            self.renderer.effect_renderer.render_overlay_bg_effects(
-                &self.device,
-                &self.queue,
-                bg_cells,
-                frame,
-                &self.renderer.atlas,
-                &final_overlay,
-                &self.target_view,
-            );
-        } else if render_path == ModernVariantRenderPath::EffectMaterialWithStableOverlay {
-            self.render_effect_material_with_stable_overlay(
-                frame,
-                bg_cells,
-                sprite_cells,
-                live_index_frame,
-                live_index_bg_cells,
-                live_index_sprite_cells,
-                &plan,
-                &variant_frame,
-                &mut stats,
-            );
-        } else {
-            self.renderer.renderer.render(
-                &self.device,
-                &self.queue,
-                &variant_frame,
-                &self.target_view,
-            );
+        match headless_variant_render_path(&stats) {
+            ModernVariantRenderPath::EffectMaterialMode1Order => {
+                self.renderer.render_effect_material_mode1_order(
+                    &self.device,
+                    &self.queue,
+                    frame,
+                    bg_cells,
+                    sprite_cells,
+                    &plan,
+                    &self.target_view,
+                );
+            }
+            ModernVariantRenderPath::LiveIndexBaseWithOverlay => {
+                let overlay = mixed_variant_prefinal_bg_packets(frame, &plan);
+                let final_overlay = mixed_variant_overlay_bg_packets(frame, &plan);
+                let prefinal_packets =
+                    MixedVariantPrefinalPackets::from_overlay(frame, &overlay, &plan);
+                record_headless_live_index_overlay_stats(
+                    &mut stats,
+                    frame,
+                    &overlay,
+                    &final_overlay,
+                    &prefinal_packets,
+                );
+                self.render_live_index_prefinal_base(
+                    frame,
+                    live_index_frame,
+                    live_index_bg_cells,
+                    live_index_sprite_cells,
+                    &final_overlay,
+                    &prefinal_packets,
+                    &mut stats,
+                );
+                self.renderer.effect_renderer.render_overlay_bg_effects(
+                    &self.device,
+                    &self.queue,
+                    bg_cells,
+                    frame,
+                    &self.renderer.atlas,
+                    &final_overlay,
+                    &self.target_view,
+                );
+            }
+            ModernVariantRenderPath::EffectMaterialWithStableOverlay => {
+                self.render_effect_material_with_stable_overlay(
+                    frame,
+                    bg_cells,
+                    sprite_cells,
+                    live_index_frame,
+                    live_index_bg_cells,
+                    live_index_sprite_cells,
+                    &plan,
+                    &variant_frame,
+                    &mut stats,
+                );
+            }
+            ModernVariantRenderPath::StableVariantFrame => {
+                self.renderer.renderer.render(
+                    &self.device,
+                    &self.queue,
+                    &variant_frame,
+                    &self.target_view,
+                );
+            }
         }
         (self.read_target_rgba(), stats)
     }
