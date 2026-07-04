@@ -891,3 +891,30 @@ pre-final overlap is now all OBJ overlap:
 `prefinal_overlap=350`, `prefinal_overlap_obj=350`. The next useful drawing
 modernization lanes are primary candidate `scanline_main=1541` and
 OBJ-aware pre-final composition.
+
+### Task 23: Restore Front OBJ Over Pre-Final BG Overlays
+
+**Files:**
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Modify: `docs/assets/rgba-variant-atlas.md`
+- [x] Test: focused renderer unit for partial scanline-main masking
+- [x] Test: focused renderer units for behind-OBJ and front-OBJ overlaps
+- [x] Test: focused opening-route oracle window
+
+**Goal:** Clear the remaining pre-final OBJ overlap bucket without drawing BG
+over sprites that should win in Mode-1 order.
+
+**Done:** The pre-final mixed overlay path now records the BG rank for each
+replaced main-screen pixel, then repaints front OBJ pixels from live CGRAM when
+the OBJ rank is in front of that BG replacement. Behind OBJ no longer blocks BG
+promotion, and front OBJ is restored before the GPU finalizer applies color
+math. The same slice also allows partially scanline-enabled BG packets by
+skipping invisible pixels instead of rejecting the whole packet.
+
+**Route result:** The opening tail remains `mismatched_pixels=0`. GPU overlay
+draws rise from `18783` to `19133`. The color-math/pre-final blocker is gone in
+this representative window:
+`mixed_overlay_bg_effect_reject_complex_color_math=0`,
+`prefinal_overlap=0`, and `prefinal_overlap_obj=0`. The next useful drawing
+modernization lane is the remaining primary candidate
+`mixed_overlay_bg_effect_reject_complex_scanline_main=1541`.

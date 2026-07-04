@@ -368,17 +368,17 @@ Expected output includes `mismatched_pixels=0` and nonzero
 `stable_preview_draws` or `stable_effect_draws`. The current representative
 proof reports `stable_effect_draws=21038`,
 `mixed_overlay_bg_effect_candidates=20674`,
-`mixed_overlay_bg_effect_draws=18783`,
-`mixed_overlay_bg_effect_reject_complex_frame=1891`,
+`mixed_overlay_bg_effect_draws=19133`,
+`mixed_overlay_bg_effect_reject_complex_frame=1541`,
 `mixed_overlay_bg_effect_reject_complex_scanline_main=1541`,
-`mixed_overlay_bg_effect_reject_complex_color_math=350`,
+`mixed_overlay_bg_effect_reject_complex_color_math=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_clip=0`,
-`mixed_overlay_bg_effect_reject_complex_color_math_subscreen=350`,
+`mixed_overlay_bg_effect_reject_complex_color_math_subscreen=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_fixed_color=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch=0`,
-`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=350`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg=0`,
-`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj=350`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch=0`,
@@ -386,11 +386,9 @@ proof reports `stable_effect_draws=21038`,
 `mixed_overlay_bg_effect_reject_overlap=0` over 17 sampled compares from the
 checkpointed opening route tail. That means most stable BG opportunities in
 this sampled mixed window now execute through the GPU overlay path with exact
-final-pixel parity; the remaining blockers are per-scanline layer visibility
-and OBJ-overlapped pre-final sub-screen composition. A fixed-color-only overlay
-shader would not reduce this representative route because the current remaining
-color-math rejects are all sub-screen dependent, and the pre-final classifier
-shows the remaining pre-final overlaps are all OBJ overlaps.
+final-pixel parity; the representative color-math/pre-final overlap blockers
+are now cleared. The remaining blocker in this focused window is primary
+per-scanline layer visibility (`scanline_main=1541`).
 
 The first pre-final sub-screen implementation supports static variant-effect BG
 packets: those pixels can be written into the packed main-screen buffer before
@@ -420,17 +418,20 @@ that are disabled by the per-scanline main-screen mask at the overlapped pixel.
 That removes the representative BG-overlap blocker (`prefinal_overlap_bg=0`)
 with `mismatched_pixels=0`; the next useful lanes are the primary
 `scanline_main=1541` bucket and the remaining OBJ pre-final overlap bucket
-(`prefinal_overlap_obj=350`).
+(`prefinal_overlap_obj=350`). The OBJ-aware pre-final slice then tracks the BG
+overlay rank for each replaced pixel and repaints front OBJ pixels from live
+CGRAM before the GPU finalizer runs. That removes the representative OBJ
+overlap blocker (`prefinal_overlap_obj=0`) with `mismatched_pixels=0`; the next
+useful lane is the remaining primary `scanline_main=1541` bucket.
 
 Mixed frames that still need dynamic, missing, or unkeyed fallback cells start
 from the fully composited fallback pixels for parity. The GPU path may overlay
-a stable BG effect packet only when each nontransparent packet pixel is proven
-unchanged by brightness, windows, mosaic, per-scanline main enable, and color
-math, and when those pixels do not overlap any other BG or OBJ packet. Other
-stable opportunities stay counted but are not drawn over the mixed fallback
-image until packet visibility and final composition state are modeled more
-completely. For pre-final color-math packets, behind-only BG overlap is the
-first modeled exception because it cannot change the winning visible pixel.
+a stable BG effect packet only when the modeled per-pixel visibility and
+composition state can preserve the fallback winner: invisible main pixels are
+skipped, eligible pre-final color-math packets write before finalization, and
+front OBJ pixels are restored over BG replacements by Mode-1 rank. Other stable
+opportunities stay counted but are not drawn over the mixed fallback image until
+their remaining composition state is modeled more completely.
 
 ## Modder Workflow Target
 
