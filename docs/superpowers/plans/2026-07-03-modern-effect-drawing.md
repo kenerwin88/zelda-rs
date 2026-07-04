@@ -880,8 +880,8 @@ pre-final overlay.
 whose pixel is disabled by raw main-screen enable, per-scanline main-screen
 masking, or layer window masking. The new renderer unit proves a BG2 target can
 still be promoted when an overlapping BG1 packet is masked off for that
-scanline, while the masked front packet remains counted as its own
-`scanline_main` complex reject.
+scanline, while the masked front packet remains tracked separately from the
+promoted behind packet.
 
 **Route result:** The opening tail remains `mismatched_pixels=0`. GPU overlay
 draws rise from `18223` to `18783`. The pre-final BG overlap blocker is gone:
@@ -918,3 +918,33 @@ this representative window:
 `prefinal_overlap=0`, and `prefinal_overlap_obj=0`. The next useful drawing
 modernization lane is the remaining primary candidate
 `mixed_overlay_bg_effect_reject_complex_scanline_main=1541`.
+
+### Task 24: Cull Fully Invisible Main-Screen BG Effect Packets
+
+**Files:**
+- [x] Modify: `crates/renderer/src/modern_gpu.rs`
+- [x] Modify: `crates/renderer/src/modern_software.rs`
+- [x] Modify: `zelda3-bin/src/main.rs`
+- [x] Modify: `scripts/gpu_render_compare_oracle_windows.py`
+- [x] Modify: `scripts/gpu_render_compare_windows.py`
+- [x] Modify: `docs/assets/rgba-variant-atlas.md`
+- [x] Test: focused renderer unit for fully scanline-disabled effect packets
+- [x] Test: parser compatibility for the new cull stat
+
+**Goal:** Stop treating stable BG effect packets as CPU fallback blockers when
+all nontransparent pixels are disabled on the main screen by raw or
+per-scanline main-screen state.
+
+**Done:** The mixed BG effect selector now classifies packets with no visible
+main-screen pixels as `mixed_overlay_bg_effect_culled_invisible_main` instead
+of incrementing `mixed_overlay_bg_effect_reject_complex_frame` or
+`mixed_overlay_bg_effect_reject_complex_scanline_main`. These packets do not
+need a GPU draw because the indexed fallback frame already has no visible main
+contribution for them. The compare summaries and oracle wrappers now surface
+the cull count.
+
+**Route result:** The opening tail remains `mismatched_pixels=0`. The previous
+`1541` `scanline_main` blocker is now fully classified as
+`mixed_overlay_bg_effect_culled_invisible_main=1541`, with
+`mixed_overlay_bg_effect_reject_complex_frame=0` and
+`mixed_overlay_bg_effect_reject_complex_scanline_main=0`.

@@ -26,6 +26,7 @@ MODERN_INDEX_SUMMARY_RE = re.compile(
     r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+)"
     r"(?: mixed_overlay_bg_effect_draws=(\d+)"
     r"(?: mixed_overlay_bg_effect_candidates=(\d+) "
+    r"(?:mixed_overlay_bg_effect_culled_invisible_main=\d+ )?"
     r"mixed_overlay_bg_effect_reject_complex_frame=(\d+) "
     r"(?:mixed_overlay_bg_effect_reject_complex_brightness=(\d+) "
     r"mixed_overlay_bg_effect_reject_complex_invalid_layer=(\d+) "
@@ -58,6 +59,7 @@ MODERN_INDEX_VARIANT_RE = re.compile(
     r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+)"
     r"(?: mixed_overlay_bg_effect_draws=(\d+)"
     r"(?: mixed_overlay_bg_effect_candidates=(\d+) "
+    r"(?:mixed_overlay_bg_effect_culled_invisible_main=\d+ )?"
     r"mixed_overlay_bg_effect_reject_complex_frame=(\d+) "
     r"(?:mixed_overlay_bg_effect_reject_complex_brightness=(\d+) "
     r"mixed_overlay_bg_effect_reject_complex_invalid_layer=(\d+) "
@@ -86,9 +88,15 @@ MODERN_INDEX_VARIANT_RE = re.compile(
 SAVED_RE = re.compile(r"saved replay-save checkpoint frame=(\d+) to (.+)")
 SUMMARY_PREFIXES = (
     "gpu-render-compare completed ",
+    "modern_index_compare_summary ",
     "saved replay-save checkpoint ",
     "gpu-render-window-compare completed ",
 )
+
+
+def int_stat(text: str, name: str) -> int:
+    match = re.search(rf"\b{re.escape(name)}=(\d+)", text)
+    return int(match.group(1)) if match else 0
 
 
 def print_success_summary(output: str) -> None:
@@ -280,6 +288,9 @@ def compare_window(
             unkeyed_fallback_draws = int(match.group(15) or 0)
             mixed_overlay_bg_effect_draws = int(match.group(16) or 0)
             mixed_overlay_bg_effect_candidates = int(match.group(17) or 0)
+            mixed_overlay_bg_effect_culled_invisible_main = int_stat(
+                match.group(0), "mixed_overlay_bg_effect_culled_invisible_main"
+            )
             mixed_overlay_bg_effect_reject_complex_frame = int(match.group(18) or 0)
             mixed_overlay_bg_effect_reject_complex_brightness = int(match.group(19) or 0)
             mixed_overlay_bg_effect_reject_complex_invalid_layer = int(match.group(20) or 0)
@@ -338,6 +349,7 @@ def compare_window(
             unkeyed_fallback_draws = 0
             mixed_overlay_bg_effect_draws = 0
             mixed_overlay_bg_effect_candidates = 0
+            mixed_overlay_bg_effect_culled_invisible_main = 0
             mixed_overlay_bg_effect_reject_complex_frame = 0
             mixed_overlay_bg_effect_reject_complex_brightness = 0
             mixed_overlay_bg_effect_reject_complex_invalid_layer = 0
@@ -374,6 +386,9 @@ def compare_window(
                 unkeyed_fallback_draws += int(frame_match.group(10) or 0)
                 mixed_overlay_bg_effect_draws += int(frame_match.group(11) or 0)
                 mixed_overlay_bg_effect_candidates += int(frame_match.group(12) or 0)
+                mixed_overlay_bg_effect_culled_invisible_main += int_stat(
+                    frame_match.group(0), "mixed_overlay_bg_effect_culled_invisible_main"
+                )
                 mixed_overlay_bg_effect_reject_complex_frame += int(frame_match.group(13) or 0)
                 mixed_overlay_bg_effect_reject_complex_brightness += int(frame_match.group(14) or 0)
                 mixed_overlay_bg_effect_reject_complex_invalid_layer += int(frame_match.group(15) or 0)
@@ -437,6 +452,7 @@ def compare_window(
             f"unkeyed_fallback_draws={unkeyed_fallback_draws} "
             f"mixed_overlay_bg_effect_draws={mixed_overlay_bg_effect_draws} "
             f"mixed_overlay_bg_effect_candidates={mixed_overlay_bg_effect_candidates} "
+            f"mixed_overlay_bg_effect_culled_invisible_main={mixed_overlay_bg_effect_culled_invisible_main} "
             f"mixed_overlay_bg_effect_reject_complex_frame={mixed_overlay_bg_effect_reject_complex_frame} "
             f"mixed_overlay_bg_effect_reject_complex_brightness={mixed_overlay_bg_effect_reject_complex_brightness} "
             f"mixed_overlay_bg_effect_reject_complex_invalid_layer={mixed_overlay_bg_effect_reject_complex_invalid_layer} "
@@ -505,6 +521,7 @@ def compare_window(
                 mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch,
                 mixed_overlay_bg_effect_reject_cgram_mismatch,
                 mixed_overlay_bg_effect_reject_overlap,
+                mixed_overlay_bg_effect_culled_invisible_main,
             ),
         )
     match = COMPARE_RE.search(output)
@@ -580,6 +597,7 @@ def main() -> None:
     total_unkeyed_fallback_draws = 0
     total_mixed_overlay_bg_effect_draws = 0
     total_mixed_overlay_bg_effect_candidates = 0
+    total_mixed_overlay_bg_effect_culled_invisible_main = 0
     total_mixed_overlay_bg_effect_reject_complex_frame = 0
     total_mixed_overlay_bg_effect_reject_complex_brightness = 0
     total_mixed_overlay_bg_effect_reject_complex_invalid_layer = 0
@@ -669,6 +687,7 @@ def main() -> None:
         total_unkeyed_fallback_draws += variant_stats[8]
         total_mixed_overlay_bg_effect_draws += variant_stats[9]
         total_mixed_overlay_bg_effect_candidates += variant_stats[10]
+        total_mixed_overlay_bg_effect_culled_invisible_main += variant_stats[35]
         total_mixed_overlay_bg_effect_reject_complex_frame += variant_stats[11]
         total_mixed_overlay_bg_effect_reject_complex_brightness += variant_stats[12]
         total_mixed_overlay_bg_effect_reject_complex_invalid_layer += variant_stats[13]
@@ -731,6 +750,7 @@ def main() -> None:
             f"unkeyed_fallback_draws={total_unkeyed_fallback_draws} "
             f"mixed_overlay_bg_effect_draws={total_mixed_overlay_bg_effect_draws} "
             f"mixed_overlay_bg_effect_candidates={total_mixed_overlay_bg_effect_candidates} "
+            f"mixed_overlay_bg_effect_culled_invisible_main={total_mixed_overlay_bg_effect_culled_invisible_main} "
             f"mixed_overlay_bg_effect_reject_complex_frame={total_mixed_overlay_bg_effect_reject_complex_frame} "
             f"mixed_overlay_bg_effect_reject_complex_brightness={total_mixed_overlay_bg_effect_reject_complex_brightness} "
             f"mixed_overlay_bg_effect_reject_complex_invalid_layer={total_mixed_overlay_bg_effect_reject_complex_invalid_layer} "

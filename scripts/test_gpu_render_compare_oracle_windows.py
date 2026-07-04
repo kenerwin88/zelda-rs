@@ -23,6 +23,7 @@ from gpu_render_compare_oracle_windows import (
     command_for_run_item,
     env_for_renderer,
     ensure_required_stable_draws,
+    int_stat,
     run_items_for_windows,
     run_command_capture_output,
     selected_windows,
@@ -103,6 +104,7 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
             "stable_preview_draws=2 stable_effect_draws=3 dynamic_material_draws=5 "
             "missing_art_draws=7 unkeyed_fallback_draws=11 mixed_overlay_bg_effect_draws=13 "
             "mixed_overlay_bg_effect_candidates=17 "
+            "mixed_overlay_bg_effect_culled_invisible_main=18 "
             "mixed_overlay_bg_effect_reject_complex_frame=19 "
             "mixed_overlay_bg_effect_reject_complex_brightness=23 "
             "mixed_overlay_bg_effect_reject_complex_invalid_layer=29 "
@@ -157,6 +159,10 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         self.assertEqual(match.group(39), "80")
         self.assertEqual(match.group(40), "79")
         self.assertEqual(match.group(41), "83")
+        self.assertEqual(
+            int_stat(match.group(0), "mixed_overlay_bg_effect_culled_invisible_main"),
+            18,
+        )
 
     def test_modern_index_summary_regex_accepts_legacy_draw_mix(self) -> None:
         line = (

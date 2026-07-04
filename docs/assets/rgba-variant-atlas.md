@@ -267,6 +267,9 @@ renderer/oracle. Verification must report:
   on top of a mixed fallback frame by the conservative safe-packet selector.
 - `mixed_overlay_bg_effect_candidates`: stable BG effect packets seen in mixed
   fallback frames before the conservative overlay guards are applied.
+- `mixed_overlay_bg_effect_culled_invisible_main`: candidates that have no
+  visible main-screen pixels after raw/per-scanline main-screen masking. These
+  packets need no GPU draw and are not CPU fallback blockers.
 - `mixed_overlay_bg_effect_reject_complex_frame`: candidates blocked because
   the frame still uses composition features the overlay path does not model yet
   such as color math, windows, mosaic, or non-simple layer state.
@@ -281,8 +284,8 @@ renderer/oracle. Verification must report:
 - `mixed_overlay_bg_effect_reject_complex_effect_bounds`: complex-frame rejects
   whose source indices exceed the static effect row.
 - `mixed_overlay_bg_effect_reject_complex_scanline_main`: complex-frame rejects
-  blocked because the candidate's layer is disabled by per-scanline main-screen
-  state at one of its nontransparent pixels.
+  blocked by main-screen scanline state while still having visible main-screen
+  contribution. Fully invisible packets are counted as culls instead.
 - `mixed_overlay_bg_effect_reject_complex_layer_window`: complex-frame rejects
   blocked by layer window masking at one of the candidate's nontransparent
   pixels.
@@ -369,8 +372,9 @@ Expected output includes `mismatched_pixels=0` and nonzero
 proof reports `stable_effect_draws=21038`,
 `mixed_overlay_bg_effect_candidates=20674`,
 `mixed_overlay_bg_effect_draws=19133`,
-`mixed_overlay_bg_effect_reject_complex_frame=1541`,
-`mixed_overlay_bg_effect_reject_complex_scanline_main=1541`,
+`mixed_overlay_bg_effect_culled_invisible_main=1541`,
+`mixed_overlay_bg_effect_reject_complex_frame=0`,
+`mixed_overlay_bg_effect_reject_complex_scanline_main=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_clip=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_subscreen=0`,

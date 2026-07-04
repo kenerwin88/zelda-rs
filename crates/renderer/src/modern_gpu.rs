@@ -445,6 +445,7 @@ impl ModernGpuVariantRenderer {
             stats.mixed_overlay_bg_effect_draws +=
                 (overlay.bg.len() + overlay.live_cgram_bg.len()) as u32;
             stats.mixed_overlay_bg_effect_candidates += overlay.candidates;
+            stats.mixed_overlay_bg_effect_culled_invisible_main += overlay.culled_invisible_main;
             stats.mixed_overlay_bg_effect_reject_complex_frame += overlay.reject_complex_frame;
             stats.mixed_overlay_bg_effect_reject_complex_brightness +=
                 overlay.reject_complex_brightness;
@@ -597,6 +598,7 @@ struct MixedVariantOverlayBgSelection<'a> {
     bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
     live_cgram_bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
     candidates: u32,
+    culled_invisible_main: u32,
     reject_complex_frame: u32,
     reject_complex_brightness: u32,
     reject_complex_invalid_layer: u32,
@@ -628,7 +630,7 @@ enum MixedOverlayComplexRejectReason {
     Mosaic,
     SubWindow,
     EffectBounds,
-    ScanlineMain,
+    InvisibleMain,
     LayerWindow,
     ColorMathClip,
     ColorMathSubscreen,
@@ -661,6 +663,10 @@ enum PrefinalBgMaterialRejectReason {
 
 impl<'a> MixedVariantOverlayBgSelection<'a> {
     fn record_complex_reject(&mut self, reason: MixedOverlayComplexRejectReason) {
+        if reason == MixedOverlayComplexRejectReason::InvisibleMain {
+            self.culled_invisible_main += 1;
+            return;
+        }
         self.reject_complex_frame += 1;
         match reason {
             MixedOverlayComplexRejectReason::Brightness => self.reject_complex_brightness += 1,
@@ -672,9 +678,7 @@ impl<'a> MixedVariantOverlayBgSelection<'a> {
             MixedOverlayComplexRejectReason::EffectBounds => {
                 self.reject_complex_effect_bounds += 1;
             }
-            MixedOverlayComplexRejectReason::ScanlineMain => {
-                self.reject_complex_scanline_main += 1;
-            }
+            MixedOverlayComplexRejectReason::InvisibleMain => unreachable!(),
             MixedOverlayComplexRejectReason::LayerWindow => {
                 self.reject_complex_layer_window += 1;
             }
@@ -893,7 +897,7 @@ fn bg_effect_packet_complex_reject_reason(
 
     if !saw_visible_pixel {
         if saw_scanline_disabled_pixel {
-            return Some(MixedOverlayComplexRejectReason::ScanlineMain);
+            return Some(MixedOverlayComplexRejectReason::InvisibleMain);
         }
         if saw_layer_window_pixel {
             return Some(MixedOverlayComplexRejectReason::LayerWindow);
@@ -3327,6 +3331,8 @@ impl ModernGpuVariantHeadless {
                 + prefinal_live_cgram_bg.len())
                 as u32;
             stats.mixed_overlay_bg_effect_candidates += final_overlay.candidates;
+            stats.mixed_overlay_bg_effect_culled_invisible_main +=
+                final_overlay.culled_invisible_main;
             stats.mixed_overlay_bg_effect_reject_complex_frame += final_overlay
                 .reject_complex_frame
                 .saturating_sub(accepted_prefinal_color_math);
@@ -5406,6 +5412,135 @@ mod tests {
     }
 
     #[test]
+    fn modern_gpu_variant_headless_culls_fully_scanline_disabled_effect_bg_packets() {
+        use crate::modern_frame::{
+            ModernBgLayer, ModernIndexSpriteInstance, ModernIndexTileInstance,
+        };
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::{
+            ModernVariantAtlas, TileEffect, VariantAtlasEntry, VariantAtlasKey,
+        };
+
+        let mut main_indices = [0u8; 64];
+        main_indices[0] = 1;
+        let bg_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: main_indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+        let mut sprite_indices = [0u8; 64];
+        sprite_indices[0] = 1;
+        let sprite_cells = vec![ModernIndexTile {
+            id: 0,
+            indices: sprite_indices,
+            source_key: NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.screen_enabled_main = 0x11;
+        frame.cgram_rgba[33] = [80, 0, 0, 0xff];
+        frame.cgram_rgba[0x81] = [0, 80, 0, 0xff];
+        frame.main_tm_scanlines[0] = 0x10;
+
+        let mut main_layer = ModernBgLayer::new(0);
+        main_layer.enabled_main = true;
+        main_layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 2,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = main_layer;
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 32,
+            screen_y: 32,
+            palette: 0,
+            priority: 0,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        });
+
+        let fallback_frame = frame.clone();
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![VariantAtlasEntry {
+                id: "bg:kBgGfx:pack0:tile0:3bpp".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "bg".to_string(),
+                    asset: "kBgGfx".to_string(),
+                    pack: 0,
+                    tile: 0,
+                    bpp: 3,
+                    palette: "palette_dung_bg_main".to_string(),
+                    palette_row: 2,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "stable".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                source_hflip: false,
+                source_vflip: false,
+            }],
+            effects: vec![TileEffect {
+                id: "palette_dung_bg_main:8color:row2".to_string(),
+                palette: "palette_dung_bg_main".to_string(),
+                palette_row: 2,
+                colors_per_row: 8,
+                index_to_rgba: vec![
+                    [0, 0, 0, 0xff],
+                    [80, 0, 0, 0xff],
+                    [2, 2, 2, 0xff],
+                    [3, 3, 3, 0xff],
+                    [4, 4, 4, 0xff],
+                    [5, 5, 5, 0xff],
+                    [6, 6, 6, 0xff],
+                    [7, 7, 7, 0xff],
+                ],
+                dynamic_policy: "stable".to_string(),
+            }],
+        };
+
+        let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_fallback(
+            &frame,
+            &bg_cells,
+            &sprite_cells,
+            &fallback_frame,
+            &bg_cells,
+            &sprite_cells,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(stats.mixed_overlay_bg_effect_candidates, 1, "{stats:?}");
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_culled_invisible_main, 1,
+            "{stats:?}"
+        );
+        assert_eq!(stats.mixed_overlay_bg_effect_draws, 0, "{stats:?}");
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_frame, 0,
+            "{stats:?}"
+        );
+        assert_eq!(
+            stats.mixed_overlay_bg_effect_reject_complex_scanline_main, 0,
+            "{stats:?}"
+        );
+    }
+
+    #[test]
     fn modern_gpu_variant_headless_applies_subscreen_math_to_mixed_live_cgram_bg() {
         use crate::modern_frame::{
             ModernBgLayer, ModernIndexSpriteInstance, ModernIndexTileInstance,
@@ -6234,9 +6369,10 @@ mod tests {
 
         assert_eq!(&rgba[0..4], &[107, 0, 0, 0xff]);
         assert_eq!(stats.mixed_overlay_bg_effect_draws, 1, "{stats:?}");
+        assert_eq!(stats.mixed_overlay_bg_effect_culled_invisible_main, 1);
         assert_eq!(
             stats.mixed_overlay_bg_effect_reject_complex_scanline_main,
-            1
+            0
         );
         assert_eq!(
             stats
