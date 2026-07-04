@@ -104,6 +104,11 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
             "fallback_draws=13 dynamic_palette_draws=17 missing_variant_draws=19 "
             "stable_preview_draws=2 stable_effect_draws=3 dynamic_material_draws=5 "
             "effect_material_draws=4 dynamic_material_fallback_draws=1 "
+            "dynamic_material_fallback_instance_source_draws=2 "
+            "dynamic_material_fallback_brightness_draws=3 "
+            "dynamic_material_fallback_policy_draws=5 "
+            "dynamic_material_fallback_missing_effect_draws=7 "
+            "dynamic_material_fallback_unsupported_draws=11 "
             "unsupported_material_draws=6 "
             "missing_art_draws=7 unkeyed_fallback_draws=11 "
             "unkeyed_bg_fallback_draws=4 unkeyed_sprite_fallback_draws=7 "
@@ -167,6 +172,26 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         self.assertEqual(int_stat(match.group(0), "unsupported_material_draws"), 6)
         self.assertEqual(int_stat(match.group(0), "effect_material_draws"), 4)
         self.assertEqual(int_stat(match.group(0), "dynamic_material_fallback_draws"), 1)
+        self.assertEqual(
+            int_stat(match.group(0), "dynamic_material_fallback_instance_source_draws"),
+            2,
+        )
+        self.assertEqual(
+            int_stat(match.group(0), "dynamic_material_fallback_brightness_draws"),
+            3,
+        )
+        self.assertEqual(
+            int_stat(match.group(0), "dynamic_material_fallback_policy_draws"),
+            5,
+        )
+        self.assertEqual(
+            int_stat(match.group(0), "dynamic_material_fallback_missing_effect_draws"),
+            7,
+        )
+        self.assertEqual(
+            int_stat(match.group(0), "dynamic_material_fallback_unsupported_draws"),
+            11,
+        )
         self.assertEqual(int_stat(match.group(0), "unkeyed_bg_fallback_draws"), 4)
         self.assertEqual(int_stat(match.group(0), "unkeyed_sprite_fallback_draws"), 7)
         self.assertEqual(

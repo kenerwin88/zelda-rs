@@ -264,6 +264,19 @@ renderer/oracle. Verification must report:
   material. This is already on the modern material path.
 - `dynamic_material_fallback_draws`: source art exists, but the live material
   has no modeled stable effect, so the renderer uses the live indexed fallback.
+- `dynamic_material_fallback_instance_source_draws`: fallback draws forced by
+  instance source-key identity. These still use source art, but the draw needs
+  live indexed pixels to preserve the exact source instance.
+- `dynamic_material_fallback_brightness_draws`: fallback draws forced by
+  non-full master brightness until the material path can represent that frame
+  brightness.
+- `dynamic_material_fallback_policy_draws`: fallback draws whose atlas entry is
+  explicitly marked `requires_live_palette`.
+- `dynamic_material_fallback_missing_effect_draws`: fallback draws where the
+  source art exists but no stable `tile_effects.json` effect matches the live
+  material key yet.
+- `dynamic_material_fallback_unsupported_draws`: fallback draws caused by a
+  runtime material class that the renderer does not model yet.
 - `unsupported_material_draws`: the fallback subset caused by an explicit
   runtime material the renderer does not model yet.
 - `missing_art_draws`: the live draw has a source key but no canonical art
@@ -358,9 +371,11 @@ sum of stable preview and stable effect draws, `fallback_draws` is the sum of
 dynamic material fallback, missing art, and unkeyed fallback draws.
 `dynamic_palette_draws` mirrors `dynamic_material_fallback_draws`,
 `dynamic_material_draws` remains the aggregate of `effect_material_draws` and
-`dynamic_material_fallback_draws`, `unsupported_material_draws` is a subset of
-`dynamic_material_fallback_draws`, and `missing_variant_draws` mirrors
-`missing_art_draws`.
+`dynamic_material_fallback_draws`, `dynamic_material_fallback_draws` is the sum
+of the five `dynamic_material_fallback_*` reason buckets above,
+`unsupported_material_draws` is a subset of
+`dynamic_material_fallback_unsupported_draws`, and `missing_variant_draws`
+mirrors `missing_art_draws`.
 
 The CHR/palette-index path remains the oracle until representative replay and
 oracle-window comparisons prove the base/effect path.

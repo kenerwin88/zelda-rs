@@ -30,7 +30,13 @@ MODERN_INDEX_SUMMARY_RE = re.compile(
     r"gpu_count=(\d+) mode7_gpu_count=(\d+) cpu_count=(\d+) "
     r"variant_draws=(\d+) fallback_draws=(\d+) dynamic_palette_draws=(\d+) missing_variant_draws=(\d+)"
     r"(?: stable_preview_draws=(\d+) stable_effect_draws=(\d+) dynamic_material_draws=(\d+) "
-    r"(?:(?:effect_material_draws=\d+ dynamic_material_fallback_draws=\d+) )?"
+    r"(?:(?:effect_material_draws=\d+ dynamic_material_fallback_draws=\d+"
+    r"(?: dynamic_material_fallback_instance_source_draws=\d+"
+    r" dynamic_material_fallback_brightness_draws=\d+"
+    r" dynamic_material_fallback_policy_draws=\d+"
+    r" dynamic_material_fallback_missing_effect_draws=\d+"
+    r" dynamic_material_fallback_unsupported_draws=\d+)?"
+    r") )?"
     r"(?:unsupported_material_draws=\d+ )?"
     r"missing_art_draws=(\d+) unkeyed_fallback_draws=(\d+)"
     r"(?: unkeyed_bg_fallback_draws=\d+ unkeyed_sprite_fallback_draws=\d+)?"
@@ -436,7 +442,7 @@ def run_window(
         )
     if mismatched_pixels != 0:
         raise SystemExit(f"{window.name}: reported {mismatched_pixels} mismatched pixels")
-    variant_stats = (0,) * 39
+    variant_stats = (0,) * 46
     modern_match = MODERN_INDEX_SUMMARY_RE.search(result.stdout)
     if renderer == "assets-variant-gpu":
         if not modern_match:
@@ -488,6 +494,11 @@ def run_window(
             int_stat(modern_match.group(0), "unsupported_material_draws"),
             int_stat(modern_match.group(0), "effect_material_draws"),
             int_stat(modern_match.group(0), "dynamic_material_fallback_draws"),
+            int_stat(modern_match.group(0), "dynamic_material_fallback_instance_source_draws"),
+            int_stat(modern_match.group(0), "dynamic_material_fallback_brightness_draws"),
+            int_stat(modern_match.group(0), "dynamic_material_fallback_policy_draws"),
+            int_stat(modern_match.group(0), "dynamic_material_fallback_missing_effect_draws"),
+            int_stat(modern_match.group(0), "dynamic_material_fallback_unsupported_draws"),
         )
     print(
         f"{window.name}: compared={compared} frames={window.frames} "
@@ -502,6 +513,11 @@ def run_window(
         f"dynamic_material_draws={variant_stats[6]} "
         f"effect_material_draws={variant_stats[39]} "
         f"dynamic_material_fallback_draws={variant_stats[40]} "
+        f"dynamic_material_fallback_instance_source_draws={variant_stats[41]} "
+        f"dynamic_material_fallback_brightness_draws={variant_stats[42]} "
+        f"dynamic_material_fallback_policy_draws={variant_stats[43]} "
+        f"dynamic_material_fallback_missing_effect_draws={variant_stats[44]} "
+        f"dynamic_material_fallback_unsupported_draws={variant_stats[45]} "
         f"unsupported_material_draws={variant_stats[38]} "
         f"missing_art_draws={variant_stats[7]} "
         f"unkeyed_fallback_draws={variant_stats[8]} "
@@ -652,6 +668,11 @@ def main() -> None:
     total_dynamic_material_draws = 0
     total_effect_material_draws = 0
     total_dynamic_material_fallback_draws = 0
+    total_dynamic_material_fallback_instance_source_draws = 0
+    total_dynamic_material_fallback_brightness_draws = 0
+    total_dynamic_material_fallback_policy_draws = 0
+    total_dynamic_material_fallback_missing_effect_draws = 0
+    total_dynamic_material_fallback_unsupported_draws = 0
     total_unsupported_material_draws = 0
     total_missing_art_draws = 0
     total_unkeyed_fallback_draws = 0
@@ -733,6 +754,11 @@ def main() -> None:
         total_dynamic_material_draws += variant_stats[6]
         total_effect_material_draws += variant_stats[39]
         total_dynamic_material_fallback_draws += variant_stats[40]
+        total_dynamic_material_fallback_instance_source_draws += variant_stats[41]
+        total_dynamic_material_fallback_brightness_draws += variant_stats[42]
+        total_dynamic_material_fallback_policy_draws += variant_stats[43]
+        total_dynamic_material_fallback_missing_effect_draws += variant_stats[44]
+        total_dynamic_material_fallback_unsupported_draws += variant_stats[45]
         total_unsupported_material_draws += variant_stats[38]
         total_missing_art_draws += variant_stats[7]
         total_unkeyed_fallback_draws += variant_stats[8]
@@ -807,6 +833,11 @@ def main() -> None:
         f"dynamic_material_draws={total_dynamic_material_draws} "
         f"effect_material_draws={total_effect_material_draws} "
         f"dynamic_material_fallback_draws={total_dynamic_material_fallback_draws} "
+        f"dynamic_material_fallback_instance_source_draws={total_dynamic_material_fallback_instance_source_draws} "
+        f"dynamic_material_fallback_brightness_draws={total_dynamic_material_fallback_brightness_draws} "
+        f"dynamic_material_fallback_policy_draws={total_dynamic_material_fallback_policy_draws} "
+        f"dynamic_material_fallback_missing_effect_draws={total_dynamic_material_fallback_missing_effect_draws} "
+        f"dynamic_material_fallback_unsupported_draws={total_dynamic_material_fallback_unsupported_draws} "
         f"unsupported_material_draws={total_unsupported_material_draws} "
         f"missing_art_draws={total_missing_art_draws} "
         f"unkeyed_fallback_draws={total_unkeyed_fallback_draws} "

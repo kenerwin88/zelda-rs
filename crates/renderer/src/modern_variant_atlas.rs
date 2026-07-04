@@ -56,9 +56,19 @@ pub enum VariantAtlasDraw<'a> {
     },
     DynamicPalette {
         entry: &'a VariantAtlasEntry,
+        reason: DynamicFallbackReason,
     },
     MissingArt,
     Unkeyed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DynamicFallbackReason {
+    InstanceSourceKey,
+    Brightness,
+    EntryRequiresLivePalette,
+    UnsupportedMaterial,
+    MissingStableEffect,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -98,7 +108,7 @@ impl<'a> VariantAtlasDraw<'a> {
         match self {
             Self::Stable { entry }
             | Self::MaterialEffect { entry, .. }
-            | Self::DynamicPalette { entry } => Some(entry),
+            | Self::DynamicPalette { entry, .. } => Some(entry),
             Self::MissingArt | Self::Unkeyed => None,
         }
     }
@@ -116,8 +126,10 @@ impl<'a> VariantAtlasDraw<'a> {
     pub fn is_unsupported_material_fallback(self) -> bool {
         matches!(
             self,
-            Self::DynamicPalette { entry }
-                if entry_runtime_material(entry) == RuntimeMaterial::Unsupported
+            Self::DynamicPalette {
+                reason: DynamicFallbackReason::UnsupportedMaterial,
+                ..
+            }
         )
     }
 }
@@ -222,10 +234,18 @@ impl ModernVariantAtlas {
             return VariantAtlasDraw::MissingArt;
         };
         if entry_dynamic_policy(entry) != DynamicPolicy::Stable {
-            return VariantAtlasDraw::DynamicPalette { entry };
+            return VariantAtlasDraw::DynamicPalette {
+                entry,
+                reason: DynamicFallbackReason::EntryRequiresLivePalette,
+            };
         }
         match entry_runtime_material(entry) {
-            RuntimeMaterial::Unsupported => return VariantAtlasDraw::DynamicPalette { entry },
+            RuntimeMaterial::Unsupported => {
+                return VariantAtlasDraw::DynamicPalette {
+                    entry,
+                    reason: DynamicFallbackReason::UnsupportedMaterial,
+                };
+            }
             RuntimeMaterial::PaletteLut => {
                 let stable_effect = self
                     .effect_for_entry_and_key(entry, key)
@@ -249,12 +269,16 @@ impl ModernVariantAtlas {
                 return VariantAtlasDraw::Stable { entry };
             }
         }
-        VariantAtlasDraw::DynamicPalette { entry }
+        VariantAtlasDraw::DynamicPalette {
+            entry,
+            reason: DynamicFallbackReason::MissingStableEffect,
+        }
     }
 
     pub fn resolve_dynamic_draw<'a>(
         &'a self,
         key: Option<&VariantAtlasKey>,
+        reason: DynamicFallbackReason,
     ) -> VariantAtlasDraw<'a> {
         let Some(key) = key else {
             return VariantAtlasDraw::Unkeyed;
@@ -262,7 +286,7 @@ impl ModernVariantAtlas {
         let Some(entry) = self.entry_for_source_key(key) else {
             return VariantAtlasDraw::MissingArt;
         };
-        VariantAtlasDraw::DynamicPalette { entry }
+        VariantAtlasDraw::DynamicPalette { entry, reason }
     }
 }
 
@@ -1151,10 +1175,32 @@ mod tests {
         let live_key = bg_test_key_with_palette_row(3);
 
         match atlas.resolve_draw(Some(&live_key)) {
-            VariantAtlasDraw::DynamicPalette { entry } => {
+            VariantAtlasDraw::DynamicPalette { entry, reason } => {
                 assert_eq!(entry.id, "bg:kBgGfx:pack0:tile0:3bpp");
+                assert_eq!(reason, DynamicFallbackReason::MissingStableEffect);
             }
             other => panic!("expected dynamic fallback, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_draw_keeps_requires_live_policy_dynamic() {
+        let mut entry = bg_test_entry_with_palette_row(3);
+        entry.dynamic_policy = "requires_live_palette".to_string();
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: solid_rgba(8, 8, [1, 2, 3, 255]),
+            entries: vec![entry],
+            effects: Vec::new(),
+        };
+        let live_key = bg_test_key_with_palette_row(3);
+
+        match atlas.resolve_draw(Some(&live_key)) {
+            VariantAtlasDraw::DynamicPalette { reason, .. } => {
+                assert_eq!(reason, DynamicFallbackReason::EntryRequiresLivePalette);
+            }
+            other => panic!("expected requires-live entry to stay dynamic, got {other:?}"),
         }
     }
 
@@ -1206,8 +1252,9 @@ mod tests {
         let live_key = bg_test_key_with_palette_row(3);
 
         match atlas.resolve_draw(Some(&live_key)) {
-            VariantAtlasDraw::DynamicPalette { entry } => {
+            VariantAtlasDraw::DynamicPalette { entry, reason } => {
                 assert_eq!(entry.id, "bg:kBgGfx:pack0:tile0:3bpp");
+                assert_eq!(reason, DynamicFallbackReason::UnsupportedMaterial);
             }
             other => panic!("expected unknown material to stay dynamic, got {other:?}"),
         }
@@ -1399,8 +1446,9 @@ mod tests {
         assert_eq!(atlas.entries.len(), 1);
         assert_eq!(atlas.entries[0].dynamic_policy, "requires_live_palette");
         match atlas.resolve_draw(Some(&live_key)) {
-            VariantAtlasDraw::DynamicPalette { entry } => {
+            VariantAtlasDraw::DynamicPalette { entry, reason } => {
                 assert_eq!(entry.id, "sprite:kSprGfx:pack0:tile7:3bpp");
+                assert_eq!(reason, DynamicFallbackReason::EntryRequiresLivePalette);
             }
             other => panic!("expected runtime policy to force dynamic draw, got {other:?}"),
         }

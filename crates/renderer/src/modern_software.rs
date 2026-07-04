@@ -70,6 +70,11 @@ pub struct VariantAtlasRenderStats {
     pub dynamic_material_draws: u32,
     pub effect_material_draws: u32,
     pub dynamic_material_fallback_draws: u32,
+    pub dynamic_material_fallback_instance_source_draws: u32,
+    pub dynamic_material_fallback_brightness_draws: u32,
+    pub dynamic_material_fallback_policy_draws: u32,
+    pub dynamic_material_fallback_missing_effect_draws: u32,
+    pub dynamic_material_fallback_unsupported_draws: u32,
     pub unsupported_material_draws: u32,
     pub missing_art_draws: u32,
     pub unkeyed_fallback_draws: u32,
@@ -121,11 +126,28 @@ impl VariantAtlasRenderStats {
                 self.dynamic_material_draws += 1;
                 self.effect_material_draws += 1;
             }
-            crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. } => {
+            crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { reason, .. } => {
                 self.fallback_draws += 1;
                 self.dynamic_palette_draws += 1;
                 self.dynamic_material_draws += 1;
                 self.dynamic_material_fallback_draws += 1;
+                match reason {
+                    crate::modern_variant_atlas::DynamicFallbackReason::InstanceSourceKey => {
+                        self.dynamic_material_fallback_instance_source_draws += 1;
+                    }
+                    crate::modern_variant_atlas::DynamicFallbackReason::Brightness => {
+                        self.dynamic_material_fallback_brightness_draws += 1;
+                    }
+                    crate::modern_variant_atlas::DynamicFallbackReason::EntryRequiresLivePalette => {
+                        self.dynamic_material_fallback_policy_draws += 1;
+                    }
+                    crate::modern_variant_atlas::DynamicFallbackReason::UnsupportedMaterial => {
+                        self.dynamic_material_fallback_unsupported_draws += 1;
+                    }
+                    crate::modern_variant_atlas::DynamicFallbackReason::MissingStableEffect => {
+                        self.dynamic_material_fallback_missing_effect_draws += 1;
+                    }
+                }
                 if draw.is_unsupported_material_fallback() {
                     self.unsupported_material_draws += 1;
                 }

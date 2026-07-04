@@ -2,8 +2,8 @@ use crate::modern_frame::{ModernFrame, ModernIndexSpriteInstance, ModernIndexTil
 use crate::modern_index_atlas::ModernIndexTile;
 use crate::modern_software::VariantAtlasRenderStats;
 use crate::modern_variant_atlas::{
-    variant_key_for_index_tile, variant_key_for_source_key, ModernVariantAtlas, VariantAtlasDraw,
-    VariantAtlasKey,
+    variant_key_for_index_tile, variant_key_for_source_key, DynamicFallbackReason,
+    ModernVariantAtlas, VariantAtlasDraw, VariantAtlasKey,
 };
 
 #[derive(Clone, Debug)]
@@ -100,8 +100,10 @@ fn resolve_draw_for_frame<'a>(
     force_dynamic: bool,
     frame: &ModernFrame,
 ) -> VariantAtlasDraw<'a> {
-    if force_dynamic || frame.brightness != 15 {
-        atlas.resolve_dynamic_draw(key)
+    if force_dynamic {
+        atlas.resolve_dynamic_draw(key, DynamicFallbackReason::InstanceSourceKey)
+    } else if frame.brightness != 15 {
+        atlas.resolve_dynamic_draw(key, DynamicFallbackReason::Brightness)
     } else {
         atlas.resolve_draw(key)
     }
@@ -117,7 +119,8 @@ mod tests {
     use crate::modern_index_atlas::ModernIndexTile;
     use crate::modern_source_atlas::modern_source_key;
     use crate::modern_variant_atlas::{
-        ModernVariantAtlas, TileEffect, VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
+        DynamicFallbackReason, ModernVariantAtlas, TileEffect, VariantAtlasDraw, VariantAtlasEntry,
+        VariantAtlasKey,
     };
 
     fn bg_key(pack: u16, tile: u16, palette_row: u8) -> VariantAtlasKey {
@@ -323,11 +326,18 @@ mod tests {
         assert_eq!(plan.bg.len(), 1);
         assert!(matches!(
             plan.bg[0].draw,
-            VariantAtlasDraw::DynamicPalette { .. }
+            VariantAtlasDraw::DynamicPalette {
+                reason: DynamicFallbackReason::InstanceSourceKey,
+                ..
+            }
         ));
         assert_eq!(plan.stats.dynamic_palette_draws, 1);
         assert_eq!(plan.stats.effect_material_draws, 0);
         assert_eq!(plan.stats.dynamic_material_fallback_draws, 1);
+        assert_eq!(
+            plan.stats.dynamic_material_fallback_instance_source_draws,
+            1
+        );
         assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.unkeyed_fallback_draws, 0);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
@@ -418,11 +428,18 @@ mod tests {
         assert_eq!(plan.bg.len(), 1);
         assert!(matches!(
             plan.bg[0].draw,
-            VariantAtlasDraw::DynamicPalette { .. }
+            VariantAtlasDraw::DynamicPalette {
+                reason: DynamicFallbackReason::InstanceSourceKey,
+                ..
+            }
         ));
         assert_eq!(plan.stats.dynamic_palette_draws, 1);
         assert_eq!(plan.stats.effect_material_draws, 0);
         assert_eq!(plan.stats.dynamic_material_fallback_draws, 1);
+        assert_eq!(
+            plan.stats.dynamic_material_fallback_instance_source_draws,
+            1
+        );
         assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
     }
@@ -462,10 +479,14 @@ mod tests {
         assert_eq!(plan.sprites.len(), 1);
         assert!(matches!(
             plan.sprites[0].draw,
-            VariantAtlasDraw::DynamicPalette { .. }
+            VariantAtlasDraw::DynamicPalette {
+                reason: DynamicFallbackReason::Brightness,
+                ..
+            }
         ));
         assert_eq!(plan.stats.dynamic_palette_draws, 1);
         assert_eq!(plan.stats.dynamic_material_fallback_draws, 1);
+        assert_eq!(plan.stats.dynamic_material_fallback_brightness_draws, 1);
         assert_eq!(plan.stats.stable_effect_draws, 0);
         assert_eq!(plan.stats.unkeyed_sprite_fallback_draws, 0);
     }
