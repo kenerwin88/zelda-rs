@@ -482,6 +482,7 @@ impl GpuFrameRenderScreen {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn work_item_kind(self, command: GpuFrameScreenWorkCommand) -> GpuWorkItemKind {
         match (self, command) {
             (Self::Main, GpuFrameScreenWorkCommand::ClearBackdrop(_)) => {

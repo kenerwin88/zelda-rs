@@ -1,4 +1,5 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(dead_code)]
 pub(crate) enum GpuWorkItemKind {
     ClearBackdrop,
     MainBgLayer,
@@ -13,6 +14,7 @@ pub(crate) enum GpuWorkItemKind {
     PostProcess,
 }
 
+#[allow(dead_code)]
 pub(crate) trait GpuWorkItem {
     fn kind(&self) -> GpuWorkItemKind;
 }
