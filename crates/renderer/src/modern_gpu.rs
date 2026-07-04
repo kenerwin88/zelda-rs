@@ -975,9 +975,9 @@ impl ModernGpuVariantRenderer {
         sprite_cells: &[ModernIndexTile],
         rank_plan: Mode1EffectRankRenderPlan<'_, '_>,
         output_view: &wgpu::TextureView,
-        rendered_any: bool,
-    ) -> bool {
-        let mut rendered_any = rendered_any;
+        rendered_before_rank: bool,
+    ) {
+        let mut rendered_any = rendered_before_rank;
         rank_plan.execute_with(|work_item| {
             let bg_load = if rendered_any {
                 wgpu::LoadOp::Load
@@ -999,7 +999,6 @@ impl ModernGpuVariantRenderer {
             );
             rendered_any = true;
         });
-        rendered_any
     }
 
     fn build_variant_frame_from_plan(
