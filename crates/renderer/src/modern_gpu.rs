@@ -710,10 +710,16 @@ struct OverlayBgEffectDispatch<'a> {
     live_cgram_bg: Vec<crate::modern_variant_draw::VariantBgDrawPacket<'a>>,
 }
 
+#[derive(Clone, Copy)]
 struct EffectMaterialGroup<'dispatch, Packet> {
     material: EffectMaterial,
     packets: &'dispatch [Packet],
 }
+
+type BgEffectMaterialGroup<'dispatch, 'frame> =
+    EffectMaterialGroup<'dispatch, crate::modern_variant_draw::VariantBgDrawPacket<'frame>>;
+type SpriteEffectMaterialGroup<'dispatch, 'frame> =
+    EffectMaterialGroup<'dispatch, crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>>;
 
 impl OverlayBgEffectDispatch<'_> {
     fn len(&self) -> usize {
@@ -726,10 +732,7 @@ impl OverlayBgEffectDispatch<'_> {
 }
 
 impl<'a> OverlayBgEffectDispatch<'a> {
-    fn material_groups(
-        &self,
-    ) -> impl Iterator<Item = EffectMaterialGroup<'_, crate::modern_variant_draw::VariantBgDrawPacket<'a>>>
-    {
+    fn material_groups(&self) -> impl Iterator<Item = BgEffectMaterialGroup<'_, 'a>> {
         [
             EffectMaterialGroup {
                 material: EffectMaterial::StaticEffect,
@@ -2180,59 +2183,65 @@ impl ModernGpuVariantEffectRenderer {
         output_view: &wgpu::TextureView,
         load: wgpu::LoadOp<wgpu::Color>,
     ) {
-        let mut batch = EffectMaterialBatch::default();
-        for packet in packets {
-            let Some(material_packet) = static_bg_effect_material_packet(atlas, packet) else {
-                continue;
-            };
-            batch.push(material_packet, EffectSurface::Bg);
-        }
-
-        self.render_bg_effect_batch(
+        self.render_bg_material_group(
             device,
             queue,
             bg_cells,
-            &self.effect_lut_view,
-            &batch,
+            None,
+            atlas,
+            BgEffectMaterialGroup {
+                material: EffectMaterial::StaticEffect,
+                packets,
+            },
             output_view,
             load,
-            "modern_variant_effect_index_atlas",
-            "modern_variant_effect",
-            "modern_variant_effect_instances",
         );
     }
 
-    fn render_bg_with_live_cgram(
+    fn render_bg_material_group(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         bg_cells: &[ModernIndexTile],
-        frame: &ModernFrame,
-        packets: &[crate::modern_variant_draw::VariantBgDrawPacket<'_>],
+        frame: Option<&ModernFrame>,
+        atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+        group: BgEffectMaterialGroup<'_, '_>,
         output_view: &wgpu::TextureView,
         load: wgpu::LoadOp<wgpu::Color>,
     ) {
-        let (_live_lut_texture, live_lut_view) = build_live_effect_lut(device, queue, frame);
-        let mut batch = EffectMaterialBatch::default();
-        for packet in packets {
-            let Some(material_packet) = live_cgram_bg_effect_material_packet(packet) else {
-                continue;
-            };
-            batch.push(material_packet, EffectSurface::Bg);
+        let material = group.material;
+        let batch = bg_effect_material_batch(atlas, group);
+        match material {
+            EffectMaterial::StaticEffect => self.render_bg_effect_batch(
+                device,
+                queue,
+                bg_cells,
+                &self.effect_lut_view,
+                &batch,
+                output_view,
+                load,
+                "modern_variant_effect_index_atlas",
+                "modern_variant_effect",
+                "modern_variant_effect_instances",
+            ),
+            EffectMaterial::LiveCgram => {
+                let frame = frame.expect("live CGRAM BG effect rendering needs frame CGRAM");
+                let (_live_lut_texture, live_lut_view) =
+                    build_live_effect_lut(device, queue, frame);
+                self.render_bg_effect_batch(
+                    device,
+                    queue,
+                    bg_cells,
+                    &live_lut_view,
+                    &batch,
+                    output_view,
+                    load,
+                    "modern_variant_live_cgram_index_atlas",
+                    "modern_variant_live_cgram_effect",
+                    "modern_variant_live_cgram_effect_instances",
+                );
+            }
         }
-
-        self.render_bg_effect_batch(
-            device,
-            queue,
-            bg_cells,
-            &live_lut_view,
-            &batch,
-            output_view,
-            load,
-            "modern_variant_live_cgram_index_atlas",
-            "modern_variant_live_cgram_effect",
-            "modern_variant_live_cgram_effect_instances",
-        );
     }
 
     fn render_overlay_bg_effects(
@@ -2246,26 +2255,16 @@ impl ModernGpuVariantEffectRenderer {
         output_view: &wgpu::TextureView,
     ) {
         for group in overlay.effects.material_groups() {
-            match group.material {
-                EffectMaterial::StaticEffect => self.render_bg(
-                    device,
-                    queue,
-                    bg_cells,
-                    atlas,
-                    group.packets,
-                    output_view,
-                    wgpu::LoadOp::Load,
-                ),
-                EffectMaterial::LiveCgram => self.render_bg_with_live_cgram(
-                    device,
-                    queue,
-                    bg_cells,
-                    frame,
-                    group.packets,
-                    output_view,
-                    wgpu::LoadOp::Load,
-                ),
-            }
+            self.render_bg_material_group(
+                device,
+                queue,
+                bg_cells,
+                Some(frame),
+                atlas,
+                group,
+                output_view,
+                wgpu::LoadOp::Load,
+            );
         }
     }
 
@@ -2559,11 +2558,29 @@ fn live_cgram_bg_effect_material_packet<'packet, 'frame>(
     ))
 }
 
+fn bg_effect_material_batch(
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+    group: BgEffectMaterialGroup<'_, '_>,
+) -> EffectMaterialBatch {
+    let mut batch = EffectMaterialBatch::default();
+    for packet in group.packets {
+        let material_packet = match group.material {
+            EffectMaterial::StaticEffect => static_bg_effect_material_packet(atlas, packet),
+            EffectMaterial::LiveCgram => live_cgram_bg_effect_material_packet(packet),
+        };
+        let Some(material_packet) = material_packet else {
+            continue;
+        };
+        debug_assert_eq!(material_packet.material, group.material);
+        batch.push(material_packet, EffectSurface::Bg);
+    }
+    batch
+}
+
 fn sprite_effect_material_groups<'dispatch, 'frame>(
     atlas: &'frame crate::modern_variant_atlas::ModernVariantAtlas,
     packets: &'dispatch [crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>],
-) -> Vec<EffectMaterialGroup<'dispatch, crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>>>
-{
+) -> Vec<SpriteEffectMaterialGroup<'dispatch, 'frame>> {
     let mut groups = Vec::new();
     let mut current_material = None;
     let mut current_start = 0;
@@ -6468,6 +6485,26 @@ mod tests {
         assert_eq!(live_material.material, EffectMaterial::LiveCgram);
         assert_eq!(live_material.surface, EffectSurface::Bg);
         assert_eq!(live_material.effect_row, 3);
+
+        let static_batch = bg_effect_material_batch(
+            &atlas,
+            BgEffectMaterialGroup {
+                material: EffectMaterial::StaticEffect,
+                packets: std::slice::from_ref(&static_packet),
+            },
+        );
+        assert_eq!(static_batch.material(), Some(EffectMaterial::StaticEffect));
+        assert_eq!(static_batch.instance_count(), 1);
+
+        let live_batch = bg_effect_material_batch(
+            &atlas,
+            BgEffectMaterialGroup {
+                material: EffectMaterial::LiveCgram,
+                packets: std::slice::from_ref(&live_packet),
+            },
+        );
+        assert_eq!(live_batch.material(), Some(EffectMaterial::LiveCgram));
+        assert_eq!(live_batch.instance_count(), 1);
     }
 
     #[test]
