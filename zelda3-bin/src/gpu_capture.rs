@@ -172,6 +172,16 @@ pub(crate) fn render_modern_index_compare_output_from_capture(
     })
 }
 
+pub(crate) fn render_modern_atlas_compare_report_from_capture(
+    resources: &renderer::ModernAtlasCompareResources,
+    capture: &LiveGpuFrameCapture,
+    classic_rgba: &[u8],
+    frame: u32,
+) -> Option<renderer::ModernAtlasCompareFrameReport> {
+    let gpu_frame = capture.gpu_frame();
+    resources.compare_frame_rgba(frame, &gpu_frame, classic_rgba)
+}
+
 fn gpu_frame_capture_from_ppu<'a>(
     ppu: &'a snes::ppu::PpuState,
     cgram: &'a [u16],

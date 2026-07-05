@@ -26,6 +26,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpu_capture::{
     capture_gpu_frame_from_game, render_gpu_capture_rgba,
+    render_modern_atlas_compare_report_from_capture,
     render_modern_index_compare_output_from_capture,
 };
 use platform::{
@@ -11742,13 +11743,13 @@ fn run_play_gpu_render_compare(args: &[String]) {
         }
         if should_compare_modern {
             let gpu_capture = capture_gpu_frame_from_game(&mut game);
-            let gpu_frame = gpu_capture.gpu_frame();
             // Classic GPU render (oracle) via the offscreen renderer:
             let classic_rgba = render_gpu_capture_rgba(&gpu_capture, &mut offscreen);
-            if let Some(report) = modern_atlas_compare_resources.compare_frame_rgba(
-                completed_frame,
-                &gpu_frame,
+            if let Some(report) = render_modern_atlas_compare_report_from_capture(
+                &modern_atlas_compare_resources,
+                &gpu_capture,
                 &classic_rgba,
+                completed_frame,
             ) {
                 println!("{}", report.line);
             }
