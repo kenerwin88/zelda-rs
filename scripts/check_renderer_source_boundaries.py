@@ -251,6 +251,8 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "gpu_frame_from_ppu(",
     "ModernIndexCompareFrameOutputInput",
     "render_compare_frame_output_from_entries(",
+    "ModernIndexCompareOutputLines",
+    "ModernIndexCompareOutputStream",
     "compare_frame_rgba(",
     "ModernAtlasCompareResources::load(",
     "load_resources_from_env(",

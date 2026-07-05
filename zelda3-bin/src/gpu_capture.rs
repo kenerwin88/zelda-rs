@@ -187,6 +187,17 @@ pub(crate) fn render_modern_index_compare_output_from_capture(
     })
 }
 
+pub(crate) fn emit_modern_index_compare_output_lines(
+    output: &renderer::ModernIndexCompareOutputLines,
+) {
+    for output_line in &output.lines {
+        match output_line.stream {
+            renderer::ModernIndexCompareOutputStream::Stdout => println!("{}", output_line.line),
+            renderer::ModernIndexCompareOutputStream::Stderr => eprintln!("{}", output_line.line),
+        }
+    }
+}
+
 pub(crate) fn render_modern_atlas_compare_report_from_capture(
     resources: &renderer::ModernAtlasCompareResources,
     capture: &LiveGpuFrameCapture,

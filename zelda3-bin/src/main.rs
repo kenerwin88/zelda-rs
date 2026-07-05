@@ -25,9 +25,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpu_capture::{
-    capture_gpu_frame_from_game, load_modern_atlas_compare_resources,
-    load_modern_index_compare_resources, render_gpu_capture_rgba,
-    render_modern_atlas_compare_report_from_capture,
+    capture_gpu_frame_from_game, emit_modern_index_compare_output_lines,
+    load_modern_atlas_compare_resources, load_modern_index_compare_resources,
+    render_gpu_capture_rgba, render_modern_atlas_compare_report_from_capture,
     render_modern_index_compare_output_from_capture,
 };
 use platform::{
@@ -11783,15 +11783,6 @@ fn run_play_gpu_render_compare(args: &[String]) {
         modern_index_compare_stats.summary_line_if_enabled(modern_index_compare.enabled())
     {
         println!("{line}");
-    }
-}
-
-fn emit_modern_index_compare_output_lines(output: &renderer::ModernIndexCompareOutputLines) {
-    for output_line in &output.lines {
-        match output_line.stream {
-            renderer::ModernIndexCompareOutputStream::Stdout => println!("{}", output_line.line),
-            renderer::ModernIndexCompareOutputStream::Stderr => eprintln!("{}", output_line.line),
-        }
     }
 }
 
