@@ -250,6 +250,7 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "ModernAssetLiveStats::from_env()",
     "LiveGpuFrameCapture::from_game(",
     "present_modern_asset_live_frame_from_entries(",
+    "RendererMode::from_effective_env()",
     "modern asset load failed",
 )
 

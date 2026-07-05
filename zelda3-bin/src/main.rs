@@ -1365,6 +1365,8 @@ fn count_nonzero(bytes: &[u8]) -> usize {
 trait PlayRendererBackend {
     fn name(&self) -> &'static str;
 
+    fn configure_frontend(&self, frontend: &mut NativeFrontend);
+
     fn present_frame(
         &mut self,
         game: &mut ZeldaState,
@@ -1379,6 +1381,10 @@ struct CpuPlayRenderer;
 impl PlayRendererBackend for CpuPlayRenderer {
     fn name(&self) -> &'static str {
         "cpu_render"
+    }
+
+    fn configure_frontend(&self, frontend: &mut NativeFrontend) {
+        frontend.set_renderer_mode(renderer::RendererMode::Classic);
     }
 
     fn present_frame(
@@ -1432,16 +1438,7 @@ fn run_play_with_state(mut game: ZeldaState) {
             process::exit(1);
         }
     };
-    // Default (unset) now selects `assets-variant-gpu`; `ZELDA3_VARIANT_ATLAS=off`
-    // selects the older `assets-anim-gpu` path, and `ZELDA3_RENDERER=classic` opts
-    // back into the wgpu PPU. `ZELDA3_RENDERER=modern`/`modern-compare` route
-    // through the modern (software) live-VRAM path. The assets modes map to Modern
-    // here because `RendererMode::parse` only recognizes "modern"/"modern-compare"
-    // (it's shared with the offline compare harness, which tracks assets modes
-    // separately). GPU asset modes intercept Mode 7 and source-atlas misses in the
-    // module-owned GPU play renderer, so the default path does not need
-    // `FrameRenderer::render_modern_frame`'s CPU compositor.
-    frontend.set_renderer_mode(renderer::RendererMode::from_effective_env());
+    renderer.configure_frontend(&mut frontend);
     let mut frame = vec![0u8; width as usize * height as usize * 4];
     let audio_samples = frontend.audio_samples_per_frame();
     let audio_channels = frontend.audio_channels();

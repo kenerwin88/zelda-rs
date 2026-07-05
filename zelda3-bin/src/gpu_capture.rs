@@ -78,6 +78,18 @@ impl super::PlayRendererBackend for GpuPlayRenderer {
         "gpu_render"
     }
 
+    fn configure_frontend(&self, frontend: &mut NativeFrontend) {
+        // Default (unset) now selects `assets-variant-gpu`; `ZELDA3_VARIANT_ATLAS=off`
+        // selects the older `assets-anim-gpu` path, and `ZELDA3_RENDERER=classic`
+        // opts back into the wgpu PPU. `ZELDA3_RENDERER=modern`/`modern-compare`
+        // route through the modern software live-VRAM path. Asset modes map to
+        // Modern because `RendererMode::parse` only recognizes "modern" and
+        // "modern-compare"; GPU asset modes intercept Mode 7 and source-atlas
+        // misses below, so the default path does not need
+        // `FrameRenderer::render_modern_frame`'s CPU compositor.
+        frontend.set_renderer_mode(renderer::RendererMode::from_effective_env());
+    }
+
     fn present_frame(
         &mut self,
         game: &mut ZeldaState,
