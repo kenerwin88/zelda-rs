@@ -30,6 +30,7 @@ def source_with_required_calls(body: str) -> str:
         let compare = renderer::ModernIndexCompareStats::from_env();
         let frame_record = renderer::ModernIndexCompareFrameRenderInput {};
         let compare_resources = renderer::ModernIndexCompareResources::load_from_env();
+        let atlas_compare_resources = renderer::ModernAtlasCompareResources::load();
         let source_table = renderer::MappedSourceTableView::from_entries(&[(0, 0, 0)]);
         let gpu_diff = renderer::compare_gpu_render_bgra_to_rgba(&[], &[]);
         let frame = renderer::GpuFrame::from_source_and_raw_scanlines();
@@ -193,6 +194,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let _ = "ZELDA3_VARIANT_ATLAS";
                 renderer::ModernAssetFrameResources::load_for_mode(mode, root);
                 renderer::ModernIndexCompareResources::load_for_mode(enabled, mode, root, true);
+                renderer::modern_assets::load_modern_overworld_tile_atlas(root);
                 let renderer_env = renderer::EffectiveRendererMode::from_env();
                 renderer_env.uses_source_atlas();
             }
@@ -201,7 +203,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 9)
+        self.assertEqual(len(errors), 10)
         self.assertTrue(
             all("modern asset loading policy escaped renderer boundary" in error for error in errors)
         )

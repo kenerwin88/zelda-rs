@@ -2219,6 +2219,32 @@ impl ModernIndexCompareResources {
     }
 }
 
+/// Renderer-owned resource bundle for the legacy modern-atlas compare path.
+///
+/// The binary supplies only whether the diagnostic compare is requested. The
+/// renderer owns which atlas that compare path needs.
+pub struct ModernAtlasCompareResources {
+    atlas: Option<modern_assets::ModernTileAtlasAsset>,
+}
+
+impl ModernAtlasCompareResources {
+    pub fn load(enabled: bool, root: &Path) -> Result<Self, String> {
+        let atlas = if enabled {
+            Some(
+                modern_assets::load_modern_overworld_tile_atlas(root)
+                    .map_err(|e| format!("modern atlas load failed: {e}"))?,
+            )
+        } else {
+            None
+        };
+        Ok(Self { atlas })
+    }
+
+    pub fn atlas(&self) -> Option<&modern_assets::ModernTileAtlasAsset> {
+        self.atlas.as_ref()
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ModernAssetFrameScene {
     in_dungeon: bool,
@@ -3661,6 +3687,18 @@ mod tests {
         assert!(resources.source_atlas().is_none());
         assert!(resources.gpu_headless().is_none());
         assert!(resources.variant_headless().is_none());
+
+        fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn modern_atlas_compare_resources_skip_when_compare_disabled() {
+        let root = temp_modern_asset_root("modern-atlas-disabled");
+
+        let resources = ModernAtlasCompareResources::load(false, &root)
+            .expect("disabled atlas compare loads no resources");
+
+        assert!(resources.atlas().is_none());
 
         fs::remove_dir_all(root).expect("remove temp root");
     }

@@ -12096,17 +12096,12 @@ fn run_play_gpu_render_compare(args: &[String]) {
         apply_sram_to_game_or_exit(&mut game, path, &sram);
     }
 
-    let modern_atlas = if modern_render_compare != 0 {
-        Some(
-            renderer::modern_assets::load_modern_overworld_tile_atlas(Path::new("."))
-                .unwrap_or_else(|e| {
-                    eprintln!("failed to load modern atlas: {e}");
-                    process::exit(2);
-                }),
-        )
-    } else {
-        None
-    };
+    let modern_atlas_compare_resources =
+        renderer::ModernAtlasCompareResources::load(modern_render_compare != 0, Path::new("."))
+            .unwrap_or_else(|e| {
+                eprintln!("modern atlas compare resources load failed: {e}");
+                process::exit(2);
+            });
     let modern_index_compare_resources = renderer::ModernIndexCompareResources::load_from_env(
         modern_index_compare != 0,
         Path::new("."),
@@ -12157,7 +12152,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
             last_hash = cpu_hash;
         }
         if should_compare_modern {
-            if let Some(atlas) = modern_atlas.as_ref() {
+            if let Some(atlas) = modern_atlas_compare_resources.atlas() {
                 // Reconstruct the GpuFrame the same way compare_gpu_render_current_frame does:
                 let hdma_cgram = game.cgram_after_first_hdma_line();
                 let scanlines_raw = game.ppu_scanline_windows();

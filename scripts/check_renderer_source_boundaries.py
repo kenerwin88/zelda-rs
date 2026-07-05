@@ -29,6 +29,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernIndexCompareStats",
     "ModernIndexCompareFrameRenderInput",
     "ModernIndexCompareResources::load_from_env",
+    "ModernAtlasCompareResources",
     "MappedSourceTableView",
     "MappedSourceTableView::from_entries",
     "compare_gpu_render_bgra_to_rgba",
@@ -72,6 +73,7 @@ FORBIDDEN_ASSET_POLICY_CALLS = (
     "ZELDA3_VARIANT_ATLAS",
     "ModernAssetFrameResources::load_for_mode(",
     "ModernIndexCompareResources::load_for_mode(",
+    "load_modern_overworld_tile_atlas(",
     "EffectiveRendererMode::from_env()",
     "uses_source_atlas()",
 )
