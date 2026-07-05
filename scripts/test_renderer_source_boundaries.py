@@ -1032,6 +1032,52 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_overworld_dump_command_ownership_in_main(self):
+        module = load_module()
+        source = """
+            struct UniqueOverworldCellAtlasManifest {}
+            struct UniqueOverworldCellManifestEntry {}
+            struct UniqueOverworldCellSource {}
+            struct UniqueOverworldCell {}
+            struct UniqueOverworldCellCollector {}
+            impl UniqueOverworldCellCollector {}
+            struct UniqueOverworldTileAtlasManifest {}
+            struct UniqueOverworldTileManifestEntry {}
+            struct DecodedTilemapEntry {}
+            struct UniqueOverworldTile {}
+            struct UniqueOverworldTileCollector {}
+            impl UniqueOverworldTileCollector {}
+            struct OverworldIndexTile {}
+            struct OverworldIndexTileCollector {}
+            impl OverworldIndexTileCollector {}
+            struct OverworldIndexTileAtlasManifest {}
+            struct OverworldIndexTileCellManifest {}
+            fn decode_tilemap_entry() {}
+            fn collect_unique_overworld_cells_from_built_bg2_map() {}
+            fn collect_unique_overworld_tiles_from_built_bg2_map() {}
+            fn render_snes_4bpp_cell_to_rgba() {}
+            fn render_snes_4bpp_tile_to_rgba() {}
+            fn render_unique_overworld_cell_atlas() {}
+            fn render_unique_overworld_tile_atlas() {}
+            fn blit_scaled_rgba_cell() {}
+            fn fnv32_bytes() {}
+            fn run_dump_unique_overworld_cells() {}
+            fn run_dump_unique_overworld_tiles() {}
+            const OVERWORLD_BG_CHR_BASE: usize = 0x2000;
+            const UNIQUE_OVERWORLD_MANIFEST_SOURCE_LIMIT: usize = 32;
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 30)
+        self.assertTrue(
+            all(
+                "overworld dump command ownership escaped overworld_dump_commands boundary"
+                in error
+                for error in errors
+            )
+        )
+
     def test_rejects_gpu_frame_assembly_calls(self):
         module = load_module()
         source = source_with_required_calls(
