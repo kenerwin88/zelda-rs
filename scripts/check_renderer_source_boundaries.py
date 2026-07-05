@@ -17,6 +17,7 @@ REPO = Path(__file__).resolve().parents[1]
 MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
 GPU_COMPARE_RS = REPO / "zelda3-bin" / "src" / "gpu_compare.rs"
 GPU_CAPTURE_RS = REPO / "zelda3-bin" / "src" / "gpu_capture.rs"
+HD_AUTHORING_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "hd_authoring_commands.rs"
 IMAGE_OUTPUT_RS = REPO / "zelda3-bin" / "src" / "image_output.rs"
 GPU_READBACK_RS = REPO / "zelda3-bin" / "src" / "gpu_readback.rs"
 PLAY_RENDERER_RS = REPO / "zelda3-bin" / "src" / "play_renderer.rs"
@@ -25,6 +26,7 @@ BOUNDARY_SOURCE_FILES = (
     REPO / "zelda3-bin" / "src" / "classic_frame_renderer.rs",
     GPU_COMPARE_RS,
     REPO / "zelda3-bin" / "src" / "gpu_capture.rs",
+    HD_AUTHORING_COMMANDS_RS,
     GPU_READBACK_RS,
     IMAGE_OUTPUT_RS,
     REPO / "zelda3-bin" / "src" / "play_renderer.rs",
@@ -332,6 +334,12 @@ FORBIDDEN_MAIN_IMAGE_OUTPUT_OWNERSHIP = (
     "fn write_rgba_frame_png",
     "fn decode_rgba_png",
     "const ASSETS_PNG_COLUMNS",
+)
+
+FORBIDDEN_MAIN_HD_AUTHORING_COMMAND_OWNERSHIP = (
+    "fn write_reference_palette_png",
+    "fn run_dump_hd_capture",
+    "fn run_slice_hd_cells",
 )
 
 FORBIDDEN_RAW_RENDER_HASH_CALLS = (
@@ -769,6 +777,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "image output ownership escaped image_output boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_HD_AUTHORING_COMMAND_OWNERSHIP:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "HD authoring command ownership escaped hd_authoring_commands boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

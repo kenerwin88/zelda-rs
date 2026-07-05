@@ -927,6 +927,25 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_hd_authoring_command_ownership_in_main(self):
+        module = load_module()
+        source = """
+            fn write_reference_palette_png() {}
+            fn run_dump_hd_capture() {}
+            fn run_slice_hd_cells() {}
+            """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 3)
+        self.assertTrue(
+            all(
+                "HD authoring command ownership escaped hd_authoring_commands boundary"
+                in error
+                for error in errors
+            )
+        )
+
     def test_rejects_gpu_frame_assembly_calls(self):
         module = load_module()
         source = source_with_required_calls(
