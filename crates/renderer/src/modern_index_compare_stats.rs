@@ -186,6 +186,72 @@ pub struct ModernIndexCompareFrameRenderedReport {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModernIndexCompareOutputStream {
+    Stdout,
+    Stderr,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModernIndexCompareOutputLine {
+    pub stream: ModernIndexCompareOutputStream,
+    pub line: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModernIndexCompareOutputLines {
+    pub lines: Vec<ModernIndexCompareOutputLine>,
+    pub has_failure: bool,
+}
+
+impl ModernIndexCompareFrameRenderedReport {
+    pub fn output_lines(&self) -> ModernIndexCompareOutputLines {
+        let mut lines = Vec::new();
+        lines.extend(
+            self.trace_lines
+                .iter()
+                .cloned()
+                .map(ModernIndexCompareOutputLine::stderr),
+        );
+
+        if let Some(line) = self.report.failure_line() {
+            lines.push(ModernIndexCompareOutputLine::stderr(line));
+            return ModernIndexCompareOutputLines {
+                lines,
+                has_failure: true,
+            };
+        }
+
+        if let Some(line) = self.report.frame_line() {
+            lines.push(ModernIndexCompareOutputLine::stdout(line));
+        }
+        if let Some(line) = self.report.progress_line() {
+            lines.push(ModernIndexCompareOutputLine::stderr(line));
+        }
+
+        ModernIndexCompareOutputLines {
+            lines,
+            has_failure: false,
+        }
+    }
+}
+
+impl ModernIndexCompareOutputLine {
+    fn stdout(line: impl Into<String>) -> Self {
+        Self {
+            stream: ModernIndexCompareOutputStream::Stdout,
+            line: line.into(),
+        }
+    }
+
+    fn stderr(line: impl Into<String>) -> Self {
+        Self {
+            stream: ModernIndexCompareOutputStream::Stderr,
+            line: line.into(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ModernIndexCompareTracePixel {
     pub frame: u32,
     pub x: i16,
@@ -957,10 +1023,79 @@ mod tests {
                 "modern_index_mismatch frame=77 mode=ow ppumode=1 mismatch_px=1 via=gpu first_mismatch=(1, 0) classic_rgb=(4,5,6) modern_rgb=(4,7,6)"
             )
         );
+        assert_eq!(
+            rendered.output_lines(),
+            ModernIndexCompareOutputLines {
+                lines: vec![
+                    ModernIndexCompareOutputLine {
+                        stream: ModernIndexCompareOutputStream::Stderr,
+                        line: "variant_pixel_trace frame=77 pixel=(1, 0) hits=0".to_string(),
+                    },
+                    ModernIndexCompareOutputLine {
+                        stream: ModernIndexCompareOutputStream::Stderr,
+                        line: "modern_index_mismatch frame=77 mode=ow ppumode=1 mismatch_px=1 via=gpu first_mismatch=(1, 0) classic_rgb=(4,5,6) modern_rgb=(4,7,6)".to_string(),
+                    },
+                ],
+                has_failure: true,
+            }
+        );
         assert!(rendered
             .report
             .frame_line()
             .is_some_and(|line| line.contains("first_mismatch=(1, 0)")));
+    }
+
+    #[test]
+    fn rendered_output_lines_preserve_nonfatal_frame_and_progress_order() {
+        let mut stats = ModernIndexCompareStats {
+            summary_enabled: true,
+            progress_interval: 1,
+            ..Default::default()
+        };
+        let classic = vec![
+            1, 2, 3, 0xff, //
+            4, 5, 6, 0xff,
+        ];
+        let modern = vec![
+            1, 2, 3, 0xff, //
+            4, 7, 6, 0xff,
+        ];
+
+        let rendered = stats.record_rendered_frame(ModernIndexCompareFrameRenderedRecord {
+            frame: 78,
+            mode_label: "ow",
+            ppu_mode: 1,
+            classic_rgba: &classic,
+            modern_render: crate::modern_gpu::ModernIndexCompareRender {
+                rgba: modern,
+                via: "gpu",
+                variant_stats: None,
+                variant_traces: Vec::new(),
+            },
+            trace_pixel: None,
+            run_config: run_config_with_requirements(false, false),
+            include_diff_in_frame_line: false,
+        });
+
+        assert_eq!(
+            rendered.output_lines(),
+            ModernIndexCompareOutputLines {
+                lines: vec![
+                    ModernIndexCompareOutputLine {
+                        stream: ModernIndexCompareOutputStream::Stdout,
+                        line:
+                            "modern_index_compare frame=78 mode=ow ppumode=1 mismatch_px=1 via=gpu"
+                                .to_string(),
+                    },
+                    ModernIndexCompareOutputLine {
+                        stream: ModernIndexCompareOutputStream::Stderr,
+                        line: "modern_index_compare_progress compare_count=1 frame=78 bad_count=1"
+                            .to_string(),
+                    },
+                ],
+                has_failure: false,
+            }
+        );
     }
 
     #[test]

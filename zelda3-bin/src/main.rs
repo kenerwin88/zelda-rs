@@ -5372,20 +5372,11 @@ fn run_replay_save(args: &[String]) {
                         include_diff_in_frame_line: false,
                     },
                 );
-                for line in &rendered.trace_lines {
-                    eprintln!("{line}");
-                }
+                let output_lines = rendered.output_lines();
+                emit_modern_index_compare_output_lines(&output_lines);
                 let modern_rgba = rendered.modern_rgba;
-                let report = rendered.report;
-                if let Some(line) = report.failure_line() {
-                    eprintln!("{line}");
+                if output_lines.has_failure {
                     process::exit(1);
-                }
-                if let Some(line) = report.frame_line() {
-                    println!("{line}");
-                }
-                if let Some(line) = report.progress_line() {
-                    eprintln!("{line}");
                 }
                 if let Some(dump_paths) = modern_index_compare_stats.dump_paths_for_frame(frames) {
                     write_modern_index_compare_dump(&dump_paths, &classic_rgba, &modern_rgba);
@@ -12133,20 +12124,11 @@ fn run_play_gpu_render_compare(args: &[String]) {
                     include_diff_in_frame_line: true,
                 },
             );
-            for line in &rendered.trace_lines {
-                eprintln!("{line}");
-            }
+            let output_lines = rendered.output_lines();
+            emit_modern_index_compare_output_lines(&output_lines);
             let modern_rgba = rendered.modern_rgba;
-            let report = rendered.report;
-            if let Some(line) = report.failure_line() {
-                eprintln!("{line}");
+            if output_lines.has_failure {
                 process::exit(1);
-            }
-            if let Some(line) = report.frame_line() {
-                println!("{line}");
-            }
-            if let Some(line) = report.progress_line() {
-                eprintln!("{line}");
             }
             if let Some(dump_paths) =
                 modern_index_compare_stats.dump_paths_for_frame(completed_frame)
@@ -12180,6 +12162,15 @@ fn write_modern_index_compare_dump(
         eprintln!("failed to write {}: {e}", paths.modern_path.display());
     } else {
         println!("{}", paths.modern_dumped_line);
+    }
+}
+
+fn emit_modern_index_compare_output_lines(output: &renderer::ModernIndexCompareOutputLines) {
+    for output_line in &output.lines {
+        match output_line.stream {
+            renderer::ModernIndexCompareOutputStream::Stdout => println!("{}", output_line.line),
+            renderer::ModernIndexCompareOutputStream::Stderr => eprintln!("{}", output_line.line),
+        }
     }
 }
 

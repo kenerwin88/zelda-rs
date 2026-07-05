@@ -32,6 +32,8 @@ def source_with_required_calls(body: str) -> str:
         let frame_record = renderer::ModernIndexCompareFrameRenderInput {};
         let compare_resources = compare_config.load_resources_from_env();
         let dump_paths = renderer::ModernIndexCompareDumpPaths {};
+        let output_stream = renderer::ModernIndexCompareOutputStream::Stdout;
+        rendered.output_lines();
         let maybe_summary = modern_index_compare_stats.summary_line_if_enabled(true);
         let atlas_compare_resources = renderer::ModernAtlasCompareResources::load();
         let atlas_frame_record = renderer::ModernAtlasCompareFrameInput {};
@@ -46,8 +48,6 @@ def source_with_required_calls(body: str) -> str:
         modern_index_compare_stats.render_compare_frame(frame_record);
         modern_index_compare_stats.dump_paths_for_frame(0);
         report.failure_line();
-        report.frame_line();
-        report.progress_line();
         atlas_compare_resources.compare_frame(atlas_frame_record);
         renderer::hd_authoring::render_hd_capture_from_sources();
     }
@@ -138,6 +138,26 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         errors = module.check_source_text(source)
 
         self.assertEqual(len(errors), 4)
+        self.assertTrue(
+            all("modern index compare stats policy escaped renderer boundary" in error for error in errors)
+        )
+
+    def test_rejects_modern_index_rendered_report_policy_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_replay_save() {
+                for line in &rendered.trace_lines {}
+                let report = rendered.report;
+                if let Some(line) = report.frame_line() {}
+                if let Some(line) = report.progress_line() {}
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 2)
         self.assertTrue(
             all("modern index compare stats policy escaped renderer boundary" in error for error in errors)
         )

@@ -71,6 +71,7 @@ pub use modern_gpu::{
 pub use modern_index_compare_stats::{
     ModernIndexCompareDumpPaths, ModernIndexCompareFrameRenderInput,
     ModernIndexCompareFrameRenderedReport, ModernIndexCompareFrameReport,
+    ModernIndexCompareOutputLine, ModernIndexCompareOutputLines, ModernIndexCompareOutputStream,
     ModernIndexCompareRunConfig, ModernIndexCompareRunConfigError, ModernIndexCompareStats,
 };
 pub use modern_live_stats::{ModernAssetLiveFrameReport, ModernAssetLiveStats};
