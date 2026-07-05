@@ -9,6 +9,7 @@ mod classic_frame_renderer;
 mod developer_destinations;
 mod developer_modern_map;
 mod gpu_capture;
+mod gpu_readback;
 mod play_renderer;
 mod render_diagnostics;
 

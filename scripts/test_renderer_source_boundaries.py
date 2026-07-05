@@ -793,6 +793,31 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_readback_ownership_in_gpu_capture(self):
+        module = load_module()
+        source = """
+            pub(crate) struct GpuReadbackRenderer;
+            pub(crate) struct GpuRgbaReadbackFrame;
+            pub(crate) struct OptionalGpuReadbackRenderer;
+            pub(crate) struct ReplayRenderHashCapture;
+            pub(crate) struct ReplayRenderHashGpuReadback;
+
+            impl GpuReadbackRenderer {}
+            impl OptionalGpuReadbackRenderer {}
+            impl ReplayRenderHashCapture {}
+            impl ReplayRenderHashGpuReadback {}
+            """
+
+        errors = module.check_gpu_capture_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 9)
+        self.assertTrue(
+            all(
+                "GPU readback ownership escaped gpu_readback boundary" in error
+                for error in errors
+            )
+        )
+
     def test_rejects_main_play_renderer_diagnostic_calls(self):
         module = load_module()
         source = """

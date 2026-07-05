@@ -16,11 +16,13 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
 GPU_CAPTURE_RS = REPO / "zelda3-bin" / "src" / "gpu_capture.rs"
+GPU_READBACK_RS = REPO / "zelda3-bin" / "src" / "gpu_readback.rs"
 PLAY_RENDERER_RS = REPO / "zelda3-bin" / "src" / "play_renderer.rs"
 BOUNDARY_SOURCE_FILES = (
     MAIN_RS,
     REPO / "zelda3-bin" / "src" / "classic_frame_renderer.rs",
     REPO / "zelda3-bin" / "src" / "gpu_capture.rs",
+    GPU_READBACK_RS,
     REPO / "zelda3-bin" / "src" / "play_renderer.rs",
     REPO / "zelda3-bin" / "src" / "render_diagnostics.rs",
 )
@@ -268,6 +270,18 @@ FORBIDDEN_MAIN_REPLAY_PLAY_RENDER_HELPER_CALLS = (
 FORBIDDEN_GPU_CAPTURE_REPLAY_CLASSIC_HELPERS = (
     "pub(crate) fn replay_projection_bgra",
     "pub(crate) fn replay_fingerprint_leaf_bgra",
+)
+
+FORBIDDEN_GPU_CAPTURE_READBACK_OWNERSHIP = (
+    "struct GpuReadbackRenderer",
+    "struct GpuRgbaReadbackFrame",
+    "struct OptionalGpuReadbackRenderer",
+    "struct ReplayRenderHashCapture",
+    "struct ReplayRenderHashGpuReadback",
+    "impl GpuReadbackRenderer",
+    "impl OptionalGpuReadbackRenderer",
+    "impl ReplayRenderHashCapture",
+    "impl ReplayRenderHashGpuReadback",
 )
 
 FORBIDDEN_PLAY_RENDERER_CLASSIC_BACKEND_CALLS = (
@@ -730,6 +744,14 @@ def check_gpu_capture_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "replay classic frame helper escaped render_diagnostics boundary at "
+                    f"zelda3-bin/src/gpu_capture.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_GPU_CAPTURE_READBACK_OWNERSHIP:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "GPU readback ownership escaped gpu_readback boundary at "
                     f"zelda3-bin/src/gpu_capture.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
