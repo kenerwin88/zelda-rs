@@ -721,8 +721,8 @@ fn run_frontend_smoke(args: &[String]) {
     let renderer_name = renderer.name();
 
     let mut completed = 0u32;
-    while completed < frames && !renderer.frontend().quit_requested() {
-        let live_input = renderer.frontend_mut().poll_input();
+    while completed < frames && !renderer.quit_requested() {
+        let live_input = renderer.poll_input();
         game.zelda_run_frame(live_input as i32);
         renderer.present_frame(&mut game);
         completed += 1;
@@ -1384,8 +1384,8 @@ fn run_play_with_state(mut game: ZeldaState) {
             process::exit(1);
         }
     };
-    let audio_samples = renderer.frontend().audio_samples_per_frame();
-    let audio_channels = renderer.frontend().audio_channels();
+    let audio_samples = renderer.audio_samples_per_frame();
+    let audio_channels = renderer.audio_channels();
     let mut audio = vec![0i16; audio_samples * audio_channels];
     let mut host_frame = 0u32;
     let mut game_started = env::var_os("ZELDA3_SKIP_HOST_MENU").is_some();
@@ -1412,12 +1412,10 @@ fn run_play_with_state(mut game: ZeldaState) {
         u8::MAX,
     );
 
-    while !renderer.frontend().quit_requested() {
-        let live_input = renderer
-            .frontend_mut()
-            .poll_input_with_menu(host_menu.is_open());
+    while !renderer.quit_requested() {
+        let live_input = renderer.poll_input_with_menu(host_menu.is_open());
         let mut should_quit = false;
-        for input in renderer.frontend_mut().drain_host_menu_inputs() {
+        for input in renderer.drain_host_menu_inputs() {
             if host_menu.is_open() {
                 if let Some(action) = host_menu.handle_input(input) {
                     match action {
@@ -1434,9 +1432,7 @@ fn run_play_with_state(mut game: ZeldaState) {
                         | HostMenuAction::SetShadows(_)
                         | HostMenuAction::SetViewport(_)
                         | HostMenuAction::ResetRuntimeSettings(_) => {
-                            renderer
-                                .frontend_mut()
-                                .apply_runtime_settings(host_menu.runtime_settings());
+                            renderer.apply_runtime_settings(host_menu.runtime_settings());
                         }
                         HostMenuAction::ShowControls(panel) => {
                             eprintln!("host menu controls panel selected: {panel:?}");
@@ -1471,9 +1467,7 @@ fn run_play_with_state(mut game: ZeldaState) {
                             | HostMenuAction::SetShadows(_),
                         ) = host_menu.handle_input(input)
                         {
-                            renderer
-                                .frontend_mut()
-                                .apply_runtime_settings(host_menu.runtime_settings());
+                            renderer.apply_runtime_settings(host_menu.runtime_settings());
                         }
                     }
                     _ => {}
@@ -1487,7 +1481,7 @@ fn run_play_with_state(mut game: ZeldaState) {
             host_menu.set_current_developer_location(current_developer_location_from_ram(
                 &game.ram, host_frame,
             ));
-            renderer.frontend_mut().present_menu_overlay(&host_menu);
+            renderer.present_menu_overlay(&host_menu);
             continue;
         }
         if !game_started {
@@ -1502,7 +1496,7 @@ fn run_play_with_state(mut game: ZeldaState) {
             renderer.present_frame(&mut game);
             crash_stage = "audio";
             game.zelda_render_audio(&mut audio, audio_samples as i32, audio_channels as i32);
-            renderer.frontend_mut().push_audio(&audio);
+            renderer.push_audio(&audio);
             game.zelda_discard_unused_audio_frames();
         }));
         if let Err(payload) = frame_result {

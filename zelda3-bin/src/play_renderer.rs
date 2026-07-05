@@ -1,7 +1,7 @@
 use std::env;
 use std::process;
 
-use platform::{Frontend, NativeFrontend, NativeFrontendOptions};
+use platform::{Frontend, HostMenuInput, HostMenuState, NativeFrontend, NativeFrontendOptions};
 use snes::ppu::PpuRenderFlags;
 use zelda3::ZeldaState;
 
@@ -31,17 +31,45 @@ impl ConfiguredPlayRenderer {
         self.backend.name()
     }
 
-    pub(crate) fn frontend(&self) -> &NativeFrontend {
-        &self.frontend
+    pub(crate) fn quit_requested(&self) -> bool {
+        self.frontend.quit_requested()
     }
 
-    pub(crate) fn frontend_mut(&mut self) -> &mut NativeFrontend {
-        &mut self.frontend
+    pub(crate) fn poll_input(&mut self) -> u16 {
+        self.frontend.poll_input()
+    }
+
+    pub(crate) fn poll_input_with_menu(&mut self, menu_open: bool) -> u16 {
+        self.frontend.poll_input_with_menu(menu_open)
+    }
+
+    pub(crate) fn drain_host_menu_inputs(&mut self) -> Vec<HostMenuInput> {
+        self.frontend.drain_host_menu_inputs()
+    }
+
+    pub(crate) fn apply_runtime_settings(&mut self, settings: platform::RuntimeSettings) {
+        self.frontend.apply_runtime_settings(settings);
+    }
+
+    pub(crate) fn present_menu_overlay(&mut self, menu: &HostMenuState) {
+        self.frontend.present_menu_overlay(menu);
+    }
+
+    pub(crate) fn audio_samples_per_frame(&self) -> usize {
+        self.frontend.audio_samples_per_frame()
+    }
+
+    pub(crate) fn audio_channels(&self) -> usize {
+        self.frontend.audio_channels()
     }
 
     pub(crate) fn present_frame(&mut self, game: &mut ZeldaState) {
         self.backend
             .present_frame(game, &mut self.frontend, &mut self.frame, self.render_flags);
+    }
+
+    pub(crate) fn push_audio(&mut self, audio: &[i16]) {
+        self.frontend.push_audio(audio);
     }
 }
 

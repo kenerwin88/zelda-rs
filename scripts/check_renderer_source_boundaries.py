@@ -250,6 +250,8 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "fn draw_play_ppu_frame",
     "play_renderer::from_env(",
     "renderer.configure_frontend(",
+    "renderer.frontend().",
+    "renderer.frontend_mut().",
     "let (mut renderer, mut frontend)",
     "renderer.present_frame(&mut game, &mut frontend",
     "ZELDA3_RENDER_BACKEND",
