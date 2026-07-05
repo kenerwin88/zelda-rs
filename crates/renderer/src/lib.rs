@@ -2050,6 +2050,7 @@ pub struct FrameRenderer {
 #[derive(Debug, Default)]
 pub enum ModernAssetFramePresentResult {
     Presented {
+        via: &'static str,
         variant_stats: Option<modern_software::VariantAtlasRenderStats>,
     },
     #[default]
@@ -2877,6 +2878,7 @@ impl FrameRenderer {
             ModernAssetFramePresentRoute::Mode7Gpu => {
                 self.present_modern_mode7_gpu(frame)?;
                 Ok(ModernAssetFramePresentResult::Presented {
+                    via: "mode7-gpu",
                     variant_stats: None,
                 })
             }
@@ -2894,6 +2896,7 @@ impl FrameRenderer {
                     scene.sprite_palette_name(),
                 )?;
                 Ok(ModernAssetFramePresentResult::Presented {
+                    via: "variant-gpu",
                     variant_stats: Some(stats),
                 })
             }
@@ -2906,6 +2909,7 @@ impl FrameRenderer {
                         .expect("route requires source atlas"),
                 )?;
                 Ok(ModernAssetFramePresentResult::Presented {
+                    via: "gpu",
                     variant_stats: None,
                 })
             }
@@ -2920,12 +2924,14 @@ impl FrameRenderer {
                     &ctx,
                 )?;
                 Ok(ModernAssetFramePresentResult::Presented {
+                    via: "sources",
                     variant_stats: None,
                 })
             }
             ModernAssetFramePresentRoute::VramGpu => {
                 self.present_modern_gpu_from_vram(frame)?;
                 Ok(ModernAssetFramePresentResult::Presented {
+                    via: "vram-gpu",
                     variant_stats: None,
                 })
             }

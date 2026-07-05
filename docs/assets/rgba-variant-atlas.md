@@ -408,9 +408,12 @@ In live play, the default `assets-variant-gpu` path requires full GPU rendering
 and full source-art/material coverage. It exits with
 `gpu_path_unsupported_live` if variant stats report CPU-prefinal composition,
 missing source art, unsupported or unmodeled material fallback, unkeyed
-live-index fallback, or any other aggregate source-art fallback draw. Set
+live-index fallback, Mode-7 live-VRAM GPU rendering, VRAM-only GPU rendering,
+or any other aggregate source-art fallback draw. Set
 `ZELDA3_REQUIRE_FULL_GPU_PATH=0` only for explicit debugging of unsupported
-escape hatches.
+escape hatches. Mode 7 remains GPU-rendered today, but it is not yet
+PNG/source-art backed, so strict source-art proof reports it as
+`mode7-live-vram` until a Mode-7 source atlas path exists.
 
 For a focused route-window proof that avoids a broad scan while still requiring
 nonzero stable source-art/effect coverage, run:

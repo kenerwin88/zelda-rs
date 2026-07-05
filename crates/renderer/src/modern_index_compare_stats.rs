@@ -1079,6 +1079,31 @@ mod tests {
     }
 
     #[test]
+    fn report_failure_line_rejects_mode7_live_vram_when_parity_passes() {
+        let mut stats = ModernIndexCompareStats::default();
+        let report = stats.record_frame(ModernIndexCompareFrameRecord {
+            frame: 44,
+            mode_label: "map",
+            ppu_mode: 7,
+            via: "mode7-gpu",
+            variant_stats: None,
+            comparison: ModernIndexCompareFrameDiff {
+                mismatch: 0,
+                diff: None,
+            },
+            run_config: run_config_with_requirements(true, true),
+            include_diff_in_frame_line: false,
+        });
+
+        assert_eq!(
+            report.failure_line(),
+            Some(
+                "gpu_path_unsupported frame=44 mode=map ppumode=7 via=mode7-gpu reason=mode7-live-vram count=1 mismatch_px=0"
+            )
+        );
+    }
+
+    #[test]
     fn record_frame_can_include_diff_in_compare_line() {
         let mut stats = ModernIndexCompareStats::default();
         let comparison = ModernIndexCompareFrameDiff {
@@ -1098,7 +1123,7 @@ mod tests {
             via: "mode7-gpu",
             variant_stats: None,
             comparison,
-            run_config: run_config_with_requirements(false, true),
+            run_config: run_config_with_requirements(false, false),
             include_diff_in_frame_line: true,
         });
 

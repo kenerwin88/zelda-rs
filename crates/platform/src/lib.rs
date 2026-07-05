@@ -266,17 +266,20 @@ impl NativeFrontend {
                         renderer.resize(window.inner_size());
                     }
                     present_result = renderer::ModernAssetFramePresentResult::Presented {
+                        via: "surface",
                         variant_stats: None,
                     };
                 }
                 Err(RenderError::SurfaceSkipped) => {
                     present_result = renderer::ModernAssetFramePresentResult::Presented {
+                        via: "surface",
                         variant_stats: None,
                     };
                 }
                 Err(RenderError::Fatal(e)) => {
                     eprintln!("render error: {e}");
                     present_result = renderer::ModernAssetFramePresentResult::Presented {
+                        via: "surface",
                         variant_stats: None,
                     };
                 }
@@ -311,17 +314,20 @@ impl NativeFrontend {
                         renderer.resize(window.inner_size());
                     }
                     present_output.result = renderer::ModernAssetFramePresentResult::Presented {
+                        via: "surface",
                         variant_stats: None,
                     };
                 }
                 Err(RenderError::SurfaceSkipped) => {
                     present_output.result = renderer::ModernAssetFramePresentResult::Presented {
+                        via: "surface",
                         variant_stats: None,
                     };
                 }
                 Err(RenderError::Fatal(e)) => {
                     eprintln!("render error: {e}");
                     present_output.result = renderer::ModernAssetFramePresentResult::Presented {
+                        via: "surface",
                         variant_stats: None,
                     };
                 }

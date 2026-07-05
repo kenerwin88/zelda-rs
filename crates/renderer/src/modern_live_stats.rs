@@ -242,11 +242,16 @@ impl ModernAssetLiveStats {
         result: &crate::ModernAssetFramePresentResult,
     ) -> ModernAssetLiveFrameReport {
         let failure_line = match result {
-            crate::ModernAssetFramePresentResult::Presented {
-                variant_stats: Some(stats),
-            } => self
-                .record_variant_stats(*stats)
-                .map(|fallback| format_live_full_gpu_failure_line(fallback)),
+            crate::ModernAssetFramePresentResult::Presented { via, variant_stats } => {
+                if let Some(fallback) = self.full_gpu_route_violation(via, variant_stats.as_ref()) {
+                    Some(format_live_full_gpu_failure_line(fallback))
+                } else if let Some(stats) = variant_stats {
+                    self.record_variant_stats(*stats)
+                        .map(|fallback| format_live_full_gpu_failure_line(fallback))
+                } else {
+                    None
+                }
+            }
             _ => None,
         };
         ModernAssetLiveFrameReport {
@@ -256,8 +261,16 @@ impl ModernAssetLiveStats {
     }
 
     fn full_gpu_violation(&self, stats: &VariantAtlasRenderStats) -> Option<ModernGpuPathFallback> {
+        self.full_gpu_route_violation("variant-gpu", Some(stats))
+    }
+
+    fn full_gpu_route_violation(
+        &self,
+        via: &str,
+        stats: Option<&VariantAtlasRenderStats>,
+    ) -> Option<ModernGpuPathFallback> {
         self.require_full_gpu_path
-            .then(|| modern_gpu_path_fallback_reason("variant-gpu", Some(stats)))
+            .then(|| modern_gpu_path_fallback_reason(via, stats))
             .flatten()
     }
 
@@ -427,6 +440,7 @@ mod tests {
         };
         let output = crate::ModernAssetFramePresentOutput {
             result: crate::ModernAssetFramePresentResult::Presented {
+                via: "variant-gpu",
                 variant_stats: Some(VariantAtlasRenderStats {
                     cpu_prefinal_overlay_frames: 2,
                     ..Default::default()
@@ -440,6 +454,52 @@ mod tests {
         assert_eq!(
             report.failure_line(),
             Some("gpu_path_unsupported_live reason=prefinal-overlay-cpu count=2")
+        );
+        assert_eq!(report.fallback_presentation_context(), None);
+    }
+
+    #[test]
+    fn record_present_output_rejects_mode7_live_vram_route() {
+        let mut live = ModernAssetLiveStats {
+            require_full_gpu_path: true,
+            ..Default::default()
+        };
+        let output = crate::ModernAssetFramePresentOutput {
+            result: crate::ModernAssetFramePresentResult::Presented {
+                via: "mode7-gpu",
+                variant_stats: None,
+            },
+            in_dungeon: false,
+        };
+
+        let report = live.record_present_output(&output, &live_resources(true));
+
+        assert_eq!(
+            report.failure_line(),
+            Some("gpu_path_unsupported_live reason=mode7-live-vram count=1")
+        );
+        assert_eq!(report.fallback_presentation_context(), None);
+    }
+
+    #[test]
+    fn record_present_output_rejects_vram_gpu_route() {
+        let mut live = ModernAssetLiveStats {
+            require_full_gpu_path: true,
+            ..Default::default()
+        };
+        let output = crate::ModernAssetFramePresentOutput {
+            result: crate::ModernAssetFramePresentResult::Presented {
+                via: "vram-gpu",
+                variant_stats: None,
+            },
+            in_dungeon: false,
+        };
+
+        let report = live.record_present_output(&output, &live_resources(true));
+
+        assert_eq!(
+            report.failure_line(),
+            Some("gpu_path_unsupported_live reason=vram-live-gpu count=1")
         );
         assert_eq!(report.fallback_presentation_context(), None);
     }

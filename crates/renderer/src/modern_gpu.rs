@@ -3305,6 +3305,18 @@ pub fn modern_gpu_path_fallback_reason(
     stats: Option<&crate::modern_software::VariantAtlasRenderStats>,
 ) -> Option<ModernGpuPathFallback> {
     match via {
+        "mode7-gpu" => {
+            return Some(ModernGpuPathFallback {
+                reason: "mode7-live-vram",
+                count: 1,
+            });
+        }
+        "vram-gpu" => {
+            return Some(ModernGpuPathFallback {
+                reason: "vram-live-gpu",
+                count: 1,
+            });
+        }
         "mode7-cpu" => {
             return Some(ModernGpuPathFallback {
                 reason: "mode7-cpu",
@@ -10810,7 +10822,7 @@ mod tests {
 
     #[test]
     fn modern_gpu_path_fallback_reason_accepts_gpu_routes() {
-        assert_eq!(modern_gpu_path_fallback_reason("mode7-gpu", None), None);
+        assert_eq!(modern_gpu_path_fallback_reason("gpu", None), None);
 
         let stats = VariantAtlasRenderStats {
             gpu_prefinal_base_frames: 1,
@@ -10826,6 +10838,20 @@ mod tests {
 
     #[test]
     fn modern_gpu_path_fallback_reason_reports_first_cpu_route_or_blocker() {
+        assert_eq!(
+            modern_gpu_path_fallback_reason("mode7-gpu", None),
+            Some(ModernGpuPathFallback {
+                reason: "mode7-live-vram",
+                count: 1,
+            })
+        );
+        assert_eq!(
+            modern_gpu_path_fallback_reason("vram-gpu", None),
+            Some(ModernGpuPathFallback {
+                reason: "vram-live-gpu",
+                count: 1,
+            })
+        );
         assert_eq!(
             modern_gpu_path_fallback_reason("mode7-cpu", None),
             Some(ModernGpuPathFallback {
