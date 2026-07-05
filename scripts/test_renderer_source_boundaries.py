@@ -1212,6 +1212,24 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_replay_save_config_ownership_in_main(self):
+        module = load_module()
+        source = '''
+            struct ReplaySaveConfig {}
+            fn parse_replay_save_args_or_exit() {}
+            const USAGE: &str = "usage: zelda3 --replay-save <path-to-rom.sfc>";
+        '''
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 3)
+        self.assertTrue(
+            all(
+                "replay-save config ownership escaped replay_save_config boundary" in error
+                for error in errors
+            )
+        )
+
     def test_rejects_gpu_frame_assembly_calls(self):
         module = load_module()
         source = source_with_required_calls(
