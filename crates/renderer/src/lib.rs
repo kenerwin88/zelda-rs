@@ -14,6 +14,7 @@
 //! - [`BgLayerRenderer`]: single-layer BG pipeline (tilemap → atlas → CGRAM).
 
 pub mod bg_layer;
+mod frame_compare;
 pub mod gpu_frame;
 mod gpu_frame_render_plan;
 mod gpu_frame_renderer_backend;
@@ -52,6 +53,10 @@ pub mod sprite_renderer;
 pub mod tile_atlas;
 
 pub use bg_layer::BgLayerRenderer;
+pub use frame_compare::{
+    compare_bgra_to_rgba, compare_rgba_to_rgba, render_frame_rgb_hash_bgra,
+    render_frame_rgb_hash_rgba, GpuRenderDiff,
+};
 pub use gpu_frame::{BgLayerRegs, GpuFrame, Mode7Regs, ObjRegs, ScanlineRegs};
 pub use gpu_renderer::GpuFrameRenderer;
 pub use mode7_renderer::Mode7Renderer;

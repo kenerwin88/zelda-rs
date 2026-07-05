@@ -3791,9 +3791,9 @@ fn run_replay_save(args: &[String]) {
             let gpu_frame =
                 gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
             let gpu_rgba = offscreen.render_gpu_frame(&gpu_frame);
-            let cpu_hash = render_frame_rgb_hash_bgra(frame);
-            let gpu_hash = render_frame_rgb_hash_rgba(&gpu_rgba);
-            if let Some(diff) = compare_bgra_to_rgba(frame, &gpu_rgba) {
+            let cpu_hash = renderer::render_frame_rgb_hash_bgra(frame);
+            let gpu_hash = renderer::render_frame_rgb_hash_rgba(&gpu_rgba);
+            if let Some(diff) = renderer::compare_bgra_to_rgba(frame, &gpu_rgba) {
                 eprintln!(
                     "gpu-render-divergence frame={frames} mismatched_pixels={} first_mismatch=({}, {}) cpu_rgb=({},{},{}) gpu_rgb=({},{},{}) cpu_hash=0x{cpu_hash:08x} gpu_hash=0x{gpu_hash:08x}",
                     diff.mismatched_pixels,
@@ -4338,7 +4338,7 @@ fn run_replay_save(args: &[String]) {
             if should_log_render_hash {
                 println!(
                     "render-hash frame={frames} hash=0x{:08x}",
-                    render_frame_rgb_hash_bgra(frame)
+                    renderer::render_frame_rgb_hash_bgra(frame)
                 );
                 if std::env::var_os("ZELDA3_PPU_STATE_HASH").is_some() {
                     let fnv16 = |s: &[u16]| {
@@ -5378,8 +5378,8 @@ fn run_replay_save(args: &[String]) {
                 }
                 if frames == 332 {
                     // extra debug
-                    let cpu_hash = render_frame_rgb_hash_bgra(frame);
-                    let gpu_hash = render_frame_rgb_hash_rgba(&gpu_rgba);
+                    let cpu_hash = renderer::render_frame_rgb_hash_bgra(frame);
+                    let gpu_hash = renderer::render_frame_rgb_hash_rgba(&gpu_rgba);
                     eprintln!(
                         "[gpu-dbg] frame=332 cpu_hash={cpu_hash:#010x} gpu_hash={gpu_hash:#010x}"
                     );
@@ -5468,7 +5468,7 @@ fn run_replay_save(args: &[String]) {
                 }
                 println!(
                     "gpu-render-hash frame={frames} hash=0x{:08x}",
-                    render_frame_rgb_hash_rgba(&gpu_rgba)
+                    renderer::render_frame_rgb_hash_rgba(&gpu_rgba)
                 );
             }
         }
@@ -5521,7 +5521,7 @@ fn run_replay_save(args: &[String]) {
                 let via = modern_render.via;
                 let variant_stats = modern_render.variant_stats;
                 let modern_rgba = modern_render.rgba;
-                let modern_diff = compare_rgba_to_rgba(&classic_rgba, &modern_rgba);
+                let modern_diff = renderer::compare_rgba_to_rgba(&classic_rgba, &modern_rgba);
                 let mismatch = modern_diff
                     .as_ref()
                     .map(|diff| diff.mismatched_pixels)
@@ -5609,7 +5609,7 @@ fn run_replay_save(args: &[String]) {
             let frame = render_hash_frame.as_mut().expect("render frame allocated");
             draw_play_ppu_frame(&mut game, frame, 256 * 4, PpuRenderFlags::empty());
             last_frame_had_fingerprint_render = true;
-            fp_render_leaf = render_frame_rgb_hash_bgra(frame);
+            fp_render_leaf = renderer::render_frame_rgb_hash_bgra(frame);
         }
         if let Some(w) = fingerprint_writer
             .as_mut()
@@ -12246,7 +12246,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
                     gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
                 // Classic GPU render (oracle) via the offscreen renderer:
                 let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
-                let old_hash = render_frame_rgb_hash_rgba(&classic_rgba);
+                let old_hash = renderer::render_frame_rgb_hash_rgba(&classic_rgba);
                 // Modern path (software for now; Task 9 swaps in GPU):
                 let modern =
                     renderer::modern_extract::extract_modern_frame_with_atlas(&gpu_frame, atlas);
@@ -12257,7 +12257,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
                     atlas.width_px as u16,
                     atlas.height_px as u16,
                 );
-                let modern_hash = render_frame_rgb_hash_rgba(&modern_rgba);
+                let modern_hash = renderer::render_frame_rgb_hash_rgba(&modern_rgba);
                 println!(
                     "modern_render_compare frame={completed_frame} old=0x{old_hash:08x} modern=0x{modern_hash:08x} match={}",
                     old_hash == modern_hash
@@ -12304,7 +12304,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let via = modern_render.via;
             let variant_stats = modern_render.variant_stats;
             let modern_rgba = modern_render.rgba;
-            let modern_diff = compare_rgba_to_rgba(&classic_rgba, &modern_rgba);
+            let modern_diff = renderer::compare_rgba_to_rgba(&classic_rgba, &modern_rgba);
             let mismatch = modern_diff
                 .as_ref()
                 .map(|diff| diff.mismatched_pixels)
@@ -12514,16 +12514,6 @@ fn parse_variant_trace_pixel(value: &str) -> Option<(u32, i16, i16)> {
     Some((frame, x, y))
 }
 
-fn render_frame_rgb_hash_rgba(frame: &[u8]) -> u32 {
-    let mut hash = 2166136261u32;
-    for pixel in frame.chunks_exact(4) {
-        hash = (hash ^ u32::from(pixel[0])).wrapping_mul(16777619); // R
-        hash = (hash ^ u32::from(pixel[1])).wrapping_mul(16777619); // G
-        hash = (hash ^ u32::from(pixel[2])).wrapping_mul(16777619); // B
-    }
-    hash
-}
-
 /// Per-frame audio leaf hash: folds the same DSP/sample quantities the audio
 /// trace prints, into one u32. Mirrored exactly in C (FingerprintAudioHash).
 fn fingerprint_audio_hash(
@@ -12544,74 +12534,6 @@ fn fingerprint_audio_hash(
     ])
 }
 
-fn render_frame_rgb_hash_bgra(frame: &[u8]) -> u32 {
-    let mut hash = 2166136261u32;
-    for pixel in frame.chunks_exact(4) {
-        hash = (hash ^ u32::from(pixel[2])).wrapping_mul(16777619); // R
-        hash = (hash ^ u32::from(pixel[1])).wrapping_mul(16777619); // G
-        hash = (hash ^ u32::from(pixel[0])).wrapping_mul(16777619); // B
-    }
-    hash
-}
-
-struct GpuRenderDiff {
-    mismatched_pixels: usize,
-    first_x: usize,
-    first_y: usize,
-    cpu_rgb: (u8, u8, u8),
-    gpu_rgb: (u8, u8, u8),
-}
-
-fn compare_bgra_to_rgba(cpu_bgra: &[u8], gpu_rgba: &[u8]) -> Option<GpuRenderDiff> {
-    let mut mismatched_pixels = 0usize;
-    let mut first = None;
-    for (i, (cpu, gpu)) in cpu_bgra
-        .chunks_exact(4)
-        .zip(gpu_rgba.chunks_exact(4))
-        .enumerate()
-    {
-        let cpu_rgb = (cpu[2], cpu[1], cpu[0]);
-        let gpu_rgb = (gpu[0], gpu[1], gpu[2]);
-        if cpu_rgb != gpu_rgb {
-            mismatched_pixels += 1;
-            first.get_or_insert((i, cpu_rgb, gpu_rgb));
-        }
-    }
-
-    first.map(|(i, cpu_rgb, gpu_rgb)| GpuRenderDiff {
-        mismatched_pixels,
-        first_x: i % 256,
-        first_y: i / 256,
-        cpu_rgb,
-        gpu_rgb,
-    })
-}
-
-fn compare_rgba_to_rgba(classic_rgba: &[u8], modern_rgba: &[u8]) -> Option<GpuRenderDiff> {
-    let mut mismatched_pixels = 0usize;
-    let mut first = None;
-    for (i, (classic, modern)) in classic_rgba
-        .chunks_exact(4)
-        .zip(modern_rgba.chunks_exact(4))
-        .enumerate()
-    {
-        let classic_rgb = (classic[0], classic[1], classic[2]);
-        let modern_rgb = (modern[0], modern[1], modern[2]);
-        if classic_rgb != modern_rgb {
-            mismatched_pixels += 1;
-            first.get_or_insert((i, classic_rgb, modern_rgb));
-        }
-    }
-
-    first.map(|(i, cpu_rgb, gpu_rgb)| GpuRenderDiff {
-        mismatched_pixels,
-        first_x: i % 256,
-        first_y: i / 256,
-        cpu_rgb,
-        gpu_rgb,
-    })
-}
-
 fn compare_gpu_render_current_frame(
     game: &mut ZeldaState,
     offscreen: &mut OffscreenRenderer,
@@ -12625,9 +12547,9 @@ fn compare_gpu_render_current_frame(
     draw_play_ppu_frame(game, frame, width as usize * 4, PpuRenderFlags::empty());
     let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
     let gpu_rgba = offscreen.render_gpu_frame(&gpu_frame);
-    let cpu_hash = render_frame_rgb_hash_bgra(frame);
-    let gpu_hash = render_frame_rgb_hash_rgba(&gpu_rgba);
-    if let Some(diff) = compare_bgra_to_rgba(frame, &gpu_rgba) {
+    let cpu_hash = renderer::render_frame_rgb_hash_bgra(frame);
+    let gpu_hash = renderer::render_frame_rgb_hash_rgba(&gpu_rgba);
+    if let Some(diff) = renderer::compare_bgra_to_rgba(frame, &gpu_rgba) {
         eprintln!(
             "gpu-render-divergence frame={frames} mismatched_pixels={} first_mismatch=({}, {}) cpu_rgb=({},{},{}) gpu_rgb=({},{},{}) cpu_hash=0x{cpu_hash:08x} gpu_hash=0x{gpu_hash:08x}",
             diff.mismatched_pixels,
@@ -14430,26 +14352,6 @@ mod tests {
         assert!(should_write_fingerprint(None, 41));
         assert!(should_write_fingerprint(Some(42), 42));
         assert!(!should_write_fingerprint(Some(42), 41));
-    }
-
-    #[test]
-    fn rgba_frame_diff_reports_first_mismatch() {
-        let classic = [
-            1, 2, 3, 0xff, //
-            4, 5, 6, 0xff,
-        ];
-        let modern = [
-            1, 2, 3, 0xff, //
-            4, 7, 6, 0xff,
-        ];
-
-        let diff = compare_rgba_to_rgba(&classic, &modern).expect("one pixel differs");
-
-        assert_eq!(diff.mismatched_pixels, 1);
-        assert_eq!(diff.first_x, 1);
-        assert_eq!(diff.first_y, 0);
-        assert_eq!(diff.cpu_rgb, (4, 5, 6));
-        assert_eq!(diff.gpu_rgb, (4, 7, 6));
     }
 
     #[test]

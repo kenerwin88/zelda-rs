@@ -24,6 +24,7 @@ def source_with_required_calls(body: str) -> str:
         let stats = renderer::ModernAssetLiveStats::from_env();
         let compare = renderer::ModernIndexCompareStats::from_env();
         let source_table = renderer::MappedSourceTableView::new(&[(0, 0, 0)], |src: &(u8, u16, u16)| *src);
+        let diff = renderer::compare_rgba_to_rgba(&[], &[]);
         frontend.present_modern_asset_frame();
         renderer::modern_gpu::render_modern_index_compare_frame();
         renderer::hd_authoring::render_hd_capture_from_sources();
@@ -249,6 +250,25 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertEqual(len(errors), 2)
         self.assertTrue(
             all("source table view adapter escaped renderer boundary" in error for error in errors)
+        )
+
+    def test_rejects_frame_compare_helper_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            struct GpuRenderDiff {}
+            fn compare_bgra_to_rgba(cpu_bgra: &[u8], gpu_rgba: &[u8]) {}
+            fn compare_rgba_to_rgba(classic_rgba: &[u8], modern_rgba: &[u8]) {}
+            fn render_frame_rgb_hash_bgra(frame: &[u8]) {}
+            fn render_frame_rgb_hash_rgba(frame: &[u8]) {}
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 5)
+        self.assertTrue(
+            all("frame compare helper escaped renderer boundary" in error for error in errors)
         )
 
     def test_rejects_missing_renderer_owned_api_call(self):
