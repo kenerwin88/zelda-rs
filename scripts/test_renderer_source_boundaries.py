@@ -687,6 +687,26 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertIn("render hash helper escaped gpu_capture boundary", errors[0])
         self.assertIn("run_replay_save", errors[0])
 
+    def test_rejects_main_replay_play_render_helper_calls(self):
+        module = load_module()
+        source = """
+            fn run_replay_save() {
+                render_replay_projection_bgra(&mut game, &mut scratch);
+                let fp_render_leaf = render_replay_fingerprint_leaf_bgra(&mut game, frame);
+            }
+            """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(
+            all(
+                "replay play-render helper escaped gpu_capture boundary" in error
+                for error in errors
+            )
+        )
+        self.assertTrue(all("run_replay_save" in error for error in errors))
+
     def test_rejects_gpu_frame_assembly_calls(self):
         module = load_module()
         source = source_with_required_calls(

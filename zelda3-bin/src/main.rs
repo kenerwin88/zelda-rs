@@ -28,7 +28,7 @@ use gpu_capture::{
     gpu_render_compare_run, modern_compare_mode_defaults_from_env,
     modern_index_compare_run_from_env, play_gpu_render_compare_session,
     render_hd_capture_from_game, render_live_game_gpu_frame_rgba, replay_cpu_bgra_hash_line,
-    replay_optional_gpu_readback_renderer,
+    replay_fingerprint_leaf_bgra, replay_optional_gpu_readback_renderer, replay_projection_bgra,
 };
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
@@ -36,8 +36,7 @@ use platform::{
 };
 use play_renderer::{
     render_lockstep_artifact_frame_bgra, render_lockstep_oracle_frames_in_place,
-    render_oracle_compare_frames_bgra, render_overworld_screen_dump_bgra,
-    render_replay_fingerprint_leaf_bgra, render_replay_projection_bgra, run_play_frame_bgra,
+    render_oracle_compare_frames_bgra, render_overworld_screen_dump_bgra, run_play_frame_bgra,
     run_play_frame_with_run_what_bgra,
 };
 use serde::{Deserialize, Serialize};
@@ -5080,7 +5079,7 @@ fn run_replay_save(args: &[String]) {
         let mut fp_render_leaf: u32 = 0;
         if should_fingerprint_frame {
             let frame = render_hash_frame.as_mut().expect("render frame allocated");
-            fp_render_leaf = render_replay_fingerprint_leaf_bgra(&mut game, frame);
+            fp_render_leaf = replay_fingerprint_leaf_bgra(&mut game, frame);
             last_frame_had_fingerprint_render = true;
         }
         if let Some(w) = fingerprint_writer
@@ -5119,7 +5118,7 @@ fn run_replay_save(args: &[String]) {
             // continuously-rendered run.
             if !last_frame_had_fingerprint_render {
                 let mut scratch = vec![0u8; 256 * 224 * 4];
-                render_replay_projection_bgra(&mut game, &mut scratch);
+                replay_projection_bgra(&mut game, &mut scratch);
                 last_frame_had_fingerprint_render = true;
             }
             write_checkpoint(&mut game, frames, path);
@@ -5174,7 +5173,7 @@ fn run_replay_save(args: &[String]) {
     if let Some(path) = save_state_path.as_deref() {
         if !last_frame_had_fingerprint_render {
             let mut scratch = vec![0u8; 256 * 224 * 4];
-            render_replay_projection_bgra(&mut game, &mut scratch);
+            replay_projection_bgra(&mut game, &mut scratch);
         }
         if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
             eprintln!(

@@ -244,6 +244,11 @@ FORBIDDEN_MAIN_RENDER_HASH_HELPER_CALLS = (
     "render_hash_frame_bgra_line(",
 )
 
+FORBIDDEN_MAIN_REPLAY_PLAY_RENDER_HELPER_CALLS = (
+    "render_replay_projection_bgra(",
+    "render_replay_fingerprint_leaf_bgra(",
+)
+
 FORBIDDEN_RAW_RENDER_HASH_CALLS = (
     "renderer::render_frame_rgb_hash_bgra(",
     "renderer::render_frame_rgb_hash_rgba(",
@@ -623,6 +628,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "render hash helper escaped gpu_capture boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_REPLAY_PLAY_RENDER_HELPER_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "replay play-render helper escaped gpu_capture boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
