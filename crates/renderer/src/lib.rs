@@ -2036,6 +2036,52 @@ impl ModernAssetFramePresentResult {
     }
 }
 
+/// Renderer-owned resource bundle for live modern-asset presentation.
+///
+/// `zelda3-bin` owns game state and runtime inputs; the renderer owns which
+/// modern asset stores a mode requires and how those stores are routed.
+pub struct ModernAssetFrameResources {
+    source_atlas: Option<modern_source_atlas::ModernSourceAtlas>,
+    variant_atlas: Option<modern_variant_atlas::ModernVariantAtlas>,
+    gpu_asset_mode: bool,
+}
+
+impl ModernAssetFrameResources {
+    pub fn load_for_mode(mode: EffectiveRendererMode<'_>, root: &Path) -> Result<Self, String> {
+        let variant_atlas = if mode.uses_variant_atlas() {
+            Some(modern_variant_atlas::load_modern_canonical_art_atlas(root)?)
+        } else {
+            None
+        };
+        let source_atlas = if mode.uses_source_atlas() {
+            Some(
+                modern_source_atlas::load_modern_source_atlas(root)
+                    .map_err(|e| format!("assets-by-source atlas missing: {e}"))?,
+            )
+        } else {
+            None
+        };
+
+        Ok(Self {
+            source_atlas,
+            variant_atlas,
+            gpu_asset_mode: mode.uses_gpu_assets(),
+        })
+    }
+
+    pub fn source_atlas(&self) -> Option<&modern_source_atlas::ModernSourceAtlas> {
+        self.source_atlas.as_ref()
+    }
+
+    pub fn variant_atlas(&self) -> Option<&modern_variant_atlas::ModernVariantAtlas> {
+        self.variant_atlas.as_ref()
+    }
+
+    pub fn gpu_asset_mode(&self) -> bool {
+        self.gpu_asset_mode
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ModernAssetFramePresentRoute {
     Mode7Gpu,
@@ -2510,9 +2556,7 @@ impl FrameRenderer {
         &mut self,
         frame: &GpuFrame<'_>,
         src_table: Option<&S>,
-        source_atlas: Option<&modern_source_atlas::ModernSourceAtlas>,
-        variant_atlas: Option<&modern_variant_atlas::ModernVariantAtlas>,
-        gpu_asset_mode: bool,
+        resources: &ModernAssetFrameResources,
         bg_palette_name: &str,
         sprite_palette_name: &str,
         ctx: &modern_hd_overrides::HdOverrideCtx,
@@ -2520,9 +2564,9 @@ impl FrameRenderer {
         match modern_asset_frame_present_route(
             frame.mode,
             src_table.is_some(),
-            source_atlas.is_some(),
-            variant_atlas.is_some(),
-            gpu_asset_mode,
+            resources.source_atlas().is_some(),
+            resources.variant_atlas().is_some(),
+            resources.gpu_asset_mode(),
         ) {
             ModernAssetFramePresentRoute::Mode7Gpu => {
                 self.present_modern_mode7_gpu(frame)?;
@@ -2534,8 +2578,12 @@ impl FrameRenderer {
                 let stats = self.present_modern_variant_gpu_from_sources(
                     frame,
                     src_table.expect("route requires source table"),
-                    source_atlas.expect("route requires source atlas"),
-                    variant_atlas.expect("route requires variant atlas"),
+                    resources
+                        .source_atlas()
+                        .expect("route requires source atlas"),
+                    resources
+                        .variant_atlas()
+                        .expect("route requires variant atlas"),
                     bg_palette_name,
                     sprite_palette_name,
                 )?;
@@ -2547,7 +2595,9 @@ impl FrameRenderer {
                 self.present_modern_gpu_from_sources(
                     frame,
                     src_table.expect("route requires source table"),
-                    source_atlas.expect("route requires source atlas"),
+                    resources
+                        .source_atlas()
+                        .expect("route requires source atlas"),
                 )?;
                 Ok(ModernAssetFramePresentResult::Presented {
                     variant_stats: None,
@@ -2557,7 +2607,9 @@ impl FrameRenderer {
                 self.present_modern_frame_from_sources(
                     frame,
                     src_table.expect("route requires source table"),
-                    source_atlas.expect("route requires source atlas"),
+                    resources
+                        .source_atlas()
+                        .expect("route requires source atlas"),
                     ctx,
                 )?;
                 Ok(ModernAssetFramePresentResult::Presented {
@@ -3317,6 +3369,65 @@ impl OffscreenRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{fs, process};
+
+    fn temp_modern_asset_root(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("z3rs-{name}-{}", process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create temp root");
+        root
+    }
+
+    #[test]
+    fn modern_asset_resources_skip_classic_atlases() {
+        let root = temp_modern_asset_root("modern-asset-classic");
+
+        let resources = ModernAssetFrameResources::load_for_mode(
+            EffectiveRendererMode::from_name("classic"),
+            &root,
+        )
+        .expect("classic loads no modern asset atlases");
+
+        assert!(resources.source_atlas().is_none());
+        assert!(resources.variant_atlas().is_none());
+        assert!(!resources.gpu_asset_mode());
+
+        fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn modern_asset_resources_require_canonical_art_atlas_for_variant_gpu() {
+        let root = temp_modern_asset_root("modern-asset-variant-missing");
+
+        let err = match ModernAssetFrameResources::load_for_mode(
+            EffectiveRendererMode::from_name("assets-variant-gpu"),
+            &root,
+        ) {
+            Ok(_) => panic!("variant GPU requires canonical art atlas"),
+            Err(err) => err,
+        };
+
+        assert!(err.contains("canonical art atlas missing"), "{err}");
+
+        fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn modern_asset_resources_require_source_atlas_for_source_gpu() {
+        let root = temp_modern_asset_root("modern-asset-source-missing");
+
+        let err = match ModernAssetFrameResources::load_for_mode(
+            EffectiveRendererMode::from_name("assets-anim-gpu"),
+            &root,
+        ) {
+            Ok(_) => panic!("source GPU requires source atlas"),
+            Err(err) => err,
+        };
+
+        assert!(err.contains("assets-by-source atlas missing"), "{err}");
+
+        fs::remove_dir_all(root).expect("remove temp root");
+    }
 
     #[test]
     fn modern_asset_frame_route_keeps_default_paths_on_gpu() {

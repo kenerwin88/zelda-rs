@@ -1435,41 +1435,12 @@ impl renderer::modern_extract::SourceTableView for VramChrSourceTableView<'_> {
     }
 }
 
-fn load_variant_atlas_for_mode(
-    mode: &str,
-    root: &Path,
-) -> Result<Option<renderer::modern_variant_atlas::ModernVariantAtlas>, String> {
-    if !renderer::variant_atlas_renderer_mode(mode) {
-        return Ok(None);
-    }
-    renderer::modern_variant_atlas::load_modern_canonical_art_atlas(root).map(Some)
-}
-
-fn load_source_atlas_for_mode(
-    mode: &str,
-    root: &Path,
-) -> Result<Option<renderer::modern_source_atlas::ModernSourceAtlas>, String> {
-    if !renderer::source_atlas_renderer_mode(mode) {
-        return Ok(None);
-    }
-    renderer::modern_source_atlas::load_modern_source_atlas(root)
-        .map(Some)
-        .map_err(|e| format!("assets-by-source atlas missing: {e}"))
-}
-
-/// Off-VRAM source atlas + HD override store for the live modern present path,
-/// loaded once. The atlas loads for the default (unset) and explicit `assets-anim`
-/// interactive modes; `source_atlas` is `None` for explicit
-/// `modern`/`modern-compare`/`classic`, so those keep rendering (VRAM-decoded,
-/// no HD overrides) through
-/// `FrameRenderer::render_modern_frame`'s fallback. Modes that use the source
-/// atlas require it at startup; the default variant atlas mode also requires the
-/// canonical art atlas.
+/// Modern asset resources + HD override store for the live present path, loaded
+/// once. The renderer crate owns which atlases each renderer mode requires and
+/// how they route through GPU/software presentation.
 struct GpuPlayRenderer {
-    source_atlas: Option<renderer::modern_source_atlas::ModernSourceAtlas>,
+    modern_assets: renderer::ModernAssetFrameResources,
     hd_overrides: Option<renderer::modern_hd_overrides::ModernHdOverrides>,
-    gpu_asset_mode: bool,
-    variant_atlas: Option<renderer::modern_variant_atlas::ModernVariantAtlas>,
     variant_live_stats: VariantLiveStats,
 }
 
@@ -1750,23 +1721,16 @@ impl GpuPlayRenderer {
     fn new() -> Self {
         let renderer_env = env::var("ZELDA3_RENDERER").ok();
         let mode = effective_renderer_mode_from_env_value(renderer_env.as_deref());
-        let gpu_asset_mode = mode.uses_gpu_assets();
-        let variant_atlas = load_variant_atlas_for_mode(mode.name(), Path::new("."))
-            .unwrap_or_else(|e| {
-                eprintln!("canonical art atlas load failed: {e}");
-                process::exit(2);
-            });
-        let source_atlas =
-            load_source_atlas_for_mode(mode.name(), Path::new(".")).unwrap_or_else(|e| {
-                eprintln!("source atlas load failed: {e}");
-                process::exit(2);
-            });
+        let modern_assets =
+            renderer::ModernAssetFrameResources::load_for_mode(mode, Path::new("."))
+                .unwrap_or_else(|e| {
+                    eprintln!("modern asset load failed: {e}");
+                    process::exit(2);
+                });
         let hd_overrides = renderer::modern_hd_overrides::ModernHdOverrides::from_env();
         Self {
-            source_atlas,
+            modern_assets,
             hd_overrides,
-            gpu_asset_mode,
-            variant_atlas,
             variant_live_stats: VariantLiveStats::from_env(),
         }
     }
@@ -1801,9 +1765,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
         match frontend.present_modern_asset_frame(
             &gpu_frame,
             Some(&src_table),
-            self.source_atlas.as_ref(),
-            self.variant_atlas.as_ref(),
-            self.gpu_asset_mode,
+            &self.modern_assets,
             bg_palette_name,
             "palette_main_spr",
             &ctx,
@@ -1816,7 +1778,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
             }
             renderer::ModernAssetFramePresentResult::Unhandled => {}
         }
-        if self.gpu_asset_mode {
+        if self.modern_assets.gpu_asset_mode() {
             eprintln!("modern asset renderer did not handle a GPU asset frame");
             process::exit(2);
         }
@@ -15505,42 +15467,6 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(opt_out.full_gpu_violation(&stats), None);
-    }
-
-    #[test]
-    fn variant_gpu_mode_requires_canonical_art_atlas() {
-        let root = env::temp_dir().join(format!("z3rs-variant-atlas-missing-{}", process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).expect("create temp root");
-
-        assert!(load_variant_atlas_for_mode("classic", &root)
-            .expect("classic does not load variant atlas")
-            .is_none());
-        let err = load_variant_atlas_for_mode("assets-variant-gpu", &root)
-            .expect_err("variant GPU requires canonical art atlas");
-
-        assert!(err.contains("canonical art atlas missing"), "{err}");
-
-        fs::remove_dir_all(root).expect("remove temp root");
-    }
-
-    #[test]
-    fn variant_gpu_mode_requires_source_atlas() {
-        let root = env::temp_dir().join(format!("z3rs-source-atlas-missing-{}", process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).expect("create temp root");
-
-        assert!(load_source_atlas_for_mode("classic", &root)
-            .expect("classic does not load source atlas")
-            .is_none());
-        let err = match load_source_atlas_for_mode("assets-variant-gpu", &root) {
-            Ok(_) => panic!("variant GPU requires source atlas"),
-            Err(err) => err,
-        };
-
-        assert!(err.contains("assets-by-source atlas missing"), "{err}");
-
-        fs::remove_dir_all(root).expect("remove temp root");
     }
 
     #[test]

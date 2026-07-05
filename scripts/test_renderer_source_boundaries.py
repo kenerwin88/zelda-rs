@@ -148,6 +148,25 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(all("run_play_with_state" in error for error in errors))
 
+    def test_rejects_asset_loading_policy_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_play_with_state() {
+                renderer::source_atlas_renderer_mode("assets-anim-gpu");
+                renderer::variant_atlas_renderer_mode("assets-variant-gpu");
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(
+            all("modern asset loading policy escaped renderer boundary" in error for error in errors)
+        )
+        self.assertTrue(all("run_play_with_state" in error for error in errors))
+
     def test_rejects_missing_renderer_owned_api_call(self):
         module = load_module()
         source = "fn run_play_with_state() {}"

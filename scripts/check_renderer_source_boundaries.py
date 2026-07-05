@@ -40,6 +40,13 @@ FORBIDDEN_GRANULAR_LIVE_PRESENT_CALLS = (
     "present_modern_mode7_gpu",
 )
 
+FORBIDDEN_ASSET_POLICY_CALLS = (
+    "source_atlas_renderer_mode",
+    "variant_atlas_renderer_mode",
+    "load_source_atlas_for_mode",
+    "load_variant_atlas_for_mode",
+)
+
 
 @dataclass(frozen=True)
 class Occurrence:
@@ -124,6 +131,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "granular live present escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_ASSET_POLICY_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "modern asset loading policy escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
