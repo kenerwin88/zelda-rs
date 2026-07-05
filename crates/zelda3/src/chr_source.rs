@@ -41,6 +41,11 @@ pub const CHR_KIND_BG_ANIM: u8 = 5;
 /// `(pack, tile_off)` fields so `modern_source_key` encodes it as
 /// `(6<<24)|(hash&0xffffff)` with no special key path.
 pub const CHR_KIND_BG_STREAM: u8 = 6;
+/// Link CHR keyed by the frame-end 4bpp tile content hash. The raw Link source
+/// identity (`CHR_KIND_LINK`) records useful DMA provenance, but source offsets are
+/// reused across poses and can resolve to stale art. This derived kind is used by the
+/// PNG/source-art renderer to pick the exact rendered Link tile.
+pub const CHR_KIND_LINK_CONTENT: u8 = 8;
 
 /// FNV-1a 32-bit hash of the little-endian bytes of `words`. Deterministic and
 /// identical for identical content (so identical streamed tiles dedup to one

@@ -193,6 +193,7 @@ def _default_preview_palette(
 ) -> tuple[str, int]:
     preferred = {
         "sprite": "palette_main_spr",
+        "link": "palette_main_spr",
         "bg": "palette_overworld_bg_main",
         "bg3": "palette_overworld_bg_main",
     }.get(kind)
@@ -230,6 +231,8 @@ def _source_tile_key_for_kind(
         return "sprite", "kSprGfx", pack, tile, 3
     if kind in (4, 7):
         return "bg3", "kBg3Gfx", pack, tile, 5
+    if kind == 8:
+        return "link", "kLinkGfx", pack, tile, 3
     return None
 
 

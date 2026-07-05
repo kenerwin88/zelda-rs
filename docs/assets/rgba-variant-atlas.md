@@ -141,12 +141,12 @@ python3 scripts/extract_assets.py --rom saves/zelda3.sfc --out-dir generated/zel
 ```
 
 The source walk stops at replay end; the current combined route reaches frame
-`1073092`. Its usage map covers observed raw BG and sprite pack tiles. Tiles not
-drawn during the route, Link-specific sources, BG3/HUD cells, and content-hashed
-streamed BG sources may still use source-kind default preview colors in the
-editable PNG. Runtime drawing can still use stable `tile_effects.json` LUTs for
-those defaults when the live draw key names a modeled stable palette row; unknown
-or runtime-derived palettes remain on the live indexed fallback.
+`1073092`. Its usage map covers observed raw BG and sprite pack tiles.
+Content-hashed Link, BG3/HUD, and streamed BG cells may still use source-kind
+default preview colors in the editable PNG. Runtime drawing uses stable
+`tile_effects.json` LUTs for those defaults when the live draw key names a
+modeled stable palette row; unknown or runtime-derived palettes remain on the
+live indexed fallback.
 
 Usage entries are keyed by the same ROM-derived source identity recorded in
 `art_tiles.json` source refs:
@@ -427,42 +427,45 @@ python3 scripts/gpu_render_compare_oracle_windows.py \
 
 Expected output includes `mismatched_pixels=0` and nonzero material-backed
 source-art coverage (`effect_material_draws`). The current representative proof
-reports `effect_material_draws=153950`,
-`live_index_draws=200`,
+reports `effect_material_draws=154150`,
+`live_index_draws=0`,
 `live_index_bg_draws=0`,
 `live_index_bg12_draws=0`,
 `live_index_bg3_draws=0`,
-`live_index_sprite_draws=200`,
+`live_index_sprite_draws=0`,
 `gpu_prefinal_base_frames=<GPU base/prefinal frames>`,
-`unkeyed_fallback_draws=200`,
+`unkeyed_fallback_draws=0`,
 `unkeyed_bg_fallback_draws=0`,
 `unkeyed_bg12_fallback_draws=0`,
 `unkeyed_bg3_fallback_draws=0`,
-`unkeyed_sprite_fallback_draws=200`,
-`mixed_overlay_bg_effect_candidates=153586`,
-`mixed_overlay_bg_effect_draws=75`,
-`mixed_overlay_bg_effect_culled_invisible_main=1597`,
-`mixed_overlay_bg_effect_reject_complex_frame=12842`,
-`mixed_overlay_bg_effect_reject_complex_effect_bounds=12917`,
+`unkeyed_sprite_fallback_draws=0`,
+`mixed_overlay_bg_effect_candidates=0`,
+`mixed_overlay_bg_effect_draws=0`,
+`mixed_overlay_bg_effect_culled_invisible_main=0`,
+`mixed_overlay_bg_effect_reject_complex_frame=0`,
+`mixed_overlay_bg_effect_reject_complex_effect_bounds=0`,
 `mixed_overlay_bg_effect_reject_complex_scanline_main=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_clip=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_subscreen=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_fixed_color=0`,
-`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch=1596`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch=0`,
-`mixed_overlay_bg_effect_reject_cgram_mismatch=1596`, and
+`mixed_overlay_bg_effect_reject_cgram_mismatch=0`, and
 `mixed_overlay_bg_effect_reject_overlap=0` over 17 sampled compares from the
-checkpointed opening route tail. That means most stable BG opportunities in
-this sampled mixed window now execute through the GPU overlay path with exact
-final-pixel parity; the representative color-math/pre-final overlap blockers
-are now cleared. The remaining live-index blocker in this focused window is the
-sprite/Link path (`live_index_sprite_draws=200`).
+checkpointed opening route tail. That means this focused window now executes
+through stable source-art/material draws with exact final-pixel parity and no
+live-index fallback draws.
+
+A broader fast oracle pass across the 12 default windows plus the SRAM-sidecar
+TAS window (`--include-sram-windows --only tas-us-full-completion-smv`) reports
+`mismatched_pixels=0`, `live_index_draws=0`, `missing_art_draws=0`, and
+`unsupported_material_draws=0` for every sampled window.
 
 The first pre-final sub-screen implementation supports static variant-effect BG
 packets: those pixels can be written into the packed main-screen buffer before
@@ -561,6 +564,9 @@ matches the manifest dimensions, and contains every declared art rect.
 `--require-full-stable` makes it fail if the PNG/manifest size drifts, the art
 or source-ref counts drift, any art rect is malformed/out of bounds, or any
 canonical source ref lacks stable coverage.
+
+Current generated output reports `art_count=43656`, `source_refs=62025`, and
+`stable_by_kind bg=29081 bg3=24702 link=1010 sprite=7232`.
 
 `scripts/extract_assets.py` runs this gate for the default compact atlas output
 and writes the resulting counts to `manifest.json` as

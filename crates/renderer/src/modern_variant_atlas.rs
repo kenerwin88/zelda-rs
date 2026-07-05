@@ -157,6 +157,7 @@ pub fn variant_key_for_source_key(
         1 | 5 | 6 => ("bg", "kBgGfx", 3),
         2 => ("sprite", "kSprGfx", 3),
         4 | 7 => ("bg3", "kBg3Gfx", 5),
+        8 => ("link", "kLinkGfx", 3),
         _ => return None,
     };
     Some(VariantAtlasKey {
@@ -164,7 +165,6 @@ pub fn variant_key_for_source_key(
         asset: asset.to_string(),
         pack,
         tile,
-        // Link/special live sources are deliberately unresolved above.
         bpp,
         palette: palette_name.to_string(),
         palette_row,
@@ -865,6 +865,24 @@ mod tests {
         assert_eq!(content_key.pack, 0x1234);
         assert_eq!(content_key.tile, 0x5678);
         assert_eq!(content_key.bpp, 5);
+    }
+
+    #[test]
+    fn link_content_source_key_maps_to_link_variant_key() {
+        let key = variant_key_for_source_key(
+            crate::modern_source_atlas::modern_source_key(8, 0x1234, 0x5678),
+            "palette_main_spr",
+            4,
+        )
+        .expect("Link content source key should resolve");
+
+        assert_eq!(key.source_kind, "link");
+        assert_eq!(key.asset, "kLinkGfx");
+        assert_eq!(key.pack, 0x1234);
+        assert_eq!(key.tile, 0x5678);
+        assert_eq!(key.bpp, 3);
+        assert_eq!(key.palette, "palette_main_spr");
+        assert_eq!(key.palette_row, 4);
     }
 
     fn bg_test_effect_with_palette_row(palette_row: u8) -> TileEffect {

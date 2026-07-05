@@ -940,13 +940,8 @@ pub fn render_modern_frame_full_scaled_from_sources<S: SourceTableView + ?Sized>
 
 use crate::modern_source_atlas::{source_cell, ModernSourceAtlas};
 
-/// The one BG kind resolved via the assets atlas: `CHR_KIND_BG_STREAM` is content-
-/// hashed (streamed dungeon BG + sprite CHR), keyed by the hash of its frame-end
-/// pixels so the atlas is self-consistent. The other kinds are NOT atlas-resolved:
-/// generic `CHR_KIND_BG` (= 1, non-injective 3bpp->4bpp conversion) and
-/// `CHR_KIND_BG_ANIM` (= 5, in-place overworld animation) decode from LIVE VRAM (see
-/// `extract_modern_frame_from_sources`); `CHR_KIND_LINK` decodes from live VRAM in the
-/// sprite path.
+/// Content-hashed streamed CHR. BG and normal sprite tiles use this when the
+/// logical source tag is not injective enough to identify the frame-end pixels.
 const CHR_KIND_BG_STREAM: u8 = 6;
 
 /// FNV-1a 32-bit hash of one 16-word (4bpp) CHR tile at `slot`, over its little-endian
@@ -984,11 +979,12 @@ fn index_pattern_hash32(indices: &[u8; 64]) -> u32 {
 const CHR_KIND_BG3: u8 = 4;
 const CHR_KIND_BG3_CONTENT: u8 = 7;
 
-/// Link CHR (mirrors `zelda3::CHR_KIND_LINK`). Decoded from live VRAM in the sprite
-/// path, not the atlas: Link's pose CHR is DMA'd per-frame from a source buffer whose
-/// offsets are reused across poses, so the source-identity atlas key is non-injective
-/// in practice (the dump captures a different pose than the live frame streams).
+/// Link source-identity CHR tag (mirrors `zelda3::CHR_KIND_LINK`). The raw identity is
+/// not injective enough for rendering because pose source offsets are reused.
 const CHR_KIND_LINK: u8 = 3;
+/// Link tiles keyed by frame-end content hash. This lets Link resolve through
+/// PNG/source art while avoiding the stale-pose source-identity key.
+const CHR_KIND_LINK_CONTENT: u8 = 8;
 
 /// A thin view over the M1 per-VRAM-slot logical CHR source table, returning
 /// `(kind, pack, tile_off)` for a CHR tile slot (`word_addr / 16`). Defined in
@@ -1496,13 +1492,42 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                     pack = (h >> 16) as u16;
                     tile_off = (h & 0xffff) as u16;
                 }
-                // Link (kind=3) decodes from LIVE VRAM (unflipped; per-instance flip is
-                // applied by the compositor). Its pose CHR is DMA'd per-frame from a
-                // source buffer whose offsets are reused across poses, so the source-
-                // identity atlas key resolves a stale pose (frame 253000 Link: 98px).
-                // Cache the per-slot decode under a high-bit-tagged key disjoint from
-                // atlas cell ids. All other sprites (kind=2, content-hashed) use the atlas.
-                let cell_id = if kind == CHR_KIND_LINK {
+                // Link (kind=3) uses a content key rather than the raw source identity:
+                // pose DMA offsets are reused across poses, but the frame-end tile pixels
+                // are injective enough to select the exact PNG/source cell.
+                let content_key = if kind == CHR_KIND_LINK {
+                    let h = content_hash32_slot(frame.vram, slot);
+                    Some((CHR_KIND_LINK_CONTENT, (h >> 16) as u16, (h & 0xffff) as u16))
+                } else {
+                    None
+                };
+                let resolved = content_key
+                    .and_then(|(k, p, t)| source_cell(atlas, k, p, t).map(|src| (k, p, t, src)))
+                    .or_else(|| {
+                        if kind == CHR_KIND_LINK {
+                            None
+                        } else {
+                            source_cell(atlas, kind, pack, tile_off)
+                                .map(|src| (kind, pack, tile_off, src))
+                        }
+                    });
+                let cell_id = if let Some((source_kind, source_pack, source_tile, src)) = resolved {
+                    *cell_ids.entry(src.id).or_insert_with(|| {
+                        let id = cells.len() as u32;
+                        cells.push(ModernIndexTile {
+                            id,
+                            indices: src.indices,
+                            source_key: crate::modern_source_atlas::modern_source_key(
+                                source_kind,
+                                source_pack,
+                                source_tile,
+                            ),
+                            hflip: false,
+                            vflip: false,
+                        });
+                        id
+                    })
+                } else if kind == CHR_KIND_LINK {
                     *cell_ids
                         .entry(0x8000_0000 | slot as u32)
                         .or_insert_with(|| {
@@ -1518,27 +1543,14 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                             id
                         })
                 } else {
-                    let Some(src) = source_cell(atlas, kind, pack, tile_off) else {
+                    {
                         if std::env::var("ZELDA3_SPR_DEBUG").is_ok() {
                             eprintln!(
                                 "[SPR_GAP] slot=0x{slot:03x} kind={kind} pack=0x{pack:04x} off=0x{tile_off:04x} x={screen_x} y={screen_y}"
                             );
                         }
                         continue;
-                    };
-                    *cell_ids.entry(src.id).or_insert_with(|| {
-                        let id = cells.len() as u32;
-                        cells.push(ModernIndexTile {
-                            id,
-                            indices: src.indices,
-                            source_key: crate::modern_source_atlas::modern_source_key(
-                                kind, pack, tile_off,
-                            ),
-                            hflip: false,
-                            vflip: false,
-                        });
-                        id
-                    })
+                    }
                 };
 
                 out.push(ModernIndexSpriteInstance {
@@ -2682,6 +2694,107 @@ mod tests {
 
         let expected = decode_snes_4bpp_tile_indices(&vram, B, TILE);
         assert_eq!(cells[sprites[1].cell_id as usize].indices, expected);
+    }
+
+    #[test]
+    fn extract_modern_sprites_from_sources_resolves_link_content_key() {
+        use crate::modern_source_atlas::{modern_source_key, ModernSourceAtlas};
+
+        const B: usize = 0x1000;
+        const TILE: u16 = 3;
+        let mut vram = vec![0u16; 0x8000];
+        let tile_base = B + (TILE as usize) * 16;
+        vram[tile_base] = 0x00ff;
+        vram[tile_base + 3] = 0xffff;
+        let h = content_hash32_slot(&vram, B / 16 + TILE as usize);
+
+        let mut source_indices = [0u8; 64];
+        source_indices[0] = 7;
+        source_indices[63] = 5;
+        let source_cell = ModernIndexTile {
+            id: 0,
+            indices: source_indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        };
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
+            vec![source_cell],
+            &[(
+                CHR_KIND_LINK_CONTENT,
+                (h >> 16) as u16,
+                (h & 0xffff) as u16,
+                0,
+            )],
+        );
+        let table = |slot: usize| -> (u8, u16, u16) {
+            if slot == B / 16 + TILE as usize {
+                (CHR_KIND_LINK, 0x12, 0x34)
+            } else {
+                (0, 0, 0)
+            }
+        };
+
+        let cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        oam[0] = (50u16 << 8) | 40u16;
+        oam[1] = (4u16 << 9) | TILE;
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.obj.obj_size = 0;
+        frame.obj.tile_adr1 = B as u16;
+
+        let (cells, sprites) = extract_modern_sprites_from_sources(&frame, &table, &atlas);
+
+        assert_eq!(sprites.len(), 1);
+        assert_eq!(cells.len(), 1);
+        assert_eq!(cells[0].indices, source_indices);
+        assert_eq!(
+            cells[0].source_key,
+            modern_source_key(CHR_KIND_LINK_CONTENT, (h >> 16) as u16, (h & 0xffff) as u16)
+        );
+        assert_eq!(sprites[0].cell_id, 0);
+        assert_eq!(sprites[0].palette, 4);
+    }
+
+    #[test]
+    fn extract_modern_sprites_from_sources_falls_back_for_missing_link_content() {
+        use crate::modern_source_atlas::ModernSourceAtlas;
+
+        const B: usize = 0x2000;
+        const TILE: u16 = 7;
+        let mut vram = vec![0u16; 0x8000];
+        let tile_base = B + (TILE as usize) * 16;
+        vram[tile_base] = 0x00ff;
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![], &[]);
+        let table = |slot: usize| -> (u8, u16, u16) {
+            if slot == B / 16 + TILE as usize {
+                (CHR_KIND_LINK, 0x55, 0x66)
+            } else {
+                (0, 0, 0)
+            }
+        };
+
+        let cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        oam[0] = (50u16 << 8) | 40u16;
+        oam[1] = TILE;
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.obj.obj_size = 0;
+        frame.obj.tile_adr1 = B as u16;
+
+        let (cells, sprites) = extract_modern_sprites_from_sources(&frame, &table, &atlas);
+
+        assert_eq!(sprites.len(), 1);
+        assert_eq!(cells.len(), 1);
+        assert_eq!(
+            cells[0].source_key,
+            crate::modern_hd_overrides::NO_SOURCE_KEY,
+            "missing regenerated Link content cells remain visible via live fallback"
+        );
+        assert_eq!(
+            cells[0].indices,
+            decode_snes_4bpp_tile_indices(&vram, B, TILE)
+        );
     }
 
     fn test_gpu_frame<'a>(

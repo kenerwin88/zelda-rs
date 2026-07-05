@@ -1043,6 +1043,78 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             self.assertEqual({ref["runtime_colors_per_row"] for ref in refs}, {32})
             self.assertEqual({ref["runtime_material_policy"] for ref in refs}, {"stable"})
 
+    def test_canonical_art_atlas_imports_link_content_source_tiles(self) -> None:
+        import json
+        from PIL import Image
+
+        palette_colors = [
+            "#000000",
+            "#101010",
+            "#202020",
+            "#303030",
+            "#404040",
+            "#505050",
+            "#606060",
+            "#707070",
+        ] * 16
+        raw_pack = bytearray(1536)
+        raw_pack[0] = 0x80
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+            source_dir = asset_dir / "developer_tilesets"
+            source_dir.mkdir()
+            (source_dir / "assets_by_source.json").write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_assets_by_source_v2_png",
+                        "cell_count": 1,
+                        "cells": [
+                            {
+                                "id": 0,
+                                "key": (8 << 32) | (0x1234 << 16) | 0x5678,
+                                "kind": 8,
+                                "pack": 0x1234,
+                                "tile_off": 0x5678,
+                            }
+                        ],
+                    }
+                )
+            )
+            image = Image.new("P", (8, 8))
+            image.putdata([7] + [0] * 63)
+            image.save(source_dir / "assets_by_source.png")
+
+            _width, _height, _pixels, arts = build_canonical_art_atlas(
+                asset_dir,
+                source_tiles_dir=source_dir,
+            )
+
+            refs = [
+                source
+                for art in arts
+                for source in art["source_refs"]
+                if source["source_kind"] == "link"
+            ]
+            self.assertEqual(len(refs), 1)
+            self.assertEqual(refs[0]["asset"], "kLinkGfx")
+            self.assertEqual(refs[0]["pack"], 0x1234)
+            self.assertEqual(refs[0]["tile"], 0x5678)
+            self.assertEqual(refs[0]["bpp"], 3)
+            self.assertEqual(refs[0]["runtime_colors_per_row"], 8)
+            self.assertEqual(refs[0]["runtime_material_policy"], "stable")
+
     def test_write_canonical_art_atlas_emits_art_tiles_manifest(self) -> None:
         import json
         from PIL import Image

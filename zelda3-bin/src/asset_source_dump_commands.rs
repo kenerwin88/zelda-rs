@@ -11,7 +11,7 @@ use renderer::modern_source_atlas::modern_source_key;
 use serde::Serialize;
 use zelda3::{
     chr_content_hash32, ZeldaState, CHR_KIND_BG, CHR_KIND_BG3, CHR_KIND_BG_STREAM, CHR_KIND_LINK,
-    CHR_KIND_NONE, CHR_KIND_SPRITE,
+    CHR_KIND_LINK_CONTENT, CHR_KIND_NONE, CHR_KIND_SPRITE,
 };
 
 const PLAYER_IS_INDOORS: usize = 0x001b;
@@ -96,12 +96,16 @@ fn record_palette_usage_count(
 }
 
 fn content_hash_source_key(vram: &[u16], slot: usize) -> Option<u64> {
+    content_hash_source_key_for_kind(vram, slot, CHR_KIND_BG_STREAM)
+}
+
+fn content_hash_source_key_for_kind(vram: &[u16], slot: usize, kind: u8) -> Option<u64> {
     let base = slot.checked_mul(16)?;
     let end = base.checked_add(16)?;
     let words = vram.get(base..end)?;
     let h = chr_content_hash32(words);
     Some(modern_source_key(
-        CHR_KIND_BG_STREAM,
+        kind,
         (h >> 16) as u16,
         (h & 0xffff) as u16,
     ))
@@ -429,7 +433,12 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                         renderer::ModernAssetFrameScene::SPRITE_PALETTE_NAME,
                         palette_row,
                     );
-                    let key = rekey_content_hash(&ppu.vram, slot, src);
+                    let key = if src.kind == CHR_KIND_LINK {
+                        content_hash_source_key_for_kind(&ppu.vram, slot, CHR_KIND_LINK_CONTENT)
+                            .unwrap_or_else(|| modern_source_key(src.kind, src.pack, src.tile_off))
+                    } else {
+                        rekey_content_hash(&ppu.vram, slot, src)
+                    };
                     let pattern = decode_snes_4bpp_tile_indices(&ppu.vram, slot * 16, 0);
                     record_keyed(key, pattern, slot);
                 }
@@ -526,6 +535,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
             CHR_KIND_BG => count_bg += 1,
             CHR_KIND_SPRITE => count_sprite += 1,
             CHR_KIND_LINK => count_link += 1,
+            CHR_KIND_LINK_CONTENT => count_link += 1,
             CHR_KIND_BG3 => count_bg3 += 1,
             _ => {}
         }
@@ -663,6 +673,24 @@ mod palette_usage_tests {
             ))
         );
         assert_eq!(content_hash_source_key(&vram, 4), None);
+    }
+
+    #[test]
+    fn content_hash_source_key_can_encode_link_content_kind() {
+        let mut vram = vec![0u16; 0x40];
+        for (i, word) in vram[0x20..0x30].iter_mut().enumerate() {
+            *word = 0x2000u16.wrapping_add(i as u16);
+        }
+        let h = chr_content_hash32(&vram[0x20..0x30]);
+
+        assert_eq!(
+            content_hash_source_key_for_kind(&vram, 2, CHR_KIND_LINK_CONTENT),
+            Some(modern_source_key(
+                CHR_KIND_LINK_CONTENT,
+                (h >> 16) as u16,
+                (h & 0xffff) as u16
+            ))
+        );
     }
 
     #[test]

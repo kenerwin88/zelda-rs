@@ -20,8 +20,8 @@ pub mod zelda_rtl;
 
 pub use chr_source::{
     chr_content_hash32, LogicalChrSrc, VramChrSourceTable, CHR_KIND_BG, CHR_KIND_BG3,
-    CHR_KIND_BG_ANIM, CHR_KIND_BG_STREAM, CHR_KIND_LINK, CHR_KIND_NONE, CHR_KIND_SPRITE,
-    CHR_LINK_SRC_RAM_FLAG, VRAM_CHR_SLOTS,
+    CHR_KIND_BG_ANIM, CHR_KIND_BG_STREAM, CHR_KIND_LINK, CHR_KIND_LINK_CONTENT, CHR_KIND_NONE,
+    CHR_KIND_SPRITE, CHR_LINK_SRC_RAM_FLAG, VRAM_CHR_SLOTS,
 };
 pub use game_state::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 pub use zelda_cpu_infra::{
