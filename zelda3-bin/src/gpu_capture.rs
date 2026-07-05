@@ -185,7 +185,7 @@ pub(crate) fn capture_gpu_frame_from_game(game: &mut ZeldaState) -> LiveGpuFrame
     LiveGpuFrameCapture::from_game(game)
 }
 
-pub(crate) fn new_gpu_readback_renderer(width: u32, height: u32) -> GpuReadbackRenderer {
+fn new_gpu_readback_renderer(width: u32, height: u32) -> GpuReadbackRenderer {
     GpuReadbackRenderer {
         offscreen: pollster::block_on(renderer::OffscreenRenderer::new(width, height)),
     }
@@ -199,6 +199,16 @@ pub(crate) fn optional_gpu_readback_renderer(
     OptionalGpuReadbackRenderer {
         renderer: required.then(|| new_gpu_readback_renderer(width, height)),
     }
+}
+
+pub(crate) fn render_live_game_gpu_frame_rgba(
+    game: &mut ZeldaState,
+    width: u32,
+    height: u32,
+) -> GpuRgbaReadbackFrame {
+    let capture = capture_gpu_frame_from_game(game);
+    let mut readback = new_gpu_readback_renderer(width, height);
+    readback.render_live_gpu_capture_rgba(&capture)
 }
 
 pub(crate) fn modern_compare_mode_defaults_from_env() -> ModernCompareModeDefaults {

@@ -27,8 +27,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use gpu_capture::{
     capture_gpu_frame_from_game, emit_modern_index_compare_output_lines, gpu_render_compare_run,
     modern_compare_mode_defaults_from_env, modern_index_compare_run_from_env,
-    new_gpu_readback_renderer, optional_gpu_readback_renderer, play_gpu_render_compare_session,
-    render_hd_capture_from_gpu_capture,
+    optional_gpu_readback_renderer, play_gpu_render_compare_session,
+    render_hd_capture_from_gpu_capture, render_live_game_gpu_frame_rgba,
 };
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
@@ -8882,9 +8882,7 @@ fn run_dump_developer_destination(args: &[String]) {
     }
 
     if let Some(path) = gpu_out_path.as_deref() {
-        let gpu_capture = capture_gpu_frame_from_game(&mut game);
-        let mut gpu_readback = new_gpu_readback_renderer(width, height);
-        let rgba = gpu_readback.render_live_gpu_capture_rgba(&gpu_capture);
+        let rgba = render_live_game_gpu_frame_rgba(&mut game, width, height);
         if let Err(e) = write_rgba_frame_png(path, &rgba, width, height) {
             eprintln!("failed to write {}: {e}", path.display());
             process::exit(1);

@@ -264,7 +264,7 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "renderer::OffscreenRenderer",
     "OffscreenRenderer::new(",
     "let mut gpu_readback = if render_hash_log != 0",
-    "let mut gpu_readback = new_gpu_readback_renderer(256, 224)",
+    "new_gpu_readback_renderer(",
     "let mut render_frame = vec![0u8; 256 * 224 * 4]",
     "GPU readback renderer allocated",
     "gpu_readback.required()",
