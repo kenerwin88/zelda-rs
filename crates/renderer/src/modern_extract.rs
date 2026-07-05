@@ -912,6 +912,30 @@ pub fn render_modern_frame_full_from_vram(frame: &GpuFrame<'_>) -> Vec<u8> {
     crate::modern_software::render_modern_frame_full(&modern, &bg_cells, &sprite_cells)
 }
 
+pub fn render_modern_frame_full_scaled_from_sources<S: SourceTableView + ?Sized>(
+    frame: &GpuFrame<'_>,
+    src_table: &S,
+    atlas: &ModernSourceAtlas,
+    ctx: &crate::modern_hd_overrides::HdOverrideCtx,
+    scale: u32,
+) -> Vec<u8> {
+    let scale = scale.clamp(1, 4);
+    if frame.mode == 7 {
+        let native = crate::modern_software::render_modern_mode7_frame(frame);
+        return crate::modern_software::upscale_rgba_nearest(&native, 256, 224, scale as usize);
+    }
+    let (mut modern, bg_cells) = extract_modern_frame_from_sources(frame, src_table, atlas);
+    let (sprite_cells, sprites) = extract_modern_sprites_from_sources(frame, src_table, atlas);
+    modern.index_sprites = sprites;
+    crate::modern_software::render_modern_frame_full_scaled(
+        &modern,
+        &bg_cells,
+        &sprite_cells,
+        ctx,
+        scale,
+    )
+}
+
 // ── Off-VRAM (logical-CHR-source) render path (Milestone 3) ──────────────────
 
 use crate::modern_source_atlas::{source_cell, ModernSourceAtlas};
@@ -1481,6 +1505,47 @@ mod tests {
         assert!(rgba.iter().any(|&b| b != 0), "frame buffer is empty");
         // Alpha channel is opaque.
         assert!(rgba.chunks_exact(4).all(|px| px[3] == 0xff));
+    }
+
+    #[test]
+    fn render_full_from_sources_matches_manual_extract_and_render() {
+        use crate::modern_source_atlas::ModernSourceAtlas;
+
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![], &[]);
+        let table = |slot: usize| -> (u8, u16, u16) {
+            if slot == 0x200 + 4 {
+                (1, 5, 3)
+            } else {
+                (0, 0, 0)
+            }
+        };
+
+        let mut vram = vec![0u16; 0x8000];
+        let mut cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        cgram[1] = 0x001f; // red in SNES BGR555
+        vram[0] = 4; // BG1 tilemap entry: tile# 4
+        vram[0x2040] = 0x0001; // live generic BG pixel at row0 x7 -> index 1
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        frame.bg[0].tilemap_adr = 0;
+        frame.bg[0].tile_adr = 0x2000;
+        frame.screen_enabled = [0x01, 0x00];
+
+        let (mut modern, bg_cells) = extract_modern_frame_from_sources(&frame, &table, &atlas);
+        let (sprite_cells, sprites) = extract_modern_sprites_from_sources(&frame, &table, &atlas);
+        modern.index_sprites = sprites;
+        let ctx = crate::modern_hd_overrides::HdOverrideCtx::disabled();
+        let manual = crate::modern_software::render_modern_frame_full_scaled(
+            &modern,
+            &bg_cells,
+            &sprite_cells,
+            &ctx,
+            1,
+        );
+        let helper = render_modern_frame_full_scaled_from_sources(&frame, &table, &atlas, &ctx, 1);
+
+        assert_eq!(helper, manual);
     }
 
     #[test]

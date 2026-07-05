@@ -1877,26 +1877,13 @@ impl PlayRendererBackend for GpuPlayRenderer {
                 frontend.present_modern_gpu_from_sources(&gpu_frame, &src_table, atlas);
                 return;
             }
-            let (mut modern, bg_cells) =
-                renderer::modern_extract::extract_modern_frame_from_sources(
-                    &gpu_frame, &src_table, atlas,
-                );
-            let (sprite_cells, sprites) =
-                renderer::modern_extract::extract_modern_sprites_from_sources(
-                    &gpu_frame, &src_table, atlas,
-                );
-            modern.index_sprites = sprites;
             let ctx = match &self.hd_overrides {
                 Some(store) => renderer::modern_hd_overrides::HdOverrideCtx::new(store),
                 None => renderer::modern_hd_overrides::HdOverrideCtx::disabled(),
             };
             let scale = frontend.renderer_hd_scale();
-            let rgba = renderer::modern_software::render_modern_frame_full_scaled(
-                &modern,
-                &bg_cells,
-                &sprite_cells,
-                &ctx,
-                scale,
+            let rgba = renderer::modern_extract::render_modern_frame_full_scaled_from_sources(
+                &gpu_frame, &src_table, atlas, &ctx, scale,
             );
             frontend.present_modern_rgba(&rgba, 256 * scale, 224 * scale);
             return;
@@ -6126,20 +6113,11 @@ fn run_replay_save(args: &[String]) {
                     // VRAM inside `extract_modern_frame_from_sources` (see
                     // `content_hash32_slot`), so the adapter stays a plain passthrough.
                     let src_table = VramChrSourceTableView::new(game.vram_chr_source());
-                    let (mut modern, bg_cells) =
-                        renderer::modern_extract::extract_modern_frame_from_sources(
-                            &gpu_frame, &src_table, atlas,
+                    let ctx = renderer::modern_hd_overrides::HdOverrideCtx::disabled();
+                    let rgba =
+                        renderer::modern_extract::render_modern_frame_full_scaled_from_sources(
+                            &gpu_frame, &src_table, atlas, &ctx, 1,
                         );
-                    let (sprite_cells, sprites) =
-                        renderer::modern_extract::extract_modern_sprites_from_sources(
-                            &gpu_frame, &src_table, atlas,
-                        );
-                    modern.index_sprites = sprites;
-                    let rgba = renderer::modern_software::render_modern_frame_full(
-                        &modern,
-                        &bg_cells,
-                        &sprite_cells,
-                    );
                     (rgba, "sources")
                 } else {
                     // Both dungeon and overworld BG patterns are decoded from LIVE VRAM
