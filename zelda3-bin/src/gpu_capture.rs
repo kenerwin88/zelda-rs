@@ -778,14 +778,6 @@ impl OptionalGpuReadbackRenderer {
 }
 
 impl ReplayRenderHashCapture {
-    pub(crate) fn cgram(&self) -> &[u16] {
-        self.capture.cgram()
-    }
-
-    pub(crate) fn raw_scanlines(&self) -> &RawScanlineFrame {
-        self.capture.raw_scanlines()
-    }
-
     pub(crate) fn render_gpu_rgba(
         &self,
         readback: &mut OptionalGpuReadbackRenderer,
@@ -793,6 +785,60 @@ impl ReplayRenderHashCapture {
         ReplayRenderHashGpuReadback {
             frame: readback.render_live_gpu_capture_rgba(&self.capture),
         }
+    }
+
+    pub(crate) fn cgram_color(&self, index: usize) -> u16 {
+        self.capture.cgram().get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn debug_frame_800_scanline_screen_enabled_main_line(&self) -> String {
+        let values = self.capture.raw_scanlines()[60..70]
+            .iter()
+            .map(|e| e.4)
+            .collect::<Vec<_>>();
+        format!("[gpu-dbg] f800 scanlines[60..70] screen_enabled_main: {values:?}")
+    }
+
+    pub(crate) fn debug_cgram_render_diff_lines(
+        &self,
+        frame: u32,
+        post_cgram: &[u16],
+    ) -> Vec<String> {
+        let diffs = self
+            .capture
+            .cgram()
+            .iter()
+            .enumerate()
+            .zip(post_cgram.iter())
+            .filter(|((_, &h), &p)| h != p)
+            .map(|((i, &h), &p)| (i, h, p))
+            .collect::<Vec<_>>();
+        let mut lines = Vec::with_capacity(1 + diffs.len().min(20));
+        lines.push(format!(
+            "[gpu-dbg] frame={frame} CGRAM changes during render: {} entries differ",
+            diffs.len()
+        ));
+        lines.extend(diffs.iter().take(20).map(|(i, before, after)| {
+            format!("[gpu-dbg]   cgram[{i}]: {before:#06x} → {after:#06x}")
+        }));
+        lines
+    }
+
+    pub(crate) fn debug_cgram_value_lines(
+        &self,
+        frame: u32,
+        label: &str,
+        value: u16,
+    ) -> Vec<String> {
+        self.capture
+            .cgram()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, &cgram_value)| {
+                (cgram_value == value)
+                    .then(|| format!("[gpu-dbg] frame={frame} {label}[{index}]={value:#06x}"))
+            })
+            .collect()
     }
 
     pub(crate) fn debug_math_state_line(&self) -> String {

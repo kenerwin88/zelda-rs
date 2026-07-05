@@ -3564,8 +3564,6 @@ fn run_replay_save(args: &[String]) {
             // via HDMA (e.g. dungeon floor palettes). State is restored after the call
             // so zelda_draw_ppu_frame renders from the correct baseline.
             let render_hash_capture = gpu_readback.capture_replay_render_hash_frame(&mut game);
-            let hdma_cgram = render_hash_capture.cgram();
-            let scanlines_raw = render_hash_capture.raw_scanlines();
             if frames == 800 {
                 // Dump DMA channel state to find which channel targets $212C (TM).
                 let hdmaen_copy = game.ram[0x9b];
@@ -3586,11 +3584,8 @@ fn run_replay_save(args: &[String]) {
                 }
                 // Dump per-scanline TM values from the simulation result.
                 eprintln!(
-                    "[gpu-dbg] f800 scanlines[60..70] screen_enabled_main: {:?}",
-                    &scanlines_raw[60..70]
-                        .iter()
-                        .map(|e| e.4)
-                        .collect::<Vec<_>>()
+                    "{}",
+                    render_hash_capture.debug_frame_800_scanline_screen_enabled_main_line()
                 );
                 for i in 0..3 {
                     eprintln!(
@@ -3671,7 +3666,7 @@ fn run_replay_save(args: &[String]) {
                     pal_idx
                 );
                 let cgram_idx = (palette_sub * 16 + pal_idx) as usize;
-                let cgram_val = hdma_cgram.get(cgram_idx).copied().unwrap_or(0);
+                let cgram_val = render_hash_capture.cgram_color(cgram_idx);
                 eprintln!(
                     "[gpu-dbg] f800 BG1 at (126,65): cgram_idx={} cgram_val={:#06x}",
                     cgram_idx, cgram_val
@@ -3770,7 +3765,7 @@ fn run_replay_save(args: &[String]) {
                     | (((w23 >> bit) & 1) << 2)
                     | (((w23 >> (8 + bit)) & 1) << 3);
                 let cgram_idx = (palette_sub * 16 + pal_idx) as usize;
-                let cgram_val = hdma_cgram.get(cgram_idx).copied().unwrap_or(0);
+                let cgram_val = render_hash_capture.cgram_color(cgram_idx);
                 eprintln!(
                     "[gpu-dbg] f800 BG1@(126,65) POST-RENDER: tilemap_adr={} tile_adr={} entry={:#06x} tile={} pal_sub={} pal_idx={} cgram[{}]={:#06x}",
                     bg1.tilemap_adr,
@@ -3824,20 +3819,10 @@ fn run_replay_save(args: &[String]) {
                     post_scrolls[3].0,
                     post_scrolls[3].1
                 );
-                let post_cgram = &game.ppu.cgram;
-                let diffs: Vec<(usize, u16, u16)> = hdma_cgram
-                    .iter()
-                    .enumerate()
-                    .zip(post_cgram.iter())
-                    .filter(|((_, &h), &p)| h != p)
-                    .map(|((i, &h), &p)| (i, h, p))
-                    .collect();
-                eprintln!(
-                    "[gpu-dbg] frame=1000 CGRAM changes during render: {} entries differ",
-                    diffs.len()
-                );
-                for (i, before, after) in diffs.iter().take(20) {
-                    eprintln!("[gpu-dbg]   cgram[{i}]: {before:#06x} → {after:#06x}");
+                for line in
+                    render_hash_capture.debug_cgram_render_diff_lines(frames, &game.ppu.cgram)
+                {
+                    eprintln!("{line}");
                 }
                 // BG1 tilemap entry at (0,0): what tile does BG1 show at screen x=0..7?
                 let bg1_tilemap_adr = game.ppu.bg_layer[0].tilemap_adr as usize;
@@ -4309,10 +4294,10 @@ fn run_replay_save(args: &[String]) {
                         render_hash_capture.debug_frame_332_scanline_window_line()
                     );
                     // Find CGRAM entry = 0x014D (the mystery color R=13,G=10,B=0)
-                    for (ci, &cv) in hdma_cgram.iter().enumerate() {
-                        if cv == 0x014d {
-                            eprintln!("[gpu-dbg] frame=332 hdma_cgram[{ci}]=0x014d");
-                        }
+                    for line in
+                        render_hash_capture.debug_cgram_value_lines(frames, "hdma_cgram", 0x014d)
+                    {
+                        eprintln!("{line}");
                     }
                     for (ci, &cv) in game.ppu.cgram.iter().enumerate() {
                         if cv == 0x014d {
@@ -4620,7 +4605,7 @@ fn run_replay_save(args: &[String]) {
                                 py,
                                 pal_idx,
                                 cgram_idx,
-                                hdma_cgram.get(cgram_idx as usize).copied().unwrap_or(0)
+                                render_hash_capture.cgram_color(cgram_idx as usize)
                             );
                         }
 
@@ -4723,7 +4708,7 @@ fn run_replay_save(args: &[String]) {
                                 used_tile,
                                 pixel,
                                 cgram_idx,
-                                hdma_cgram.get(cgram_idx as usize).copied().unwrap_or(0)
+                                render_hash_capture.cgram_color(cgram_idx as usize)
                             );
                         }
                     }
@@ -4772,7 +4757,7 @@ fn run_replay_save(args: &[String]) {
                         let bg3_pal_idx =
                             ((bg3_w01 >> bg3_bit) & 1) | (((bg3_w01 >> (8 + bg3_bit)) & 1) << 1);
                         let bg3_cgram_idx = (bg3_pal_sub * 4 + bg3_pal_idx) as usize;
-                        let bg3_cgram_val = hdma_cgram.get(bg3_cgram_idx).copied().unwrap_or(0);
+                        let bg3_cgram_val = render_hash_capture.cgram_color(bg3_cgram_idx);
                         eprintln!(
                             "[gpu-dbg] f800 BG3@(126,65): tilemap_adr={} tile={} pal_sub={} prio={} pal_idx={} cgram[{}]={:#06x}",
                             bg3.tilemap_adr,
@@ -4815,7 +4800,7 @@ fn run_replay_save(args: &[String]) {
                         );
                         // Also log the specific GPU cgram value
                         let gpu_bg3_cgram_val =
-                            hdma_cgram.get(gpu_bg3_cgram as usize).copied().unwrap_or(0);
+                            render_hash_capture.cgram_color(gpu_bg3_cgram as usize);
                         eprintln!(
                             "[gpu-dbg] f800 GPU BG3 cgram[{}]={:#06x}",
                             gpu_bg3_cgram, gpu_bg3_cgram_val

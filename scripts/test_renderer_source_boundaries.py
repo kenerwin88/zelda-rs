@@ -715,6 +715,8 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let _hashes = gpu_rgba.hash_pair_with_cpu_bgra(frame);
                 println!("{}", gpu_rgba.render_hash_line(frames));
                 let _debug_frame = render_hash_capture.gpu_frame();
+                let _debug_cgram = render_hash_capture.cgram();
+                let _debug_scanlines = render_hash_capture.raw_scanlines();
                 modern_index_compare.load_resources_from_env(root, false);
                 let (mut renderer, mut frontend) = play_renderer::configured_from_env();
                 let mut renderer = play_renderer::from_env();
@@ -761,7 +763,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 86)
+        self.assertEqual(len(errors), 88)
         self.assertTrue(
             all("live GPU play backend ownership escaped gpu_capture boundary" in error for error in errors)
         )
