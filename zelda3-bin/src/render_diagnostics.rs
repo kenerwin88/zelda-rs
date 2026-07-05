@@ -1,6 +1,31 @@
 use snes::ppu::PpuRenderFlags;
 use zelda3::{LockstepOracle, ZeldaState};
 
+pub(crate) fn run_diagnostic_play_frame_bgra(
+    game: &mut ZeldaState,
+    input: u16,
+    frame: &mut [u8],
+    render_flags: PpuRenderFlags,
+) {
+    crate::classic_frame_renderer::run_play_frame_bgra(game, input, frame, render_flags);
+}
+
+pub(crate) fn run_diagnostic_play_frame_with_run_what_bgra(
+    game: &mut ZeldaState,
+    input: u16,
+    run_what: u8,
+    frame: &mut [u8],
+    render_flags: PpuRenderFlags,
+) {
+    crate::classic_frame_renderer::run_play_frame_with_run_what_bgra(
+        game,
+        input,
+        run_what,
+        frame,
+        render_flags,
+    );
+}
+
 pub(crate) fn render_diagnostic_lockstep_artifact_frame_bgra(
     game: &mut ZeldaState,
     frame: &mut [u8],

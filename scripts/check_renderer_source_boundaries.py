@@ -250,6 +250,11 @@ FORBIDDEN_MAIN_PLAY_RENDER_CALLS = (
     "render_play_frame_bgra(",
 )
 
+FORBIDDEN_MAIN_CLASSIC_RUN_CALLS = (
+    "run_play_frame_bgra(",
+    "run_play_frame_with_run_what_bgra(",
+)
+
 FORBIDDEN_MAIN_RENDER_HASH_HELPER_CALLS = (
     "render_hash_frame_bgra_line(",
 )
@@ -651,6 +656,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "play render escaped play_renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_CLASSIC_RUN_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "classic play-frame run escaped render_diagnostics boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

@@ -26,7 +26,6 @@ use std::process;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use classic_frame_renderer::{run_play_frame_bgra, run_play_frame_with_run_what_bgra};
 use gpu_capture::{
     gpu_render_compare_run, modern_compare_mode_defaults_from_env,
     modern_index_compare_run_from_env, play_gpu_render_compare_session,
@@ -41,6 +40,7 @@ use render_diagnostics::{
     render_diagnostic_lockstep_artifact_frame_bgra,
     render_diagnostic_lockstep_oracle_frames_in_place,
     render_diagnostic_oracle_compare_frames_bgra, render_diagnostic_overworld_screen_bgra,
+    run_diagnostic_play_frame_bgra, run_diagnostic_play_frame_with_run_what_bgra,
 };
 use serde::{Deserialize, Serialize};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, ppu::PpuRenderFlags, Snes};
@@ -991,7 +991,7 @@ fn run_compare_bootstrap_apu_startup(args: &[String]) {
     );
 
     for _ in 0..frames {
-        run_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
         let ports = game.zelda_debug_apu_write_ports();
         for (port, &value) in ports.iter().enumerate() {
             full_apu.write_snes_port(port as u8, value);
@@ -1121,7 +1121,7 @@ fn run_trace_bootstrap_apu_direct_frame(args: &[String]) {
     );
 
     for frame_index in 0..frames {
-        run_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
         let high_ports = game.zelda_debug_apu_write_ports();
         game.zelda_render_audio(&mut high_audio, 735, 2);
         game.zelda_discard_unused_audio_frames();
@@ -6372,7 +6372,13 @@ fn run_replay_crash(args: &[String]) {
         let host_frame = checkpoint.host_frame.wrapping_add(local_frame);
         let pre_frame_game = game.clone();
         let result = panic::catch_unwind(AssertUnwindSafe(|| {
-            run_play_frame_with_run_what_bgra(&mut game, input, run_what, &mut frame, render_flags);
+            run_diagnostic_play_frame_with_run_what_bgra(
+                &mut game,
+                input,
+                run_what,
+                &mut frame,
+                render_flags,
+            );
         }));
         if let Err(payload) = result {
             let panic_info = captured_panic_from(last_panic.clone(), payload);
@@ -6410,7 +6416,7 @@ fn run_smoke_render(args: &[String]) {
     let mut audio_peak = 0i16;
     let render_flags = PpuRenderFlags::empty();
     for _ in 0..frames {
-        run_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
         game.zelda_render_audio(&mut audio, 735, 2);
         game.zelda_discard_unused_audio_frames();
         audio_nonzero += audio.iter().filter(|&&sample| sample != 0).count();
@@ -6526,7 +6532,7 @@ fn run_trace_startup_audio(args: &[String]) {
     let mut last_ports = [0u8; 4];
     let mut last_nonzero = false;
     for frame_index in 0..frames {
-        run_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
         let ports = game.zelda_debug_apu_write_ports();
         game.zelda_render_audio(&mut audio, 735, 2);
         game.zelda_discard_unused_audio_frames();
@@ -6630,7 +6636,7 @@ fn run_trace_bsnes_audio(args: &[String]) {
         bsnes.av_info.timing.sample_rate,
     );
     for frame_index in 0..frames {
-        run_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
         let ports = game.zelda_debug_apu_write_ports();
         game.zelda_render_audio(&mut audio, 735, 2);
         game.zelda_discard_unused_audio_frames();
@@ -6701,7 +6707,7 @@ fn run_compare_bsnes_startup_audio(args: &[String]) {
     let mut ref_video_frames = 0usize;
     let mut ref_video_meta = None;
     for _ in 0..frames {
-        run_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
         let ports = game.zelda_debug_apu_write_ports();
         game.zelda_render_audio(&mut audio, 735, 2);
         game.zelda_discard_unused_audio_frames();
@@ -7007,7 +7013,7 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
     for frame_index in 0..frames {
         let input = input_script.input_for_frame(frame_index);
         let pre_game = game.clone();
-        run_play_frame_bgra(&mut game, input, &mut rust_frame, render_flags);
+        run_diagnostic_play_frame_bgra(&mut game, input, &mut rust_frame, render_flags);
         let ports = game.zelda_debug_apu_write_ports();
         if trace_poly_sched {
             eprintln!(
@@ -7648,7 +7654,7 @@ fn run_compare_startup_apu_impls(args: &[String]) {
     let mut debug = Vec::with_capacity(frames as usize);
 
     for _ in 0..frames {
-        run_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
         let full_apu = full_apu.get_or_insert_with(|| game.zelda_debug_full_apu_from_spc());
         let ports = game.zelda_debug_apu_write_ports();
         for (port, &value) in ports.iter().enumerate() {
@@ -8710,7 +8716,7 @@ fn run_dump_frame(args: &[String]) {
     let mut frame = vec![0u8; width as usize * height as usize * 4];
     for frame_no in 0..frames {
         let input = input_script.input_for_frame(start_frame.wrapping_add(frame_no));
-        run_play_frame_bgra(&mut game, input, &mut frame, render_flags);
+        run_diagnostic_play_frame_bgra(&mut game, input, &mut frame, render_flags);
     }
     if let Err(e) = write_argb_frame_png(&out_path, &frame, width, height) {
         eprintln!("failed to write {}: {e}", out_path.display());
@@ -8787,7 +8793,7 @@ fn run_dump_developer_destination(args: &[String]) {
     let height = 224u32;
     let mut frame = vec![0u8; width as usize * height as usize * 4];
     for _ in 0..frames {
-        run_play_frame_bgra(&mut game, 0, &mut frame, PpuRenderFlags::empty());
+        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, PpuRenderFlags::empty());
     }
     if let Err(e) = write_argb_frame_png(&out_path, &frame, width, height) {
         eprintln!("failed to write {}: {e}", out_path.display());
@@ -8972,7 +8978,7 @@ fn run_dump_replay_checkpoint_ppu(args: &[String]) {
     let height = 224u32;
     let mut frame = vec![0u8; width as usize * height as usize * 4];
     for _ in 0..frames {
-        run_play_frame_bgra(&mut game, 0, &mut frame, PpuRenderFlags::empty());
+        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, PpuRenderFlags::empty());
     }
     if let Err(e) = write_argb_frame_png(&out_path, &frame, width, height) {
         eprintln!("failed to write {}: {e}", out_path.display());

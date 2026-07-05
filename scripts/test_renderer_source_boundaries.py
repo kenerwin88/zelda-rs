@@ -701,6 +701,25 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_main_classic_run_calls(self):
+        module = load_module()
+        source = """
+            fn run_smoke_render() {
+                run_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+                run_play_frame_with_run_what_bgra(&mut game, input, run_what, &mut frame, render_flags);
+            }
+            """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(
+            all(
+                "classic play-frame run escaped render_diagnostics boundary" in error
+                for error in errors
+            )
+        )
+
     def test_rejects_raw_render_hash_calls(self):
         module = load_module()
         source = source_with_required_calls(
