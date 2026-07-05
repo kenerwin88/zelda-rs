@@ -818,6 +818,34 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_compare_ownership_in_gpu_capture(self):
+        module = load_module()
+        source = """
+            pub(crate) struct ModernCompareModeDefaults;
+            pub(crate) struct ModernIndexCompareRun;
+            pub(crate) struct GpuRenderCompareRun;
+            struct ModernAtlasCompareRun;
+            pub(crate) struct PlayGpuRenderCompareSession;
+
+            pub(crate) fn modern_compare_mode_defaults_from_env() {}
+            pub(crate) fn modern_index_compare_run_from_env() {}
+            pub(crate) fn gpu_render_compare_run() {}
+            pub(crate) fn play_gpu_render_compare_session() {}
+            fn compare_gpu_render_current_frame() {}
+            fn emit_modern_index_compare_output_lines() {}
+            fn cgram_match() {}
+            """
+
+        errors = module.check_gpu_capture_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 12)
+        self.assertTrue(
+            all(
+                "GPU compare ownership escaped gpu_compare boundary" in error
+                for error in errors
+            )
+        )
+
     def test_rejects_main_play_renderer_diagnostic_calls(self):
         module = load_module()
         source = """

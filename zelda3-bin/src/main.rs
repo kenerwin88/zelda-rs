@@ -9,6 +9,7 @@ mod classic_frame_renderer;
 mod developer_destinations;
 mod developer_modern_map;
 mod gpu_capture;
+mod gpu_compare;
 mod gpu_readback;
 mod play_renderer;
 mod render_diagnostics;
@@ -27,10 +28,10 @@ use std::process;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use gpu_capture::{
+use gpu_capture::{render_hd_capture_from_game, render_live_game_gpu_frame_rgba};
+use gpu_compare::{
     gpu_render_compare_run, modern_compare_mode_defaults_from_env,
-    modern_index_compare_run_from_env, play_gpu_render_compare_session,
-    render_hd_capture_from_game, render_live_game_gpu_frame_rgba, replay_cpu_bgra_hash_line,
+    modern_index_compare_run_from_env, play_gpu_render_compare_session, replay_cpu_bgra_hash_line,
     replay_optional_gpu_readback_renderer,
 };
 use platform::{

@@ -15,12 +15,14 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
+GPU_COMPARE_RS = REPO / "zelda3-bin" / "src" / "gpu_compare.rs"
 GPU_CAPTURE_RS = REPO / "zelda3-bin" / "src" / "gpu_capture.rs"
 GPU_READBACK_RS = REPO / "zelda3-bin" / "src" / "gpu_readback.rs"
 PLAY_RENDERER_RS = REPO / "zelda3-bin" / "src" / "play_renderer.rs"
 BOUNDARY_SOURCE_FILES = (
     MAIN_RS,
     REPO / "zelda3-bin" / "src" / "classic_frame_renderer.rs",
+    GPU_COMPARE_RS,
     REPO / "zelda3-bin" / "src" / "gpu_capture.rs",
     GPU_READBACK_RS,
     REPO / "zelda3-bin" / "src" / "play_renderer.rs",
@@ -282,6 +284,21 @@ FORBIDDEN_GPU_CAPTURE_READBACK_OWNERSHIP = (
     "impl OptionalGpuReadbackRenderer",
     "impl ReplayRenderHashCapture",
     "impl ReplayRenderHashGpuReadback",
+)
+
+FORBIDDEN_GPU_CAPTURE_COMPARE_OWNERSHIP = (
+    "struct ModernCompareModeDefaults",
+    "struct ModernIndexCompareRun",
+    "struct GpuRenderCompareRun",
+    "struct ModernAtlasCompareRun",
+    "struct PlayGpuRenderCompareSession",
+    "fn modern_compare_mode_defaults_from_env",
+    "fn modern_index_compare_run_from_env",
+    "fn gpu_render_compare_run",
+    "fn play_gpu_render_compare_session",
+    "fn compare_gpu_render_current_frame",
+    "fn emit_modern_index_compare_output_lines",
+    "fn cgram_match",
 )
 
 FORBIDDEN_PLAY_RENDERER_CLASSIC_BACKEND_CALLS = (
@@ -752,6 +769,14 @@ def check_gpu_capture_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "GPU readback ownership escaped gpu_readback boundary at "
+                    f"zelda3-bin/src/gpu_capture.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_GPU_CAPTURE_COMPARE_OWNERSHIP:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "GPU compare ownership escaped gpu_compare boundary at "
                     f"zelda3-bin/src/gpu_capture.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
