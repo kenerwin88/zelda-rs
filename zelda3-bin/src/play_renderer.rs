@@ -110,7 +110,7 @@ impl PlayRendererBackend for CpuPlayRenderer {
         frame: &mut [u8],
         render_flags: PpuRenderFlags,
     ) {
-        render_play_frame_bgra(game, frame, 256 * 4, render_flags);
+        crate::classic_frame_renderer::render_play_frame_bgra(game, frame, 256 * 4, render_flags);
         let pixels =
             unsafe { std::slice::from_raw_parts(frame.as_ptr().cast::<u32>(), frame.len() / 4) };
         frontend.present_frame(pixels, 256, 224);
@@ -145,19 +145,6 @@ pub(crate) fn configured_from_env(
     })
 }
 
-pub(crate) fn render_play_frame_bgra(
-    game: &mut ZeldaState,
-    frame: &mut [u8],
-    pitch: usize,
-    render_flags: PpuRenderFlags,
-) {
-    game.zelda_draw_display_frame(frame, pitch, render_flags);
-}
-
-pub(crate) fn render_standard_play_frame_bgra(game: &mut ZeldaState, frame: &mut [u8]) {
-    render_play_frame_bgra(game, frame, 256 * 4, PpuRenderFlags::empty());
-}
-
 pub(crate) fn run_play_frame_bgra(
     game: &mut ZeldaState,
     input: u16,
@@ -165,7 +152,7 @@ pub(crate) fn run_play_frame_bgra(
     render_flags: PpuRenderFlags,
 ) {
     game.zelda_run_frame(input as i32);
-    render_play_frame_bgra(game, frame, 256 * 4, render_flags);
+    crate::classic_frame_renderer::render_play_frame_bgra(game, frame, 256 * 4, render_flags);
 }
 
 pub(crate) fn run_play_frame_with_run_what_bgra(
@@ -177,7 +164,7 @@ pub(crate) fn run_play_frame_with_run_what_bgra(
 ) {
     game.run_frame_internal(input, run_what);
     game.zelda_push_apu_state();
-    render_play_frame_bgra(game, frame, 256 * 4, render_flags);
+    crate::classic_frame_renderer::render_play_frame_bgra(game, frame, 256 * 4, render_flags);
 }
 
 #[cfg(test)]

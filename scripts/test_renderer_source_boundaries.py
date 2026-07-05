@@ -624,6 +624,29 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(all("run_replay_save" in error for error in errors))
 
+    def test_rejects_play_renderer_classic_frame_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn render_replay_dump_frame_rgba() {
+                crate::play_renderer::render_play_frame_bgra(&mut game, frame, pitch, PpuRenderFlags::empty());
+                crate::play_renderer::render_standard_play_frame_bgra(&mut game, frame);
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        classic_errors = [
+            error
+            for error in errors
+            if "classic frame render escaped classic_frame_renderer boundary" in error
+        ]
+        self.assertEqual(len(classic_errors), 2)
+        self.assertTrue(
+            any("replay fingerprint render escaped play_renderer boundary" in error for error in errors)
+        )
+
     def test_rejects_main_play_render_calls(self):
         module = load_module()
         source = """

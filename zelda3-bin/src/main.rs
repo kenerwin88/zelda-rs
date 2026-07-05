@@ -5,6 +5,7 @@
 //! `--lockstep` keeps the C-oracle comparison path available for parity work,
 //! while `--headless` preserves the raw opcode-budget emulator harness.
 
+mod classic_frame_renderer;
 mod developer_destinations;
 mod developer_modern_map;
 mod gpu_capture;

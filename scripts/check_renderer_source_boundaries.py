@@ -17,6 +17,7 @@ REPO = Path(__file__).resolve().parents[1]
 MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
 BOUNDARY_SOURCE_FILES = (
     MAIN_RS,
+    REPO / "zelda3-bin" / "src" / "classic_frame_renderer.rs",
     REPO / "zelda3-bin" / "src" / "gpu_capture.rs",
     REPO / "zelda3-bin" / "src" / "play_renderer.rs",
     REPO / "zelda3-bin" / "src" / "render_diagnostics.rs",
@@ -235,6 +236,11 @@ FORBIDDEN_RENDER_HASH_REPORT_CALLS = (
 FORBIDDEN_REPLAY_FINGERPRINT_RENDER_CALLS = (
     "render_standard_play_frame_bgra(&mut game",
     "fp_render_leaf = render_fingerprint_leaf_bgra(",
+)
+
+FORBIDDEN_PLAY_RENDERER_CLASSIC_FRAME_CALLS = (
+    "crate::play_renderer::render_play_frame_bgra(",
+    "crate::play_renderer::render_standard_play_frame_bgra(",
 )
 
 FORBIDDEN_MAIN_PLAY_RENDER_CALLS = (
@@ -578,6 +584,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "replay fingerprint render escaped play_renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_PLAY_RENDERER_CLASSIC_FRAME_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "classic frame render escaped classic_frame_renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

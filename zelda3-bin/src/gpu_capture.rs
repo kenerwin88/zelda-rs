@@ -606,7 +606,7 @@ fn compare_gpu_render_current_frame(
 ) -> Option<u32> {
     let width = 256u32;
     let gpu_capture = capture_gpu_frame_from_game(game);
-    crate::play_renderer::render_play_frame_bgra(
+    crate::classic_frame_renderer::render_play_frame_bgra(
         game,
         frame,
         width as usize * 4,
@@ -750,7 +750,7 @@ impl OptionalGpuReadbackRenderer {
         frame: &mut [u8],
     ) -> GpuRgbaReadbackFrame {
         let width = 256usize;
-        crate::play_renderer::render_play_frame_bgra(
+        crate::classic_frame_renderer::render_play_frame_bgra(
             game,
             frame,
             width * 4,
@@ -767,7 +767,7 @@ impl OptionalGpuReadbackRenderer {
         let height = 224usize;
         let mut frame = vec![0u8; width * height * 4];
         let mut render_game = game.clone();
-        crate::play_renderer::render_play_frame_bgra(
+        crate::classic_frame_renderer::render_play_frame_bgra(
             &mut render_game,
             &mut frame,
             width * 4,
@@ -940,7 +940,7 @@ pub(crate) fn replay_cpu_bgra_hash_line(frame: u32, cpu_bgra: &[u8]) -> String {
 }
 
 pub(crate) fn replay_projection_bgra(game: &mut ZeldaState, frame: &mut [u8]) {
-    crate::play_renderer::render_standard_play_frame_bgra(game, frame);
+    crate::classic_frame_renderer::render_standard_play_frame_bgra(game, frame);
 }
 
 pub(crate) fn replay_fingerprint_leaf_bgra(game: &mut ZeldaState, frame: &mut [u8]) -> u32 {
