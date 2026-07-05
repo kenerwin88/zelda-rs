@@ -73,7 +73,6 @@ pub use modern_index_compare_stats::{
     ModernIndexCompareFrameRenderedReport, ModernIndexCompareFrameReport, ModernIndexCompareStats,
 };
 pub use modern_live_stats::{ModernAssetLiveFrameReport, ModernAssetLiveStats};
-pub use post_process::scanlines_from_raw;
 pub use renderer_mode::{
     default_renderer_env_for_variant_setting, renderer_env_or_default, source_atlas_renderer_mode,
     variant_atlas_renderer_mode, EffectiveRendererMode, RendererMode,
