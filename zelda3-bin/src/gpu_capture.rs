@@ -1,0 +1,119 @@
+use renderer::{GpuFrame, RawScanlineFrame};
+use zelda3::ZeldaState;
+
+pub struct LiveGpuFrameCapture {
+    ppu: snes::ppu::PpuState,
+    cgram: Vec<u16>,
+    raw_scanlines: Box<RawScanlineFrame>,
+}
+
+impl LiveGpuFrameCapture {
+    pub fn from_game(game: &mut ZeldaState) -> Self {
+        let cgram = game.cgram_after_first_hdma_line();
+        let raw_scanlines = game.ppu_scanline_windows();
+        let ppu = game.ppu.clone();
+        Self {
+            ppu,
+            cgram,
+            raw_scanlines,
+        }
+    }
+
+    pub fn capture_input(&self) -> renderer::GpuFrameCaptureInput<'_> {
+        gpu_frame_capture_from_ppu(&self.ppu, &self.cgram, self.raw_scanlines.as_ref())
+    }
+
+    pub fn modern_asset_present_input<'a, T>(
+        &'a self,
+        source_entries: &'a [T],
+        resources: &'a renderer::ModernAssetFrameResources,
+        stats: &'a mut renderer::ModernAssetLiveStats,
+        player_indoors: u8,
+    ) -> renderer::ModernAssetFrameLivePresentInput<'a, 'a, T>
+    where
+        T: Copy + Into<(u8, u16, u16)>,
+    {
+        renderer::ModernAssetFrameLivePresentInput {
+            frame: self.capture_input(),
+            source_entries,
+            resources,
+            stats,
+            player_indoors,
+        }
+    }
+}
+
+/// Borrow `PpuState` fields into a [`GpuFrame`] for the tile renderer.
+///
+/// `cgram` must be passed explicitly so callers can supply a pre-render snapshot:
+/// ALttP uses HDMA to modify CGRAM per-scanline during rendering, so the post-render
+/// `ppu.cgram` may differ from what was active for most of the frame.
+///
+/// `raw_scanlines` captures per-scanline window boundaries from HDMA pre-simulation.
+pub fn gpu_frame_from_ppu<'a>(
+    ppu: &'a snes::ppu::PpuState,
+    cgram: &'a [u16],
+    raw_scanlines: &'a RawScanlineFrame,
+) -> GpuFrame<'a> {
+    GpuFrame::from_capture_input(gpu_frame_capture_from_ppu(ppu, cgram, raw_scanlines))
+}
+
+fn gpu_frame_capture_from_ppu<'a>(
+    ppu: &'a snes::ppu::PpuState,
+    cgram: &'a [u16],
+    raw_scanlines: &'a RawScanlineFrame,
+) -> renderer::GpuFrameCaptureInput<'a> {
+    renderer::GpuFrameCaptureInput {
+        registers: gpu_frame_register_snapshot_from_ppu(ppu),
+        cgram,
+        raw_scanlines,
+    }
+}
+
+fn gpu_frame_register_snapshot_from_ppu<'a>(
+    ppu: &'a snes::ppu::PpuState,
+) -> renderer::GpuFrameRegisterSnapshot<'a> {
+    renderer::GpuFrameRegisterSnapshot {
+        vram: &ppu.vram,
+        oam: &ppu.oam,
+        mode: ppu.mode,
+        bg: std::array::from_fn(|layer| renderer::BgLayerRegs {
+            h_scroll: ppu.bg_layer[layer].h_scroll,
+            v_scroll: ppu.bg_layer[layer].v_scroll,
+            tilemap_wider: ppu.bg_layer[layer].tilemap_wider,
+            tilemap_higher: ppu.bg_layer[layer].tilemap_higher,
+            tilemap_adr: ppu.bg_layer[layer].tilemap_adr,
+            tile_adr: ppu.bg_layer[layer].tile_adr,
+        }),
+        obj: renderer::ObjRegs {
+            tile_adr1: ppu.obj_tile_adr1,
+            tile_adr2: ppu.obj_tile_adr2,
+            obj_size: ppu.obj_size,
+        },
+        mosaic_enabled: ppu.mosaic_enabled,
+        mosaic_size: ppu.mosaic_size,
+        extra_left_right: ppu.extra_left_right,
+        mode7: renderer::Mode7Regs {
+            matrix: ppu.m7_matrix,
+            large_field: ppu.m7_large_field,
+            char_fill: ppu.m7_char_fill,
+            x_flip: ppu.m7_x_flip,
+            y_flip: ppu.m7_y_flip,
+            ext_bg_always_zero: ppu.m7_ext_bg_always_zero,
+        },
+        screen_enabled: ppu.screen_enabled,
+        screen_windowed: ppu.screen_windowed,
+        brightness: ppu.brightness,
+        forced_blank: ppu.forced_blank,
+        math_enabled: ppu.math_enabled,
+        subtract_color: ppu.subtract_color,
+        half_color: ppu.half_color,
+        fixed_color_r: ppu.fixed_color_r,
+        fixed_color_g: ppu.fixed_color_g,
+        fixed_color_b: ppu.fixed_color_b,
+        add_subscreen: ppu.add_subscreen,
+        clip_mode: ppu.clip_mode,
+        prevent_math_mode: ppu.prevent_math_mode,
+        windowsel: ppu.windowsel,
+    }
+}

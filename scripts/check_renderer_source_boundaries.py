@@ -15,6 +15,10 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
+BOUNDARY_SOURCE_FILES = (
+    MAIN_RS,
+    REPO / "zelda3-bin" / "src" / "gpu_capture.rs",
+)
 
 MANUAL_EXTRACT = "extract_modern_frame_from_sources"
 REQUIRED_RENDERER_OWNED_CALLS = (
@@ -473,8 +477,12 @@ def check_source_text(source: str) -> list[str]:
     return errors
 
 
+def boundary_source_text() -> str:
+    return "\n".join(path.read_text() for path in BOUNDARY_SOURCE_FILES)
+
+
 def main() -> int:
-    source = MAIN_RS.read_text()
+    source = boundary_source_text()
     errors = check_source_text(source)
     if errors:
         for error in errors:

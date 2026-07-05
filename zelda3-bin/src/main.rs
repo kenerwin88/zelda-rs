@@ -7,6 +7,7 @@
 
 mod developer_destinations;
 mod developer_modern_map;
+mod gpu_capture;
 
 use std::backtrace::Backtrace;
 use std::collections::HashMap;
@@ -22,11 +23,12 @@ use std::process;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use gpu_capture::{gpu_frame_from_ppu, LiveGpuFrameCapture};
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
     HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
 };
-use renderer::{GpuFrame, OffscreenRenderer, RawScanlineFrame};
+use renderer::OffscreenRenderer;
 use serde::{Deserialize, Serialize};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, ppu::PpuRenderFlags, Snes};
 use zelda3::{
@@ -1427,17 +1429,14 @@ impl PlayRendererBackend for GpuPlayRenderer {
         _frame: &mut [u8],
         _render_flags: PpuRenderFlags,
     ) {
-        let hdma_cgram = game.cgram_after_first_hdma_line();
-        let scanlines_raw = game.ppu_scanline_windows();
-        let ppu = game.ppu.clone();
+        let capture = LiveGpuFrameCapture::from_game(game);
         let report = frontend.present_modern_asset_live_frame_from_entries(
-            renderer::ModernAssetFrameLivePresentInput {
-                frame: gpu_frame_capture_from_ppu(&ppu, &hdma_cgram, &scanlines_raw),
-                source_entries: game.vram_chr_source().as_slice(),
-                resources: &self.modern_assets,
-                stats: &mut self.variant_live_stats,
-                player_indoors: game.ram[PLAYER_IS_INDOORS],
-            },
+            capture.modern_asset_present_input(
+                game.vram_chr_source().as_slice(),
+                &self.modern_assets,
+                &mut self.variant_live_stats,
+                game.ram[PLAYER_IS_INDOORS],
+            ),
         );
         if let Some(line) = report.failure_line() {
             eprintln!("{line}");
@@ -6646,81 +6645,6 @@ fn draw_play_ppu_frame(
     render_flags: PpuRenderFlags,
 ) {
     game.zelda_draw_display_frame(frame, pitch, render_flags);
-}
-
-/// Borrow `PpuState` fields into a [`GpuFrame`] for the tile renderer.
-///
-/// `cgram` must be passed explicitly so callers can supply a pre-render snapshot:
-/// ALttP uses HDMA to modify CGRAM per-scanline during rendering, so the post-render
-/// `ppu.cgram` may differ from what was active for most of the frame.
-///
-/// `raw_scanlines` captures per-scanline window boundaries from HDMA pre-simulation.
-fn gpu_frame_from_ppu<'a>(
-    ppu: &'a snes::ppu::PpuState,
-    cgram: &'a [u16],
-    raw_scanlines: &'a RawScanlineFrame,
-) -> GpuFrame<'a> {
-    GpuFrame::from_capture_input(gpu_frame_capture_from_ppu(ppu, cgram, raw_scanlines))
-}
-
-fn gpu_frame_capture_from_ppu<'a>(
-    ppu: &'a snes::ppu::PpuState,
-    cgram: &'a [u16],
-    raw_scanlines: &'a RawScanlineFrame,
-) -> renderer::GpuFrameCaptureInput<'a> {
-    renderer::GpuFrameCaptureInput {
-        registers: gpu_frame_register_snapshot_from_ppu(ppu),
-        cgram,
-        raw_scanlines,
-    }
-}
-
-fn gpu_frame_register_snapshot_from_ppu<'a>(
-    ppu: &'a snes::ppu::PpuState,
-) -> renderer::GpuFrameRegisterSnapshot<'a> {
-    renderer::GpuFrameRegisterSnapshot {
-        vram: &ppu.vram,
-        oam: &ppu.oam,
-        mode: ppu.mode,
-        bg: std::array::from_fn(|layer| renderer::BgLayerRegs {
-            h_scroll: ppu.bg_layer[layer].h_scroll,
-            v_scroll: ppu.bg_layer[layer].v_scroll,
-            tilemap_wider: ppu.bg_layer[layer].tilemap_wider,
-            tilemap_higher: ppu.bg_layer[layer].tilemap_higher,
-            tilemap_adr: ppu.bg_layer[layer].tilemap_adr,
-            tile_adr: ppu.bg_layer[layer].tile_adr,
-        }),
-        obj: renderer::ObjRegs {
-            tile_adr1: ppu.obj_tile_adr1,
-            tile_adr2: ppu.obj_tile_adr2,
-            obj_size: ppu.obj_size,
-        },
-        mosaic_enabled: ppu.mosaic_enabled,
-        mosaic_size: ppu.mosaic_size,
-        extra_left_right: ppu.extra_left_right,
-        mode7: renderer::Mode7Regs {
-            matrix: ppu.m7_matrix,
-            large_field: ppu.m7_large_field,
-            char_fill: ppu.m7_char_fill,
-            x_flip: ppu.m7_x_flip,
-            y_flip: ppu.m7_y_flip,
-            ext_bg_always_zero: ppu.m7_ext_bg_always_zero,
-        },
-        screen_enabled: ppu.screen_enabled,
-        screen_windowed: ppu.screen_windowed,
-        brightness: ppu.brightness,
-        forced_blank: ppu.forced_blank,
-        math_enabled: ppu.math_enabled,
-        subtract_color: ppu.subtract_color,
-        half_color: ppu.half_color,
-        fixed_color_r: ppu.fixed_color_r,
-        fixed_color_g: ppu.fixed_color_g,
-        fixed_color_b: ppu.fixed_color_b,
-        add_subscreen: ppu.add_subscreen,
-        clip_mode: ppu.clip_mode,
-        prevent_math_mode: ppu.prevent_math_mode,
-        windowsel: ppu.windowsel,
-    }
 }
 
 fn run_replay_crash(args: &[String]) {
