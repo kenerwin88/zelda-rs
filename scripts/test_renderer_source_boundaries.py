@@ -23,6 +23,7 @@ def source_with_required_calls(body: str) -> str:
         let scene = renderer::ModernAssetFrameScene::from_in_dungeon(false);
         let stats = renderer::ModernAssetLiveStats::from_env();
         let compare = renderer::ModernIndexCompareStats::from_env();
+        let frame_record = renderer::ModernIndexCompareFrameRecord {};
         let source_table = renderer::MappedSourceTableView::new(&[(0, 0, 0)], |src: &(u8, u16, u16)| *src);
         let diff = renderer::compare_modern_index_rgba(&[], &[]);
         let gpu_diff = renderer::compare_gpu_render_bgra_to_rgba(&[], &[]);
@@ -30,6 +31,7 @@ def source_with_required_calls(body: str) -> str:
         let atlas_compare = renderer::modern_gpu::compare_modern_atlas_to_rgba();
         frontend.present_modern_asset_frame();
         renderer::modern_gpu::render_modern_index_compare_frame();
+        modern_index_compare_stats.record_frame(frame_record);
         renderer::hd_authoring::render_hd_capture_from_sources();
     }
     """
@@ -254,6 +256,27 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertEqual(len(errors), 6)
         self.assertTrue(
             all("modern index compare stats policy escaped renderer boundary" in error for error in errors)
+        )
+
+    def test_rejects_modern_index_frame_report_policy_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_play_with_state() {
+                modern_index_compare_stats.record(via, mismatch, variant_stats.as_ref());
+                modern_index_compare_stats.full_gpu_fallback(via, variant_stats.as_ref());
+                modern_index_compare_stats.should_print_frame(mismatch);
+                modern_index_compare_stats.frame_line(renderer::ModernIndexCompareFrameLine {});
+                modern_index_compare_stats.progress_line(frames);
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 5)
+        self.assertTrue(
+            all("modern index frame report policy escaped renderer boundary" in error for error in errors)
         )
 
     def test_rejects_source_table_view_adapter_calls(self):

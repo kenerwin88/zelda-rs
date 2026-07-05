@@ -22,12 +22,14 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernAssetFrameScene",
     "ModernAssetLiveStats",
     "ModernIndexCompareStats",
+    "ModernIndexCompareFrameRecord",
     "MappedSourceTableView",
     "compare_modern_index_rgba",
     "compare_gpu_render_bgra_to_rgba",
     "GpuFrame::from_source_and_raw_scanlines",
     "compare_modern_atlas_to_rgba",
     "render_modern_index_compare_frame",
+    "record_frame",
     "render_hd_capture_from_sources",
 )
 
@@ -80,6 +82,14 @@ FORBIDDEN_MODERN_INDEX_COMPARE_POLICY_CALLS = (
     "modern_index_compare_bad_count",
     "modern_index_compare_variant_draws",
     "modern_gpu_path_fallback_reason(",
+)
+
+FORBIDDEN_MODERN_INDEX_FRAME_REPORT_CALLS = (
+    "modern_index_compare_stats.record(",
+    "modern_index_compare_stats.full_gpu_fallback(",
+    "modern_index_compare_stats.should_print_frame(",
+    "modern_index_compare_stats.frame_line(",
+    "modern_index_compare_stats.progress_line(",
 )
 
 FORBIDDEN_SOURCE_TABLE_VIEW_CALLS = (
@@ -240,6 +250,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "modern index compare stats policy escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MODERN_INDEX_FRAME_REPORT_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "modern index frame report policy escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

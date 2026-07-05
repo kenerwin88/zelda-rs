@@ -18,6 +18,7 @@ pub struct ModernIndexCompareFrameDiff {
     pub diff: Option<ModernIndexComparePixelDiff>,
 }
 
+#[derive(Clone, Copy)]
 pub struct ModernIndexCompareFrameLine<'a> {
     pub frame: u32,
     pub mode_label: &'a str,
@@ -26,6 +27,27 @@ pub struct ModernIndexCompareFrameLine<'a> {
     pub via: &'a str,
     pub variant_stats: Option<&'a VariantAtlasRenderStats>,
     pub diff: Option<ModernIndexComparePixelDiff>,
+}
+
+#[derive(Clone, Copy)]
+pub struct ModernIndexCompareFrameRecord<'a> {
+    pub frame: u32,
+    pub mode_label: &'a str,
+    pub ppu_mode: u8,
+    pub via: &'a str,
+    pub variant_stats: Option<&'a VariantAtlasRenderStats>,
+    pub comparison: ModernIndexCompareFrameDiff,
+    pub require_modern_index_parity: bool,
+    pub require_full_gpu_path: bool,
+    pub include_diff_in_frame_line: bool,
+}
+
+pub struct ModernIndexCompareFrameReport {
+    pub mismatch: u32,
+    pub parity_failure_line: Option<String>,
+    pub full_gpu_failure_line: Option<String>,
+    pub frame_line: Option<String>,
+    pub progress_line: Option<String>,
 }
 
 pub fn compare_modern_index_rgba(
@@ -121,9 +143,72 @@ impl ModernIndexCompareStats {
             })
     }
 
+    pub fn record_frame(
+        &mut self,
+        record: ModernIndexCompareFrameRecord<'_>,
+    ) -> ModernIndexCompareFrameReport {
+        let mismatch = record.comparison.mismatch;
+        self.record(record.via, mismatch, record.variant_stats);
+
+        let line = ModernIndexCompareFrameLine {
+            frame: record.frame,
+            mode_label: record.mode_label,
+            ppu_mode: record.ppu_mode,
+            mismatch,
+            via: record.via,
+            variant_stats: record.variant_stats,
+            diff: record.comparison.diff,
+        };
+        let parity_failure_line =
+            (record.require_modern_index_parity && mismatch != 0).then(|| self.mismatch_line(line));
+        let full_gpu_failure_line = if record.require_full_gpu_path {
+            self.full_gpu_fallback(record.via, record.variant_stats)
+                .map(|fallback| {
+                    format!(
+                        "gpu_path_unsupported frame={} mode={} ppumode={} via={} reason={} count={} mismatch_px={}",
+                        record.frame,
+                        record.mode_label,
+                        record.ppu_mode,
+                        record.via,
+                        fallback.reason,
+                        fallback.count,
+                        mismatch
+                    )
+                })
+        } else {
+            None
+        };
+        let frame_line = self.should_print_frame(mismatch).then(|| {
+            self.frame_line(ModernIndexCompareFrameLine {
+                diff: record
+                    .include_diff_in_frame_line
+                    .then_some(record.comparison.diff)
+                    .flatten(),
+                ..line
+            })
+        });
+        let progress_line = self.progress_line(record.frame);
+
+        ModernIndexCompareFrameReport {
+            mismatch,
+            parity_failure_line,
+            full_gpu_failure_line,
+            frame_line,
+            progress_line,
+        }
+    }
+
     pub fn frame_line(&self, line: ModernIndexCompareFrameLine<'_>) -> String {
+        self.format_frame_line("modern_index_compare", line)
+    }
+
+    fn mismatch_line(&self, line: ModernIndexCompareFrameLine<'_>) -> String {
+        self.format_frame_line("modern_index_mismatch", line)
+    }
+
+    fn format_frame_line(&self, prefix: &str, line: ModernIndexCompareFrameLine<'_>) -> String {
         let mut out = format!(
-            "modern_index_compare frame={} mode={} ppumode={} mismatch_px={} via={}",
+            "{prefix} frame={} mode={} ppumode={} mismatch_px={} via={}",
             line.frame, line.mode_label, line.ppu_mode, line.mismatch, line.via
         );
         if let Some(stats) = line.variant_stats {
@@ -326,6 +411,86 @@ mod tests {
         assert!(line.contains("first_mismatch=(4, 5)"));
         assert!(line.contains("classic_rgb=(1,2,3)"));
         assert!(line.contains("modern_rgb=(4,5,6)"));
+    }
+
+    #[test]
+    fn record_frame_owns_compare_reporting_and_failure_lines() {
+        let mut stats = ModernIndexCompareStats::default();
+        let comparison = ModernIndexCompareFrameDiff {
+            mismatch: 3,
+            diff: Some(ModernIndexComparePixelDiff {
+                first_x: 4,
+                first_y: 5,
+                classic_rgb: (1, 2, 3),
+                modern_rgb: (4, 5, 6),
+            }),
+        };
+
+        let report = stats.record_frame(ModernIndexCompareFrameRecord {
+            frame: 42,
+            mode_label: "ow",
+            ppu_mode: 1,
+            via: "sources",
+            variant_stats: None,
+            comparison,
+            require_modern_index_parity: true,
+            require_full_gpu_path: true,
+            include_diff_in_frame_line: false,
+        });
+
+        assert_eq!(report.mismatch, 3);
+        assert_eq!(
+            report.parity_failure_line.as_deref(),
+            Some(
+                "modern_index_mismatch frame=42 mode=ow ppumode=1 mismatch_px=3 via=sources first_mismatch=(4, 5) classic_rgb=(1,2,3) modern_rgb=(4,5,6)"
+            )
+        );
+        assert_eq!(
+            report.full_gpu_failure_line.as_deref(),
+            Some(
+                "gpu_path_unsupported frame=42 mode=ow ppumode=1 via=sources reason=sources-cpu count=1 mismatch_px=3"
+            )
+        );
+        assert_eq!(
+            report.frame_line.as_deref(),
+            Some("modern_index_compare frame=42 mode=ow ppumode=1 mismatch_px=3 via=sources")
+        );
+        assert!(report.progress_line.is_none());
+        assert!(stats.summary_line().contains("compare_count=1"));
+        assert!(stats.summary_line().contains("bad_pixels=3"));
+    }
+
+    #[test]
+    fn record_frame_can_include_diff_in_compare_line() {
+        let mut stats = ModernIndexCompareStats::default();
+        let comparison = ModernIndexCompareFrameDiff {
+            mismatch: 1,
+            diff: Some(ModernIndexComparePixelDiff {
+                first_x: 2,
+                first_y: 3,
+                classic_rgb: (7, 8, 9),
+                modern_rgb: (10, 11, 12),
+            }),
+        };
+
+        let report = stats.record_frame(ModernIndexCompareFrameRecord {
+            frame: 99,
+            mode_label: "dungeon",
+            ppu_mode: 7,
+            via: "mode7-gpu",
+            variant_stats: None,
+            comparison,
+            require_modern_index_parity: false,
+            require_full_gpu_path: true,
+            include_diff_in_frame_line: true,
+        });
+
+        assert!(report.parity_failure_line.is_none());
+        assert!(report.full_gpu_failure_line.is_none());
+        assert!(report
+            .frame_line
+            .as_deref()
+            .is_some_and(|line| line.contains("first_mismatch=(2, 3)")));
     }
 
     #[test]

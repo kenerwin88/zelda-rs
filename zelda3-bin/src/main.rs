@@ -5505,58 +5505,31 @@ fn run_replay_save(args: &[String]) {
                 let variant_stats = modern_render.variant_stats;
                 let modern_rgba = modern_render.rgba;
                 let comparison = renderer::compare_modern_index_rgba(&classic_rgba, &modern_rgba);
-                let mismatch = comparison.mismatch;
-                modern_index_compare_stats.record(via, mismatch, variant_stats.as_ref());
-                if require_modern_index_parity && mismatch != 0 {
-                    if let Some(diff) = comparison.diff.as_ref() {
-                        eprintln!(
-                            "modern_index_mismatch frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} first_mismatch=({}, {}) classic_rgb=({},{},{}) modern_rgb=({},{},{})",
-                            gpu_frame.mode,
-                            diff.first_x,
-                            diff.first_y,
-                            diff.classic_rgb.0,
-                            diff.classic_rgb.1,
-                            diff.classic_rgb.2,
-                            diff.modern_rgb.0,
-                            diff.modern_rgb.1,
-                            diff.modern_rgb.2
-                        );
-                    } else {
-                        eprintln!(
-                            "modern_index_mismatch frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via}",
-                            gpu_frame.mode
-                        );
-                    }
+                let report = modern_index_compare_stats.record_frame(
+                    renderer::ModernIndexCompareFrameRecord {
+                        frame: frames,
+                        mode_label: &mode_label,
+                        ppu_mode: gpu_frame.mode,
+                        via,
+                        variant_stats: variant_stats.as_ref(),
+                        comparison,
+                        require_modern_index_parity,
+                        require_full_gpu_path,
+                        include_diff_in_frame_line: false,
+                    },
+                );
+                if let Some(line) = report.parity_failure_line {
+                    eprintln!("{line}");
                     process::exit(1);
                 }
-                if require_full_gpu_path {
-                    if let Some(fallback) =
-                        modern_index_compare_stats.full_gpu_fallback(via, variant_stats.as_ref())
-                    {
-                        eprintln!(
-                            "gpu_path_unsupported frame={frames} mode={mode_label} ppumode={} via={via} reason={} count={} mismatch_px={mismatch}",
-                            gpu_frame.mode, fallback.reason, fallback.count
-                        );
-                        process::exit(1);
-                    }
+                if let Some(line) = report.full_gpu_failure_line {
+                    eprintln!("{line}");
+                    process::exit(1);
                 }
-                if modern_index_compare_stats.should_print_frame(mismatch) {
-                    println!(
-                        "{}",
-                        modern_index_compare_stats.frame_line(
-                            renderer::ModernIndexCompareFrameLine {
-                                frame: frames,
-                                mode_label: &mode_label,
-                                ppu_mode: gpu_frame.mode,
-                                mismatch,
-                                via,
-                                variant_stats: variant_stats.as_ref(),
-                                diff: None,
-                            }
-                        )
-                    );
+                if let Some(line) = report.frame_line {
+                    println!("{line}");
                 }
-                if let Some(line) = modern_index_compare_stats.progress_line(frames) {
+                if let Some(line) = report.progress_line {
                     eprintln!("{line}");
                 }
                 if let Ok(dump_str) = std::env::var("ZELDA3_MODERN_INDEX_DUMP_FRAME") {
@@ -12377,56 +12350,30 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let variant_stats = modern_render.variant_stats;
             let modern_rgba = modern_render.rgba;
             let comparison = renderer::compare_modern_index_rgba(&classic_rgba, &modern_rgba);
-            let mismatch = comparison.mismatch;
-            modern_index_compare_stats.record(via, mismatch, variant_stats.as_ref());
-            if require_modern_index_parity && mismatch != 0 {
-                if let Some(diff) = comparison.diff.as_ref() {
-                    eprintln!(
-                        "modern_index_mismatch frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} first_mismatch=({}, {}) classic_rgb=({},{},{}) modern_rgb=({},{},{})",
-                        gpu_frame.mode,
-                        diff.first_x,
-                        diff.first_y,
-                        diff.classic_rgb.0,
-                        diff.classic_rgb.1,
-                        diff.classic_rgb.2,
-                        diff.modern_rgb.0,
-                        diff.modern_rgb.1,
-                        diff.modern_rgb.2
-                    );
-                } else {
-                    eprintln!(
-                        "modern_index_mismatch frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via}",
-                        gpu_frame.mode
-                    );
-                }
+            let report =
+                modern_index_compare_stats.record_frame(renderer::ModernIndexCompareFrameRecord {
+                    frame: completed_frame,
+                    mode_label: &mode_label,
+                    ppu_mode: gpu_frame.mode,
+                    via,
+                    variant_stats: variant_stats.as_ref(),
+                    comparison,
+                    require_modern_index_parity,
+                    require_full_gpu_path,
+                    include_diff_in_frame_line: true,
+                });
+            if let Some(line) = report.parity_failure_line {
+                eprintln!("{line}");
                 process::exit(1);
             }
-            if require_full_gpu_path {
-                if let Some(fallback) =
-                    modern_index_compare_stats.full_gpu_fallback(via, variant_stats.as_ref())
-                {
-                    eprintln!(
-                        "gpu_path_unsupported frame={completed_frame} mode={mode_label} ppumode={} via={via} reason={} count={} mismatch_px={mismatch}",
-                        gpu_frame.mode, fallback.reason, fallback.count
-                    );
-                    process::exit(1);
-                }
+            if let Some(line) = report.full_gpu_failure_line {
+                eprintln!("{line}");
+                process::exit(1);
             }
-            if modern_index_compare_stats.should_print_frame(mismatch) {
-                println!(
-                    "{}",
-                    modern_index_compare_stats.frame_line(renderer::ModernIndexCompareFrameLine {
-                        frame: completed_frame,
-                        mode_label: &mode_label,
-                        ppu_mode: gpu_frame.mode,
-                        mismatch,
-                        via,
-                        variant_stats: variant_stats.as_ref(),
-                        diff: comparison.diff,
-                    })
-                );
+            if let Some(line) = report.frame_line {
+                println!("{line}");
             }
-            if let Some(line) = modern_index_compare_stats.progress_line(completed_frame) {
+            if let Some(line) = report.progress_line {
                 eprintln!("{line}");
             }
             if let Ok(dump_str) = std::env::var("ZELDA3_MODERN_INDEX_DUMP_FRAME") {

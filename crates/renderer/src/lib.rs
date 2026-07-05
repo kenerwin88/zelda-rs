@@ -69,7 +69,8 @@ pub use modern_gpu::{
 };
 pub use modern_index_compare_stats::{
     compare_modern_index_rgba, ModernIndexCompareFrameDiff, ModernIndexCompareFrameLine,
-    ModernIndexComparePixelDiff, ModernIndexCompareStats,
+    ModernIndexCompareFrameRecord, ModernIndexCompareFrameReport, ModernIndexComparePixelDiff,
+    ModernIndexCompareStats,
 };
 pub use modern_live_stats::ModernAssetLiveStats;
 pub use post_process::scanlines_from_raw;
