@@ -164,7 +164,16 @@ fn bg_pixel(layer: u32, sx: u32, sy: u32, hi_priority: bool, is_main: bool) -> u
     return out;
 }
 
-fn sprite_instance_pixel(inst_base: u32, sx: u32, sy: u32, prio: u32) -> u32 {
+struct ObjPixel {
+    px: u32,
+    prio: u32,
+};
+
+fn transparent_obj() -> ObjPixel {
+    return ObjPixel(0xffffffffu, 255u);
+}
+
+fn sprite_instance_pixel(inst_base: u32, sx: u32, sy: u32) -> ObjPixel {
     let cell_id = data[inst_base + 0u];
     let inst_x = bitcast<i32>(data[inst_base + 1u]);
     let inst_y = bitcast<i32>(data[inst_base + 2u]);
@@ -172,43 +181,40 @@ fn sprite_instance_pixel(inst_base: u32, sx: u32, sy: u32, prio: u32) -> u32 {
     let inst_prio = data[inst_base + 4u];
     let flags = data[inst_base + 5u];
     let row_mask = data[inst_base + 6u];
-    if (inst_prio != prio) {
-        return 0xffffffffu;
-    }
     let local_x = i32(sx) - inst_x;
     let local_y = i32(sy) - inst_y;
     if (local_x < 0 || local_y < 0 || local_x >= 8 || local_y >= 8) {
-        return 0xffffffffu;
+        return transparent_obj();
     }
     if ((row_mask & (1u << u32(local_y))) == 0u) {
-        return 0xffffffffu;
+        return transparent_obj();
     }
     let src_x = select(u32(local_x), 7u - u32(local_x), (flags & 1u) != 0u);
     let src_y = select(u32(local_y), 7u - u32(local_y), (flags & 2u) != 0u);
     let index = data[params.p5.x + (params.p0.y + cell_id) * 64u + src_y * 8u + src_x];
     if (index == 0u) {
-        return 0xffffffffu;
+        return transparent_obj();
     }
     let color = cgram_c5(128u + palette * 16u + index);
     let bit = select(4u, 6u, palette < 4u);
-    return pack_pixel(color, bit, true);
+    return ObjPixel(pack_pixel(color, bit, true), inst_prio);
 }
 
-fn obj_pixel(sx: u32, sy: u32, prio: u32, is_main: bool) -> u32 {
+fn obj_pixel(sx: u32, sy: u32, is_main: bool) -> ObjPixel {
     if (is_main && ((data[params.p6.y + sy] & 0x10u) == 0u)) {
-        return 0xffffffffu;
+        return transparent_obj();
     }
     if (layer_window_masks(4u, sx, sy, is_main)) {
-        return 0xffffffffu;
+        return transparent_obj();
     }
     let count = params.p0.w;
     for (var i = 0u; i < count; i = i + 1u) {
-        let px = sprite_instance_pixel(params.p5.z + i * 8u, sx, sy, prio);
-        if (px != 0xffffffffu) {
-            return px;
+        let obj = sprite_instance_pixel(params.p5.z + i * 8u, sx, sy);
+        if (obj.px != 0xffffffffu) {
+            return obj;
         }
     }
-    return 0xffffffffu;
+    return transparent_obj();
 }
 
 fn maybe_paint_bg(current: u32, enabled: u32, layer: u32, sx: u32, sy: u32, hi: bool, is_main: bool) -> u32 {
@@ -223,8 +229,8 @@ fn maybe_paint_obj(current: u32, enabled: u32, prio: u32, sx: u32, sy: u32, is_m
     if ((enabled & 0x10u) == 0u) {
         return current;
     }
-    let px = obj_pixel(sx, sy, prio, is_main);
-    return select(current, px, px != 0xffffffffu);
+    let obj = obj_pixel(sx, sy, is_main);
+    return select(current, obj.px, obj.px != 0xffffffffu && obj.prio == prio);
 }
 
 fn composite_screen(sx: u32, sy: u32, enabled: u32, is_main: bool, backdrop: u32) -> u32 {

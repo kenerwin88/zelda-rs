@@ -4684,6 +4684,60 @@ mod tests {
     }
 
     #[test]
+    fn modern_gpu_screen_builder_resolves_obj_order_before_priority_slotting() {
+        use crate::modern_frame::ModernIndexSpriteInstance;
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        let sprite_cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.cgram_rgba[0x80 + 4 * 16 + 1] = [255, 0, 0, 0xff];
+        frame.cgram_rgba[0x80 + 5 * 16 + 1] = [0, 255, 0, 0xff];
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 4,
+            priority: 0,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        });
+        frame.index_sprites.push(ModernIndexSpriteInstance {
+            cell_id: 0,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 5,
+            priority: 3,
+            hflip: false,
+            vflip: false,
+            row_mask: 0xff,
+        });
+        frame.screen_enabled_main = 0x10;
+        frame.brightness = 15;
+
+        let gpu = ModernGpuHeadless::new().render_rgba(&frame, &[], &sprite_cells);
+        let software = crate::modern_software::render_modern_frame_full(&frame, &[], &sprite_cells);
+
+        assert_eq!(&software[0..3], &[255, 0, 0]);
+        assert_eq!(
+            &gpu[0..3],
+            &[255, 0, 0],
+            "GPU screen builder must resolve OBJ-vs-OBJ by OAM index before BG priority slotting"
+        );
+    }
+
+    #[test]
     fn modern_gpu_compositor_matches_full_software_color_math() {
         use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
         use crate::modern_hd_overrides::NO_SOURCE_KEY;
