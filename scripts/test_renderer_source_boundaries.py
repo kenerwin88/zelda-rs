@@ -602,6 +602,28 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             all("render hash report escaped renderer boundary" in error for error in errors)
         )
 
+    def test_rejects_replay_fingerprint_render_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_replay_save() {
+                render_standard_play_frame_bgra(&mut game, frame);
+                let fp_render_leaf = render_fingerprint_leaf_bgra(frame);
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(
+            all(
+                "replay fingerprint render escaped play_renderer boundary" in error
+                for error in errors
+            )
+        )
+        self.assertTrue(all("run_replay_save" in error for error in errors))
+
     def test_rejects_raw_render_hash_calls(self):
         module = load_module()
         source = source_with_required_calls(

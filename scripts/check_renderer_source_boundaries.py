@@ -231,6 +231,11 @@ FORBIDDEN_RENDER_HASH_REPORT_CALLS = (
     '"gpu-render-hash frame=',
 )
 
+FORBIDDEN_REPLAY_FINGERPRINT_RENDER_CALLS = (
+    "render_standard_play_frame_bgra(&mut game",
+    "fp_render_leaf = render_fingerprint_leaf_bgra(",
+)
+
 FORBIDDEN_RAW_RENDER_HASH_CALLS = (
     "renderer::render_frame_rgb_hash_bgra(",
     "renderer::render_frame_rgb_hash_rgba(",
@@ -544,6 +549,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "render hash report escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_REPLAY_FINGERPRINT_RENDER_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "replay fingerprint render escaped play_renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

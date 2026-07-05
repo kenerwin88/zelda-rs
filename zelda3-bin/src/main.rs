@@ -35,8 +35,8 @@ use platform::{
     HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
 };
 use play_renderer::{
-    render_fingerprint_leaf_bgra, render_hash_frame_bgra_line, render_play_frame_bgra,
-    render_standard_play_frame_bgra, run_play_frame_bgra, run_play_frame_with_run_what_bgra,
+    render_hash_frame_bgra_line, render_play_frame_bgra, render_replay_fingerprint_leaf_bgra,
+    render_replay_projection_bgra, run_play_frame_bgra, run_play_frame_with_run_what_bgra,
 };
 use serde::{Deserialize, Serialize};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, ppu::PpuRenderFlags, Snes};
@@ -5078,9 +5078,8 @@ fn run_replay_save(args: &[String]) {
         let mut fp_render_leaf: u32 = 0;
         if should_fingerprint_frame {
             let frame = render_hash_frame.as_mut().expect("render frame allocated");
-            render_standard_play_frame_bgra(&mut game, frame);
+            fp_render_leaf = render_replay_fingerprint_leaf_bgra(&mut game, frame);
             last_frame_had_fingerprint_render = true;
-            fp_render_leaf = render_fingerprint_leaf_bgra(frame);
         }
         if let Some(w) = fingerprint_writer
             .as_mut()
@@ -5118,7 +5117,7 @@ fn run_replay_save(args: &[String]) {
             // continuously-rendered run.
             if !last_frame_had_fingerprint_render {
                 let mut scratch = vec![0u8; 256 * 224 * 4];
-                render_standard_play_frame_bgra(&mut game, &mut scratch);
+                render_replay_projection_bgra(&mut game, &mut scratch);
                 last_frame_had_fingerprint_render = true;
             }
             write_checkpoint(&mut game, frames, path);
@@ -5173,7 +5172,7 @@ fn run_replay_save(args: &[String]) {
     if let Some(path) = save_state_path.as_deref() {
         if !last_frame_had_fingerprint_render {
             let mut scratch = vec![0u8; 256 * 224 * 4];
-            render_standard_play_frame_bgra(&mut game, &mut scratch);
+            render_replay_projection_bgra(&mut game, &mut scratch);
         }
         if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
             eprintln!(

@@ -158,12 +158,21 @@ pub(crate) fn render_standard_play_frame_bgra(game: &mut ZeldaState, frame: &mut
     render_play_frame_bgra(game, frame, 256 * 4, PpuRenderFlags::empty());
 }
 
+pub(crate) fn render_replay_projection_bgra(game: &mut ZeldaState, frame: &mut [u8]) {
+    render_standard_play_frame_bgra(game, frame);
+}
+
 pub(crate) fn render_hash_frame_bgra_line(frame_number: u32, frame: &[u8]) -> String {
     renderer::render_hash_frame_bgra(frame_number, frame).line
 }
 
 pub(crate) fn render_fingerprint_leaf_bgra(frame: &[u8]) -> u32 {
     renderer::render_fingerprint_leaf_bgra(frame)
+}
+
+pub(crate) fn render_replay_fingerprint_leaf_bgra(game: &mut ZeldaState, frame: &mut [u8]) -> u32 {
+    render_replay_projection_bgra(game, frame);
+    render_fingerprint_leaf_bgra(frame)
 }
 
 pub(crate) fn run_play_frame_bgra(
