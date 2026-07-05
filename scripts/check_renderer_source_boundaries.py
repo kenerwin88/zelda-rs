@@ -22,6 +22,8 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernAssetFrameScene",
     "ModernIndexCompareScene",
     "ModernAssetLiveStats",
+    "record_present_result",
+    "unhandled_gpu_asset_frame_line",
     "ModernIndexCompareStats",
     "ModernIndexCompareFrameRenderInput",
     "ModernIndexCompareResources",
@@ -76,6 +78,10 @@ FORBIDDEN_LIVE_STATS_POLICY_CALLS = (
     "env_flag_default_true",
     "ZELDA3_VARIANT_LIVE_STATS",
     "ZELDA3_REQUIRE_FULL_GPU_PATH",
+    "variant_live_stats.record_variant_stats(",
+    "modern_assets.gpu_asset_mode()",
+    "gpu_path_unsupported_live reason={}",
+    "modern asset renderer did not handle a GPU asset frame",
 )
 
 FORBIDDEN_MODERN_INDEX_COMPARE_POLICY_CALLS = (

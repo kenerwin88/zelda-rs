@@ -23,6 +23,8 @@ def source_with_required_calls(body: str) -> str:
         let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(0);
         let compare_scene = renderer::ModernIndexCompareScene::from_main_module_and_player_indoors_flag(9, 0);
         let stats = renderer::ModernAssetLiveStats::from_env();
+        variant_live_stats.record_present_result(&present_result);
+        modern_assets.unhandled_gpu_asset_frame_line();
         let compare = renderer::ModernIndexCompareStats::from_env();
         let frame_record = renderer::ModernIndexCompareFrameRenderInput {};
         let compare_resources = renderer::ModernIndexCompareResources::load_for_mode();
@@ -225,13 +227,17 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             fn run_play_with_state() {
                 let _ = "ZELDA3_VARIANT_LIVE_STATS";
                 let _ = "ZELDA3_REQUIRE_FULL_GPU_PATH";
+                variant_live_stats.record_variant_stats(stats);
+                self.modern_assets.gpu_asset_mode();
+                eprintln!("gpu_path_unsupported_live reason={} count={}", reason, count);
+                eprintln!("modern asset renderer did not handle a GPU asset frame");
             }
             """
         )
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 4)
+        self.assertEqual(len(errors), 8)
         self.assertTrue(
             all("live modern asset stats policy escaped renderer boundary" in error for error in errors)
         )

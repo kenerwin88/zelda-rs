@@ -73,6 +73,10 @@ pub struct ModernAssetLiveStats {
     mixed_overlay_bg_effect_reject_overlap: u64,
 }
 
+pub struct ModernAssetLiveFrameReport {
+    pub full_gpu_failure_line: Option<String>,
+}
+
 impl ModernAssetLiveStats {
     pub fn from_env() -> Self {
         let enabled = env::var_os("ZELDA3_VARIANT_LIVE_STATS").is_some();
@@ -203,6 +207,23 @@ impl ModernAssetLiveStats {
         None
     }
 
+    pub fn record_present_result(
+        &mut self,
+        result: &crate::ModernAssetFramePresentResult,
+    ) -> ModernAssetLiveFrameReport {
+        let full_gpu_failure_line = match result {
+            crate::ModernAssetFramePresentResult::Presented {
+                variant_stats: Some(stats),
+            } => self
+                .record_variant_stats(*stats)
+                .map(|fallback| format_live_full_gpu_failure_line(fallback)),
+            _ => None,
+        };
+        ModernAssetLiveFrameReport {
+            full_gpu_failure_line,
+        }
+    }
+
     fn full_gpu_violation(&self, stats: &VariantAtlasRenderStats) -> Option<ModernGpuPathFallback> {
         self.require_full_gpu_path
             .then(|| modern_gpu_path_fallback_reason("variant-gpu", Some(stats)))
@@ -289,6 +310,13 @@ fn env_flag_default_true(value: Option<&str>) -> bool {
     }
 }
 
+fn format_live_full_gpu_failure_line(fallback: ModernGpuPathFallback) -> String {
+    format!(
+        "gpu_path_unsupported_live reason={} count={}",
+        fallback.reason, fallback.count
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,5 +356,26 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(opt_out.full_gpu_violation(&stats), None);
+    }
+
+    #[test]
+    fn record_present_result_owns_live_gpu_failure_line() {
+        let mut live = ModernAssetLiveStats {
+            require_full_gpu_path: true,
+            ..Default::default()
+        };
+        let result = crate::ModernAssetFramePresentResult::Presented {
+            variant_stats: Some(VariantAtlasRenderStats {
+                cpu_prefinal_overlay_frames: 2,
+                ..Default::default()
+            }),
+        };
+
+        let report = live.record_present_result(&result);
+
+        assert_eq!(
+            report.full_gpu_failure_line.as_deref(),
+            Some("gpu_path_unsupported_live reason=prefinal-overlay-cpu count=2")
+        );
     }
 }

@@ -73,7 +73,7 @@ pub use modern_index_compare_stats::{
     ModernIndexCompareFrameRenderedRecord, ModernIndexCompareFrameRenderedReport,
     ModernIndexCompareFrameReport, ModernIndexComparePixelDiff, ModernIndexCompareStats,
 };
-pub use modern_live_stats::ModernAssetLiveStats;
+pub use modern_live_stats::{ModernAssetLiveFrameReport, ModernAssetLiveStats};
 pub use post_process::scanlines_from_raw;
 pub use renderer_mode::{
     default_renderer_env_for_variant_setting, renderer_env_or_default, source_atlas_renderer_mode,
@@ -2097,8 +2097,13 @@ impl ModernAssetFrameResources {
         self.variant_atlas.as_ref()
     }
 
-    pub fn gpu_asset_mode(&self) -> bool {
+    fn gpu_asset_mode(&self) -> bool {
         self.gpu_asset_mode
+    }
+
+    pub fn unhandled_gpu_asset_frame_line(&self) -> Option<&'static str> {
+        self.gpu_asset_mode
+            .then_some("modern asset renderer did not handle a GPU asset frame")
     }
 
     pub fn hd_override_ctx(&self) -> modern_hd_overrides::HdOverrideCtx<'_> {
@@ -3570,9 +3575,24 @@ mod tests {
 
         assert!(resources.source_atlas().is_none());
         assert!(resources.variant_atlas().is_none());
-        assert!(!resources.gpu_asset_mode());
+        assert!(resources.unhandled_gpu_asset_frame_line().is_none());
 
         fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn modern_asset_resources_own_unhandled_gpu_asset_failure_line() {
+        let resources = ModernAssetFrameResources {
+            source_atlas: None,
+            variant_atlas: None,
+            hd_overrides: None,
+            gpu_asset_mode: true,
+        };
+
+        assert_eq!(
+            resources.unhandled_gpu_asset_frame_line(),
+            Some("modern asset renderer did not handle a GPU asset frame")
+        );
     }
 
     #[test]

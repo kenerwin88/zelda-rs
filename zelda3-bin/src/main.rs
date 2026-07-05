@@ -1445,28 +1445,24 @@ impl PlayRendererBackend for GpuPlayRenderer {
             renderer::MappedSourceTableView::from_entries(game.vram_chr_source().as_slice());
         let scene =
             renderer::ModernAssetFrameScene::from_player_indoors_flag(game.ram[PLAYER_IS_INDOORS]);
-        match frontend.present_modern_asset_frame(
+        let present_result = frontend.present_modern_asset_frame(
             &gpu_frame,
             Some(&src_table),
             &self.modern_assets,
             scene,
-        ) {
-            renderer::ModernAssetFramePresentResult::Presented { variant_stats } => {
-                if let Some(stats) = variant_stats {
-                    if let Some(fallback) = self.variant_live_stats.record_variant_stats(stats) {
-                        eprintln!(
-                            "gpu_path_unsupported_live reason={} count={}",
-                            fallback.reason, fallback.count
-                        );
-                        process::exit(2);
-                    }
-                }
-                return;
-            }
-            renderer::ModernAssetFramePresentResult::Unhandled => {}
+        );
+        let report = self
+            .variant_live_stats
+            .record_present_result(&present_result);
+        if let Some(line) = report.full_gpu_failure_line {
+            eprintln!("{line}");
+            process::exit(2);
         }
-        if self.modern_assets.gpu_asset_mode() {
-            eprintln!("modern asset renderer did not handle a GPU asset frame");
+        if present_result.is_presented() {
+            return;
+        }
+        if let Some(line) = self.modern_assets.unhandled_gpu_asset_frame_line() {
+            eprintln!("{line}");
             process::exit(2);
         }
         let presentation = PresentationContext {
