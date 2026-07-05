@@ -153,11 +153,13 @@ def run_sweep(
     frames: int,
     modern_index_compare: int,
     renderer: str | None,
+    require_mode7: bool,
     dry_run: bool,
     runner: CommandRunner = run_command,
 ) -> int:
     env = env_for_run(os.environ, renderer)
     total_compared = 0
+    total_mode7_gpu = 0
     last_frame = None
     for checkpoint in checkpoints:
         command = command_for_checkpoint(
@@ -183,11 +185,15 @@ def run_sweep(
             raise SystemExit(f"checkpoint {checkpoint.frame}: missing modern-index summary")
         validate_summary_stats(checkpoint, stats)
         total_compared += stats.get("compare_count", 0)
+        total_mode7_gpu += stats.get("mode7_gpu_count", 0)
         last_frame = checkpoint.frame
 
+    if require_mode7 and not dry_run and total_mode7_gpu == 0:
+        raise SystemExit("checkpoint sweep did not compare any Mode-7 GPU frames")
     print(
         "checkpoint_sweep_passed "
         f"count={len(checkpoints)} compared={total_compared} "
+        f"mode7_gpu={total_mode7_gpu} "
         f"last={last_frame if last_frame is not None else 'none'}",
         flush=True,
     )
@@ -216,6 +222,11 @@ def parse_args() -> argparse.Namespace:
             "optionally set ZELDA3_RENDERER; omitted by default so the sweep "
             "proves the runtime default renderer"
         ),
+    )
+    parser.add_argument(
+        "--require-mode7",
+        action="store_true",
+        help="fail unless the selected checkpoints compare at least one Mode-7 GPU frame",
     )
     parser.add_argument(
         "--build",
@@ -263,6 +274,7 @@ def main() -> None:
             args.frames,
             args.modern_index_compare,
             args.renderer,
+            args.require_mode7,
             args.dry_run,
         )
     )

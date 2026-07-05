@@ -116,12 +116,44 @@ class CheckpointSweepTests(unittest.TestCase):
             frames=3,
             modern_index_compare=1,
             renderer=None,
+            require_mode7=False,
             dry_run=False,
             runner=runner,
         )
 
         self.assertEqual(status, 0)
         self.assertEqual([command[4] for command in commands], ["103", "203"])
+
+    def test_run_sweep_can_require_mode7_gpu_coverage(self) -> None:
+        checkpoints = [sweep.ReplayCheckpoint(100, Path("a.sav"))]
+
+        def runner(
+            command: list[str],
+            cwd: Path,
+            env: dict[str, str],
+        ) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                args=command,
+                returncode=0,
+                stdout=(
+                    "modern_index_compare_summary compare_count=3 "
+                    "bad_count=0 bad_pixels=0 gpu_count=3 mode7_gpu_count=0 cpu_count=0\n"
+                ),
+            )
+
+        with self.assertRaises(SystemExit):
+            sweep.run_sweep(
+                checkpoints,
+                Path("target/parity/zelda3"),
+                Path("saves/zelda3.sfc"),
+                Path("saves/route.sav"),
+                frames=3,
+                modern_index_compare=1,
+                renderer=None,
+                require_mode7=True,
+                dry_run=False,
+                runner=runner,
+            )
 
 
 if __name__ == "__main__":
