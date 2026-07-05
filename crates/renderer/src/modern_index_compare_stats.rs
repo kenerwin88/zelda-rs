@@ -44,11 +44,31 @@ struct ModernIndexCompareFrameRecord<'a> {
 }
 
 pub struct ModernIndexCompareFrameReport {
-    pub mismatch: u32,
-    pub parity_failure_line: Option<String>,
-    pub full_gpu_failure_line: Option<String>,
-    pub frame_line: Option<String>,
-    pub progress_line: Option<String>,
+    mismatch: u32,
+    parity_failure_line: Option<String>,
+    full_gpu_failure_line: Option<String>,
+    frame_line: Option<String>,
+    progress_line: Option<String>,
+}
+
+impl ModernIndexCompareFrameReport {
+    pub fn mismatch(&self) -> u32 {
+        self.mismatch
+    }
+
+    pub fn failure_line(&self) -> Option<&str> {
+        self.parity_failure_line
+            .as_deref()
+            .or(self.full_gpu_failure_line.as_deref())
+    }
+
+    pub fn frame_line(&self) -> Option<&str> {
+        self.frame_line.as_deref()
+    }
+
+    pub fn progress_line(&self) -> Option<&str> {
+        self.progress_line.as_deref()
+    }
 }
 
 pub struct ModernIndexCompareFrameRenderInput<
@@ -575,26 +595,46 @@ mod tests {
             include_diff_in_frame_line: false,
         });
 
-        assert_eq!(report.mismatch, 3);
+        assert_eq!(report.mismatch(), 3);
         assert_eq!(
-            report.parity_failure_line.as_deref(),
+            report.failure_line(),
             Some(
                 "modern_index_mismatch frame=42 mode=ow ppumode=1 mismatch_px=3 via=sources first_mismatch=(4, 5) classic_rgb=(1,2,3) modern_rgb=(4,5,6)"
             )
         );
         assert_eq!(
-            report.full_gpu_failure_line.as_deref(),
-            Some(
-                "gpu_path_unsupported frame=42 mode=ow ppumode=1 via=sources reason=sources-cpu count=1 mismatch_px=3"
-            )
-        );
-        assert_eq!(
-            report.frame_line.as_deref(),
+            report.frame_line(),
             Some("modern_index_compare frame=42 mode=ow ppumode=1 mismatch_px=3 via=sources")
         );
-        assert!(report.progress_line.is_none());
+        assert!(report.progress_line().is_none());
         assert!(stats.summary_line().contains("compare_count=1"));
         assert!(stats.summary_line().contains("bad_pixels=3"));
+    }
+
+    #[test]
+    fn report_failure_line_uses_full_gpu_failure_when_parity_passes() {
+        let mut stats = ModernIndexCompareStats::default();
+        let report = stats.record_frame(ModernIndexCompareFrameRecord {
+            frame: 42,
+            mode_label: "ow",
+            ppu_mode: 1,
+            via: "sources",
+            variant_stats: None,
+            comparison: ModernIndexCompareFrameDiff {
+                mismatch: 0,
+                diff: None,
+            },
+            require_modern_index_parity: true,
+            require_full_gpu_path: true,
+            include_diff_in_frame_line: false,
+        });
+
+        assert_eq!(
+            report.failure_line(),
+            Some(
+                "gpu_path_unsupported frame=42 mode=ow ppumode=1 via=sources reason=sources-cpu count=1 mismatch_px=0"
+            )
+        );
     }
 
     #[test]
@@ -622,11 +662,9 @@ mod tests {
             include_diff_in_frame_line: true,
         });
 
-        assert!(report.parity_failure_line.is_none());
-        assert!(report.full_gpu_failure_line.is_none());
+        assert!(report.failure_line().is_none());
         assert!(report
-            .frame_line
-            .as_deref()
+            .frame_line()
             .is_some_and(|line| line.contains("first_mismatch=(2, 3)")));
     }
 
@@ -690,18 +728,16 @@ mod tests {
 
         assert_eq!(rendered.modern_rgba, modern);
         assert!(rendered.variant_traces.is_empty());
-        assert_eq!(rendered.report.mismatch, 1);
+        assert_eq!(rendered.report.mismatch(), 1);
         assert_eq!(
-            rendered.report.parity_failure_line.as_deref(),
+            rendered.report.failure_line(),
             Some(
                 "modern_index_mismatch frame=77 mode=ow ppumode=1 mismatch_px=1 via=gpu first_mismatch=(1, 0) classic_rgb=(4,5,6) modern_rgb=(4,7,6)"
             )
         );
-        assert!(rendered.report.full_gpu_failure_line.is_none());
         assert!(rendered
             .report
-            .frame_line
-            .as_deref()
+            .frame_line()
             .is_some_and(|line| line.contains("first_mismatch=(1, 0)")));
     }
 

@@ -44,6 +44,9 @@ def source_with_required_calls(body: str) -> str:
         frontend.present_modern_asset_frame();
         modern_index_compare_stats.render_compare_frame(frame_record);
         modern_index_compare_stats.dump_paths_for_frame(0);
+        report.failure_line();
+        report.frame_line();
+        report.progress_line();
         atlas_compare_resources.compare_frame(atlas_frame_record);
         renderer::hd_authoring::render_hd_capture_from_sources();
     }

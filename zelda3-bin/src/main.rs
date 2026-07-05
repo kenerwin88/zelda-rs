@@ -5395,18 +5395,14 @@ fn run_replay_save(args: &[String]) {
                 }
                 let modern_rgba = rendered.modern_rgba;
                 let report = rendered.report;
-                if let Some(line) = report.parity_failure_line {
+                if let Some(line) = report.failure_line() {
                     eprintln!("{line}");
                     process::exit(1);
                 }
-                if let Some(line) = report.full_gpu_failure_line {
-                    eprintln!("{line}");
-                    process::exit(1);
-                }
-                if let Some(line) = report.frame_line {
+                if let Some(line) = report.frame_line() {
                     println!("{line}");
                 }
-                if let Some(line) = report.progress_line {
+                if let Some(line) = report.progress_line() {
                     eprintln!("{line}");
                 }
                 if let Some(dump_paths) = modern_index_compare_stats.dump_paths_for_frame(frames) {
@@ -12173,18 +12169,14 @@ fn run_play_gpu_render_compare(args: &[String]) {
             }
             let modern_rgba = rendered.modern_rgba;
             let report = rendered.report;
-            if let Some(line) = report.parity_failure_line {
+            if let Some(line) = report.failure_line() {
                 eprintln!("{line}");
                 process::exit(1);
             }
-            if let Some(line) = report.full_gpu_failure_line {
-                eprintln!("{line}");
-                process::exit(1);
-            }
-            if let Some(line) = report.frame_line {
+            if let Some(line) = report.frame_line() {
                 println!("{line}");
             }
-            if let Some(line) = report.progress_line {
+            if let Some(line) = report.progress_line() {
                 eprintln!("{line}");
             }
             if let Some(dump_paths) =
