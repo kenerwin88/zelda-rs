@@ -18,6 +18,7 @@ MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
 BOUNDARY_SOURCE_FILES = (
     MAIN_RS,
     REPO / "zelda3-bin" / "src" / "gpu_capture.rs",
+    REPO / "zelda3-bin" / "src" / "play_renderer.rs",
 )
 
 MANUAL_EXTRACT = "extract_modern_frame_from_sources"
@@ -276,6 +277,10 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "fn compare_gpu_render_current_frame(",
     "fn cgram_match(",
     "gpu-render-state frame=",
+    "renderer::render_hash_frame_bgra(",
+    "renderer::gpu_render_hash_frame_rgba(",
+    "renderer::render_hash_pair_bgra_rgba(",
+    "renderer::render_fingerprint_leaf_bgra(",
     "RendererMode::parse(",
     "RendererMode::ModernCompare",
     "RendererMode::Modern {",

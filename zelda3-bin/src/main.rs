@@ -28,8 +28,8 @@ use gpu_capture::{
     capture_gpu_frame_from_game, compare_gpu_render_current_frame,
     emit_modern_index_compare_output_lines, load_modern_atlas_compare_resources,
     load_modern_index_compare_resources, modern_compare_mode_defaults_from_env,
-    render_gpu_capture_rgba, render_hd_capture_from_gpu_capture,
-    render_modern_atlas_compare_report_from_capture,
+    render_gpu_capture_rgba, render_gpu_hash_frame_rgba_line, render_hash_pair_bgra_rgba,
+    render_hd_capture_from_gpu_capture, render_modern_atlas_compare_report_from_capture,
     render_modern_index_compare_output_from_capture,
 };
 use platform::{
@@ -37,8 +37,8 @@ use platform::{
     HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
 };
 use play_renderer::{
-    render_play_frame_bgra, render_standard_play_frame_bgra, run_play_frame_bgra,
-    run_play_frame_with_run_what_bgra,
+    render_fingerprint_leaf_bgra, render_hash_frame_bgra_line, render_play_frame_bgra,
+    render_standard_play_frame_bgra, run_play_frame_bgra, run_play_frame_with_run_what_bgra,
 };
 use renderer::OffscreenRenderer;
 use serde::{Deserialize, Serialize};
@@ -4025,7 +4025,7 @@ fn run_replay_save(args: &[String]) {
                 }
             }
             if should_log_render_hash {
-                println!("{}", renderer::render_hash_frame_bgra(frames, frame).line);
+                println!("{}", render_hash_frame_bgra_line(frames, frame));
                 if std::env::var_os("ZELDA3_PPU_STATE_HASH").is_some() {
                     let fnv16 = |s: &[u16]| {
                         let mut h = 2166136261u32;
@@ -5054,7 +5054,7 @@ fn run_replay_save(args: &[String]) {
                 }
                 if frames == 332 {
                     // extra debug
-                    let hashes = renderer::render_hash_pair_bgra_rgba(frame, &gpu_rgba);
+                    let hashes = render_hash_pair_bgra_rgba(frame, &gpu_rgba);
                     eprintln!(
                         "[gpu-dbg] frame=332 cpu_hash={:#010x} gpu_hash={:#010x}",
                         hashes.cpu_hash, hashes.gpu_hash
@@ -5142,10 +5142,7 @@ fn run_replay_save(args: &[String]) {
                     }
                     eprintln!();
                 }
-                println!(
-                    "{}",
-                    renderer::gpu_render_hash_frame_rgba(frames, &gpu_rgba).line
-                );
+                println!("{}", render_gpu_hash_frame_rgba_line(frames, &gpu_rgba));
             }
         }
         if modern_index_compare.should_compare_frame(frames) {
@@ -5174,7 +5171,7 @@ fn run_replay_save(args: &[String]) {
             let frame = render_hash_frame.as_mut().expect("render frame allocated");
             render_standard_play_frame_bgra(&mut game, frame);
             last_frame_had_fingerprint_render = true;
-            fp_render_leaf = renderer::render_fingerprint_leaf_bgra(frame);
+            fp_render_leaf = render_fingerprint_leaf_bgra(frame);
         }
         if let Some(w) = fingerprint_writer
             .as_mut()

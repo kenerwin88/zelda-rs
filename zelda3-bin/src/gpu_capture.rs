@@ -170,6 +170,17 @@ pub(crate) fn render_gpu_capture_rgba(
     offscreen.render_gpu_frame(&capture.gpu_frame())
 }
 
+pub(crate) fn render_gpu_hash_frame_rgba_line(frame: u32, frame_rgba: &[u8]) -> String {
+    renderer::gpu_render_hash_frame_rgba(frame, frame_rgba).line
+}
+
+pub(crate) fn render_hash_pair_bgra_rgba(
+    cpu_bgra: &[u8],
+    gpu_rgba: &[u8],
+) -> renderer::RenderHashPair {
+    renderer::render_hash_pair_bgra_rgba(cpu_bgra, gpu_rgba)
+}
+
 pub(crate) fn compare_gpu_render_current_frame(
     game: &mut ZeldaState,
     offscreen: &mut renderer::OffscreenRenderer,
