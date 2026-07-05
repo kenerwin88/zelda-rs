@@ -708,9 +708,7 @@ fn run_frontend_smoke(args: &[String]) {
     let width = 256u32;
     let height = 224u32;
     let render_flags = PpuRenderFlags::empty();
-    let mut renderer = play_renderer::from_env();
-    let renderer_name = renderer.name();
-    let mut frontend = match NativeFrontend::new_with_options(
+    let (mut renderer, mut frontend) = match play_renderer::configured_from_env(
         width,
         height,
         NativeFrontendOptions::from_env(3, false),
@@ -721,7 +719,7 @@ fn run_frontend_smoke(args: &[String]) {
             process::exit(1);
         }
     };
-    renderer.configure_frontend(&mut frontend);
+    let renderer_name = renderer.name();
     let mut frame = vec![0u8; width as usize * height as usize * 4];
 
     let mut completed = 0u32;
@@ -1378,8 +1376,7 @@ fn run_play_with_state(mut game: ZeldaState) {
     let width = 256u32;
     let height = 224u32;
     let render_flags = PpuRenderFlags::empty();
-    let mut renderer = play_renderer::from_env();
-    let mut frontend = match NativeFrontend::new_with_options(
+    let (mut renderer, mut frontend) = match play_renderer::configured_from_env(
         width,
         height,
         NativeFrontendOptions::from_env(3, true),
@@ -1390,7 +1387,6 @@ fn run_play_with_state(mut game: ZeldaState) {
             process::exit(1);
         }
     };
-    renderer.configure_frontend(&mut frontend);
     let mut frame = vec![0u8; width as usize * height as usize * 4];
     let audio_samples = frontend.audio_samples_per_frame();
     let audio_channels = frontend.audio_channels();

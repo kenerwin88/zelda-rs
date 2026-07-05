@@ -1,7 +1,7 @@
 use std::env;
 use std::process;
 
-use platform::{Frontend, NativeFrontend};
+use platform::{Frontend, NativeFrontend, NativeFrontendOptions};
 use snes::ppu::PpuRenderFlags;
 use zelda3::ZeldaState;
 
@@ -63,7 +63,7 @@ impl PlayRendererBackend for CpuPlayRenderer {
     }
 }
 
-pub(crate) fn from_env() -> Box<dyn PlayRendererBackend> {
+fn from_env() -> Box<dyn PlayRendererBackend> {
     let value = env::var("ZELDA3_RENDER_BACKEND").ok();
     match PlayRendererBackendChoice::from_env_value(value.as_deref()) {
         Ok(PlayRendererBackendChoice::Cpu) => Box::new(CpuPlayRenderer),
@@ -73,6 +73,17 @@ pub(crate) fn from_env() -> Box<dyn PlayRendererBackend> {
             process::exit(2);
         }
     }
+}
+
+pub(crate) fn configured_from_env(
+    width: u32,
+    height: u32,
+    options: NativeFrontendOptions,
+) -> Result<(Box<dyn PlayRendererBackend>, NativeFrontend), String> {
+    let renderer = from_env();
+    let mut frontend = NativeFrontend::new_with_options(width, height, options)?;
+    renderer.configure_frontend(&mut frontend);
+    Ok((renderer, frontend))
 }
 
 pub(crate) fn draw_play_ppu_frame(

@@ -675,11 +675,15 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             }
             struct CpuPlayRenderer;
             fn draw_play_ppu_frame() {}
+            fn run_play_with_state() {
+                let mut renderer = play_renderer::from_env();
+                renderer.configure_frontend(&mut frontend);
+            }
         """
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 7)
+        self.assertEqual(len(errors), 9)
         self.assertTrue(
             all("live GPU play backend ownership escaped gpu_capture boundary" in error for error in errors)
         )
