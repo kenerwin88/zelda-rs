@@ -38,6 +38,10 @@ class ValidateAllParityTests(unittest.TestCase):
         )
         self.assertEqual(
             commands[1],
+            [module.sys.executable, "scripts/check_renderer_source_boundaries.py"],
+        )
+        self.assertEqual(
+            commands[2],
             [
                 "cargo",
                 "run",
@@ -51,7 +55,7 @@ class ValidateAllParityTests(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            commands[2],
+            commands[3],
             [
                 module.sys.executable,
                 "scripts/gpu_render_compare_checkpoint_sweep.py",
@@ -76,7 +80,10 @@ class ValidateAllParityTests(unittest.TestCase):
 
         self.assertEqual(
             calls,
-            [["cargo", "run", "-p", "parity", "--", "check", "--frames", "12000"]],
+            [
+                [module.sys.executable, "scripts/check_renderer_source_boundaries.py"],
+                ["cargo", "run", "-p", "parity", "--", "check", "--frames", "12000"],
+            ],
         )
 
     def test_full_can_skip_gpu_checkpoint_sweep_when_explicitly_requested(self):
@@ -90,7 +97,13 @@ class ValidateAllParityTests(unittest.TestCase):
         with mock.patch.object(module.subprocess, "run", side_effect=fake_run):
             self.assertEqual(module.main(["--full", "--skip-gpu-checkpoint-sweep"]), 0)
 
-        self.assertEqual(calls, [["cargo", "run", "-p", "parity", "--", "check", "--full"]])
+        self.assertEqual(
+            calls,
+            [
+                [module.sys.executable, "scripts/check_renderer_source_boundaries.py"],
+                ["cargo", "run", "-p", "parity", "--", "check", "--full"],
+            ],
+        )
 
     def test_gpu_checkpoint_sweep_runs_after_successful_zparity_when_requested(self):
         module = load_module()
@@ -106,6 +119,7 @@ class ValidateAllParityTests(unittest.TestCase):
         self.assertEqual(
             calls,
             [
+                [module.sys.executable, "scripts/check_renderer_source_boundaries.py"],
                 ["cargo", "run", "-p", "parity", "--", "check", "--frames", "12000"],
                 [
                     module.sys.executable,
@@ -128,6 +142,22 @@ class ValidateAllParityTests(unittest.TestCase):
             self.assertEqual(module.main(["--gpu-checkpoint-sweep"]), 1)
 
         self.assertEqual(len(calls), 1)
+
+    def test_zparity_does_not_run_after_failed_renderer_boundary_check(self):
+        module = load_module()
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return mock.Mock(returncode=1)
+
+        with mock.patch.object(module.subprocess, "run", side_effect=fake_run):
+            self.assertEqual(module.main([]), 1)
+
+        self.assertEqual(
+            calls,
+            [[module.sys.executable, "scripts/check_renderer_source_boundaries.py"]],
+        )
 
     def test_pre_commit_uses_golden_checker_not_live_c_parity(self):
         hook = PRE_COMMIT.read_text()

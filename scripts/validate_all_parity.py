@@ -95,6 +95,10 @@ def gpu_checkpoint_sweep_command() -> list[str]:
     ]
 
 
+def renderer_source_boundary_command() -> list[str]:
+    return [sys.executable, "scripts/check_renderer_source_boundaries.py"]
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.build:
@@ -113,6 +117,10 @@ def main(argv: list[str] | None = None) -> int:
             "validate_all_parity: stride flags are ignored; zparity checks every emitted fingerprint",
             file=sys.stderr,
         )
+
+    result = subprocess.run(renderer_source_boundary_command(), cwd=REPO)
+    if result.returncode != 0:
+        return result.returncode
 
     cmd = zparity_check_command(args)
     result = subprocess.run(cmd, cwd=REPO)
