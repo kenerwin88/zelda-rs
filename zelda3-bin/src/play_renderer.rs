@@ -75,17 +75,18 @@ impl ConfiguredPlayRenderer {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PlayRendererBackendChoice {
-    Cpu,
     Gpu,
 }
 
 impl PlayRendererBackendChoice {
     fn from_env_value(value: Option<&str>) -> Result<Self, String> {
         match value {
-            Some(value) if value.eq_ignore_ascii_case("cpu") => Ok(Self::Cpu),
+            Some(value) if value.eq_ignore_ascii_case("cpu") => Err(
+                "ZELDA3_RENDER_BACKEND=cpu is diagnostic-only; live play requires gpu".to_string(),
+            ),
             Some(value) if value.eq_ignore_ascii_case("gpu") => Ok(Self::Gpu),
             Some(value) => Err(format!(
-                "unknown ZELDA3_RENDER_BACKEND={value:?}; expected cpu or gpu"
+                "unknown ZELDA3_RENDER_BACKEND={value:?}; expected gpu"
             )),
             None => Ok(Self::Gpu),
         }
@@ -95,9 +96,6 @@ impl PlayRendererBackendChoice {
 fn from_env() -> Box<dyn PlayRendererBackend> {
     let value = env::var("ZELDA3_RENDER_BACKEND").ok();
     match PlayRendererBackendChoice::from_env_value(value.as_deref()) {
-        Ok(PlayRendererBackendChoice::Cpu) => {
-            crate::classic_frame_renderer::new_cpu_play_renderer()
-        }
         Ok(PlayRendererBackendChoice::Gpu) => crate::gpu_capture::new_gpu_play_renderer(),
         Err(message) => {
             eprintln!("{message}");
@@ -124,7 +122,7 @@ pub(crate) fn configured_from_env(
 
 #[cfg(test)]
 mod tests {
-    use super::{PlayRendererBackendChoice, PlayRendererBackendChoice::*};
+    use super::{PlayRendererBackendChoice, PlayRendererBackendChoice::Gpu};
 
     #[test]
     fn unset_backend_defaults_to_gpu() {
@@ -132,14 +130,20 @@ mod tests {
     }
 
     #[test]
-    fn explicit_backend_accepts_cpu_or_gpu_case_insensitively() {
-        assert_eq!(
-            PlayRendererBackendChoice::from_env_value(Some("cpu")),
-            Ok(Cpu)
-        );
+    fn explicit_backend_accepts_gpu_case_insensitively() {
         assert_eq!(
             PlayRendererBackendChoice::from_env_value(Some("GPU")),
             Ok(Gpu)
+        );
+    }
+
+    #[test]
+    fn live_backend_rejects_cpu_renderer() {
+        let error = PlayRendererBackendChoice::from_env_value(Some("cpu")).unwrap_err();
+
+        assert_eq!(
+            error,
+            "ZELDA3_RENDER_BACKEND=cpu is diagnostic-only; live play requires gpu"
         );
     }
 
@@ -149,7 +153,7 @@ mod tests {
 
         assert_eq!(
             error,
-            "unknown ZELDA3_RENDER_BACKEND=\"software\"; expected cpu or gpu"
+            "unknown ZELDA3_RENDER_BACKEND=\"software\"; expected gpu"
         );
     }
 }

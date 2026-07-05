@@ -671,6 +671,24 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_live_cpu_backend_in_classic_frame_renderer(self):
+        module = load_module()
+        source = """
+            struct CpuPlayRenderer;
+            impl crate::play_renderer::PlayRendererBackend for CpuPlayRenderer {}
+            fn new_cpu_play_renderer() {}
+        """
+
+        errors = module.check_classic_frame_renderer_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 3)
+        self.assertTrue(
+            all(
+                "live CPU play backend escaped explicit diagnostic boundary" in error
+                for error in errors
+            )
+        )
+
     def test_rejects_main_play_render_calls(self):
         module = load_module()
         source = """

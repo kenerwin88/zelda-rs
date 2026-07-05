@@ -33,6 +33,7 @@ PLAY_RENDERER_RS = REPO / "zelda3-bin" / "src" / "play_renderer.rs"
 PLAY_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "play_commands.rs"
 REPLAY_DIAGNOSTICS_RS = REPO / "zelda3-bin" / "src" / "replay_diagnostics.rs"
 REPLAY_SAVE_CONFIG_RS = REPO / "zelda3-bin" / "src" / "replay_save_config.rs"
+CLASSIC_FRAME_RENDERER_RS = REPO / "zelda3-bin" / "src" / "classic_frame_renderer.rs"
 BOUNDARY_SOURCE_FILES = (
     MAIN_RS,
     ASSET_PALETTE_COMMANDS_RS,
@@ -43,7 +44,7 @@ BOUNDARY_SOURCE_FILES = (
     INDEX_DUMP_COMMANDS_RS,
     OVERWORLD_DUMP_COMMANDS_RS,
     ROUTE_COVERAGE_COMMANDS_RS,
-    REPO / "zelda3-bin" / "src" / "classic_frame_renderer.rs",
+    CLASSIC_FRAME_RENDERER_RS,
     GPU_COMPARE_RS,
     REPO / "zelda3-bin" / "src" / "gpu_capture.rs",
     HD_AUTHORING_COMMANDS_RS,
@@ -337,6 +338,13 @@ FORBIDDEN_PLAY_RENDERER_CLASSIC_BACKEND_CALLS = (
     "struct CpuPlayRenderer",
     "impl PlayRendererBackend for CpuPlayRenderer",
     "render_play_frame_bgra(",
+)
+
+FORBIDDEN_CLASSIC_FRAME_RENDERER_LIVE_BACKEND = (
+    "struct CpuPlayRenderer",
+    "impl crate::play_renderer::PlayRendererBackend",
+    "impl PlayRendererBackend for",
+    "fn new_cpu_play_renderer",
 )
 
 FORBIDDEN_MAIN_PLAY_RENDERER_DIAGNOSTIC_CALLS = (
@@ -1122,6 +1130,24 @@ def check_play_renderer_text(source: str) -> list[str]:
     return errors
 
 
+def check_classic_frame_renderer_text(source: str) -> list[str]:
+    errors: list[str] = []
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith("//") or stripped.startswith("///"):
+            continue
+        for forbidden in FORBIDDEN_CLASSIC_FRAME_RENDERER_LIVE_BACKEND:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "live CPU play backend escaped explicit diagnostic boundary at "
+                    f"zelda3-bin/src/classic_frame_renderer.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+    return errors
+
+
 def check_gpu_capture_text(source: str) -> list[str]:
     errors: list[str] = []
     lines = source.splitlines()
@@ -1166,6 +1192,7 @@ def main() -> int:
     errors.extend(check_main_text(MAIN_RS.read_text()))
     errors.extend(check_gpu_capture_text(GPU_CAPTURE_RS.read_text()))
     errors.extend(check_play_renderer_text(PLAY_RENDERER_RS.read_text()))
+    errors.extend(check_classic_frame_renderer_text(CLASSIC_FRAME_RENDERER_RS.read_text()))
     if errors:
         for error in errors:
             print(error, file=sys.stderr)
