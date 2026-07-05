@@ -5,12 +5,13 @@ use std::process;
 use snes::ppu::PpuRenderFlags;
 
 use crate::image_output::write_argb_frame_png;
+use crate::input_script::InputScript;
 use crate::render_diagnostics::{
     render_diagnostic_overworld_screen_bgra, run_diagnostic_play_frame_bgra,
 };
 use crate::{
     apply_sram_to_game_or_exit, load_play_or_checkpoint, load_replay_save_checkpoint,
-    load_translated_replay_state, parse_u16_auto, read_file_or_exit, read_le_u16, InputScript,
+    load_translated_replay_state, parse_u16_auto, read_file_or_exit, read_le_u16,
     PLAYER_IS_INDOORS,
 };
 

@@ -1192,6 +1192,26 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_input_script_ownership_in_main(self):
+        module = load_module()
+        source = """
+            struct InputScript {}
+            impl InputScript {}
+            struct InputRule {}
+            fn parse_frame_spec() {}
+            fn parse_buttons() {}
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 5)
+        self.assertTrue(
+            all(
+                "input script ownership escaped input_script boundary" in error
+                for error in errors
+            )
+        )
+
     def test_rejects_gpu_frame_assembly_calls(self):
         module = load_module()
         source = source_with_required_calls(

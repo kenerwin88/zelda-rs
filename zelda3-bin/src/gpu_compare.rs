@@ -4,9 +4,10 @@ use std::process;
 
 use crate::gpu_capture::{capture_gpu_frame_from_game, LiveGpuFrameCapture};
 use crate::gpu_readback::{GpuReadbackRenderer, OptionalGpuReadbackRenderer};
+use crate::input_script::InputScript;
 use crate::{
     apply_sram_to_game_or_exit, captured_panic_from, install_crash_panic_hook,
-    load_play_or_checkpoint, print_replay_save_panic_report, read_file_or_exit, InputScript,
+    load_play_or_checkpoint, print_replay_save_panic_report, read_file_or_exit,
 };
 use snes::ppu::PpuRenderFlags;
 use zelda3::ZeldaState;
