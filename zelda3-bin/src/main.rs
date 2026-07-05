@@ -1400,20 +1400,6 @@ fn effective_renderer_mode_from_env_value(
     renderer::EffectiveRendererMode::from_env_value(value, variant_atlas_env.as_deref())
 }
 
-fn vram_chr_source_table_view(
-    table: &zelda3::VramChrSourceTable,
-) -> renderer::MappedSourceTableView<
-    '_,
-    zelda3::LogicalChrSrc,
-    fn(&zelda3::LogicalChrSrc) -> (u8, u16, u16),
-> {
-    fn logical_chr_src_tuple(src: &zelda3::LogicalChrSrc) -> (u8, u16, u16) {
-        (src.kind, src.pack, src.tile_off)
-    }
-
-    renderer::MappedSourceTableView::new(table.as_slice(), logical_chr_src_tuple)
-}
-
 /// Modern asset resources + HD override store for the live present path, loaded
 /// once. The renderer crate owns which atlases each renderer mode requires and
 /// how they route through GPU/software presentation.
@@ -1455,7 +1441,8 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let scanlines_raw = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
         let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, &scanlines_raw);
-        let src_table = vram_chr_source_table_view(game.vram_chr_source());
+        let src_table =
+            renderer::MappedSourceTableView::from_entries(game.vram_chr_source().as_slice());
         let scene =
             renderer::ModernAssetFrameScene::from_player_indoors_flag(game.ram[PLAYER_IS_INDOORS]);
         match frontend.present_modern_asset_frame(
@@ -5471,7 +5458,9 @@ fn run_replay_save(args: &[String]) {
                 let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
                 let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
                 let _ = (&dungeon_index_atlas, &index_atlas);
-                let src_table = vram_chr_source_table_view(game.vram_chr_source());
+                let src_table = renderer::MappedSourceTableView::from_entries(
+                    game.vram_chr_source().as_slice(),
+                );
                 let scene = compare_scene.asset_scene();
                 let trace_pixel =
                     variant_trace_pixel_env().filter(|(trace_frame, _, _)| frames == *trace_frame);
@@ -11120,7 +11109,8 @@ fn run_dump_hd_capture(args: &[String]) {
             eprintln!("frame {completed}: Mode 7 not supported by the sources path; skipping");
             continue;
         }
-        let src_table = vram_chr_source_table_view(game.vram_chr_source());
+        let src_table =
+            renderer::MappedSourceTableView::from_entries(game.vram_chr_source().as_slice());
         let capture =
             renderer::hd_authoring::render_hd_capture_from_sources(&gpu_frame, &src_table, &atlas);
         let png_path = format!("{OUT_DIR}/frame_{completed}.png");
@@ -12315,7 +12305,8 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
             let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
 
-            let src_table = vram_chr_source_table_view(game.vram_chr_source());
+            let src_table =
+                renderer::MappedSourceTableView::from_entries(game.vram_chr_source().as_slice());
             let scene = compare_scene.asset_scene();
             let trace_pixel = variant_trace_pixel_env()
                 .filter(|(trace_frame, _, _)| completed_frame == *trace_frame);

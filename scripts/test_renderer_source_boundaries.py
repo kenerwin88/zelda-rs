@@ -25,7 +25,7 @@ def source_with_required_calls(body: str) -> str:
         let stats = renderer::ModernAssetLiveStats::from_env();
         let compare = renderer::ModernIndexCompareStats::from_env();
         let frame_record = renderer::ModernIndexCompareFrameRecord {};
-        let source_table = renderer::MappedSourceTableView::new(&[(0, 0, 0)], |src: &(u8, u16, u16)| *src);
+        let source_table = renderer::MappedSourceTableView::from_entries(&[(0, 0, 0)]);
         let diff = renderer::compare_modern_index_rgba(&[], &[]);
         let gpu_diff = renderer::compare_gpu_render_bgra_to_rgba(&[], &[]);
         let frame = renderer::GpuFrame::from_source_and_raw_scanlines();
@@ -315,12 +315,17 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             impl renderer::modern_extract::SourceTableView for VramChrSourceTableView {
                 fn get(&self, slot: usize) -> (u8, u16, u16) { (0, 0, 0) }
             }
+            fn vram_chr_source_table_view() {}
+            fn logical_chr_src_tuple() {}
+            fn run_play_with_state() {
+                renderer::MappedSourceTableView::new(table.as_slice(), logical_chr_src_tuple);
+            }
             """
         )
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 2)
+        self.assertEqual(len(errors), 5)
         self.assertTrue(
             all("source table view adapter escaped renderer boundary" in error for error in errors)
         )

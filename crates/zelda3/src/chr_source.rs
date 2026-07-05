@@ -86,6 +86,12 @@ pub struct LogicalChrSrc {
     pub tile_off: u16,
 }
 
+impl From<LogicalChrSrc> for (u8, u16, u16) {
+    fn from(src: LogicalChrSrc) -> Self {
+        (src.kind, src.pack, src.tile_off)
+    }
+}
+
 /// `[LogicalChrSrc; VRAM_CHR_SLOTS]` table, one entry per CHR tile slot.
 ///
 /// Stored as a `Vec` so the type is `Default`-constructible (fixed arrays of

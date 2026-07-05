@@ -23,6 +23,17 @@ fn table_starts_empty() {
 }
 
 #[test]
+fn logical_chr_src_converts_to_renderer_source_tuple() {
+    let src = LogicalChrSrc {
+        kind: CHR_KIND_SPRITE,
+        pack: 94,
+        tile_off: 12,
+    };
+
+    assert_eq!(<(u8, u16, u16)>::from(src), (CHR_KIND_SPRITE, 94, 12));
+}
+
+#[test]
 fn bg_chr_upload_keeps_raw_preview_source_after_render_source_is_hashed() {
     let mut state = ZeldaState::new();
     let data = vec![0u8; 0x600];

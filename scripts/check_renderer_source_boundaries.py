@@ -25,6 +25,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernIndexCompareStats",
     "ModernIndexCompareFrameRecord",
     "MappedSourceTableView",
+    "MappedSourceTableView::from_entries",
     "compare_modern_index_rgba",
     "compare_gpu_render_bgra_to_rgba",
     "GpuFrame::from_source_and_raw_scanlines",
@@ -104,6 +105,9 @@ FORBIDDEN_MODERN_SCENE_POLICY_CALLS = (
 FORBIDDEN_SOURCE_TABLE_VIEW_CALLS = (
     "struct VramChrSourceTableView",
     "impl renderer::modern_extract::SourceTableView for VramChrSourceTableView",
+    "fn vram_chr_source_table_view(",
+    "fn logical_chr_src_tuple(",
+    "renderer::MappedSourceTableView::new(",
 )
 
 FORBIDDEN_FRAME_COMPARE_CALLS = (

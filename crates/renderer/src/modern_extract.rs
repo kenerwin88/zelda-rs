@@ -1008,6 +1008,22 @@ impl<'a, T, F> MappedSourceTableView<'a, T, F> {
     }
 }
 
+fn source_entry_tuple<T>(src: &T) -> (u8, u16, u16)
+where
+    T: Copy + Into<(u8, u16, u16)>,
+{
+    (*src).into()
+}
+
+impl<'a, T> MappedSourceTableView<'a, T, fn(&T) -> (u8, u16, u16)>
+where
+    T: Copy + Into<(u8, u16, u16)>,
+{
+    pub fn from_entries(entries: &'a [T]) -> Self {
+        Self::new(entries, source_entry_tuple::<T>)
+    }
+}
+
 impl<T, F> SourceTableView for MappedSourceTableView<'_, T, F>
 where
     F: Fn(&T) -> (u8, u16, u16),
@@ -1537,6 +1553,17 @@ mod tests {
         assert_eq!(SourceTableView::get(&view, 0), (1, 0x12, 0x34));
         assert_eq!(SourceTableView::get(&view, 1), (1, 0x12, 0x35));
         assert_eq!(SourceTableView::get(&view, usize::MAX), (0, 0, 0));
+
+        impl From<Entry> for (u8, u16, u16) {
+            fn from(entry: Entry) -> Self {
+                (entry.kind, entry.pack, entry.tile_off)
+            }
+        }
+
+        let converted_view = MappedSourceTableView::from_entries(&entries);
+        assert_eq!(SourceTableView::get(&converted_view, 0), (1, 0x12, 0x34));
+        assert_eq!(SourceTableView::get(&converted_view, 1), (1, 0x12, 0x35));
+        assert_eq!(SourceTableView::get(&converted_view, usize::MAX), (0, 0, 0));
     }
 
     #[test]
