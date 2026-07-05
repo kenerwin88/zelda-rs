@@ -1230,6 +1230,26 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_replay_diagnostic_ownership_in_main(self):
+        module = load_module()
+        source = """
+            fn replay_sram_checksum_ok() {}
+            fn replay_checksum_bytes() {}
+            fn replay_checksum_ram_range() {}
+            fn replay_save_sprite_dump() {}
+            fn replay_save_palette_dump() {}
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 5)
+        self.assertTrue(
+            all(
+                "replay diagnostic ownership escaped replay_diagnostics boundary" in error
+                for error in errors
+            )
+        )
+
     def test_rejects_audio_trace_ownership_in_main(self):
         module = load_module()
         source = """

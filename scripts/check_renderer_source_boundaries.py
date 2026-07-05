@@ -31,6 +31,7 @@ INPUT_SCRIPT_RS = REPO / "zelda3-bin" / "src" / "input_script.rs"
 GPU_READBACK_RS = REPO / "zelda3-bin" / "src" / "gpu_readback.rs"
 PLAY_RENDERER_RS = REPO / "zelda3-bin" / "src" / "play_renderer.rs"
 PLAY_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "play_commands.rs"
+REPLAY_DIAGNOSTICS_RS = REPO / "zelda3-bin" / "src" / "replay_diagnostics.rs"
 REPLAY_SAVE_CONFIG_RS = REPO / "zelda3-bin" / "src" / "replay_save_config.rs"
 BOUNDARY_SOURCE_FILES = (
     MAIN_RS,
@@ -51,6 +52,7 @@ BOUNDARY_SOURCE_FILES = (
     INPUT_SCRIPT_RS,
     REPO / "zelda3-bin" / "src" / "play_renderer.rs",
     PLAY_COMMANDS_RS,
+    REPLAY_DIAGNOSTICS_RS,
     REPLAY_SAVE_CONFIG_RS,
     REPO / "zelda3-bin" / "src" / "render_diagnostics.rs",
 )
@@ -384,6 +386,28 @@ FORBIDDEN_MAIN_REPLAY_SAVE_CONFIG_OWNERSHIP = (
     "struct ReplaySaveConfig",
     "fn parse_replay_save_args_or_exit",
     "usage: zelda3 --replay-save",
+)
+
+FORBIDDEN_MAIN_REPLAY_DIAGNOSTIC_OWNERSHIP = (
+    "fn replay_sram_checksum_ok",
+    "fn replay_checksum_bytes",
+    "fn replay_checksum_ram_range",
+    "fn replay_save_ancilla_dump",
+    "fn replay_save_ram_page_dump",
+    "fn replay_save_ram0400_dump",
+    "fn replay_save_ram0000_dump",
+    "fn replay_save_requested_ram_page_dump",
+    "fn replay_save_room_mask",
+    "fn replay_save_garnish_dump",
+    "fn replay_save_room_history_dump",
+    "fn replay_save_room_mask_dump",
+    "fn replay_save_overlord_dump",
+    "fn replay_save_sprite_dump",
+    "fn replay_save_door_dump",
+    "fn replay_save_dungeon_attr_dump",
+    "fn replay_save_dungmap_dump",
+    "fn replay_save_message_dump",
+    "fn replay_save_palette_dump",
 )
 
 FORBIDDEN_MAIN_AUDIO_TRACE_OWNERSHIP = (
@@ -994,6 +1018,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "replay-save config ownership escaped replay_save_config boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_REPLAY_DIAGNOSTIC_OWNERSHIP:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "replay diagnostic ownership escaped replay_diagnostics boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
