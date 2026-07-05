@@ -118,6 +118,8 @@ FORBIDDEN_MODERN_INDEX_RESOURCE_POLICY_CALLS = (
     "let modern_variant_headless",
     "let variant_atlas = if modern_index_compare",
     "let source_atlas = if modern_index_compare",
+    "load_modern_overworld_index_atlas",
+    "load_modern_dungeon_index_atlas",
 )
 
 FORBIDDEN_MODERN_SCENE_POLICY_CALLS = (

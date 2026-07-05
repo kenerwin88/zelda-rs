@@ -306,13 +306,15 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let modern_variant_headless = variant_atlas.as_ref().map(renderer::ModernGpuVariantHeadless::new);
                 let variant_atlas = if modern_index_compare != 0 { None } else { None };
                 let source_atlas = if modern_index_compare != 0 { None } else { None };
+                renderer::modern_index_atlas::load_modern_overworld_index_atlas(root);
+                renderer::modern_dungeon_atlas::load_modern_dungeon_index_atlas(root);
             }
             """
         )
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 6)
+        self.assertEqual(len(errors), 8)
         self.assertTrue(
             all("modern index resource policy escaped renderer boundary" in error for error in errors)
         )

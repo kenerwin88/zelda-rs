@@ -3594,32 +3594,6 @@ fn run_replay_save(args: &[String]) {
     let mut route_coverage = coverage_log
         .as_ref()
         .map(|_| parity::coverage::RouteCoverage::default());
-    let index_atlas = if modern_index_compare != 0 {
-        Some(
-            renderer::modern_index_atlas::load_modern_overworld_index_atlas(std::path::Path::new(
-                ".",
-            ))
-            .unwrap_or_else(|e| {
-                eprintln!("index atlas load failed: {e}");
-                process::exit(2);
-            }),
-        )
-    } else {
-        None
-    };
-    let dungeon_index_atlas = if modern_index_compare != 0 {
-        Some(
-            renderer::modern_dungeon_atlas::load_modern_dungeon_index_atlas(std::path::Path::new(
-                ".",
-            ))
-            .unwrap_or_else(|e| {
-                eprintln!("dungeon index atlas load failed: {e}");
-                process::exit(2);
-            }),
-        )
-    } else {
-        None
-    };
     // Sprite tiles are now decoded from LIVE VRAM per frame
     // (extract_modern_sprites_from_vram); the static sprite atlas is no longer
     // loaded for rendering.
@@ -5404,7 +5378,6 @@ fn run_replay_save(args: &[String]) {
                 let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
                 let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
                 let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
-                let _ = (&dungeon_index_atlas, &index_atlas);
                 let src_table = renderer::MappedSourceTableView::from_entries(
                     game.vram_chr_source().as_slice(),
                 );
