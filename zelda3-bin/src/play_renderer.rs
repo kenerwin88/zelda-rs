@@ -19,6 +19,32 @@ pub(crate) trait PlayRendererBackend {
     );
 }
 
+pub(crate) struct ConfiguredPlayRenderer {
+    backend: Box<dyn PlayRendererBackend>,
+    frontend: NativeFrontend,
+    frame: Vec<u8>,
+    render_flags: PpuRenderFlags,
+}
+
+impl ConfiguredPlayRenderer {
+    pub(crate) fn name(&self) -> &'static str {
+        self.backend.name()
+    }
+
+    pub(crate) fn frontend(&self) -> &NativeFrontend {
+        &self.frontend
+    }
+
+    pub(crate) fn frontend_mut(&mut self) -> &mut NativeFrontend {
+        &mut self.frontend
+    }
+
+    pub(crate) fn present_frame(&mut self, game: &mut ZeldaState) {
+        self.backend
+            .present_frame(game, &mut self.frontend, &mut self.frame, self.render_flags);
+    }
+}
+
 struct CpuPlayRenderer;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,11 +105,16 @@ pub(crate) fn configured_from_env(
     width: u32,
     height: u32,
     options: NativeFrontendOptions,
-) -> Result<(Box<dyn PlayRendererBackend>, NativeFrontend), String> {
-    let renderer = from_env();
+) -> Result<ConfiguredPlayRenderer, String> {
+    let backend = from_env();
     let mut frontend = NativeFrontend::new_with_options(width, height, options)?;
-    renderer.configure_frontend(&mut frontend);
-    Ok((renderer, frontend))
+    backend.configure_frontend(&mut frontend);
+    Ok(ConfiguredPlayRenderer {
+        backend,
+        frontend,
+        frame: vec![0u8; width as usize * height as usize * 4],
+        render_flags: PpuRenderFlags::empty(),
+    })
 }
 
 pub(crate) fn draw_play_ppu_frame(
