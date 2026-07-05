@@ -23,6 +23,9 @@ pub struct ScanlineRegs {
     pub mode7_matrix: [i16; 8],
 }
 
+pub type RawScanlineRegs = (u8, u8, u8, u8, u8, [u16; 4], [u16; 4], [i16; 8]);
+pub type RawScanlineFrame = [RawScanlineRegs; 224];
+
 /// Data bundle for one GPU-rendered frame, borrowing directly from `PpuState`.
 ///
 /// Constructed by the caller each frame; zero copy of VRAM/OAM/CGRAM.
@@ -82,6 +85,34 @@ pub struct GpuFrame<'a> {
 }
 
 impl<'a> GpuFrame<'a> {
+    pub fn scanlines_from_raw(raw: &RawScanlineFrame) -> Box<[ScanlineRegs; 224]> {
+        let mut result = Box::new([ScanlineRegs::default(); 224]);
+        for (dst, &(w1l, w1r, w2l, w2r, tm, bg_h_scroll, bg_v_scroll, mode7_matrix)) in
+            result.iter_mut().zip(raw.iter())
+        {
+            dst.window1_left = w1l;
+            dst.window1_right = w1r;
+            dst.window2_left = w2l;
+            dst.window2_right = w2r;
+            dst.screen_enabled_main = tm;
+            dst.bg_h_scroll = bg_h_scroll;
+            dst.bg_v_scroll = bg_v_scroll;
+            dst.mode7_matrix = mode7_matrix;
+        }
+        result
+    }
+
+    pub fn from_source_and_raw_scanlines<S>(
+        source: &S,
+        cgram: &'a [u16],
+        raw_scanlines: &RawScanlineFrame,
+    ) -> Self
+    where
+        S: GpuFrameSource<'a> + ?Sized,
+    {
+        Self::from_source(source, cgram, Self::scanlines_from_raw(raw_scanlines))
+    }
+
     pub fn from_source<S>(source: &S, cgram: &'a [u16], scanlines: Box<[ScanlineRegs; 224]>) -> Self
     where
         S: GpuFrameSource<'a> + ?Sized,
@@ -403,5 +434,44 @@ mod tests {
         assert_eq!(frame.prevent_math_mode, 2);
         assert_eq!(frame.windowsel_cm, 5);
         assert_eq!(frame.windowsel, 0x0050_0000);
+    }
+
+    #[test]
+    fn gpu_frame_from_source_and_raw_scanlines_owns_scanline_conversion() {
+        let vram = [0x1111, 0x2222];
+        let cgram = [0x3333, 0x4444];
+        let oam = [0x5555, 0x6666];
+        let source = TestFrameSource {
+            vram: &vram,
+            oam: &oam,
+        };
+        let mut raw = [(0, 0, 0, 0, 0, [0; 4], [0; 4], [0; 8]); 224];
+        raw[7] = (
+            1,
+            2,
+            3,
+            4,
+            0x1f,
+            [10, 11, 12, 13],
+            [20, 21, 22, 23],
+            [30, 31, 32, 33, 34, 35, 36, 37],
+        );
+
+        let frame = GpuFrame::from_source_and_raw_scanlines(&source, &cgram, &raw);
+
+        assert_eq!(frame.scanlines[7].window1_left, 1);
+        assert_eq!(frame.scanlines[7].window1_right, 2);
+        assert_eq!(frame.scanlines[7].window2_left, 3);
+        assert_eq!(frame.scanlines[7].window2_right, 4);
+        assert_eq!(frame.scanlines[7].screen_enabled_main, 0x1f);
+        assert_eq!(frame.scanlines[7].bg_h_scroll, [10, 11, 12, 13]);
+        assert_eq!(frame.scanlines[7].bg_v_scroll, [20, 21, 22, 23]);
+        assert_eq!(
+            frame.scanlines[7].mode7_matrix,
+            [30, 31, 32, 33, 34, 35, 36, 37]
+        );
+        assert_eq!(frame.vram, &vram);
+        assert_eq!(frame.cgram, &cgram);
+        assert_eq!(frame.oam, &oam);
     }
 }

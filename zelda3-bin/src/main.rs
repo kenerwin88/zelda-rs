@@ -26,9 +26,7 @@ use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
     HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
 };
-use renderer::{
-    scanlines_from_raw, GpuFrame, OffscreenRenderer, PresentationContext, ScanlineRegs,
-};
+use renderer::{GpuFrame, OffscreenRenderer, PresentationContext, RawScanlineFrame};
 use serde::{Deserialize, Serialize};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, ppu::PpuRenderFlags, Snes};
 use zelda3::{
@@ -1456,7 +1454,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let hdma_cgram = game.cgram_after_first_hdma_line();
         let scanlines_raw = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
-        let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+        let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, &scanlines_raw);
         let src_table = vram_chr_source_table_view(game.vram_chr_source());
         let scene =
             renderer::ModernAssetFrameScene::from_in_dungeon(game.ram[PLAYER_IS_INDOORS] != 0);
@@ -3787,8 +3785,7 @@ fn run_replay_save(args: &[String]) {
                 PpuRenderFlags::empty(),
             );
             let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
-            let gpu_frame =
-                gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+            let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
             let gpu_rgba = offscreen.render_gpu_frame(&gpu_frame);
             let cpu_hash = renderer::render_frame_rgb_hash_bgra(frame);
             let gpu_hash = renderer::render_frame_rgb_hash_rgba(&gpu_rgba);
@@ -4309,11 +4306,7 @@ fn run_replay_save(args: &[String]) {
                         process::exit(1);
                     }
                     println!("dumped replay-save frame to {}", dump_path.display());
-                    let gpu_frame = gpu_frame_from_ppu(
-                        &game.ppu,
-                        &hdma_cgram,
-                        scanlines_from_raw(&scanlines_raw),
-                    );
+                    let gpu_frame = gpu_frame_from_ppu(&game.ppu, &hdma_cgram, &scanlines_raw);
                     let gpu_rgba = offscreen.render_gpu_frame(&gpu_frame);
                     let gpu_path = {
                         let stem = dump_path.file_stem().unwrap_or_default().to_string_lossy();
@@ -4610,8 +4603,7 @@ fn run_replay_save(args: &[String]) {
                         }
                     }
                 }
-                let gpu_frame =
-                    gpu_frame_from_ppu(&game.ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+                let gpu_frame = gpu_frame_from_ppu(&game.ppu, &hdma_cgram, &scanlines_raw);
                 if frames == 8000 {
                     eprintln!(
                         "[gpu-dbg] math_enabled={:#04x} subtract={} half={} fixed_rgb=({},{},{}) add_sub={} clip_mode={} prevent_math={} windowsel_cm={:#04x} brightness={}",
@@ -4647,11 +4639,7 @@ fn run_replay_save(args: &[String]) {
                 }
                 if frames == 332 {
                     // Print math/window params
-                    let gf = gpu_frame_from_ppu(
-                        &game.ppu,
-                        &hdma_cgram,
-                        scanlines_from_raw(&scanlines_raw),
-                    );
+                    let gf = gpu_frame_from_ppu(&game.ppu, &hdma_cgram, &scanlines_raw);
                     eprintln!(
                         "[gpu-dbg] frame=332 math_enabled={:#04x} subtract={} half={} fixed=({},{},{}) clip_mode={} prevent_math={} windowsel_cm={:#04x} add_sub={}",
                         gf.math_enabled,
@@ -4675,10 +4663,9 @@ fn run_replay_save(args: &[String]) {
                         game.ppu.window1_right
                     );
                     // Print scanline 0 window params
-                    let scanlines = scanlines_from_raw(&scanlines_raw);
                     eprintln!(
                         "[gpu-dbg] frame=332 scanline[0]: w1l={} w1r={}",
-                        scanlines[0].window1_left, scanlines[0].window1_right
+                        gf.scanlines[0].window1_left, gf.scanlines[0].window1_right
                     );
                     // Find CGRAM entry = 0x014D (the mystery color R=13,G=10,B=0)
                     for (ci, &cv) in hdma_cgram.iter().enumerate() {
@@ -4822,11 +4809,7 @@ fn run_replay_save(args: &[String]) {
                     }
                 }
                 if frames == 733 || frames == 800 || frames == 900 || frames == 1050 {
-                    let gf = gpu_frame_from_ppu(
-                        &game.ppu,
-                        &hdma_cgram,
-                        scanlines_from_raw(&scanlines_raw),
-                    );
+                    let gf = gpu_frame_from_ppu(&game.ppu, &hdma_cgram, &scanlines_raw);
                     let mut ndiff_top = 0usize;
                     let mut ndiff_bot = 0usize;
                     let mut max_shown = 3usize;
@@ -5488,8 +5471,7 @@ fn run_replay_save(args: &[String]) {
                 let hdma_cgram = game.cgram_after_first_hdma_line();
                 let scanlines_raw = game.ppu_scanline_windows();
                 let gpu_ppu = game.ppu.clone();
-                let gpu_frame =
-                    gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+                let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
                 let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
                 let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
                 let _ = (theme, &dungeon_index_atlas, &index_atlas);
@@ -6900,13 +6882,13 @@ fn draw_play_ppu_frame(
 /// ALttP uses HDMA to modify CGRAM per-scanline during rendering, so the post-render
 /// `ppu.cgram` may differ from what was active for most of the frame.
 ///
-/// `scanlines` captures per-scanline window boundaries from HDMA pre-simulation.
+/// `raw_scanlines` captures per-scanline window boundaries from HDMA pre-simulation.
 fn gpu_frame_from_ppu<'a>(
     ppu: &'a snes::ppu::PpuState,
     cgram: &'a [u16],
-    scanlines: Box<[ScanlineRegs; 224]>,
+    raw_scanlines: &RawScanlineFrame,
 ) -> GpuFrame<'a> {
-    GpuFrame::from_source(&PpuGpuFrameSource { ppu }, cgram, scanlines)
+    GpuFrame::from_source_and_raw_scanlines(&PpuGpuFrameSource { ppu }, cgram, raw_scanlines)
 }
 
 struct PpuGpuFrameSource<'a> {
@@ -9540,7 +9522,7 @@ fn run_dump_developer_destination(args: &[String]) {
         let hdma_cgram = game.cgram_after_first_hdma_line();
         let scanlines_raw = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
-        let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+        let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, &scanlines_raw);
         let mut offscreen = pollster::block_on(OffscreenRenderer::new(width, height));
         let rgba = offscreen.render_gpu_frame(&gpu_frame);
         if let Err(e) = write_rgba_frame_png(path, &rgba, width, height) {
@@ -11169,7 +11151,7 @@ fn run_dump_hd_capture(args: &[String]) {
         let hdma_cgram = game.cgram_after_first_hdma_line();
         let scanlines_raw = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
-        let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+        let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, &scanlines_raw);
         if gpu_frame.mode == 7 {
             eprintln!("frame {completed}: Mode 7 not supported by the sources path; skipping");
             continue;
@@ -12342,8 +12324,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 let hdma_cgram = game.cgram_after_first_hdma_line();
                 let scanlines_raw = game.ppu_scanline_windows();
                 let gpu_ppu = game.ppu.clone();
-                let gpu_frame =
-                    gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+                let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
                 // Classic GPU render (oracle) via the offscreen renderer:
                 let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
                 let old_hash = renderer::render_frame_rgb_hash_rgba(&classic_rgba);
@@ -12374,8 +12355,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let hdma_cgram = game.cgram_after_first_hdma_line();
             let scanlines_raw = game.ppu_scanline_windows();
             let gpu_ppu = game.ppu.clone();
-            let gpu_frame =
-                gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+            let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
             let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
 
             let src_table = vram_chr_source_table_view(game.vram_chr_source());
@@ -12645,7 +12625,7 @@ fn compare_gpu_render_current_frame(
     let scanlines_raw = game.ppu_scanline_windows();
     let gpu_ppu = game.ppu.clone();
     draw_play_ppu_frame(game, frame, width as usize * 4, PpuRenderFlags::empty());
-    let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
+    let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
     let gpu_rgba = offscreen.render_gpu_frame(&gpu_frame);
     let cpu_hash = renderer::render_frame_rgb_hash_bgra(frame);
     let gpu_hash = renderer::render_frame_rgb_hash_rgba(&gpu_rgba);

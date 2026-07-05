@@ -1,4 +1,4 @@
-use crate::gpu_frame::{GpuFrame, ScanlineRegs};
+use crate::gpu_frame::{GpuFrame, RawScanlineFrame, ScanlineRegs};
 
 const PARAMS_SIZE: u64 = 64;
 const SCANLINE_SIZE: u64 = 56 * 16; // 56 vec4<u32>
@@ -235,21 +235,6 @@ fn build_uniform_bytes(frame: &GpuFrame<'_>) -> Vec<u8> {
 
 /// Convert raw scanline tuples from `zelda_rtl::ppu_scanline_windows()` into
 /// the `ScanlineRegs` array stored in `GpuFrame`.
-pub fn scanlines_from_raw(
-    raw: &[(u8, u8, u8, u8, u8, [u16; 4], [u16; 4], [i16; 8]); 224],
-) -> Box<[ScanlineRegs; 224]> {
-    let mut result = Box::new([ScanlineRegs::default(); 224]);
-    for (dst, &(w1l, w1r, w2l, w2r, tm, bg_h_scroll, bg_v_scroll, mode7_matrix)) in
-        result.iter_mut().zip(raw.iter())
-    {
-        dst.window1_left = w1l;
-        dst.window1_right = w1r;
-        dst.window2_left = w2l;
-        dst.window2_right = w2r;
-        dst.screen_enabled_main = tm;
-        dst.bg_h_scroll = bg_h_scroll;
-        dst.bg_v_scroll = bg_v_scroll;
-        dst.mode7_matrix = mode7_matrix;
-    }
-    result
+pub fn scanlines_from_raw(raw: &RawScanlineFrame) -> Box<[ScanlineRegs; 224]> {
+    GpuFrame::scanlines_from_raw(raw)
 }

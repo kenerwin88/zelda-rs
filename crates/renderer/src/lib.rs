@@ -57,7 +57,10 @@ pub use frame_compare::{
     compare_bgra_to_rgba, compare_rgba_to_rgba, render_frame_rgb_hash_bgra,
     render_frame_rgb_hash_rgba, GpuRenderDiff,
 };
-pub use gpu_frame::{BgLayerRegs, GpuFrame, GpuFrameSource, Mode7Regs, ObjRegs, ScanlineRegs};
+pub use gpu_frame::{
+    BgLayerRegs, GpuFrame, GpuFrameSource, Mode7Regs, ObjRegs, RawScanlineFrame, RawScanlineRegs,
+    ScanlineRegs,
+};
 pub use gpu_renderer::GpuFrameRenderer;
 pub use mode7_renderer::Mode7Renderer;
 pub use modern_extract::MappedSourceTableView;

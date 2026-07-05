@@ -25,7 +25,7 @@ def source_with_required_calls(body: str) -> str:
         let compare = renderer::ModernIndexCompareStats::from_env();
         let source_table = renderer::MappedSourceTableView::new(&[(0, 0, 0)], |src: &(u8, u16, u16)| *src);
         let diff = renderer::compare_rgba_to_rgba(&[], &[]);
-        let frame = renderer::GpuFrame::from_source();
+        let frame = renderer::GpuFrame::from_source_and_raw_scanlines();
         frontend.present_modern_asset_frame();
         renderer::modern_gpu::render_modern_index_compare_frame();
         renderer::hd_authoring::render_hd_capture_from_sources();
@@ -288,6 +288,21 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         self.assertEqual(len(errors), 1)
         self.assertIn("gpu frame assembly escaped renderer boundary", errors[0])
+
+    def test_rejects_gpu_scanline_capture_conversion_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_play_with_state() {
+                let scanlines = renderer::scanlines_from_raw(&scanlines_raw);
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("gpu scanline capture conversion escaped renderer boundary", errors[0])
 
     def test_rejects_missing_renderer_owned_api_call(self):
         module = load_module()
