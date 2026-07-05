@@ -1,5 +1,7 @@
 use std::env;
 use std::fmt::Write;
+use std::fs::File;
+use std::io::BufWriter;
 use std::path::PathBuf;
 
 use crate::modern_gpu::{modern_gpu_path_fallback_reason, ModernGpuPathFallback};
@@ -258,7 +260,7 @@ pub struct ModernIndexCompareTracePixel {
     pub y: i16,
 }
 
-pub struct ModernIndexCompareDumpPaths {
+struct ModernIndexCompareDumpPaths {
     pub classic_path: PathBuf,
     pub modern_path: PathBuf,
     pub classic_dumped_line: String,
@@ -362,7 +364,7 @@ impl ModernIndexCompareStats {
             })
     }
 
-    pub fn dump_paths_for_frame(&self, frame: u32) -> Option<ModernIndexCompareDumpPaths> {
+    fn dump_paths_for_frame(&self, frame: u32) -> Option<ModernIndexCompareDumpPaths> {
         (self.dump_frame == Some(frame)).then(|| {
             let classic_path = PathBuf::from(format!("/tmp/classic_{frame}.png"));
             let modern_path = PathBuf::from(format!("/tmp/modern_index_{frame}.png"));
@@ -376,6 +378,33 @@ impl ModernIndexCompareStats {
                 modern_path,
             }
         })
+    }
+
+    pub fn write_dump_for_frame(
+        &self,
+        frame: u32,
+        classic_rgba: &[u8],
+        modern_rgba: &[u8],
+    ) -> ModernIndexCompareOutputLines {
+        let mut lines = Vec::new();
+        if let Some(paths) = self.dump_paths_for_frame(frame) {
+            write_dump_png(
+                &mut lines,
+                &paths.classic_path,
+                paths.classic_dumped_line,
+                classic_rgba,
+            );
+            write_dump_png(
+                &mut lines,
+                &paths.modern_path,
+                paths.modern_dumped_line,
+                modern_rgba,
+            );
+        }
+        ModernIndexCompareOutputLines {
+            lines,
+            has_failure: false,
+        }
     }
 
     fn trace_pixel_for_frame(&self, frame: u32) -> Option<ModernIndexCompareTracePixel> {
@@ -578,6 +607,37 @@ fn trace_lines(
             )
         })
         .collect()
+}
+
+fn write_dump_png(
+    output: &mut Vec<ModernIndexCompareOutputLine>,
+    path: &std::path::Path,
+    success_line: String,
+    rgba: &[u8],
+) {
+    match write_rgba_frame_png(path, rgba, 256, 224) {
+        Ok(()) => output.push(ModernIndexCompareOutputLine::stdout(success_line)),
+        Err(error) => output.push(ModernIndexCompareOutputLine::stderr(format!(
+            "failed to write {}: {error}",
+            path.display()
+        ))),
+    }
+}
+
+fn write_rgba_frame_png(
+    path: &std::path::Path,
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let file = File::create(path).map_err(|error| error.to_string())?;
+    let writer = BufWriter::new(file);
+    let mut encoder = png::Encoder::new(writer, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut png = encoder.write_header().map_err(|error| error.to_string())?;
+    png.write_image_data(rgba)
+        .map_err(|error| error.to_string())
 }
 
 macro_rules! variant_stat_fields {
@@ -977,6 +1037,44 @@ mod tests {
             "dumped modern_index frame to /tmp/modern_index_42.png"
         );
         assert!(stats.dump_paths_for_frame(43).is_none());
+
+        let classic_path = std::path::PathBuf::from("/tmp/classic_42.png");
+        let modern_path = std::path::PathBuf::from("/tmp/modern_index_42.png");
+        let _ = std::fs::remove_file(&classic_path);
+        let _ = std::fs::remove_file(&modern_path);
+        let classic = vec![0u8; 256 * 224 * 4];
+        let modern = vec![0xffu8; 256 * 224 * 4];
+
+        let output = stats.write_dump_for_frame(42, &classic, &modern);
+
+        assert_eq!(
+            output,
+            ModernIndexCompareOutputLines {
+                lines: vec![
+                    ModernIndexCompareOutputLine {
+                        stream: ModernIndexCompareOutputStream::Stdout,
+                        line: "dumped classic frame to /tmp/classic_42.png".to_string(),
+                    },
+                    ModernIndexCompareOutputLine {
+                        stream: ModernIndexCompareOutputStream::Stdout,
+                        line: "dumped modern_index frame to /tmp/modern_index_42.png".to_string(),
+                    },
+                ],
+                has_failure: false,
+            }
+        );
+        assert!(classic_path.exists());
+        assert!(modern_path.exists());
+        let _ = std::fs::remove_file(classic_path);
+        let _ = std::fs::remove_file(modern_path);
+
+        assert_eq!(
+            stats.write_dump_for_frame(43, &classic, &modern),
+            ModernIndexCompareOutputLines {
+                lines: Vec::new(),
+                has_failure: false,
+            }
+        );
     }
 
     #[test]

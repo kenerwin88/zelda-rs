@@ -31,7 +31,7 @@ def source_with_required_calls(body: str) -> str:
         let compare_config = renderer::ModernIndexCompareRunConfig::default();
         let frame_record = renderer::ModernIndexCompareFrameRenderInput {};
         let compare_resources = compare_config.load_resources_from_env();
-        let dump_paths = renderer::ModernIndexCompareDumpPaths {};
+        let dump_output = modern_index_compare_stats.write_dump_for_frame(0, &[], &[]);
         let output_stream = renderer::ModernIndexCompareOutputStream::Stdout;
         rendered.output_lines();
         let maybe_summary = modern_index_compare_stats.summary_line_if_enabled(true);
@@ -46,7 +46,6 @@ def source_with_required_calls(body: str) -> str:
         let frame = renderer::GpuFrame::from_source_and_raw_scanlines();
         frontend.present_modern_asset_frame();
         modern_index_compare_stats.render_compare_frame(frame_record);
-        modern_index_compare_stats.dump_paths_for_frame(0);
         report.failure_line();
         atlas_compare_resources.compare_frame(atlas_frame_record);
         renderer::hd_authoring::render_hd_capture_from_sources();
@@ -407,13 +406,16 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let modern_path = format!("/tmp/modern_index_{frame}.png");
                 println!("dumped classic frame to {classic_path}");
                 println!("dumped modern_index frame to {modern_path}");
+                let paths = renderer::ModernIndexCompareDumpPaths {};
+                modern_index_compare_stats.dump_paths_for_frame(frame);
+                write_modern_index_compare_dump(&paths, &classic, &modern);
             }
             """
         )
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 5)
+        self.assertEqual(len(errors), 8)
         self.assertTrue(
             all("modern index dump policy escaped renderer boundary" in error for error in errors)
         )

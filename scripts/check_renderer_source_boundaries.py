@@ -30,7 +30,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernIndexCompareRunConfig",
     "ModernIndexCompareFrameRenderInput",
     "load_resources_from_env",
-    "ModernIndexCompareDumpPaths",
+    "write_dump_for_frame",
     "ModernIndexCompareOutputStream",
     "output_lines",
     "summary_line_if_enabled",
@@ -45,7 +45,6 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "render_fingerprint_leaf_bgra",
     "GpuFrame::from_source_and_raw_scanlines",
     "render_compare_frame",
-    "dump_paths_for_frame",
     "compare_frame",
     "from_main_module_and_player_indoors_flag",
     "from_player_indoors_flag",
@@ -146,6 +145,9 @@ FORBIDDEN_MODERN_INDEX_FRAME_REPORT_CALLS = (
 )
 
 FORBIDDEN_MODERN_INDEX_DUMP_POLICY_CALLS = (
+    "ModernIndexCompareDumpPaths",
+    "dump_paths_for_frame(",
+    "write_modern_index_compare_dump(",
     "ZELDA3_MODERN_INDEX_DUMP_FRAME",
     "/tmp/classic_",
     "/tmp/modern_index_",

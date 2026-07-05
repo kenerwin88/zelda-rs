@@ -5378,9 +5378,12 @@ fn run_replay_save(args: &[String]) {
                 if output_lines.has_failure {
                     process::exit(1);
                 }
-                if let Some(dump_paths) = modern_index_compare_stats.dump_paths_for_frame(frames) {
-                    write_modern_index_compare_dump(&dump_paths, &classic_rgba, &modern_rgba);
-                }
+                let dump_output = modern_index_compare_stats.write_dump_for_frame(
+                    frames,
+                    &classic_rgba,
+                    &modern_rgba,
+                );
+                emit_modern_index_compare_output_lines(&dump_output);
             }
         }
         let mut fp_render_leaf: u32 = 0;
@@ -12130,11 +12133,12 @@ fn run_play_gpu_render_compare(args: &[String]) {
             if output_lines.has_failure {
                 process::exit(1);
             }
-            if let Some(dump_paths) =
-                modern_index_compare_stats.dump_paths_for_frame(completed_frame)
-            {
-                write_modern_index_compare_dump(&dump_paths, &classic_rgba, &modern_rgba);
-            }
+            let dump_output = modern_index_compare_stats.write_dump_for_frame(
+                completed_frame,
+                &classic_rgba,
+                &modern_rgba,
+            );
+            emit_modern_index_compare_output_lines(&dump_output);
         }
     }
 
@@ -12145,23 +12149,6 @@ fn run_play_gpu_render_compare(args: &[String]) {
         modern_index_compare_stats.summary_line_if_enabled(modern_index_compare.enabled())
     {
         println!("{line}");
-    }
-}
-
-fn write_modern_index_compare_dump(
-    paths: &renderer::ModernIndexCompareDumpPaths,
-    classic_rgba: &[u8],
-    modern_rgba: &[u8],
-) {
-    if let Err(e) = write_rgba_frame_png(&paths.classic_path, classic_rgba, 256, 224) {
-        eprintln!("failed to write {}: {e}", paths.classic_path.display());
-    } else {
-        println!("{}", paths.classic_dumped_line);
-    }
-    if let Err(e) = write_rgba_frame_png(&paths.modern_path, modern_rgba, 256, 224) {
-        eprintln!("failed to write {}: {e}", paths.modern_path.display());
-    } else {
-        println!("{}", paths.modern_dumped_line);
     }
 }
 
