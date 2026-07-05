@@ -109,6 +109,9 @@ FORBIDDEN_LIVE_STATS_POLICY_CALLS = (
 FORBIDDEN_MODERN_INDEX_COMPARE_POLICY_CALLS = (
     "ZELDA3_MODERN_INDEX_COMPARE_SUMMARY",
     "ZELDA3_MODERN_INDEX_COMPARE_PROGRESS",
+    "ZELDA3_VARIANT_TRACE_PIXEL",
+    "variant_trace_pixel_env(",
+    "parse_variant_trace_pixel(",
     "modern_index_compare_count",
     "modern_index_compare_bad_count",
     "modern_index_compare_variant_draws",

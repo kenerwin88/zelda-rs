@@ -5367,8 +5367,6 @@ fn run_replay_save(args: &[String]) {
                 let src_table =
                     renderer::source_table_from_entries(game.vram_chr_source().as_slice());
                 let scene = compare_scene.asset_scene();
-                let trace_pixel =
-                    variant_trace_pixel_env().filter(|(trace_frame, _, _)| frames == *trace_frame);
                 let rendered = modern_index_compare_stats.render_compare_frame(
                     renderer::ModernIndexCompareFrameRenderInput {
                         frame: frames,
@@ -5378,18 +5376,17 @@ fn run_replay_save(args: &[String]) {
                         resources: &modern_index_compare_resources,
                         scene,
                         classic_rgba: &classic_rgba,
-                        trace_pixel: trace_pixel.map(|(_, trace_x, trace_y)| (trace_x, trace_y)),
                         allow_source_cpu_fallback: true,
                         require_modern_index_parity,
                         require_full_gpu_path,
                         include_diff_in_frame_line: false,
                     },
                 );
-                if let Some((trace_frame, trace_x, trace_y)) = trace_pixel {
+                if let Some(trace_pixel) = rendered.trace_pixel {
                     print_variant_pixel_traces(
-                        trace_frame,
-                        trace_x,
-                        trace_y,
+                        trace_pixel.frame,
+                        trace_pixel.x,
+                        trace_pixel.y,
                         &rendered.variant_traces,
                     );
                 }
@@ -12146,8 +12143,6 @@ fn run_play_gpu_render_compare(args: &[String]) {
 
             let src_table = renderer::source_table_from_entries(game.vram_chr_source().as_slice());
             let scene = compare_scene.asset_scene();
-            let trace_pixel = variant_trace_pixel_env()
-                .filter(|(trace_frame, _, _)| completed_frame == *trace_frame);
             let rendered = modern_index_compare_stats.render_compare_frame(
                 renderer::ModernIndexCompareFrameRenderInput {
                     frame: completed_frame,
@@ -12157,15 +12152,19 @@ fn run_play_gpu_render_compare(args: &[String]) {
                     resources: &modern_index_compare_resources,
                     scene,
                     classic_rgba: &classic_rgba,
-                    trace_pixel: trace_pixel.map(|(_, trace_x, trace_y)| (trace_x, trace_y)),
                     allow_source_cpu_fallback: false,
                     require_modern_index_parity,
                     require_full_gpu_path,
                     include_diff_in_frame_line: true,
                 },
             );
-            if let Some((trace_frame, trace_x, trace_y)) = trace_pixel {
-                print_variant_pixel_traces(trace_frame, trace_x, trace_y, &rendered.variant_traces);
+            if let Some(trace_pixel) = rendered.trace_pixel {
+                print_variant_pixel_traces(
+                    trace_pixel.frame,
+                    trace_pixel.x,
+                    trace_pixel.y,
+                    &rendered.variant_traces,
+                );
             }
             let modern_rgba = rendered.modern_rgba;
             let report = rendered.report;
@@ -12293,12 +12292,6 @@ fn write_assets_index_png(path: &str, bin: &[u8], cell_count: usize) -> Result<(
 ///
 /// Produces the same hash value as the C oracle's RGB hash for identical pixel
 /// data, enabling direct comparison of render-hash lines in the parity gate.
-fn variant_trace_pixel_env() -> Option<(u32, i16, i16)> {
-    std::env::var("ZELDA3_VARIANT_TRACE_PIXEL")
-        .ok()
-        .and_then(|value| parse_variant_trace_pixel(&value))
-}
-
 fn print_variant_pixel_traces(
     trace_frame: u32,
     trace_x: i16,
@@ -12315,17 +12308,6 @@ fn print_variant_pixel_traces(
             );
         }
     }
-}
-
-fn parse_variant_trace_pixel(value: &str) -> Option<(u32, i16, i16)> {
-    let mut parts = value.split([':', ',']);
-    let frame = parts.next()?.parse().ok()?;
-    let x = parts.next()?.parse().ok()?;
-    let y = parts.next()?.parse().ok()?;
-    if parts.next().is_some() {
-        return None;
-    }
-    Some((frame, x, y))
 }
 
 /// Per-frame audio leaf hash: folds the same DSP/sample quantities the audio
@@ -14157,20 +14139,6 @@ mod tests {
         assert!(should_write_fingerprint(None, 41));
         assert!(should_write_fingerprint(Some(42), 42));
         assert!(!should_write_fingerprint(Some(42), 41));
-    }
-
-    #[test]
-    fn parses_variant_trace_pixel_env_value() {
-        assert_eq!(
-            parse_variant_trace_pixel("175:102:104"),
-            Some((175, 102, 104))
-        );
-        assert_eq!(
-            parse_variant_trace_pixel("175,102,104"),
-            Some((175, 102, 104))
-        );
-        assert_eq!(parse_variant_trace_pixel("175:102"), None);
-        assert_eq!(parse_variant_trace_pixel("175:102:104:1"), None);
     }
 
     #[test]

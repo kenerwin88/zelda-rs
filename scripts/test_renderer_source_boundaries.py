@@ -89,7 +89,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         source = source_with_required_calls(
             """
             fn run_replay_save() {
-                if let Some(_) = variant_trace_pixel_env() {
+                if trace_pixel_enabled {
                     renderer::modern_extract::extract_modern_frame_from_sources();
                     renderer::modern_variant_draw::trace_variant_plan_pixel();
                 }
@@ -101,6 +101,25 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         self.assertEqual(len(errors), 1)
         self.assertIn("run_replay_save", errors[0])
+
+    def test_rejects_modern_index_trace_env_policy_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_replay_save() {
+                let _ = "ZELDA3_VARIANT_TRACE_PIXEL";
+                variant_trace_pixel_env();
+                parse_variant_trace_pixel("1:2:3");
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 3)
+        self.assertTrue(
+            all("modern index compare stats policy escaped renderer boundary" in error for error in errors)
+        )
 
     def test_rejects_default_path_manual_extraction(self):
         module = load_module()

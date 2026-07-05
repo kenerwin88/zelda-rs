@@ -83,7 +83,6 @@ pub struct ModernIndexCompareFrameRenderInput<
     pub resources: &'a crate::ModernIndexCompareResources,
     pub scene: crate::ModernAssetFrameScene,
     pub classic_rgba: &'a [u8],
-    pub trace_pixel: Option<(i16, i16)>,
     pub allow_source_cpu_fallback: bool,
     pub require_modern_index_parity: bool,
     pub require_full_gpu_path: bool,
@@ -96,6 +95,7 @@ struct ModernIndexCompareFrameRenderedRecord<'a> {
     pub ppu_mode: u8,
     pub classic_rgba: &'a [u8],
     pub modern_render: crate::modern_gpu::ModernIndexCompareRender,
+    pub trace_pixel: Option<ModernIndexCompareTracePixel>,
     pub require_modern_index_parity: bool,
     pub require_full_gpu_path: bool,
     pub include_diff_in_frame_line: bool,
@@ -104,7 +104,15 @@ struct ModernIndexCompareFrameRenderedRecord<'a> {
 pub struct ModernIndexCompareFrameRenderedReport {
     pub report: ModernIndexCompareFrameReport,
     pub modern_rgba: Vec<u8>,
+    pub trace_pixel: Option<ModernIndexCompareTracePixel>,
     pub variant_traces: Vec<crate::modern_variant_draw::VariantPixelTrace>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModernIndexCompareTracePixel {
+    pub frame: u32,
+    pub x: i16,
+    pub y: i16,
 }
 
 pub struct ModernIndexCompareDumpPaths {
@@ -144,6 +152,7 @@ pub struct ModernIndexCompareStats {
     cpu_count: u64,
     variant_totals: VariantAtlasRenderTotals,
     dump_frame: Option<u32>,
+    trace_pixel: Option<ModernIndexCompareTracePixel>,
 }
 
 impl ModernIndexCompareStats {
@@ -157,6 +166,9 @@ impl ModernIndexCompareStats {
             dump_frame: env::var("ZELDA3_MODERN_INDEX_DUMP_FRAME")
                 .ok()
                 .and_then(|s| s.parse::<u32>().ok()),
+            trace_pixel: env::var("ZELDA3_VARIANT_TRACE_PIXEL")
+                .ok()
+                .and_then(|value| parse_trace_pixel(&value)),
             ..Self::default()
         }
     }
@@ -221,6 +233,10 @@ impl ModernIndexCompareStats {
                 modern_path,
             }
         })
+    }
+
+    fn trace_pixel_for_frame(&self, frame: u32) -> Option<ModernIndexCompareTracePixel> {
+        self.trace_pixel.filter(|trace| trace.frame == frame)
     }
 
     fn record_frame(
@@ -300,6 +316,7 @@ impl ModernIndexCompareStats {
         ModernIndexCompareFrameRenderedReport {
             report,
             modern_rgba: record.modern_render.rgba,
+            trace_pixel: record.trace_pixel,
             variant_traces: record.modern_render.variant_traces,
         }
     }
@@ -308,6 +325,7 @@ impl ModernIndexCompareStats {
         &mut self,
         input: ModernIndexCompareFrameRenderInput<'_, '_, S>,
     ) -> ModernIndexCompareFrameRenderedReport {
+        let trace_pixel = self.trace_pixel_for_frame(input.frame);
         let modern_render = crate::modern_gpu::render_modern_index_compare_frame(
             input.gpu_frame,
             input.src_table,
@@ -315,7 +333,7 @@ impl ModernIndexCompareStats {
             input.resources.gpu_headless(),
             input.resources.variant_headless(),
             input.scene,
-            input.trace_pixel,
+            trace_pixel.map(|trace| (trace.x, trace.y)),
             input.allow_source_cpu_fallback,
         );
         self.record_rendered_frame(ModernIndexCompareFrameRenderedRecord {
@@ -324,6 +342,7 @@ impl ModernIndexCompareStats {
             ppu_mode: input.gpu_frame.mode,
             classic_rgba: input.classic_rgba,
             modern_render,
+            trace_pixel,
             require_modern_index_parity: input.require_modern_index_parity,
             require_full_gpu_path: input.require_full_gpu_path,
             include_diff_in_frame_line: input.include_diff_in_frame_line,
@@ -380,6 +399,17 @@ impl ModernIndexCompareStats {
     pub fn summary_line_if_enabled(&self, compare_enabled: bool) -> Option<String> {
         (compare_enabled && self.summary_enabled).then(|| self.summary_line())
     }
+}
+
+fn parse_trace_pixel(value: &str) -> Option<ModernIndexCompareTracePixel> {
+    let mut parts = value.split([':', ',']);
+    let frame = parts.next()?.parse().ok()?;
+    let x = parts.next()?.parse().ok()?;
+    let y = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(ModernIndexCompareTracePixel { frame, x, y })
 }
 
 macro_rules! variant_stat_fields {
@@ -535,6 +565,42 @@ mod tests {
 
         let disabled = ModernIndexCompareStats::default();
         assert!(disabled.summary_line_if_enabled(true).is_none());
+    }
+
+    #[test]
+    fn parses_trace_pixel_config_and_filters_by_frame() {
+        assert_eq!(
+            parse_trace_pixel("175:102:104"),
+            Some(ModernIndexCompareTracePixel {
+                frame: 175,
+                x: 102,
+                y: 104
+            })
+        );
+        assert_eq!(
+            parse_trace_pixel("175,102,104"),
+            Some(ModernIndexCompareTracePixel {
+                frame: 175,
+                x: 102,
+                y: 104
+            })
+        );
+        assert_eq!(parse_trace_pixel("175:102"), None);
+        assert_eq!(parse_trace_pixel("175:102:104:1"), None);
+
+        let stats = ModernIndexCompareStats {
+            trace_pixel: parse_trace_pixel("175:102:104"),
+            ..Default::default()
+        };
+        assert_eq!(
+            stats.trace_pixel_for_frame(175),
+            Some(ModernIndexCompareTracePixel {
+                frame: 175,
+                x: 102,
+                y: 104
+            })
+        );
+        assert_eq!(stats.trace_pixel_for_frame(174), None);
     }
 
     #[test]
@@ -721,12 +787,25 @@ mod tests {
                 variant_stats: None,
                 variant_traces: Vec::new(),
             },
+            trace_pixel: Some(ModernIndexCompareTracePixel {
+                frame: 77,
+                x: 1,
+                y: 0,
+            }),
             require_modern_index_parity: true,
             require_full_gpu_path: true,
             include_diff_in_frame_line: true,
         });
 
         assert_eq!(rendered.modern_rgba, modern);
+        assert_eq!(
+            rendered.trace_pixel,
+            Some(ModernIndexCompareTracePixel {
+                frame: 77,
+                x: 1,
+                y: 0,
+            })
+        );
         assert!(rendered.variant_traces.is_empty());
         assert_eq!(rendered.report.mismatch(), 1);
         assert_eq!(
