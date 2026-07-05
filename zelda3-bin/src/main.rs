@@ -3318,94 +3318,7 @@ fn run_replay_save(args: &[String]) {
     let mut modern_index_compare = 0u32;
     let mut require_full_gpu_path = false;
     let mut require_modern_index_parity = false;
-    let modern_index_compare_summary = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_SUMMARY").is_ok();
-    let modern_index_compare_progress = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_PROGRESS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(0);
-    let mut modern_index_compare_count = 0u64;
-    let mut modern_index_compare_bad_count = 0u64;
-    let mut modern_index_compare_bad_pixels = 0u64;
-    let mut modern_index_compare_gpu_count = 0u64;
-    let mut modern_index_compare_mode7_gpu_count = 0u64;
-    let mut modern_index_compare_cpu_count = 0u64;
-    let mut modern_index_compare_variant_draws = 0u64;
-    let mut modern_index_compare_fallback_draws = 0u64;
-    let mut modern_index_compare_live_index_draws = 0u64;
-    let mut modern_index_compare_live_index_bg_draws = 0u64;
-    let mut modern_index_compare_live_index_bg12_draws = 0u64;
-    let mut modern_index_compare_live_index_bg3_draws = 0u64;
-    let mut modern_index_compare_live_index_sprite_draws = 0u64;
-    let mut modern_index_compare_gpu_prefinal_base_frames = 0u64;
-    let mut modern_index_compare_gpu_screen_builder_frames = 0u64;
-    let mut modern_index_compare_cpu_prefinal_composite_frames = 0u64;
-    let mut modern_index_compare_cpu_prefinal_overlay_frames = 0u64;
-    let mut modern_index_compare_dynamic_palette_draws = 0u64;
-    let mut modern_index_compare_missing_variant_draws = 0u64;
-    let mut modern_index_compare_stable_preview_draws = 0u64;
-    let mut modern_index_compare_stable_effect_draws = 0u64;
-    let mut modern_index_compare_dynamic_material_draws = 0u64;
-    let mut modern_index_compare_effect_material_draws = 0u64;
-    let mut modern_index_compare_dynamic_material_fallback_draws = 0u64;
-    let mut modern_index_compare_dynamic_material_fallback_instance_source_draws = 0u64;
-    let mut modern_index_compare_dynamic_material_fallback_brightness_draws = 0u64;
-    let mut modern_index_compare_dynamic_material_fallback_policy_draws = 0u64;
-    let mut modern_index_compare_dynamic_material_fallback_missing_effect_draws = 0u64;
-    let mut modern_index_compare_dynamic_material_fallback_unsupported_draws = 0u64;
-    let mut modern_index_compare_unsupported_material_draws = 0u64;
-    let mut modern_index_compare_missing_art_draws = 0u64;
-    let mut modern_index_compare_unkeyed_fallback_draws = 0u64;
-    let mut modern_index_compare_unkeyed_bg_fallback_draws = 0u64;
-    let mut modern_index_compare_unkeyed_bg12_fallback_draws = 0u64;
-    let mut modern_index_compare_unkeyed_bg3_fallback_draws = 0u64;
-    let mut modern_index_compare_unkeyed_sprite_fallback_draws = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_draws = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_candidates = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_culled_invisible_main = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_frame = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_brightness = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_invalid_layer = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_mosaic = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_sub_window = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_effect_bounds = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_scanline_main = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_layer_window = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_clip = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_subscreen = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_fixed_color =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch =
-        0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch =
-        0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_cgram_mismatch = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_overlap = 0u64;
+    let mut modern_index_compare_stats = renderer::ModernIndexCompareStats::from_env();
     let ppu_mode_summary = std::env::var("ZELDA3_PPU_MODE_SUMMARY").is_ok();
     let mut ppu_mode_counts = [0u64; 8];
     let mut first_mode7_frame = None::<u32>;
@@ -5617,18 +5530,7 @@ fn run_replay_save(args: &[String]) {
                     .as_ref()
                     .map(|diff| diff.mismatched_pixels)
                     .unwrap_or(0);
-                modern_index_compare_count += 1;
-                match via {
-                    "gpu" => modern_index_compare_gpu_count += 1,
-                    "variant-gpu" => modern_index_compare_gpu_count += 1,
-                    "mode7-gpu" => modern_index_compare_mode7_gpu_count += 1,
-                    "mode7-cpu" | "sources" | "vram" => modern_index_compare_cpu_count += 1,
-                    _ => {}
-                }
-                if mismatch != 0 {
-                    modern_index_compare_bad_count += 1;
-                    modern_index_compare_bad_pixels += mismatch as u64;
-                }
+                modern_index_compare_stats.record(via, mismatch as u32, variant_stats.as_ref());
                 if require_modern_index_parity && mismatch != 0 {
                     if let Some(diff) = modern_diff.as_ref() {
                         eprintln!(
@@ -5652,10 +5554,9 @@ fn run_replay_save(args: &[String]) {
                     process::exit(1);
                 }
                 if require_full_gpu_path {
-                    if let Some(fallback) = renderer::modern_gpu::modern_gpu_path_fallback_reason(
-                        via,
-                        variant_stats.as_ref(),
-                    ) {
+                    if let Some(fallback) =
+                        modern_index_compare_stats.full_gpu_fallback(via, variant_stats.as_ref())
+                    {
                         eprintln!(
                             "gpu_path_unsupported frame={frames} mode={mode_label} ppumode={} via={via} reason={} count={} mismatch_px={mismatch}",
                             gpu_frame.mode, fallback.reason, fallback.count
@@ -5663,218 +5564,24 @@ fn run_replay_save(args: &[String]) {
                         process::exit(1);
                     }
                 }
-                if let Some(stats) = variant_stats {
-                    modern_index_compare_variant_draws += u64::from(stats.stable_draws);
-                    modern_index_compare_fallback_draws += u64::from(stats.fallback_draws);
-                    modern_index_compare_live_index_draws += u64::from(stats.live_index_draws);
-                    modern_index_compare_live_index_bg_draws +=
-                        u64::from(stats.live_index_bg_draws);
-                    modern_index_compare_live_index_bg12_draws +=
-                        u64::from(stats.live_index_bg12_draws);
-                    modern_index_compare_live_index_bg3_draws +=
-                        u64::from(stats.live_index_bg3_draws);
-                    modern_index_compare_live_index_sprite_draws +=
-                        u64::from(stats.live_index_sprite_draws);
-                    modern_index_compare_gpu_prefinal_base_frames +=
-                        u64::from(stats.gpu_prefinal_base_frames);
-                    modern_index_compare_gpu_screen_builder_frames +=
-                        u64::from(stats.gpu_screen_builder_frames);
-                    modern_index_compare_cpu_prefinal_composite_frames +=
-                        u64::from(stats.cpu_prefinal_composite_frames);
-                    modern_index_compare_cpu_prefinal_overlay_frames +=
-                        u64::from(stats.cpu_prefinal_overlay_frames);
-                    modern_index_compare_dynamic_palette_draws +=
-                        u64::from(stats.dynamic_palette_draws);
-                    modern_index_compare_missing_variant_draws +=
-                        u64::from(stats.missing_variant_draws);
-                    modern_index_compare_stable_preview_draws +=
-                        u64::from(stats.stable_preview_draws);
-                    modern_index_compare_stable_effect_draws +=
-                        u64::from(stats.stable_effect_draws);
-                    modern_index_compare_dynamic_material_draws +=
-                        u64::from(stats.dynamic_material_draws);
-                    modern_index_compare_effect_material_draws +=
-                        u64::from(stats.effect_material_draws);
-                    modern_index_compare_dynamic_material_fallback_draws +=
-                        u64::from(stats.dynamic_material_fallback_draws);
-                    modern_index_compare_dynamic_material_fallback_instance_source_draws +=
-                        u64::from(stats.dynamic_material_fallback_instance_source_draws);
-                    modern_index_compare_dynamic_material_fallback_brightness_draws +=
-                        u64::from(stats.dynamic_material_fallback_brightness_draws);
-                    modern_index_compare_dynamic_material_fallback_policy_draws +=
-                        u64::from(stats.dynamic_material_fallback_policy_draws);
-                    modern_index_compare_dynamic_material_fallback_missing_effect_draws +=
-                        u64::from(stats.dynamic_material_fallback_missing_effect_draws);
-                    modern_index_compare_dynamic_material_fallback_unsupported_draws +=
-                        u64::from(stats.dynamic_material_fallback_unsupported_draws);
-                    modern_index_compare_unsupported_material_draws +=
-                        u64::from(stats.unsupported_material_draws);
-                    modern_index_compare_missing_art_draws += u64::from(stats.missing_art_draws);
-                    modern_index_compare_unkeyed_fallback_draws +=
-                        u64::from(stats.unkeyed_fallback_draws);
-                    modern_index_compare_unkeyed_bg_fallback_draws +=
-                        u64::from(stats.unkeyed_bg_fallback_draws);
-                    modern_index_compare_unkeyed_bg12_fallback_draws +=
-                        u64::from(stats.unkeyed_bg12_fallback_draws);
-                    modern_index_compare_unkeyed_bg3_fallback_draws +=
-                        u64::from(stats.unkeyed_bg3_fallback_draws);
-                    modern_index_compare_unkeyed_sprite_fallback_draws +=
-                        u64::from(stats.unkeyed_sprite_fallback_draws);
-                    modern_index_compare_mixed_overlay_bg_effect_draws +=
-                        u64::from(stats.mixed_overlay_bg_effect_draws);
-                    modern_index_compare_mixed_overlay_bg_effect_candidates +=
-                        u64::from(stats.mixed_overlay_bg_effect_candidates);
-                    modern_index_compare_mixed_overlay_bg_effect_culled_invisible_main +=
-                        u64::from(stats.mixed_overlay_bg_effect_culled_invisible_main);
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_frame +=
-                        u64::from(stats.mixed_overlay_bg_effect_reject_complex_frame);
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_brightness +=
-                        u64::from(stats.mixed_overlay_bg_effect_reject_complex_brightness);
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_invalid_layer +=
-                        u64::from(stats.mixed_overlay_bg_effect_reject_complex_invalid_layer);
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_mosaic +=
-                        u64::from(stats.mixed_overlay_bg_effect_reject_complex_mosaic);
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_sub_window +=
-                        u64::from(stats.mixed_overlay_bg_effect_reject_complex_sub_window);
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_effect_bounds +=
-                        u64::from(stats.mixed_overlay_bg_effect_reject_complex_effect_bounds);
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_scanline_main +=
-                        u64::from(stats.mixed_overlay_bg_effect_reject_complex_scanline_main);
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_layer_window +=
-                        u64::from(stats.mixed_overlay_bg_effect_reject_complex_layer_window);
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math +=
-                        u64::from(stats.mixed_overlay_bg_effect_reject_complex_color_math);
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_clip +=
-                        u64::from(stats.mixed_overlay_bg_effect_reject_complex_color_math_clip);
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_subscreen +=
-                        u64::from(stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen);
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_fixed_color +=
-                        u64::from(
-                            stats.mixed_overlay_bg_effect_reject_complex_color_math_fixed_color,
-                        );
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch += u64::from(
-                        stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch,
+                if modern_index_compare_stats.should_print_frame(mismatch as u32) {
+                    println!(
+                        "{}",
+                        modern_index_compare_stats.frame_line(
+                            renderer::ModernIndexCompareFrameLine {
+                                frame: frames,
+                                mode_label: &mode_label,
+                                ppu_mode: gpu_frame.mode,
+                                mismatch: mismatch as u32,
+                                via,
+                                variant_stats: variant_stats.as_ref(),
+                                diff: None,
+                            }
+                        )
                     );
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap += u64::from(
-                        stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap,
-                    );
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg += u64::from(
-                        stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg,
-                    );
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj += u64::from(
-                        stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj,
-                    );
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain += u64::from(
-                        stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain,
-                    );
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front += u64::from(
-                        stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front,
-                    );
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order += u64::from(
-                        stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order,
-                    );
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect += u64::from(
-                        stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect,
-                    );
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex += u64::from(
-                        stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex,
-                    );
-                    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch += u64::from(
-                        stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch,
-                    );
-                    modern_index_compare_mixed_overlay_bg_effect_reject_cgram_mismatch +=
-                        u64::from(stats.mixed_overlay_bg_effect_reject_cgram_mismatch);
-                    modern_index_compare_mixed_overlay_bg_effect_reject_overlap +=
-                        u64::from(stats.mixed_overlay_bg_effect_reject_overlap);
                 }
-                if !modern_index_compare_summary || mismatch != 0 {
-                    if let Some(stats) = variant_stats {
-                        println!(
-                            "modern_index_compare frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} fallback_draws={} live_index_draws={} live_index_bg_draws={} live_index_bg12_draws={} live_index_bg3_draws={} live_index_sprite_draws={} gpu_prefinal_base_frames={} direct_gpu_fallback_frames={} gpu_screen_builder_frames={} cpu_prefinal_composite_frames={} cpu_prefinal_overlay_frames={} dynamic_palette_draws={} missing_variant_draws={} stable_preview_draws={} stable_effect_draws={} dynamic_material_draws={} effect_material_draws={} dynamic_material_fallback_draws={} dynamic_material_fallback_instance_source_draws={} dynamic_material_fallback_brightness_draws={} dynamic_material_fallback_policy_draws={} dynamic_material_fallback_missing_effect_draws={} dynamic_material_fallback_unsupported_draws={} unsupported_material_draws={} missing_art_draws={} unkeyed_fallback_draws={} unkeyed_bg_fallback_draws={} unkeyed_bg12_fallback_draws={} unkeyed_bg3_fallback_draws={} unkeyed_sprite_fallback_draws={} mixed_overlay_bg_effect_draws={} mixed_overlay_bg_effect_candidates={} mixed_overlay_bg_effect_culled_invisible_main={} mixed_overlay_bg_effect_reject_complex_frame={} mixed_overlay_bg_effect_reject_complex_brightness={} mixed_overlay_bg_effect_reject_complex_invalid_layer={} mixed_overlay_bg_effect_reject_complex_mosaic={} mixed_overlay_bg_effect_reject_complex_sub_window={} mixed_overlay_bg_effect_reject_complex_effect_bounds={} mixed_overlay_bg_effect_reject_complex_scanline_main={} mixed_overlay_bg_effect_reject_complex_layer_window={} mixed_overlay_bg_effect_reject_complex_color_math={} mixed_overlay_bg_effect_reject_complex_color_math_clip={} mixed_overlay_bg_effect_reject_complex_color_math_subscreen={} mixed_overlay_bg_effect_reject_complex_color_math_fixed_color={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch={} mixed_overlay_bg_effect_reject_cgram_mismatch={} mixed_overlay_bg_effect_reject_overlap={}",
-                            gpu_frame.mode,
-                            stats.stable_draws,
-                            stats.fallback_draws,
-                            stats.live_index_draws,
-                            stats.live_index_bg_draws,
-                            stats.live_index_bg12_draws,
-                            stats.live_index_bg3_draws,
-                            stats.live_index_sprite_draws,
-                            stats.gpu_prefinal_base_frames,
-                            stats.gpu_prefinal_base_frames,
-                            stats.gpu_screen_builder_frames,
-                            stats.cpu_prefinal_composite_frames,
-                            stats.cpu_prefinal_overlay_frames,
-                            stats.dynamic_palette_draws,
-                            stats.missing_variant_draws,
-                            stats.stable_preview_draws,
-                            stats.stable_effect_draws,
-                            stats.dynamic_material_draws,
-                            stats.effect_material_draws,
-                            stats.dynamic_material_fallback_draws,
-                            stats.dynamic_material_fallback_instance_source_draws,
-                            stats.dynamic_material_fallback_brightness_draws,
-                            stats.dynamic_material_fallback_policy_draws,
-                            stats.dynamic_material_fallback_missing_effect_draws,
-                            stats.dynamic_material_fallback_unsupported_draws,
-                            stats.unsupported_material_draws,
-                            stats.missing_art_draws,
-                            stats.unkeyed_fallback_draws,
-                            stats.unkeyed_bg_fallback_draws,
-                            stats.unkeyed_bg12_fallback_draws,
-                            stats.unkeyed_bg3_fallback_draws,
-                            stats.unkeyed_sprite_fallback_draws,
-                            stats.mixed_overlay_bg_effect_draws,
-                            stats.mixed_overlay_bg_effect_candidates,
-                            stats.mixed_overlay_bg_effect_culled_invisible_main,
-                            stats.mixed_overlay_bg_effect_reject_complex_frame,
-                            stats.mixed_overlay_bg_effect_reject_complex_brightness,
-                            stats.mixed_overlay_bg_effect_reject_complex_invalid_layer,
-                            stats.mixed_overlay_bg_effect_reject_complex_mosaic,
-                            stats.mixed_overlay_bg_effect_reject_complex_sub_window,
-                            stats.mixed_overlay_bg_effect_reject_complex_effect_bounds,
-                            stats.mixed_overlay_bg_effect_reject_complex_scanline_main,
-                            stats.mixed_overlay_bg_effect_reject_complex_layer_window,
-                            stats.mixed_overlay_bg_effect_reject_complex_color_math,
-                            stats.mixed_overlay_bg_effect_reject_complex_color_math_clip,
-                            stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen,
-                            stats.mixed_overlay_bg_effect_reject_complex_color_math_fixed_color,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch,
-                            stats.mixed_overlay_bg_effect_reject_cgram_mismatch,
-                            stats.mixed_overlay_bg_effect_reject_overlap
-                        );
-                    } else {
-                        println!(
-                            "modern_index_compare frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via}",
-                            gpu_frame.mode
-                        );
-                    }
-                }
-                if modern_index_compare_summary
-                    && modern_index_compare_progress != 0
-                    && modern_index_compare_count % modern_index_compare_progress == 0
-                {
-                    eprintln!(
-                        "modern_index_compare_progress compare_count={modern_index_compare_count} frame={frames} bad_count={modern_index_compare_bad_count}"
-                    );
+                if let Some(line) = modern_index_compare_stats.progress_line(frames) {
+                    eprintln!("{line}");
                 }
                 if let Ok(dump_str) = std::env::var("ZELDA3_MODERN_INDEX_DUMP_FRAME") {
                     if let Ok(dump_frame) = dump_str.parse::<u32>() {
@@ -5951,10 +5658,8 @@ fn run_replay_save(args: &[String]) {
         }
     }
 
-    if modern_index_compare != 0 && modern_index_compare_summary {
-        println!(
-            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels} gpu_count={modern_index_compare_gpu_count} mode7_gpu_count={modern_index_compare_mode7_gpu_count} cpu_count={modern_index_compare_cpu_count} variant_draws={modern_index_compare_variant_draws} fallback_draws={modern_index_compare_fallback_draws} live_index_draws={modern_index_compare_live_index_draws} live_index_bg_draws={modern_index_compare_live_index_bg_draws} live_index_bg12_draws={modern_index_compare_live_index_bg12_draws} live_index_bg3_draws={modern_index_compare_live_index_bg3_draws} live_index_sprite_draws={modern_index_compare_live_index_sprite_draws} gpu_prefinal_base_frames={modern_index_compare_gpu_prefinal_base_frames} direct_gpu_fallback_frames={modern_index_compare_gpu_prefinal_base_frames} gpu_screen_builder_frames={modern_index_compare_gpu_screen_builder_frames} cpu_prefinal_composite_frames={modern_index_compare_cpu_prefinal_composite_frames} cpu_prefinal_overlay_frames={modern_index_compare_cpu_prefinal_overlay_frames} dynamic_palette_draws={modern_index_compare_dynamic_palette_draws} missing_variant_draws={modern_index_compare_missing_variant_draws} stable_preview_draws={modern_index_compare_stable_preview_draws} stable_effect_draws={modern_index_compare_stable_effect_draws} dynamic_material_draws={modern_index_compare_dynamic_material_draws} effect_material_draws={modern_index_compare_effect_material_draws} dynamic_material_fallback_draws={modern_index_compare_dynamic_material_fallback_draws} dynamic_material_fallback_instance_source_draws={modern_index_compare_dynamic_material_fallback_instance_source_draws} dynamic_material_fallback_brightness_draws={modern_index_compare_dynamic_material_fallback_brightness_draws} dynamic_material_fallback_policy_draws={modern_index_compare_dynamic_material_fallback_policy_draws} dynamic_material_fallback_missing_effect_draws={modern_index_compare_dynamic_material_fallback_missing_effect_draws} dynamic_material_fallback_unsupported_draws={modern_index_compare_dynamic_material_fallback_unsupported_draws} unsupported_material_draws={modern_index_compare_unsupported_material_draws} missing_art_draws={modern_index_compare_missing_art_draws} unkeyed_fallback_draws={modern_index_compare_unkeyed_fallback_draws} unkeyed_bg_fallback_draws={modern_index_compare_unkeyed_bg_fallback_draws} unkeyed_bg12_fallback_draws={modern_index_compare_unkeyed_bg12_fallback_draws} unkeyed_bg3_fallback_draws={modern_index_compare_unkeyed_bg3_fallback_draws} unkeyed_sprite_fallback_draws={modern_index_compare_unkeyed_sprite_fallback_draws} mixed_overlay_bg_effect_draws={modern_index_compare_mixed_overlay_bg_effect_draws} mixed_overlay_bg_effect_candidates={modern_index_compare_mixed_overlay_bg_effect_candidates} mixed_overlay_bg_effect_culled_invisible_main={modern_index_compare_mixed_overlay_bg_effect_culled_invisible_main} mixed_overlay_bg_effect_reject_complex_frame={modern_index_compare_mixed_overlay_bg_effect_reject_complex_frame} mixed_overlay_bg_effect_reject_complex_brightness={modern_index_compare_mixed_overlay_bg_effect_reject_complex_brightness} mixed_overlay_bg_effect_reject_complex_invalid_layer={modern_index_compare_mixed_overlay_bg_effect_reject_complex_invalid_layer} mixed_overlay_bg_effect_reject_complex_mosaic={modern_index_compare_mixed_overlay_bg_effect_reject_complex_mosaic} mixed_overlay_bg_effect_reject_complex_sub_window={modern_index_compare_mixed_overlay_bg_effect_reject_complex_sub_window} mixed_overlay_bg_effect_reject_complex_effect_bounds={modern_index_compare_mixed_overlay_bg_effect_reject_complex_effect_bounds} mixed_overlay_bg_effect_reject_complex_scanline_main={modern_index_compare_mixed_overlay_bg_effect_reject_complex_scanline_main} mixed_overlay_bg_effect_reject_complex_layer_window={modern_index_compare_mixed_overlay_bg_effect_reject_complex_layer_window} mixed_overlay_bg_effect_reject_complex_color_math={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math} mixed_overlay_bg_effect_reject_complex_color_math_clip={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_clip} mixed_overlay_bg_effect_reject_complex_color_math_subscreen={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_subscreen} mixed_overlay_bg_effect_reject_complex_color_math_fixed_color={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_fixed_color} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch} mixed_overlay_bg_effect_reject_cgram_mismatch={modern_index_compare_mixed_overlay_bg_effect_reject_cgram_mismatch} mixed_overlay_bg_effect_reject_overlap={modern_index_compare_mixed_overlay_bg_effect_reject_overlap}"
-        );
+    if modern_index_compare != 0 && modern_index_compare_stats.summary_enabled() {
+        println!("{}", modern_index_compare_stats.summary_line());
     }
     if ppu_mode_summary {
         println!(
@@ -12319,94 +12024,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
     let mut modern_index_compare = 0u32;
     let mut require_full_gpu_path = false;
     let mut require_modern_index_parity = false;
-    let modern_index_compare_summary = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_SUMMARY").is_ok();
-    let modern_index_compare_progress = std::env::var("ZELDA3_MODERN_INDEX_COMPARE_PROGRESS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(0);
-    let mut modern_index_compare_count = 0u64;
-    let mut modern_index_compare_bad_count = 0u64;
-    let mut modern_index_compare_bad_pixels = 0u64;
-    let mut modern_index_compare_gpu_count = 0u64;
-    let mut modern_index_compare_mode7_gpu_count = 0u64;
-    let mut modern_index_compare_cpu_count = 0u64;
-    let mut modern_index_compare_variant_draws = 0u64;
-    let mut modern_index_compare_fallback_draws = 0u64;
-    let mut modern_index_compare_live_index_draws = 0u64;
-    let mut modern_index_compare_live_index_bg_draws = 0u64;
-    let mut modern_index_compare_live_index_bg12_draws = 0u64;
-    let mut modern_index_compare_live_index_bg3_draws = 0u64;
-    let mut modern_index_compare_live_index_sprite_draws = 0u64;
-    let mut modern_index_compare_gpu_prefinal_base_frames = 0u64;
-    let mut modern_index_compare_gpu_screen_builder_frames = 0u64;
-    let mut modern_index_compare_cpu_prefinal_composite_frames = 0u64;
-    let mut modern_index_compare_cpu_prefinal_overlay_frames = 0u64;
-    let mut modern_index_compare_dynamic_palette_draws = 0u64;
-    let mut modern_index_compare_missing_variant_draws = 0u64;
-    let mut modern_index_compare_stable_preview_draws = 0u64;
-    let mut modern_index_compare_stable_effect_draws = 0u64;
-    let mut modern_index_compare_dynamic_material_draws = 0u64;
-    let mut modern_index_compare_effect_material_draws = 0u64;
-    let mut modern_index_compare_dynamic_material_fallback_draws = 0u64;
-    let mut modern_index_compare_dynamic_material_fallback_instance_source_draws = 0u64;
-    let mut modern_index_compare_dynamic_material_fallback_brightness_draws = 0u64;
-    let mut modern_index_compare_dynamic_material_fallback_policy_draws = 0u64;
-    let mut modern_index_compare_dynamic_material_fallback_missing_effect_draws = 0u64;
-    let mut modern_index_compare_dynamic_material_fallback_unsupported_draws = 0u64;
-    let mut modern_index_compare_unsupported_material_draws = 0u64;
-    let mut modern_index_compare_missing_art_draws = 0u64;
-    let mut modern_index_compare_unkeyed_fallback_draws = 0u64;
-    let mut modern_index_compare_unkeyed_bg_fallback_draws = 0u64;
-    let mut modern_index_compare_unkeyed_bg12_fallback_draws = 0u64;
-    let mut modern_index_compare_unkeyed_bg3_fallback_draws = 0u64;
-    let mut modern_index_compare_unkeyed_sprite_fallback_draws = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_draws = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_candidates = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_culled_invisible_main = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_frame = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_brightness = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_invalid_layer = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_mosaic = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_sub_window = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_effect_bounds = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_scanline_main = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_layer_window = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_clip = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_subscreen = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_fixed_color =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch =
-        0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex =
-        0u64;
-    let mut
-    modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch =
-        0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_cgram_mismatch = 0u64;
-    let mut modern_index_compare_mixed_overlay_bg_effect_reject_overlap = 0u64;
+    let mut modern_index_compare_stats = renderer::ModernIndexCompareStats::from_env();
     while i < args.len() {
         match args[i].as_str() {
             "--input-script" => {
@@ -12695,17 +12313,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 .as_ref()
                 .map(|diff| diff.mismatched_pixels)
                 .unwrap_or(0);
-            modern_index_compare_count += 1;
-            match via {
-                "gpu" | "variant-gpu" => modern_index_compare_gpu_count += 1,
-                "mode7-gpu" => modern_index_compare_mode7_gpu_count += 1,
-                "mode7-cpu" | "vram" => modern_index_compare_cpu_count += 1,
-                _ => {}
-            }
-            if mismatch != 0 {
-                modern_index_compare_bad_count += 1;
-                modern_index_compare_bad_pixels += mismatch as u64;
-            }
+            modern_index_compare_stats.record(via, mismatch as u32, variant_stats.as_ref());
             if require_modern_index_parity && mismatch != 0 {
                 if let Some(diff) = modern_diff.as_ref() {
                     eprintln!(
@@ -12729,10 +12337,9 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 process::exit(1);
             }
             if require_full_gpu_path {
-                if let Some(fallback) = renderer::modern_gpu::modern_gpu_path_fallback_reason(
-                    via,
-                    variant_stats.as_ref(),
-                ) {
+                if let Some(fallback) =
+                    modern_index_compare_stats.full_gpu_fallback(via, variant_stats.as_ref())
+                {
                     eprintln!(
                         "gpu_path_unsupported frame={completed_frame} mode={mode_label} ppumode={} via={via} reason={} count={} mismatch_px={mismatch}",
                         gpu_frame.mode, fallback.reason, fallback.count
@@ -12740,308 +12347,30 @@ fn run_play_gpu_render_compare(args: &[String]) {
                     process::exit(1);
                 }
             }
-            if let Some(stats) = variant_stats {
-                modern_index_compare_variant_draws += u64::from(stats.stable_draws);
-                modern_index_compare_fallback_draws += u64::from(stats.fallback_draws);
-                modern_index_compare_live_index_draws += u64::from(stats.live_index_draws);
-                modern_index_compare_live_index_bg_draws += u64::from(stats.live_index_bg_draws);
-                modern_index_compare_live_index_bg12_draws +=
-                    u64::from(stats.live_index_bg12_draws);
-                modern_index_compare_live_index_bg3_draws += u64::from(stats.live_index_bg3_draws);
-                modern_index_compare_live_index_sprite_draws +=
-                    u64::from(stats.live_index_sprite_draws);
-                modern_index_compare_gpu_prefinal_base_frames +=
-                    u64::from(stats.gpu_prefinal_base_frames);
-                modern_index_compare_gpu_screen_builder_frames +=
-                    u64::from(stats.gpu_screen_builder_frames);
-                modern_index_compare_cpu_prefinal_composite_frames +=
-                    u64::from(stats.cpu_prefinal_composite_frames);
-                modern_index_compare_cpu_prefinal_overlay_frames +=
-                    u64::from(stats.cpu_prefinal_overlay_frames);
-                modern_index_compare_dynamic_palette_draws +=
-                    u64::from(stats.dynamic_palette_draws);
-                modern_index_compare_missing_variant_draws +=
-                    u64::from(stats.missing_variant_draws);
-                modern_index_compare_stable_preview_draws += u64::from(stats.stable_preview_draws);
-                modern_index_compare_stable_effect_draws += u64::from(stats.stable_effect_draws);
-                modern_index_compare_dynamic_material_draws +=
-                    u64::from(stats.dynamic_material_draws);
-                modern_index_compare_effect_material_draws +=
-                    u64::from(stats.effect_material_draws);
-                modern_index_compare_dynamic_material_fallback_draws +=
-                    u64::from(stats.dynamic_material_fallback_draws);
-                modern_index_compare_dynamic_material_fallback_instance_source_draws +=
-                    u64::from(stats.dynamic_material_fallback_instance_source_draws);
-                modern_index_compare_dynamic_material_fallback_brightness_draws +=
-                    u64::from(stats.dynamic_material_fallback_brightness_draws);
-                modern_index_compare_dynamic_material_fallback_policy_draws +=
-                    u64::from(stats.dynamic_material_fallback_policy_draws);
-                modern_index_compare_dynamic_material_fallback_missing_effect_draws +=
-                    u64::from(stats.dynamic_material_fallback_missing_effect_draws);
-                modern_index_compare_dynamic_material_fallback_unsupported_draws +=
-                    u64::from(stats.dynamic_material_fallback_unsupported_draws);
-                modern_index_compare_unsupported_material_draws +=
-                    u64::from(stats.unsupported_material_draws);
-                modern_index_compare_missing_art_draws += u64::from(stats.missing_art_draws);
-                modern_index_compare_unkeyed_fallback_draws +=
-                    u64::from(stats.unkeyed_fallback_draws);
-                modern_index_compare_unkeyed_bg_fallback_draws +=
-                    u64::from(stats.unkeyed_bg_fallback_draws);
-                modern_index_compare_unkeyed_bg12_fallback_draws +=
-                    u64::from(stats.unkeyed_bg12_fallback_draws);
-                modern_index_compare_unkeyed_bg3_fallback_draws +=
-                    u64::from(stats.unkeyed_bg3_fallback_draws);
-                modern_index_compare_unkeyed_sprite_fallback_draws +=
-                    u64::from(stats.unkeyed_sprite_fallback_draws);
-                modern_index_compare_mixed_overlay_bg_effect_draws +=
-                    u64::from(stats.mixed_overlay_bg_effect_draws);
-                modern_index_compare_mixed_overlay_bg_effect_candidates +=
-                    u64::from(stats.mixed_overlay_bg_effect_candidates);
-                modern_index_compare_mixed_overlay_bg_effect_culled_invisible_main +=
-                    u64::from(stats.mixed_overlay_bg_effect_culled_invisible_main);
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_frame +=
-                    u64::from(stats.mixed_overlay_bg_effect_reject_complex_frame);
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_brightness +=
-                    u64::from(stats.mixed_overlay_bg_effect_reject_complex_brightness);
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_invalid_layer +=
-                    u64::from(stats.mixed_overlay_bg_effect_reject_complex_invalid_layer);
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_mosaic +=
-                    u64::from(stats.mixed_overlay_bg_effect_reject_complex_mosaic);
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_sub_window +=
-                    u64::from(stats.mixed_overlay_bg_effect_reject_complex_sub_window);
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_effect_bounds +=
-                    u64::from(stats.mixed_overlay_bg_effect_reject_complex_effect_bounds);
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_scanline_main +=
-                    u64::from(stats.mixed_overlay_bg_effect_reject_complex_scanline_main);
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_layer_window +=
-                    u64::from(stats.mixed_overlay_bg_effect_reject_complex_layer_window);
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math +=
-                    u64::from(stats.mixed_overlay_bg_effect_reject_complex_color_math);
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_clip +=
-                    u64::from(stats.mixed_overlay_bg_effect_reject_complex_color_math_clip);
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_subscreen +=
-                    u64::from(stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen);
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_fixed_color +=
-                    u64::from(stats.mixed_overlay_bg_effect_reject_complex_color_math_fixed_color);
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch += u64::from(
-                    stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch,
+            if modern_index_compare_stats.should_print_frame(mismatch as u32) {
+                let diff = modern_diff
+                    .as_ref()
+                    .map(|diff| renderer::ModernIndexComparePixelDiff {
+                        first_x: diff.first_x,
+                        first_y: diff.first_y,
+                        classic_rgb: diff.cpu_rgb,
+                        modern_rgb: diff.gpu_rgb,
+                    });
+                println!(
+                    "{}",
+                    modern_index_compare_stats.frame_line(renderer::ModernIndexCompareFrameLine {
+                        frame: completed_frame,
+                        mode_label: &mode_label,
+                        ppu_mode: gpu_frame.mode,
+                        mismatch: mismatch as u32,
+                        via,
+                        variant_stats: variant_stats.as_ref(),
+                        diff,
+                    })
                 );
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap += u64::from(
-                    stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap,
-                );
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg += u64::from(
-                    stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg,
-                );
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj += u64::from(
-                    stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj,
-                );
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain += u64::from(
-                    stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain,
-                );
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front += u64::from(
-                    stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front,
-                );
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order += u64::from(
-                    stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order,
-                );
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect += u64::from(
-                    stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect,
-                );
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex += u64::from(
-                    stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex,
-                );
-                modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch += u64::from(
-                    stats.mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch,
-                );
-                modern_index_compare_mixed_overlay_bg_effect_reject_cgram_mismatch +=
-                    u64::from(stats.mixed_overlay_bg_effect_reject_cgram_mismatch);
-                modern_index_compare_mixed_overlay_bg_effect_reject_overlap +=
-                    u64::from(stats.mixed_overlay_bg_effect_reject_overlap);
-                if !modern_index_compare_summary || mismatch != 0 {
-                    if let Some(diff) = modern_diff.as_ref() {
-                        println!(
-                            "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} fallback_draws={} live_index_draws={} live_index_bg_draws={} live_index_bg12_draws={} live_index_bg3_draws={} live_index_sprite_draws={} gpu_prefinal_base_frames={} direct_gpu_fallback_frames={} gpu_screen_builder_frames={} cpu_prefinal_composite_frames={} cpu_prefinal_overlay_frames={} dynamic_palette_draws={} missing_variant_draws={} stable_preview_draws={} stable_effect_draws={} dynamic_material_draws={} effect_material_draws={} dynamic_material_fallback_draws={} dynamic_material_fallback_instance_source_draws={} dynamic_material_fallback_brightness_draws={} dynamic_material_fallback_policy_draws={} dynamic_material_fallback_missing_effect_draws={} dynamic_material_fallback_unsupported_draws={} unsupported_material_draws={} missing_art_draws={} unkeyed_fallback_draws={} unkeyed_bg_fallback_draws={} unkeyed_bg12_fallback_draws={} unkeyed_bg3_fallback_draws={} unkeyed_sprite_fallback_draws={} mixed_overlay_bg_effect_draws={} mixed_overlay_bg_effect_candidates={} mixed_overlay_bg_effect_culled_invisible_main={} mixed_overlay_bg_effect_reject_complex_frame={} mixed_overlay_bg_effect_reject_complex_brightness={} mixed_overlay_bg_effect_reject_complex_invalid_layer={} mixed_overlay_bg_effect_reject_complex_mosaic={} mixed_overlay_bg_effect_reject_complex_sub_window={} mixed_overlay_bg_effect_reject_complex_effect_bounds={} mixed_overlay_bg_effect_reject_complex_scanline_main={} mixed_overlay_bg_effect_reject_complex_layer_window={} mixed_overlay_bg_effect_reject_complex_color_math={} mixed_overlay_bg_effect_reject_complex_color_math_clip={} mixed_overlay_bg_effect_reject_complex_color_math_subscreen={} mixed_overlay_bg_effect_reject_complex_color_math_fixed_color={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch={} mixed_overlay_bg_effect_reject_cgram_mismatch={} mixed_overlay_bg_effect_reject_overlap={} first_mismatch=({}, {}) classic_rgb=({},{},{}) modern_rgb=({},{},{})",
-                            gpu_frame.mode,
-                            stats.stable_draws,
-                            stats.fallback_draws,
-                            stats.live_index_draws,
-                            stats.live_index_bg_draws,
-                            stats.live_index_bg12_draws,
-                            stats.live_index_bg3_draws,
-                            stats.live_index_sprite_draws,
-                            stats.gpu_prefinal_base_frames,
-                            stats.gpu_prefinal_base_frames,
-                            stats.gpu_screen_builder_frames,
-                            stats.cpu_prefinal_composite_frames,
-                            stats.cpu_prefinal_overlay_frames,
-                            stats.dynamic_palette_draws,
-                            stats.missing_variant_draws,
-                            stats.stable_preview_draws,
-                            stats.stable_effect_draws,
-                            stats.dynamic_material_draws,
-                            stats.effect_material_draws,
-                            stats.dynamic_material_fallback_draws,
-                            stats.dynamic_material_fallback_instance_source_draws,
-                            stats.dynamic_material_fallback_brightness_draws,
-                            stats.dynamic_material_fallback_policy_draws,
-                            stats.dynamic_material_fallback_missing_effect_draws,
-                            stats.dynamic_material_fallback_unsupported_draws,
-                            stats.unsupported_material_draws,
-                            stats.missing_art_draws,
-                            stats.unkeyed_fallback_draws,
-                            stats.unkeyed_bg_fallback_draws,
-                            stats.unkeyed_bg12_fallback_draws,
-                            stats.unkeyed_bg3_fallback_draws,
-                            stats.unkeyed_sprite_fallback_draws,
-                            stats.mixed_overlay_bg_effect_draws,
-                            stats.mixed_overlay_bg_effect_candidates,
-                            stats.mixed_overlay_bg_effect_culled_invisible_main,
-                            stats.mixed_overlay_bg_effect_reject_complex_frame,
-                            stats.mixed_overlay_bg_effect_reject_complex_brightness,
-                            stats.mixed_overlay_bg_effect_reject_complex_invalid_layer,
-                            stats.mixed_overlay_bg_effect_reject_complex_mosaic,
-                            stats.mixed_overlay_bg_effect_reject_complex_sub_window,
-                            stats.mixed_overlay_bg_effect_reject_complex_effect_bounds,
-                            stats.mixed_overlay_bg_effect_reject_complex_scanline_main,
-                            stats.mixed_overlay_bg_effect_reject_complex_layer_window,
-                            stats.mixed_overlay_bg_effect_reject_complex_color_math,
-                            stats.mixed_overlay_bg_effect_reject_complex_color_math_clip,
-                            stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen,
-                            stats.mixed_overlay_bg_effect_reject_complex_color_math_fixed_color,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch,
-                            stats.mixed_overlay_bg_effect_reject_cgram_mismatch,
-                            stats.mixed_overlay_bg_effect_reject_overlap,
-                            diff.first_x,
-                            diff.first_y,
-                            diff.cpu_rgb.0,
-                            diff.cpu_rgb.1,
-                            diff.cpu_rgb.2,
-                            diff.gpu_rgb.0,
-                            diff.gpu_rgb.1,
-                            diff.gpu_rgb.2
-                        );
-                    } else {
-                        println!(
-                            "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} variant_draws={} fallback_draws={} live_index_draws={} live_index_bg_draws={} live_index_bg12_draws={} live_index_bg3_draws={} live_index_sprite_draws={} gpu_prefinal_base_frames={} direct_gpu_fallback_frames={} gpu_screen_builder_frames={} cpu_prefinal_composite_frames={} cpu_prefinal_overlay_frames={} dynamic_palette_draws={} missing_variant_draws={} stable_preview_draws={} stable_effect_draws={} dynamic_material_draws={} effect_material_draws={} dynamic_material_fallback_draws={} dynamic_material_fallback_instance_source_draws={} dynamic_material_fallback_brightness_draws={} dynamic_material_fallback_policy_draws={} dynamic_material_fallback_missing_effect_draws={} dynamic_material_fallback_unsupported_draws={} unsupported_material_draws={} missing_art_draws={} unkeyed_fallback_draws={} unkeyed_bg_fallback_draws={} unkeyed_bg12_fallback_draws={} unkeyed_bg3_fallback_draws={} unkeyed_sprite_fallback_draws={} mixed_overlay_bg_effect_draws={} mixed_overlay_bg_effect_candidates={} mixed_overlay_bg_effect_culled_invisible_main={} mixed_overlay_bg_effect_reject_complex_frame={} mixed_overlay_bg_effect_reject_complex_brightness={} mixed_overlay_bg_effect_reject_complex_invalid_layer={} mixed_overlay_bg_effect_reject_complex_mosaic={} mixed_overlay_bg_effect_reject_complex_sub_window={} mixed_overlay_bg_effect_reject_complex_effect_bounds={} mixed_overlay_bg_effect_reject_complex_scanline_main={} mixed_overlay_bg_effect_reject_complex_layer_window={} mixed_overlay_bg_effect_reject_complex_color_math={} mixed_overlay_bg_effect_reject_complex_color_math_clip={} mixed_overlay_bg_effect_reject_complex_color_math_subscreen={} mixed_overlay_bg_effect_reject_complex_color_math_fixed_color={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch={} mixed_overlay_bg_effect_reject_cgram_mismatch={} mixed_overlay_bg_effect_reject_overlap={}",
-                            gpu_frame.mode,
-                            stats.stable_draws,
-                            stats.fallback_draws,
-                            stats.live_index_draws,
-                            stats.live_index_bg_draws,
-                            stats.live_index_bg12_draws,
-                            stats.live_index_bg3_draws,
-                            stats.live_index_sprite_draws,
-                            stats.gpu_prefinal_base_frames,
-                            stats.gpu_prefinal_base_frames,
-                            stats.gpu_screen_builder_frames,
-                            stats.cpu_prefinal_composite_frames,
-                            stats.cpu_prefinal_overlay_frames,
-                            stats.dynamic_palette_draws,
-                            stats.missing_variant_draws,
-                            stats.stable_preview_draws,
-                            stats.stable_effect_draws,
-                            stats.dynamic_material_draws,
-                            stats.effect_material_draws,
-                            stats.dynamic_material_fallback_draws,
-                            stats.dynamic_material_fallback_instance_source_draws,
-                            stats.dynamic_material_fallback_brightness_draws,
-                            stats.dynamic_material_fallback_policy_draws,
-                            stats.dynamic_material_fallback_missing_effect_draws,
-                            stats.dynamic_material_fallback_unsupported_draws,
-                            stats.unsupported_material_draws,
-                            stats.missing_art_draws,
-                            stats.unkeyed_fallback_draws,
-                            stats.unkeyed_bg_fallback_draws,
-                            stats.unkeyed_bg12_fallback_draws,
-                            stats.unkeyed_bg3_fallback_draws,
-                            stats.unkeyed_sprite_fallback_draws,
-                            stats.mixed_overlay_bg_effect_draws,
-                            stats.mixed_overlay_bg_effect_candidates,
-                            stats.mixed_overlay_bg_effect_culled_invisible_main,
-                            stats.mixed_overlay_bg_effect_reject_complex_frame,
-                            stats.mixed_overlay_bg_effect_reject_complex_brightness,
-                            stats.mixed_overlay_bg_effect_reject_complex_invalid_layer,
-                            stats.mixed_overlay_bg_effect_reject_complex_mosaic,
-                            stats.mixed_overlay_bg_effect_reject_complex_sub_window,
-                            stats.mixed_overlay_bg_effect_reject_complex_effect_bounds,
-                            stats.mixed_overlay_bg_effect_reject_complex_scanline_main,
-                            stats.mixed_overlay_bg_effect_reject_complex_layer_window,
-                            stats.mixed_overlay_bg_effect_reject_complex_color_math,
-                            stats.mixed_overlay_bg_effect_reject_complex_color_math_clip,
-                            stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen,
-                            stats.mixed_overlay_bg_effect_reject_complex_color_math_fixed_color,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex,
-                            stats
-                                .mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch,
-                            stats.mixed_overlay_bg_effect_reject_cgram_mismatch,
-                            stats.mixed_overlay_bg_effect_reject_overlap
-                        );
-                    }
-                }
-            } else if !modern_index_compare_summary || mismatch != 0 {
-                if let Some(diff) = modern_diff.as_ref() {
-                    println!(
-                        "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} first_mismatch=({}, {}) classic_rgb=({},{},{}) modern_rgb=({},{},{})",
-                        gpu_frame.mode,
-                        diff.first_x,
-                        diff.first_y,
-                        diff.cpu_rgb.0,
-                        diff.cpu_rgb.1,
-                        diff.cpu_rgb.2,
-                        diff.gpu_rgb.0,
-                        diff.gpu_rgb.1,
-                        diff.gpu_rgb.2
-                    );
-                } else {
-                    println!(
-                        "modern_index_compare frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via}",
-                        gpu_frame.mode
-                    );
-                }
             }
-            if modern_index_compare_summary
-                && modern_index_compare_progress != 0
-                && modern_index_compare_count % modern_index_compare_progress == 0
-            {
-                eprintln!(
-                    "modern_index_compare_progress compare_count={modern_index_compare_count} frame={completed_frame} bad_count={modern_index_compare_bad_count}"
-                );
+            if let Some(line) = modern_index_compare_stats.progress_line(completed_frame) {
+                eprintln!("{line}");
             }
             if let Ok(dump_str) = std::env::var("ZELDA3_MODERN_INDEX_DUMP_FRAME") {
                 if let Ok(dump_frame) = dump_str.parse::<u32>() {
@@ -13070,10 +12399,8 @@ fn run_play_gpu_render_compare(args: &[String]) {
     println!(
         "play-gpu-render-compare completed compared={compared} start_frame={start_frame} last_frame={last_frame} last_hash=0x{last_hash:08x} mismatched_pixels=0"
     );
-    if modern_index_compare != 0 && modern_index_compare_summary {
-        println!(
-            "modern_index_compare_summary compare_count={modern_index_compare_count} bad_count={modern_index_compare_bad_count} bad_pixels={modern_index_compare_bad_pixels} gpu_count={modern_index_compare_gpu_count} mode7_gpu_count={modern_index_compare_mode7_gpu_count} cpu_count={modern_index_compare_cpu_count} variant_draws={modern_index_compare_variant_draws} fallback_draws={modern_index_compare_fallback_draws} live_index_draws={modern_index_compare_live_index_draws} live_index_bg_draws={modern_index_compare_live_index_bg_draws} live_index_bg12_draws={modern_index_compare_live_index_bg12_draws} live_index_bg3_draws={modern_index_compare_live_index_bg3_draws} live_index_sprite_draws={modern_index_compare_live_index_sprite_draws} gpu_prefinal_base_frames={modern_index_compare_gpu_prefinal_base_frames} direct_gpu_fallback_frames={modern_index_compare_gpu_prefinal_base_frames} gpu_screen_builder_frames={modern_index_compare_gpu_screen_builder_frames} cpu_prefinal_composite_frames={modern_index_compare_cpu_prefinal_composite_frames} cpu_prefinal_overlay_frames={modern_index_compare_cpu_prefinal_overlay_frames} dynamic_palette_draws={modern_index_compare_dynamic_palette_draws} missing_variant_draws={modern_index_compare_missing_variant_draws} stable_preview_draws={modern_index_compare_stable_preview_draws} stable_effect_draws={modern_index_compare_stable_effect_draws} dynamic_material_draws={modern_index_compare_dynamic_material_draws} effect_material_draws={modern_index_compare_effect_material_draws} dynamic_material_fallback_draws={modern_index_compare_dynamic_material_fallback_draws} dynamic_material_fallback_instance_source_draws={modern_index_compare_dynamic_material_fallback_instance_source_draws} dynamic_material_fallback_brightness_draws={modern_index_compare_dynamic_material_fallback_brightness_draws} dynamic_material_fallback_policy_draws={modern_index_compare_dynamic_material_fallback_policy_draws} dynamic_material_fallback_missing_effect_draws={modern_index_compare_dynamic_material_fallback_missing_effect_draws} dynamic_material_fallback_unsupported_draws={modern_index_compare_dynamic_material_fallback_unsupported_draws} unsupported_material_draws={modern_index_compare_unsupported_material_draws} missing_art_draws={modern_index_compare_missing_art_draws} unkeyed_fallback_draws={modern_index_compare_unkeyed_fallback_draws} unkeyed_bg_fallback_draws={modern_index_compare_unkeyed_bg_fallback_draws} unkeyed_bg12_fallback_draws={modern_index_compare_unkeyed_bg12_fallback_draws} unkeyed_bg3_fallback_draws={modern_index_compare_unkeyed_bg3_fallback_draws} unkeyed_sprite_fallback_draws={modern_index_compare_unkeyed_sprite_fallback_draws} mixed_overlay_bg_effect_draws={modern_index_compare_mixed_overlay_bg_effect_draws} mixed_overlay_bg_effect_candidates={modern_index_compare_mixed_overlay_bg_effect_candidates} mixed_overlay_bg_effect_culled_invisible_main={modern_index_compare_mixed_overlay_bg_effect_culled_invisible_main} mixed_overlay_bg_effect_reject_complex_frame={modern_index_compare_mixed_overlay_bg_effect_reject_complex_frame} mixed_overlay_bg_effect_reject_complex_brightness={modern_index_compare_mixed_overlay_bg_effect_reject_complex_brightness} mixed_overlay_bg_effect_reject_complex_invalid_layer={modern_index_compare_mixed_overlay_bg_effect_reject_complex_invalid_layer} mixed_overlay_bg_effect_reject_complex_mosaic={modern_index_compare_mixed_overlay_bg_effect_reject_complex_mosaic} mixed_overlay_bg_effect_reject_complex_sub_window={modern_index_compare_mixed_overlay_bg_effect_reject_complex_sub_window} mixed_overlay_bg_effect_reject_complex_effect_bounds={modern_index_compare_mixed_overlay_bg_effect_reject_complex_effect_bounds} mixed_overlay_bg_effect_reject_complex_scanline_main={modern_index_compare_mixed_overlay_bg_effect_reject_complex_scanline_main} mixed_overlay_bg_effect_reject_complex_layer_window={modern_index_compare_mixed_overlay_bg_effect_reject_complex_layer_window} mixed_overlay_bg_effect_reject_complex_color_math={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math} mixed_overlay_bg_effect_reject_complex_color_math_clip={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_clip} mixed_overlay_bg_effect_reject_complex_color_math_subscreen={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_subscreen} mixed_overlay_bg_effect_reject_complex_color_math_fixed_color={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_fixed_color} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch={modern_index_compare_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch} mixed_overlay_bg_effect_reject_cgram_mismatch={modern_index_compare_mixed_overlay_bg_effect_reject_cgram_mismatch} mixed_overlay_bg_effect_reject_overlap={modern_index_compare_mixed_overlay_bg_effect_reject_overlap}"
-        );
+    if modern_index_compare != 0 && modern_index_compare_stats.summary_enabled() {
+        println!("{}", modern_index_compare_stats.summary_line());
     }
 }
 

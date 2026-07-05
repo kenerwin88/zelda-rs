@@ -21,6 +21,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "present_modern_asset_frame",
     "ModernAssetFrameScene",
     "ModernAssetLiveStats",
+    "ModernIndexCompareStats",
     "render_modern_index_compare_frame",
     "render_hd_capture_from_sources",
 )
@@ -60,6 +61,15 @@ FORBIDDEN_LIVE_STATS_POLICY_CALLS = (
     "env_flag_default_true",
     "ZELDA3_VARIANT_LIVE_STATS",
     "ZELDA3_REQUIRE_FULL_GPU_PATH",
+)
+
+FORBIDDEN_MODERN_INDEX_COMPARE_POLICY_CALLS = (
+    "ZELDA3_MODERN_INDEX_COMPARE_SUMMARY",
+    "ZELDA3_MODERN_INDEX_COMPARE_PROGRESS",
+    "modern_index_compare_count",
+    "modern_index_compare_bad_count",
+    "modern_index_compare_variant_draws",
+    "modern_gpu_path_fallback_reason(",
 )
 
 
@@ -170,6 +180,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "live modern asset stats policy escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MODERN_INDEX_COMPARE_POLICY_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "modern index compare stats policy escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

@@ -22,6 +22,7 @@ def source_with_required_calls(body: str) -> str:
     fn run_play_with_state() {
         let scene = renderer::ModernAssetFrameScene::from_in_dungeon(false);
         let stats = renderer::ModernAssetLiveStats::from_env();
+        let compare = renderer::ModernIndexCompareStats::from_env();
         frontend.present_modern_asset_frame();
         renderer::modern_gpu::render_modern_index_compare_frame();
         renderer::hd_authoring::render_hd_capture_from_sources();
@@ -207,6 +208,28 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertEqual(len(errors), 4)
         self.assertTrue(
             all("live modern asset stats policy escaped renderer boundary" in error for error in errors)
+        )
+
+    def test_rejects_modern_index_compare_policy_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_play_with_state() {
+                let modern_index_compare_count = 0;
+                let modern_index_compare_bad_count = 0;
+                let modern_index_compare_variant_draws = 0;
+                let _ = "ZELDA3_MODERN_INDEX_COMPARE_SUMMARY";
+                let _ = "ZELDA3_MODERN_INDEX_COMPARE_PROGRESS";
+                renderer::modern_gpu::modern_gpu_path_fallback_reason("variant-gpu", None);
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 6)
+        self.assertTrue(
+            all("modern index compare stats policy escaped renderer boundary" in error for error in errors)
         )
 
     def test_rejects_missing_renderer_owned_api_call(self):
