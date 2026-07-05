@@ -45,11 +45,14 @@ pub fn render_frame_rgb_hash_bgra(frame: &[u8]) -> u32 {
     hash
 }
 
-pub fn compare_bgra_to_rgba(cpu_bgra: &[u8], gpu_rgba: &[u8]) -> Option<GpuRenderDiff> {
+pub(crate) fn compare_bgra_to_rgba(cpu_bgra: &[u8], gpu_rgba: &[u8]) -> Option<GpuRenderDiff> {
     compare_frame_rgb_channels(cpu_bgra, gpu_rgba, |cpu| (cpu[2], cpu[1], cpu[0]))
 }
 
-pub fn compare_gpu_render_bgra_to_rgba(cpu_bgra: &[u8], gpu_rgba: &[u8]) -> GpuRenderComparison {
+pub(crate) fn compare_gpu_render_bgra_to_rgba(
+    cpu_bgra: &[u8],
+    gpu_rgba: &[u8],
+) -> GpuRenderComparison {
     GpuRenderComparison {
         cpu_hash: render_frame_rgb_hash_bgra(cpu_bgra),
         gpu_hash: render_frame_rgb_hash_rgba(gpu_rgba),
@@ -93,7 +96,10 @@ fn gpu_render_divergence_line(
     )
 }
 
-pub fn compare_rgba_to_rgba(classic_rgba: &[u8], modern_rgba: &[u8]) -> Option<GpuRenderDiff> {
+pub(crate) fn compare_rgba_to_rgba(
+    classic_rgba: &[u8],
+    modern_rgba: &[u8],
+) -> Option<GpuRenderDiff> {
     compare_frame_rgb_channels(classic_rgba, modern_rgba, |classic| {
         (classic[0], classic[1], classic[2])
     })
