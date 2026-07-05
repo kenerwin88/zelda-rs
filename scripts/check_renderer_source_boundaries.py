@@ -21,8 +21,12 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "present_modern_variant_gpu_from_sources",
     "present_modern_gpu_from_sources",
     "render_modern_index_compare_frame",
-    "render_modern_frame_full_scaled_from_sources",
+    "present_modern_frame_from_sources",
     "render_hd_capture_from_sources",
+)
+
+FORBIDDEN_SOURCE_RENDER_CALLS = (
+    "render_modern_frame_full_scaled_from_sources",
 )
 
 
@@ -83,6 +87,19 @@ def check_source_text(source: str) -> list[str]:
             f"zelda3-bin/src/main.rs:{occurrence.line_number} "
             f"in {fn}: {occurrence.line}"
         )
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith("//") or stripped.startswith("///"):
+            continue
+        for forbidden in FORBIDDEN_SOURCE_RENDER_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "low-level source render escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
     return errors
 
 

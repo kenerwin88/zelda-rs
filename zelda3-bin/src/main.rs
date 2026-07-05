@@ -1883,11 +1883,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
                 Some(store) => renderer::modern_hd_overrides::HdOverrideCtx::new(store),
                 None => renderer::modern_hd_overrides::HdOverrideCtx::disabled(),
             };
-            let scale = frontend.renderer_hd_scale();
-            let rgba = renderer::modern_extract::render_modern_frame_full_scaled_from_sources(
-                &gpu_frame, &src_table, atlas, &ctx, scale,
-            );
-            frontend.present_modern_rgba(&rgba, 256 * scale, 224 * scale);
+            frontend.present_modern_frame_from_sources(&gpu_frame, &src_table, atlas, &ctx);
             return;
         }
         if gpu_frame.mode != 7 && self.gpu_asset_mode {

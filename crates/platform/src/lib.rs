@@ -213,21 +213,6 @@ impl NativeFrontend {
         self.renderer_mode = mode;
     }
 
-    /// Current live HD scale (`ZELDA3_HD_SCALE`, default 2), resolved by the
-    /// renderer at construction. Callers that render the modern
-    /// sources+overrides path themselves (the CHR-source table lives on the
-    /// zelda3 `GameState`, which `FrameRenderer` can't reach) use this so
-    /// their finished RGBA is sized consistently with the renderer's own
-    /// VRAM-only fallback (`present_gpu_frame_with_context`'s modern branch).
-    /// `1` (no scaling) if the renderer isn't constructed yet.
-    pub fn renderer_hd_scale(&self) -> u32 {
-        self.handler
-            .renderer
-            .as_ref()
-            .map(FrameRenderer::hd_scale)
-            .unwrap_or(1)
-    }
-
     pub fn present_gpu_frame(&mut self, frame: &GpuFrame<'_>) {
         self.present_gpu_frame_with_context(frame, PresentationContext::default());
     }
@@ -261,14 +246,40 @@ impl NativeFrontend {
         self.sleep_after_present();
     }
 
-    /// Present an already-composited modern-renderer RGBA frame — built by the
-    /// caller via the sources+overrides path (`extract_modern_frame_from_sources`
-    /// then `render_modern_frame_full_scaled`), which needs the CHR-source
-    /// table this crate doesn't have access to. `width`/`height` should be
-    /// `renderer_hd_scale()*256 × renderer_hd_scale()*224`.
+    /// Present an already-composited modern-renderer RGBA frame. Prefer
+    /// `present_modern_frame_from_sources` when the caller is presenting a live
+    /// source-atlas frame, so scale and composition stay inside the renderer.
     pub fn present_modern_rgba(&mut self, rgba: &[u8], width: u32, height: u32) {
         if let Some(renderer) = &mut self.handler.renderer {
             let result = renderer.present_modern_rgba(rgba, width, height);
+            match result {
+                Ok(()) => {}
+                Err(RenderError::SurfaceReconfigureNeeded) => {
+                    if let Some(window) = &self.handler.window {
+                        renderer.resize(window.inner_size());
+                    }
+                }
+                Err(RenderError::SurfaceSkipped) => {}
+                Err(RenderError::Fatal(e)) => eprintln!("render error: {e}"),
+            }
+        }
+        self.sleep_after_present();
+    }
+
+    /// Present a software-composited source-atlas frame. The binary supplies
+    /// the game-owned CHR source table; the renderer owns source extraction,
+    /// HD override composition, scaling, upload, and presentation.
+    pub fn present_modern_frame_from_sources<
+        S: renderer::modern_extract::SourceTableView + ?Sized,
+    >(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        src_table: &S,
+        atlas: &renderer::modern_source_atlas::ModernSourceAtlas,
+        ctx: &renderer::modern_hd_overrides::HdOverrideCtx,
+    ) {
+        if let Some(renderer) = &mut self.handler.renderer {
+            let result = renderer.present_modern_frame_from_sources(frame, src_table, atlas, ctx);
             match result {
                 Ok(()) => {}
                 Err(RenderError::SurfaceReconfigureNeeded) => {

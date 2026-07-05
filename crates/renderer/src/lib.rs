@@ -2005,9 +2005,8 @@ pub struct FrameRenderer {
     log_viewport: bool,
     /// Integer HD scale for the modern (off-VRAM) live render path
     /// (`ZELDA3_HD_SCALE`, default 2); read once at construction so every
-    /// `render_modern_frame` call — and callers of [`FrameRenderer::hd_scale`]
-    /// building their own N× frame (the sources+overrides path, which needs
-    /// the CHR-source table this renderer can't reach) — agree on one value.
+    /// `render_modern_frame` and `present_modern_frame_from_sources` call uses
+    /// one consistent size.
     hd_scale: modern_hd_overrides::HdScale,
     /// Lazily built on first `present_modern_gpu` call (assets-anim-gpu mode).
     modern_gpu: Option<ModernGpuCompositor>,
@@ -2375,8 +2374,8 @@ impl FrameRenderer {
     /// Modern (software) live-VRAM render path: the fallback used when the
     /// caller can't supply the sources+overrides render (that path needs the
     /// CHR-source table, which lives on the zelda3 `GameState` this crate
-    /// can't depend on — see [`FrameRenderer::present_modern_rgba`] for the
-    /// caller-supplied alternative). Decodes BG + sprites from the live
+    /// can't depend on — see [`FrameRenderer::present_modern_frame_from_sources`]
+    /// for the source-table boundary). Decodes BG + sprites from the live
     /// `GpuFrame` VRAM, composites at [`FrameRenderer::hd_scale`] (N× nearest,
     /// no HD overrides — those are source-keyed and VRAM-decoded cells never
     /// carry a source key), then uploads the resulting `scale*256 × scale*224`
@@ -2422,6 +2421,25 @@ impl FrameRenderer {
     ) -> Result<(), RenderError> {
         self.upload_rgba8(rgba, width, height);
         self.render()
+    }
+
+    /// Modern (software) source-atlas present path for callers that hold the
+    /// live CHR source table. This is the source-backed sibling of
+    /// [`FrameRenderer::render_modern_frame`]: the caller supplies the source
+    /// table and HD override context, while the renderer owns composition,
+    /// scale selection, upload, and final presentation.
+    pub fn present_modern_frame_from_sources<S: modern_extract::SourceTableView + ?Sized>(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        src_table: &S,
+        atlas: &modern_source_atlas::ModernSourceAtlas,
+        ctx: &modern_hd_overrides::HdOverrideCtx,
+    ) -> Result<(), RenderError> {
+        let scale = self.hd_scale.get();
+        let rgba = modern_extract::render_modern_frame_full_scaled_from_sources(
+            frame, src_table, atlas, ctx, scale,
+        );
+        self.present_modern_rgba(&rgba, 256 * scale, 224 * scale)
     }
 
     /// Live GPU present of the PNG-atlas path (`ZELDA3_RENDERER=assets-anim-gpu`).
