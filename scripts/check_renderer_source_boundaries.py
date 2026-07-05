@@ -34,7 +34,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "summary_line_if_enabled",
     "failure_line()",
     "ModernAtlasCompareResources",
-    "ModernAtlasCompareFrameInput",
+    "compare_frame_rgba",
     "source_table_from_entries",
     "compare_gpu_render_frame_bgra_to_rgba",
     "render_hash_frame_bgra",
@@ -42,7 +42,6 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "render_hash_pair_bgra_rgba",
     "render_fingerprint_leaf_bgra",
     "GpuFrame::from_source_and_raw_scanlines",
-    "compare_frame",
     "from_player_indoors_flag",
     "render_hd_capture_from_sources",
 )
@@ -198,6 +197,8 @@ FORBIDDEN_DIRECT_MODERN_INDEX_COMPARE_CALLS = (
 )
 
 FORBIDDEN_DIRECT_MODERN_ATLAS_COMPARE_CALLS = (
+    "ModernAtlasCompareFrameInput",
+    "modern_atlas_compare_resources.compare_frame(",
     "renderer::modern_gpu::compare_modern_atlas_to_rgba(",
     "modern_atlas_compare_resources.atlas()",
 )

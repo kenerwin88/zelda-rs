@@ -2235,7 +2235,7 @@ pub struct ModernAtlasCompareResources {
     atlas: Option<modern_assets::ModernTileAtlasAsset>,
 }
 
-pub struct ModernAtlasCompareFrameInput<'a, 'frame> {
+struct ModernAtlasCompareFrameInput<'a, 'frame> {
     pub frame: u32,
     pub gpu_frame: &'a GpuFrame<'frame>,
     pub classic_rgba: &'a [u8],
@@ -2263,7 +2263,7 @@ impl ModernAtlasCompareResources {
         self.atlas.as_ref()
     }
 
-    pub fn compare_frame(
+    fn compare_frame(
         &self,
         input: ModernAtlasCompareFrameInput<'_, '_>,
     ) -> Option<ModernAtlasCompareFrameReport> {
@@ -2272,6 +2272,19 @@ impl ModernAtlasCompareResources {
             modern_gpu::compare_modern_atlas_to_rgba(input.classic_rgba, input.gpu_frame, atlas);
         let line = modern_atlas_compare_frame_line(input.frame, &result);
         Some(ModernAtlasCompareFrameReport { line, result })
+    }
+
+    pub fn compare_frame_rgba(
+        &self,
+        frame: u32,
+        gpu_frame: &GpuFrame<'_>,
+        classic_rgba: &[u8],
+    ) -> Option<ModernAtlasCompareFrameReport> {
+        self.compare_frame(ModernAtlasCompareFrameInput {
+            frame,
+            gpu_frame,
+            classic_rgba,
+        })
     }
 }
 

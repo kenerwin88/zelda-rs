@@ -12072,12 +12072,10 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
             // Classic GPU render (oracle) via the offscreen renderer:
             let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
-            if let Some(report) = modern_atlas_compare_resources.compare_frame(
-                renderer::ModernAtlasCompareFrameInput {
-                    frame: completed_frame,
-                    gpu_frame: &gpu_frame,
-                    classic_rgba: &classic_rgba,
-                },
+            if let Some(report) = modern_atlas_compare_resources.compare_frame_rgba(
+                completed_frame,
+                &gpu_frame,
+                &classic_rgba,
             ) {
                 println!("{}", report.line);
             }
