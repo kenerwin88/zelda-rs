@@ -3,9 +3,11 @@
 //! of super-resolved frames.
 use serde::{Deserialize, Serialize};
 
+use crate::gpu_frame::GpuFrame;
 use crate::modern_frame::ModernFrame;
 use crate::modern_hd_overrides::NO_SOURCE_KEY;
 use crate::modern_index_atlas::ModernIndexTile;
+use crate::modern_source_atlas::ModernSourceAtlas;
 
 /// One drawn 8×8 cell occurrence: its source key and native-pixel screen rect.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -16,6 +18,48 @@ pub struct HdPlacement {
     pub y: i16,
     pub w: u16,
     pub h: u16,
+}
+
+/// Native-frame HD-authoring capture assembled from a source-atlas GPU frame.
+pub struct HdCaptureFrame {
+    /// Native 256×224 RGBA8 frame, rendered at scale 1 with HD overrides disabled.
+    pub rgba: Vec<u8>,
+    /// Source-key placements for slicing generated HD cells.
+    pub placements: Vec<HdPlacement>,
+    /// 256-entry CGRAM palette converted to RGBA, used as the reference palette.
+    pub cgram_rgba: [[u8; 4]; 256],
+}
+
+/// Build the native RGBA frame and placement map for offline HD-art authoring.
+///
+/// This mirrors the source-atlas modern path but returns authoring metadata in
+/// one renderer-owned bundle so callers do not assemble intermediate modern
+/// frames themselves.
+pub fn render_hd_capture_from_sources<S: crate::modern_extract::SourceTableView + ?Sized>(
+    frame: &GpuFrame<'_>,
+    src_table: &S,
+    atlas: &ModernSourceAtlas,
+) -> HdCaptureFrame {
+    let (mut modern, bg_cells) =
+        crate::modern_extract::extract_modern_frame_from_sources(frame, src_table, atlas);
+    let (sprite_cells, sprites) =
+        crate::modern_extract::extract_modern_sprites_from_sources(frame, src_table, atlas);
+    modern.index_sprites = sprites;
+
+    let ctx = crate::modern_hd_overrides::HdOverrideCtx::disabled();
+    let rgba = crate::modern_software::render_modern_frame_full_scaled(
+        &modern,
+        &bg_cells,
+        &sprite_cells,
+        &ctx,
+        1,
+    );
+    let placements = build_hd_placement_map(&modern, &bg_cells, &sprite_cells);
+    HdCaptureFrame {
+        rgba,
+        placements,
+        cgram_rgba: modern.cgram_rgba,
+    }
 }
 
 /// Enumerate every drawn tile/sprite instance that has a real source key, with its
@@ -94,9 +138,14 @@ pub fn slice_hd_cell(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gpu_frame::{GpuFrame, ScanlineRegs};
+    use crate::modern_extract::{
+        extract_modern_frame_from_sources, extract_modern_sprites_from_sources,
+    };
     use crate::modern_frame::ModernFrame;
     use crate::modern_hd_overrides::NO_SOURCE_KEY;
     use crate::modern_index_atlas::ModernIndexTile;
+    use crate::modern_source_atlas::{modern_source_key, ModernSourceAtlas};
 
     fn cell(id: u32, source_key: u64) -> ModernIndexTile {
         ModernIndexTile {
@@ -106,6 +155,56 @@ mod tests {
             hflip: false,
             vflip: false,
         }
+    }
+
+    fn test_gpu_frame<'a>(
+        vram: &'a [u16],
+        cgram: &'a [u16],
+        oam: &'a [u16],
+        brightness: u8,
+        forced_blank: bool,
+    ) -> GpuFrame<'a> {
+        GpuFrame {
+            vram,
+            cgram,
+            oam,
+            mode: 1,
+            bg: Default::default(),
+            obj: Default::default(),
+            mosaic_enabled: 0,
+            mosaic_size: 0,
+            extra_left_right: 0,
+            mode7: Default::default(),
+            screen_enabled: [0, 0],
+            screen_windowed: [0, 0],
+            brightness,
+            forced_blank,
+            math_enabled: 0,
+            subtract_color: false,
+            half_color: false,
+            fixed_color_r: 0,
+            fixed_color_g: 0,
+            fixed_color_b: 0,
+            add_subscreen: false,
+            clip_mode: 0,
+            prevent_math_mode: 0,
+            windowsel_cm: 0,
+            windowsel: 0,
+            scanlines: Box::new([ScanlineRegs::default(); 224]),
+        }
+    }
+
+    fn content_hash32_slot_for_test(vram: &[u16], slot: usize) -> u32 {
+        let base = slot * 16;
+        let mut hash: u32 = 0x811c_9dc5;
+        for off in 0..16 {
+            let word = *vram.get(base + off).unwrap_or(&0);
+            for byte in [(word & 0xff) as u8, (word >> 8) as u8] {
+                hash ^= byte as u32;
+                hash = hash.wrapping_mul(0x0100_0193);
+            }
+        }
+        hash
     }
 
     #[test]
@@ -195,5 +294,84 @@ mod tests {
                                                    // Negative and overhanging placements skip.
         assert!(slice_hd_cell(&sr, sr_w, sr_h, -1, 0, 1, 1, scale).is_none());
         assert!(slice_hd_cell(&sr, sr_w, sr_h, 4, 0, 1, 1, scale).is_none()); // x*scale=8 >= sr_w
+    }
+
+    #[test]
+    fn capture_from_sources_matches_manual_authoring_assembly() {
+        const CHR_KIND_BG_STREAM: u8 = 6;
+
+        let mut vram = vec![0u16; 0x8000];
+        let mut cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        cgram[7] = 0x001f;
+        for (i, word) in vram[0x2040..0x2050].iter_mut().enumerate() {
+            *word = 0x1000u16.wrapping_add(i as u16);
+        }
+        vram[0] = 4;
+        let hash = content_hash32_slot_for_test(&vram, 0x204);
+        let source_key = modern_source_key(
+            CHR_KIND_BG_STREAM,
+            (hash >> 16) as u16,
+            (hash & 0xffff) as u16,
+        );
+
+        let mut indices = [0u8; 64];
+        indices[0] = 7;
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
+            vec![ModernIndexTile {
+                id: 0,
+                indices,
+                source_key: NO_SOURCE_KEY,
+                hflip: false,
+                vflip: false,
+            }],
+            &[(
+                CHR_KIND_BG_STREAM,
+                (hash >> 16) as u16,
+                (hash & 0xffff) as u16,
+                0,
+            )],
+        );
+        let table = |slot: usize| -> (u8, u16, u16) {
+            if slot == 0x200 + 4 {
+                (CHR_KIND_BG_STREAM, 9, 99)
+            } else {
+                (0, 0, 0)
+            }
+        };
+
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.bg[0].tilemap_adr = 0;
+        frame.bg[0].tile_adr = 0x2000;
+        frame.screen_enabled = [0x01, 0x00];
+
+        let (mut modern, bg_cells) = extract_modern_frame_from_sources(&frame, &table, &atlas);
+        let (sprite_cells, sprites) = extract_modern_sprites_from_sources(&frame, &table, &atlas);
+        modern.index_sprites = sprites;
+        let ctx = crate::modern_hd_overrides::HdOverrideCtx::disabled();
+        let manual_rgba = crate::modern_software::render_modern_frame_full_scaled(
+            &modern,
+            &bg_cells,
+            &sprite_cells,
+            &ctx,
+            1,
+        );
+        let manual_map = build_hd_placement_map(&modern, &bg_cells, &sprite_cells);
+
+        let capture = render_hd_capture_from_sources(&frame, &table, &atlas);
+
+        assert_eq!(capture.rgba, manual_rgba);
+        assert_eq!(capture.placements, manual_map);
+        assert_eq!(capture.cgram_rgba, modern.cgram_rgba);
+        assert_eq!(
+            capture.placements,
+            vec![HdPlacement {
+                key: format!("0x{source_key:016x}"),
+                x: 0,
+                y: -1,
+                w: 8,
+                h: 8,
+            }]
+        );
     }
 }

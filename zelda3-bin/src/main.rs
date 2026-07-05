@@ -11804,8 +11804,6 @@ fn write_reference_palette_png(
 /// vars, like every replay run). Mode-7 frames are skipped (the sources path, like
 /// the live present path, doesn't cover Mode 7).
 fn run_dump_hd_capture(args: &[String]) {
-    use renderer::hd_authoring::build_hd_placement_map;
-
     let targets: Vec<u32> = args.iter().filter_map(|s| s.parse::<u32>().ok()).collect();
     if targets.is_empty() {
         eprintln!("usage: zelda3 --dump-hd-capture <frame> [frame...]");
@@ -11859,33 +11857,16 @@ fn run_dump_hd_capture(args: &[String]) {
             continue;
         }
         let src_table = VramChrSourceTableView::new(game.vram_chr_source());
-        let (mut modern, bg_cells) = renderer::modern_extract::extract_modern_frame_from_sources(
-            &gpu_frame, &src_table, &atlas,
-        );
-        let (sprite_cells, sprites) = renderer::modern_extract::extract_modern_sprites_from_sources(
-            &gpu_frame, &src_table, &atlas,
-        );
-        modern.index_sprites = sprites;
-
-        // Native RGBA (scale 1, overrides disabled) — the colorized frame SR ingests.
-        let ctx = renderer::modern_hd_overrides::HdOverrideCtx::disabled();
-        let rgba = renderer::modern_software::render_modern_frame_full_scaled(
-            &modern,
-            &bg_cells,
-            &sprite_cells,
-            &ctx,
-            1,
-        );
+        let capture =
+            renderer::hd_authoring::render_hd_capture_from_sources(&gpu_frame, &src_table, &atlas);
         let png_path = format!("{OUT_DIR}/frame_{completed}.png");
-        if let Err(e) = write_rgba_frame_png(Path::new(&png_path), &rgba, 256, 224) {
+        if let Err(e) = write_rgba_frame_png(Path::new(&png_path), &capture.rgba, 256, 224) {
             eprintln!("failed to write {png_path}: {e}");
             process::exit(1);
         }
 
-        // Placement map.
-        let map = build_hd_placement_map(&modern, &bg_cells, &sprite_cells);
         let map_path = format!("{OUT_DIR}/frame_{completed}.map.json");
-        let json = match serde_json::to_vec_pretty(&map) {
+        let json = match serde_json::to_vec_pretty(&capture.placements) {
             Ok(j) => j,
             Err(e) => {
                 eprintln!("failed to serialize placement map: {e}");
@@ -11900,14 +11881,17 @@ fn run_dump_hd_capture(args: &[String]) {
         // Reference palette from the FIRST captured frame's CGRAM (256x1 RGBA).
         if first_capture {
             let pal_path = format!("{OUT_DIR}/reference_palette.png");
-            if let Err(e) = write_reference_palette_png(&pal_path, &modern.cgram_rgba) {
+            if let Err(e) = write_reference_palette_png(&pal_path, &capture.cgram_rgba) {
                 eprintln!("failed to write {pal_path}: {e}");
                 process::exit(1);
             }
             first_capture = false;
         }
         captured += 1;
-        eprintln!("captured frame {completed}: {} placements", map.len());
+        eprintln!(
+            "captured frame {completed}: {} placements",
+            capture.placements.len()
+        );
     }
 
     if captured < targets.len() {

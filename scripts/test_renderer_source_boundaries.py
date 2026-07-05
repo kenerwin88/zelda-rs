@@ -32,7 +32,19 @@ def source_with_required_calls(body: str) -> str:
 
 
 class RendererSourceBoundaryTests(unittest.TestCase):
-    def test_allows_only_hd_authoring_manual_extraction(self):
+    def test_allows_renderer_owned_source_render_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_dump_hd_capture() {
+                renderer::hd_authoring::render_hd_capture_from_sources();
+            }
+            """
+        )
+
+        self.assertEqual(module.check_source_text(source), [])
+
+    def test_rejects_hd_authoring_manual_extraction(self):
         module = load_module()
         source = source_with_required_calls(
             """
@@ -44,7 +56,10 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             """
         )
 
-        self.assertEqual(module.check_source_text(source), [])
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("run_dump_hd_capture", errors[0])
 
     def test_rejects_trace_path_manual_extraction(self):
         module = load_module()

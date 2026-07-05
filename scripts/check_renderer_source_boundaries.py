@@ -70,12 +70,6 @@ def manual_extract_occurrences(source: str) -> list[Occurrence]:
     return occurrences
 
 
-def allowed_manual_extract(occurrence: Occurrence) -> bool:
-    if occurrence.function == "run_dump_hd_capture":
-        return "build_hd_placement_map" in occurrence.context
-    return False
-
-
 def check_source_text(source: str) -> list[str]:
     errors: list[str] = []
     for required in REQUIRED_RENDERER_OWNED_CALLS:
@@ -84,13 +78,12 @@ def check_source_text(source: str) -> list[str]:
 
     occurrences = manual_extract_occurrences(source)
     for occurrence in occurrences:
-        if not allowed_manual_extract(occurrence):
-            fn = occurrence.function or "<module>"
-            errors.append(
-                "manual source extraction escaped renderer boundary at "
-                f"zelda3-bin/src/main.rs:{occurrence.line_number} "
-                f"in {fn}: {occurrence.line}"
-            )
+        fn = occurrence.function or "<module>"
+        errors.append(
+            "manual source extraction escaped renderer boundary at "
+            f"zelda3-bin/src/main.rs:{occurrence.line_number} "
+            f"in {fn}: {occurrence.line}"
+        )
     return errors
 
 
