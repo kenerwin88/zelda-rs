@@ -17,6 +17,7 @@ REPO = Path(__file__).resolve().parents[1]
 MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
 GPU_COMPARE_RS = REPO / "zelda3-bin" / "src" / "gpu_compare.rs"
 GPU_CAPTURE_RS = REPO / "zelda3-bin" / "src" / "gpu_capture.rs"
+IMAGE_OUTPUT_RS = REPO / "zelda3-bin" / "src" / "image_output.rs"
 GPU_READBACK_RS = REPO / "zelda3-bin" / "src" / "gpu_readback.rs"
 PLAY_RENDERER_RS = REPO / "zelda3-bin" / "src" / "play_renderer.rs"
 BOUNDARY_SOURCE_FILES = (
@@ -25,6 +26,7 @@ BOUNDARY_SOURCE_FILES = (
     GPU_COMPARE_RS,
     REPO / "zelda3-bin" / "src" / "gpu_capture.rs",
     GPU_READBACK_RS,
+    IMAGE_OUTPUT_RS,
     REPO / "zelda3-bin" / "src" / "play_renderer.rs",
     REPO / "zelda3-bin" / "src" / "render_diagnostics.rs",
 )
@@ -322,6 +324,14 @@ FORBIDDEN_MAIN_RENDER_DIAGNOSTIC_OWNERSHIP = (
     "struct RenderDiff",
     "fn compare_oracle_render_frame",
     "fn format_render_ppu_summary",
+)
+
+FORBIDDEN_MAIN_IMAGE_OUTPUT_OWNERSHIP = (
+    "fn write_argb_frame_png",
+    "fn write_assets_index_png",
+    "fn write_rgba_frame_png",
+    "fn decode_rgba_png",
+    "const ASSETS_PNG_COLUMNS",
 )
 
 FORBIDDEN_RAW_RENDER_HASH_CALLS = (
@@ -751,6 +761,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "render diagnostic ownership escaped render_diagnostics boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_IMAGE_OUTPUT_OWNERSHIP:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "image output ownership escaped image_output boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

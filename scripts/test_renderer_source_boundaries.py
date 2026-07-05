@@ -907,6 +907,26 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_image_output_ownership_in_main(self):
+        module = load_module()
+        source = """
+            const ASSETS_PNG_COLUMNS: usize = 128;
+            fn write_argb_frame_png() {}
+            fn write_assets_index_png() {}
+            fn write_rgba_frame_png() {}
+            fn decode_rgba_png() {}
+            """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 5)
+        self.assertTrue(
+            all(
+                "image output ownership escaped image_output boundary" in error
+                for error in errors
+            )
+        )
+
     def test_rejects_gpu_frame_assembly_calls(self):
         module = load_module()
         source = source_with_required_calls(

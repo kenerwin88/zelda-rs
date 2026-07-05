@@ -11,6 +11,7 @@ mod developer_modern_map;
 mod gpu_capture;
 mod gpu_compare;
 mod gpu_readback;
+mod image_output;
 mod play_renderer;
 mod render_diagnostics;
 
@@ -32,6 +33,9 @@ use gpu_capture::{render_hd_capture_from_game, render_live_game_gpu_frame_rgba};
 use gpu_compare::{
     gpu_render_compare_run, modern_index_compare_run_from_env, replay_cpu_bgra_hash_line,
     replay_optional_gpu_readback_renderer, run_play_gpu_render_compare,
+};
+use image_output::{
+    decode_rgba_png, write_argb_frame_png, write_assets_index_png, write_rgba_frame_png,
 };
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
@@ -10611,35 +10615,6 @@ fn run_slice_hd_cells(args: &[String]) {
     println!("wrote {} cells + hd_art/manifest.json", written.len());
 }
 
-/// Decode any RGBA8 PNG to `(rgba, width, height)`; RGB is expanded to RGBA (alpha
-/// 0xff). Used by [`run_slice_hd_cells`] to read the super-resolved source frames.
-fn decode_rgba_png(path: &Path) -> Option<(Vec<u8>, u32, u32)> {
-    let file = fs::File::open(path).ok()?;
-    let decoder = png::Decoder::new(std::io::BufReader::new(file));
-    let mut reader = decoder.read_info().ok()?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
-    let info = reader.next_frame(&mut buf).ok()?;
-    let bytes = &buf[..info.buffer_size()];
-    let rgba = match (info.color_type, info.bit_depth) {
-        (png::ColorType::Rgba, png::BitDepth::Eight) => bytes.to_vec(),
-        (png::ColorType::Rgb, png::BitDepth::Eight) => {
-            let mut rgba = Vec::with_capacity((info.width * info.height * 4) as usize);
-            for rgb in bytes.chunks_exact(3) {
-                rgba.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 0xff]);
-            }
-            rgba
-        }
-        (color, depth) => {
-            eprintln!(
-                "{}: unsupported PNG format {color:?}/{depth:?}",
-                path.display()
-            );
-            return None;
-        }
-    };
-    Some((rgba, info.width, info.height))
-}
-
 /// Walk the combined-route replay and extract a REAL colored sprite sheet: every
 /// visible OAM 8x8 tile is decoded from live VRAM, colored with the live sprite
 /// palette (CGRAM), and deduped by its 8x8 RGBA appearance so each unique colored
@@ -11347,81 +11322,6 @@ fn snes_cgram_entry_to_rgba(entry: Option<u16>) -> [u8; 4] {
     ]
 }
 
-fn write_argb_frame_png(
-    path: &Path,
-    frame: &[u8],
-    width: u32,
-    height: u32,
-) -> Result<(), Box<dyn Error>> {
-    let mut rgba = Vec::with_capacity(frame.len());
-    for pixel in frame.chunks_exact(4) {
-        rgba.push(pixel[2]);
-        rgba.push(pixel[1]);
-        rgba.push(pixel[0]);
-        rgba.push(0xff);
-    }
-    let file = fs::File::create(path)?;
-    let writer = BufWriter::new(file);
-    let mut encoder = png::Encoder::new(writer, width, height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    let mut png = encoder.write_header()?;
-    png.write_image_data(&rgba)?;
-    Ok(())
-}
-
-/// Cells per row in the assets-by-source index PNG grid. The loader derives the
-/// column count from the PNG width (`width / 8`), so this is a layout choice only.
-const ASSETS_PNG_COLUMNS: usize = 128;
-
-/// Encode the flat `bin` (`cell_count * 64` palette-slot indices) as a viewable
-/// INDEXED PNG grid — the parity "index channel" that replaces
-/// `assets_by_source.bin`. Each pixel is the 0..15 palette slot (0 = transparent);
-/// the actual color comes from live CGRAM at render time, so the sheet stays
-/// palette-agnostic and byte-exact. Cells are laid out `ASSETS_PNG_COLUMNS` per
-/// row, 8x8 each; trailing grid slots past `cell_count` are index 0.
-fn write_assets_index_png(path: &str, bin: &[u8], cell_count: usize) -> Result<(), Box<dyn Error>> {
-    let cols = ASSETS_PNG_COLUMNS;
-    let rows = cell_count.div_ceil(cols).max(1);
-    let img_w = cols * 8;
-    let img_h = rows * 8;
-    let mut pixels = vec![0u8; img_w * img_h];
-    for cell in 0..cell_count {
-        let cx = (cell % cols) * 8;
-        let cy = (cell / cols) * 8;
-        for py in 0..8 {
-            for px in 0..8 {
-                pixels[(cy + py) * img_w + (cx + px)] = bin[cell * 64 + py * 8 + px];
-            }
-        }
-    }
-    // 32-entry viewing palette (index 0 transparent; 1..31 distinct hues). The atlas
-    // stores palette SLOTS 0..31 — 0..15 for BG/sprite/Link, 0..31 for BG3 HUD cells
-    // whose BG3->CGRAM mapping (palette*4 + pal_idx) is baked in — so the palette must
-    // cover 0..31 for the PNG to be a valid indexed image in external viewers. These
-    // colors are for human inspection only; the renderer reads the raw index.
-    let mut palette = vec![0u8; 32 * 3];
-    for i in 1..32usize {
-        let t = (i as u8).wrapping_mul(37); // spread across 0..255 (37 is coprime to 256)
-        palette[i * 3] = t;
-        palette[i * 3 + 1] = t.wrapping_mul(2).wrapping_add(48);
-        palette[i * 3 + 2] = 255u8.wrapping_sub(t);
-    }
-    let mut trns = vec![255u8; 32];
-    trns[0] = 0; // index 0 → transparent
-
-    let file = fs::File::create(path)?;
-    let writer = BufWriter::new(file);
-    let mut encoder = png::Encoder::new(writer, img_w as u32, img_h as u32);
-    encoder.set_color(png::ColorType::Indexed);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.set_palette(palette);
-    encoder.set_trns(trns);
-    let mut png = encoder.write_header()?;
-    png.write_image_data(&pixels)?;
-    Ok(())
-}
-
 /// FNV-1a hash over R, G, B channels of an RGBA frame (pixel[0]=R, [1]=G, [2]=B).
 ///
 /// Produces the same hash value as the C oracle's RGB hash for identical pixel
@@ -11444,23 +11344,6 @@ fn fingerprint_audio_hash(
         dsp_write_hash,
         dsp_write_values_hash,
     ])
-}
-
-/// Write an RGBA frame to a PNG.
-fn write_rgba_frame_png(
-    path: &Path,
-    rgba: &[u8],
-    width: u32,
-    height: u32,
-) -> Result<(), Box<dyn Error>> {
-    let file = fs::File::create(path)?;
-    let writer = BufWriter::new(file);
-    let mut encoder = png::Encoder::new(writer, width, height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    let mut png = encoder.write_header()?;
-    png.write_image_data(rgba)?;
-    Ok(())
 }
 
 fn run_lockstep(args: &[String]) {
