@@ -624,10 +624,9 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(all("run_replay_save" in error for error in errors))
 
-    def test_rejects_cli_debug_play_render_calls(self):
+    def test_rejects_main_play_render_calls(self):
         module = load_module()
-        source = source_with_required_calls(
-            """
+        source = """
             fn write_lockstep_parity_failure_artifacts() {
                 render_play_frame_bgra(&mut rust_state, &mut rust_frame, pitch, PpuRenderFlags::empty());
             }
@@ -635,15 +634,22 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             fn run_dump_overworld_screen() {
                 render_play_frame_bgra(&mut game, &mut frame, pitch, PpuRenderFlags::empty());
             }
+
+            fn compare_oracle_render_frame() {
+                render_play_frame_bgra(&mut game_state, game_frame, pitch, PpuRenderFlags::empty());
+            }
+
+            fn render_lockstep_frames_in_place() {
+                render_play_frame_bgra(&mut oracle.game, game_frame, pitch, PpuRenderFlags::empty());
+            }
             """
-        )
 
-        errors = module.check_source_text(source)
+        errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 2)
+        self.assertEqual(len(errors), 4)
         self.assertTrue(
             all(
-                "CLI/debug play render escaped play_renderer boundary" in error
+                "play render escaped play_renderer boundary" in error
                 for error in errors
             )
         )

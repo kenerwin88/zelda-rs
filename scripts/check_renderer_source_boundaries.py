@@ -236,9 +236,8 @@ FORBIDDEN_REPLAY_FINGERPRINT_RENDER_CALLS = (
     "fp_render_leaf = render_fingerprint_leaf_bgra(",
 )
 
-FORBIDDEN_CLI_DEBUG_PLAY_RENDER_CALLS = (
-    ("write_lockstep_parity_failure_artifacts", "render_play_frame_bgra("),
-    ("run_dump_overworld_screen", "render_play_frame_bgra("),
+FORBIDDEN_MAIN_PLAY_RENDER_CALLS = (
+    "render_play_frame_bgra(",
 )
 
 FORBIDDEN_RAW_RENDER_HASH_CALLS = (
@@ -565,14 +564,6 @@ def check_source_text(source: str) -> list[str]:
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
-        for function_name, forbidden in FORBIDDEN_CLI_DEBUG_PLAY_RENDER_CALLS:
-            fn = enclosing_function(lines, index) or "<module>"
-            if fn == function_name and forbidden in line:
-                errors.append(
-                    "CLI/debug play render escaped play_renderer boundary at "
-                    f"zelda3-bin/src/main.rs:{index + 1} "
-                    f"in {fn}: {line.strip()}"
-                )
         for forbidden in FORBIDDEN_RAW_RENDER_HASH_CALLS:
             if forbidden in line:
                 fn = enclosing_function(lines, index) or "<module>"
@@ -612,6 +603,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "live GPU play backend ownership escaped gpu_capture boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_PLAY_RENDER_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "play render escaped play_renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

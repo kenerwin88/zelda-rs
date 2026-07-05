@@ -36,7 +36,8 @@ use platform::{
 };
 use play_renderer::{
     render_hash_frame_bgra_line, render_lockstep_artifact_frame_bgra,
-    render_overworld_screen_dump_bgra, render_play_frame_bgra, render_replay_fingerprint_leaf_bgra,
+    render_lockstep_oracle_frames_in_place, render_oracle_compare_frames_bgra,
+    render_overworld_screen_dump_bgra, render_replay_fingerprint_leaf_bgra,
     render_replay_projection_bgra, run_play_frame_bgra, run_play_frame_with_run_what_bgra,
 };
 use serde::{Deserialize, Serialize};
@@ -12029,7 +12030,12 @@ fn run_play_lockstep(args: &[String]) {
             }
             process::exit(1);
         }
-        render_lockstep_frames_in_place(&mut oracle, &mut game_frame, &mut snes_frame, pitch);
+        render_lockstep_oracle_frames_in_place(
+            &mut oracle,
+            &mut game_frame,
+            &mut snes_frame,
+            pitch,
+        );
 
         let bsnes_capture = bsnes
             .as_mut()
@@ -12161,11 +12167,7 @@ fn compare_oracle_render_frame(
     pitch: usize,
     width: usize,
 ) -> Option<RenderDiff> {
-    let mut game_state = oracle.game.clone();
-    let mut snes_state = snes_render_state(oracle);
-
-    render_play_frame_bgra(&mut game_state, game_frame, pitch, PpuRenderFlags::empty());
-    render_play_frame_bgra(&mut snes_state, snes_frame, pitch, PpuRenderFlags::empty());
+    let rendered = render_oracle_compare_frames_bgra(oracle, game_frame, snes_frame, pitch);
 
     let mut mismatched_pixels = 0usize;
     let mut first_pixel = usize::MAX;
@@ -12192,41 +12194,9 @@ fn compare_oracle_render_frame(
         first_pixel,
         mine_pixel,
         theirs_pixel,
-        mine_ppu: format_render_ppu_summary(&game_state),
-        theirs_ppu: format_render_ppu_summary(&snes_state),
+        mine_ppu: format_render_ppu_summary(&rendered.game_state),
+        theirs_ppu: format_render_ppu_summary(&rendered.snes_state),
     })
-}
-
-fn snes_render_state(oracle: &LockstepOracle) -> ZeldaState {
-    let mut snes_state = oracle.game.clone();
-    snes_state.ppu = oracle.snes.ppu.clone();
-    snes_state.dma = oracle.snes.dma.clone();
-    snes_state.ram.copy_from_slice(&oracle.snes.ram);
-    snes_state
-        .ram
-        .copy_within(0x1b00..0x1b00 + 224 * 2, 0x1dba0);
-    snes_state.sram.copy_from_slice(&oracle.snes.cart.ram);
-    snes_state
-}
-
-fn render_lockstep_frames_in_place(
-    oracle: &mut LockstepOracle,
-    game_frame: &mut [u8],
-    snes_frame: &mut [u8],
-    pitch: usize,
-) {
-    render_play_frame_bgra(&mut oracle.game, game_frame, pitch, PpuRenderFlags::empty());
-
-    let mut snes_state = oracle.game.clone();
-    snes_state.ppu = oracle.snes.ppu.clone();
-    snes_state.dma = oracle.snes.dma.clone();
-    snes_state.ram.copy_from_slice(&oracle.snes.ram);
-    snes_state.sram.copy_from_slice(&oracle.snes.cart.ram);
-    render_play_frame_bgra(&mut snes_state, snes_frame, pitch, PpuRenderFlags::empty());
-    oracle.snes.ppu = snes_state.ppu;
-    oracle.snes.dma = snes_state.dma;
-    oracle.snes.ram.copy_from_slice(&snes_state.ram);
-    oracle.snes.cart.ram.copy_from_slice(&snes_state.sram);
 }
 
 fn format_render_ppu_summary(state: &ZeldaState) -> String {
