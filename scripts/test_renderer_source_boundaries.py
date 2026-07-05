@@ -21,6 +21,7 @@ def source_with_required_calls(body: str) -> str:
     required = """
     fn run_play_with_state() {
         let assets = renderer::ModernAssetFrameResources::load_from_env();
+        frontend.set_renderer_mode(renderer::RendererMode::from_effective_env());
         let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(0);
         let compare_scene = renderer::ModernIndexCompareScene::from_main_module_and_player_indoors_flag(9, 0);
         let stats = renderer::ModernAssetLiveStats::from_env();
@@ -192,13 +193,15 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let _ = "ZELDA3_VARIANT_ATLAS";
                 renderer::ModernAssetFrameResources::load_for_mode(mode, root);
                 renderer::ModernIndexCompareResources::load_for_mode(enabled, mode, root, true);
+                let renderer_env = renderer::EffectiveRendererMode::from_env();
+                renderer_env.uses_source_atlas();
             }
             """
         )
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 7)
+        self.assertEqual(len(errors), 9)
         self.assertTrue(
             all("modern asset loading policy escaped renderer boundary" in error for error in errors)
         )

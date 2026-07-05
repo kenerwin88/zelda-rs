@@ -15,6 +15,18 @@ impl RendererMode {
             _ => Self::Classic,
         }
     }
+
+    pub fn from_effective_mode(mode: EffectiveRendererMode<'_>) -> Self {
+        if mode.uses_source_atlas() {
+            Self::Modern
+        } else {
+            Self::parse(Some(mode.name()))
+        }
+    }
+
+    pub fn from_effective_env() -> Self {
+        Self::from_effective_mode(EffectiveRendererMode::from_env())
+    }
 }
 
 pub const DEFAULT_RENDERER_ENV: &str = "assets-variant-gpu";
@@ -125,6 +137,32 @@ mod tests {
         );
         assert_eq!(RendererMode::parse(Some("modern")), RendererMode::Modern);
         assert_eq!(RendererMode::parse(Some("garbage")), RendererMode::Classic);
+    }
+
+    #[test]
+    fn renderer_mode_from_effective_mode_owns_asset_mode_mapping() {
+        assert_eq!(
+            RendererMode::from_effective_mode(EffectiveRendererMode::from_name(
+                "assets-variant-gpu"
+            )),
+            RendererMode::Modern
+        );
+        assert_eq!(
+            RendererMode::from_effective_mode(EffectiveRendererMode::from_name("assets-anim-gpu")),
+            RendererMode::Modern
+        );
+        assert_eq!(
+            RendererMode::from_effective_mode(EffectiveRendererMode::from_name("assets-anim")),
+            RendererMode::Modern
+        );
+        assert_eq!(
+            RendererMode::from_effective_mode(EffectiveRendererMode::from_name("modern-compare")),
+            RendererMode::ModernCompare
+        );
+        assert_eq!(
+            RendererMode::from_effective_mode(EffectiveRendererMode::from_name("classic")),
+            RendererMode::Classic
+        );
     }
 
     #[test]

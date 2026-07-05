@@ -1508,13 +1508,7 @@ fn run_play_with_state(mut game: ZeldaState) {
     // separately). GPU asset modes intercept Mode 7 and source-atlas misses in
     // `GpuPlayRenderer::present_frame`, so the default path does not need
     // `FrameRenderer::render_modern_frame`'s CPU compositor.
-    let renderer_env = renderer::EffectiveRendererMode::from_env();
-    let renderer_mode = if renderer_env.uses_source_atlas() {
-        renderer::RendererMode::Modern
-    } else {
-        renderer::RendererMode::parse(Some(renderer_env.name()))
-    };
-    frontend.set_renderer_mode(renderer_mode);
+    frontend.set_renderer_mode(renderer::RendererMode::from_effective_env());
     let mut frame = vec![0u8; width as usize * height as usize * 4];
     let audio_samples = frontend.audio_samples_per_frame();
     let audio_channels = frontend.audio_channels();

@@ -20,6 +20,7 @@ MANUAL_EXTRACT = "extract_modern_frame_from_sources"
 REQUIRED_RENDERER_OWNED_CALLS = (
     "present_modern_asset_frame",
     "ModernAssetFrameResources::load_from_env",
+    "RendererMode::from_effective_env",
     "ModernAssetFrameScene",
     "ModernIndexCompareScene",
     "ModernAssetLiveStats",
@@ -71,6 +72,8 @@ FORBIDDEN_ASSET_POLICY_CALLS = (
     "ZELDA3_VARIANT_ATLAS",
     "ModernAssetFrameResources::load_for_mode(",
     "ModernIndexCompareResources::load_for_mode(",
+    "EffectiveRendererMode::from_env()",
+    "uses_source_atlas()",
 )
 
 FORBIDDEN_HD_OVERRIDE_CALLS = (
