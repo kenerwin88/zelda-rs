@@ -206,6 +206,8 @@ FORBIDDEN_DIRECT_MODERN_ATLAS_COMPARE_CALLS = (
 FORBIDDEN_DIRECT_GPU_RENDER_COMPARE_CALLS = (
     "renderer::compare_bgra_to_rgba(",
     "renderer::compare_gpu_render_bgra_to_rgba(",
+    ".comparison.",
+    ".divergence_line.",
     "gpu-render-divergence frame=",
 )
 

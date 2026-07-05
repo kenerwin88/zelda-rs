@@ -21,8 +21,8 @@ pub struct GpuRenderComparison {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GpuRenderFrameComparison {
-    pub comparison: GpuRenderComparison,
-    pub divergence_line: Option<String>,
+    comparison: GpuRenderComparison,
+    divergence_line: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -35,6 +35,20 @@ pub struct RenderFrameHashReport {
 pub struct RenderHashPair {
     pub cpu_hash: u32,
     pub gpu_hash: u32,
+}
+
+impl GpuRenderFrameComparison {
+    pub fn diff(&self) -> Option<GpuRenderDiff> {
+        self.comparison.diff
+    }
+
+    pub fn divergence_line(&self) -> Option<&str> {
+        self.divergence_line.as_deref()
+    }
+
+    pub fn cpu_hash(&self) -> u32 {
+        self.comparison.cpu_hash
+    }
 }
 
 pub(crate) fn render_frame_rgb_hash_rgba(frame: &[u8]) -> u32 {
@@ -261,11 +275,22 @@ mod tests {
         let report = compare_gpu_render_frame_bgra_to_rgba(42, &cpu_bgra, &gpu_rgba);
 
         assert_eq!(
-            report.divergence_line.as_deref(),
+            report.divergence_line(),
             Some(
                 "gpu-render-divergence frame=42 mismatched_pixels=1 first_mismatch=(1, 0) cpu_rgb=(4,5,6) gpu_rgb=(4,7,6) cpu_hash=0x03d252aa gpu_hash=0x43d73498"
             )
         );
+        assert_eq!(
+            report.diff(),
+            Some(GpuRenderDiff {
+                mismatched_pixels: 1,
+                first_x: 1,
+                first_y: 0,
+                cpu_rgb: (4, 5, 6),
+                gpu_rgb: (4, 7, 6),
+            })
+        );
+        assert_eq!(report.cpu_hash(), 0x03d252aa);
     }
 
     #[test]
@@ -275,8 +300,8 @@ mod tests {
 
         let report = compare_gpu_render_frame_bgra_to_rgba(42, &cpu_bgra, &gpu_rgba);
 
-        assert_eq!(report.divergence_line, None);
-        assert_eq!(report.comparison.diff, None);
+        assert_eq!(report.divergence_line(), None);
+        assert_eq!(report.diff(), None);
     }
 
     #[test]

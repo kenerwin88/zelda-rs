@@ -3687,8 +3687,8 @@ fn run_replay_save(args: &[String]) {
             let gpu_rgba = offscreen.render_gpu_frame(&gpu_frame);
             let render_comparison =
                 renderer::compare_gpu_render_frame_bgra_to_rgba(frames, frame, &gpu_rgba);
-            if let Some(diff) = render_comparison.comparison.diff {
-                if let Some(line) = render_comparison.divergence_line.as_deref() {
+            if let Some(diff) = render_comparison.diff() {
+                if let Some(line) = render_comparison.divergence_line() {
                     eprintln!("{line}");
                 }
                 eprintln!(
@@ -3758,11 +3758,11 @@ fn run_replay_save(args: &[String]) {
             }
             gpu_render_compare_count = gpu_render_compare_count.wrapping_add(1);
             gpu_render_compare_last_frame = frames;
-            gpu_render_compare_last_hash = render_comparison.comparison.cpu_hash;
+            gpu_render_compare_last_hash = render_comparison.cpu_hash();
             if !gpu_render_compare_quiet {
                 println!(
                     "gpu-render-compare frame={frames} hash=0x{:08x} mismatched_pixels=0",
-                    render_comparison.comparison.cpu_hash
+                    render_comparison.cpu_hash()
                 );
             }
         }
@@ -12241,8 +12241,8 @@ fn compare_gpu_render_current_frame(
     let gpu_rgba = offscreen.render_gpu_frame(&gpu_frame);
     let render_comparison =
         renderer::compare_gpu_render_frame_bgra_to_rgba(frames, frame, &gpu_rgba);
-    if let Some(diff) = render_comparison.comparison.diff {
-        if let Some(line) = render_comparison.divergence_line.as_deref() {
+    if let Some(diff) = render_comparison.diff() {
+        if let Some(line) = render_comparison.divergence_line() {
             eprintln!("{line}");
         }
         eprintln!(
@@ -12311,7 +12311,7 @@ fn compare_gpu_render_current_frame(
         return None;
     }
 
-    Some(render_comparison.comparison.cpu_hash)
+    Some(render_comparison.cpu_hash())
 }
 
 fn cgram_match(cgram: &[u16], rgb: (u8, u8, u8)) -> String {

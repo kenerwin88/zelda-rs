@@ -560,6 +560,8 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             fn run_play_with_state() {
                 let diff = renderer::compare_bgra_to_rgba(&cpu, &gpu);
                 let comparison = renderer::compare_gpu_render_bgra_to_rgba(&cpu, &gpu);
+                let direct_diff = report.comparison.diff;
+                let line = report.divergence_line.as_deref();
                 eprintln!("gpu-render-divergence frame={frames}");
             }
             """
@@ -567,7 +569,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 3)
+        self.assertEqual(len(errors), 5)
         self.assertTrue(
             all("gpu render compare diff assembly escaped renderer boundary" in error for error in errors)
         )
