@@ -5257,10 +5257,10 @@ fn run_replay_save(args: &[String]) {
                 }
                 if frames == 332 {
                     // extra debug
-                    let cpu_hash = renderer::render_frame_rgb_hash_bgra(frame);
-                    let gpu_hash = renderer::render_frame_rgb_hash_rgba(&gpu_rgba);
+                    let hashes = renderer::render_hash_pair_bgra_rgba(frame, &gpu_rgba);
                     eprintln!(
-                        "[gpu-dbg] frame=332 cpu_hash={cpu_hash:#010x} gpu_hash={gpu_hash:#010x}"
+                        "[gpu-dbg] frame=332 cpu_hash={:#010x} gpu_hash={:#010x}",
+                        hashes.cpu_hash, hashes.gpu_hash
                     );
                     eprintln!(
                         "[gpu-dbg] frame=332 ppu_mode={} screen_enabled={:#04x} brightness={}",
@@ -5441,7 +5441,7 @@ fn run_replay_save(args: &[String]) {
             let frame = render_hash_frame.as_mut().expect("render frame allocated");
             draw_play_ppu_frame(&mut game, frame, 256 * 4, PpuRenderFlags::empty());
             last_frame_had_fingerprint_render = true;
-            fp_render_leaf = renderer::render_frame_rgb_hash_bgra(frame);
+            fp_render_leaf = renderer::render_fingerprint_leaf_bgra(frame);
         }
         if let Some(w) = fingerprint_writer
             .as_mut()

@@ -31,7 +31,13 @@ pub struct RenderFrameHashReport {
     pub line: String,
 }
 
-pub fn render_frame_rgb_hash_rgba(frame: &[u8]) -> u32 {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RenderHashPair {
+    pub cpu_hash: u32,
+    pub gpu_hash: u32,
+}
+
+pub(crate) fn render_frame_rgb_hash_rgba(frame: &[u8]) -> u32 {
     let mut hash = 2166136261u32;
     for pixel in frame.chunks_exact(4) {
         hash = (hash ^ u32::from(pixel[0])).wrapping_mul(16777619); // R
@@ -41,7 +47,7 @@ pub fn render_frame_rgb_hash_rgba(frame: &[u8]) -> u32 {
     hash
 }
 
-pub fn render_frame_rgb_hash_bgra(frame: &[u8]) -> u32 {
+pub(crate) fn render_frame_rgb_hash_bgra(frame: &[u8]) -> u32 {
     let mut hash = 2166136261u32;
     for pixel in frame.chunks_exact(4) {
         hash = (hash ^ u32::from(pixel[2])).wrapping_mul(16777619); // R
@@ -64,6 +70,17 @@ pub fn gpu_render_hash_frame_rgba(frame: u32, frame_rgba: &[u8]) -> RenderFrameH
     RenderFrameHashReport {
         hash,
         line: render_hash_line("gpu-render-hash", frame, hash),
+    }
+}
+
+pub fn render_fingerprint_leaf_bgra(frame_bgra: &[u8]) -> u32 {
+    render_frame_rgb_hash_bgra(frame_bgra)
+}
+
+pub fn render_hash_pair_bgra_rgba(cpu_bgra: &[u8], gpu_rgba: &[u8]) -> RenderHashPair {
+    RenderHashPair {
+        cpu_hash: render_frame_rgb_hash_bgra(cpu_bgra),
+        gpu_hash: render_frame_rgb_hash_rgba(gpu_rgba),
     }
 }
 
@@ -274,6 +291,18 @@ mod tests {
         assert_eq!(gpu.hash, render_frame_rgb_hash_rgba(&rgba));
         assert_eq!(cpu.line, "render-hash frame=42 hash=0x03d252aa");
         assert_eq!(gpu.line, "gpu-render-hash frame=42 hash=0x03d252aa");
+    }
+
+    #[test]
+    fn semantic_render_hash_helpers_own_raw_hash_reads() {
+        let bgra = [3, 2, 1, 0xff, 6, 5, 4, 0xff];
+        let rgba = [1, 2, 3, 0xff, 4, 5, 6, 0xff];
+
+        let pair = render_hash_pair_bgra_rgba(&bgra, &rgba);
+
+        assert_eq!(pair.cpu_hash, render_frame_rgb_hash_bgra(&bgra));
+        assert_eq!(pair.gpu_hash, render_frame_rgb_hash_rgba(&rgba));
+        assert_eq!(render_fingerprint_leaf_bgra(&bgra), pair.cpu_hash);
     }
 
     #[test]

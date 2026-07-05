@@ -36,6 +36,8 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "compare_gpu_render_frame_bgra_to_rgba",
     "render_hash_frame_bgra",
     "gpu_render_hash_frame_rgba",
+    "render_hash_pair_bgra_rgba",
+    "render_fingerprint_leaf_bgra",
     "GpuFrame::from_source_and_raw_scanlines",
     "render_compare_frame",
     "compare_frame",
@@ -171,9 +173,9 @@ FORBIDDEN_RENDER_HASH_REPORT_CALLS = (
     '"gpu-render-hash frame=',
 )
 
-FORBIDDEN_DIRECT_MODERN_ATLAS_COMPARE_HASH_CALLS = (
-    "renderer::render_frame_rgb_hash_rgba(&classic_rgba)",
-    "renderer::render_frame_rgb_hash_rgba(&modern_render.rgba)",
+FORBIDDEN_RAW_RENDER_HASH_CALLS = (
+    "renderer::render_frame_rgb_hash_bgra(",
+    "renderer::render_frame_rgb_hash_rgba(",
 )
 
 FORBIDDEN_GPU_FRAME_ASSEMBLY_CALLS = (
@@ -383,11 +385,11 @@ def check_source_text(source: str) -> list[str]:
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
-        for forbidden in FORBIDDEN_DIRECT_MODERN_ATLAS_COMPARE_HASH_CALLS:
+        for forbidden in FORBIDDEN_RAW_RENDER_HASH_CALLS:
             if forbidden in line:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
-                    "modern atlas compare hash assembly escaped renderer boundary at "
+                    "raw render hash escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
