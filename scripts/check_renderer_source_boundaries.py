@@ -19,6 +19,7 @@ BOUNDARY_SOURCE_FILES = (
     MAIN_RS,
     REPO / "zelda3-bin" / "src" / "gpu_capture.rs",
     REPO / "zelda3-bin" / "src" / "play_renderer.rs",
+    REPO / "zelda3-bin" / "src" / "render_diagnostics.rs",
 )
 
 MANUAL_EXTRACT = "extract_modern_frame_from_sources"
@@ -247,6 +248,13 @@ FORBIDDEN_MAIN_RENDER_HASH_HELPER_CALLS = (
 FORBIDDEN_MAIN_REPLAY_PLAY_RENDER_HELPER_CALLS = (
     "render_replay_projection_bgra(",
     "render_replay_fingerprint_leaf_bgra(",
+)
+
+FORBIDDEN_MAIN_PLAY_RENDERER_DIAGNOSTIC_CALLS = (
+    "render_lockstep_artifact_frame_bgra(",
+    "render_overworld_screen_dump_bgra(",
+    "render_oracle_compare_frames_bgra(",
+    "render_lockstep_oracle_frames_in_place(",
 )
 
 FORBIDDEN_RAW_RENDER_HASH_CALLS = (
@@ -636,6 +644,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "replay play-render helper escaped gpu_capture boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_PLAY_RENDERER_DIAGNOSTIC_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "diagnostic play-render helper escaped render_diagnostics boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

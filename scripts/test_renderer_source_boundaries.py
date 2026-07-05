@@ -707,6 +707,37 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(all("run_replay_save" in error for error in errors))
 
+    def test_rejects_main_play_renderer_diagnostic_calls(self):
+        module = load_module()
+        source = """
+            fn write_lockstep_parity_failure_artifacts() {
+                render_lockstep_artifact_frame_bgra(&mut rust_state, &mut rust_frame);
+            }
+
+            fn run_dump_overworld_screen() {
+                render_overworld_screen_dump_bgra(&mut game, &mut frame);
+            }
+
+            fn compare_oracle_render_frame() {
+                render_oracle_compare_frames_bgra(oracle, game_frame, snes_frame, pitch);
+            }
+
+            fn run_play_lockstep() {
+                render_lockstep_oracle_frames_in_place(&mut oracle, &mut game_frame, &mut snes_frame, pitch);
+            }
+            """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 4)
+        self.assertTrue(
+            all(
+                "diagnostic play-render helper escaped render_diagnostics boundary"
+                in error
+                for error in errors
+            )
+        )
+
     def test_rejects_gpu_frame_assembly_calls(self):
         module = load_module()
         source = source_with_required_calls(

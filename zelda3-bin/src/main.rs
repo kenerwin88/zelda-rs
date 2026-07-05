@@ -9,6 +9,7 @@ mod developer_destinations;
 mod developer_modern_map;
 mod gpu_capture;
 mod play_renderer;
+mod render_diagnostics;
 
 use std::backtrace::Backtrace;
 use std::collections::HashMap;
@@ -34,10 +35,11 @@ use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
     HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
 };
-use play_renderer::{
-    render_lockstep_artifact_frame_bgra, render_lockstep_oracle_frames_in_place,
-    render_oracle_compare_frames_bgra, render_overworld_screen_dump_bgra, run_play_frame_bgra,
-    run_play_frame_with_run_what_bgra,
+use play_renderer::{run_play_frame_bgra, run_play_frame_with_run_what_bgra};
+use render_diagnostics::{
+    render_diagnostic_lockstep_artifact_frame_bgra,
+    render_diagnostic_lockstep_oracle_frames_in_place,
+    render_diagnostic_oracle_compare_frames_bgra, render_diagnostic_overworld_screen_bgra,
 };
 use serde::{Deserialize, Serialize};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, ppu::PpuRenderFlags, Snes};
@@ -7994,8 +7996,11 @@ fn write_lockstep_parity_failure_artifacts(
     oracle_state
         .sram
         .copy_from_slice(&post_oracle.snes.cart.ram);
-    render_lockstep_artifact_frame_bgra(&mut rust_state, &mut rust_frame);
-    render_lockstep_artifact_frame_bgra(&mut oracle_state, &mut snes_state_rust_render_frame);
+    render_diagnostic_lockstep_artifact_frame_bgra(&mut rust_state, &mut rust_frame);
+    render_diagnostic_lockstep_artifact_frame_bgra(
+        &mut oracle_state,
+        &mut snes_state_rust_render_frame,
+    );
     write_argb_frame_png(&dir.join("rust_frame.png"), &rust_frame, width, height)?;
     write_argb_frame_png(
         &dir.join("snes_state_rust_render_frame.png"),
@@ -8843,7 +8848,7 @@ fn run_dump_overworld_screen(args: &[String]) {
     let width = 256u32;
     let height = 224u32;
     let mut frame = vec![0u8; width as usize * height as usize * 4];
-    render_overworld_screen_dump_bgra(&mut game, &mut frame);
+    render_diagnostic_overworld_screen_bgra(&mut game, &mut frame);
     if let Err(e) = write_argb_frame_png(&out_path, &frame, width, height) {
         eprintln!("failed to write {}: {e}", out_path.display());
         process::exit(1);
@@ -12029,7 +12034,7 @@ fn run_play_lockstep(args: &[String]) {
             }
             process::exit(1);
         }
-        render_lockstep_oracle_frames_in_place(
+        render_diagnostic_lockstep_oracle_frames_in_place(
             &mut oracle,
             &mut game_frame,
             &mut snes_frame,
@@ -12166,7 +12171,8 @@ fn compare_oracle_render_frame(
     pitch: usize,
     width: usize,
 ) -> Option<RenderDiff> {
-    let rendered = render_oracle_compare_frames_bgra(oracle, game_frame, snes_frame, pitch);
+    let rendered =
+        render_diagnostic_oracle_compare_frames_bgra(oracle, game_frame, snes_frame, pitch);
 
     let mut mismatched_pixels = 0usize;
     let mut first_pixel = usize::MAX;
