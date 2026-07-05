@@ -428,6 +428,7 @@ mod tests {
             source_atlas: None,
             variant_atlas: None,
             hd_overrides: None,
+            mode7_source_chars: None,
             gpu_asset_mode,
         }
     }
@@ -478,6 +479,26 @@ mod tests {
             report.failure_line(),
             Some("gpu_path_unsupported_live reason=mode7-live-vram count=1")
         );
+        assert_eq!(report.fallback_presentation_context(), None);
+    }
+
+    #[test]
+    fn record_present_output_accepts_source_backed_mode7_route() {
+        let mut live = ModernAssetLiveStats {
+            require_full_gpu_path: true,
+            ..Default::default()
+        };
+        let output = crate::ModernAssetFramePresentOutput {
+            result: crate::ModernAssetFramePresentResult::Presented {
+                via: "mode7-source-gpu",
+                variant_stats: None,
+            },
+            in_dungeon: false,
+        };
+
+        let report = live.record_present_output(&output, &live_resources(true));
+
+        assert_eq!(report.failure_line(), None);
         assert_eq!(report.fallback_presentation_context(), None);
     }
 

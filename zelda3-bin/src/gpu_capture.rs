@@ -15,6 +15,7 @@ pub struct LiveGpuFrameCapture {
     cgram: Vec<u16>,
     raw_scanlines: Box<RawScanlineFrame>,
     source_entries: Vec<zelda3::LogicalChrSrc>,
+    mode7_source_chars: Option<Vec<u8>>,
     main_module: u8,
     player_indoors: u8,
 }
@@ -25,6 +26,7 @@ impl LiveGpuFrameCapture {
         let raw_scanlines = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
         let source_entries = game.vram_chr_source().as_slice().to_vec();
+        let mode7_source_chars = game.mode7_character_source().map(<[u8]>::to_vec);
         let main_module = game.ram[MAIN_MODULE_INDEX];
         let player_indoors = game.ram[PLAYER_IS_INDOORS];
         Self {
@@ -32,6 +34,7 @@ impl LiveGpuFrameCapture {
             cgram,
             raw_scanlines,
             source_entries,
+            mode7_source_chars,
             main_module,
             player_indoors,
         }
@@ -61,6 +64,10 @@ impl LiveGpuFrameCapture {
         &self.source_entries
     }
 
+    pub fn mode7_source_chars(&self) -> Option<&[u8]> {
+        self.mode7_source_chars.as_deref()
+    }
+
     pub fn main_module(&self) -> u8 {
         self.main_module
     }
@@ -77,6 +84,7 @@ impl LiveGpuFrameCapture {
         renderer::ModernAssetFrameLivePresentInput {
             frame: self.capture_input(),
             source_entries: &self.source_entries,
+            mode7_source_chars: self.mode7_source_chars(),
             resources,
             stats,
             player_indoors: self.player_indoors,

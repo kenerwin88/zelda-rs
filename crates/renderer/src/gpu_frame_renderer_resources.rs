@@ -115,6 +115,7 @@ impl GpuFrameRendererResources {
         queue: &'a wgpu::Queue,
         frame: &'a GpuFrame<'frame>,
         output_view: &'a wgpu::TextureView,
+        mode7_source_chars: Option<&'a [u8]>,
     ) -> GpuFrameRendererBackend<'a, 'frame> {
         GpuFrameRendererBackend {
             tile_atlas: &mut self.tile_atlas,
@@ -129,6 +130,7 @@ impl GpuFrameRendererResources {
             queue,
             frame,
             output_view,
+            mode7_source_chars,
         }
     }
 }

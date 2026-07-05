@@ -162,6 +162,7 @@ where
     pub player_indoors: u8,
     pub gpu_frame: &'a crate::gpu_frame::GpuFrame<'frame>,
     pub source_entries: &'a [T],
+    pub mode7_source_chars: Option<&'a [u8]>,
     pub resources: &'a crate::ModernIndexCompareResources,
     pub classic_rgba: &'a [u8],
     pub allow_source_cpu_fallback: bool,
@@ -178,6 +179,7 @@ struct ModernIndexCompareFrameRenderInput<
     pub mode_label: &'a str,
     pub gpu_frame: &'a crate::gpu_frame::GpuFrame<'frame>,
     pub src_table: Option<&'a S>,
+    pub mode7_source_chars: Option<&'a [u8]>,
     pub resources: &'a crate::ModernIndexCompareResources,
     pub scene: crate::ModernAssetFrameScene,
     pub classic_rgba: &'a [u8],
@@ -347,7 +349,7 @@ impl ModernIndexCompareStats {
         self.compare_count += 1;
         match via {
             "gpu" | "variant-gpu" => self.gpu_count += 1,
-            "mode7-gpu" => self.mode7_gpu_count += 1,
+            "mode7-gpu" | "mode7-source-gpu" => self.mode7_gpu_count += 1,
             "mode7-cpu" | "sources" | "vram" => self.cpu_count += 1,
             _ => {}
         }
@@ -518,6 +520,7 @@ impl ModernIndexCompareStats {
             input.resources.source_atlas(),
             input.resources.gpu_headless(),
             input.resources.variant_headless(),
+            input.mode7_source_chars,
             input.scene,
             trace_pixel.map(|trace| (trace.x, trace.y)),
             input.allow_source_cpu_fallback,
@@ -562,6 +565,7 @@ impl ModernIndexCompareStats {
             mode_label: compare_scene.mode_label(),
             gpu_frame: input.gpu_frame,
             src_table: Some(&src_table),
+            mode7_source_chars: input.mode7_source_chars,
             resources: input.resources,
             scene: compare_scene.asset_scene(),
             classic_rgba: input.classic_rgba,
@@ -1101,6 +1105,26 @@ mod tests {
                 "gpu_path_unsupported frame=44 mode=map ppumode=7 via=mode7-gpu reason=mode7-live-vram count=1 mismatch_px=0"
             )
         );
+    }
+
+    #[test]
+    fn report_failure_line_accepts_source_backed_mode7_when_parity_passes() {
+        let mut stats = ModernIndexCompareStats::default();
+        let report = stats.record_frame(ModernIndexCompareFrameRecord {
+            frame: 44,
+            mode_label: "map",
+            ppu_mode: 7,
+            via: "mode7-source-gpu",
+            variant_stats: None,
+            comparison: ModernIndexCompareFrameDiff {
+                mismatch: 0,
+                diff: None,
+            },
+            run_config: run_config_with_requirements(true, true),
+            include_diff_in_frame_line: false,
+        });
+
+        assert_eq!(report.failure_line(), None);
     }
 
     #[test]

@@ -23,6 +23,7 @@ struct Mode7Uniforms {
 @group(0) @binding(0) var cgram_palette: texture_2d<f32>;
 @group(0) @binding(1) var<storage, read> vram: array<u32>;
 @group(0) @binding(2) var<uniform> uni: Mode7Uniforms;
+@group(0) @binding(3) var<storage, read> source_chars: array<u32>;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
@@ -143,7 +144,7 @@ fn fs_main(@builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
     if outside && (uni.flags & 0x2u) == 0u {
         pixel = 0u;
     } else {
-        pixel = (vram[tile * 64u + u32((y_pos & 7) * 8 + (x_pos & 7))] >> 8u) & 0xffu;
+        pixel = source_chars[tile * 64u + u32((y_pos & 7) * 8 + (x_pos & 7))] & 0xffu;
     }
     if pixel == 0u {
         discard;

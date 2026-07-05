@@ -48,6 +48,25 @@ impl GpuFrameRenderer {
             frame,
             output_view,
             GpuFramePlan::from_frame(frame),
+            None,
+        );
+    }
+
+    pub fn render_frame_with_mode7_source_chars(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        queue: &wgpu::Queue,
+        frame: &GpuFrame<'_>,
+        output_view: &wgpu::TextureView,
+        mode7_source_chars: &[u8],
+    ) {
+        self.execute_frame_plan(
+            encoder,
+            queue,
+            frame,
+            output_view,
+            GpuFramePlan::from_frame(frame),
+            Some(mode7_source_chars),
         );
     }
 
@@ -58,8 +77,11 @@ impl GpuFrameRenderer {
         frame: &GpuFrame<'_>,
         output_view: &wgpu::TextureView,
         frame_plan: GpuFramePlan,
+        mode7_source_chars: Option<&[u8]>,
     ) {
-        let mut backend = self.resources.backend(encoder, queue, frame, output_view);
+        let mut backend =
+            self.resources
+                .backend(encoder, queue, frame, output_view, mode7_source_chars);
         GpuFramePlanExecutor::execute(frame_plan, &mut backend);
     }
 

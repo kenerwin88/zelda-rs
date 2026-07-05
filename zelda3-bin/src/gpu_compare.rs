@@ -482,6 +482,7 @@ impl ModernIndexCompareRun {
                 player_indoors: capture.player_indoors(),
                 gpu_frame: &gpu_frame,
                 source_entries: capture.source_entries(),
+                mode7_source_chars: capture.mode7_source_chars(),
                 resources,
                 classic_rgba,
                 allow_source_cpu_fallback: self.allow_source_cpu_fallback,

@@ -8243,6 +8243,10 @@ impl ZeldaState {
         (offset + 1 < bytes.len()).then(|| read_word_from_slice(bytes, offset))
     }
 
+    pub fn mode7_character_source(&self) -> Option<&[u8]> {
+        self.asset_raw(66)
+    }
+
     pub fn replay_gloves_color(&self, index: usize) -> u16 {
         self.gloves_color[index & 1]
     }

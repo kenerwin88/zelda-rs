@@ -10,14 +10,19 @@ const SCANLINE_WINDOW_OFFSET: usize = SCANLINE_TM_OFFSET + SCANLINE_BYTES;
 const SCANLINE_MODE7_OFFSET: usize = SCANLINE_WINDOW_OFFSET + SCANLINE_BYTES;
 const SCANLINE_MODE7_BYTES: usize = 224 * 8 * 4;
 const UNIFORM_BYTES: usize = SCANLINE_MODE7_OFFSET + SCANLINE_MODE7_BYTES;
+const MODE7_CHAR_BYTES: usize = 0x4000;
+const MODE7_CHAR_STORAGE_BYTES: usize = MODE7_CHAR_BYTES * 4;
 
 pub struct Mode7Renderer {
     pipeline: wgpu::RenderPipeline,
     vram_buf: wgpu::Buffer,
+    source_char_buf: wgpu::Buffer,
     uniform_buf: [wgpu::Buffer; 2],
     bind_group: [wgpu::BindGroup; 2],
     last_vram_hash: u32,
+    last_source_char_hash: u32,
     vram_bytes: Vec<u8>,
+    source_char_bytes: Vec<u8>,
 }
 
 impl Mode7Renderer {
@@ -29,6 +34,12 @@ impl Mode7Renderer {
         let vram_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("mode7_vram"),
             size: VRAM_BYTES as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let source_char_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("mode7_source_chars"),
+            size: MODE7_CHAR_STORAGE_BYTES as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -78,6 +89,16 @@ impl Mode7Renderer {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -101,6 +122,10 @@ impl Mode7Renderer {
                     wgpu::BindGroupEntry {
                         binding: 2,
                         resource: uniform_buf[screen].as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: source_char_buf.as_entire_binding(),
                     },
                 ],
             })
@@ -141,10 +166,13 @@ impl Mode7Renderer {
         Self {
             pipeline,
             vram_buf,
+            source_char_buf,
             uniform_buf,
             bind_group,
             last_vram_hash: 0,
+            last_source_char_hash: 0,
             vram_bytes: vec![0; VRAM_BYTES],
+            source_char_bytes: vec![0; MODE7_CHAR_STORAGE_BYTES],
         }
     }
 
@@ -161,6 +189,7 @@ impl Mode7Renderer {
         window_flags_shift: u32,
     ) {
         self.prepare_vram(queue, frame.vram);
+        self.prepare_source_chars_from_vram(queue, frame.vram);
         self.render_prepared(
             encoder,
             queue,
@@ -185,6 +214,37 @@ impl Mode7Renderer {
             self.vram_bytes[i * 4..i * 4 + 4].copy_from_slice(&u32::from(word).to_le_bytes());
         }
         queue.write_buffer(&self.vram_buf, 0, &self.vram_bytes);
+    }
+
+    /// Upload source-backed Mode 7 character pixels once before prepared render passes.
+    pub fn prepare_source_chars(&mut self, queue: &wgpu::Queue, chars: &[u8]) {
+        let hash = fnv32_u8_prefix(chars, MODE7_CHAR_BYTES);
+        if hash == self.last_source_char_hash {
+            return;
+        }
+        self.last_source_char_hash = hash;
+        self.source_char_bytes.fill(0);
+        for (i, &byte) in chars.iter().take(MODE7_CHAR_BYTES).enumerate() {
+            self.source_char_bytes[i * 4..i * 4 + 4]
+                .copy_from_slice(&u32::from(byte).to_le_bytes());
+        }
+        queue.write_buffer(&self.source_char_buf, 0, &self.source_char_bytes);
+    }
+
+    /// Mirror legacy live-VRAM Mode 7 character pixels into the source buffer.
+    pub fn prepare_source_chars_from_vram(&mut self, queue: &wgpu::Queue, vram: &[u16]) {
+        let hash = fnv32_mode7_vram_chars(vram);
+        if hash == self.last_source_char_hash {
+            return;
+        }
+        self.last_source_char_hash = hash;
+        self.source_char_bytes.fill(0);
+        for (i, &word) in vram.iter().take(MODE7_CHAR_BYTES).enumerate() {
+            let byte = ((word >> 8) & 0xff) as u8;
+            self.source_char_bytes[i * 4..i * 4 + 4]
+                .copy_from_slice(&u32::from(byte).to_le_bytes());
+        }
+        queue.write_buffer(&self.source_char_buf, 0, &self.source_char_bytes);
     }
 
     /// Render using the Mode 7 VRAM buffer last supplied to `prepare_vram`.
@@ -289,6 +349,29 @@ fn fnv32_u16(words: &[u16]) -> u32 {
         let [lo, hi] = word.to_le_bytes();
         hash = (hash ^ u32::from(lo)).wrapping_mul(16777619);
         hash = (hash ^ u32::from(hi)).wrapping_mul(16777619);
+    }
+    hash
+}
+
+fn fnv32_u8_prefix(bytes: &[u8], len: usize) -> u32 {
+    let mut hash = 2166136261u32;
+    for &byte in bytes.iter().take(len) {
+        hash = (hash ^ u32::from(byte)).wrapping_mul(16777619);
+    }
+    for _ in bytes.len().min(len)..len {
+        hash = (hash ^ 0).wrapping_mul(16777619);
+    }
+    hash
+}
+
+fn fnv32_mode7_vram_chars(words: &[u16]) -> u32 {
+    let mut hash = 2166136261u32;
+    for &word in words.iter().take(MODE7_CHAR_BYTES) {
+        let byte = ((word >> 8) & 0xff) as u8;
+        hash = (hash ^ u32::from(byte)).wrapping_mul(16777619);
+    }
+    for _ in words.len().min(MODE7_CHAR_BYTES)..MODE7_CHAR_BYTES {
+        hash = (hash ^ 0).wrapping_mul(16777619);
     }
     hash
 }

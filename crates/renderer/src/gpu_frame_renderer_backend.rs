@@ -22,6 +22,7 @@ pub(crate) struct GpuFrameRendererBackend<'a, 'frame> {
     pub(crate) queue: &'a wgpu::Queue,
     pub(crate) frame: &'a GpuFrame<'frame>,
     pub(crate) output_view: &'a wgpu::TextureView,
+    pub(crate) mode7_source_chars: Option<&'a [u8]>,
 }
 
 impl GpuFramePlanBackend for GpuFrameRendererBackend<'_, '_> {
@@ -35,6 +36,12 @@ impl GpuFramePlanBackend for GpuFrameRendererBackend<'_, '_> {
 
     fn prepare_mode7_vram(&mut self) {
         self.mode7.prepare_vram(self.queue, self.frame.vram);
+        match self.mode7_source_chars {
+            Some(chars) => self.mode7.prepare_source_chars(self.queue, chars),
+            None => self
+                .mode7
+                .prepare_source_chars_from_vram(self.queue, self.frame.vram),
+        }
     }
 
     fn prepare_sprites(&mut self) {

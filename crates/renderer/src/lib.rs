@@ -2069,6 +2069,7 @@ where
 {
     pub frame: &'a GpuFrame<'frame>,
     pub source_entries: &'a [T],
+    pub mode7_source_chars: Option<&'a [u8]>,
     pub resources: &'a ModernAssetFrameResources,
     pub player_indoors: u8,
 }
@@ -2084,6 +2085,7 @@ where
 {
     pub frame: GpuFrameCaptureInput<'frame>,
     pub source_entries: &'a [T],
+    pub mode7_source_chars: Option<&'a [u8]>,
     pub resources: &'a ModernAssetFrameResources,
     pub stats: &'a mut ModernAssetLiveStats,
     pub player_indoors: u8,
@@ -2097,6 +2099,7 @@ pub struct ModernAssetFrameResources {
     source_atlas: Option<modern_source_atlas::ModernSourceAtlas>,
     variant_atlas: Option<modern_variant_atlas::ModernVariantAtlas>,
     hd_overrides: Option<modern_hd_overrides::ModernHdOverrides>,
+    mode7_source_chars: Option<Vec<u8>>,
     gpu_asset_mode: bool,
 }
 
@@ -2124,8 +2127,14 @@ impl ModernAssetFrameResources {
             source_atlas,
             variant_atlas,
             hd_overrides: modern_hd_overrides::ModernHdOverrides::from_env(),
+            mode7_source_chars: None,
             gpu_asset_mode: mode.uses_gpu_assets(),
         })
+    }
+
+    pub fn with_mode7_source_chars(mut self, chars: &[u8]) -> Self {
+        self.mode7_source_chars = Some(chars.to_vec());
+        self
     }
 
     pub fn source_atlas(&self) -> Option<&modern_source_atlas::ModernSourceAtlas> {
@@ -2134,6 +2143,10 @@ impl ModernAssetFrameResources {
 
     pub fn variant_atlas(&self) -> Option<&modern_variant_atlas::ModernVariantAtlas> {
         self.variant_atlas.as_ref()
+    }
+
+    pub fn mode7_source_chars(&self) -> Option<&[u8]> {
+        self.mode7_source_chars.as_deref()
     }
 
     fn gpu_asset_mode(&self) -> bool {
@@ -2392,6 +2405,7 @@ impl ModernIndexCompareScene {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ModernAssetFramePresentRoute {
+    Mode7SourceGpu,
     Mode7Gpu,
     SourceVariantGpu,
     SourceGpu,
@@ -2405,10 +2419,13 @@ fn modern_asset_frame_present_route(
     has_src_table: bool,
     has_source_atlas: bool,
     has_variant_atlas: bool,
+    has_mode7_source_chars: bool,
     gpu_asset_mode: bool,
 ) -> ModernAssetFramePresentRoute {
     if frame_mode == 7 {
-        return if gpu_asset_mode {
+        return if gpu_asset_mode && has_mode7_source_chars {
+            ModernAssetFramePresentRoute::Mode7SourceGpu
+        } else if gpu_asset_mode {
             ModernAssetFramePresentRoute::Mode7Gpu
         } else {
             ModernAssetFramePresentRoute::Unhandled
@@ -2866,15 +2883,28 @@ impl FrameRenderer {
         frame: &GpuFrame<'_>,
         src_table: Option<&S>,
         resources: &ModernAssetFrameResources,
+        mode7_source_chars: Option<&[u8]>,
         scene: ModernAssetFrameScene,
     ) -> Result<ModernAssetFramePresentResult, RenderError> {
+        let mode7_source_chars = mode7_source_chars.or_else(|| resources.mode7_source_chars());
         match modern_asset_frame_present_route(
             frame.mode,
             src_table.is_some(),
             resources.source_atlas().is_some(),
             resources.variant_atlas().is_some(),
+            mode7_source_chars.is_some(),
             resources.gpu_asset_mode(),
         ) {
+            ModernAssetFramePresentRoute::Mode7SourceGpu => {
+                self.present_modern_mode7_source_gpu(
+                    frame,
+                    mode7_source_chars.expect("route requires Mode 7 source chars"),
+                )?;
+                Ok(ModernAssetFramePresentResult::Presented {
+                    via: "mode7-source-gpu",
+                    variant_stats: None,
+                })
+            }
             ModernAssetFramePresentRoute::Mode7Gpu => {
                 self.present_modern_mode7_gpu(frame)?;
                 Ok(ModernAssetFramePresentResult::Presented {
@@ -2948,8 +2978,13 @@ impl FrameRenderer {
     {
         let src_table = source_table_from_entries(input.source_entries);
         let scene = ModernAssetFrameScene::from_player_indoors_flag(input.player_indoors);
-        let result =
-            self.present_modern_asset_frame(input.frame, Some(&src_table), input.resources, scene)?;
+        let result = self.present_modern_asset_frame(
+            input.frame,
+            Some(&src_table),
+            input.resources,
+            input.mode7_source_chars,
+            scene,
+        )?;
         Ok(ModernAssetFramePresentOutput {
             result,
             in_dungeon: scene.in_dungeon(),
@@ -3205,11 +3240,34 @@ impl FrameRenderer {
         )
     }
 
+    /// Present a source-backed Mode-7 frame through the live GPU PPU path, then
+    /// GPU-copy the native 256x224 result into the standard presentation texture.
+    pub fn present_modern_mode7_source_gpu(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        mode7_source_chars: &[u8],
+    ) -> Result<(), RenderError> {
+        self.present_modern_mode7_gpu_inner(
+            frame,
+            Some(mode7_source_chars),
+            "modern_gpu_mode7_source_live",
+        )
+    }
+
     /// Present a Mode-7 frame through the live GPU PPU path, then GPU-copy the
     /// native 256x224 result into the standard presentation texture. This is
     /// used by GPU atlas modes because Mode 7 is not a Mode-1 source-atlas
     /// tilemap, but it still has a real GPU renderer.
     pub fn present_modern_mode7_gpu(&mut self, frame: &GpuFrame<'_>) -> Result<(), RenderError> {
+        self.present_modern_mode7_gpu_inner(frame, None, "modern_gpu_mode7_live")
+    }
+
+    fn present_modern_mode7_gpu_inner(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        mode7_source_chars: Option<&[u8]>,
+        encoder_label: &'static str,
+    ) -> Result<(), RenderError> {
         debug_assert_eq!(frame.mode, 7);
         let format = wgpu::TextureFormat::Rgba8Unorm;
         if self.modern_gpu_target.is_none() {
@@ -3247,10 +3305,20 @@ impl FrameRenderer {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("modern_gpu_mode7_live"),
+                label: Some(encoder_label),
             });
-        self.gpu_renderer
-            .render_frame(&mut encoder, &self.queue, frame, target_view);
+        match mode7_source_chars {
+            Some(chars) => self.gpu_renderer.render_frame_with_mode7_source_chars(
+                &mut encoder,
+                &self.queue,
+                frame,
+                target_view,
+                chars,
+            ),
+            None => self
+                .gpu_renderer
+                .render_frame(&mut encoder, &self.queue, frame, target_view),
+        }
         encoder.copy_texture_to_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: target_texture,
@@ -3731,6 +3799,7 @@ mod tests {
             source_atlas: None,
             variant_atlas: None,
             hd_overrides: None,
+            mode7_source_chars: None,
             gpu_asset_mode: true,
         };
 
@@ -3916,19 +3985,23 @@ mod tests {
     #[test]
     fn modern_asset_frame_route_keeps_default_paths_on_gpu() {
         assert_eq!(
-            modern_asset_frame_present_route(7, true, true, true, true),
+            modern_asset_frame_present_route(7, true, true, true, true, true),
+            ModernAssetFramePresentRoute::Mode7SourceGpu
+        );
+        assert_eq!(
+            modern_asset_frame_present_route(7, true, true, true, false, true),
             ModernAssetFramePresentRoute::Mode7Gpu
         );
         assert_eq!(
-            modern_asset_frame_present_route(1, true, true, true, true),
+            modern_asset_frame_present_route(1, true, true, true, false, true),
             ModernAssetFramePresentRoute::SourceVariantGpu
         );
         assert_eq!(
-            modern_asset_frame_present_route(1, true, true, false, true),
+            modern_asset_frame_present_route(1, true, true, false, false, true),
             ModernAssetFramePresentRoute::SourceGpu
         );
         assert_eq!(
-            modern_asset_frame_present_route(1, false, false, false, true),
+            modern_asset_frame_present_route(1, false, false, false, false, true),
             ModernAssetFramePresentRoute::VramGpu
         );
     }
@@ -3936,15 +4009,15 @@ mod tests {
     #[test]
     fn modern_asset_frame_route_preserves_explicit_non_gpu_fallbacks() {
         assert_eq!(
-            modern_asset_frame_present_route(1, true, true, false, false),
+            modern_asset_frame_present_route(1, true, true, false, false, false),
             ModernAssetFramePresentRoute::SourceSoftware
         );
         assert_eq!(
-            modern_asset_frame_present_route(7, true, true, false, false),
+            modern_asset_frame_present_route(7, true, true, false, true, false),
             ModernAssetFramePresentRoute::Unhandled
         );
         assert_eq!(
-            modern_asset_frame_present_route(1, false, false, false, false),
+            modern_asset_frame_present_route(1, false, false, false, false, false),
             ModernAssetFramePresentRoute::Unhandled
         );
     }
