@@ -706,6 +706,10 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 println!("{}", renderer::gpu_render_hash_frame_rgba(frames, &gpu_rgba).line);
                 let _hashes = renderer::render_hash_pair_bgra_rgba(frame, &gpu_rgba);
                 let _leaf = renderer::render_fingerprint_leaf_bgra(frame);
+                let _config = renderer::ModernIndexCompareRunConfig::default();
+                let _stats = renderer::ModernIndexCompareStats::from_env();
+                let _resources = load_modern_index_compare_resources(_config, root, false);
+                let _output = render_modern_index_compare_output_from_capture();
             }
             fn compare_gpu_render_current_frame() {}
             fn cgram_match() {}
@@ -713,7 +717,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 36)
+        self.assertEqual(len(errors), 40)
         self.assertTrue(
             all("live GPU play backend ownership escaped gpu_capture boundary" in error for error in errors)
         )

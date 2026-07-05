@@ -27,10 +27,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use gpu_capture::{
     capture_gpu_frame_from_game, compare_gpu_render_current_frame,
     emit_modern_index_compare_output_lines, load_modern_atlas_compare_resources,
-    load_modern_index_compare_resources, modern_compare_mode_defaults_from_env,
+    modern_compare_mode_defaults_from_env, modern_index_compare_run_from_env,
     render_gpu_capture_rgba, render_gpu_hash_frame_rgba_line, render_hash_pair_bgra_rgba,
     render_hd_capture_from_gpu_capture, render_modern_atlas_compare_report_from_capture,
-    render_modern_index_compare_output_from_capture,
 };
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
@@ -3158,8 +3157,7 @@ fn run_replay_save(args: &[String]) {
     let mut gpu_render_compare_count = 0u32;
     let mut gpu_render_compare_last_frame = 0u32;
     let mut gpu_render_compare_last_hash = 0u32;
-    let mut modern_index_compare = renderer::ModernIndexCompareRunConfig::default();
-    let mut modern_index_compare_stats = renderer::ModernIndexCompareStats::from_env();
+    let mut modern_index_compare = modern_index_compare_run_from_env();
     let ppu_mode_summary = std::env::var("ZELDA3_PPU_MODE_SUMMARY").is_ok();
     let mut ppu_mode_counts = [0u64; 8];
     let mut first_mode7_frame = None::<u32>;
@@ -3246,7 +3244,7 @@ fn run_replay_save(args: &[String]) {
                     eprintln!("invalid --modern-index-compare stride: {stride}");
                     process::exit(2);
                 });
-                if modern_index_compare.set_stride(stride).is_err() {
+                if !modern_index_compare.set_stride(stride) {
                     eprintln!("--modern-index-compare stride must be greater than zero");
                     process::exit(2);
                 }
@@ -3481,12 +3479,12 @@ fn run_replay_save(args: &[String]) {
     // explicit renderer env selects it. Explicit `assets-anim` keeps the CPU atlas
     // compositor as an opt-out/debug oracle. `assets-variant-gpu` uses compact
     // base art plus LUT effects for stable draws and reports fallback counts.
-    let modern_index_compare_resources =
-        load_modern_index_compare_resources(modern_index_compare, Path::new("."), true)
-            .unwrap_or_else(|e| {
-                eprintln!("modern index compare resources load failed: {e}");
-                process::exit(2);
-            });
+    let modern_index_compare_resources = modern_index_compare
+        .load_resources(Path::new("."), true)
+        .unwrap_or_else(|e| {
+            eprintln!("modern index compare resources load failed: {e}");
+            process::exit(2);
+        });
     let capture_panic_pre_frame =
         std::env::var_os("ZELDA3_REPLAY_CAPTURE_PANIC_PRE_FRAME").is_some();
     let mut last_frame_had_fingerprint_render = false;
@@ -5150,14 +5148,12 @@ fn run_replay_save(args: &[String]) {
                 let gpu_capture = capture_gpu_frame_from_game(&mut game);
                 let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
                 let classic_rgba = render_gpu_capture_rgba(&gpu_capture, offscreen);
-                let output_lines = render_modern_index_compare_output_from_capture(
-                    &mut modern_index_compare_stats,
+                let output_lines = modern_index_compare.render_output_from_capture(
                     &gpu_capture,
                     &modern_index_compare_resources,
                     &classic_rgba,
                     frames,
                     true,
-                    modern_index_compare,
                     false,
                 );
                 emit_modern_index_compare_output_lines(&output_lines);
@@ -5216,9 +5212,7 @@ fn run_replay_save(args: &[String]) {
         }
     }
 
-    if let Some(line) =
-        modern_index_compare_stats.summary_line_if_enabled(modern_index_compare.enabled())
-    {
+    if let Some(line) = modern_index_compare.summary_line_if_enabled() {
         println!("{line}");
     }
     if ppu_mode_summary {
@@ -11482,8 +11476,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
     let mut load_state = None::<PathBuf>;
     let mut stride = 1u32;
     let mut modern_render_compare = 0u32;
-    let mut modern_index_compare = renderer::ModernIndexCompareRunConfig::default();
-    let mut modern_index_compare_stats = renderer::ModernIndexCompareStats::from_env();
+    let mut modern_index_compare = modern_index_compare_run_from_env();
     while i < args.len() {
         match args[i].as_str() {
             "--input-script" => {
@@ -11555,7 +11548,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
                     eprintln!("invalid --modern-index-compare value: {value}");
                     process::exit(2);
                 });
-                if modern_index_compare.set_stride(value).is_err() {
+                if !modern_index_compare.set_stride(value) {
                     eprintln!("--modern-index-compare must be greater than zero");
                     process::exit(2);
                 }
@@ -11611,12 +11604,12 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 eprintln!("modern atlas compare resources load failed: {e}");
                 process::exit(2);
             });
-    let modern_index_compare_resources =
-        load_modern_index_compare_resources(modern_index_compare, Path::new("."), false)
-            .unwrap_or_else(|e| {
-                eprintln!("modern index compare resources load failed: {e}");
-                process::exit(2);
-            });
+    let modern_index_compare_resources = modern_index_compare
+        .load_resources(Path::new("."), false)
+        .unwrap_or_else(|e| {
+            eprintln!("modern index compare resources load failed: {e}");
+            process::exit(2);
+        });
     let last_panic = install_crash_panic_hook();
     let mut offscreen = pollster::block_on(OffscreenRenderer::new(256, 224));
     let mut render_frame = vec![0u8; 256 * 224 * 4];
@@ -11674,14 +11667,12 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let gpu_capture = capture_gpu_frame_from_game(&mut game);
             let classic_rgba = render_gpu_capture_rgba(&gpu_capture, &mut offscreen);
 
-            let output_lines = render_modern_index_compare_output_from_capture(
-                &mut modern_index_compare_stats,
+            let output_lines = modern_index_compare.render_output_from_capture(
                 &gpu_capture,
                 &modern_index_compare_resources,
                 &classic_rgba,
                 completed_frame,
                 false,
-                modern_index_compare,
                 true,
             );
             emit_modern_index_compare_output_lines(&output_lines);
@@ -11694,9 +11685,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
     println!(
         "play-gpu-render-compare completed compared={compared} start_frame={start_frame} last_frame={last_frame} last_hash=0x{last_hash:08x} mismatched_pixels=0"
     );
-    if let Some(line) =
-        modern_index_compare_stats.summary_line_if_enabled(modern_index_compare.enabled())
-    {
+    if let Some(line) = modern_index_compare.summary_line_if_enabled() {
         println!("{line}");
     }
 }

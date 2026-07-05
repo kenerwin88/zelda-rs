@@ -88,6 +88,11 @@ pub(crate) struct ModernCompareModeDefaults {
     pub(crate) note: Option<&'static str>,
 }
 
+pub(crate) struct ModernIndexCompareRun {
+    config: renderer::ModernIndexCompareRunConfig,
+    stats: renderer::ModernIndexCompareStats,
+}
+
 impl GpuPlayRenderer {
     fn new() -> Self {
         let modern_assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."))
@@ -160,6 +165,78 @@ pub(crate) fn modern_compare_mode_defaults_from_env() -> ModernCompareModeDefaul
     ModernCompareModeDefaults {
         enable_modern_render_compare,
         note,
+    }
+}
+
+pub(crate) fn modern_index_compare_run_from_env() -> ModernIndexCompareRun {
+    ModernIndexCompareRun {
+        config: renderer::ModernIndexCompareRunConfig::default(),
+        stats: renderer::ModernIndexCompareStats::from_env(),
+    }
+}
+
+impl ModernIndexCompareRun {
+    pub(crate) fn set_stride(&mut self, stride: u32) -> bool {
+        self.config.set_stride(stride).is_ok()
+    }
+
+    pub(crate) fn set_require_full_gpu_path(&mut self) {
+        self.config.set_require_full_gpu_path();
+    }
+
+    pub(crate) fn set_require_modern_index_parity(&mut self) {
+        self.config.set_require_modern_index_parity();
+    }
+
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        self.config.validate().map_err(|e| e.to_string())
+    }
+
+    pub(crate) fn enabled(&self) -> bool {
+        self.config.enabled()
+    }
+
+    pub(crate) fn should_compare_frame(&self, frame: u32) -> bool {
+        self.config.should_compare_frame(frame)
+    }
+
+    pub(crate) fn load_resources(
+        &self,
+        root: &Path,
+        allow_source_cpu_fallback: bool,
+    ) -> Result<renderer::ModernIndexCompareResources, String> {
+        self.config
+            .load_resources_from_env(root, allow_source_cpu_fallback)
+    }
+
+    pub(crate) fn render_output_from_capture(
+        &mut self,
+        capture: &LiveGpuFrameCapture,
+        resources: &renderer::ModernIndexCompareResources,
+        classic_rgba: &[u8],
+        frame: u32,
+        allow_source_cpu_fallback: bool,
+        include_diff_in_frame_line: bool,
+    ) -> renderer::ModernIndexCompareOutputLines {
+        let gpu_frame = capture.gpu_frame();
+        self.stats.render_compare_frame_output_from_entries(
+            renderer::ModernIndexCompareFrameOutputInput {
+                frame,
+                main_module: capture.main_module,
+                player_indoors: capture.player_indoors,
+                gpu_frame: &gpu_frame,
+                source_entries: capture.source_entries(),
+                resources,
+                classic_rgba,
+                allow_source_cpu_fallback,
+                run_config: self.config,
+                include_diff_in_frame_line,
+            },
+        )
+    }
+
+    pub(crate) fn summary_line_if_enabled(&self) -> Option<String> {
+        self.stats.summary_line_if_enabled(self.enabled())
     }
 }
 
@@ -283,44 +360,11 @@ pub(crate) fn render_hd_capture_from_gpu_capture(
     renderer::hd_authoring::render_hd_capture_from_sources(&gpu_frame, &source_table, atlas)
 }
 
-pub(crate) fn load_modern_index_compare_resources(
-    run_config: renderer::ModernIndexCompareRunConfig,
-    root: &Path,
-    allow_source_cpu_fallback: bool,
-) -> Result<renderer::ModernIndexCompareResources, String> {
-    run_config.load_resources_from_env(root, allow_source_cpu_fallback)
-}
-
 pub(crate) fn load_modern_atlas_compare_resources(
     enabled: bool,
     root: &Path,
 ) -> Result<renderer::ModernAtlasCompareResources, String> {
     renderer::ModernAtlasCompareResources::load(enabled, root)
-}
-
-pub(crate) fn render_modern_index_compare_output_from_capture(
-    stats: &mut renderer::ModernIndexCompareStats,
-    capture: &LiveGpuFrameCapture,
-    resources: &renderer::ModernIndexCompareResources,
-    classic_rgba: &[u8],
-    frame: u32,
-    allow_source_cpu_fallback: bool,
-    run_config: renderer::ModernIndexCompareRunConfig,
-    include_diff_in_frame_line: bool,
-) -> renderer::ModernIndexCompareOutputLines {
-    let gpu_frame = capture.gpu_frame();
-    stats.render_compare_frame_output_from_entries(renderer::ModernIndexCompareFrameOutputInput {
-        frame,
-        main_module: capture.main_module,
-        player_indoors: capture.player_indoors,
-        gpu_frame: &gpu_frame,
-        source_entries: capture.source_entries(),
-        resources,
-        classic_rgba,
-        allow_source_cpu_fallback,
-        run_config,
-        include_diff_in_frame_line,
-    })
 }
 
 pub(crate) fn emit_modern_index_compare_output_lines(
