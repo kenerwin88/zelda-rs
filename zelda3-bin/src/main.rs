@@ -3666,9 +3666,9 @@ fn run_replay_save(args: &[String]) {
                     pal_idx
                 );
                 let cgram_idx = (palette_sub * 16 + pal_idx) as usize;
-                let cgram_val = render_hash_capture.cgram_color(cgram_idx);
+                let cgram_val = render_hash_capture.cgram_color_hex(cgram_idx);
                 eprintln!(
-                    "[gpu-dbg] f800 BG1 at (126,65): cgram_idx={} cgram_val={:#06x}",
+                    "[gpu-dbg] f800 BG1 at (126,65): cgram_idx={} cgram_val={}",
                     cgram_idx, cgram_val
                 );
             }
@@ -3765,9 +3765,9 @@ fn run_replay_save(args: &[String]) {
                     | (((w23 >> bit) & 1) << 2)
                     | (((w23 >> (8 + bit)) & 1) << 3);
                 let cgram_idx = (palette_sub * 16 + pal_idx) as usize;
-                let cgram_val = render_hash_capture.cgram_color(cgram_idx);
+                let cgram_val = render_hash_capture.cgram_color_hex(cgram_idx);
                 eprintln!(
-                    "[gpu-dbg] f800 BG1@(126,65) POST-RENDER: tilemap_adr={} tile_adr={} entry={:#06x} tile={} pal_sub={} pal_idx={} cgram[{}]={:#06x}",
+                    "[gpu-dbg] f800 BG1@(126,65) POST-RENDER: tilemap_adr={} tile_adr={} entry={:#06x} tile={} pal_sub={} pal_idx={} cgram[{}]={}",
                     bg1.tilemap_adr,
                     bg1.tile_adr,
                     entry,
@@ -4592,7 +4592,7 @@ fn run_replay_save(args: &[String]) {
                                 (pal_idx, 16 * pal_sub + pal_idx)
                             };
                             eprintln!(
-                                "[gpu-dbg] f{frames} BG{}@({cx},{cy}): enabled_main={} tilemap={} tile_adr={} entry={:#06x} tile={} pal_sub={} prio={} px={} py={} pal_idx={} cgram[{}]={:#06x}",
+                                "[gpu-dbg] f{frames} BG{}@({cx},{cy}): enabled_main={} tilemap={} tile_adr={} entry={:#06x} tile={} pal_sub={} prio={} px={} py={} pal_idx={} cgram[{}]={}",
                                 layer + 1,
                                 (game.ppu.screen_enabled[0] & (1 << layer)) != 0,
                                 bg.tilemap_adr,
@@ -4605,7 +4605,7 @@ fn run_replay_save(args: &[String]) {
                                 py,
                                 pal_idx,
                                 cgram_idx,
-                                render_hash_capture.cgram_color(cgram_idx as usize)
+                                render_hash_capture.cgram_color_hex(cgram_idx as usize)
                             );
                         }
 
@@ -4695,7 +4695,7 @@ fn run_replay_save(args: &[String]) {
                             let palette_sub = ((oam1 & 0x0e00) >> 9) as u32;
                             let cgram_idx = 0x80 + 16 * palette_sub + pixel;
                             eprintln!(
-                                "[gpu-dbg] f{frames} sprite#{} covers ({cx},{cy}): x={} y_base={} size={} oam1={:#06x} prio={} pal_sub={} row={} col={} used_tile={:#04x} pixel={} cgram[{}]={:#06x}",
+                                "[gpu-dbg] f{frames} sprite#{} covers ({cx},{cy}): x={} y_base={} size={} oam1={:#06x} prio={} pal_sub={} row={} col={} used_tile={:#04x} pixel={} cgram[{}]={}",
                                 sprite_num,
                                 x_screen,
                                 y_base,
@@ -4708,7 +4708,7 @@ fn run_replay_save(args: &[String]) {
                                 used_tile,
                                 pixel,
                                 cgram_idx,
-                                render_hash_capture.cgram_color(cgram_idx as usize)
+                                render_hash_capture.cgram_color_hex(cgram_idx as usize)
                             );
                         }
                     }
@@ -4757,9 +4757,9 @@ fn run_replay_save(args: &[String]) {
                         let bg3_pal_idx =
                             ((bg3_w01 >> bg3_bit) & 1) | (((bg3_w01 >> (8 + bg3_bit)) & 1) << 1);
                         let bg3_cgram_idx = (bg3_pal_sub * 4 + bg3_pal_idx) as usize;
-                        let bg3_cgram_val = render_hash_capture.cgram_color(bg3_cgram_idx);
+                        let bg3_cgram_val = render_hash_capture.cgram_color_hex(bg3_cgram_idx);
                         eprintln!(
-                            "[gpu-dbg] f800 BG3@(126,65): tilemap_adr={} tile={} pal_sub={} prio={} pal_idx={} cgram[{}]={:#06x}",
+                            "[gpu-dbg] f800 BG3@(126,65): tilemap_adr={} tile={} pal_sub={} prio={} pal_idx={} cgram[{}]={}",
                             bg3.tilemap_adr,
                             bg3_tile_num,
                             bg3_pal_sub,
@@ -4800,9 +4800,9 @@ fn run_replay_save(args: &[String]) {
                         );
                         // Also log the specific GPU cgram value
                         let gpu_bg3_cgram_val =
-                            render_hash_capture.cgram_color(gpu_bg3_cgram as usize);
+                            render_hash_capture.cgram_color_hex(gpu_bg3_cgram as usize);
                         eprintln!(
-                            "[gpu-dbg] f800 GPU BG3 cgram[{}]={:#06x}",
+                            "[gpu-dbg] f800 GPU BG3 cgram[{}]={}",
                             gpu_bg3_cgram, gpu_bg3_cgram_val
                         );
                         // Check if any sprite covers (126,65) — that would explain the gold pixel

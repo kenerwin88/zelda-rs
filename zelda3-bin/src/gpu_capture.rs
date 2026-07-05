@@ -787,8 +787,12 @@ impl ReplayRenderHashCapture {
         }
     }
 
-    pub(crate) fn cgram_color(&self, index: usize) -> u16 {
+    fn cgram_color(&self, index: usize) -> u16 {
         self.capture.cgram().get(index).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn cgram_color_hex(&self, index: usize) -> String {
+        format!("{:#06x}", self.cgram_color(index))
     }
 
     pub(crate) fn debug_frame_800_scanline_screen_enabled_main_line(&self) -> String {
