@@ -2043,6 +2043,7 @@ impl ModernAssetFramePresentResult {
 pub struct ModernAssetFrameResources {
     source_atlas: Option<modern_source_atlas::ModernSourceAtlas>,
     variant_atlas: Option<modern_variant_atlas::ModernVariantAtlas>,
+    hd_overrides: Option<modern_hd_overrides::ModernHdOverrides>,
     gpu_asset_mode: bool,
 }
 
@@ -2065,6 +2066,7 @@ impl ModernAssetFrameResources {
         Ok(Self {
             source_atlas,
             variant_atlas,
+            hd_overrides: modern_hd_overrides::ModernHdOverrides::from_env(),
             gpu_asset_mode: mode.uses_gpu_assets(),
         })
     }
@@ -2079,6 +2081,13 @@ impl ModernAssetFrameResources {
 
     pub fn gpu_asset_mode(&self) -> bool {
         self.gpu_asset_mode
+    }
+
+    pub fn hd_override_ctx(&self) -> modern_hd_overrides::HdOverrideCtx<'_> {
+        match &self.hd_overrides {
+            Some(store) => modern_hd_overrides::HdOverrideCtx::new(store),
+            None => modern_hd_overrides::HdOverrideCtx::disabled(),
+        }
     }
 }
 
@@ -2590,7 +2599,6 @@ impl FrameRenderer {
         src_table: Option<&S>,
         resources: &ModernAssetFrameResources,
         scene: ModernAssetFrameScene,
-        ctx: &modern_hd_overrides::HdOverrideCtx,
     ) -> Result<ModernAssetFramePresentResult, RenderError> {
         match modern_asset_frame_present_route(
             frame.mode,
@@ -2635,13 +2643,14 @@ impl FrameRenderer {
                 })
             }
             ModernAssetFramePresentRoute::SourceSoftware => {
+                let ctx = resources.hd_override_ctx();
                 self.present_modern_frame_from_sources(
                     frame,
                     src_table.expect("route requires source table"),
                     resources
                         .source_atlas()
                         .expect("route requires source atlas"),
-                    ctx,
+                    &ctx,
                 )?;
                 Ok(ModernAssetFramePresentResult::Presented {
                     variant_stats: None,

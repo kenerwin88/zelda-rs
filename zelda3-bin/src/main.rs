@@ -1440,7 +1440,6 @@ impl renderer::modern_extract::SourceTableView for VramChrSourceTableView<'_> {
 /// how they route through GPU/software presentation.
 struct GpuPlayRenderer {
     modern_assets: renderer::ModernAssetFrameResources,
-    hd_overrides: Option<renderer::modern_hd_overrides::ModernHdOverrides>,
     variant_live_stats: VariantLiveStats,
 }
 
@@ -1727,10 +1726,8 @@ impl GpuPlayRenderer {
                     eprintln!("modern asset load failed: {e}");
                     process::exit(2);
                 });
-        let hd_overrides = renderer::modern_hd_overrides::ModernHdOverrides::from_env();
         Self {
             modern_assets,
-            hd_overrides,
             variant_live_stats: VariantLiveStats::from_env(),
         }
     }
@@ -1755,16 +1752,11 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let src_table = VramChrSourceTableView::new(game.vram_chr_source());
         let scene =
             renderer::ModernAssetFrameScene::from_in_dungeon(game.ram[PLAYER_IS_INDOORS] != 0);
-        let ctx = match &self.hd_overrides {
-            Some(store) => renderer::modern_hd_overrides::HdOverrideCtx::new(store),
-            None => renderer::modern_hd_overrides::HdOverrideCtx::disabled(),
-        };
         match frontend.present_modern_asset_frame(
             &gpu_frame,
             Some(&src_table),
             &self.modern_assets,
             scene,
-            &ctx,
         ) {
             renderer::ModernAssetFramePresentResult::Presented { variant_stats } => {
                 if let Some(stats) = variant_stats {

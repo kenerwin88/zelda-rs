@@ -48,6 +48,12 @@ FORBIDDEN_ASSET_POLICY_CALLS = (
     "load_variant_atlas_for_mode",
 )
 
+FORBIDDEN_HD_OVERRIDE_CALLS = (
+    "ModernHdOverrides::from_env",
+    "HdOverrideCtx::new",
+    "HdOverrideCtx::disabled",
+)
+
 
 @dataclass(frozen=True)
 class Occurrence:
@@ -140,6 +146,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "modern asset loading policy escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_HD_OVERRIDE_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "HD override loading policy escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

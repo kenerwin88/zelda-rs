@@ -168,6 +168,26 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(all("run_play_with_state" in error for error in errors))
 
+    def test_rejects_hd_override_loading_policy_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_play_with_state() {
+                renderer::modern_hd_overrides::ModernHdOverrides::from_env();
+                renderer::modern_hd_overrides::HdOverrideCtx::new(&store);
+                renderer::modern_hd_overrides::HdOverrideCtx::disabled();
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 3)
+        self.assertTrue(
+            all("HD override loading policy escaped renderer boundary" in error for error in errors)
+        )
+        self.assertTrue(all("run_play_with_state" in error for error in errors))
+
     def test_rejects_missing_renderer_owned_api_call(self):
         module = load_module()
         source = "fn run_play_with_state() {}"
