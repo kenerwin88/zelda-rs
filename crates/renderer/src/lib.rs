@@ -57,7 +57,10 @@ pub use modern_gpu::{
     ModernGpuCompositor, ModernGpuHeadless, ModernGpuVariantHeadless, ModernGpuVariantRenderer,
 };
 pub use post_process::scanlines_from_raw;
-pub use renderer_mode::RendererMode;
+pub use renderer_mode::{
+    default_renderer_env_for_variant_setting, renderer_env_or_default, source_atlas_renderer_mode,
+    variant_atlas_renderer_mode, EffectiveRendererMode, RendererMode,
+};
 pub use tile_atlas::{
     CgramPalette, RgbaTileOverrideData, TileAtlas, ATLAS_HEIGHT, ATLAS_TILE_COUNT, ATLAS_WIDTH,
     RGBA_TILE_OVERRIDE_LOOKUP_COUNT,
