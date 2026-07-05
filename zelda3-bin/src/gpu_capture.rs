@@ -91,6 +91,8 @@ pub(crate) struct ModernCompareModeDefaults {
 pub(crate) struct ModernIndexCompareRun {
     config: renderer::ModernIndexCompareRunConfig,
     stats: renderer::ModernIndexCompareStats,
+    resources: Option<renderer::ModernIndexCompareResources>,
+    allow_source_cpu_fallback: bool,
 }
 
 pub(crate) struct ModernAtlasCompareRun {
@@ -187,6 +189,8 @@ pub(crate) fn modern_index_compare_run_from_env() -> ModernIndexCompareRun {
     ModernIndexCompareRun {
         config: renderer::ModernIndexCompareRunConfig::default(),
         stats: renderer::ModernIndexCompareStats::from_env(),
+        resources: None,
+        allow_source_cpu_fallback: false,
     }
 }
 
@@ -241,24 +245,30 @@ impl ModernIndexCompareRun {
     }
 
     pub(crate) fn load_resources(
-        &self,
+        &mut self,
         root: &Path,
         allow_source_cpu_fallback: bool,
-    ) -> Result<renderer::ModernIndexCompareResources, String> {
-        self.config
-            .load_resources_from_env(root, allow_source_cpu_fallback)
+    ) -> Result<(), String> {
+        self.resources = Some(
+            self.config
+                .load_resources_from_env(root, allow_source_cpu_fallback)?,
+        );
+        self.allow_source_cpu_fallback = allow_source_cpu_fallback;
+        Ok(())
     }
 
     pub(crate) fn render_output_from_capture(
         &mut self,
         capture: &LiveGpuFrameCapture,
-        resources: &renderer::ModernIndexCompareResources,
         classic_rgba: &[u8],
         frame: u32,
-        allow_source_cpu_fallback: bool,
         include_diff_in_frame_line: bool,
     ) -> renderer::ModernIndexCompareOutputLines {
         let gpu_frame = capture.gpu_frame();
+        let resources = self
+            .resources
+            .as_ref()
+            .expect("modern index compare resources loaded");
         self.stats.render_compare_frame_output_from_entries(
             renderer::ModernIndexCompareFrameOutputInput {
                 frame,
@@ -268,7 +278,7 @@ impl ModernIndexCompareRun {
                 source_entries: capture.source_entries(),
                 resources,
                 classic_rgba,
-                allow_source_cpu_fallback,
+                allow_source_cpu_fallback: self.allow_source_cpu_fallback,
                 run_config: self.config,
                 include_diff_in_frame_line,
             },

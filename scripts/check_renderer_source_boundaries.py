@@ -289,6 +289,8 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "renderer::render_fingerprint_leaf_bgra(",
     "renderer::ModernIndexCompareRunConfig",
     "renderer::ModernIndexCompareStats",
+    "renderer::ModernIndexCompareResources",
+    "let modern_index_compare_resources",
     "load_modern_index_compare_resources",
     "render_modern_index_compare_output_from_capture",
     "RendererMode::parse(",

@@ -3478,7 +3478,7 @@ fn run_replay_save(args: &[String]) {
     // explicit renderer env selects it. Explicit `assets-anim` keeps the CPU atlas
     // compositor as an opt-out/debug oracle. `assets-variant-gpu` uses compact
     // base art plus LUT effects for stable draws and reports fallback counts.
-    let modern_index_compare_resources = modern_index_compare
+    modern_index_compare
         .load_resources(Path::new("."), true)
         .unwrap_or_else(|e| {
             eprintln!("modern index compare resources load failed: {e}");
@@ -5154,10 +5154,8 @@ fn run_replay_save(args: &[String]) {
                 let classic_rgba = gpu_readback.render_gpu_capture_rgba(&gpu_capture);
                 let output_lines = modern_index_compare.render_output_from_capture(
                     &gpu_capture,
-                    &modern_index_compare_resources,
                     &classic_rgba,
                     frames,
-                    true,
                     false,
                 );
                 emit_modern_index_compare_output_lines(&output_lines);
@@ -11608,7 +11606,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
             eprintln!("modern atlas compare resources load failed: {e}");
             process::exit(2);
         });
-    let modern_index_compare_resources = modern_index_compare
+    modern_index_compare
         .load_resources(Path::new("."), false)
         .unwrap_or_else(|e| {
             eprintln!("modern index compare resources load failed: {e}");
@@ -11670,10 +11668,8 @@ fn run_play_gpu_render_compare(args: &[String]) {
 
             let output_lines = modern_index_compare.render_output_from_capture(
                 &gpu_capture,
-                &modern_index_compare_resources,
                 &classic_rgba,
                 completed_frame,
-                false,
                 true,
             );
             emit_modern_index_compare_output_lines(&output_lines);
