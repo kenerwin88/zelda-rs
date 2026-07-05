@@ -14,6 +14,7 @@ Usage:
   scripts/validate_all_parity.py --frames 12000
   scripts/validate_all_parity.py --full          # full route ~1,073,092 frames
   scripts/validate_all_parity.py --full --shards 8
+  scripts/validate_all_parity.py --gpu-checkpoint-sweep
   scripts/validate_all_parity.py --build         # build target/parity/zelda3 first
 """
 
@@ -55,6 +56,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="accepted for legacy callers; golden rollups include the fingerprint mask",
     )
+    parser.add_argument(
+        "--gpu-checkpoint-sweep",
+        action="store_true",
+        help=(
+            "after zparity passes, run the self-seeding full-GPU modern-index "
+            "checkpoint sweep, including Mode-7 coverage"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -69,6 +78,15 @@ def zparity_check_command(args: argparse.Namespace) -> list[str]:
     if args.detail:
         cmd.append("--detail")
     return cmd
+
+
+def gpu_checkpoint_sweep_command() -> list[str]:
+    return [
+        sys.executable,
+        "scripts/gpu_render_compare_checkpoint_sweep.py",
+        "--build",
+        "--require-mode7",
+    ]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -92,7 +110,12 @@ def main(argv: list[str] | None = None) -> int:
 
     cmd = zparity_check_command(args)
     result = subprocess.run(cmd, cwd=REPO)
-    return result.returncode
+    if result.returncode != 0:
+        return result.returncode
+    if args.gpu_checkpoint_sweep:
+        result = subprocess.run(gpu_checkpoint_sweep_command(), cwd=REPO)
+        return result.returncode
+    return 0
 
 
 if __name__ == "__main__":
