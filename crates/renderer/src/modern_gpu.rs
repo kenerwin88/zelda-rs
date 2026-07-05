@@ -3431,7 +3431,15 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
 
 pub struct ModernAtlasCompareRender {
     pub rgba: Vec<u8>,
+    pub hash: u32,
     pub via: &'static str,
+}
+
+pub struct ModernAtlasCompareResult {
+    pub classic_hash: u32,
+    pub modern_hash: u32,
+    pub matches: bool,
+    pub render: ModernAtlasCompareRender,
 }
 
 pub fn render_modern_atlas_compare_frame(
@@ -3439,14 +3447,32 @@ pub fn render_modern_atlas_compare_frame(
     atlas: &ModernTileAtlasAsset,
 ) -> ModernAtlasCompareRender {
     let modern = crate::modern_extract::extract_modern_frame_with_atlas(frame, atlas);
+    let rgba = crate::modern_software::render_modern_frame_software(
+        &modern,
+        &atlas.rgba,
+        atlas.width_px as u16,
+        atlas.height_px as u16,
+    );
+    let hash = crate::frame_compare::render_frame_rgb_hash_rgba(&rgba);
     ModernAtlasCompareRender {
-        rgba: crate::modern_software::render_modern_frame_software(
-            &modern,
-            &atlas.rgba,
-            atlas.width_px as u16,
-            atlas.height_px as u16,
-        ),
+        rgba,
+        hash,
         via: "atlas-software",
+    }
+}
+
+pub fn compare_modern_atlas_to_rgba(
+    classic_rgba: &[u8],
+    frame: &crate::gpu_frame::GpuFrame<'_>,
+    atlas: &ModernTileAtlasAsset,
+) -> ModernAtlasCompareResult {
+    let classic_hash = crate::frame_compare::render_frame_rgb_hash_rgba(classic_rgba);
+    let render = render_modern_atlas_compare_frame(frame, atlas);
+    ModernAtlasCompareResult {
+        classic_hash,
+        modern_hash: render.hash,
+        matches: classic_hash == render.hash,
+        render,
     }
 }
 
@@ -10686,6 +10712,49 @@ mod tests {
 
         assert_eq!(render.via, "atlas-software");
         assert_eq!(render.rgba, manual);
+        assert_eq!(
+            render.hash,
+            crate::frame_compare::render_frame_rgb_hash_rgba(&manual)
+        );
+    }
+
+    #[test]
+    fn modern_atlas_compare_owns_hash_and_match_assembly() {
+        let atlas = ModernTileAtlasAsset {
+            tile_width_px: 8,
+            tile_height_px: 8,
+            atlas_scale: 1,
+            width_px: 8,
+            height_px: 8,
+            rgba: vec![0x44; 8 * 8 * 4],
+            entries: vec![crate::modern_assets::ModernTileAtlasEntry {
+                id: 0,
+                atlas_x_px: 0,
+                atlas_y_px: 0,
+                atlas_width_px: 8,
+                atlas_height_px: 8,
+                tilemap_entry: 0x0001,
+                tilemap_variants: vec![0x0001],
+            }],
+        };
+        let mut vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        vram[0] = 0x0001;
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.bg[0].tilemap_adr = 0;
+        frame.screen_enabled = [0x01, 0x00];
+
+        let expected = render_modern_atlas_compare_frame(&frame, &atlas);
+        let compare = compare_modern_atlas_to_rgba(&expected.rgba, &frame, &atlas);
+
+        assert_eq!(
+            compare.classic_hash,
+            crate::frame_compare::render_frame_rgb_hash_rgba(&expected.rgba)
+        );
+        assert_eq!(compare.modern_hash, compare.render.hash);
+        assert_eq!(compare.modern_hash, expected.hash);
+        assert!(compare.matches);
     }
 
     #[test]

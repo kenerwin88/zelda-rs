@@ -12326,13 +12326,14 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
                 // Classic GPU render (oracle) via the offscreen renderer:
                 let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
-                let old_hash = renderer::render_frame_rgb_hash_rgba(&classic_rgba);
-                let modern_render =
-                    renderer::modern_gpu::render_modern_atlas_compare_frame(&gpu_frame, atlas);
-                let modern_hash = renderer::render_frame_rgb_hash_rgba(&modern_render.rgba);
+                let modern_compare = renderer::modern_gpu::compare_modern_atlas_to_rgba(
+                    &classic_rgba,
+                    &gpu_frame,
+                    atlas,
+                );
                 println!(
-                    "modern_render_compare frame={completed_frame} old=0x{old_hash:08x} modern=0x{modern_hash:08x} match={}",
-                    old_hash == modern_hash
+                    "modern_render_compare frame={completed_frame} old=0x{:08x} modern=0x{:08x} match={}",
+                    modern_compare.classic_hash, modern_compare.modern_hash, modern_compare.matches
                 );
             }
         }

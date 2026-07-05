@@ -26,7 +26,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "compare_modern_index_rgba",
     "compare_gpu_render_bgra_to_rgba",
     "GpuFrame::from_source_and_raw_scanlines",
-    "render_modern_atlas_compare_frame",
+    "compare_modern_atlas_to_rgba",
     "render_modern_index_compare_frame",
     "render_hd_capture_from_sources",
 )
@@ -101,6 +101,11 @@ FORBIDDEN_DIRECT_MODERN_INDEX_COMPARE_CALLS = (
 
 FORBIDDEN_DIRECT_GPU_RENDER_COMPARE_CALLS = (
     "renderer::compare_bgra_to_rgba(",
+)
+
+FORBIDDEN_DIRECT_MODERN_ATLAS_COMPARE_HASH_CALLS = (
+    "renderer::render_frame_rgb_hash_rgba(&classic_rgba)",
+    "renderer::render_frame_rgb_hash_rgba(&modern_render.rgba)",
 )
 
 FORBIDDEN_GPU_FRAME_ASSEMBLY_CALLS = (
@@ -267,6 +272,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "gpu render compare diff assembly escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_DIRECT_MODERN_ATLAS_COMPARE_HASH_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "modern atlas compare hash assembly escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
