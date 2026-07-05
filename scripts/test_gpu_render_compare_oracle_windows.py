@@ -137,6 +137,18 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "requires --jobs 1"):
             parse_args()
 
+    def test_release_and_parity_profile_are_mutually_exclusive(self) -> None:
+        old_argv = sys.argv
+        sys.argv = [
+            "gpu_render_compare_oracle_windows.py",
+            "--release",
+            "--parity-profile",
+        ]
+        self.addCleanup(lambda: setattr(sys, "argv", old_argv))
+
+        with self.assertRaisesRegex(SystemExit, "cannot be combined"):
+            parse_args()
+
     def test_parse_key_value_stats_ignores_labels_and_non_numeric_values(self) -> None:
         stats = parse_key_value_stats(
             "modern_index_compare_summary compare_count=7 via=variant-gpu "
@@ -328,6 +340,29 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
         self.assertIn("--input-script", command)
         self.assertNotIn("--load-sram", command)
 
+    def test_command_for_can_use_parity_profile(self) -> None:
+        window = OracleWindow(
+            name="route",
+            status="pass",
+            frames=100,
+            input_script="",
+            coverage="",
+            notes="",
+        )
+
+        command = command_for(
+            window,
+            Path("/rom.sfc"),
+            stride=1,
+            release=False,
+            parity_profile=True,
+            renderer="assets-variant-gpu",
+            frames=10,
+        )
+
+        self.assertEqual(command[:4], ["cargo", "run", "--profile", "parity"])
+        self.assertNotIn("--release", command)
+
     def test_best_checkpoint_uses_newest_existing_matching_checkpoint(self) -> None:
         window = OracleWindow(
             name="route",
@@ -409,6 +444,7 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
             Path("/rom.sfc"),
             stride=1,
             release=True,
+            parity_profile=False,
             renderer="assets-variant-gpu",
         )
 

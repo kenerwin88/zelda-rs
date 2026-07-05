@@ -341,11 +341,14 @@ def command_for(
     rom: Path,
     stride: int,
     release: bool,
+    parity_profile: bool = False,
     renderer: str | None = None,
     frames: int | None = None,
     load_state: str | None = None,
 ) -> list[str]:
     command = ["cargo", "run"]
+    if parity_profile:
+        command.extend(["--profile", "parity"])
     if release:
         command.append("--release")
     command.extend(
@@ -379,6 +382,7 @@ def command_for_run_item(
     rom: Path,
     stride: int,
     release: bool,
+    parity_profile: bool,
     renderer: str | None,
 ) -> list[str]:
     load_state = (
@@ -389,6 +393,7 @@ def command_for_run_item(
         rom,
         stride,
         release,
+        parity_profile,
         renderer,
         frames=item.tail_frames,
         load_state=load_state,
@@ -433,6 +438,7 @@ def run_window(
     rom: Path,
     stride: int,
     release: bool,
+    parity_profile: bool,
     renderer: str | None,
     progress_every: int,
     checkpoint: OracleCheckpoint | None,
@@ -450,6 +456,7 @@ def run_window(
         rom,
         stride,
         release,
+        parity_profile,
         renderer,
         frames=run_frames,
         load_state=load_state,
@@ -587,6 +594,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--release", action="store_true")
     parser.add_argument(
+        "--parity-profile",
+        action="store_true",
+        help="run zelda3-bin with cargo's optimized parity profile",
+    )
+    parser.add_argument(
         "--progress-every",
         type=int,
         default=DEFAULT_PROGRESS_EVERY,
@@ -637,6 +649,8 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.stride <= 0:
         raise SystemExit("--stride must be greater than zero")
+    if args.release and args.parity_profile:
+        raise SystemExit("--release cannot be combined with --parity-profile")
     if args.max_frames is not None and args.max_frames <= 0:
         raise SystemExit("--max-frames must be greater than zero")
     if args.progress_every < 0:
@@ -740,6 +754,7 @@ def main() -> None:
                         args.rom,
                         args.stride,
                         args.release,
+                        args.parity_profile,
                         args.renderer,
                     )
                 )
@@ -752,6 +767,7 @@ def main() -> None:
             args.rom,
             args.stride,
             args.release,
+            args.parity_profile,
             args.renderer,
             args.progress_every,
             item.checkpoint,
