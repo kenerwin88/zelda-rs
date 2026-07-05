@@ -664,6 +664,22 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             errors,
         )
 
+    def test_rejects_live_gpu_backend_ownership_in_main(self):
+        module = load_module()
+        source = """
+            fn play_renderer_from_env() {
+                let assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."));
+                let report = frontend.present_modern_asset_live_frame_from_entries(input);
+            }
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(
+            all("live GPU play backend ownership escaped gpu_capture boundary" in error for error in errors)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

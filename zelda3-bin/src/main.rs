@@ -23,7 +23,7 @@ use std::process;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use gpu_capture::{gpu_frame_from_ppu, LiveGpuFrameCapture};
+use gpu_capture::gpu_frame_from_ppu;
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
     HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
@@ -1395,60 +1395,15 @@ impl PlayRendererBackend for CpuPlayRenderer {
     }
 }
 
-/// Modern asset resources + HD override store for the live present path, loaded
-/// once. The renderer crate owns which atlases each renderer mode requires and
-/// how they route through GPU/software presentation.
-struct GpuPlayRenderer {
-    modern_assets: renderer::ModernAssetFrameResources,
-    variant_live_stats: renderer::ModernAssetLiveStats,
-}
-
-impl GpuPlayRenderer {
-    fn new() -> Self {
-        let modern_assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."))
-            .unwrap_or_else(|e| {
-                eprintln!("modern asset load failed: {e}");
-                process::exit(2);
-            });
-        Self {
-            modern_assets,
-            variant_live_stats: renderer::ModernAssetLiveStats::from_env(),
-        }
-    }
-}
-
-impl PlayRendererBackend for GpuPlayRenderer {
-    fn name(&self) -> &'static str {
-        "gpu_render"
-    }
-
-    fn present_frame(
-        &mut self,
-        game: &mut ZeldaState,
-        frontend: &mut NativeFrontend,
-        _frame: &mut [u8],
-        _render_flags: PpuRenderFlags,
-    ) {
-        let capture = LiveGpuFrameCapture::from_game(game);
-        let report = frontend.present_modern_asset_live_frame_from_entries(
-            capture.modern_asset_present_input(&self.modern_assets, &mut self.variant_live_stats),
-        );
-        if let Some(line) = report.failure_line() {
-            eprintln!("{line}");
-            process::exit(2);
-        }
-    }
-}
-
 fn play_renderer_from_env() -> Box<dyn PlayRendererBackend> {
     match env::var("ZELDA3_RENDER_BACKEND") {
         Ok(value) if value.eq_ignore_ascii_case("cpu") => Box::new(CpuPlayRenderer),
-        Ok(value) if value.eq_ignore_ascii_case("gpu") => Box::new(GpuPlayRenderer::new()),
+        Ok(value) if value.eq_ignore_ascii_case("gpu") => gpu_capture::new_gpu_play_renderer(),
         Ok(value) => {
             eprintln!("unknown ZELDA3_RENDER_BACKEND={value:?}; expected cpu or gpu");
             process::exit(2);
         }
-        Err(_) => Box::new(GpuPlayRenderer::new()),
+        Err(_) => gpu_capture::new_gpu_play_renderer(),
     }
 }
 
@@ -1483,8 +1438,8 @@ fn run_play_with_state(mut game: ZeldaState) {
     // through the modern (software) live-VRAM path. The assets modes map to Modern
     // here because `RendererMode::parse` only recognizes "modern"/"modern-compare"
     // (it's shared with the offline compare harness, which tracks assets modes
-    // separately). GPU asset modes intercept Mode 7 and source-atlas misses in
-    // `GpuPlayRenderer::present_frame`, so the default path does not need
+    // separately). GPU asset modes intercept Mode 7 and source-atlas misses in the
+    // module-owned GPU play renderer, so the default path does not need
     // `FrameRenderer::render_modern_frame`'s CPU compositor.
     frontend.set_renderer_mode(renderer::RendererMode::from_effective_env());
     let mut frame = vec![0u8; width as usize * height as usize * 4];
@@ -10696,7 +10651,7 @@ fn write_reference_palette_png(
 /// Capture native composited frames for offline HD-art authoring (Task 3 of the
 /// HD-art-via-ML-super-resolution pipeline). At each requested replay frame, builds
 /// the SAME `GpuFrame` -> sources-extract -> `ModernFrame` pipeline the live present
-/// path uses (`GpuPlayRenderer::present_frame`), renders it at scale 1 with HD
+/// path uses, renders it at scale 1 with HD
 /// overrides disabled (native RGBA — the frame the super-resolution step ingests),
 /// and writes into `hd_art/capture/`:
 ///   - `frame_<n>.png`         native 256x224 RGBA

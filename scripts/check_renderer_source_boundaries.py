@@ -243,6 +243,16 @@ FORBIDDEN_GPU_SCANLINE_CAPTURE_CALLS = (
     "scanlines_from_raw",
 )
 
+FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
+    "struct GpuPlayRenderer",
+    "impl PlayRendererBackend for GpuPlayRenderer",
+    "ModernAssetFrameResources::load_from_env",
+    "ModernAssetLiveStats::from_env()",
+    "LiveGpuFrameCapture::from_game(",
+    "present_modern_asset_live_frame_from_entries(",
+    "modern asset load failed",
+)
+
 
 @dataclass(frozen=True)
 class Occurrence:
@@ -477,6 +487,24 @@ def check_source_text(source: str) -> list[str]:
     return errors
 
 
+def check_main_text(source: str) -> list[str]:
+    errors: list[str] = []
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith("//") or stripped.startswith("///"):
+            continue
+        for forbidden in FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "live GPU play backend ownership escaped gpu_capture boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+    return errors
+
+
 def boundary_source_text() -> str:
     return "\n".join(path.read_text() for path in BOUNDARY_SOURCE_FILES)
 
@@ -484,6 +512,7 @@ def boundary_source_text() -> str:
 def main() -> int:
     source = boundary_source_text()
     errors = check_source_text(source)
+    errors.extend(check_main_text(MAIN_RS.read_text()))
     if errors:
         for error in errors:
             print(error, file=sys.stderr)

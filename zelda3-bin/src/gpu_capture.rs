@@ -1,4 +1,9 @@
+use std::path::Path;
+use std::process;
+
+use platform::NativeFrontend;
 use renderer::{GpuFrame, RawScanlineFrame};
+use snes::ppu::PpuRenderFlags;
 use zelda3::ZeldaState;
 
 const PLAYER_IS_INDOORS: usize = 0x001b;
@@ -44,6 +49,55 @@ impl LiveGpuFrameCapture {
             player_indoors: self.player_indoors,
         }
     }
+}
+
+/// Modern asset resources + HD override store for the live present path, loaded
+/// once. The renderer crate owns which atlases each renderer mode requires and
+/// how they route through GPU/software presentation.
+struct GpuPlayRenderer {
+    modern_assets: renderer::ModernAssetFrameResources,
+    variant_live_stats: renderer::ModernAssetLiveStats,
+}
+
+impl GpuPlayRenderer {
+    fn new() -> Self {
+        let modern_assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."))
+            .unwrap_or_else(|e| {
+                eprintln!("modern asset load failed: {e}");
+                process::exit(2);
+            });
+        Self {
+            modern_assets,
+            variant_live_stats: renderer::ModernAssetLiveStats::from_env(),
+        }
+    }
+}
+
+impl super::PlayRendererBackend for GpuPlayRenderer {
+    fn name(&self) -> &'static str {
+        "gpu_render"
+    }
+
+    fn present_frame(
+        &mut self,
+        game: &mut ZeldaState,
+        frontend: &mut NativeFrontend,
+        _frame: &mut [u8],
+        _render_flags: PpuRenderFlags,
+    ) {
+        let capture = LiveGpuFrameCapture::from_game(game);
+        let report = frontend.present_modern_asset_live_frame_from_entries(
+            capture.modern_asset_present_input(&self.modern_assets, &mut self.variant_live_stats),
+        );
+        if let Some(line) = report.failure_line() {
+            eprintln!("{line}");
+            process::exit(2);
+        }
+    }
+}
+
+pub(super) fn new_gpu_play_renderer() -> Box<dyn super::PlayRendererBackend> {
+    Box::new(GpuPlayRenderer::new())
 }
 
 /// Borrow `PpuState` fields into a [`GpuFrame`] for the tile renderer.
