@@ -1753,11 +1753,8 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let ppu = game.ppu.clone();
         let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
         let src_table = VramChrSourceTableView::new(game.vram_chr_source());
-        let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
-            "palette_dung_bg_main"
-        } else {
-            "palette_overworld_bg_main"
-        };
+        let scene =
+            renderer::ModernAssetFrameScene::from_in_dungeon(game.ram[PLAYER_IS_INDOORS] != 0);
         let ctx = match &self.hd_overrides {
             Some(store) => renderer::modern_hd_overrides::HdOverrideCtx::new(store),
             None => renderer::modern_hd_overrides::HdOverrideCtx::disabled(),
@@ -1766,8 +1763,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
             &gpu_frame,
             Some(&src_table),
             &self.modern_assets,
-            bg_palette_name,
-            "palette_main_spr",
+            scene,
             &ctx,
         ) {
             renderer::ModernAssetFramePresentResult::Presented { variant_stats } => {
@@ -1783,7 +1779,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
             process::exit(2);
         }
         let presentation = PresentationContext {
-            in_dungeon: game.ram[PLAYER_IS_INDOORS] != 0,
+            in_dungeon: scene.in_dungeon(),
         };
         frontend.present_gpu_frame_with_context(&gpu_frame, presentation);
     }
@@ -5879,11 +5875,9 @@ fn run_replay_save(args: &[String]) {
                 let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
                 let _ = (theme, &dungeon_index_atlas, &index_atlas);
                 let src_table = VramChrSourceTableView::new(game.vram_chr_source());
-                let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
-                    "palette_dung_bg_main"
-                } else {
-                    "palette_overworld_bg_main"
-                };
+                let scene = renderer::ModernAssetFrameScene::from_in_dungeon(
+                    game.ram[PLAYER_IS_INDOORS] != 0,
+                );
                 let trace_pixel =
                     variant_trace_pixel_env().filter(|(trace_frame, _, _)| frames == *trace_frame);
                 let modern_render = renderer::modern_gpu::render_modern_index_compare_frame(
@@ -5892,8 +5886,7 @@ fn run_replay_save(args: &[String]) {
                     source_atlas.as_ref(),
                     modern_gpu_headless.as_ref(),
                     modern_variant_headless.as_ref(),
-                    bg_palette_name,
-                    "palette_main_spr",
+                    scene,
                     trace_pixel.map(|(_, trace_x, trace_y)| (trace_x, trace_y)),
                     true,
                 );
@@ -11247,12 +11240,9 @@ fn run_dump_assets_by_source(args: &[String]) {
                         continue;
                     }
                     let palette_row = ((entry_word >> 10) & 7) as u8;
-                    let palette_name = if game.ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) != 0
-                    {
-                        "palette_dung_bg_main"
-                    } else {
-                        "palette_overworld_bg_main"
-                    };
+                    let scene = renderer::ModernAssetFrameScene::from_in_dungeon(
+                        game.ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) != 0,
+                    );
                     let preview_src = game.vram_chr_preview_source().get(slot);
                     let usage_src =
                         if src.kind == CHR_KIND_BG_STREAM && preview_src.kind == CHR_KIND_BG {
@@ -11263,7 +11253,7 @@ fn run_dump_assets_by_source(args: &[String]) {
                     record_palette_usage_count(
                         &mut palette_usage_counts,
                         usage_src,
-                        palette_name,
+                        scene.bg_palette_name(),
                         palette_row,
                     );
                     let key = rekey_content_hash(&ppu.vram, slot, src);
@@ -11342,7 +11332,7 @@ fn run_dump_assets_by_source(args: &[String]) {
                     record_palette_usage_count(
                         &mut palette_usage_counts,
                         usage_src,
-                        "palette_main_spr",
+                        renderer::ModernAssetFrameScene::SPRITE_PALETTE_NAME,
                         palette_row,
                     );
                     let key = rekey_content_hash(&ppu.vram, slot, src);
@@ -12964,11 +12954,8 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
 
             let src_table = VramChrSourceTableView::new(game.vram_chr_source());
-            let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
-                "palette_dung_bg_main"
-            } else {
-                "palette_overworld_bg_main"
-            };
+            let scene =
+                renderer::ModernAssetFrameScene::from_in_dungeon(game.ram[PLAYER_IS_INDOORS] != 0);
             let trace_pixel = variant_trace_pixel_env()
                 .filter(|(trace_frame, _, _)| completed_frame == *trace_frame);
             let modern_render = renderer::modern_gpu::render_modern_index_compare_frame(
@@ -12977,8 +12964,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 source_atlas.as_ref(),
                 modern_gpu_headless.as_ref(),
                 modern_variant_headless.as_ref(),
-                bg_palette_name,
-                "palette_main_spr",
+                scene,
                 trace_pixel.map(|(_, trace_x, trace_y)| (trace_x, trace_y)),
                 false,
             );

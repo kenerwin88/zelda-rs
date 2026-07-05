@@ -2083,6 +2083,37 @@ impl ModernAssetFrameResources {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModernAssetFrameScene {
+    in_dungeon: bool,
+}
+
+impl ModernAssetFrameScene {
+    pub const DUNGEON_BG_PALETTE_NAME: &'static str = "palette_dung_bg_main";
+    pub const OVERWORLD_BG_PALETTE_NAME: &'static str = "palette_overworld_bg_main";
+    pub const SPRITE_PALETTE_NAME: &'static str = "palette_main_spr";
+
+    pub const fn from_in_dungeon(in_dungeon: bool) -> Self {
+        Self { in_dungeon }
+    }
+
+    pub const fn in_dungeon(self) -> bool {
+        self.in_dungeon
+    }
+
+    pub const fn bg_palette_name(self) -> &'static str {
+        if self.in_dungeon {
+            Self::DUNGEON_BG_PALETTE_NAME
+        } else {
+            Self::OVERWORLD_BG_PALETTE_NAME
+        }
+    }
+
+    pub const fn sprite_palette_name(self) -> &'static str {
+        Self::SPRITE_PALETTE_NAME
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ModernAssetFramePresentRoute {
     Mode7Gpu,
     SourceVariantGpu,
@@ -2549,16 +2580,16 @@ impl FrameRenderer {
     }
 
     /// Present one live modern-asset frame using the highest available renderer
-    /// path. The caller supplies game-owned inputs (source table and current
-    /// palette names); this method owns the route choice across Mode 7 GPU,
-    /// source variant GPU, source GPU, source software, and VRAM GPU fallback.
+    /// path. The caller supplies game-owned inputs (source table and semantic
+    /// scene state); this method owns the route and asset-palette choices across
+    /// Mode 7 GPU, source variant GPU, source GPU, source software, and VRAM GPU
+    /// fallback.
     pub fn present_modern_asset_frame<S: modern_extract::SourceTableView + ?Sized>(
         &mut self,
         frame: &GpuFrame<'_>,
         src_table: Option<&S>,
         resources: &ModernAssetFrameResources,
-        bg_palette_name: &str,
-        sprite_palette_name: &str,
+        scene: ModernAssetFrameScene,
         ctx: &modern_hd_overrides::HdOverrideCtx,
     ) -> Result<ModernAssetFramePresentResult, RenderError> {
         match modern_asset_frame_present_route(
@@ -2584,8 +2615,8 @@ impl FrameRenderer {
                     resources
                         .variant_atlas()
                         .expect("route requires variant atlas"),
-                    bg_palette_name,
-                    sprite_palette_name,
+                    scene.bg_palette_name(),
+                    scene.sprite_palette_name(),
                 )?;
                 Ok(ModernAssetFramePresentResult::Presented {
                     variant_stats: Some(stats),
@@ -3427,6 +3458,19 @@ mod tests {
         assert!(err.contains("assets-by-source atlas missing"), "{err}");
 
         fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn modern_asset_frame_scene_owns_palette_names() {
+        let overworld = ModernAssetFrameScene::from_in_dungeon(false);
+        assert!(!overworld.in_dungeon());
+        assert_eq!(overworld.bg_palette_name(), "palette_overworld_bg_main");
+        assert_eq!(overworld.sprite_palette_name(), "palette_main_spr");
+
+        let dungeon = ModernAssetFrameScene::from_in_dungeon(true);
+        assert!(dungeon.in_dungeon());
+        assert_eq!(dungeon.bg_palette_name(), "palette_dung_bg_main");
+        assert_eq!(dungeon.sprite_palette_name(), "palette_main_spr");
     }
 
     #[test]

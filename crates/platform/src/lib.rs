@@ -254,20 +254,13 @@ impl NativeFrontend {
         frame: &GpuFrame<'_>,
         src_table: Option<&S>,
         resources: &renderer::ModernAssetFrameResources,
-        bg_palette_name: &str,
-        sprite_palette_name: &str,
+        scene: renderer::ModernAssetFrameScene,
         ctx: &renderer::modern_hd_overrides::HdOverrideCtx,
     ) -> renderer::ModernAssetFramePresentResult {
         let mut present_result = renderer::ModernAssetFramePresentResult::Unhandled;
         if let Some(renderer) = &mut self.handler.renderer {
-            let result = renderer.present_modern_asset_frame(
-                frame,
-                src_table,
-                resources,
-                bg_palette_name,
-                sprite_palette_name,
-                ctx,
-            );
+            let result =
+                renderer.present_modern_asset_frame(frame, src_table, resources, scene, ctx);
             match result {
                 Ok(result) => present_result = result,
                 Err(RenderError::SurfaceReconfigureNeeded) => {

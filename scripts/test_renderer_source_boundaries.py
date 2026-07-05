@@ -20,6 +20,7 @@ def load_module():
 def source_with_required_calls(body: str) -> str:
     required = """
     fn run_play_with_state() {
+        let scene = renderer::ModernAssetFrameScene::from_in_dungeon(false);
         frontend.present_modern_asset_frame();
         renderer::modern_gpu::render_modern_index_compare_frame();
         renderer::hd_authoring::render_hd_capture_from_sources();

@@ -19,6 +19,7 @@ MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
 MANUAL_EXTRACT = "extract_modern_frame_from_sources"
 REQUIRED_RENDERER_OWNED_CALLS = (
     "present_modern_asset_frame",
+    "ModernAssetFrameScene",
     "render_modern_index_compare_frame",
     "render_hd_capture_from_sources",
 )

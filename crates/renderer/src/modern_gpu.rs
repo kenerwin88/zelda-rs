@@ -3346,8 +3346,7 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
     source_atlas: Option<&crate::modern_source_atlas::ModernSourceAtlas>,
     headless: Option<&ModernGpuHeadless>,
     variant_headless: Option<&ModernGpuVariantHeadless>,
-    bg_palette_name: &str,
-    sprite_palette_name: &str,
+    scene: crate::ModernAssetFrameScene,
     trace_pixel: Option<(i16, i16)>,
     allow_source_cpu_fallback: bool,
 ) -> ModernIndexCompareRender {
@@ -3368,8 +3367,8 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
                 frame,
                 src_table,
                 atlas,
-                bg_palette_name,
-                sprite_palette_name,
+                scene.bg_palette_name(),
+                scene.sprite_palette_name(),
                 trace_pixel,
             );
         return ModernIndexCompareRender {
@@ -10577,8 +10576,7 @@ mod tests {
             None,
             None,
             None,
-            "palette_dung_bg_main",
-            "palette_main_spr",
+            crate::ModernAssetFrameScene::from_in_dungeon(true),
             None,
             false,
         );
@@ -10608,8 +10606,7 @@ mod tests {
             Some(&atlas),
             None,
             None,
-            "palette_dung_bg_main",
-            "palette_main_spr",
+            crate::ModernAssetFrameScene::from_in_dungeon(true),
             None,
             true,
         );
@@ -10619,8 +10616,7 @@ mod tests {
             Some(&atlas),
             None,
             None,
-            "palette_dung_bg_main",
-            "palette_main_spr",
+            crate::ModernAssetFrameScene::from_in_dungeon(true),
             None,
             false,
         );
