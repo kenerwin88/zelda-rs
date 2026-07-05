@@ -2128,7 +2128,7 @@ impl ModernAssetFrameResources {
         self.gpu_asset_mode
     }
 
-    pub fn unhandled_gpu_asset_frame_line(&self) -> Option<&'static str> {
+    fn unhandled_gpu_asset_frame_line(&self) -> Option<&'static str> {
         self.gpu_asset_mode
             .then_some("modern asset renderer did not handle a GPU asset frame")
     }

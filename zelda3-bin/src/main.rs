@@ -26,7 +26,7 @@ use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
     HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
 };
-use renderer::{GpuFrame, OffscreenRenderer, PresentationContext, RawScanlineFrame};
+use renderer::{GpuFrame, OffscreenRenderer, RawScanlineFrame};
 use serde::{Deserialize, Serialize};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, ppu::PpuRenderFlags, Snes};
 use zelda3::{
@@ -1441,22 +1441,14 @@ impl PlayRendererBackend for GpuPlayRenderer {
         );
         let report = self
             .variant_live_stats
-            .record_present_result(&present.result);
+            .record_present_output(&present, &self.modern_assets);
         if let Some(line) = report.failure_line() {
             eprintln!("{line}");
             process::exit(2);
         }
-        if present.result.is_presented() {
-            return;
+        if let Some(presentation) = report.fallback_presentation_context() {
+            frontend.present_gpu_frame_with_context(&gpu_frame, presentation);
         }
-        if let Some(line) = self.modern_assets.unhandled_gpu_asset_frame_line() {
-            eprintln!("{line}");
-            process::exit(2);
-        }
-        let presentation = PresentationContext {
-            in_dungeon: present.in_dungeon,
-        };
-        frontend.present_gpu_frame_with_context(&gpu_frame, presentation);
     }
 }
 

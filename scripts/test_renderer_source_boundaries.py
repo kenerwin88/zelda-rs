@@ -26,8 +26,8 @@ def source_with_required_calls(body: str) -> str:
         frontend.set_renderer_mode(renderer::RendererMode::from_effective_env());
         let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(0);
         let stats = renderer::ModernAssetLiveStats::from_env();
-        variant_live_stats.record_present_result(&present_result);
-        modern_assets.unhandled_gpu_asset_frame_line();
+        let report = variant_live_stats.record_present_output(&present, &modern_assets);
+        report.fallback_presentation_context();
         let compare = renderer::ModernIndexCompareStats::from_env();
         let compare_config = renderer::ModernIndexCompareRunConfig::default();
         let frame_record = renderer::ModernIndexCompareFrameOutputInput {};
@@ -337,8 +337,12 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let _ = "ZELDA3_VARIANT_LIVE_STATS";
                 let _ = "ZELDA3_REQUIRE_FULL_GPU_PATH";
                 variant_live_stats.record_variant_stats(stats);
+                variant_live_stats.record_present_result(&present_result);
                 self.modern_assets.gpu_asset_mode();
+                self.modern_assets.unhandled_gpu_asset_frame_line();
                 report.full_gpu_failure_line;
+                if present.result.is_presented() { return; }
+                let presentation = renderer::PresentationContext { in_dungeon: present.in_dungeon };
                 eprintln!("gpu_path_unsupported_live reason={} count={}", reason, count);
                 eprintln!("modern asset renderer did not handle a GPU asset frame");
             }
@@ -347,7 +351,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 9)
+        self.assertEqual(len(errors), 13)
         self.assertTrue(
             all("live modern asset stats policy escaped renderer boundary" in error for error in errors)
         )

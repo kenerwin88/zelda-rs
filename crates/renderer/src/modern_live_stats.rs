@@ -74,12 +74,17 @@ pub struct ModernAssetLiveStats {
 }
 
 pub struct ModernAssetLiveFrameReport {
-    full_gpu_failure_line: Option<String>,
+    failure_line: Option<String>,
+    fallback_presentation_context: Option<crate::PresentationContext>,
 }
 
 impl ModernAssetLiveFrameReport {
     pub fn failure_line(&self) -> Option<&str> {
-        self.full_gpu_failure_line.as_deref()
+        self.failure_line.as_deref()
+    }
+
+    pub fn fallback_presentation_context(&self) -> Option<crate::PresentationContext> {
+        self.fallback_presentation_context
     }
 }
 
@@ -213,11 +218,30 @@ impl ModernAssetLiveStats {
         None
     }
 
-    pub fn record_present_result(
+    pub fn record_present_output(
+        &mut self,
+        output: &crate::ModernAssetFramePresentOutput,
+        resources: &crate::ModernAssetFrameResources,
+    ) -> ModernAssetLiveFrameReport {
+        let mut report = self.record_present_result(&output.result);
+        if report.failure_line.is_none() && !output.result.is_presented() {
+            report.failure_line = resources
+                .unhandled_gpu_asset_frame_line()
+                .map(ToString::to_string);
+        }
+        if report.failure_line.is_none() && !output.result.is_presented() {
+            report.fallback_presentation_context = Some(crate::PresentationContext {
+                in_dungeon: output.in_dungeon,
+            });
+        }
+        report
+    }
+
+    fn record_present_result(
         &mut self,
         result: &crate::ModernAssetFramePresentResult,
     ) -> ModernAssetLiveFrameReport {
-        let full_gpu_failure_line = match result {
+        let failure_line = match result {
             crate::ModernAssetFramePresentResult::Presented {
                 variant_stats: Some(stats),
             } => self
@@ -226,7 +250,8 @@ impl ModernAssetLiveStats {
             _ => None,
         };
         ModernAssetLiveFrameReport {
-            full_gpu_failure_line,
+            failure_line,
+            fallback_presentation_context: None,
         }
     }
 
@@ -364,24 +389,71 @@ mod tests {
         assert_eq!(opt_out.full_gpu_violation(&stats), None);
     }
 
+    fn live_resources(gpu_asset_mode: bool) -> crate::ModernAssetFrameResources {
+        crate::ModernAssetFrameResources {
+            source_atlas: None,
+            variant_atlas: None,
+            hd_overrides: None,
+            gpu_asset_mode,
+        }
+    }
+
     #[test]
-    fn record_present_result_owns_live_gpu_failure_line() {
+    fn record_present_output_owns_live_gpu_failure_line() {
         let mut live = ModernAssetLiveStats {
             require_full_gpu_path: true,
             ..Default::default()
         };
-        let result = crate::ModernAssetFramePresentResult::Presented {
-            variant_stats: Some(VariantAtlasRenderStats {
-                cpu_prefinal_overlay_frames: 2,
-                ..Default::default()
-            }),
+        let output = crate::ModernAssetFramePresentOutput {
+            result: crate::ModernAssetFramePresentResult::Presented {
+                variant_stats: Some(VariantAtlasRenderStats {
+                    cpu_prefinal_overlay_frames: 2,
+                    ..Default::default()
+                }),
+            },
+            in_dungeon: false,
         };
 
-        let report = live.record_present_result(&result);
+        let report = live.record_present_output(&output, &live_resources(false));
 
         assert_eq!(
             report.failure_line(),
             Some("gpu_path_unsupported_live reason=prefinal-overlay-cpu count=2")
+        );
+        assert_eq!(report.fallback_presentation_context(), None);
+    }
+
+    #[test]
+    fn record_present_output_owns_unhandled_gpu_asset_failure_line() {
+        let mut live = ModernAssetLiveStats::default();
+        let output = crate::ModernAssetFramePresentOutput {
+            result: crate::ModernAssetFramePresentResult::Unhandled,
+            in_dungeon: true,
+        };
+
+        let report = live.record_present_output(&output, &live_resources(true));
+
+        assert_eq!(
+            report.failure_line(),
+            Some("modern asset renderer did not handle a GPU asset frame")
+        );
+        assert_eq!(report.fallback_presentation_context(), None);
+    }
+
+    #[test]
+    fn record_present_output_owns_fallback_context() {
+        let mut live = ModernAssetLiveStats::default();
+        let output = crate::ModernAssetFramePresentOutput {
+            result: crate::ModernAssetFramePresentResult::Unhandled,
+            in_dungeon: true,
+        };
+
+        let report = live.record_present_output(&output, &live_resources(false));
+
+        assert_eq!(report.failure_line(), None);
+        assert_eq!(
+            report.fallback_presentation_context(),
+            Some(crate::PresentationContext { in_dungeon: true })
         );
     }
 }
