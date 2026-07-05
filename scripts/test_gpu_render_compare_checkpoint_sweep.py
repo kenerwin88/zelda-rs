@@ -64,11 +64,87 @@ class CheckpointSweepTests(unittest.TestCase):
         self.assertIn("--require-full-gpu-path", command)
         self.assertIn("--require-modern-index-parity", command)
 
+    def test_seed_checkpoint_command_targets_known_mode7_boundary(self) -> None:
+        checkpoint = sweep.ReplayCheckpoint(72930, Path(".cache/rust-frame-72930.sav"))
+
+        command = sweep.seed_checkpoint_command(
+            checkpoint,
+            Path("target/parity/zelda3"),
+            Path("saves/zelda3.sfc"),
+            Path("saves/route.sav"),
+        )
+
+        self.assertEqual(command[:5], [
+            "target/parity/zelda3",
+            "--replay-save",
+            "saves/zelda3.sfc",
+            "saves/route.sav",
+            "72930",
+        ])
+        self.assertEqual(command[-2:], [
+            "--save-state-at",
+            "72930:.cache/rust-frame-72930.sav",
+        ])
+
     def test_env_for_run_does_not_override_renderer_by_default(self) -> None:
         env = sweep.env_for_run({"PATH": "/bin"}, renderer=None)
 
         self.assertEqual(env["ZELDA3_MODERN_INDEX_COMPARE_SUMMARY"], "1")
         self.assertNotIn("ZELDA3_RENDERER", env)
+
+    def test_ensure_known_mode7_checkpoint_seeds_missing_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            commands: list[list[str]] = []
+
+            def runner(
+                command: list[str],
+                cwd: Path,
+                env: dict[str, str],
+            ) -> subprocess.CompletedProcess[str]:
+                commands.append(command)
+                Path(command[-1].split(":", 1)[1]).write_bytes(b"state")
+                return subprocess.CompletedProcess(args=command, returncode=0, stdout="")
+
+            sweep.ensure_known_mode7_checkpoint(
+                state_dir,
+                Path("target/parity/zelda3"),
+                Path("saves/zelda3.sfc"),
+                Path("saves/route.sav"),
+                start_frame=None,
+                end_frame=None,
+                dry_run=False,
+                runner=runner,
+            )
+
+            self.assertEqual(len(commands), 1)
+            self.assertTrue((state_dir / "rust-frame-72930.sav").exists())
+
+    def test_ensure_known_mode7_checkpoint_respects_frame_filters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            commands: list[list[str]] = []
+
+            def runner(
+                command: list[str],
+                cwd: Path,
+                env: dict[str, str],
+            ) -> subprocess.CompletedProcess[str]:
+                commands.append(command)
+                return subprocess.CompletedProcess(args=command, returncode=0, stdout="")
+
+            sweep.ensure_known_mode7_checkpoint(
+                state_dir,
+                Path("target/parity/zelda3"),
+                Path("saves/zelda3.sfc"),
+                Path("saves/route.sav"),
+                start_frame=80_000,
+                end_frame=None,
+                dry_run=False,
+                runner=runner,
+            )
+
+            self.assertEqual(commands, [])
 
     def test_validate_summary_stats_rejects_cpu_fallback(self) -> None:
         checkpoint = sweep.ReplayCheckpoint(100, Path("a.sav"))

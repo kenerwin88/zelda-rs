@@ -17,6 +17,7 @@ DEFAULT_BINARY = REPO_ROOT / "target" / "parity" / "zelda3"
 DEFAULT_ROM = REPO_ROOT / "saves" / "zelda3.sfc"
 DEFAULT_REPLAY = REPO_ROOT / "saves" / "zelda3-combined-route.sav"
 DEFAULT_STATE_DIR = REPO_ROOT / ".cache" / "replay-bisect"
+KNOWN_MODE7_CHECKPOINT_FRAME = 72_930
 CHECKPOINT_RE = re.compile(r"^rust-frame-(\d+)\.sav$")
 SUMMARY_RE = re.compile(r"^modern_index_compare_summary\b.*$", re.MULTILINE)
 
@@ -97,6 +98,38 @@ def command_for_checkpoint(
     ]
 
 
+def known_mode7_checkpoint(state_dir: Path) -> ReplayCheckpoint:
+    frame = KNOWN_MODE7_CHECKPOINT_FRAME
+    return ReplayCheckpoint(frame=frame, path=state_dir / f"rust-frame-{frame}.sav")
+
+
+def checkpoint_allowed_by_frame_filters(
+    checkpoint: ReplayCheckpoint,
+    start_frame: int | None,
+    end_frame: int | None,
+) -> bool:
+    return (start_frame is None or checkpoint.frame >= start_frame) and (
+        end_frame is None or checkpoint.frame <= end_frame
+    )
+
+
+def seed_checkpoint_command(
+    checkpoint: ReplayCheckpoint,
+    binary: Path,
+    rom: Path,
+    replay: Path,
+) -> list[str]:
+    return [
+        str(binary),
+        "--replay-save",
+        str(rom),
+        str(replay),
+        str(checkpoint.frame),
+        "--save-state-at",
+        f"{checkpoint.frame}:{checkpoint.path}",
+    ]
+
+
 def env_for_run(base_env: dict[str, str], renderer: str | None) -> dict[str, str]:
     env = base_env.copy()
     env["ZELDA3_MODERN_INDEX_COMPARE_SUMMARY"] = "1"
@@ -122,6 +155,35 @@ def run_command(
 
 
 CommandRunner = Callable[[list[str], Path, dict[str, str]], subprocess.CompletedProcess[str]]
+
+
+def ensure_known_mode7_checkpoint(
+    state_dir: Path,
+    binary: Path,
+    rom: Path,
+    replay: Path,
+    start_frame: int | None,
+    end_frame: int | None,
+    dry_run: bool,
+    runner: CommandRunner = run_command,
+) -> None:
+    checkpoint = known_mode7_checkpoint(state_dir)
+    if not checkpoint_allowed_by_frame_filters(checkpoint, start_frame, end_frame):
+        return
+    if checkpoint.path.exists():
+        return
+    command = seed_checkpoint_command(checkpoint, binary, rom, replay)
+    print(
+        f"seeding known Mode-7 checkpoint {checkpoint.frame}: {' '.join(command)}",
+        flush=True,
+    )
+    if dry_run:
+        return
+    checkpoint.path.parent.mkdir(parents=True, exist_ok=True)
+    result = runner(command, REPO_ROOT, os.environ.copy())
+    if result.returncode != 0:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+        raise SystemExit(result.returncode)
 
 
 def validate_summary_stats(checkpoint: ReplayCheckpoint, stats: dict[str, int]) -> None:
@@ -226,7 +288,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--require-mode7",
         action="store_true",
-        help="fail unless the selected checkpoints compare at least one Mode-7 GPU frame",
+        help=(
+            "seed the known first Mode-7 checkpoint when needed and fail unless "
+            "the selected checkpoints compare at least one Mode-7 GPU frame"
+        ),
     )
     parser.add_argument(
         "--build",
@@ -257,6 +322,16 @@ def main() -> None:
         )
         if build.returncode != 0:
             raise SystemExit(build.returncode)
+    if args.require_mode7:
+        ensure_known_mode7_checkpoint(
+            args.state_dir,
+            args.binary,
+            args.rom,
+            args.replay,
+            args.start_frame,
+            args.end_frame,
+            args.dry_run,
+        )
     checkpoints = select_checkpoints(
         discover_checkpoints(args.state_dir),
         args.start_frame,
