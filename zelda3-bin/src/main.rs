@@ -27,8 +27,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use gpu_capture::{
     capture_gpu_frame_from_game, emit_modern_index_compare_output_lines, gpu_render_compare_run,
     modern_atlas_compare_run, modern_compare_mode_defaults_from_env,
-    modern_index_compare_run_from_env, new_gpu_readback_renderer, render_gpu_hash_frame_rgba_line,
-    render_hash_pair_bgra_rgba, render_hd_capture_from_gpu_capture,
+    modern_index_compare_run_from_env, new_gpu_readback_renderer, optional_gpu_readback_renderer,
+    render_gpu_hash_frame_rgba_line, render_hash_pair_bgra_rgba,
+    render_hd_capture_from_gpu_capture,
 };
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
@@ -3441,16 +3442,15 @@ fn run_replay_save(args: &[String]) {
     // GPU readback is used for dump-frame and the diagnostic gpu-render-hash
     // line. The parity-facing render-hash line hashes the raw CPU BGRA display
     // buffer, matching C PrintRenderHash exactly.
-    let mut gpu_readback = if render_hash_log != 0
-        || gpu_render_compare.enabled()
-        || render_hash_dump_frame.is_some()
-        || dump_frame_path.is_some()
-        || modern_index_compare.enabled()
-    {
-        Some(new_gpu_readback_renderer(256, 224))
-    } else {
-        None
-    };
+    let mut gpu_readback = optional_gpu_readback_renderer(
+        render_hash_log != 0
+            || gpu_render_compare.enabled()
+            || render_hash_dump_frame.is_some()
+            || dump_frame_path.is_some()
+            || modern_index_compare.enabled(),
+        256,
+        224,
+    );
     let mut fingerprint_writer = match fingerprint_log.as_deref() {
         Some(p) => {
             let f = std::fs::File::create(p).unwrap_or_else(|e| {
@@ -3549,9 +3549,7 @@ fn run_replay_save(args: &[String]) {
             let frame = render_hash_frame
                 .as_mut()
                 .expect("render compare frame allocated");
-            let gpu_readback = gpu_readback
-                .as_mut()
-                .expect("GPU readback renderer allocated");
+            let gpu_readback = gpu_readback.required();
             let Some(line) =
                 gpu_render_compare.compare_current_frame(&mut game, gpu_readback, frame, frames)
             else {
@@ -3794,9 +3792,7 @@ fn run_replay_save(args: &[String]) {
                     cgram_val
                 );
             }
-            let gpu_readback = gpu_readback
-                .as_mut()
-                .expect("GPU readback renderer allocated");
+            let gpu_readback = gpu_readback.required();
             let rgba = gpu_readback.render_bgra_frame_to_rgba(frame);
             if frames == 1000 {
                 let post_vram_hash: u32 = {
@@ -5136,9 +5132,7 @@ fn run_replay_save(args: &[String]) {
         }
         if modern_index_compare.should_compare_frame(frames) {
             {
-                let gpu_readback = gpu_readback
-                    .as_mut()
-                    .expect("GPU readback renderer allocated");
+                let gpu_readback = gpu_readback.required();
                 let output_lines = modern_index_compare.render_output_from_game(
                     &mut game,
                     gpu_readback,
@@ -5273,9 +5267,7 @@ fn run_replay_save(args: &[String]) {
             width as usize * 4,
             PpuRenderFlags::empty(),
         );
-        let gpu_readback = gpu_readback
-            .as_mut()
-            .expect("GPU readback renderer allocated");
+        let gpu_readback = gpu_readback.required();
         let rgba = gpu_readback.render_bgra_frame_to_rgba(&frame);
         if let Err(e) = write_rgba_frame_png(path, &rgba, width, height) {
             eprintln!("failed to write {}: {e}", path.display());

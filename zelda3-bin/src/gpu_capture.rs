@@ -112,6 +112,10 @@ pub(crate) struct GpuReadbackRenderer {
     offscreen: renderer::OffscreenRenderer,
 }
 
+pub(crate) struct OptionalGpuReadbackRenderer {
+    renderer: Option<GpuReadbackRenderer>,
+}
+
 impl GpuPlayRenderer {
     fn new() -> Self {
         let modern_assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."))
@@ -172,6 +176,16 @@ pub(crate) fn capture_gpu_frame_from_game(game: &mut ZeldaState) -> LiveGpuFrame
 pub(crate) fn new_gpu_readback_renderer(width: u32, height: u32) -> GpuReadbackRenderer {
     GpuReadbackRenderer {
         offscreen: pollster::block_on(renderer::OffscreenRenderer::new(width, height)),
+    }
+}
+
+pub(crate) fn optional_gpu_readback_renderer(
+    required: bool,
+    width: u32,
+    height: u32,
+) -> OptionalGpuReadbackRenderer {
+    OptionalGpuReadbackRenderer {
+        renderer: required.then(|| new_gpu_readback_renderer(width, height)),
     }
 }
 
@@ -502,6 +516,14 @@ impl GpuReadbackRenderer {
     pub(crate) fn render_bgra_frame_to_rgba(&mut self, frame: &[u8]) -> Vec<u8> {
         self.offscreen.upload_bgra_frame(frame);
         self.offscreen.render_to_rgba()
+    }
+}
+
+impl OptionalGpuReadbackRenderer {
+    pub(crate) fn required(&mut self) -> &mut GpuReadbackRenderer {
+        self.renderer
+            .as_mut()
+            .expect("GPU readback renderer allocated")
     }
 }
 

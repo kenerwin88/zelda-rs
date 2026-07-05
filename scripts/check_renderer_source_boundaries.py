@@ -262,6 +262,8 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "render_modern_atlas_compare_report_from_capture",
     "renderer::OffscreenRenderer",
     "OffscreenRenderer::new(",
+    "let mut gpu_readback = if render_hash_log != 0",
+    "GPU readback renderer allocated",
     ".upload_bgra_frame(",
     ".render_to_rgba(",
     "load_resources_from_env(",

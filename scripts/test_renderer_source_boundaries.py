@@ -696,6 +696,8 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let mut offscreen = pollster::block_on(OffscreenRenderer::new(256, 224));
                 offscreen.upload_bgra_frame(frame);
                 offscreen.render_to_rgba();
+                let mut gpu_readback = if render_hash_log != 0 { Some(new_gpu_readback_renderer(256, 224)) } else { None };
+                let gpu_readback = gpu_readback.as_mut().expect("GPU readback renderer allocated");
                 modern_index_compare.load_resources_from_env(root, false);
                 let (mut renderer, mut frontend) = play_renderer::configured_from_env();
                 let mut renderer = play_renderer::from_env();
@@ -731,7 +733,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 55)
+        self.assertEqual(len(errors), 57)
         self.assertTrue(
             all("live GPU play backend ownership escaped gpu_capture boundary" in error for error in errors)
         )
