@@ -309,6 +309,33 @@ impl NativeFrontend {
         self.sleep_after_present();
     }
 
+    /// Present a modern PNG-atlas frame from the source-table boundary. The
+    /// renderer crate owns source extraction plus GPU presentation; zelda3-bin
+    /// only supplies the CHR source view that lives on game state.
+    pub fn present_modern_gpu_from_sources<
+        S: renderer::modern_extract::SourceTableView + ?Sized,
+    >(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        src_table: &S,
+        atlas: &renderer::modern_source_atlas::ModernSourceAtlas,
+    ) {
+        if let Some(renderer) = &mut self.handler.renderer {
+            let result = renderer.present_modern_gpu_from_sources(frame, src_table, atlas);
+            match result {
+                Ok(()) => {}
+                Err(RenderError::SurfaceReconfigureNeeded) => {
+                    if let Some(window) = &self.handler.window {
+                        renderer.resize(window.inner_size());
+                    }
+                }
+                Err(RenderError::SurfaceSkipped) => {}
+                Err(RenderError::Fatal(e)) => eprintln!("render error: {e}"),
+            }
+        }
+        self.sleep_after_present();
+    }
+
     pub fn present_modern_variant_gpu(
         &mut self,
         frame: &renderer::modern_frame::ModernFrame,
@@ -325,6 +352,45 @@ impl NativeFrontend {
                 bg_cells,
                 sprite_cells,
                 atlas,
+                bg_palette_name,
+                sprite_palette_name,
+            );
+            match result {
+                Ok(render_stats) => stats = Some(render_stats),
+                Err(RenderError::SurfaceReconfigureNeeded) => {
+                    if let Some(window) = &self.handler.window {
+                        renderer.resize(window.inner_size());
+                    }
+                }
+                Err(RenderError::SurfaceSkipped) => {}
+                Err(RenderError::Fatal(e)) => eprintln!("render error: {e}"),
+            }
+        }
+        self.sleep_after_present();
+        stats
+    }
+
+    /// Present the default compact RGBA variant path from the source-table
+    /// boundary. Returns the variant render stats when the renderer was able to
+    /// present the frame.
+    pub fn present_modern_variant_gpu_from_sources<
+        S: renderer::modern_extract::SourceTableView + ?Sized,
+    >(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        src_table: &S,
+        source_atlas: &renderer::modern_source_atlas::ModernSourceAtlas,
+        variant_atlas: &renderer::modern_variant_atlas::ModernVariantAtlas,
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+    ) -> Option<renderer::modern_software::VariantAtlasRenderStats> {
+        let mut stats = None;
+        if let Some(renderer) = &mut self.handler.renderer {
+            let result = renderer.present_modern_variant_gpu_from_sources(
+                frame,
+                src_table,
+                source_atlas,
+                variant_atlas,
                 bg_palette_name,
                 sprite_palette_name,
             );

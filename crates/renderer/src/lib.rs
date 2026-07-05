@@ -2509,6 +2509,26 @@ impl FrameRenderer {
         self.render()
     }
 
+    /// Live GPU present of the PNG-atlas path from the source table boundary.
+    /// The caller supplies the game-owned CHR source table; the renderer owns
+    /// the Mode-1 scene build and GPU present, which keeps the binary out of
+    /// the draw pipeline and gives this crate the replacement point for a
+    /// future GPU scene builder.
+    pub fn present_modern_gpu_from_sources<S: modern_extract::SourceTableView + ?Sized>(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        src_table: &S,
+        atlas: &modern_source_atlas::ModernSourceAtlas,
+    ) -> Result<(), RenderError> {
+        debug_assert_ne!(frame.mode, 7);
+        let (mut modern, bg_cells) =
+            modern_extract::extract_modern_frame_from_sources(frame, src_table, atlas);
+        let (sprite_cells, sprites) =
+            modern_extract::extract_modern_sprites_from_sources(frame, src_table, atlas);
+        modern.index_sprites = sprites;
+        self.present_modern_gpu(&modern, &bg_cells, &sprite_cells)
+    }
+
     /// Live GPU present of the compact RGBA canonical-art/effect atlas path
     /// (`ZELDA3_RENDERER=assets-variant-gpu`, also the default). This keeps the
     /// variant render and final presentation on the live renderer's GPU device:
@@ -2606,6 +2626,36 @@ impl FrameRenderer {
 
         self.render()?;
         Ok(stats)
+    }
+
+    /// Live GPU present of the compact RGBA canonical-art/effect atlas path
+    /// from the source table boundary. This is the default renderer path's
+    /// highest-level Mode-1 entry point: zelda3-bin provides current PPU state
+    /// plus the CHR source table, and this crate owns extraction, variant
+    /// planning, GPU rendering, and final presentation.
+    pub fn present_modern_variant_gpu_from_sources<S: modern_extract::SourceTableView + ?Sized>(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        src_table: &S,
+        source_atlas: &modern_source_atlas::ModernSourceAtlas,
+        variant_atlas: &modern_variant_atlas::ModernVariantAtlas,
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+    ) -> Result<modern_software::VariantAtlasRenderStats, RenderError> {
+        debug_assert_ne!(frame.mode, 7);
+        let (mut modern, bg_cells) =
+            modern_extract::extract_modern_frame_from_sources(frame, src_table, source_atlas);
+        let (sprite_cells, sprites) =
+            modern_extract::extract_modern_sprites_from_sources(frame, src_table, source_atlas);
+        modern.index_sprites = sprites;
+        self.present_modern_variant_gpu(
+            &modern,
+            &bg_cells,
+            &sprite_cells,
+            variant_atlas,
+            bg_palette_name,
+            sprite_palette_name,
+        )
     }
 
     /// Present a Mode-7 frame through the live GPU PPU path, then GPU-copy the

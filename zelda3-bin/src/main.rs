@@ -1830,7 +1830,8 @@ impl PlayRendererBackend for GpuPlayRenderer {
 
         // Off-VRAM sources+overrides path: needs the CHR-source table
         // (`game.vram_chr_source()`), which only this binary (holding the
-        // zelda3 `GameState`) can see — `FrameRenderer` only gets `GpuFrame`.
+        // zelda3 `GameState`) can see. The renderer crate owns source
+        // extraction and GPU presentation once this table is adapted.
         // Mode 7 isn't a Mode-1 tilemap the sources extractor can render, so
         // GPU atlas modes route it through `present_modern_mode7_gpu` above.
         // CPU/debug modes fall through to the frontend's modern fallback below.
@@ -1841,6 +1842,28 @@ impl PlayRendererBackend for GpuPlayRenderer {
                 .iter()
                 .map(|s| (s.kind, s.pack, s.tile_off))
                 .collect();
+            if let Some(variant_atlas) = self.variant_atlas.as_ref() {
+                let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
+                    "palette_dung_bg_main"
+                } else {
+                    "palette_overworld_bg_main"
+                };
+                if let Some(stats) = frontend.present_modern_variant_gpu_from_sources(
+                    &gpu_frame,
+                    &src_slice[..],
+                    atlas,
+                    variant_atlas,
+                    bg_palette_name,
+                    "palette_main_spr",
+                ) {
+                    self.variant_live_stats.record(stats);
+                }
+                return;
+            }
+            if self.gpu_asset_mode {
+                frontend.present_modern_gpu_from_sources(&gpu_frame, &src_slice[..], atlas);
+                return;
+            }
             let (mut modern, bg_cells) =
                 renderer::modern_extract::extract_modern_frame_from_sources(
                     &gpu_frame,
@@ -1854,28 +1877,6 @@ impl PlayRendererBackend for GpuPlayRenderer {
                     atlas,
                 );
             modern.index_sprites = sprites;
-            if let Some(variant_atlas) = self.variant_atlas.as_ref() {
-                let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
-                    "palette_dung_bg_main"
-                } else {
-                    "palette_overworld_bg_main"
-                };
-                if let Some(stats) = frontend.present_modern_variant_gpu(
-                    &modern,
-                    &bg_cells,
-                    &sprite_cells,
-                    variant_atlas,
-                    bg_palette_name,
-                    "palette_main_spr",
-                ) {
-                    self.variant_live_stats.record(stats);
-                }
-                return;
-            }
-            if self.gpu_asset_mode {
-                frontend.present_modern_gpu(&modern, &bg_cells, &sprite_cells);
-                return;
-            }
             let ctx = match &self.hd_overrides {
                 Some(store) => renderer::modern_hd_overrides::HdOverrideCtx::new(store),
                 None => renderer::modern_hd_overrides::HdOverrideCtx::disabled(),
