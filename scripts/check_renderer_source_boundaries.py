@@ -24,6 +24,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernAssetLiveStats",
     "ModernIndexCompareStats",
     "ModernIndexCompareFrameRecord",
+    "ModernIndexCompareResources",
     "MappedSourceTableView",
     "MappedSourceTableView::from_entries",
     "compare_modern_index_rgba",
@@ -94,6 +95,15 @@ FORBIDDEN_MODERN_INDEX_FRAME_REPORT_CALLS = (
     "modern_index_compare_stats.should_print_frame(",
     "modern_index_compare_stats.frame_line(",
     "modern_index_compare_stats.progress_line(",
+)
+
+FORBIDDEN_MODERN_INDEX_RESOURCE_POLICY_CALLS = (
+    "atlas_gpu_compare",
+    "variant_gpu_compare",
+    "let modern_gpu_headless",
+    "let modern_variant_headless",
+    "let variant_atlas = if modern_index_compare",
+    "let source_atlas = if modern_index_compare",
 )
 
 FORBIDDEN_MODERN_SCENE_POLICY_CALLS = (
@@ -271,6 +281,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "modern index frame report policy escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MODERN_INDEX_RESOURCE_POLICY_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "modern index resource policy escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

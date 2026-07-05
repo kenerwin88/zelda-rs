@@ -3653,44 +3653,16 @@ fn run_replay_save(args: &[String]) {
     let replay_renderer_env = std::env::var("ZELDA3_RENDERER").ok();
     let replay_renderer_mode =
         effective_renderer_mode_from_env_value(replay_renderer_env.as_deref());
-    let assets_anim_mode = replay_renderer_mode.name() == "assets-anim";
-    let atlas_gpu_compare = replay_renderer_mode.name() == "assets-anim-gpu";
-    let variant_gpu_compare = replay_renderer_mode.uses_variant_atlas();
-    let modern_gpu_headless: Option<renderer::ModernGpuHeadless> =
-        if modern_index_compare != 0 && (atlas_gpu_compare || variant_gpu_compare) {
-            Some(renderer::ModernGpuHeadless::new())
-        } else {
-            None
-        };
-    let variant_atlas = if modern_index_compare != 0 && variant_gpu_compare {
-        Some(
-            renderer::modern_variant_atlas::load_modern_canonical_art_atlas(std::path::Path::new(
-                ".",
-            ))
-            .unwrap_or_else(|e| {
-                eprintln!("canonical art atlas load failed: {e}");
-                process::exit(2);
-            }),
-        )
-    } else {
-        None
-    };
-    let modern_variant_headless: Option<renderer::ModernGpuVariantHeadless> = variant_atlas
-        .as_ref()
-        .map(renderer::ModernGpuVariantHeadless::new);
-    let source_atlas = if modern_index_compare != 0
-        && (assets_anim_mode || atlas_gpu_compare || variant_gpu_compare)
-    {
-        Some(
-            renderer::modern_source_atlas::load_modern_source_atlas(std::path::Path::new("."))
-                .unwrap_or_else(|e| {
-                    eprintln!("assets-by-source atlas load failed: {e}");
-                    process::exit(2);
-                }),
-        )
-    } else {
-        None
-    };
+    let modern_index_compare_resources = renderer::ModernIndexCompareResources::load_for_mode(
+        modern_index_compare != 0,
+        replay_renderer_mode,
+        Path::new("."),
+        true,
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("modern index compare resources load failed: {e}");
+        process::exit(2);
+    });
     let capture_panic_pre_frame =
         std::env::var_os("ZELDA3_REPLAY_CAPTURE_PANIC_PRE_FRAME").is_some();
     let mut last_frame_had_fingerprint_render = false;
@@ -5467,9 +5439,9 @@ fn run_replay_save(args: &[String]) {
                 let modern_render = renderer::modern_gpu::render_modern_index_compare_frame(
                     &gpu_frame,
                     Some(&src_table),
-                    source_atlas.as_ref(),
-                    modern_gpu_headless.as_ref(),
-                    modern_variant_headless.as_ref(),
+                    modern_index_compare_resources.source_atlas(),
+                    modern_index_compare_resources.gpu_headless(),
+                    modern_index_compare_resources.variant_headless(),
                     scene,
                     trace_pixel.map(|(_, trace_x, trace_y)| (trace_x, trace_y)),
                     true,
@@ -12198,40 +12170,16 @@ fn run_play_gpu_render_compare(args: &[String]) {
     };
     let play_renderer_env = std::env::var("ZELDA3_RENDERER").ok();
     let play_renderer_mode = effective_renderer_mode_from_env_value(play_renderer_env.as_deref());
-    let atlas_gpu_compare = play_renderer_mode.name() == "assets-anim-gpu";
-    let variant_gpu_compare = play_renderer_mode.uses_variant_atlas();
-    let modern_gpu_headless: Option<renderer::ModernGpuHeadless> =
-        if modern_index_compare != 0 && (atlas_gpu_compare || variant_gpu_compare) {
-            Some(renderer::ModernGpuHeadless::new())
-        } else {
-            None
-        };
-    let variant_atlas = if modern_index_compare != 0 && variant_gpu_compare {
-        Some(
-            renderer::modern_variant_atlas::load_modern_canonical_art_atlas(Path::new("."))
-                .unwrap_or_else(|e| {
-                    eprintln!("canonical art atlas load failed: {e}");
-                    process::exit(2);
-                }),
-        )
-    } else {
-        None
-    };
-    let modern_variant_headless: Option<renderer::ModernGpuVariantHeadless> = variant_atlas
-        .as_ref()
-        .map(renderer::ModernGpuVariantHeadless::new);
-    let source_atlas = if modern_index_compare != 0 && (atlas_gpu_compare || variant_gpu_compare) {
-        Some(
-            renderer::modern_source_atlas::load_modern_source_atlas(Path::new(".")).unwrap_or_else(
-                |e| {
-                    eprintln!("assets-by-source atlas load failed: {e}");
-                    process::exit(2);
-                },
-            ),
-        )
-    } else {
-        None
-    };
+    let modern_index_compare_resources = renderer::ModernIndexCompareResources::load_for_mode(
+        modern_index_compare != 0,
+        play_renderer_mode,
+        Path::new("."),
+        false,
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("modern index compare resources load failed: {e}");
+        process::exit(2);
+    });
     let last_panic = install_crash_panic_hook();
     let mut offscreen = pollster::block_on(OffscreenRenderer::new(256, 224));
     let mut render_frame = vec![0u8; 256 * 224 * 4];
@@ -12313,9 +12261,9 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let modern_render = renderer::modern_gpu::render_modern_index_compare_frame(
                 &gpu_frame,
                 Some(&src_table),
-                source_atlas.as_ref(),
-                modern_gpu_headless.as_ref(),
-                modern_variant_headless.as_ref(),
+                modern_index_compare_resources.source_atlas(),
+                modern_index_compare_resources.gpu_headless(),
+                modern_index_compare_resources.variant_headless(),
                 scene,
                 trace_pixel.map(|(_, trace_x, trace_y)| (trace_x, trace_y)),
                 false,

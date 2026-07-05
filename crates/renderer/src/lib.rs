@@ -2109,6 +2109,94 @@ impl ModernAssetFrameResources {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ModernIndexCompareResourcePlan {
+    load_source_atlas: bool,
+    load_variant_atlas: bool,
+    load_gpu_headless: bool,
+}
+
+fn modern_index_compare_resource_plan(
+    enabled: bool,
+    mode: EffectiveRendererMode<'_>,
+    allow_source_cpu_fallback: bool,
+) -> ModernIndexCompareResourcePlan {
+    if !enabled {
+        return ModernIndexCompareResourcePlan {
+            load_source_atlas: false,
+            load_variant_atlas: false,
+            load_gpu_headless: false,
+        };
+    }
+
+    let source_gpu = mode.name() == "assets-anim-gpu";
+    let source_cpu = allow_source_cpu_fallback && mode.name() == "assets-anim";
+    let variant_gpu = mode.uses_variant_atlas();
+    ModernIndexCompareResourcePlan {
+        load_source_atlas: source_gpu || source_cpu || variant_gpu,
+        load_variant_atlas: variant_gpu,
+        load_gpu_headless: source_gpu || variant_gpu,
+    }
+}
+
+/// Renderer-owned resource bundle for modern-index compare runs.
+///
+/// The binary decides whether a compare is requested and supplies the effective
+/// renderer mode. The renderer owns which atlases and headless GPU helpers that
+/// mode needs for modern-index rendering.
+pub struct ModernIndexCompareResources {
+    source_atlas: Option<modern_source_atlas::ModernSourceAtlas>,
+    gpu_headless: Option<ModernGpuHeadless>,
+    variant_headless: Option<ModernGpuVariantHeadless>,
+}
+
+impl ModernIndexCompareResources {
+    pub fn load_for_mode(
+        enabled: bool,
+        mode: EffectiveRendererMode<'_>,
+        root: &Path,
+        allow_source_cpu_fallback: bool,
+    ) -> Result<Self, String> {
+        let plan = modern_index_compare_resource_plan(enabled, mode, allow_source_cpu_fallback);
+        let source_atlas = if plan.load_source_atlas {
+            Some(
+                modern_source_atlas::load_modern_source_atlas(root)
+                    .map_err(|e| format!("assets-by-source atlas load failed: {e}"))?,
+            )
+        } else {
+            None
+        };
+        let variant_atlas = if plan.load_variant_atlas {
+            Some(
+                modern_variant_atlas::load_modern_canonical_art_atlas(root)
+                    .map_err(|e| format!("canonical art atlas load failed: {e}"))?,
+            )
+        } else {
+            None
+        };
+        let gpu_headless = plan.load_gpu_headless.then(ModernGpuHeadless::new);
+        let variant_headless = variant_atlas.as_ref().map(ModernGpuVariantHeadless::new);
+
+        Ok(Self {
+            source_atlas,
+            gpu_headless,
+            variant_headless,
+        })
+    }
+
+    pub fn source_atlas(&self) -> Option<&modern_source_atlas::ModernSourceAtlas> {
+        self.source_atlas.as_ref()
+    }
+
+    pub fn gpu_headless(&self) -> Option<&ModernGpuHeadless> {
+        self.gpu_headless.as_ref()
+    }
+
+    pub fn variant_headless(&self) -> Option<&ModernGpuVariantHeadless> {
+        self.variant_headless.as_ref()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ModernAssetFrameScene {
     in_dungeon: bool,
 }
@@ -3518,6 +3606,77 @@ mod tests {
         assert!(err.contains("assets-by-source atlas missing"), "{err}");
 
         fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn modern_index_compare_resources_skip_when_compare_disabled() {
+        let root = temp_modern_asset_root("modern-index-disabled");
+
+        let resources = ModernIndexCompareResources::load_for_mode(
+            false,
+            EffectiveRendererMode::from_name("assets-variant-gpu"),
+            &root,
+            false,
+        )
+        .expect("disabled compare loads no resources");
+
+        assert!(resources.source_atlas().is_none());
+        assert!(resources.gpu_headless().is_none());
+        assert!(resources.variant_headless().is_none());
+
+        fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn modern_index_compare_resource_plan_covers_gpu_and_cpu_routes() {
+        assert_eq!(
+            modern_index_compare_resource_plan(
+                true,
+                EffectiveRendererMode::from_name("assets-anim-gpu"),
+                false,
+            ),
+            ModernIndexCompareResourcePlan {
+                load_source_atlas: true,
+                load_variant_atlas: false,
+                load_gpu_headless: true,
+            }
+        );
+        assert_eq!(
+            modern_index_compare_resource_plan(
+                true,
+                EffectiveRendererMode::from_name("assets-variant-gpu"),
+                false,
+            ),
+            ModernIndexCompareResourcePlan {
+                load_source_atlas: true,
+                load_variant_atlas: true,
+                load_gpu_headless: true,
+            }
+        );
+        assert_eq!(
+            modern_index_compare_resource_plan(
+                true,
+                EffectiveRendererMode::from_name("assets-anim"),
+                true,
+            ),
+            ModernIndexCompareResourcePlan {
+                load_source_atlas: true,
+                load_variant_atlas: false,
+                load_gpu_headless: false,
+            }
+        );
+        assert_eq!(
+            modern_index_compare_resource_plan(
+                true,
+                EffectiveRendererMode::from_name("assets-anim"),
+                false,
+            ),
+            ModernIndexCompareResourcePlan {
+                load_source_atlas: false,
+                load_variant_atlas: false,
+                load_gpu_headless: false,
+            }
+        );
     }
 
     #[test]

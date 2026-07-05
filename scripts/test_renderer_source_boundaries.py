@@ -25,6 +25,7 @@ def source_with_required_calls(body: str) -> str:
         let stats = renderer::ModernAssetLiveStats::from_env();
         let compare = renderer::ModernIndexCompareStats::from_env();
         let frame_record = renderer::ModernIndexCompareFrameRecord {};
+        let compare_resources = renderer::ModernIndexCompareResources::load_for_mode();
         let source_table = renderer::MappedSourceTableView::from_entries(&[(0, 0, 0)]);
         let diff = renderer::compare_modern_index_rgba(&[], &[]);
         let gpu_diff = renderer::compare_gpu_render_bgra_to_rgba(&[], &[]);
@@ -278,6 +279,28 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertEqual(len(errors), 5)
         self.assertTrue(
             all("modern index frame report policy escaped renderer boundary" in error for error in errors)
+        )
+
+    def test_rejects_modern_index_resource_policy_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_play_with_state() {
+                let atlas_gpu_compare = mode.name() == "assets-anim-gpu";
+                let variant_gpu_compare = mode.uses_variant_atlas();
+                let modern_gpu_headless = Some(renderer::ModernGpuHeadless::new());
+                let modern_variant_headless = variant_atlas.as_ref().map(renderer::ModernGpuVariantHeadless::new);
+                let variant_atlas = if modern_index_compare != 0 { None } else { None };
+                let source_atlas = if modern_index_compare != 0 { None } else { None };
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 6)
+        self.assertTrue(
+            all("modern index resource policy escaped renderer boundary" in error for error in errors)
         )
 
     def test_rejects_modern_scene_policy_calls(self):
