@@ -1843,52 +1843,37 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let scanlines_raw = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
         let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
-        if gpu_frame.mode == 7 && self.gpu_asset_mode {
-            frontend.present_modern_mode7_gpu(&gpu_frame);
-            return;
-        }
-
-        // Off-VRAM sources+overrides path: needs the CHR-source table
-        // (`game.vram_chr_source()`), which only this binary (holding the
-        // zelda3 `GameState`) can see. The renderer crate owns source
-        // extraction and GPU presentation once this table is adapted.
-        // Mode 7 isn't a Mode-1 tilemap the sources extractor can render, so
-        // GPU atlas modes route it through `present_modern_mode7_gpu` above.
-        // CPU/debug modes fall through to the frontend's modern fallback below.
-        if let Some(atlas) = self.source_atlas.as_ref().filter(|_| gpu_frame.mode != 7) {
-            let src_table = VramChrSourceTableView::new(game.vram_chr_source());
-            if let Some(variant_atlas) = self.variant_atlas.as_ref() {
-                let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
-                    "palette_dung_bg_main"
-                } else {
-                    "palette_overworld_bg_main"
-                };
-                if let Some(stats) = frontend.present_modern_variant_gpu_from_sources(
-                    &gpu_frame,
-                    &src_table,
-                    atlas,
-                    variant_atlas,
-                    bg_palette_name,
-                    "palette_main_spr",
-                ) {
+        let src_table = VramChrSourceTableView::new(game.vram_chr_source());
+        let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
+            "palette_dung_bg_main"
+        } else {
+            "palette_overworld_bg_main"
+        };
+        let ctx = match &self.hd_overrides {
+            Some(store) => renderer::modern_hd_overrides::HdOverrideCtx::new(store),
+            None => renderer::modern_hd_overrides::HdOverrideCtx::disabled(),
+        };
+        match frontend.present_modern_asset_frame(
+            &gpu_frame,
+            Some(&src_table),
+            self.source_atlas.as_ref(),
+            self.variant_atlas.as_ref(),
+            self.gpu_asset_mode,
+            bg_palette_name,
+            "palette_main_spr",
+            &ctx,
+        ) {
+            renderer::ModernAssetFramePresentResult::Presented { variant_stats } => {
+                if let Some(stats) = variant_stats {
                     self.variant_live_stats.record(stats);
                 }
                 return;
             }
-            if self.gpu_asset_mode {
-                frontend.present_modern_gpu_from_sources(&gpu_frame, &src_table, atlas);
-                return;
-            }
-            let ctx = match &self.hd_overrides {
-                Some(store) => renderer::modern_hd_overrides::HdOverrideCtx::new(store),
-                None => renderer::modern_hd_overrides::HdOverrideCtx::disabled(),
-            };
-            frontend.present_modern_frame_from_sources(&gpu_frame, &src_table, atlas, &ctx);
-            return;
+            renderer::ModernAssetFramePresentResult::Unhandled => {}
         }
-        if gpu_frame.mode != 7 && self.gpu_asset_mode {
-            frontend.present_modern_gpu_from_vram(&gpu_frame);
-            return;
+        if self.gpu_asset_mode {
+            eprintln!("modern asset renderer did not handle a GPU asset frame");
+            process::exit(2);
         }
         let presentation = PresentationContext {
             in_dungeon: game.ram[PLAYER_IS_INDOORS] != 0,

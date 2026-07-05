@@ -2018,6 +2018,63 @@ pub struct FrameRenderer {
     modern_gpu_target: Option<(wgpu::Texture, wgpu::TextureView)>,
 }
 
+#[derive(Debug, Default)]
+pub enum ModernAssetFramePresentResult {
+    Presented {
+        variant_stats: Option<modern_software::VariantAtlasRenderStats>,
+    },
+    #[default]
+    Unhandled,
+}
+
+impl ModernAssetFramePresentResult {
+    pub fn is_presented(&self) -> bool {
+        matches!(self, Self::Presented { .. })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ModernAssetFramePresentRoute {
+    Mode7Gpu,
+    SourceVariantGpu,
+    SourceGpu,
+    SourceSoftware,
+    VramGpu,
+    Unhandled,
+}
+
+fn modern_asset_frame_present_route(
+    frame_mode: u8,
+    has_src_table: bool,
+    has_source_atlas: bool,
+    has_variant_atlas: bool,
+    gpu_asset_mode: bool,
+) -> ModernAssetFramePresentRoute {
+    if frame_mode == 7 {
+        return if gpu_asset_mode {
+            ModernAssetFramePresentRoute::Mode7Gpu
+        } else {
+            ModernAssetFramePresentRoute::Unhandled
+        };
+    }
+
+    if has_src_table && has_source_atlas {
+        if has_variant_atlas {
+            return ModernAssetFramePresentRoute::SourceVariantGpu;
+        }
+        if gpu_asset_mode {
+            return ModernAssetFramePresentRoute::SourceGpu;
+        }
+        return ModernAssetFramePresentRoute::SourceSoftware;
+    }
+
+    if gpu_asset_mode {
+        ModernAssetFramePresentRoute::VramGpu
+    } else {
+        ModernAssetFramePresentRoute::Unhandled
+    }
+}
+
 impl FrameRenderer {
     pub async fn new(window: Arc<Window>, game_width: u32, game_height: u32) -> Self {
         let instance = create_wgpu_instance();
@@ -2440,6 +2497,78 @@ impl FrameRenderer {
             frame, src_table, atlas, ctx, scale,
         );
         self.present_modern_rgba(&rgba, 256 * scale, 224 * scale)
+    }
+
+    /// Present one live modern-asset frame using the highest available renderer
+    /// path. The caller supplies game-owned inputs (source table and current
+    /// palette names); this method owns the route choice across Mode 7 GPU,
+    /// source variant GPU, source GPU, source software, and VRAM GPU fallback.
+    pub fn present_modern_asset_frame<S: modern_extract::SourceTableView + ?Sized>(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        src_table: Option<&S>,
+        source_atlas: Option<&modern_source_atlas::ModernSourceAtlas>,
+        variant_atlas: Option<&modern_variant_atlas::ModernVariantAtlas>,
+        gpu_asset_mode: bool,
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+        ctx: &modern_hd_overrides::HdOverrideCtx,
+    ) -> Result<ModernAssetFramePresentResult, RenderError> {
+        match modern_asset_frame_present_route(
+            frame.mode,
+            src_table.is_some(),
+            source_atlas.is_some(),
+            variant_atlas.is_some(),
+            gpu_asset_mode,
+        ) {
+            ModernAssetFramePresentRoute::Mode7Gpu => {
+                self.present_modern_mode7_gpu(frame)?;
+                Ok(ModernAssetFramePresentResult::Presented {
+                    variant_stats: None,
+                })
+            }
+            ModernAssetFramePresentRoute::SourceVariantGpu => {
+                let stats = self.present_modern_variant_gpu_from_sources(
+                    frame,
+                    src_table.expect("route requires source table"),
+                    source_atlas.expect("route requires source atlas"),
+                    variant_atlas.expect("route requires variant atlas"),
+                    bg_palette_name,
+                    sprite_palette_name,
+                )?;
+                Ok(ModernAssetFramePresentResult::Presented {
+                    variant_stats: Some(stats),
+                })
+            }
+            ModernAssetFramePresentRoute::SourceGpu => {
+                self.present_modern_gpu_from_sources(
+                    frame,
+                    src_table.expect("route requires source table"),
+                    source_atlas.expect("route requires source atlas"),
+                )?;
+                Ok(ModernAssetFramePresentResult::Presented {
+                    variant_stats: None,
+                })
+            }
+            ModernAssetFramePresentRoute::SourceSoftware => {
+                self.present_modern_frame_from_sources(
+                    frame,
+                    src_table.expect("route requires source table"),
+                    source_atlas.expect("route requires source atlas"),
+                    ctx,
+                )?;
+                Ok(ModernAssetFramePresentResult::Presented {
+                    variant_stats: None,
+                })
+            }
+            ModernAssetFramePresentRoute::VramGpu => {
+                self.present_modern_gpu_from_vram(frame)?;
+                Ok(ModernAssetFramePresentResult::Presented {
+                    variant_stats: None,
+                })
+            }
+            ModernAssetFramePresentRoute::Unhandled => Ok(ModernAssetFramePresentResult::Unhandled),
+        }
     }
 
     /// Live GPU present of the PNG-atlas path (`ZELDA3_RENDERER=assets-anim-gpu`).
@@ -3185,6 +3314,42 @@ impl OffscreenRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn modern_asset_frame_route_keeps_default_paths_on_gpu() {
+        assert_eq!(
+            modern_asset_frame_present_route(7, true, true, true, true),
+            ModernAssetFramePresentRoute::Mode7Gpu
+        );
+        assert_eq!(
+            modern_asset_frame_present_route(1, true, true, true, true),
+            ModernAssetFramePresentRoute::SourceVariantGpu
+        );
+        assert_eq!(
+            modern_asset_frame_present_route(1, true, true, false, true),
+            ModernAssetFramePresentRoute::SourceGpu
+        );
+        assert_eq!(
+            modern_asset_frame_present_route(1, false, false, false, true),
+            ModernAssetFramePresentRoute::VramGpu
+        );
+    }
+
+    #[test]
+    fn modern_asset_frame_route_preserves_explicit_non_gpu_fallbacks() {
+        assert_eq!(
+            modern_asset_frame_present_route(1, true, true, false, false),
+            ModernAssetFramePresentRoute::SourceSoftware
+        );
+        assert_eq!(
+            modern_asset_frame_present_route(7, true, true, false, false),
+            ModernAssetFramePresentRoute::Unhandled
+        );
+        assert_eq!(
+            modern_asset_frame_present_route(1, false, false, false, false),
+            ModernAssetFramePresentRoute::Unhandled
+        );
+    }
 
     fn assert_near(actual: f32, expected: f32) {
         assert!(

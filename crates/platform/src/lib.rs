@@ -294,6 +294,61 @@ impl NativeFrontend {
         self.sleep_after_present();
     }
 
+    /// Present one live modern-asset frame through the renderer-owned route
+    /// selector. Returns `Unhandled` when the caller should fall back to the
+    /// classic/modern PPU presentation path.
+    pub fn present_modern_asset_frame<S: renderer::modern_extract::SourceTableView + ?Sized>(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        src_table: Option<&S>,
+        source_atlas: Option<&renderer::modern_source_atlas::ModernSourceAtlas>,
+        variant_atlas: Option<&renderer::modern_variant_atlas::ModernVariantAtlas>,
+        gpu_asset_mode: bool,
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+        ctx: &renderer::modern_hd_overrides::HdOverrideCtx,
+    ) -> renderer::ModernAssetFramePresentResult {
+        let mut present_result = renderer::ModernAssetFramePresentResult::Unhandled;
+        if let Some(renderer) = &mut self.handler.renderer {
+            let result = renderer.present_modern_asset_frame(
+                frame,
+                src_table,
+                source_atlas,
+                variant_atlas,
+                gpu_asset_mode,
+                bg_palette_name,
+                sprite_palette_name,
+                ctx,
+            );
+            match result {
+                Ok(result) => present_result = result,
+                Err(RenderError::SurfaceReconfigureNeeded) => {
+                    if let Some(window) = &self.handler.window {
+                        renderer.resize(window.inner_size());
+                    }
+                    present_result = renderer::ModernAssetFramePresentResult::Presented {
+                        variant_stats: None,
+                    };
+                }
+                Err(RenderError::SurfaceSkipped) => {
+                    present_result = renderer::ModernAssetFramePresentResult::Presented {
+                        variant_stats: None,
+                    };
+                }
+                Err(RenderError::Fatal(e)) => {
+                    eprintln!("render error: {e}");
+                    present_result = renderer::ModernAssetFramePresentResult::Presented {
+                        variant_stats: None,
+                    };
+                }
+            }
+        }
+        if present_result.is_presented() {
+            self.sleep_after_present();
+        }
+        present_result
+    }
+
     /// Present a modern PNG-atlas frame fully on the GPU (`assets-anim-gpu`).
     /// The caller builds `(ModernFrame, bg_cells, sprite_cells)` via the source
     /// extractor because that path needs the CHR-source table this crate can't

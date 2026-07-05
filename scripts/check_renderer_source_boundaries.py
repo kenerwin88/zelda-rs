@@ -18,11 +18,8 @@ MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
 
 MANUAL_EXTRACT = "extract_modern_frame_from_sources"
 REQUIRED_RENDERER_OWNED_CALLS = (
-    "present_modern_variant_gpu_from_sources",
-    "present_modern_gpu_from_sources",
-    "present_modern_gpu_from_vram",
+    "present_modern_asset_frame",
     "render_modern_index_compare_frame",
-    "present_modern_frame_from_sources",
     "render_hd_capture_from_sources",
 )
 
@@ -33,6 +30,14 @@ FORBIDDEN_SOURCE_RENDER_CALLS = (
 FORBIDDEN_VRAM_EXTRACT_CALLS = (
     "extract_modern_frame_from_vram",
     "extract_modern_sprites_from_vram",
+)
+
+FORBIDDEN_GRANULAR_LIVE_PRESENT_CALLS = (
+    "present_modern_variant_gpu_from_sources",
+    "present_modern_gpu_from_sources",
+    "present_modern_gpu_from_vram",
+    "present_modern_frame_from_sources",
+    "present_modern_mode7_gpu",
 )
 
 
@@ -111,6 +116,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "manual VRAM extraction escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_GRANULAR_LIVE_PRESENT_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "granular live present escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
