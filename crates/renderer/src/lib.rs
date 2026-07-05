@@ -70,10 +70,8 @@ pub use modern_gpu::{
     ModernGpuCompositor, ModernGpuHeadless, ModernGpuVariantHeadless, ModernGpuVariantRenderer,
 };
 pub use modern_index_compare_stats::{
-    compare_modern_index_rgba, ModernIndexCompareDumpPaths, ModernIndexCompareFrameDiff,
-    ModernIndexCompareFrameLine, ModernIndexCompareFrameRecord, ModernIndexCompareFrameRenderInput,
-    ModernIndexCompareFrameRenderedRecord, ModernIndexCompareFrameRenderedReport,
-    ModernIndexCompareFrameReport, ModernIndexComparePixelDiff, ModernIndexCompareStats,
+    ModernIndexCompareDumpPaths, ModernIndexCompareFrameRenderInput,
+    ModernIndexCompareFrameRenderedReport, ModernIndexCompareFrameReport, ModernIndexCompareStats,
 };
 pub use modern_live_stats::{ModernAssetLiveFrameReport, ModernAssetLiveStats};
 pub use post_process::scanlines_from_raw;

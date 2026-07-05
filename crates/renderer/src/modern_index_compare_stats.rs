@@ -6,7 +6,7 @@ use crate::modern_gpu::{modern_gpu_path_fallback_reason, ModernGpuPathFallback};
 use crate::modern_software::VariantAtlasRenderStats;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ModernIndexComparePixelDiff {
+struct ModernIndexComparePixelDiff {
     pub first_x: usize,
     pub first_y: usize,
     pub classic_rgb: (u8, u8, u8),
@@ -14,13 +14,13 @@ pub struct ModernIndexComparePixelDiff {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ModernIndexCompareFrameDiff {
+struct ModernIndexCompareFrameDiff {
     pub mismatch: u32,
     pub diff: Option<ModernIndexComparePixelDiff>,
 }
 
 #[derive(Clone, Copy)]
-pub struct ModernIndexCompareFrameLine<'a> {
+struct ModernIndexCompareFrameLine<'a> {
     pub frame: u32,
     pub mode_label: &'a str,
     pub ppu_mode: u8,
@@ -31,7 +31,7 @@ pub struct ModernIndexCompareFrameLine<'a> {
 }
 
 #[derive(Clone, Copy)]
-pub struct ModernIndexCompareFrameRecord<'a> {
+struct ModernIndexCompareFrameRecord<'a> {
     pub frame: u32,
     pub mode_label: &'a str,
     pub ppu_mode: u8,
@@ -70,7 +70,7 @@ pub struct ModernIndexCompareFrameRenderInput<
     pub include_diff_in_frame_line: bool,
 }
 
-pub struct ModernIndexCompareFrameRenderedRecord<'a> {
+struct ModernIndexCompareFrameRenderedRecord<'a> {
     pub frame: u32,
     pub mode_label: &'a str,
     pub ppu_mode: u8,
@@ -94,7 +94,7 @@ pub struct ModernIndexCompareDumpPaths {
     pub modern_dumped_line: String,
 }
 
-pub fn compare_modern_index_rgba(
+fn compare_modern_index_rgba(
     classic_rgba: &[u8],
     modern_rgba: &[u8],
 ) -> ModernIndexCompareFrameDiff {
@@ -171,7 +171,7 @@ impl ModernIndexCompareStats {
         }
     }
 
-    pub fn full_gpu_fallback(
+    fn full_gpu_fallback(
         &self,
         via: &str,
         variant_stats: Option<&VariantAtlasRenderStats>,
@@ -179,7 +179,7 @@ impl ModernIndexCompareStats {
         modern_gpu_path_fallback_reason(via, variant_stats)
     }
 
-    pub fn progress_line(&self, frame: u32) -> Option<String> {
+    fn progress_line(&self, frame: u32) -> Option<String> {
         (self.summary_enabled
             && self.progress_interval != 0
             && self.compare_count % self.progress_interval == 0)
@@ -207,7 +207,7 @@ impl ModernIndexCompareStats {
         })
     }
 
-    pub fn record_frame(
+    fn record_frame(
         &mut self,
         record: ModernIndexCompareFrameRecord<'_>,
     ) -> ModernIndexCompareFrameReport {
@@ -262,7 +262,7 @@ impl ModernIndexCompareStats {
         }
     }
 
-    pub fn record_rendered_frame(
+    fn record_rendered_frame(
         &mut self,
         record: ModernIndexCompareFrameRenderedRecord<'_>,
     ) -> ModernIndexCompareFrameRenderedReport {
@@ -314,7 +314,7 @@ impl ModernIndexCompareStats {
         })
     }
 
-    pub fn frame_line(&self, line: ModernIndexCompareFrameLine<'_>) -> String {
+    fn frame_line(&self, line: ModernIndexCompareFrameLine<'_>) -> String {
         self.format_frame_line("modern_index_compare", line)
     }
 
