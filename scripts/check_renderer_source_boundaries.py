@@ -19,6 +19,7 @@ MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
 MANUAL_EXTRACT = "extract_modern_frame_from_sources"
 REQUIRED_RENDERER_OWNED_CALLS = (
     "present_modern_asset_frame",
+    "ModernAssetFrameResources::load_from_env",
     "ModernAssetFrameScene",
     "ModernIndexCompareScene",
     "ModernAssetLiveStats",
@@ -26,7 +27,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "unhandled_gpu_asset_frame_line",
     "ModernIndexCompareStats",
     "ModernIndexCompareFrameRenderInput",
-    "ModernIndexCompareResources",
+    "ModernIndexCompareResources::load_from_env",
     "MappedSourceTableView",
     "MappedSourceTableView::from_entries",
     "compare_gpu_render_bgra_to_rgba",
@@ -65,6 +66,11 @@ FORBIDDEN_ASSET_POLICY_CALLS = (
     "variant_atlas_renderer_mode",
     "load_source_atlas_for_mode",
     "load_variant_atlas_for_mode",
+    "effective_renderer_mode_from_env_value",
+    "EffectiveRendererMode::from_env_value",
+    "ZELDA3_VARIANT_ATLAS",
+    "ModernAssetFrameResources::load_for_mode(",
+    "ModernIndexCompareResources::load_for_mode(",
 )
 
 FORBIDDEN_HD_OVERRIDE_CALLS = (

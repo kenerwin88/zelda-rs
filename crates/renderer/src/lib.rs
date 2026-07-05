@@ -2066,6 +2066,10 @@ pub struct ModernAssetFrameResources {
 }
 
 impl ModernAssetFrameResources {
+    pub fn load_from_env(root: &Path) -> Result<Self, String> {
+        Self::load_for_mode(EffectiveRendererMode::from_env(), root)
+    }
+
     pub fn load_for_mode(mode: EffectiveRendererMode<'_>, root: &Path) -> Result<Self, String> {
         let variant_atlas = if mode.uses_variant_atlas() {
             Some(modern_variant_atlas::load_modern_canonical_art_atlas(root)?)
@@ -2156,6 +2160,19 @@ pub struct ModernIndexCompareResources {
 }
 
 impl ModernIndexCompareResources {
+    pub fn load_from_env(
+        enabled: bool,
+        root: &Path,
+        allow_source_cpu_fallback: bool,
+    ) -> Result<Self, String> {
+        Self::load_for_mode(
+            enabled,
+            EffectiveRendererMode::from_env(),
+            root,
+            allow_source_cpu_fallback,
+        )
+    }
+
     pub fn load_for_mode(
         enabled: bool,
         mode: EffectiveRendererMode<'_>,

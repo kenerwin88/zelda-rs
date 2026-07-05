@@ -1393,13 +1393,6 @@ impl PlayRendererBackend for CpuPlayRenderer {
     }
 }
 
-fn effective_renderer_mode_from_env_value(
-    value: Option<&str>,
-) -> renderer::EffectiveRendererMode<'_> {
-    let variant_atlas_env = env::var("ZELDA3_VARIANT_ATLAS").ok();
-    renderer::EffectiveRendererMode::from_env_value(value, variant_atlas_env.as_deref())
-}
-
 /// Modern asset resources + HD override store for the live present path, loaded
 /// once. The renderer crate owns which atlases each renderer mode requires and
 /// how they route through GPU/software presentation.
@@ -1410,14 +1403,11 @@ struct GpuPlayRenderer {
 
 impl GpuPlayRenderer {
     fn new() -> Self {
-        let renderer_env = env::var("ZELDA3_RENDERER").ok();
-        let mode = effective_renderer_mode_from_env_value(renderer_env.as_deref());
-        let modern_assets =
-            renderer::ModernAssetFrameResources::load_for_mode(mode, Path::new("."))
-                .unwrap_or_else(|e| {
-                    eprintln!("modern asset load failed: {e}");
-                    process::exit(2);
-                });
+        let modern_assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."))
+            .unwrap_or_else(|e| {
+                eprintln!("modern asset load failed: {e}");
+                process::exit(2);
+            });
         Self {
             modern_assets,
             variant_live_stats: renderer::ModernAssetLiveStats::from_env(),
@@ -1518,8 +1508,7 @@ fn run_play_with_state(mut game: ZeldaState) {
     // separately). GPU asset modes intercept Mode 7 and source-atlas misses in
     // `GpuPlayRenderer::present_frame`, so the default path does not need
     // `FrameRenderer::render_modern_frame`'s CPU compositor.
-    let explicit_renderer_env = env::var("ZELDA3_RENDERER").ok();
-    let renderer_env = effective_renderer_mode_from_env_value(explicit_renderer_env.as_deref());
+    let renderer_env = renderer::EffectiveRendererMode::from_env();
     let renderer_mode = if renderer_env.uses_source_atlas() {
         renderer::RendererMode::Modern
     } else {
@@ -3646,12 +3635,8 @@ fn run_replay_save(args: &[String]) {
     // explicit renderer env selects it. Explicit `assets-anim` keeps the CPU atlas
     // compositor as an opt-out/debug oracle. `assets-variant-gpu` uses compact
     // base art plus LUT effects for stable draws and reports fallback counts.
-    let replay_renderer_env = std::env::var("ZELDA3_RENDERER").ok();
-    let replay_renderer_mode =
-        effective_renderer_mode_from_env_value(replay_renderer_env.as_deref());
-    let modern_index_compare_resources = renderer::ModernIndexCompareResources::load_for_mode(
+    let modern_index_compare_resources = renderer::ModernIndexCompareResources::load_from_env(
         modern_index_compare != 0,
-        replay_renderer_mode,
         Path::new("."),
         true,
     )
@@ -12155,11 +12140,8 @@ fn run_play_gpu_render_compare(args: &[String]) {
     } else {
         None
     };
-    let play_renderer_env = std::env::var("ZELDA3_RENDERER").ok();
-    let play_renderer_mode = effective_renderer_mode_from_env_value(play_renderer_env.as_deref());
-    let modern_index_compare_resources = renderer::ModernIndexCompareResources::load_for_mode(
+    let modern_index_compare_resources = renderer::ModernIndexCompareResources::load_from_env(
         modern_index_compare != 0,
-        play_renderer_mode,
         Path::new("."),
         false,
     )

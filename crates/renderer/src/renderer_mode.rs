@@ -1,3 +1,5 @@
+use std::env;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RendererMode {
     Classic,
@@ -57,6 +59,19 @@ impl<'a> EffectiveRendererMode<'a> {
     }
 }
 
+impl EffectiveRendererMode<'static> {
+    pub fn from_env() -> Self {
+        let renderer_env = env::var("ZELDA3_RENDERER").ok();
+        let variant_atlas_env = env::var("ZELDA3_VARIANT_ATLAS").ok();
+        Self {
+            name: renderer_env_or_default_static(
+                renderer_env.as_deref(),
+                variant_atlas_env.as_deref(),
+            ),
+        }
+    }
+}
+
 pub fn default_renderer_env_for_variant_setting(value: Option<&str>) -> &'static str {
     match value {
         Some(value) if value.eq_ignore_ascii_case("off") => DEFAULT_VARIANT_ATLAS_OFF_RENDERER_ENV,
@@ -70,6 +85,22 @@ pub fn renderer_env_or_default<'a>(
 ) -> &'a str {
     match value {
         Some(value) => value,
+        None => default_renderer_env_for_variant_setting(variant_atlas_setting),
+    }
+}
+
+fn renderer_env_or_default_static(
+    value: Option<&str>,
+    variant_atlas_setting: Option<&str>,
+) -> &'static str {
+    match value {
+        Some("assets-variant-gpu") => "assets-variant-gpu",
+        Some("assets-anim-gpu") => "assets-anim-gpu",
+        Some("assets-anim") => "assets-anim",
+        Some("classic") => "classic",
+        Some("modern") => "modern",
+        Some("modern-compare") => "modern-compare",
+        Some(_) => "classic",
         None => default_renderer_env_for_variant_setting(variant_atlas_setting),
     }
 }
@@ -136,6 +167,11 @@ mod tests {
             renderer_env_or_default(Some("classic"), Some("off")),
             "classic",
             "explicit classic mode remains an opt-out"
+        );
+        assert_eq!(
+            renderer_env_or_default_static(Some("unknown-mode"), Some("off")),
+            "classic",
+            "unknown explicit renderer modes preserve classic/non-asset behavior"
         );
     }
 }

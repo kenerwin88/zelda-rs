@@ -20,6 +20,7 @@ def load_module():
 def source_with_required_calls(body: str) -> str:
     required = """
     fn run_play_with_state() {
+        let assets = renderer::ModernAssetFrameResources::load_from_env();
         let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(0);
         let compare_scene = renderer::ModernIndexCompareScene::from_main_module_and_player_indoors_flag(9, 0);
         let stats = renderer::ModernAssetLiveStats::from_env();
@@ -27,7 +28,7 @@ def source_with_required_calls(body: str) -> str:
         modern_assets.unhandled_gpu_asset_frame_line();
         let compare = renderer::ModernIndexCompareStats::from_env();
         let frame_record = renderer::ModernIndexCompareFrameRenderInput {};
-        let compare_resources = renderer::ModernIndexCompareResources::load_for_mode();
+        let compare_resources = renderer::ModernIndexCompareResources::load_from_env();
         let source_table = renderer::MappedSourceTableView::from_entries(&[(0, 0, 0)]);
         let gpu_diff = renderer::compare_gpu_render_bgra_to_rgba(&[], &[]);
         let frame = renderer::GpuFrame::from_source_and_raw_scanlines();
@@ -186,13 +187,18 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             fn run_play_with_state() {
                 renderer::source_atlas_renderer_mode("assets-anim-gpu");
                 renderer::variant_atlas_renderer_mode("assets-variant-gpu");
+                effective_renderer_mode_from_env_value(renderer_env.as_deref());
+                renderer::EffectiveRendererMode::from_env_value(renderer_env.as_deref(), variant_env.as_deref());
+                let _ = "ZELDA3_VARIANT_ATLAS";
+                renderer::ModernAssetFrameResources::load_for_mode(mode, root);
+                renderer::ModernIndexCompareResources::load_for_mode(enabled, mode, root, true);
             }
             """
         )
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 2)
+        self.assertEqual(len(errors), 7)
         self.assertTrue(
             all("modern asset loading policy escaped renderer boundary" in error for error in errors)
         )
