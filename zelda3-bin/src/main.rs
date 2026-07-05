@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpu_capture::{
-    capture_gpu_frame_from_game, gpu_render_compare_run, modern_compare_mode_defaults_from_env,
+    gpu_render_compare_run, modern_compare_mode_defaults_from_env,
     modern_index_compare_run_from_env, play_gpu_render_compare_session,
     render_hd_capture_from_game, render_live_game_gpu_frame_rgba,
     replay_optional_gpu_readback_renderer,
@@ -3563,9 +3563,9 @@ fn run_replay_save(args: &[String]) {
             // Run HDMA channel 6+7 for one line to load CGRAM entries that ALttP sets
             // via HDMA (e.g. dungeon floor palettes). State is restored after the call
             // so zelda_draw_ppu_frame renders from the correct baseline.
-            let gpu_capture = capture_gpu_frame_from_game(&mut game);
-            let hdma_cgram = gpu_capture.cgram();
-            let scanlines_raw = gpu_capture.raw_scanlines();
+            let render_hash_capture = gpu_readback.capture_replay_render_hash_frame(&mut game);
+            let hdma_cgram = render_hash_capture.cgram();
+            let scanlines_raw = render_hash_capture.raw_scanlines();
             if frames == 800 {
                 // Dump DMA channel state to find which channel targets $212C (TM).
                 let hdmaen_copy = game.ram[0x9b];
@@ -3690,12 +3690,7 @@ fn run_replay_save(args: &[String]) {
                 }
                 h
             };
-            render_play_frame_bgra(
-                &mut game,
-                frame,
-                width as usize * 4,
-                PpuRenderFlags::empty(),
-            );
+            let rgba = gpu_readback.render_replay_hash_cpu_frame_rgba(&mut game, frame);
             if frames == 800 {
                 let post_scrolls: [(u16, u16); 4] = std::array::from_fn(|i| {
                     (game.ppu.bg_layer[i].h_scroll, game.ppu.bg_layer[i].v_scroll)
@@ -3788,7 +3783,6 @@ fn run_replay_save(args: &[String]) {
                     cgram_val
                 );
             }
-            let rgba = gpu_readback.render_cpu_bgra_frame_rgba(frame);
             if frames == 1000 {
                 let post_vram_hash: u32 = {
                     let mut h = 2166136261u32;
@@ -3984,7 +3978,7 @@ fn run_replay_save(args: &[String]) {
                         process::exit(1);
                     }
                     println!("dumped replay-save frame to {}", dump_path.display());
-                    let gpu_rgba = gpu_readback.render_live_gpu_capture_rgba(&gpu_capture);
+                    let gpu_rgba = render_hash_capture.render_gpu_rgba(&mut gpu_readback);
                     let gpu_path = {
                         let stem = dump_path.file_stem().unwrap_or_default().to_string_lossy();
                         let ext = dump_path
@@ -4277,7 +4271,7 @@ fn run_replay_save(args: &[String]) {
                         }
                     }
                 }
-                let gpu_frame = gpu_capture.gpu_frame();
+                let gpu_frame = render_hash_capture.gpu_frame();
                 if frames == 8000 {
                     eprintln!(
                         "[gpu-dbg] math_enabled={:#04x} subtract={} half={} fixed_rgb=({},{},{}) add_sub={} clip_mode={} prevent_math={} windowsel_cm={:#04x} brightness={}",
@@ -4301,7 +4295,7 @@ fn run_replay_save(args: &[String]) {
                         game.ppu.prevent_math_mode
                     );
                 }
-                let gpu_rgba = gpu_readback.render_live_gpu_capture_rgba(&gpu_capture);
+                let gpu_rgba = render_hash_capture.render_gpu_rgba(&mut gpu_readback);
                 if frames == 8000 {
                     let cx = 128usize;
                     let cy = 112usize;
@@ -4313,7 +4307,7 @@ fn run_replay_save(args: &[String]) {
                 }
                 if frames == 332 {
                     // Print math/window params
-                    let gf = gpu_capture.gpu_frame();
+                    let gf = render_hash_capture.gpu_frame();
                     eprintln!(
                         "[gpu-dbg] frame=332 math_enabled={:#04x} subtract={} half={} fixed=({},{},{}) clip_mode={} prevent_math={} windowsel_cm={:#04x} add_sub={}",
                         gf.math_enabled,
@@ -4483,7 +4477,7 @@ fn run_replay_save(args: &[String]) {
                     }
                 }
                 if frames == 733 || frames == 800 || frames == 900 || frames == 1050 {
-                    let gf = gpu_capture.gpu_frame();
+                    let gf = render_hash_capture.gpu_frame();
                     let mut ndiff_top = 0usize;
                     let mut ndiff_bot = 0usize;
                     let mut max_shown = 3usize;

@@ -128,6 +128,10 @@ pub(crate) struct OptionalGpuReadbackRenderer {
     renderer: Option<GpuReadbackRenderer>,
 }
 
+pub(crate) struct ReplayRenderHashCapture {
+    capture: LiveGpuFrameCapture,
+}
+
 impl GpuPlayRenderer {
     fn new() -> Self {
         let modern_assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."))
@@ -727,6 +731,30 @@ impl OptionalGpuReadbackRenderer {
         self.required().render_cpu_bgra_frame_rgba(frame)
     }
 
+    pub(crate) fn capture_replay_render_hash_frame(
+        &self,
+        game: &mut ZeldaState,
+    ) -> ReplayRenderHashCapture {
+        ReplayRenderHashCapture {
+            capture: capture_gpu_frame_from_game(game),
+        }
+    }
+
+    pub(crate) fn render_replay_hash_cpu_frame_rgba(
+        &mut self,
+        game: &mut ZeldaState,
+        frame: &mut [u8],
+    ) -> GpuRgbaReadbackFrame {
+        let width = 256usize;
+        crate::play_renderer::render_play_frame_bgra(
+            game,
+            frame,
+            width * 4,
+            PpuRenderFlags::empty(),
+        );
+        self.render_cpu_bgra_frame_rgba(frame)
+    }
+
     pub(crate) fn render_replay_dump_frame_rgba(
         &mut self,
         game: &ZeldaState,
@@ -742,6 +770,27 @@ impl OptionalGpuReadbackRenderer {
             PpuRenderFlags::empty(),
         );
         self.render_cpu_bgra_frame_rgba(&frame)
+    }
+}
+
+impl ReplayRenderHashCapture {
+    pub(crate) fn cgram(&self) -> &[u16] {
+        self.capture.cgram()
+    }
+
+    pub(crate) fn raw_scanlines(&self) -> &RawScanlineFrame {
+        self.capture.raw_scanlines()
+    }
+
+    pub(crate) fn gpu_frame(&self) -> GpuFrame<'_> {
+        self.capture.gpu_frame()
+    }
+
+    pub(crate) fn render_gpu_rgba(
+        &self,
+        readback: &mut OptionalGpuReadbackRenderer,
+    ) -> GpuRgbaReadbackFrame {
+        readback.render_live_gpu_capture_rgba(&self.capture)
     }
 }
 
