@@ -170,6 +170,99 @@ pub(crate) fn render_gpu_capture_rgba(
     offscreen.render_gpu_frame(&capture.gpu_frame())
 }
 
+pub(crate) fn compare_gpu_render_current_frame(
+    game: &mut ZeldaState,
+    offscreen: &mut renderer::OffscreenRenderer,
+    frame: &mut [u8],
+    frames: u32,
+) -> Option<u32> {
+    let width = 256u32;
+    let gpu_capture = capture_gpu_frame_from_game(game);
+    crate::play_renderer::render_play_frame_bgra(
+        game,
+        frame,
+        width as usize * 4,
+        PpuRenderFlags::empty(),
+    );
+    let gpu_rgba = render_gpu_capture_rgba(&gpu_capture, offscreen);
+    let render_comparison =
+        renderer::compare_gpu_render_frame_bgra_to_rgba(frames, frame, &gpu_rgba);
+    if let Some(diff) = render_comparison.diff() {
+        let gpu_ppu = gpu_capture.ppu();
+        let scanlines_raw = gpu_capture.raw_scanlines();
+        let hdma_cgram = gpu_capture.cgram();
+        if let Some(line) = render_comparison.divergence_line() {
+            eprintln!("{line}");
+        }
+        eprintln!(
+            "gpu-render-state frame={frames} forced_blank={} brightness={} screen={:02x}/{:02x} windowed={:02x}/{:02x} windowsel={:08x} math={:02x} add_sub={} subtract={} half={} fixed=({},{},{}) clip={} prevent={} extra=({},{},{}) win0=({},{},{},{}) win128=({},{},{},{}) scanline_tm0={:02x} scanline_tm128={:02x} mode={} cgram0={:04x}",
+            gpu_ppu.forced_blank,
+            gpu_ppu.brightness,
+            gpu_ppu.screen_enabled[0],
+            gpu_ppu.screen_enabled[1],
+            gpu_ppu.screen_windowed[0],
+            gpu_ppu.screen_windowed[1],
+            gpu_ppu.windowsel,
+            gpu_ppu.math_enabled,
+            gpu_ppu.add_subscreen,
+            gpu_ppu.subtract_color,
+            gpu_ppu.half_color,
+            gpu_ppu.fixed_color_r,
+            gpu_ppu.fixed_color_g,
+            gpu_ppu.fixed_color_b,
+            gpu_ppu.clip_mode,
+            gpu_ppu.prevent_math_mode,
+            gpu_ppu.extra_left_cur,
+            gpu_ppu.extra_right_cur,
+            gpu_ppu.extra_bottom_cur,
+            scanlines_raw[0].0,
+            scanlines_raw[0].1,
+            scanlines_raw[0].2,
+            scanlines_raw[0].3,
+            scanlines_raw[128].0,
+            scanlines_raw[128].1,
+            scanlines_raw[128].2,
+            scanlines_raw[128].3,
+            scanlines_raw[0].4,
+            scanlines_raw[128].4,
+            gpu_ppu.mode,
+            hdma_cgram[0]
+        );
+        eprintln!(
+            "gpu-render-captured-compose frame={frames} x{} {}",
+            diff.first_x,
+            game.ppu.debug_pixel_compose_summary(diff.first_x)
+        );
+        eprintln!(
+            "gpu-render-cgram-match frame={frames} cpu={} gpu={}",
+            cgram_match(hdma_cgram, diff.cpu_rgb),
+            cgram_match(hdma_cgram, diff.gpu_rgb)
+        );
+        let mut cpu_probe_ppu = gpu_ppu.clone();
+        let probe_sl = &scanlines_raw[diff.first_y];
+        cpu_probe_ppu.window1_left = probe_sl.0;
+        cpu_probe_ppu.window1_right = probe_sl.1;
+        cpu_probe_ppu.window2_left = probe_sl.2;
+        cpu_probe_ppu.window2_right = probe_sl.3;
+        cpu_probe_ppu.screen_enabled[0] = probe_sl.4;
+        for layer in 0..4 {
+            cpu_probe_ppu.bg_layer[layer].h_scroll = probe_sl.5[layer];
+            cpu_probe_ppu.bg_layer[layer].v_scroll = probe_sl.6[layer];
+        }
+        eprintln!(
+            "gpu-render-old-probe frame={frames} {}",
+            cpu_probe_ppu.debug_pixel_old_summary(
+                diff.first_x as i32,
+                diff.first_y as i32 + 1,
+                false
+            )
+        );
+        return None;
+    }
+
+    Some(render_comparison.cpu_hash())
+}
+
 pub(crate) fn render_hd_capture_from_gpu_capture(
     capture: &LiveGpuFrameCapture,
     atlas: &renderer::modern_source_atlas::ModernSourceAtlas,
@@ -250,6 +343,26 @@ fn gpu_frame_capture_from_ppu<'a>(
         cgram,
         raw_scanlines,
     }
+}
+
+fn cgram_match(cgram: &[u16], rgb: (u8, u8, u8)) -> String {
+    cgram
+        .iter()
+        .enumerate()
+        .find_map(|(i, &entry)| {
+            let r5 = (entry & 0x1f) as u8;
+            let g5 = ((entry >> 5) & 0x1f) as u8;
+            let b5 = ((entry >> 10) & 0x1f) as u8;
+            let r = (r5 << 3) | (r5 >> 2);
+            let g = (g5 << 3) | (g5 >> 2);
+            let b = (b5 << 3) | (b5 >> 2);
+            if (r, g, b) == rgb {
+                Some(format!("{i:02x}:{entry:04x}"))
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "none".to_string())
 }
 
 fn gpu_frame_register_snapshot_from_ppu<'a>(
