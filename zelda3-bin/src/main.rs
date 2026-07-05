@@ -26,8 +26,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpu_capture::{
     capture_gpu_frame_from_game, emit_modern_index_compare_output_lines, gpu_render_compare_run,
-    modern_atlas_compare_run, modern_compare_mode_defaults_from_env,
-    modern_index_compare_run_from_env, new_gpu_readback_renderer, optional_gpu_readback_renderer,
+    modern_compare_mode_defaults_from_env, modern_index_compare_run_from_env,
+    new_gpu_readback_renderer, optional_gpu_readback_renderer, play_gpu_render_compare_session,
     render_hd_capture_from_gpu_capture,
 };
 use platform::{
@@ -11576,21 +11576,17 @@ fn run_play_gpu_render_compare(args: &[String]) {
         apply_sram_to_game_or_exit(&mut game, path, &sram);
     }
 
-    let modern_atlas_compare = modern_atlas_compare_run(modern_render_compare, Path::new("."))
-        .unwrap_or_else(|e| {
-            eprintln!("modern atlas compare resources load failed: {e}");
-            process::exit(2);
-        });
-    modern_index_compare
-        .load_resources(Path::new("."), false)
-        .unwrap_or_else(|e| {
-            eprintln!("modern index compare resources load failed: {e}");
-            process::exit(2);
-        });
+    let mut compare_session = play_gpu_render_compare_session(
+        stride,
+        modern_render_compare,
+        modern_index_compare,
+        Path::new("."),
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("{e}");
+        process::exit(2);
+    });
     let last_panic = install_crash_panic_hook();
-    let mut gpu_readback = new_gpu_readback_renderer(256, 224);
-    let mut render_frame = vec![0u8; 256 * 224 * 4];
-    let mut gpu_render_compare = gpu_render_compare_run(stride, true);
     for local_frame in 0..frames_to_run {
         let frame = start_frame.wrapping_add(local_frame);
         let input = input_script.input_for_frame(frame);
@@ -11604,48 +11600,13 @@ fn run_play_gpu_render_compare(args: &[String]) {
             process::exit(101);
         }
         let completed_frame = frame.wrapping_add(1);
-        let should_compare_stride = gpu_render_compare.should_compare_frame(completed_frame);
-        let should_compare_modern = modern_atlas_compare.should_compare_frame(completed_frame);
-        let should_compare_modern_index =
-            modern_index_compare.should_compare_frame(completed_frame);
-        if !should_compare_stride && !should_compare_modern && !should_compare_modern_index {
-            continue;
-        }
-        if should_compare_stride {
-            let Some(_) = gpu_render_compare.compare_current_frame(
-                &mut game,
-                &mut gpu_readback,
-                &mut render_frame,
-                completed_frame,
-            ) else {
-                process::exit(1);
-            };
-        }
-        if should_compare_modern {
-            if let Some(report) = modern_atlas_compare.render_report_from_game(
-                &mut game,
-                &mut gpu_readback,
-                completed_frame,
-            ) {
-                println!("{}", report.line);
-            }
-        }
-        if should_compare_modern_index {
-            let output_lines = modern_index_compare.render_output_from_game(
-                &mut game,
-                &mut gpu_readback,
-                completed_frame,
-                true,
-            );
-            emit_modern_index_compare_output_lines(&output_lines);
-            if output_lines.has_failure {
-                process::exit(1);
-            }
+        if !compare_session.compare_frame(&mut game, completed_frame) {
+            process::exit(1);
         }
     }
 
-    println!("{}", gpu_render_compare.play_summary_line(start_frame));
-    if let Some(line) = modern_index_compare.summary_line_if_enabled() {
+    println!("{}", compare_session.play_summary_line(start_frame));
+    if let Some(line) = compare_session.modern_index_summary_line_if_enabled() {
         println!("{line}");
     }
 }

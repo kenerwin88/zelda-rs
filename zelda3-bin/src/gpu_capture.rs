@@ -103,9 +103,17 @@ pub(crate) struct GpuRenderCompareRun {
     last_hash: u32,
 }
 
-pub(crate) struct ModernAtlasCompareRun {
+struct ModernAtlasCompareRun {
     stride: u32,
     resources: renderer::ModernAtlasCompareResources,
+}
+
+pub(crate) struct PlayGpuRenderCompareSession {
+    readback: GpuReadbackRenderer,
+    render_frame: Vec<u8>,
+    gpu_render_compare: GpuRenderCompareRun,
+    modern_atlas_compare: ModernAtlasCompareRun,
+    modern_index_compare: ModernIndexCompareRun,
 }
 
 pub(crate) struct GpuReadbackRenderer {
@@ -230,20 +238,37 @@ pub(crate) fn gpu_render_compare_run(stride: u32, quiet: bool) -> GpuRenderCompa
     }
 }
 
-pub(crate) fn modern_atlas_compare_run(
-    stride: u32,
-    root: &Path,
-) -> Result<ModernAtlasCompareRun, String> {
+fn modern_atlas_compare_run(stride: u32, root: &Path) -> Result<ModernAtlasCompareRun, String> {
     let resources = renderer::ModernAtlasCompareResources::load(stride != 0, root)?;
     Ok(ModernAtlasCompareRun { stride, resources })
 }
 
+pub(crate) fn play_gpu_render_compare_session(
+    stride: u32,
+    modern_render_compare: u32,
+    mut modern_index_compare: ModernIndexCompareRun,
+    root: &Path,
+) -> Result<PlayGpuRenderCompareSession, String> {
+    let modern_atlas_compare = modern_atlas_compare_run(modern_render_compare, root)
+        .map_err(|e| format!("modern atlas compare resources load failed: {e}"))?;
+    modern_index_compare
+        .load_resources(root, false)
+        .map_err(|e| format!("modern index compare resources load failed: {e}"))?;
+    Ok(PlayGpuRenderCompareSession {
+        readback: new_gpu_readback_renderer(256, 224),
+        render_frame: vec![0u8; 256 * 224 * 4],
+        gpu_render_compare: gpu_render_compare_run(stride, true),
+        modern_atlas_compare,
+        modern_index_compare,
+    })
+}
+
 impl ModernAtlasCompareRun {
-    pub(crate) fn should_compare_frame(&self, frame: u32) -> bool {
+    fn should_compare_frame(&self, frame: u32) -> bool {
         self.stride != 0 && frame % self.stride == 0
     }
 
-    pub(crate) fn render_report_from_game(
+    fn render_report_from_game(
         &self,
         game: &mut ZeldaState,
         readback: &mut GpuReadbackRenderer,
@@ -430,6 +455,66 @@ impl ModernIndexCompareRun {
 
     pub(crate) fn summary_line_if_enabled(&self) -> Option<String> {
         self.stats.summary_line_if_enabled(self.enabled())
+    }
+}
+
+impl PlayGpuRenderCompareSession {
+    pub(crate) fn compare_frame(&mut self, game: &mut ZeldaState, completed_frame: u32) -> bool {
+        let should_compare_stride = self
+            .gpu_render_compare
+            .should_compare_frame(completed_frame);
+        let should_compare_modern = self
+            .modern_atlas_compare
+            .should_compare_frame(completed_frame);
+        let should_compare_modern_index = self
+            .modern_index_compare
+            .should_compare_frame(completed_frame);
+        if !should_compare_stride && !should_compare_modern && !should_compare_modern_index {
+            return true;
+        }
+        if should_compare_stride {
+            let Some(line) = self.gpu_render_compare.compare_current_frame(
+                game,
+                &mut self.readback,
+                &mut self.render_frame,
+                completed_frame,
+            ) else {
+                return false;
+            };
+            if let Some(line) = line {
+                println!("{line}");
+            }
+        }
+        if should_compare_modern {
+            if let Some(report) = self.modern_atlas_compare.render_report_from_game(
+                game,
+                &mut self.readback,
+                completed_frame,
+            ) {
+                println!("{}", report.line);
+            }
+        }
+        if should_compare_modern_index {
+            let output_lines = self.modern_index_compare.render_output_from_game(
+                game,
+                &mut self.readback,
+                completed_frame,
+                true,
+            );
+            emit_modern_index_compare_output_lines(&output_lines);
+            if output_lines.has_failure {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub(crate) fn play_summary_line(&self, start_frame: u32) -> String {
+        self.gpu_render_compare.play_summary_line(start_frame)
+    }
+
+    pub(crate) fn modern_index_summary_line_if_enabled(&self) -> Option<String> {
+        self.modern_index_compare.summary_line_if_enabled()
     }
 }
 

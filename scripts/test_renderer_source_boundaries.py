@@ -692,11 +692,14 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 renderer::ModernAtlasCompareResources::load(enabled, root);
                 let _atlas_resources = load_modern_atlas_compare_resources(enabled, root);
                 let _atlas_report = render_modern_atlas_compare_report_from_capture();
+                let modern_atlas_compare = modern_atlas_compare_run(modern_render_compare, Path::new("."));
                 let _offscreen: renderer::OffscreenRenderer;
                 let mut offscreen = pollster::block_on(OffscreenRenderer::new(256, 224));
                 offscreen.upload_bgra_frame(frame);
                 offscreen.render_to_rgba();
                 let mut gpu_readback = if render_hash_log != 0 { Some(new_gpu_readback_renderer(256, 224)) } else { None };
+                let mut gpu_readback = new_gpu_readback_renderer(256, 224);
+                let mut render_frame = vec![0u8; 256 * 224 * 4];
                 let gpu_readback = gpu_readback.as_mut().expect("GPU readback renderer allocated");
                 gpu_readback.required();
                 let _cpu_rgba = gpu_readback.render_bgra_frame_to_rgba(frame);
@@ -714,6 +717,9 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let source_table = renderer::source_table_from_entries(gpu_capture.source_entries());
                 renderer::hd_authoring::render_hd_capture_from_sources(&gpu_frame, &source_table, &atlas);
                 renderer::compare_gpu_render_frame_bgra_to_rgba(frames, frame, &gpu_rgba);
+                gpu_render_compare.compare_current_frame(&mut game, &mut gpu_readback, &mut render_frame, completed_frame);
+                modern_atlas_compare.render_report_from_game(&mut game, &mut gpu_readback, completed_frame);
+                modern_index_compare.render_output_from_game(&mut game, &mut gpu_readback, completed_frame, true);
                 if gpu_render_compare != 0 && frames % gpu_render_compare == 0 {}
                 gpu_render_compare_count = gpu_render_compare_count.wrapping_add(1);
                 gpu_render_compare_last_frame = frames;
@@ -738,7 +744,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 62)
+        self.assertEqual(len(errors), 68)
         self.assertTrue(
             all("live GPU play backend ownership escaped gpu_capture boundary" in error for error in errors)
         )
