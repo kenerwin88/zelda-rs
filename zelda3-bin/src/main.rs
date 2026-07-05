@@ -4271,22 +4271,8 @@ fn run_replay_save(args: &[String]) {
                         }
                     }
                 }
-                let gpu_frame = render_hash_capture.gpu_frame();
                 if frames == 8000 {
-                    eprintln!(
-                        "[gpu-dbg] math_enabled={:#04x} subtract={} half={} fixed_rgb=({},{},{}) add_sub={} clip_mode={} prevent_math={} windowsel_cm={:#04x} brightness={}",
-                        gpu_frame.math_enabled,
-                        gpu_frame.subtract_color,
-                        gpu_frame.half_color,
-                        gpu_frame.fixed_color_r,
-                        gpu_frame.fixed_color_g,
-                        gpu_frame.fixed_color_b,
-                        gpu_frame.add_subscreen,
-                        gpu_frame.clip_mode,
-                        gpu_frame.prevent_math_mode,
-                        gpu_frame.windowsel_cm,
-                        gpu_frame.brightness
-                    );
+                    eprintln!("{}", render_hash_capture.debug_math_state_line());
                     eprintln!(
                         "[gpu-dbg] ppu.math_enabled={:#04x} ppu.add_subscreen={} ppu.subtract={} ppu.prevent_math_mode={}",
                         game.ppu.math_enabled,
@@ -4307,20 +4293,7 @@ fn run_replay_save(args: &[String]) {
                 }
                 if frames == 332 {
                     // Print math/window params
-                    let gf = render_hash_capture.gpu_frame();
-                    eprintln!(
-                        "[gpu-dbg] frame=332 math_enabled={:#04x} subtract={} half={} fixed=({},{},{}) clip_mode={} prevent_math={} windowsel_cm={:#04x} add_sub={}",
-                        gf.math_enabled,
-                        gf.subtract_color,
-                        gf.half_color,
-                        gf.fixed_color_r,
-                        gf.fixed_color_g,
-                        gf.fixed_color_b,
-                        gf.clip_mode,
-                        gf.prevent_math_mode,
-                        gf.windowsel_cm,
-                        gf.add_subscreen
-                    );
+                    eprintln!("{}", render_hash_capture.debug_frame_332_math_line());
                     eprintln!(
                         "[gpu-dbg] frame=332 ppu: math_enabled={:#04x} clip_mode={} prevent_math={} windowsel={:#010x} w1l={} w1r={}",
                         game.ppu.math_enabled,
@@ -4332,8 +4305,8 @@ fn run_replay_save(args: &[String]) {
                     );
                     // Print scanline 0 window params
                     eprintln!(
-                        "[gpu-dbg] frame=332 scanline[0]: w1l={} w1r={}",
-                        gf.scanlines[0].window1_left, gf.scanlines[0].window1_right
+                        "{}",
+                        render_hash_capture.debug_frame_332_scanline_window_line()
                     );
                     // Find CGRAM entry = 0x014D (the mystery color R=13,G=10,B=0)
                     for (ci, &cv) in hdma_cgram.iter().enumerate() {
@@ -4477,7 +4450,6 @@ fn run_replay_save(args: &[String]) {
                     }
                 }
                 if frames == 733 || frames == 800 || frames == 900 || frames == 1050 {
-                    let gf = render_hash_capture.gpu_frame();
                     let mut ndiff_top = 0usize;
                     let mut ndiff_bot = 0usize;
                     let mut max_shown = 3usize;
@@ -4523,16 +4495,12 @@ fn run_replay_save(args: &[String]) {
                         game.ppu.windowsel
                     );
                     eprintln!(
-                        "[gpu-dbg] f{frames} math={:#04x} add_sub={} subtract={} half={} fixed_r={} fixed_g={} fixed_b={} bg1_hscroll={} irq_flag={}",
-                        gf.math_enabled,
-                        gf.add_subscreen,
-                        gf.subtract_color,
-                        gf.half_color,
-                        gf.fixed_color_r,
-                        gf.fixed_color_g,
-                        gf.fixed_color_b,
-                        game.ppu.bg_layer[0].h_scroll,
-                        game.ram[0xf9]
+                        "{}",
+                        render_hash_capture.debug_effect_math_line(
+                            frames,
+                            game.ppu.bg_layer[0].h_scroll,
+                            game.ram[0xf9],
+                        )
                     );
                     if frames == 900 || frames == 1050 {
                         let (cx, cy) = match frames {
@@ -4542,11 +4510,8 @@ fn run_replay_save(args: &[String]) {
                         };
                         eprintln!("[gpu-dbg] f{frames} probe ({cx},{cy})");
                         eprintln!(
-                            "[gpu-dbg] f{frames} scanline_tm row{}={:#04x} row{}={:#04x}",
-                            cy,
-                            gf.scanlines[cy as usize].screen_enabled_main,
-                            cy + 1,
-                            gf.scanlines[(cy + 1) as usize].screen_enabled_main
+                            "{}",
+                            render_hash_capture.debug_scanline_tm_probe_line(frames, cy)
                         );
                         let ppu_x = (cx + PPU_EXTRA_LEFT_RIGHT as i32) as usize;
                         let main_z = game.ppu.bg_buffers[0].data.get(ppu_x).copied().unwrap_or(0);

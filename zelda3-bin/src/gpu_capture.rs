@@ -786,10 +786,6 @@ impl ReplayRenderHashCapture {
         self.capture.raw_scanlines()
     }
 
-    pub(crate) fn gpu_frame(&self) -> GpuFrame<'_> {
-        self.capture.gpu_frame()
-    }
-
     pub(crate) fn render_gpu_rgba(
         &self,
         readback: &mut OptionalGpuReadbackRenderer,
@@ -797,6 +793,81 @@ impl ReplayRenderHashCapture {
         ReplayRenderHashGpuReadback {
             frame: readback.render_live_gpu_capture_rgba(&self.capture),
         }
+    }
+
+    pub(crate) fn debug_math_state_line(&self) -> String {
+        let gpu_frame = self.capture.gpu_frame();
+        format!(
+            "[gpu-dbg] math_enabled={:#04x} subtract={} half={} fixed_rgb=({},{},{}) add_sub={} clip_mode={} prevent_math={} windowsel_cm={:#04x} brightness={}",
+            gpu_frame.math_enabled,
+            gpu_frame.subtract_color,
+            gpu_frame.half_color,
+            gpu_frame.fixed_color_r,
+            gpu_frame.fixed_color_g,
+            gpu_frame.fixed_color_b,
+            gpu_frame.add_subscreen,
+            gpu_frame.clip_mode,
+            gpu_frame.prevent_math_mode,
+            gpu_frame.windowsel_cm,
+            gpu_frame.brightness
+        )
+    }
+
+    pub(crate) fn debug_frame_332_math_line(&self) -> String {
+        let gpu_frame = self.capture.gpu_frame();
+        format!(
+            "[gpu-dbg] frame=332 math_enabled={:#04x} subtract={} half={} fixed=({},{},{}) clip_mode={} prevent_math={} windowsel_cm={:#04x} add_sub={}",
+            gpu_frame.math_enabled,
+            gpu_frame.subtract_color,
+            gpu_frame.half_color,
+            gpu_frame.fixed_color_r,
+            gpu_frame.fixed_color_g,
+            gpu_frame.fixed_color_b,
+            gpu_frame.clip_mode,
+            gpu_frame.prevent_math_mode,
+            gpu_frame.windowsel_cm,
+            gpu_frame.add_subscreen
+        )
+    }
+
+    pub(crate) fn debug_frame_332_scanline_window_line(&self) -> String {
+        let gpu_frame = self.capture.gpu_frame();
+        format!(
+            "[gpu-dbg] frame=332 scanline[0]: w1l={} w1r={}",
+            gpu_frame.scanlines[0].window1_left, gpu_frame.scanlines[0].window1_right
+        )
+    }
+
+    pub(crate) fn debug_effect_math_line(
+        &self,
+        frame: u32,
+        bg1_hscroll: u16,
+        irq_flag: u8,
+    ) -> String {
+        let gpu_frame = self.capture.gpu_frame();
+        format!(
+            "[gpu-dbg] f{frame} math={:#04x} add_sub={} subtract={} half={} fixed_r={} fixed_g={} fixed_b={} bg1_hscroll={} irq_flag={}",
+            gpu_frame.math_enabled,
+            gpu_frame.add_subscreen,
+            gpu_frame.subtract_color,
+            gpu_frame.half_color,
+            gpu_frame.fixed_color_r,
+            gpu_frame.fixed_color_g,
+            gpu_frame.fixed_color_b,
+            bg1_hscroll,
+            irq_flag
+        )
+    }
+
+    pub(crate) fn debug_scanline_tm_probe_line(&self, frame: u32, cy: i32) -> String {
+        let gpu_frame = self.capture.gpu_frame();
+        format!(
+            "[gpu-dbg] f{frame} scanline_tm row{}={:#04x} row{}={:#04x}",
+            cy,
+            gpu_frame.scanlines[cy as usize].screen_enabled_main,
+            cy + 1,
+            gpu_frame.scanlines[(cy + 1) as usize].screen_enabled_main
+        )
     }
 }
 
