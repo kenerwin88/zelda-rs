@@ -26,10 +26,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpu_capture::{
     capture_gpu_frame_from_game, compare_gpu_render_current_frame,
-    emit_modern_index_compare_output_lines, load_modern_atlas_compare_resources,
+    emit_modern_index_compare_output_lines, modern_atlas_compare_run,
     modern_compare_mode_defaults_from_env, modern_index_compare_run_from_env,
     render_gpu_capture_rgba, render_gpu_hash_frame_rgba_line, render_hash_pair_bgra_rgba,
-    render_hd_capture_from_gpu_capture, render_modern_atlas_compare_report_from_capture,
+    render_hd_capture_from_gpu_capture,
 };
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
@@ -11598,12 +11598,11 @@ fn run_play_gpu_render_compare(args: &[String]) {
         apply_sram_to_game_or_exit(&mut game, path, &sram);
     }
 
-    let modern_atlas_compare_resources =
-        load_modern_atlas_compare_resources(modern_render_compare != 0, Path::new("."))
-            .unwrap_or_else(|e| {
-                eprintln!("modern atlas compare resources load failed: {e}");
-                process::exit(2);
-            });
+    let modern_atlas_compare = modern_atlas_compare_run(modern_render_compare, Path::new("."))
+        .unwrap_or_else(|e| {
+            eprintln!("modern atlas compare resources load failed: {e}");
+            process::exit(2);
+        });
     let modern_index_compare_resources = modern_index_compare
         .load_resources(Path::new("."), false)
         .unwrap_or_else(|e| {
@@ -11630,8 +11629,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
         }
         let completed_frame = frame.wrapping_add(1);
         let should_compare_stride = completed_frame % stride == 0;
-        let should_compare_modern =
-            modern_render_compare != 0 && completed_frame % modern_render_compare == 0;
+        let should_compare_modern = modern_atlas_compare.should_compare_frame(completed_frame);
         let should_compare_modern_index =
             modern_index_compare.should_compare_frame(completed_frame);
         if !should_compare_stride && !should_compare_modern && !should_compare_modern_index {
@@ -11654,8 +11652,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let gpu_capture = capture_gpu_frame_from_game(&mut game);
             // Classic GPU render (oracle) via the offscreen renderer:
             let classic_rgba = render_gpu_capture_rgba(&gpu_capture, &mut offscreen);
-            if let Some(report) = render_modern_atlas_compare_report_from_capture(
-                &modern_atlas_compare_resources,
+            if let Some(report) = modern_atlas_compare.render_report_from_capture(
                 &gpu_capture,
                 &classic_rgba,
                 completed_frame,

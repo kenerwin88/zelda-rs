@@ -93,6 +93,11 @@ pub(crate) struct ModernIndexCompareRun {
     stats: renderer::ModernIndexCompareStats,
 }
 
+pub(crate) struct ModernAtlasCompareRun {
+    stride: u32,
+    resources: renderer::ModernAtlasCompareResources,
+}
+
 impl GpuPlayRenderer {
     fn new() -> Self {
         let modern_assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."))
@@ -172,6 +177,31 @@ pub(crate) fn modern_index_compare_run_from_env() -> ModernIndexCompareRun {
     ModernIndexCompareRun {
         config: renderer::ModernIndexCompareRunConfig::default(),
         stats: renderer::ModernIndexCompareStats::from_env(),
+    }
+}
+
+pub(crate) fn modern_atlas_compare_run(
+    stride: u32,
+    root: &Path,
+) -> Result<ModernAtlasCompareRun, String> {
+    let resources = renderer::ModernAtlasCompareResources::load(stride != 0, root)?;
+    Ok(ModernAtlasCompareRun { stride, resources })
+}
+
+impl ModernAtlasCompareRun {
+    pub(crate) fn should_compare_frame(&self, frame: u32) -> bool {
+        self.stride != 0 && frame % self.stride == 0
+    }
+
+    pub(crate) fn render_report_from_capture(
+        &self,
+        capture: &LiveGpuFrameCapture,
+        classic_rgba: &[u8],
+        frame: u32,
+    ) -> Option<renderer::ModernAtlasCompareFrameReport> {
+        let gpu_frame = capture.gpu_frame();
+        self.resources
+            .compare_frame_rgba(frame, &gpu_frame, classic_rgba)
     }
 }
 
@@ -360,13 +390,6 @@ pub(crate) fn render_hd_capture_from_gpu_capture(
     renderer::hd_authoring::render_hd_capture_from_sources(&gpu_frame, &source_table, atlas)
 }
 
-pub(crate) fn load_modern_atlas_compare_resources(
-    enabled: bool,
-    root: &Path,
-) -> Result<renderer::ModernAtlasCompareResources, String> {
-    renderer::ModernAtlasCompareResources::load(enabled, root)
-}
-
 pub(crate) fn emit_modern_index_compare_output_lines(
     output: &renderer::ModernIndexCompareOutputLines,
 ) {
@@ -376,16 +399,6 @@ pub(crate) fn emit_modern_index_compare_output_lines(
             renderer::ModernIndexCompareOutputStream::Stderr => eprintln!("{}", output_line.line),
         }
     }
-}
-
-pub(crate) fn render_modern_atlas_compare_report_from_capture(
-    resources: &renderer::ModernAtlasCompareResources,
-    capture: &LiveGpuFrameCapture,
-    classic_rgba: &[u8],
-    frame: u32,
-) -> Option<renderer::ModernAtlasCompareFrameReport> {
-    let gpu_frame = capture.gpu_frame();
-    resources.compare_frame_rgba(frame, &gpu_frame, classic_rgba)
 }
 
 fn gpu_frame_capture_from_ppu<'a>(
