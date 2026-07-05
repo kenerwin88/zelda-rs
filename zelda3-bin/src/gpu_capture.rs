@@ -705,7 +705,16 @@ impl std::ops::Deref for GpuRgbaReadbackFrame {
     }
 }
 
-pub(crate) fn render_hd_capture_from_gpu_capture(
+pub(crate) fn render_hd_capture_from_game(
+    game: &mut ZeldaState,
+    atlas: &renderer::modern_source_atlas::ModernSourceAtlas,
+) -> Option<renderer::hd_authoring::HdCaptureFrame> {
+    let capture = capture_gpu_frame_from_game(game);
+    let gpu_frame = capture.gpu_frame();
+    (gpu_frame.mode != 7).then(|| render_hd_capture_from_gpu_capture(&capture, atlas))
+}
+
+fn render_hd_capture_from_gpu_capture(
     capture: &LiveGpuFrameCapture,
     atlas: &renderer::modern_source_atlas::ModernSourceAtlas,
 ) -> renderer::hd_authoring::HdCaptureFrame {

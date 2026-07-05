@@ -290,6 +290,7 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "LiveGpuFrameCapture::from_game(",
     "present_modern_asset_live_frame_from_entries(",
     "source_table_from_entries(",
+    "render_hd_capture_from_gpu_capture(",
     "render_hd_capture_from_sources(",
     "compare_gpu_render_frame_bgra_to_rgba(",
     "compare_gpu_render_current_frame(",

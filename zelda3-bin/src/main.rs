@@ -27,8 +27,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use gpu_capture::{
     capture_gpu_frame_from_game, gpu_render_compare_run, modern_compare_mode_defaults_from_env,
     modern_index_compare_run_from_env, optional_gpu_readback_renderer,
-    play_gpu_render_compare_session, render_hd_capture_from_gpu_capture,
-    render_live_game_gpu_frame_rgba,
+    play_gpu_render_compare_session, render_hd_capture_from_game, render_live_game_gpu_frame_rgba,
 };
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
@@ -10501,13 +10500,10 @@ fn run_dump_hd_capture(args: &[String]) {
             continue;
         }
 
-        let gpu_capture = capture_gpu_frame_from_game(&mut game);
-        let gpu_frame = gpu_capture.gpu_frame();
-        if gpu_frame.mode == 7 {
+        let Some(capture) = render_hd_capture_from_game(&mut game, &atlas) else {
             eprintln!("frame {completed}: Mode 7 not supported by the sources path; skipping");
             continue;
-        }
-        let capture = render_hd_capture_from_gpu_capture(&gpu_capture, &atlas);
+        };
         let png_path = format!("{OUT_DIR}/frame_{completed}.png");
         if let Err(e) = write_rgba_frame_png(Path::new(&png_path), &capture.rgba, 256, 224) {
             eprintln!("failed to write {png_path}: {e}");

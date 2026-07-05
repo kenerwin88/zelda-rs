@@ -718,6 +718,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let _modern_compare = renderer::RendererMode::ModernCompare;
                 if renderer_mode == renderer::RendererMode::Modern {}
                 let source_table = renderer::source_table_from_entries(gpu_capture.source_entries());
+                render_hd_capture_from_gpu_capture(&gpu_capture, &atlas);
                 renderer::hd_authoring::render_hd_capture_from_sources(&gpu_frame, &source_table, &atlas);
                 renderer::compare_gpu_render_frame_bgra_to_rgba(frames, frame, &gpu_rgba);
                 gpu_render_compare.compare_current_frame(&mut game, &mut gpu_readback, &mut render_frame, completed_frame);
@@ -747,7 +748,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 72)
+        self.assertEqual(len(errors), 73)
         self.assertTrue(
             all("live GPU play backend ownership escaped gpu_capture boundary" in error for error in errors)
         )
