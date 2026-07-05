@@ -624,6 +624,30 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(all("run_replay_save" in error for error in errors))
 
+    def test_rejects_cli_debug_play_render_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn write_lockstep_parity_failure_artifacts() {
+                render_play_frame_bgra(&mut rust_state, &mut rust_frame, pitch, PpuRenderFlags::empty());
+            }
+
+            fn run_dump_overworld_screen() {
+                render_play_frame_bgra(&mut game, &mut frame, pitch, PpuRenderFlags::empty());
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(
+            all(
+                "CLI/debug play render escaped play_renderer boundary" in error
+                for error in errors
+            )
+        )
+
     def test_rejects_raw_render_hash_calls(self):
         module = load_module()
         source = source_with_required_calls(

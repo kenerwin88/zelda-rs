@@ -35,7 +35,8 @@ use platform::{
     HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
 };
 use play_renderer::{
-    render_hash_frame_bgra_line, render_play_frame_bgra, render_replay_fingerprint_leaf_bgra,
+    render_hash_frame_bgra_line, render_lockstep_artifact_frame_bgra,
+    render_overworld_screen_dump_bgra, render_play_frame_bgra, render_replay_fingerprint_leaf_bgra,
     render_replay_projection_bgra, run_play_frame_bgra, run_play_frame_with_run_what_bgra,
 };
 use serde::{Deserialize, Serialize};
@@ -7983,7 +7984,6 @@ fn write_lockstep_parity_failure_artifacts(
 
     let width = 256u32;
     let height = 224u32;
-    let pitch = width as usize * 4;
     let mut rust_frame = vec![0u8; width as usize * height as usize * 4];
     let mut snes_state_rust_render_frame = vec![0u8; rust_frame.len()];
     let mut rust_state = post_oracle.game.clone();
@@ -7994,18 +7994,8 @@ fn write_lockstep_parity_failure_artifacts(
     oracle_state
         .sram
         .copy_from_slice(&post_oracle.snes.cart.ram);
-    render_play_frame_bgra(
-        &mut rust_state,
-        &mut rust_frame,
-        pitch,
-        PpuRenderFlags::empty(),
-    );
-    render_play_frame_bgra(
-        &mut oracle_state,
-        &mut snes_state_rust_render_frame,
-        pitch,
-        PpuRenderFlags::empty(),
-    );
+    render_lockstep_artifact_frame_bgra(&mut rust_state, &mut rust_frame);
+    render_lockstep_artifact_frame_bgra(&mut oracle_state, &mut snes_state_rust_render_frame);
     write_argb_frame_png(&dir.join("rust_frame.png"), &rust_frame, width, height)?;
     write_argb_frame_png(
         &dir.join("snes_state_rust_render_frame.png"),
@@ -8853,12 +8843,7 @@ fn run_dump_overworld_screen(args: &[String]) {
     let width = 256u32;
     let height = 224u32;
     let mut frame = vec![0u8; width as usize * height as usize * 4];
-    render_play_frame_bgra(
-        &mut game,
-        &mut frame,
-        width as usize * 4,
-        PpuRenderFlags::empty(),
-    );
+    render_overworld_screen_dump_bgra(&mut game, &mut frame);
     if let Err(e) = write_argb_frame_png(&out_path, &frame, width, height) {
         eprintln!("failed to write {}: {e}", out_path.display());
         process::exit(1);

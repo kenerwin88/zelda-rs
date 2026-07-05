@@ -162,6 +162,14 @@ pub(crate) fn render_replay_projection_bgra(game: &mut ZeldaState, frame: &mut [
     render_standard_play_frame_bgra(game, frame);
 }
 
+pub(crate) fn render_lockstep_artifact_frame_bgra(game: &mut ZeldaState, frame: &mut [u8]) {
+    render_standard_play_frame_bgra(game, frame);
+}
+
+pub(crate) fn render_overworld_screen_dump_bgra(game: &mut ZeldaState, frame: &mut [u8]) {
+    render_standard_play_frame_bgra(game, frame);
+}
+
 pub(crate) fn render_hash_frame_bgra_line(frame_number: u32, frame: &[u8]) -> String {
     renderer::render_hash_frame_bgra(frame_number, frame).line
 }
