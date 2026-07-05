@@ -3429,6 +3429,27 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
     }
 }
 
+pub struct ModernAtlasCompareRender {
+    pub rgba: Vec<u8>,
+    pub via: &'static str,
+}
+
+pub fn render_modern_atlas_compare_frame(
+    frame: &crate::gpu_frame::GpuFrame<'_>,
+    atlas: &ModernTileAtlasAsset,
+) -> ModernAtlasCompareRender {
+    let modern = crate::modern_extract::extract_modern_frame_with_atlas(frame, atlas);
+    ModernAtlasCompareRender {
+        rgba: crate::modern_software::render_modern_frame_software(
+            &modern,
+            &atlas.rgba,
+            atlas.width_px as u16,
+            atlas.height_px as u16,
+        ),
+        via: "atlas-software",
+    }
+}
+
 /// Owns a headless wgpu device + a 256x224 offscreen `Rgba8Unorm` target + the
 /// compositor. Construct once and reuse; device creation is expensive.
 pub struct ModernGpuHeadless {
@@ -10625,6 +10646,46 @@ mod tests {
         assert_eq!(vram_render.via, "vram");
         assert_eq!(source_render.rgba.len(), 256 * 224 * 4);
         assert_eq!(vram_render.rgba.len(), 256 * 224 * 4);
+    }
+
+    #[test]
+    fn modern_atlas_compare_frame_owns_legacy_extract_and_software_render() {
+        let atlas = ModernTileAtlasAsset {
+            tile_width_px: 8,
+            tile_height_px: 8,
+            atlas_scale: 1,
+            width_px: 8,
+            height_px: 8,
+            rgba: vec![0x44; 8 * 8 * 4],
+            entries: vec![crate::modern_assets::ModernTileAtlasEntry {
+                id: 0,
+                atlas_x_px: 0,
+                atlas_y_px: 0,
+                atlas_width_px: 8,
+                atlas_height_px: 8,
+                tilemap_entry: 0x0001,
+                tilemap_variants: vec![0x0001],
+            }],
+        };
+        let mut vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        vram[0] = 0x0001;
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.bg[0].tilemap_adr = 0;
+        frame.screen_enabled = [0x01, 0x00];
+
+        let render = render_modern_atlas_compare_frame(&frame, &atlas);
+        let modern = crate::modern_extract::extract_modern_frame_with_atlas(&frame, &atlas);
+        let manual = crate::modern_software::render_modern_frame_software(
+            &modern,
+            &atlas.rgba,
+            atlas.width_px as u16,
+            atlas.height_px as u16,
+        );
+
+        assert_eq!(render.via, "atlas-software");
+        assert_eq!(render.rgba, manual);
     }
 
     #[test]

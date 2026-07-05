@@ -25,12 +25,18 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "MappedSourceTableView",
     "compare_rgba_to_rgba",
     "GpuFrame::from_source_and_raw_scanlines",
+    "render_modern_atlas_compare_frame",
     "render_modern_index_compare_frame",
     "render_hd_capture_from_sources",
 )
 
 FORBIDDEN_SOURCE_RENDER_CALLS = (
     "render_modern_frame_full_scaled_from_sources",
+)
+
+FORBIDDEN_MODERN_ATLAS_COMPARE_CALLS = (
+    "extract_modern_frame_with_atlas",
+    "render_modern_frame_software",
 )
 
 FORBIDDEN_VRAM_EXTRACT_CALLS = (
@@ -164,6 +170,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "low-level source render escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MODERN_ATLAS_COMPARE_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "modern atlas compare render escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

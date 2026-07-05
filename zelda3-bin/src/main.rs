@@ -12328,17 +12328,9 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 // Classic GPU render (oracle) via the offscreen renderer:
                 let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
                 let old_hash = renderer::render_frame_rgb_hash_rgba(&classic_rgba);
-                // Modern path (software for now; Task 9 swaps in GPU):
-                let modern =
-                    renderer::modern_extract::extract_modern_frame_with_atlas(&gpu_frame, atlas);
-                // Atlas dimensions (2113×3169) fit in u16 (<65535); cast is safe.
-                let modern_rgba = renderer::modern_software::render_modern_frame_software(
-                    &modern,
-                    &atlas.rgba,
-                    atlas.width_px as u16,
-                    atlas.height_px as u16,
-                );
-                let modern_hash = renderer::render_frame_rgb_hash_rgba(&modern_rgba);
+                let modern_render =
+                    renderer::modern_gpu::render_modern_atlas_compare_frame(&gpu_frame, atlas);
+                let modern_hash = renderer::render_frame_rgb_hash_rgba(&modern_render.rgba);
                 println!(
                     "modern_render_compare frame={completed_frame} old=0x{old_hash:08x} modern=0x{modern_hash:08x} match={}",
                     old_hash == modern_hash
