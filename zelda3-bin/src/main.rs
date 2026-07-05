@@ -26,6 +26,7 @@ use std::process;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use classic_frame_renderer::{run_play_frame_bgra, run_play_frame_with_run_what_bgra};
 use gpu_capture::{
     gpu_render_compare_run, modern_compare_mode_defaults_from_env,
     modern_index_compare_run_from_env, play_gpu_render_compare_session,
@@ -36,7 +37,6 @@ use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
     HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
 };
-use play_renderer::{run_play_frame_bgra, run_play_frame_with_run_what_bgra};
 use render_diagnostics::{
     render_diagnostic_lockstep_artifact_frame_bgra,
     render_diagnostic_lockstep_oracle_frames_in_place,

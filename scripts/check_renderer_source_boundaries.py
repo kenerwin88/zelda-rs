@@ -241,6 +241,8 @@ FORBIDDEN_REPLAY_FINGERPRINT_RENDER_CALLS = (
 FORBIDDEN_PLAY_RENDERER_CLASSIC_FRAME_CALLS = (
     "crate::play_renderer::render_play_frame_bgra(",
     "crate::play_renderer::render_standard_play_frame_bgra(",
+    "crate::play_renderer::run_play_frame_bgra(",
+    "crate::play_renderer::run_play_frame_with_run_what_bgra(",
 )
 
 FORBIDDEN_MAIN_PLAY_RENDER_CALLS = (

@@ -631,6 +631,8 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             fn render_replay_dump_frame_rgba() {
                 crate::play_renderer::render_play_frame_bgra(&mut game, frame, pitch, PpuRenderFlags::empty());
                 crate::play_renderer::render_standard_play_frame_bgra(&mut game, frame);
+                crate::play_renderer::run_play_frame_bgra(&mut game, input, frame, PpuRenderFlags::empty());
+                crate::play_renderer::run_play_frame_with_run_what_bgra(&mut game, input, run_what, frame, PpuRenderFlags::empty());
             }
             """
         )
@@ -642,7 +644,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             for error in errors
             if "classic frame render escaped classic_frame_renderer boundary" in error
         ]
-        self.assertEqual(len(classic_errors), 2)
+        self.assertEqual(len(classic_errors), 4)
         self.assertTrue(
             any("replay fingerprint render escaped play_renderer boundary" in error for error in errors)
         )
