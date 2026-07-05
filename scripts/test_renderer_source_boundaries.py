@@ -22,10 +22,9 @@ def source_with_required_calls(body: str) -> str:
     fn run_play_with_state() {
         frontend.present_modern_variant_gpu_from_sources();
         frontend.present_modern_gpu_from_sources();
-        variant_headless.render_rgba_with_live_index_base_from_sources_traced();
-        variant_headless.render_rgba_with_live_index_base_from_sources();
-        headless.render_rgba_from_sources();
+        renderer::modern_gpu::render_modern_index_compare_frame();
         renderer::modern_extract::render_modern_frame_full_scaled_from_sources();
+        renderer::hd_authoring::render_hd_capture_from_sources();
     }
     """
     return textwrap.dedent(required + body)

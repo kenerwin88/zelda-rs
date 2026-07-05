@@ -3287,6 +3287,103 @@ impl ModernGpuCompositor {
     }
 }
 
+pub struct ModernIndexCompareRender {
+    pub rgba: Vec<u8>,
+    pub via: &'static str,
+    pub variant_stats: Option<crate::modern_software::VariantAtlasRenderStats>,
+    pub variant_traces: Vec<crate::modern_variant_draw::VariantPixelTrace>,
+}
+
+pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableView + ?Sized>(
+    frame: &crate::gpu_frame::GpuFrame<'_>,
+    src_table: Option<&S>,
+    source_atlas: Option<&crate::modern_source_atlas::ModernSourceAtlas>,
+    headless: Option<&ModernGpuHeadless>,
+    variant_headless: Option<&ModernGpuVariantHeadless>,
+    bg_palette_name: &str,
+    sprite_palette_name: &str,
+    trace_pixel: Option<(i16, i16)>,
+    allow_source_cpu_fallback: bool,
+) -> ModernIndexCompareRender {
+    if let Some(variant_headless) = variant_headless {
+        if frame.mode == 7 {
+            let headless = headless.expect("mode7 helper allocated for variant compare");
+            return ModernIndexCompareRender {
+                rgba: headless.render_mode7_rgba(frame),
+                via: "mode7-gpu",
+                variant_stats: None,
+                variant_traces: Vec::new(),
+            };
+        }
+        let atlas = source_atlas.expect("atlas loaded for gpu compare");
+        let src_table = src_table.expect("source table loaded for gpu compare");
+        let (rgba, stats, traces) = variant_headless
+            .render_rgba_with_live_index_base_from_sources_traced(
+                frame,
+                src_table,
+                atlas,
+                bg_palette_name,
+                sprite_palette_name,
+                trace_pixel,
+            );
+        return ModernIndexCompareRender {
+            rgba,
+            via: "variant-gpu",
+            variant_stats: Some(stats),
+            variant_traces: traces,
+        };
+    }
+
+    if let Some(headless) = headless {
+        if frame.mode == 7 {
+            return ModernIndexCompareRender {
+                rgba: headless.render_mode7_rgba(frame),
+                via: "mode7-gpu",
+                variant_stats: None,
+                variant_traces: Vec::new(),
+            };
+        }
+        let atlas = source_atlas.expect("atlas loaded for gpu compare");
+        let src_table = src_table.expect("source table loaded for gpu compare");
+        return ModernIndexCompareRender {
+            rgba: headless.render_rgba_from_sources(frame, src_table, atlas),
+            via: "gpu",
+            variant_stats: None,
+            variant_traces: Vec::new(),
+        };
+    }
+
+    if frame.mode == 7 {
+        return ModernIndexCompareRender {
+            rgba: crate::modern_software::render_modern_mode7_frame(frame),
+            via: "mode7-cpu",
+            variant_stats: None,
+            variant_traces: Vec::new(),
+        };
+    }
+
+    if allow_source_cpu_fallback {
+        if let (Some(atlas), Some(src_table)) = (source_atlas, src_table) {
+            let ctx = crate::modern_hd_overrides::HdOverrideCtx::disabled();
+            return ModernIndexCompareRender {
+                rgba: crate::modern_extract::render_modern_frame_full_scaled_from_sources(
+                    frame, src_table, atlas, &ctx, 1,
+                ),
+                via: "sources",
+                variant_stats: None,
+                variant_traces: Vec::new(),
+            };
+        }
+    }
+
+    ModernIndexCompareRender {
+        rgba: crate::modern_extract::render_modern_frame_full_from_vram(frame),
+        via: "vram",
+        variant_stats: None,
+        variant_traces: Vec::new(),
+    }
+}
+
 /// Owns a headless wgpu device + a 256x224 offscreen `Rgba8Unorm` target + the
 /// compositor. Construct once and reuse; device creation is expensive.
 pub struct ModernGpuHeadless {
@@ -10418,6 +10515,74 @@ mod tests {
 
         assert_eq!(gpu.len(), software.len());
         assert_eq!(gpu, software);
+    }
+
+    #[test]
+    fn modern_index_compare_frame_selects_cpu_mode7_without_gpu_helpers() {
+        let vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 7;
+
+        let render = render_modern_index_compare_frame(
+            &frame,
+            None::<&dyn crate::modern_extract::SourceTableView>,
+            None,
+            None,
+            None,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+            None,
+            false,
+        );
+
+        assert_eq!(render.via, "mode7-cpu");
+        assert_eq!(render.rgba.len(), 256 * 224 * 4);
+        assert!(render.variant_stats.is_none());
+        assert!(render.variant_traces.is_empty());
+    }
+
+    #[test]
+    fn modern_index_compare_frame_preserves_source_cpu_fallback_toggle() {
+        let vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        let atlas = crate::modern_source_atlas::ModernSourceAtlas::from_keyed_cells_for_test(
+            Vec::new(),
+            &[],
+        );
+        let table = |_: usize| (0, 0, 0);
+
+        let source_render = render_modern_index_compare_frame(
+            &frame,
+            Some(&table),
+            Some(&atlas),
+            None,
+            None,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+            None,
+            true,
+        );
+        let vram_render = render_modern_index_compare_frame(
+            &frame,
+            Some(&table),
+            Some(&atlas),
+            None,
+            None,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+            None,
+            false,
+        );
+
+        assert_eq!(source_render.via, "sources");
+        assert_eq!(vram_render.via, "vram");
+        assert_eq!(source_render.rgba.len(), 256 * 224 * 4);
+        assert_eq!(vram_render.rgba.len(), 256 * 224 * 4);
     }
 
     fn test_gpu_frame<'a>(

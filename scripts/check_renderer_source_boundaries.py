@@ -20,10 +20,9 @@ MANUAL_EXTRACT = "extract_modern_frame_from_sources"
 REQUIRED_RENDERER_OWNED_CALLS = (
     "present_modern_variant_gpu_from_sources",
     "present_modern_gpu_from_sources",
-    "render_rgba_with_live_index_base_from_sources_traced",
-    "render_rgba_with_live_index_base_from_sources",
-    "render_rgba_from_sources",
+    "render_modern_index_compare_frame",
     "render_modern_frame_full_scaled_from_sources",
+    "render_hd_capture_from_sources",
 )
 
 
