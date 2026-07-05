@@ -31,12 +31,13 @@ def source_with_required_calls(body: str) -> str:
         let frame_record = renderer::ModernIndexCompareFrameRenderInput {};
         let compare_resources = renderer::ModernIndexCompareResources::load_from_env();
         let atlas_compare_resources = renderer::ModernAtlasCompareResources::load();
+        let atlas_frame_record = renderer::ModernAtlasCompareFrameInput {};
         let source_table = renderer::MappedSourceTableView::from_entries(&[(0, 0, 0)]);
         let gpu_diff = renderer::compare_gpu_render_bgra_to_rgba(&[], &[]);
         let frame = renderer::GpuFrame::from_source_and_raw_scanlines();
-        let atlas_compare = renderer::modern_gpu::compare_modern_atlas_to_rgba();
         frontend.present_modern_asset_frame();
         modern_index_compare_stats.render_compare_frame(frame_record);
+        atlas_compare_resources.compare_frame(atlas_frame_record);
         renderer::hd_authoring::render_hd_capture_from_sources();
     }
     """
@@ -406,6 +407,25 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         self.assertEqual(len(errors), 3)
         self.assertIn("modern index compare diff assembly escaped renderer boundary", errors[0])
+
+    def test_rejects_direct_modern_atlas_compare_execution_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_play_with_state() {
+                if let Some(atlas) = modern_atlas_compare_resources.atlas() {
+                    let compare = renderer::modern_gpu::compare_modern_atlas_to_rgba(&classic, &frame, atlas);
+                }
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(
+            all("modern atlas compare execution escaped renderer boundary" in error for error in errors)
+        )
 
     def test_rejects_direct_gpu_render_compare_diff_assembly_calls(self):
         module = load_module()

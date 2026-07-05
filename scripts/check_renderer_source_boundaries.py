@@ -30,12 +30,13 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernIndexCompareFrameRenderInput",
     "ModernIndexCompareResources::load_from_env",
     "ModernAtlasCompareResources",
+    "ModernAtlasCompareFrameInput",
     "MappedSourceTableView",
     "MappedSourceTableView::from_entries",
     "compare_gpu_render_bgra_to_rgba",
     "GpuFrame::from_source_and_raw_scanlines",
-    "compare_modern_atlas_to_rgba",
     "render_compare_frame",
+    "compare_frame",
     "from_main_module_and_player_indoors_flag",
     "from_player_indoors_flag",
     "render_hd_capture_from_sources",
@@ -150,6 +151,11 @@ FORBIDDEN_DIRECT_MODERN_INDEX_COMPARE_CALLS = (
     "renderer::compare_rgba_to_rgba(",
     "renderer::compare_modern_index_rgba(",
     "renderer::modern_gpu::render_modern_index_compare_frame(",
+)
+
+FORBIDDEN_DIRECT_MODERN_ATLAS_COMPARE_CALLS = (
+    "renderer::modern_gpu::compare_modern_atlas_to_rgba(",
+    "modern_atlas_compare_resources.atlas()",
 )
 
 FORBIDDEN_DIRECT_GPU_RENDER_COMPARE_CALLS = (
@@ -341,6 +347,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "modern index compare diff assembly escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_DIRECT_MODERN_ATLAS_COMPARE_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "modern atlas compare execution escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

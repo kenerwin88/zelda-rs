@@ -12152,23 +12152,21 @@ fn run_play_gpu_render_compare(args: &[String]) {
             last_hash = cpu_hash;
         }
         if should_compare_modern {
-            if let Some(atlas) = modern_atlas_compare_resources.atlas() {
-                // Reconstruct the GpuFrame the same way compare_gpu_render_current_frame does:
-                let hdma_cgram = game.cgram_after_first_hdma_line();
-                let scanlines_raw = game.ppu_scanline_windows();
-                let gpu_ppu = game.ppu.clone();
-                let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
-                // Classic GPU render (oracle) via the offscreen renderer:
-                let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
-                let modern_compare = renderer::modern_gpu::compare_modern_atlas_to_rgba(
-                    &classic_rgba,
-                    &gpu_frame,
-                    atlas,
-                );
-                println!(
-                    "modern_render_compare frame={completed_frame} old=0x{:08x} modern=0x{:08x} match={}",
-                    modern_compare.classic_hash, modern_compare.modern_hash, modern_compare.matches
-                );
+            // Reconstruct the GpuFrame the same way compare_gpu_render_current_frame does:
+            let hdma_cgram = game.cgram_after_first_hdma_line();
+            let scanlines_raw = game.ppu_scanline_windows();
+            let gpu_ppu = game.ppu.clone();
+            let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
+            // Classic GPU render (oracle) via the offscreen renderer:
+            let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
+            if let Some(report) = modern_atlas_compare_resources.compare_frame(
+                renderer::ModernAtlasCompareFrameInput {
+                    frame: completed_frame,
+                    gpu_frame: &gpu_frame,
+                    classic_rgba: &classic_rgba,
+                },
+            ) {
+                println!("{}", report.line);
             }
         }
         if should_compare_modern_index {

@@ -2227,6 +2227,17 @@ pub struct ModernAtlasCompareResources {
     atlas: Option<modern_assets::ModernTileAtlasAsset>,
 }
 
+pub struct ModernAtlasCompareFrameInput<'a, 'frame> {
+    pub frame: u32,
+    pub gpu_frame: &'a GpuFrame<'frame>,
+    pub classic_rgba: &'a [u8],
+}
+
+pub struct ModernAtlasCompareFrameReport {
+    pub line: String,
+    pub result: modern_gpu::ModernAtlasCompareResult,
+}
+
 impl ModernAtlasCompareResources {
     pub fn load(enabled: bool, root: &Path) -> Result<Self, String> {
         let atlas = if enabled {
@@ -2243,6 +2254,27 @@ impl ModernAtlasCompareResources {
     pub fn atlas(&self) -> Option<&modern_assets::ModernTileAtlasAsset> {
         self.atlas.as_ref()
     }
+
+    pub fn compare_frame(
+        &self,
+        input: ModernAtlasCompareFrameInput<'_, '_>,
+    ) -> Option<ModernAtlasCompareFrameReport> {
+        let atlas = self.atlas.as_ref()?;
+        let result =
+            modern_gpu::compare_modern_atlas_to_rgba(input.classic_rgba, input.gpu_frame, atlas);
+        let line = modern_atlas_compare_frame_line(input.frame, &result);
+        Some(ModernAtlasCompareFrameReport { line, result })
+    }
+}
+
+fn modern_atlas_compare_frame_line(
+    frame: u32,
+    result: &modern_gpu::ModernAtlasCompareResult,
+) -> String {
+    format!(
+        "modern_render_compare frame={frame} old=0x{:08x} modern=0x{:08x} match={}",
+        result.classic_hash, result.modern_hash, result.matches
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3701,6 +3733,25 @@ mod tests {
         assert!(resources.atlas().is_none());
 
         fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn modern_atlas_compare_frame_line_matches_legacy_output() {
+        let result = modern_gpu::ModernAtlasCompareResult {
+            classic_hash: 0x1234_abcd,
+            modern_hash: 0x5678_ef90,
+            matches: false,
+            render: modern_gpu::ModernAtlasCompareRender {
+                rgba: Vec::new(),
+                hash: 0x5678_ef90,
+                via: "atlas-software",
+            },
+        };
+
+        assert_eq!(
+            modern_atlas_compare_frame_line(42, &result),
+            "modern_render_compare frame=42 old=0x1234abcd modern=0x5678ef90 match=false"
+        );
     }
 
     #[test]
