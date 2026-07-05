@@ -946,6 +946,20 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_asset_palette_command_ownership_in_main(self):
+        module = load_module()
+        source = """
+            fn run_dump_reference_palette() {}
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn(
+            "asset palette command ownership escaped asset_palette_commands boundary",
+            errors[0],
+        )
+
     def test_rejects_gpu_frame_assembly_calls(self):
         module = load_module()
         source = source_with_required_calls(
