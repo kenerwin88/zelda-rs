@@ -254,6 +254,8 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "render_compare_frame_output_from_entries(",
     "ModernIndexCompareOutputLines",
     "ModernIndexCompareOutputStream",
+    "emit_modern_index_compare_output_lines(",
+    "output_lines.has_failure",
     "compare_frame_rgba(",
     "modern_atlas_compare.render_report_from_capture(",
     "modern_index_compare.render_output_from_capture(",

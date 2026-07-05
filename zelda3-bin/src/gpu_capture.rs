@@ -436,7 +436,7 @@ impl ModernIndexCompareRun {
         )
     }
 
-    pub(crate) fn render_output_from_game(
+    fn render_output_from_game(
         &mut self,
         game: &mut ZeldaState,
         readback: &mut GpuReadbackRenderer,
@@ -453,7 +453,7 @@ impl ModernIndexCompareRun {
         )
     }
 
-    pub(crate) fn render_output_from_game_with_optional_readback(
+    fn render_output_from_game_with_optional_readback(
         &mut self,
         game: &mut ZeldaState,
         readback: &mut OptionalGpuReadbackRenderer,
@@ -465,6 +465,23 @@ impl ModernIndexCompareRun {
 
     pub(crate) fn summary_line_if_enabled(&self) -> Option<String> {
         self.stats.summary_line_if_enabled(self.enabled())
+    }
+
+    pub(crate) fn emit_compare_from_game_with_optional_readback(
+        &mut self,
+        game: &mut ZeldaState,
+        readback: &mut OptionalGpuReadbackRenderer,
+        frame: u32,
+        include_diff_in_frame_line: bool,
+    ) -> bool {
+        let output_lines = self.render_output_from_game_with_optional_readback(
+            game,
+            readback,
+            frame,
+            include_diff_in_frame_line,
+        );
+        emit_modern_index_compare_output_lines(&output_lines);
+        !output_lines.has_failure
     }
 }
 
@@ -697,9 +714,7 @@ pub(crate) fn render_hd_capture_from_gpu_capture(
     renderer::hd_authoring::render_hd_capture_from_sources(&gpu_frame, &source_table, atlas)
 }
 
-pub(crate) fn emit_modern_index_compare_output_lines(
-    output: &renderer::ModernIndexCompareOutputLines,
-) {
+fn emit_modern_index_compare_output_lines(output: &renderer::ModernIndexCompareOutputLines) {
     for output_line in &output.lines {
         match output_line.stream {
             renderer::ModernIndexCompareOutputStream::Stdout => println!("{}", output_line.line),

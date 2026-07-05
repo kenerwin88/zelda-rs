@@ -25,10 +25,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpu_capture::{
-    capture_gpu_frame_from_game, emit_modern_index_compare_output_lines, gpu_render_compare_run,
-    modern_compare_mode_defaults_from_env, modern_index_compare_run_from_env,
-    optional_gpu_readback_renderer, play_gpu_render_compare_session,
-    render_hd_capture_from_gpu_capture, render_live_game_gpu_frame_rgba,
+    capture_gpu_frame_from_game, gpu_render_compare_run, modern_compare_mode_defaults_from_env,
+    modern_index_compare_run_from_env, optional_gpu_readback_renderer,
+    play_gpu_render_compare_session, render_hd_capture_from_gpu_capture,
+    render_live_game_gpu_frame_rgba,
 };
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
@@ -5131,18 +5131,13 @@ fn run_replay_save(args: &[String]) {
             }
         }
         if modern_index_compare.should_compare_frame(frames) {
-            {
-                let output_lines = modern_index_compare
-                    .render_output_from_game_with_optional_readback(
-                        &mut game,
-                        &mut gpu_readback,
-                        frames,
-                        false,
-                    );
-                emit_modern_index_compare_output_lines(&output_lines);
-                if output_lines.has_failure {
-                    process::exit(1);
-                }
+            if !modern_index_compare.emit_compare_from_game_with_optional_readback(
+                &mut game,
+                &mut gpu_readback,
+                frames,
+                false,
+            ) {
+                process::exit(1);
             }
         }
         let mut fp_render_leaf: u32 = 0;
