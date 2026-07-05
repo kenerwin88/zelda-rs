@@ -33,8 +33,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "summary_line_if_enabled",
     "ModernAtlasCompareResources",
     "ModernAtlasCompareFrameInput",
-    "MappedSourceTableView",
-    "MappedSourceTableView::from_entries",
+    "source_table_from_entries",
     "compare_gpu_render_frame_bgra_to_rgba",
     "render_hash_frame_bgra",
     "gpu_render_hash_frame_rgba",
@@ -154,6 +153,7 @@ FORBIDDEN_SOURCE_TABLE_VIEW_CALLS = (
     "fn vram_chr_source_table_view(",
     "fn logical_chr_src_tuple(",
     "renderer::MappedSourceTableView::new(",
+    "renderer::MappedSourceTableView::from_entries(",
 )
 
 FORBIDDEN_FRAME_COMPARE_CALLS = (

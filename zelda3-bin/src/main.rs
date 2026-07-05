@@ -1431,8 +1431,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let scanlines_raw = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
         let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, &scanlines_raw);
-        let src_table =
-            renderer::MappedSourceTableView::from_entries(game.vram_chr_source().as_slice());
+        let src_table = renderer::source_table_from_entries(game.vram_chr_source().as_slice());
         let scene =
             renderer::ModernAssetFrameScene::from_player_indoors_flag(game.ram[PLAYER_IS_INDOORS]);
         let present_result = frontend.present_modern_asset_frame(
@@ -5365,9 +5364,8 @@ fn run_replay_save(args: &[String]) {
                 let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
                 let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
                 let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
-                let src_table = renderer::MappedSourceTableView::from_entries(
-                    game.vram_chr_source().as_slice(),
-                );
+                let src_table =
+                    renderer::source_table_from_entries(game.vram_chr_source().as_slice());
                 let scene = compare_scene.asset_scene();
                 let trace_pixel =
                     variant_trace_pixel_env().filter(|(trace_frame, _, _)| frames == *trace_frame);
@@ -10989,8 +10987,7 @@ fn run_dump_hd_capture(args: &[String]) {
             eprintln!("frame {completed}: Mode 7 not supported by the sources path; skipping");
             continue;
         }
-        let src_table =
-            renderer::MappedSourceTableView::from_entries(game.vram_chr_source().as_slice());
+        let src_table = renderer::source_table_from_entries(game.vram_chr_source().as_slice());
         let capture =
             renderer::hd_authoring::render_hd_capture_from_sources(&gpu_frame, &src_table, &atlas);
         let png_path = format!("{OUT_DIR}/frame_{completed}.png");
@@ -12151,8 +12148,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
             let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
 
-            let src_table =
-                renderer::MappedSourceTableView::from_entries(game.vram_chr_source().as_slice());
+            let src_table = renderer::source_table_from_entries(game.vram_chr_source().as_slice());
             let scene = compare_scene.asset_scene();
             let trace_pixel = variant_trace_pixel_env()
                 .filter(|(trace_frame, _, _)| completed_frame == *trace_frame);

@@ -65,7 +65,6 @@ pub use gpu_frame::{
 };
 pub use gpu_renderer::GpuFrameRenderer;
 pub use mode7_renderer::Mode7Renderer;
-pub use modern_extract::MappedSourceTableView;
 pub use modern_gpu::{
     ModernGpuCompositor, ModernGpuHeadless, ModernGpuVariantHeadless, ModernGpuVariantRenderer,
 };
@@ -79,6 +78,15 @@ pub use renderer_mode::{
     default_renderer_env_for_variant_setting, renderer_env_or_default, source_atlas_renderer_mode,
     variant_atlas_renderer_mode, EffectiveRendererMode, RendererMode,
 };
+
+pub fn source_table_from_entries<'a, T>(
+    entries: &'a [T],
+) -> impl modern_extract::SourceTableView + 'a
+where
+    T: Copy + Into<(u8, u16, u16)> + 'a,
+{
+    modern_extract::MappedSourceTableView::from_entries(entries)
+}
 pub use tile_atlas::{
     CgramPalette, RgbaTileOverrideData, TileAtlas, ATLAS_HEIGHT, ATLAS_TILE_COUNT, ATLAS_WIDTH,
     RGBA_TILE_OVERRIDE_LOOKUP_COUNT,

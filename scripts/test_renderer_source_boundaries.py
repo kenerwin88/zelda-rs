@@ -34,7 +34,7 @@ def source_with_required_calls(body: str) -> str:
         let maybe_summary = modern_index_compare_stats.summary_line_if_enabled(true);
         let atlas_compare_resources = renderer::ModernAtlasCompareResources::load();
         let atlas_frame_record = renderer::ModernAtlasCompareFrameInput {};
-        let source_table = renderer::MappedSourceTableView::from_entries(&[(0, 0, 0)]);
+        let source_table = renderer::source_table_from_entries(&[(0, 0, 0)]);
         let gpu_diff = renderer::compare_gpu_render_frame_bgra_to_rgba(0, &[], &[]);
         let render_hash = renderer::render_hash_frame_bgra(0, &[]);
         let gpu_render_hash = renderer::gpu_render_hash_frame_rgba(0, &[]);
@@ -391,13 +391,14 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             fn logical_chr_src_tuple() {}
             fn run_play_with_state() {
                 renderer::MappedSourceTableView::new(table.as_slice(), logical_chr_src_tuple);
+                renderer::MappedSourceTableView::from_entries(table.as_slice());
             }
             """
         )
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 5)
+        self.assertEqual(len(errors), 6)
         self.assertTrue(
             all("source table view adapter escaped renderer boundary" in error for error in errors)
         )
