@@ -191,7 +191,7 @@ fn new_gpu_readback_renderer(width: u32, height: u32) -> GpuReadbackRenderer {
     }
 }
 
-pub(crate) fn optional_gpu_readback_renderer(
+fn optional_gpu_readback_renderer(
     required: bool,
     width: u32,
     height: u32,
@@ -199,6 +199,24 @@ pub(crate) fn optional_gpu_readback_renderer(
     OptionalGpuReadbackRenderer {
         renderer: required.then(|| new_gpu_readback_renderer(width, height)),
     }
+}
+
+pub(crate) fn replay_optional_gpu_readback_renderer(
+    render_hash_log: u32,
+    gpu_render_compare: &GpuRenderCompareRun,
+    render_hash_dump_enabled: bool,
+    dump_frame_enabled: bool,
+    modern_index_compare: &ModernIndexCompareRun,
+) -> OptionalGpuReadbackRenderer {
+    optional_gpu_readback_renderer(
+        render_hash_log != 0
+            || gpu_render_compare.enabled()
+            || render_hash_dump_enabled
+            || dump_frame_enabled
+            || modern_index_compare.enabled(),
+        256,
+        224,
+    )
 }
 
 pub(crate) fn render_live_game_gpu_frame_rgba(

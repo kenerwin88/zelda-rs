@@ -26,8 +26,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpu_capture::{
     capture_gpu_frame_from_game, gpu_render_compare_run, modern_compare_mode_defaults_from_env,
-    modern_index_compare_run_from_env, optional_gpu_readback_renderer,
-    play_gpu_render_compare_session, render_hd_capture_from_game, render_live_game_gpu_frame_rgba,
+    modern_index_compare_run_from_env, play_gpu_render_compare_session,
+    render_hd_capture_from_game, render_live_game_gpu_frame_rgba,
+    replay_optional_gpu_readback_renderer,
 };
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
@@ -3440,14 +3441,12 @@ fn run_replay_save(args: &[String]) {
     // GPU readback is used for dump-frame and the diagnostic gpu-render-hash
     // line. The parity-facing render-hash line hashes the raw CPU BGRA display
     // buffer, matching C PrintRenderHash exactly.
-    let mut gpu_readback = optional_gpu_readback_renderer(
-        render_hash_log != 0
-            || gpu_render_compare.enabled()
-            || render_hash_dump_frame.is_some()
-            || dump_frame_path.is_some()
-            || modern_index_compare.enabled(),
-        256,
-        224,
+    let mut gpu_readback = replay_optional_gpu_readback_renderer(
+        render_hash_log,
+        &gpu_render_compare,
+        render_hash_dump_frame.is_some(),
+        dump_frame_path.is_some(),
+        &modern_index_compare,
     );
     let mut fingerprint_writer = match fingerprint_log.as_deref() {
         Some(p) => {
