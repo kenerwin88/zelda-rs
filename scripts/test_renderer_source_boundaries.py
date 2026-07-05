@@ -986,6 +986,27 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_sheet_dump_command_ownership_in_main(self):
+        module = load_module()
+        source = """
+            struct SpriteSheetPngManifest {}
+            struct SpriteSheetPngCell {}
+            fn run_dump_sprite_sheet_png() {}
+            struct DungeonSheetPngManifest {}
+            struct DungeonSheetPngCell {}
+            fn run_dump_dungeon_sheet_png() {}
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 6)
+        self.assertTrue(
+            all(
+                "sheet dump command ownership escaped sheet_dump_commands boundary" in error
+                for error in errors
+            )
+        )
+
     def test_rejects_gpu_frame_assembly_calls(self):
         module = load_module()
         source = source_with_required_calls(
