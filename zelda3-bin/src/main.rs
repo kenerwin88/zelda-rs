@@ -1421,8 +1421,33 @@ fn renderer_env_or_default(value: Option<&str>) -> &str {
     }
 }
 
-fn effective_play_renderer() -> String {
-    renderer_env_or_default(env::var("ZELDA3_RENDERER").ok().as_deref()).to_string()
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct EffectiveRendererMode<'a> {
+    name: &'a str,
+}
+
+impl<'a> EffectiveRendererMode<'a> {
+    fn from_env_value(value: Option<&'a str>) -> Self {
+        Self {
+            name: renderer_env_or_default(value),
+        }
+    }
+
+    fn name(self) -> &'a str {
+        self.name
+    }
+
+    fn uses_gpu_assets(self) -> bool {
+        self.name == "assets-anim-gpu" || self.name == "assets-variant-gpu"
+    }
+
+    fn uses_source_atlas(self) -> bool {
+        self.name == "assets-anim" || self.uses_gpu_assets()
+    }
+
+    fn uses_variant_atlas(self) -> bool {
+        self.name == "assets-variant-gpu"
+    }
 }
 
 fn env_flag_default_true(value: Option<&str>) -> bool {
@@ -1439,16 +1464,12 @@ fn env_flag_default_true(value: Option<&str>) -> bool {
     }
 }
 
-fn gpu_asset_renderer_mode(mode: &str) -> bool {
-    mode == "assets-anim-gpu" || mode == "assets-variant-gpu"
-}
-
 fn source_atlas_renderer_mode(mode: &str) -> bool {
-    mode == "assets-anim" || gpu_asset_renderer_mode(mode)
+    EffectiveRendererMode { name: mode }.uses_source_atlas()
 }
 
 fn variant_atlas_renderer_mode(mode: &str) -> bool {
-    mode == "assets-variant-gpu"
+    EffectiveRendererMode { name: mode }.uses_variant_atlas()
 }
 
 fn load_variant_atlas_for_mode(
@@ -1475,9 +1496,9 @@ fn load_source_atlas_for_mode(
 
 /// Off-VRAM source atlas + HD override store for the live modern present path,
 /// loaded once. The atlas loads for the default (unset) and explicit `assets-anim`
-/// interactive modes (see `effective_play_renderer`) — `source_atlas`
-/// is `None` for explicit `modern`/`modern-compare`/`classic`, so those keep
-/// rendering (VRAM-decoded, no HD overrides) through
+/// interactive modes; `source_atlas` is `None` for explicit
+/// `modern`/`modern-compare`/`classic`, so those keep rendering (VRAM-decoded,
+/// no HD overrides) through
 /// `FrameRenderer::render_modern_frame`'s fallback. Modes that use the source
 /// atlas require it at startup; the default variant atlas mode also requires the
 /// canonical art atlas.
@@ -1762,17 +1783,19 @@ impl VariantLiveStats {
 
 impl GpuPlayRenderer {
     fn new() -> Self {
-        let mode = effective_play_renderer();
-        let gpu_asset_mode = gpu_asset_renderer_mode(&mode);
-        let variant_atlas =
-            load_variant_atlas_for_mode(&mode, Path::new(".")).unwrap_or_else(|e| {
+        let renderer_env = env::var("ZELDA3_RENDERER").ok();
+        let mode = EffectiveRendererMode::from_env_value(renderer_env.as_deref());
+        let gpu_asset_mode = mode.uses_gpu_assets();
+        let variant_atlas = load_variant_atlas_for_mode(mode.name(), Path::new("."))
+            .unwrap_or_else(|e| {
                 eprintln!("canonical art atlas load failed: {e}");
                 process::exit(2);
             });
-        let source_atlas = load_source_atlas_for_mode(&mode, Path::new(".")).unwrap_or_else(|e| {
-            eprintln!("source atlas load failed: {e}");
-            process::exit(2);
-        });
+        let source_atlas =
+            load_source_atlas_for_mode(mode.name(), Path::new(".")).unwrap_or_else(|e| {
+                eprintln!("source atlas load failed: {e}");
+                process::exit(2);
+            });
         let hd_overrides = renderer::modern_hd_overrides::ModernHdOverrides::from_env();
         Self {
             source_atlas,
@@ -1930,14 +1953,12 @@ fn run_play_with_state(mut game: ZeldaState) {
     // separately). GPU asset modes intercept Mode 7 and source-atlas misses in
     // `GpuPlayRenderer::present_frame`, so the default path does not need
     // `FrameRenderer::render_modern_frame`'s CPU compositor.
-    let renderer_env = effective_play_renderer();
-    let renderer_mode = if renderer_env == "assets-anim"
-        || renderer_env == "assets-anim-gpu"
-        || renderer_env == "assets-variant-gpu"
-    {
+    let explicit_renderer_env = env::var("ZELDA3_RENDERER").ok();
+    let renderer_env = EffectiveRendererMode::from_env_value(explicit_renderer_env.as_deref());
+    let renderer_mode = if renderer_env.uses_source_atlas() {
         renderer::RendererMode::Modern
     } else {
-        renderer::RendererMode::parse(Some(renderer_env.as_str()))
+        renderer::RendererMode::parse(Some(renderer_env.name()))
     };
     frontend.set_renderer_mode(renderer_mode);
     let mut frame = vec![0u8; width as usize * height as usize * 4];
@@ -4148,10 +4169,11 @@ fn run_replay_save(args: &[String]) {
     // compositor as an opt-out/debug oracle. `assets-variant-gpu` uses compact
     // base art plus LUT effects for stable draws and reports fallback counts.
     let replay_renderer_env = std::env::var("ZELDA3_RENDERER").ok();
-    let replay_renderer_mode = renderer_env_or_default(replay_renderer_env.as_deref());
-    let assets_anim_mode = replay_renderer_mode == "assets-anim";
-    let atlas_gpu_compare = replay_renderer_mode == "assets-anim-gpu";
-    let variant_gpu_compare = replay_renderer_mode == "assets-variant-gpu";
+    let replay_renderer_mode =
+        EffectiveRendererMode::from_env_value(replay_renderer_env.as_deref());
+    let assets_anim_mode = replay_renderer_mode.name() == "assets-anim";
+    let atlas_gpu_compare = replay_renderer_mode.name() == "assets-anim-gpu";
+    let variant_gpu_compare = replay_renderer_mode.uses_variant_atlas();
     let modern_gpu_headless: Option<renderer::ModernGpuHeadless> =
         if modern_index_compare != 0 && (atlas_gpu_compare || variant_gpu_compare) {
             Some(renderer::ModernGpuHeadless::new())
@@ -13106,9 +13128,9 @@ fn run_play_gpu_render_compare(args: &[String]) {
         None
     };
     let play_renderer_env = std::env::var("ZELDA3_RENDERER").ok();
-    let play_renderer_mode = renderer_env_or_default(play_renderer_env.as_deref());
-    let atlas_gpu_compare = play_renderer_mode == "assets-anim-gpu";
-    let variant_gpu_compare = play_renderer_mode == "assets-variant-gpu";
+    let play_renderer_mode = EffectiveRendererMode::from_env_value(play_renderer_env.as_deref());
+    let atlas_gpu_compare = play_renderer_mode.name() == "assets-anim-gpu";
+    let variant_gpu_compare = play_renderer_mode.uses_variant_atlas();
     let modern_gpu_headless: Option<renderer::ModernGpuHeadless> =
         if modern_index_compare != 0 && (atlas_gpu_compare || variant_gpu_compare) {
             Some(renderer::ModernGpuHeadless::new())
@@ -15798,15 +15820,29 @@ mod tests {
 
     #[test]
     fn unset_renderer_defaults_to_full_gpu_path() {
-        assert_eq!(
-            default_renderer_env_for_variant_setting(None),
-            "assets-variant-gpu"
-        );
-        assert!(gpu_asset_renderer_mode(
-            default_renderer_env_for_variant_setting(None)
-        ));
-        assert!(gpu_asset_renderer_mode("assets-anim-gpu"));
-        assert!(!gpu_asset_renderer_mode("assets-anim"));
+        let default_mode = EffectiveRendererMode {
+            name: default_renderer_env_for_variant_setting(None),
+        };
+        assert_eq!(default_mode.name(), "assets-variant-gpu");
+        assert!(default_mode.uses_gpu_assets());
+        assert!(default_mode.uses_source_atlas());
+        assert!(default_mode.uses_variant_atlas());
+
+        let indexed_gpu_mode = EffectiveRendererMode {
+            name: default_renderer_env_for_variant_setting(Some("off")),
+        };
+        assert_eq!(indexed_gpu_mode.name(), "assets-anim-gpu");
+        assert!(indexed_gpu_mode.uses_gpu_assets());
+        assert!(indexed_gpu_mode.uses_source_atlas());
+        assert!(!indexed_gpu_mode.uses_variant_atlas());
+
+        let cpu_atlas_mode = EffectiveRendererMode {
+            name: "assets-anim",
+        };
+        assert!(!cpu_atlas_mode.uses_gpu_assets());
+        assert!(cpu_atlas_mode.uses_source_atlas());
+        assert!(!cpu_atlas_mode.uses_variant_atlas());
+
         assert!(source_atlas_renderer_mode("assets-variant-gpu"));
         assert!(source_atlas_renderer_mode("assets-anim-gpu"));
         assert!(source_atlas_renderer_mode("assets-anim"));
@@ -15814,11 +15850,6 @@ mod tests {
         assert!(variant_atlas_renderer_mode("assets-variant-gpu"));
         assert!(!variant_atlas_renderer_mode("assets-anim-gpu"));
         assert!(!variant_atlas_renderer_mode("assets-anim"));
-        assert_eq!(
-            default_renderer_env_for_variant_setting(Some("off")),
-            "assets-anim-gpu",
-            "explicit variant-atlas opt-out keeps the old full indexed GPU path"
-        );
         assert_eq!(
             renderer_env_or_default(Some("assets-anim")),
             "assets-anim",
