@@ -773,6 +773,17 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(all("run_replay_save" in error for error in errors))
 
+    def test_rejects_gpu_compare_command_ownership_in_main(self):
+        module = load_module()
+        source = """
+            fn run_play_gpu_render_compare(args: &[String]) {}
+            """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("GPU compare command ownership escaped gpu_compare boundary", errors[0])
+
     def test_rejects_replay_classic_helpers_in_gpu_capture(self):
         module = load_module()
         source = """

@@ -269,6 +269,10 @@ FORBIDDEN_MAIN_REPLAY_PLAY_RENDER_HELPER_CALLS = (
     "render_replay_fingerprint_leaf_bgra(",
 )
 
+FORBIDDEN_MAIN_GPU_COMPARE_COMMAND_OWNERSHIP = (
+    "fn run_play_gpu_render_compare",
+)
+
 FORBIDDEN_GPU_CAPTURE_REPLAY_CLASSIC_HELPERS = (
     "pub(crate) fn replay_projection_bgra",
     "pub(crate) fn replay_fingerprint_leaf_bgra",
@@ -717,6 +721,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "replay play-render helper escaped gpu_capture boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_GPU_COMPARE_COMMAND_OWNERSHIP:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "GPU compare command ownership escaped gpu_compare boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

@@ -30,9 +30,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpu_capture::{render_hd_capture_from_game, render_live_game_gpu_frame_rgba};
 use gpu_compare::{
-    gpu_render_compare_run, modern_compare_mode_defaults_from_env,
-    modern_index_compare_run_from_env, play_gpu_render_compare_session, replay_cpu_bgra_hash_line,
-    replay_optional_gpu_readback_renderer,
+    gpu_render_compare_run, modern_index_compare_run_from_env, replay_cpu_bgra_hash_line,
+    replay_optional_gpu_readback_renderer, run_play_gpu_render_compare,
 };
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
@@ -5992,7 +5991,11 @@ fn replay_save_palette_dump(game: &ZeldaState) -> String {
     )
 }
 
-fn print_replay_save_panic_report(game: &ZeldaState, frames: u32, panic_info: &CapturedPanic) {
+pub(crate) fn print_replay_save_panic_report(
+    game: &ZeldaState,
+    frames: u32,
+    panic_info: &CapturedPanic,
+) {
     let sr = &game.state_recorder;
     let packet = &game.ram[0x1000..0x1010];
     let packet_dst = u16::from_le_bytes([game.ram[0x1000], game.ram[0x1001]]);
@@ -6037,13 +6040,13 @@ struct PlayCrashCheckpoint {
 }
 
 #[derive(Clone, Debug)]
-struct CapturedPanic {
+pub(crate) struct CapturedPanic {
     message: String,
     location: String,
     backtrace: String,
 }
 
-fn install_crash_panic_hook() -> Arc<Mutex<Option<CapturedPanic>>> {
+pub(crate) fn install_crash_panic_hook() -> Arc<Mutex<Option<CapturedPanic>>> {
     let last_panic = Arc::new(Mutex::new(None));
     let hook_slot = last_panic.clone();
     let default_hook = panic::take_hook();
@@ -6075,7 +6078,7 @@ fn capture_panic_info(info: &PanicHookInfo<'_>) -> CapturedPanic {
     }
 }
 
-fn captured_panic_from(
+pub(crate) fn captured_panic_from(
     last_panic: Arc<Mutex<Option<CapturedPanic>>>,
     payload: Box<dyn std::any::Any + Send>,
 ) -> CapturedPanic {
@@ -6276,7 +6279,10 @@ fn configure_game_runtime_defaults(game: &mut ZeldaState) {
     game.zelda_set_language(cfg.language.as_deref());
 }
 
-fn load_play_or_checkpoint(rom_path: &str, load_state: Option<&Path>) -> (ZeldaState, u32) {
+pub(crate) fn load_play_or_checkpoint(
+    rom_path: &str,
+    load_state: Option<&Path>,
+) -> (ZeldaState, u32) {
     if let Some(path) = load_state {
         if let Ok(checkpoint) = load_play_crash_checkpoint(path) {
             let mut game = checkpoint.game;
@@ -8491,7 +8497,7 @@ fn initialize_libretro_dirs() -> Result<PathBuf, String> {
     Ok(save_dir)
 }
 
-fn read_file_or_exit(path: &Path, label: &str) -> Vec<u8> {
+pub(crate) fn read_file_or_exit(path: &Path, label: &str) -> Vec<u8> {
     match fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) => {
@@ -8501,7 +8507,7 @@ fn read_file_or_exit(path: &Path, label: &str) -> Vec<u8> {
     }
 }
 
-fn apply_sram_to_game_or_exit(game: &mut ZeldaState, path: &Path, sram: &[u8]) {
+pub(crate) fn apply_sram_to_game_or_exit(game: &mut ZeldaState, path: &Path, sram: &[u8]) {
     let expected = game.sram.len();
     if sram.len() < expected {
         eprintln!(
@@ -11341,185 +11347,6 @@ fn snes_cgram_entry_to_rgba(entry: Option<u16>) -> [u8; 4] {
     ]
 }
 
-fn run_play_gpu_render_compare(args: &[String]) {
-    let rom_path = match args.first() {
-        Some(p) => p,
-        None => {
-            eprintln!(
-                "usage: zelda3 --play-gpu-render-compare <path-to-rom.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--load-state <path>] [--stride <n>] [--modern-index-compare <n>] [--require-full-gpu-path] [--require-modern-index-parity]"
-            );
-            process::exit(2);
-        }
-    };
-    let frames_to_run = args
-        .get(1)
-        .filter(|candidate| !candidate.starts_with("--"))
-        .and_then(|value| value.parse::<u32>().ok())
-        .unwrap_or(1);
-    let mut i = if args.get(1).is_some_and(|arg| !arg.starts_with("--")) {
-        2usize
-    } else {
-        1usize
-    };
-    let mut input_script = InputScript::default();
-    let mut load_sram = None::<PathBuf>;
-    let mut load_state = None::<PathBuf>;
-    let mut stride = 1u32;
-    let mut modern_render_compare = 0u32;
-    let mut modern_index_compare = modern_index_compare_run_from_env();
-    while i < args.len() {
-        match args[i].as_str() {
-            "--input-script" => {
-                let path = args.get(i + 1).unwrap_or_else(|| {
-                    eprintln!("--input-script requires a path");
-                    process::exit(2);
-                });
-                input_script = match InputScript::from_path(Path::new(path)) {
-                    Ok(script) => script,
-                    Err(e) => {
-                        eprintln!("failed to parse input script {}: {e}", path);
-                        process::exit(2);
-                    }
-                };
-                i += 2;
-            }
-            "--load-sram" => {
-                let path = args.get(i + 1).unwrap_or_else(|| {
-                    eprintln!("--load-sram requires a path");
-                    process::exit(2);
-                });
-                load_sram = Some(PathBuf::from(path));
-                i += 2;
-            }
-            "--load-state" => {
-                let path = args.get(i + 1).unwrap_or_else(|| {
-                    eprintln!("--load-state requires a path");
-                    process::exit(2);
-                });
-                load_state = Some(PathBuf::from(path));
-                i += 2;
-            }
-            "--stride" => {
-                let value = args.get(i + 1).unwrap_or_else(|| {
-                    eprintln!("--stride requires a value");
-                    process::exit(2);
-                });
-                stride = value.parse::<u32>().unwrap_or_else(|_| {
-                    eprintln!("invalid --stride value: {value}");
-                    process::exit(2);
-                });
-                if stride == 0 {
-                    eprintln!("--stride must be greater than zero");
-                    process::exit(2);
-                }
-                i += 2;
-            }
-            "--modern-render-compare" => {
-                let value = args.get(i + 1).unwrap_or_else(|| {
-                    eprintln!("--modern-render-compare requires a value");
-                    process::exit(2);
-                });
-                modern_render_compare = value.parse::<u32>().unwrap_or_else(|_| {
-                    eprintln!("invalid --modern-render-compare value: {value}");
-                    process::exit(2);
-                });
-                if modern_render_compare == 0 {
-                    eprintln!("--modern-render-compare must be greater than zero");
-                    process::exit(2);
-                }
-                i += 2;
-            }
-            "--modern-index-compare" => {
-                let value = args.get(i + 1).unwrap_or_else(|| {
-                    eprintln!("--modern-index-compare requires a value");
-                    process::exit(2);
-                });
-                let value = value.parse::<u32>().unwrap_or_else(|_| {
-                    eprintln!("invalid --modern-index-compare value: {value}");
-                    process::exit(2);
-                });
-                if !modern_index_compare.set_stride(value) {
-                    eprintln!("--modern-index-compare must be greater than zero");
-                    process::exit(2);
-                }
-                i += 2;
-            }
-            "--require-full-gpu-path" => {
-                modern_index_compare.set_require_full_gpu_path();
-                i += 1;
-            }
-            "--require-modern-index-parity" => {
-                modern_index_compare.set_require_modern_index_parity();
-                i += 1;
-            }
-            flag => {
-                eprintln!("unknown --play-gpu-render-compare option: {flag}");
-                process::exit(2);
-            }
-        }
-    }
-    if let Err(e) = modern_index_compare.validate() {
-        eprintln!("{e}");
-        process::exit(2);
-    }
-    let modern_compare_defaults = modern_compare_mode_defaults_from_env();
-    if modern_compare_defaults.enable_modern_render_compare {
-        if let Some(note) = modern_compare_defaults.note {
-            eprintln!("{note}");
-        }
-        if modern_render_compare == 0 {
-            modern_render_compare = stride; // env var alone turns on the compare at the regular stride
-        }
-    }
-    if load_state.is_some() && load_sram.is_some() {
-        eprintln!("--play-gpu-render-compare cannot combine --load-sram with --load-state");
-        process::exit(2);
-    }
-    if frames_to_run == 0 {
-        println!(
-            "play-gpu-render-compare completed compared=0 start_frame=0 last_frame=0 last_hash=0x00000000 mismatched_pixels=0"
-        );
-        return;
-    }
-
-    let (mut game, start_frame) = load_play_or_checkpoint(rom_path, load_state.as_deref());
-    if let Some(path) = load_sram.as_deref() {
-        let sram = read_file_or_exit(path, "SRAM");
-        apply_sram_to_game_or_exit(&mut game, path, &sram);
-    }
-
-    let mut compare_session = play_gpu_render_compare_session(
-        stride,
-        modern_render_compare,
-        modern_index_compare,
-        Path::new("."),
-    )
-    .unwrap_or_else(|e| {
-        eprintln!("{e}");
-        process::exit(2);
-    });
-    let last_panic = install_crash_panic_hook();
-    for local_frame in 0..frames_to_run {
-        let frame = start_frame.wrapping_add(local_frame);
-        let input = input_script.input_for_frame(frame);
-        let pre_frame_game = game.clone();
-        let result = panic::catch_unwind(AssertUnwindSafe(|| {
-            game.zelda_run_frame(input as i32);
-        }));
-        if let Err(payload) = result {
-            let panic_info = captured_panic_from(last_panic.clone(), payload);
-            print_replay_save_panic_report(&pre_frame_game, frame, &panic_info);
-            process::exit(101);
-        }
-        let completed_frame = frame.wrapping_add(1);
-        if !compare_session.compare_frame(&mut game, completed_frame) {
-            process::exit(1);
-        }
-    }
-
-    compare_session.emit_summaries(start_frame);
-}
-
 fn write_argb_frame_png(
     path: &Path,
     frame: &[u8],
@@ -12814,12 +12641,12 @@ fn select_run_what(ram: &[u8]) -> u8 {
 }
 
 #[derive(Debug, Default)]
-struct InputScript {
+pub(crate) struct InputScript {
     rules: Vec<InputRule>,
 }
 
 impl InputScript {
-    fn from_path(path: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
+    pub(crate) fn from_path(path: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
         let mut stack = Vec::new();
         Self::from_path_inner(path.as_ref(), &mut stack)
     }
@@ -12838,7 +12665,7 @@ impl InputScript {
         Ok(script)
     }
 
-    fn input_for_frame(&self, frame: u32) -> u16 {
+    pub(crate) fn input_for_frame(&self, frame: u32) -> u16 {
         self.input_override_for_frame(frame).unwrap_or(0)
     }
 
