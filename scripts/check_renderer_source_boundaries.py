@@ -23,16 +23,14 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernIndexCompareScene",
     "ModernAssetLiveStats",
     "ModernIndexCompareStats",
-    "ModernIndexCompareFrameRecord",
+    "ModernIndexCompareFrameRenderInput",
     "ModernIndexCompareResources",
     "MappedSourceTableView",
     "MappedSourceTableView::from_entries",
-    "compare_modern_index_rgba",
     "compare_gpu_render_bgra_to_rgba",
     "GpuFrame::from_source_and_raw_scanlines",
     "compare_modern_atlas_to_rgba",
-    "render_modern_index_compare_frame",
-    "record_frame",
+    "render_compare_frame",
     "from_main_module_and_player_indoors_flag",
     "from_player_indoors_flag",
     "render_hd_capture_from_sources",
@@ -95,6 +93,7 @@ FORBIDDEN_MODERN_INDEX_FRAME_REPORT_CALLS = (
     "modern_index_compare_stats.should_print_frame(",
     "modern_index_compare_stats.frame_line(",
     "modern_index_compare_stats.progress_line(",
+    "modern_index_compare_stats.record_frame(",
 )
 
 FORBIDDEN_MODERN_INDEX_RESOURCE_POLICY_CALLS = (
@@ -130,6 +129,8 @@ FORBIDDEN_FRAME_COMPARE_CALLS = (
 
 FORBIDDEN_DIRECT_MODERN_INDEX_COMPARE_CALLS = (
     "renderer::compare_rgba_to_rgba(",
+    "renderer::compare_modern_index_rgba(",
+    "renderer::modern_gpu::render_modern_index_compare_frame(",
 )
 
 FORBIDDEN_DIRECT_GPU_RENDER_COMPARE_CALLS = (

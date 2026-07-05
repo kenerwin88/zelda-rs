@@ -5436,41 +5436,32 @@ fn run_replay_save(args: &[String]) {
                 let scene = compare_scene.asset_scene();
                 let trace_pixel =
                     variant_trace_pixel_env().filter(|(trace_frame, _, _)| frames == *trace_frame);
-                let modern_render = renderer::modern_gpu::render_modern_index_compare_frame(
-                    &gpu_frame,
-                    Some(&src_table),
-                    modern_index_compare_resources.source_atlas(),
-                    modern_index_compare_resources.gpu_headless(),
-                    modern_index_compare_resources.variant_headless(),
-                    scene,
-                    trace_pixel.map(|(_, trace_x, trace_y)| (trace_x, trace_y)),
-                    true,
+                let rendered = modern_index_compare_stats.render_compare_frame(
+                    renderer::ModernIndexCompareFrameRenderInput {
+                        frame: frames,
+                        mode_label: compare_scene.mode_label(),
+                        gpu_frame: &gpu_frame,
+                        src_table: Some(&src_table),
+                        resources: &modern_index_compare_resources,
+                        scene,
+                        classic_rgba: &classic_rgba,
+                        trace_pixel: trace_pixel.map(|(_, trace_x, trace_y)| (trace_x, trace_y)),
+                        allow_source_cpu_fallback: true,
+                        require_modern_index_parity,
+                        require_full_gpu_path,
+                        include_diff_in_frame_line: false,
+                    },
                 );
                 if let Some((trace_frame, trace_x, trace_y)) = trace_pixel {
                     print_variant_pixel_traces(
                         trace_frame,
                         trace_x,
                         trace_y,
-                        &modern_render.variant_traces,
+                        &rendered.variant_traces,
                     );
                 }
-                let via = modern_render.via;
-                let variant_stats = modern_render.variant_stats;
-                let modern_rgba = modern_render.rgba;
-                let comparison = renderer::compare_modern_index_rgba(&classic_rgba, &modern_rgba);
-                let report = modern_index_compare_stats.record_frame(
-                    renderer::ModernIndexCompareFrameRecord {
-                        frame: frames,
-                        mode_label: compare_scene.mode_label(),
-                        ppu_mode: gpu_frame.mode,
-                        via,
-                        variant_stats: variant_stats.as_ref(),
-                        comparison,
-                        require_modern_index_parity,
-                        require_full_gpu_path,
-                        include_diff_in_frame_line: false,
-                    },
-                );
+                let modern_rgba = rendered.modern_rgba;
+                let report = rendered.report;
                 if let Some(line) = report.parity_failure_line {
                     eprintln!("{line}");
                     process::exit(1);
@@ -12258,40 +12249,27 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let scene = compare_scene.asset_scene();
             let trace_pixel = variant_trace_pixel_env()
                 .filter(|(trace_frame, _, _)| completed_frame == *trace_frame);
-            let modern_render = renderer::modern_gpu::render_modern_index_compare_frame(
-                &gpu_frame,
-                Some(&src_table),
-                modern_index_compare_resources.source_atlas(),
-                modern_index_compare_resources.gpu_headless(),
-                modern_index_compare_resources.variant_headless(),
-                scene,
-                trace_pixel.map(|(_, trace_x, trace_y)| (trace_x, trace_y)),
-                false,
-            );
-            if let Some((trace_frame, trace_x, trace_y)) = trace_pixel {
-                print_variant_pixel_traces(
-                    trace_frame,
-                    trace_x,
-                    trace_y,
-                    &modern_render.variant_traces,
-                );
-            }
-            let via = modern_render.via;
-            let variant_stats = modern_render.variant_stats;
-            let modern_rgba = modern_render.rgba;
-            let comparison = renderer::compare_modern_index_rgba(&classic_rgba, &modern_rgba);
-            let report =
-                modern_index_compare_stats.record_frame(renderer::ModernIndexCompareFrameRecord {
+            let rendered = modern_index_compare_stats.render_compare_frame(
+                renderer::ModernIndexCompareFrameRenderInput {
                     frame: completed_frame,
                     mode_label: compare_scene.mode_label(),
-                    ppu_mode: gpu_frame.mode,
-                    via,
-                    variant_stats: variant_stats.as_ref(),
-                    comparison,
+                    gpu_frame: &gpu_frame,
+                    src_table: Some(&src_table),
+                    resources: &modern_index_compare_resources,
+                    scene,
+                    classic_rgba: &classic_rgba,
+                    trace_pixel: trace_pixel.map(|(_, trace_x, trace_y)| (trace_x, trace_y)),
+                    allow_source_cpu_fallback: false,
                     require_modern_index_parity,
                     require_full_gpu_path,
                     include_diff_in_frame_line: true,
-                });
+                },
+            );
+            if let Some((trace_frame, trace_x, trace_y)) = trace_pixel {
+                print_variant_pixel_traces(trace_frame, trace_x, trace_y, &rendered.variant_traces);
+            }
+            let modern_rgba = rendered.modern_rgba;
+            let report = rendered.report;
             if let Some(line) = report.parity_failure_line {
                 eprintln!("{line}");
                 process::exit(1);

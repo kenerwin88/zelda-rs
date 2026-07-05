@@ -50,6 +50,42 @@ pub struct ModernIndexCompareFrameReport {
     pub progress_line: Option<String>,
 }
 
+pub struct ModernIndexCompareFrameRenderInput<
+    'a,
+    'frame,
+    S: crate::modern_extract::SourceTableView + ?Sized,
+> {
+    pub frame: u32,
+    pub mode_label: &'a str,
+    pub gpu_frame: &'a crate::gpu_frame::GpuFrame<'frame>,
+    pub src_table: Option<&'a S>,
+    pub resources: &'a crate::ModernIndexCompareResources,
+    pub scene: crate::ModernAssetFrameScene,
+    pub classic_rgba: &'a [u8],
+    pub trace_pixel: Option<(i16, i16)>,
+    pub allow_source_cpu_fallback: bool,
+    pub require_modern_index_parity: bool,
+    pub require_full_gpu_path: bool,
+    pub include_diff_in_frame_line: bool,
+}
+
+pub struct ModernIndexCompareFrameRenderedRecord<'a> {
+    pub frame: u32,
+    pub mode_label: &'a str,
+    pub ppu_mode: u8,
+    pub classic_rgba: &'a [u8],
+    pub modern_render: crate::modern_gpu::ModernIndexCompareRender,
+    pub require_modern_index_parity: bool,
+    pub require_full_gpu_path: bool,
+    pub include_diff_in_frame_line: bool,
+}
+
+pub struct ModernIndexCompareFrameRenderedReport {
+    pub report: ModernIndexCompareFrameReport,
+    pub modern_rgba: Vec<u8>,
+    pub variant_traces: Vec<crate::modern_variant_draw::VariantPixelTrace>,
+}
+
 pub fn compare_modern_index_rgba(
     classic_rgba: &[u8],
     modern_rgba: &[u8],
@@ -196,6 +232,58 @@ impl ModernIndexCompareStats {
             frame_line,
             progress_line,
         }
+    }
+
+    pub fn record_rendered_frame(
+        &mut self,
+        record: ModernIndexCompareFrameRenderedRecord<'_>,
+    ) -> ModernIndexCompareFrameRenderedReport {
+        let via = record.modern_render.via;
+        let variant_stats = record.modern_render.variant_stats;
+        let comparison = compare_modern_index_rgba(record.classic_rgba, &record.modern_render.rgba);
+        let report = self.record_frame(ModernIndexCompareFrameRecord {
+            frame: record.frame,
+            mode_label: record.mode_label,
+            ppu_mode: record.ppu_mode,
+            via,
+            variant_stats: variant_stats.as_ref(),
+            comparison,
+            require_modern_index_parity: record.require_modern_index_parity,
+            require_full_gpu_path: record.require_full_gpu_path,
+            include_diff_in_frame_line: record.include_diff_in_frame_line,
+        });
+
+        ModernIndexCompareFrameRenderedReport {
+            report,
+            modern_rgba: record.modern_render.rgba,
+            variant_traces: record.modern_render.variant_traces,
+        }
+    }
+
+    pub fn render_compare_frame<S: crate::modern_extract::SourceTableView + ?Sized>(
+        &mut self,
+        input: ModernIndexCompareFrameRenderInput<'_, '_, S>,
+    ) -> ModernIndexCompareFrameRenderedReport {
+        let modern_render = crate::modern_gpu::render_modern_index_compare_frame(
+            input.gpu_frame,
+            input.src_table,
+            input.resources.source_atlas(),
+            input.resources.gpu_headless(),
+            input.resources.variant_headless(),
+            input.scene,
+            input.trace_pixel,
+            input.allow_source_cpu_fallback,
+        );
+        self.record_rendered_frame(ModernIndexCompareFrameRenderedRecord {
+            frame: input.frame,
+            mode_label: input.mode_label,
+            ppu_mode: input.gpu_frame.mode,
+            classic_rgba: input.classic_rgba,
+            modern_render,
+            require_modern_index_parity: input.require_modern_index_parity,
+            require_full_gpu_path: input.require_full_gpu_path,
+            include_diff_in_frame_line: input.include_diff_in_frame_line,
+        })
     }
 
     pub fn frame_line(&self, line: ModernIndexCompareFrameLine<'_>) -> String {
@@ -491,6 +579,51 @@ mod tests {
             .frame_line
             .as_deref()
             .is_some_and(|line| line.contains("first_mismatch=(2, 3)")));
+    }
+
+    #[test]
+    fn record_rendered_frame_owns_compare_diff_and_report() {
+        let mut stats = ModernIndexCompareStats::default();
+        let classic = vec![
+            1, 2, 3, 0xff, //
+            4, 5, 6, 0xff,
+        ];
+        let modern = vec![
+            1, 2, 3, 0xff, //
+            4, 7, 6, 0xff,
+        ];
+
+        let rendered = stats.record_rendered_frame(ModernIndexCompareFrameRenderedRecord {
+            frame: 77,
+            mode_label: "ow",
+            ppu_mode: 1,
+            classic_rgba: &classic,
+            modern_render: crate::modern_gpu::ModernIndexCompareRender {
+                rgba: modern.clone(),
+                via: "gpu",
+                variant_stats: None,
+                variant_traces: Vec::new(),
+            },
+            require_modern_index_parity: true,
+            require_full_gpu_path: true,
+            include_diff_in_frame_line: true,
+        });
+
+        assert_eq!(rendered.modern_rgba, modern);
+        assert!(rendered.variant_traces.is_empty());
+        assert_eq!(rendered.report.mismatch, 1);
+        assert_eq!(
+            rendered.report.parity_failure_line.as_deref(),
+            Some(
+                "modern_index_mismatch frame=77 mode=ow ppumode=1 mismatch_px=1 via=gpu first_mismatch=(1, 0) classic_rgb=(4,5,6) modern_rgb=(4,7,6)"
+            )
+        );
+        assert!(rendered.report.full_gpu_failure_line.is_none());
+        assert!(rendered
+            .report
+            .frame_line
+            .as_deref()
+            .is_some_and(|line| line.contains("first_mismatch=(1, 0)")));
     }
 
     #[test]

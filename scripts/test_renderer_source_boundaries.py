@@ -24,16 +24,14 @@ def source_with_required_calls(body: str) -> str:
         let compare_scene = renderer::ModernIndexCompareScene::from_main_module_and_player_indoors_flag(9, 0);
         let stats = renderer::ModernAssetLiveStats::from_env();
         let compare = renderer::ModernIndexCompareStats::from_env();
-        let frame_record = renderer::ModernIndexCompareFrameRecord {};
+        let frame_record = renderer::ModernIndexCompareFrameRenderInput {};
         let compare_resources = renderer::ModernIndexCompareResources::load_for_mode();
         let source_table = renderer::MappedSourceTableView::from_entries(&[(0, 0, 0)]);
-        let diff = renderer::compare_modern_index_rgba(&[], &[]);
         let gpu_diff = renderer::compare_gpu_render_bgra_to_rgba(&[], &[]);
         let frame = renderer::GpuFrame::from_source_and_raw_scanlines();
         let atlas_compare = renderer::modern_gpu::compare_modern_atlas_to_rgba();
         frontend.present_modern_asset_frame();
-        renderer::modern_gpu::render_modern_index_compare_frame();
-        modern_index_compare_stats.record_frame(frame_record);
+        modern_index_compare_stats.render_compare_frame(frame_record);
         renderer::hd_authoring::render_hd_capture_from_sources();
     }
     """
@@ -270,13 +268,14 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 modern_index_compare_stats.should_print_frame(mismatch);
                 modern_index_compare_stats.frame_line(renderer::ModernIndexCompareFrameLine {});
                 modern_index_compare_stats.progress_line(frames);
+                modern_index_compare_stats.record_frame(frame_record);
             }
             """
         )
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 5)
+        self.assertEqual(len(errors), 6)
         self.assertTrue(
             all("modern index frame report policy escaped renderer boundary" in error for error in errors)
         )
@@ -378,13 +377,15 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             """
             fn run_play_with_state() {
                 let diff = renderer::compare_rgba_to_rgba(&classic, &modern);
+                let index_diff = renderer::compare_modern_index_rgba(&classic, &modern);
+                let modern = renderer::modern_gpu::render_modern_index_compare_frame();
             }
             """
         )
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 1)
+        self.assertEqual(len(errors), 3)
         self.assertIn("modern index compare diff assembly escaped renderer boundary", errors[0])
 
     def test_rejects_direct_gpu_render_compare_diff_assembly_calls(self):
