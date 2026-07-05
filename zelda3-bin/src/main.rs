@@ -28,7 +28,7 @@ use gpu_capture::{
     capture_gpu_frame_from_game, compare_gpu_render_current_frame,
     emit_modern_index_compare_output_lines, modern_atlas_compare_run,
     modern_compare_mode_defaults_from_env, modern_index_compare_run_from_env,
-    render_gpu_capture_rgba, render_gpu_hash_frame_rgba_line, render_hash_pair_bgra_rgba,
+    new_gpu_readback_renderer, render_gpu_hash_frame_rgba_line, render_hash_pair_bgra_rgba,
     render_hd_capture_from_gpu_capture,
 };
 use platform::{
@@ -39,7 +39,6 @@ use play_renderer::{
     render_fingerprint_leaf_bgra, render_hash_frame_bgra_line, render_play_frame_bgra,
     render_standard_play_frame_bgra, run_play_frame_bgra, run_play_frame_with_run_what_bgra,
 };
-use renderer::OffscreenRenderer;
 use serde::{Deserialize, Serialize};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, ppu::PpuRenderFlags, Snes};
 use zelda3::{
@@ -3444,16 +3443,16 @@ fn run_replay_save(args: &[String]) {
     } else {
         None
     };
-    // OffscreenRenderer is the GPU readback path for dump-frame and the
-    // diagnostic gpu-render-hash line. The parity-facing render-hash line hashes
-    // the raw CPU BGRA display buffer, matching C PrintRenderHash exactly.
-    let mut offscreen = if render_hash_log != 0
+    // GPU readback is used for dump-frame and the diagnostic gpu-render-hash
+    // line. The parity-facing render-hash line hashes the raw CPU BGRA display
+    // buffer, matching C PrintRenderHash exactly.
+    let mut gpu_readback = if render_hash_log != 0
         || gpu_render_compare != 0
         || render_hash_dump_frame.is_some()
         || dump_frame_path.is_some()
         || modern_index_compare.enabled()
     {
-        Some(pollster::block_on(OffscreenRenderer::new(256, 224)))
+        Some(new_gpu_readback_renderer(256, 224))
     } else {
         None
     };
@@ -3555,9 +3554,11 @@ fn run_replay_save(args: &[String]) {
             let frame = render_hash_frame
                 .as_mut()
                 .expect("render compare frame allocated");
-            let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
+            let gpu_readback = gpu_readback
+                .as_mut()
+                .expect("GPU readback renderer allocated");
             let Some(cpu_hash) =
-                compare_gpu_render_current_frame(&mut game, offscreen, frame, frames)
+                compare_gpu_render_current_frame(&mut game, gpu_readback, frame, frames)
             else {
                 process::exit(1);
             };
@@ -3804,9 +3805,10 @@ fn run_replay_save(args: &[String]) {
                     cgram_val
                 );
             }
-            let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
-            offscreen.upload_bgra_frame(frame);
-            let rgba = offscreen.render_to_rgba();
+            let gpu_readback = gpu_readback
+                .as_mut()
+                .expect("GPU readback renderer allocated");
+            let rgba = gpu_readback.render_bgra_frame_to_rgba(frame);
             if frames == 1000 {
                 let post_vram_hash: u32 = {
                     let mut h = 2166136261u32;
@@ -4002,7 +4004,7 @@ fn run_replay_save(args: &[String]) {
                         process::exit(1);
                     }
                     println!("dumped replay-save frame to {}", dump_path.display());
-                    let gpu_rgba = render_gpu_capture_rgba(&gpu_capture, offscreen);
+                    let gpu_rgba = gpu_readback.render_gpu_capture_rgba(&gpu_capture);
                     let gpu_path = {
                         let stem = dump_path.file_stem().unwrap_or_default().to_string_lossy();
                         let ext = dump_path
@@ -4319,7 +4321,7 @@ fn run_replay_save(args: &[String]) {
                         game.ppu.prevent_math_mode
                     );
                 }
-                let gpu_rgba = render_gpu_capture_rgba(&gpu_capture, offscreen);
+                let gpu_rgba = gpu_readback.render_gpu_capture_rgba(&gpu_capture);
                 if frames == 8000 {
                     let cx = 128usize;
                     let cy = 112usize;
@@ -5146,8 +5148,10 @@ fn run_replay_save(args: &[String]) {
         if modern_index_compare.should_compare_frame(frames) {
             {
                 let gpu_capture = capture_gpu_frame_from_game(&mut game);
-                let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
-                let classic_rgba = render_gpu_capture_rgba(&gpu_capture, offscreen);
+                let gpu_readback = gpu_readback
+                    .as_mut()
+                    .expect("GPU readback renderer allocated");
+                let classic_rgba = gpu_readback.render_gpu_capture_rgba(&gpu_capture);
                 let output_lines = modern_index_compare.render_output_from_capture(
                     &gpu_capture,
                     &modern_index_compare_resources,
@@ -5284,9 +5288,10 @@ fn run_replay_save(args: &[String]) {
             width as usize * 4,
             PpuRenderFlags::empty(),
         );
-        let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
-        offscreen.upload_bgra_frame(&frame);
-        let rgba = offscreen.render_to_rgba();
+        let gpu_readback = gpu_readback
+            .as_mut()
+            .expect("GPU readback renderer allocated");
+        let rgba = gpu_readback.render_bgra_frame_to_rgba(&frame);
         if let Err(e) = write_rgba_frame_png(path, &rgba, width, height) {
             eprintln!("failed to write {}: {e}", path.display());
             process::exit(1);
@@ -8905,8 +8910,8 @@ fn run_dump_developer_destination(args: &[String]) {
 
     if let Some(path) = gpu_out_path.as_deref() {
         let gpu_capture = capture_gpu_frame_from_game(&mut game);
-        let mut offscreen = pollster::block_on(OffscreenRenderer::new(width, height));
-        let rgba = render_gpu_capture_rgba(&gpu_capture, &mut offscreen);
+        let mut gpu_readback = new_gpu_readback_renderer(width, height);
+        let rgba = gpu_readback.render_gpu_capture_rgba(&gpu_capture);
         if let Err(e) = write_rgba_frame_png(path, &rgba, width, height) {
             eprintln!("failed to write {}: {e}", path.display());
             process::exit(1);
@@ -11610,7 +11615,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
             process::exit(2);
         });
     let last_panic = install_crash_panic_hook();
-    let mut offscreen = pollster::block_on(OffscreenRenderer::new(256, 224));
+    let mut gpu_readback = new_gpu_readback_renderer(256, 224);
     let mut render_frame = vec![0u8; 256 * 224 * 4];
     let mut compared = 0u32;
     let mut last_frame = start_frame;
@@ -11638,7 +11643,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
         if should_compare_stride {
             let Some(cpu_hash) = compare_gpu_render_current_frame(
                 &mut game,
-                &mut offscreen,
+                &mut gpu_readback,
                 &mut render_frame,
                 completed_frame,
             ) else {
@@ -11650,8 +11655,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
         }
         if should_compare_modern {
             let gpu_capture = capture_gpu_frame_from_game(&mut game);
-            // Classic GPU render (oracle) via the offscreen renderer:
-            let classic_rgba = render_gpu_capture_rgba(&gpu_capture, &mut offscreen);
+            let classic_rgba = gpu_readback.render_gpu_capture_rgba(&gpu_capture);
             if let Some(report) = modern_atlas_compare.render_report_from_capture(
                 &gpu_capture,
                 &classic_rgba,
@@ -11662,7 +11666,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
         }
         if should_compare_modern_index {
             let gpu_capture = capture_gpu_frame_from_game(&mut game);
-            let classic_rgba = render_gpu_capture_rgba(&gpu_capture, &mut offscreen);
+            let classic_rgba = gpu_readback.render_gpu_capture_rgba(&gpu_capture);
 
             let output_lines = modern_index_compare.render_output_from_capture(
                 &gpu_capture,
@@ -11786,7 +11790,7 @@ fn fingerprint_audio_hash(
     ])
 }
 
-/// Write an RGBA frame (as returned by [`OffscreenRenderer::render_to_rgba`]) to a PNG.
+/// Write an RGBA frame to a PNG.
 fn write_rgba_frame_png(
     path: &Path,
     rgba: &[u8],

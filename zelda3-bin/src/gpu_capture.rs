@@ -98,6 +98,10 @@ pub(crate) struct ModernAtlasCompareRun {
     resources: renderer::ModernAtlasCompareResources,
 }
 
+pub(crate) struct GpuReadbackRenderer {
+    offscreen: renderer::OffscreenRenderer,
+}
+
 impl GpuPlayRenderer {
     fn new() -> Self {
         let modern_assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."))
@@ -153,6 +157,12 @@ pub(crate) fn new_gpu_play_renderer() -> Box<dyn crate::play_renderer::PlayRende
 
 pub(crate) fn capture_gpu_frame_from_game(game: &mut ZeldaState) -> LiveGpuFrameCapture {
     LiveGpuFrameCapture::from_game(game)
+}
+
+pub(crate) fn new_gpu_readback_renderer(width: u32, height: u32) -> GpuReadbackRenderer {
+    GpuReadbackRenderer {
+        offscreen: pollster::block_on(renderer::OffscreenRenderer::new(width, height)),
+    }
 }
 
 pub(crate) fn modern_compare_mode_defaults_from_env() -> ModernCompareModeDefaults {
@@ -270,13 +280,6 @@ impl ModernIndexCompareRun {
     }
 }
 
-pub(crate) fn render_gpu_capture_rgba(
-    capture: &LiveGpuFrameCapture,
-    offscreen: &mut renderer::OffscreenRenderer,
-) -> Vec<u8> {
-    offscreen.render_gpu_frame(&capture.gpu_frame())
-}
-
 pub(crate) fn render_gpu_hash_frame_rgba_line(frame: u32, frame_rgba: &[u8]) -> String {
     renderer::gpu_render_hash_frame_rgba(frame, frame_rgba).line
 }
@@ -290,7 +293,7 @@ pub(crate) fn render_hash_pair_bgra_rgba(
 
 pub(crate) fn compare_gpu_render_current_frame(
     game: &mut ZeldaState,
-    offscreen: &mut renderer::OffscreenRenderer,
+    readback: &mut GpuReadbackRenderer,
     frame: &mut [u8],
     frames: u32,
 ) -> Option<u32> {
@@ -302,7 +305,7 @@ pub(crate) fn compare_gpu_render_current_frame(
         width as usize * 4,
         PpuRenderFlags::empty(),
     );
-    let gpu_rgba = render_gpu_capture_rgba(&gpu_capture, offscreen);
+    let gpu_rgba = readback.render_gpu_capture_rgba(&gpu_capture);
     let render_comparison =
         renderer::compare_gpu_render_frame_bgra_to_rgba(frames, frame, &gpu_rgba);
     if let Some(diff) = render_comparison.diff() {
@@ -379,6 +382,17 @@ pub(crate) fn compare_gpu_render_current_frame(
     }
 
     Some(render_comparison.cpu_hash())
+}
+
+impl GpuReadbackRenderer {
+    pub(crate) fn render_gpu_capture_rgba(&mut self, capture: &LiveGpuFrameCapture) -> Vec<u8> {
+        self.offscreen.render_gpu_frame(&capture.gpu_frame())
+    }
+
+    pub(crate) fn render_bgra_frame_to_rgba(&mut self, frame: &[u8]) -> Vec<u8> {
+        self.offscreen.upload_bgra_frame(frame);
+        self.offscreen.render_to_rgba()
+    }
 }
 
 pub(crate) fn render_hd_capture_from_gpu_capture(
