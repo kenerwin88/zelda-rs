@@ -1068,13 +1068,17 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             fn run_dump_dungeon_index_tiles() {}
             fn run_dump_sprite_index_tiles() {}
             fn dungeon_room_index_probe() {}
+            const OBJ_SIZE_TABLE: [[u32; 2]; 8] = [[8, 16]; 8];
+            struct SpriteTileProbe {}
+            fn sprite_index_probe() {}
+            fn decode_snes_4bpp_tile_indices() {}
             const DUNGEON_BG_CHR_BASE: usize = 0x2000;
             const DUNGEON_BG1_TILEMAP_WORDS: usize = 0x1000;
         """
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 10)
+        self.assertEqual(len(errors), 14)
         self.assertTrue(
             all(
                 "index dump command ownership escaped index_dump_commands boundary" in error

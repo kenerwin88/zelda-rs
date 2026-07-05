@@ -426,6 +426,10 @@ FORBIDDEN_MAIN_INDEX_DUMP_COMMAND_OWNERSHIP = (
     "fn run_dump_dungeon_index_tiles",
     "fn run_dump_sprite_index_tiles",
     "fn dungeon_room_index_probe",
+    "const OBJ_SIZE_TABLE",
+    "struct SpriteTileProbe",
+    "fn sprite_index_probe",
+    "fn decode_snes_4bpp_tile_indices",
     "const DUNGEON_BG_CHR_BASE",
     "const DUNGEON_BG1_TILEMAP_WORDS",
 )
