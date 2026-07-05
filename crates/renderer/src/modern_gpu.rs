@@ -3294,6 +3294,52 @@ pub struct ModernIndexCompareRender {
     pub variant_traces: Vec<crate::modern_variant_draw::VariantPixelTrace>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModernGpuPathFallback {
+    pub reason: &'static str,
+    pub count: u32,
+}
+
+pub fn modern_gpu_path_fallback_reason(
+    via: &str,
+    stats: Option<&crate::modern_software::VariantAtlasRenderStats>,
+) -> Option<ModernGpuPathFallback> {
+    match via {
+        "mode7-cpu" => {
+            return Some(ModernGpuPathFallback {
+                reason: "mode7-cpu",
+                count: 1,
+            });
+        }
+        "sources" => {
+            return Some(ModernGpuPathFallback {
+                reason: "sources-cpu",
+                count: 1,
+            });
+        }
+        "vram" => {
+            return Some(ModernGpuPathFallback {
+                reason: "vram-cpu",
+                count: 1,
+            });
+        }
+        _ => {}
+    }
+
+    let stats = stats?;
+    let checks = [
+        ("prefinal-overlay-cpu", stats.cpu_prefinal_overlay_frames),
+        (
+            "prefinal-composite-cpu",
+            stats.cpu_prefinal_composite_frames,
+        ),
+    ];
+    checks
+        .into_iter()
+        .find(|(_, count)| *count != 0)
+        .map(|(reason, count)| ModernGpuPathFallback { reason, count })
+}
+
 pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableView + ?Sized>(
     frame: &crate::gpu_frame::GpuFrame<'_>,
     src_table: Option<&S>,
@@ -10583,6 +10629,61 @@ mod tests {
         assert_eq!(vram_render.via, "vram");
         assert_eq!(source_render.rgba.len(), 256 * 224 * 4);
         assert_eq!(vram_render.rgba.len(), 256 * 224 * 4);
+    }
+
+    #[test]
+    fn modern_gpu_path_fallback_reason_accepts_gpu_routes() {
+        assert_eq!(modern_gpu_path_fallback_reason("mode7-gpu", None), None);
+
+        let stats = VariantAtlasRenderStats {
+            gpu_prefinal_base_frames: 1,
+            gpu_screen_builder_frames: 1,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            modern_gpu_path_fallback_reason("variant-gpu", Some(&stats)),
+            None
+        );
+    }
+
+    #[test]
+    fn modern_gpu_path_fallback_reason_reports_first_cpu_route_or_blocker() {
+        assert_eq!(
+            modern_gpu_path_fallback_reason("mode7-cpu", None),
+            Some(ModernGpuPathFallback {
+                reason: "mode7-cpu",
+                count: 1,
+            })
+        );
+        assert_eq!(
+            modern_gpu_path_fallback_reason("sources", None),
+            Some(ModernGpuPathFallback {
+                reason: "sources-cpu",
+                count: 1,
+            })
+        );
+        assert_eq!(
+            modern_gpu_path_fallback_reason("vram", None),
+            Some(ModernGpuPathFallback {
+                reason: "vram-cpu",
+                count: 1,
+            })
+        );
+
+        let stats = VariantAtlasRenderStats {
+            cpu_prefinal_overlay_frames: 2,
+            cpu_prefinal_composite_frames: 1,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            modern_gpu_path_fallback_reason("variant-gpu", Some(&stats)),
+            Some(ModernGpuPathFallback {
+                reason: "prefinal-overlay-cpu",
+                count: 2,
+            })
+        );
     }
 
     fn test_gpu_frame<'a>(

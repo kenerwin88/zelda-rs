@@ -1792,9 +1792,11 @@ impl VariantLiveStats {
     fn full_gpu_violation(
         &self,
         stats: &renderer::modern_software::VariantAtlasRenderStats,
-    ) -> Option<CpuRenderFallback> {
+    ) -> Option<renderer::modern_gpu::ModernGpuPathFallback> {
         self.require_full_gpu_path
-            .then(|| first_cpu_render_fallback_reason("variant-gpu", Some(stats)))
+            .then(|| {
+                renderer::modern_gpu::modern_gpu_path_fallback_reason("variant-gpu", Some(stats))
+            })
             .flatten()
     }
 }
@@ -6063,9 +6065,10 @@ fn run_replay_save(args: &[String]) {
                     process::exit(1);
                 }
                 if require_full_gpu_path {
-                    if let Some(fallback) =
-                        first_cpu_render_fallback_reason(via, variant_stats.as_ref())
-                    {
+                    if let Some(fallback) = renderer::modern_gpu::modern_gpu_path_fallback_reason(
+                        via,
+                        variant_stats.as_ref(),
+                    ) {
                         eprintln!(
                             "gpu_path_unsupported frame={frames} mode={mode_label} ppumode={} via={via} reason={} count={} mismatch_px={mismatch}",
                             gpu_frame.mode, fallback.reason, fallback.count
@@ -13146,9 +13149,10 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 process::exit(1);
             }
             if require_full_gpu_path {
-                if let Some(fallback) =
-                    first_cpu_render_fallback_reason(via, variant_stats.as_ref())
-                {
+                if let Some(fallback) = renderer::modern_gpu::modern_gpu_path_fallback_reason(
+                    via,
+                    variant_stats.as_ref(),
+                ) {
                     eprintln!(
                         "gpu_path_unsupported frame={completed_frame} mode={mode_label} ppumode={} via={via} reason={} count={} mismatch_px={mismatch}",
                         gpu_frame.mode, fallback.reason, fallback.count
@@ -13605,52 +13609,6 @@ fn parse_variant_trace_pixel(value: &str) -> Option<(u32, i16, i16)> {
         return None;
     }
     Some((frame, x, y))
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct CpuRenderFallback {
-    reason: &'static str,
-    count: u32,
-}
-
-fn first_cpu_render_fallback_reason(
-    via: &str,
-    stats: Option<&renderer::modern_software::VariantAtlasRenderStats>,
-) -> Option<CpuRenderFallback> {
-    match via {
-        "mode7-cpu" => {
-            return Some(CpuRenderFallback {
-                reason: "mode7-cpu",
-                count: 1,
-            });
-        }
-        "sources" => {
-            return Some(CpuRenderFallback {
-                reason: "sources-cpu",
-                count: 1,
-            });
-        }
-        "vram" => {
-            return Some(CpuRenderFallback {
-                reason: "vram-cpu",
-                count: 1,
-            });
-        }
-        _ => {}
-    }
-
-    let stats = stats?;
-    let checks = [
-        ("prefinal-overlay-cpu", stats.cpu_prefinal_overlay_frames),
-        (
-            "prefinal-composite-cpu",
-            stats.cpu_prefinal_composite_frames,
-        ),
-    ];
-    checks
-        .into_iter()
-        .find(|(_, count)| *count != 0)
-        .map(|(reason, count)| CpuRenderFallback { reason, count })
 }
 
 fn render_frame_rgb_hash_rgba(frame: &[u8]) -> u32 {
@@ -15659,7 +15617,7 @@ mod tests {
         };
         assert_eq!(
             strict.full_gpu_violation(&stats),
-            Some(CpuRenderFallback {
+            Some(renderer::modern_gpu::ModernGpuPathFallback {
                 reason: "prefinal-composite-cpu",
                 count: 1,
             })
@@ -15740,46 +15698,6 @@ mod tests {
         );
         assert_eq!(parse_variant_trace_pixel("175:102"), None);
         assert_eq!(parse_variant_trace_pixel("175:102:104:1"), None);
-    }
-
-    #[test]
-    fn full_gpu_path_classifier_accepts_gpu_routes() {
-        assert_eq!(first_cpu_render_fallback_reason("mode7-gpu", None), None);
-
-        let stats = renderer::modern_software::VariantAtlasRenderStats {
-            gpu_prefinal_base_frames: 1,
-            gpu_screen_builder_frames: 1,
-            ..Default::default()
-        };
-
-        assert_eq!(
-            first_cpu_render_fallback_reason("variant-gpu", Some(&stats)),
-            None
-        );
-    }
-
-    #[test]
-    fn full_gpu_path_classifier_reports_first_cpu_route_or_blocker() {
-        assert_eq!(
-            first_cpu_render_fallback_reason("mode7-cpu", None),
-            Some(CpuRenderFallback {
-                reason: "mode7-cpu",
-                count: 1,
-            })
-        );
-
-        let stats = renderer::modern_software::VariantAtlasRenderStats {
-            cpu_prefinal_composite_frames: 1,
-            ..Default::default()
-        };
-
-        assert_eq!(
-            first_cpu_render_fallback_reason("variant-gpu", Some(&stats)),
-            Some(CpuRenderFallback {
-                reason: "prefinal-composite-cpu",
-                count: 1,
-            })
-        );
     }
 
     #[test]
