@@ -181,7 +181,7 @@ struct ModernIndexCompareFrameRenderedRecord<'a> {
     pub include_diff_in_frame_line: bool,
 }
 
-pub struct ModernIndexCompareFrameRenderedReport {
+struct ModernIndexCompareFrameRenderedReport {
     pub report: ModernIndexCompareFrameReport,
     pub modern_rgba: Vec<u8>,
     pub trace_lines: Vec<String>,
@@ -206,7 +206,7 @@ pub struct ModernIndexCompareOutputLines {
 }
 
 impl ModernIndexCompareFrameRenderedReport {
-    pub fn output_lines(&self) -> ModernIndexCompareOutputLines {
+    fn output_lines(&self) -> ModernIndexCompareOutputLines {
         let mut lines = Vec::new();
         lines.extend(
             self.trace_lines
@@ -380,7 +380,7 @@ impl ModernIndexCompareStats {
         })
     }
 
-    pub fn write_dump_for_frame(
+    fn write_dump_for_frame(
         &self,
         frame: u32,
         classic_rgba: &[u8],
@@ -491,7 +491,7 @@ impl ModernIndexCompareStats {
         }
     }
 
-    pub fn render_compare_frame<S: crate::modern_extract::SourceTableView + ?Sized>(
+    fn render_compare_frame<S: crate::modern_extract::SourceTableView + ?Sized>(
         &mut self,
         input: ModernIndexCompareFrameRenderInput<'_, '_, S>,
     ) -> ModernIndexCompareFrameRenderedReport {
@@ -516,6 +516,32 @@ impl ModernIndexCompareStats {
             run_config: input.run_config,
             include_diff_in_frame_line: input.include_diff_in_frame_line,
         })
+    }
+
+    pub fn render_compare_frame_output<S: crate::modern_extract::SourceTableView + ?Sized>(
+        &mut self,
+        input: ModernIndexCompareFrameRenderInput<'_, '_, S>,
+    ) -> ModernIndexCompareOutputLines {
+        let frame = input.frame;
+        let classic_rgba = input.classic_rgba;
+        let rendered = self.render_compare_frame(input);
+        self.output_lines_for_rendered_frame(frame, classic_rgba, rendered)
+    }
+
+    fn output_lines_for_rendered_frame(
+        &self,
+        frame: u32,
+        classic_rgba: &[u8],
+        rendered: ModernIndexCompareFrameRenderedReport,
+    ) -> ModernIndexCompareOutputLines {
+        let mut output = rendered.output_lines();
+        if !output.has_failure {
+            output.lines.extend(
+                self.write_dump_for_frame(frame, classic_rgba, &rendered.modern_rgba)
+                    .lines,
+            );
+        }
+        output
     }
 
     fn frame_line(&self, line: ModernIndexCompareFrameLine<'_>) -> String {
@@ -1194,6 +1220,103 @@ mod tests {
                 has_failure: false,
             }
         );
+    }
+
+    #[test]
+    fn output_lines_for_rendered_frame_appends_dumps_after_successful_compare_output() {
+        let mut stats = ModernIndexCompareStats {
+            dump_frame: Some(80),
+            ..Default::default()
+        };
+        let classic_path = std::path::PathBuf::from("/tmp/classic_80.png");
+        let modern_path = std::path::PathBuf::from("/tmp/modern_index_80.png");
+        let _ = std::fs::remove_file(&classic_path);
+        let _ = std::fs::remove_file(&modern_path);
+        let classic = vec![0u8; 256 * 224 * 4];
+        let modern = classic.clone();
+
+        let rendered = stats.record_rendered_frame(ModernIndexCompareFrameRenderedRecord {
+            frame: 80,
+            mode_label: "ow",
+            ppu_mode: 1,
+            classic_rgba: &classic,
+            modern_render: crate::modern_gpu::ModernIndexCompareRender {
+                rgba: modern,
+                via: "gpu",
+                variant_stats: None,
+                variant_traces: Vec::new(),
+            },
+            trace_pixel: None,
+            run_config: ModernIndexCompareRunConfig::default(),
+            include_diff_in_frame_line: false,
+        });
+
+        let output = stats.output_lines_for_rendered_frame(80, &classic, rendered);
+
+        assert_eq!(
+            output,
+            ModernIndexCompareOutputLines {
+                lines: vec![
+                    ModernIndexCompareOutputLine {
+                        stream: ModernIndexCompareOutputStream::Stdout,
+                        line:
+                            "modern_index_compare frame=80 mode=ow ppumode=1 mismatch_px=0 via=gpu"
+                                .to_string(),
+                    },
+                    ModernIndexCompareOutputLine {
+                        stream: ModernIndexCompareOutputStream::Stdout,
+                        line: "dumped classic frame to /tmp/classic_80.png".to_string(),
+                    },
+                    ModernIndexCompareOutputLine {
+                        stream: ModernIndexCompareOutputStream::Stdout,
+                        line: "dumped modern_index frame to /tmp/modern_index_80.png".to_string(),
+                    },
+                ],
+                has_failure: false,
+            }
+        );
+        assert!(classic_path.exists());
+        assert!(modern_path.exists());
+        let _ = std::fs::remove_file(classic_path);
+        let _ = std::fs::remove_file(modern_path);
+    }
+
+    #[test]
+    fn output_lines_for_rendered_frame_skips_dumps_after_failure() {
+        let mut stats = ModernIndexCompareStats {
+            dump_frame: Some(81),
+            ..Default::default()
+        };
+        let classic_path = std::path::PathBuf::from("/tmp/classic_81.png");
+        let modern_path = std::path::PathBuf::from("/tmp/modern_index_81.png");
+        let _ = std::fs::remove_file(&classic_path);
+        let _ = std::fs::remove_file(&modern_path);
+        let classic = vec![0u8; 256 * 224 * 4];
+        let modern = vec![0xffu8; 256 * 224 * 4];
+
+        let rendered = stats.record_rendered_frame(ModernIndexCompareFrameRenderedRecord {
+            frame: 81,
+            mode_label: "ow",
+            ppu_mode: 1,
+            classic_rgba: &classic,
+            modern_render: crate::modern_gpu::ModernIndexCompareRender {
+                rgba: modern,
+                via: "gpu",
+                variant_stats: None,
+                variant_traces: Vec::new(),
+            },
+            trace_pixel: None,
+            run_config: run_config_with_requirements(true, false),
+            include_diff_in_frame_line: false,
+        });
+
+        let output = stats.output_lines_for_rendered_frame(81, &classic, rendered);
+
+        assert_eq!(output.lines.len(), 1);
+        assert!(output.has_failure);
+        assert!(output.lines[0].line.starts_with("modern_index_mismatch "));
+        assert!(!classic_path.exists());
+        assert!(!modern_path.exists());
     }
 
     #[test]

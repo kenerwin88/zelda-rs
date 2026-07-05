@@ -5358,7 +5358,7 @@ fn run_replay_save(args: &[String]) {
                 let src_table =
                     renderer::source_table_from_entries(game.vram_chr_source().as_slice());
                 let scene = compare_scene.asset_scene();
-                let rendered = modern_index_compare_stats.render_compare_frame(
+                let output_lines = modern_index_compare_stats.render_compare_frame_output(
                     renderer::ModernIndexCompareFrameRenderInput {
                         frame: frames,
                         mode_label: compare_scene.mode_label(),
@@ -5372,18 +5372,10 @@ fn run_replay_save(args: &[String]) {
                         include_diff_in_frame_line: false,
                     },
                 );
-                let output_lines = rendered.output_lines();
                 emit_modern_index_compare_output_lines(&output_lines);
-                let modern_rgba = rendered.modern_rgba;
                 if output_lines.has_failure {
                     process::exit(1);
                 }
-                let dump_output = modern_index_compare_stats.write_dump_for_frame(
-                    frames,
-                    &classic_rgba,
-                    &modern_rgba,
-                );
-                emit_modern_index_compare_output_lines(&dump_output);
             }
         }
         let mut fp_render_leaf: u32 = 0;
@@ -12113,7 +12105,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
 
             let src_table = renderer::source_table_from_entries(game.vram_chr_source().as_slice());
             let scene = compare_scene.asset_scene();
-            let rendered = modern_index_compare_stats.render_compare_frame(
+            let output_lines = modern_index_compare_stats.render_compare_frame_output(
                 renderer::ModernIndexCompareFrameRenderInput {
                     frame: completed_frame,
                     mode_label: compare_scene.mode_label(),
@@ -12127,18 +12119,10 @@ fn run_play_gpu_render_compare(args: &[String]) {
                     include_diff_in_frame_line: true,
                 },
             );
-            let output_lines = rendered.output_lines();
             emit_modern_index_compare_output_lines(&output_lines);
-            let modern_rgba = rendered.modern_rgba;
             if output_lines.has_failure {
                 process::exit(1);
             }
-            let dump_output = modern_index_compare_stats.write_dump_for_frame(
-                completed_frame,
-                &classic_rgba,
-                &modern_rgba,
-            );
-            emit_modern_index_compare_output_lines(&dump_output);
         }
     }
 
