@@ -1457,7 +1457,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, &scanlines_raw);
         let src_table = vram_chr_source_table_view(game.vram_chr_source());
         let scene =
-            renderer::ModernAssetFrameScene::from_in_dungeon(game.ram[PLAYER_IS_INDOORS] != 0);
+            renderer::ModernAssetFrameScene::from_player_indoors_flag(game.ram[PLAYER_IS_INDOORS]);
         match frontend.present_modern_asset_frame(
             &gpu_frame,
             Some(&src_table),
@@ -5458,29 +5458,21 @@ fn run_replay_save(args: &[String]) {
         }
         if modern_index_compare != 0 && frames % modern_index_compare == 0 {
             let module = game.ram[TRACE_MAIN_MODULE_INDEX];
-            // 0x0aa1 = MAIN_TILE_THEME_INDEX (the blockset CHR key; same RAM address the dungeon dump uses)
-            let theme = game.ram[0x0aa1] as u16;
-            // Compare every module by default so full-route parity sweeps do not
-            // silently skip title, menus, credits, transitions, or unsupported PPU
-            // modes. Non-gameplay modules are labeled `mod{N}` and include the PPU
-            // mode in the output so the failure surface stays explicit.
-            let mode_str: Option<String> = match module {
-                9 | 11 => Some("ow".to_string()),
-                7 | 16 => Some("dungeon".to_string()),
-                m => Some(format!("mod{m}")),
-            };
-            if let Some(mode_label) = mode_str {
+            let compare_scene =
+                renderer::ModernIndexCompareScene::from_main_module_and_player_indoors_flag(
+                    module,
+                    game.ram[PLAYER_IS_INDOORS],
+                );
+            {
                 let hdma_cgram = game.cgram_after_first_hdma_line();
                 let scanlines_raw = game.ppu_scanline_windows();
                 let gpu_ppu = game.ppu.clone();
                 let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
                 let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
                 let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
-                let _ = (theme, &dungeon_index_atlas, &index_atlas);
+                let _ = (&dungeon_index_atlas, &index_atlas);
                 let src_table = vram_chr_source_table_view(game.vram_chr_source());
-                let scene = renderer::ModernAssetFrameScene::from_in_dungeon(
-                    game.ram[PLAYER_IS_INDOORS] != 0,
-                );
+                let scene = compare_scene.asset_scene();
                 let trace_pixel =
                     variant_trace_pixel_env().filter(|(trace_frame, _, _)| frames == *trace_frame);
                 let modern_render = renderer::modern_gpu::render_modern_index_compare_frame(
@@ -5508,7 +5500,7 @@ fn run_replay_save(args: &[String]) {
                 let report = modern_index_compare_stats.record_frame(
                     renderer::ModernIndexCompareFrameRecord {
                         frame: frames,
-                        mode_label: &mode_label,
+                        mode_label: compare_scene.mode_label(),
                         ppu_mode: gpu_frame.mode,
                         via,
                         variant_stats: variant_stats.as_ref(),
@@ -10706,8 +10698,8 @@ fn run_dump_assets_by_source(args: &[String]) {
                         continue;
                     }
                     let palette_row = ((entry_word >> 10) & 7) as u8;
-                    let scene = renderer::ModernAssetFrameScene::from_in_dungeon(
-                        game.ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) != 0,
+                    let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(
+                        game.ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0),
                     );
                     let preview_src = game.vram_chr_preview_source().get(slot);
                     let usage_src =
@@ -12312,11 +12304,11 @@ fn run_play_gpu_render_compare(args: &[String]) {
         }
         if should_compare_modern_index {
             let module = game.ram[TRACE_MAIN_MODULE_INDEX];
-            let mode_label = match module {
-                9 | 11 => "ow".to_string(),
-                7 | 16 => "dungeon".to_string(),
-                m => format!("mod{m}"),
-            };
+            let compare_scene =
+                renderer::ModernIndexCompareScene::from_main_module_and_player_indoors_flag(
+                    module,
+                    game.ram[PLAYER_IS_INDOORS],
+                );
             let hdma_cgram = game.cgram_after_first_hdma_line();
             let scanlines_raw = game.ppu_scanline_windows();
             let gpu_ppu = game.ppu.clone();
@@ -12324,8 +12316,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
 
             let src_table = vram_chr_source_table_view(game.vram_chr_source());
-            let scene =
-                renderer::ModernAssetFrameScene::from_in_dungeon(game.ram[PLAYER_IS_INDOORS] != 0);
+            let scene = compare_scene.asset_scene();
             let trace_pixel = variant_trace_pixel_env()
                 .filter(|(trace_frame, _, _)| completed_frame == *trace_frame);
             let modern_render = renderer::modern_gpu::render_modern_index_compare_frame(
@@ -12353,7 +12344,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let report =
                 modern_index_compare_stats.record_frame(renderer::ModernIndexCompareFrameRecord {
                     frame: completed_frame,
-                    mode_label: &mode_label,
+                    mode_label: compare_scene.mode_label(),
                     ppu_mode: gpu_frame.mode,
                     via,
                     variant_stats: variant_stats.as_ref(),

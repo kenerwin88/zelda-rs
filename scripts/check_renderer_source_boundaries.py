@@ -20,6 +20,7 @@ MANUAL_EXTRACT = "extract_modern_frame_from_sources"
 REQUIRED_RENDERER_OWNED_CALLS = (
     "present_modern_asset_frame",
     "ModernAssetFrameScene",
+    "ModernIndexCompareScene",
     "ModernAssetLiveStats",
     "ModernIndexCompareStats",
     "ModernIndexCompareFrameRecord",
@@ -30,6 +31,8 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "compare_modern_atlas_to_rgba",
     "render_modern_index_compare_frame",
     "record_frame",
+    "from_main_module_and_player_indoors_flag",
+    "from_player_indoors_flag",
     "render_hd_capture_from_sources",
 )
 
@@ -90,6 +93,12 @@ FORBIDDEN_MODERN_INDEX_FRAME_REPORT_CALLS = (
     "modern_index_compare_stats.should_print_frame(",
     "modern_index_compare_stats.frame_line(",
     "modern_index_compare_stats.progress_line(",
+)
+
+FORBIDDEN_MODERN_SCENE_POLICY_CALLS = (
+    "renderer::ModernAssetFrameScene::from_in_dungeon(",
+    "mode_str: Option<String> = match module",
+    "mode_label = match module",
 )
 
 FORBIDDEN_SOURCE_TABLE_VIEW_CALLS = (
@@ -258,6 +267,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "modern index frame report policy escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MODERN_SCENE_POLICY_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "modern scene policy escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

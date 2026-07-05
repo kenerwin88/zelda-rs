@@ -20,7 +20,8 @@ def load_module():
 def source_with_required_calls(body: str) -> str:
     required = """
     fn run_play_with_state() {
-        let scene = renderer::ModernAssetFrameScene::from_in_dungeon(false);
+        let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(0);
+        let compare_scene = renderer::ModernIndexCompareScene::from_main_module_and_player_indoors_flag(9, 0);
         let stats = renderer::ModernAssetLiveStats::from_env();
         let compare = renderer::ModernIndexCompareStats::from_env();
         let frame_record = renderer::ModernIndexCompareFrameRecord {};
@@ -277,6 +278,33 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertEqual(len(errors), 5)
         self.assertTrue(
             all("modern index frame report policy escaped renderer boundary" in error for error in errors)
+        )
+
+    def test_rejects_modern_scene_policy_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_play_with_state() {
+                let scene = renderer::ModernAssetFrameScene::from_in_dungeon(game.ram[PLAYER_IS_INDOORS] != 0);
+                let mode_str: Option<String> = match module {
+                    9 | 11 => Some("ow".to_string()),
+                    7 | 16 => Some("dungeon".to_string()),
+                    m => Some(format!("mod{m}")),
+                };
+                let mode_label = match module {
+                    9 | 11 => "ow".to_string(),
+                    7 | 16 => "dungeon".to_string(),
+                    m => format!("mod{m}"),
+                };
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 3)
+        self.assertTrue(
+            all("modern scene policy escaped renderer boundary" in error for error in errors)
         )
 
     def test_rejects_source_table_view_adapter_calls(self):

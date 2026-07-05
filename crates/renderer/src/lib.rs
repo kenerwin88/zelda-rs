@@ -2122,6 +2122,12 @@ impl ModernAssetFrameScene {
         Self { in_dungeon }
     }
 
+    pub const fn from_player_indoors_flag(player_indoors: u8) -> Self {
+        Self {
+            in_dungeon: player_indoors != 0,
+        }
+    }
+
     pub const fn in_dungeon(self) -> bool {
         self.in_dungeon
     }
@@ -2136,6 +2142,34 @@ impl ModernAssetFrameScene {
 
     pub const fn sprite_palette_name(self) -> &'static str {
         Self::SPRITE_PALETTE_NAME
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModernIndexCompareScene {
+    mode_label: String,
+    asset_scene: ModernAssetFrameScene,
+}
+
+impl ModernIndexCompareScene {
+    pub fn from_main_module_and_player_indoors_flag(main_module: u8, player_indoors: u8) -> Self {
+        let mode_label = match main_module {
+            9 | 11 => "ow".to_string(),
+            7 | 16 => "dungeon".to_string(),
+            module => format!("mod{module}"),
+        };
+        Self {
+            mode_label,
+            asset_scene: ModernAssetFrameScene::from_player_indoors_flag(player_indoors),
+        }
+    }
+
+    pub fn mode_label(&self) -> &str {
+        &self.mode_label
+    }
+
+    pub const fn asset_scene(&self) -> ModernAssetFrameScene {
+        self.asset_scene
     }
 }
 
@@ -3497,6 +3531,30 @@ mod tests {
         assert!(dungeon.in_dungeon());
         assert_eq!(dungeon.bg_palette_name(), "palette_dung_bg_main");
         assert_eq!(dungeon.sprite_palette_name(), "palette_main_spr");
+
+        assert!(!ModernAssetFrameScene::from_player_indoors_flag(0).in_dungeon());
+        assert!(ModernAssetFrameScene::from_player_indoors_flag(2).in_dungeon());
+    }
+
+    #[test]
+    fn modern_index_compare_scene_owns_route_labels_and_asset_scene() {
+        let overworld = ModernIndexCompareScene::from_main_module_and_player_indoors_flag(9, 0);
+        assert_eq!(overworld.mode_label(), "ow");
+        assert!(!overworld.asset_scene().in_dungeon());
+
+        let overworld_alt =
+            ModernIndexCompareScene::from_main_module_and_player_indoors_flag(11, 0);
+        assert_eq!(overworld_alt.mode_label(), "ow");
+
+        let dungeon = ModernIndexCompareScene::from_main_module_and_player_indoors_flag(7, 1);
+        assert_eq!(dungeon.mode_label(), "dungeon");
+        assert!(dungeon.asset_scene().in_dungeon());
+
+        let dungeon_alt = ModernIndexCompareScene::from_main_module_and_player_indoors_flag(16, 1);
+        assert_eq!(dungeon_alt.mode_label(), "dungeon");
+
+        let fallback = ModernIndexCompareScene::from_main_module_and_player_indoors_flag(3, 0);
+        assert_eq!(fallback.mode_label(), "mod3");
     }
 
     #[test]
