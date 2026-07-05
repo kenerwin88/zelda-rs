@@ -3508,6 +3508,36 @@ impl ModernGpuVariantHeadless {
         bg_palette_name: &str,
         sprite_palette_name: &str,
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
+        let (rgba, stats, _traces) = self.render_rgba_with_live_index_base_and_trace(
+            frame,
+            bg_cells,
+            sprite_cells,
+            live_index_frame,
+            live_index_bg_cells,
+            live_index_sprite_cells,
+            bg_palette_name,
+            sprite_palette_name,
+            None,
+        );
+        (rgba, stats)
+    }
+
+    fn render_rgba_with_live_index_base_and_trace(
+        &self,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        live_index_frame: &ModernFrame,
+        live_index_bg_cells: &[ModernIndexTile],
+        live_index_sprite_cells: &[ModernIndexTile],
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+        trace_pixel: Option<(i16, i16)>,
+    ) -> (
+        Vec<u8>,
+        crate::modern_software::VariantAtlasRenderStats,
+        Vec<crate::modern_variant_draw::VariantPixelTrace>,
+    ) {
         let prepared = self.renderer.prepare_variant_render(
             frame,
             bg_cells,
@@ -3515,12 +3545,24 @@ impl ModernGpuVariantHeadless {
             bg_palette_name,
             sprite_palette_name,
         );
+        let traces = trace_pixel
+            .map(|(trace_x, trace_y)| {
+                crate::modern_variant_draw::trace_variant_plan_pixel(
+                    frame,
+                    &self.renderer.atlas,
+                    prepared.plan(),
+                    trace_x,
+                    trace_y,
+                )
+            })
+            .unwrap_or_default();
         let live_index_base = LiveIndexVariantBase {
             frame: live_index_frame,
             bg_cells: live_index_bg_cells,
             sprite_cells: live_index_sprite_cells,
         };
-        self.render_prepared_variant_rgba(&live_index_base, &prepared)
+        let (rgba, stats) = self.render_prepared_variant_rgba(&live_index_base, &prepared);
+        (rgba, stats, traces)
     }
 
     pub fn render_rgba_with_live_index_base_from_sources<
@@ -3533,6 +3575,32 @@ impl ModernGpuVariantHeadless {
         bg_palette_name: &str,
         sprite_palette_name: &str,
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
+        let (rgba, stats, _traces) = self.render_rgba_with_live_index_base_from_sources_traced(
+            frame,
+            src_table,
+            atlas,
+            bg_palette_name,
+            sprite_palette_name,
+            None,
+        );
+        (rgba, stats)
+    }
+
+    pub fn render_rgba_with_live_index_base_from_sources_traced<
+        S: crate::modern_extract::SourceTableView + ?Sized,
+    >(
+        &self,
+        frame: &crate::gpu_frame::GpuFrame<'_>,
+        src_table: &S,
+        atlas: &crate::modern_source_atlas::ModernSourceAtlas,
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+        trace_pixel: Option<(i16, i16)>,
+    ) -> (
+        Vec<u8>,
+        crate::modern_software::VariantAtlasRenderStats,
+        Vec<crate::modern_variant_draw::VariantPixelTrace>,
+    ) {
         debug_assert_ne!(frame.mode, 7);
         let (mut modern, bg_cells) =
             crate::modern_extract::extract_modern_frame_from_sources(frame, src_table, atlas);
@@ -3546,7 +3614,7 @@ impl ModernGpuVariantHeadless {
             crate::modern_extract::extract_modern_sprites_from_vram(frame);
         live_index_modern.index_sprites = live_index_sprites;
 
-        self.render_rgba_with_live_index_base(
+        self.render_rgba_with_live_index_base_and_trace(
             &modern,
             &bg_cells,
             &sprite_cells,
@@ -3555,6 +3623,7 @@ impl ModernGpuVariantHeadless {
             &live_index_sprite_cells,
             bg_palette_name,
             sprite_palette_name,
+            trace_pixel,
         )
     }
 
@@ -5040,6 +5109,80 @@ mod tests {
         assert_eq!(stats.missing_art_draws, 1);
         assert_eq!(stats.unkeyed_fallback_draws, 0);
         assert_eq!(variant, full);
+    }
+
+    #[test]
+    fn modern_gpu_variant_headless_trace_does_not_change_render_output() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_source_atlas::modern_source_key;
+        use crate::modern_variant_atlas::ModernVariantAtlas;
+        use crate::modern_variant_draw::{ModernDrawMaterial, VariantDrawSurface};
+
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        let cells = vec![ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: modern_source_key(1, 0, 0),
+            hflip: false,
+            vflip: false,
+        }];
+
+        let mut frame = ModernFrame::empty();
+        frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.cgram_rgba[1] = [20 << 3, 18 << 3, 16 << 3, 0xff];
+        let mut layer = ModernBgLayer::new(0);
+        layer.enabled_main = true;
+        layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = layer;
+        frame.screen_enabled_main = 0x01;
+        frame.brightness = 15;
+
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: Vec::new(),
+            effects: Vec::new(),
+        };
+        let headless = ModernGpuVariantHeadless::new(&atlas);
+        let (untraced, untraced_stats) = headless.render_rgba(
+            &frame,
+            &cells,
+            &[],
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+        let (traced, traced_stats, traces) = headless.render_rgba_with_live_index_base_and_trace(
+            &frame,
+            &cells,
+            &[],
+            &frame,
+            &cells,
+            &[],
+            "palette_dung_bg_main",
+            "palette_main_spr",
+            Some((0, 0)),
+        );
+
+        assert_eq!(traced, untraced);
+        assert_eq!(traced_stats, untraced_stats);
+        assert_eq!(traces.len(), 1);
+        let trace = &traces[0];
+        assert_eq!(trace.surface, VariantDrawSurface::Bg);
+        assert_eq!(trace.material, ModernDrawMaterial::MissingArt);
+        assert_eq!(trace.cell_id, 0);
+        assert_eq!(trace.palette_index, 1);
     }
 
     #[test]

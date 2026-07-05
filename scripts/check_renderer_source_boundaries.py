@@ -20,11 +20,11 @@ MANUAL_EXTRACT = "extract_modern_frame_from_sources"
 REQUIRED_RENDERER_OWNED_CALLS = (
     "present_modern_variant_gpu_from_sources",
     "present_modern_gpu_from_sources",
+    "render_rgba_with_live_index_base_from_sources_traced",
     "render_rgba_with_live_index_base_from_sources",
     "render_rgba_from_sources",
     "render_modern_frame_full_scaled_from_sources",
 )
-TRACE_FUNCTIONS = {"run_replay_save", "run_play_gpu_render_compare"}
 
 
 @dataclass(frozen=True)
@@ -71,11 +71,6 @@ def manual_extract_occurrences(source: str) -> list[Occurrence]:
 
 
 def allowed_manual_extract(occurrence: Occurrence) -> bool:
-    if occurrence.function in TRACE_FUNCTIONS:
-        return (
-            "variant_trace_pixel_env" in occurrence.context
-            and "trace_variant_plan_pixel" in occurrence.context
-        )
     if occurrence.function == "run_dump_hd_capture":
         return "build_hd_placement_map" in occurrence.context
     return False
