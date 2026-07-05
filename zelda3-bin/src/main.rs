@@ -5502,25 +5502,22 @@ fn run_replay_save(args: &[String]) {
                 let via = modern_render.via;
                 let variant_stats = modern_render.variant_stats;
                 let modern_rgba = modern_render.rgba;
-                let modern_diff = renderer::compare_rgba_to_rgba(&classic_rgba, &modern_rgba);
-                let mismatch = modern_diff
-                    .as_ref()
-                    .map(|diff| diff.mismatched_pixels)
-                    .unwrap_or(0);
-                modern_index_compare_stats.record(via, mismatch as u32, variant_stats.as_ref());
+                let comparison = renderer::compare_modern_index_rgba(&classic_rgba, &modern_rgba);
+                let mismatch = comparison.mismatch;
+                modern_index_compare_stats.record(via, mismatch, variant_stats.as_ref());
                 if require_modern_index_parity && mismatch != 0 {
-                    if let Some(diff) = modern_diff.as_ref() {
+                    if let Some(diff) = comparison.diff.as_ref() {
                         eprintln!(
                             "modern_index_mismatch frame={frames} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} first_mismatch=({}, {}) classic_rgb=({},{},{}) modern_rgb=({},{},{})",
                             gpu_frame.mode,
                             diff.first_x,
                             diff.first_y,
-                            diff.cpu_rgb.0,
-                            diff.cpu_rgb.1,
-                            diff.cpu_rgb.2,
-                            diff.gpu_rgb.0,
-                            diff.gpu_rgb.1,
-                            diff.gpu_rgb.2
+                            diff.classic_rgb.0,
+                            diff.classic_rgb.1,
+                            diff.classic_rgb.2,
+                            diff.modern_rgb.0,
+                            diff.modern_rgb.1,
+                            diff.modern_rgb.2
                         );
                     } else {
                         eprintln!(
@@ -5541,7 +5538,7 @@ fn run_replay_save(args: &[String]) {
                         process::exit(1);
                     }
                 }
-                if modern_index_compare_stats.should_print_frame(mismatch as u32) {
+                if modern_index_compare_stats.should_print_frame(mismatch) {
                     println!(
                         "{}",
                         modern_index_compare_stats.frame_line(
@@ -5549,7 +5546,7 @@ fn run_replay_save(args: &[String]) {
                                 frame: frames,
                                 mode_label: &mode_label,
                                 ppu_mode: gpu_frame.mode,
-                                mismatch: mismatch as u32,
+                                mismatch,
                                 via,
                                 variant_stats: variant_stats.as_ref(),
                                 diff: None,
@@ -12376,25 +12373,22 @@ fn run_play_gpu_render_compare(args: &[String]) {
             let via = modern_render.via;
             let variant_stats = modern_render.variant_stats;
             let modern_rgba = modern_render.rgba;
-            let modern_diff = renderer::compare_rgba_to_rgba(&classic_rgba, &modern_rgba);
-            let mismatch = modern_diff
-                .as_ref()
-                .map(|diff| diff.mismatched_pixels)
-                .unwrap_or(0);
-            modern_index_compare_stats.record(via, mismatch as u32, variant_stats.as_ref());
+            let comparison = renderer::compare_modern_index_rgba(&classic_rgba, &modern_rgba);
+            let mismatch = comparison.mismatch;
+            modern_index_compare_stats.record(via, mismatch, variant_stats.as_ref());
             if require_modern_index_parity && mismatch != 0 {
-                if let Some(diff) = modern_diff.as_ref() {
+                if let Some(diff) = comparison.diff.as_ref() {
                     eprintln!(
                         "modern_index_mismatch frame={completed_frame} mode={mode_label} ppumode={} mismatch_px={mismatch} via={via} first_mismatch=({}, {}) classic_rgb=({},{},{}) modern_rgb=({},{},{})",
                         gpu_frame.mode,
                         diff.first_x,
                         diff.first_y,
-                        diff.cpu_rgb.0,
-                        diff.cpu_rgb.1,
-                        diff.cpu_rgb.2,
-                        diff.gpu_rgb.0,
-                        diff.gpu_rgb.1,
-                        diff.gpu_rgb.2
+                        diff.classic_rgb.0,
+                        diff.classic_rgb.1,
+                        diff.classic_rgb.2,
+                        diff.modern_rgb.0,
+                        diff.modern_rgb.1,
+                        diff.modern_rgb.2
                     );
                 } else {
                     eprintln!(
@@ -12415,25 +12409,17 @@ fn run_play_gpu_render_compare(args: &[String]) {
                     process::exit(1);
                 }
             }
-            if modern_index_compare_stats.should_print_frame(mismatch as u32) {
-                let diff = modern_diff
-                    .as_ref()
-                    .map(|diff| renderer::ModernIndexComparePixelDiff {
-                        first_x: diff.first_x,
-                        first_y: diff.first_y,
-                        classic_rgb: diff.cpu_rgb,
-                        modern_rgb: diff.gpu_rgb,
-                    });
+            if modern_index_compare_stats.should_print_frame(mismatch) {
                 println!(
                     "{}",
                     modern_index_compare_stats.frame_line(renderer::ModernIndexCompareFrameLine {
                         frame: completed_frame,
                         mode_label: &mode_label,
                         ppu_mode: gpu_frame.mode,
-                        mismatch: mismatch as u32,
+                        mismatch,
                         via,
                         variant_stats: variant_stats.as_ref(),
-                        diff,
+                        diff: comparison.diff,
                     })
                 );
             }

@@ -12,6 +12,12 @@ pub struct ModernIndexComparePixelDiff {
     pub modern_rgb: (u8, u8, u8),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModernIndexCompareFrameDiff {
+    pub mismatch: u32,
+    pub diff: Option<ModernIndexComparePixelDiff>,
+}
+
 pub struct ModernIndexCompareFrameLine<'a> {
     pub frame: u32,
     pub mode_label: &'a str,
@@ -20,6 +26,24 @@ pub struct ModernIndexCompareFrameLine<'a> {
     pub via: &'a str,
     pub variant_stats: Option<&'a VariantAtlasRenderStats>,
     pub diff: Option<ModernIndexComparePixelDiff>,
+}
+
+pub fn compare_modern_index_rgba(
+    classic_rgba: &[u8],
+    modern_rgba: &[u8],
+) -> ModernIndexCompareFrameDiff {
+    let generic_diff = crate::frame_compare::compare_rgba_to_rgba(classic_rgba, modern_rgba);
+    let mismatch = generic_diff
+        .as_ref()
+        .map(|diff| diff.mismatched_pixels as u32)
+        .unwrap_or(0);
+    let diff = generic_diff.map(|diff| ModernIndexComparePixelDiff {
+        first_x: diff.first_x,
+        first_y: diff.first_y,
+        classic_rgb: diff.cpu_rgb,
+        modern_rgb: diff.gpu_rgb,
+    });
+    ModernIndexCompareFrameDiff { mismatch, diff }
 }
 
 #[derive(Default)]
@@ -302,6 +326,31 @@ mod tests {
         assert!(line.contains("first_mismatch=(4, 5)"));
         assert!(line.contains("classic_rgb=(1,2,3)"));
         assert!(line.contains("modern_rgb=(4,5,6)"));
+    }
+
+    #[test]
+    fn compare_modern_index_rgba_maps_generic_diff_to_index_diff() {
+        let classic = [
+            1, 2, 3, 0xff, //
+            4, 5, 6, 0xff,
+        ];
+        let modern = [
+            1, 2, 3, 0xff, //
+            4, 7, 6, 0xff,
+        ];
+
+        let comparison = compare_modern_index_rgba(&classic, &modern);
+
+        assert_eq!(comparison.mismatch, 1);
+        assert_eq!(
+            comparison.diff,
+            Some(ModernIndexComparePixelDiff {
+                first_x: 1,
+                first_y: 0,
+                classic_rgb: (4, 5, 6),
+                modern_rgb: (4, 7, 6),
+            })
+        );
     }
 
     #[test]
