@@ -28,6 +28,7 @@ HD_AUTHORING_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "hd_authoring_commands.
 IMAGE_OUTPUT_RS = REPO / "zelda3-bin" / "src" / "image_output.rs"
 GPU_READBACK_RS = REPO / "zelda3-bin" / "src" / "gpu_readback.rs"
 PLAY_RENDERER_RS = REPO / "zelda3-bin" / "src" / "play_renderer.rs"
+PLAY_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "play_commands.rs"
 BOUNDARY_SOURCE_FILES = (
     MAIN_RS,
     ASSET_PALETTE_COMMANDS_RS,
@@ -44,6 +45,7 @@ BOUNDARY_SOURCE_FILES = (
     GPU_READBACK_RS,
     IMAGE_OUTPUT_RS,
     REPO / "zelda3-bin" / "src" / "play_renderer.rs",
+    PLAY_COMMANDS_RS,
     REPO / "zelda3-bin" / "src" / "render_diagnostics.rs",
 )
 
@@ -353,6 +355,15 @@ FORBIDDEN_MAIN_ROUTE_COVERAGE_OWNERSHIP = (
     "fn route_coverage_frame_from_game",
     "fn write_route_coverage_log_or_exit",
     "fn run_coverage_probe",
+)
+
+FORBIDDEN_MAIN_PLAY_COMMAND_OWNERSHIP = (
+    "fn run_frontend_smoke",
+    "fn run_play(",
+    "fn run_standalone_play",
+    "fn run_play_with_state",
+    "fn apply_host_menu_action_for_test",
+    "mod host_menu_play_tests",
 )
 
 FORBIDDEN_MAIN_IMAGE_OUTPUT_OWNERSHIP = (
@@ -925,6 +936,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "route coverage ownership escaped route_coverage_commands boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_PLAY_COMMAND_OWNERSHIP:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "play command ownership escaped play_commands boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

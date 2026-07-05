@@ -166,7 +166,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         module = load_module()
         source = source_with_required_calls(
             """
-            fn run_play_with_state() {
+            fn live_gpu_backend_site() {
                 if modern_index_compare != 0 && frames % modern_index_compare == 0 {}
                 if modern_index_compare != 0 && completed_frame % modern_index_compare == 0 {}
                 if require_full_gpu_path && modern_index_compare == 0 {}
@@ -946,6 +946,27 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_play_command_ownership_in_main(self):
+        module = load_module()
+        source = """
+            fn run_frontend_smoke() {}
+            fn run_play() {}
+            fn run_standalone_play() {}
+            fn run_play_with_state() {}
+            fn apply_host_menu_action_for_test() {}
+            mod host_menu_play_tests {}
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 6)
+        self.assertTrue(
+            all(
+                "play command ownership escaped play_commands boundary" in error
+                for error in errors
+            )
+        )
+
     def test_rejects_image_output_ownership_in_main(self):
         module = load_module()
         source = """
@@ -1225,7 +1246,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             }
             struct CpuPlayRenderer;
             fn draw_play_ppu_frame() {}
-            fn run_play_with_state() {
+            fn live_gpu_backend_site() {
                 draw_play_ppu_frame(&mut game, &mut frame, 256 * 4, render_flags);
                 gpu_frame_from_ppu(&game.ppu, &cgram, &scanlines);
                 renderer::ModernIndexCompareFrameOutputInput {
