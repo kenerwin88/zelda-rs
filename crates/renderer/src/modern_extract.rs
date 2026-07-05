@@ -969,6 +969,21 @@ fn content_hash32_slot(vram: &[u16], slot: usize) -> u32 {
     h
 }
 
+fn index_pattern_hash32(indices: &[u8; 64]) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    for &b in indices {
+        h ^= u32::from(b);
+        h = h.wrapping_mul(0x0100_0193);
+    }
+    h
+}
+
+/// BG3/HUD/message-layer cells. The source dump keys these by `(tile_number,
+/// palette)` only when that baked 2bpp pattern is injective over the route; ambiguous
+/// UI glyph slots are dropped and continue to decode from live VRAM.
+const CHR_KIND_BG3: u8 = 4;
+const CHR_KIND_BG3_CONTENT: u8 = 7;
+
 /// Link CHR (mirrors `zelda3::CHR_KIND_LINK`). Decoded from live VRAM in the sprite
 /// path, not the atlas: Link's pose CHR is DMA'd per-frame from a source buffer whose
 /// offsets are reused across poses, so the source-identity atlas key is non-injective
@@ -1090,14 +1105,11 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
     let mut dbg_samples: Vec<(usize, usize, u8, u16, u16)> = Vec::new();
     // key: (atlas cell id, hflip, vflip) -> local flip-baked cell id
     let mut cell_ids: HashMap<(u32, bool, bool), u32> = HashMap::new();
-    // BG3 (the HUD/message layer) is procedurally COMPOSED at runtime: digit and
-    // item-icon glyphs are streamed into a small set of 2bpp CHR slots, so the same
-    // `(tile_number, palette)` holds different pixels across the route (~46% of BG3
-    // keys are non-injective). A static source atlas therefore cannot represent it
-    // (the dump must drop the ambiguous keys -> HUD gaps / wrong digits). Decode BG3
-    // from LIVE VRAM instead, keyed by `(chr_base, tile+flip+palette)`. Game art
-    // (BG1/BG2/sprites/Link) stays off-VRAM via the source atlas; only this dynamic
-    // UI layer reads VRAM pixels.
+    // BG3 (the HUD/message layer) is partly procedural: digit and item-icon glyphs can
+    // be streamed into a small set of 2bpp CHR slots, so the same `(tile_number,
+    // palette)` may hold different pixels across the route. The source dump keeps only
+    // injective BG3 keys and drops ambiguous ones. Use kept source cells as PNG-backed
+    // art; keep live decode for the dropped dynamic glyph slots.
     let mut bg3_cell_ids: HashMap<(usize, u16), u32> = HashMap::new();
 
     for layer_index in 0..3usize {
@@ -1140,40 +1152,73 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                 let tile_number = (entry_word & 0x03ff) as usize;
                 let hflip = entry_word & 0x4000 != 0;
                 let vflip = entry_word & 0x8000 != 0;
-                // BG3 (2bpp HUD/message) is decoded from LIVE VRAM (procedurally
-                // composed; not injective by tilemap key — see `bg3_cell_ids`). BG1/BG2
-                // (4bpp) resolve via the per-slot CHR source table and keep the tilemap
-                // palette. The BG3 cell bakes the BG3->CGRAM palette + flip, so its
-                // instance renders with palette 0 and no flip.
+                // BG3 (2bpp HUD/message) bakes the BG3->CGRAM palette into its cell, so
+                // its instance renders with palette 0. BG1/BG2 (4bpp) resolve via the
+                // per-slot CHR source table and keep the tilemap palette.
                 let is_bg3 = layer_index == 2;
                 let (cell_id, palette, source_key) = if is_bg3 {
                     let pal = ((entry_word >> 10) & 7) as u8;
                     let chr_base = frame.bg[layer_index].tile_adr as usize;
-                    // dedup key: chr_base + tile# + flip + palette (priority bit dropped)
-                    let map_key = entry_word & 0xDFFF;
-                    let id = *bg3_cell_ids.entry((chr_base, map_key)).or_insert_with(|| {
-                        // 2bpp decode with flip baked, then bake the classic BG3->CGRAM
-                        // palette (cgram_idx = palette*4 + pal_idx; pal_idx 0 transparent).
-                        let raw = decode_snes_2bpp_tile_indices(
-                            frame.vram,
-                            chr_base,
-                            entry_word & 0xc3ff,
-                        );
-                        let mut baked = [0u8; 64];
-                        for (b, &p) in baked.iter_mut().zip(raw.iter()) {
-                            *b = if p == 0 { 0 } else { pal * 4 + p };
-                        }
-                        let id = cells.len() as u32;
-                        cells.push(ModernIndexTile {
-                            id,
-                            indices: baked,
-                            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
-                            hflip: false,
-                            vflip: false,
-                        });
-                        id
+                    let stable_pack = (tile_number as u16) | (u16::from(pal) << 10);
+                    let raw =
+                        decode_snes_2bpp_tile_indices(frame.vram, chr_base, entry_word & 0x03ff);
+                    let mut baked = [0u8; 64];
+                    for (b, &p) in baked.iter_mut().zip(raw.iter()) {
+                        *b = if p == 0 { 0 } else { pal * 4 + p };
+                    }
+                    let content_hash = index_pattern_hash32(&baked);
+                    let source_hit = [
+                        (CHR_KIND_BG3, stable_pack, 0),
+                        (
+                            CHR_KIND_BG3_CONTENT,
+                            (content_hash >> 16) as u16,
+                            (content_hash & 0xffff) as u16,
+                        ),
+                    ]
+                    .into_iter()
+                    .find_map(|(kind, pack, tile_off)| {
+                        source_cell(atlas, kind, pack, tile_off)
+                            .map(|src| (kind, pack, tile_off, src))
                     });
-                    (id, 0u8, crate::modern_hd_overrides::NO_SOURCE_KEY)
+                    match source_hit {
+                        Some((kind, pack, tile_off, src)) => {
+                            let source_key =
+                                crate::modern_source_atlas::modern_source_key(kind, pack, tile_off);
+                            let id = *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
+                                let indices = flip_index_pattern(&src.indices, hflip, vflip);
+                                let id = cells.len() as u32;
+                                cells.push(ModernIndexTile {
+                                    id,
+                                    indices,
+                                    source_key,
+                                    hflip,
+                                    vflip,
+                                });
+                                id
+                            });
+                            (id, 0u8, source_key)
+                        }
+                        None => {
+                            // Dedup key: chr_base + tile# + flip + palette (priority bit
+                            // dropped). The fallback uses the exact baked live pattern, flipped
+                            // to match the tilemap entry.
+                            let map_key = entry_word & 0xDFFF;
+                            let id =
+                                *bg3_cell_ids.entry((chr_base, map_key)).or_insert_with(|| {
+                                    let baked = flip_index_pattern(&baked, hflip, vflip);
+                                    let id = cells.len() as u32;
+                                    cells.push(ModernIndexTile {
+                                        id,
+                                        indices: baked,
+                                        source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                        hflip: false,
+                                        vflip: false,
+                                    });
+                                    id
+                                });
+                            (id, 0u8, crate::modern_hd_overrides::NO_SOURCE_KEY)
+                        }
+                    }
                 } else {
                     let slot = chr_slot_base + tile_number;
                     let (mut kind, mut pack, mut tile_off) = src_table.get(slot);
@@ -1820,9 +1865,9 @@ mod tests {
     #[test]
     fn extract_from_sources_decodes_bg3_from_live_vram_palette_zero() {
         use crate::modern_source_atlas::ModernSourceAtlas;
-        // BG3 (layer 2, 2bpp HUD) is procedurally composed, so it is decoded from
-        // LIVE VRAM (not the source atlas), with the BG3->CGRAM palette baked into
-        // the cell and rendered at instance palette 0. The atlas is irrelevant here.
+        // BG3 source keys that were dropped as ambiguous are decoded from live VRAM,
+        // with the BG3->CGRAM palette baked into the cell and rendered at instance
+        // palette 0.
         let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![], &[]);
         let table = |_slot: usize| -> (u8, u16, u16) { (0, 0, 0) };
 
@@ -1850,6 +1895,101 @@ mod tests {
         assert_eq!(tiles[0].cell_id, 0);
         // BG3 bakes CGRAM into the cell, so the instance palette is 0.
         assert_eq!(tiles[0].palette, 0);
+        assert_eq!(
+            tiles[0].source_key,
+            crate::modern_hd_overrides::NO_SOURCE_KEY
+        );
+    }
+
+    #[test]
+    fn extract_from_sources_emits_source_key_for_injective_bg3_tile() {
+        use crate::modern_source_atlas::{modern_source_key, ModernSourceAtlas};
+
+        let mut baked = [0u8; 64];
+        baked[0] = 14;
+        let source_cell = ModernIndexTile {
+            id: 0,
+            indices: baked,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        };
+        let source_pack = 7 | (3 << 10);
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
+            vec![source_cell],
+            &[(CHR_KIND_BG3, source_pack, 0, 0)],
+        );
+        let table = |_slot: usize| -> (u8, u16, u16) { (0, 0, 0) };
+
+        let mut vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        vram[0] = 7 | (3 << 10);
+        vram[0x1038] = 0x8000;
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        frame.bg[2].tilemap_adr = 0;
+        frame.bg[2].tile_adr = 0x1000;
+        frame.screen_enabled = [0x04, 0x00];
+
+        let (modern, cells) = extract_modern_frame_from_sources(&frame, &table, &atlas);
+
+        assert_eq!(cells.len(), 1, "BG3 source cell emitted");
+        assert_eq!(cells[0].indices[0], 14);
+        let tiles = &modern.bg_layers[2].index_tiles;
+        assert_eq!(tiles.len(), 1);
+        assert_eq!(tiles[0].palette, 0);
+        assert_eq!(
+            tiles[0].source_key,
+            modern_source_key(CHR_KIND_BG3, source_pack, 0)
+        );
+    }
+
+    #[test]
+    fn extract_from_sources_emits_content_source_key_for_dynamic_bg3_tile() {
+        use crate::modern_source_atlas::{modern_source_key, ModernSourceAtlas};
+
+        let mut baked = [0u8; 64];
+        baked[0] = 14;
+        let h = index_pattern_hash32(&baked);
+        let source_cell = ModernIndexTile {
+            id: 0,
+            indices: baked,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        };
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
+            vec![source_cell],
+            &[(
+                CHR_KIND_BG3_CONTENT,
+                (h >> 16) as u16,
+                (h & 0xffff) as u16,
+                0,
+            )],
+        );
+        let table = |_slot: usize| -> (u8, u16, u16) { (0, 0, 0) };
+
+        let mut vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        vram[0] = 7 | (3 << 10);
+        vram[0x1038] = 0x8000;
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        frame.bg[2].tilemap_adr = 0;
+        frame.bg[2].tile_adr = 0x1000;
+        frame.screen_enabled = [0x04, 0x00];
+
+        let (modern, cells) = extract_modern_frame_from_sources(&frame, &table, &atlas);
+
+        assert_eq!(cells.len(), 1, "BG3 content source cell emitted");
+        let tile = &modern.bg_layers[2].index_tiles[0];
+        assert_eq!(tile.palette, 0);
+        assert_eq!(
+            tile.source_key,
+            modern_source_key(CHR_KIND_BG3_CONTENT, (h >> 16) as u16, (h & 0xffff) as u16)
+        );
     }
 
     #[test]

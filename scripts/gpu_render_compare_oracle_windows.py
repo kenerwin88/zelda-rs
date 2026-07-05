@@ -34,15 +34,37 @@ MODERN_INDEX_PROGRESS_RE = re.compile(
 VARIANT_STAT_NAMES = (
     "variant_draws",
     "fallback_draws",
+    "live_index_draws",
+    "live_index_bg_draws",
+    "live_index_bg12_draws",
+    "live_index_bg3_draws",
+    "live_index_sprite_draws",
+    "gpu_prefinal_base_frames",
+    "gpu_screen_builder_frames",
+    "cpu_prefinal_composite_frames",
+    "cpu_prefinal_overlay_frames",
     "dynamic_palette_draws",
     "missing_variant_draws",
     "stable_preview_draws",
     "stable_effect_draws",
     "dynamic_material_draws",
+    "effect_material_draws",
+    "dynamic_material_fallback_draws",
+    "dynamic_material_fallback_instance_source_draws",
+    "dynamic_material_fallback_brightness_draws",
+    "dynamic_material_fallback_policy_draws",
+    "dynamic_material_fallback_missing_effect_draws",
+    "dynamic_material_fallback_unsupported_draws",
+    "unsupported_material_draws",
     "missing_art_draws",
     "unkeyed_fallback_draws",
+    "unkeyed_bg_fallback_draws",
+    "unkeyed_bg12_fallback_draws",
+    "unkeyed_bg3_fallback_draws",
+    "unkeyed_sprite_fallback_draws",
     "mixed_overlay_bg_effect_draws",
     "mixed_overlay_bg_effect_candidates",
+    "mixed_overlay_bg_effect_culled_invisible_main",
     "mixed_overlay_bg_effect_reject_complex_frame",
     "mixed_overlay_bg_effect_reject_complex_brightness",
     "mixed_overlay_bg_effect_reject_complex_invalid_layer",
@@ -67,18 +89,22 @@ VARIANT_STAT_NAMES = (
     "mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch",
     "mixed_overlay_bg_effect_reject_cgram_mismatch",
     "mixed_overlay_bg_effect_reject_overlap",
-    "mixed_overlay_bg_effect_culled_invisible_main",
-    "unkeyed_bg_fallback_draws",
-    "unkeyed_sprite_fallback_draws",
-    "unsupported_material_draws",
-    "effect_material_draws",
-    "dynamic_material_fallback_draws",
-    "dynamic_material_fallback_instance_source_draws",
-    "dynamic_material_fallback_brightness_draws",
-    "dynamic_material_fallback_policy_draws",
-    "dynamic_material_fallback_missing_effect_draws",
-    "dynamic_material_fallback_unsupported_draws",
 )
+
+WINDOW_PRINT_STAT_NAMES = VARIANT_STAT_NAMES
+SUMMARY_PRINT_STAT_NAMES = VARIANT_STAT_NAMES
+
+
+def empty_variant_stats() -> dict[str, int]:
+    return {name: 0 for name in VARIANT_STAT_NAMES}
+
+
+def variant_stats_from_summary(modern_stats: dict[str, int]) -> dict[str, int]:
+    return {name: modern_stats.get(name, 0) for name in VARIANT_STAT_NAMES}
+
+
+def format_variant_stats(stats: dict[str, int], names: tuple[str, ...]) -> str:
+    return " ".join(f"{name}={stats.get(name, 0)}" for name in names)
 
 
 def parse_key_value_stats(line: str) -> dict[str, int]:
@@ -444,7 +470,7 @@ def run_window(
     progress_every: int,
     checkpoint: OracleCheckpoint | None,
     tail_frames: int | None = None,
-) -> tuple[int, str, int, tuple[int, ...]]:
+) -> tuple[int, str, int, dict[str, int]]:
     run_frames = window.frames
     load_state = None
     if checkpoint is not None:
@@ -504,7 +530,7 @@ def run_window(
         )
     if mismatched_pixels != 0:
         raise SystemExit(f"{window.name}: reported {mismatched_pixels} mismatched pixels")
-    variant_stats = (0,) * 46
+    variant_stats = empty_variant_stats()
     modern_stats = modern_index_summary_stats(result.stdout)
     if renderer == "assets-variant-gpu":
         if modern_stats is None:
@@ -526,57 +552,12 @@ def run_window(
                 f"{window.name}: reported CPU prefinal frames "
                 f"composite={cpu_prefinal_composite_frames} overlay={cpu_prefinal_overlay_frames}"
             )
-        variant_stats = tuple(modern_stats.get(name, 0) for name in VARIANT_STAT_NAMES)
+        variant_stats = variant_stats_from_summary(modern_stats)
     print(
         f"{window.name}: compared={compared} frames={window.frames} "
         f"start_frame={start_frame} "
         f"last_hash={last_hash} mismatched_pixels=0 "
-        f"variant_draws={variant_stats[0]} "
-        f"fallback_draws={variant_stats[1]} "
-        f"dynamic_palette_draws={variant_stats[2]} "
-        f"missing_variant_draws={variant_stats[3]} "
-        f"stable_preview_draws={variant_stats[4]} "
-        f"stable_effect_draws={variant_stats[5]} "
-        f"dynamic_material_draws={variant_stats[6]} "
-        f"effect_material_draws={variant_stats[39]} "
-        f"dynamic_material_fallback_draws={variant_stats[40]} "
-        f"dynamic_material_fallback_instance_source_draws={variant_stats[41]} "
-        f"dynamic_material_fallback_brightness_draws={variant_stats[42]} "
-        f"dynamic_material_fallback_policy_draws={variant_stats[43]} "
-        f"dynamic_material_fallback_missing_effect_draws={variant_stats[44]} "
-        f"dynamic_material_fallback_unsupported_draws={variant_stats[45]} "
-        f"unsupported_material_draws={variant_stats[38]} "
-        f"missing_art_draws={variant_stats[7]} "
-        f"unkeyed_fallback_draws={variant_stats[8]} "
-        f"unkeyed_bg_fallback_draws={variant_stats[36]} "
-        f"unkeyed_sprite_fallback_draws={variant_stats[37]} "
-        f"mixed_overlay_bg_effect_draws={variant_stats[9]} "
-        f"mixed_overlay_bg_effect_candidates={variant_stats[10]} "
-        f"mixed_overlay_bg_effect_culled_invisible_main={variant_stats[35]} "
-        f"mixed_overlay_bg_effect_reject_complex_frame={variant_stats[11]} "
-        f"mixed_overlay_bg_effect_reject_complex_brightness={variant_stats[12]} "
-        f"mixed_overlay_bg_effect_reject_complex_invalid_layer={variant_stats[13]} "
-        f"mixed_overlay_bg_effect_reject_complex_mosaic={variant_stats[14]} "
-        f"mixed_overlay_bg_effect_reject_complex_sub_window={variant_stats[15]} "
-        f"mixed_overlay_bg_effect_reject_complex_effect_bounds={variant_stats[16]} "
-        f"mixed_overlay_bg_effect_reject_complex_scanline_main={variant_stats[17]} "
-        f"mixed_overlay_bg_effect_reject_complex_layer_window={variant_stats[18]} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math={variant_stats[19]} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_clip={variant_stats[20]} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_subscreen={variant_stats[21]} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_fixed_color={variant_stats[22]} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch={variant_stats[23]} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap={variant_stats[24]} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg={variant_stats[25]} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj={variant_stats[26]} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain={variant_stats[27]} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front={variant_stats[28]} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order={variant_stats[29]} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect={variant_stats[30]} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex={variant_stats[31]} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch={variant_stats[32]} "
-        f"mixed_overlay_bg_effect_reject_cgram_mismatch={variant_stats[33]} "
-        f"mixed_overlay_bg_effect_reject_overlap={variant_stats[34]}"
+        f"{format_variant_stats(variant_stats, WINDOW_PRINT_STAT_NAMES)}"
     )
     return compared, last_hash, mismatched_pixels, variant_stats
 
@@ -698,52 +679,7 @@ def main() -> None:
     )
 
     total_compared = 0
-    total_variant_draws = 0
-    total_fallback_draws = 0
-    total_dynamic_palette_draws = 0
-    total_missing_variant_draws = 0
-    total_stable_preview_draws = 0
-    total_stable_effect_draws = 0
-    total_dynamic_material_draws = 0
-    total_effect_material_draws = 0
-    total_dynamic_material_fallback_draws = 0
-    total_dynamic_material_fallback_instance_source_draws = 0
-    total_dynamic_material_fallback_brightness_draws = 0
-    total_dynamic_material_fallback_policy_draws = 0
-    total_dynamic_material_fallback_missing_effect_draws = 0
-    total_dynamic_material_fallback_unsupported_draws = 0
-    total_unsupported_material_draws = 0
-    total_missing_art_draws = 0
-    total_unkeyed_fallback_draws = 0
-    total_unkeyed_bg_fallback_draws = 0
-    total_unkeyed_sprite_fallback_draws = 0
-    total_mixed_overlay_bg_effect_draws = 0
-    total_mixed_overlay_bg_effect_candidates = 0
-    total_mixed_overlay_bg_effect_culled_invisible_main = 0
-    total_mixed_overlay_bg_effect_reject_complex_frame = 0
-    total_mixed_overlay_bg_effect_reject_complex_brightness = 0
-    total_mixed_overlay_bg_effect_reject_complex_invalid_layer = 0
-    total_mixed_overlay_bg_effect_reject_complex_mosaic = 0
-    total_mixed_overlay_bg_effect_reject_complex_sub_window = 0
-    total_mixed_overlay_bg_effect_reject_complex_effect_bounds = 0
-    total_mixed_overlay_bg_effect_reject_complex_scanline_main = 0
-    total_mixed_overlay_bg_effect_reject_complex_layer_window = 0
-    total_mixed_overlay_bg_effect_reject_complex_color_math = 0
-    total_mixed_overlay_bg_effect_reject_complex_color_math_clip = 0
-    total_mixed_overlay_bg_effect_reject_complex_color_math_subscreen = 0
-    total_mixed_overlay_bg_effect_reject_complex_color_math_fixed_color = 0
-    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch = 0
-    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap = 0
-    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg = 0
-    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj = 0
-    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain = 0
-    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front = 0
-    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order = 0
-    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect = 0
-    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex = 0
-    total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch = 0
-    total_mixed_overlay_bg_effect_reject_cgram_mismatch = 0
-    total_mixed_overlay_bg_effect_reject_overlap = 0
+    total_variant_stats = empty_variant_stats()
     if args.dry_run:
         for item in run_items:
             prefix = f"ZELDA3_RENDERER={args.renderer} " if args.renderer else ""
@@ -762,7 +698,7 @@ def main() -> None:
             )
         return
 
-    def run_item(item: RunItem) -> tuple[int, str, int, tuple[int, ...]]:
+    def run_item(item: RunItem) -> tuple[int, str, int, dict[str, int]]:
         return run_window(
             item.window,
             args.rom,
@@ -786,132 +722,23 @@ def main() -> None:
 
     for compared, _, _, variant_stats in results:
         total_compared += compared
-        total_variant_draws += variant_stats[0]
-        total_fallback_draws += variant_stats[1]
-        total_dynamic_palette_draws += variant_stats[2]
-        total_missing_variant_draws += variant_stats[3]
-        total_stable_preview_draws += variant_stats[4]
-        total_stable_effect_draws += variant_stats[5]
-        total_dynamic_material_draws += variant_stats[6]
-        total_effect_material_draws += variant_stats[39]
-        total_dynamic_material_fallback_draws += variant_stats[40]
-        total_dynamic_material_fallback_instance_source_draws += variant_stats[41]
-        total_dynamic_material_fallback_brightness_draws += variant_stats[42]
-        total_dynamic_material_fallback_policy_draws += variant_stats[43]
-        total_dynamic_material_fallback_missing_effect_draws += variant_stats[44]
-        total_dynamic_material_fallback_unsupported_draws += variant_stats[45]
-        total_unsupported_material_draws += variant_stats[38]
-        total_missing_art_draws += variant_stats[7]
-        total_unkeyed_fallback_draws += variant_stats[8]
-        total_unkeyed_bg_fallback_draws += variant_stats[36]
-        total_unkeyed_sprite_fallback_draws += variant_stats[37]
-        total_mixed_overlay_bg_effect_draws += variant_stats[9]
-        total_mixed_overlay_bg_effect_candidates += variant_stats[10]
-        total_mixed_overlay_bg_effect_culled_invisible_main += variant_stats[35]
-        total_mixed_overlay_bg_effect_reject_complex_frame += variant_stats[11]
-        total_mixed_overlay_bg_effect_reject_complex_brightness += variant_stats[12]
-        total_mixed_overlay_bg_effect_reject_complex_invalid_layer += variant_stats[13]
-        total_mixed_overlay_bg_effect_reject_complex_mosaic += variant_stats[14]
-        total_mixed_overlay_bg_effect_reject_complex_sub_window += variant_stats[15]
-        total_mixed_overlay_bg_effect_reject_complex_effect_bounds += variant_stats[16]
-        total_mixed_overlay_bg_effect_reject_complex_scanline_main += variant_stats[17]
-        total_mixed_overlay_bg_effect_reject_complex_layer_window += variant_stats[18]
-        total_mixed_overlay_bg_effect_reject_complex_color_math += variant_stats[19]
-        total_mixed_overlay_bg_effect_reject_complex_color_math_clip += variant_stats[20]
-        total_mixed_overlay_bg_effect_reject_complex_color_math_subscreen += variant_stats[21]
-        total_mixed_overlay_bg_effect_reject_complex_color_math_fixed_color += variant_stats[22]
-        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch += (
-            variant_stats[23]
-        )
-        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap += variant_stats[
-            24
-        ]
-        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg += (
-            variant_stats[25]
-        )
-        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj += (
-            variant_stats[26]
-        )
-        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain += (
-            variant_stats[27]
-        )
-        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front += (
-            variant_stats[28]
-        )
-        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order += (
-            variant_stats[29]
-        )
-        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect += (
-            variant_stats[30]
-        )
-        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex += (
-            variant_stats[31]
-        )
-        total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch += (
-            variant_stats[32]
-        )
-        total_mixed_overlay_bg_effect_reject_cgram_mismatch += variant_stats[33]
-        total_mixed_overlay_bg_effect_reject_overlap += variant_stats[34]
+        for name in VARIANT_STAT_NAMES:
+            total_variant_stats[name] += variant_stats.get(name, 0)
 
     if args.require_stable_draws:
         ensure_required_stable_draws(
-            stable_preview_draws=total_stable_preview_draws,
-            stable_effect_draws=total_stable_effect_draws,
-            effect_material_draws=total_effect_material_draws,
+            stable_preview_draws=total_variant_stats["stable_preview_draws"],
+            stable_effect_draws=total_variant_stats["stable_effect_draws"],
+            effect_material_draws=total_variant_stats["effect_material_draws"],
         )
     if args.renderer == "assets-variant-gpu":
-        ensure_no_unsupported_material_draws(total_unsupported_material_draws)
+        ensure_no_unsupported_material_draws(total_variant_stats["unsupported_material_draws"])
 
     print(
         "gpu-render-oracle-windows completed "
         f"windows={len(windows)} compared={total_compared} stride={args.stride} "
         "mismatched_pixels=0 "
-        f"variant_draws={total_variant_draws} "
-        f"fallback_draws={total_fallback_draws} "
-        f"dynamic_palette_draws={total_dynamic_palette_draws} "
-        f"missing_variant_draws={total_missing_variant_draws} "
-        f"stable_preview_draws={total_stable_preview_draws} "
-        f"stable_effect_draws={total_stable_effect_draws} "
-        f"dynamic_material_draws={total_dynamic_material_draws} "
-        f"effect_material_draws={total_effect_material_draws} "
-        f"dynamic_material_fallback_draws={total_dynamic_material_fallback_draws} "
-        f"dynamic_material_fallback_instance_source_draws={total_dynamic_material_fallback_instance_source_draws} "
-        f"dynamic_material_fallback_brightness_draws={total_dynamic_material_fallback_brightness_draws} "
-        f"dynamic_material_fallback_policy_draws={total_dynamic_material_fallback_policy_draws} "
-        f"dynamic_material_fallback_missing_effect_draws={total_dynamic_material_fallback_missing_effect_draws} "
-        f"dynamic_material_fallback_unsupported_draws={total_dynamic_material_fallback_unsupported_draws} "
-        f"unsupported_material_draws={total_unsupported_material_draws} "
-        f"missing_art_draws={total_missing_art_draws} "
-        f"unkeyed_fallback_draws={total_unkeyed_fallback_draws} "
-        f"unkeyed_bg_fallback_draws={total_unkeyed_bg_fallback_draws} "
-        f"unkeyed_sprite_fallback_draws={total_unkeyed_sprite_fallback_draws} "
-        f"mixed_overlay_bg_effect_draws={total_mixed_overlay_bg_effect_draws} "
-        f"mixed_overlay_bg_effect_candidates={total_mixed_overlay_bg_effect_candidates} "
-        f"mixed_overlay_bg_effect_culled_invisible_main={total_mixed_overlay_bg_effect_culled_invisible_main} "
-        f"mixed_overlay_bg_effect_reject_complex_frame={total_mixed_overlay_bg_effect_reject_complex_frame} "
-        f"mixed_overlay_bg_effect_reject_complex_brightness={total_mixed_overlay_bg_effect_reject_complex_brightness} "
-        f"mixed_overlay_bg_effect_reject_complex_invalid_layer={total_mixed_overlay_bg_effect_reject_complex_invalid_layer} "
-        f"mixed_overlay_bg_effect_reject_complex_mosaic={total_mixed_overlay_bg_effect_reject_complex_mosaic} "
-        f"mixed_overlay_bg_effect_reject_complex_sub_window={total_mixed_overlay_bg_effect_reject_complex_sub_window} "
-        f"mixed_overlay_bg_effect_reject_complex_effect_bounds={total_mixed_overlay_bg_effect_reject_complex_effect_bounds} "
-        f"mixed_overlay_bg_effect_reject_complex_scanline_main={total_mixed_overlay_bg_effect_reject_complex_scanline_main} "
-        f"mixed_overlay_bg_effect_reject_complex_layer_window={total_mixed_overlay_bg_effect_reject_complex_layer_window} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math={total_mixed_overlay_bg_effect_reject_complex_color_math} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_clip={total_mixed_overlay_bg_effect_reject_complex_color_math_clip} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_subscreen={total_mixed_overlay_bg_effect_reject_complex_color_math_subscreen} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_fixed_color={total_mixed_overlay_bg_effect_reject_complex_color_math_fixed_color} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex} "
-        f"mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch={total_mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch} "
-        f"mixed_overlay_bg_effect_reject_cgram_mismatch={total_mixed_overlay_bg_effect_reject_cgram_mismatch} "
-        f"mixed_overlay_bg_effect_reject_overlap={total_mixed_overlay_bg_effect_reject_overlap}"
+        f"{format_variant_stats(total_variant_stats, SUMMARY_PRINT_STAT_NAMES)}"
     )
 
 

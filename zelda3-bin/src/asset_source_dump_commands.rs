@@ -15,6 +15,7 @@ use zelda3::{
 };
 
 const PLAYER_IS_INDOORS: usize = 0x001b;
+const CHR_KIND_BG3_CONTENT: u8 = 7;
 
 #[derive(Debug, Serialize)]
 struct AssetsBySourceManifest {
@@ -104,6 +105,20 @@ fn content_hash_source_key(vram: &[u16], slot: usize) -> Option<u64> {
         (h >> 16) as u16,
         (h & 0xffff) as u16,
     ))
+}
+
+fn index_pattern_hash32(indices: &[u8; 64]) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    for &b in indices {
+        h ^= u32::from(b);
+        h = h.wrapping_mul(0x0100_0193);
+    }
+    h
+}
+
+fn bg3_content_source_key(indices: &[u8; 64]) -> u64 {
+    let h = index_pattern_hash32(indices);
+    modern_source_key(CHR_KIND_BG3_CONTENT, (h >> 16) as u16, (h & 0xffff) as u16)
 }
 
 fn palette_usage_entries_from_counts(
@@ -298,6 +313,11 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                             *b = if p == 0 { 0 } else { (palette as u8) * 4 + p };
                         }
                         record_keyed(key, baked, chr_base + tile_number * 8);
+                        record_keyed(
+                            bg3_content_source_key(&baked),
+                            baked,
+                            chr_base + tile_number * 8,
+                        );
                         continue;
                     }
                     let slot = (chr_base + tile_number * 16) / 16;
@@ -643,6 +663,19 @@ mod palette_usage_tests {
             ))
         );
         assert_eq!(content_hash_source_key(&vram, 4), None);
+    }
+
+    #[test]
+    fn bg3_content_source_key_uses_distinct_content_kind() {
+        let mut indices = [0u8; 64];
+        indices[0] = 14;
+        indices[63] = 3;
+        let h = index_pattern_hash32(&indices);
+
+        assert_eq!(
+            bg3_content_source_key(&indices),
+            modern_source_key(CHR_KIND_BG3_CONTENT, (h >> 16) as u16, (h & 0xffff) as u16)
+        );
     }
 
     fn assert_palette_usage_key(

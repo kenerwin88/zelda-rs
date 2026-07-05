@@ -1049,6 +1049,8 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             fn palette_usage_key_from_chr_source() {}
             fn record_palette_usage_count() {}
             fn content_hash_source_key() {}
+            fn index_pattern_hash32() {}
+            fn bg3_content_source_key() {}
             fn palette_usage_entries_from_counts() {}
             mod palette_usage_tests {}
             fn run_dump_assets_by_source() {}
@@ -1056,7 +1058,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 11)
+        self.assertEqual(len(errors), 13)
         self.assertTrue(
             all(
                 "asset source dump command ownership escaped asset_source_dump_commands boundary"

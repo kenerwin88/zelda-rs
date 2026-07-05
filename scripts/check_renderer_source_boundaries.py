@@ -459,6 +459,8 @@ FORBIDDEN_MAIN_ASSET_SOURCE_DUMP_COMMAND_OWNERSHIP = (
     "fn palette_usage_key_from_chr_source",
     "fn record_palette_usage_count",
     "fn content_hash_source_key",
+    "fn index_pattern_hash32",
+    "fn bg3_content_source_key",
     "fn palette_usage_entries_from_counts",
     "mod palette_usage_tests",
     "fn run_dump_assets_by_source",

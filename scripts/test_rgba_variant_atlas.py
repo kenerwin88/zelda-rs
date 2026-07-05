@@ -971,6 +971,78 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                 },
             )
 
+    def test_canonical_art_atlas_imports_bg3_source_tiles_as_32_color_art(self) -> None:
+        import json
+        from PIL import Image
+
+        raw_pack = bytearray(1536)
+        raw_pack[0] = 0x80
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [f"#{index:02x}{index:02x}{index:02x}" for index in range(256)]
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_overworld_bg_main.json",
+                palette_colors,
+            )
+            source_dir = asset_dir / "developer_tilesets"
+            source_dir.mkdir()
+            (source_dir / "assets_by_source.json").write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_assets_by_source_v2_png",
+                        "cell_count": 2,
+                        "cells": [
+                            {
+                                "id": 0,
+                                "key": (4 << 32) | (0x0C07 << 16),
+                                "kind": 4,
+                                "pack": 0x0C07,
+                                "tile_off": 0,
+                            },
+                            {
+                                "id": 1,
+                                "key": (7 << 32) | (0x1234 << 16) | 0x5678,
+                                "kind": 7,
+                                "pack": 0x1234,
+                                "tile_off": 0x5678,
+                            },
+                        ],
+                    }
+                )
+            )
+            image = Image.new("P", (16, 8))
+            image.putdata(([14] + [0] * 63) * 2)
+            image.save(source_dir / "assets_by_source.png")
+
+            _width, _height, _pixels, arts = build_canonical_art_atlas(
+                asset_dir,
+                source_tiles_dir=source_dir,
+            )
+
+            refs = [
+                source
+                for art in arts
+                for source in art["source_refs"]
+                if source["source_kind"] == "bg3"
+            ]
+            self.assertEqual(len(refs), 2)
+            self.assertEqual({ref["asset"] for ref in refs}, {"kBg3Gfx"})
+            self.assertEqual(
+                {(ref["pack"], ref["tile"]) for ref in refs},
+                {(0x0C07, 0), (0x1234, 0x5678)},
+            )
+            self.assertEqual({ref["bpp"] for ref in refs}, {5})
+            self.assertEqual({ref["runtime_colors_per_row"] for ref in refs}, {32})
+            self.assertEqual({ref["runtime_material_policy"] for ref in refs}, {"stable"})
+
     def test_write_canonical_art_atlas_emits_art_tiles_manifest(self) -> None:
         import json
         from PIL import Image
@@ -1054,6 +1126,9 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             effects = json.loads((asset_dir / "atlas/tile_effects.json").read_text())
             self.assertEqual(manifest["format"], "zelda3_base_art_atlas_v1")
             self.assertEqual(effects["format"], "zelda3_tile_effect_table_v1")
+            self.assertTrue(
+                any(effect["colors_per_row"] == 32 for effect in effects["effects"])
+            )
             self.assertLess(manifest["entry_count"], 2000)
 
     def test_write_tile_effect_table_omits_legacy_base_tiles(self) -> None:

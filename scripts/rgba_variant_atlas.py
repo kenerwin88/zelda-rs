@@ -60,7 +60,7 @@ def _build_effect_table_from_palettes(
 ) -> dict[str, object]:
     effects_by_id: dict[str, dict[str, object]] = {}
     for name, colors in palettes.items():
-        for colors_per_row in (4, 8, 16):
+        for colors_per_row in (4, 8, 16, 32):
             for effect in _effect_rows_for_palette(name, colors, colors_per_row):
                 effects_by_id.setdefault(str(effect["id"]), effect)
     return {
@@ -182,6 +182,8 @@ def _rows_for_bpp(bpp: int) -> tuple[int, int]:
         return 8, 8
     if bpp == 4:
         return 16, 16
+    if bpp == 5:
+        return 8, 32
     raise ValueError(f"unsupported SNES tile bit depth: {bpp}")
 
 
@@ -192,10 +194,11 @@ def _default_preview_palette(
     preferred = {
         "sprite": "palette_main_spr",
         "bg": "palette_overworld_bg_main",
+        "bg3": "palette_overworld_bg_main",
     }.get(kind)
     if preferred in available_palette_names:
         return preferred, 0
-    if "palette_dung_bg_main" in available_palette_names and kind == "bg":
+    if "palette_dung_bg_main" in available_palette_names and kind in ("bg", "bg3"):
         return "palette_dung_bg_main", 0
     if available_palette_names:
         return available_palette_names[0], 0
@@ -225,6 +228,8 @@ def _source_tile_key_for_kind(
         return "bg", "kBgGfx", pack, tile, 3
     if kind == 2:
         return "sprite", "kSprGfx", pack, tile, 3
+    if kind in (4, 7):
+        return "bg3", "kBg3Gfx", pack, tile, 5
     return None
 
 

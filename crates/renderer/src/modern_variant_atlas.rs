@@ -153,9 +153,10 @@ pub fn variant_key_for_source_key(
     let kind = (source_key >> 32) as u8;
     let pack = ((source_key >> 16) & 0xffff) as u16;
     let tile = (source_key & 0xffff) as u16;
-    let (source_kind, asset) = match kind {
-        1 | 5 | 6 => ("bg", "kBgGfx"),
-        2 => ("sprite", "kSprGfx"),
+    let (source_kind, asset, bpp) = match kind {
+        1 | 5 | 6 => ("bg", "kBgGfx", 3),
+        2 => ("sprite", "kSprGfx", 3),
+        4 | 7 => ("bg3", "kBg3Gfx", 5),
         _ => return None,
     };
     Some(VariantAtlasKey {
@@ -163,9 +164,8 @@ pub fn variant_key_for_source_key(
         asset: asset.to_string(),
         pack,
         tile,
-        // The current ROM-derived source packs that feed this atlas are 3bpp.
         // Link/special live sources are deliberately unresolved above.
-        bpp: 3,
+        bpp,
         palette: palette_name.to_string(),
         palette_row,
     })
@@ -835,6 +835,36 @@ mod tests {
             source_hflip: false,
             source_vflip: false,
         }
+    }
+
+    #[test]
+    fn bg3_source_key_maps_to_32_color_variant_key() {
+        let key = variant_key_for_source_key(
+            crate::modern_source_atlas::modern_source_key(4, 0x0407, 0),
+            "palette_overworld_bg_main",
+            0,
+        )
+        .expect("BG3 source key should resolve");
+
+        assert_eq!(key.source_kind, "bg3");
+        assert_eq!(key.asset, "kBg3Gfx");
+        assert_eq!(key.pack, 0x0407);
+        assert_eq!(key.tile, 0);
+        assert_eq!(key.bpp, 5);
+        assert_eq!(key.palette, "palette_overworld_bg_main");
+        assert_eq!(key.palette_row, 0);
+
+        let content_key = variant_key_for_source_key(
+            crate::modern_source_atlas::modern_source_key(7, 0x1234, 0x5678),
+            "palette_overworld_bg_main",
+            0,
+        )
+        .expect("BG3 content source key should resolve");
+        assert_eq!(content_key.source_kind, "bg3");
+        assert_eq!(content_key.asset, "kBg3Gfx");
+        assert_eq!(content_key.pack, 0x1234);
+        assert_eq!(content_key.tile, 0x5678);
+        assert_eq!(content_key.bpp, 5);
     }
 
     fn bg_test_effect_with_palette_row(palette_row: u8) -> TileEffect {

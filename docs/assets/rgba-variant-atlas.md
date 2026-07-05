@@ -427,17 +427,19 @@ python3 scripts/gpu_render_compare_oracle_windows.py \
 
 Expected output includes `mismatched_pixels=0` and nonzero material-backed
 source-art coverage (`effect_material_draws`). The current representative proof
-reports `effect_material_draws=110956`,
-`live_index_draws=43194`,
-`live_index_bg_draws=42994`,
+reports `effect_material_draws=153950`,
+`live_index_draws=200`,
+`live_index_bg_draws=0`,
+`live_index_bg12_draws=0`,
+`live_index_bg3_draws=0`,
 `live_index_sprite_draws=200`,
 `gpu_prefinal_base_frames=<GPU base/prefinal frames>`,
-`unkeyed_fallback_draws=43194`,
-`unkeyed_bg_fallback_draws=42994`,
-`unkeyed_bg12_fallback_draws=<BG1/BG2 subset>`,
-`unkeyed_bg3_fallback_draws=<BG3 subset>`,
+`unkeyed_fallback_draws=200`,
+`unkeyed_bg_fallback_draws=0`,
+`unkeyed_bg12_fallback_draws=0`,
+`unkeyed_bg3_fallback_draws=0`,
 `unkeyed_sprite_fallback_draws=200`,
-`mixed_overlay_bg_effect_candidates=110592`,
+`mixed_overlay_bg_effect_candidates=153586`,
 `mixed_overlay_bg_effect_draws=75`,
 `mixed_overlay_bg_effect_culled_invisible_main=1597`,
 `mixed_overlay_bg_effect_reject_complex_frame=12842`,
@@ -447,20 +449,20 @@ reports `effect_material_draws=110956`,
 `mixed_overlay_bg_effect_reject_complex_color_math_clip=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_subscreen=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_fixed_color=0`,
-`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch=0`,
+`mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch=1596`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch=0`,
-`mixed_overlay_bg_effect_reject_cgram_mismatch=0`, and
+`mixed_overlay_bg_effect_reject_cgram_mismatch=1596`, and
 `mixed_overlay_bg_effect_reject_overlap=0` over 17 sampled compares from the
 checkpointed opening route tail. That means most stable BG opportunities in
 this sampled mixed window now execute through the GPU overlay path with exact
 final-pixel parity; the representative color-math/pre-final overlap blockers
-are now cleared. The remaining blocker in this focused window is primary
-per-scanline layer visibility (`scanline_main=1541`).
+are now cleared. The remaining live-index blocker in this focused window is the
+sprite/Link path (`live_index_sprite_draws=200`).
 
 The first pre-final sub-screen implementation supports static variant-effect BG
 packets: those pixels can be written into the packed main-screen buffer before
