@@ -695,12 +695,15 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 renderer.frontend().quit_requested();
                 renderer.frontend_mut().poll_input();
                 renderer.present_frame(&mut game, &mut frontend, &mut frame, render_flags);
+                let renderer_mode = renderer::RendererMode::parse(std::env::var("ZELDA3_RENDERER").ok().as_deref());
+                let _modern_compare = renderer::RendererMode::ModernCompare;
+                if renderer_mode == renderer::RendererMode::Modern {}
             }
         """
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 22)
+        self.assertEqual(len(errors), 26)
         self.assertTrue(
             all("live GPU play backend ownership escaped gpu_capture boundary" in error for error in errors)
         )

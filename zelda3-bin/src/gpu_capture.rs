@@ -83,6 +83,11 @@ struct GpuPlayRenderer {
     variant_live_stats: renderer::ModernAssetLiveStats,
 }
 
+pub(crate) struct ModernCompareModeDefaults {
+    pub(crate) enable_modern_render_compare: bool,
+    pub(crate) note: Option<&'static str>,
+}
+
 impl GpuPlayRenderer {
     fn new() -> Self {
         let modern_assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."))
@@ -138,6 +143,24 @@ pub(crate) fn new_gpu_play_renderer() -> Box<dyn crate::play_renderer::PlayRende
 
 pub(crate) fn capture_gpu_frame_from_game(game: &mut ZeldaState) -> LiveGpuFrameCapture {
     LiveGpuFrameCapture::from_game(game)
+}
+
+pub(crate) fn modern_compare_mode_defaults_from_env() -> ModernCompareModeDefaults {
+    let renderer_mode =
+        renderer::RendererMode::parse(std::env::var("ZELDA3_RENDERER").ok().as_deref());
+    let enable_modern_render_compare = renderer_mode == renderer::RendererMode::ModernCompare
+        || renderer_mode == renderer::RendererMode::Modern;
+    let note = if renderer_mode == renderer::RendererMode::Modern {
+        Some(
+            "note: ZELDA3_RENDERER=modern is experimental; modern path cannot render most content — running as modern-compare",
+        )
+    } else {
+        None
+    };
+    ModernCompareModeDefaults {
+        enable_modern_render_compare,
+        note,
+    }
 }
 
 pub(crate) fn render_gpu_capture_rgba(

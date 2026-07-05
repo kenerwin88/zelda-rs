@@ -27,7 +27,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use gpu_capture::{
     capture_gpu_frame_from_game, emit_modern_index_compare_output_lines,
     load_modern_atlas_compare_resources, load_modern_index_compare_resources,
-    render_gpu_capture_rgba, render_modern_atlas_compare_report_from_capture,
+    modern_compare_mode_defaults_from_env, render_gpu_capture_rgba,
+    render_modern_atlas_compare_report_from_capture,
     render_modern_index_compare_output_from_capture,
 };
 use platform::{
@@ -11558,7 +11559,6 @@ fn run_play_gpu_render_compare(args: &[String]) {
     } else {
         1usize
     };
-    let renderer_mode = renderer::RendererMode::parse(env::var("ZELDA3_RENDERER").ok().as_deref());
     let mut input_script = InputScript::default();
     let mut load_sram = None::<PathBuf>;
     let mut load_state = None::<PathBuf>;
@@ -11661,13 +11661,10 @@ fn run_play_gpu_render_compare(args: &[String]) {
         eprintln!("{e}");
         process::exit(2);
     }
-    if renderer_mode == renderer::RendererMode::ModernCompare
-        || renderer_mode == renderer::RendererMode::Modern
-    {
-        if renderer_mode == renderer::RendererMode::Modern {
-            eprintln!(
-                "note: ZELDA3_RENDERER=modern is experimental; modern path cannot render most content — running as modern-compare"
-            );
+    let modern_compare_defaults = modern_compare_mode_defaults_from_env();
+    if modern_compare_defaults.enable_modern_render_compare {
+        if let Some(note) = modern_compare_defaults.note {
+            eprintln!("{note}");
         }
         if modern_render_compare == 0 {
             modern_render_compare = stride; // env var alone turns on the compare at the regular stride
