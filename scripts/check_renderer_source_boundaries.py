@@ -277,6 +277,8 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     ".render_cpu_bgra_frame_rgba(frame)",
     ".render_cpu_bgra_frame_rgba(&frame)",
     ".render_live_gpu_capture_rgba(&gpu_capture)",
+    ".hash_pair_with_cpu_bgra(",
+    ".render_hash_line(frames)",
     ".upload_bgra_frame(",
     ".render_to_rgba(",
     "load_resources_from_env(",

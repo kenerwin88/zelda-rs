@@ -132,6 +132,10 @@ pub(crate) struct ReplayRenderHashCapture {
     capture: LiveGpuFrameCapture,
 }
 
+pub(crate) struct ReplayRenderHashGpuReadback {
+    frame: GpuRgbaReadbackFrame,
+}
+
 impl GpuPlayRenderer {
     fn new() -> Self {
         let modern_assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."))
@@ -789,8 +793,10 @@ impl ReplayRenderHashCapture {
     pub(crate) fn render_gpu_rgba(
         &self,
         readback: &mut OptionalGpuReadbackRenderer,
-    ) -> GpuRgbaReadbackFrame {
-        readback.render_live_gpu_capture_rgba(&self.capture)
+    ) -> ReplayRenderHashGpuReadback {
+        ReplayRenderHashGpuReadback {
+            frame: readback.render_live_gpu_capture_rgba(&self.capture),
+        }
     }
 }
 
@@ -799,12 +805,26 @@ impl GpuRgbaReadbackFrame {
         &self.rgba
     }
 
-    pub(crate) fn render_hash_line(&self, frame: u32) -> String {
+    fn render_hash_line(&self, frame: u32) -> String {
         renderer::gpu_render_hash_frame_rgba(frame, &self.rgba).line
     }
 
-    pub(crate) fn hash_pair_with_cpu_bgra(&self, cpu_bgra: &[u8]) -> renderer::RenderHashPair {
+    fn hash_pair_with_cpu_bgra(&self, cpu_bgra: &[u8]) -> renderer::RenderHashPair {
         renderer::render_hash_pair_bgra_rgba(cpu_bgra, &self.rgba)
+    }
+}
+
+impl ReplayRenderHashGpuReadback {
+    pub(crate) fn gpu_render_hash_log_line(&self, frame: u32) -> String {
+        self.frame.render_hash_line(frame)
+    }
+
+    pub(crate) fn debug_hash_line_with_cpu_bgra(&self, frame: u32, cpu_bgra: &[u8]) -> String {
+        let hashes = self.frame.hash_pair_with_cpu_bgra(cpu_bgra);
+        format!(
+            "[gpu-dbg] frame={frame} cpu_hash={:#010x} gpu_hash={:#010x}",
+            hashes.cpu_hash, hashes.gpu_hash
+        )
     }
 }
 
@@ -813,6 +833,14 @@ impl std::ops::Deref for GpuRgbaReadbackFrame {
 
     fn deref(&self) -> &Self::Target {
         &self.rgba
+    }
+}
+
+impl std::ops::Deref for ReplayRenderHashGpuReadback {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.frame.as_slice()
     }
 }
 

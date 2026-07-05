@@ -5028,11 +5028,7 @@ fn run_replay_save(args: &[String]) {
                 }
                 if frames == 332 {
                     // extra debug
-                    let hashes = gpu_rgba.hash_pair_with_cpu_bgra(frame);
-                    eprintln!(
-                        "[gpu-dbg] frame=332 cpu_hash={:#010x} gpu_hash={:#010x}",
-                        hashes.cpu_hash, hashes.gpu_hash
-                    );
+                    eprintln!("{}", gpu_rgba.debug_hash_line_with_cpu_bgra(frames, frame));
                     eprintln!(
                         "[gpu-dbg] frame=332 ppu_mode={} screen_enabled={:#04x} brightness={}",
                         game.ppu.mode, game.ppu.screen_enabled[0], game.ppu.brightness
@@ -5116,7 +5112,7 @@ fn run_replay_save(args: &[String]) {
                     }
                     eprintln!();
                 }
-                println!("{}", gpu_rgba.render_hash_line(frames));
+                println!("{}", gpu_rgba.gpu_render_hash_log_line(frames));
             }
         }
         if modern_index_compare.should_compare_frame(frames) {
