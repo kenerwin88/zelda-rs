@@ -284,11 +284,25 @@ class GpuRenderCompareOracleWindowsTests(unittest.TestCase):
             ensure_required_stable_draws(
                 stable_preview_draws=0,
                 stable_effect_draws=0,
+                effect_material_draws=0,
             )
 
     def test_required_stable_draws_accepts_preview_or_effect_art(self) -> None:
-        ensure_required_stable_draws(stable_preview_draws=1, stable_effect_draws=0)
-        ensure_required_stable_draws(stable_preview_draws=0, stable_effect_draws=1)
+        ensure_required_stable_draws(
+            stable_preview_draws=1,
+            stable_effect_draws=0,
+            effect_material_draws=0,
+        )
+        ensure_required_stable_draws(
+            stable_preview_draws=0,
+            stable_effect_draws=1,
+            effect_material_draws=0,
+        )
+        ensure_required_stable_draws(
+            stable_preview_draws=0,
+            stable_effect_draws=0,
+            effect_material_draws=1,
+        )
 
     def test_unsupported_material_draws_are_not_valid_gpu_proof(self) -> None:
         with self.assertRaisesRegex(SystemExit, "unsupported runtime material"):

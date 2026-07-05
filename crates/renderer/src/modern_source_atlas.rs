@@ -300,8 +300,8 @@ mod tests {
             .cells
             .iter()
             .all(|c| c.indices.iter().all(|&i| i < 32)));
-        // A known BG (kind=1) source from the committed manifest resolves.
-        assert!(source_cell(&atlas, 1, 30, 44).is_some());
+        // A known content-hash BG stream source from the committed manifest resolves.
+        assert!(source_cell(&atlas, 6, 53219, 29765).is_some());
     }
 
     #[test]

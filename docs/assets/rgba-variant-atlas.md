@@ -425,22 +425,23 @@ python3 scripts/gpu_render_compare_oracle_windows.py \
   --release
 ```
 
-Expected output includes `mismatched_pixels=0` and nonzero
-`effect_material_draws`. The current representative proof reports
-`effect_material_draws=68926`,
-`live_index_draws=85224`,
-`live_index_bg_draws=85024`,
+Expected output includes `mismatched_pixels=0` and nonzero material-backed
+source-art coverage (`effect_material_draws`). The current representative proof
+reports `effect_material_draws=110956`,
+`live_index_draws=43194`,
+`live_index_bg_draws=42994`,
 `live_index_sprite_draws=200`,
 `gpu_prefinal_base_frames=<GPU base/prefinal frames>`,
-`unkeyed_fallback_draws=85224`,
-`unkeyed_bg_fallback_draws=85024`,
+`unkeyed_fallback_draws=43194`,
+`unkeyed_bg_fallback_draws=42994`,
 `unkeyed_bg12_fallback_draws=<BG1/BG2 subset>`,
 `unkeyed_bg3_fallback_draws=<BG3 subset>`,
 `unkeyed_sprite_fallback_draws=200`,
-`mixed_overlay_bg_effect_candidates=68562`,
-`mixed_overlay_bg_effect_draws=19133`,
-`mixed_overlay_bg_effect_culled_invisible_main=1541`,
-`mixed_overlay_bg_effect_reject_complex_frame=0`,
+`mixed_overlay_bg_effect_candidates=110592`,
+`mixed_overlay_bg_effect_draws=75`,
+`mixed_overlay_bg_effect_culled_invisible_main=1597`,
+`mixed_overlay_bg_effect_reject_complex_frame=12842`,
+`mixed_overlay_bg_effect_reject_complex_effect_bounds=12917`,
 `mixed_overlay_bg_effect_reject_complex_scanline_main=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math=0`,
 `mixed_overlay_bg_effect_reject_complex_color_math_clip=0`,

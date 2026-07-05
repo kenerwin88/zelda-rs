@@ -418,8 +418,9 @@ def env_for_renderer(
 def ensure_required_stable_draws(
     stable_preview_draws: int,
     stable_effect_draws: int,
+    effect_material_draws: int,
 ) -> None:
-    if stable_preview_draws + stable_effect_draws == 0:
+    if stable_preview_draws + stable_effect_draws + effect_material_draws == 0:
         raise SystemExit(
             "required stable source-art/effect draws, but selected windows drew zero"
         )
@@ -623,7 +624,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "fail unless selected assets-variant-gpu windows draw at least one "
-            "stable preview/effect-backed source-art tile"
+            "stable preview/effect/material-backed source-art tile"
         ),
     )
     parser.add_argument("--dry-run", action="store_true")
@@ -856,6 +857,7 @@ def main() -> None:
         ensure_required_stable_draws(
             stable_preview_draws=total_stable_preview_draws,
             stable_effect_draws=total_stable_effect_draws,
+            effect_material_draws=total_effect_material_draws,
         )
     if args.renderer == "assets-variant-gpu":
         ensure_no_unsupported_material_draws(total_unsupported_material_draws)

@@ -94,6 +94,18 @@ fn record_palette_usage_count(
     }
 }
 
+fn content_hash_source_key(vram: &[u16], slot: usize) -> Option<u64> {
+    let base = slot.checked_mul(16)?;
+    let end = base.checked_add(16)?;
+    let words = vram.get(base..end)?;
+    let h = chr_content_hash32(words);
+    Some(modern_source_key(
+        CHR_KIND_BG_STREAM,
+        (h >> 16) as u16,
+        (h & 0xffff) as u16,
+    ))
+}
+
 fn palette_usage_entries_from_counts(
     counts: &HashMap<PaletteUsageKey, u32>,
 ) -> Vec<PaletteUsageEntry> {
@@ -159,14 +171,8 @@ fn palette_usage_entries_from_counts(
 pub(crate) fn run_dump_assets_by_source(args: &[String]) {
     let rekey_content_hash = |vram: &[u16], slot: usize, src: zelda3::LogicalChrSrc| -> u64 {
         if src.kind == CHR_KIND_BG_STREAM {
-            let base = slot * 16;
-            if base + 16 <= vram.len() {
-                let h = chr_content_hash32(&vram[base..base + 16]);
-                return modern_source_key(
-                    CHR_KIND_BG_STREAM,
-                    (h >> 16) as u16,
-                    (h & 0xffff) as u16,
-                );
+            if let Some(key) = content_hash_source_key(vram, slot) {
+                return key;
             }
         }
         modern_source_key(src.kind, src.pack, src.tile_off)
@@ -335,6 +341,15 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                         e.2 += 1;
                     }
                     record_keyed(key, pattern, slot);
+                    if src.kind != CHR_KIND_BG_STREAM {
+                        // The renderer rekeys non-injective BG1/BG2 source tags to the
+                        // frame-end 4bpp content hash and resolves that exact key from the
+                        // source atlas when present. Emit the same key here so generic BG
+                        // draws can use PNG/source art instead of staying live-indexed.
+                        if let Some(hash_key) = content_hash_source_key(&ppu.vram, slot) {
+                            record_keyed(hash_key, pattern, slot);
+                        }
+                    }
                 }
             }
         }
@@ -609,6 +624,25 @@ mod palette_usage_tests {
             6,
         );
         assert!(palette_usage_key_from_chr_source(streamed, "palette_dung_bg_main", 1).is_none());
+    }
+
+    #[test]
+    fn content_hash_source_key_encodes_frame_end_tile_bytes() {
+        let mut vram = vec![0u16; 0x40];
+        for (i, word) in vram[0x20..0x30].iter_mut().enumerate() {
+            *word = 0x1000u16.wrapping_add(i as u16);
+        }
+        let h = chr_content_hash32(&vram[0x20..0x30]);
+
+        assert_eq!(
+            content_hash_source_key(&vram, 2),
+            Some(modern_source_key(
+                CHR_KIND_BG_STREAM,
+                (h >> 16) as u16,
+                (h & 0xffff) as u16
+            ))
+        );
+        assert_eq!(content_hash_source_key(&vram, 4), None);
     }
 
     fn assert_palette_usage_key(
