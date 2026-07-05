@@ -25,11 +25,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpu_capture::{
-    capture_gpu_frame_from_game, compare_gpu_render_current_frame,
-    emit_modern_index_compare_output_lines, modern_atlas_compare_run,
-    modern_compare_mode_defaults_from_env, modern_index_compare_run_from_env,
-    new_gpu_readback_renderer, render_gpu_hash_frame_rgba_line, render_hash_pair_bgra_rgba,
-    render_hd_capture_from_gpu_capture,
+    capture_gpu_frame_from_game, emit_modern_index_compare_output_lines, gpu_render_compare_run,
+    modern_atlas_compare_run, modern_compare_mode_defaults_from_env,
+    modern_index_compare_run_from_env, new_gpu_readback_renderer, render_gpu_hash_frame_rgba_line,
+    render_hash_pair_bgra_rgba, render_hd_capture_from_gpu_capture,
 };
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
@@ -3151,11 +3150,7 @@ fn run_replay_save(args: &[String]) {
     let mut fingerprint_log: Option<PathBuf> = None;
     let mut fingerprint_frame = None::<u32>;
     let mut coverage_log: Option<PathBuf> = None;
-    let mut gpu_render_compare = 0u32;
-    let mut gpu_render_compare_quiet = false;
-    let mut gpu_render_compare_count = 0u32;
-    let mut gpu_render_compare_last_frame = 0u32;
-    let mut gpu_render_compare_last_hash = 0u32;
+    let mut gpu_render_compare = gpu_render_compare_run(0, false);
     let mut modern_index_compare = modern_index_compare_run_from_env();
     let ppu_mode_summary = std::env::var("ZELDA3_PPU_MODE_SUMMARY").is_ok();
     let mut ppu_mode_counts = [0u64; 8];
@@ -3220,18 +3215,18 @@ fn run_replay_save(args: &[String]) {
                     eprintln!("--gpu-render-compare requires a stride");
                     process::exit(2);
                 });
-                gpu_render_compare = stride.parse::<u32>().unwrap_or_else(|_| {
+                let stride = stride.parse::<u32>().unwrap_or_else(|_| {
                     eprintln!("invalid --gpu-render-compare stride: {stride}");
                     process::exit(2);
                 });
-                if gpu_render_compare == 0 {
+                if !gpu_render_compare.set_stride(stride) {
                     eprintln!("--gpu-render-compare stride must be greater than zero");
                     process::exit(2);
                 }
                 i += 2;
             }
             "--gpu-render-compare-quiet" => {
-                gpu_render_compare_quiet = true;
+                gpu_render_compare.set_quiet();
                 i += 1;
             }
             "--modern-index-compare" => {
@@ -3435,7 +3430,7 @@ fn run_replay_save(args: &[String]) {
         None
     };
     let mut render_hash_frame = if render_hash_log != 0
-        || gpu_render_compare != 0
+        || gpu_render_compare.enabled()
         || render_hash_dump_frame.is_some()
         || fingerprint_log.is_some()
     {
@@ -3447,7 +3442,7 @@ fn run_replay_save(args: &[String]) {
     // line. The parity-facing render-hash line hashes the raw CPU BGRA display
     // buffer, matching C PrintRenderHash exactly.
     let mut gpu_readback = if render_hash_log != 0
-        || gpu_render_compare != 0
+        || gpu_render_compare.enabled()
         || render_hash_dump_frame.is_some()
         || dump_frame_path.is_some()
         || modern_index_compare.enabled()
@@ -3546,7 +3541,7 @@ fn run_replay_save(args: &[String]) {
             }
         }
         let should_log_render_hash = render_hash_log != 0 && frames % render_hash_log == 0;
-        let should_compare_gpu = gpu_render_compare != 0 && frames % gpu_render_compare == 0;
+        let should_compare_gpu = gpu_render_compare.should_compare_frame(frames);
         let should_dump_render_hash = render_hash_dump_frame
             .as_ref()
             .is_some_and(|(dump_frame, _)| frames == *dump_frame);
@@ -3557,19 +3552,13 @@ fn run_replay_save(args: &[String]) {
             let gpu_readback = gpu_readback
                 .as_mut()
                 .expect("GPU readback renderer allocated");
-            let Some(cpu_hash) =
-                compare_gpu_render_current_frame(&mut game, gpu_readback, frame, frames)
+            let Some(line) =
+                gpu_render_compare.compare_current_frame(&mut game, gpu_readback, frame, frames)
             else {
                 process::exit(1);
             };
-            gpu_render_compare_count = gpu_render_compare_count.wrapping_add(1);
-            gpu_render_compare_last_frame = frames;
-            gpu_render_compare_last_hash = cpu_hash;
-            if !gpu_render_compare_quiet {
-                println!(
-                    "gpu-render-compare frame={frames} hash=0x{:08x} mismatched_pixels=0",
-                    cpu_hash
-                );
+            if let Some(line) = line {
+                println!("{line}");
             }
         }
         if should_log_render_hash || should_dump_render_hash {
@@ -5358,11 +5347,8 @@ fn run_replay_save(args: &[String]) {
         game.overworld_get_tile_attribute_at_location(action_x1, action_y1)
     };
 
-    if gpu_render_compare != 0 && gpu_render_compare_quiet {
-        println!(
-            "gpu-render-compare completed compared={} last_frame={} last_hash=0x{:08x} mismatched_pixels=0",
-            gpu_render_compare_count, gpu_render_compare_last_frame, gpu_render_compare_last_hash
-        );
+    if let Some(line) = gpu_render_compare.summary_line_if_quiet() {
+        println!("{line}");
     }
 
     // Stable byte-level WRAM dump for deterministic old-vs-new diffing (no
@@ -11613,9 +11599,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
     let last_panic = install_crash_panic_hook();
     let mut gpu_readback = new_gpu_readback_renderer(256, 224);
     let mut render_frame = vec![0u8; 256 * 224 * 4];
-    let mut compared = 0u32;
-    let mut last_frame = start_frame;
-    let mut last_hash = 0u32;
+    let mut gpu_render_compare = gpu_render_compare_run(stride, true);
     for local_frame in 0..frames_to_run {
         let frame = start_frame.wrapping_add(local_frame);
         let input = input_script.input_for_frame(frame);
@@ -11629,7 +11613,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
             process::exit(101);
         }
         let completed_frame = frame.wrapping_add(1);
-        let should_compare_stride = completed_frame % stride == 0;
+        let should_compare_stride = gpu_render_compare.should_compare_frame(completed_frame);
         let should_compare_modern = modern_atlas_compare.should_compare_frame(completed_frame);
         let should_compare_modern_index =
             modern_index_compare.should_compare_frame(completed_frame);
@@ -11637,7 +11621,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
             continue;
         }
         if should_compare_stride {
-            let Some(cpu_hash) = compare_gpu_render_current_frame(
+            let Some(_) = gpu_render_compare.compare_current_frame(
                 &mut game,
                 &mut gpu_readback,
                 &mut render_frame,
@@ -11645,9 +11629,6 @@ fn run_play_gpu_render_compare(args: &[String]) {
             ) else {
                 process::exit(1);
             };
-            compared = compared.wrapping_add(1);
-            last_frame = completed_frame;
-            last_hash = cpu_hash;
         }
         if should_compare_modern {
             if let Some(report) = modern_atlas_compare.render_report_from_game(
@@ -11672,9 +11653,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
         }
     }
 
-    println!(
-        "play-gpu-render-compare completed compared={compared} start_frame={start_frame} last_frame={last_frame} last_hash=0x{last_hash:08x} mismatched_pixels=0"
-    );
+    println!("{}", gpu_render_compare.play_summary_line(start_frame));
     if let Some(line) = modern_index_compare.summary_line_if_enabled() {
         println!("{line}");
     }

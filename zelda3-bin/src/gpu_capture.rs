@@ -95,6 +95,14 @@ pub(crate) struct ModernIndexCompareRun {
     allow_source_cpu_fallback: bool,
 }
 
+pub(crate) struct GpuRenderCompareRun {
+    stride: u32,
+    quiet: bool,
+    compared: u32,
+    last_frame: u32,
+    last_hash: u32,
+}
+
 pub(crate) struct ModernAtlasCompareRun {
     stride: u32,
     resources: renderer::ModernAtlasCompareResources,
@@ -194,6 +202,16 @@ pub(crate) fn modern_index_compare_run_from_env() -> ModernIndexCompareRun {
     }
 }
 
+pub(crate) fn gpu_render_compare_run(stride: u32, quiet: bool) -> GpuRenderCompareRun {
+    GpuRenderCompareRun {
+        stride,
+        quiet,
+        compared: 0,
+        last_frame: 0,
+        last_hash: 0,
+    }
+}
+
 pub(crate) fn modern_atlas_compare_run(
     stride: u32,
     root: &Path,
@@ -227,6 +245,65 @@ impl ModernAtlasCompareRun {
         let gpu_frame = capture.gpu_frame();
         self.resources
             .compare_frame_rgba(frame, &gpu_frame, classic_rgba)
+    }
+}
+
+impl GpuRenderCompareRun {
+    pub(crate) fn set_stride(&mut self, stride: u32) -> bool {
+        if stride == 0 {
+            return false;
+        }
+        self.stride = stride;
+        true
+    }
+
+    pub(crate) fn set_quiet(&mut self) {
+        self.quiet = true;
+    }
+
+    pub(crate) fn enabled(&self) -> bool {
+        self.stride != 0
+    }
+
+    pub(crate) fn should_compare_frame(&self, frame: u32) -> bool {
+        self.stride != 0 && frame % self.stride == 0
+    }
+
+    pub(crate) fn compare_current_frame(
+        &mut self,
+        game: &mut ZeldaState,
+        readback: &mut GpuReadbackRenderer,
+        frame_bgra: &mut [u8],
+        frame: u32,
+    ) -> Option<Option<String>> {
+        let cpu_hash = compare_gpu_render_current_frame(game, readback, frame_bgra, frame)?;
+        self.compared = self.compared.wrapping_add(1);
+        self.last_frame = frame;
+        self.last_hash = cpu_hash;
+        Some((!self.quiet).then(|| {
+            format!("gpu-render-compare frame={frame} hash=0x{cpu_hash:08x} mismatched_pixels=0")
+        }))
+    }
+
+    pub(crate) fn summary_line_if_quiet(&self) -> Option<String> {
+        (self.enabled() && self.quiet).then(|| {
+            format!(
+                "gpu-render-compare completed compared={} last_frame={} last_hash=0x{:08x} mismatched_pixels=0",
+                self.compared, self.last_frame, self.last_hash
+            )
+        })
+    }
+
+    pub(crate) fn play_summary_line(&self, start_frame: u32) -> String {
+        let last_frame = if self.compared == 0 {
+            start_frame
+        } else {
+            self.last_frame
+        };
+        format!(
+            "play-gpu-render-compare completed compared={} start_frame={} last_frame={} last_hash=0x{:08x} mismatched_pixels=0",
+            self.compared, start_frame, last_frame, self.last_hash
+        )
     }
 }
 
@@ -324,7 +401,7 @@ pub(crate) fn render_hash_pair_bgra_rgba(
     renderer::render_hash_pair_bgra_rgba(cpu_bgra, gpu_rgba)
 }
 
-pub(crate) fn compare_gpu_render_current_frame(
+fn compare_gpu_render_current_frame(
     game: &mut ZeldaState,
     readback: &mut GpuReadbackRenderer,
     frame: &mut [u8],
@@ -525,5 +602,27 @@ fn gpu_frame_register_snapshot_from_ppu<'a>(
         clip_mode: ppu.clip_mode,
         prevent_math_mode: ppu.prevent_math_mode,
         windowsel: ppu.windowsel,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::gpu_render_compare_run;
+
+    #[test]
+    fn quiet_summary_requires_enabled_compare() {
+        let compare = gpu_render_compare_run(0, true);
+
+        assert_eq!(compare.summary_line_if_quiet(), None);
+    }
+
+    #[test]
+    fn play_summary_uses_start_frame_until_first_compare() {
+        let compare = gpu_render_compare_run(10, true);
+
+        assert_eq!(
+            compare.play_summary_line(1234),
+            "play-gpu-render-compare completed compared=0 start_frame=1234 last_frame=1234 last_hash=0x00000000 mismatched_pixels=0"
+        );
     }
 }
