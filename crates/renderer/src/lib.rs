@@ -55,6 +55,7 @@ pub use bg_layer::BgLayerRenderer;
 pub use gpu_frame::{BgLayerRegs, GpuFrame, Mode7Regs, ObjRegs, ScanlineRegs};
 pub use gpu_renderer::GpuFrameRenderer;
 pub use mode7_renderer::Mode7Renderer;
+pub use modern_extract::MappedSourceTableView;
 pub use modern_gpu::{
     ModernGpuCompositor, ModernGpuHeadless, ModernGpuVariantHeadless, ModernGpuVariantRenderer,
 };

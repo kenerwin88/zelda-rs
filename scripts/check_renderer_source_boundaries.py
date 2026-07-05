@@ -22,6 +22,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernAssetFrameScene",
     "ModernAssetLiveStats",
     "ModernIndexCompareStats",
+    "MappedSourceTableView",
     "render_modern_index_compare_frame",
     "render_hd_capture_from_sources",
 )
@@ -70,6 +71,11 @@ FORBIDDEN_MODERN_INDEX_COMPARE_POLICY_CALLS = (
     "modern_index_compare_bad_count",
     "modern_index_compare_variant_draws",
     "modern_gpu_path_fallback_reason(",
+)
+
+FORBIDDEN_SOURCE_TABLE_VIEW_CALLS = (
+    "struct VramChrSourceTableView",
+    "impl renderer::modern_extract::SourceTableView for VramChrSourceTableView",
 )
 
 
@@ -188,6 +194,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "modern index compare stats policy escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_SOURCE_TABLE_VIEW_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "source table view adapter escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

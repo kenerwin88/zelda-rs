@@ -1403,22 +1403,18 @@ fn effective_renderer_mode_from_env_value(
     renderer::EffectiveRendererMode::from_env_value(value, variant_atlas_env.as_deref())
 }
 
-#[derive(Clone, Copy)]
-struct VramChrSourceTableView<'a> {
-    table: &'a zelda3::VramChrSourceTable,
-}
-
-impl<'a> VramChrSourceTableView<'a> {
-    fn new(table: &'a zelda3::VramChrSourceTable) -> Self {
-        Self { table }
-    }
-}
-
-impl renderer::modern_extract::SourceTableView for VramChrSourceTableView<'_> {
-    fn get(&self, slot: usize) -> (u8, u16, u16) {
-        let src = self.table.get(slot);
+fn vram_chr_source_table_view(
+    table: &zelda3::VramChrSourceTable,
+) -> renderer::MappedSourceTableView<
+    '_,
+    zelda3::LogicalChrSrc,
+    fn(&zelda3::LogicalChrSrc) -> (u8, u16, u16),
+> {
+    fn logical_chr_src_tuple(src: &zelda3::LogicalChrSrc) -> (u8, u16, u16) {
         (src.kind, src.pack, src.tile_off)
     }
+
+    renderer::MappedSourceTableView::new(table.as_slice(), logical_chr_src_tuple)
 }
 
 /// Modern asset resources + HD override store for the live present path, loaded
@@ -1462,7 +1458,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let scanlines_raw = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
         let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
-        let src_table = VramChrSourceTableView::new(game.vram_chr_source());
+        let src_table = vram_chr_source_table_view(game.vram_chr_source());
         let scene =
             renderer::ModernAssetFrameScene::from_in_dungeon(game.ram[PLAYER_IS_INDOORS] != 0);
         match frontend.present_modern_asset_frame(
@@ -5498,7 +5494,7 @@ fn run_replay_save(args: &[String]) {
                 let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
                 let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
                 let _ = (theme, &dungeon_index_atlas, &index_atlas);
-                let src_table = VramChrSourceTableView::new(game.vram_chr_source());
+                let src_table = vram_chr_source_table_view(game.vram_chr_source());
                 let scene = renderer::ModernAssetFrameScene::from_in_dungeon(
                     game.ram[PLAYER_IS_INDOORS] != 0,
                 );
@@ -11078,7 +11074,7 @@ fn run_dump_hd_capture(args: &[String]) {
             eprintln!("frame {completed}: Mode 7 not supported by the sources path; skipping");
             continue;
         }
-        let src_table = VramChrSourceTableView::new(game.vram_chr_source());
+        let src_table = vram_chr_source_table_view(game.vram_chr_source());
         let capture =
             renderer::hd_authoring::render_hd_capture_from_sources(&gpu_frame, &src_table, &atlas);
         let png_path = format!("{OUT_DIR}/frame_{completed}.png");
@@ -12282,7 +12278,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, scanlines_from_raw(&scanlines_raw));
             let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
 
-            let src_table = VramChrSourceTableView::new(game.vram_chr_source());
+            let src_table = vram_chr_source_table_view(game.vram_chr_source());
             let scene =
                 renderer::ModernAssetFrameScene::from_in_dungeon(game.ram[PLAYER_IS_INDOORS] != 0);
             let trace_pixel = variant_trace_pixel_env()
@@ -14434,26 +14430,6 @@ mod tests {
         assert!(should_write_fingerprint(None, 41));
         assert!(should_write_fingerprint(Some(42), 42));
         assert!(!should_write_fingerprint(Some(42), 41));
-    }
-
-    #[test]
-    fn vram_chr_source_view_reads_slots_without_tuple_copy() {
-        let mut table = zelda3::VramChrSourceTable::default();
-        table.record_tiles_from(0x40, 2, zelda3::CHR_KIND_BG, 0x12, 0x34);
-        let view = VramChrSourceTableView::new(&table);
-
-        assert_eq!(
-            renderer::modern_extract::SourceTableView::get(&view, 0x40 / 16),
-            (zelda3::CHR_KIND_BG, 0x12, 0x34)
-        );
-        assert_eq!(
-            renderer::modern_extract::SourceTableView::get(&view, 0x40 / 16 + 1),
-            (zelda3::CHR_KIND_BG, 0x12, 0x35)
-        );
-        assert_eq!(
-            renderer::modern_extract::SourceTableView::get(&view, usize::MAX),
-            (0, 0, 0)
-        );
     }
 
     #[test]

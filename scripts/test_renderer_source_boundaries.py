@@ -23,6 +23,7 @@ def source_with_required_calls(body: str) -> str:
         let scene = renderer::ModernAssetFrameScene::from_in_dungeon(false);
         let stats = renderer::ModernAssetLiveStats::from_env();
         let compare = renderer::ModernIndexCompareStats::from_env();
+        let source_table = renderer::MappedSourceTableView::new(&[(0, 0, 0)], |src: &(u8, u16, u16)| *src);
         frontend.present_modern_asset_frame();
         renderer::modern_gpu::render_modern_index_compare_frame();
         renderer::hd_authoring::render_hd_capture_from_sources();
@@ -230,6 +231,24 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertEqual(len(errors), 6)
         self.assertTrue(
             all("modern index compare stats policy escaped renderer boundary" in error for error in errors)
+        )
+
+    def test_rejects_source_table_view_adapter_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            struct VramChrSourceTableView {}
+            impl renderer::modern_extract::SourceTableView for VramChrSourceTableView {
+                fn get(&self, slot: usize) -> (u8, u16, u16) { (0, 0, 0) }
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(
+            all("source table view adapter escaped renderer boundary" in error for error in errors)
         )
 
     def test_rejects_missing_renderer_owned_api_call(self):

@@ -996,6 +996,30 @@ impl SourceTableView for [(u8, u16, u16)] {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct MappedSourceTableView<'a, T, F> {
+    entries: &'a [T],
+    map: F,
+}
+
+impl<'a, T, F> MappedSourceTableView<'a, T, F> {
+    pub fn new(entries: &'a [T], map: F) -> Self {
+        Self { entries, map }
+    }
+}
+
+impl<T, F> SourceTableView for MappedSourceTableView<'_, T, F>
+where
+    F: Fn(&T) -> (u8, u16, u16),
+{
+    fn get(&self, slot: usize) -> (u8, u16, u16) {
+        match self.entries.get(slot) {
+            Some(entry) => (self.map)(entry),
+            None => (0, 0, 0),
+        }
+    }
+}
+
 /// Apply hflip/vflip to a 64-entry (8x8 row-major) index pattern.
 fn flip_index_pattern(indices: &[u8; 64], hflip: bool, vflip: bool) -> [u8; 64] {
     if !hflip && !vflip {
@@ -1485,6 +1509,35 @@ mod tests {
     use crate::modern_assets::{ModernTileAtlasAsset, ModernTileAtlasEntry};
     use crate::modern_index_atlas::ModernIndexTile;
     use crate::modern_palette::snes_cgram_to_rgba;
+
+    #[test]
+    fn mapped_source_table_view_reads_slots_without_tuple_copy() {
+        #[derive(Clone, Copy)]
+        struct Entry {
+            kind: u8,
+            pack: u16,
+            tile_off: u16,
+        }
+
+        let entries = [
+            Entry {
+                kind: 1,
+                pack: 0x12,
+                tile_off: 0x34,
+            },
+            Entry {
+                kind: 1,
+                pack: 0x12,
+                tile_off: 0x35,
+            },
+        ];
+        let view =
+            MappedSourceTableView::new(&entries, |src: &Entry| (src.kind, src.pack, src.tile_off));
+
+        assert_eq!(SourceTableView::get(&view, 0), (1, 0x12, 0x34));
+        assert_eq!(SourceTableView::get(&view, 1), (1, 0x12, 0x35));
+        assert_eq!(SourceTableView::get(&view, usize::MAX), (0, 0, 0));
+    }
 
     #[test]
     fn render_full_from_vram_returns_256x224x4_backdrop() {
