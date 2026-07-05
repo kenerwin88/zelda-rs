@@ -76,7 +76,7 @@ pub fn load_modern_overworld_index_atlas(repo_root: &Path) -> Result<ModernIndex
         cells.push(ModernIndexTile {
             id: cell_json.id,
             indices,
-            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            source_key: source_key_from_manifest(cell_json.source_key),
             hflip: false,
             vflip: false,
         });
@@ -107,6 +107,21 @@ struct Manifest {
 struct CellJson {
     id: u32,
     graphics_keys: Vec<u16>,
+    #[serde(default)]
+    source_key: Option<SourceKeyJson>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+pub(crate) struct SourceKeyJson {
+    kind: u8,
+    pack: u16,
+    tile_off: u16,
+}
+
+pub(crate) fn source_key_from_manifest(source_key: Option<SourceKeyJson>) -> u64 {
+    source_key.map_or(crate::modern_hd_overrides::NO_SOURCE_KEY, |source| {
+        crate::modern_source_atlas::modern_source_key(source.kind, source.pack, source.tile_off)
+    })
 }
 
 // ── Test helpers ─────────────────────────────────────────────────────────────
@@ -163,6 +178,11 @@ mod tests {
         // word 2218 masks to graphics_key 170 (2218 & 0xC3FF == 170), which is in cell 0.
         let cell = index_cell_for_tilemap_entry(&atlas, 2218).expect("resolves");
         assert_eq!(cell.id, 0);
+        assert_ne!(
+            cell.source_key,
+            crate::modern_hd_overrides::NO_SOURCE_KEY,
+            "committed content-hash source refs should feed PNG/RGBA material lookup"
+        );
         // palette/priority bits are ignored: 2218 | 0x2000 (priority) resolves the same
         assert_eq!(
             index_cell_for_tilemap_entry(&atlas, 2218 | 0x2000)

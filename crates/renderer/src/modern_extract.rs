@@ -1176,7 +1176,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                     (id, 0u8, crate::modern_hd_overrides::NO_SOURCE_KEY)
                 } else {
                     let slot = chr_slot_base + tile_number;
-                    let (kind, mut pack, mut tile_off) = src_table.get(slot);
+                    let (mut kind, mut pack, mut tile_off) = src_table.get(slot);
                     if kind == CHR_KIND_BG_STREAM {
                         // Re-derive the content-hash key from the FRAME-END pixels (see
                         // `content_hash32_slot`) so it matches how the assets dump keys.
@@ -1193,46 +1193,18 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                     // themes/areas. The assets-by-source dump keeps the first occurrence
                     // (it is processed in frame order), so areas that reuse a key with the
                     // other conversion render a stale cell (whole-screen shade shift in the
-                    // overworld). The injective BG kinds — `CHR_KIND_BG_ANIM` (keyed by
-                    // absolute buffer position) and `CHR_KIND_BG_STREAM` (content-hashed) —
-                    // do not have this problem, and sprites are content-hashed too. Until
-                    // the generic-BG area-load is content-hashed at the source (the same fix
-                    // already applied to OBJ CHR via `tag_stream_content_hash`), decode the
-                    // non-injective generic-BG tiles (and any untagged/gap slot) from LIVE
-                    // VRAM, exactly like the BG3 exception above and the from-VRAM oracle.
-                    // NOTE: CHR_KIND_BG_ANIM (overworld water/flower tiles at VRAM
-                    // 0x3c00) is intentionally NOT injective here — it decodes from LIVE
-                    // VRAM below. Those animations rewrite the same 0xa680 buffer position
-                    // in-place per phase, so the frame-end pixels the assets dump captures
-                    // never match the pixels the live frame streams; no static key
-                    // (neither (pack,position) nor content-hash) yields a byte-exact atlas
-                    // cell (frame 250000 waterfall). Only CHR_KIND_BG_STREAM (content-
-                    // hashed dungeon/streamed BG, verified byte-exact) resolves via the atlas.
+                    // overworld). For ambiguous/untagged BG slots, derive a frame-end
+                    // content-hash key and use PNG-backed source art only when that exact
+                    // 4bpp pattern exists in the atlas; otherwise retain the live-VRAM
+                    // fallback.
                     let injective = kind == CHR_KIND_BG_STREAM;
                     if !injective {
-                        let pal = ((entry_word >> 10) & 7) as u8;
-                        let chr_base = frame.bg[layer_index].tile_adr as usize;
-                        let pattern_key = entry_word & 0xC3FF;
-                        let id = *cell_ids
-                            .entry((0x8000_0000 | u32::from(pattern_key), false, false))
-                            .or_insert_with(|| {
-                                let indices = decode_snes_4bpp_tile_indices(
-                                    frame.vram,
-                                    chr_base,
-                                    pattern_key,
-                                );
-                                let id = cells.len() as u32;
-                                cells.push(ModernIndexTile {
-                                    id,
-                                    indices,
-                                    source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
-                                    hflip: false,
-                                    vflip: false,
-                                });
-                                id
-                            });
-                        (id, pal, crate::modern_hd_overrides::NO_SOURCE_KEY)
-                    } else {
+                        let h = content_hash32_slot(frame.vram, slot);
+                        kind = CHR_KIND_BG_STREAM;
+                        pack = (h >> 16) as u16;
+                        tile_off = (h & 0xffff) as u16;
+                    }
+                    if injective || source_cell(atlas, kind, pack, tile_off).is_some() {
                         if dbg && layer_index < 2 {
                             dbg_total += 1;
                             let live = decode_snes_4bpp_tile_indices(
@@ -1322,6 +1294,29 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                 (id, pal, crate::modern_hd_overrides::NO_SOURCE_KEY)
                             }
                         }
+                    } else {
+                        let pal = ((entry_word >> 10) & 7) as u8;
+                        let chr_base = frame.bg[layer_index].tile_adr as usize;
+                        let pattern_key = entry_word & 0xC3FF;
+                        let id = *cell_ids
+                            .entry((0x8000_0000 | u32::from(pattern_key), false, false))
+                            .or_insert_with(|| {
+                                let indices = decode_snes_4bpp_tile_indices(
+                                    frame.vram,
+                                    chr_base,
+                                    pattern_key,
+                                );
+                                let id = cells.len() as u32;
+                                cells.push(ModernIndexTile {
+                                    id,
+                                    indices,
+                                    source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                    hflip: false,
+                                    vflip: false,
+                                });
+                                id
+                            });
+                        (id, pal, crate::modern_hd_overrides::NO_SOURCE_KEY)
                     }
                 };
 
@@ -1740,17 +1735,17 @@ mod tests {
         // so the off-VRAM path must decode it from LIVE VRAM to stay byte-exact with
         // the from-VRAM oracle — even when the source table reports a kind=1 tag and
         // the atlas holds a (stale) cell for that key. Here the atlas's kind=1 cell
-        // (index 7) must be IGNORED in favour of the live VRAM pattern.
+        // (index 7) must be IGNORED in favour of either an exact content-hash source
+        // hit or the live VRAM fallback.
         let mut stale = [0u8; 64];
         stale[0] = 7;
-        let cell = ModernIndexTile {
+        let stale_cell = ModernIndexTile {
             id: 0,
             indices: stale,
             source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
             hflip: false,
             vflip: false,
         };
-        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![cell], &[(1, 5, 3, 0)]);
         let table = |slot: usize| -> (u8, u16, u16) {
             if slot == 0x200 + 4 {
                 (1, 5, 3)
@@ -1772,14 +1767,54 @@ mod tests {
         frame.bg[0].tile_adr = 0x2000;
         frame.screen_enabled = [0x01, 0x00];
 
+        let h = content_hash32_slot(&vram, 0x200 + 4);
+        let live_indices = decode_snes_4bpp_tile_indices(&vram, 0x2000, 4);
+        let hash_cell = ModernIndexTile {
+            id: 1,
+            indices: live_indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        };
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
+            vec![stale_cell.clone(), hash_cell],
+            &[
+                (1, 5, 3, 0),
+                (CHR_KIND_BG_STREAM, (h >> 16) as u16, (h & 0xffff) as u16, 1),
+            ],
+        );
         let (modern, cells) = extract_modern_frame_from_sources(&frame, &table, &atlas);
-        assert_eq!(cells.len(), 1, "one cell decoded from live VRAM");
-        // Live decode: pixel (row 0, x=7) = 1; the stale atlas index 7 is NOT used.
-        assert_eq!(cells[0].indices[7], 1, "generic BG decoded from live VRAM");
+        assert_eq!(cells.len(), 1, "one exact content-hash cell emitted");
+        // Live decode: pixel (row 0, x=7) = 1; the stale kind=1 atlas index 7 is NOT used.
+        assert_eq!(cells[0].indices[7], 1, "generic BG used exact content hash");
         assert_eq!(cells[0].indices[0], 0);
         let tiles = &modern.bg_layers[0].index_tiles;
         assert_eq!(tiles.len(), 1);
         assert_eq!(tiles[0].cell_id, 0);
+        assert_eq!(
+            tiles[0].source_key,
+            crate::modern_source_atlas::modern_source_key(
+                CHR_KIND_BG_STREAM,
+                (h >> 16) as u16,
+                (h & 0xffff) as u16,
+            )
+        );
+
+        let stale_only_atlas =
+            ModernSourceAtlas::from_keyed_cells_for_test(vec![stale_cell], &[(1, 5, 3, 0)]);
+        let (modern_fallback, fallback_cells) =
+            extract_modern_frame_from_sources(&frame, &table, &stale_only_atlas);
+        assert_eq!(
+            fallback_cells.len(),
+            1,
+            "missing content hash falls back live"
+        );
+        assert_eq!(
+            fallback_cells[0].source_key,
+            crate::modern_hd_overrides::NO_SOURCE_KEY
+        );
+        assert_eq!(fallback_cells[0].indices[7], 1);
+        assert_eq!(modern_fallback.bg_layers[0].index_tiles[0].source_key, 0);
     }
 
     #[test]

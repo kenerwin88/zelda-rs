@@ -3,6 +3,7 @@ use std::fs;
 use std::panic::{self, AssertUnwindSafe};
 use std::process;
 
+use crate::index_source_keys::{IndexSourceKey, IndexSourceKeyMap};
 use crate::load_translated_replay_state;
 use renderer::modern_extract::decode_snes_4bpp_tile_indices;
 use serde::Serialize;
@@ -34,6 +35,8 @@ struct DungeonIndexTileCellManifest {
     id: u32,
     /// Packed keys: `(theme as u32) << 16 | (tilemap_entry & 0xC3FF) as u32`.
     keys: Vec<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_key: Option<IndexSourceKey>,
 }
 
 /// Manifest for the sprite palette-index tile atlas produced by `--dump-sprite-index-tiles`.
@@ -51,6 +54,8 @@ struct SpriteIndexTileAtlasManifest {
 struct SpriteIndexTileCellManifest {
     id: u32,
     keys: Vec<SpriteIndexKey>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_key: Option<IndexSourceKey>,
 }
 
 /// One lookup key for a sprite index cell: a `(context, tile)` pair where
@@ -103,6 +108,10 @@ pub(crate) fn run_dump_dungeon_index_tiles(_args: &[String]) {
     panic::set_hook(original_hook);
 
     let cell_count = cells.len();
+    let source_keys = IndexSourceKeyMap::load_from_developer_tilesets(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("developer_tilesets"),
+    )
+    .unwrap_or_default();
     let mut bin = Vec::with_capacity(cell_count * 64);
     for pattern in &cells {
         bin.extend_from_slice(pattern);
@@ -123,6 +132,7 @@ pub(crate) fn run_dump_dungeon_index_tiles(_args: &[String]) {
             .map(|(id, keys)| DungeonIndexTileCellManifest {
                 id: id as u32,
                 keys: keys.iter().copied().collect(),
+                source_key: source_keys.get(&cells[id]),
             })
             .collect(),
     };
@@ -249,6 +259,10 @@ pub(crate) fn run_dump_sprite_index_tiles(_args: &[String]) {
 
     let cell_count = cells.len();
     let context_count = seen_contexts.len();
+    let source_keys = IndexSourceKeyMap::load_from_developer_tilesets(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("developer_tilesets"),
+    )
+    .unwrap_or_default();
 
     let mut bin = Vec::with_capacity(cell_count * 64);
     for pattern in &cells {
@@ -273,6 +287,7 @@ pub(crate) fn run_dump_sprite_index_tiles(_args: &[String]) {
                     .iter()
                     .map(|&(context, tile)| SpriteIndexKey { context, tile })
                     .collect(),
+                source_key: source_keys.get(&cells[id]),
             })
             .collect(),
     };

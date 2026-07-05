@@ -7024,6 +7024,15 @@ mod tests {
         assert_eq!(prefinal_packets.sprites.len(), 0);
         assert_eq!(prefinal_packets.bg_len(), 1);
 
+        let prefinal_selection = mixed_variant_prefinal_bg_packets(&frame, &plan);
+        let render_prefinal_packets =
+            MixedVariantPrefinalPackets::from_overlay(&frame, &prefinal_selection, &plan);
+        assert_eq!(
+            render_prefinal_packets.bg_len(),
+            0,
+            "the headless render path only records selected BG packets that need prefinal color math"
+        );
+
         let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
             .render_rgba_with_live_index_base(
                 &frame,
@@ -7036,11 +7045,11 @@ mod tests {
                 "palette_main_spr",
             );
 
-        assert_eq!(stats.mixed_overlay_bg_effect_draws, 1);
+        assert_eq!(stats.mixed_overlay_bg_effect_draws, 0);
         assert_eq!(stats.mixed_overlay_bg_effect_candidates, 2);
         assert_eq!(stats.mixed_overlay_bg_effect_reject_complex_frame, 0);
         assert_eq!(stats.mixed_overlay_bg_effect_reject_cgram_mismatch, 0);
-        assert_eq!(stats.mixed_overlay_bg_effect_reject_overlap, 1);
+        assert_eq!(stats.mixed_overlay_bg_effect_reject_overlap, 0);
     }
 
     #[test]

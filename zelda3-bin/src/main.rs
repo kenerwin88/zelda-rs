@@ -19,6 +19,7 @@ mod gpu_readback;
 mod hd_authoring_commands;
 mod image_output;
 mod index_dump_commands;
+mod index_source_keys;
 mod input_script;
 mod overworld_dump_commands;
 mod play_commands;

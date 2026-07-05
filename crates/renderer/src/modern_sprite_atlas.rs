@@ -1,4 +1,4 @@
-use crate::modern_index_atlas::ModernIndexTile;
+use crate::modern_index_atlas::{source_key_from_manifest, ModernIndexTile, SourceKeyJson};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -63,7 +63,7 @@ pub fn load_modern_sprite_index_atlas(repo_root: &Path) -> Result<ModernSpriteIn
         cells.push(ModernIndexTile {
             id: cell_json.id,
             indices,
-            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            source_key: source_key_from_manifest(cell_json.source_key),
             hflip: false,
             vflip: false,
         });
@@ -94,6 +94,8 @@ struct Manifest {
 struct CellJson {
     id: u32,
     keys: Vec<KeyJson>,
+    #[serde(default)]
+    source_key: Option<SourceKeyJson>,
 }
 
 #[derive(Deserialize)]
@@ -142,7 +144,13 @@ mod tests {
             .cells
             .iter()
             .all(|c| c.indices.iter().all(|&i| i < 16)));
-        assert_eq!(sprite_index_cell(&atlas, 21, 64).expect("resolves").id, 0);
+        let cell = sprite_index_cell(&atlas, 21, 64).expect("resolves");
+        assert_eq!(cell.id, 0);
+        assert_ne!(
+            cell.source_key,
+            crate::modern_hd_overrides::NO_SOURCE_KEY,
+            "committed content-hash source refs should feed PNG/RGBA material lookup"
+        );
         assert!(
             sprite_index_cell(&atlas, 0xdead_beef, 64).is_none()
                 || sprite_index_cell(&atlas, 0xdead_beef, 64).unwrap().id != 0

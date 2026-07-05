@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::fs;
 use std::panic::{self, AssertUnwindSafe};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 
 use crate::image_output::write_rgba_frame_png;
+use crate::index_source_keys::{IndexSourceKey, IndexSourceKeyMap};
 use crate::{load_translated_replay_state, parse_u16_auto};
 use renderer::modern_extract::decode_snes_4bpp_tile_indices;
 use renderer::modern_palette::snes_cgram_to_rgba;
@@ -319,6 +320,8 @@ struct OverworldIndexTileAtlasManifest {
 struct OverworldIndexTileCellManifest {
     id: u32,
     graphics_keys: Vec<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_key: Option<IndexSourceKey>,
 }
 
 fn decode_tilemap_entry(entry: u16) -> DecodedTilemapEntry {
@@ -771,6 +774,10 @@ pub(crate) fn run_dump_unique_overworld_tiles(args: &[String]) {
         env!("CARGO_MANIFEST_DIR"),
         "/developer_tilesets/overworld_index_tiles.json"
     );
+    let source_keys = IndexSourceKeyMap::load_from_developer_tilesets(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("developer_tilesets"),
+    )
+    .unwrap_or_default();
     let cell_count = index_collector.tiles.len();
     let mut bin = Vec::with_capacity(cell_count * 64);
     for tile in &index_collector.tiles {
@@ -792,6 +799,7 @@ pub(crate) fn run_dump_unique_overworld_tiles(args: &[String]) {
             .map(|(id, tile)| OverworldIndexTileCellManifest {
                 id: id as u32,
                 graphics_keys: tile.graphics_keys.clone(),
+                source_key: source_keys.get(&tile.indices),
             })
             .collect(),
     };

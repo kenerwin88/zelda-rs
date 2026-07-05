@@ -1,4 +1,4 @@
-use crate::modern_index_atlas::ModernIndexTile;
+use crate::modern_index_atlas::{source_key_from_manifest, ModernIndexTile, SourceKeyJson};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -63,7 +63,7 @@ pub fn load_modern_dungeon_index_atlas(
         cells.push(ModernIndexTile {
             id: cell_json.id,
             indices,
-            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            source_key: source_key_from_manifest(cell_json.source_key),
             hflip: false,
             vflip: false,
         });
@@ -94,6 +94,8 @@ struct Manifest {
 struct CellJson {
     id: u32,
     keys: Vec<u32>,
+    #[serde(default)]
+    source_key: Option<SourceKeyJson>,
 }
 
 // ── Test helpers ─────────────────────────────────────────────────────────────
@@ -139,6 +141,13 @@ mod tests {
         assert_eq!(
             dungeon_index_cell(&atlas, 0, 0x01ec).expect("resolves").id,
             0
+        );
+        assert_ne!(
+            dungeon_index_cell(&atlas, 0, 0x01ec)
+                .expect("resolves")
+                .source_key,
+            crate::modern_hd_overrides::NO_SOURCE_KEY,
+            "committed content-hash source refs should feed PNG/RGBA material lookup"
         );
         assert_eq!(
             dungeon_index_cell(&atlas, 0, 0x01ec | 0x2000)

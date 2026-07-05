@@ -467,8 +467,8 @@ window proof, not a full route scan.
 `--frames`, and `--require-stable-draws`. The focused proof command above
 resumes from `opening-uncle-dismiss-and-move` frame `28610`, samples 17
 comparison frames over a 1000-frame tail at stride 60, and reports
-`mismatched_pixels=0`, `variant_draws=21038`,
-`stable_effect_draws=21038`, and `unkeyed_fallback_draws=133112`.
+`mismatched_pixels=0`, `effect_material_draws=68926`, and
+`unkeyed_fallback_draws=85224`.
 
 ### Task 9: Re-enable Provably Safe Mixed Fallback BG Effect Packets
 
@@ -970,10 +970,9 @@ as one opaque renderer category.
 the aggregate `unkeyed_fallback_draws` field for compatibility. Live summaries,
 modern-index summaries, and oracle/window wrappers surface both split counters.
 
-**Route result:** The opening tail remains `mismatched_pixels=0`. The remaining
-unkeyed fallback is overwhelmingly BG: `unkeyed_fallback_draws=133112`,
-`unkeyed_bg_fallback_draws=132912`, and
-`unkeyed_sprite_fallback_draws=200`. Current committed overworld/dungeon index
-atlas loaders still initialize BG index cells with `NO_SOURCE_KEY`, so the next
-high-value modernization lane is adding source identity/source refs to those BG
-index manifests or switching this path to source-keyed BG cells.
+**Route result:** The opening tail remains `mismatched_pixels=0`. Frame-end
+content-hash source lookup moved exact BG patterns onto PNG-backed effect
+materials: `effect_material_draws=68926`, `unkeyed_fallback_draws=85224`,
+`unkeyed_bg_fallback_draws=85024`, and `unkeyed_sprite_fallback_draws=200`.
+The next high-value modernization lane is expanding exact source coverage for
+the remaining BG live-index cells.

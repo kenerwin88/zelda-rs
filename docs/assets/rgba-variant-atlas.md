@@ -426,18 +426,18 @@ python3 scripts/gpu_render_compare_oracle_windows.py \
 ```
 
 Expected output includes `mismatched_pixels=0` and nonzero
-`stable_preview_draws` or `stable_effect_draws`. The current representative
-proof reports `stable_effect_draws=21038`,
-`live_index_draws=133112`,
-`live_index_bg_draws=132912`,
+`effect_material_draws`. The current representative proof reports
+`effect_material_draws=68926`,
+`live_index_draws=85224`,
+`live_index_bg_draws=85024`,
 `live_index_sprite_draws=200`,
 `gpu_prefinal_base_frames=<GPU base/prefinal frames>`,
-`unkeyed_fallback_draws=133112`,
-`unkeyed_bg_fallback_draws=132912`,
+`unkeyed_fallback_draws=85224`,
+`unkeyed_bg_fallback_draws=85024`,
 `unkeyed_bg12_fallback_draws=<BG1/BG2 subset>`,
 `unkeyed_bg3_fallback_draws=<BG3 subset>`,
 `unkeyed_sprite_fallback_draws=200`,
-`mixed_overlay_bg_effect_candidates=20674`,
+`mixed_overlay_bg_effect_candidates=68562`,
 `mixed_overlay_bg_effect_draws=19133`,
 `mixed_overlay_bg_effect_culled_invisible_main=1541`,
 `mixed_overlay_bg_effect_reject_complex_frame=0`,
