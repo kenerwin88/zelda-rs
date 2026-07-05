@@ -251,6 +251,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let _ = "ZELDA3_REQUIRE_FULL_GPU_PATH";
                 variant_live_stats.record_variant_stats(stats);
                 self.modern_assets.gpu_asset_mode();
+                report.full_gpu_failure_line;
                 eprintln!("gpu_path_unsupported_live reason={} count={}", reason, count);
                 eprintln!("modern asset renderer did not handle a GPU asset frame");
             }
@@ -259,7 +260,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 8)
+        self.assertEqual(len(errors), 9)
         self.assertTrue(
             all("live modern asset stats policy escaped renderer boundary" in error for error in errors)
         )

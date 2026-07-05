@@ -101,6 +101,7 @@ FORBIDDEN_LIVE_STATS_POLICY_CALLS = (
     "ZELDA3_REQUIRE_FULL_GPU_PATH",
     "variant_live_stats.record_variant_stats(",
     "modern_assets.gpu_asset_mode()",
+    ".full_gpu_failure_line",
     "gpu_path_unsupported_live reason={}",
     "modern asset renderer did not handle a GPU asset frame",
 )

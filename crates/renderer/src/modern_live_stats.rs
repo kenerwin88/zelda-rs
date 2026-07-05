@@ -74,7 +74,13 @@ pub struct ModernAssetLiveStats {
 }
 
 pub struct ModernAssetLiveFrameReport {
-    pub full_gpu_failure_line: Option<String>,
+    full_gpu_failure_line: Option<String>,
+}
+
+impl ModernAssetLiveFrameReport {
+    pub fn failure_line(&self) -> Option<&str> {
+        self.full_gpu_failure_line.as_deref()
+    }
 }
 
 impl ModernAssetLiveStats {
@@ -374,7 +380,7 @@ mod tests {
         let report = live.record_present_result(&result);
 
         assert_eq!(
-            report.full_gpu_failure_line.as_deref(),
+            report.failure_line(),
             Some("gpu_path_unsupported_live reason=prefinal-overlay-cpu count=2")
         );
     }

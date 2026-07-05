@@ -1443,7 +1443,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let report = self
             .variant_live_stats
             .record_present_result(&present_result);
-        if let Some(line) = report.full_gpu_failure_line {
+        if let Some(line) = report.failure_line() {
             eprintln!("{line}");
             process::exit(2);
         }
