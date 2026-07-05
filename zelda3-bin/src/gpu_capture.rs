@@ -170,6 +170,15 @@ pub(crate) fn render_gpu_capture_rgba(
     offscreen.render_gpu_frame(&capture.gpu_frame())
 }
 
+pub(crate) fn render_hd_capture_from_gpu_capture(
+    capture: &LiveGpuFrameCapture,
+    atlas: &renderer::modern_source_atlas::ModernSourceAtlas,
+) -> renderer::hd_authoring::HdCaptureFrame {
+    let gpu_frame = capture.gpu_frame();
+    let source_table = renderer::source_table_from_entries(capture.source_entries());
+    renderer::hd_authoring::render_hd_capture_from_sources(&gpu_frame, &source_table, atlas)
+}
+
 pub(crate) fn load_modern_index_compare_resources(
     run_config: renderer::ModernIndexCompareRunConfig,
     root: &Path,

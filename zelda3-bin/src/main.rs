@@ -28,7 +28,7 @@ use gpu_capture::{
     capture_gpu_frame_from_game, emit_modern_index_compare_output_lines,
     load_modern_atlas_compare_resources, load_modern_index_compare_resources,
     modern_compare_mode_defaults_from_env, render_gpu_capture_rgba,
-    render_modern_atlas_compare_report_from_capture,
+    render_hd_capture_from_gpu_capture, render_modern_atlas_compare_report_from_capture,
     render_modern_index_compare_output_from_capture,
 };
 use platform::{
@@ -10622,9 +10622,7 @@ fn run_dump_hd_capture(args: &[String]) {
             eprintln!("frame {completed}: Mode 7 not supported by the sources path; skipping");
             continue;
         }
-        let src_table = renderer::source_table_from_entries(gpu_capture.source_entries());
-        let capture =
-            renderer::hd_authoring::render_hd_capture_from_sources(&gpu_frame, &src_table, &atlas);
+        let capture = render_hd_capture_from_gpu_capture(&gpu_capture, &atlas);
         let png_path = format!("{OUT_DIR}/frame_{completed}.png");
         if let Err(e) = write_rgba_frame_png(Path::new(&png_path), &capture.rgba, 256, 224) {
             eprintln!("failed to write {png_path}: {e}");
