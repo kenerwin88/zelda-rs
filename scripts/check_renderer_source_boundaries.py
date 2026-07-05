@@ -18,6 +18,7 @@ MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
 ASSET_PALETTE_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "asset_palette_commands.rs"
 ASSET_SOURCE_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "asset_source_dump_commands.rs"
 SHEET_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "sheet_dump_commands.rs"
+INDEX_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "index_dump_commands.rs"
 GPU_COMPARE_RS = REPO / "zelda3-bin" / "src" / "gpu_compare.rs"
 GPU_CAPTURE_RS = REPO / "zelda3-bin" / "src" / "gpu_capture.rs"
 HD_AUTHORING_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "hd_authoring_commands.rs"
@@ -29,6 +30,7 @@ BOUNDARY_SOURCE_FILES = (
     ASSET_PALETTE_COMMANDS_RS,
     ASSET_SOURCE_DUMP_COMMANDS_RS,
     SHEET_DUMP_COMMANDS_RS,
+    INDEX_DUMP_COMMANDS_RS,
     REPO / "zelda3-bin" / "src" / "classic_frame_renderer.rs",
     GPU_COMPARE_RS,
     REPO / "zelda3-bin" / "src" / "gpu_capture.rs",
@@ -372,6 +374,19 @@ FORBIDDEN_MAIN_SHEET_DUMP_COMMAND_OWNERSHIP = (
     "struct DungeonSheetPngManifest",
     "struct DungeonSheetPngCell",
     "fn run_dump_dungeon_sheet_png",
+)
+
+FORBIDDEN_MAIN_INDEX_DUMP_COMMAND_OWNERSHIP = (
+    "struct DungeonIndexTileAtlasManifest",
+    "struct DungeonIndexTileCellManifest",
+    "struct SpriteIndexTileAtlasManifest",
+    "struct SpriteIndexTileCellManifest",
+    "struct SpriteIndexKey",
+    "fn run_dump_dungeon_index_tiles",
+    "fn run_dump_sprite_index_tiles",
+    "fn dungeon_room_index_probe",
+    "const DUNGEON_BG_CHR_BASE",
+    "const DUNGEON_BG1_TILEMAP_WORDS",
 )
 
 FORBIDDEN_RAW_RENDER_HASH_CALLS = (
@@ -841,6 +856,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "sheet dump command ownership escaped sheet_dump_commands boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_INDEX_DUMP_COMMAND_OWNERSHIP:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "index dump command ownership escaped index_dump_commands boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

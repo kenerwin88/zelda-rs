@@ -1007,6 +1007,31 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_index_dump_command_ownership_in_main(self):
+        module = load_module()
+        source = """
+            struct DungeonIndexTileAtlasManifest {}
+            struct DungeonIndexTileCellManifest {}
+            struct SpriteIndexTileAtlasManifest {}
+            struct SpriteIndexTileCellManifest {}
+            struct SpriteIndexKey {}
+            fn run_dump_dungeon_index_tiles() {}
+            fn run_dump_sprite_index_tiles() {}
+            fn dungeon_room_index_probe() {}
+            const DUNGEON_BG_CHR_BASE: usize = 0x2000;
+            const DUNGEON_BG1_TILEMAP_WORDS: usize = 0x1000;
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 10)
+        self.assertTrue(
+            all(
+                "index dump command ownership escaped index_dump_commands boundary" in error
+                for error in errors
+            )
+        )
+
     def test_rejects_gpu_frame_assembly_calls(self):
         module = load_module()
         source = source_with_required_calls(
