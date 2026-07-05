@@ -248,6 +248,7 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "struct CpuPlayRenderer",
     "fn play_renderer_from_env",
     "draw_play_ppu_frame(",
+    "gpu_frame_from_ppu(",
     "play_renderer::from_env(",
     "renderer.configure_frontend(",
     "renderer.frontend().",

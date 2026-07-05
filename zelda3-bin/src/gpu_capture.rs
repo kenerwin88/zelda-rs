@@ -36,6 +36,26 @@ impl LiveGpuFrameCapture {
         gpu_frame_capture_from_ppu(&self.ppu, &self.cgram, self.raw_scanlines.as_ref())
     }
 
+    pub fn gpu_frame(&self) -> GpuFrame<'_> {
+        GpuFrame::from_capture_input(self.capture_input())
+    }
+
+    pub fn ppu(&self) -> &snes::ppu::PpuState {
+        &self.ppu
+    }
+
+    pub fn cgram(&self) -> &[u16] {
+        &self.cgram
+    }
+
+    pub fn raw_scanlines(&self) -> &RawScanlineFrame {
+        self.raw_scanlines.as_ref()
+    }
+
+    pub fn source_entries(&self) -> &[zelda3::LogicalChrSrc] {
+        &self.source_entries
+    }
+
     pub fn modern_asset_present_input<'a>(
         &'a self,
         resources: &'a renderer::ModernAssetFrameResources,
@@ -112,19 +132,15 @@ pub(crate) fn new_gpu_play_renderer() -> Box<dyn crate::play_renderer::PlayRende
     Box::new(GpuPlayRenderer::new())
 }
 
-/// Borrow `PpuState` fields into a [`GpuFrame`] for the tile renderer.
-///
-/// `cgram` must be passed explicitly so callers can supply a pre-render snapshot:
-/// ALttP uses HDMA to modify CGRAM per-scanline during rendering, so the post-render
-/// `ppu.cgram` may differ from what was active for most of the frame.
-///
-/// `raw_scanlines` captures per-scanline window boundaries from HDMA pre-simulation.
-pub fn gpu_frame_from_ppu<'a>(
-    ppu: &'a snes::ppu::PpuState,
-    cgram: &'a [u16],
-    raw_scanlines: &'a RawScanlineFrame,
-) -> GpuFrame<'a> {
-    GpuFrame::from_capture_input(gpu_frame_capture_from_ppu(ppu, cgram, raw_scanlines))
+pub(crate) fn capture_gpu_frame_from_game(game: &mut ZeldaState) -> LiveGpuFrameCapture {
+    LiveGpuFrameCapture::from_game(game)
+}
+
+pub(crate) fn render_gpu_capture_rgba(
+    capture: &LiveGpuFrameCapture,
+    offscreen: &mut renderer::OffscreenRenderer,
+) -> Vec<u8> {
+    offscreen.render_gpu_frame(&capture.gpu_frame())
 }
 
 fn gpu_frame_capture_from_ppu<'a>(
