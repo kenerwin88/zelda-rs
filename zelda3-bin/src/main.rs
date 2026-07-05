@@ -1431,12 +1431,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
     ) {
         let capture = LiveGpuFrameCapture::from_game(game);
         let report = frontend.present_modern_asset_live_frame_from_entries(
-            capture.modern_asset_present_input(
-                game.vram_chr_source().as_slice(),
-                &self.modern_assets,
-                &mut self.variant_live_stats,
-                game.ram[PLAYER_IS_INDOORS],
-            ),
+            capture.modern_asset_present_input(&self.modern_assets, &mut self.variant_live_stats),
         );
         if let Some(line) = report.failure_line() {
             eprintln!("{line}");

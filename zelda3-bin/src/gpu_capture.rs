@@ -1,10 +1,14 @@
 use renderer::{GpuFrame, RawScanlineFrame};
 use zelda3::ZeldaState;
 
+const PLAYER_IS_INDOORS: usize = 0x001b;
+
 pub struct LiveGpuFrameCapture {
     ppu: snes::ppu::PpuState,
     cgram: Vec<u16>,
     raw_scanlines: Box<RawScanlineFrame>,
+    source_entries: Vec<zelda3::LogicalChrSrc>,
+    player_indoors: u8,
 }
 
 impl LiveGpuFrameCapture {
@@ -12,10 +16,14 @@ impl LiveGpuFrameCapture {
         let cgram = game.cgram_after_first_hdma_line();
         let raw_scanlines = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
+        let source_entries = game.vram_chr_source().as_slice().to_vec();
+        let player_indoors = game.ram[PLAYER_IS_INDOORS];
         Self {
             ppu,
             cgram,
             raw_scanlines,
+            source_entries,
+            player_indoors,
         }
     }
 
@@ -23,22 +31,17 @@ impl LiveGpuFrameCapture {
         gpu_frame_capture_from_ppu(&self.ppu, &self.cgram, self.raw_scanlines.as_ref())
     }
 
-    pub fn modern_asset_present_input<'a, T>(
+    pub fn modern_asset_present_input<'a>(
         &'a self,
-        source_entries: &'a [T],
         resources: &'a renderer::ModernAssetFrameResources,
         stats: &'a mut renderer::ModernAssetLiveStats,
-        player_indoors: u8,
-    ) -> renderer::ModernAssetFrameLivePresentInput<'a, 'a, T>
-    where
-        T: Copy + Into<(u8, u16, u16)>,
-    {
+    ) -> renderer::ModernAssetFrameLivePresentInput<'a, 'a, zelda3::LogicalChrSrc> {
         renderer::ModernAssetFrameLivePresentInput {
             frame: self.capture_input(),
-            source_entries,
+            source_entries: &self.source_entries,
             resources,
             stats,
-            player_indoors,
+            player_indoors: self.player_indoors,
         }
     }
 }
