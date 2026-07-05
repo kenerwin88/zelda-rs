@@ -3328,6 +3328,48 @@ pub fn modern_gpu_path_fallback_reason(
 
     let stats = stats?;
     let checks = [
+        ("missing-art", stats.missing_art_draws),
+        ("unsupported-material", stats.unsupported_material_draws),
+        (
+            "dynamic-material-instance-source",
+            stats.dynamic_material_fallback_instance_source_draws,
+        ),
+        (
+            "dynamic-material-brightness",
+            stats.dynamic_material_fallback_brightness_draws,
+        ),
+        (
+            "dynamic-material-policy",
+            stats.dynamic_material_fallback_policy_draws,
+        ),
+        (
+            "dynamic-material-missing-effect",
+            stats.dynamic_material_fallback_missing_effect_draws,
+        ),
+        (
+            "dynamic-material-unsupported",
+            stats.dynamic_material_fallback_unsupported_draws,
+        ),
+        (
+            "dynamic-material-fallback",
+            stats.dynamic_material_fallback_draws,
+        ),
+        ("unkeyed-bg12-fallback", stats.unkeyed_bg12_fallback_draws),
+        ("unkeyed-bg3-fallback", stats.unkeyed_bg3_fallback_draws),
+        (
+            "unkeyed-sprite-fallback",
+            stats.unkeyed_sprite_fallback_draws,
+        ),
+        ("unkeyed-bg-fallback", stats.unkeyed_bg_fallback_draws),
+        ("unkeyed-fallback", stats.unkeyed_fallback_draws),
+        ("live-index-bg12", stats.live_index_bg12_draws),
+        ("live-index-bg3", stats.live_index_bg3_draws),
+        ("live-index-sprite", stats.live_index_sprite_draws),
+        ("live-index-bg", stats.live_index_bg_draws),
+        ("live-index", stats.live_index_draws),
+        ("missing-variant", stats.missing_variant_draws),
+        ("dynamic-palette", stats.dynamic_palette_draws),
+        ("fallback-draw", stats.fallback_draws),
         ("prefinal-overlay-cpu", stats.cpu_prefinal_overlay_frames),
         (
             "prefinal-composite-cpu",
@@ -10817,6 +10859,39 @@ mod tests {
             Some(ModernGpuPathFallback {
                 reason: "prefinal-overlay-cpu",
                 count: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn modern_gpu_path_fallback_reason_reports_source_art_gaps_before_cpu_blockers() {
+        let stats = VariantAtlasRenderStats {
+            missing_art_draws: 3,
+            unsupported_material_draws: 2,
+            live_index_draws: 1,
+            cpu_prefinal_overlay_frames: 4,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            modern_gpu_path_fallback_reason("variant-gpu", Some(&stats)),
+            Some(ModernGpuPathFallback {
+                reason: "missing-art",
+                count: 3,
+            })
+        );
+
+        let stats = VariantAtlasRenderStats {
+            live_index_sprite_draws: 5,
+            live_index_draws: 5,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            modern_gpu_path_fallback_reason("variant-gpu", Some(&stats)),
+            Some(ModernGpuPathFallback {
+                reason: "live-index-sprite",
+                count: 5,
             })
         );
     }

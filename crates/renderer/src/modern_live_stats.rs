@@ -389,6 +389,27 @@ mod tests {
         assert_eq!(opt_out.full_gpu_violation(&stats), None);
     }
 
+    #[test]
+    fn full_gpu_live_guard_reports_source_art_violation() {
+        let stats = VariantAtlasRenderStats {
+            unsupported_material_draws: 2,
+            live_index_draws: 3,
+            ..Default::default()
+        };
+        let strict = ModernAssetLiveStats {
+            require_full_gpu_path: true,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            strict.full_gpu_violation(&stats),
+            Some(ModernGpuPathFallback {
+                reason: "unsupported-material",
+                count: 2,
+            })
+        );
+    }
+
     fn live_resources(gpu_asset_mode: bool) -> crate::ModernAssetFrameResources {
         crate::ModernAssetFrameResources {
             source_atlas: None,

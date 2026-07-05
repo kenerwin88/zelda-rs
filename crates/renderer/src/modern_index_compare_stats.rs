@@ -1049,6 +1049,36 @@ mod tests {
     }
 
     #[test]
+    fn report_failure_line_uses_source_art_failure_when_parity_passes() {
+        let mut stats = ModernIndexCompareStats::default();
+        let variant = VariantAtlasRenderStats {
+            live_index_bg12_draws: 2,
+            live_index_draws: 2,
+            ..Default::default()
+        };
+        let report = stats.record_frame(ModernIndexCompareFrameRecord {
+            frame: 43,
+            mode_label: "ow",
+            ppu_mode: 1,
+            via: "variant-gpu",
+            variant_stats: Some(&variant),
+            comparison: ModernIndexCompareFrameDiff {
+                mismatch: 0,
+                diff: None,
+            },
+            run_config: run_config_with_requirements(true, true),
+            include_diff_in_frame_line: false,
+        });
+
+        assert_eq!(
+            report.failure_line(),
+            Some(
+                "gpu_path_unsupported frame=43 mode=ow ppumode=1 via=variant-gpu reason=live-index-bg12 count=2 mismatch_px=0"
+            )
+        );
+    }
+
+    #[test]
     fn record_frame_can_include_diff_in_compare_line() {
         let mut stats = ModernIndexCompareStats::default();
         let comparison = ModernIndexCompareFrameDiff {
@@ -1391,14 +1421,14 @@ mod tests {
     fn reports_full_gpu_fallback_reason() {
         let stats = ModernIndexCompareStats::default();
         let variant = VariantAtlasRenderStats {
-            cpu_prefinal_composite_frames: 1,
+            dynamic_material_fallback_missing_effect_draws: 1,
             ..Default::default()
         };
 
         assert_eq!(
             stats.full_gpu_fallback("variant-gpu", Some(&variant)),
             Some(ModernGpuPathFallback {
-                reason: "prefinal-composite-cpu",
+                reason: "dynamic-material-missing-effect",
                 count: 1,
             })
         );
