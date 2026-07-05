@@ -24,7 +24,10 @@ use std::process;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use gpu_capture::{capture_gpu_frame_from_game, render_gpu_capture_rgba};
+use gpu_capture::{
+    capture_gpu_frame_from_game, render_gpu_capture_rgba,
+    render_modern_index_compare_output_from_capture,
+};
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
     HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
@@ -5222,24 +5225,18 @@ fn run_replay_save(args: &[String]) {
         if modern_index_compare.should_compare_frame(frames) {
             {
                 let gpu_capture = capture_gpu_frame_from_game(&mut game);
-                let gpu_frame = gpu_capture.gpu_frame();
                 let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
                 let classic_rgba = render_gpu_capture_rgba(&gpu_capture, offscreen);
-                let output_lines = modern_index_compare_stats
-                    .render_compare_frame_output_from_entries(
-                        renderer::ModernIndexCompareFrameOutputInput {
-                            frame: frames,
-                            main_module: game.ram[TRACE_MAIN_MODULE_INDEX],
-                            player_indoors: game.ram[PLAYER_IS_INDOORS],
-                            gpu_frame: &gpu_frame,
-                            source_entries: gpu_capture.source_entries(),
-                            resources: &modern_index_compare_resources,
-                            classic_rgba: &classic_rgba,
-                            allow_source_cpu_fallback: true,
-                            run_config: modern_index_compare,
-                            include_diff_in_frame_line: false,
-                        },
-                    );
+                let output_lines = render_modern_index_compare_output_from_capture(
+                    &mut modern_index_compare_stats,
+                    &gpu_capture,
+                    &modern_index_compare_resources,
+                    &classic_rgba,
+                    frames,
+                    true,
+                    modern_index_compare,
+                    false,
+                );
                 emit_modern_index_compare_output_lines(&output_lines);
                 if output_lines.has_failure {
                     process::exit(1);
@@ -11758,22 +11755,17 @@ fn run_play_gpu_render_compare(args: &[String]) {
         }
         if should_compare_modern_index {
             let gpu_capture = capture_gpu_frame_from_game(&mut game);
-            let gpu_frame = gpu_capture.gpu_frame();
             let classic_rgba = render_gpu_capture_rgba(&gpu_capture, &mut offscreen);
 
-            let output_lines = modern_index_compare_stats.render_compare_frame_output_from_entries(
-                renderer::ModernIndexCompareFrameOutputInput {
-                    frame: completed_frame,
-                    main_module: game.ram[TRACE_MAIN_MODULE_INDEX],
-                    player_indoors: game.ram[PLAYER_IS_INDOORS],
-                    gpu_frame: &gpu_frame,
-                    source_entries: gpu_capture.source_entries(),
-                    resources: &modern_index_compare_resources,
-                    classic_rgba: &classic_rgba,
-                    allow_source_cpu_fallback: false,
-                    run_config: modern_index_compare,
-                    include_diff_in_frame_line: true,
-                },
+            let output_lines = render_modern_index_compare_output_from_capture(
+                &mut modern_index_compare_stats,
+                &gpu_capture,
+                &modern_index_compare_resources,
+                &classic_rgba,
+                completed_frame,
+                false,
+                modern_index_compare,
+                true,
             );
             emit_modern_index_compare_output_lines(&output_lines);
             if output_lines.has_failure {

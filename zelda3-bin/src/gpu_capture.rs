@@ -7,12 +7,14 @@ use snes::ppu::PpuRenderFlags;
 use zelda3::ZeldaState;
 
 const PLAYER_IS_INDOORS: usize = 0x001b;
+const MAIN_MODULE_INDEX: usize = 0x10;
 
 pub struct LiveGpuFrameCapture {
     ppu: snes::ppu::PpuState,
     cgram: Vec<u16>,
     raw_scanlines: Box<RawScanlineFrame>,
     source_entries: Vec<zelda3::LogicalChrSrc>,
+    main_module: u8,
     player_indoors: u8,
 }
 
@@ -22,12 +24,14 @@ impl LiveGpuFrameCapture {
         let raw_scanlines = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
         let source_entries = game.vram_chr_source().as_slice().to_vec();
+        let main_module = game.ram[MAIN_MODULE_INDEX];
         let player_indoors = game.ram[PLAYER_IS_INDOORS];
         Self {
             ppu,
             cgram,
             raw_scanlines,
             source_entries,
+            main_module,
             player_indoors,
         }
     }
@@ -141,6 +145,31 @@ pub(crate) fn render_gpu_capture_rgba(
     offscreen: &mut renderer::OffscreenRenderer,
 ) -> Vec<u8> {
     offscreen.render_gpu_frame(&capture.gpu_frame())
+}
+
+pub(crate) fn render_modern_index_compare_output_from_capture(
+    stats: &mut renderer::ModernIndexCompareStats,
+    capture: &LiveGpuFrameCapture,
+    resources: &renderer::ModernIndexCompareResources,
+    classic_rgba: &[u8],
+    frame: u32,
+    allow_source_cpu_fallback: bool,
+    run_config: renderer::ModernIndexCompareRunConfig,
+    include_diff_in_frame_line: bool,
+) -> renderer::ModernIndexCompareOutputLines {
+    let gpu_frame = capture.gpu_frame();
+    stats.render_compare_frame_output_from_entries(renderer::ModernIndexCompareFrameOutputInput {
+        frame,
+        main_module: capture.main_module,
+        player_indoors: capture.player_indoors,
+        gpu_frame: &gpu_frame,
+        source_entries: capture.source_entries(),
+        resources,
+        classic_rgba,
+        allow_source_cpu_fallback,
+        run_config,
+        include_diff_in_frame_line,
+    })
 }
 
 fn gpu_frame_capture_from_ppu<'a>(
