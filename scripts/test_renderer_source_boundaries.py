@@ -31,6 +31,7 @@ def source_with_required_calls(body: str) -> str:
         let frame_record = renderer::ModernIndexCompareFrameRenderInput {};
         let compare_resources = renderer::ModernIndexCompareResources::load_from_env();
         let dump_paths = renderer::ModernIndexCompareDumpPaths {};
+        let maybe_summary = modern_index_compare_stats.summary_line_if_enabled(true);
         let atlas_compare_resources = renderer::ModernAtlasCompareResources::load();
         let atlas_frame_record = renderer::ModernAtlasCompareFrameInput {};
         let source_table = renderer::MappedSourceTableView::from_entries(&[(0, 0, 0)]);
@@ -293,13 +294,15 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 modern_index_compare_stats.frame_line(renderer::ModernIndexCompareFrameLine {});
                 modern_index_compare_stats.progress_line(frames);
                 modern_index_compare_stats.record_frame(frame_record);
+                modern_index_compare_stats.summary_enabled();
+                modern_index_compare_stats.summary_line();
             }
             """
         )
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 6)
+        self.assertEqual(len(errors), 8)
         self.assertTrue(
             all("modern index frame report policy escaped renderer boundary" in error for error in errors)
         )

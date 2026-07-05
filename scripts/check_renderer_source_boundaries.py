@@ -30,6 +30,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernIndexCompareFrameRenderInput",
     "ModernIndexCompareResources::load_from_env",
     "ModernIndexCompareDumpPaths",
+    "summary_line_if_enabled",
     "ModernAtlasCompareResources",
     "ModernAtlasCompareFrameInput",
     "MappedSourceTableView",
@@ -118,6 +119,8 @@ FORBIDDEN_MODERN_INDEX_FRAME_REPORT_CALLS = (
     "modern_index_compare_stats.frame_line(",
     "modern_index_compare_stats.progress_line(",
     "modern_index_compare_stats.record_frame(",
+    "modern_index_compare_stats.summary_enabled(",
+    "modern_index_compare_stats.summary_line(",
 )
 
 FORBIDDEN_MODERN_INDEX_DUMP_POLICY_CALLS = (

@@ -141,15 +141,11 @@ impl ModernIndexCompareStats {
         }
     }
 
-    pub fn summary_enabled(&self) -> bool {
-        self.summary_enabled
-    }
-
-    pub fn should_print_frame(&self, mismatch: u32) -> bool {
+    fn should_print_frame(&self, mismatch: u32) -> bool {
         !self.summary_enabled || mismatch != 0
     }
 
-    pub fn record(
+    fn record(
         &mut self,
         via: &str,
         mismatch: u32,
@@ -347,7 +343,7 @@ impl ModernIndexCompareStats {
         out
     }
 
-    pub fn summary_line(&self) -> String {
+    fn summary_line(&self) -> String {
         let mut out = format!(
             "modern_index_compare_summary compare_count={} bad_count={} bad_pixels={} gpu_count={} mode7_gpu_count={} cpu_count={}",
             self.compare_count,
@@ -359,6 +355,10 @@ impl ModernIndexCompareStats {
         );
         self.variant_totals.append_fields(&mut out);
         out
+    }
+
+    pub fn summary_line_if_enabled(&self, compare_enabled: bool) -> Option<String> {
+        (compare_enabled && self.summary_enabled).then(|| self.summary_line())
     }
 }
 
@@ -494,6 +494,27 @@ mod tests {
         assert!(summary.contains("direct_gpu_fallback_frames=1"));
         assert!(summary.contains("cpu_prefinal_composite_frames=1"));
         assert!(summary.contains("mixed_overlay_bg_effect_reject_overlap=4"));
+    }
+
+    #[test]
+    fn summary_line_if_enabled_owns_print_gating() {
+        let mut stats = ModernIndexCompareStats {
+            summary_enabled: true,
+            ..Default::default()
+        };
+        stats.record("gpu", 0, None);
+
+        assert!(stats.summary_line_if_enabled(false).is_none());
+        let summary = stats
+            .summary_line_if_enabled(true)
+            .expect("enabled summary returns a line");
+        assert!(summary.starts_with(
+            "modern_index_compare_summary compare_count=1 bad_count=0 bad_pixels=0 gpu_count=1 mode7_gpu_count=0 cpu_count=0"
+        ));
+        assert!(summary.contains("direct_gpu_fallback_frames=0"));
+
+        let disabled = ModernIndexCompareStats::default();
+        assert!(disabled.summary_line_if_enabled(true).is_none());
     }
 
     #[test]

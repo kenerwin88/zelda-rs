@@ -5466,8 +5466,10 @@ fn run_replay_save(args: &[String]) {
         }
     }
 
-    if modern_index_compare != 0 && modern_index_compare_stats.summary_enabled() {
-        println!("{}", modern_index_compare_stats.summary_line());
+    if let Some(line) =
+        modern_index_compare_stats.summary_line_if_enabled(modern_index_compare != 0)
+    {
+        println!("{line}");
     }
     if ppu_mode_summary {
         println!(
@@ -12200,8 +12202,10 @@ fn run_play_gpu_render_compare(args: &[String]) {
     println!(
         "play-gpu-render-compare completed compared={compared} start_frame={start_frame} last_frame={last_frame} last_hash=0x{last_hash:08x} mismatched_pixels=0"
     );
-    if modern_index_compare != 0 && modern_index_compare_stats.summary_enabled() {
-        println!("{}", modern_index_compare_stats.summary_line());
+    if let Some(line) =
+        modern_index_compare_stats.summary_line_if_enabled(modern_index_compare != 0)
+    {
+        println!("{line}");
     }
 }
 
