@@ -3549,10 +3549,12 @@ fn run_replay_save(args: &[String]) {
             let frame = render_hash_frame
                 .as_mut()
                 .expect("render compare frame allocated");
-            let gpu_readback = gpu_readback.required();
-            let Some(line) =
-                gpu_render_compare.compare_current_frame(&mut game, gpu_readback, frame, frames)
-            else {
+            let Some(line) = gpu_render_compare.compare_current_frame_with_optional_readback(
+                &mut game,
+                &mut gpu_readback,
+                frame,
+                frames,
+            ) else {
                 process::exit(1);
             };
             if let Some(line) = line {
@@ -3792,7 +3794,6 @@ fn run_replay_save(args: &[String]) {
                     cgram_val
                 );
             }
-            let gpu_readback = gpu_readback.required();
             let rgba = gpu_readback.render_bgra_frame_to_rgba(frame);
             if frames == 1000 {
                 let post_vram_hash: u32 = {
@@ -5132,13 +5133,13 @@ fn run_replay_save(args: &[String]) {
         }
         if modern_index_compare.should_compare_frame(frames) {
             {
-                let gpu_readback = gpu_readback.required();
-                let output_lines = modern_index_compare.render_output_from_game(
-                    &mut game,
-                    gpu_readback,
-                    frames,
-                    false,
-                );
+                let output_lines = modern_index_compare
+                    .render_output_from_game_with_optional_readback(
+                        &mut game,
+                        &mut gpu_readback,
+                        frames,
+                        false,
+                    );
                 emit_modern_index_compare_output_lines(&output_lines);
                 if output_lines.has_failure {
                     process::exit(1);
@@ -5267,7 +5268,6 @@ fn run_replay_save(args: &[String]) {
             width as usize * 4,
             PpuRenderFlags::empty(),
         );
-        let gpu_readback = gpu_readback.required();
         let rgba = gpu_readback.render_bgra_frame_to_rgba(&frame);
         if let Err(e) = write_rgba_frame_png(path, &rgba, width, height) {
             eprintln!("failed to write {}: {e}", path.display());

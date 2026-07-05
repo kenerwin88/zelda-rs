@@ -299,6 +299,16 @@ impl GpuRenderCompareRun {
         }))
     }
 
+    pub(crate) fn compare_current_frame_with_optional_readback(
+        &mut self,
+        game: &mut ZeldaState,
+        readback: &mut OptionalGpuReadbackRenderer,
+        frame_bgra: &mut [u8],
+        frame: u32,
+    ) -> Option<Option<String>> {
+        self.compare_current_frame(game, readback.required(), frame_bgra, frame)
+    }
+
     pub(crate) fn summary_line_if_quiet(&self) -> Option<String> {
         (self.enabled() && self.quiet).then(|| {
             format!(
@@ -397,6 +407,16 @@ impl ModernIndexCompareRun {
         let capture = capture_gpu_frame_from_game(game);
         let classic_rgba = readback.render_gpu_capture_rgba(&capture);
         self.render_output_from_capture(&capture, &classic_rgba, frame, include_diff_in_frame_line)
+    }
+
+    pub(crate) fn render_output_from_game_with_optional_readback(
+        &mut self,
+        game: &mut ZeldaState,
+        readback: &mut OptionalGpuReadbackRenderer,
+        frame: u32,
+        include_diff_in_frame_line: bool,
+    ) -> renderer::ModernIndexCompareOutputLines {
+        self.render_output_from_game(game, readback.required(), frame, include_diff_in_frame_line)
     }
 
     pub(crate) fn summary_line_if_enabled(&self) -> Option<String> {
@@ -524,6 +544,14 @@ impl OptionalGpuReadbackRenderer {
         self.renderer
             .as_mut()
             .expect("GPU readback renderer allocated")
+    }
+
+    pub(crate) fn render_gpu_capture_rgba(&mut self, capture: &LiveGpuFrameCapture) -> Vec<u8> {
+        self.required().render_gpu_capture_rgba(capture)
+    }
+
+    pub(crate) fn render_bgra_frame_to_rgba(&mut self, frame: &[u8]) -> Vec<u8> {
+        self.required().render_bgra_frame_to_rgba(frame)
     }
 }
 
