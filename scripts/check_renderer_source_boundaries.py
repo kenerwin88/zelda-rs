@@ -21,6 +21,7 @@ DEVELOPER_ROOM_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "developer_room_comma
 SHEET_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "sheet_dump_commands.rs"
 INDEX_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "index_dump_commands.rs"
 OVERWORLD_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "overworld_dump_commands.rs"
+ROUTE_COVERAGE_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "route_coverage_commands.rs"
 GPU_COMPARE_RS = REPO / "zelda3-bin" / "src" / "gpu_compare.rs"
 GPU_CAPTURE_RS = REPO / "zelda3-bin" / "src" / "gpu_capture.rs"
 HD_AUTHORING_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "hd_authoring_commands.rs"
@@ -35,6 +36,7 @@ BOUNDARY_SOURCE_FILES = (
     SHEET_DUMP_COMMANDS_RS,
     INDEX_DUMP_COMMANDS_RS,
     OVERWORLD_DUMP_COMMANDS_RS,
+    ROUTE_COVERAGE_COMMANDS_RS,
     REPO / "zelda3-bin" / "src" / "classic_frame_renderer.rs",
     GPU_COMPARE_RS,
     REPO / "zelda3-bin" / "src" / "gpu_capture.rs",
@@ -345,6 +347,12 @@ FORBIDDEN_MAIN_FRAME_DUMP_COMMAND_OWNERSHIP = (
     "fn run_dump_overworld_screen",
     "fn run_scan_replay_checkpoints",
     "fn run_dump_replay_checkpoint_ppu",
+)
+
+FORBIDDEN_MAIN_ROUTE_COVERAGE_OWNERSHIP = (
+    "fn route_coverage_frame_from_game",
+    "fn write_route_coverage_log_or_exit",
+    "fn run_coverage_probe",
 )
 
 FORBIDDEN_MAIN_IMAGE_OUTPUT_OWNERSHIP = (
@@ -909,6 +917,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "frame dump command ownership escaped frame_dump_commands boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_ROUTE_COVERAGE_OWNERSHIP:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "route coverage ownership escaped route_coverage_commands boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

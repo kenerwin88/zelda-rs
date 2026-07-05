@@ -927,6 +927,25 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_route_coverage_ownership_in_main(self):
+        module = load_module()
+        source = """
+            fn route_coverage_frame_from_game() {}
+            fn write_route_coverage_log_or_exit() {}
+            fn run_coverage_probe() {}
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 3)
+        self.assertTrue(
+            all(
+                "route coverage ownership escaped route_coverage_commands boundary"
+                in error
+                for error in errors
+            )
+        )
+
     def test_rejects_image_output_ownership_in_main(self):
         module = load_module()
         source = """
