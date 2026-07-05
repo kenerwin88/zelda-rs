@@ -112,6 +112,10 @@ pub(crate) struct GpuReadbackRenderer {
     offscreen: renderer::OffscreenRenderer,
 }
 
+pub(crate) struct GpuRgbaReadbackFrame {
+    rgba: Vec<u8>,
+}
+
 pub(crate) struct OptionalGpuReadbackRenderer {
     renderer: Option<GpuReadbackRenderer>,
 }
@@ -246,8 +250,8 @@ impl ModernAtlasCompareRun {
         frame: u32,
     ) -> Option<renderer::ModernAtlasCompareFrameReport> {
         let capture = capture_gpu_frame_from_game(game);
-        let classic_rgba = readback.render_gpu_capture_rgba(&capture);
-        self.render_report_from_capture(&capture, &classic_rgba, frame)
+        let classic_rgba = readback.render_live_gpu_capture_rgba(&capture);
+        self.render_report_from_capture(&capture, classic_rgba.as_slice(), frame)
     }
 
     fn render_report_from_capture(
@@ -405,8 +409,13 @@ impl ModernIndexCompareRun {
         include_diff_in_frame_line: bool,
     ) -> renderer::ModernIndexCompareOutputLines {
         let capture = capture_gpu_frame_from_game(game);
-        let classic_rgba = readback.render_gpu_capture_rgba(&capture);
-        self.render_output_from_capture(&capture, &classic_rgba, frame, include_diff_in_frame_line)
+        let classic_rgba = readback.render_live_gpu_capture_rgba(&capture);
+        self.render_output_from_capture(
+            &capture,
+            classic_rgba.as_slice(),
+            frame,
+            include_diff_in_frame_line,
+        )
     }
 
     pub(crate) fn render_output_from_game_with_optional_readback(
@@ -424,17 +433,6 @@ impl ModernIndexCompareRun {
     }
 }
 
-pub(crate) fn render_gpu_hash_frame_rgba_line(frame: u32, frame_rgba: &[u8]) -> String {
-    renderer::gpu_render_hash_frame_rgba(frame, frame_rgba).line
-}
-
-pub(crate) fn render_hash_pair_bgra_rgba(
-    cpu_bgra: &[u8],
-    gpu_rgba: &[u8],
-) -> renderer::RenderHashPair {
-    renderer::render_hash_pair_bgra_rgba(cpu_bgra, gpu_rgba)
-}
-
 fn compare_gpu_render_current_frame(
     game: &mut ZeldaState,
     readback: &mut GpuReadbackRenderer,
@@ -449,9 +447,9 @@ fn compare_gpu_render_current_frame(
         width as usize * 4,
         PpuRenderFlags::empty(),
     );
-    let gpu_rgba = readback.render_gpu_capture_rgba(&gpu_capture);
+    let gpu_rgba = readback.render_live_gpu_capture_rgba(&gpu_capture);
     let render_comparison =
-        renderer::compare_gpu_render_frame_bgra_to_rgba(frames, frame, &gpu_rgba);
+        renderer::compare_gpu_render_frame_bgra_to_rgba(frames, frame, gpu_rgba.as_slice());
     if let Some(diff) = render_comparison.diff() {
         let gpu_ppu = gpu_capture.ppu();
         let scanlines_raw = gpu_capture.raw_scanlines();
@@ -529,13 +527,28 @@ fn compare_gpu_render_current_frame(
 }
 
 impl GpuReadbackRenderer {
-    pub(crate) fn render_gpu_capture_rgba(&mut self, capture: &LiveGpuFrameCapture) -> Vec<u8> {
-        self.offscreen.render_gpu_frame(&capture.gpu_frame())
+    fn render_gpu_capture_rgba(&mut self, capture: &LiveGpuFrameCapture) -> GpuRgbaReadbackFrame {
+        GpuRgbaReadbackFrame {
+            rgba: self.offscreen.render_gpu_frame(&capture.gpu_frame()),
+        }
     }
 
-    pub(crate) fn render_bgra_frame_to_rgba(&mut self, frame: &[u8]) -> Vec<u8> {
+    fn render_bgra_frame_to_rgba(&mut self, frame: &[u8]) -> GpuRgbaReadbackFrame {
         self.offscreen.upload_bgra_frame(frame);
-        self.offscreen.render_to_rgba()
+        GpuRgbaReadbackFrame {
+            rgba: self.offscreen.render_to_rgba(),
+        }
+    }
+
+    pub(crate) fn render_live_gpu_capture_rgba(
+        &mut self,
+        capture: &LiveGpuFrameCapture,
+    ) -> GpuRgbaReadbackFrame {
+        self.render_gpu_capture_rgba(capture)
+    }
+
+    pub(crate) fn render_cpu_bgra_frame_rgba(&mut self, frame: &[u8]) -> GpuRgbaReadbackFrame {
+        self.render_bgra_frame_to_rgba(frame)
     }
 }
 
@@ -546,12 +559,37 @@ impl OptionalGpuReadbackRenderer {
             .expect("GPU readback renderer allocated")
     }
 
-    pub(crate) fn render_gpu_capture_rgba(&mut self, capture: &LiveGpuFrameCapture) -> Vec<u8> {
-        self.required().render_gpu_capture_rgba(capture)
+    pub(crate) fn render_live_gpu_capture_rgba(
+        &mut self,
+        capture: &LiveGpuFrameCapture,
+    ) -> GpuRgbaReadbackFrame {
+        self.required().render_live_gpu_capture_rgba(capture)
     }
 
-    pub(crate) fn render_bgra_frame_to_rgba(&mut self, frame: &[u8]) -> Vec<u8> {
-        self.required().render_bgra_frame_to_rgba(frame)
+    pub(crate) fn render_cpu_bgra_frame_rgba(&mut self, frame: &[u8]) -> GpuRgbaReadbackFrame {
+        self.required().render_cpu_bgra_frame_rgba(frame)
+    }
+}
+
+impl GpuRgbaReadbackFrame {
+    pub(crate) fn as_slice(&self) -> &[u8] {
+        &self.rgba
+    }
+
+    pub(crate) fn render_hash_line(&self, frame: u32) -> String {
+        renderer::gpu_render_hash_frame_rgba(frame, &self.rgba).line
+    }
+
+    pub(crate) fn hash_pair_with_cpu_bgra(&self, cpu_bgra: &[u8]) -> renderer::RenderHashPair {
+        renderer::render_hash_pair_bgra_rgba(cpu_bgra, &self.rgba)
+    }
+}
+
+impl std::ops::Deref for GpuRgbaReadbackFrame {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.rgba
     }
 }
 

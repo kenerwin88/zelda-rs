@@ -28,7 +28,6 @@ use gpu_capture::{
     capture_gpu_frame_from_game, emit_modern_index_compare_output_lines, gpu_render_compare_run,
     modern_atlas_compare_run, modern_compare_mode_defaults_from_env,
     modern_index_compare_run_from_env, new_gpu_readback_renderer, optional_gpu_readback_renderer,
-    render_gpu_hash_frame_rgba_line, render_hash_pair_bgra_rgba,
     render_hd_capture_from_gpu_capture,
 };
 use platform::{
@@ -3794,7 +3793,7 @@ fn run_replay_save(args: &[String]) {
                     cgram_val
                 );
             }
-            let rgba = gpu_readback.render_bgra_frame_to_rgba(frame);
+            let rgba = gpu_readback.render_cpu_bgra_frame_rgba(frame);
             if frames == 1000 {
                 let post_vram_hash: u32 = {
                     let mut h = 2166136261u32;
@@ -3990,7 +3989,7 @@ fn run_replay_save(args: &[String]) {
                         process::exit(1);
                     }
                     println!("dumped replay-save frame to {}", dump_path.display());
-                    let gpu_rgba = gpu_readback.render_gpu_capture_rgba(&gpu_capture);
+                    let gpu_rgba = gpu_readback.render_live_gpu_capture_rgba(&gpu_capture);
                     let gpu_path = {
                         let stem = dump_path.file_stem().unwrap_or_default().to_string_lossy();
                         let ext = dump_path
@@ -4307,7 +4306,7 @@ fn run_replay_save(args: &[String]) {
                         game.ppu.prevent_math_mode
                     );
                 }
-                let gpu_rgba = gpu_readback.render_gpu_capture_rgba(&gpu_capture);
+                let gpu_rgba = gpu_readback.render_live_gpu_capture_rgba(&gpu_capture);
                 if frames == 8000 {
                     let cx = 128usize;
                     let cy = 112usize;
@@ -5040,7 +5039,7 @@ fn run_replay_save(args: &[String]) {
                 }
                 if frames == 332 {
                     // extra debug
-                    let hashes = render_hash_pair_bgra_rgba(frame, &gpu_rgba);
+                    let hashes = gpu_rgba.hash_pair_with_cpu_bgra(frame);
                     eprintln!(
                         "[gpu-dbg] frame=332 cpu_hash={:#010x} gpu_hash={:#010x}",
                         hashes.cpu_hash, hashes.gpu_hash
@@ -5128,7 +5127,7 @@ fn run_replay_save(args: &[String]) {
                     }
                     eprintln!();
                 }
-                println!("{}", render_gpu_hash_frame_rgba_line(frames, &gpu_rgba));
+                println!("{}", gpu_rgba.render_hash_line(frames));
             }
         }
         if modern_index_compare.should_compare_frame(frames) {
@@ -5268,7 +5267,7 @@ fn run_replay_save(args: &[String]) {
             width as usize * 4,
             PpuRenderFlags::empty(),
         );
-        let rgba = gpu_readback.render_bgra_frame_to_rgba(&frame);
+        let rgba = gpu_readback.render_cpu_bgra_frame_rgba(&frame);
         if let Err(e) = write_rgba_frame_png(path, &rgba, width, height) {
             eprintln!("failed to write {}: {e}", path.display());
             process::exit(1);
@@ -8885,7 +8884,7 @@ fn run_dump_developer_destination(args: &[String]) {
     if let Some(path) = gpu_out_path.as_deref() {
         let gpu_capture = capture_gpu_frame_from_game(&mut game);
         let mut gpu_readback = new_gpu_readback_renderer(width, height);
-        let rgba = gpu_readback.render_gpu_capture_rgba(&gpu_capture);
+        let rgba = gpu_readback.render_live_gpu_capture_rgba(&gpu_capture);
         if let Err(e) = write_rgba_frame_png(path, &rgba, width, height) {
             eprintln!("failed to write {}: {e}", path.display());
             process::exit(1);

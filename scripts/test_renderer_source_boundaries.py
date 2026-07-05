@@ -699,6 +699,8 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let mut gpu_readback = if render_hash_log != 0 { Some(new_gpu_readback_renderer(256, 224)) } else { None };
                 let gpu_readback = gpu_readback.as_mut().expect("GPU readback renderer allocated");
                 gpu_readback.required();
+                let _cpu_rgba = gpu_readback.render_bgra_frame_to_rgba(frame);
+                let _gpu_rgba = gpu_readback.render_gpu_capture_rgba(&gpu_capture);
                 modern_index_compare.load_resources_from_env(root, false);
                 let (mut renderer, mut frontend) = play_renderer::configured_from_env();
                 let mut renderer = play_renderer::from_env();
@@ -720,6 +722,8 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 println!("{}", renderer::render_hash_frame_bgra(frames, frame).line);
                 println!("{}", renderer::gpu_render_hash_frame_rgba(frames, &gpu_rgba).line);
                 let _hashes = renderer::render_hash_pair_bgra_rgba(frame, &gpu_rgba);
+                println!("{}", render_gpu_hash_frame_rgba_line(frames, &gpu_rgba));
+                let _wrapper_hashes = render_hash_pair_bgra_rgba(frame, &gpu_rgba);
                 let _leaf = renderer::render_fingerprint_leaf_bgra(frame);
                 let _config = renderer::ModernIndexCompareRunConfig::default();
                 let _stats = renderer::ModernIndexCompareStats::from_env();
@@ -734,7 +738,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 58)
+        self.assertEqual(len(errors), 62)
         self.assertTrue(
             all("live GPU play backend ownership escaped gpu_capture boundary" in error for error in errors)
         )
