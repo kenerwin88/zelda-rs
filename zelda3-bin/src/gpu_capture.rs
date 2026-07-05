@@ -147,6 +147,21 @@ pub(crate) fn render_gpu_capture_rgba(
     offscreen.render_gpu_frame(&capture.gpu_frame())
 }
 
+pub(crate) fn load_modern_index_compare_resources(
+    run_config: renderer::ModernIndexCompareRunConfig,
+    root: &Path,
+    allow_source_cpu_fallback: bool,
+) -> Result<renderer::ModernIndexCompareResources, String> {
+    run_config.load_resources_from_env(root, allow_source_cpu_fallback)
+}
+
+pub(crate) fn load_modern_atlas_compare_resources(
+    enabled: bool,
+    root: &Path,
+) -> Result<renderer::ModernAtlasCompareResources, String> {
+    renderer::ModernAtlasCompareResources::load(enabled, root)
+}
+
 pub(crate) fn render_modern_index_compare_output_from_capture(
     stats: &mut renderer::ModernIndexCompareStats,
     capture: &LiveGpuFrameCapture,

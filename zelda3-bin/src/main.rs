@@ -25,7 +25,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gpu_capture::{
-    capture_gpu_frame_from_game, render_gpu_capture_rgba,
+    capture_gpu_frame_from_game, load_modern_atlas_compare_resources,
+    load_modern_index_compare_resources, render_gpu_capture_rgba,
     render_modern_atlas_compare_report_from_capture,
     render_modern_index_compare_output_from_capture,
 };
@@ -3478,12 +3479,12 @@ fn run_replay_save(args: &[String]) {
     // explicit renderer env selects it. Explicit `assets-anim` keeps the CPU atlas
     // compositor as an opt-out/debug oracle. `assets-variant-gpu` uses compact
     // base art plus LUT effects for stable draws and reports fallback counts.
-    let modern_index_compare_resources = modern_index_compare
-        .load_resources_from_env(Path::new("."), true)
-        .unwrap_or_else(|e| {
-            eprintln!("modern index compare resources load failed: {e}");
-            process::exit(2);
-        });
+    let modern_index_compare_resources =
+        load_modern_index_compare_resources(modern_index_compare, Path::new("."), true)
+            .unwrap_or_else(|e| {
+                eprintln!("modern index compare resources load failed: {e}");
+                process::exit(2);
+            });
     let capture_panic_pre_frame =
         std::env::var_os("ZELDA3_REPLAY_CAPTURE_PANIC_PRE_FRAME").is_some();
     let mut last_frame_had_fingerprint_render = false;
@@ -11690,17 +11691,17 @@ fn run_play_gpu_render_compare(args: &[String]) {
     }
 
     let modern_atlas_compare_resources =
-        renderer::ModernAtlasCompareResources::load(modern_render_compare != 0, Path::new("."))
+        load_modern_atlas_compare_resources(modern_render_compare != 0, Path::new("."))
             .unwrap_or_else(|e| {
                 eprintln!("modern atlas compare resources load failed: {e}");
                 process::exit(2);
             });
-    let modern_index_compare_resources = modern_index_compare
-        .load_resources_from_env(Path::new("."), false)
-        .unwrap_or_else(|e| {
-            eprintln!("modern index compare resources load failed: {e}");
-            process::exit(2);
-        });
+    let modern_index_compare_resources =
+        load_modern_index_compare_resources(modern_index_compare, Path::new("."), false)
+            .unwrap_or_else(|e| {
+                eprintln!("modern index compare resources load failed: {e}");
+                process::exit(2);
+            });
     let last_panic = install_crash_panic_hook();
     let mut offscreen = pollster::block_on(OffscreenRenderer::new(256, 224));
     let mut render_frame = vec![0u8; 256 * 224 * 4];
