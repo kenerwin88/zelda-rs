@@ -1472,6 +1472,24 @@ fn variant_atlas_renderer_mode(mode: &str) -> bool {
     EffectiveRendererMode { name: mode }.uses_variant_atlas()
 }
 
+#[derive(Clone, Copy)]
+struct VramChrSourceTableView<'a> {
+    table: &'a zelda3::VramChrSourceTable,
+}
+
+impl<'a> VramChrSourceTableView<'a> {
+    fn new(table: &'a zelda3::VramChrSourceTable) -> Self {
+        Self { table }
+    }
+}
+
+impl renderer::modern_extract::SourceTableView for VramChrSourceTableView<'_> {
+    fn get(&self, slot: usize) -> (u8, u16, u16) {
+        let src = self.table.get(slot);
+        (src.kind, src.pack, src.tile_off)
+    }
+}
+
 fn load_variant_atlas_for_mode(
     mode: &str,
     root: &Path,
@@ -1836,12 +1854,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
         // GPU atlas modes route it through `present_modern_mode7_gpu` above.
         // CPU/debug modes fall through to the frontend's modern fallback below.
         if let Some(atlas) = self.source_atlas.as_ref().filter(|_| gpu_frame.mode != 7) {
-            let src_slice: Vec<(u8, u16, u16)> = game
-                .vram_chr_source()
-                .as_slice()
-                .iter()
-                .map(|s| (s.kind, s.pack, s.tile_off))
-                .collect();
+            let src_table = VramChrSourceTableView::new(game.vram_chr_source());
             if let Some(variant_atlas) = self.variant_atlas.as_ref() {
                 let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
                     "palette_dung_bg_main"
@@ -1850,7 +1863,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
                 };
                 if let Some(stats) = frontend.present_modern_variant_gpu_from_sources(
                     &gpu_frame,
-                    &src_slice[..],
+                    &src_table,
                     atlas,
                     variant_atlas,
                     bg_palette_name,
@@ -1861,20 +1874,16 @@ impl PlayRendererBackend for GpuPlayRenderer {
                 return;
             }
             if self.gpu_asset_mode {
-                frontend.present_modern_gpu_from_sources(&gpu_frame, &src_slice[..], atlas);
+                frontend.present_modern_gpu_from_sources(&gpu_frame, &src_table, atlas);
                 return;
             }
             let (mut modern, bg_cells) =
                 renderer::modern_extract::extract_modern_frame_from_sources(
-                    &gpu_frame,
-                    &src_slice[..],
-                    atlas,
+                    &gpu_frame, &src_table, atlas,
                 );
             let (sprite_cells, sprites) =
                 renderer::modern_extract::extract_modern_sprites_from_sources(
-                    &gpu_frame,
-                    &src_slice[..],
-                    atlas,
+                    &gpu_frame, &src_table, atlas,
                 );
             modern.index_sprites = sprites;
             let ctx = match &self.hd_overrides {
@@ -6013,23 +6022,14 @@ fn run_replay_save(args: &[String]) {
                         (headless.render_mode7_rgba(&gpu_frame), "mode7-gpu")
                     } else {
                         let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
-                        let src_slice: Vec<(u8, u16, u16)> = game
-                            .vram_chr_source()
-                            .as_slice()
-                            .iter()
-                            .map(|s| (s.kind, s.pack, s.tile_off))
-                            .collect();
+                        let src_table = VramChrSourceTableView::new(game.vram_chr_source());
                         let (mut modern, bg_cells) =
                             renderer::modern_extract::extract_modern_frame_from_sources(
-                                &gpu_frame,
-                                &src_slice[..],
-                                atlas,
+                                &gpu_frame, &src_table, atlas,
                             );
                         let (sprite_cells, sprites) =
                             renderer::modern_extract::extract_modern_sprites_from_sources(
-                                &gpu_frame,
-                                &src_slice[..],
-                                atlas,
+                                &gpu_frame, &src_table, atlas,
                             );
                         modern.index_sprites = sprites;
                         let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
@@ -6095,23 +6095,14 @@ fn run_replay_save(args: &[String]) {
                         (headless.render_mode7_rgba(&gpu_frame), "mode7-gpu")
                     } else {
                         let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
-                        let src_slice: Vec<(u8, u16, u16)> = game
-                            .vram_chr_source()
-                            .as_slice()
-                            .iter()
-                            .map(|s| (s.kind, s.pack, s.tile_off))
-                            .collect();
+                        let src_table = VramChrSourceTableView::new(game.vram_chr_source());
                         let (mut modern, bg_cells) =
                             renderer::modern_extract::extract_modern_frame_from_sources(
-                                &gpu_frame,
-                                &src_slice[..],
-                                atlas,
+                                &gpu_frame, &src_table, atlas,
                             );
                         let (sprite_cells, sprites) =
                             renderer::modern_extract::extract_modern_sprites_from_sources(
-                                &gpu_frame,
-                                &src_slice[..],
-                                atlas,
+                                &gpu_frame, &src_table, atlas,
                             );
                         modern.index_sprites = sprites;
                         (
@@ -6128,28 +6119,17 @@ fn run_replay_save(args: &[String]) {
                         "mode7-cpu",
                     )
                 } else if let Some(atlas) = source_atlas.as_ref() {
-                    // Copy the M1 source table into a plain (kind, pack, tile_off)
-                    // slice the renderer crate consumes (it must not depend on zelda3).
                     // Content-hashed slots (CHR_KIND_BG_STREAM) are re-keyed from frame-end
                     // VRAM inside `extract_modern_frame_from_sources` (see
-                    // `content_hash32_slot`), so this copy stays a plain passthrough.
-                    let src_slice: Vec<(u8, u16, u16)> = game
-                        .vram_chr_source()
-                        .as_slice()
-                        .iter()
-                        .map(|s| (s.kind, s.pack, s.tile_off))
-                        .collect();
+                    // `content_hash32_slot`), so the adapter stays a plain passthrough.
+                    let src_table = VramChrSourceTableView::new(game.vram_chr_source());
                     let (mut modern, bg_cells) =
                         renderer::modern_extract::extract_modern_frame_from_sources(
-                            &gpu_frame,
-                            &src_slice[..],
-                            atlas,
+                            &gpu_frame, &src_table, atlas,
                         );
                     let (sprite_cells, sprites) =
                         renderer::modern_extract::extract_modern_sprites_from_sources(
-                            &gpu_frame,
-                            &src_slice[..],
-                            atlas,
+                            &gpu_frame, &src_table, atlas,
                         );
                     modern.index_sprites = sprites;
                     let rgba = renderer::modern_software::render_modern_frame_full(
@@ -11932,21 +11912,12 @@ fn run_dump_hd_capture(args: &[String]) {
             eprintln!("frame {completed}: Mode 7 not supported by the sources path; skipping");
             continue;
         }
-        let src_slice: Vec<(u8, u16, u16)> = game
-            .vram_chr_source()
-            .as_slice()
-            .iter()
-            .map(|s| (s.kind, s.pack, s.tile_off))
-            .collect();
+        let src_table = VramChrSourceTableView::new(game.vram_chr_source());
         let (mut modern, bg_cells) = renderer::modern_extract::extract_modern_frame_from_sources(
-            &gpu_frame,
-            &src_slice[..],
-            &atlas,
+            &gpu_frame, &src_table, &atlas,
         );
         let (sprite_cells, sprites) = renderer::modern_extract::extract_modern_sprites_from_sources(
-            &gpu_frame,
-            &src_slice[..],
-            &atlas,
+            &gpu_frame, &src_table, &atlas,
         );
         modern.index_sprites = sprites;
 
@@ -13257,23 +13228,14 @@ fn run_play_gpu_render_compare(args: &[String]) {
                     (headless.render_mode7_rgba(&gpu_frame), "mode7-gpu")
                 } else {
                     let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
-                    let src_slice: Vec<(u8, u16, u16)> = game
-                        .vram_chr_source()
-                        .as_slice()
-                        .iter()
-                        .map(|s| (s.kind, s.pack, s.tile_off))
-                        .collect();
+                    let src_table = VramChrSourceTableView::new(game.vram_chr_source());
                     let (mut modern, bg_cells) =
                         renderer::modern_extract::extract_modern_frame_from_sources(
-                            &gpu_frame,
-                            &src_slice[..],
-                            atlas,
+                            &gpu_frame, &src_table, atlas,
                         );
                     let (sprite_cells, sprites) =
                         renderer::modern_extract::extract_modern_sprites_from_sources(
-                            &gpu_frame,
-                            &src_slice[..],
-                            atlas,
+                            &gpu_frame, &src_table, atlas,
                         );
                     modern.index_sprites = sprites;
                     let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
@@ -13338,23 +13300,14 @@ fn run_play_gpu_render_compare(args: &[String]) {
                     (headless.render_mode7_rgba(&gpu_frame), "mode7-gpu")
                 } else {
                     let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
-                    let src_slice: Vec<(u8, u16, u16)> = game
-                        .vram_chr_source()
-                        .as_slice()
-                        .iter()
-                        .map(|s| (s.kind, s.pack, s.tile_off))
-                        .collect();
+                    let src_table = VramChrSourceTableView::new(game.vram_chr_source());
                     let (mut modern, bg_cells) =
                         renderer::modern_extract::extract_modern_frame_from_sources(
-                            &gpu_frame,
-                            &src_slice[..],
-                            atlas,
+                            &gpu_frame, &src_table, atlas,
                         );
                     let (sprite_cells, sprites) =
                         renderer::modern_extract::extract_modern_sprites_from_sources(
-                            &gpu_frame,
-                            &src_slice[..],
-                            atlas,
+                            &gpu_frame, &src_table, atlas,
                         );
                     modern.index_sprites = sprites;
                     (
@@ -15860,6 +15813,26 @@ mod tests {
             renderer_env_or_default(Some("classic")),
             "classic",
             "explicit classic mode remains an opt-out"
+        );
+    }
+
+    #[test]
+    fn vram_chr_source_view_reads_slots_without_tuple_copy() {
+        let mut table = zelda3::VramChrSourceTable::default();
+        table.record_tiles_from(0x40, 2, zelda3::CHR_KIND_BG, 0x12, 0x34);
+        let view = VramChrSourceTableView::new(&table);
+
+        assert_eq!(
+            renderer::modern_extract::SourceTableView::get(&view, 0x40 / 16),
+            (zelda3::CHR_KIND_BG, 0x12, 0x34)
+        );
+        assert_eq!(
+            renderer::modern_extract::SourceTableView::get(&view, 0x40 / 16 + 1),
+            (zelda3::CHR_KIND_BG, 0x12, 0x35)
+        );
+        assert_eq!(
+            renderer::modern_extract::SourceTableView::get(&view, usize::MAX),
+            (0, 0, 0)
         );
     }
 
