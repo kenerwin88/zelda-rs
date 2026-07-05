@@ -5342,12 +5342,6 @@ fn run_replay_save(args: &[String]) {
             }
         }
         if modern_index_compare.should_compare_frame(frames) {
-            let module = game.ram[TRACE_MAIN_MODULE_INDEX];
-            let compare_scene =
-                renderer::ModernIndexCompareScene::from_main_module_and_player_indoors_flag(
-                    module,
-                    game.ram[PLAYER_IS_INDOORS],
-                );
             {
                 let hdma_cgram = game.cgram_after_first_hdma_line();
                 let scanlines_raw = game.ppu_scanline_windows();
@@ -5355,23 +5349,21 @@ fn run_replay_save(args: &[String]) {
                 let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
                 let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
                 let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
-                let src_table =
-                    renderer::source_table_from_entries(game.vram_chr_source().as_slice());
-                let scene = compare_scene.asset_scene();
-                let output_lines = modern_index_compare_stats.render_compare_frame_output(
-                    renderer::ModernIndexCompareFrameRenderInput {
-                        frame: frames,
-                        mode_label: compare_scene.mode_label(),
-                        gpu_frame: &gpu_frame,
-                        src_table: Some(&src_table),
-                        resources: &modern_index_compare_resources,
-                        scene,
-                        classic_rgba: &classic_rgba,
-                        allow_source_cpu_fallback: true,
-                        run_config: modern_index_compare,
-                        include_diff_in_frame_line: false,
-                    },
-                );
+                let output_lines = modern_index_compare_stats
+                    .render_compare_frame_output_from_entries(
+                        renderer::ModernIndexCompareFrameOutputInput {
+                            frame: frames,
+                            main_module: game.ram[TRACE_MAIN_MODULE_INDEX],
+                            player_indoors: game.ram[PLAYER_IS_INDOORS],
+                            gpu_frame: &gpu_frame,
+                            source_entries: game.vram_chr_source().as_slice(),
+                            resources: &modern_index_compare_resources,
+                            classic_rgba: &classic_rgba,
+                            allow_source_cpu_fallback: true,
+                            run_config: modern_index_compare,
+                            include_diff_in_frame_line: false,
+                        },
+                    );
                 emit_modern_index_compare_output_lines(&output_lines);
                 if output_lines.has_failure {
                     process::exit(1);
@@ -12091,28 +12083,20 @@ fn run_play_gpu_render_compare(args: &[String]) {
             }
         }
         if should_compare_modern_index {
-            let module = game.ram[TRACE_MAIN_MODULE_INDEX];
-            let compare_scene =
-                renderer::ModernIndexCompareScene::from_main_module_and_player_indoors_flag(
-                    module,
-                    game.ram[PLAYER_IS_INDOORS],
-                );
             let hdma_cgram = game.cgram_after_first_hdma_line();
             let scanlines_raw = game.ppu_scanline_windows();
             let gpu_ppu = game.ppu.clone();
             let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
             let classic_rgba = offscreen.render_gpu_frame(&gpu_frame);
 
-            let src_table = renderer::source_table_from_entries(game.vram_chr_source().as_slice());
-            let scene = compare_scene.asset_scene();
-            let output_lines = modern_index_compare_stats.render_compare_frame_output(
-                renderer::ModernIndexCompareFrameRenderInput {
+            let output_lines = modern_index_compare_stats.render_compare_frame_output_from_entries(
+                renderer::ModernIndexCompareFrameOutputInput {
                     frame: completed_frame,
-                    mode_label: compare_scene.mode_label(),
+                    main_module: game.ram[TRACE_MAIN_MODULE_INDEX],
+                    player_indoors: game.ram[PLAYER_IS_INDOORS],
                     gpu_frame: &gpu_frame,
-                    src_table: Some(&src_table),
+                    source_entries: game.vram_chr_source().as_slice(),
                     resources: &modern_index_compare_resources,
-                    scene,
                     classic_rgba: &classic_rgba,
                     allow_source_cpu_fallback: false,
                     run_config: modern_index_compare,

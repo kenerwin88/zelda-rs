@@ -69,7 +69,7 @@ pub use modern_gpu::{
     ModernGpuCompositor, ModernGpuHeadless, ModernGpuVariantHeadless, ModernGpuVariantRenderer,
 };
 pub use modern_index_compare_stats::{
-    ModernIndexCompareFrameRenderInput, ModernIndexCompareFrameReport,
+    ModernIndexCompareFrameOutputInput, ModernIndexCompareFrameReport,
     ModernIndexCompareOutputLine, ModernIndexCompareOutputLines, ModernIndexCompareOutputStream,
     ModernIndexCompareRunConfig, ModernIndexCompareRunConfigError, ModernIndexCompareStats,
 };
@@ -2323,7 +2323,7 @@ impl ModernAssetFrameScene {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ModernIndexCompareScene {
+struct ModernIndexCompareScene {
     mode_label: String,
     asset_scene: ModernAssetFrameScene,
 }

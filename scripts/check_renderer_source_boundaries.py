@@ -22,15 +22,14 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernAssetFrameResources::load_from_env",
     "RendererMode::from_effective_env",
     "ModernAssetFrameScene",
-    "ModernIndexCompareScene",
     "ModernAssetLiveStats",
     "record_present_result",
     "unhandled_gpu_asset_frame_line",
     "ModernIndexCompareStats",
     "ModernIndexCompareRunConfig",
-    "ModernIndexCompareFrameRenderInput",
+    "ModernIndexCompareFrameOutputInput",
     "load_resources_from_env",
-    "render_compare_frame_output",
+    "render_compare_frame_output_from_entries",
     "ModernIndexCompareOutputStream",
     "summary_line_if_enabled",
     "failure_line()",
@@ -44,7 +43,6 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "render_fingerprint_leaf_bgra",
     "GpuFrame::from_source_and_raw_scanlines",
     "compare_frame",
-    "from_main_module_and_player_indoors_flag",
     "from_player_indoors_flag",
     "render_hd_capture_from_sources",
 )
@@ -105,6 +103,8 @@ FORBIDDEN_LIVE_STATS_POLICY_CALLS = (
 )
 
 FORBIDDEN_MODERN_INDEX_COMPARE_POLICY_CALLS = (
+    "ModernIndexCompareScene",
+    "ModernIndexCompareFrameRenderInput",
     "ZELDA3_MODERN_INDEX_COMPARE_SUMMARY",
     "ZELDA3_MODERN_INDEX_COMPARE_PROGRESS",
     "ZELDA3_VARIANT_TRACE_PIXEL",
@@ -118,6 +118,7 @@ FORBIDDEN_MODERN_INDEX_COMPARE_POLICY_CALLS = (
     "rendered.report",
     "rendered.output_lines()",
     "render_compare_frame(",
+    "render_compare_frame_output(",
     "modern_index_compare != 0",
     "frames % modern_index_compare",
     "completed_frame % modern_index_compare",

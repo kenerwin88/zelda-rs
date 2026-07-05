@@ -23,15 +23,14 @@ def source_with_required_calls(body: str) -> str:
         let assets = renderer::ModernAssetFrameResources::load_from_env();
         frontend.set_renderer_mode(renderer::RendererMode::from_effective_env());
         let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(0);
-        let compare_scene = renderer::ModernIndexCompareScene::from_main_module_and_player_indoors_flag(9, 0);
         let stats = renderer::ModernAssetLiveStats::from_env();
         variant_live_stats.record_present_result(&present_result);
         modern_assets.unhandled_gpu_asset_frame_line();
         let compare = renderer::ModernIndexCompareStats::from_env();
         let compare_config = renderer::ModernIndexCompareRunConfig::default();
-        let frame_record = renderer::ModernIndexCompareFrameRenderInput {};
+        let frame_record = renderer::ModernIndexCompareFrameOutputInput {};
         let compare_resources = compare_config.load_resources_from_env();
-        let compare_output = modern_index_compare_stats.render_compare_frame_output(frame_record);
+        let compare_output = modern_index_compare_stats.render_compare_frame_output_from_entries(frame_record);
         let output_stream = renderer::ModernIndexCompareOutputStream::Stdout;
         let maybe_summary = modern_index_compare_stats.summary_line_if_enabled(true);
         let atlas_compare_resources = renderer::ModernAtlasCompareResources::load();
@@ -148,6 +147,8 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let report = rendered.report;
                 rendered.output_lines();
                 modern_index_compare_stats.render_compare_frame(frame_record);
+                modern_index_compare_stats.render_compare_frame_output(frame_record);
+                let compare_scene = renderer::ModernIndexCompareScene::from_main_module_and_player_indoors_flag(9, 0);
                 if let Some(line) = report.frame_line() {}
                 if let Some(line) = report.progress_line() {}
             }
@@ -156,7 +157,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 4)
+        self.assertEqual(len(errors), 6)
         self.assertTrue(
             all("modern index compare stats policy escaped renderer boundary" in error for error in errors)
         )
@@ -182,7 +183,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 10)
+        self.assertEqual(len(errors), 11)
         self.assertTrue(
             all("modern index compare stats policy escaped renderer boundary" in error for error in errors)
         )

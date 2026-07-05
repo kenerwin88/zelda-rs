@@ -153,7 +153,23 @@ impl ModernIndexCompareFrameReport {
     }
 }
 
-pub struct ModernIndexCompareFrameRenderInput<
+pub struct ModernIndexCompareFrameOutputInput<'a, 'frame, T>
+where
+    T: Copy + Into<(u8, u16, u16)>,
+{
+    pub frame: u32,
+    pub main_module: u8,
+    pub player_indoors: u8,
+    pub gpu_frame: &'a crate::gpu_frame::GpuFrame<'frame>,
+    pub source_entries: &'a [T],
+    pub resources: &'a crate::ModernIndexCompareResources,
+    pub classic_rgba: &'a [u8],
+    pub allow_source_cpu_fallback: bool,
+    pub run_config: ModernIndexCompareRunConfig,
+    pub include_diff_in_frame_line: bool,
+}
+
+struct ModernIndexCompareFrameRenderInput<
     'a,
     'frame,
     S: crate::modern_extract::SourceTableView + ?Sized,
@@ -518,7 +534,7 @@ impl ModernIndexCompareStats {
         })
     }
 
-    pub fn render_compare_frame_output<S: crate::modern_extract::SourceTableView + ?Sized>(
+    fn render_compare_frame_output<S: crate::modern_extract::SourceTableView + ?Sized>(
         &mut self,
         input: ModernIndexCompareFrameRenderInput<'_, '_, S>,
     ) -> ModernIndexCompareOutputLines {
@@ -526,6 +542,33 @@ impl ModernIndexCompareStats {
         let classic_rgba = input.classic_rgba;
         let rendered = self.render_compare_frame(input);
         self.output_lines_for_rendered_frame(frame, classic_rgba, rendered)
+    }
+
+    pub fn render_compare_frame_output_from_entries<T>(
+        &mut self,
+        input: ModernIndexCompareFrameOutputInput<'_, '_, T>,
+    ) -> ModernIndexCompareOutputLines
+    where
+        T: Copy + Into<(u8, u16, u16)>,
+    {
+        let compare_scene =
+            crate::ModernIndexCompareScene::from_main_module_and_player_indoors_flag(
+                input.main_module,
+                input.player_indoors,
+            );
+        let src_table = crate::source_table_from_entries(input.source_entries);
+        self.render_compare_frame_output(ModernIndexCompareFrameRenderInput {
+            frame: input.frame,
+            mode_label: compare_scene.mode_label(),
+            gpu_frame: input.gpu_frame,
+            src_table: Some(&src_table),
+            resources: input.resources,
+            scene: compare_scene.asset_scene(),
+            classic_rgba: input.classic_rgba,
+            allow_source_cpu_fallback: input.allow_source_cpu_fallback,
+            run_config: input.run_config,
+            include_diff_in_frame_line: input.include_diff_in_frame_line,
+        })
     }
 
     fn output_lines_for_rendered_frame(
