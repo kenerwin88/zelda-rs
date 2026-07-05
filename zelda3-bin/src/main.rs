@@ -5372,13 +5372,8 @@ fn run_replay_save(args: &[String]) {
                         include_diff_in_frame_line: false,
                     },
                 );
-                if let Some(trace_pixel) = rendered.trace_pixel {
-                    print_variant_pixel_traces(
-                        trace_pixel.frame,
-                        trace_pixel.x,
-                        trace_pixel.y,
-                        &rendered.variant_traces,
-                    );
+                for line in &rendered.trace_lines {
+                    eprintln!("{line}");
                 }
                 let modern_rgba = rendered.modern_rgba;
                 let report = rendered.report;
@@ -12138,13 +12133,8 @@ fn run_play_gpu_render_compare(args: &[String]) {
                     include_diff_in_frame_line: true,
                 },
             );
-            if let Some(trace_pixel) = rendered.trace_pixel {
-                print_variant_pixel_traces(
-                    trace_pixel.frame,
-                    trace_pixel.x,
-                    trace_pixel.y,
-                    &rendered.variant_traces,
-                );
+            for line in &rendered.trace_lines {
+                eprintln!("{line}");
             }
             let modern_rgba = rendered.modern_rgba;
             let report = rendered.report;
@@ -12272,24 +12262,6 @@ fn write_assets_index_png(path: &str, bin: &[u8], cell_count: usize) -> Result<(
 ///
 /// Produces the same hash value as the C oracle's RGB hash for identical pixel
 /// data, enabling direct comparison of render-hash lines in the parity gate.
-fn print_variant_pixel_traces(
-    trace_frame: u32,
-    trace_x: i16,
-    trace_y: i16,
-    traces: &[renderer::modern_variant_draw::VariantPixelTrace],
-) {
-    if traces.is_empty() {
-        eprintln!("variant_pixel_trace frame={trace_frame} pixel=({trace_x}, {trace_y}) hits=0");
-    } else {
-        for trace in traces {
-            eprintln!(
-                "variant_pixel_trace frame={trace_frame} pixel=({trace_x}, {trace_y}) {}",
-                trace.describe()
-            );
-        }
-    }
-}
-
 /// Per-frame audio leaf hash: folds the same DSP/sample quantities the audio
 /// trace prints, into one u32. Mirrored exactly in C (FingerprintAudioHash).
 fn fingerprint_audio_hash(

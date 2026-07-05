@@ -122,6 +122,26 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             all("modern index compare stats policy escaped renderer boundary" in error for error in errors)
         )
 
+    def test_rejects_modern_index_trace_format_policy_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_replay_save() {
+                print_variant_pixel_traces(frame, x, y, &rendered.variant_traces);
+                if let Some(trace_pixel) = rendered.trace_pixel {
+                    eprintln!("variant_pixel_trace frame={frame}");
+                }
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 4)
+        self.assertTrue(
+            all("modern index compare stats policy escaped renderer boundary" in error for error in errors)
+        )
+
     def test_rejects_modern_index_run_policy_calls(self):
         module = load_module()
         source = source_with_required_calls(

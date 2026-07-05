@@ -182,8 +182,7 @@ struct ModernIndexCompareFrameRenderedRecord<'a> {
 pub struct ModernIndexCompareFrameRenderedReport {
     pub report: ModernIndexCompareFrameReport,
     pub modern_rgba: Vec<u8>,
-    pub trace_pixel: Option<ModernIndexCompareTracePixel>,
-    pub variant_traces: Vec<crate::modern_variant_draw::VariantPixelTrace>,
+    pub trace_lines: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -393,8 +392,7 @@ impl ModernIndexCompareStats {
         ModernIndexCompareFrameRenderedReport {
             report,
             modern_rgba: record.modern_render.rgba,
-            trace_pixel: record.trace_pixel,
-            variant_traces: record.modern_render.variant_traces,
+            trace_lines: trace_lines(record.trace_pixel, &record.modern_render.variant_traces),
         }
     }
 
@@ -486,6 +484,34 @@ fn parse_trace_pixel(value: &str) -> Option<ModernIndexCompareTracePixel> {
         return None;
     }
     Some(ModernIndexCompareTracePixel { frame, x, y })
+}
+
+fn trace_lines(
+    trace_pixel: Option<ModernIndexCompareTracePixel>,
+    traces: &[crate::modern_variant_draw::VariantPixelTrace],
+) -> Vec<String> {
+    let Some(trace_pixel) = trace_pixel else {
+        return Vec::new();
+    };
+    if traces.is_empty() {
+        return vec![format!(
+            "variant_pixel_trace frame={} pixel=({}, {}) hits=0",
+            trace_pixel.frame, trace_pixel.x, trace_pixel.y
+        )];
+    }
+
+    traces
+        .iter()
+        .map(|trace| {
+            format!(
+                "variant_pixel_trace frame={} pixel=({}, {}) {}",
+                trace_pixel.frame,
+                trace_pixel.x,
+                trace_pixel.y,
+                trace.describe()
+            )
+        })
+        .collect()
 }
 
 macro_rules! variant_stat_fields {
@@ -921,14 +947,9 @@ mod tests {
 
         assert_eq!(rendered.modern_rgba, modern);
         assert_eq!(
-            rendered.trace_pixel,
-            Some(ModernIndexCompareTracePixel {
-                frame: 77,
-                x: 1,
-                y: 0,
-            })
+            rendered.trace_lines,
+            vec!["variant_pixel_trace frame=77 pixel=(1, 0) hits=0"]
         );
-        assert!(rendered.variant_traces.is_empty());
         assert_eq!(rendered.report.mismatch(), 1);
         assert_eq!(
             rendered.report.failure_line(),
