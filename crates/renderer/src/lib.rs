@@ -60,8 +60,8 @@ pub use frame_compare::{
     RenderHashPair,
 };
 pub use gpu_frame::{
-    BgLayerRegs, GpuFrame, GpuFrameSource, Mode7Regs, ObjRegs, RawScanlineFrame, RawScanlineRegs,
-    ScanlineRegs,
+    BgLayerRegs, GpuFrame, GpuFrameCaptureInput, GpuFrameRegisterSnapshot, GpuFrameSource,
+    Mode7Regs, ObjRegs, RawScanlineFrame, RawScanlineRegs, ScanlineRegs,
 };
 pub use gpu_renderer::GpuFrameRenderer;
 pub use mode7_renderer::Mode7Renderer;
@@ -2075,6 +2075,17 @@ where
 pub struct ModernAssetFramePresentOutput {
     pub result: ModernAssetFramePresentResult,
     pub in_dungeon: bool,
+}
+
+pub struct ModernAssetFrameLivePresentInput<'a, 'frame, T>
+where
+    T: Copy + Into<(u8, u16, u16)>,
+{
+    pub frame: GpuFrameCaptureInput<'frame>,
+    pub source_entries: &'a [T],
+    pub resources: &'a ModernAssetFrameResources,
+    pub stats: &'a mut ModernAssetLiveStats,
+    pub player_indoors: u8,
 }
 
 /// Renderer-owned resource bundle for live modern-asset presentation.

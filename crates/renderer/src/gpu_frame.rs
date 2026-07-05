@@ -84,6 +84,41 @@ pub struct GpuFrame<'a> {
     pub scanlines: Box<[ScanlineRegs; 224]>,
 }
 
+/// Raw register/slice snapshot used to construct a [`GpuFrame`] without tying
+/// the renderer crate to an emulator-state type.
+#[derive(Clone, Copy)]
+pub struct GpuFrameRegisterSnapshot<'a> {
+    pub vram: &'a [u16],
+    pub oam: &'a [u16],
+    pub mode: u8,
+    pub bg: [BgLayerRegs; 4],
+    pub obj: ObjRegs,
+    pub mosaic_enabled: u8,
+    pub mosaic_size: u8,
+    pub extra_left_right: u8,
+    pub mode7: Mode7Regs,
+    pub screen_enabled: [u8; 2],
+    pub screen_windowed: [u8; 2],
+    pub brightness: u8,
+    pub forced_blank: bool,
+    pub math_enabled: u8,
+    pub subtract_color: bool,
+    pub half_color: bool,
+    pub fixed_color_r: u8,
+    pub fixed_color_g: u8,
+    pub fixed_color_b: u8,
+    pub add_subscreen: bool,
+    pub clip_mode: u8,
+    pub prevent_math_mode: u8,
+    pub windowsel: u32,
+}
+
+pub struct GpuFrameCaptureInput<'a> {
+    pub registers: GpuFrameRegisterSnapshot<'a>,
+    pub cgram: &'a [u16],
+    pub raw_scanlines: &'a RawScanlineFrame,
+}
+
 impl<'a> GpuFrame<'a> {
     pub fn scanlines_from_raw(raw: &RawScanlineFrame) -> Box<[ScanlineRegs; 224]> {
         let mut result = Box::new([ScanlineRegs::default(); 224]);
@@ -111,6 +146,38 @@ impl<'a> GpuFrame<'a> {
         S: GpuFrameSource<'a> + ?Sized,
     {
         Self::from_source(source, cgram, Self::scanlines_from_raw(raw_scanlines))
+    }
+
+    pub fn from_capture_input(input: GpuFrameCaptureInput<'a>) -> Self {
+        let registers = input.registers;
+        Self {
+            vram: registers.vram,
+            cgram: input.cgram,
+            oam: registers.oam,
+            mode: registers.mode,
+            bg: registers.bg,
+            obj: registers.obj,
+            mosaic_enabled: registers.mosaic_enabled,
+            mosaic_size: registers.mosaic_size,
+            extra_left_right: registers.extra_left_right,
+            mode7: registers.mode7,
+            screen_enabled: registers.screen_enabled,
+            screen_windowed: registers.screen_windowed,
+            brightness: registers.brightness,
+            forced_blank: registers.forced_blank,
+            math_enabled: registers.math_enabled,
+            subtract_color: registers.subtract_color,
+            half_color: registers.half_color,
+            fixed_color_r: registers.fixed_color_r,
+            fixed_color_g: registers.fixed_color_g,
+            fixed_color_b: registers.fixed_color_b,
+            add_subscreen: registers.add_subscreen,
+            clip_mode: registers.clip_mode,
+            prevent_math_mode: registers.prevent_math_mode,
+            windowsel_cm: ((registers.windowsel >> 20) & 0xF) as u8,
+            windowsel: registers.windowsel,
+            scanlines: Self::scanlines_from_raw(input.raw_scanlines),
+        }
     }
 
     pub fn from_source<S>(source: &S, cgram: &'a [u16], scanlines: Box<[ScanlineRegs; 224]>) -> Self
@@ -473,5 +540,94 @@ mod tests {
         assert_eq!(frame.vram, &vram);
         assert_eq!(frame.cgram, &cgram);
         assert_eq!(frame.oam, &oam);
+    }
+
+    #[test]
+    fn gpu_frame_from_capture_input_owns_register_snapshot_adaptation() {
+        let vram = [0x1111, 0x2222];
+        let cgram = [0x3333, 0x4444];
+        let oam = [0x5555, 0x6666];
+        let mut raw = [(0, 0, 0, 0, 0, [0; 4], [0; 4], [0; 8]); 224];
+        raw[3] = (
+            9,
+            10,
+            11,
+            12,
+            0x12,
+            [100, 101, 102, 103],
+            [200, 201, 202, 203],
+            [-1, -2, -3, -4, -5, -6, -7, -8],
+        );
+        let registers = GpuFrameRegisterSnapshot {
+            vram: &vram,
+            oam: &oam,
+            mode: 7,
+            bg: [
+                BgLayerRegs {
+                    h_scroll: 1,
+                    v_scroll: 2,
+                    tilemap_wider: true,
+                    tilemap_higher: false,
+                    tilemap_adr: 0x0400,
+                    tile_adr: 0x1000,
+                },
+                BgLayerRegs::default(),
+                BgLayerRegs::default(),
+                BgLayerRegs::default(),
+            ],
+            obj: ObjRegs {
+                tile_adr1: 0x2000,
+                tile_adr2: 0x3000,
+                obj_size: 5,
+            },
+            mosaic_enabled: 0x7,
+            mosaic_size: 3,
+            extra_left_right: 16,
+            mode7: Mode7Regs {
+                matrix: [1, 2, 3, 4, 5, 6, 7, 8],
+                large_field: true,
+                char_fill: true,
+                x_flip: true,
+                y_flip: false,
+                ext_bg_always_zero: true,
+            },
+            screen_enabled: [0x15, 0x04],
+            screen_windowed: [0x01, 0x02],
+            brightness: 14,
+            forced_blank: true,
+            math_enabled: 0x2f,
+            subtract_color: true,
+            half_color: true,
+            fixed_color_r: 3,
+            fixed_color_g: 4,
+            fixed_color_b: 5,
+            add_subscreen: true,
+            clip_mode: 2,
+            prevent_math_mode: 1,
+            windowsel: 0x0030_0000,
+        };
+
+        let frame = GpuFrame::from_capture_input(GpuFrameCaptureInput {
+            registers,
+            cgram: &cgram,
+            raw_scanlines: &raw,
+        });
+
+        assert_eq!(frame.vram, &vram);
+        assert_eq!(frame.cgram, &cgram);
+        assert_eq!(frame.oam, &oam);
+        assert_eq!(frame.mode, 7);
+        assert_eq!(frame.bg[0].tilemap_adr, 0x0400);
+        assert_eq!(frame.obj.tile_adr2, 0x3000);
+        assert!(frame.mode7.large_field);
+        assert_eq!(frame.screen_enabled, [0x15, 0x04]);
+        assert_eq!(frame.brightness, 14);
+        assert_eq!(frame.windowsel_cm, 3);
+        assert_eq!(frame.scanlines[3].window1_left, 9);
+        assert_eq!(frame.scanlines[3].bg_h_scroll, [100, 101, 102, 103]);
+        assert_eq!(
+            frame.scanlines[3].mode7_matrix,
+            [-1, -2, -3, -4, -5, -6, -7, -8]
+        );
     }
 }

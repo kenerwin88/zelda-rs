@@ -21,13 +21,11 @@ def source_with_required_calls(body: str) -> str:
     required = """
     fn run_play_with_state() {
         let assets = renderer::ModernAssetFrameResources::load_from_env();
-        let present_input = renderer::ModernAssetFramePresentInput {};
-        frontend.present_modern_asset_frame_from_entries(present_input);
+        let live_present_input = renderer::ModernAssetFrameLivePresentInput {};
+        frontend.present_modern_asset_live_frame_from_entries(live_present_input);
         frontend.set_renderer_mode(renderer::RendererMode::from_effective_env());
         let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(0);
         let stats = renderer::ModernAssetLiveStats::from_env();
-        let report = variant_live_stats.record_present_output(&present, &modern_assets);
-        report.fallback_presentation_context();
         let compare = renderer::ModernIndexCompareStats::from_env();
         let compare_config = renderer::ModernIndexCompareRunConfig::default();
         let frame_record = renderer::ModernIndexCompareFrameOutputInput {};
@@ -43,7 +41,9 @@ def source_with_required_calls(body: str) -> str:
         let gpu_render_hash = renderer::gpu_render_hash_frame_rgba(0, &[]);
         let render_hash_pair = renderer::render_hash_pair_bgra_rgba(&[], &[]);
         let fingerprint_leaf = renderer::render_fingerprint_leaf_bgra(&[]);
-        let frame = renderer::GpuFrame::from_source_and_raw_scanlines();
+        let frame_input = renderer::GpuFrameCaptureInput {};
+        let frame_snapshot = renderer::GpuFrameRegisterSnapshot {};
+        let frame = renderer::GpuFrame::from_capture_input(frame_input);
         report.failure_line();
         renderer::hd_authoring::render_hd_capture_from_sources();
     }
@@ -268,13 +268,15 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 frontend.present_modern_frame_from_sources();
                 frontend.present_modern_mode7_gpu();
                 frontend.present_modern_asset_frame();
+                frontend.present_gpu_frame_with_context(&gpu_frame, presentation);
+                renderer::GpuFrame::from_source_and_raw_scanlines(source, cgram, scanlines);
             }
             """
         )
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 6)
+        self.assertEqual(len(errors), 8)
         self.assertTrue(
             all("granular live present escaped renderer boundary" in error for error in errors)
         )
@@ -338,9 +340,11 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let _ = "ZELDA3_REQUIRE_FULL_GPU_PATH";
                 variant_live_stats.record_variant_stats(stats);
                 variant_live_stats.record_present_result(&present_result);
+                variant_live_stats.record_present_output(&present, &modern_assets);
                 self.modern_assets.gpu_asset_mode();
                 self.modern_assets.unhandled_gpu_asset_frame_line();
                 report.full_gpu_failure_line;
+                report.fallback_presentation_context();
                 if present.result.is_presented() { return; }
                 let presentation = renderer::PresentationContext { in_dungeon: present.in_dungeon };
                 eprintln!("gpu_path_unsupported_live reason={} count={}", reason, count);
@@ -351,7 +355,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 13)
+        self.assertEqual(len(errors), 15)
         self.assertTrue(
             all("live modern asset stats policy escaped renderer boundary" in error for error in errors)
         )
@@ -656,7 +660,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         errors = module.check_source_text(source)
 
         self.assertIn(
-            "missing renderer-owned source API call: present_modern_asset_frame",
+            "missing renderer-owned source API call: present_modern_asset_live_frame_from_entries",
             errors,
         )
 

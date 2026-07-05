@@ -18,15 +18,12 @@ MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
 
 MANUAL_EXTRACT = "extract_modern_frame_from_sources"
 REQUIRED_RENDERER_OWNED_CALLS = (
-    "present_modern_asset_frame",
-    "ModernAssetFramePresentInput",
-    "present_modern_asset_frame_from_entries",
+    "ModernAssetFrameLivePresentInput",
+    "present_modern_asset_live_frame_from_entries",
     "ModernAssetFrameResources::load_from_env",
     "RendererMode::from_effective_env",
     "ModernAssetFrameScene",
     "ModernAssetLiveStats",
-    "record_present_output",
-    "fallback_presentation_context",
     "ModernIndexCompareStats",
     "ModernIndexCompareRunConfig",
     "ModernIndexCompareFrameOutputInput",
@@ -43,7 +40,9 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "gpu_render_hash_frame_rgba",
     "render_hash_pair_bgra_rgba",
     "render_fingerprint_leaf_bgra",
-    "GpuFrame::from_source_and_raw_scanlines",
+    "GpuFrameCaptureInput",
+    "GpuFrameRegisterSnapshot",
+    "GpuFrame::from_capture_input",
     "from_player_indoors_flag",
     "render_hd_capture_from_sources",
 )
@@ -69,6 +68,8 @@ FORBIDDEN_GRANULAR_LIVE_PRESENT_CALLS = (
     "present_modern_gpu_from_vram",
     "present_modern_frame_from_sources",
     "present_modern_mode7_gpu",
+    "frontend.present_gpu_frame_with_context(&gpu_frame",
+    "GpuFrame::from_source_and_raw_scanlines",
 )
 
 FORBIDDEN_ASSET_POLICY_CALLS = (
@@ -99,9 +100,11 @@ FORBIDDEN_LIVE_STATS_POLICY_CALLS = (
     "ZELDA3_REQUIRE_FULL_GPU_PATH",
     "variant_live_stats.record_variant_stats(",
     "variant_live_stats.record_present_result(",
+    "variant_live_stats.record_present_output(",
     "modern_assets.gpu_asset_mode()",
     "modern_assets.unhandled_gpu_asset_frame_line()",
     ".full_gpu_failure_line",
+    ".fallback_presentation_context()",
     "present.result.is_presented()",
     "in_dungeon: present.in_dungeon",
     "gpu_path_unsupported_live reason={}",

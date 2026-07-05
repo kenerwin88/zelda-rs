@@ -333,6 +333,31 @@ impl NativeFrontend {
         present_output
     }
 
+    /// Present one live modern-asset frame from a renderer capture input. The
+    /// platform owns surface handling and fallback presentation; the renderer
+    /// owns source adaptation and live-report policy.
+    pub fn present_modern_asset_live_frame_from_entries<T>(
+        &mut self,
+        input: renderer::ModernAssetFrameLivePresentInput<'_, '_, T>,
+    ) -> renderer::ModernAssetLiveFrameReport
+    where
+        T: Copy + Into<(u8, u16, u16)>,
+    {
+        let gpu_frame = renderer::GpuFrame::from_capture_input(input.frame);
+        let present =
+            self.present_modern_asset_frame_from_entries(renderer::ModernAssetFramePresentInput {
+                frame: &gpu_frame,
+                source_entries: input.source_entries,
+                resources: input.resources,
+                player_indoors: input.player_indoors,
+            });
+        let report = input.stats.record_present_output(&present, input.resources);
+        if let Some(presentation) = report.fallback_presentation_context() {
+            self.present_gpu_frame_with_context(&gpu_frame, presentation);
+        }
+        report
+    }
+
     pub fn set_menu_open(&mut self, open: bool) {
         self.handler.menu_open = open;
         if open {
