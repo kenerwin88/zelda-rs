@@ -247,6 +247,7 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "trait PlayRendererBackend",
     "struct CpuPlayRenderer",
     "fn play_renderer_from_env",
+    "fn draw_play_ppu_frame",
     "ZELDA3_RENDER_BACKEND",
     "struct GpuPlayRenderer",
     "impl PlayRendererBackend for GpuPlayRenderer",

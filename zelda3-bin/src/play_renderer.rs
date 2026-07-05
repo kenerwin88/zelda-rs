@@ -56,7 +56,7 @@ impl PlayRendererBackend for CpuPlayRenderer {
         frame: &mut [u8],
         render_flags: PpuRenderFlags,
     ) {
-        crate::draw_play_ppu_frame(game, frame, 256 * 4, render_flags);
+        draw_play_ppu_frame(game, frame, 256 * 4, render_flags);
         let pixels =
             unsafe { std::slice::from_raw_parts(frame.as_ptr().cast::<u32>(), frame.len() / 4) };
         frontend.present_frame(pixels, 256, 224);
@@ -73,6 +73,15 @@ pub(crate) fn from_env() -> Box<dyn PlayRendererBackend> {
             process::exit(2);
         }
     }
+}
+
+pub(crate) fn draw_play_ppu_frame(
+    game: &mut ZeldaState,
+    frame: &mut [u8],
+    pitch: usize,
+    render_flags: PpuRenderFlags,
+) {
+    game.zelda_draw_display_frame(frame, pitch, render_flags);
 }
 
 #[cfg(test)]

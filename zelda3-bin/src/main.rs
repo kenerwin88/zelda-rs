@@ -29,6 +29,7 @@ use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
     HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
 };
+use play_renderer::draw_play_ppu_frame;
 use renderer::OffscreenRenderer;
 use serde::{Deserialize, Serialize};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, ppu::PpuRenderFlags, Snes};
@@ -6534,15 +6535,6 @@ fn run_play_frame_with_run_what(
     game.run_frame_internal(input, run_what);
     game.zelda_push_apu_state();
     draw_play_ppu_frame(game, frame, 256 * 4, render_flags);
-}
-
-fn draw_play_ppu_frame(
-    game: &mut ZeldaState,
-    frame: &mut [u8],
-    pitch: usize,
-    render_flags: PpuRenderFlags,
-) {
-    game.zelda_draw_display_frame(frame, pitch, render_flags);
 }
 
 fn run_replay_crash(args: &[String]) {
