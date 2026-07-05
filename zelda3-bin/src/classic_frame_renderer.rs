@@ -1,5 +1,35 @@
+use platform::{Frontend, NativeFrontend};
 use snes::ppu::PpuRenderFlags;
 use zelda3::ZeldaState;
+
+struct CpuPlayRenderer;
+
+impl crate::play_renderer::PlayRendererBackend for CpuPlayRenderer {
+    fn name(&self) -> &'static str {
+        "cpu_render"
+    }
+
+    fn configure_frontend(&self, frontend: &mut NativeFrontend) {
+        frontend.set_renderer_mode(renderer::RendererMode::Classic);
+    }
+
+    fn present_frame(
+        &mut self,
+        game: &mut ZeldaState,
+        frontend: &mut NativeFrontend,
+        frame: &mut [u8],
+        render_flags: PpuRenderFlags,
+    ) {
+        render_play_frame_bgra(game, frame, 256 * 4, render_flags);
+        let pixels =
+            unsafe { std::slice::from_raw_parts(frame.as_ptr().cast::<u32>(), frame.len() / 4) };
+        frontend.present_frame(pixels, 256, 224);
+    }
+}
+
+pub(crate) fn new_cpu_play_renderer() -> Box<dyn crate::play_renderer::PlayRendererBackend> {
+    Box::new(CpuPlayRenderer)
+}
 
 pub(crate) fn render_play_frame_bgra(
     game: &mut ZeldaState,

@@ -73,8 +73,6 @@ impl ConfiguredPlayRenderer {
     }
 }
 
-struct CpuPlayRenderer;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PlayRendererBackendChoice {
     Cpu,
@@ -94,33 +92,12 @@ impl PlayRendererBackendChoice {
     }
 }
 
-impl PlayRendererBackend for CpuPlayRenderer {
-    fn name(&self) -> &'static str {
-        "cpu_render"
-    }
-
-    fn configure_frontend(&self, frontend: &mut NativeFrontend) {
-        frontend.set_renderer_mode(renderer::RendererMode::Classic);
-    }
-
-    fn present_frame(
-        &mut self,
-        game: &mut ZeldaState,
-        frontend: &mut NativeFrontend,
-        frame: &mut [u8],
-        render_flags: PpuRenderFlags,
-    ) {
-        crate::classic_frame_renderer::render_play_frame_bgra(game, frame, 256 * 4, render_flags);
-        let pixels =
-            unsafe { std::slice::from_raw_parts(frame.as_ptr().cast::<u32>(), frame.len() / 4) };
-        frontend.present_frame(pixels, 256, 224);
-    }
-}
-
 fn from_env() -> Box<dyn PlayRendererBackend> {
     let value = env::var("ZELDA3_RENDER_BACKEND").ok();
     match PlayRendererBackendChoice::from_env_value(value.as_deref()) {
-        Ok(PlayRendererBackendChoice::Cpu) => Box::new(CpuPlayRenderer),
+        Ok(PlayRendererBackendChoice::Cpu) => {
+            crate::classic_frame_renderer::new_cpu_play_renderer()
+        }
         Ok(PlayRendererBackendChoice::Gpu) => crate::gpu_capture::new_gpu_play_renderer(),
         Err(message) => {
             eprintln!("{message}");

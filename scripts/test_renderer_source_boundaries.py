@@ -649,6 +649,28 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             any("replay fingerprint render escaped play_renderer boundary" in error for error in errors)
         )
 
+    def test_rejects_classic_backend_in_play_renderer(self):
+        module = load_module()
+        source = """
+            struct CpuPlayRenderer;
+
+            impl PlayRendererBackend for CpuPlayRenderer {
+                fn present_frame(&mut self) {
+                    render_play_frame_bgra(game, frame, 256 * 4, render_flags);
+                }
+            }
+            """
+
+        errors = module.check_play_renderer_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 3)
+        self.assertTrue(
+            all(
+                "classic CPU backend escaped classic_frame_renderer boundary" in error
+                for error in errors
+            )
+        )
+
     def test_rejects_main_play_render_calls(self):
         module = load_module()
         source = """

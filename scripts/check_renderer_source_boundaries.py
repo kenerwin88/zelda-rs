@@ -15,6 +15,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
+PLAY_RENDERER_RS = REPO / "zelda3-bin" / "src" / "play_renderer.rs"
 BOUNDARY_SOURCE_FILES = (
     MAIN_RS,
     REPO / "zelda3-bin" / "src" / "classic_frame_renderer.rs",
@@ -256,6 +257,12 @@ FORBIDDEN_MAIN_RENDER_HASH_HELPER_CALLS = (
 FORBIDDEN_MAIN_REPLAY_PLAY_RENDER_HELPER_CALLS = (
     "render_replay_projection_bgra(",
     "render_replay_fingerprint_leaf_bgra(",
+)
+
+FORBIDDEN_PLAY_RENDERER_CLASSIC_BACKEND_CALLS = (
+    "struct CpuPlayRenderer",
+    "impl PlayRendererBackend for CpuPlayRenderer",
+    "render_play_frame_bgra(",
 )
 
 FORBIDDEN_MAIN_PLAY_RENDERER_DIAGNOSTIC_CALLS = (
@@ -674,6 +681,24 @@ def check_main_text(source: str) -> list[str]:
     return errors
 
 
+def check_play_renderer_text(source: str) -> list[str]:
+    errors: list[str] = []
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith("//") or stripped.startswith("///"):
+            continue
+        for forbidden in FORBIDDEN_PLAY_RENDERER_CLASSIC_BACKEND_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "classic CPU backend escaped classic_frame_renderer boundary at "
+                    f"zelda3-bin/src/play_renderer.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+    return errors
+
+
 def boundary_source_text() -> str:
     return "\n".join(path.read_text() for path in BOUNDARY_SOURCE_FILES)
 
@@ -682,6 +707,7 @@ def main() -> int:
     source = boundary_source_text()
     errors = check_source_text(source)
     errors.extend(check_main_text(MAIN_RS.read_text()))
+    errors.extend(check_play_renderer_text(PLAY_RENDERER_RS.read_text()))
     if errors:
         for error in errors:
             print(error, file=sys.stderr)
