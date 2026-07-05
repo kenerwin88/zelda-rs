@@ -5,7 +5,8 @@ use std::path::Path;
 use std::process;
 
 use crate::image_output::write_assets_index_png;
-use crate::load_translated_replay_state;
+use crate::input_script::InputScript;
+use crate::{load_play_or_checkpoint, load_play_state, load_translated_replay_state};
 use renderer::modern_extract::{decode_snes_2bpp_tile_indices, decode_snes_4bpp_tile_indices};
 use renderer::modern_source_atlas::modern_source_key;
 use serde::Serialize;
@@ -16,6 +17,22 @@ use zelda3::{
 
 const PLAYER_IS_INDOORS: usize = 0x001b;
 const CHR_KIND_BG3_CONTENT: u8 = 7;
+
+#[derive(Debug)]
+struct ScriptedDumpRoute {
+    name: String,
+    frames: u32,
+    input_script: String,
+    checkpoint_path: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct ScriptedDumpCheckpoint {
+    name: String,
+    frame: u32,
+    checkpoint_path: String,
+    input_script: String,
+}
 
 #[derive(Debug, Serialize)]
 struct AssetsBySourceManifest {
@@ -68,7 +85,7 @@ fn palette_usage_key_from_chr_source(
     preview_palette_row: u8,
 ) -> Option<PaletteUsageKey> {
     let (source_kind, asset) = match src.kind {
-        CHR_KIND_BG => ("bg", "kBgGfx"),
+        CHR_KIND_BG | CHR_KIND_BG_STREAM => ("bg", "kBgGfx"),
         CHR_KIND_SPRITE => ("sprite", "kSprGfx"),
         _ => return None,
     };
@@ -173,6 +190,95 @@ fn palette_usage_entries_from_counts(
     entries
 }
 
+fn scripted_dump_checkpoints(repo_root: &Path) -> Vec<ScriptedDumpCheckpoint> {
+    let path = repo_root.join("docs/porting/oracle_checkpoints.tsv");
+    let Ok(text) = fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    let mut checkpoints = Vec::new();
+    for (line_no, line) in text.lines().enumerate() {
+        if line_no == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let cols = line.split('\t').collect::<Vec<_>>();
+        if cols.len() < 4 {
+            continue;
+        }
+        let frame = cols[1].parse::<u32>().unwrap_or_else(|_| {
+            eprintln!(
+                "{}:{}: invalid checkpoint frame: {}",
+                path.display(),
+                line_no + 1,
+                cols[1]
+            );
+            process::exit(2);
+        });
+        checkpoints.push(ScriptedDumpCheckpoint {
+            name: cols[0].to_owned(),
+            frame,
+            checkpoint_path: cols[2].to_owned(),
+            input_script: cols[3].to_owned(),
+        });
+    }
+    checkpoints
+}
+
+fn scripted_dump_routes(repo_root: &Path, frame_cap: u32) -> Vec<ScriptedDumpRoute> {
+    let path = repo_root.join("docs/porting/oracle_windows.tsv");
+    let Ok(text) = fs::read_to_string(&path) else {
+        eprintln!(
+            "[warn] scripted source dump routes missing: {}",
+            path.display()
+        );
+        return Vec::new();
+    };
+    let checkpoints = scripted_dump_checkpoints(repo_root);
+    let mut routes = Vec::new();
+    for (line_no, line) in text.lines().enumerate() {
+        if line_no == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let cols = line.split('\t').collect::<Vec<_>>();
+        if cols.len() < 4 || cols[1] != "pass" || cols[3].is_empty() {
+            continue;
+        }
+        let input_script = cols[3].to_owned();
+        let script_path = repo_root.join(&input_script);
+        if script_path.with_extension("sram").is_file() {
+            continue;
+        }
+        let frames = cols[2].parse::<u32>().unwrap_or_else(|_| {
+            eprintln!(
+                "{}:{}: invalid frame count for scripted dump route: {}",
+                path.display(),
+                line_no + 1,
+                cols[2]
+            );
+            process::exit(2);
+        });
+        let checkpoint = checkpoints
+            .iter()
+            .filter(|checkpoint| {
+                checkpoint.name == cols[0]
+                    && checkpoint.input_script == input_script
+                    && checkpoint.frame < frames
+                    && repo_root.join(&checkpoint.checkpoint_path).is_file()
+            })
+            .max_by_key(|checkpoint| checkpoint.frame);
+        let route_frames = checkpoint
+            .map(|checkpoint| frames.saturating_sub(checkpoint.frame))
+            .unwrap_or(frames)
+            .min(frame_cap);
+        routes.push(ScriptedDumpRoute {
+            name: cols[0].to_owned(),
+            frames: route_frames,
+            input_script,
+            checkpoint_path: checkpoint.map(|checkpoint| checkpoint.checkpoint_path.clone()),
+        });
+    }
+    routes
+}
+
 /// Walk the combined-route replay and dump an asset library keyed by the LOGICAL
 /// CHR SOURCE (Milestone 2 of the animation-modeled asset renderer), NOT by VRAM
 /// appearance.
@@ -181,8 +287,8 @@ fn palette_usage_entries_from_counts(
 /// walking the three BG tilemaps + OAM and mapping every referenced tile back to
 /// its VRAM CHR slot (`tile_word_base / 16`). For each used slot the M1
 /// bookkeeping table (`game.vram_chr_source()`) names the logical source that
-/// filled it (`kind/pack/tile_off`); slots with no recorded source (`kind == 0`)
-/// are skipped. Each unique logical source key
+/// filled it (`kind/pack/tile_off`); BG1/BG2 slots with no recorded source are
+/// keyed by their frame-end content hash. Each unique logical source key
 /// (`(kind<<24)|(pack<<8)|(tile_off&0xff)`) becomes one cell, whose 8x8 4bpp
 /// palette-index pattern is decoded offline from live VRAM at that slot.
 ///
@@ -220,6 +326,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
         env!("CARGO_MANIFEST_DIR"),
         "/../generated/zelda3_assets/atlas/palette_usage.json"
     );
+    const REPO_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
     let rom = concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc");
     let replay = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -235,6 +342,15 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
             })
         })
         .unwrap_or(60_000);
+    let startup_frames = std::env::var("ZELDA3_DUMP_STARTUP_FRAMES")
+        .ok()
+        .map(|s| {
+            s.parse::<u32>().unwrap_or_else(|_| {
+                eprintln!("invalid ZELDA3_DUMP_STARTUP_FRAMES: {s}");
+                process::exit(2);
+            })
+        })
+        .unwrap_or(30_000);
 
     let watch_key: Option<u64> = std::env::var("ZELDA3_DUMP_WATCH_KEY")
         .ok()
@@ -325,9 +441,16 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                         continue;
                     }
                     let slot = (chr_base + tile_number * 16) / 16;
-                    let src = game.vram_chr_source().get(slot);
+                    let mut src = game.vram_chr_source().get(slot);
                     if src.kind == CHR_KIND_NONE {
-                        continue;
+                        let Some(key) = content_hash_source_key(&ppu.vram, slot) else {
+                            continue;
+                        };
+                        src = zelda3::LogicalChrSrc {
+                            kind: CHR_KIND_BG_STREAM,
+                            pack: ((key >> 16) & 0xffff) as u16,
+                            tile_off: (key & 0xffff) as u16,
+                        };
                     }
                     let palette_row = ((entry_word >> 10) & 7) as u8;
                     let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(
@@ -450,6 +573,64 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
     panic::set_hook(Box::new(|_| {}));
 
     let walk = panic::catch_unwind(AssertUnwindSafe(|| {
+        let repo_root = Path::new(REPO_ROOT);
+        let scripted_routes = scripted_dump_routes(repo_root, max_frames);
+        let mut startup_game = load_play_state(rom);
+        let mut startup_walked = 0u32;
+        while startup_walked < startup_frames {
+            let step = panic::catch_unwind(AssertUnwindSafe(|| {
+                startup_game.zelda_run_frame(0);
+            }));
+            if step.is_err() {
+                eprintln!(
+                    "[warn] startup frame {startup_walked} panicked; stopping startup walk early"
+                );
+                break;
+            }
+            startup_walked = startup_walked.wrapping_add(1);
+            collect_used_slots(&startup_game, startup_walked);
+        }
+
+        let mut scripted_walked = 0u32;
+        for route in scripted_routes {
+            let script_path = repo_root.join(&route.input_script);
+            let script = match InputScript::from_path(&script_path) {
+                Ok(script) => script,
+                Err(e) => {
+                    eprintln!(
+                        "[warn] failed to parse scripted source dump route {} ({}): {e}",
+                        route.name,
+                        script_path.display()
+                    );
+                    continue;
+                }
+            };
+            let (mut game, start_frame) = match route.checkpoint_path.as_deref() {
+                Some(checkpoint_path) => {
+                    load_play_or_checkpoint(rom, Some(&repo_root.join(checkpoint_path)))
+                }
+                None => (load_play_state(rom), 0),
+            };
+            let mut frames = 0u32;
+            while frames < route.frames {
+                let absolute_frame = start_frame.wrapping_add(frames);
+                let input = script.input_for_frame(absolute_frame);
+                let step = panic::catch_unwind(AssertUnwindSafe(|| {
+                    game.zelda_run_frame(input as i32);
+                }));
+                if step.is_err() {
+                    eprintln!(
+                        "[warn] scripted route {} frame {frames} panicked; stopping route walk early",
+                        route.name
+                    );
+                    break;
+                }
+                frames = frames.wrapping_add(1);
+                scripted_walked = scripted_walked.wrapping_add(1);
+                collect_used_slots(&game, frames);
+            }
+        }
+
         let mut game = load_translated_replay_state(rom);
         if let Err(e) = game.replay_save_file(Path::new(replay)) {
             eprintln!("failed to load replay save {replay}: {e}");
@@ -467,12 +648,17 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
             frames = frames.wrapping_add(1);
             collect_used_slots(&game, frames);
         }
-        frames
+        (
+            startup_walked
+                .wrapping_add(scripted_walked)
+                .wrapping_add(frames),
+            scripted_walked,
+        )
     }));
 
     panic::set_hook(original_hook);
 
-    let frames_walked = match walk {
+    let (frames_walked, scripted_frames_walked) = match walk {
         Ok(f) => f,
         Err(_) => {
             eprintln!("assets-by-source walk aborted by panic");
@@ -608,7 +794,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
         eprintln!("[warn] {collisions} source->pattern collisions (kept first per key)");
     }
     println!(
-        "dumped assets-by-source cells={cell_count} kind_counts(bg/sprite/link/bg3)={count_bg}/{count_sprite}/{count_link}/{count_bg3} dropped_bg3_ambiguous={dropped_bg3} palette_usage_entries={} frames={frames_walked}",
+        "dumped assets-by-source cells={cell_count} kind_counts(bg/sprite/link/bg3)={count_bg}/{count_sprite}/{count_link}/{count_bg3} dropped_bg3_ambiguous={dropped_bg3} palette_usage_entries={} frames={frames_walked} startup_frames={startup_frames} scripted_frames={scripted_frames_walked} replay_max_frames={max_frames}",
         palette_usage_entries_from_counts(&palette_usage_counts).len()
     );
 }
@@ -653,7 +839,15 @@ mod palette_usage_tests {
             "palette_main_spr",
             6,
         );
-        assert!(palette_usage_key_from_chr_source(streamed, "palette_dung_bg_main", 1).is_none());
+        self::assert_palette_usage_key(
+            palette_usage_key_from_chr_source(streamed, "palette_dung_bg_main", 1),
+            "bg",
+            "kBgGfx",
+            0x1234,
+            0x5678,
+            "palette_dung_bg_main",
+            1,
+        );
     }
 
     #[test]

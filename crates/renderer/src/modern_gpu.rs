@@ -1306,6 +1306,30 @@ fn frame_uses_direct_final_index_math(frame: &ModernFrame) -> bool {
         && frame.windowsel_cm == 0
 }
 
+fn bg_effect_group_is_content_sourced(group: &BgEffectMaterialGroup<'_, '_>) -> bool {
+    !group.packets.is_empty()
+        && group.packets.iter().all(|packet| {
+            let source_key = if packet.inst.source_key != crate::modern_hd_overrides::NO_SOURCE_KEY
+            {
+                packet.inst.source_key
+            } else {
+                packet.cell.source_key
+            };
+            matches!((source_key >> 32) as u8, 6 | 7 | 8)
+        })
+}
+
+fn sprite_effect_groups_are_content_sourced(groups: &[SpriteEffectMaterialGroup<'_, '_>]) -> bool {
+    !groups.is_empty()
+        && groups.iter().all(|group| {
+            !group.packets.is_empty()
+                && group
+                    .packets
+                    .iter()
+                    .all(|packet| matches!((packet.cell.source_key >> 32) as u8, 6 | 7 | 8))
+        })
+}
+
 fn can_render_final_index_base_gpu(frame: &ModernFrame, bg_cells: &[ModernIndexTile]) -> bool {
     if frame.forced_blank
         || !frame_uses_direct_final_index_math(frame)
@@ -4040,21 +4064,16 @@ impl ModernGpuVariantHeadless {
 
     fn render_effect_material_with_stable_overlay(
         &self,
-        live_index_base: &LiveIndexVariantBase<'_>,
+        _live_index_base: &LiveIndexVariantBase<'_>,
         execution: &mut PreparedModernVariantExecution<'_, '_>,
     ) {
         let frame = execution.frame();
         if frame_needs_material_prefinal_finalizer(frame) {
-            let build_result =
-                self.render_effect_material_with_prefinal_base(live_index_base, execution);
+            let build_result = self.render_effect_material_with_prefinal_base(execution);
             record_screen_builder_result(execution.stats_mut().as_mut(), build_result);
         } else {
-            self.renderer.render_effect_material_mode1_order(
-                &self.device,
-                &self.queue,
-                execution,
-                &self.target_view,
-            );
+            let build_result = self.render_effect_material_over_source_base(execution);
+            record_screen_builder_result(execution.stats_mut().as_mut(), build_result);
         }
         if execution.stats().needs_headless_stable_overlay() {
             self.renderer.renderer.render_overlay(
@@ -4068,7 +4087,6 @@ impl ModernGpuVariantHeadless {
 
     fn render_effect_material_with_prefinal_base(
         &self,
-        live_index_base: &LiveIndexVariantBase<'_>,
         execution: &PreparedModernVariantExecution<'_, '_>,
     ) -> ModernScreenBuilderResult {
         let frame = execution.frame();
@@ -4079,10 +4097,10 @@ impl ModernGpuVariantHeadless {
             return self.compositor.render_prefinal_screens_with_final_frame(
                 &self.device,
                 &self.queue,
-                live_index_base.frame(),
                 frame,
-                live_index_base.bg_cells(),
-                live_index_base.sprite_cells(),
+                frame,
+                execution.bg_cells(),
+                execution.sprite_cells(),
                 &self.target,
             );
         }
@@ -4090,14 +4108,58 @@ impl ModernGpuVariantHeadless {
             .render_prefinal_overlay_screens_with_final_frame(
                 &self.device,
                 &self.queue,
-                live_index_base.frame(),
                 frame,
                 frame,
-                live_index_base.bg_cells(),
-                live_index_base.sprite_cells(),
+                frame,
+                execution.bg_cells(),
+                execution.sprite_cells(),
                 &prefinal_packets,
                 &self.target,
             )
+    }
+
+    fn render_effect_material_over_source_base(
+        &self,
+        execution: &PreparedModernVariantExecution<'_, '_>,
+    ) -> ModernScreenBuilderResult {
+        let build_result = self.compositor.render_prefinal_screens_with_final_frame(
+            &self.device,
+            &self.queue,
+            execution.frame(),
+            execution.frame(),
+            execution.bg_cells(),
+            execution.sprite_cells(),
+            &self.target,
+        );
+        let command_plan = execution
+            .mode1_effect_render_plan(&self.renderer.atlas)
+            .into_command_plan();
+        command_plan.execute_with(|mut command| {
+            if command.source == Mode1EffectCommandSource::EmptyFrameFallback {
+                return;
+            }
+            if let ModernGpuWorkItem::BgEffect(group) = &command.command.work_item {
+                if bg_effect_group_is_content_sourced(group) {
+                    return;
+                }
+            }
+            if let ModernGpuWorkItem::SpriteEffects(groups) = &command.command.work_item {
+                if sprite_effect_groups_are_content_sourced(groups) {
+                    return;
+                }
+            }
+            command.command.target_load = ModernGpuCommandLoad::Load;
+            self.renderer.render_mode1_effect_command(
+                &self.device,
+                &self.queue,
+                execution.frame(),
+                execution.bg_cells(),
+                execution.sprite_cells(),
+                &self.target_view,
+                command,
+            );
+        });
+        build_result
     }
 
     fn read_target_rgba(&self) -> Vec<u8> {

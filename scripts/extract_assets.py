@@ -286,6 +286,21 @@ def clean_generated_output(out_dir: Path) -> Path:
     return assets_dir
 
 
+def preserve_palette_usage(out_dir: Path) -> bytes | None:
+    path = out_dir / "atlas" / "palette_usage.json"
+    if not path.is_file():
+        return None
+    return path.read_bytes()
+
+
+def restore_palette_usage(out_dir: Path, data: bytes | None) -> None:
+    if data is None:
+        return
+    path = out_dir / "atlas" / "palette_usage.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+
 def write_asset_output(
     out_dir: Path, *, index: int, name: str, payload: bytes
 ) -> dict[str, object]:
@@ -767,7 +782,9 @@ def main() -> int:
         return 2
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    palette_usage = preserve_palette_usage(out_dir)
     clean_generated_output(out_dir)
+    restore_palette_usage(out_dir, palette_usage)
     if source_pack.exists():
         source_pack.unlink()
 
