@@ -19,6 +19,12 @@ pub struct GpuRenderComparison {
     pub diff: Option<GpuRenderDiff>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GpuRenderFrameComparison {
+    pub comparison: GpuRenderComparison,
+    pub divergence_line: Option<String>,
+}
+
 pub fn render_frame_rgb_hash_rgba(frame: &[u8]) -> u32 {
     let mut hash = 2166136261u32;
     for pixel in frame.chunks_exact(4) {
@@ -49,6 +55,42 @@ pub fn compare_gpu_render_bgra_to_rgba(cpu_bgra: &[u8], gpu_rgba: &[u8]) -> GpuR
         gpu_hash: render_frame_rgb_hash_rgba(gpu_rgba),
         diff: compare_bgra_to_rgba(cpu_bgra, gpu_rgba),
     }
+}
+
+pub fn compare_gpu_render_frame_bgra_to_rgba(
+    frame: u32,
+    cpu_bgra: &[u8],
+    gpu_rgba: &[u8],
+) -> GpuRenderFrameComparison {
+    let comparison = compare_gpu_render_bgra_to_rgba(cpu_bgra, gpu_rgba);
+    let divergence_line = comparison
+        .diff
+        .map(|diff| gpu_render_divergence_line(frame, &comparison, diff));
+    GpuRenderFrameComparison {
+        comparison,
+        divergence_line,
+    }
+}
+
+fn gpu_render_divergence_line(
+    frame: u32,
+    comparison: &GpuRenderComparison,
+    diff: GpuRenderDiff,
+) -> String {
+    format!(
+        "gpu-render-divergence frame={frame} mismatched_pixels={} first_mismatch=({}, {}) cpu_rgb=({},{},{}) gpu_rgb=({},{},{}) cpu_hash=0x{:08x} gpu_hash=0x{:08x}",
+        diff.mismatched_pixels,
+        diff.first_x,
+        diff.first_y,
+        diff.cpu_rgb.0,
+        diff.cpu_rgb.1,
+        diff.cpu_rgb.2,
+        diff.gpu_rgb.0,
+        diff.gpu_rgb.1,
+        diff.gpu_rgb.2,
+        comparison.cpu_hash,
+        comparison.gpu_hash
+    )
 }
 
 pub fn compare_rgba_to_rgba(classic_rgba: &[u8], modern_rgba: &[u8]) -> Option<GpuRenderDiff> {
@@ -154,6 +196,38 @@ mod tests {
                 gpu_rgb: (4, 7, 6),
             })
         );
+    }
+
+    #[test]
+    fn gpu_render_frame_comparison_owns_divergence_line() {
+        let cpu_bgra = [
+            3, 2, 1, 0xff, //
+            6, 5, 4, 0xff,
+        ];
+        let gpu_rgba = [
+            1, 2, 3, 0xff, //
+            4, 7, 6, 0xff,
+        ];
+
+        let report = compare_gpu_render_frame_bgra_to_rgba(42, &cpu_bgra, &gpu_rgba);
+
+        assert_eq!(
+            report.divergence_line.as_deref(),
+            Some(
+                "gpu-render-divergence frame=42 mismatched_pixels=1 first_mismatch=(1, 0) cpu_rgb=(4,5,6) gpu_rgb=(4,7,6) cpu_hash=0x03d252aa gpu_hash=0x43d73498"
+            )
+        );
+    }
+
+    #[test]
+    fn gpu_render_frame_comparison_omits_divergence_line_when_matching() {
+        let cpu_bgra = [3, 2, 1, 0xff, 6, 5, 4, 0xff];
+        let gpu_rgba = [1, 2, 3, 0xff, 4, 5, 6, 0xff];
+
+        let report = compare_gpu_render_frame_bgra_to_rgba(42, &cpu_bgra, &gpu_rgba);
+
+        assert_eq!(report.divergence_line, None);
+        assert_eq!(report.comparison.diff, None);
     }
 
     #[test]

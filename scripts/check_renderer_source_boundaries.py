@@ -33,7 +33,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernAtlasCompareFrameInput",
     "MappedSourceTableView",
     "MappedSourceTableView::from_entries",
-    "compare_gpu_render_bgra_to_rgba",
+    "compare_gpu_render_frame_bgra_to_rgba",
     "GpuFrame::from_source_and_raw_scanlines",
     "render_compare_frame",
     "compare_frame",
@@ -160,6 +160,8 @@ FORBIDDEN_DIRECT_MODERN_ATLAS_COMPARE_CALLS = (
 
 FORBIDDEN_DIRECT_GPU_RENDER_COMPARE_CALLS = (
     "renderer::compare_bgra_to_rgba(",
+    "renderer::compare_gpu_render_bgra_to_rgba(",
+    "gpu-render-divergence frame=",
 )
 
 FORBIDDEN_DIRECT_MODERN_ATLAS_COMPARE_HASH_CALLS = (
