@@ -5,13 +5,14 @@ use std::path::PathBuf;
 use std::process;
 
 use crate::image_output::write_rgba_frame_png;
-use crate::{load_translated_replay_state, parse_u16_auto, DEVELOPER_ROOM_SOURCE_BG_LAYER};
+use crate::{load_translated_replay_state, parse_u16_auto};
 use renderer::modern_extract::decode_snes_4bpp_tile_indices;
 use renderer::modern_palette::snes_cgram_to_rgba;
 use serde::Serialize;
 use zelda3::ZeldaState;
 
 const OVERWORLD_BG_CHR_BASE: usize = 0x2000;
+const OVERWORLD_BG_SOURCE_LAYER: u8 = 1;
 const UNIQUE_OVERWORLD_MANIFEST_SOURCE_LIMIT: usize = 32;
 
 #[derive(Debug, Serialize)]
@@ -363,7 +364,7 @@ fn collect_unique_overworld_cells_from_built_bg2_map(
                 UniqueOverworldCellSource {
                     screen: requested_screen,
                     loaded_screen,
-                    layer: DEVELOPER_ROOM_SOURCE_BG_LAYER as u8,
+                    layer: OVERWORLD_BG_SOURCE_LAYER,
                     x: cell_x as u8,
                     y: cell_y as u8,
                 },
@@ -399,7 +400,7 @@ fn collect_unique_overworld_tiles_from_built_bg2_map(
                 UniqueOverworldCellSource {
                     screen: requested_screen,
                     loaded_screen,
-                    layer: DEVELOPER_ROOM_SOURCE_BG_LAYER as u8,
+                    layer: OVERWORLD_BG_SOURCE_LAYER,
                     x: tile_x as u8,
                     y: tile_y as u8,
                 },

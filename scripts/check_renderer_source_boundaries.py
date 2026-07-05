@@ -17,6 +17,7 @@ REPO = Path(__file__).resolve().parents[1]
 MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
 ASSET_PALETTE_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "asset_palette_commands.rs"
 ASSET_SOURCE_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "asset_source_dump_commands.rs"
+DEVELOPER_ROOM_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "developer_room_commands.rs"
 SHEET_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "sheet_dump_commands.rs"
 INDEX_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "index_dump_commands.rs"
 OVERWORLD_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "overworld_dump_commands.rs"
@@ -30,6 +31,7 @@ BOUNDARY_SOURCE_FILES = (
     MAIN_RS,
     ASSET_PALETTE_COMMANDS_RS,
     ASSET_SOURCE_DUMP_COMMANDS_RS,
+    DEVELOPER_ROOM_COMMANDS_RS,
     SHEET_DUMP_COMMANDS_RS,
     INDEX_DUMP_COMMANDS_RS,
     OVERWORLD_DUMP_COMMANDS_RS,
@@ -367,6 +369,43 @@ FORBIDDEN_MAIN_ASSET_SOURCE_DUMP_COMMAND_OWNERSHIP = (
     "fn palette_usage_entries_from_counts",
     "mod palette_usage_tests",
     "fn run_dump_assets_by_source",
+)
+
+FORBIDDEN_MAIN_DEVELOPER_ROOM_COMMAND_OWNERSHIP = (
+    "struct DeveloperSandboxTilemapManifest {",
+    "struct DeveloperTilesetManifest {",
+    "struct DeveloperTilesetEntry {",
+    "fn current_developer_location_from_ram(",
+    "fn load_developer_route_bookmark(",
+    "fn load_developer_destination(",
+    "fn developer_sandbox_tilemap_manifest(",
+    "fn developer_kakariko_tileset_manifest(",
+    "fn load_developer_synthetic_room(",
+    "fn load_developer_room_theme_source(",
+    "fn write_developer_room_visuals_to_ppu(",
+    "fn write_developer_room_palette_from_source(",
+    "fn copy_developer_room_chr_from_source(",
+    "fn developer_room_kakariko_sample_origin(",
+    "fn developer_room_kakariko_visible_cell(",
+    "fn run_dump_developer_destination(",
+    "fn run_dump_developer_tileset(",
+    "const DEVELOPER_ROOM_BG_TILE_BASE:",
+    "const DEVELOPER_ROOM_SOURCE_BG_LAYER:",
+    "const DEV_TOWN_ROOF:",
+    "const DEV_TOWN_WALL:",
+    "const DEV_TOWN_DOOR:",
+    "const DEV_TOWN_GRASS:",
+    "const DEV_TOWN_PATH:",
+    "const DEV_TOWN_FENCE:",
+    "const DEV_TOWN_SHRUB:",
+    "const DEV_TOWN_SIGN:",
+    "const DEV_TOWN_TREE:",
+    "const DEV_TOWN_CLIFF_TOP:",
+    "const DEV_TOWN_CLIFF_FACE:",
+    "const DEV_TOWN_FLOWERS:",
+    "const DEV_TOWN_STONE:",
+    "const DEV_TOWN_HEDGE:",
+    "const DEVELOPER_ROOM_KAKARIKO_MUSIC:",
 )
 
 FORBIDDEN_MAIN_SHEET_DUMP_COMMAND_OWNERSHIP = (
@@ -883,6 +922,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "asset source dump command ownership escaped asset_source_dump_commands boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_DEVELOPER_ROOM_COMMAND_OWNERSHIP:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "developer room command ownership escaped developer_room_commands boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

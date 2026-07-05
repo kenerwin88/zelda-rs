@@ -986,6 +986,56 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_developer_room_command_ownership_in_main(self):
+        module = load_module()
+        source = """
+            struct DeveloperSandboxTilemapManifest {}
+            struct DeveloperTilesetManifest {}
+            struct DeveloperTilesetEntry {}
+            fn current_developer_location_from_ram() {}
+            fn load_developer_route_bookmark() {}
+            fn load_developer_destination() {}
+            fn developer_sandbox_tilemap_manifest() {}
+            fn developer_kakariko_tileset_manifest() {}
+            fn load_developer_synthetic_room() {}
+            fn load_developer_room_theme_source() {}
+            fn write_developer_room_visuals_to_ppu() {}
+            fn write_developer_room_palette_from_source() {}
+            fn copy_developer_room_chr_from_source() {}
+            fn developer_room_kakariko_sample_origin() {}
+            fn developer_room_kakariko_visible_cell() {}
+            fn run_dump_developer_destination() {}
+            fn run_dump_developer_tileset() {}
+            const DEVELOPER_ROOM_BG_TILE_BASE: u16 = 0x2000;
+            const DEVELOPER_ROOM_SOURCE_BG_LAYER: usize = 1;
+            const DEV_TOWN_ROOF: u16 = 224;
+            const DEV_TOWN_WALL: u16 = 225;
+            const DEV_TOWN_DOOR: u16 = 226;
+            const DEV_TOWN_GRASS: u16 = 227;
+            const DEV_TOWN_PATH: u16 = 228;
+            const DEV_TOWN_FENCE: u16 = 229;
+            const DEV_TOWN_SHRUB: u16 = 230;
+            const DEV_TOWN_SIGN: u16 = 231;
+            const DEV_TOWN_TREE: u16 = 232;
+            const DEV_TOWN_CLIFF_TOP: u16 = 233;
+            const DEV_TOWN_CLIFF_FACE: u16 = 234;
+            const DEV_TOWN_FLOWERS: u16 = 235;
+            const DEV_TOWN_STONE: u16 = 236;
+            const DEV_TOWN_HEDGE: u16 = 237;
+            const DEVELOPER_ROOM_KAKARIKO_MUSIC: u8 = 0x07;
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 34)
+        self.assertTrue(
+            all(
+                "developer room command ownership escaped developer_room_commands boundary"
+                in error
+                for error in errors
+            )
+        )
+
     def test_rejects_sheet_dump_command_ownership_in_main(self):
         module = load_module()
         source = """
