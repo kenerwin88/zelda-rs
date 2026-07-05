@@ -678,7 +678,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 render_play_frame_bgra(&mut rust_state, &mut rust_frame, pitch, PpuRenderFlags::empty());
             }
 
-            fn run_dump_overworld_screen() {
+            fn dump_overworld_screen_site() {
                 render_play_frame_bgra(&mut game, &mut frame, pitch, PpuRenderFlags::empty());
             }
 
@@ -864,7 +864,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 render_lockstep_artifact_frame_bgra(&mut rust_state, &mut rust_frame);
             }
 
-            fn run_dump_overworld_screen() {
+            fn dump_overworld_screen_site() {
                 render_overworld_screen_dump_bgra(&mut game, &mut frame);
             }
 
@@ -902,6 +902,26 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertTrue(
             all(
                 "render diagnostic ownership escaped render_diagnostics boundary"
+                in error
+                for error in errors
+            )
+        )
+
+    def test_rejects_frame_dump_command_ownership_in_main(self):
+        module = load_module()
+        source = """
+            fn run_dump_frame() {}
+            fn run_dump_overworld_screen() {}
+            fn run_scan_replay_checkpoints() {}
+            fn run_dump_replay_checkpoint_ppu() {}
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 4)
+        self.assertTrue(
+            all(
+                "frame dump command ownership escaped frame_dump_commands boundary"
                 in error
                 for error in errors
             )

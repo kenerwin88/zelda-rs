@@ -340,6 +340,13 @@ FORBIDDEN_MAIN_RENDER_DIAGNOSTIC_OWNERSHIP = (
     "fn format_render_ppu_summary",
 )
 
+FORBIDDEN_MAIN_FRAME_DUMP_COMMAND_OWNERSHIP = (
+    "fn run_dump_frame",
+    "fn run_dump_overworld_screen",
+    "fn run_scan_replay_checkpoints",
+    "fn run_dump_replay_checkpoint_ppu",
+)
+
 FORBIDDEN_MAIN_IMAGE_OUTPUT_OWNERSHIP = (
     "fn write_argb_frame_png",
     "fn write_assets_index_png",
@@ -894,6 +901,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "render diagnostic ownership escaped render_diagnostics boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_FRAME_DUMP_COMMAND_OWNERSHIP:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "frame dump command ownership escaped frame_dump_commands boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
