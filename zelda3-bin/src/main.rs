@@ -27,7 +27,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use gpu_capture::{
     gpu_render_compare_run, modern_compare_mode_defaults_from_env,
     modern_index_compare_run_from_env, play_gpu_render_compare_session,
-    render_hd_capture_from_game, render_live_game_gpu_frame_rgba,
+    render_hd_capture_from_game, render_live_game_gpu_frame_rgba, replay_cpu_bgra_hash_line,
     replay_optional_gpu_readback_renderer,
 };
 use platform::{
@@ -35,10 +35,10 @@ use platform::{
     HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
 };
 use play_renderer::{
-    render_hash_frame_bgra_line, render_lockstep_artifact_frame_bgra,
-    render_lockstep_oracle_frames_in_place, render_oracle_compare_frames_bgra,
-    render_overworld_screen_dump_bgra, render_replay_fingerprint_leaf_bgra,
-    render_replay_projection_bgra, run_play_frame_bgra, run_play_frame_with_run_what_bgra,
+    render_lockstep_artifact_frame_bgra, render_lockstep_oracle_frames_in_place,
+    render_oracle_compare_frames_bgra, render_overworld_screen_dump_bgra,
+    render_replay_fingerprint_leaf_bgra, render_replay_projection_bgra, run_play_frame_bgra,
+    run_play_frame_with_run_what_bgra,
 };
 use serde::{Deserialize, Serialize};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, ppu::PpuRenderFlags, Snes};
@@ -3986,7 +3986,7 @@ fn run_replay_save(args: &[String]) {
                 }
             }
             if should_log_render_hash {
-                println!("{}", render_hash_frame_bgra_line(frames, frame));
+                println!("{}", replay_cpu_bgra_hash_line(frames, frame));
                 if std::env::var_os("ZELDA3_PPU_STATE_HASH").is_some() {
                     let fnv16 = |s: &[u16]| {
                         let mut h = 2166136261u32;

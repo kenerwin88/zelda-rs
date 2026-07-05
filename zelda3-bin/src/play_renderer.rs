@@ -225,10 +225,6 @@ pub(crate) fn render_lockstep_oracle_frames_in_place(
     oracle.snes.cart.ram.copy_from_slice(&snes_state.sram);
 }
 
-pub(crate) fn render_hash_frame_bgra_line(frame_number: u32, frame: &[u8]) -> String {
-    renderer::render_hash_frame_bgra(frame_number, frame).line
-}
-
 pub(crate) fn render_fingerprint_leaf_bgra(frame: &[u8]) -> u32 {
     renderer::render_fingerprint_leaf_bgra(frame)
 }

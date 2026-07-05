@@ -935,6 +935,10 @@ impl GpuRgbaReadbackFrame {
     }
 }
 
+pub(crate) fn replay_cpu_bgra_hash_line(frame: u32, cpu_bgra: &[u8]) -> String {
+    renderer::render_hash_frame_bgra(frame, cpu_bgra).line
+}
+
 impl ReplayRenderHashGpuReadback {
     pub(crate) fn gpu_render_hash_log_line(&self, frame: u32) -> String {
         self.frame.render_hash_line(frame)

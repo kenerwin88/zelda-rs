@@ -673,6 +673,20 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(all("run_play_with_state" in error for error in errors))
 
+    def test_rejects_main_render_hash_helper_calls(self):
+        module = load_module()
+        source = """
+            fn run_replay_save() {
+                println!("{}", render_hash_frame_bgra_line(frames, frame));
+            }
+            """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("render hash helper escaped gpu_capture boundary", errors[0])
+        self.assertIn("run_replay_save", errors[0])
+
     def test_rejects_gpu_frame_assembly_calls(self):
         module = load_module()
         source = source_with_required_calls(
