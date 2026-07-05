@@ -3546,16 +3546,13 @@ fn run_replay_save(args: &[String]) {
             let frame = render_hash_frame
                 .as_mut()
                 .expect("render compare frame allocated");
-            let Some(line) = gpu_render_compare.compare_current_frame_with_optional_readback(
+            if !gpu_render_compare.emit_current_frame_with_optional_readback(
                 &mut game,
                 &mut gpu_readback,
                 frame,
                 frames,
-            ) else {
+            ) {
                 process::exit(1);
-            };
-            if let Some(line) = line {
-                println!("{line}");
             }
         }
         if should_log_render_hash || should_dump_render_hash {
@@ -5188,9 +5185,7 @@ fn run_replay_save(args: &[String]) {
         }
     }
 
-    if let Some(line) = modern_index_compare.summary_line_if_enabled() {
-        println!("{line}");
-    }
+    modern_index_compare.emit_summary_line_if_enabled();
     if ppu_mode_summary {
         println!(
             "ppu_mode_summary m0={} m1={} m2={} m3={} m4={} m5={} m6={} m7={} first_m7={} last_m7={}",
@@ -5331,9 +5326,7 @@ fn run_replay_save(args: &[String]) {
         game.overworld_get_tile_attribute_at_location(action_x1, action_y1)
     };
 
-    if let Some(line) = gpu_render_compare.summary_line_if_quiet() {
-        println!("{line}");
-    }
+    gpu_render_compare.emit_summary_line_if_quiet();
 
     // Stable byte-level WRAM dump for deterministic old-vs-new diffing (no
     // bisection): `ZELDA3_REPLAY_WRAM_DUMP=<path>` writes the full 128KB WRAM.
@@ -11593,10 +11586,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
         }
     }
 
-    println!("{}", compare_session.play_summary_line(start_frame));
-    if let Some(line) = compare_session.modern_index_summary_line_if_enabled() {
-        println!("{line}");
-    }
+    compare_session.emit_summaries(start_frame);
 }
 
 fn write_argb_frame_png(

@@ -723,8 +723,13 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 renderer::hd_authoring::render_hd_capture_from_sources(&gpu_frame, &source_table, &atlas);
                 renderer::compare_gpu_render_frame_bgra_to_rgba(frames, frame, &gpu_rgba);
                 gpu_render_compare.compare_current_frame(&mut game, &mut gpu_readback, &mut render_frame, completed_frame);
+                gpu_render_compare.compare_current_frame_with_optional_readback(&mut game, &mut gpu_readback, &mut render_frame, completed_frame);
                 modern_atlas_compare.render_report_from_game(&mut game, &mut gpu_readback, completed_frame);
                 modern_index_compare.render_output_from_game(&mut game, &mut gpu_readback, completed_frame, true);
+                gpu_render_compare.summary_line_if_quiet();
+                modern_index_compare.summary_line_if_enabled();
+                compare_session.modern_index_summary_line_if_enabled();
+                compare_session.play_summary_line(start_frame);
                 if gpu_render_compare != 0 && frames % gpu_render_compare == 0 {}
                 gpu_render_compare_count = gpu_render_compare_count.wrapping_add(1);
                 gpu_render_compare_last_frame = frames;
@@ -749,7 +754,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 74)
+        self.assertEqual(len(errors), 79)
         self.assertTrue(
             all("live GPU play backend ownership escaped gpu_capture boundary" in error for error in errors)
         )

@@ -356,7 +356,7 @@ impl GpuRenderCompareRun {
         }))
     }
 
-    pub(crate) fn compare_current_frame_with_optional_readback(
+    fn compare_current_frame_with_optional_readback(
         &mut self,
         game: &mut ZeldaState,
         readback: &mut OptionalGpuReadbackRenderer,
@@ -366,13 +366,37 @@ impl GpuRenderCompareRun {
         self.compare_current_frame(game, readback.required(), frame_bgra, frame)
     }
 
-    pub(crate) fn summary_line_if_quiet(&self) -> Option<String> {
+    fn summary_line_if_quiet(&self) -> Option<String> {
         (self.enabled() && self.quiet).then(|| {
             format!(
                 "gpu-render-compare completed compared={} last_frame={} last_hash=0x{:08x} mismatched_pixels=0",
                 self.compared, self.last_frame, self.last_hash
             )
         })
+    }
+
+    pub(crate) fn emit_current_frame_with_optional_readback(
+        &mut self,
+        game: &mut ZeldaState,
+        readback: &mut OptionalGpuReadbackRenderer,
+        frame_bgra: &mut [u8],
+        frame: u32,
+    ) -> bool {
+        let Some(line) =
+            self.compare_current_frame_with_optional_readback(game, readback, frame_bgra, frame)
+        else {
+            return false;
+        };
+        if let Some(line) = line {
+            println!("{line}");
+        }
+        true
+    }
+
+    pub(crate) fn emit_summary_line_if_quiet(&self) {
+        if let Some(line) = self.summary_line_if_quiet() {
+            println!("{line}");
+        }
     }
 
     pub(crate) fn play_summary_line(&self, start_frame: u32) -> String {
@@ -485,6 +509,12 @@ impl ModernIndexCompareRun {
         self.stats.summary_line_if_enabled(self.enabled())
     }
 
+    pub(crate) fn emit_summary_line_if_enabled(&self) {
+        if let Some(line) = self.summary_line_if_enabled() {
+            println!("{line}");
+        }
+    }
+
     pub(crate) fn emit_compare_from_game_with_optional_readback(
         &mut self,
         game: &mut ZeldaState,
@@ -554,12 +584,9 @@ impl PlayGpuRenderCompareSession {
         true
     }
 
-    pub(crate) fn play_summary_line(&self, start_frame: u32) -> String {
-        self.gpu_render_compare.play_summary_line(start_frame)
-    }
-
-    pub(crate) fn modern_index_summary_line_if_enabled(&self) -> Option<String> {
-        self.modern_index_compare.summary_line_if_enabled()
+    pub(crate) fn emit_summaries(&self, start_frame: u32) {
+        println!("{}", self.gpu_render_compare.play_summary_line(start_frame));
+        self.modern_index_compare.emit_summary_line_if_enabled();
     }
 }
 
