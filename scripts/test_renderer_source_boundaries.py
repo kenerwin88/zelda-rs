@@ -960,6 +960,32 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             errors[0],
         )
 
+    def test_rejects_asset_source_dump_command_ownership_in_main(self):
+        module = load_module()
+        source = """
+            struct AssetsBySourceManifest {}
+            struct AssetsBySourceCell {}
+            struct PaletteUsageKey {}
+            struct PaletteUsageManifest {}
+            struct PaletteUsageEntry {}
+            fn palette_usage_key_from_chr_source() {}
+            fn record_palette_usage_count() {}
+            fn palette_usage_entries_from_counts() {}
+            mod palette_usage_tests {}
+            fn run_dump_assets_by_source() {}
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 10)
+        self.assertTrue(
+            all(
+                "asset source dump command ownership escaped asset_source_dump_commands boundary"
+                in error
+                for error in errors
+            )
+        )
+
     def test_rejects_gpu_frame_assembly_calls(self):
         module = load_module()
         source = source_with_required_calls(
