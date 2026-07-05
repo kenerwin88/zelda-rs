@@ -38,9 +38,9 @@ use platform::{
     HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
 };
 use render_diagnostics::{
+    compare_diagnostic_oracle_render_frame, format_render_ppu_summary,
     render_diagnostic_lockstep_artifact_frame_bgra,
-    render_diagnostic_lockstep_oracle_frames_in_place,
-    render_diagnostic_oracle_compare_frames_bgra, render_diagnostic_overworld_screen_bgra,
+    render_diagnostic_lockstep_oracle_frames_in_place, render_diagnostic_overworld_screen_bgra,
     replay_fingerprint_leaf_bgra, replay_projection_bgra, run_diagnostic_play_frame_bgra,
     run_diagnostic_play_frame_with_run_what_bgra,
 };
@@ -11631,7 +11631,7 @@ fn run_compare_lockstep_render(args: &[String]) {
             process::exit(1);
         }
 
-        if let Some(render_diff) = compare_oracle_render_frame(
+        if let Some(render_diff) = compare_diagnostic_oracle_render_frame(
             &oracle,
             &mut game_frame,
             &mut snes_frame,
@@ -11824,7 +11824,7 @@ fn run_play_lockstep(args: &[String]) {
             }
             process::exit(1);
         }
-        if let Some(render_diff) = compare_oracle_render_frame(
+        if let Some(render_diff) = compare_diagnostic_oracle_render_frame(
             &oracle,
             &mut game_frame,
             &mut snes_frame,
@@ -11990,102 +11990,6 @@ fn run_play_lockstep(args: &[String]) {
         frontend.present_frame(pixels, width, height);
         local_frame = local_frame.wrapping_add(1);
     }
-}
-
-struct RenderDiff {
-    mismatched_pixels: usize,
-    first_pixel: usize,
-    mine_pixel: [u8; 4],
-    theirs_pixel: [u8; 4],
-    mine_ppu: String,
-    theirs_ppu: String,
-}
-
-fn compare_oracle_render_frame(
-    oracle: &LockstepOracle,
-    game_frame: &mut [u8],
-    snes_frame: &mut [u8],
-    pitch: usize,
-    width: usize,
-) -> Option<RenderDiff> {
-    let rendered =
-        render_diagnostic_oracle_compare_frames_bgra(oracle, game_frame, snes_frame, pitch);
-
-    let mut mismatched_pixels = 0usize;
-    let mut first_pixel = usize::MAX;
-    let mut mine_pixel = [0; 4];
-    let mut theirs_pixel = [0; 4];
-    for (idx, (game_pixel, snes_pixel)) in game_frame
-        .chunks_exact(4)
-        .zip(snes_frame.chunks_exact(4))
-        .take(width * 224)
-        .enumerate()
-    {
-        if game_pixel != snes_pixel {
-            mismatched_pixels += 1;
-            if first_pixel == usize::MAX {
-                first_pixel = idx;
-                mine_pixel.copy_from_slice(game_pixel);
-                theirs_pixel.copy_from_slice(snes_pixel);
-            }
-        }
-    }
-
-    (mismatched_pixels != 0).then_some(RenderDiff {
-        mismatched_pixels,
-        first_pixel,
-        mine_pixel,
-        theirs_pixel,
-        mine_ppu: format_render_ppu_summary(&rendered.game_state),
-        theirs_ppu: format_render_ppu_summary(&rendered.snes_state),
-    })
-}
-
-fn format_render_ppu_summary(state: &ZeldaState) -> String {
-    let ppu = &state.ppu;
-    format!(
-        "mode={} forced_blank={} brightness={} screen={:02x}/{:02x} window={:02x}/{:02x} math={:02x} cg={:02x}/{:02x} fixed=({:02x},{:02x},{:02x}) m7={:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x} bg1=({:04x},{:04x},tm={:04x},chr={:04x}) bg2=({:04x},{:04x},tm={:04x},chr={:04x}) hdma={:02x} dma6={:02x}:{:04x}->{:02x} dma7={:02x}:{:04x}->{:02x} cgram0={:04x} cgram1={:04x} vram0000={:04x} vram1000={:04x}",
-        ppu.mode,
-        ppu.forced_blank,
-        ppu.brightness,
-        ppu.screen_enabled[0],
-        ppu.screen_enabled[1],
-        ppu.screen_windowed[0],
-        ppu.screen_windowed[1],
-        ppu.math_enabled,
-        ppu.clip_mode,
-        ppu.prevent_math_mode,
-        ppu.fixed_color_r,
-        ppu.fixed_color_g,
-        ppu.fixed_color_b,
-        ppu.m7_matrix[0] as u16,
-        ppu.m7_matrix[1] as u16,
-        ppu.m7_matrix[2] as u16,
-        ppu.m7_matrix[3] as u16,
-        ppu.m7_matrix[4] as u16,
-        ppu.m7_matrix[5] as u16,
-        ppu.m7_matrix[6] as u16,
-        ppu.m7_matrix[7] as u16,
-        ppu.bg_layer[0].h_scroll,
-        ppu.bg_layer[0].v_scroll,
-        ppu.bg_layer[0].tilemap_adr,
-        ppu.bg_layer[0].tile_adr,
-        ppu.bg_layer[1].h_scroll,
-        ppu.bg_layer[1].v_scroll,
-        ppu.bg_layer[1].tilemap_adr,
-        ppu.bg_layer[1].tile_adr,
-        state.ram[0x9b],
-        state.dma.channel[6].a_bank,
-        state.dma.channel[6].a_adr,
-        state.dma.channel[6].b_adr,
-        state.dma.channel[7].a_bank,
-        state.dma.channel[7].a_adr,
-        state.dma.channel[7].b_adr,
-        ppu.cgram[0],
-        ppu.cgram[1],
-        ppu.vram[0],
-        ppu.vram[0x1000],
-    )
 }
 
 fn summarize_audio_samples(samples: &[i16]) -> String {

@@ -682,7 +682,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 render_play_frame_bgra(&mut game, &mut frame, pitch, PpuRenderFlags::empty());
             }
 
-            fn compare_oracle_render_frame() {
+            fn compare_oracle_render_site() {
                 render_play_frame_bgra(&mut game_state, game_frame, pitch, PpuRenderFlags::empty());
             }
 
@@ -868,7 +868,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 render_overworld_screen_dump_bgra(&mut game, &mut frame);
             }
 
-            fn compare_oracle_render_frame() {
+            fn compare_oracle_render_site() {
                 render_oracle_compare_frames_bgra(oracle, game_frame, snes_frame, pitch);
             }
 
@@ -883,6 +883,25 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertTrue(
             all(
                 "diagnostic play-render helper escaped render_diagnostics boundary"
+                in error
+                for error in errors
+            )
+        )
+
+    def test_rejects_render_diagnostic_ownership_in_main(self):
+        module = load_module()
+        source = """
+            struct RenderDiff {}
+            fn compare_oracle_render_frame() {}
+            fn format_render_ppu_summary() {}
+            """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 3)
+        self.assertTrue(
+            all(
+                "render diagnostic ownership escaped render_diagnostics boundary"
                 in error
                 for error in errors
             )

@@ -318,6 +318,12 @@ FORBIDDEN_MAIN_PLAY_RENDERER_DIAGNOSTIC_CALLS = (
     "render_lockstep_oracle_frames_in_place(",
 )
 
+FORBIDDEN_MAIN_RENDER_DIAGNOSTIC_OWNERSHIP = (
+    "struct RenderDiff",
+    "fn compare_oracle_render_frame",
+    "fn format_render_ppu_summary",
+)
+
 FORBIDDEN_RAW_RENDER_HASH_CALLS = (
     "renderer::render_frame_rgb_hash_bgra(",
     "renderer::render_frame_rgb_hash_rgba(",
@@ -737,6 +743,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "diagnostic play-render helper escaped render_diagnostics boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_RENDER_DIAGNOSTIC_OWNERSHIP:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "render diagnostic ownership escaped render_diagnostics boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
