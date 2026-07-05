@@ -50,6 +50,15 @@ class ValidateAllParityTests(unittest.TestCase):
                 "8",
             ],
         )
+        self.assertEqual(
+            commands[2],
+            [
+                module.sys.executable,
+                "scripts/gpu_render_compare_checkpoint_sweep.py",
+                "--build",
+                "--require-mode7",
+            ],
+        )
         flattened = " ".join(" ".join(command) for command in commands)
         self.assertNotIn("--smv-test-frames", flattened)
         self.assertNotIn("headless_replay.ini", flattened)
@@ -69,6 +78,19 @@ class ValidateAllParityTests(unittest.TestCase):
             calls,
             [["cargo", "run", "-p", "parity", "--", "check", "--frames", "12000"]],
         )
+
+    def test_full_can_skip_gpu_checkpoint_sweep_when_explicitly_requested(self):
+        module = load_module()
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return mock.Mock(returncode=0)
+
+        with mock.patch.object(module.subprocess, "run", side_effect=fake_run):
+            self.assertEqual(module.main(["--full", "--skip-gpu-checkpoint-sweep"]), 0)
+
+        self.assertEqual(calls, [["cargo", "run", "-p", "parity", "--", "check", "--full"]])
 
     def test_gpu_checkpoint_sweep_runs_after_successful_zparity_when_requested(self):
         module = load_module()
@@ -110,6 +132,7 @@ class ValidateAllParityTests(unittest.TestCase):
     def test_pre_commit_uses_golden_checker_not_live_c_parity(self):
         hook = PRE_COMMIT.read_text()
 
+        self.assertIn("full zparity golden sweep + GPU checkpoint sweep", hook)
         self.assertIn("scripts/validate_all_parity.py --full", hook)
         self.assertIn('scripts/validate_all_parity.py --frames "$PARITY_FRAMES"', hook)
         self.assertIn("scripts/variant_atlas_summary.py --require-full-stable", hook)

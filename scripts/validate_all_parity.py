@@ -12,9 +12,10 @@ checkpoints once, then fans out replay shards across the available CPU cores.
 Usage:
   scripts/validate_all_parity.py                 # fast smoke test (3000 frames)
   scripts/validate_all_parity.py --frames 12000
-  scripts/validate_all_parity.py --full          # full route ~1,073,092 frames
+  scripts/validate_all_parity.py --full          # full route + GPU checkpoint sweep
   scripts/validate_all_parity.py --full --shards 8
   scripts/validate_all_parity.py --gpu-checkpoint-sweep
+  scripts/validate_all_parity.py --full --skip-gpu-checkpoint-sweep
   scripts/validate_all_parity.py --build         # build target/parity/zelda3 first
 """
 
@@ -64,6 +65,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "checkpoint sweep, including Mode-7 coverage"
         ),
     )
+    parser.add_argument(
+        "--skip-gpu-checkpoint-sweep",
+        action="store_true",
+        help="with --full, run only the zparity rollup and skip the GPU checkpoint sweep",
+    )
     return parser.parse_args(argv)
 
 
@@ -112,7 +118,10 @@ def main(argv: list[str] | None = None) -> int:
     result = subprocess.run(cmd, cwd=REPO)
     if result.returncode != 0:
         return result.returncode
-    if args.gpu_checkpoint_sweep:
+    run_gpu_checkpoint_sweep = args.gpu_checkpoint_sweep or (
+        args.full and not args.skip_gpu_checkpoint_sweep
+    )
+    if run_gpu_checkpoint_sweep:
         result = subprocess.run(gpu_checkpoint_sweep_command(), cwd=REPO)
         return result.returncode
     return 0
