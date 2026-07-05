@@ -28,8 +28,9 @@ def source_with_required_calls(body: str) -> str:
         variant_live_stats.record_present_result(&present_result);
         modern_assets.unhandled_gpu_asset_frame_line();
         let compare = renderer::ModernIndexCompareStats::from_env();
+        let compare_config = renderer::ModernIndexCompareRunConfig::default();
         let frame_record = renderer::ModernIndexCompareFrameRenderInput {};
-        let compare_resources = renderer::ModernIndexCompareResources::load_from_env();
+        let compare_resources = compare_config.load_resources_from_env();
         let dump_paths = renderer::ModernIndexCompareDumpPaths {};
         let maybe_summary = modern_index_compare_stats.summary_line_if_enabled(true);
         let atlas_compare_resources = renderer::ModernAtlasCompareResources::load();
@@ -117,6 +118,26 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         errors = module.check_source_text(source)
 
         self.assertEqual(len(errors), 3)
+        self.assertTrue(
+            all("modern index compare stats policy escaped renderer boundary" in error for error in errors)
+        )
+
+    def test_rejects_modern_index_run_policy_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_play_with_state() {
+                if modern_index_compare != 0 && frames % modern_index_compare == 0 {}
+                if modern_index_compare != 0 && completed_frame % modern_index_compare == 0 {}
+                if require_full_gpu_path && modern_index_compare == 0 {}
+                if require_modern_index_parity && modern_index_compare == 0 {}
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 6)
         self.assertTrue(
             all("modern index compare stats policy escaped renderer boundary" in error for error in errors)
         )
@@ -360,8 +381,8 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let variant_gpu_compare = mode.uses_variant_atlas();
                 let modern_gpu_headless = Some(renderer::ModernGpuHeadless::new());
                 let modern_variant_headless = variant_atlas.as_ref().map(renderer::ModernGpuVariantHeadless::new);
-                let variant_atlas = if modern_index_compare != 0 { None } else { None };
-                let source_atlas = if modern_index_compare != 0 { None } else { None };
+                let variant_atlas = if compare_enabled { None } else { None };
+                let source_atlas = if compare_enabled { None } else { None };
                 renderer::modern_index_atlas::load_modern_overworld_index_atlas(root);
                 renderer::modern_dungeon_atlas::load_modern_dungeon_index_atlas(root);
             }
@@ -370,7 +391,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 8)
+        self.assertEqual(len(errors), 6)
         self.assertTrue(
             all("modern index resource policy escaped renderer boundary" in error for error in errors)
         )

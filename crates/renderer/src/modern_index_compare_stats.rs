@@ -6,6 +6,95 @@ use crate::modern_gpu::{modern_gpu_path_fallback_reason, ModernGpuPathFallback};
 use crate::modern_software::VariantAtlasRenderStats;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModernIndexCompareRunConfigError {
+    ZeroStride,
+    RequireFullGpuPathWithoutCompare,
+    RequireModernIndexParityWithoutCompare,
+}
+
+impl std::fmt::Display for ModernIndexCompareRunConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ZeroStride => write!(f, "--modern-index-compare must be greater than zero"),
+            Self::RequireFullGpuPathWithoutCompare => {
+                write!(f, "--require-full-gpu-path requires --modern-index-compare")
+            }
+            Self::RequireModernIndexParityWithoutCompare => {
+                write!(
+                    f,
+                    "--require-modern-index-parity requires --modern-index-compare"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for ModernIndexCompareRunConfigError {}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ModernIndexCompareRunConfig {
+    stride: u32,
+    require_full_gpu_path: bool,
+    require_modern_index_parity: bool,
+}
+
+impl ModernIndexCompareRunConfig {
+    pub fn set_stride(&mut self, stride: u32) -> Result<(), ModernIndexCompareRunConfigError> {
+        if stride == 0 {
+            return Err(ModernIndexCompareRunConfigError::ZeroStride);
+        }
+        self.stride = stride;
+        Ok(())
+    }
+
+    pub fn set_require_full_gpu_path(&mut self) {
+        self.require_full_gpu_path = true;
+    }
+
+    pub fn set_require_modern_index_parity(&mut self) {
+        self.require_modern_index_parity = true;
+    }
+
+    pub fn validate(self) -> Result<(), ModernIndexCompareRunConfigError> {
+        if self.stride == 0 && self.require_full_gpu_path {
+            return Err(ModernIndexCompareRunConfigError::RequireFullGpuPathWithoutCompare);
+        }
+        if self.stride == 0 && self.require_modern_index_parity {
+            return Err(ModernIndexCompareRunConfigError::RequireModernIndexParityWithoutCompare);
+        }
+        Ok(())
+    }
+
+    pub fn enabled(self) -> bool {
+        self.stride != 0
+    }
+
+    pub fn should_compare_frame(self, frame: u32) -> bool {
+        self.stride != 0 && frame % self.stride == 0
+    }
+
+    pub fn require_full_gpu_path(self) -> bool {
+        self.require_full_gpu_path
+    }
+
+    pub fn require_modern_index_parity(self) -> bool {
+        self.require_modern_index_parity
+    }
+
+    pub fn load_resources_from_env(
+        self,
+        root: &std::path::Path,
+        allow_source_cpu_fallback: bool,
+    ) -> Result<crate::ModernIndexCompareResources, String> {
+        crate::ModernIndexCompareResources::load_from_env(
+            self.enabled(),
+            root,
+            allow_source_cpu_fallback,
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ModernIndexComparePixelDiff {
     pub first_x: usize,
     pub first_y: usize,
@@ -601,6 +690,42 @@ mod tests {
             })
         );
         assert_eq!(stats.trace_pixel_for_frame(174), None);
+    }
+
+    #[test]
+    fn run_config_owns_compare_cadence_and_require_validation() {
+        let mut config = ModernIndexCompareRunConfig::default();
+        assert!(!config.enabled());
+        assert!(!config.should_compare_frame(10));
+        assert_eq!(
+            config.set_stride(0),
+            Err(ModernIndexCompareRunConfigError::ZeroStride)
+        );
+
+        config.set_stride(5).expect("valid stride");
+        assert!(config.enabled());
+        assert!(config.should_compare_frame(10));
+        assert!(!config.should_compare_frame(11));
+
+        let mut invalid_full_gpu = ModernIndexCompareRunConfig::default();
+        invalid_full_gpu.set_require_full_gpu_path();
+        assert_eq!(
+            invalid_full_gpu.validate(),
+            Err(ModernIndexCompareRunConfigError::RequireFullGpuPathWithoutCompare)
+        );
+
+        let mut invalid_parity = ModernIndexCompareRunConfig::default();
+        invalid_parity.set_require_modern_index_parity();
+        assert_eq!(
+            invalid_parity.validate(),
+            Err(ModernIndexCompareRunConfigError::RequireModernIndexParityWithoutCompare)
+        );
+
+        config.set_require_full_gpu_path();
+        config.set_require_modern_index_parity();
+        assert!(config.validate().is_ok());
+        assert!(config.require_full_gpu_path());
+        assert!(config.require_modern_index_parity());
     }
 
     #[test]

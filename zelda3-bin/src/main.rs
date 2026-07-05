@@ -3273,9 +3273,7 @@ fn run_replay_save(args: &[String]) {
     let mut gpu_render_compare_count = 0u32;
     let mut gpu_render_compare_last_frame = 0u32;
     let mut gpu_render_compare_last_hash = 0u32;
-    let mut modern_index_compare = 0u32;
-    let mut require_full_gpu_path = false;
-    let mut require_modern_index_parity = false;
+    let mut modern_index_compare = renderer::ModernIndexCompareRunConfig::default();
     let mut modern_index_compare_stats = renderer::ModernIndexCompareStats::from_env();
     let ppu_mode_summary = std::env::var("ZELDA3_PPU_MODE_SUMMARY").is_ok();
     let mut ppu_mode_counts = [0u64; 8];
@@ -3359,22 +3357,22 @@ fn run_replay_save(args: &[String]) {
                     eprintln!("--modern-index-compare requires a stride");
                     process::exit(2);
                 });
-                modern_index_compare = stride.parse::<u32>().unwrap_or_else(|_| {
+                let stride = stride.parse::<u32>().unwrap_or_else(|_| {
                     eprintln!("invalid --modern-index-compare stride: {stride}");
                     process::exit(2);
                 });
-                if modern_index_compare == 0 {
+                if modern_index_compare.set_stride(stride).is_err() {
                     eprintln!("--modern-index-compare stride must be greater than zero");
                     process::exit(2);
                 }
                 i += 2;
             }
             "--require-full-gpu-path" => {
-                require_full_gpu_path = true;
+                modern_index_compare.set_require_full_gpu_path();
                 i += 1;
             }
             "--require-modern-index-parity" => {
-                require_modern_index_parity = true;
+                modern_index_compare.set_require_modern_index_parity();
                 i += 1;
             }
             "--render-hash-dump-frame" => {
@@ -3499,12 +3497,8 @@ fn run_replay_save(args: &[String]) {
         }
     }
 
-    if require_full_gpu_path && modern_index_compare == 0 {
-        eprintln!("--require-full-gpu-path requires --modern-index-compare");
-        process::exit(2);
-    }
-    if require_modern_index_parity && modern_index_compare == 0 {
-        eprintln!("--require-modern-index-parity requires --modern-index-compare");
+    if let Err(e) = modern_index_compare.validate() {
+        eprintln!("{e}");
         process::exit(2);
     }
 
@@ -3574,7 +3568,7 @@ fn run_replay_save(args: &[String]) {
         || gpu_render_compare != 0
         || render_hash_dump_frame.is_some()
         || dump_frame_path.is_some()
-        || modern_index_compare != 0
+        || modern_index_compare.enabled()
     {
         Some(pollster::block_on(OffscreenRenderer::new(256, 224)))
     } else {
@@ -3602,15 +3596,12 @@ fn run_replay_save(args: &[String]) {
     // explicit renderer env selects it. Explicit `assets-anim` keeps the CPU atlas
     // compositor as an opt-out/debug oracle. `assets-variant-gpu` uses compact
     // base art plus LUT effects for stable draws and reports fallback counts.
-    let modern_index_compare_resources = renderer::ModernIndexCompareResources::load_from_env(
-        modern_index_compare != 0,
-        Path::new("."),
-        true,
-    )
-    .unwrap_or_else(|e| {
-        eprintln!("modern index compare resources load failed: {e}");
-        process::exit(2);
-    });
+    let modern_index_compare_resources = modern_index_compare
+        .load_resources_from_env(Path::new("."), true)
+        .unwrap_or_else(|e| {
+            eprintln!("modern index compare resources load failed: {e}");
+            process::exit(2);
+        });
     let capture_panic_pre_frame =
         std::env::var_os("ZELDA3_REPLAY_CAPTURE_PANIC_PRE_FRAME").is_some();
     let mut last_frame_had_fingerprint_render = false;
@@ -5350,7 +5341,7 @@ fn run_replay_save(args: &[String]) {
                 );
             }
         }
-        if modern_index_compare != 0 && frames % modern_index_compare == 0 {
+        if modern_index_compare.should_compare_frame(frames) {
             let module = game.ram[TRACE_MAIN_MODULE_INDEX];
             let compare_scene =
                 renderer::ModernIndexCompareScene::from_main_module_and_player_indoors_flag(
@@ -5377,8 +5368,9 @@ fn run_replay_save(args: &[String]) {
                         scene,
                         classic_rgba: &classic_rgba,
                         allow_source_cpu_fallback: true,
-                        require_modern_index_parity,
-                        require_full_gpu_path,
+                        require_modern_index_parity: modern_index_compare
+                            .require_modern_index_parity(),
+                        require_full_gpu_path: modern_index_compare.require_full_gpu_path(),
                         include_diff_in_frame_line: false,
                     },
                 );
@@ -5458,7 +5450,7 @@ fn run_replay_save(args: &[String]) {
     }
 
     if let Some(line) =
-        modern_index_compare_stats.summary_line_if_enabled(modern_index_compare != 0)
+        modern_index_compare_stats.summary_line_if_enabled(modern_index_compare.enabled())
     {
         println!("{line}");
     }
@@ -11923,9 +11915,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
     let mut load_state = None::<PathBuf>;
     let mut stride = 1u32;
     let mut modern_render_compare = 0u32;
-    let mut modern_index_compare = 0u32;
-    let mut require_full_gpu_path = false;
-    let mut require_modern_index_parity = false;
+    let mut modern_index_compare = renderer::ModernIndexCompareRunConfig::default();
     let mut modern_index_compare_stats = renderer::ModernIndexCompareStats::from_env();
     while i < args.len() {
         match args[i].as_str() {
@@ -11994,22 +11984,22 @@ fn run_play_gpu_render_compare(args: &[String]) {
                     eprintln!("--modern-index-compare requires a value");
                     process::exit(2);
                 });
-                modern_index_compare = value.parse::<u32>().unwrap_or_else(|_| {
+                let value = value.parse::<u32>().unwrap_or_else(|_| {
                     eprintln!("invalid --modern-index-compare value: {value}");
                     process::exit(2);
                 });
-                if modern_index_compare == 0 {
+                if modern_index_compare.set_stride(value).is_err() {
                     eprintln!("--modern-index-compare must be greater than zero");
                     process::exit(2);
                 }
                 i += 2;
             }
             "--require-full-gpu-path" => {
-                require_full_gpu_path = true;
+                modern_index_compare.set_require_full_gpu_path();
                 i += 1;
             }
             "--require-modern-index-parity" => {
-                require_modern_index_parity = true;
+                modern_index_compare.set_require_modern_index_parity();
                 i += 1;
             }
             flag => {
@@ -12018,12 +12008,8 @@ fn run_play_gpu_render_compare(args: &[String]) {
             }
         }
     }
-    if require_full_gpu_path && modern_index_compare == 0 {
-        eprintln!("--require-full-gpu-path requires --modern-index-compare");
-        process::exit(2);
-    }
-    if require_modern_index_parity && modern_index_compare == 0 {
-        eprintln!("--require-modern-index-parity requires --modern-index-compare");
+    if let Err(e) = modern_index_compare.validate() {
+        eprintln!("{e}");
         process::exit(2);
     }
     if renderer_mode == renderer::RendererMode::ModernCompare
@@ -12061,15 +12047,12 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 eprintln!("modern atlas compare resources load failed: {e}");
                 process::exit(2);
             });
-    let modern_index_compare_resources = renderer::ModernIndexCompareResources::load_from_env(
-        modern_index_compare != 0,
-        Path::new("."),
-        false,
-    )
-    .unwrap_or_else(|e| {
-        eprintln!("modern index compare resources load failed: {e}");
-        process::exit(2);
-    });
+    let modern_index_compare_resources = modern_index_compare
+        .load_resources_from_env(Path::new("."), false)
+        .unwrap_or_else(|e| {
+            eprintln!("modern index compare resources load failed: {e}");
+            process::exit(2);
+        });
     let last_panic = install_crash_panic_hook();
     let mut offscreen = pollster::block_on(OffscreenRenderer::new(256, 224));
     let mut render_frame = vec![0u8; 256 * 224 * 4];
@@ -12093,7 +12076,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
         let should_compare_modern =
             modern_render_compare != 0 && completed_frame % modern_render_compare == 0;
         let should_compare_modern_index =
-            modern_index_compare != 0 && completed_frame % modern_index_compare == 0;
+            modern_index_compare.should_compare_frame(completed_frame);
         if !should_compare_stride && !should_compare_modern && !should_compare_modern_index {
             continue;
         }
@@ -12153,8 +12136,8 @@ fn run_play_gpu_render_compare(args: &[String]) {
                     scene,
                     classic_rgba: &classic_rgba,
                     allow_source_cpu_fallback: false,
-                    require_modern_index_parity,
-                    require_full_gpu_path,
+                    require_modern_index_parity: modern_index_compare.require_modern_index_parity(),
+                    require_full_gpu_path: modern_index_compare.require_full_gpu_path(),
                     include_diff_in_frame_line: true,
                 },
             );
@@ -12190,7 +12173,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
         "play-gpu-render-compare completed compared={compared} start_frame={start_frame} last_frame={last_frame} last_hash=0x{last_hash:08x} mismatched_pixels=0"
     );
     if let Some(line) =
-        modern_index_compare_stats.summary_line_if_enabled(modern_index_compare != 0)
+        modern_index_compare_stats.summary_line_if_enabled(modern_index_compare.enabled())
     {
         println!("{line}");
     }
