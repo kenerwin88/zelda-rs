@@ -207,7 +207,18 @@ impl ModernAtlasCompareRun {
         self.stride != 0 && frame % self.stride == 0
     }
 
-    pub(crate) fn render_report_from_capture(
+    pub(crate) fn render_report_from_game(
+        &self,
+        game: &mut ZeldaState,
+        readback: &mut GpuReadbackRenderer,
+        frame: u32,
+    ) -> Option<renderer::ModernAtlasCompareFrameReport> {
+        let capture = capture_gpu_frame_from_game(game);
+        let classic_rgba = readback.render_gpu_capture_rgba(&capture);
+        self.render_report_from_capture(&capture, &classic_rgba, frame)
+    }
+
+    fn render_report_from_capture(
         &self,
         capture: &LiveGpuFrameCapture,
         classic_rgba: &[u8],
@@ -257,7 +268,7 @@ impl ModernIndexCompareRun {
         Ok(())
     }
 
-    pub(crate) fn render_output_from_capture(
+    fn render_output_from_capture(
         &mut self,
         capture: &LiveGpuFrameCapture,
         classic_rgba: &[u8],
@@ -283,6 +294,18 @@ impl ModernIndexCompareRun {
                 include_diff_in_frame_line,
             },
         )
+    }
+
+    pub(crate) fn render_output_from_game(
+        &mut self,
+        game: &mut ZeldaState,
+        readback: &mut GpuReadbackRenderer,
+        frame: u32,
+        include_diff_in_frame_line: bool,
+    ) -> renderer::ModernIndexCompareOutputLines {
+        let capture = capture_gpu_frame_from_game(game);
+        let classic_rgba = readback.render_gpu_capture_rgba(&capture);
+        self.render_output_from_capture(&capture, &classic_rgba, frame, include_diff_in_frame_line)
     }
 
     pub(crate) fn summary_line_if_enabled(&self) -> Option<String> {

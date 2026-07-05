@@ -255,6 +255,8 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "ModernIndexCompareOutputLines",
     "ModernIndexCompareOutputStream",
     "compare_frame_rgba(",
+    "modern_atlas_compare.render_report_from_capture(",
+    "modern_index_compare.render_output_from_capture(",
     "ModernAtlasCompareResources::load(",
     "load_modern_atlas_compare_resources",
     "render_modern_atlas_compare_report_from_capture",

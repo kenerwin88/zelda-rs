@@ -5147,14 +5147,12 @@ fn run_replay_save(args: &[String]) {
         }
         if modern_index_compare.should_compare_frame(frames) {
             {
-                let gpu_capture = capture_gpu_frame_from_game(&mut game);
                 let gpu_readback = gpu_readback
                     .as_mut()
                     .expect("GPU readback renderer allocated");
-                let classic_rgba = gpu_readback.render_gpu_capture_rgba(&gpu_capture);
-                let output_lines = modern_index_compare.render_output_from_capture(
-                    &gpu_capture,
-                    &classic_rgba,
+                let output_lines = modern_index_compare.render_output_from_game(
+                    &mut game,
+                    gpu_readback,
                     frames,
                     false,
                 );
@@ -11652,23 +11650,18 @@ fn run_play_gpu_render_compare(args: &[String]) {
             last_hash = cpu_hash;
         }
         if should_compare_modern {
-            let gpu_capture = capture_gpu_frame_from_game(&mut game);
-            let classic_rgba = gpu_readback.render_gpu_capture_rgba(&gpu_capture);
-            if let Some(report) = modern_atlas_compare.render_report_from_capture(
-                &gpu_capture,
-                &classic_rgba,
+            if let Some(report) = modern_atlas_compare.render_report_from_game(
+                &mut game,
+                &mut gpu_readback,
                 completed_frame,
             ) {
                 println!("{}", report.line);
             }
         }
         if should_compare_modern_index {
-            let gpu_capture = capture_gpu_frame_from_game(&mut game);
-            let classic_rgba = gpu_readback.render_gpu_capture_rgba(&gpu_capture);
-
-            let output_lines = modern_index_compare.render_output_from_capture(
-                &gpu_capture,
-                &classic_rgba,
+            let output_lines = modern_index_compare.render_output_from_game(
+                &mut game,
+                &mut gpu_readback,
                 completed_frame,
                 true,
             );

@@ -687,6 +687,8 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 fn emit(output: &renderer::ModernIndexCompareOutputLines) {}
                 let stream = renderer::ModernIndexCompareOutputStream::Stdout;
                 modern_atlas_compare_resources.compare_frame_rgba(frame, &gpu_frame, &classic_rgba);
+                modern_atlas_compare.render_report_from_capture(&gpu_capture, &classic_rgba, frame);
+                modern_index_compare.render_output_from_capture(&gpu_capture, &classic_rgba, frame, true);
                 renderer::ModernAtlasCompareResources::load(enabled, root);
                 let _atlas_resources = load_modern_atlas_compare_resources(enabled, root);
                 let _atlas_report = render_modern_atlas_compare_report_from_capture();
@@ -725,7 +727,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 48)
+        self.assertEqual(len(errors), 50)
         self.assertTrue(
             all("live GPU play backend ownership escaped gpu_capture boundary" in error for error in errors)
         )
