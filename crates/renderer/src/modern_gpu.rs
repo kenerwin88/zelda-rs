@@ -3353,6 +3353,21 @@ impl ModernGpuHeadless {
         self.read_target_rgba()
     }
 
+    pub fn render_rgba_from_sources<S: crate::modern_extract::SourceTableView + ?Sized>(
+        &self,
+        frame: &crate::gpu_frame::GpuFrame<'_>,
+        src_table: &S,
+        atlas: &crate::modern_source_atlas::ModernSourceAtlas,
+    ) -> Vec<u8> {
+        debug_assert_ne!(frame.mode, 7);
+        let (mut modern, bg_cells) =
+            crate::modern_extract::extract_modern_frame_from_sources(frame, src_table, atlas);
+        let (sprite_cells, sprites) =
+            crate::modern_extract::extract_modern_sprites_from_sources(frame, src_table, atlas);
+        modern.index_sprites = sprites;
+        self.render_rgba(&modern, &bg_cells, &sprite_cells)
+    }
+
     pub fn render_mode7_rgba(&self, frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<u8> {
         debug_assert_eq!(frame.mode, 7);
         let mut encoder = self
@@ -3506,6 +3521,41 @@ impl ModernGpuVariantHeadless {
             sprite_cells: live_index_sprite_cells,
         };
         self.render_prepared_variant_rgba(&live_index_base, &prepared)
+    }
+
+    pub fn render_rgba_with_live_index_base_from_sources<
+        S: crate::modern_extract::SourceTableView + ?Sized,
+    >(
+        &self,
+        frame: &crate::gpu_frame::GpuFrame<'_>,
+        src_table: &S,
+        atlas: &crate::modern_source_atlas::ModernSourceAtlas,
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+    ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
+        debug_assert_ne!(frame.mode, 7);
+        let (mut modern, bg_cells) =
+            crate::modern_extract::extract_modern_frame_from_sources(frame, src_table, atlas);
+        let (sprite_cells, sprites) =
+            crate::modern_extract::extract_modern_sprites_from_sources(frame, src_table, atlas);
+        modern.index_sprites = sprites;
+
+        let (mut live_index_modern, live_index_bg_cells) =
+            crate::modern_extract::extract_modern_frame_from_vram(frame);
+        let (live_index_sprite_cells, live_index_sprites) =
+            crate::modern_extract::extract_modern_sprites_from_vram(frame);
+        live_index_modern.index_sprites = live_index_sprites;
+
+        self.render_rgba_with_live_index_base(
+            &modern,
+            &bg_cells,
+            &sprite_cells,
+            &live_index_modern,
+            &live_index_bg_cells,
+            &live_index_sprite_cells,
+            bg_palette_name,
+            sprite_palette_name,
+        )
     }
 
     fn render_prepared_variant_rgba(

@@ -6023,70 +6023,82 @@ fn run_replay_save(args: &[String]) {
                     } else {
                         let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
                         let src_table = VramChrSourceTableView::new(game.vram_chr_source());
-                        let (mut modern, bg_cells) =
-                            renderer::modern_extract::extract_modern_frame_from_sources(
-                                &gpu_frame, &src_table, atlas,
-                            );
-                        let (sprite_cells, sprites) =
-                            renderer::modern_extract::extract_modern_sprites_from_sources(
-                                &gpu_frame, &src_table, atlas,
-                            );
-                        modern.index_sprites = sprites;
                         let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
                             "palette_dung_bg_main"
                         } else {
                             "palette_overworld_bg_main"
                         };
-                        if let Some((trace_frame, trace_x, trace_y)) = variant_trace_pixel_env() {
-                            if frames == trace_frame {
-                                let variant_atlas = variant_atlas
-                                    .as_ref()
-                                    .expect("variant atlas loaded for variant compare");
-                                let plan = renderer::modern_variant_draw::compile_variant_draws(
-                                    &modern,
-                                    &bg_cells,
-                                    &sprite_cells,
-                                    variant_atlas,
-                                    bg_palette_name,
-                                    "palette_main_spr",
+                        let (rgba, stats) = if let Some((trace_frame, trace_x, trace_y)) =
+                            variant_trace_pixel_env()
+                                .filter(|(trace_frame, _, _)| frames == *trace_frame)
+                        {
+                            let (mut modern, bg_cells) =
+                                renderer::modern_extract::extract_modern_frame_from_sources(
+                                    &gpu_frame, &src_table, atlas,
                                 );
-                                let traces =
-                                    renderer::modern_variant_draw::trace_variant_plan_pixel(
-                                        &modern,
-                                        variant_atlas,
-                                        &plan,
-                                        trace_x,
-                                        trace_y,
+                            let (sprite_cells, sprites) =
+                                renderer::modern_extract::extract_modern_sprites_from_sources(
+                                    &gpu_frame, &src_table, atlas,
+                                );
+                            modern.index_sprites = sprites;
+                            let variant_atlas = variant_atlas
+                                .as_ref()
+                                .expect("variant atlas loaded for variant compare");
+                            let plan = renderer::modern_variant_draw::compile_variant_draws(
+                                &modern,
+                                &bg_cells,
+                                &sprite_cells,
+                                variant_atlas,
+                                bg_palette_name,
+                                "palette_main_spr",
+                            );
+                            let traces = renderer::modern_variant_draw::trace_variant_plan_pixel(
+                                &modern,
+                                variant_atlas,
+                                &plan,
+                                trace_x,
+                                trace_y,
+                            );
+                            if traces.is_empty() {
+                                eprintln!(
+                                        "variant_pixel_trace frame={trace_frame} pixel=({trace_x}, {trace_y}) hits=0"
                                     );
-                                if traces.is_empty() {
+                            } else {
+                                for trace in traces {
                                     eprintln!(
-                                        "variant_pixel_trace frame={frames} pixel=({trace_x}, {trace_y}) hits=0"
-                                    );
-                                } else {
-                                    for trace in traces {
-                                        eprintln!(
-                                            "variant_pixel_trace frame={frames} pixel=({trace_x}, {trace_y}) {}",
+                                            "variant_pixel_trace frame={trace_frame} pixel=({trace_x}, {trace_y}) {}",
                                             trace.describe()
                                         );
-                                    }
                                 }
                             }
-                        }
-                        let (mut live_index_modern, live_index_bg_cells) =
-                            renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
-                        let (live_index_sprite_cells, live_index_sprites) =
-                            renderer::modern_extract::extract_modern_sprites_from_vram(&gpu_frame);
-                        live_index_modern.index_sprites = live_index_sprites;
-                        let (rgba, stats) = variant_headless.render_rgba_with_live_index_base(
-                            &modern,
-                            &bg_cells,
-                            &sprite_cells,
-                            &live_index_modern,
-                            &live_index_bg_cells,
-                            &live_index_sprite_cells,
-                            bg_palette_name,
-                            "palette_main_spr",
-                        );
+                            let (mut live_index_modern, live_index_bg_cells) =
+                                renderer::modern_extract::extract_modern_frame_from_vram(
+                                    &gpu_frame,
+                                );
+                            let (live_index_sprite_cells, live_index_sprites) =
+                                renderer::modern_extract::extract_modern_sprites_from_vram(
+                                    &gpu_frame,
+                                );
+                            live_index_modern.index_sprites = live_index_sprites;
+                            variant_headless.render_rgba_with_live_index_base(
+                                &modern,
+                                &bg_cells,
+                                &sprite_cells,
+                                &live_index_modern,
+                                &live_index_bg_cells,
+                                &live_index_sprite_cells,
+                                bg_palette_name,
+                                "palette_main_spr",
+                            )
+                        } else {
+                            variant_headless.render_rgba_with_live_index_base_from_sources(
+                                &gpu_frame,
+                                &src_table,
+                                atlas,
+                                bg_palette_name,
+                                "palette_main_spr",
+                            )
+                        };
                         variant_stats = Some(stats);
                         (rgba, "variant-gpu")
                     }
@@ -6096,17 +6108,8 @@ fn run_replay_save(args: &[String]) {
                     } else {
                         let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
                         let src_table = VramChrSourceTableView::new(game.vram_chr_source());
-                        let (mut modern, bg_cells) =
-                            renderer::modern_extract::extract_modern_frame_from_sources(
-                                &gpu_frame, &src_table, atlas,
-                            );
-                        let (sprite_cells, sprites) =
-                            renderer::modern_extract::extract_modern_sprites_from_sources(
-                                &gpu_frame, &src_table, atlas,
-                            );
-                        modern.index_sprites = sprites;
                         (
-                            headless.render_rgba(&modern, &bg_cells, &sprite_cells),
+                            headless.render_rgba_from_sources(&gpu_frame, &src_table, atlas),
                             "gpu",
                         )
                     }
@@ -13229,69 +13232,78 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 } else {
                     let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
                     let src_table = VramChrSourceTableView::new(game.vram_chr_source());
-                    let (mut modern, bg_cells) =
-                        renderer::modern_extract::extract_modern_frame_from_sources(
-                            &gpu_frame, &src_table, atlas,
-                        );
-                    let (sprite_cells, sprites) =
-                        renderer::modern_extract::extract_modern_sprites_from_sources(
-                            &gpu_frame, &src_table, atlas,
-                        );
-                    modern.index_sprites = sprites;
                     let bg_palette_name = if game.ram[PLAYER_IS_INDOORS] != 0 {
                         "palette_dung_bg_main"
                     } else {
                         "palette_overworld_bg_main"
                     };
-                    if let Some((trace_frame, trace_x, trace_y)) = variant_trace_pixel_env() {
-                        if completed_frame == trace_frame {
-                            let variant_atlas = variant_atlas
-                                .as_ref()
-                                .expect("variant atlas loaded for variant compare");
-                            let plan = renderer::modern_variant_draw::compile_variant_draws(
-                                &modern,
-                                &bg_cells,
-                                &sprite_cells,
-                                variant_atlas,
-                                bg_palette_name,
-                                "palette_main_spr",
+                    let (rgba, stats) = if let Some((trace_frame, trace_x, trace_y)) =
+                        variant_trace_pixel_env()
+                            .filter(|(trace_frame, _, _)| completed_frame == *trace_frame)
+                    {
+                        let (mut modern, bg_cells) =
+                            renderer::modern_extract::extract_modern_frame_from_sources(
+                                &gpu_frame, &src_table, atlas,
                             );
-                            let traces = renderer::modern_variant_draw::trace_variant_plan_pixel(
-                                &modern,
-                                variant_atlas,
-                                &plan,
-                                trace_x,
-                                trace_y,
+                        let (sprite_cells, sprites) =
+                            renderer::modern_extract::extract_modern_sprites_from_sources(
+                                &gpu_frame, &src_table, atlas,
                             );
-                            if traces.is_empty() {
+                        modern.index_sprites = sprites;
+                        let variant_atlas = variant_atlas
+                            .as_ref()
+                            .expect("variant atlas loaded for variant compare");
+                        let plan = renderer::modern_variant_draw::compile_variant_draws(
+                            &modern,
+                            &bg_cells,
+                            &sprite_cells,
+                            variant_atlas,
+                            bg_palette_name,
+                            "palette_main_spr",
+                        );
+                        let traces = renderer::modern_variant_draw::trace_variant_plan_pixel(
+                            &modern,
+                            variant_atlas,
+                            &plan,
+                            trace_x,
+                            trace_y,
+                        );
+                        if traces.is_empty() {
+                            eprintln!(
+                                    "variant_pixel_trace frame={trace_frame} pixel=({trace_x}, {trace_y}) hits=0"
+                                );
+                        } else {
+                            for trace in traces {
                                 eprintln!(
-                                        "variant_pixel_trace frame={completed_frame} pixel=({trace_x}, {trace_y}) hits=0"
+                                        "variant_pixel_trace frame={trace_frame} pixel=({trace_x}, {trace_y}) {}",
+                                        trace.describe()
                                     );
-                            } else {
-                                for trace in traces {
-                                    eprintln!(
-                                            "variant_pixel_trace frame={completed_frame} pixel=({trace_x}, {trace_y}) {}",
-                                            trace.describe()
-                                        );
-                                }
                             }
                         }
-                    }
-                    let (mut live_index_modern, live_index_bg_cells) =
-                        renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
-                    let (live_index_sprite_cells, live_index_sprites) =
-                        renderer::modern_extract::extract_modern_sprites_from_vram(&gpu_frame);
-                    live_index_modern.index_sprites = live_index_sprites;
-                    let (rgba, stats) = variant_headless.render_rgba_with_live_index_base(
-                        &modern,
-                        &bg_cells,
-                        &sprite_cells,
-                        &live_index_modern,
-                        &live_index_bg_cells,
-                        &live_index_sprite_cells,
-                        bg_palette_name,
-                        "palette_main_spr",
-                    );
+                        let (mut live_index_modern, live_index_bg_cells) =
+                            renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
+                        let (live_index_sprite_cells, live_index_sprites) =
+                            renderer::modern_extract::extract_modern_sprites_from_vram(&gpu_frame);
+                        live_index_modern.index_sprites = live_index_sprites;
+                        variant_headless.render_rgba_with_live_index_base(
+                            &modern,
+                            &bg_cells,
+                            &sprite_cells,
+                            &live_index_modern,
+                            &live_index_bg_cells,
+                            &live_index_sprite_cells,
+                            bg_palette_name,
+                            "palette_main_spr",
+                        )
+                    } else {
+                        variant_headless.render_rgba_with_live_index_base_from_sources(
+                            &gpu_frame,
+                            &src_table,
+                            atlas,
+                            bg_palette_name,
+                            "palette_main_spr",
+                        )
+                    };
                     variant_stats = Some(stats);
                     (rgba, "variant-gpu")
                 }
@@ -13301,17 +13313,8 @@ fn run_play_gpu_render_compare(args: &[String]) {
                 } else {
                     let atlas = source_atlas.as_ref().expect("atlas loaded for gpu compare");
                     let src_table = VramChrSourceTableView::new(game.vram_chr_source());
-                    let (mut modern, bg_cells) =
-                        renderer::modern_extract::extract_modern_frame_from_sources(
-                            &gpu_frame, &src_table, atlas,
-                        );
-                    let (sprite_cells, sprites) =
-                        renderer::modern_extract::extract_modern_sprites_from_sources(
-                            &gpu_frame, &src_table, atlas,
-                        );
-                    modern.index_sprites = sprites;
                     (
-                        headless.render_rgba(&modern, &bg_cells, &sprite_cells),
+                        headless.render_rgba_from_sources(&gpu_frame, &src_table, atlas),
                         "gpu",
                     )
                 }
