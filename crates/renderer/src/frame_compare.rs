@@ -25,6 +25,12 @@ pub struct GpuRenderFrameComparison {
     pub divergence_line: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RenderFrameHashReport {
+    pub hash: u32,
+    pub line: String,
+}
+
 pub fn render_frame_rgb_hash_rgba(frame: &[u8]) -> u32 {
     let mut hash = 2166136261u32;
     for pixel in frame.chunks_exact(4) {
@@ -43,6 +49,26 @@ pub fn render_frame_rgb_hash_bgra(frame: &[u8]) -> u32 {
         hash = (hash ^ u32::from(pixel[0])).wrapping_mul(16777619); // B
     }
     hash
+}
+
+pub fn render_hash_frame_bgra(frame: u32, frame_bgra: &[u8]) -> RenderFrameHashReport {
+    let hash = render_frame_rgb_hash_bgra(frame_bgra);
+    RenderFrameHashReport {
+        hash,
+        line: render_hash_line("render-hash", frame, hash),
+    }
+}
+
+pub fn gpu_render_hash_frame_rgba(frame: u32, frame_rgba: &[u8]) -> RenderFrameHashReport {
+    let hash = render_frame_rgb_hash_rgba(frame_rgba);
+    RenderFrameHashReport {
+        hash,
+        line: render_hash_line("gpu-render-hash", frame, hash),
+    }
+}
+
+fn render_hash_line(label: &str, frame: u32, hash: u32) -> String {
+    format!("{label} frame={frame} hash=0x{hash:08x}")
 }
 
 pub(crate) fn compare_bgra_to_rgba(cpu_bgra: &[u8], gpu_rgba: &[u8]) -> Option<GpuRenderDiff> {
@@ -234,6 +260,20 @@ mod tests {
 
         assert_eq!(report.divergence_line, None);
         assert_eq!(report.comparison.diff, None);
+    }
+
+    #[test]
+    fn render_hash_reports_own_legacy_output_lines() {
+        let bgra = [3, 2, 1, 0xff, 6, 5, 4, 0xff];
+        let rgba = [1, 2, 3, 0xff, 4, 5, 6, 0xff];
+
+        let cpu = render_hash_frame_bgra(42, &bgra);
+        let gpu = gpu_render_hash_frame_rgba(42, &rgba);
+
+        assert_eq!(cpu.hash, render_frame_rgb_hash_bgra(&bgra));
+        assert_eq!(gpu.hash, render_frame_rgb_hash_rgba(&rgba));
+        assert_eq!(cpu.line, "render-hash frame=42 hash=0x03d252aa");
+        assert_eq!(gpu.line, "gpu-render-hash frame=42 hash=0x03d252aa");
     }
 
     #[test]

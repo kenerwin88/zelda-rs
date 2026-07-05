@@ -54,8 +54,9 @@ pub mod tile_atlas;
 
 pub use bg_layer::BgLayerRenderer;
 pub use frame_compare::{
-    compare_gpu_render_frame_bgra_to_rgba, render_frame_rgb_hash_bgra, render_frame_rgb_hash_rgba,
-    GpuRenderComparison, GpuRenderDiff, GpuRenderFrameComparison,
+    compare_gpu_render_frame_bgra_to_rgba, gpu_render_hash_frame_rgba, render_frame_rgb_hash_bgra,
+    render_frame_rgb_hash_rgba, render_hash_frame_bgra, GpuRenderComparison, GpuRenderDiff,
+    GpuRenderFrameComparison, RenderFrameHashReport,
 };
 pub use gpu_frame::{
     BgLayerRegs, GpuFrame, GpuFrameSource, Mode7Regs, ObjRegs, RawScanlineFrame, RawScanlineRegs,

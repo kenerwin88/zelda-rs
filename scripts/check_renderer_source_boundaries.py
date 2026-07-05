@@ -34,6 +34,8 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "MappedSourceTableView",
     "MappedSourceTableView::from_entries",
     "compare_gpu_render_frame_bgra_to_rgba",
+    "render_hash_frame_bgra",
+    "gpu_render_hash_frame_rgba",
     "GpuFrame::from_source_and_raw_scanlines",
     "render_compare_frame",
     "compare_frame",
@@ -162,6 +164,11 @@ FORBIDDEN_DIRECT_GPU_RENDER_COMPARE_CALLS = (
     "renderer::compare_bgra_to_rgba(",
     "renderer::compare_gpu_render_bgra_to_rgba(",
     "gpu-render-divergence frame=",
+)
+
+FORBIDDEN_RENDER_HASH_REPORT_CALLS = (
+    '"render-hash frame=',
+    '"gpu-render-hash frame=',
 )
 
 FORBIDDEN_DIRECT_MODERN_ATLAS_COMPARE_HASH_CALLS = (
@@ -365,6 +372,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "gpu render compare diff assembly escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_RENDER_HASH_REPORT_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "render hash report escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

@@ -4228,10 +4228,7 @@ fn run_replay_save(args: &[String]) {
                 }
             }
             if should_log_render_hash {
-                println!(
-                    "render-hash frame={frames} hash=0x{:08x}",
-                    renderer::render_frame_rgb_hash_bgra(frame)
-                );
+                println!("{}", renderer::render_hash_frame_bgra(frames, frame).line);
                 if std::env::var_os("ZELDA3_PPU_STATE_HASH").is_some() {
                     let fnv16 = |s: &[u16]| {
                         let mut h = 2166136261u32;
@@ -5349,8 +5346,8 @@ fn run_replay_save(args: &[String]) {
                     eprintln!();
                 }
                 println!(
-                    "gpu-render-hash frame={frames} hash=0x{:08x}",
-                    renderer::render_frame_rgb_hash_rgba(&gpu_rgba)
+                    "{}",
+                    renderer::gpu_render_hash_frame_rgba(frames, &gpu_rgba).line
                 );
             }
         }
