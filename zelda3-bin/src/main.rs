@@ -8,6 +8,7 @@
 mod developer_destinations;
 mod developer_modern_map;
 mod gpu_capture;
+mod play_renderer;
 
 use std::backtrace::Backtrace;
 use std::collections::HashMap;
@@ -706,7 +707,7 @@ fn run_frontend_smoke(args: &[String]) {
     let width = 256u32;
     let height = 224u32;
     let render_flags = PpuRenderFlags::empty();
-    let mut renderer = play_renderer_from_env();
+    let mut renderer = play_renderer::from_env();
     let renderer_name = renderer.name();
     let mut frontend = match NativeFrontend::new_with_options(
         width,
@@ -719,6 +720,7 @@ fn run_frontend_smoke(args: &[String]) {
             process::exit(1);
         }
     };
+    renderer.configure_frontend(&mut frontend);
     let mut frame = vec![0u8; width as usize * height as usize * 4];
 
     let mut completed = 0u32;
@@ -1362,57 +1364,6 @@ fn count_nonzero(bytes: &[u8]) -> usize {
     bytes.iter().filter(|&&b| b != 0).count()
 }
 
-trait PlayRendererBackend {
-    fn name(&self) -> &'static str;
-
-    fn configure_frontend(&self, frontend: &mut NativeFrontend);
-
-    fn present_frame(
-        &mut self,
-        game: &mut ZeldaState,
-        frontend: &mut NativeFrontend,
-        frame: &mut [u8],
-        render_flags: PpuRenderFlags,
-    );
-}
-
-struct CpuPlayRenderer;
-
-impl PlayRendererBackend for CpuPlayRenderer {
-    fn name(&self) -> &'static str {
-        "cpu_render"
-    }
-
-    fn configure_frontend(&self, frontend: &mut NativeFrontend) {
-        frontend.set_renderer_mode(renderer::RendererMode::Classic);
-    }
-
-    fn present_frame(
-        &mut self,
-        game: &mut ZeldaState,
-        frontend: &mut NativeFrontend,
-        frame: &mut [u8],
-        render_flags: PpuRenderFlags,
-    ) {
-        draw_play_ppu_frame(game, frame, 256 * 4, render_flags);
-        let pixels =
-            unsafe { std::slice::from_raw_parts(frame.as_ptr().cast::<u32>(), frame.len() / 4) };
-        frontend.present_frame(pixels, 256, 224);
-    }
-}
-
-fn play_renderer_from_env() -> Box<dyn PlayRendererBackend> {
-    match env::var("ZELDA3_RENDER_BACKEND") {
-        Ok(value) if value.eq_ignore_ascii_case("cpu") => Box::new(CpuPlayRenderer),
-        Ok(value) if value.eq_ignore_ascii_case("gpu") => gpu_capture::new_gpu_play_renderer(),
-        Ok(value) => {
-            eprintln!("unknown ZELDA3_RENDER_BACKEND={value:?}; expected cpu or gpu");
-            process::exit(2);
-        }
-        Err(_) => gpu_capture::new_gpu_play_renderer(),
-    }
-}
-
 fn run_play(rom_path: &str) {
     run_play_with_state(load_play_state(rom_path));
 }
@@ -1426,7 +1377,7 @@ fn run_play_with_state(mut game: ZeldaState) {
     let width = 256u32;
     let height = 224u32;
     let render_flags = PpuRenderFlags::empty();
-    let mut renderer = play_renderer_from_env();
+    let mut renderer = play_renderer::from_env();
     let mut frontend = match NativeFrontend::new_with_options(
         width,
         height,

@@ -668,15 +668,17 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         module = load_module()
         source = """
             fn play_renderer_from_env() {
+                let backend_env = std::env::var("ZELDA3_RENDER_BACKEND");
                 let assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."));
                 let report = frontend.present_modern_asset_live_frame_from_entries(input);
                 frontend.set_renderer_mode(renderer::RendererMode::from_effective_env());
             }
+            struct CpuPlayRenderer;
         """
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 3)
+        self.assertEqual(len(errors), 6)
         self.assertTrue(
             all("live GPU play backend ownership escaped gpu_capture boundary" in error for error in errors)
         )

@@ -73,7 +73,7 @@ impl GpuPlayRenderer {
     }
 }
 
-impl super::PlayRendererBackend for GpuPlayRenderer {
+impl crate::play_renderer::PlayRendererBackend for GpuPlayRenderer {
     fn name(&self) -> &'static str {
         "gpu_render"
     }
@@ -108,7 +108,7 @@ impl super::PlayRendererBackend for GpuPlayRenderer {
     }
 }
 
-pub(super) fn new_gpu_play_renderer() -> Box<dyn super::PlayRendererBackend> {
+pub(crate) fn new_gpu_play_renderer() -> Box<dyn crate::play_renderer::PlayRendererBackend> {
     Box::new(GpuPlayRenderer::new())
 }
 

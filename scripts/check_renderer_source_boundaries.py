@@ -244,6 +244,10 @@ FORBIDDEN_GPU_SCANLINE_CAPTURE_CALLS = (
 )
 
 FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
+    "trait PlayRendererBackend",
+    "struct CpuPlayRenderer",
+    "fn play_renderer_from_env",
+    "ZELDA3_RENDER_BACKEND",
     "struct GpuPlayRenderer",
     "impl PlayRendererBackend for GpuPlayRenderer",
     "ModernAssetFrameResources::load_from_env",
