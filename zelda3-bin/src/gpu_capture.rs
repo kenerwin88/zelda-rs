@@ -939,15 +939,6 @@ pub(crate) fn replay_cpu_bgra_hash_line(frame: u32, cpu_bgra: &[u8]) -> String {
     renderer::render_hash_frame_bgra(frame, cpu_bgra).line
 }
 
-pub(crate) fn replay_projection_bgra(game: &mut ZeldaState, frame: &mut [u8]) {
-    crate::classic_frame_renderer::render_standard_play_frame_bgra(game, frame);
-}
-
-pub(crate) fn replay_fingerprint_leaf_bgra(game: &mut ZeldaState, frame: &mut [u8]) -> u32 {
-    replay_projection_bgra(game, frame);
-    renderer::render_fingerprint_leaf_bgra(frame)
-}
-
 impl ReplayRenderHashGpuReadback {
     pub(crate) fn gpu_render_hash_log_line(&self, frame: u32) -> String {
         self.frame.render_hash_line(frame)

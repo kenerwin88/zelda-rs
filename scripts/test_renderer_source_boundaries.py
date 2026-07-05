@@ -773,6 +773,26 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(all("run_replay_save" in error for error in errors))
 
+    def test_rejects_replay_classic_helpers_in_gpu_capture(self):
+        module = load_module()
+        source = """
+            pub(crate) fn replay_projection_bgra(game: &mut ZeldaState, frame: &mut [u8]) {}
+
+            pub(crate) fn replay_fingerprint_leaf_bgra(game: &mut ZeldaState, frame: &mut [u8]) -> u32 {
+                0
+            }
+            """
+
+        errors = module.check_gpu_capture_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(
+            all(
+                "replay classic frame helper escaped render_diagnostics boundary" in error
+                for error in errors
+            )
+        )
+
     def test_rejects_main_play_renderer_diagnostic_calls(self):
         module = load_module()
         source = """

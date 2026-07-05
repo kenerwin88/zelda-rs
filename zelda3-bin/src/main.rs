@@ -30,7 +30,7 @@ use gpu_capture::{
     gpu_render_compare_run, modern_compare_mode_defaults_from_env,
     modern_index_compare_run_from_env, play_gpu_render_compare_session,
     render_hd_capture_from_game, render_live_game_gpu_frame_rgba, replay_cpu_bgra_hash_line,
-    replay_fingerprint_leaf_bgra, replay_optional_gpu_readback_renderer, replay_projection_bgra,
+    replay_optional_gpu_readback_renderer,
 };
 use platform::{
     DeveloperCurrentLocation, DeveloperThumbnail, Frontend, HostMenuAction, HostMenuInput,
@@ -40,7 +40,8 @@ use render_diagnostics::{
     render_diagnostic_lockstep_artifact_frame_bgra,
     render_diagnostic_lockstep_oracle_frames_in_place,
     render_diagnostic_oracle_compare_frames_bgra, render_diagnostic_overworld_screen_bgra,
-    run_diagnostic_play_frame_bgra, run_diagnostic_play_frame_with_run_what_bgra,
+    replay_fingerprint_leaf_bgra, replay_projection_bgra, run_diagnostic_play_frame_bgra,
+    run_diagnostic_play_frame_with_run_what_bgra,
 };
 use serde::{Deserialize, Serialize};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, ppu::PpuRenderFlags, Snes};

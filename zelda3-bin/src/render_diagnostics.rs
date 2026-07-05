@@ -37,6 +37,15 @@ pub(crate) fn render_diagnostic_overworld_screen_bgra(game: &mut ZeldaState, fra
     crate::classic_frame_renderer::render_standard_play_frame_bgra(game, frame);
 }
 
+pub(crate) fn replay_projection_bgra(game: &mut ZeldaState, frame: &mut [u8]) {
+    crate::classic_frame_renderer::render_standard_play_frame_bgra(game, frame);
+}
+
+pub(crate) fn replay_fingerprint_leaf_bgra(game: &mut ZeldaState, frame: &mut [u8]) -> u32 {
+    replay_projection_bgra(game, frame);
+    renderer::render_fingerprint_leaf_bgra(frame)
+}
+
 pub(crate) struct DiagnosticOracleRenderFramePair {
     pub(crate) game_state: ZeldaState,
     pub(crate) snes_state: ZeldaState,
