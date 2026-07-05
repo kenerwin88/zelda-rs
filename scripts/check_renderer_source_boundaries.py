@@ -273,6 +273,7 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "gpu_readback.required()",
     ".render_gpu_capture_rgba(",
     ".render_bgra_frame_to_rgba(",
+    ".render_cpu_bgra_frame_rgba(&frame)",
     ".upload_bgra_frame(",
     ".render_to_rgba(",
     "load_resources_from_env(",

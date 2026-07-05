@@ -5247,15 +5247,7 @@ fn run_replay_save(args: &[String]) {
     if let Some(path) = dump_frame_path.as_deref() {
         let width = 256u32;
         let height = 224u32;
-        let mut frame = vec![0u8; width as usize * height as usize * 4];
-        let mut render_game = game.clone();
-        render_play_frame_bgra(
-            &mut render_game,
-            &mut frame,
-            width as usize * 4,
-            PpuRenderFlags::empty(),
-        );
-        let rgba = gpu_readback.render_cpu_bgra_frame_rgba(&frame);
+        let rgba = gpu_readback.render_replay_dump_frame_rgba(&game);
         if let Err(e) = write_rgba_frame_png(path, &rgba, width, height) {
             eprintln!("failed to write {}: {e}", path.display());
             process::exit(1);
