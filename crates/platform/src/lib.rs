@@ -320,6 +320,25 @@ impl NativeFrontend {
         self.sleep_after_present();
     }
 
+    /// Present a VRAM-decoded modern PNG-atlas frame fully on the GPU. The
+    /// renderer crate owns VRAM extraction plus GPU presentation.
+    pub fn present_modern_gpu_from_vram(&mut self, frame: &GpuFrame<'_>) {
+        if let Some(renderer) = &mut self.handler.renderer {
+            let result = renderer.present_modern_gpu_from_vram(frame);
+            match result {
+                Ok(()) => {}
+                Err(RenderError::SurfaceReconfigureNeeded) => {
+                    if let Some(window) = &self.handler.window {
+                        renderer.resize(window.inner_size());
+                    }
+                }
+                Err(RenderError::SurfaceSkipped) => {}
+                Err(RenderError::Fatal(e)) => eprintln!("render error: {e}"),
+            }
+        }
+        self.sleep_after_present();
+    }
+
     /// Present a modern PNG-atlas frame from the source-table boundary. The
     /// renderer crate owns source extraction plus GPU presentation; zelda3-bin
     /// only supplies the CHR source view that lives on game state.

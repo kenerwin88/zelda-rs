@@ -22,6 +22,7 @@ def source_with_required_calls(body: str) -> str:
     fn run_play_with_state() {
         frontend.present_modern_variant_gpu_from_sources();
         frontend.present_modern_gpu_from_sources();
+        frontend.present_modern_gpu_from_vram();
         renderer::modern_gpu::render_modern_index_compare_frame();
         frontend.present_modern_frame_from_sources();
         renderer::hd_authoring::render_hd_capture_from_sources();
@@ -108,6 +109,25 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("low-level source render escaped renderer boundary", errors[0])
         self.assertIn("run_play_with_state", errors[0])
+
+    def test_rejects_live_vram_extraction(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_play_with_state() {
+                renderer::modern_extract::extract_modern_frame_from_vram();
+                renderer::modern_extract::extract_modern_sprites_from_vram();
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(
+            all("manual VRAM extraction escaped renderer boundary" in error for error in errors)
+        )
+        self.assertTrue(all("run_play_with_state" in error for error in errors))
 
     def test_rejects_missing_renderer_owned_api_call(self):
         module = load_module()

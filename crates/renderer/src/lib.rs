@@ -2527,6 +2527,21 @@ impl FrameRenderer {
         self.render()
     }
 
+    /// Live GPU present of a VRAM-decoded modern frame. This is the fallback
+    /// GPU asset path when the caller has no source atlas loaded: the renderer
+    /// owns VRAM extraction plus GPU presentation, keeping the binary out of
+    /// ModernFrame/cell assembly.
+    pub fn present_modern_gpu_from_vram(
+        &mut self,
+        frame: &GpuFrame<'_>,
+    ) -> Result<(), RenderError> {
+        debug_assert_ne!(frame.mode, 7);
+        let (mut modern, bg_cells) = modern_extract::extract_modern_frame_from_vram(frame);
+        let (sprite_cells, sprites) = modern_extract::extract_modern_sprites_from_vram(frame);
+        modern.index_sprites = sprites;
+        self.present_modern_gpu(&modern, &bg_cells, &sprite_cells)
+    }
+
     /// Live GPU present of the PNG-atlas path from the source table boundary.
     /// The caller supplies the game-owned CHR source table; the renderer owns
     /// the Mode-1 scene build and GPU present, which keeps the binary out of

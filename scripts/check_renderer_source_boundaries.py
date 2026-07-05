@@ -20,6 +20,7 @@ MANUAL_EXTRACT = "extract_modern_frame_from_sources"
 REQUIRED_RENDERER_OWNED_CALLS = (
     "present_modern_variant_gpu_from_sources",
     "present_modern_gpu_from_sources",
+    "present_modern_gpu_from_vram",
     "render_modern_index_compare_frame",
     "present_modern_frame_from_sources",
     "render_hd_capture_from_sources",
@@ -27,6 +28,11 @@ REQUIRED_RENDERER_OWNED_CALLS = (
 
 FORBIDDEN_SOURCE_RENDER_CALLS = (
     "render_modern_frame_full_scaled_from_sources",
+)
+
+FORBIDDEN_VRAM_EXTRACT_CALLS = (
+    "extract_modern_frame_from_vram",
+    "extract_modern_sprites_from_vram",
 )
 
 
@@ -97,6 +103,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "low-level source render escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_VRAM_EXTRACT_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "manual VRAM extraction escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

@@ -1887,12 +1887,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
             return;
         }
         if gpu_frame.mode != 7 && self.gpu_asset_mode {
-            let (mut modern, bg_cells) =
-                renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
-            let (sprite_cells, sprites) =
-                renderer::modern_extract::extract_modern_sprites_from_vram(&gpu_frame);
-            modern.index_sprites = sprites;
-            frontend.present_modern_gpu(&modern, &bg_cells, &sprite_cells);
+            frontend.present_modern_gpu_from_vram(&gpu_frame);
             return;
         }
         let presentation = PresentationContext {
