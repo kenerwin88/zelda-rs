@@ -3787,11 +3787,10 @@ fn run_replay_save(args: &[String]) {
             let offscreen = offscreen.as_mut().expect("offscreen renderer allocated");
             let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
             let gpu_rgba = offscreen.render_gpu_frame(&gpu_frame);
-            let cpu_hash = renderer::render_frame_rgb_hash_bgra(frame);
-            let gpu_hash = renderer::render_frame_rgb_hash_rgba(&gpu_rgba);
-            if let Some(diff) = renderer::compare_bgra_to_rgba(frame, &gpu_rgba) {
+            let comparison = renderer::compare_gpu_render_bgra_to_rgba(frame, &gpu_rgba);
+            if let Some(diff) = comparison.diff {
                 eprintln!(
-                    "gpu-render-divergence frame={frames} mismatched_pixels={} first_mismatch=({}, {}) cpu_rgb=({},{},{}) gpu_rgb=({},{},{}) cpu_hash=0x{cpu_hash:08x} gpu_hash=0x{gpu_hash:08x}",
+                    "gpu-render-divergence frame={frames} mismatched_pixels={} first_mismatch=({}, {}) cpu_rgb=({},{},{}) gpu_rgb=({},{},{}) cpu_hash=0x{:08x} gpu_hash=0x{:08x}",
                     diff.mismatched_pixels,
                     diff.first_x,
                     diff.first_y,
@@ -3800,7 +3799,9 @@ fn run_replay_save(args: &[String]) {
                     diff.cpu_rgb.2,
                     diff.gpu_rgb.0,
                     diff.gpu_rgb.1,
-                    diff.gpu_rgb.2
+                    diff.gpu_rgb.2,
+                    comparison.cpu_hash,
+                    comparison.gpu_hash
                 );
                 eprintln!(
                     "gpu-render-state frame={frames} forced_blank={} brightness={} screen={:02x}/{:02x} windowed={:02x}/{:02x} windowsel={:08x} math={:02x} add_sub={} subtract={} half={} fixed=({},{},{}) clip={} prevent={} extra=({},{},{}) win0=({},{},{},{}) win128=({},{},{},{}) scanline_tm0={:02x} scanline_tm128={:02x} mode={} cgram0={:04x}",
@@ -3869,10 +3870,11 @@ fn run_replay_save(args: &[String]) {
             }
             gpu_render_compare_count = gpu_render_compare_count.wrapping_add(1);
             gpu_render_compare_last_frame = frames;
-            gpu_render_compare_last_hash = cpu_hash;
+            gpu_render_compare_last_hash = comparison.cpu_hash;
             if !gpu_render_compare_quiet {
                 println!(
-                    "gpu-render-compare frame={frames} hash=0x{cpu_hash:08x} mismatched_pixels=0"
+                    "gpu-render-compare frame={frames} hash=0x{:08x} mismatched_pixels=0",
+                    comparison.cpu_hash
                 );
             }
         }
@@ -12605,11 +12607,10 @@ fn compare_gpu_render_current_frame(
     draw_play_ppu_frame(game, frame, width as usize * 4, PpuRenderFlags::empty());
     let gpu_frame = gpu_frame_from_ppu(&gpu_ppu, &hdma_cgram, &scanlines_raw);
     let gpu_rgba = offscreen.render_gpu_frame(&gpu_frame);
-    let cpu_hash = renderer::render_frame_rgb_hash_bgra(frame);
-    let gpu_hash = renderer::render_frame_rgb_hash_rgba(&gpu_rgba);
-    if let Some(diff) = renderer::compare_bgra_to_rgba(frame, &gpu_rgba) {
+    let comparison = renderer::compare_gpu_render_bgra_to_rgba(frame, &gpu_rgba);
+    if let Some(diff) = comparison.diff {
         eprintln!(
-            "gpu-render-divergence frame={frames} mismatched_pixels={} first_mismatch=({}, {}) cpu_rgb=({},{},{}) gpu_rgb=({},{},{}) cpu_hash=0x{cpu_hash:08x} gpu_hash=0x{gpu_hash:08x}",
+            "gpu-render-divergence frame={frames} mismatched_pixels={} first_mismatch=({}, {}) cpu_rgb=({},{},{}) gpu_rgb=({},{},{}) cpu_hash=0x{:08x} gpu_hash=0x{:08x}",
             diff.mismatched_pixels,
             diff.first_x,
             diff.first_y,
@@ -12618,7 +12619,9 @@ fn compare_gpu_render_current_frame(
             diff.cpu_rgb.2,
             diff.gpu_rgb.0,
             diff.gpu_rgb.1,
-            diff.gpu_rgb.2
+            diff.gpu_rgb.2,
+            comparison.cpu_hash,
+            comparison.gpu_hash
         );
         eprintln!(
             "gpu-render-state frame={frames} forced_blank={} brightness={} screen={:02x}/{:02x} windowed={:02x}/{:02x} windowsel={:08x} math={:02x} add_sub={} subtract={} half={} fixed=({},{},{}) clip={} prevent={} extra=({},{},{}) win0=({},{},{},{}) win128=({},{},{},{}) scanline_tm0={:02x} scanline_tm128={:02x} mode={} cgram0={:04x}",
@@ -12686,7 +12689,7 @@ fn compare_gpu_render_current_frame(
         return None;
     }
 
-    Some(cpu_hash)
+    Some(comparison.cpu_hash)
 }
 
 fn cgram_match(cgram: &[u16], rgb: (u8, u8, u8)) -> String {

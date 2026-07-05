@@ -25,6 +25,7 @@ def source_with_required_calls(body: str) -> str:
         let compare = renderer::ModernIndexCompareStats::from_env();
         let source_table = renderer::MappedSourceTableView::new(&[(0, 0, 0)], |src: &(u8, u16, u16)| *src);
         let diff = renderer::compare_modern_index_rgba(&[], &[]);
+        let gpu_diff = renderer::compare_gpu_render_bgra_to_rgba(&[], &[]);
         let frame = renderer::GpuFrame::from_source_and_raw_scanlines();
         let atlas_render = renderer::modern_gpu::render_modern_atlas_compare_frame();
         frontend.present_modern_asset_frame();
@@ -306,6 +307,21 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         self.assertEqual(len(errors), 1)
         self.assertIn("modern index compare diff assembly escaped renderer boundary", errors[0])
+
+    def test_rejects_direct_gpu_render_compare_diff_assembly_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_play_with_state() {
+                let diff = renderer::compare_bgra_to_rgba(&cpu, &gpu);
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("gpu render compare diff assembly escaped renderer boundary", errors[0])
 
     def test_rejects_gpu_frame_assembly_calls(self):
         module = load_module()

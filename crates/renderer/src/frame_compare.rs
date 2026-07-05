@@ -12,6 +12,13 @@ pub struct GpuRenderDiff {
     pub gpu_rgb: (u8, u8, u8),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpuRenderComparison {
+    pub cpu_hash: u32,
+    pub gpu_hash: u32,
+    pub diff: Option<GpuRenderDiff>,
+}
+
 pub fn render_frame_rgb_hash_rgba(frame: &[u8]) -> u32 {
     let mut hash = 2166136261u32;
     for pixel in frame.chunks_exact(4) {
@@ -34,6 +41,14 @@ pub fn render_frame_rgb_hash_bgra(frame: &[u8]) -> u32 {
 
 pub fn compare_bgra_to_rgba(cpu_bgra: &[u8], gpu_rgba: &[u8]) -> Option<GpuRenderDiff> {
     compare_frame_rgb_channels(cpu_bgra, gpu_rgba, |cpu| (cpu[2], cpu[1], cpu[0]))
+}
+
+pub fn compare_gpu_render_bgra_to_rgba(cpu_bgra: &[u8], gpu_rgba: &[u8]) -> GpuRenderComparison {
+    GpuRenderComparison {
+        cpu_hash: render_frame_rgb_hash_bgra(cpu_bgra),
+        gpu_hash: render_frame_rgb_hash_rgba(gpu_rgba),
+        diff: compare_bgra_to_rgba(cpu_bgra, gpu_rgba),
+    }
 }
 
 pub fn compare_rgba_to_rgba(classic_rgba: &[u8], modern_rgba: &[u8]) -> Option<GpuRenderDiff> {
@@ -112,6 +127,33 @@ mod tests {
         assert_eq!(diff.first_x, 1);
         assert_eq!(diff.cpu_rgb, (4, 5, 6));
         assert_eq!(diff.gpu_rgb, (4, 7, 6));
+    }
+
+    #[test]
+    fn gpu_render_comparison_owns_hashes_and_diff() {
+        let cpu_bgra = [
+            3, 2, 1, 0xff, //
+            6, 5, 4, 0xff,
+        ];
+        let gpu_rgba = [
+            1, 2, 3, 0xff, //
+            4, 7, 6, 0xff,
+        ];
+
+        let comparison = compare_gpu_render_bgra_to_rgba(&cpu_bgra, &gpu_rgba);
+
+        assert_eq!(comparison.cpu_hash, render_frame_rgb_hash_bgra(&cpu_bgra));
+        assert_eq!(comparison.gpu_hash, render_frame_rgb_hash_rgba(&gpu_rgba));
+        assert_eq!(
+            comparison.diff,
+            Some(GpuRenderDiff {
+                mismatched_pixels: 1,
+                first_x: 1,
+                first_y: 0,
+                cpu_rgb: (4, 5, 6),
+                gpu_rgb: (4, 7, 6),
+            })
+        );
     }
 
     #[test]
