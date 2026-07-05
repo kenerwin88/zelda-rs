@@ -1431,23 +1431,22 @@ impl PlayRendererBackend for GpuPlayRenderer {
         let scanlines_raw = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
         let gpu_frame = gpu_frame_from_ppu(&ppu, &hdma_cgram, &scanlines_raw);
-        let src_table = renderer::source_table_from_entries(game.vram_chr_source().as_slice());
-        let scene =
-            renderer::ModernAssetFrameScene::from_player_indoors_flag(game.ram[PLAYER_IS_INDOORS]);
-        let present_result = frontend.present_modern_asset_frame(
-            &gpu_frame,
-            Some(&src_table),
-            &self.modern_assets,
-            scene,
+        let present = frontend.present_modern_asset_frame_from_entries(
+            renderer::ModernAssetFramePresentInput {
+                frame: &gpu_frame,
+                source_entries: game.vram_chr_source().as_slice(),
+                resources: &self.modern_assets,
+                player_indoors: game.ram[PLAYER_IS_INDOORS],
+            },
         );
         let report = self
             .variant_live_stats
-            .record_present_result(&present_result);
+            .record_present_result(&present.result);
         if let Some(line) = report.failure_line() {
             eprintln!("{line}");
             process::exit(2);
         }
-        if present_result.is_presented() {
+        if present.result.is_presented() {
             return;
         }
         if let Some(line) = self.modern_assets.unhandled_gpu_asset_frame_line() {
@@ -1455,7 +1454,7 @@ impl PlayRendererBackend for GpuPlayRenderer {
             process::exit(2);
         }
         let presentation = PresentationContext {
-            in_dungeon: scene.in_dungeon(),
+            in_dungeon: present.in_dungeon,
         };
         frontend.present_gpu_frame_with_context(&gpu_frame, presentation);
     }

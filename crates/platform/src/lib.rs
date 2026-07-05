@@ -288,6 +288,51 @@ impl NativeFrontend {
         present_result
     }
 
+    /// Present one live modern-asset frame from raw source entries. The renderer
+    /// owns source-table adaptation and scene construction; the platform owns
+    /// surface error handling.
+    pub fn present_modern_asset_frame_from_entries<T>(
+        &mut self,
+        input: renderer::ModernAssetFramePresentInput<'_, '_, T>,
+    ) -> renderer::ModernAssetFramePresentOutput
+    where
+        T: Copy + Into<(u8, u16, u16)>,
+    {
+        let mut present_output = renderer::ModernAssetFramePresentOutput {
+            result: renderer::ModernAssetFramePresentResult::Unhandled,
+            in_dungeon: input.player_indoors != 0,
+        };
+        if let Some(renderer) = &mut self.handler.renderer {
+            let result = renderer.present_modern_asset_frame_from_entries(input);
+            match result {
+                Ok(output) => present_output = output,
+                Err(RenderError::SurfaceReconfigureNeeded) => {
+                    if let Some(window) = &self.handler.window {
+                        renderer.resize(window.inner_size());
+                    }
+                    present_output.result = renderer::ModernAssetFramePresentResult::Presented {
+                        variant_stats: None,
+                    };
+                }
+                Err(RenderError::SurfaceSkipped) => {
+                    present_output.result = renderer::ModernAssetFramePresentResult::Presented {
+                        variant_stats: None,
+                    };
+                }
+                Err(RenderError::Fatal(e)) => {
+                    eprintln!("render error: {e}");
+                    present_output.result = renderer::ModernAssetFramePresentResult::Presented {
+                        variant_stats: None,
+                    };
+                }
+            }
+        }
+        if present_output.result.is_presented() {
+            self.sleep_after_present();
+        }
+        present_output
+    }
+
     pub fn set_menu_open(&mut self, open: bool) {
         self.handler.menu_open = open;
         if open {

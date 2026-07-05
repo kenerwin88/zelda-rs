@@ -19,6 +19,8 @@ MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
 MANUAL_EXTRACT = "extract_modern_frame_from_sources"
 REQUIRED_RENDERER_OWNED_CALLS = (
     "present_modern_asset_frame",
+    "ModernAssetFramePresentInput",
+    "present_modern_asset_frame_from_entries",
     "ModernAssetFrameResources::load_from_env",
     "RendererMode::from_effective_env",
     "ModernAssetFrameScene",
@@ -61,6 +63,7 @@ FORBIDDEN_VRAM_EXTRACT_CALLS = (
 )
 
 FORBIDDEN_GRANULAR_LIVE_PRESENT_CALLS = (
+    "frontend.present_modern_asset_frame(",
     "present_modern_variant_gpu_from_sources",
     "present_modern_gpu_from_sources",
     "present_modern_gpu_from_vram",

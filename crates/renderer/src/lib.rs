@@ -2062,6 +2062,21 @@ impl ModernAssetFramePresentResult {
     }
 }
 
+pub struct ModernAssetFramePresentInput<'a, 'frame, T>
+where
+    T: Copy + Into<(u8, u16, u16)>,
+{
+    pub frame: &'a GpuFrame<'frame>,
+    pub source_entries: &'a [T],
+    pub resources: &'a ModernAssetFrameResources,
+    pub player_indoors: u8,
+}
+
+pub struct ModernAssetFramePresentOutput {
+    pub result: ModernAssetFramePresentResult,
+    pub in_dungeon: bool,
+}
+
 /// Renderer-owned resource bundle for live modern-asset presentation.
 ///
 /// `zelda3-bin` owns game state and runtime inputs; the renderer owns which
@@ -2905,6 +2920,23 @@ impl FrameRenderer {
             }
             ModernAssetFramePresentRoute::Unhandled => Ok(ModernAssetFramePresentResult::Unhandled),
         }
+    }
+
+    pub fn present_modern_asset_frame_from_entries<T>(
+        &mut self,
+        input: ModernAssetFramePresentInput<'_, '_, T>,
+    ) -> Result<ModernAssetFramePresentOutput, RenderError>
+    where
+        T: Copy + Into<(u8, u16, u16)>,
+    {
+        let src_table = source_table_from_entries(input.source_entries);
+        let scene = ModernAssetFrameScene::from_player_indoors_flag(input.player_indoors);
+        let result =
+            self.present_modern_asset_frame(input.frame, Some(&src_table), input.resources, scene)?;
+        Ok(ModernAssetFramePresentOutput {
+            result,
+            in_dungeon: scene.in_dungeon(),
+        })
     }
 
     /// Live GPU present of the PNG-atlas path (`ZELDA3_RENDERER=assets-anim-gpu`).

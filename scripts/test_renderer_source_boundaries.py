@@ -21,6 +21,8 @@ def source_with_required_calls(body: str) -> str:
     required = """
     fn run_play_with_state() {
         let assets = renderer::ModernAssetFrameResources::load_from_env();
+        let present_input = renderer::ModernAssetFramePresentInput {};
+        frontend.present_modern_asset_frame_from_entries(present_input);
         frontend.set_renderer_mode(renderer::RendererMode::from_effective_env());
         let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(0);
         let stats = renderer::ModernAssetLiveStats::from_env();
@@ -42,7 +44,6 @@ def source_with_required_calls(body: str) -> str:
         let render_hash_pair = renderer::render_hash_pair_bgra_rgba(&[], &[]);
         let fingerprint_leaf = renderer::render_fingerprint_leaf_bgra(&[]);
         let frame = renderer::GpuFrame::from_source_and_raw_scanlines();
-        frontend.present_modern_asset_frame();
         report.failure_line();
         renderer::hd_authoring::render_hd_capture_from_sources();
     }
@@ -266,13 +267,14 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 frontend.present_modern_gpu_from_vram();
                 frontend.present_modern_frame_from_sources();
                 frontend.present_modern_mode7_gpu();
+                frontend.present_modern_asset_frame();
             }
             """
         )
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 5)
+        self.assertEqual(len(errors), 6)
         self.assertTrue(
             all("granular live present escaped renderer boundary" in error for error in errors)
         )
