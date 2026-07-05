@@ -20,6 +20,7 @@ MANUAL_EXTRACT = "extract_modern_frame_from_sources"
 REQUIRED_RENDERER_OWNED_CALLS = (
     "present_modern_asset_frame",
     "ModernAssetFrameScene",
+    "ModernAssetLiveStats",
     "render_modern_index_compare_frame",
     "render_hd_capture_from_sources",
 )
@@ -52,6 +53,13 @@ FORBIDDEN_HD_OVERRIDE_CALLS = (
     "ModernHdOverrides::from_env",
     "HdOverrideCtx::new",
     "HdOverrideCtx::disabled",
+)
+
+FORBIDDEN_LIVE_STATS_POLICY_CALLS = (
+    "struct VariantLiveStats",
+    "env_flag_default_true",
+    "ZELDA3_VARIANT_LIVE_STATS",
+    "ZELDA3_REQUIRE_FULL_GPU_PATH",
 )
 
 
@@ -154,6 +162,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "HD override loading policy escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_LIVE_STATS_POLICY_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "live modern asset stats policy escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

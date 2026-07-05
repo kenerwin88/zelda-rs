@@ -34,6 +34,7 @@ mod modern_gpu_work_command;
 pub mod modern_hd_overrides;
 pub mod modern_index_atlas;
 mod modern_index_renderer;
+mod modern_live_stats;
 mod modern_mode1_effect_plan;
 pub mod modern_palette;
 mod modern_screen_builder;
@@ -56,6 +57,7 @@ pub use mode7_renderer::Mode7Renderer;
 pub use modern_gpu::{
     ModernGpuCompositor, ModernGpuHeadless, ModernGpuVariantHeadless, ModernGpuVariantRenderer,
 };
+pub use modern_live_stats::ModernAssetLiveStats;
 pub use post_process::scanlines_from_raw;
 pub use renderer_mode::{
     default_renderer_env_for_variant_setting, renderer_env_or_default, source_atlas_renderer_mode,

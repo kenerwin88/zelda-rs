@@ -21,6 +21,7 @@ def source_with_required_calls(body: str) -> str:
     required = """
     fn run_play_with_state() {
         let scene = renderer::ModernAssetFrameScene::from_in_dungeon(false);
+        let stats = renderer::ModernAssetLiveStats::from_env();
         frontend.present_modern_asset_frame();
         renderer::modern_gpu::render_modern_index_compare_frame();
         renderer::hd_authoring::render_hd_capture_from_sources();
@@ -187,6 +188,26 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             all("HD override loading policy escaped renderer boundary" in error for error in errors)
         )
         self.assertTrue(all("run_play_with_state" in error for error in errors))
+
+    def test_rejects_live_stats_policy_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            struct VariantLiveStats {}
+            fn env_flag_default_true(value: Option<&str>) -> bool { true }
+            fn run_play_with_state() {
+                let _ = "ZELDA3_VARIANT_LIVE_STATS";
+                let _ = "ZELDA3_REQUIRE_FULL_GPU_PATH";
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 4)
+        self.assertTrue(
+            all("live modern asset stats policy escaped renderer boundary" in error for error in errors)
+        )
 
     def test_rejects_missing_renderer_owned_api_call(self):
         module = load_module()
