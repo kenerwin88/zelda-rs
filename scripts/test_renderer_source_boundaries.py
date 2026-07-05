@@ -30,6 +30,7 @@ def source_with_required_calls(body: str) -> str:
         let compare = renderer::ModernIndexCompareStats::from_env();
         let frame_record = renderer::ModernIndexCompareFrameRenderInput {};
         let compare_resources = renderer::ModernIndexCompareResources::load_from_env();
+        let dump_paths = renderer::ModernIndexCompareDumpPaths {};
         let atlas_compare_resources = renderer::ModernAtlasCompareResources::load();
         let atlas_frame_record = renderer::ModernAtlasCompareFrameInput {};
         let source_table = renderer::MappedSourceTableView::from_entries(&[(0, 0, 0)]);
@@ -41,6 +42,7 @@ def source_with_required_calls(body: str) -> str:
         let frame = renderer::GpuFrame::from_source_and_raw_scanlines();
         frontend.present_modern_asset_frame();
         modern_index_compare_stats.render_compare_frame(frame_record);
+        modern_index_compare_stats.dump_paths_for_frame(0);
         atlas_compare_resources.compare_frame(atlas_frame_record);
         renderer::hd_authoring::render_hd_capture_from_sources();
     }
@@ -300,6 +302,27 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertEqual(len(errors), 6)
         self.assertTrue(
             all("modern index frame report policy escaped renderer boundary" in error for error in errors)
+        )
+
+    def test_rejects_modern_index_dump_policy_calls(self):
+        module = load_module()
+        source = source_with_required_calls(
+            """
+            fn run_play_with_state() {
+                let dump = "ZELDA3_MODERN_INDEX_DUMP_FRAME";
+                let classic_path = format!("/tmp/classic_{frame}.png");
+                let modern_path = format!("/tmp/modern_index_{frame}.png");
+                println!("dumped classic frame to {classic_path}");
+                println!("dumped modern_index frame to {modern_path}");
+            }
+            """
+        )
+
+        errors = module.check_source_text(source)
+
+        self.assertEqual(len(errors), 5)
+        self.assertTrue(
+            all("modern index dump policy escaped renderer boundary" in error for error in errors)
         )
 
     def test_rejects_modern_index_resource_policy_calls(self):

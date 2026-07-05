@@ -1,5 +1,6 @@
 use std::env;
 use std::fmt::Write;
+use std::path::PathBuf;
 
 use crate::modern_gpu::{modern_gpu_path_fallback_reason, ModernGpuPathFallback};
 use crate::modern_software::VariantAtlasRenderStats;
@@ -86,6 +87,13 @@ pub struct ModernIndexCompareFrameRenderedReport {
     pub variant_traces: Vec<crate::modern_variant_draw::VariantPixelTrace>,
 }
 
+pub struct ModernIndexCompareDumpPaths {
+    pub classic_path: PathBuf,
+    pub modern_path: PathBuf,
+    pub classic_dumped_line: String,
+    pub modern_dumped_line: String,
+}
+
 pub fn compare_modern_index_rgba(
     classic_rgba: &[u8],
     modern_rgba: &[u8],
@@ -115,6 +123,7 @@ pub struct ModernIndexCompareStats {
     mode7_gpu_count: u64,
     cpu_count: u64,
     variant_totals: VariantAtlasRenderTotals,
+    dump_frame: Option<u32>,
 }
 
 impl ModernIndexCompareStats {
@@ -125,6 +134,9 @@ impl ModernIndexCompareStats {
                 .ok()
                 .and_then(|s| s.parse::<u64>().ok())
                 .unwrap_or(0),
+            dump_frame: env::var("ZELDA3_MODERN_INDEX_DUMP_FRAME")
+                .ok()
+                .and_then(|s| s.parse::<u32>().ok()),
             ..Self::default()
         }
     }
@@ -177,6 +189,22 @@ impl ModernIndexCompareStats {
                     self.compare_count, frame, self.bad_count
                 )
             })
+    }
+
+    pub fn dump_paths_for_frame(&self, frame: u32) -> Option<ModernIndexCompareDumpPaths> {
+        (self.dump_frame == Some(frame)).then(|| {
+            let classic_path = PathBuf::from(format!("/tmp/classic_{frame}.png"));
+            let modern_path = PathBuf::from(format!("/tmp/modern_index_{frame}.png"));
+            ModernIndexCompareDumpPaths {
+                classic_dumped_line: format!("dumped classic frame to {}", classic_path.display()),
+                modern_dumped_line: format!(
+                    "dumped modern_index frame to {}",
+                    modern_path.display()
+                ),
+                classic_path,
+                modern_path,
+            }
+        })
     }
 
     pub fn record_frame(
@@ -579,6 +607,36 @@ mod tests {
             .frame_line
             .as_deref()
             .is_some_and(|line| line.contains("first_mismatch=(2, 3)")));
+    }
+
+    #[test]
+    fn dump_paths_for_frame_owns_env_dump_paths_and_lines() {
+        let stats = ModernIndexCompareStats {
+            dump_frame: Some(42),
+            ..Default::default()
+        };
+
+        let paths = stats
+            .dump_paths_for_frame(42)
+            .expect("configured frame gets dump paths");
+
+        assert_eq!(
+            paths.classic_path,
+            std::path::PathBuf::from("/tmp/classic_42.png")
+        );
+        assert_eq!(
+            paths.modern_path,
+            std::path::PathBuf::from("/tmp/modern_index_42.png")
+        );
+        assert_eq!(
+            paths.classic_dumped_line,
+            "dumped classic frame to /tmp/classic_42.png"
+        );
+        assert_eq!(
+            paths.modern_dumped_line,
+            "dumped modern_index frame to /tmp/modern_index_42.png"
+        );
+        assert!(stats.dump_paths_for_frame(43).is_none());
     }
 
     #[test]

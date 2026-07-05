@@ -5411,28 +5411,8 @@ fn run_replay_save(args: &[String]) {
                 if let Some(line) = report.progress_line {
                     eprintln!("{line}");
                 }
-                if let Ok(dump_str) = std::env::var("ZELDA3_MODERN_INDEX_DUMP_FRAME") {
-                    if let Ok(dump_frame) = dump_str.parse::<u32>() {
-                        if frames == dump_frame {
-                            let classic_path = PathBuf::from(format!("/tmp/classic_{frames}.png"));
-                            let modern_path =
-                                PathBuf::from(format!("/tmp/modern_index_{frames}.png"));
-                            if let Err(e) =
-                                write_rgba_frame_png(&classic_path, &classic_rgba, 256, 224)
-                            {
-                                eprintln!("failed to write {}: {e}", classic_path.display());
-                            } else {
-                                println!("dumped classic frame to {}", classic_path.display());
-                            }
-                            if let Err(e) =
-                                write_rgba_frame_png(&modern_path, &modern_rgba, 256, 224)
-                            {
-                                eprintln!("failed to write {}: {e}", modern_path.display());
-                            } else {
-                                println!("dumped modern_index frame to {}", modern_path.display());
-                            }
-                        }
-                    }
+                if let Some(dump_paths) = modern_index_compare_stats.dump_paths_for_frame(frames) {
+                    write_modern_index_compare_dump(&dump_paths, &classic_rgba, &modern_rgba);
                 }
             }
         }
@@ -12209,26 +12189,10 @@ fn run_play_gpu_render_compare(args: &[String]) {
             if let Some(line) = report.progress_line {
                 eprintln!("{line}");
             }
-            if let Ok(dump_str) = std::env::var("ZELDA3_MODERN_INDEX_DUMP_FRAME") {
-                if let Ok(dump_frame) = dump_str.parse::<u32>() {
-                    if completed_frame == dump_frame {
-                        let classic_path =
-                            PathBuf::from(format!("/tmp/classic_{completed_frame}.png"));
-                        let modern_path =
-                            PathBuf::from(format!("/tmp/modern_index_{completed_frame}.png"));
-                        if let Err(e) = write_rgba_frame_png(&classic_path, &classic_rgba, 256, 224)
-                        {
-                            eprintln!("failed to write {}: {e}", classic_path.display());
-                        } else {
-                            println!("dumped classic frame to {}", classic_path.display());
-                        }
-                        if let Err(e) = write_rgba_frame_png(&modern_path, &modern_rgba, 256, 224) {
-                            eprintln!("failed to write {}: {e}", modern_path.display());
-                        } else {
-                            println!("dumped modern_index frame to {}", modern_path.display());
-                        }
-                    }
-                }
+            if let Some(dump_paths) =
+                modern_index_compare_stats.dump_paths_for_frame(completed_frame)
+            {
+                write_modern_index_compare_dump(&dump_paths, &classic_rgba, &modern_rgba);
             }
         }
     }
@@ -12238,6 +12202,23 @@ fn run_play_gpu_render_compare(args: &[String]) {
     );
     if modern_index_compare != 0 && modern_index_compare_stats.summary_enabled() {
         println!("{}", modern_index_compare_stats.summary_line());
+    }
+}
+
+fn write_modern_index_compare_dump(
+    paths: &renderer::ModernIndexCompareDumpPaths,
+    classic_rgba: &[u8],
+    modern_rgba: &[u8],
+) {
+    if let Err(e) = write_rgba_frame_png(&paths.classic_path, classic_rgba, 256, 224) {
+        eprintln!("failed to write {}: {e}", paths.classic_path.display());
+    } else {
+        println!("{}", paths.classic_dumped_line);
+    }
+    if let Err(e) = write_rgba_frame_png(&paths.modern_path, modern_rgba, 256, 224) {
+        eprintln!("failed to write {}: {e}", paths.modern_path.display());
+    } else {
+        println!("{}", paths.modern_dumped_line);
     }
 }
 

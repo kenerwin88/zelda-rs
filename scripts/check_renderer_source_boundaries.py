@@ -29,6 +29,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernIndexCompareStats",
     "ModernIndexCompareFrameRenderInput",
     "ModernIndexCompareResources::load_from_env",
+    "ModernIndexCompareDumpPaths",
     "ModernAtlasCompareResources",
     "ModernAtlasCompareFrameInput",
     "MappedSourceTableView",
@@ -40,6 +41,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "render_fingerprint_leaf_bgra",
     "GpuFrame::from_source_and_raw_scanlines",
     "render_compare_frame",
+    "dump_paths_for_frame",
     "compare_frame",
     "from_main_module_and_player_indoors_flag",
     "from_player_indoors_flag",
@@ -116,6 +118,14 @@ FORBIDDEN_MODERN_INDEX_FRAME_REPORT_CALLS = (
     "modern_index_compare_stats.frame_line(",
     "modern_index_compare_stats.progress_line(",
     "modern_index_compare_stats.record_frame(",
+)
+
+FORBIDDEN_MODERN_INDEX_DUMP_POLICY_CALLS = (
+    "ZELDA3_MODERN_INDEX_DUMP_FRAME",
+    "/tmp/classic_",
+    "/tmp/modern_index_",
+    "dumped classic frame to ",
+    "dumped modern_index frame to ",
 )
 
 FORBIDDEN_MODERN_INDEX_RESOURCE_POLICY_CALLS = (
@@ -318,6 +328,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "modern index frame report policy escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MODERN_INDEX_DUMP_POLICY_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "modern index dump policy escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
