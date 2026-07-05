@@ -131,13 +131,19 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 if modern_index_compare != 0 && completed_frame % modern_index_compare == 0 {}
                 if require_full_gpu_path && modern_index_compare == 0 {}
                 if require_modern_index_parity && modern_index_compare == 0 {}
+                modern_index_compare.require_full_gpu_path();
+                modern_index_compare.require_modern_index_parity();
+                let _input = ModernIndexCompareFrameRenderInput {
+                    require_full_gpu_path: true,
+                    require_modern_index_parity: true,
+                };
             }
             """
         )
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 6)
+        self.assertEqual(len(errors), 10)
         self.assertTrue(
             all("modern index compare stats policy escaped renderer boundary" in error for error in errors)
         )

@@ -73,14 +73,6 @@ impl ModernIndexCompareRunConfig {
         self.stride != 0 && frame % self.stride == 0
     }
 
-    pub fn require_full_gpu_path(self) -> bool {
-        self.require_full_gpu_path
-    }
-
-    pub fn require_modern_index_parity(self) -> bool {
-        self.require_modern_index_parity
-    }
-
     pub fn load_resources_from_env(
         self,
         root: &std::path::Path,
@@ -127,8 +119,7 @@ struct ModernIndexCompareFrameRecord<'a> {
     pub via: &'a str,
     pub variant_stats: Option<&'a VariantAtlasRenderStats>,
     pub comparison: ModernIndexCompareFrameDiff,
-    pub require_modern_index_parity: bool,
-    pub require_full_gpu_path: bool,
+    pub run_config: ModernIndexCompareRunConfig,
     pub include_diff_in_frame_line: bool,
 }
 
@@ -173,8 +164,7 @@ pub struct ModernIndexCompareFrameRenderInput<
     pub scene: crate::ModernAssetFrameScene,
     pub classic_rgba: &'a [u8],
     pub allow_source_cpu_fallback: bool,
-    pub require_modern_index_parity: bool,
-    pub require_full_gpu_path: bool,
+    pub run_config: ModernIndexCompareRunConfig,
     pub include_diff_in_frame_line: bool,
 }
 
@@ -185,8 +175,7 @@ struct ModernIndexCompareFrameRenderedRecord<'a> {
     pub classic_rgba: &'a [u8],
     pub modern_render: crate::modern_gpu::ModernIndexCompareRender,
     pub trace_pixel: Option<ModernIndexCompareTracePixel>,
-    pub require_modern_index_parity: bool,
-    pub require_full_gpu_path: bool,
+    pub run_config: ModernIndexCompareRunConfig,
     pub include_diff_in_frame_line: bool,
 }
 
@@ -344,9 +333,9 @@ impl ModernIndexCompareStats {
             variant_stats: record.variant_stats,
             diff: record.comparison.diff,
         };
-        let parity_failure_line =
-            (record.require_modern_index_parity && mismatch != 0).then(|| self.mismatch_line(line));
-        let full_gpu_failure_line = if record.require_full_gpu_path {
+        let parity_failure_line = (record.run_config.require_modern_index_parity && mismatch != 0)
+            .then(|| self.mismatch_line(line));
+        let full_gpu_failure_line = if record.run_config.require_full_gpu_path {
             self.full_gpu_fallback(record.via, record.variant_stats)
                 .map(|fallback| {
                     format!(
@@ -397,8 +386,7 @@ impl ModernIndexCompareStats {
             via,
             variant_stats: variant_stats.as_ref(),
             comparison,
-            require_modern_index_parity: record.require_modern_index_parity,
-            require_full_gpu_path: record.require_full_gpu_path,
+            run_config: record.run_config,
             include_diff_in_frame_line: record.include_diff_in_frame_line,
         });
 
@@ -432,8 +420,7 @@ impl ModernIndexCompareStats {
             classic_rgba: input.classic_rgba,
             modern_render,
             trace_pixel,
-            require_modern_index_parity: input.require_modern_index_parity,
-            require_full_gpu_path: input.require_full_gpu_path,
+            run_config: input.run_config,
             include_diff_in_frame_line: input.include_diff_in_frame_line,
         })
     }
@@ -604,6 +591,21 @@ variant_stat_fields!(define_variant_totals);
 mod tests {
     use super::*;
 
+    fn run_config_with_requirements(
+        require_modern_index_parity: bool,
+        require_full_gpu_path: bool,
+    ) -> ModernIndexCompareRunConfig {
+        let mut config = ModernIndexCompareRunConfig::default();
+        config.set_stride(1).expect("valid compare stride");
+        if require_modern_index_parity {
+            config.set_require_modern_index_parity();
+        }
+        if require_full_gpu_path {
+            config.set_require_full_gpu_path();
+        }
+        config
+    }
+
     #[test]
     fn records_compare_counts_and_variant_totals() {
         let mut stats = ModernIndexCompareStats::default();
@@ -724,8 +726,7 @@ mod tests {
         config.set_require_full_gpu_path();
         config.set_require_modern_index_parity();
         assert!(config.validate().is_ok());
-        assert!(config.require_full_gpu_path());
-        assert!(config.require_modern_index_parity());
+        assert!(config.should_compare_frame(10));
     }
 
     #[test]
@@ -781,8 +782,7 @@ mod tests {
             via: "sources",
             variant_stats: None,
             comparison,
-            require_modern_index_parity: true,
-            require_full_gpu_path: true,
+            run_config: run_config_with_requirements(true, true),
             include_diff_in_frame_line: false,
         });
 
@@ -815,8 +815,7 @@ mod tests {
                 mismatch: 0,
                 diff: None,
             },
-            require_modern_index_parity: true,
-            require_full_gpu_path: true,
+            run_config: run_config_with_requirements(true, true),
             include_diff_in_frame_line: false,
         });
 
@@ -848,8 +847,7 @@ mod tests {
             via: "mode7-gpu",
             variant_stats: None,
             comparison,
-            require_modern_index_parity: false,
-            require_full_gpu_path: true,
+            run_config: run_config_with_requirements(false, true),
             include_diff_in_frame_line: true,
         });
 
@@ -917,8 +915,7 @@ mod tests {
                 x: 1,
                 y: 0,
             }),
-            require_modern_index_parity: true,
-            require_full_gpu_path: true,
+            run_config: run_config_with_requirements(true, true),
             include_diff_in_frame_line: true,
         });
 

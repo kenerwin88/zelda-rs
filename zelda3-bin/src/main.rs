@@ -5368,9 +5368,7 @@ fn run_replay_save(args: &[String]) {
                         scene,
                         classic_rgba: &classic_rgba,
                         allow_source_cpu_fallback: true,
-                        require_modern_index_parity: modern_index_compare
-                            .require_modern_index_parity(),
-                        require_full_gpu_path: modern_index_compare.require_full_gpu_path(),
+                        run_config: modern_index_compare,
                         include_diff_in_frame_line: false,
                     },
                 );
@@ -12136,8 +12134,7 @@ fn run_play_gpu_render_compare(args: &[String]) {
                     scene,
                     classic_rgba: &classic_rgba,
                     allow_source_cpu_fallback: false,
-                    require_modern_index_parity: modern_index_compare.require_modern_index_parity(),
-                    require_full_gpu_path: modern_index_compare.require_full_gpu_path(),
+                    run_config: modern_index_compare,
                     include_diff_in_frame_line: true,
                 },
             );
