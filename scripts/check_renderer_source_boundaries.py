@@ -17,6 +17,7 @@ REPO = Path(__file__).resolve().parents[1]
 MAIN_RS = REPO / "zelda3-bin" / "src" / "main.rs"
 ASSET_PALETTE_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "asset_palette_commands.rs"
 ASSET_SOURCE_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "asset_source_dump_commands.rs"
+AUDIO_TRACE_RS = REPO / "zelda3-bin" / "src" / "audio_trace.rs"
 DEVELOPER_ROOM_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "developer_room_commands.rs"
 SHEET_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "sheet_dump_commands.rs"
 INDEX_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "index_dump_commands.rs"
@@ -35,6 +36,7 @@ BOUNDARY_SOURCE_FILES = (
     MAIN_RS,
     ASSET_PALETTE_COMMANDS_RS,
     ASSET_SOURCE_DUMP_COMMANDS_RS,
+    AUDIO_TRACE_RS,
     DEVELOPER_ROOM_COMMANDS_RS,
     SHEET_DUMP_COMMANDS_RS,
     INDEX_DUMP_COMMANDS_RS,
@@ -382,6 +384,20 @@ FORBIDDEN_MAIN_REPLAY_SAVE_CONFIG_OWNERSHIP = (
     "struct ReplaySaveConfig",
     "fn parse_replay_save_args_or_exit",
     "usage: zelda3 --replay-save",
+)
+
+FORBIDDEN_MAIN_AUDIO_TRACE_OWNERSHIP = (
+    "struct AudioFrameStats",
+    "fn print_replay_audio_trace",
+    "fn replay_dsp_write_events_json",
+    "fn replay_checksum_samples",
+    "fn replay_checksum_dsp_writes",
+    "fn replay_checksum_dsp_write_values",
+    "fn fingerprint_audio_hash",
+    "fn should_write_fingerprint",
+    "fn first_peak_frame",
+    "fn max_peak_frame",
+    "fn print_audio_window",
 )
 
 FORBIDDEN_MAIN_IMAGE_OUTPUT_OWNERSHIP = (
@@ -978,6 +994,14 @@ def check_main_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "replay-save config ownership escaped replay_save_config boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_MAIN_AUDIO_TRACE_OWNERSHIP:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "audio trace ownership escaped audio_trace boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
