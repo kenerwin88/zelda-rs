@@ -81,6 +81,98 @@ pub struct GpuFrame<'a> {
     pub scanlines: Box<[ScanlineRegs; 224]>,
 }
 
+impl<'a> GpuFrame<'a> {
+    pub fn from_source<S>(source: &S, cgram: &'a [u16], scanlines: Box<[ScanlineRegs; 224]>) -> Self
+    where
+        S: GpuFrameSource<'a> + ?Sized,
+    {
+        Self {
+            vram: source.vram(),
+            cgram,
+            oam: source.oam(),
+            mode: source.mode(),
+            bg: std::array::from_fn(|layer| BgLayerRegs {
+                h_scroll: source.bg_h_scroll(layer),
+                v_scroll: source.bg_v_scroll(layer),
+                tilemap_wider: source.bg_tilemap_wider(layer),
+                tilemap_higher: source.bg_tilemap_higher(layer),
+                tilemap_adr: source.bg_tilemap_adr(layer),
+                tile_adr: source.bg_tile_adr(layer),
+            }),
+            obj: ObjRegs {
+                tile_adr1: source.obj_tile_adr1(),
+                tile_adr2: source.obj_tile_adr2(),
+                obj_size: source.obj_size(),
+            },
+            mosaic_enabled: source.mosaic_enabled(),
+            mosaic_size: source.mosaic_size(),
+            extra_left_right: source.extra_left_right(),
+            mode7: Mode7Regs {
+                matrix: source.mode7_matrix(),
+                large_field: source.mode7_large_field(),
+                char_fill: source.mode7_char_fill(),
+                x_flip: source.mode7_x_flip(),
+                y_flip: source.mode7_y_flip(),
+                ext_bg_always_zero: source.mode7_ext_bg_always_zero(),
+            },
+            screen_enabled: source.screen_enabled(),
+            screen_windowed: source.screen_windowed(),
+            brightness: source.brightness(),
+            forced_blank: source.forced_blank(),
+            math_enabled: source.math_enabled(),
+            subtract_color: source.subtract_color(),
+            half_color: source.half_color(),
+            fixed_color_r: source.fixed_color_r(),
+            fixed_color_g: source.fixed_color_g(),
+            fixed_color_b: source.fixed_color_b(),
+            add_subscreen: source.add_subscreen(),
+            clip_mode: source.clip_mode(),
+            prevent_math_mode: source.prevent_math_mode(),
+            windowsel_cm: ((source.windowsel() >> 20) & 0xF) as u8,
+            windowsel: source.windowsel(),
+            scanlines,
+        }
+    }
+}
+
+pub trait GpuFrameSource<'a> {
+    fn vram(&self) -> &'a [u16];
+    fn oam(&self) -> &'a [u16];
+    fn mode(&self) -> u8;
+    fn bg_h_scroll(&self, layer: usize) -> u16;
+    fn bg_v_scroll(&self, layer: usize) -> u16;
+    fn bg_tilemap_wider(&self, layer: usize) -> bool;
+    fn bg_tilemap_higher(&self, layer: usize) -> bool;
+    fn bg_tilemap_adr(&self, layer: usize) -> u16;
+    fn bg_tile_adr(&self, layer: usize) -> u16;
+    fn obj_tile_adr1(&self) -> u16;
+    fn obj_tile_adr2(&self) -> u16;
+    fn obj_size(&self) -> u8;
+    fn mosaic_enabled(&self) -> u8;
+    fn mosaic_size(&self) -> u8;
+    fn extra_left_right(&self) -> u8;
+    fn mode7_matrix(&self) -> [i16; 8];
+    fn mode7_large_field(&self) -> bool;
+    fn mode7_char_fill(&self) -> bool;
+    fn mode7_x_flip(&self) -> bool;
+    fn mode7_y_flip(&self) -> bool;
+    fn mode7_ext_bg_always_zero(&self) -> bool;
+    fn screen_enabled(&self) -> [u8; 2];
+    fn screen_windowed(&self) -> [u8; 2];
+    fn brightness(&self) -> u8;
+    fn forced_blank(&self) -> bool;
+    fn math_enabled(&self) -> u8;
+    fn subtract_color(&self) -> bool;
+    fn half_color(&self) -> bool;
+    fn fixed_color_r(&self) -> u8;
+    fn fixed_color_g(&self) -> u8;
+    fn fixed_color_b(&self) -> u8;
+    fn add_subscreen(&self) -> bool;
+    fn clip_mode(&self) -> u8;
+    fn prevent_math_mode(&self) -> u8;
+    fn windowsel(&self) -> u32;
+}
+
 /// Per-BG-layer register snapshot (mirrors `snes::ppu::BgLayer`).
 #[derive(Clone, Copy, Default)]
 pub struct BgLayerRegs {
@@ -114,4 +206,202 @@ pub struct Mode7Regs {
     pub x_flip: bool,
     pub y_flip: bool,
     pub ext_bg_always_zero: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestFrameSource<'a> {
+        vram: &'a [u16],
+        oam: &'a [u16],
+    }
+
+    impl<'a> GpuFrameSource<'a> for TestFrameSource<'a> {
+        fn vram(&self) -> &'a [u16] {
+            self.vram
+        }
+
+        fn oam(&self) -> &'a [u16] {
+            self.oam
+        }
+
+        fn mode(&self) -> u8 {
+            7
+        }
+
+        fn bg_h_scroll(&self, layer: usize) -> u16 {
+            10 + layer as u16
+        }
+
+        fn bg_v_scroll(&self, layer: usize) -> u16 {
+            20 + layer as u16
+        }
+
+        fn bg_tilemap_wider(&self, layer: usize) -> bool {
+            layer == 1
+        }
+
+        fn bg_tilemap_higher(&self, layer: usize) -> bool {
+            layer == 2
+        }
+
+        fn bg_tilemap_adr(&self, layer: usize) -> u16 {
+            0x1000 + layer as u16
+        }
+
+        fn bg_tile_adr(&self, layer: usize) -> u16 {
+            0x2000 + layer as u16
+        }
+
+        fn obj_tile_adr1(&self) -> u16 {
+            0x3000
+        }
+
+        fn obj_tile_adr2(&self) -> u16 {
+            0x4000
+        }
+
+        fn obj_size(&self) -> u8 {
+            2
+        }
+
+        fn mosaic_enabled(&self) -> u8 {
+            0x03
+        }
+
+        fn mosaic_size(&self) -> u8 {
+            4
+        }
+
+        fn extra_left_right(&self) -> u8 {
+            8
+        }
+
+        fn mode7_matrix(&self) -> [i16; 8] {
+            [1, 2, 3, 4, 5, 6, 7, 8]
+        }
+
+        fn mode7_large_field(&self) -> bool {
+            true
+        }
+
+        fn mode7_char_fill(&self) -> bool {
+            false
+        }
+
+        fn mode7_x_flip(&self) -> bool {
+            true
+        }
+
+        fn mode7_y_flip(&self) -> bool {
+            false
+        }
+
+        fn mode7_ext_bg_always_zero(&self) -> bool {
+            true
+        }
+
+        fn screen_enabled(&self) -> [u8; 2] {
+            [0x11, 0x22]
+        }
+
+        fn screen_windowed(&self) -> [u8; 2] {
+            [0x33, 0x44]
+        }
+
+        fn brightness(&self) -> u8 {
+            15
+        }
+
+        fn forced_blank(&self) -> bool {
+            true
+        }
+
+        fn math_enabled(&self) -> u8 {
+            0x2f
+        }
+
+        fn subtract_color(&self) -> bool {
+            true
+        }
+
+        fn half_color(&self) -> bool {
+            true
+        }
+
+        fn fixed_color_r(&self) -> u8 {
+            1
+        }
+
+        fn fixed_color_g(&self) -> u8 {
+            2
+        }
+
+        fn fixed_color_b(&self) -> u8 {
+            3
+        }
+
+        fn add_subscreen(&self) -> bool {
+            true
+        }
+
+        fn clip_mode(&self) -> u8 {
+            1
+        }
+
+        fn prevent_math_mode(&self) -> u8 {
+            2
+        }
+
+        fn windowsel(&self) -> u32 {
+            0x0050_0000
+        }
+    }
+
+    #[test]
+    fn gpu_frame_from_source_owns_register_assembly() {
+        let vram = [0x1111, 0x2222];
+        let cgram = [0x3333, 0x4444];
+        let oam = [0x5555, 0x6666];
+        let source = TestFrameSource {
+            vram: &vram,
+            oam: &oam,
+        };
+        let frame =
+            GpuFrame::from_source(&source, &cgram, Box::new([ScanlineRegs::default(); 224]));
+
+        assert_eq!(frame.vram, &vram);
+        assert_eq!(frame.cgram, &cgram);
+        assert_eq!(frame.oam, &oam);
+        assert_eq!(frame.mode, 7);
+        assert_eq!(frame.bg[2].h_scroll, 12);
+        assert_eq!(frame.bg[2].v_scroll, 22);
+        assert!(frame.bg[1].tilemap_wider);
+        assert!(frame.bg[2].tilemap_higher);
+        assert_eq!(frame.bg[3].tilemap_adr, 0x1003);
+        assert_eq!(frame.bg[3].tile_adr, 0x2003);
+        assert_eq!(frame.obj.tile_adr1, 0x3000);
+        assert_eq!(frame.obj.tile_adr2, 0x4000);
+        assert_eq!(frame.obj.obj_size, 2);
+        assert_eq!(frame.mode7.matrix, [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert!(frame.mode7.large_field);
+        assert!(frame.mode7.x_flip);
+        assert!(frame.mode7.ext_bg_always_zero);
+        assert_eq!(frame.screen_enabled, [0x11, 0x22]);
+        assert_eq!(frame.screen_windowed, [0x33, 0x44]);
+        assert_eq!(frame.brightness, 15);
+        assert!(frame.forced_blank);
+        assert_eq!(frame.math_enabled, 0x2f);
+        assert!(frame.subtract_color);
+        assert!(frame.half_color);
+        assert_eq!(frame.fixed_color_r, 1);
+        assert_eq!(frame.fixed_color_g, 2);
+        assert_eq!(frame.fixed_color_b, 3);
+        assert!(frame.add_subscreen);
+        assert_eq!(frame.clip_mode, 1);
+        assert_eq!(frame.prevent_math_mode, 2);
+        assert_eq!(frame.windowsel_cm, 5);
+        assert_eq!(frame.windowsel, 0x0050_0000);
+    }
 }

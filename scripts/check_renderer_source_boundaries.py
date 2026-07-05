@@ -24,6 +24,7 @@ REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernIndexCompareStats",
     "MappedSourceTableView",
     "compare_rgba_to_rgba",
+    "GpuFrame::from_source",
     "render_modern_index_compare_frame",
     "render_hd_capture_from_sources",
 )
@@ -85,6 +86,10 @@ FORBIDDEN_FRAME_COMPARE_CALLS = (
     "fn compare_rgba_to_rgba",
     "fn render_frame_rgb_hash_bgra",
     "fn render_frame_rgb_hash_rgba",
+)
+
+FORBIDDEN_GPU_FRAME_ASSEMBLY_CALLS = (
+    "GpuFrame {",
 )
 
 
@@ -219,6 +224,14 @@ def check_source_text(source: str) -> list[str]:
                 fn = enclosing_function(lines, index) or "<module>"
                 errors.append(
                     "frame compare helper escaped renderer boundary at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+        for forbidden in FORBIDDEN_GPU_FRAME_ASSEMBLY_CALLS:
+            if forbidden in line:
+                fn = enclosing_function(lines, index) or "<module>"
+                errors.append(
+                    "gpu frame assembly escaped renderer boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )

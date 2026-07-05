@@ -27,8 +27,7 @@ use platform::{
     HostMenuMode, HostMenuState, NativeFrontend, NativeFrontendOptions,
 };
 use renderer::{
-    scanlines_from_raw, BgLayerRegs, GpuFrame, Mode7Regs, ObjRegs, OffscreenRenderer,
-    PresentationContext, ScanlineRegs,
+    scanlines_from_raw, GpuFrame, OffscreenRenderer, PresentationContext, ScanlineRegs,
 };
 use serde::{Deserialize, Serialize};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, ppu::PpuRenderFlags, Snes};
@@ -6907,51 +6906,152 @@ fn gpu_frame_from_ppu<'a>(
     cgram: &'a [u16],
     scanlines: Box<[ScanlineRegs; 224]>,
 ) -> GpuFrame<'a> {
-    GpuFrame {
-        vram: &ppu.vram,
-        cgram,
-        oam: &ppu.oam,
-        mode: ppu.mode,
-        bg: std::array::from_fn(|i| BgLayerRegs {
-            h_scroll: ppu.bg_layer[i].h_scroll,
-            v_scroll: ppu.bg_layer[i].v_scroll,
-            tilemap_wider: ppu.bg_layer[i].tilemap_wider,
-            tilemap_higher: ppu.bg_layer[i].tilemap_higher,
-            tilemap_adr: ppu.bg_layer[i].tilemap_adr,
-            tile_adr: ppu.bg_layer[i].tile_adr,
-        }),
-        obj: ObjRegs {
-            tile_adr1: ppu.obj_tile_adr1,
-            tile_adr2: ppu.obj_tile_adr2,
-            obj_size: ppu.obj_size,
-        },
-        mosaic_enabled: ppu.mosaic_enabled,
-        mosaic_size: ppu.mosaic_size,
-        extra_left_right: ppu.extra_left_right,
-        mode7: Mode7Regs {
-            matrix: ppu.m7_matrix,
-            large_field: ppu.m7_large_field,
-            char_fill: ppu.m7_char_fill,
-            x_flip: ppu.m7_x_flip,
-            y_flip: ppu.m7_y_flip,
-            ext_bg_always_zero: ppu.m7_ext_bg_always_zero,
-        },
-        screen_enabled: ppu.screen_enabled,
-        screen_windowed: ppu.screen_windowed,
-        brightness: ppu.brightness,
-        forced_blank: ppu.forced_blank,
-        math_enabled: ppu.math_enabled,
-        subtract_color: ppu.subtract_color,
-        half_color: ppu.half_color,
-        fixed_color_r: ppu.fixed_color_r,
-        fixed_color_g: ppu.fixed_color_g,
-        fixed_color_b: ppu.fixed_color_b,
-        add_subscreen: ppu.add_subscreen,
-        clip_mode: ppu.clip_mode,
-        prevent_math_mode: ppu.prevent_math_mode,
-        windowsel_cm: ((ppu.windowsel >> 20) & 0xF) as u8,
-        windowsel: ppu.windowsel,
-        scanlines,
+    GpuFrame::from_source(&PpuGpuFrameSource { ppu }, cgram, scanlines)
+}
+
+struct PpuGpuFrameSource<'a> {
+    ppu: &'a snes::ppu::PpuState,
+}
+
+impl<'a> renderer::GpuFrameSource<'a> for PpuGpuFrameSource<'a> {
+    fn vram(&self) -> &'a [u16] {
+        &self.ppu.vram
+    }
+
+    fn oam(&self) -> &'a [u16] {
+        &self.ppu.oam
+    }
+
+    fn mode(&self) -> u8 {
+        self.ppu.mode
+    }
+
+    fn bg_h_scroll(&self, layer: usize) -> u16 {
+        self.ppu.bg_layer[layer].h_scroll
+    }
+
+    fn bg_v_scroll(&self, layer: usize) -> u16 {
+        self.ppu.bg_layer[layer].v_scroll
+    }
+
+    fn bg_tilemap_wider(&self, layer: usize) -> bool {
+        self.ppu.bg_layer[layer].tilemap_wider
+    }
+
+    fn bg_tilemap_higher(&self, layer: usize) -> bool {
+        self.ppu.bg_layer[layer].tilemap_higher
+    }
+
+    fn bg_tilemap_adr(&self, layer: usize) -> u16 {
+        self.ppu.bg_layer[layer].tilemap_adr
+    }
+
+    fn bg_tile_adr(&self, layer: usize) -> u16 {
+        self.ppu.bg_layer[layer].tile_adr
+    }
+
+    fn obj_tile_adr1(&self) -> u16 {
+        self.ppu.obj_tile_adr1
+    }
+
+    fn obj_tile_adr2(&self) -> u16 {
+        self.ppu.obj_tile_adr2
+    }
+
+    fn obj_size(&self) -> u8 {
+        self.ppu.obj_size
+    }
+
+    fn mosaic_enabled(&self) -> u8 {
+        self.ppu.mosaic_enabled
+    }
+
+    fn mosaic_size(&self) -> u8 {
+        self.ppu.mosaic_size
+    }
+
+    fn extra_left_right(&self) -> u8 {
+        self.ppu.extra_left_right
+    }
+
+    fn mode7_matrix(&self) -> [i16; 8] {
+        self.ppu.m7_matrix
+    }
+
+    fn mode7_large_field(&self) -> bool {
+        self.ppu.m7_large_field
+    }
+
+    fn mode7_char_fill(&self) -> bool {
+        self.ppu.m7_char_fill
+    }
+
+    fn mode7_x_flip(&self) -> bool {
+        self.ppu.m7_x_flip
+    }
+
+    fn mode7_y_flip(&self) -> bool {
+        self.ppu.m7_y_flip
+    }
+
+    fn mode7_ext_bg_always_zero(&self) -> bool {
+        self.ppu.m7_ext_bg_always_zero
+    }
+
+    fn screen_enabled(&self) -> [u8; 2] {
+        self.ppu.screen_enabled
+    }
+
+    fn screen_windowed(&self) -> [u8; 2] {
+        self.ppu.screen_windowed
+    }
+
+    fn brightness(&self) -> u8 {
+        self.ppu.brightness
+    }
+
+    fn forced_blank(&self) -> bool {
+        self.ppu.forced_blank
+    }
+
+    fn math_enabled(&self) -> u8 {
+        self.ppu.math_enabled
+    }
+
+    fn subtract_color(&self) -> bool {
+        self.ppu.subtract_color
+    }
+
+    fn half_color(&self) -> bool {
+        self.ppu.half_color
+    }
+
+    fn fixed_color_r(&self) -> u8 {
+        self.ppu.fixed_color_r
+    }
+
+    fn fixed_color_g(&self) -> u8 {
+        self.ppu.fixed_color_g
+    }
+
+    fn fixed_color_b(&self) -> u8 {
+        self.ppu.fixed_color_b
+    }
+
+    fn add_subscreen(&self) -> bool {
+        self.ppu.add_subscreen
+    }
+
+    fn clip_mode(&self) -> u8 {
+        self.ppu.clip_mode
+    }
+
+    fn prevent_math_mode(&self) -> u8 {
+        self.ppu.prevent_math_mode
+    }
+
+    fn windowsel(&self) -> u32 {
+        self.ppu.windowsel
     }
 }
 
