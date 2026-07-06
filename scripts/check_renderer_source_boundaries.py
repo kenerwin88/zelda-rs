@@ -391,7 +391,10 @@ FORBIDDEN_PLAY_LOCKSTEP_CLASSIC_PRESENT_CALLS = (
 )
 
 GPU_ASSET_LIBRETRO_VIDEO_FUNCTION_FORBIDDEN_FRAMES = {
-    "run_compare_libretro_oracle": ("&rust_frame,",),
+    "run_compare_libretro_oracle": (
+        "run_diagnostic_play_frame_bgra(",
+        "&rust_frame,",
+    ),
     "run_play_lockstep": ("&game_frame,",),
 }
 

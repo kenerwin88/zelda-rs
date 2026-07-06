@@ -858,7 +858,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 5)
+        self.assertEqual(len(errors), 6)
         self.assertTrue(
             all(
                 "libretro video comparison escaped PNG-backed GPU path" in error

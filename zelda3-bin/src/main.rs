@@ -70,8 +70,7 @@ use render_diagnostics::{
     compare_diagnostic_oracle_render_frame, format_render_ppu_summary,
     render_diagnostic_lockstep_artifact_frame_bgra,
     render_diagnostic_lockstep_oracle_frames_in_place, replay_fingerprint_leaf_bgra,
-    replay_projection_bgra, run_diagnostic_play_frame_bgra,
-    run_diagnostic_play_frame_with_run_what_bgra,
+    replay_projection_bgra, run_diagnostic_play_frame_with_run_what_bgra,
 };
 use replay_diagnostics::{
     replay_checksum_bytes, replay_checksum_ram_range, replay_save_ancilla_dump,
@@ -4353,8 +4352,6 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
     }
     let width = 256u32;
     let height = 224u32;
-    let render_flags = PpuRenderFlags::empty();
-    let mut rust_frame = vec![0u8; width as usize * height as usize * 4];
     let mut rust_audio = Vec::new();
     let mut discard_audio = Vec::new();
     let mut dsp_writes = Vec::new();
@@ -4393,7 +4390,7 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
         let input = input_script.input_for_frame(frame_index);
         let compare_this_frame = frame_index >= compare_from_frame;
         let pre_game = game.clone();
-        run_diagnostic_play_frame_bgra(&mut game, input, &mut rust_frame, render_flags);
+        game.zelda_run_frame(input as i32);
         let rust_video_frame =
             (trace_video_pixel.is_some() || (compare_this_frame && compare_video)).then(|| {
                 render_modern_asset_gpu_frame_rgba_or_exit(
