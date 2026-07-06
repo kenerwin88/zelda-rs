@@ -995,6 +995,31 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(all("run_smoke_render" in error for error in errors))
 
+    def test_rejects_classic_default_developer_destination_dump_calls(self):
+        module = load_module()
+        source = """
+            fn run_dump_developer_destination() {
+                eprintln!("usage: zelda3 --dump-developer-destination <destination-id> <frames> <cpu-out.png> [--gpu <gpu-out.png>]");
+                run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, PpuRenderFlags::empty());
+                write_argb_frame_png(&out_path, &frame, width, height);
+                if let Some(path) = cpu_out_path.as_deref() {
+                    run_diagnostic_play_frame_bgra(cpu_game, 0, &mut frame, PpuRenderFlags::empty());
+                    write_argb_frame_png(path, &frame, width, height);
+                }
+            }
+        """
+
+        errors = module.check_developer_room_commands_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 4)
+        self.assertTrue(
+            all(
+                "default developer destination dump escaped PNG-backed GPU path" in error
+                for error in errors
+            )
+        )
+        self.assertTrue(all("run_dump_developer_destination" in error for error in errors))
+
     def test_rejects_route_coverage_ownership_in_main(self):
         module = load_module()
         source = """

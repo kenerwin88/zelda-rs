@@ -382,7 +382,7 @@ pub(crate) fn run_dump_developer_destination(args: &[String]) {
         Some(id) => id,
         None => {
             eprintln!(
-                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <cpu-out.png> [--gpu <gpu-out.png>]"
+                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <gpu-out.png> [--cpu <cpu-out.png>]"
             );
             process::exit(2);
         }
@@ -391,7 +391,7 @@ pub(crate) fn run_dump_developer_destination(args: &[String]) {
         Some(frames) => frames,
         None => {
             eprintln!(
-                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <cpu-out.png> [--gpu <gpu-out.png>]"
+                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <gpu-out.png> [--cpu <cpu-out.png>]"
             );
             process::exit(2);
         }
@@ -400,21 +400,21 @@ pub(crate) fn run_dump_developer_destination(args: &[String]) {
         Some(path) => PathBuf::from(path),
         None => {
             eprintln!(
-                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <cpu-out.png> [--gpu <gpu-out.png>]"
+                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <gpu-out.png> [--cpu <cpu-out.png>]"
             );
             process::exit(2);
         }
     };
-    let mut gpu_out_path = None::<PathBuf>;
+    let mut cpu_out_path = None::<PathBuf>;
     let mut i = 3usize;
     while i < args.len() {
         match args[i].as_str() {
-            "--gpu" => {
+            "--cpu" => {
                 let path = args.get(i + 1).unwrap_or_else(|| {
-                    eprintln!("--gpu requires a path");
+                    eprintln!("--cpu requires a path");
                     process::exit(2);
                 });
-                gpu_out_path = Some(PathBuf::from(path));
+                cpu_out_path = Some(PathBuf::from(path));
                 i += 2;
             }
             flag => {
@@ -433,33 +433,37 @@ pub(crate) fn run_dump_developer_destination(args: &[String]) {
     };
     let width = 256u32;
     let height = 224u32;
-    let mut frame = vec![0u8; width as usize * height as usize * 4];
+    let mut cpu_game = cpu_out_path.as_ref().map(|_| game.clone());
     for _ in 0..frames {
-        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, PpuRenderFlags::empty());
+        game.zelda_run_frame(0);
     }
-    if let Err(e) = write_argb_frame_png(&out_path, &frame, width, height) {
+    let rgba = match render_live_game_gpu_frame_rgba(&mut game, width, height) {
+        Ok(rgba) => rgba,
+        Err(e) => {
+            eprintln!("failed to render developer destination via modern asset GPU path: {e}");
+            process::exit(1);
+        }
+    };
+    if let Err(e) = write_rgba_frame_png(&out_path, &rgba, width, height) {
         eprintln!("failed to write {}: {e}", out_path.display());
         process::exit(1);
     }
 
-    if let Some(path) = gpu_out_path.as_deref() {
-        let rgba = match render_live_game_gpu_frame_rgba(&mut game, width, height) {
-            Ok(rgba) => rgba,
-            Err(e) => {
-                eprintln!("failed to render developer GPU dump: {e}");
-                process::exit(1);
-            }
-        };
-        if let Err(e) = write_rgba_frame_png(path, &rgba, width, height) {
+    if let (Some(path), Some(cpu_game)) = (cpu_out_path.as_deref(), cpu_game.as_mut()) {
+        let mut frame = vec![0u8; width as usize * height as usize * 4];
+        for _ in 0..frames {
+            run_diagnostic_play_frame_bgra(cpu_game, 0, &mut frame, PpuRenderFlags::empty());
+        }
+        if let Err(e) = write_argb_frame_png(path, &frame, width, height) {
             eprintln!("failed to write {}: {e}", path.display());
             process::exit(1);
         }
     }
 
     println!(
-        "dumped developer destination {id} frames={frames} start_frame={start_frame} to {}; gpu={}; main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; bg1_tm={:04x}; bg1_chr={:04x}; cgram_nonzero={}; oam_nonzero={}",
+        "dumped developer destination {id} frames={frames} start_frame={start_frame} to {}; cpu={}; main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; bg1_tm={:04x}; bg1_chr={:04x}; cgram_nonzero={}; oam_nonzero={}",
         out_path.display(),
-        gpu_out_path
+        cpu_out_path
             .as_ref()
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "none".to_string()),

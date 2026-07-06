@@ -383,6 +383,17 @@ FORBIDDEN_FRAME_DUMP_CLASSIC_DEFAULT_CALLS = (
     "write_argb_frame_png(",
 )
 
+GPU_ASSET_DEVELOPER_DESTINATION_FUNCTIONS = {
+    "run_dump_developer_destination",
+}
+
+FORBIDDEN_DEVELOPER_DESTINATION_CLASSIC_DEFAULT_CALLS = (
+    "run_diagnostic_play_frame_bgra(&mut game",
+    "write_argb_frame_png(&out_path",
+    "<cpu-out.png>",
+    "[--gpu",
+)
+
 FORBIDDEN_MAIN_GPU_ASSET_RENDER_CALLS = (
     "run_diagnostic_play_frame_bgra(",
     "write_argb_frame_png(",
@@ -1183,6 +1194,26 @@ def check_frame_dump_commands_text(source: str) -> list[str]:
     return errors
 
 
+def check_developer_room_commands_text(source: str) -> list[str]:
+    errors: list[str] = []
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith("//") or stripped.startswith("///"):
+            continue
+        fn = enclosing_function(lines, index)
+        if fn not in GPU_ASSET_DEVELOPER_DESTINATION_FUNCTIONS:
+            continue
+        for forbidden in FORBIDDEN_DEVELOPER_DESTINATION_CLASSIC_DEFAULT_CALLS:
+            if forbidden in line:
+                errors.append(
+                    "default developer destination dump escaped PNG-backed GPU path at "
+                    f"zelda3-bin/src/developer_room_commands.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+    return errors
+
+
 def check_classic_frame_renderer_text(source: str) -> list[str]:
     errors: list[str] = []
     lines = source.splitlines()
@@ -1244,6 +1275,7 @@ def main() -> int:
     errors = check_source_text(source)
     errors.extend(check_main_text(MAIN_RS.read_text()))
     errors.extend(check_frame_dump_commands_text(FRAME_DUMP_COMMANDS_RS.read_text()))
+    errors.extend(check_developer_room_commands_text(DEVELOPER_ROOM_COMMANDS_RS.read_text()))
     errors.extend(check_gpu_capture_text(GPU_CAPTURE_RS.read_text()))
     errors.extend(check_play_renderer_text(PLAY_RENDERER_RS.read_text()))
     errors.extend(check_classic_frame_renderer_text(CLASSIC_FRAME_RENDERER_RS.read_text()))
