@@ -44,6 +44,12 @@ pub struct ModernGpuVariantRenderer {
     effect_renderer: ModernGpuVariantEffectRenderer,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModernGpuVariantLiveRender {
+    pub stats: crate::modern_software::VariantAtlasRenderStats,
+    pub rendered: bool,
+}
+
 struct PreparedModernVariantExecution<'p, 'frame> {
     prepared: &'p PreparedModernVariantRender<'frame>,
     render_path: ModernVariantRenderPath,
@@ -182,7 +188,7 @@ impl ModernGpuVariantRenderer {
         bg_palette_name: &str,
         sprite_palette_name: &str,
         output_view: &wgpu::TextureView,
-    ) -> crate::modern_software::VariantAtlasRenderStats {
+    ) -> ModernGpuVariantLiveRender {
         let prepared = self.prepare_variant_render(
             frame,
             bg_cells,
@@ -199,11 +205,20 @@ impl ModernGpuVariantRenderer {
         queue: &wgpu::Queue,
         prepared: &PreparedModernVariantRender<'_>,
         output_view: &wgpu::TextureView,
-    ) -> crate::modern_software::VariantAtlasRenderStats {
+    ) -> ModernGpuVariantLiveRender {
         let mut execution =
             PreparedModernVariantExecution::new(prepared, PreparedModernVariantOutput::Live);
+        if execution.render_path() == ModernVariantRenderPath::LiveIndexBaseWithOverlay {
+            return ModernGpuVariantLiveRender {
+                stats: execution.finish(),
+                rendered: false,
+            };
+        }
         self.render_live_execution(device, queue, output_view, &mut execution);
-        execution.finish()
+        ModernGpuVariantLiveRender {
+            stats: execution.finish(),
+            rendered: true,
+        }
     }
 
     fn render_live_execution(
@@ -11804,7 +11819,7 @@ mod tests {
             });
             let view = target.create_view(&wgpu::TextureViewDescriptor::default());
 
-            let stats = renderer.render(
+            let live_render = renderer.render(
                 &device,
                 &queue,
                 &frame,
@@ -11814,6 +11829,7 @@ mod tests {
                 "palette_main_spr",
                 &view,
             );
+            assert!(live_render.rendered);
 
             let bytes_per_row = width * 4;
             let readback = device.create_buffer(&wgpu::BufferDescriptor {
@@ -11866,11 +11882,11 @@ mod tests {
                 "palette_main_spr",
             );
 
-            assert_eq!(stats.stable_draws, 0);
-            assert_eq!(stats.effect_draws, 2);
-            assert_eq!(stats.dynamic_material_draws, 2);
-            assert_eq!(stats.fallback_draws, 0);
-            assert_eq!(stats, software_stats);
+            assert_eq!(live_render.stats.stable_draws, 0);
+            assert_eq!(live_render.stats.effect_draws, 2);
+            assert_eq!(live_render.stats.dynamic_material_draws, 2);
+            assert_eq!(live_render.stats.fallback_draws, 0);
+            assert_eq!(live_render.stats, software_stats);
             if gpu_rgba != software_rgba {
                 let mismatch = gpu_rgba
                     .chunks_exact(4)
@@ -11887,6 +11903,89 @@ mod tests {
                     mismatch.1 .1
                 );
             }
+        });
+    }
+
+    #[test]
+    fn modern_gpu_variant_live_refuses_live_index_base() {
+        use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
+        use crate::modern_hd_overrides::NO_SOURCE_KEY;
+        use crate::modern_index_atlas::ModernIndexTile;
+        use crate::modern_variant_atlas::ModernVariantAtlas;
+
+        pollster::block_on(async {
+            let instance = crate::create_wgpu_instance();
+            let (_adapter, device, queue) = crate::create_device_queue(&instance, None).await;
+
+            let mut indices = [0u8; 64];
+            indices[0] = 1;
+            let cells = vec![ModernIndexTile {
+                id: 0,
+                indices,
+                source_key: NO_SOURCE_KEY,
+                hflip: false,
+                vflip: false,
+            }];
+            let mut frame = ModernFrame::empty();
+            let mut layer = ModernBgLayer::new(0);
+            layer.enabled_main = true;
+            layer.index_tiles.push(ModernIndexTileInstance {
+                cell_id: 0,
+                source_key: NO_SOURCE_KEY,
+                screen_x: 0,
+                screen_y: 0,
+                palette: 0,
+                hflip: false,
+                vflip: false,
+                priority: false,
+            });
+            frame.bg_layers[0] = layer;
+
+            let atlas = ModernVariantAtlas {
+                width: 8,
+                height: 8,
+                rgba: vec![0u8; 8 * 8 * 4],
+                entries: Vec::new(),
+                effects: Vec::new(),
+                mode7_source_chars: None,
+            };
+            let renderer = ModernGpuVariantRenderer::new(
+                &device,
+                &queue,
+                &atlas,
+                wgpu::TextureFormat::Rgba8Unorm,
+            );
+            let target = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("modern_gpu_variant_refuse_live_index_target"),
+                size: wgpu::Extent3d {
+                    width: 256,
+                    height: 224,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let view = target.create_view(&wgpu::TextureViewDescriptor::default());
+
+            let live_render = renderer.render(
+                &device,
+                &queue,
+                &frame,
+                &cells,
+                &[],
+                "palette_dung_bg_main",
+                "palette_main_spr",
+                &view,
+            );
+
+            assert!(!live_render.rendered);
+            assert_eq!(live_render.stats.live_index_draws, 1);
+            assert_eq!(live_render.stats.unkeyed_fallback_draws, 1);
+            assert_eq!(live_render.stats.gpu_prefinal_base_frames, 0);
         });
     }
 

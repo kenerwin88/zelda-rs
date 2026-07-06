@@ -303,11 +303,7 @@ fn validate_modern_asset_capture(
 ) -> Result<renderer::ModernAssetValidationFrame, String> {
     let gpu_frame = capture.gpu_frame();
     let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
-    resources.validate_full_gpu_asset_from_entries(
-        &gpu_frame,
-        capture.source_entries(),
-        scene,
-    )
+    resources.validate_full_gpu_asset_from_entries(&gpu_frame, capture.source_entries(), scene)
 }
 
 fn validation_cache_key(capture: &LiveGpuFrameCapture) -> u64 {

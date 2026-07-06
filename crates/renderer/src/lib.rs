@@ -3015,7 +3015,7 @@ impl FrameRenderer {
                 })
             }
             ModernAssetFramePresentRoute::SourceVariantGpu => {
-                let stats = self.present_modern_variant_gpu_from_sources(
+                let Some(stats) = self.present_modern_variant_gpu_from_sources(
                     frame,
                     src_table.expect("route requires source table"),
                     resources
@@ -3026,7 +3026,10 @@ impl FrameRenderer {
                         .expect("route requires variant atlas"),
                     scene.bg_palette_name(),
                     scene.sprite_palette_name(),
-                )?;
+                )?
+                else {
+                    return Ok(ModernAssetFramePresentResult::Unhandled);
+                };
                 Ok(ModernAssetFramePresentResult::Presented {
                     via: "variant-gpu",
                     variant_stats: Some(stats),
@@ -3184,7 +3187,7 @@ impl FrameRenderer {
         atlas: &modern_variant_atlas::ModernVariantAtlas,
         bg_palette_name: &str,
         sprite_palette_name: &str,
-    ) -> Result<modern_software::VariantAtlasRenderStats, RenderError> {
+    ) -> Result<Option<modern_software::VariantAtlasRenderStats>, RenderError> {
         let format = wgpu::TextureFormat::Rgba8Unorm;
         if self.modern_variant_gpu.is_none() {
             self.modern_variant_gpu = Some(ModernGpuVariantRenderer::new(
@@ -3230,7 +3233,7 @@ impl FrameRenderer {
             .expect("variant renderer built above");
         let (target_texture, target_view) =
             self.modern_gpu_target.as_ref().expect("target built above");
-        let stats = variant.render(
+        let render = variant.render(
             &self.device,
             &self.queue,
             frame,
@@ -3240,6 +3243,9 @@ impl FrameRenderer {
             sprite_palette_name,
             target_view,
         );
+        if !render.rendered {
+            return Ok(None);
+        }
 
         let mut encoder = self
             .device
@@ -3268,7 +3274,7 @@ impl FrameRenderer {
         self.queue.submit([encoder.finish()]);
 
         self.render()?;
-        Ok(stats)
+        Ok(Some(render.stats))
     }
 
     /// Live GPU present of the compact RGBA canonical-art/effect atlas path
@@ -3284,7 +3290,7 @@ impl FrameRenderer {
         variant_atlas: &modern_variant_atlas::ModernVariantAtlas,
         bg_palette_name: &str,
         sprite_palette_name: &str,
-    ) -> Result<modern_software::VariantAtlasRenderStats, RenderError> {
+    ) -> Result<Option<modern_software::VariantAtlasRenderStats>, RenderError> {
         debug_assert_ne!(frame.mode, 7);
         let (mut modern, bg_cells) =
             modern_extract::extract_modern_frame_from_sources(frame, src_table, source_atlas);
