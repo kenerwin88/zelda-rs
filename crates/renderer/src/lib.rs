@@ -2007,7 +2007,11 @@ fn upload_ppu_pixels(
 
 // ── FrameRenderer ─────────────────────────────────────────────────────────────
 
-/// Blits a CPU BGRA framebuffer to a winit window surface each frame.
+/// Presents Zelda frames to a winit window surface.
+///
+/// The default live path is PNG-backed GPU asset rendering
+/// (`assets-variant-gpu`). Classic and diagnostic modes may still upload
+/// CPU-produced framebuffers explicitly.
 pub struct FrameRenderer {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
@@ -2582,14 +2586,14 @@ fn modern_asset_frame_present_route(
         };
     }
 
-    if variant_gpu_mode && !(has_src_table && has_source_atlas && has_variant_atlas) {
+    if variant_gpu_mode {
+        if gpu_asset_mode && has_src_table && has_source_atlas && has_variant_atlas {
+            return ModernAssetFramePresentRoute::SourceVariantGpu;
+        }
         return ModernAssetFramePresentRoute::Unhandled;
     }
 
     if has_src_table && has_source_atlas {
-        if has_variant_atlas {
-            return ModernAssetFramePresentRoute::SourceVariantGpu;
-        }
         if gpu_asset_mode {
             return ModernAssetFramePresentRoute::SourceGpu;
         }
@@ -2956,9 +2960,9 @@ impl FrameRenderer {
         );
     }
 
-    /// Modern (software) live-VRAM render path: the fallback used when the
-    /// caller can't supply the sources+overrides render (that path needs the
-    /// CHR-source table, which lives on the zelda3 `GameState` this crate
+    /// Modern (software) live-VRAM render path: the diagnostic fallback used
+    /// when the caller can't supply the sources+overrides render. That path
+    /// needs the CHR-source table, which lives on the zelda3 `GameState` this crate
     /// can't depend on — see [`FrameRenderer::present_modern_frame_from_sources`]
     /// for the source-table boundary). Decodes BG + sprites from the live
     /// `GpuFrame` VRAM, composites at [`FrameRenderer::hd_scale`] (N× nearest,
@@ -2966,8 +2970,8 @@ impl FrameRenderer {
     /// carry a source key), then uploads the resulting `scale*256 × scale*224`
     /// RGBA and blits it with the standard presentation pipeline (`render()`).
     /// Mode 7 (not a Mode-1 tilemap) routes through the dedicated CPU
-    /// compositor, nearest-upscaled to match. Default/Classic callers are
-    /// unaffected.
+    /// compositor, nearest-upscaled to match. Default live asset rendering uses
+    /// [`FrameRenderer::present_modern_asset_frame`] instead.
     pub fn render_modern_frame(&mut self, frame: &GpuFrame<'_>) -> Result<(), RenderError> {
         let scale = self.hd_scale.get();
         let rgba = if frame.mode == 7 {
@@ -4342,6 +4346,10 @@ mod tests {
             ModernAssetFramePresentRoute::SourceVariantGpu
         );
         assert_eq!(
+            modern_asset_frame_present_route(1, true, true, true, false, false, false, true),
+            ModernAssetFramePresentRoute::Unhandled
+        );
+        assert_eq!(
             modern_asset_frame_present_route(1, true, true, false, false, false, true, true),
             ModernAssetFramePresentRoute::Unhandled
         );
@@ -4363,6 +4371,10 @@ mod tests {
         );
         assert_eq!(
             modern_asset_frame_present_route(1, true, true, false, false, false, true, false),
+            ModernAssetFramePresentRoute::SourceGpu
+        );
+        assert_eq!(
+            modern_asset_frame_present_route(1, true, true, true, false, false, true, false),
             ModernAssetFramePresentRoute::SourceGpu
         );
         assert_eq!(
