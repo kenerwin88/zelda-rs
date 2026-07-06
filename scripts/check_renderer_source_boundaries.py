@@ -402,6 +402,14 @@ GPU_ASSET_LOCKSTEP_ARTIFACT_FUNCTIONS = {
     "write_lockstep_parity_failure_artifacts",
 }
 
+GPU_ASSET_REPLAY_SAVE_DUMP_FUNCTIONS = {
+    "run_replay_save",
+}
+
+FORBIDDEN_REPLAY_SAVE_CPU_DUMP_CALLS = (
+    "write_rgba_frame_png(dump_path, &rgba",
+)
+
 FORBIDDEN_LOCKSTEP_ARTIFACT_CLASSIC_RUST_FRAME_CALLS = (
     "render_diagnostic_lockstep_artifact_frame_bgra(&mut rust_state",
     'write_argb_frame_png(&dir.join("rust_frame.png")',
@@ -1099,6 +1107,14 @@ def check_main_text(source: str) -> list[str]:
                 if forbidden in line:
                     errors.append(
                         "lockstep rust frame artifact escaped PNG-backed GPU path at "
+                        f"zelda3-bin/src/main.rs:{index + 1} "
+                        f"in {fn}: {line.strip()}"
+                    )
+        if fn in GPU_ASSET_REPLAY_SAVE_DUMP_FUNCTIONS:
+            for forbidden in FORBIDDEN_REPLAY_SAVE_CPU_DUMP_CALLS:
+                if forbidden in line:
+                    errors.append(
+                        "replay-save dump escaped PNG-backed GPU path at "
                         f"zelda3-bin/src/main.rs:{index + 1} "
                         f"in {fn}: {line.strip()}"
                     )

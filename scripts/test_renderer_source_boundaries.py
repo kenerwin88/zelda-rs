@@ -898,6 +898,24 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(all("rust_state" in error or "rust_frame.png" in error for error in errors))
 
+    def test_rejects_replay_save_cpu_readback_dump_frame(self):
+        module = load_module()
+        source = """
+            fn run_replay_save() {
+                write_rgba_frame_png(dump_path, &rgba, width, 224);
+            }
+
+            fn unrelated_dump_frame() {
+                write_rgba_frame_png(dump_path, &rgba, width, 224);
+            }
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("replay-save dump escaped PNG-backed GPU path", errors[0])
+        self.assertIn("run_replay_save", errors[0])
+
     def test_rejects_replay_classic_helpers_in_gpu_capture(self):
         module = load_module()
         source = """

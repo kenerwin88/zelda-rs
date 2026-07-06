@@ -1715,29 +1715,15 @@ fn run_replay_save(args: &[String]) {
             }
             if should_dump_render_hash {
                 if let Some((_, dump_path)) = render_hash_dump_frame.as_ref() {
-                    if let Err(e) = write_rgba_frame_png(dump_path, &rgba, width, 224) {
+                    let gpu_rgba = render_hash_capture.render_gpu_rgba(&mut gpu_readback);
+                    if let Err(e) = write_rgba_frame_png(dump_path, &gpu_rgba, width, 224) {
                         eprintln!("failed to write {}: {e}", dump_path.display());
                         process::exit(1);
                     }
-                    println!("dumped replay-save frame to {}", dump_path.display());
-                    let gpu_rgba = render_hash_capture.render_gpu_rgba(&mut gpu_readback);
-                    let gpu_path = {
-                        let stem = dump_path.file_stem().unwrap_or_default().to_string_lossy();
-                        let ext = dump_path
-                            .extension()
-                            .map(|e| e.to_string_lossy().into_owned())
-                            .unwrap_or_default();
-                        dump_path.with_file_name(if ext.is_empty() {
-                            format!("{stem}.gpu")
-                        } else {
-                            format!("{stem}.gpu.{ext}")
-                        })
-                    };
-                    if let Err(e) = write_rgba_frame_png(&gpu_path, &gpu_rgba, width, 224) {
-                        eprintln!("failed to write {}: {e}", gpu_path.display());
-                        process::exit(1);
-                    }
-                    println!("dumped GPU frame to {}", gpu_path.display());
+                    println!(
+                        "dumped replay-save asset GPU frame to {}",
+                        dump_path.display()
+                    );
                 }
             }
             if should_log_render_hash {
