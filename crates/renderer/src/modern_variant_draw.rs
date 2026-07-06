@@ -933,6 +933,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: vec![bg_entry(0, 0, 0)],
             effects: vec![effect(2)],
+            mode7_source_chars: None,
         };
 
         let plan = compile_variant_draws(
@@ -1020,6 +1021,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: vec![bg_entry(0, 0, 0)],
             effects: vec![effect(2)],
+            mode7_source_chars: None,
         };
 
         let plan = compile_variant_draws(
@@ -1095,6 +1097,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: vec![],
             effects: vec![],
+            mode7_source_chars: None,
         };
         let bg_cells = vec![bg_cell];
         let sprite_cells = vec![sprite_cell];
@@ -1143,6 +1146,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: vec![],
             effects: vec![],
+            mode7_source_chars: None,
         };
 
         let plan = compile_variant_draws(
@@ -1190,6 +1194,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: vec![bg_entry(3, 5, 2)],
             effects: vec![effect(2)],
+            mode7_source_chars: None,
         };
 
         let plan = compile_variant_draws(
@@ -1241,6 +1246,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: vec![bg_entry(3, 5, 0)],
             effects: vec![effect(2)],
+            mode7_source_chars: None,
         };
 
         let plan = compile_variant_draws(
@@ -1289,6 +1295,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: vec![bg_entry(3, 5, 2)],
             effects: vec![effect(2)],
+            mode7_source_chars: None,
         };
 
         let plan = compile_variant_draws(
@@ -1337,6 +1344,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: vec![sprite_entry(3, 5, 4)],
             effects: vec![sprite_effect(4)],
+            mode7_source_chars: None,
         };
 
         let plan = compile_variant_draws(
@@ -1387,6 +1395,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: vec![bg_entry(3, 5, 0)],
             effects: vec![effect],
+            mode7_source_chars: None,
         };
         let bg_cells = vec![cell];
         let plan = compile_variant_draws(
@@ -1456,6 +1465,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
 
         let plan = compile_variant_draws(

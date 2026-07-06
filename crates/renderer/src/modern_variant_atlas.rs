@@ -43,6 +43,7 @@ pub struct ModernVariantAtlas {
     pub rgba: Vec<u8>,
     pub entries: Vec<VariantAtlasEntry>,
     pub effects: Vec<TileEffect>,
+    pub mode7_source_chars: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -196,6 +197,10 @@ impl ModernVariantAtlas {
                 && entry.runtime_material.as_deref() == Some("palette_lut")
                 && entry.runtime_colors_per_row == Some(128)
         })
+    }
+
+    pub fn mode7_source_chars(&self) -> Option<&[u8]> {
+        self.mode7_source_chars.as_deref()
     }
 
     pub fn effect_for_entry(&self, entry: &VariantAtlasEntry) -> Option<&TileEffect> {
@@ -402,6 +407,7 @@ pub fn load_modern_variant_atlas(root: &Path) -> Result<ModernVariantAtlas, Stri
         rgba,
         entries,
         effects: load_tile_effects_from_dir(&atlas_dir)?,
+        mode7_source_chars: None,
     })
 }
 
@@ -530,10 +536,21 @@ fn load_modern_canonical_art_atlas_from_dir(
 
     let effects = load_tile_effects_from_dir(atlas_dir)?;
     let mut entries = Vec::new();
+    let mut mode7_source_chars = vec![0u8; 0x4000];
+    let mut has_mode7_source_chars = false;
     for art in manifest.arts {
+        let art_indices = decode_art_indices_hex(&json_path, &art)?;
         for source_ref in art.source_refs {
             let dynamic_policy = dynamic_policy_for_source_ref(&effects, &source_ref);
             let runtime_material = runtime_material_for_source_ref(&effects, &source_ref);
+            let is_mode7_source = source_ref.source_kind == "mode7"
+                && source_ref.asset == "kOverworldMapGfx"
+                && source_ref.pack == 0
+                && source_ref.bpp == 8
+                && usize::from(source_ref.tile) < 256;
+            let source_hflip = source_ref.hflip;
+            let source_vflip = source_ref.vflip;
+            let source_tile = source_ref.tile;
             let id = format!(
                 "{}:{}:pack{}:tile{}:{}bpp",
                 source_ref.source_kind,
@@ -559,9 +576,17 @@ fn load_modern_canonical_art_atlas_from_dir(
                 dynamic_policy,
                 runtime_material,
                 runtime_colors_per_row: source_ref.runtime_colors_per_row,
-                source_hflip: source_ref.hflip,
-                source_vflip: source_ref.vflip,
+                source_hflip,
+                source_vflip,
             });
+            if is_mode7_source {
+                if let Some(indices) = &art_indices {
+                    let source_indices = transform_art_indices(indices, source_hflip, source_vflip);
+                    let start = usize::from(source_tile) * 64;
+                    mode7_source_chars[start..start + 64].copy_from_slice(&source_indices);
+                    has_mode7_source_chars = true;
+                }
+            }
         }
     }
 
@@ -571,7 +596,56 @@ fn load_modern_canonical_art_atlas_from_dir(
         rgba: buf[..info.buffer_size()].to_vec(),
         entries,
         effects,
+        mode7_source_chars: has_mode7_source_chars.then_some(mode7_source_chars),
     })
+}
+
+fn decode_art_indices_hex(
+    json_path: &Path,
+    art: &ArtEntryJson,
+) -> Result<Option<[u8; 64]>, String> {
+    let Some(indices_hex) = art.indices_hex.as_deref() else {
+        return Ok(None);
+    };
+    if indices_hex.len() != 128 {
+        return Err(format!(
+            "{}: indices_hex for {} must be 128 hex characters",
+            json_path.display(),
+            art.art_id
+        ));
+    }
+
+    let mut indices = [0u8; 64];
+    for (idx, chunk) in indices_hex.as_bytes().chunks_exact(2).enumerate() {
+        let text = std::str::from_utf8(chunk).map_err(|e| {
+            format!(
+                "{}: invalid UTF-8 in indices_hex for {}: {e}",
+                json_path.display(),
+                art.art_id
+            )
+        })?;
+        indices[idx] = u8::from_str_radix(text, 16).map_err(|e| {
+            format!(
+                "{}: invalid hex byte {:?} in indices_hex for {}: {e}",
+                json_path.display(),
+                text,
+                art.art_id
+            )
+        })?;
+    }
+    Ok(Some(indices))
+}
+
+fn transform_art_indices(indices: &[u8; 64], hflip: bool, vflip: bool) -> [u8; 64] {
+    let mut out = [0u8; 64];
+    for y in 0..8 {
+        for x in 0..8 {
+            let source_x = if hflip { 7 - x } else { x };
+            let source_y = if vflip { 7 - y } else { y };
+            out[y * 8 + x] = indices[source_y * 8 + source_x];
+        }
+    }
+    out
 }
 
 fn dynamic_policy_for_source_ref(effects: &[TileEffect], source_ref: &ArtSourceRefJson) -> String {
@@ -741,6 +815,8 @@ struct ArtEntryJson {
     art_id: String,
     rect: [u32; 4],
     sha1_indices: String,
+    #[serde(default)]
+    indices_hex: Option<String>,
     source_refs: Vec<ArtSourceRefJson>,
 }
 
@@ -926,6 +1002,7 @@ mod tests {
             rgba: solid_rgba(8, 8, [1, 2, 3, 255]),
             entries: vec![bg_test_entry_with_palette_row(entry_row)],
             effects,
+            mode7_source_chars: None,
         }
     }
 
@@ -1107,6 +1184,7 @@ mod tests {
               "arts": [{
                 "art_id": "art:mode7",
                 "bpp": 8,
+                "indices_hex": "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
                 "rect": [0, 0, 8, 8],
                 "sha1_indices": "mode7",
                 "preview_palette": "palette_overworld_bg_main",
@@ -1144,6 +1222,13 @@ mod tests {
         assert_eq!(entry.runtime_colors_per_row, Some(128));
         assert_eq!(entry.dynamic_policy, "stable");
         assert!(atlas.has_mode7_source_art());
+        let chars = atlas
+            .mode7_source_chars()
+            .expect("Mode 7 art indices should populate source chars");
+        assert_eq!(chars.len(), 0x4000);
+        assert!(chars[42 * 64..42 * 64 + 64]
+            .iter()
+            .all(|&index| index == 0x2a));
 
         std::fs::remove_dir_all(root).expect("remove temp root");
     }
@@ -1175,6 +1260,7 @@ mod tests {
                 source_vflip: false,
             }],
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
 
         assert!(!atlas.has_mode7_source_art());
@@ -1210,6 +1296,7 @@ mod tests {
                 source_vflip: false,
             }],
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
         let live_key = VariantAtlasKey {
             source_kind: "bg".to_string(),
@@ -1268,6 +1355,7 @@ mod tests {
                 index_to_rgba: vec![[0, 0, 0, 255]; 8],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
         let live_key = VariantAtlasKey {
             source_kind: "sprite".to_string(),
@@ -1349,6 +1437,7 @@ mod tests {
             rgba: solid_rgba(8, 8, [1, 2, 3, 255]),
             entries: vec![entry],
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
         let live_key = bg_test_key_with_palette_row(3);
 
@@ -1383,6 +1472,7 @@ mod tests {
             rgba: solid_rgba(8, 8, [1, 2, 3, 255]),
             entries: vec![entry],
             effects: vec![bg_test_effect_with_palette_row(3)],
+            mode7_source_chars: None,
         };
         let live_key = bg_test_key_with_palette_row(3);
 
@@ -1404,6 +1494,7 @@ mod tests {
             rgba: solid_rgba(8, 8, [1, 2, 3, 255]),
             entries: vec![entry],
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
         let live_key = bg_test_key_with_palette_row(3);
 

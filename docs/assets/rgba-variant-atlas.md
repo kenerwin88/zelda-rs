@@ -576,8 +576,9 @@ matches the manifest dimensions, and contains every declared art rect.
 or source-ref counts drift, any art rect is malformed/out of bounds, or any
 canonical source ref lacks stable coverage.
 
-Current generated output reports `art_count=28465`, `source_refs=38110`, and
-`stable_by_kind bg=14322 bg3=15573 link=727 mode7=256 sprite=7232`.
+Current generated output reports `art_count=28465`, `source_refs=38110`,
+`material_effect_refs=38110`, `stable_preview_refs=0`, and `stable_by_kind
+bg=14322 bg3=15573 link=727 mode7=256 sprite=7232`.
 
 `scripts/extract_assets.py` runs this gate for the default compact atlas output
 and writes the resulting counts to `manifest.json` as

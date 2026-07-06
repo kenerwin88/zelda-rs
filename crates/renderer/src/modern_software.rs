@@ -3138,6 +3138,7 @@ mod tests {
                 source_vflip: false,
             }],
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
 
         let indexed = render_modern_frame_software_indexed(&frame, &cells);
@@ -3237,6 +3238,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (variant, stats) = render_modern_frame_software_variant_atlas(
@@ -3331,6 +3333,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (variant, stats) = render_modern_frame_software_variant_atlas(
@@ -3409,6 +3412,7 @@ mod tests {
                 source_vflip: false,
             }],
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
 
         let (variant, stats) = render_modern_frame_software_variant_atlas(
@@ -3504,6 +3508,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (variant, stats) = render_modern_frame_software_variant_atlas(

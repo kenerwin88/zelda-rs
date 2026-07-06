@@ -1068,12 +1068,19 @@ class RgbaVariantAtlasTests(unittest.TestCase):
 
             _width, _height, _pixels, arts = build_canonical_art_atlas(asset_dir)
 
+            mode7_arts = [
+                art
+                for art in arts
+                if any(source["source_kind"] == "mode7" for source in art["source_refs"])
+            ]
             refs = [
                 source
                 for art in arts
                 for source in art["source_refs"]
                 if source["source_kind"] == "mode7"
             ]
+            self.assertTrue(all("indices_hex" in art for art in mode7_arts))
+            self.assertIn(mode7_chars[:64].hex(), {art["indices_hex"] for art in mode7_arts})
             self.assertEqual(len(refs), 256)
             self.assertEqual({ref["asset"] for ref in refs}, {"kOverworldMapGfx"})
             self.assertEqual({ref["pack"] for ref in refs}, {0})
@@ -1280,6 +1287,9 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             self.assertFalse((asset_dir / "atlas/base_tiles.json").exists())
             effects = json.loads((asset_dir / "atlas/tile_effects.json").read_text())
             self.assertEqual(effects["format"], "zelda3_tile_effect_table_v1")
+            self.assertTrue(
+                any(effect["colors_per_row"] == 128 for effect in effects["effects"])
+            )
 
     def test_known_static_palettes_are_stable(self) -> None:
         self.assertEqual(classify_palette_policy("palette_main_spr"), "stable")

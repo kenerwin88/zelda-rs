@@ -2157,7 +2157,11 @@ impl ModernAssetFrameResources {
     }
 
     pub fn mode7_source_chars(&self) -> Option<&[u8]> {
-        self.mode7_source_chars.as_deref()
+        self.mode7_source_chars.as_deref().or_else(|| {
+            self.variant_atlas
+                .as_ref()
+                .and_then(modern_variant_atlas::ModernVariantAtlas::mode7_source_chars)
+        })
     }
 
     fn has_mode7_source_art(&self) -> bool {

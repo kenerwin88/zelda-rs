@@ -4537,6 +4537,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
         let render_plan = execution.mode1_effect_render_plan(&atlas);
         let rank_plans = render_plan.rank_plans();
@@ -4616,6 +4617,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
 
         let execution =
@@ -5531,6 +5533,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
             &frame,
@@ -5596,6 +5599,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
         let headless = ModernGpuVariantHeadless::new(&atlas);
         let (untraced, untraced_stats) = headless.render_rgba(
@@ -5691,6 +5695,7 @@ mod tests {
                 index_to_rgba: vec![[0, 0, 0, 0xff]; 8],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
@@ -5785,6 +5790,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas)
@@ -6157,6 +6163,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: vec![entry.clone()],
             effects: vec![effect.clone()],
+            mode7_source_chars: None,
         };
         let cell = ModernIndexTile {
             id: 0,
@@ -6314,6 +6321,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: vec![entry.clone()],
             effects: vec![effect.clone()],
+            mode7_source_chars: None,
         };
 
         let mut static_indices = [0u8; 64];
@@ -6453,6 +6461,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: vec![entry.clone()],
             effects: vec![effect.clone()],
+            mode7_source_chars: None,
         };
 
         let mut static_indices = [0u8; 64];
@@ -6717,6 +6726,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
@@ -6874,6 +6884,7 @@ mod tests {
                     dynamic_policy: "stable".to_string(),
                 },
             ],
+            mode7_source_chars: None,
         };
 
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
@@ -6961,6 +6972,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas)
             .render_rgba_with_live_index_base(
@@ -7094,6 +7106,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas)
@@ -7274,6 +7287,7 @@ mod tests {
                     dynamic_policy: "stable".to_string(),
                 },
             ],
+            mode7_source_chars: None,
         };
         let plan = crate::modern_variant_draw::compile_variant_draws(
             &frame,
@@ -7661,6 +7675,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
         let plan = crate::modern_variant_draw::compile_variant_draws(
             &frame,
@@ -7757,6 +7772,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
         let plan = crate::modern_variant_draw::compile_variant_draws(
             &frame,
@@ -7854,6 +7870,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
         let plan = crate::modern_variant_draw::compile_variant_draws(
             &frame,
@@ -7939,6 +7956,7 @@ mod tests {
                 index_to_rgba: vec![[12, 34, 56, 0xff]; 8],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
         let plan = crate::modern_variant_draw::compile_variant_draws(
             &frame,
@@ -8056,6 +8074,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
         let plan = crate::modern_variant_draw::compile_variant_draws(
             &frame,
@@ -8113,6 +8132,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
         let (_variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
             &frame,
@@ -8214,6 +8234,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
             &frame,
@@ -8287,6 +8308,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
             &frame,
@@ -8352,6 +8374,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
             &frame,
@@ -8532,6 +8555,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas)
             .render_rgba_with_live_index_base(
@@ -8599,6 +8623,7 @@ mod tests {
             rgba: vec![0u8; 8 * 8 * 4],
             entries: Vec::new(),
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
             &frame,
@@ -8724,6 +8749,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas)
@@ -8880,6 +8906,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -9037,6 +9064,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -9163,6 +9191,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
@@ -9328,6 +9357,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -9466,6 +9496,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
@@ -9629,6 +9660,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -9833,6 +9865,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -10042,6 +10075,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -10263,6 +10297,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
@@ -10460,6 +10495,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
@@ -10693,6 +10729,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -10852,6 +10889,7 @@ mod tests {
                 ],
                 dynamic_policy: "stable".to_string(),
             }],
+            mode7_source_chars: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -11005,6 +11043,7 @@ mod tests {
             rgba: vec![0; 8 * 8 * 4],
             entries: Vec::new(),
             effects: Vec::new(),
+            mode7_source_chars: None,
         };
         let variant_headless = ModernGpuVariantHeadless::new(&variant_atlas);
 
@@ -11478,6 +11517,7 @@ mod tests {
                         dynamic_policy: "stable".to_string(),
                     },
                 ],
+                mode7_source_chars: None,
             };
 
             let cells = vec![ModernIndexTile {

@@ -60,7 +60,7 @@ def _build_effect_table_from_palettes(
 ) -> dict[str, object]:
     effects_by_id: dict[str, dict[str, object]] = {}
     for name, colors in palettes.items():
-        for colors_per_row in (4, 8, 16, 32):
+        for colors_per_row in (4, 8, 16, 32, 128):
             for effect in _effect_rows_for_palette(name, colors, colors_per_row):
                 effects_by_id.setdefault(str(effect["id"]), effect)
     return {
@@ -774,6 +774,7 @@ def build_canonical_art_atlas(
             {
                 "art_id": f"art:{group['digest']}",
                 "bpp": bpp,
+                "indices_hex": bytes(group["indices"]).hex(),  # type: ignore[arg-type]
                 "rect": [x, y, 8, 8],
                 "sha1_indices": group["digest"],
                 "preview_palette": preview_palette,
