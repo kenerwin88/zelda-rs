@@ -412,8 +412,9 @@ the caller
 supplies asset 66 character bytes: the shader reads character pixels from that
 source buffer while keeping live tilemap, CGRAM, matrix, window, sprite, and
 color-math metadata on the GPU path. If those source bytes are missing, the
-legacy `mode7-gpu` route is still available as a debug fallback and strict
-source-art proof reports it as `mode7-live-vram`.
+live asset presenter rejects the frame instead of falling back to live-VRAM
+Mode 7. The legacy `mode7-gpu` route remains only in diagnostic compare helpers,
+where strict source-art proof reports it as `mode7-live-vram`.
 
 For a focused route-window proof that avoids a broad scan while still requiring
 nonzero stable source-art/effect coverage, run:

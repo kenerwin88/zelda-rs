@@ -2552,7 +2552,6 @@ impl ModernIndexCompareScene {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ModernAssetFramePresentRoute {
     Mode7SourceGpu,
-    Mode7Gpu,
     SourceVariantGpu,
     SourceGpu,
     Unhandled,
@@ -2577,8 +2576,6 @@ fn modern_asset_frame_present_route(
             }
         } else if gpu_asset_mode && has_mode7_source_chars {
             ModernAssetFramePresentRoute::Mode7SourceGpu
-        } else if gpu_asset_mode {
-            ModernAssetFramePresentRoute::Mode7Gpu
         } else {
             ModernAssetFramePresentRoute::Unhandled
         };
@@ -3057,13 +3054,6 @@ impl FrameRenderer {
                 )?;
                 Ok(ModernAssetFramePresentResult::Presented {
                     via: "mode7-source-gpu",
-                    variant_stats: None,
-                })
-            }
-            ModernAssetFramePresentRoute::Mode7Gpu => {
-                self.present_modern_mode7_gpu(frame)?;
-                Ok(ModernAssetFramePresentResult::Presented {
-                    via: "mode7-gpu",
                     variant_stats: None,
                 })
             }
@@ -4331,10 +4321,10 @@ mod tests {
     }
 
     #[test]
-    fn modern_asset_frame_route_preserves_explicit_indexed_gpu_fallbacks() {
+    fn modern_asset_frame_route_preserves_source_backed_indexed_gpu_paths() {
         assert_eq!(
             modern_asset_frame_present_route(7, true, true, false, false, false, true, false),
-            ModernAssetFramePresentRoute::Mode7Gpu
+            ModernAssetFramePresentRoute::Unhandled
         );
         assert_eq!(
             modern_asset_frame_present_route(7, true, true, false, true, false, true, false),
