@@ -313,6 +313,7 @@ pub struct ModernIndexCompareStats {
     gpu_count: u64,
     mode7_gpu_count: u64,
     cpu_count: u64,
+    unsupported_count: u64,
     variant_totals: VariantAtlasRenderTotals,
     dump_frame: Option<u32>,
     trace_pixel: Option<ModernIndexCompareTracePixel>,
@@ -351,6 +352,7 @@ impl ModernIndexCompareStats {
             "gpu" | "variant-gpu" => self.gpu_count += 1,
             "mode7-gpu" | "mode7-source-gpu" => self.mode7_gpu_count += 1,
             "mode7-cpu" | "sources" | "vram" => self.cpu_count += 1,
+            "mode7-missing-source" => self.unsupported_count += 1,
             _ => {}
         }
         if mismatch != 0 {
@@ -626,13 +628,14 @@ impl ModernIndexCompareStats {
 
     fn summary_line(&self) -> String {
         let mut out = format!(
-            "modern_index_compare_summary compare_count={} bad_count={} bad_pixels={} gpu_count={} mode7_gpu_count={} cpu_count={}",
+            "modern_index_compare_summary compare_count={} bad_count={} bad_pixels={} gpu_count={} mode7_gpu_count={} cpu_count={} unsupported_count={}",
             self.compare_count,
             self.bad_count,
             self.bad_pixels,
             self.gpu_count,
             self.mode7_gpu_count,
-            self.cpu_count
+            self.cpu_count,
+            self.unsupported_count
         );
         self.variant_totals.append_fields(&mut out);
         out
@@ -836,14 +839,16 @@ mod tests {
         stats.record("variant-gpu", 5, Some(&variant));
         stats.record("mode7-gpu", 0, None);
         stats.record("sources", 7, None);
+        stats.record("mode7-missing-source", 0, None);
 
         let summary = stats.summary_line();
-        assert!(summary.contains("compare_count=3"));
+        assert!(summary.contains("compare_count=4"));
         assert!(summary.contains("bad_count=2"));
         assert!(summary.contains("bad_pixels=12"));
         assert!(summary.contains("gpu_count=1"));
         assert!(summary.contains("mode7_gpu_count=1"));
         assert!(summary.contains("cpu_count=1"));
+        assert!(summary.contains("unsupported_count=1"));
         assert!(summary.contains("variant_draws=2"));
         assert!(summary.contains("fallback_draws=3"));
         assert!(summary.contains("gpu_prefinal_base_frames=1"));
@@ -865,7 +870,7 @@ mod tests {
             .summary_line_if_enabled(true)
             .expect("enabled summary returns a line");
         assert!(summary.starts_with(
-            "modern_index_compare_summary compare_count=1 bad_count=0 bad_pixels=0 gpu_count=1 mode7_gpu_count=0 cpu_count=0"
+            "modern_index_compare_summary compare_count=1 bad_count=0 bad_pixels=0 gpu_count=1 mode7_gpu_count=0 cpu_count=0 unsupported_count=0"
         ));
         assert!(!summary.contains("direct_gpu_fallback_frames"));
 

@@ -3459,6 +3459,12 @@ pub fn modern_gpu_path_fallback_reason(
                 count: 1,
             });
         }
+        "mode7-missing-source" => {
+            return Some(ModernGpuPathFallback {
+                reason: "mode7-missing-source",
+                count: 1,
+            });
+        }
         "vram-gpu" => {
             return Some(ModernGpuPathFallback {
                 reason: "vram-live-gpu",
@@ -3565,8 +3571,8 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
                 };
             }
             return ModernIndexCompareRender {
-                rgba: headless.render_mode7_rgba(frame),
-                via: "mode7-gpu",
+                rgba: vec![0; 256 * 224 * 4],
+                via: "mode7-missing-source",
                 variant_stats: None,
                 variant_traces: Vec::new(),
             };
@@ -10986,6 +10992,41 @@ mod tests {
     }
 
     #[test]
+    fn modern_index_compare_frame_requires_source_backed_mode7_for_variant_gpu() {
+        let vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 7;
+        let source_headless = ModernGpuHeadless::new();
+        let variant_atlas = crate::modern_variant_atlas::ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0; 8 * 8 * 4],
+            entries: Vec::new(),
+            effects: Vec::new(),
+        };
+        let variant_headless = ModernGpuVariantHeadless::new(&variant_atlas);
+
+        let render = render_modern_index_compare_frame(
+            &frame,
+            None::<&dyn crate::modern_extract::SourceTableView>,
+            None,
+            Some(&source_headless),
+            Some(&variant_headless),
+            None,
+            crate::ModernAssetFrameScene::from_in_dungeon(true),
+            None,
+            false,
+        );
+
+        assert_eq!(render.via, "mode7-missing-source");
+        assert_eq!(render.rgba, vec![0; 256 * 224 * 4]);
+        assert!(render.variant_stats.is_none());
+        assert!(render.variant_traces.is_empty());
+    }
+
+    #[test]
     fn modern_index_compare_frame_preserves_source_cpu_fallback_toggle() {
         let vram = vec![0u16; 0x8000];
         let cgram = vec![0u16; 0x100];
@@ -11136,6 +11177,13 @@ mod tests {
             modern_gpu_path_fallback_reason("mode7-gpu", None),
             Some(ModernGpuPathFallback {
                 reason: "mode7-live-vram",
+                count: 1,
+            })
+        );
+        assert_eq!(
+            modern_gpu_path_fallback_reason("mode7-missing-source", None),
+            Some(ModernGpuPathFallback {
+                reason: "mode7-missing-source",
                 count: 1,
             })
         );
