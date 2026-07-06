@@ -217,18 +217,37 @@ fn render_modern_asset_capture_rgba(
 pub(crate) fn render_hd_capture_from_game(
     game: &mut ZeldaState,
     atlas: &renderer::modern_source_atlas::ModernSourceAtlas,
-) -> Result<Option<renderer::hd_authoring::HdCaptureFrame>, String> {
+) -> Result<renderer::hd_authoring::HdCaptureFrame, String> {
     let capture = capture_gpu_frame_from_game(game);
-    let gpu_frame = capture.gpu_frame();
-    if gpu_frame.mode == 7 {
-        return Ok(None);
-    }
     let repo_root = repo_root();
     let resources = renderer::ModernIndexCompareResources::load_from_env(true, &repo_root, false)?;
     let gpu_render = render_modern_asset_capture_rgba(&capture, &resources)?;
-    let mut hd_capture = render_hd_capture_from_gpu_capture(&capture, atlas);
+    Ok(render_hd_capture_from_gpu_readback(
+        &capture, atlas, gpu_render,
+    ))
+}
+
+fn render_hd_capture_from_gpu_readback(
+    capture: &LiveGpuFrameCapture,
+    atlas: &renderer::modern_source_atlas::ModernSourceAtlas,
+    gpu_render: ModernAssetGpuReadbackFrame,
+) -> renderer::hd_authoring::HdCaptureFrame {
+    if capture.gpu_frame().mode == 7 {
+        return renderer::hd_authoring::HdCaptureFrame {
+            rgba: gpu_render.frame.as_slice().to_vec(),
+            placements: Vec::new(),
+            cgram_rgba: cgram_rgba_from_capture(capture),
+        };
+    }
+    let mut hd_capture = render_hd_capture_from_gpu_capture(capture, atlas);
     hd_capture.rgba = gpu_render.frame.as_slice().to_vec();
-    Ok(Some(hd_capture))
+    hd_capture
+}
+
+fn cgram_rgba_from_capture(capture: &LiveGpuFrameCapture) -> [[u8; 4]; 256] {
+    std::array::from_fn(|i| {
+        renderer::modern_palette::snes_cgram_to_rgba(capture.cgram().get(i).copied().unwrap_or(0))
+    })
 }
 
 fn render_hd_capture_from_gpu_capture(
@@ -280,15 +299,48 @@ mod tests {
                 .expect("developer sandbox should load");
         game.zelda_run_frame(0);
 
-        let hd_capture = render_hd_capture_from_game(&mut game, &atlas)
-            .expect("HD capture GPU readback should render")
-            .expect("developer sandbox is not Mode 7");
+        let hd_capture =
+            render_hd_capture_from_game(&mut game, &atlas).expect("HD capture should render");
         let gpu_render = render_live_game_modern_asset_frame_rgba(&mut game)
             .expect("GPU readback should render");
 
         assert_eq!(gpu_render.via, "variant-gpu");
         assert_eq!(hd_capture.rgba, gpu_render.frame.as_slice());
         assert!(!hd_capture.placements.is_empty());
+    }
+
+    #[test]
+    fn hd_capture_mode7_keeps_gpu_rgba_with_empty_affine_placement_map() {
+        let mut ppu = snes::ppu::PpuState::default();
+        ppu.mode = 7;
+        let mut cgram = vec![0u16; 256];
+        cgram[1] = 0x7fff;
+        let capture = LiveGpuFrameCapture {
+            ppu,
+            cgram,
+            raw_scanlines: Box::new([(0, 0, 0, 0, 0, [0; 4], [0; 4], [0; 8]); 224]),
+            source_entries: Vec::new(),
+            mode7_source_chars: None,
+            main_module: 0,
+            player_indoors: 0,
+        };
+        let gpu_render = ModernAssetGpuReadbackFrame {
+            frame: GpuRgbaReadbackFrame::from_rgba(vec![0x7f; 256 * 224 * 4]),
+            #[cfg(test)]
+            via: "mode7-source-gpu",
+        };
+        let repo_root = repo_root();
+        let atlas =
+            renderer::modern_source_atlas::load_modern_source_atlas(&repo_root).expect("atlas");
+
+        let hd_capture = render_hd_capture_from_gpu_readback(&capture, &atlas, gpu_render);
+
+        assert_eq!(hd_capture.rgba, vec![0x7f; 256 * 224 * 4]);
+        assert!(hd_capture.placements.is_empty());
+        assert_eq!(
+            hd_capture.cgram_rgba[1],
+            renderer::modern_palette::snes_cgram_to_rgba(0x7fff)
+        );
     }
 }
 
