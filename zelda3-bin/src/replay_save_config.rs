@@ -19,6 +19,7 @@ pub(crate) struct ReplaySaveConfig {
     pub(crate) coverage_log: Option<PathBuf>,
     pub(crate) gpu_render_compare: GpuRenderCompareRun,
     pub(crate) modern_index_compare: ModernIndexCompareRun,
+    pub(crate) asset_gpu_smoke: bool,
     pub(crate) ppu_mode_summary: bool,
     pub(crate) render_hash_dump_frame: Option<(u32, PathBuf)>,
     pub(crate) save_state_path: Option<PathBuf>,
@@ -35,7 +36,7 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
         (Some(rom), Some(replay)) => (rom.clone(), replay.clone()),
         _ => {
             eprintln!(
-                "usage: zelda3 --replay-save <path-to-rom.sfc> <replay.sav> [frames] [--dump-frame <out.png>] [--render-hash-log <stride>] [--audio-trace-log <stride>] [--gpu-render-compare <stride>] [--gpu-render-compare-quiet] [--modern-index-compare <stride>] [--require-full-gpu-path] [--require-modern-index-parity] [--render-hash-dump-frame <frame> <out.png>] [--input-script <path>] [--input-script-overlay <path>] [--stop-replay-after-load] [--save-state <checkpoint.sav>] [--load-state <checkpoint.sav>] [--load-sram <path>] [--fingerprint-log <path>] [--fingerprint-frame <frame>] [--coverage-log <path>]"
+                "usage: zelda3 --replay-save <path-to-rom.sfc> <replay.sav> [frames] [--dump-frame <out.png>] [--render-hash-log <stride>] [--audio-trace-log <stride>] [--gpu-render-compare <stride>] [--gpu-render-compare-quiet] [--modern-index-compare <stride>] [--require-full-gpu-path] [--require-modern-index-parity] [--asset-gpu-smoke] [--render-hash-dump-frame <frame> <out.png>] [--input-script <path>] [--input-script-overlay <path>] [--stop-replay-after-load] [--save-state <checkpoint.sav>] [--load-state <checkpoint.sav>] [--load-sram <path>] [--fingerprint-log <path>] [--fingerprint-frame <frame>] [--coverage-log <path>]"
             );
             process::exit(2);
         }
@@ -49,6 +50,7 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
     let mut coverage_log: Option<PathBuf> = None;
     let mut gpu_render_compare = gpu_render_compare_run(0, false);
     let mut modern_index_compare = modern_index_compare_run_from_env();
+    let mut asset_gpu_smoke = false;
     let ppu_mode_summary = std::env::var("ZELDA3_PPU_MODE_SUMMARY").is_ok();
     let mut render_hash_dump_frame = None::<(u32, PathBuf)>;
     let mut save_state_path = None::<PathBuf>;
@@ -144,6 +146,10 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
             }
             "--require-modern-index-parity" => {
                 modern_index_compare.set_require_modern_index_parity();
+                i += 1;
+            }
+            "--asset-gpu-smoke" => {
+                asset_gpu_smoke = true;
                 i += 1;
             }
             "--render-hash-dump-frame" => {
@@ -292,6 +298,7 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
         coverage_log,
         gpu_render_compare,
         modern_index_compare,
+        asset_gpu_smoke,
         ppu_mode_summary,
         render_hash_dump_frame,
         save_state_path,

@@ -1134,6 +1134,7 @@ fn run_replay_save(args: &[String]) {
         coverage_log,
         mut gpu_render_compare,
         mut modern_index_compare,
+        asset_gpu_smoke,
         ppu_mode_summary,
         render_hash_dump_frame,
         save_state_path,
@@ -1236,6 +1237,13 @@ fn run_replay_save(args: &[String]) {
             eprintln!("modern index compare resources load failed: {e}");
             process::exit(2);
         });
+    let mut asset_gpu_smoke_renderer = if asset_gpu_smoke {
+        Some(load_modern_asset_gpu_readback_or_exit(
+            "replay-save asset GPU smoke",
+        ))
+    } else {
+        None
+    };
     let capture_panic_pre_frame =
         std::env::var_os("ZELDA3_REPLAY_CAPTURE_PANIC_PRE_FRAME").is_some();
     let mut last_frame_had_fingerprint_render = false;
@@ -1263,6 +1271,14 @@ fn run_replay_save(args: &[String]) {
             if game.ppu.mode == 7 {
                 first_mode7_frame.get_or_insert(frames);
                 last_mode7_frame = Some(frames);
+            }
+        }
+        if let Some(renderer) = asset_gpu_smoke_renderer.as_mut() {
+            if let Err(e) = renderer.validate_game_full_gpu_path(&mut game) {
+                eprintln!(
+                    "replay-save asset GPU smoke failed frame={frames} input=0x{input:04x}: {e}"
+                );
+                process::exit(1);
             }
         }
         last_frame_had_fingerprint_render = false;
@@ -2912,6 +2928,37 @@ fn run_replay_save(args: &[String]) {
     }
 
     modern_index_compare.emit_summary_line_if_enabled();
+    if let Some(renderer) = asset_gpu_smoke_renderer.as_ref() {
+        let (
+            cache_hits,
+            cache_misses,
+            cache_entries,
+            cache_key_ms,
+            cache_miss_ms,
+            bg_extract_ms,
+            sprite_extract_ms,
+            stats_ms,
+        ) = renderer.validation_cache_stats();
+        println!(
+            "replay-save asset GPU smoke passed frames={} main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; cgram_nonzero={}; oam_nonzero={}; validation_cache_hits={}; validation_cache_misses={}; validation_cache_entries={}; validation_key_ms={}; validation_miss_ms={}; validation_bg_extract_ms={}; validation_sprite_extract_ms={}; validation_stats_ms={}",
+            frames,
+            game.ram[0x10],
+            game.ram[0x11],
+            game.ppu.mode,
+            game.ppu.screen_enabled[0],
+            game.ppu.screen_enabled[1],
+            game.ppu.cgram.iter().filter(|&&v| v != 0).count(),
+            game.ppu.oam.iter().filter(|&&v| v != 0).count(),
+            cache_hits,
+            cache_misses,
+            cache_entries,
+            cache_key_ms,
+            cache_miss_ms,
+            bg_extract_ms,
+            sprite_extract_ms,
+            stats_ms,
+        );
+    }
     if ppu_mode_summary {
         println!(
             "ppu_mode_summary m0={} m1={} m2={} m3={} m4={} m5={} m6={} m7={} first_m7={} last_m7={}",
