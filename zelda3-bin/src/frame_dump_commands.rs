@@ -123,9 +123,18 @@ pub(crate) fn run_smoke_asset_gpu(args: &[String]) {
             process::exit(1);
         }
     }
-    let (cache_hits, cache_misses, cache_entries) = renderer.validation_cache_stats();
+    let (
+        cache_hits,
+        cache_misses,
+        cache_entries,
+        cache_key_ms,
+        cache_miss_ms,
+        bg_extract_ms,
+        sprite_extract_ms,
+        stats_ms,
+    ) = renderer.validation_cache_stats();
     println!(
-        "asset GPU smoke passed frames={} start_frame={} end_frame={} main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; cgram_nonzero={}; oam_nonzero={}; validation_cache_hits={}; validation_cache_misses={}; validation_cache_entries={}",
+        "asset GPU smoke passed frames={} start_frame={} end_frame={} main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; cgram_nonzero={}; oam_nonzero={}; validation_cache_hits={}; validation_cache_misses={}; validation_cache_entries={}; validation_key_ms={}; validation_miss_ms={}; validation_bg_extract_ms={}; validation_sprite_extract_ms={}; validation_stats_ms={}",
         options.frames,
         start_frame,
         start_frame.wrapping_add(options.frames),
@@ -139,6 +148,11 @@ pub(crate) fn run_smoke_asset_gpu(args: &[String]) {
         cache_hits,
         cache_misses,
         cache_entries,
+        cache_key_ms,
+        cache_miss_ms,
+        bg_extract_ms,
+        sprite_extract_ms,
+        stats_ms,
     );
 }
 

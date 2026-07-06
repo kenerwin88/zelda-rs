@@ -3,7 +3,7 @@ use crate::modern_index_atlas::ModernIndexTile;
 use crate::modern_software::VariantAtlasRenderStats;
 use crate::modern_variant_atlas::{
     variant_key_for_index_tile, variant_key_for_source_key, DynamicFallbackReason,
-    ModernVariantAtlas, VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
+    ModernVariantAtlas, SourceEntryIndex, VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
 };
 
 #[derive(Clone, Debug)]
@@ -413,6 +413,26 @@ pub fn compile_variant_draws<'a>(
     bg_palette_name: &str,
     sprite_palette_name: &str,
 ) -> VariantDrawPlan<'a> {
+    compile_variant_draws_with_source_index(
+        frame,
+        bg_cells,
+        sprite_cells,
+        atlas,
+        None,
+        bg_palette_name,
+        sprite_palette_name,
+    )
+}
+
+pub(crate) fn compile_variant_draws_with_source_index<'a>(
+    frame: &'a ModernFrame,
+    bg_cells: &'a [ModernIndexTile],
+    sprite_cells: &'a [ModernIndexTile],
+    atlas: &'a ModernVariantAtlas,
+    source_index: Option<&'a SourceEntryIndex>,
+    bg_palette_name: &str,
+    sprite_palette_name: &str,
+) -> VariantDrawPlan<'a> {
     let mut plan = VariantDrawPlan {
         bg: Vec::new(),
         sprites: Vec::new(),
@@ -439,7 +459,8 @@ pub fn compile_variant_draws<'a>(
                 cell.source_key
             };
             let key = variant_key_for_source_key(source_key, bg_palette_name, inst.palette);
-            let draw = resolve_draw_for_frame(atlas, key.as_ref(), uses_instance_source_key);
+            let draw =
+                resolve_draw_for_frame(atlas, source_index, key.as_ref(), uses_instance_source_key);
             plan.stats.record_bg_draw(layer_index, &draw);
             plan.bg.push(VariantBgDrawPacket {
                 layer_index,
@@ -456,7 +477,7 @@ pub fn compile_variant_draws<'a>(
             continue;
         };
         let key = variant_key_for_index_tile(cell, sprite_palette_name, inst.palette);
-        let draw = resolve_draw_for_frame(atlas, key.as_ref(), false);
+        let draw = resolve_draw_for_frame(atlas, source_index, key.as_ref(), false);
         plan.stats.record_sprite_draw(&draw);
         plan.sprites.push(VariantSpriteDrawPacket {
             cell,
@@ -467,6 +488,74 @@ pub fn compile_variant_draws<'a>(
     }
 
     plan
+}
+
+pub fn compile_variant_draw_stats(
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+    sprite_cells: &[ModernIndexTile],
+    atlas: &ModernVariantAtlas,
+    bg_palette_name: &str,
+    sprite_palette_name: &str,
+) -> VariantAtlasRenderStats {
+    compile_variant_draw_stats_with_source_index(
+        frame,
+        bg_cells,
+        sprite_cells,
+        atlas,
+        None,
+        bg_palette_name,
+        sprite_palette_name,
+    )
+}
+
+pub(crate) fn compile_variant_draw_stats_with_source_index(
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+    sprite_cells: &[ModernIndexTile],
+    atlas: &ModernVariantAtlas,
+    source_index: Option<&SourceEntryIndex>,
+    bg_palette_name: &str,
+    sprite_palette_name: &str,
+) -> VariantAtlasRenderStats {
+    let mut stats = VariantAtlasRenderStats::default();
+
+    if frame.forced_blank {
+        return stats;
+    }
+
+    for (layer_index, layer) in frame.bg_layers.iter().enumerate() {
+        if !layer.enabled_main {
+            continue;
+        }
+        for inst in &layer.index_tiles {
+            let Some(cell) = bg_cells.get(inst.cell_id as usize) else {
+                continue;
+            };
+            let uses_instance_source_key =
+                inst.source_key != crate::modern_hd_overrides::NO_SOURCE_KEY;
+            let source_key = if uses_instance_source_key {
+                inst.source_key
+            } else {
+                cell.source_key
+            };
+            let key = variant_key_for_source_key(source_key, bg_palette_name, inst.palette);
+            let draw =
+                resolve_draw_for_frame(atlas, source_index, key.as_ref(), uses_instance_source_key);
+            stats.record_bg_draw(layer_index, &draw);
+        }
+    }
+
+    for inst in frame.index_sprites.iter().rev() {
+        let Some(cell) = sprite_cells.get(inst.cell_id as usize) else {
+            continue;
+        };
+        let key = variant_key_for_index_tile(cell, sprite_palette_name, inst.palette);
+        let draw = resolve_draw_for_frame(atlas, source_index, key.as_ref(), false);
+        stats.record_sprite_draw(&draw);
+    }
+
+    stats
 }
 
 pub fn trace_variant_plan_pixel(
@@ -772,21 +861,35 @@ fn atlas_entry_rgba(
 
 fn resolve_draw_for_frame<'a>(
     atlas: &'a ModernVariantAtlas,
+    source_index: Option<&'a SourceEntryIndex>,
     key: Option<&VariantAtlasKey>,
     force_dynamic: bool,
 ) -> VariantAtlasDraw<'a> {
     if force_dynamic {
-        let draw = atlas.resolve_draw(key);
+        let draw = match source_index {
+            Some(source_index) => atlas.resolve_draw_in_index(key, source_index),
+            None => atlas.resolve_draw(key),
+        };
         if matches!(
             draw,
             VariantAtlasDraw::MaterialEffect { .. } | VariantAtlasDraw::Stable { .. }
         ) {
             draw
         } else {
-            atlas.resolve_dynamic_draw(key, DynamicFallbackReason::InstanceSourceKey)
+            match source_index {
+                Some(source_index) => atlas.resolve_dynamic_draw_in_index(
+                    key,
+                    DynamicFallbackReason::InstanceSourceKey,
+                    source_index,
+                ),
+                None => atlas.resolve_dynamic_draw(key, DynamicFallbackReason::InstanceSourceKey),
+            }
         }
     } else {
-        atlas.resolve_draw(key)
+        match source_index {
+            Some(source_index) => atlas.resolve_draw_in_index(key, source_index),
+            None => atlas.resolve_draw(key),
+        }
     }
 }
 
@@ -975,6 +1078,16 @@ mod tests {
         assert_eq!(plan.stats.unkeyed_fallback_draws, 1);
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
         assert_eq!(plan.stats.unkeyed_sprite_fallback_draws, 1);
+
+        let stats = compile_variant_draw_stats(
+            &frame,
+            &bg_cells,
+            &sprite_cells,
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+        assert_eq!(stats, plan.stats);
     }
 
     #[test]

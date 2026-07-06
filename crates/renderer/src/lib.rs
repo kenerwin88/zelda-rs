@@ -2254,6 +2254,11 @@ pub struct ModernAssetReadbackFrame {
     pub via: &'static str,
 }
 
+pub struct ModernAssetValidationFrame {
+    pub via: &'static str,
+    pub timings: modern_gpu::ModernIndexCompareValidationTimings,
+}
+
 impl ModernIndexCompareResources {
     pub fn load_from_env(
         enabled: bool,
@@ -2369,7 +2374,7 @@ impl ModernIndexCompareResources {
         source_entries: &[T],
         mode7_source_chars: Option<&[u8]>,
         scene: ModernAssetFrameScene,
-    ) -> Result<&'static str, String>
+    ) -> Result<ModernAssetValidationFrame, String>
     where
         T: Copy + Into<(u8, u16, u16)>,
     {
@@ -2397,7 +2402,10 @@ impl ModernIndexCompareResources {
                 render.via, fallback.reason, fallback.count
             ));
         }
-        Ok(render.via)
+        Ok(ModernAssetValidationFrame {
+            via: render.via,
+            timings: render.timings,
+        })
     }
 }
 

@@ -33,11 +33,13 @@ use crate::modern_variant_render_plan::{
     PreparedModernVariantStats,
 };
 use std::cell::RefCell;
+use std::time::Instant;
 
 pub use crate::modern_bg_renderer::ModernGpuRenderer;
 
 pub struct ModernGpuVariantRenderer {
     atlas: crate::modern_variant_atlas::ModernVariantAtlas,
+    source_entry_index: crate::modern_variant_atlas::SourceEntryIndex,
     renderer: ModernGpuRenderer,
     effect_renderer: ModernGpuVariantEffectRenderer,
 }
@@ -164,6 +166,7 @@ impl ModernGpuVariantRenderer {
         };
         Self {
             atlas: atlas.clone(),
+            source_entry_index: atlas.build_source_entry_index(),
             renderer: ModernGpuRenderer::new(device, queue, &atlas_asset, format),
             effect_renderer: ModernGpuVariantEffectRenderer::new(device, queue, atlas, format),
         }
@@ -239,16 +242,36 @@ impl ModernGpuVariantRenderer {
         bg_palette_name: &str,
         sprite_palette_name: &str,
     ) -> PreparedModernVariantRender<'a> {
-        let plan = crate::modern_variant_draw::compile_variant_draws(
+        let plan = crate::modern_variant_draw::compile_variant_draws_with_source_index(
             frame,
             bg_cells,
             sprite_cells,
             &self.atlas,
+            Some(&self.source_entry_index),
             bg_palette_name,
             sprite_palette_name,
         );
         let variant_frame = self.build_variant_frame_from_plan(frame, &plan);
         PreparedModernVariantRender::new(frame, bg_cells, sprite_cells, plan, variant_frame)
+    }
+
+    fn validate_variant_stats(
+        &self,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+    ) -> crate::modern_software::VariantAtlasRenderStats {
+        crate::modern_variant_draw::compile_variant_draw_stats_with_source_index(
+            frame,
+            bg_cells,
+            sprite_cells,
+            &self.atlas,
+            Some(&self.source_entry_index),
+            bg_palette_name,
+            sprite_palette_name,
+        )
     }
 
     fn render_live_index_base_with_overlay(
@@ -3445,6 +3468,14 @@ pub struct ModernIndexCompareRender {
 pub struct ModernIndexCompareValidation {
     pub via: &'static str,
     pub variant_stats: Option<crate::modern_software::VariantAtlasRenderStats>,
+    pub timings: ModernIndexCompareValidationTimings,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ModernIndexCompareValidationTimings {
+    pub bg_extract_nanos: u128,
+    pub sprite_extract_nanos: u128,
+    pub stats_nanos: u128,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3678,19 +3709,22 @@ pub fn validate_modern_index_compare_frame<S: crate::modern_extract::SourceTable
                     "mode7-missing-source"
                 },
                 variant_stats: None,
+                timings: ModernIndexCompareValidationTimings::default(),
             };
         }
         let atlas = source_atlas.expect("atlas loaded for gpu compare");
         let src_table = src_table.expect("source table loaded for gpu compare");
+        let validation = variant_headless.validate_from_sources(
+            frame,
+            src_table,
+            atlas,
+            scene.bg_palette_name(),
+            scene.sprite_palette_name(),
+        );
         return ModernIndexCompareValidation {
             via: "variant-gpu",
-            variant_stats: Some(variant_headless.validate_from_sources(
-                frame,
-                src_table,
-                atlas,
-                scene.bg_palette_name(),
-                scene.sprite_palette_name(),
-            )),
+            variant_stats: Some(validation.stats),
+            timings: validation.timings,
         };
     }
 
@@ -3703,11 +3737,13 @@ pub fn validate_modern_index_compare_frame<S: crate::modern_extract::SourceTable
                     "mode7-gpu"
                 },
                 variant_stats: None,
+                timings: ModernIndexCompareValidationTimings::default(),
             };
         }
         return ModernIndexCompareValidation {
             via: "gpu",
             variant_stats: None,
+            timings: ModernIndexCompareValidationTimings::default(),
         };
     }
 
@@ -3715,6 +3751,7 @@ pub fn validate_modern_index_compare_frame<S: crate::modern_extract::SourceTable
         return ModernIndexCompareValidation {
             via: "mode7-cpu",
             variant_stats: None,
+            timings: ModernIndexCompareValidationTimings::default(),
         };
     }
 
@@ -3722,12 +3759,14 @@ pub fn validate_modern_index_compare_frame<S: crate::modern_extract::SourceTable
         return ModernIndexCompareValidation {
             via: "sources",
             variant_stats: None,
+            timings: ModernIndexCompareValidationTimings::default(),
         };
     }
 
     ModernIndexCompareValidation {
         via: "vram",
         variant_stats: None,
+        timings: ModernIndexCompareValidationTimings::default(),
     }
 }
 
@@ -3957,6 +3996,11 @@ pub struct ModernGpuVariantHeadless {
     target_view: wgpu::TextureView,
 }
 
+pub struct ModernGpuVariantValidation {
+    pub stats: crate::modern_software::VariantAtlasRenderStats,
+    pub timings: ModernIndexCompareValidationTimings,
+}
+
 impl ModernGpuVariantHeadless {
     pub fn new(atlas: &crate::modern_variant_atlas::ModernVariantAtlas) -> Self {
         let instance = crate::create_wgpu_instance();
@@ -4153,22 +4197,35 @@ impl ModernGpuVariantHeadless {
         atlas: &crate::modern_source_atlas::ModernSourceAtlas,
         bg_palette_name: &str,
         sprite_palette_name: &str,
-    ) -> crate::modern_software::VariantAtlasRenderStats {
+    ) -> ModernGpuVariantValidation {
         debug_assert_ne!(frame.mode, 7);
+        let bg_extract_start = Instant::now();
         let (mut modern, bg_cells) =
             crate::modern_extract::extract_modern_frame_from_sources(frame, src_table, atlas);
+        let bg_extract_nanos = bg_extract_start.elapsed().as_nanos();
+        let sprite_extract_start = Instant::now();
         let (sprite_cells, sprites) =
             crate::modern_extract::extract_modern_sprites_from_sources(frame, src_table, atlas);
+        let sprite_extract_nanos = sprite_extract_start.elapsed().as_nanos();
         modern.index_sprites = sprites;
 
-        let prepared = self.renderer.prepare_variant_render(
+        let stats_start = Instant::now();
+        let stats = self.renderer.validate_variant_stats(
             &modern,
             &bg_cells,
             &sprite_cells,
             bg_palette_name,
             sprite_palette_name,
         );
-        prepared.initial_stats()
+        let stats_nanos = stats_start.elapsed().as_nanos();
+        ModernGpuVariantValidation {
+            stats,
+            timings: ModernIndexCompareValidationTimings {
+                bg_extract_nanos,
+                sprite_extract_nanos,
+                stats_nanos,
+            },
+        }
     }
 
     fn render_prepared_variant_rgba(

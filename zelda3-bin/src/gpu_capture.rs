@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process;
+use std::time::Duration;
+use std::time::Instant;
 
 use crate::gpu_readback::GpuRgbaReadbackFrame;
 use platform::NativeFrontend;
@@ -34,6 +36,11 @@ pub(crate) struct ModernAssetGpuReadbackRenderer {
     validation_cache: HashMap<u64, Result<(), String>>,
     validation_cache_hits: u64,
     validation_cache_misses: u64,
+    validation_key_time: Duration,
+    validation_miss_time: Duration,
+    validation_bg_extract_nanos: u128,
+    validation_sprite_extract_nanos: u128,
+    validation_stats_nanos: u128,
 }
 
 impl LiveGpuFrameCapture {
@@ -145,6 +152,11 @@ impl ModernAssetGpuReadbackRenderer {
             validation_cache: HashMap::new(),
             validation_cache_hits: 0,
             validation_cache_misses: 0,
+            validation_key_time: Duration::ZERO,
+            validation_miss_time: Duration::ZERO,
+            validation_bg_extract_nanos: 0,
+            validation_sprite_extract_nanos: 0,
+            validation_stats_nanos: 0,
         })
     }
 
@@ -161,22 +173,39 @@ impl ModernAssetGpuReadbackRenderer {
         game: &mut ZeldaState,
     ) -> Result<(), String> {
         let capture = capture_gpu_frame_from_game(game);
+        let key_start = Instant::now();
         let key = validation_cache_key(&capture);
+        self.validation_key_time += key_start.elapsed();
         if let Some(result) = self.validation_cache.get(&key) {
             self.validation_cache_hits += 1;
             return result.clone();
         }
         self.validation_cache_misses += 1;
-        let result = validate_modern_asset_capture(&capture, &self.resources).map(|_| ());
+        let miss_start = Instant::now();
+        let result = match validate_modern_asset_capture(&capture, &self.resources) {
+            Ok(validation) => {
+                self.validation_bg_extract_nanos += validation.timings.bg_extract_nanos;
+                self.validation_sprite_extract_nanos += validation.timings.sprite_extract_nanos;
+                self.validation_stats_nanos += validation.timings.stats_nanos;
+                Ok(())
+            }
+            Err(e) => Err(e),
+        };
+        self.validation_miss_time += miss_start.elapsed();
         self.validation_cache.insert(key, result.clone());
         result
     }
 
-    pub(crate) fn validation_cache_stats(&self) -> (u64, u64, usize) {
+    pub(crate) fn validation_cache_stats(&self) -> (u64, u64, usize, u128, u128, u128, u128, u128) {
         (
             self.validation_cache_hits,
             self.validation_cache_misses,
             self.validation_cache.len(),
+            self.validation_key_time.as_millis(),
+            self.validation_miss_time.as_millis(),
+            self.validation_bg_extract_nanos / 1_000_000,
+            self.validation_sprite_extract_nanos / 1_000_000,
+            self.validation_stats_nanos / 1_000_000,
         )
     }
 }
@@ -273,7 +302,7 @@ fn render_modern_asset_capture_rgba(
 fn validate_modern_asset_capture(
     capture: &LiveGpuFrameCapture,
     resources: &renderer::ModernIndexCompareResources,
-) -> Result<&'static str, String> {
+) -> Result<renderer::ModernAssetValidationFrame, String> {
     let gpu_frame = capture.gpu_frame();
     let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
     resources.validate_full_gpu_asset_from_entries(

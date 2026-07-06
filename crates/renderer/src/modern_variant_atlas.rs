@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -45,6 +46,39 @@ pub struct ModernVariantAtlas {
     pub effects: Vec<TileEffect>,
     pub mode7_source_chars: Option<Vec<u8>>,
 }
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub(crate) struct VariantSourceLookupKey {
+    source_kind: String,
+    asset: String,
+    pack: u16,
+    tile: u16,
+    bpp: u8,
+}
+
+impl VariantSourceLookupKey {
+    pub(crate) fn from_key(key: &VariantAtlasKey) -> Self {
+        Self {
+            source_kind: key.source_kind.clone(),
+            asset: key.asset.clone(),
+            pack: key.pack,
+            tile: key.tile,
+            bpp: key.bpp,
+        }
+    }
+
+    pub(crate) fn from_entry(entry: &VariantAtlasEntry) -> Self {
+        Self {
+            source_kind: entry.key.source_kind.clone(),
+            asset: entry.key.asset.clone(),
+            pack: entry.key.pack,
+            tile: entry.key.tile,
+            bpp: entry.key.bpp,
+        }
+    }
+}
+
+pub(crate) type SourceEntryIndex = HashMap<VariantSourceLookupKey, usize>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum VariantAtlasDraw<'a> {
@@ -187,6 +221,26 @@ impl ModernVariantAtlas {
         })
     }
 
+    pub(crate) fn build_source_entry_index(&self) -> SourceEntryIndex {
+        let mut index = SourceEntryIndex::with_capacity(self.entries.len());
+        for (entry_index, entry) in self.entries.iter().enumerate() {
+            index
+                .entry(VariantSourceLookupKey::from_entry(entry))
+                .or_insert(entry_index);
+        }
+        index
+    }
+
+    pub(crate) fn entry_for_source_key_in_index(
+        &self,
+        key: &VariantAtlasKey,
+        index: &SourceEntryIndex,
+    ) -> Option<&VariantAtlasEntry> {
+        index
+            .get(&VariantSourceLookupKey::from_key(key))
+            .and_then(|entry_index| self.entries.get(*entry_index))
+    }
+
     pub fn has_mode7_source_art(&self) -> bool {
         self.entries.iter().any(|entry| {
             entry.key.source_kind == "mode7"
@@ -250,6 +304,28 @@ impl ModernVariantAtlas {
         let Some(entry) = self.entry_for_source_key(key) else {
             return VariantAtlasDraw::MissingArt;
         };
+        self.resolve_draw_for_entry(key, entry)
+    }
+
+    pub(crate) fn resolve_draw_in_index<'a>(
+        &'a self,
+        key: Option<&VariantAtlasKey>,
+        index: &SourceEntryIndex,
+    ) -> VariantAtlasDraw<'a> {
+        let Some(key) = key else {
+            return VariantAtlasDraw::Unkeyed;
+        };
+        let Some(entry) = self.entry_for_source_key_in_index(key, index) else {
+            return VariantAtlasDraw::MissingArt;
+        };
+        self.resolve_draw_for_entry(key, entry)
+    }
+
+    fn resolve_draw_for_entry<'a>(
+        &'a self,
+        key: &VariantAtlasKey,
+        entry: &'a VariantAtlasEntry,
+    ) -> VariantAtlasDraw<'a> {
         if entry_dynamic_policy(entry) != DynamicPolicy::Stable {
             return VariantAtlasDraw::DynamicPalette {
                 entry,
@@ -301,6 +377,21 @@ impl ModernVariantAtlas {
             return VariantAtlasDraw::Unkeyed;
         };
         let Some(entry) = self.entry_for_source_key(key) else {
+            return VariantAtlasDraw::MissingArt;
+        };
+        VariantAtlasDraw::DynamicPalette { entry, reason }
+    }
+
+    pub(crate) fn resolve_dynamic_draw_in_index<'a>(
+        &'a self,
+        key: Option<&VariantAtlasKey>,
+        reason: DynamicFallbackReason,
+        index: &SourceEntryIndex,
+    ) -> VariantAtlasDraw<'a> {
+        let Some(key) = key else {
+            return VariantAtlasDraw::Unkeyed;
+        };
+        let Some(entry) = self.entry_for_source_key_in_index(key, index) else {
             return VariantAtlasDraw::MissingArt;
         };
         VariantAtlasDraw::DynamicPalette { entry, reason }
