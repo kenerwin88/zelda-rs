@@ -3562,7 +3562,7 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
     if let Some(variant_headless) = variant_headless {
         if frame.mode == 7 {
             let headless = headless.expect("mode7 helper allocated for variant compare");
-            if let Some(chars) = mode7_source_chars {
+            if let Some(chars) = variant_headless.mode7_source_chars() {
                 return ModernIndexCompareRender {
                     rgba: headless.render_mode7_source_rgba(frame, chars),
                     via: "mode7-source-gpu",
@@ -3913,6 +3913,10 @@ impl ModernGpuVariantHeadless {
             target,
             target_view,
         }
+    }
+
+    pub fn mode7_source_chars(&self) -> Option<&[u8]> {
+        self.renderer.atlas.mode7_source_chars()
     }
 
     pub fn render_rgba(
@@ -11030,7 +11034,58 @@ mod tests {
     }
 
     #[test]
+    fn modern_index_compare_frame_uses_variant_atlas_mode7_source_chars() {
+        let mut atlas_chars = vec![0u8; 0x4000];
+        atlas_chars[2 * 64 + 8] = 5;
+        let mut caller_chars = vec![0u8; 0x4000];
+        caller_chars[2 * 64 + 8] = 1;
+        let mut vram = vec![0u16; 0x8000];
+        vram[0] = 0x0002;
+        let mut cgram = vec![0u16; 0x100];
+        cgram[1] = 0x03e0; // green if caller chars leak through
+        cgram[5] = 0x7c1f; // magenta from canonical atlas chars
+        let oam = vec![0u16; 0x110];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 7;
+        frame.screen_enabled = [0x01, 0];
+        for sl in frame.scanlines.iter_mut() {
+            sl.mode7_matrix = [256, 0, 0, 256, 0, 0, 0, 0];
+            sl.screen_enabled_main = 0x01;
+        }
+        let source_headless = ModernGpuHeadless::new();
+        let expected = source_headless.render_mode7_source_rgba(&frame, &atlas_chars);
+        let variant_atlas = crate::modern_variant_atlas::ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0; 8 * 8 * 4],
+            entries: Vec::new(),
+            effects: Vec::new(),
+            mode7_source_chars: Some(atlas_chars),
+        };
+        let variant_headless = ModernGpuVariantHeadless::new(&variant_atlas);
+
+        let render = render_modern_index_compare_frame(
+            &frame,
+            None::<&dyn crate::modern_extract::SourceTableView>,
+            None,
+            Some(&source_headless),
+            Some(&variant_headless),
+            Some(&caller_chars),
+            crate::ModernAssetFrameScene::from_in_dungeon(true),
+            None,
+            false,
+        );
+
+        assert_eq!(render.via, "mode7-source-gpu");
+        assert_eq!(render.rgba, expected);
+        assert!(render.variant_stats.is_none());
+        assert!(render.variant_traces.is_empty());
+    }
+
+    #[test]
     fn modern_index_compare_frame_requires_source_backed_mode7_for_variant_gpu() {
+        let mut caller_chars = vec![0u8; 0x4000];
+        caller_chars[2 * 64 + 8] = 5;
         let vram = vec![0u16; 0x8000];
         let cgram = vec![0u16; 0x100];
         let oam = vec![0u16; 0x110];
@@ -11053,7 +11108,7 @@ mod tests {
             None,
             Some(&source_headless),
             Some(&variant_headless),
-            None,
+            Some(&caller_chars),
             crate::ModernAssetFrameScene::from_in_dungeon(true),
             None,
             false,
