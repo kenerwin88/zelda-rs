@@ -3299,15 +3299,21 @@ impl FrameRenderer {
         sprite_palette_name: &str,
     ) -> Result<modern_gpu::ModernGpuVariantLiveRender, RenderError> {
         debug_assert_ne!(frame.mode, 7);
-        let (mut modern, bg_cells) =
-            modern_extract::extract_modern_frame_from_sources(frame, src_table, source_atlas);
-        let (sprite_cells, sprites) =
-            modern_extract::extract_modern_sprites_from_sources(frame, src_table, source_atlas);
-        modern.index_sprites = sprites;
+        let modern_assets = modern_extract::extract_asset_resolved_modern_frame_from_sources(
+            frame,
+            src_table,
+            source_atlas,
+        );
+        if modern_assets.has_unresolved_sources() {
+            return Ok(modern_gpu::ModernGpuVariantLiveRender {
+                stats: modern_assets.unresolved_stats,
+                rendered: false,
+            });
+        }
         self.present_modern_variant_gpu(
-            &modern,
-            &bg_cells,
-            &sprite_cells,
+            &modern_assets.frame,
+            &modern_assets.bg_cells,
+            &modern_assets.sprite_cells,
             variant_atlas,
             bg_palette_name,
             sprite_palette_name,

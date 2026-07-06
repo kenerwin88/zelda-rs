@@ -7,6 +7,19 @@ use crate::modern_index_atlas::{index_cell_for_tilemap_entry, ModernIndexAtlas, 
 use crate::modern_source_atlas::source_cell_by_indices;
 use crate::modern_sprite_atlas::{sprite_index_cell, ModernSpriteIndexAtlas};
 
+pub struct AssetResolvedModernFrame {
+    pub frame: ModernFrame,
+    pub bg_cells: Vec<ModernIndexTile>,
+    pub sprite_cells: Vec<ModernIndexTile>,
+    pub unresolved_stats: crate::modern_software::VariantAtlasRenderStats,
+}
+
+impl AssetResolvedModernFrame {
+    pub fn has_unresolved_sources(&self) -> bool {
+        self.unresolved_stats.unkeyed_fallback_draws != 0
+    }
+}
+
 // Per SNES PPU OBSEL: maps obj_size (3-bit index) to [small_px, large_px].
 // Copied from sprite_renderer::SPRITE_SIZES so the modern OAM enumeration matches
 // the classic resolver's size selection exactly.
@@ -1606,6 +1619,55 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
     (cells, out)
 }
 
+pub fn extract_asset_resolved_modern_frame_from_sources<S: SourceTableView + ?Sized>(
+    frame: &GpuFrame<'_>,
+    src_table: &S,
+    atlas: &ModernSourceAtlas,
+) -> AssetResolvedModernFrame {
+    let (mut modern, bg_cells) = extract_modern_frame_from_sources(frame, src_table, atlas);
+    let (sprite_cells, sprites) = extract_modern_sprites_from_sources(frame, src_table, atlas);
+    modern.index_sprites = sprites;
+    let unresolved_stats =
+        unresolved_source_stats_for_modern_frame(&modern, &bg_cells, &sprite_cells);
+    AssetResolvedModernFrame {
+        frame: modern,
+        bg_cells,
+        sprite_cells,
+        unresolved_stats,
+    }
+}
+
+fn unresolved_source_stats_for_modern_frame(
+    frame: &ModernFrame,
+    bg_cells: &[ModernIndexTile],
+    sprite_cells: &[ModernIndexTile],
+) -> crate::modern_software::VariantAtlasRenderStats {
+    let mut stats = crate::modern_software::VariantAtlasRenderStats::default();
+    for (layer_index, layer) in frame.bg_layers.iter().enumerate() {
+        for inst in &layer.index_tiles {
+            let instance_unkeyed = inst.source_key == crate::modern_hd_overrides::NO_SOURCE_KEY;
+            let cell_unkeyed = bg_cells
+                .get(inst.cell_id as usize)
+                .is_none_or(|cell| cell.source_key == crate::modern_hd_overrides::NO_SOURCE_KEY);
+            if instance_unkeyed || cell_unkeyed {
+                stats.record_bg_draw(
+                    layer_index,
+                    &crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed,
+                );
+            }
+        }
+    }
+    for inst in &frame.index_sprites {
+        let cell_unkeyed = sprite_cells
+            .get(inst.cell_id as usize)
+            .is_none_or(|cell| cell.source_key == crate::modern_hd_overrides::NO_SOURCE_KEY);
+        if cell_unkeyed {
+            stats.record_sprite_draw(&crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed);
+        }
+    }
+    stats
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1908,6 +1970,13 @@ mod tests {
         );
         assert_eq!(fallback_cells[0].indices[7], 1);
         assert_eq!(modern_fallback.bg_layers[0].index_tiles[0].source_key, 0);
+        let strict_fallback =
+            extract_asset_resolved_modern_frame_from_sources(&frame, &table, &stale_only_atlas);
+        assert!(strict_fallback.has_unresolved_sources());
+        assert_eq!(
+            strict_fallback.unresolved_stats.unkeyed_bg12_fallback_draws,
+            1
+        );
 
         let exact_pattern_cell = ModernIndexTile {
             id: 2,
@@ -1930,6 +1999,9 @@ mod tests {
             modern_pattern.bg_layers[0].index_tiles[0].source_key,
             crate::modern_source_atlas::modern_source_key(1, 7, 8)
         );
+        let strict_pattern =
+            extract_asset_resolved_modern_frame_from_sources(&frame, &table, &exact_pattern_atlas);
+        assert!(!strict_pattern.has_unresolved_sources());
     }
 
     #[test]
@@ -2853,6 +2925,9 @@ mod tests {
             cells[0].indices,
             decode_snes_4bpp_tile_indices(&vram, B, TILE)
         );
+        let strict = extract_asset_resolved_modern_frame_from_sources(&frame, &table, &atlas);
+        assert!(strict.has_unresolved_sources());
+        assert_eq!(strict.unresolved_stats.unkeyed_sprite_fallback_draws, 1);
     }
 
     fn test_gpu_frame<'a>(
