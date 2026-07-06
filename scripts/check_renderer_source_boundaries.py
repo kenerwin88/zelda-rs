@@ -373,6 +373,7 @@ FORBIDDEN_MAIN_FRAME_DUMP_COMMAND_OWNERSHIP = (
 GPU_ASSET_FRAME_DUMP_FUNCTIONS = {
     "run_dump_frame",
     "run_dump_overworld_screen",
+    "run_dump_replay_checkpoint_ppu",
 }
 
 GPU_ASSET_MAIN_RENDER_FUNCTIONS = {

@@ -1062,13 +1062,13 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_frame_dump_commands_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 4)
+        self.assertEqual(len(errors), 6)
         self.assertTrue(
             all("default frame dump escaped PNG-backed GPU path" in error for error in errors)
         )
         self.assertTrue(any("run_dump_frame" in error for error in errors))
         self.assertTrue(any("run_dump_overworld_screen" in error for error in errors))
-        self.assertFalse(any("run_dump_replay_checkpoint_ppu" in error for error in errors))
+        self.assertTrue(any("run_dump_replay_checkpoint_ppu" in error for error in errors))
 
     def test_rejects_classic_default_render_smoke_calls(self):
         module = load_module()
