@@ -1192,6 +1192,29 @@ fn write_asset_gpu_missing_report_or_exit(
     });
 }
 
+fn write_asset_gpu_checkpoint_or_exit(game: &ZeldaState, frames: u32, dir: &Path) {
+    if let Err(e) = fs::create_dir_all(dir) {
+        eprintln!(
+            "failed to create asset GPU checkpoint directory {}: {e}",
+            dir.display()
+        );
+        process::exit(2);
+    }
+    let mut checkpoint_game = game.clone();
+    let frame_path = dir.join(format!("asset-gpu-frame-{frames:09}.sav"));
+    write_checkpoint(&mut checkpoint_game, frames, &frame_path);
+    let latest_path = dir.join("asset-gpu-latest.sav");
+    write_checkpoint(&mut checkpoint_game, frames, &latest_path);
+    let latest_frame_path = dir.join("asset-gpu-latest-frame.txt");
+    fs::write(&latest_frame_path, format!("{frames}\n")).unwrap_or_else(|e| {
+        eprintln!(
+            "failed to write asset GPU latest frame {}: {e}",
+            latest_frame_path.display()
+        );
+        process::exit(2);
+    });
+}
+
 fn run_replay_save(args: &[String]) {
     let ReplaySaveConfig {
         rom_path,
@@ -1208,6 +1231,8 @@ fn run_replay_save(args: &[String]) {
         asset_gpu_smoke,
         asset_gpu_progress_interval,
         asset_gpu_missing_assets_out,
+        asset_gpu_checkpoint_dir,
+        asset_gpu_checkpoint_interval,
         ppu_mode_summary,
         render_hash_dump_frame,
         save_state_path,
@@ -2980,6 +3005,14 @@ fn run_replay_save(args: &[String]) {
         }
         if let Some(coverage) = route_coverage.as_mut() {
             coverage.record(route_coverage_frame_from_game(frames, &game));
+        }
+        if asset_gpu_smoke_renderer.is_some()
+            && asset_gpu_checkpoint_interval != 0
+            && frames % asset_gpu_checkpoint_interval == 0
+        {
+            if let Some(dir) = asset_gpu_checkpoint_dir.as_deref() {
+                write_asset_gpu_checkpoint_or_exit(&game, frames, dir);
+            }
         }
         // Write --save-state-at checkpoints at the very END of the loop body, AFTER
         // the per-frame audio trace (which advances the DSP) AND the fingerprint

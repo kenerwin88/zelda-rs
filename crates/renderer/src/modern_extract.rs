@@ -54,6 +54,13 @@ pub struct MissingAssetSource {
     pub palette: u8,
     pub instance_source_key: u64,
     pub cell_source_key: Option<u64>,
+    pub source_kind: Option<u8>,
+    pub source_pack: Option<u16>,
+    pub source_tile_off: Option<u16>,
+    pub chr_slot: Option<u32>,
+    pub tile_number: Option<u16>,
+    pub tilemap_word: Option<u16>,
+    pub pattern_hash: Option<u32>,
 }
 
 impl MissingAssetSource {
@@ -63,16 +70,38 @@ impl MissingAssetSource {
             .map(|key| format!("0x{key:016x}"))
             .unwrap_or_else(|| "missing-cell".to_string());
         match self.surface {
-            MissingAssetSurface::Bg => format!(
-                "bg{} cell={} xy=({}, {}) pal={} inst_key=0x{:016x} cell_key={}",
-                self.layer_index.unwrap_or(0),
-                self.cell_id,
-                self.screen_x,
-                self.screen_y,
-                self.palette,
-                self.instance_source_key,
-                cell_key
-            ),
+            MissingAssetSurface::Bg => {
+                let mut out = format!(
+                    "bg{} cell={} xy=({}, {}) pal={} inst_key=0x{:016x} cell_key={}",
+                    self.layer_index.unwrap_or(0),
+                    self.cell_id,
+                    self.screen_x,
+                    self.screen_y,
+                    self.palette,
+                    self.instance_source_key,
+                    cell_key
+                );
+                if let (Some(kind), Some(pack), Some(tile_off)) =
+                    (self.source_kind, self.source_pack, self.source_tile_off)
+                {
+                    out.push_str(&format!(
+                        " src=(kind={kind},pack=0x{pack:04x},tile_off=0x{tile_off:04x})"
+                    ));
+                }
+                if let Some(slot) = self.chr_slot {
+                    out.push_str(&format!(" slot=0x{slot:03x}"));
+                }
+                if let Some(tile_number) = self.tile_number {
+                    out.push_str(&format!(" tile=0x{tile_number:03x}"));
+                }
+                if let Some(tilemap_word) = self.tilemap_word {
+                    out.push_str(&format!(" word=0x{tilemap_word:04x}"));
+                }
+                if let Some(pattern_hash) = self.pattern_hash {
+                    out.push_str(&format!(" pattern_hash=0x{pattern_hash:08x}"));
+                }
+                out
+            }
             MissingAssetSurface::Sprite => format!(
                 "sprite cell={} xy=({}, {}) pal={} cell_key={}",
                 self.cell_id, self.screen_x, self.screen_y, self.palette, cell_key
@@ -101,6 +130,17 @@ pub fn format_missing_asset_source_report(
     }
     report.push(']');
     report
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct MissingAssetCandidate {
+    source_kind: u8,
+    source_pack: u16,
+    source_tile_off: u16,
+    chr_slot: u32,
+    tile_number: u16,
+    tilemap_word: u16,
+    pattern_hash: u32,
 }
 
 // Per SNES PPU OBSEL: maps obj_size (3-bit index) to [small_px, large_px].
@@ -1179,6 +1219,16 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
     src_table: &S,
     atlas: &ModernSourceAtlas,
 ) -> (ModernFrame, Vec<ModernIndexTile>) {
+    let (modern, cells, _) =
+        extract_modern_frame_from_sources_with_missing_sources(frame, src_table, atlas);
+    (modern, cells)
+}
+
+fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?Sized>(
+    frame: &GpuFrame<'_>,
+    src_table: &S,
+    atlas: &ModernSourceAtlas,
+) -> (ModernFrame, Vec<ModernIndexTile>, Vec<MissingAssetSource>) {
     use std::collections::HashMap;
     let mut modern = extract_modern_frame(frame);
     modern.cgram_rgba = crate::modern_palette::cgram_words_to_rgba256(frame.cgram);
@@ -1186,6 +1236,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
         crate::modern_palette::snes_cgram_to_rgba(*frame.cgram.first().unwrap_or(&0));
 
     let mut cells: Vec<ModernIndexTile> = Vec::new();
+    let mut missing_sources = Vec::new();
     // Permanent env-gated diagnostic (ZELDA3_SRC_DEBUG): per BG1/BG2 tile, compare
     // the off-VRAM resolved atlas cell (unflipped) against the live-VRAM decode of
     // the same slot. wrong_cell>0 means a STALE/WRONG source tag; gap>0 means the
@@ -1249,7 +1300,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                 // its instance renders with palette 0. BG1/BG2 (4bpp) resolve via the
                 // per-slot CHR source table and keep the tilemap palette.
                 let is_bg3 = layer_index == 2;
-                let (cell_id, palette, source_key) = if is_bg3 {
+                let (cell_id, palette, source_key, missing_candidate) = if is_bg3 {
                     let pal = ((entry_word >> 10) & 7) as u8;
                     let chr_base = frame.bg[layer_index].tile_adr as usize;
                     let stable_pack = (tile_number as u16) | (u16::from(pal) << 10);
@@ -1289,7 +1340,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                 });
                                 id
                             });
-                            (id, 0u8, source_key)
+                            (id, 0u8, source_key, None)
                         }
                         None => {
                             // Dedup key: chr_base + tile# + flip + palette (priority bit
@@ -1309,7 +1360,20 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                     });
                                     id
                                 });
-                            (id, 0u8, crate::modern_hd_overrides::NO_SOURCE_KEY)
+                            (
+                                id,
+                                0u8,
+                                crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                Some(MissingAssetCandidate {
+                                    source_kind: CHR_KIND_BG3_CONTENT,
+                                    source_pack: (content_hash >> 16) as u16,
+                                    source_tile_off: (content_hash & 0xffff) as u16,
+                                    chr_slot: (chr_base / 8 + tile_number) as u32,
+                                    tile_number: tile_number as u16,
+                                    tilemap_word: entry_word,
+                                    pattern_hash: index_pattern_hash32(&baked),
+                                }),
+                            )
                         }
                     }
                 } else {
@@ -1405,7 +1469,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                         });
                                         id
                                     });
-                                (id, ((entry_word >> 10) & 7) as u8, source_key)
+                                (id, ((entry_word >> 10) & 7) as u8, source_key, None)
                             }
                             None => {
                                 let pal = ((entry_word >> 10) & 7) as u8;
@@ -1434,7 +1498,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                             });
                                             id
                                         });
-                                    (id, pal, source_key)
+                                    (id, pal, source_key, None)
                                 } else {
                                     let id = *cell_ids
                                         .entry((0x9000_0000 | u32::from(pattern_key), false, false))
@@ -1450,7 +1514,20 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                             });
                                             id
                                         });
-                                    (id, pal, crate::modern_hd_overrides::NO_SOURCE_KEY)
+                                    (
+                                        id,
+                                        pal,
+                                        crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                        Some(MissingAssetCandidate {
+                                            source_kind: kind,
+                                            source_pack: pack,
+                                            source_tile_off: tile_off,
+                                            chr_slot: slot as u32,
+                                            tile_number: tile_number as u16,
+                                            tilemap_word: entry_word,
+                                            pattern_hash: index_pattern_hash32(&indices),
+                                        }),
+                                    )
                                 }
                             }
                         }
@@ -1473,7 +1550,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                 });
                                 id
                             });
-                            (id, pal, source_key)
+                            (id, pal, source_key, None)
                         } else {
                             let id = *cell_ids
                                 .entry((0x8000_0000 | u32::from(pattern_key), false, false))
@@ -1488,7 +1565,20 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                     });
                                     id
                                 });
-                            (id, pal, crate::modern_hd_overrides::NO_SOURCE_KEY)
+                            (
+                                id,
+                                pal,
+                                crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                Some(MissingAssetCandidate {
+                                    source_kind: kind,
+                                    source_pack: pack,
+                                    source_tile_off: tile_off,
+                                    chr_slot: slot as u32,
+                                    tile_number: tile_number as u16,
+                                    tilemap_word: entry_word,
+                                    pattern_hash: index_pattern_hash32(&indices),
+                                }),
+                            )
                         }
                     }
                 };
@@ -1517,6 +1607,27 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                         vflip: false,
                         priority: entry_word & 0x2000 != 0,
                     });
+                if source_key == crate::modern_hd_overrides::NO_SOURCE_KEY {
+                    if let Some(candidate) = missing_candidate {
+                        missing_sources.push(MissingAssetSource {
+                            surface: MissingAssetSurface::Bg,
+                            layer_index: Some(layer_index as u8),
+                            cell_id,
+                            screen_x: sx as i16,
+                            screen_y: sy as i16,
+                            palette,
+                            instance_source_key: source_key,
+                            cell_source_key: Some(crate::modern_hd_overrides::NO_SOURCE_KEY),
+                            source_kind: Some(candidate.source_kind),
+                            source_pack: Some(candidate.source_pack),
+                            source_tile_off: Some(candidate.source_tile_off),
+                            chr_slot: Some(candidate.chr_slot),
+                            tile_number: Some(candidate.tile_number),
+                            tilemap_word: Some(candidate.tilemap_word),
+                            pattern_hash: Some(candidate.pattern_hash),
+                        });
+                    }
+                }
             }
         }
     }
@@ -1528,7 +1639,7 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
             );
         }
     }
-    (modern, cells)
+    (modern, cells, missing_sources)
 }
 
 /// Decode OAM into palette-index sprite-tile instances whose 8x8 patterns come
@@ -1707,17 +1818,31 @@ pub fn extract_asset_resolved_modern_frame_from_sources<S: SourceTableView + ?Si
     src_table: &S,
     atlas: &ModernSourceAtlas,
 ) -> AssetResolvedModernFrame {
-    let (mut modern, bg_cells) = extract_modern_frame_from_sources(frame, src_table, atlas);
+    let (mut modern, bg_cells, mut rich_bg_missing_sources) =
+        extract_modern_frame_from_sources_with_missing_sources(frame, src_table, atlas);
     let (sprite_cells, sprites) = extract_modern_sprites_from_sources(frame, src_table, atlas);
     modern.index_sprites = sprites;
-    let (unresolved_stats, missing_sources) =
+    let (unresolved_stats, fallback_missing_sources) =
         unresolved_sources_for_modern_frame(&modern, &bg_cells, &sprite_cells);
+    if rich_bg_missing_sources.is_empty() {
+        rich_bg_missing_sources.extend(
+            fallback_missing_sources
+                .iter()
+                .filter(|missing| missing.surface == MissingAssetSurface::Bg)
+                .cloned(),
+        );
+    }
+    rich_bg_missing_sources.extend(
+        fallback_missing_sources
+            .into_iter()
+            .filter(|missing| missing.surface == MissingAssetSurface::Sprite),
+    );
     AssetResolvedModernFrame {
         frame: modern,
         bg_cells,
         sprite_cells,
         unresolved_stats,
-        missing_sources,
+        missing_sources: rich_bg_missing_sources,
     }
 }
 
@@ -1751,6 +1876,13 @@ fn unresolved_sources_for_modern_frame(
                     palette: inst.palette,
                     instance_source_key: inst.source_key,
                     cell_source_key: cell.map(|cell| cell.source_key),
+                    source_kind: None,
+                    source_pack: None,
+                    source_tile_off: None,
+                    chr_slot: None,
+                    tile_number: None,
+                    tilemap_word: None,
+                    pattern_hash: None,
                 });
             }
         }
@@ -1770,6 +1902,13 @@ fn unresolved_sources_for_modern_frame(
                 palette: inst.palette,
                 instance_source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 cell_source_key: cell.map(|cell| cell.source_key),
+                source_kind: None,
+                source_pack: None,
+                source_tile_off: None,
+                chr_slot: None,
+                tile_number: None,
+                tilemap_word: None,
+                pattern_hash: None,
             });
         }
     }
@@ -2097,11 +2236,18 @@ mod tests {
                 palette: 0,
                 instance_source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                 cell_source_key: Some(crate::modern_hd_overrides::NO_SOURCE_KEY),
+                source_kind: Some(CHR_KIND_BG_STREAM),
+                source_pack: Some((h >> 16) as u16),
+                source_tile_off: Some((h & 0xffff) as u16),
+                chr_slot: Some((0x200 + 4) as u32),
+                tile_number: Some(4),
+                tilemap_word: Some(4),
+                pattern_hash: Some(index_pattern_hash32(&live_indices)),
             }
         );
         assert!(strict_fallback
             .missing_source_report(4)
-            .contains("missing_sources=1 samples=[bg0 cell=0 xy=(0, -1) pal=0"));
+            .contains("src=(kind=6,pack="));
 
         let exact_pattern_cell = ModernIndexTile {
             id: 2,

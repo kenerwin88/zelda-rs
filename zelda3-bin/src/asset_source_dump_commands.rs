@@ -50,7 +50,9 @@ struct DumpAssetsBySourceOptions {
     input_script_path: Option<PathBuf>,
     load_sram: Option<PathBuf>,
     skip_startup: bool,
+    skip_scripted: bool,
     skip_replay: bool,
+    progress_interval: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -169,7 +171,9 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
     let mut input_script_path = None;
     let mut load_sram = None;
     let mut skip_startup = false;
+    let mut skip_scripted = false;
     let mut skip_replay = false;
+    let mut progress_interval = 100_000u32;
     let mut i = 0usize;
     while i < args.len() {
         match args[i].as_str() {
@@ -228,9 +232,24 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
                 skip_startup = true;
                 i += 1;
             }
+            "--skip-scripted" => {
+                skip_scripted = true;
+                i += 1;
+            }
             "--skip-replay" => {
                 skip_replay = true;
                 i += 1;
+            }
+            "--progress" => {
+                let Some(frames) = args.get(i + 1) else {
+                    eprintln!("--progress requires a frame count");
+                    process::exit(2);
+                };
+                progress_interval = frames.parse::<u32>().unwrap_or_else(|_| {
+                    eprintln!("invalid --progress frame count: {frames}");
+                    process::exit(2);
+                });
+                i += 2;
             }
             value if !value.starts_with("--") && !max_frames_set => {
                 max_frames = value.parse::<u32>().unwrap_or_else(|_| {
@@ -242,7 +261,7 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
             }
             other => {
                 eprintln!(
-                    "usage: zelda3 --dump-assets-by-source [frames] [--merge-existing] [--write-palette-usage] [--only-window <name>] [--window-frames <n>] [--developer-destination <id>] [--input-script <path>] [--load-sram <path>] [--skip-startup] [--skip-replay]"
+                    "usage: zelda3 --dump-assets-by-source [frames] [--merge-existing] [--write-palette-usage] [--only-window <name>] [--window-frames <n>] [--developer-destination <id>] [--input-script <path>] [--load-sram <path>] [--skip-startup] [--skip-scripted] [--skip-replay] [--progress <frames>]"
                 );
                 eprintln!("unknown --dump-assets-by-source argument: {other}");
                 process::exit(2);
@@ -266,7 +285,9 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
         input_script_path,
         load_sram,
         skip_startup,
+        skip_scripted,
         skip_replay,
+        progress_interval,
     }
 }
 
@@ -825,18 +846,19 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
             return (frames, frames);
         }
 
-        let mut scripted_routes =
-            if let Some(input_script_path) = options.input_script_path.as_ref() {
-                vec![ScriptedDumpRoute {
-                    name: input_script_path.display().to_string(),
-                    frames: max_frames,
-                    input_script: input_script_path.clone(),
-                    checkpoint_path: None,
-                    load_sram: options.load_sram.clone(),
-                }]
-            } else {
-                scripted_dump_routes(repo_root, max_frames)
-            };
+        let mut scripted_routes = if options.skip_scripted {
+            Vec::new()
+        } else if let Some(input_script_path) = options.input_script_path.as_ref() {
+            vec![ScriptedDumpRoute {
+                name: input_script_path.display().to_string(),
+                frames: max_frames,
+                input_script: input_script_path.clone(),
+                checkpoint_path: None,
+                load_sram: options.load_sram.clone(),
+            }]
+        } else {
+            scripted_dump_routes(repo_root, max_frames)
+        };
         if options.window_frames.is_some() && options.only_window.is_none() {
             eprintln!("--window-frames requires --only-window");
             process::exit(2);
@@ -868,6 +890,10 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                 }
                 startup_walked = startup_walked.wrapping_add(1);
                 collect_used_slots(&startup_game, startup_walked);
+                if options.progress_interval != 0 && startup_walked % options.progress_interval == 0
+                {
+                    eprintln!("[dump] startup progress frames={startup_walked}");
+                }
             }
         }
 
@@ -926,6 +952,14 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                 frames = frames.wrapping_add(1);
                 scripted_walked = scripted_walked.wrapping_add(1);
                 collect_used_slots(&game, absolute_frame.wrapping_add(1));
+                if options.progress_interval != 0
+                    && scripted_walked % options.progress_interval == 0
+                {
+                    eprintln!(
+                        "[dump] scripted progress frames={scripted_walked} route={}",
+                        route.name
+                    );
+                }
             }
         }
 
@@ -947,6 +981,9 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                 }
                 frames = frames.wrapping_add(1);
                 collect_used_slots(&game, frames);
+                if options.progress_interval != 0 && frames % options.progress_interval == 0 {
+                    eprintln!("[dump] replay progress frames={frames} max_frames={max_frames}");
+                }
             }
         }
         (
@@ -1171,6 +1208,7 @@ mod palette_usage_tests {
             "scripts/inputs/tas-us-full-completion-smv.sram".to_string(),
             "--merge-existing".to_string(),
             "--skip-startup".to_string(),
+            "--skip-scripted".to_string(),
             "--skip-replay".to_string(),
         ];
 
@@ -1187,6 +1225,7 @@ mod palette_usage_tests {
         );
         assert!(options.merge_existing);
         assert!(options.skip_startup);
+        assert!(options.skip_scripted);
         assert!(options.skip_replay);
     }
 

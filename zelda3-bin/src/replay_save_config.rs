@@ -22,6 +22,8 @@ pub(crate) struct ReplaySaveConfig {
     pub(crate) asset_gpu_smoke: bool,
     pub(crate) asset_gpu_progress_interval: u32,
     pub(crate) asset_gpu_missing_assets_out: Option<PathBuf>,
+    pub(crate) asset_gpu_checkpoint_dir: Option<PathBuf>,
+    pub(crate) asset_gpu_checkpoint_interval: u32,
     pub(crate) ppu_mode_summary: bool,
     pub(crate) render_hash_dump_frame: Option<(u32, PathBuf)>,
     pub(crate) save_state_path: Option<PathBuf>,
@@ -38,7 +40,7 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
         (Some(rom), Some(replay)) => (rom.clone(), replay.clone()),
         _ => {
             eprintln!(
-                "usage: zelda3 --replay-save <path-to-rom.sfc> <replay.sav> [frames] [--dump-frame <out.png>] [--render-hash-log <stride>] [--audio-trace-log <stride>] [--gpu-render-compare <stride>] [--gpu-render-compare-quiet] [--modern-index-compare <stride>] [--require-full-gpu-path] [--require-modern-index-parity] [--asset-gpu-smoke] [--asset-gpu-progress <stride>] [--missing-assets-out <path>] [--stop-after-first-missing] [--render-hash-dump-frame <frame> <out.png>] [--input-script <path>] [--input-script-overlay <path>] [--stop-replay-after-load] [--save-state <checkpoint.sav>] [--load-state <checkpoint.sav>] [--load-sram <path>] [--fingerprint-log <path>] [--fingerprint-frame <frame>] [--coverage-log <path>]"
+                "usage: zelda3 --replay-save <path-to-rom.sfc> <replay.sav> [frames] [--dump-frame <out.png>] [--render-hash-log <stride>] [--audio-trace-log <stride>] [--gpu-render-compare <stride>] [--gpu-render-compare-quiet] [--modern-index-compare <stride>] [--require-full-gpu-path] [--require-modern-index-parity] [--asset-gpu-smoke] [--asset-gpu-progress <stride>] [--missing-assets-out <path>] [--stop-after-first-missing] [--asset-gpu-checkpoint-dir <dir>] [--asset-gpu-checkpoint-interval <frames>] [--render-hash-dump-frame <frame> <out.png>] [--input-script <path>] [--input-script-overlay <path>] [--stop-replay-after-load] [--save-state <checkpoint.sav>] [--load-state <checkpoint.sav>] [--load-sram <path>] [--fingerprint-log <path>] [--fingerprint-frame <frame>] [--coverage-log <path>]"
             );
             process::exit(2);
         }
@@ -55,6 +57,8 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
     let mut asset_gpu_smoke = false;
     let mut asset_gpu_progress_interval = 10_000u32;
     let mut asset_gpu_missing_assets_out = None::<PathBuf>;
+    let mut asset_gpu_checkpoint_dir = None::<PathBuf>;
+    let mut asset_gpu_checkpoint_interval = 10_000u32;
     let ppu_mode_summary = std::env::var("ZELDA3_PPU_MODE_SUMMARY").is_ok();
     let mut render_hash_dump_frame = None::<(u32, PathBuf)>;
     let mut save_state_path = None::<PathBuf>;
@@ -179,6 +183,26 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
             "--stop-after-first-missing" => {
                 asset_gpu_smoke = true;
                 i += 1;
+            }
+            "--asset-gpu-checkpoint-dir" => {
+                let path = args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--asset-gpu-checkpoint-dir requires a directory");
+                    process::exit(2);
+                });
+                asset_gpu_smoke = true;
+                asset_gpu_checkpoint_dir = Some(PathBuf::from(path));
+                i += 2;
+            }
+            "--asset-gpu-checkpoint-interval" => {
+                let frames = args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--asset-gpu-checkpoint-interval requires a frame count");
+                    process::exit(2);
+                });
+                asset_gpu_checkpoint_interval = frames.parse::<u32>().unwrap_or_else(|_| {
+                    eprintln!("invalid --asset-gpu-checkpoint-interval frame count: {frames}");
+                    process::exit(2);
+                });
+                i += 2;
             }
             "--render-hash-dump-frame" => {
                 let frame = args.get(i + 1).unwrap_or_else(|| {
@@ -329,6 +353,8 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
         asset_gpu_smoke,
         asset_gpu_progress_interval,
         asset_gpu_missing_assets_out,
+        asset_gpu_checkpoint_dir,
+        asset_gpu_checkpoint_interval,
         ppu_mode_summary,
         render_hash_dump_frame,
         save_state_path,
