@@ -935,6 +935,26 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertIn("replay-save dump escaped PNG-backed GPU path", errors[0])
         self.assertIn("run_replay_save", errors[0])
 
+    def test_rejects_replay_crash_classic_frame_replay(self):
+        module = load_module()
+        source = """
+            fn run_replay_crash() {
+                run_diagnostic_play_frame_with_run_what_bgra(
+                    &mut game,
+                    input,
+                    run_what,
+                    &mut frame,
+                    render_flags,
+                );
+            }
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("replay-crash escaped PNG-backed GPU path", errors[0])
+        self.assertIn("run_replay_crash", errors[0])
+
     def test_rejects_replay_classic_helpers_in_gpu_capture(self):
         module = load_module()
         source = """

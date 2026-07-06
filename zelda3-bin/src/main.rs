@@ -70,7 +70,7 @@ use render_diagnostics::{
     compare_diagnostic_oracle_render_frame, format_render_ppu_summary,
     render_diagnostic_lockstep_artifact_frame_bgra,
     render_diagnostic_lockstep_oracle_frames_in_place, replay_fingerprint_leaf_bgra,
-    replay_projection_bgra, run_diagnostic_play_frame_with_run_what_bgra,
+    replay_projection_bgra,
 };
 use replay_diagnostics::{
     replay_checksum_bytes, replay_checksum_ram_range, replay_save_ancilla_dump,
@@ -87,7 +87,7 @@ use route_coverage_commands::{
 };
 use serde::{Deserialize, Serialize};
 use sheet_dump_commands::{run_dump_dungeon_sheet_png, run_dump_sprite_sheet_png};
-use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, ppu::PpuRenderFlags, Snes};
+use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, Snes};
 use zelda3::{
     config::parse_config_file_context, LockstepOracle, OracleError, ZeldaState, RUN_MAIN, RUN_POLY,
 };
@@ -3711,8 +3711,13 @@ fn run_replay_crash(args: &[String]) {
     let _ = load_play_state(rom_path);
     let last_panic = install_crash_panic_hook();
     let mut game = checkpoint.game;
-    let mut frame = vec![0u8; 256 * 224 * 4];
-    let render_flags = PpuRenderFlags::empty();
+    let gpu_readback = match ModernAssetGpuReadbackRenderer::load_from_env() {
+        Ok(readback) => readback,
+        Err(e) => {
+            eprintln!("failed to initialize replay-crash asset GPU renderer: {e}");
+            process::exit(1);
+        }
+    };
     eprintln!(
         "replaying crash checkpoint {} from host_frame {}; trace={}",
         crash_path.display(),
@@ -3732,26 +3737,29 @@ fn run_replay_crash(args: &[String]) {
         };
         let host_frame = checkpoint.host_frame.wrapping_add(local_frame);
         let pre_frame_game = game.clone();
-        let result = panic::catch_unwind(AssertUnwindSafe(|| {
-            run_diagnostic_play_frame_with_run_what_bgra(
-                &mut game,
-                input,
-                run_what,
-                &mut frame,
-                render_flags,
-            );
+        let result = panic::catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
+            game.run_frame_internal(input, run_what);
+            game.zelda_push_apu_state();
+            gpu_readback.render_game_rgba(&mut game).map(|_| ())
         }));
-        if let Err(payload) = result {
-            let panic_info = captured_panic_from(last_panic.clone(), payload);
-            write_play_crash_report(
-                &pre_frame_game,
-                host_frame,
-                input,
-                run_what,
-                "replay_run_frame",
-                Some(&panic_info),
-            );
-            process::exit(101);
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                eprintln!("failed to replay crash frame via asset GPU renderer: {e}");
+                process::exit(1);
+            }
+            Err(payload) => {
+                let panic_info = captured_panic_from(last_panic.clone(), payload);
+                write_play_crash_report(
+                    &pre_frame_game,
+                    host_frame,
+                    input,
+                    run_what,
+                    "replay_asset_gpu_frame",
+                    Some(&panic_info),
+                );
+                process::exit(101);
+            }
         }
     }
     println!(

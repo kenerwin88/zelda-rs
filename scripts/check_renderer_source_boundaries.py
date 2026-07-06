@@ -411,6 +411,15 @@ FORBIDDEN_REPLAY_SAVE_CPU_DUMP_CALLS = (
     "write_rgba_frame_png(dump_path, &rgba",
 )
 
+GPU_ASSET_REPLAY_CRASH_FUNCTIONS = {
+    "run_replay_crash",
+}
+
+FORBIDDEN_REPLAY_CRASH_CLASSIC_CALLS = (
+    "run_diagnostic_play_frame_with_run_what_bgra(",
+    "run_diagnostic_play_frame_bgra(",
+)
+
 FORBIDDEN_LOCKSTEP_ARTIFACT_CLASSIC_RUST_FRAME_CALLS = (
     "render_diagnostic_lockstep_artifact_frame_bgra(&mut rust_state",
     'write_argb_frame_png(&dir.join("rust_frame.png")',
@@ -1116,6 +1125,14 @@ def check_main_text(source: str) -> list[str]:
                 if forbidden in line:
                     errors.append(
                         "replay-save dump escaped PNG-backed GPU path at "
+                        f"zelda3-bin/src/main.rs:{index + 1} "
+                        f"in {fn}: {line.strip()}"
+                    )
+        if fn in GPU_ASSET_REPLAY_CRASH_FUNCTIONS:
+            for forbidden in FORBIDDEN_REPLAY_CRASH_CLASSIC_CALLS:
+                if forbidden in line:
+                    errors.append(
+                        "replay-crash escaped PNG-backed GPU path at "
                         f"zelda3-bin/src/main.rs:{index + 1} "
                         f"in {fn}: {line.strip()}"
                     )
