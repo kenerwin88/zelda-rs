@@ -4,6 +4,7 @@ use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
 use std::process;
 
+use crate::developer_room_commands::load_developer_destination;
 use crate::image_output::write_assets_index_png;
 use crate::input_script::InputScript;
 use crate::{load_play_or_checkpoint, load_play_state, load_translated_replay_state};
@@ -40,6 +41,7 @@ struct DumpAssetsBySourceOptions {
     merge_existing: bool,
     write_palette_usage: bool,
     only_window: Option<String>,
+    developer_destination: Option<String>,
     skip_startup: bool,
     skip_replay: bool,
 }
@@ -155,6 +157,7 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
     let mut merge_existing = false;
     let mut write_palette_usage = false;
     let mut only_window = None;
+    let mut developer_destination = None;
     let mut skip_startup = false;
     let mut skip_replay = false;
     let mut i = 0usize;
@@ -176,6 +179,14 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
                 only_window = Some(name.clone());
                 i += 2;
             }
+            "--developer-destination" => {
+                let Some(id) = args.get(i + 1) else {
+                    eprintln!("--developer-destination requires a destination id");
+                    process::exit(2);
+                };
+                developer_destination = Some(id.clone());
+                i += 2;
+            }
             "--skip-startup" => {
                 skip_startup = true;
                 i += 1;
@@ -194,18 +205,22 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
             }
             other => {
                 eprintln!(
-                    "usage: zelda3 --dump-assets-by-source [frames] [--merge-existing] [--write-palette-usage] [--only-window <name>] [--skip-startup] [--skip-replay]"
+                    "usage: zelda3 --dump-assets-by-source [frames] [--merge-existing] [--write-palette-usage] [--only-window <name>] [--developer-destination <id>] [--skip-startup] [--skip-replay]"
                 );
                 eprintln!("unknown --dump-assets-by-source argument: {other}");
                 process::exit(2);
             }
         }
     }
+    if developer_destination.is_some() && !max_frames_set {
+        max_frames = 1;
+    }
     DumpAssetsBySourceOptions {
         max_frames,
         merge_existing,
         write_palette_usage,
         only_window,
+        developer_destination,
         skip_startup,
         skip_replay,
     }
@@ -741,6 +756,29 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
 
     let walk = panic::catch_unwind(AssertUnwindSafe(|| {
         let repo_root = Path::new(REPO_ROOT);
+        if let Some(destination_id) = options.developer_destination.as_deref() {
+            let (mut game, start_frame) = load_developer_destination(destination_id)
+                .unwrap_or_else(|e| {
+                    eprintln!("failed to load developer destination {destination_id}: {e}");
+                    process::exit(1);
+                });
+            let mut frames = 0u32;
+            while frames < max_frames {
+                let step = panic::catch_unwind(AssertUnwindSafe(|| {
+                    game.zelda_run_frame(0);
+                }));
+                if step.is_err() {
+                    eprintln!(
+                        "[warn] developer destination {destination_id} frame {frames} panicked; stopping walk early"
+                    );
+                    break;
+                }
+                frames = frames.wrapping_add(1);
+                collect_used_slots(&game, start_frame.wrapping_add(frames));
+            }
+            return (frames, frames);
+        }
+
         let mut scripted_routes = scripted_dump_routes(repo_root, max_frames);
         if let Some(only_window) = options.only_window.as_deref() {
             scripted_routes.retain(|route| route.name == only_window);
@@ -983,6 +1021,41 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
 #[cfg(test)]
 mod palette_usage_tests {
     use super::*;
+
+    #[test]
+    fn developer_destination_dump_defaults_to_one_frame() {
+        let args = vec![
+            "--developer-destination".to_string(),
+            "route-late-checkpoint".to_string(),
+            "--merge-existing".to_string(),
+        ];
+
+        let options = parse_dump_assets_by_source_options(&args);
+
+        assert_eq!(options.max_frames, 1);
+        assert_eq!(
+            options.developer_destination.as_deref(),
+            Some("route-late-checkpoint")
+        );
+        assert!(options.merge_existing);
+    }
+
+    #[test]
+    fn developer_destination_dump_accepts_explicit_frame_count() {
+        let args = vec![
+            "4".to_string(),
+            "--developer-destination".to_string(),
+            "preset-dev-sandbox".to_string(),
+        ];
+
+        let options = parse_dump_assets_by_source_options(&args);
+
+        assert_eq!(options.max_frames, 4);
+        assert_eq!(
+            options.developer_destination.as_deref(),
+            Some("preset-dev-sandbox")
+        );
+    }
 
     #[test]
     fn raw_chr_sources_map_to_base_tile_usage_keys() {
