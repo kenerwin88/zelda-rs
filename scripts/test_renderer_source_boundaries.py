@@ -21,6 +21,7 @@ def source_with_required_calls(body: str) -> str:
     required = """
     fn run_play_with_state() {
         let assets = renderer::ModernAssetFrameResources::load_live_gpu_from_env();
+        let readback_assets = renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, Path::new("."));
         let live_present_input = renderer::ModernAssetFrameLivePresentInput {};
         frontend.present_modern_asset_live_frame_from_entries(live_present_input);
         frontend.set_renderer_mode(renderer::RendererMode::from_effective_mode(mode));
@@ -293,6 +294,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 renderer::EffectiveRendererMode::from_env_value(renderer_env.as_deref(), variant_env.as_deref());
                 let _ = "ZELDA3_VARIANT_ATLAS";
                 renderer::ModernAssetFrameResources::load_for_mode(mode, root);
+                renderer::ModernIndexCompareResources::load_from_env(enabled, root, false);
                 renderer::ModernIndexCompareResources::load_for_mode(enabled, mode, root, true);
                 renderer::modern_assets::load_modern_overworld_tile_atlas(root);
                 let renderer_env = renderer::EffectiveRendererMode::from_env();
@@ -303,7 +305,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_source_text(source)
 
-        self.assertEqual(len(errors), 10)
+        self.assertEqual(len(errors), 11)
         self.assertTrue(
             all("modern asset loading policy escaped renderer boundary" in error for error in errors)
         )
@@ -1516,6 +1518,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 let backend_env = std::env::var("ZELDA3_RENDER_BACKEND");
                 let assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."));
                 let live_assets = renderer::ModernAssetFrameResources::load_live_gpu_from_env(Path::new("."));
+                let readback_assets = renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, Path::new("."));
                 let report = frontend.present_modern_asset_live_frame_from_entries(input);
                 frontend.set_renderer_mode(renderer::RendererMode::from_effective_env());
                 frontend.set_renderer_mode(renderer::RendererMode::from_effective_mode(mode));
@@ -1611,7 +1614,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 91)
+        self.assertEqual(len(errors), 93)
         self.assertTrue(
             all("live GPU play backend ownership escaped gpu_capture boundary" in error for error in errors)
         )

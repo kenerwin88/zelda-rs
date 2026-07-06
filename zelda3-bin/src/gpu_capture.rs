@@ -133,7 +133,7 @@ impl ModernAssetGpuReadbackRenderer {
     pub(crate) fn load_from_env() -> Result<Self, String> {
         let repo_root = repo_root();
         let resources =
-            renderer::ModernIndexCompareResources::load_from_env(true, &repo_root, false)?;
+            renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)?;
         Ok(Self { resources })
     }
 
@@ -211,7 +211,8 @@ fn render_live_game_modern_asset_frame_rgba(
 ) -> Result<ModernAssetGpuReadbackFrame, String> {
     let capture = capture_gpu_frame_from_game(game);
     let repo_root = repo_root();
-    let resources = renderer::ModernIndexCompareResources::load_from_env(true, &repo_root, false)?;
+    let resources =
+        renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)?;
     render_modern_asset_capture_rgba(&capture, &resources)
 }
 
@@ -240,7 +241,8 @@ pub(crate) fn render_hd_capture_from_game(
 ) -> Result<renderer::hd_authoring::HdCaptureFrame, String> {
     let capture = capture_gpu_frame_from_game(game);
     let repo_root = repo_root();
-    let resources = renderer::ModernIndexCompareResources::load_from_env(true, &repo_root, false)?;
+    let resources =
+        renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)?;
     let gpu_render = render_modern_asset_capture_rgba(&capture, &resources)?;
     Ok(render_hd_capture_from_gpu_readback(
         &capture, atlas, gpu_render,

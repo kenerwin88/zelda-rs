@@ -2240,6 +2240,15 @@ impl ModernIndexCompareResources {
         )
     }
 
+    pub fn load_live_gpu_from_env(enabled: bool, root: &Path) -> Result<Self, String> {
+        Self::load_for_mode(
+            enabled,
+            EffectiveRendererMode::live_gpu_asset_from_env()?,
+            root,
+            false,
+        )
+    }
+
     pub fn load_for_mode(
         enabled: bool,
         mode: EffectiveRendererMode<'_>,
