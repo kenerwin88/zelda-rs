@@ -476,6 +476,25 @@ mod tests {
     }
 
     #[test]
+    fn record_present_output_rejects_surface_pseudo_route() {
+        let mut live = ModernAssetLiveStats::default();
+        let output = crate::ModernAssetFramePresentOutput {
+            result: crate::ModernAssetFramePresentResult::Presented {
+                via: "surface",
+                variant_stats: None,
+            },
+            in_dungeon: false,
+        };
+
+        let report = live.record_present_output(&output, &live_resources(true));
+
+        assert_eq!(
+            report.failure_line(),
+            Some("gpu_path_unsupported_live reason=surface-not-presented count=1")
+        );
+    }
+
+    #[test]
     fn record_present_output_owns_unhandled_gpu_asset_failure_line() {
         let mut live = ModernAssetLiveStats::default();
         let output = crate::ModernAssetFramePresentOutput {

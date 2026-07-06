@@ -3522,6 +3522,12 @@ pub fn modern_gpu_path_fallback_reason(
                 count: 1,
             });
         }
+        "surface" => {
+            return Some(ModernGpuPathFallback {
+                reason: "surface-not-presented",
+                count: 1,
+            });
+        }
         "mode7-cpu" => {
             return Some(ModernGpuPathFallback {
                 reason: "mode7-cpu",
@@ -11459,6 +11465,13 @@ mod tests {
             modern_gpu_path_fallback_reason("vram-gpu", None),
             Some(ModernGpuPathFallback {
                 reason: "vram-live-gpu",
+                count: 1,
+            })
+        );
+        assert_eq!(
+            modern_gpu_path_fallback_reason("surface", None),
+            Some(ModernGpuPathFallback {
+                reason: "surface-not-presented",
                 count: 1,
             })
         );
