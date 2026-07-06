@@ -5291,8 +5291,7 @@ fn write_lockstep_parity_failure_artifacts(
 
     let width = 256u32;
     let height = 224u32;
-    let mut rust_frame = vec![0u8; width as usize * height as usize * 4];
-    let mut snes_state_rust_render_frame = vec![0u8; rust_frame.len()];
+    let mut snes_state_rust_render_frame = vec![0u8; width as usize * height as usize * 4];
     let mut rust_state = post_oracle.game.clone();
     let mut oracle_state = post_oracle.game.clone();
     oracle_state.ppu = post_oracle.snes.ppu.clone();
@@ -5301,12 +5300,23 @@ fn write_lockstep_parity_failure_artifacts(
     oracle_state
         .sram
         .copy_from_slice(&post_oracle.snes.cart.ram);
-    render_diagnostic_lockstep_artifact_frame_bgra(&mut rust_state, &mut rust_frame);
+    let gpu_readback = ModernAssetGpuReadbackRenderer::load_from_env()
+        .map_err(|e| format!("failed to initialize lockstep artifact GPU readback: {e}"))?;
+    let rust_frame_rgba = gpu_readback
+        .render_game_rgba(&mut rust_state)
+        .map_err(|e| {
+            format!("failed to render lockstep artifact via modern asset GPU path: {e}")
+        })?;
     render_diagnostic_lockstep_artifact_frame_bgra(
         &mut oracle_state,
         &mut snes_state_rust_render_frame,
     );
-    write_argb_frame_png(&dir.join("rust_frame.png"), &rust_frame, width, height)?;
+    write_rgba_frame_png(
+        &dir.join("rust_frame.png"),
+        rust_frame_rgba.as_slice(),
+        width,
+        height,
+    )?;
     write_argb_frame_png(
         &dir.join("snes_state_rust_render_frame.png"),
         &snes_state_rust_render_frame,

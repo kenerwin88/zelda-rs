@@ -866,6 +866,36 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertTrue(any("run_compare_libretro_oracle" in error for error in errors))
         self.assertTrue(any("run_play_lockstep" in error for error in errors))
 
+    def test_rejects_lockstep_rust_frame_artifact_cpu_render(self):
+        module = load_module()
+        source = """
+            fn write_lockstep_parity_failure_artifacts() {
+                render_diagnostic_lockstep_artifact_frame_bgra(&mut rust_state, &mut rust_frame);
+                render_diagnostic_lockstep_artifact_frame_bgra(
+                    &mut oracle_state,
+                    &mut snes_state_rust_render_frame,
+                );
+                write_argb_frame_png(&dir.join("rust_frame.png"), &rust_frame, width, height)?;
+                write_argb_frame_png(
+                    &dir.join("snes_state_rust_render_frame.png"),
+                    &snes_state_rust_render_frame,
+                    width,
+                    height,
+                )?;
+            }
+            """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(
+            all(
+                "lockstep rust frame artifact escaped PNG-backed GPU path" in error
+                for error in errors
+            )
+        )
+        self.assertTrue(all("rust_state" in error or "rust_frame.png" in error for error in errors))
+
     def test_rejects_replay_classic_helpers_in_gpu_capture(self):
         module = load_module()
         source = """

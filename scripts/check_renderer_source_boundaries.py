@@ -392,6 +392,15 @@ GPU_ASSET_LIBRETRO_VIDEO_FUNCTION_FORBIDDEN_FRAMES = {
     "run_play_lockstep": ("&game_frame,",),
 }
 
+GPU_ASSET_LOCKSTEP_ARTIFACT_FUNCTIONS = {
+    "write_lockstep_parity_failure_artifacts",
+}
+
+FORBIDDEN_LOCKSTEP_ARTIFACT_CLASSIC_RUST_FRAME_CALLS = (
+    "render_diagnostic_lockstep_artifact_frame_bgra(&mut rust_state",
+    'write_argb_frame_png(&dir.join("rust_frame.png")',
+)
+
 FORBIDDEN_FRAME_DUMP_CLASSIC_DEFAULT_CALLS = (
     "run_diagnostic_play_frame_bgra(",
     "render_diagnostic_overworld_screen_bgra(",
@@ -1063,6 +1072,14 @@ def check_main_text(source: str) -> list[str]:
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
+        if fn in GPU_ASSET_LOCKSTEP_ARTIFACT_FUNCTIONS:
+            for forbidden in FORBIDDEN_LOCKSTEP_ARTIFACT_CLASSIC_RUST_FRAME_CALLS:
+                if forbidden in line:
+                    errors.append(
+                        "lockstep rust frame artifact escaped PNG-backed GPU path at "
+                        f"zelda3-bin/src/main.rs:{index + 1} "
+                        f"in {fn}: {line.strip()}"
+                    )
         for forbidden in FORBIDDEN_MAIN_FRAME_DUMP_COMMAND_OWNERSHIP:
             if forbidden in line:
                 fn = enclosing_function(lines, index) or "<module>"
