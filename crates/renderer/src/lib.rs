@@ -2553,7 +2553,6 @@ impl ModernIndexCompareScene {
 enum ModernAssetFramePresentRoute {
     Mode7SourceGpu,
     SourceVariantGpu,
-    SourceGpu,
     Unhandled,
 }
 
@@ -2584,13 +2583,6 @@ fn modern_asset_frame_present_route(
     if variant_gpu_mode {
         if gpu_asset_mode && has_src_table && has_source_atlas && has_variant_atlas {
             return ModernAssetFramePresentRoute::SourceVariantGpu;
-        }
-        return ModernAssetFramePresentRoute::Unhandled;
-    }
-
-    if has_src_table && has_source_atlas {
-        if gpu_asset_mode {
-            return ModernAssetFramePresentRoute::SourceGpu;
         }
         return ModernAssetFramePresentRoute::Unhandled;
     }
@@ -3025,9 +3017,10 @@ impl FrameRenderer {
     /// Present one live modern-asset frame using the route required by the
     /// active asset mode. The caller supplies game-owned inputs (source table
     /// and semantic scene state); this method owns the route and asset-palette
-    /// choices across source-backed variant GPU and explicit indexed GPU
-    /// diagnostics. Frames without source inputs are unhandled instead of
-    /// falling back to live-VRAM rendering.
+    /// choices across source-backed variant GPU and source-backed Mode 7.
+    /// Indexed GPU diagnostics use lower-level renderer entry points instead.
+    /// Frames without source/variant inputs are unhandled instead of falling
+    /// back to indexed or live-VRAM rendering.
     pub fn present_modern_asset_frame<S: modern_extract::SourceTableView + ?Sized>(
         &mut self,
         frame: &GpuFrame<'_>,
@@ -3073,19 +3066,6 @@ impl FrameRenderer {
                 Ok(ModernAssetFramePresentResult::Presented {
                     via: "variant-gpu",
                     variant_stats: Some(stats),
-                })
-            }
-            ModernAssetFramePresentRoute::SourceGpu => {
-                self.present_modern_gpu_from_sources(
-                    frame,
-                    src_table.expect("route requires source table"),
-                    resources
-                        .source_atlas()
-                        .expect("route requires source atlas"),
-                )?;
-                Ok(ModernAssetFramePresentResult::Presented {
-                    via: "gpu",
-                    variant_stats: None,
                 })
             }
             ModernAssetFramePresentRoute::Unhandled => Ok(ModernAssetFramePresentResult::Unhandled),
@@ -4321,7 +4301,7 @@ mod tests {
     }
 
     #[test]
-    fn modern_asset_frame_route_preserves_source_backed_indexed_gpu_paths() {
+    fn modern_asset_frame_route_preserves_source_backed_mode7_path() {
         assert_eq!(
             modern_asset_frame_present_route(7, true, true, false, false, false, true, false),
             ModernAssetFramePresentRoute::Unhandled
@@ -4332,11 +4312,11 @@ mod tests {
         );
         assert_eq!(
             modern_asset_frame_present_route(1, true, true, false, false, false, true, false),
-            ModernAssetFramePresentRoute::SourceGpu
+            ModernAssetFramePresentRoute::Unhandled
         );
         assert_eq!(
             modern_asset_frame_present_route(1, true, true, true, false, false, true, false),
-            ModernAssetFramePresentRoute::SourceGpu
+            ModernAssetFramePresentRoute::Unhandled
         );
         assert_eq!(
             modern_asset_frame_present_route(1, false, false, false, false, false, true, false),
