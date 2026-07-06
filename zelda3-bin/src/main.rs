@@ -1312,7 +1312,19 @@ fn run_replay_save(args: &[String]) {
                 process::exit(1);
             }
         }
-        if should_log_render_hash || should_dump_render_hash {
+        if should_dump_render_hash && !should_log_render_hash {
+            if let Some((_, dump_path)) = render_hash_dump_frame.as_ref() {
+                let width = 256u32;
+                let render_hash_capture = gpu_readback.capture_replay_render_hash_frame(&mut game);
+                write_replay_save_render_hash_gpu_dump_or_exit(
+                    dump_path,
+                    &render_hash_capture,
+                    &mut gpu_readback,
+                    width,
+                );
+            }
+        }
+        if should_log_render_hash {
             let width = 256u32;
             let frame = render_hash_frame
                 .as_mut()
@@ -1715,14 +1727,11 @@ fn run_replay_save(args: &[String]) {
             }
             if should_dump_render_hash {
                 if let Some((_, dump_path)) = render_hash_dump_frame.as_ref() {
-                    let gpu_rgba = render_hash_capture.render_gpu_rgba(&mut gpu_readback);
-                    if let Err(e) = write_rgba_frame_png(dump_path, &gpu_rgba, width, 224) {
-                        eprintln!("failed to write {}: {e}", dump_path.display());
-                        process::exit(1);
-                    }
-                    println!(
-                        "dumped replay-save asset GPU frame to {}",
-                        dump_path.display()
+                    write_replay_save_render_hash_gpu_dump_or_exit(
+                        dump_path,
+                        &render_hash_capture,
+                        &mut gpu_readback,
+                        width,
                     );
                 }
             }
@@ -3219,6 +3228,23 @@ fn run_replay_save(args: &[String]) {
     if std::env::var_os("ZELDA3_REPLAY_PALETTE_DUMP").is_some() {
         println!("{}", replay_save_palette_dump(&game));
     }
+}
+
+fn write_replay_save_render_hash_gpu_dump_or_exit(
+    dump_path: &Path,
+    render_hash_capture: &gpu_readback::ReplayRenderHashCapture,
+    gpu_readback: &mut gpu_readback::OptionalGpuReadbackRenderer,
+    width: u32,
+) {
+    let gpu_rgba = render_hash_capture.render_gpu_rgba(gpu_readback);
+    if let Err(e) = write_rgba_frame_png(dump_path, &gpu_rgba, width, 224) {
+        eprintln!("failed to write {}: {e}", dump_path.display());
+        process::exit(1);
+    }
+    println!(
+        "dumped replay-save asset GPU frame to {}",
+        dump_path.display()
+    );
 }
 
 // Trailer appended after the C-style state-recorder checkpoint to make resume

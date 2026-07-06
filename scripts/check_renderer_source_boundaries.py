@@ -407,6 +407,7 @@ GPU_ASSET_REPLAY_SAVE_DUMP_FUNCTIONS = {
 }
 
 FORBIDDEN_REPLAY_SAVE_CPU_DUMP_CALLS = (
+    "if should_log_render_hash || should_dump_render_hash",
     "write_rgba_frame_png(dump_path, &rgba",
 )
 

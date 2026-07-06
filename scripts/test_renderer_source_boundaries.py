@@ -916,6 +916,25 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertIn("replay-save dump escaped PNG-backed GPU path", errors[0])
         self.assertIn("run_replay_save", errors[0])
 
+    def test_rejects_replay_save_combined_render_hash_log_and_dump_branch(self):
+        module = load_module()
+        source = """
+            fn run_replay_save() {
+                if should_log_render_hash || should_dump_render_hash {
+                    let rgba = gpu_readback.render_replay_hash_cpu_frame_rgba(&mut game, frame);
+                    if should_dump_render_hash {
+                        write_replay_save_render_hash_gpu_dump_or_exit(path, capture, readback, width);
+                    }
+                }
+            }
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("replay-save dump escaped PNG-backed GPU path", errors[0])
+        self.assertIn("run_replay_save", errors[0])
+
     def test_rejects_replay_classic_helpers_in_gpu_capture(self):
         module = load_module()
         source = """
