@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 
-use crate::gpu_capture::render_live_game_gpu_frame_rgba;
+use crate::gpu_capture::{render_live_game_gpu_frame_rgba, ModernAssetGpuReadbackRenderer};
 use crate::image_output::write_rgba_frame_png;
 use crate::input_script::InputScript;
 use crate::{
@@ -10,6 +10,133 @@ use crate::{
     load_translated_replay_state, parse_u16_auto, read_file_or_exit, read_le_u16,
     PLAYER_IS_INDOORS,
 };
+
+#[derive(Debug, PartialEq, Eq)]
+struct ScriptedAssetGpuSmokeOptions {
+    rom_path: String,
+    frames: u32,
+    input_script_path: Option<PathBuf>,
+    load_sram: Option<PathBuf>,
+    load_state: Option<PathBuf>,
+}
+
+fn parse_scripted_asset_gpu_smoke_options(args: &[String]) -> ScriptedAssetGpuSmokeOptions {
+    let usage = "usage: zelda3 --smoke-asset-gpu <path-to-rom.sfc> <frames> [--input-script <path>] [--load-sram <path>] [--load-state <path>]";
+    let rom_path = match args.first() {
+        Some(path) => path.clone(),
+        None => {
+            eprintln!("{usage}");
+            process::exit(2);
+        }
+    };
+    let frames = match args.get(1).and_then(|s| s.parse().ok()) {
+        Some(frames) => frames,
+        None => {
+            eprintln!("{usage}");
+            process::exit(2);
+        }
+    };
+    let mut input_script_path = None;
+    let mut load_sram = None;
+    let mut load_state = None;
+    let mut i = 2usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--input-script" => {
+                let path = args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--input-script requires a path");
+                    process::exit(2);
+                });
+                input_script_path = Some(PathBuf::from(path));
+                i += 2;
+            }
+            "--load-state" => {
+                let path = args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--load-state requires a path");
+                    process::exit(2);
+                });
+                load_state = Some(PathBuf::from(path));
+                i += 2;
+            }
+            "--load-sram" => {
+                let path = args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--load-sram requires a path");
+                    process::exit(2);
+                });
+                load_sram = Some(PathBuf::from(path));
+                i += 2;
+            }
+            flag => {
+                eprintln!("unknown smoke-asset-gpu option: {flag}");
+                process::exit(2);
+            }
+        }
+    }
+    if load_state.is_some() && load_sram.is_some() {
+        eprintln!("--smoke-asset-gpu cannot combine --load-sram with --load-state");
+        process::exit(2);
+    }
+    ScriptedAssetGpuSmokeOptions {
+        rom_path,
+        frames,
+        input_script_path,
+        load_sram,
+        load_state,
+    }
+}
+
+pub(crate) fn run_smoke_asset_gpu(args: &[String]) {
+    let options = parse_scripted_asset_gpu_smoke_options(args);
+    let input_script = match options.input_script_path.as_deref() {
+        Some(path) => match InputScript::from_path(path) {
+            Ok(script) => script,
+            Err(e) => {
+                eprintln!("failed to parse input script {}: {e}", path.display());
+                process::exit(2);
+            }
+        },
+        None => InputScript::default(),
+    };
+    let (mut game, start_frame) =
+        load_play_or_checkpoint(&options.rom_path, options.load_state.as_deref());
+    if let Some(path) = options.load_sram.as_deref() {
+        let sram = read_file_or_exit(path, "SRAM");
+        apply_sram_to_game_or_exit(&mut game, path, &sram);
+    }
+    let renderer = match ModernAssetGpuReadbackRenderer::load_from_env() {
+        Ok(renderer) => renderer,
+        Err(e) => {
+            eprintln!("failed to initialize modern asset GPU readback: {e}");
+            process::exit(1);
+        }
+    };
+    for frame_no in 0..options.frames {
+        let absolute_frame = start_frame.wrapping_add(frame_no);
+        let input = input_script.input_for_frame(absolute_frame);
+        game.zelda_run_frame(input as i32);
+        if let Err(e) = renderer.render_game_rgba(&mut game) {
+            eprintln!(
+                "asset GPU smoke failed frame={} absolute_frame={} input=0x{input:04x}: {e}",
+                frame_no.wrapping_add(1),
+                absolute_frame.wrapping_add(1),
+            );
+            process::exit(1);
+        }
+    }
+    println!(
+        "asset GPU smoke passed frames={} start_frame={} end_frame={} main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; cgram_nonzero={}; oam_nonzero={}",
+        options.frames,
+        start_frame,
+        start_frame.wrapping_add(options.frames),
+        game.ram[0x10],
+        game.ram[0x11],
+        game.ppu.mode,
+        game.ppu.screen_enabled[0],
+        game.ppu.screen_enabled[1],
+        game.ppu.cgram.iter().filter(|&&v| v != 0).count(),
+        game.ppu.oam.iter().filter(|&&v| v != 0).count(),
+    );
+}
 
 pub(crate) fn run_dump_frame(args: &[String]) {
     let rom_path = match args.first() {
@@ -303,4 +430,57 @@ pub(crate) fn run_dump_replay_checkpoint_ppu(args: &[String]) {
         game.ppu.bg_layer[0].tilemap_adr,
         game.ppu.bg_layer[0].tile_adr,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn smoke_asset_gpu_options_accept_input_script_and_state() {
+        let args = vec![
+            "saves/zelda3.sfc".to_string(),
+            "12000".to_string(),
+            "--input-script".to_string(),
+            "scripts/inputs/branch.txt".to_string(),
+            "--load-state".to_string(),
+            ".cache/branch.sav".to_string(),
+        ];
+
+        let options = parse_scripted_asset_gpu_smoke_options(&args);
+
+        assert_eq!(
+            options,
+            ScriptedAssetGpuSmokeOptions {
+                rom_path: "saves/zelda3.sfc".to_string(),
+                frames: 12000,
+                input_script_path: Some(PathBuf::from("scripts/inputs/branch.txt")),
+                load_sram: None,
+                load_state: Some(PathBuf::from(".cache/branch.sav")),
+            }
+        );
+    }
+
+    #[test]
+    fn smoke_asset_gpu_options_accept_sram_without_script() {
+        let args = vec![
+            "saves/zelda3.sfc".to_string(),
+            "5".to_string(),
+            "--load-sram".to_string(),
+            "route.srm".to_string(),
+        ];
+
+        let options = parse_scripted_asset_gpu_smoke_options(&args);
+
+        assert_eq!(
+            options,
+            ScriptedAssetGpuSmokeOptions {
+                rom_path: "saves/zelda3.sfc".to_string(),
+                frames: 5,
+                input_script_path: None,
+                load_sram: Some(PathBuf::from("route.srm")),
+                load_state: None,
+            }
+        );
+    }
 }

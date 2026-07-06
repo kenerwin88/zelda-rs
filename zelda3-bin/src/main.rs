@@ -53,7 +53,7 @@ use audio_trace::{
 use developer_room_commands::{run_dump_developer_destination, run_dump_developer_tileset};
 use frame_dump_commands::{
     run_dump_frame, run_dump_overworld_screen, run_dump_replay_checkpoint_ppu,
-    run_scan_replay_checkpoints,
+    run_scan_replay_checkpoints, run_smoke_asset_gpu,
 };
 use gpu_capture::{render_live_game_gpu_frame_rgba, ModernAssetGpuReadbackRenderer};
 use gpu_compare::{
@@ -144,6 +144,10 @@ fn main() {
     }
     if args.get(1).map(String::as_str) == Some("--smoke-render") {
         run_smoke_render(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--smoke-asset-gpu") {
+        run_smoke_asset_gpu(&args[2..]);
         return;
     }
     if args.get(1).map(String::as_str) == Some("--trace-startup-audio") {
