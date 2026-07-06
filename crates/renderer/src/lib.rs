@@ -2555,7 +2555,6 @@ enum ModernAssetFramePresentRoute {
     Mode7Gpu,
     SourceVariantGpu,
     SourceGpu,
-    SourceSoftware,
     VramGpu,
     Unhandled,
 }
@@ -2597,7 +2596,7 @@ fn modern_asset_frame_present_route(
         if gpu_asset_mode {
             return ModernAssetFramePresentRoute::SourceGpu;
         }
-        return ModernAssetFramePresentRoute::SourceSoftware;
+        return ModernAssetFramePresentRoute::Unhandled;
     }
 
     if gpu_asset_mode {
@@ -3100,21 +3099,6 @@ impl FrameRenderer {
                 )?;
                 Ok(ModernAssetFramePresentResult::Presented {
                     via: "gpu",
-                    variant_stats: None,
-                })
-            }
-            ModernAssetFramePresentRoute::SourceSoftware => {
-                let ctx = resources.hd_override_ctx();
-                self.present_modern_frame_from_sources(
-                    frame,
-                    src_table.expect("route requires source table"),
-                    resources
-                        .source_atlas()
-                        .expect("route requires source atlas"),
-                    &ctx,
-                )?;
-                Ok(ModernAssetFramePresentResult::Presented {
-                    via: "sources",
                     variant_stats: None,
                 })
             }
@@ -4384,10 +4368,10 @@ mod tests {
     }
 
     #[test]
-    fn modern_asset_frame_route_preserves_explicit_non_gpu_fallbacks() {
+    fn modern_asset_frame_route_rejects_non_gpu_asset_fallbacks() {
         assert_eq!(
             modern_asset_frame_present_route(1, true, true, false, false, false, false, false),
-            ModernAssetFramePresentRoute::SourceSoftware
+            ModernAssetFramePresentRoute::Unhandled
         );
         assert_eq!(
             modern_asset_frame_present_route(7, true, true, false, true, false, false, false),
