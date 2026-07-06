@@ -2157,11 +2157,28 @@ impl ModernAssetFrameResources {
     }
 
     pub fn mode7_source_chars(&self) -> Option<&[u8]> {
-        self.mode7_source_chars.as_deref().or_else(|| {
-            self.variant_atlas
-                .as_ref()
-                .and_then(modern_variant_atlas::ModernVariantAtlas::mode7_source_chars)
-        })
+        if self.variant_gpu_mode {
+            return self.variant_atlas_mode7_source_chars();
+        }
+        self.mode7_source_chars
+            .as_deref()
+            .or_else(|| self.variant_atlas_mode7_source_chars())
+    }
+
+    fn mode7_source_chars_for_frame<'a>(
+        &'a self,
+        caller_chars: Option<&'a [u8]>,
+    ) -> Option<&'a [u8]> {
+        if self.variant_gpu_mode {
+            return self.variant_atlas_mode7_source_chars();
+        }
+        caller_chars.or_else(|| self.mode7_source_chars())
+    }
+
+    fn variant_atlas_mode7_source_chars(&self) -> Option<&[u8]> {
+        self.variant_atlas
+            .as_ref()
+            .and_then(modern_variant_atlas::ModernVariantAtlas::mode7_source_chars)
     }
 
     fn has_mode7_source_art(&self) -> bool {
@@ -2978,7 +2995,7 @@ impl FrameRenderer {
         mode7_source_chars: Option<&[u8]>,
         scene: ModernAssetFrameScene,
     ) -> Result<ModernAssetFramePresentResult, RenderError> {
-        let mode7_source_chars = mode7_source_chars.or_else(|| resources.mode7_source_chars());
+        let mode7_source_chars = resources.mode7_source_chars_for_frame(mode7_source_chars);
         match modern_asset_frame_present_route(
             frame.mode,
             src_table.is_some(),
@@ -3871,6 +3888,19 @@ mod tests {
         root
     }
 
+    fn test_variant_atlas_with_mode7_chars(
+        chars: Option<Vec<u8>>,
+    ) -> modern_variant_atlas::ModernVariantAtlas {
+        modern_variant_atlas::ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: Vec::new(),
+            effects: Vec::new(),
+            mode7_source_chars: chars,
+        }
+    }
+
     #[test]
     fn modern_asset_resources_skip_classic_atlases() {
         let root = temp_modern_asset_root("modern-asset-classic");
@@ -3903,6 +3933,64 @@ mod tests {
             resources.unhandled_gpu_asset_frame_line(),
             Some("modern asset renderer did not handle a GPU asset frame")
         );
+    }
+
+    #[test]
+    fn variant_gpu_mode7_chars_come_from_canonical_atlas() {
+        let caller_chars = vec![3u8; 0x4000];
+        let resource_chars = vec![5u8; 0x4000];
+        let atlas_chars = vec![7u8; 0x4000];
+        let resources = ModernAssetFrameResources {
+            source_atlas: None,
+            variant_atlas: Some(test_variant_atlas_with_mode7_chars(Some(atlas_chars))),
+            hd_overrides: None,
+            mode7_source_chars: Some(resource_chars),
+            gpu_asset_mode: true,
+            variant_gpu_mode: true,
+        };
+
+        let resolved = resources
+            .mode7_source_chars_for_frame(Some(&caller_chars))
+            .expect("variant atlas chars should resolve");
+
+        assert_eq!(resolved[0], 7);
+    }
+
+    #[test]
+    fn variant_gpu_mode7_chars_do_not_fall_back_to_capture_bytes() {
+        let caller_chars = vec![3u8; 0x4000];
+        let resource_chars = vec![5u8; 0x4000];
+        let resources = ModernAssetFrameResources {
+            source_atlas: None,
+            variant_atlas: Some(test_variant_atlas_with_mode7_chars(None)),
+            hd_overrides: None,
+            mode7_source_chars: Some(resource_chars),
+            gpu_asset_mode: true,
+            variant_gpu_mode: true,
+        };
+
+        assert!(resources
+            .mode7_source_chars_for_frame(Some(&caller_chars))
+            .is_none());
+    }
+
+    #[test]
+    fn explicit_indexed_gpu_mode7_can_still_use_capture_bytes() {
+        let caller_chars = vec![3u8; 0x4000];
+        let resources = ModernAssetFrameResources {
+            source_atlas: None,
+            variant_atlas: None,
+            hd_overrides: None,
+            mode7_source_chars: Some(vec![5u8; 0x4000]),
+            gpu_asset_mode: true,
+            variant_gpu_mode: false,
+        };
+
+        let resolved = resources
+            .mode7_source_chars_for_frame(Some(&caller_chars))
+            .expect("explicit indexed GPU mode should accept caller chars");
+
+        assert_eq!(resolved[0], 3);
     }
 
     #[test]
