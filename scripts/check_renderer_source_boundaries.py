@@ -377,6 +377,16 @@ GPU_ASSET_MAIN_RENDER_FUNCTIONS = {
     "run_smoke_render",
 }
 
+GPU_ASSET_PLAY_LOCKSTEP_FUNCTIONS = {
+    "run_play_lockstep",
+}
+
+FORBIDDEN_PLAY_LOCKSTEP_CLASSIC_PRESENT_CALLS = (
+    "NativeFrontend::new_with_options(",
+    "std::slice::from_raw_parts(",
+    "frontend.present_frame(",
+)
+
 FORBIDDEN_FRAME_DUMP_CLASSIC_DEFAULT_CALLS = (
     "run_diagnostic_play_frame_bgra(",
     "render_diagnostic_overworld_screen_bgra(",
@@ -1030,6 +1040,14 @@ def check_main_text(source: str) -> list[str]:
                 if forbidden in line:
                     errors.append(
                         "default render smoke escaped PNG-backed GPU path at "
+                        f"zelda3-bin/src/main.rs:{index + 1} "
+                        f"in {fn}: {line.strip()}"
+                    )
+        if fn in GPU_ASSET_PLAY_LOCKSTEP_FUNCTIONS:
+            for forbidden in FORBIDDEN_PLAY_LOCKSTEP_CLASSIC_PRESENT_CALLS:
+                if forbidden in line:
+                    errors.append(
+                        "play-lockstep presentation escaped PNG-backed GPU path at "
                         f"zelda3-bin/src/main.rs:{index + 1} "
                         f"in {fn}: {line.strip()}"
                     )

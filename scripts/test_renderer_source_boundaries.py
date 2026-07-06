@@ -802,6 +802,37 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("GPU compare command ownership escaped gpu_compare boundary", errors[0])
 
+    def test_rejects_classic_play_lockstep_presentation(self):
+        module = load_module()
+        source = """
+            fn run_play_lockstep() {
+                let mut frontend = NativeFrontend::new_with_options(width, height, options);
+                let pixels = unsafe {
+                    std::slice::from_raw_parts(
+                        game_frame.as_ptr().cast::<u32>(),
+                        game_frame.len() / 4,
+                    )
+                };
+                frontend.present_frame(pixels, width, height);
+            }
+
+            fn run_compare_lockstep_render() {
+                let mut frontend = NativeFrontend::new_with_options(width, height, options);
+                frontend.present_frame(pixels, width, height);
+            }
+            """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 3)
+        self.assertTrue(
+            all(
+                "play-lockstep presentation escaped PNG-backed GPU path" in error
+                for error in errors
+            )
+        )
+        self.assertTrue(all("run_play_lockstep" in error for error in errors))
+
     def test_rejects_replay_classic_helpers_in_gpu_capture(self):
         module = load_module()
         source = """

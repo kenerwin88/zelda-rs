@@ -64,7 +64,7 @@ use image_output::{write_argb_frame_png, write_rgba_frame_png};
 use index_dump_commands::{run_dump_dungeon_index_tiles, run_dump_sprite_index_tiles};
 use input_script::InputScript;
 use overworld_dump_commands::{run_dump_unique_overworld_cells, run_dump_unique_overworld_tiles};
-use platform::{Frontend, NativeFrontend, NativeFrontendOptions};
+use platform::NativeFrontendOptions;
 use play_commands::{run_frontend_smoke, run_play, run_standalone_play};
 use render_diagnostics::{
     compare_diagnostic_oracle_render_frame, format_render_ppu_summary,
@@ -6127,28 +6127,28 @@ fn run_play_lockstep(args: &[String]) {
     let pitch = width as usize * 4;
     let mut game_frame = vec![0u8; width as usize * height as usize * 4];
     let mut snes_frame = vec![0u8; game_frame.len()];
-    let mut frontend = match NativeFrontend::new_with_options(
+    let mut renderer = match play_renderer::configured_from_env(
         width,
         height,
         NativeFrontendOptions::from_env(3, true),
     ) {
-        Ok(frontend) => frontend,
+        Ok(renderer) => renderer,
         Err(e) => {
-            eprintln!("failed to initialize native frontend: {e}");
+            eprintln!("failed to initialize play renderer: {e}");
             process::exit(1);
         }
     };
-    let audio_samples = frontend.audio_samples_per_frame();
-    let audio_channels = frontend.audio_channels();
+    let audio_samples = renderer.audio_samples_per_frame();
+    let audio_channels = renderer.audio_channels();
     let mut audio = vec![0i16; audio_samples * audio_channels];
     let mut local_frame = 0u32;
     let mut input_history = Vec::new();
     let trace_live_input = env::var_os("ZELDA3_TRACE_LIVE_INPUT").is_some();
     let mut last_traced_live_input = u16::MAX;
 
-    while !frontend.quit_requested() && frame_limit.is_none_or(|limit| local_frame < limit) {
+    while !renderer.quit_requested() && frame_limit.is_none_or(|limit| local_frame < limit) {
         let frame = start_frame.wrapping_add(local_frame);
-        let live_input = frontend.poll_input();
+        let live_input = renderer.poll_input();
         if trace_live_input && live_input != last_traced_live_input {
             eprintln!(
                 "live-input frame={frame} input=0x{live_input:04x} main={} sub={} subsub={}",
@@ -6349,12 +6349,9 @@ fn run_play_lockstep(args: &[String]) {
                 }
             }
         }
-        frontend.push_audio(&audio);
+        renderer.push_audio(&audio);
         oracle.game.zelda_discard_unused_audio_frames();
-        let pixels = unsafe {
-            std::slice::from_raw_parts(game_frame.as_ptr().cast::<u32>(), game_frame.len() / 4)
-        };
-        frontend.present_frame(pixels, width, height);
+        renderer.present_frame(&mut oracle.game);
         local_frame = local_frame.wrapping_add(1);
     }
 }
