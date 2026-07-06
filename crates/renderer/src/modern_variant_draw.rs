@@ -777,7 +777,10 @@ fn resolve_draw_for_frame<'a>(
 ) -> VariantAtlasDraw<'a> {
     if force_dynamic {
         let draw = atlas.resolve_draw(key);
-        if matches!(draw, VariantAtlasDraw::MaterialEffect { .. }) {
+        if matches!(
+            draw,
+            VariantAtlasDraw::MaterialEffect { .. } | VariantAtlasDraw::Stable { .. }
+        ) {
             draw
         } else {
             atlas.resolve_dynamic_draw(key, DynamicFallbackReason::InstanceSourceKey)
@@ -1320,6 +1323,56 @@ mod tests {
             0
         );
         assert_eq!(plan.stats.stable_effect_draws, 0);
+        assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
+    }
+
+    #[test]
+    fn bg_instance_source_key_keeps_exact_stable_art_on_source_backed_path() {
+        let mut frame = ModernFrame::empty();
+        let mut bg0 = ModernBgLayer::new(0);
+        bg0.enabled_main = true;
+        let source_key = modern_source_key(1, 3, 5);
+        bg0.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key,
+            screen_x: 4,
+            screen_y: 8,
+            palette: 2,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[0] = bg0;
+        let bg_cells = vec![index_cell(0, NO_SOURCE_KEY)];
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![bg_entry(3, 5, 2)],
+            effects: vec![],
+            mode7_source_chars: None,
+        };
+
+        let plan = compile_variant_draws(
+            &frame,
+            &bg_cells,
+            &[],
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(plan.bg.len(), 1);
+        assert!(matches!(plan.bg[0].draw, VariantAtlasDraw::Stable { .. }));
+        assert_eq!(plan.bg[0].material(), ModernDrawMaterial::RgbaAtlas);
+        assert_eq!(plan.stats.stable_draws, 1);
+        assert_eq!(plan.stats.stable_preview_draws, 1);
+        assert_eq!(plan.stats.dynamic_palette_draws, 0);
+        assert_eq!(plan.stats.dynamic_material_fallback_draws, 0);
+        assert_eq!(
+            plan.stats.dynamic_material_fallback_instance_source_draws,
+            0
+        );
         assert_eq!(plan.stats.unkeyed_bg_fallback_draws, 0);
     }
 
