@@ -421,8 +421,8 @@ FORBIDDEN_REPLAY_CRASH_CLASSIC_CALLS = (
 )
 
 FORBIDDEN_LOCKSTEP_ARTIFACT_CLASSIC_RUST_FRAME_CALLS = (
-    "render_diagnostic_lockstep_artifact_frame_bgra(&mut rust_state",
-    'write_argb_frame_png(&dir.join("rust_frame.png")',
+    "render_diagnostic_lockstep_artifact_frame_bgra(",
+    "write_argb_frame_png(",
 )
 
 FORBIDDEN_FRAME_DUMP_CLASSIC_DEFAULT_CALLS = (

@@ -889,14 +889,22 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 2)
+        self.assertEqual(len(errors), 4)
         self.assertTrue(
             all(
                 "lockstep rust frame artifact escaped PNG-backed GPU path" in error
                 for error in errors
             )
         )
-        self.assertTrue(all("rust_state" in error or "rust_frame.png" in error for error in errors))
+        self.assertTrue(
+            any("rust_state" in error or "rust_frame.png" in error for error in errors)
+        )
+        self.assertTrue(
+            any("render_diagnostic_lockstep_artifact_frame_bgra" in error for error in errors)
+        )
+        self.assertTrue(
+            any("write_argb_frame_png" in error for error in errors)
+        )
 
     def test_rejects_replay_save_cpu_readback_dump_frame(self):
         module = load_module()

@@ -68,7 +68,6 @@ use platform::NativeFrontendOptions;
 use play_commands::{run_frontend_smoke, run_play, run_standalone_play};
 use render_diagnostics::{
     compare_diagnostic_oracle_render_frame, format_render_ppu_summary,
-    render_diagnostic_lockstep_artifact_frame_bgra,
     render_diagnostic_lockstep_oracle_frames_in_place, replay_fingerprint_leaf_bgra,
     replay_projection_bgra,
 };
@@ -5290,7 +5289,6 @@ fn write_lockstep_parity_failure_artifacts(
 
     let width = 256u32;
     let height = 224u32;
-    let mut snes_state_rust_render_frame = vec![0u8; width as usize * height as usize * 4];
     let mut rust_state = post_oracle.game.clone();
     let mut oracle_state = post_oracle.game.clone();
     oracle_state.ppu = post_oracle.snes.ppu.clone();
@@ -5306,19 +5304,21 @@ fn write_lockstep_parity_failure_artifacts(
         .map_err(|e| {
             format!("failed to render lockstep artifact via modern asset GPU path: {e}")
         })?;
-    render_diagnostic_lockstep_artifact_frame_bgra(
-        &mut oracle_state,
-        &mut snes_state_rust_render_frame,
-    );
+    let snes_state_rust_frame_rgba =
+        gpu_readback
+            .render_game_rgba(&mut oracle_state)
+            .map_err(|e| {
+                format!("failed to render lockstep oracle-state artifact via asset GPU path: {e}")
+            })?;
     write_rgba_frame_png(
         &dir.join("rust_frame.png"),
         rust_frame_rgba.as_slice(),
         width,
         height,
     )?;
-    write_argb_frame_png(
+    write_rgba_frame_png(
         &dir.join("snes_state_rust_render_frame.png"),
-        &snes_state_rust_render_frame,
+        snes_state_rust_frame_rgba.as_slice(),
         width,
         height,
     )?;
@@ -5356,7 +5356,7 @@ fn write_lockstep_parity_failure_artifacts(
         notes: vec![
             "oracle_before.z3state is a --load-state compatible lockstep checkpoint before the failing frame".to_string(),
             "rust_before.z3state is a --replay-crash compatible Rust checkpoint before the failing frame".to_string(),
-            "snes_state_rust_render_frame.png is the Rust renderer drawing the C/SNES oracle state; it is not a true C-rendered or bsnes-rendered frame".to_string(),
+            "snes_state_rust_render_frame.png is the PNG-backed GPU renderer drawing the C/SNES oracle state; it is not a true C-rendered or bsnes-rendered frame".to_string(),
             "true video reference artifacts require --compare-bsnes-oracle or --dump-bsnes-frame".to_string(),
             "lockstep validates game RAM, PPU, DMA, SRAM, and renderer-visible state; exact video/audio comparison requires the bsnes oracle path".to_string(),
         ],

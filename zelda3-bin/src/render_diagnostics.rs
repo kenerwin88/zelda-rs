@@ -10,13 +10,6 @@ pub(crate) fn run_diagnostic_play_frame_bgra(
     crate::classic_frame_renderer::run_play_frame_bgra(game, input, frame, render_flags);
 }
 
-pub(crate) fn render_diagnostic_lockstep_artifact_frame_bgra(
-    game: &mut ZeldaState,
-    frame: &mut [u8],
-) {
-    crate::classic_frame_renderer::render_standard_play_frame_bgra(game, frame);
-}
-
 pub(crate) fn replay_projection_bgra(game: &mut ZeldaState, frame: &mut [u8]) {
     crate::classic_frame_renderer::render_standard_play_frame_bgra(game, frame);
 }
