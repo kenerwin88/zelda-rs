@@ -24,13 +24,14 @@ impl<'frame> PreparedMode1EffectDrawWork<'frame> {
 
     pub(crate) fn render_plan<'work>(
         &'work self,
+        frame: &'work crate::modern_frame::ModernFrame,
         atlas: &'work crate::modern_variant_atlas::ModernVariantAtlas,
     ) -> PreparedMode1EffectRenderPlan<'work, 'frame> {
         let mut rendered_any = false;
         let mut rank_plans = Vec::with_capacity(self.rank_dispatches.len());
         for (rank_index, rank_dispatch) in self.rank_dispatches.iter().enumerate() {
             let rendered_before = rendered_any;
-            let render_plan = rank_dispatch.render_plan(atlas, rendered_before);
+            let render_plan = rank_dispatch.render_plan(frame, atlas, rendered_before);
             if !render_plan.is_empty() {
                 rendered_any = true;
             }

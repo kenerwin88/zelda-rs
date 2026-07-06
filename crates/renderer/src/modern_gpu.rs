@@ -95,7 +95,7 @@ impl<'p, 'frame> PreparedModernVariantExecution<'p, 'frame> {
         &'work self,
         atlas: &'work crate::modern_variant_atlas::ModernVariantAtlas,
     ) -> PreparedMode1EffectRenderPlan<'work, 'frame> {
-        self.mode1_effect_draw_work.render_plan(atlas)
+        self.mode1_effect_draw_work.render_plan(self.frame(), atlas)
     }
 
     fn stats(&self) -> &PreparedModernVariantStats {
@@ -344,7 +344,7 @@ impl ModernGpuVariantRenderer {
             bg_cells,
             sprite_cells,
             &self.atlas,
-            None,
+            Some(frame),
             output_view,
             command.command,
         );
@@ -530,13 +530,8 @@ impl<'a> Mode1EffectRankDispatch<'a> {
         }
     }
 
-    fn bg_material_groups(&self) -> impl Iterator<Item = BgEffectMaterialGroup<'_, 'a>> {
-        [EffectMaterialGroup {
-            material: EffectMaterial::StaticEffect,
-            packets: self.bg.as_slice(),
-        }]
-        .into_iter()
-        .filter(|group| !group.packets.is_empty())
+    fn bg_material_groups(&self, frame: &ModernFrame) -> Vec<BgEffectMaterialGroup<'_, 'a>> {
+        bg_effect_material_groups(frame, &self.bg)
     }
 
     fn sprite_material_groups(
@@ -548,10 +543,11 @@ impl<'a> Mode1EffectRankDispatch<'a> {
 
     pub(crate) fn render_plan(
         &self,
+        frame: &ModernFrame,
         atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
         rendered_any: bool,
     ) -> Mode1EffectRankRenderPlan<'_, 'a> {
-        let bg_groups = self.bg_material_groups().collect::<Vec<_>>();
+        let bg_groups = self.bg_material_groups(frame);
         let sprite_groups = self.sprite_material_groups(atlas);
         let clear_before_sprites =
             !rendered_any && bg_groups.is_empty() && !sprite_groups.is_empty();
@@ -862,6 +858,7 @@ impl<'a> MixedVariantPrefinalPackets<'a> {
         }
     }
 
+    #[cfg(test)]
     fn from_all_overlay(
         overlay: &MixedVariantOverlayBgSelection<'a>,
         plan: &crate::modern_variant_draw::VariantDrawPlan<'a>,
@@ -869,6 +866,29 @@ impl<'a> MixedVariantPrefinalPackets<'a> {
         Self {
             bg: overlay.effects.prefinal_bg_packets(|_| true),
             sprites: plan.sprites.clone(),
+        }
+    }
+
+    fn from_material_plan(
+        frame: &ModernFrame,
+        plan: &crate::modern_variant_draw::VariantDrawPlan<'a>,
+    ) -> Self {
+        let mut bg = Vec::new();
+        for packet in plan
+            .material_packets()
+            .filter_map(|packet| packet.as_bg().map(|(_, packet)| packet))
+        {
+            let Ok(material) = bg_packet_prefinal_material(frame, packet) else {
+                continue;
+            };
+            bg.push(MixedVariantPrefinalBgPacket {
+                material,
+                packet: packet.clone(),
+            });
+        }
+        Self {
+            bg,
+            sprites: Vec::new(),
         }
     }
 
@@ -1306,30 +1326,6 @@ fn frame_uses_direct_final_index_math(frame: &ModernFrame) -> bool {
         && frame.windowsel_cm == 0
 }
 
-fn bg_effect_group_is_content_sourced(group: &BgEffectMaterialGroup<'_, '_>) -> bool {
-    !group.packets.is_empty()
-        && group.packets.iter().all(|packet| {
-            let source_key = if packet.inst.source_key != crate::modern_hd_overrides::NO_SOURCE_KEY
-            {
-                packet.inst.source_key
-            } else {
-                packet.cell.source_key
-            };
-            matches!((source_key >> 32) as u8, 6 | 7 | 8)
-        })
-}
-
-fn sprite_effect_groups_are_content_sourced(groups: &[SpriteEffectMaterialGroup<'_, '_>]) -> bool {
-    !groups.is_empty()
-        && groups.iter().all(|group| {
-            !group.packets.is_empty()
-                && group
-                    .packets
-                    .iter()
-                    .all(|packet| matches!((packet.cell.source_key >> 32) as u8, 6 | 7 | 8))
-        })
-}
-
 fn can_render_final_index_base_gpu(frame: &ModernFrame, bg_cells: &[ModernIndexTile]) -> bool {
     if frame.forced_blank
         || !frame_uses_direct_final_index_math(frame)
@@ -1478,6 +1474,22 @@ fn bg_packet_can_use_live_cgram(
         }
     }
     true
+}
+
+fn bg_effect_material_for_packet(
+    frame: &ModernFrame,
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+) -> EffectMaterial {
+    let Some((_, effect)) = packet.draw.material_effect() else {
+        return EffectMaterial::StaticEffect;
+    };
+    if bg_effect_matches_live_cgram(packet.cell, packet.inst.palette, effect, frame) {
+        return EffectMaterial::StaticEffect;
+    }
+    if bg_packet_can_use_live_cgram(packet, frame) {
+        return EffectMaterial::LiveCgram;
+    }
+    EffectMaterial::StaticEffect
 }
 
 #[cfg(test)]
@@ -2574,6 +2586,43 @@ fn bg_effect_material_batch(
     batch
 }
 
+fn bg_effect_material_groups<'dispatch, 'frame>(
+    frame: &ModernFrame,
+    packets: &'dispatch [crate::modern_variant_draw::VariantBgDrawPacket<'frame>],
+) -> Vec<BgEffectMaterialGroup<'dispatch, 'frame>> {
+    let mut groups = Vec::new();
+    let mut current_material = None;
+    let mut current_start = 0;
+
+    for (index, packet) in packets.iter().enumerate() {
+        let packet_material = bg_effect_material_for_packet(frame, packet);
+        match current_material {
+            None => {
+                current_material = Some(packet_material);
+                current_start = index;
+            }
+            Some(material) if material == packet_material => {}
+            Some(material) => {
+                groups.push(EffectMaterialGroup {
+                    material,
+                    packets: &packets[current_start..index],
+                });
+                current_material = Some(packet_material);
+                current_start = index;
+            }
+        }
+    }
+
+    if let Some(material) = current_material {
+        groups.push(EffectMaterialGroup {
+            material,
+            packets: &packets[current_start..],
+        });
+    }
+
+    groups
+}
+
 fn sprite_effect_material_groups<'dispatch, 'frame>(
     atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
     packets: &'dispatch [crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>],
@@ -2963,7 +3012,7 @@ fn uniform_buffer_with_words(
 fn modern_prefinal_overlay_data_words(
     frame: &ModernFrame,
     packets: &MixedVariantPrefinalPackets<'_>,
-) -> (Vec<u32>, [u32; 8]) {
+) -> (Vec<u32>, [u32; 32]) {
     let mut data = Vec::new();
     let mut bg_packet_words = Vec::new();
     let mut sprite_packet_words = Vec::new();
@@ -2978,6 +3027,10 @@ fn modern_prefinal_overlay_data_words(
                 i32::from(packet.inst.screen_y) as u32,
                 u32::from(rank),
                 cell_offset,
+                packet.layer_index as u32,
+                0,
+                0,
+                0,
             ]);
         }
     }
@@ -3013,21 +3066,122 @@ fn modern_prefinal_overlay_data_words(
     } else {
         &sprite_packet_words
     });
+    let scroll_offset = data.len() as u32;
+    data.extend_from_slice(&modern_prefinal_overlay_scroll_words(frame));
+    let main_tm_offset = data.len() as u32;
+    data.extend_from_slice(&modern_prefinal_overlay_main_tm_words(frame));
+    let window_offset = data.len() as u32;
+    data.extend_from_slice(&modern_prefinal_overlay_window_words(frame));
+
+    let layer_params = |layer: usize| -> [u32; 4] {
+        let Some(bg) = frame.bg_layers.get(layer) else {
+            return [0, 0, 256, 224];
+        };
+        [
+            u32::from(bg.scroll_x),
+            u32::from(bg.scroll_y),
+            u32::from(bg.wrap_w).max(256),
+            u32::from(bg.wrap_h).max(224),
+        ]
+    };
+    let p2 = layer_params(0);
+    let p3 = layer_params(1);
+    let p4 = layer_params(2);
+    let scroll_mask = (0..3usize).fold(0u32, |mask, layer| {
+        if modern_prefinal_overlay_layer_needs_scroll(frame, layer) {
+            mask | (1u32 << layer)
+        } else {
+            mask
+        }
+    });
 
     (
         data,
         [
             u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
                 * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT),
-            (bg_packet_words.len() / 4) as u32,
+            (bg_packet_words.len() / 8) as u32,
             (sprite_packet_words.len() / 4) as u32,
-            0,
-            0,
             0,
             bg_packets_offset,
             sprite_packets_offset,
+            scroll_offset,
+            main_tm_offset,
+            p2[0],
+            p2[1],
+            p2[2],
+            p2[3],
+            p3[0],
+            p3[1],
+            p3[2],
+            p3[3],
+            p4[0],
+            p4[1],
+            p4[2],
+            p4[3],
+            window_offset,
+            scroll_mask,
+            frame.windowsel,
+            u32::from(frame.screen_enabled_main),
+            u32::from(frame.screen_windowed_main),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
         ],
     )
+}
+
+fn modern_prefinal_overlay_scroll_words(frame: &ModernFrame) -> Vec<u32> {
+    let mut words = Vec::with_capacity(usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT) * 8);
+    for row in 0..usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT) {
+        let scanline = frame.bg_scroll_scanlines.get(row);
+        for layer in 0..4usize {
+            let base = [
+                frame.bg_layers.get(layer).map_or(0, |bg| bg.scroll_x),
+                frame.bg_layers.get(layer).map_or(0, |bg| bg.scroll_y),
+            ];
+            let scroll = scanline.map_or(base, |sl| sl[layer]);
+            words.push(u32::from(scroll[0]));
+            words.push(u32::from(scroll[1]));
+        }
+    }
+    words
+}
+
+fn modern_prefinal_overlay_main_tm_words(frame: &ModernFrame) -> Vec<u32> {
+    (0..usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT))
+        .map(|row| u32::from(frame.main_tm_scanlines.get(row).copied().unwrap_or(0xff)))
+        .collect()
+}
+
+fn modern_prefinal_overlay_window_words(frame: &ModernFrame) -> Vec<u32> {
+    let mut words = Vec::with_capacity(usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT) * 4);
+    for row in 0..usize::from(crate::modern_frame::MODERN_FRAME_HEIGHT) {
+        words.extend(
+            frame
+                .window_scanlines
+                .get(row)
+                .copied()
+                .unwrap_or([0u8; 4])
+                .map(u32::from),
+        );
+    }
+    words
+}
+
+fn modern_prefinal_overlay_layer_needs_scroll(frame: &ModernFrame, layer: usize) -> bool {
+    let Some(bg) = frame.bg_layers.get(layer) else {
+        return false;
+    };
+    let varies = frame
+        .bg_scroll_scanlines
+        .iter()
+        .any(|sl| sl[layer][0] != bg.scroll_x || sl[layer][1] != bg.scroll_y);
+    varies || bg.scroll_x != 0 || bg.scroll_y != 0
 }
 
 fn modern_prefinal_overlay_bg_packet_pixels(
@@ -3078,7 +3232,7 @@ fn modern_prefinal_overlay_live_bg_pixels(
 }
 
 fn modern_prefinal_overlay_bg_pixels(
-    frame: &ModernFrame,
+    _frame: &ModernFrame,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     color_for_local: impl Fn(usize, usize) -> Option<[u8; 4]>,
 ) -> [u32; 64] {
@@ -3095,14 +3249,6 @@ fn modern_prefinal_overlay_bg_pixels(
                 continue;
             };
             if rgba[3] == 0 {
-                continue;
-            }
-            let dst_x = packet.inst.screen_x + x as i16;
-            let dst_y = packet.inst.screen_y + y as i16;
-            if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
-                continue;
-            }
-            if !bg_packet_visible_on_main_at_pixel(frame, packet, dst_x as u32, dst_y as usize) {
                 continue;
             }
             pixels[y * 8 + x] = pack_variant_prefinal_pixel(rgba, math_bit);
@@ -3952,6 +4098,11 @@ impl ModernGpuVariantHeadless {
         execution: &mut PreparedModernVariantExecution<'_, '_>,
     ) {
         match execution.render_path() {
+            ModernVariantRenderPath::EffectMaterialMode1Order
+                if frame_needs_material_prefinal_finalizer(execution.frame()) =>
+            {
+                self.render_effect_material_with_stable_overlay(live_index_base, execution);
+            }
             ModernVariantRenderPath::EffectMaterialMode1Order => {
                 self.render_effect_material_mode1_order(execution);
             }
@@ -4072,8 +4223,7 @@ impl ModernGpuVariantHeadless {
             let build_result = self.render_effect_material_with_prefinal_base(execution);
             record_screen_builder_result(execution.stats_mut().as_mut(), build_result);
         } else {
-            let build_result = self.render_effect_material_over_source_base(execution);
-            record_screen_builder_result(execution.stats_mut().as_mut(), build_result);
+            self.render_effect_material_mode1_order(execution);
         }
         if execution.stats().needs_headless_stable_overlay() {
             self.renderer.renderer.render_overlay(
@@ -4087,12 +4237,13 @@ impl ModernGpuVariantHeadless {
 
     fn render_effect_material_with_prefinal_base(
         &self,
-        execution: &PreparedModernVariantExecution<'_, '_>,
+        execution: &mut PreparedModernVariantExecution<'_, '_>,
     ) -> ModernScreenBuilderResult {
         let frame = execution.frame();
         let plan = execution.plan();
-        let overlay = mixed_variant_prefinal_bg_packets(frame, plan);
-        let prefinal_packets = MixedVariantPrefinalPackets::from_all_overlay(&overlay, plan);
+        let prefinal_packets = MixedVariantPrefinalPackets::from_material_plan(frame, plan);
+        execution.stats_mut().as_mut().mixed_overlay_bg_effect_draws +=
+            prefinal_packets.bg_len() as u32;
         if prefinal_packets.is_bg_empty() {
             return self.compositor.render_prefinal_screens_with_final_frame(
                 &self.device,
@@ -4116,50 +4267,6 @@ impl ModernGpuVariantHeadless {
                 &prefinal_packets,
                 &self.target,
             )
-    }
-
-    fn render_effect_material_over_source_base(
-        &self,
-        execution: &PreparedModernVariantExecution<'_, '_>,
-    ) -> ModernScreenBuilderResult {
-        let build_result = self.compositor.render_prefinal_screens_with_final_frame(
-            &self.device,
-            &self.queue,
-            execution.frame(),
-            execution.frame(),
-            execution.bg_cells(),
-            execution.sprite_cells(),
-            &self.target,
-        );
-        let command_plan = execution
-            .mode1_effect_render_plan(&self.renderer.atlas)
-            .into_command_plan();
-        command_plan.execute_with(|mut command| {
-            if command.source == Mode1EffectCommandSource::EmptyFrameFallback {
-                return;
-            }
-            if let ModernGpuWorkItem::BgEffect(group) = &command.command.work_item {
-                if bg_effect_group_is_content_sourced(group) {
-                    return;
-                }
-            }
-            if let ModernGpuWorkItem::SpriteEffects(groups) = &command.command.work_item {
-                if sprite_effect_groups_are_content_sourced(groups) {
-                    return;
-                }
-            }
-            command.command.target_load = ModernGpuCommandLoad::Load;
-            self.renderer.render_mode1_effect_command(
-                &self.device,
-                &self.queue,
-                execution.frame(),
-                execution.bg_cells(),
-                execution.sprite_cells(),
-                &self.target_view,
-                command,
-            );
-        });
-        build_result
     }
 
     fn read_target_rgba(&self) -> Vec<u8> {
@@ -4278,7 +4385,7 @@ mod tests {
         };
         assert_eq!(
             headless_variant_render_path(&all_effect),
-            ModernVariantRenderPath::EffectMaterialWithStableOverlay
+            ModernVariantRenderPath::EffectMaterialMode1Order
         );
 
         let live_index = VariantAtlasRenderStats {
@@ -5911,8 +6018,9 @@ mod tests {
         };
 
         let ranks = mode1_effect_rank_dispatches(&plan);
-        let rank0_bg_groups = ranks[0].bg_material_groups().collect::<Vec<_>>();
-        let rank7_bg_groups = ranks[7].bg_material_groups().collect::<Vec<_>>();
+        let frame = ModernFrame::empty();
+        let rank0_bg_groups = ranks[0].bg_material_groups(&frame);
+        let rank7_bg_groups = ranks[7].bg_material_groups(&frame);
 
         assert_eq!(ranks.len(), 10);
         assert_eq!(rank0_bg_groups.len(), 1);
@@ -5926,7 +6034,7 @@ mod tests {
         assert_eq!(
             ranks
                 .iter()
-                .flat_map(|rank| rank.bg_material_groups())
+                .flat_map(|rank| rank.bg_material_groups(&frame))
                 .map(|group| group.packets.len())
                 .sum::<usize>(),
             2
@@ -6146,6 +6254,18 @@ mod tests {
         );
         assert_eq!(live_batch.material(), Some(EffectMaterial::LiveCgram));
         assert_eq!(live_batch.instance_count(), 1);
+
+        let mut frame = ModernFrame::empty();
+        frame.cgram_rgba[3 * 16 + 1] = [80, 0, 0, 0xff];
+        let matching_groups =
+            bg_effect_material_groups(&frame, std::slice::from_ref(&static_packet));
+        assert_eq!(matching_groups.len(), 1);
+        assert_eq!(matching_groups[0].material, EffectMaterial::StaticEffect);
+
+        frame.cgram_rgba[3 * 16 + 1] = [0, 180, 0, 0xff];
+        let live_groups = bg_effect_material_groups(&frame, std::slice::from_ref(&static_packet));
+        assert_eq!(live_groups.len(), 1);
+        assert_eq!(live_groups[0].material, EffectMaterial::LiveCgram);
     }
 
     #[test]
@@ -6422,7 +6542,8 @@ mod tests {
             bg: Vec::new(),
             sprites: packets.clone(),
         };
-        let first_rank_plan = sprite_only_rank.render_plan(&atlas, false);
+        let frame = ModernFrame::empty();
+        let first_rank_plan = sprite_only_rank.render_plan(&frame, &atlas, false);
         assert_eq!(first_rank_plan.len(), 2);
         assert_eq!(
             first_rank_plan.kinds(),
@@ -6449,7 +6570,7 @@ mod tests {
             rank_plans: vec![PreparedMode1EffectRankRenderPlan {
                 rank_index: 0,
                 rendered_before: false,
-                render_plan: sprite_only_rank.render_plan(&atlas, false),
+                render_plan: sprite_only_rank.render_plan(&frame, &atlas, false),
             }],
             needs_empty_frame_fallback: false,
         };
@@ -6472,7 +6593,7 @@ mod tests {
                 },
             ]
         );
-        let later_rank_plan = sprite_only_rank.render_plan(&atlas, true);
+        let later_rank_plan = sprite_only_rank.render_plan(&frame, &atlas, true);
         assert_eq!(later_rank_plan.len(), 1);
         assert_eq!(
             later_rank_plan.kinds(),

@@ -129,6 +129,8 @@ pub(crate) fn headless_variant_render_path(
 ) -> ModernVariantRenderPath {
     if stats.needs_live_index_base() {
         ModernVariantRenderPath::LiveIndexBaseWithOverlay
+    } else if stats.effect_draws != 0 && stats.effect_draws == stats.stable_draws {
+        ModernVariantRenderPath::EffectMaterialMode1Order
     } else if stats.effect_draws != 0 {
         ModernVariantRenderPath::EffectMaterialWithStableOverlay
     } else {
