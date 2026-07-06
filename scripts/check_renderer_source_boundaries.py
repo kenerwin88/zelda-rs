@@ -491,6 +491,19 @@ FORBIDDEN_MAIN_AUDIO_TRACE_OWNERSHIP = (
     "fn print_audio_window",
 )
 
+AUDIO_TRACE_ADVANCE_FUNCTIONS = {
+    "run_compare_bootstrap_apu_startup",
+    "run_trace_bootstrap_apu_direct_frame",
+    "run_trace_startup_audio",
+    "run_trace_bsnes_audio",
+    "run_compare_bsnes_startup_audio",
+    "run_compare_startup_apu_impls",
+}
+
+FORBIDDEN_AUDIO_TRACE_CPU_RENDER_CALLS = (
+    "run_diagnostic_play_frame_bgra(",
+)
+
 FORBIDDEN_MAIN_IMAGE_OUTPUT_OWNERSHIP = (
     "fn write_argb_frame_png",
     "fn write_assets_index_png",
@@ -1142,6 +1155,14 @@ def check_main_text(source: str) -> list[str]:
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
+        if fn in AUDIO_TRACE_ADVANCE_FUNCTIONS:
+            for forbidden in FORBIDDEN_AUDIO_TRACE_CPU_RENDER_CALLS:
+                if forbidden in line:
+                    errors.append(
+                        "audio trace frame advance escaped CPU-free path at "
+                        f"zelda3-bin/src/main.rs:{index + 1} "
+                        f"in {fn}: {line.strip()}"
+                    )
         for forbidden in FORBIDDEN_MAIN_IMAGE_OUTPUT_OWNERSHIP:
             if forbidden in line:
                 fn = enclosing_function(lines, index) or "<module>"

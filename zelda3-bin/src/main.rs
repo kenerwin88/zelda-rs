@@ -724,10 +724,6 @@ fn run_compare_bootstrap_apu_startup(args: &[String]) {
     full_apu.dsp.sample_offset = 0;
     full_apu.dsp_write_history.clear();
 
-    let width = 256u32;
-    let height = 224u32;
-    let render_flags = PpuRenderFlags::empty();
-    let mut frame = vec![0u8; width as usize * height as usize * 4];
     let mut high_audio = vec![0i16; 735 * 2];
     let mut full_audio = vec![0i16; 735 * 2];
     let mut high_stats = Vec::with_capacity(frames as usize);
@@ -746,7 +742,7 @@ fn run_compare_bootstrap_apu_startup(args: &[String]) {
     );
 
     for _ in 0..frames {
-        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+        game.zelda_run_frame(0);
         let ports = game.zelda_debug_apu_write_ports();
         for (port, &value) in ports.iter().enumerate() {
             full_apu.write_snes_port(port as u8, value);
@@ -853,10 +849,6 @@ fn run_trace_bootstrap_apu_direct_frame(args: &[String]) {
     oracle.snes.apu.dsp_write_history.clear();
 
     let mut game = load_play_state(rom_path);
-    let width = 256u32;
-    let height = 224u32;
-    let render_flags = PpuRenderFlags::empty();
-    let mut frame = vec![0u8; width as usize * height as usize * 4];
     let mut high_audio = vec![0i16; 735 * 2];
     let mut direct_audio = vec![0i16; 735 * 2];
     let mut apu_cycle_accum = 0.0f64;
@@ -876,7 +868,7 @@ fn run_trace_bootstrap_apu_direct_frame(args: &[String]) {
     );
 
     for frame_index in 0..frames {
-        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+        game.zelda_run_frame(0);
         let high_ports = game.zelda_debug_apu_write_ports();
         game.zelda_render_audio(&mut high_audio, 735, 2);
         game.zelda_discard_unused_audio_frames();
@@ -3917,13 +3909,11 @@ fn run_trace_startup_audio(args: &[String]) {
         }
     }
     let mut game = load_game_state(rom_path, !c_oracle);
-    let mut frame = vec![0u8; 256 * 224 * 4];
     let mut audio = vec![0i16; 735 * 2];
-    let render_flags = PpuRenderFlags::empty();
     let mut last_ports = [0u8; 4];
     let mut last_nonzero = false;
     for frame_index in 0..frames {
-        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+        game.zelda_run_frame(0);
         let ports = game.zelda_debug_apu_write_ports();
         game.zelda_render_audio(&mut audio, 735, 2);
         game.zelda_discard_unused_audio_frames();
@@ -4009,9 +3999,7 @@ fn run_trace_bsnes_audio(args: &[String]) {
     };
     let frames: u32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(360);
     let mut game = load_play_state(rom_path);
-    let mut frame = vec![0u8; 256 * 224 * 4];
     let mut audio = vec![0i16; 735 * 2];
-    let render_flags = PpuRenderFlags::empty();
     let mut bsnes = match LibretroCore::load(core_path, rom_path) {
         Ok(core) => core,
         Err(e) => {
@@ -4027,7 +4015,7 @@ fn run_trace_bsnes_audio(args: &[String]) {
         bsnes.av_info.timing.sample_rate,
     );
     for frame_index in 0..frames {
-        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+        game.zelda_run_frame(0);
         let ports = game.zelda_debug_apu_write_ports();
         game.zelda_render_audio(&mut audio, 735, 2);
         game.zelda_discard_unused_audio_frames();
@@ -4081,9 +4069,7 @@ fn run_compare_bsnes_startup_audio(args: &[String]) {
     };
     let frames: u32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(180);
     let mut game = load_play_state(rom_path);
-    let mut frame = vec![0u8; 256 * 224 * 4];
     let mut audio = vec![0i16; 735 * 2];
-    let render_flags = PpuRenderFlags::empty();
     let mut bsnes = match LibretroCore::load(core_path, rom_path) {
         Ok(core) => core,
         Err(e) => {
@@ -4098,7 +4084,7 @@ fn run_compare_bsnes_startup_audio(args: &[String]) {
     let mut ref_video_frames = 0usize;
     let mut ref_video_meta = None;
     for _ in 0..frames {
-        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+        game.zelda_run_frame(0);
         let ports = game.zelda_debug_apu_write_ports();
         game.zelda_render_audio(&mut audio, 735, 2);
         game.zelda_discard_unused_audio_frames();
@@ -5067,10 +5053,6 @@ fn run_compare_startup_apu_impls(args: &[String]) {
     let frames: u32 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(120);
     let mut game = load_play_state(rom_path);
     let mut full_apu = None;
-    let width = 256u32;
-    let height = 224u32;
-    let render_flags = PpuRenderFlags::empty();
-    let mut frame = vec![0u8; width as usize * height as usize * 4];
     let mut high_audio = vec![0i16; 735 * 2];
     let mut full_audio = vec![0i16; 735 * 2];
     let mut high_stats = Vec::with_capacity(frames as usize);
@@ -5078,7 +5060,7 @@ fn run_compare_startup_apu_impls(args: &[String]) {
     let mut debug = Vec::with_capacity(frames as usize);
 
     for _ in 0..frames {
-        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+        game.zelda_run_frame(0);
         let full_apu = full_apu.get_or_insert_with(|| game.zelda_debug_full_apu_from_spc());
         let ports = game.zelda_debug_apu_write_ports();
         for (port, &value) in ports.iter().enumerate() {

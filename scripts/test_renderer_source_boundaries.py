@@ -1078,7 +1078,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
                 write_argb_frame_png(&out_path, &frame, width, height);
             }
 
-            fn run_trace_startup_audio() {
+            fn run_unrelated_trace_startup_audio() {
                 run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
             }
         """
@@ -1464,6 +1464,39 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertTrue(
             all(
                 "audio trace ownership escaped audio_trace boundary" in error
+                for error in errors
+            )
+        )
+
+    def test_rejects_audio_trace_cpu_render_frame_advance(self):
+        module = load_module()
+        source = """
+            fn run_compare_bootstrap_apu_startup() {
+                run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+            }
+            fn run_trace_bootstrap_apu_direct_frame() {
+                run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+            }
+            fn run_trace_startup_audio() {
+                run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+            }
+            fn run_trace_bsnes_audio() {
+                run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+            }
+            fn run_compare_bsnes_startup_audio() {
+                run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+            }
+            fn run_compare_startup_apu_impls() {
+                run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+            }
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 6)
+        self.assertTrue(
+            all(
+                "audio trace frame advance escaped CPU-free path" in error
                 for error in errors
             )
         )
