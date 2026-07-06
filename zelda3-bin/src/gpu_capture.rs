@@ -288,7 +288,6 @@ fn render_modern_asset_capture_rgba(
     let render = resources.render_full_gpu_asset_rgba_from_entries(
         &gpu_frame,
         capture.source_entries(),
-        capture.mode7_source_chars(),
         scene,
     )?;
     Ok(ModernAssetGpuReadbackFrame {
@@ -307,7 +306,6 @@ fn validate_modern_asset_capture(
     resources.validate_full_gpu_asset_from_entries(
         &gpu_frame,
         capture.source_entries(),
-        capture.mode7_source_chars(),
         scene,
     )
 }
@@ -361,7 +359,6 @@ fn validation_cache_key(capture: &LiveGpuFrameCapture) -> u64 {
         src.pack.hash(&mut hasher);
         src.tile_off.hash(&mut hasher);
     }
-    capture.mode7_source_chars().hash(&mut hasher);
     capture.player_indoors().hash(&mut hasher);
 
     hasher.finish()

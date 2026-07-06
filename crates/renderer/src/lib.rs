@@ -2302,7 +2302,6 @@ impl ModernIndexCompareResources {
         &self,
         frame: &GpuFrame<'_>,
         source_entries: &[T],
-        mode7_source_chars: Option<&[u8]>,
         scene: ModernAssetFrameScene,
     ) -> Result<ModernAssetReadbackFrame, String>
     where
@@ -2320,7 +2319,7 @@ impl ModernIndexCompareResources {
             self.source_atlas(),
             self.gpu_headless(),
             self.variant_headless(),
-            mode7_source_chars,
+            None,
             scene,
             None,
             false,
@@ -2343,7 +2342,6 @@ impl ModernIndexCompareResources {
         &self,
         frame: &GpuFrame<'_>,
         source_entries: &[T],
-        mode7_source_chars: Option<&[u8]>,
         scene: ModernAssetFrameScene,
     ) -> Result<ModernAssetValidationFrame, String>
     where
@@ -2361,7 +2359,7 @@ impl ModernIndexCompareResources {
             self.source_atlas(),
             self.gpu_headless(),
             self.variant_headless(),
-            mode7_source_chars,
+            None,
             scene,
             false,
         );
@@ -4020,7 +4018,6 @@ mod tests {
         let err = match resources.render_full_gpu_asset_rgba_from_entries(
             &frame,
             &entries,
-            None,
             ModernAssetFrameScene::from_in_dungeon(false),
         ) {
             Ok(_) => panic!("full asset readback must not use indexed GPU resources"),
@@ -4076,7 +4073,6 @@ mod tests {
         let err = match resources.validate_full_gpu_asset_from_entries(
             &frame,
             &entries,
-            None,
             ModernAssetFrameScene::from_in_dungeon(false),
         ) {
             Ok(_) => panic!("full asset validation must not use indexed GPU resources"),
