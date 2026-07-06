@@ -82,11 +82,11 @@ cargo run --profile parity -p zelda3-bin
 Use these opt-outs when comparing behavior:
 
 ```bash
-ZELDA3_VARIANT_ATLAS=off cargo run --profile parity -p zelda3-bin
+ZELDA3_RENDERER=assets-anim-gpu cargo run --profile parity -p zelda3-bin
 ZELDA3_RENDERER=assets-anim cargo run --profile parity -p zelda3-bin
 ```
 
-`ZELDA3_VARIANT_ATLAS=off` keeps the older indexed GPU atlas path.
+`ZELDA3_RENDERER=assets-anim-gpu` keeps the older indexed GPU atlas path.
 `ZELDA3_RENDERER=assets-anim` uses the CPU atlas compositor oracle.
 
 ## Dynamic Palette Fallback

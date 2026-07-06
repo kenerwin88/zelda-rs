@@ -541,13 +541,13 @@ for rows that are not stable final pixels.
 
 Unset `ZELDA3_RENDERER` now chooses the variant atlas GPU path. Live play
 presents that path on the window renderer's GPU device without headless
-readback or CPU RGBA upload. Use `ZELDA3_VARIANT_ATLAS=off` to keep the older
-indexed GPU atlas path, or `ZELDA3_RENDERER=assets-anim` for the CPU atlas
-compositor oracle.
+readback or CPU RGBA upload. Use `ZELDA3_RENDERER=assets-anim-gpu` to keep the
+older indexed GPU atlas path, or `ZELDA3_RENDERER=assets-anim` for the CPU
+atlas compositor oracle.
 
 If `art_tiles.*` fails to load, the selected default mode reports a canonical
 art atlas error instead of silently switching to legacy base previews. Use
-`ZELDA3_VARIANT_ATLAS=off` for the older indexed GPU atlas path, or
+`ZELDA3_RENDERER=assets-anim-gpu` for the older indexed GPU atlas path, or
 `ZELDA3_RENDERER=assets-anim` for the CPU atlas compositor oracle/debug mode.
 
 For a cheap live coverage check without a replay scan, set

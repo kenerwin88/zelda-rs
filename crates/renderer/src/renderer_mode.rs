@@ -30,14 +30,12 @@ impl RendererMode {
 }
 
 pub const DEFAULT_RENDERER_ENV: &str = "assets-variant-gpu";
-pub const DEFAULT_VARIANT_ATLAS_OFF_RENDERER_ENV: &str = "assets-anim-gpu";
 
 /// Effective renderer for paths that honor `ZELDA3_RENDERER`. Unset defaults to
 /// `assets-variant-gpu` so stable base-art draws use the RGBA variant atlas and
-/// dynamic rows fall back to the indexed GPU compositor. Set
-/// `ZELDA3_VARIANT_ATLAS=off` to keep the older full indexed GPU path. Explicit
-/// `assets-anim` keeps the CPU atlas compositor, and `classic` opts back into
-/// the wgpu PPU path.
+/// dynamic effects route through shader/material metadata. Explicit
+/// `assets-anim-gpu` keeps the older full indexed GPU path, `assets-anim` keeps
+/// the CPU atlas compositor, and `classic` opts back into the wgpu PPU path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EffectiveRendererMode<'a> {
     name: &'a str,
@@ -84,11 +82,8 @@ impl EffectiveRendererMode<'static> {
     }
 }
 
-pub fn default_renderer_env_for_variant_setting(value: Option<&str>) -> &'static str {
-    match value {
-        Some(value) if value.eq_ignore_ascii_case("off") => DEFAULT_VARIANT_ATLAS_OFF_RENDERER_ENV,
-        _ => DEFAULT_RENDERER_ENV,
-    }
+pub fn default_renderer_env_for_variant_setting(_value: Option<&str>) -> &'static str {
+    DEFAULT_RENDERER_ENV
 }
 
 pub fn renderer_env_or_default<'a>(
@@ -174,12 +169,22 @@ mod tests {
         assert!(default_mode.uses_source_atlas());
         assert!(default_mode.uses_variant_atlas());
 
-        let indexed_gpu_mode =
+        let legacy_variant_off_mode =
             EffectiveRendererMode::from_name(default_renderer_env_for_variant_setting(Some("off")));
-        assert_eq!(indexed_gpu_mode.name(), "assets-anim-gpu");
-        assert!(indexed_gpu_mode.uses_gpu_assets());
-        assert!(indexed_gpu_mode.uses_source_atlas());
-        assert!(!indexed_gpu_mode.uses_variant_atlas());
+        assert_eq!(legacy_variant_off_mode.name(), "assets-variant-gpu");
+        assert!(legacy_variant_off_mode.uses_gpu_assets());
+        assert!(legacy_variant_off_mode.uses_source_atlas());
+        assert!(legacy_variant_off_mode.uses_variant_atlas());
+        assert_eq!(
+            EffectiveRendererMode::from_env_value(None, Some("off")).name(),
+            "assets-variant-gpu",
+            "legacy variant-atlas opt-out must not downgrade the default renderer"
+        );
+        assert_eq!(
+            renderer_env_or_default_static(None, Some("off")),
+            "assets-variant-gpu",
+            "static env resolver must keep the default on the RGBA variant path"
+        );
     }
 
     #[test]
