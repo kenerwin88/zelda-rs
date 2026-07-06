@@ -4,6 +4,7 @@ use crate::modern_frame::{
     ModernFrame, ModernIndexSpriteInstance, ModernIndexTileInstance, ModernTileInstance,
 };
 use crate::modern_index_atlas::{index_cell_for_tilemap_entry, ModernIndexAtlas, ModernIndexTile};
+use crate::modern_source_atlas::source_cell_by_indices;
 use crate::modern_sprite_atlas::{sprite_index_cell, ModernSpriteIndexAtlas};
 
 // Per SNES PPU OBSEL: maps obj_size (3-bit index) to [small_px, large_px].
@@ -1314,50 +1315,85 @@ pub fn extract_modern_frame_from_sources<S: SourceTableView + ?Sized>(
                                 let pal = ((entry_word >> 10) & 7) as u8;
                                 let chr_base = frame.bg[layer_index].tile_adr as usize;
                                 let pattern_key = entry_word & 0xC3FF;
-                                let id = *cell_ids
-                                    .entry((0x9000_0000 | u32::from(pattern_key), false, false))
-                                    .or_insert_with(|| {
-                                        let indices = decode_snes_4bpp_tile_indices(
-                                            frame.vram,
-                                            chr_base,
-                                            pattern_key,
-                                        );
-                                        let id = cells.len() as u32;
-                                        cells.push(ModernIndexTile {
-                                            id,
-                                            indices,
-                                            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
-                                            hflip: false,
-                                            vflip: false,
+                                let indices = decode_snes_4bpp_tile_indices(
+                                    frame.vram,
+                                    chr_base,
+                                    pattern_key,
+                                );
+                                if let Some((source_key, src)) =
+                                    source_cell_by_indices(atlas, &indices)
+                                {
+                                    let id = *cell_ids
+                                        .entry((src.id, hflip, vflip))
+                                        .or_insert_with(|| {
+                                            let indices =
+                                                flip_index_pattern(&src.indices, hflip, vflip);
+                                            let id = cells.len() as u32;
+                                            cells.push(ModernIndexTile {
+                                                id,
+                                                indices,
+                                                source_key,
+                                                hflip,
+                                                vflip,
+                                            });
+                                            id
                                         });
-                                        id
-                                    });
-                                (id, pal, crate::modern_hd_overrides::NO_SOURCE_KEY)
+                                    (id, pal, source_key)
+                                } else {
+                                    let id = *cell_ids
+                                        .entry((0x9000_0000 | u32::from(pattern_key), false, false))
+                                        .or_insert_with(|| {
+                                            let id = cells.len() as u32;
+                                            cells.push(ModernIndexTile {
+                                                id,
+                                                indices,
+                                                source_key:
+                                                    crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                                hflip: false,
+                                                vflip: false,
+                                            });
+                                            id
+                                        });
+                                    (id, pal, crate::modern_hd_overrides::NO_SOURCE_KEY)
+                                }
                             }
                         }
                     } else {
                         let pal = ((entry_word >> 10) & 7) as u8;
                         let chr_base = frame.bg[layer_index].tile_adr as usize;
                         let pattern_key = entry_word & 0xC3FF;
-                        let id = *cell_ids
-                            .entry((0x8000_0000 | u32::from(pattern_key), false, false))
-                            .or_insert_with(|| {
-                                let indices = decode_snes_4bpp_tile_indices(
-                                    frame.vram,
-                                    chr_base,
-                                    pattern_key,
-                                );
+                        let indices =
+                            decode_snes_4bpp_tile_indices(frame.vram, chr_base, pattern_key);
+                        if let Some((source_key, src)) = source_cell_by_indices(atlas, &indices) {
+                            let id = *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
+                                let indices = flip_index_pattern(&src.indices, hflip, vflip);
                                 let id = cells.len() as u32;
                                 cells.push(ModernIndexTile {
                                     id,
                                     indices,
-                                    source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
-                                    hflip: false,
-                                    vflip: false,
+                                    source_key,
+                                    hflip,
+                                    vflip,
                                 });
                                 id
                             });
-                        (id, pal, crate::modern_hd_overrides::NO_SOURCE_KEY)
+                            (id, pal, source_key)
+                        } else {
+                            let id = *cell_ids
+                                .entry((0x8000_0000 | u32::from(pattern_key), false, false))
+                                .or_insert_with(|| {
+                                    let id = cells.len() as u32;
+                                    cells.push(ModernIndexTile {
+                                        id,
+                                        indices,
+                                        source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                        hflip: false,
+                                        vflip: false,
+                                    });
+                                    id
+                                });
+                            (id, pal, crate::modern_hd_overrides::NO_SOURCE_KEY)
+                        }
                     }
                 };
 
@@ -1864,7 +1900,7 @@ mod tests {
         assert_eq!(
             fallback_cells.len(),
             1,
-            "missing content hash falls back live"
+            "missing source identity is still represented for unsupported reporting"
         );
         assert_eq!(
             fallback_cells[0].source_key,
@@ -1872,6 +1908,28 @@ mod tests {
         );
         assert_eq!(fallback_cells[0].indices[7], 1);
         assert_eq!(modern_fallback.bg_layers[0].index_tiles[0].source_key, 0);
+
+        let exact_pattern_cell = ModernIndexTile {
+            id: 2,
+            indices: live_indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        };
+        let exact_pattern_atlas =
+            ModernSourceAtlas::from_keyed_cells_for_test(vec![exact_pattern_cell], &[(1, 7, 8, 0)]);
+        let (modern_pattern, pattern_cells) =
+            extract_modern_frame_from_sources(&frame, &table, &exact_pattern_atlas);
+        assert_eq!(pattern_cells.len(), 1, "exact PNG source pattern emitted");
+        assert_eq!(
+            pattern_cells[0].source_key,
+            crate::modern_source_atlas::modern_source_key(1, 7, 8),
+            "exact PNG pattern match resolves to the asset identity"
+        );
+        assert_eq!(
+            modern_pattern.bg_layers[0].index_tiles[0].source_key,
+            crate::modern_source_atlas::modern_source_key(1, 7, 8)
+        );
     }
 
     #[test]

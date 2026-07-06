@@ -49,6 +49,8 @@ pub fn modern_source_key(kind: u8, pack: u16, tile_off: u16) -> u64 {
 pub struct ModernSourceAtlas {
     pub cells: Vec<ModernIndexTile>,
     key_to_cell: HashMap<u64, usize>,
+    cell_source_keys: Vec<u64>,
+    pattern_to_cell: HashMap<[u8; 64], usize>,
 }
 
 /// Resolve the cell for a logical CHR source `{kind, pack, tile_off}`.
@@ -61,6 +63,19 @@ pub fn source_cell<'a>(
 ) -> Option<&'a ModernIndexTile> {
     let key = modern_source_key(kind, pack, tile_off);
     atlas.key_to_cell.get(&key).map(|&idx| &atlas.cells[idx])
+}
+
+/// Resolve an atlas cell by exact palette-index pixels when the logical source
+/// key is absent or stale. The returned key is the committed PNG/source identity
+/// for the matched cell; the caller should use it for downstream variant lookup
+/// instead of keeping the draw unkeyed.
+pub fn source_cell_by_indices<'a>(
+    atlas: &'a ModernSourceAtlas,
+    indices: &[u8; 64],
+) -> Option<(u64, &'a ModernIndexTile)> {
+    let &idx = atlas.pattern_to_cell.get(indices)?;
+    let key = *atlas.cell_source_keys.get(idx)?;
+    (key != crate::modern_hd_overrides::NO_SOURCE_KEY).then_some((key, &atlas.cells[idx]))
 }
 
 /// Load the assets-by-source atlas from the committed assets under
@@ -135,6 +150,8 @@ pub fn load_modern_source_atlas(repo_root: &Path) -> Result<ModernSourceAtlas, S
 
     let mut cells = Vec::with_capacity(manifest.cells.len());
     let mut key_to_cell: HashMap<u64, usize> = HashMap::new();
+    let mut cell_source_keys = Vec::with_capacity(manifest.cells.len());
+    let mut pattern_to_cell: HashMap<[u8; 64], usize> = HashMap::new();
 
     for cell_json in &manifest.cells {
         let id = cell_json.id as usize;
@@ -155,21 +172,28 @@ pub fn load_modern_source_atlas(repo_root: &Path) -> Result<ModernSourceAtlas, S
             let row_start = (cy + py) * width + cx;
             indices[py * 8..py * 8 + 8].copy_from_slice(&data[row_start..row_start + 8]);
         }
+        let key = modern_source_key(cell_json.kind, cell_json.pack, cell_json.tile_off);
         let cell_index = cells.len();
         cells.push(ModernIndexTile {
             id: cell_json.id,
             indices,
-            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            source_key: key,
             hflip: false,
             vflip: false,
         });
+        pattern_to_cell.entry(indices).or_insert(cell_index);
+        cell_source_keys.push(key);
         // Rebuild the key from {kind, pack, tile_off} so the loader is robust even
         // if the JSON `key` field were ever stale; this matches the dump.
-        let key = modern_source_key(cell_json.kind, cell_json.pack, cell_json.tile_off);
         key_to_cell.insert(key, cell_index);
     }
 
-    Ok(ModernSourceAtlas { cells, key_to_cell })
+    Ok(ModernSourceAtlas {
+        cells,
+        key_to_cell,
+        cell_source_keys,
+        pattern_to_cell,
+    })
 }
 
 // ── JSON manifest types ───────────────────────────────────────────────────────
@@ -199,10 +223,26 @@ impl ModernSourceAtlas {
         keys: &[(u8, u16, u16, usize)],
     ) -> Self {
         let mut key_to_cell: HashMap<u64, usize> = HashMap::new();
+        let mut cell_source_keys = vec![crate::modern_hd_overrides::NO_SOURCE_KEY; cells.len()];
         for &(kind, pack, tile_off, cell_idx) in keys {
-            key_to_cell.insert(modern_source_key(kind, pack, tile_off), cell_idx);
+            let key = modern_source_key(kind, pack, tile_off);
+            key_to_cell.insert(key, cell_idx);
+            if let Some(cell_key) = cell_source_keys.get_mut(cell_idx) {
+                if *cell_key == crate::modern_hd_overrides::NO_SOURCE_KEY {
+                    *cell_key = key;
+                }
+            }
         }
-        Self { cells, key_to_cell }
+        let mut pattern_to_cell = HashMap::new();
+        for (cell_idx, cell) in cells.iter().enumerate() {
+            pattern_to_cell.entry(cell.indices).or_insert(cell_idx);
+        }
+        Self {
+            cells,
+            key_to_cell,
+            cell_source_keys,
+            pattern_to_cell,
+        }
     }
 }
 
@@ -282,8 +322,13 @@ mod tests {
         let got = source_cell(&atlas, 1, 30, 44).expect("known source resolves");
         assert_eq!(got.id, 7);
         assert_eq!(got.indices[0], 9);
+        let (pattern_key, pattern_cell) =
+            source_cell_by_indices(&atlas, &[9u8; 64]).expect("known pattern resolves");
+        assert_eq!(pattern_key, modern_source_key(1, 30, 44));
+        assert_eq!(pattern_cell.id, 7);
         // Unknown source → None.
         assert!(source_cell(&atlas, 2, 99, 99).is_none());
+        assert!(source_cell_by_indices(&atlas, &[8u8; 64]).is_none());
         // kind=0 (none) is never recorded → None.
         assert!(source_cell(&atlas, 0, 0, 0).is_none());
     }
