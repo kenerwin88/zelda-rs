@@ -368,8 +368,14 @@ FORBIDDEN_MAIN_FRAME_DUMP_COMMAND_OWNERSHIP = (
     "fn run_dump_replay_checkpoint_ppu",
 )
 
+GPU_ASSET_FRAME_DUMP_FUNCTIONS = {
+    "run_dump_frame",
+    "run_dump_overworld_screen",
+}
+
 FORBIDDEN_FRAME_DUMP_CLASSIC_DEFAULT_CALLS = (
     "run_diagnostic_play_frame_bgra(",
+    "render_diagnostic_overworld_screen_bgra(",
     "write_argb_frame_png(",
 )
 
@@ -1147,7 +1153,7 @@ def check_frame_dump_commands_text(source: str) -> list[str]:
         if stripped.startswith("//") or stripped.startswith("///"):
             continue
         fn = enclosing_function(lines, index)
-        if fn != "run_dump_frame":
+        if fn not in GPU_ASSET_FRAME_DUMP_FUNCTIONS:
             continue
         for forbidden in FORBIDDEN_FRAME_DUMP_CLASSIC_DEFAULT_CALLS:
             if forbidden in line:

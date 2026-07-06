@@ -7,9 +7,7 @@ use snes::ppu::PpuRenderFlags;
 use crate::gpu_capture::render_live_game_gpu_frame_rgba;
 use crate::image_output::{write_argb_frame_png, write_rgba_frame_png};
 use crate::input_script::InputScript;
-use crate::render_diagnostics::{
-    render_diagnostic_overworld_screen_bgra, run_diagnostic_play_frame_bgra,
-};
+use crate::render_diagnostics::run_diagnostic_play_frame_bgra;
 use crate::{
     apply_sram_to_game_or_exit, load_play_or_checkpoint, load_replay_save_checkpoint,
     load_translated_replay_state, parse_u16_auto, read_file_or_exit, read_le_u16,
@@ -153,9 +151,14 @@ pub(crate) fn run_dump_overworld_screen(args: &[String]) {
     let loaded = game.parity_probe_overworld_screen(screen);
     let width = 256u32;
     let height = 224u32;
-    let mut frame = vec![0u8; width as usize * height as usize * 4];
-    render_diagnostic_overworld_screen_bgra(&mut game, &mut frame);
-    if let Err(e) = write_argb_frame_png(&out_path, &frame, width, height) {
+    let rgba = match render_live_game_gpu_frame_rgba(&mut game, width, height) {
+        Ok(rgba) => rgba,
+        Err(e) => {
+            eprintln!("failed to render overworld screen via modern asset GPU path: {e}");
+            process::exit(1);
+        }
+    };
+    if let Err(e) = write_rgba_frame_png(&out_path, &rgba, width, height) {
         eprintln!("failed to write {}: {e}", out_path.display());
         process::exit(1);
     }
