@@ -186,6 +186,18 @@ impl ModernVariantAtlas {
         })
     }
 
+    pub fn has_mode7_source_art(&self) -> bool {
+        self.entries.iter().any(|entry| {
+            entry.key.source_kind == "mode7"
+                && entry.key.asset == "kOverworldMapGfx"
+                && entry.key.pack == 0
+                && entry.key.bpp == 8
+                && entry.dynamic_policy == "stable"
+                && entry.runtime_material.as_deref() == Some("palette_lut")
+                && entry.runtime_colors_per_row == Some(128)
+        })
+    }
+
     pub fn effect_for_entry(&self, entry: &VariantAtlasEntry) -> Option<&TileEffect> {
         self.effect_for_entry_and_key(entry, &entry.key)
     }
@@ -1131,8 +1143,44 @@ mod tests {
         assert_eq!(entry.runtime_material.as_deref(), Some("palette_lut"));
         assert_eq!(entry.runtime_colors_per_row, Some(128));
         assert_eq!(entry.dynamic_policy, "stable");
+        assert!(atlas.has_mode7_source_art());
 
         std::fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn mode7_source_art_requires_palette_lut_metadata() {
+        let mut atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: solid_rgba(8, 8, [1, 2, 3, 255]),
+            entries: vec![VariantAtlasEntry {
+                id: "mode7:kOverworldMapGfx:pack0:tile1:8bpp".to_string(),
+                key: VariantAtlasKey {
+                    source_kind: "mode7".to_string(),
+                    asset: "kOverworldMapGfx".to_string(),
+                    pack: 0,
+                    tile: 1,
+                    bpp: 8,
+                    palette: String::new(),
+                    palette_row: 0,
+                },
+                rect: [0, 0, 8, 8],
+                sha1: "abc".to_string(),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                runtime_material: None,
+                runtime_colors_per_row: Some(128),
+                source_hflip: false,
+                source_vflip: false,
+            }],
+            effects: Vec::new(),
+        };
+
+        assert!(!atlas.has_mode7_source_art());
+
+        atlas.entries[0].runtime_material = Some("palette_lut".to_string());
+        assert!(atlas.has_mode7_source_art());
     }
 
     #[test]

@@ -2160,6 +2160,12 @@ impl ModernAssetFrameResources {
         self.mode7_source_chars.as_deref()
     }
 
+    fn has_mode7_source_art(&self) -> bool {
+        self.variant_atlas
+            .as_ref()
+            .is_some_and(modern_variant_atlas::ModernVariantAtlas::has_mode7_source_art)
+    }
+
     fn gpu_asset_mode(&self) -> bool {
         self.gpu_asset_mode
     }
@@ -2490,13 +2496,20 @@ fn modern_asset_frame_present_route(
     has_source_atlas: bool,
     has_variant_atlas: bool,
     has_mode7_source_chars: bool,
+    has_mode7_source_art: bool,
     gpu_asset_mode: bool,
     variant_gpu_mode: bool,
 ) -> ModernAssetFramePresentRoute {
     if frame_mode == 7 {
-        return if gpu_asset_mode && has_mode7_source_chars {
+        return if variant_gpu_mode {
+            if gpu_asset_mode && has_mode7_source_chars && has_mode7_source_art {
+                ModernAssetFramePresentRoute::Mode7SourceGpu
+            } else {
+                ModernAssetFramePresentRoute::Unhandled
+            }
+        } else if gpu_asset_mode && has_mode7_source_chars {
             ModernAssetFramePresentRoute::Mode7SourceGpu
-        } else if gpu_asset_mode && !variant_gpu_mode {
+        } else if gpu_asset_mode {
             ModernAssetFramePresentRoute::Mode7Gpu
         } else {
             ModernAssetFramePresentRoute::Unhandled
@@ -2968,6 +2981,7 @@ impl FrameRenderer {
             resources.source_atlas().is_some(),
             resources.variant_atlas().is_some(),
             mode7_source_chars.is_some(),
+            resources.has_mode7_source_art(),
             resources.gpu_asset_mode(),
             resources.variant_gpu_mode(),
         ) {
@@ -4119,23 +4133,27 @@ mod tests {
     #[test]
     fn modern_asset_frame_route_keeps_default_paths_on_gpu() {
         assert_eq!(
-            modern_asset_frame_present_route(7, true, true, true, true, true, true),
+            modern_asset_frame_present_route(7, true, true, true, true, true, true, true),
             ModernAssetFramePresentRoute::Mode7SourceGpu
         );
         assert_eq!(
-            modern_asset_frame_present_route(7, true, true, true, false, true, true),
+            modern_asset_frame_present_route(7, true, true, true, true, false, true, true),
             ModernAssetFramePresentRoute::Unhandled
         );
         assert_eq!(
-            modern_asset_frame_present_route(1, true, true, true, false, true, true),
+            modern_asset_frame_present_route(7, true, true, true, false, true, true, true),
+            ModernAssetFramePresentRoute::Unhandled
+        );
+        assert_eq!(
+            modern_asset_frame_present_route(1, true, true, true, false, false, true, true),
             ModernAssetFramePresentRoute::SourceVariantGpu
         );
         assert_eq!(
-            modern_asset_frame_present_route(1, true, true, false, false, true, true),
+            modern_asset_frame_present_route(1, true, true, false, false, false, true, true),
             ModernAssetFramePresentRoute::Unhandled
         );
         assert_eq!(
-            modern_asset_frame_present_route(1, false, false, false, false, true, true),
+            modern_asset_frame_present_route(1, false, false, false, false, false, true, true),
             ModernAssetFramePresentRoute::Unhandled
         );
     }
@@ -4143,15 +4161,19 @@ mod tests {
     #[test]
     fn modern_asset_frame_route_preserves_explicit_indexed_gpu_fallbacks() {
         assert_eq!(
-            modern_asset_frame_present_route(7, true, true, false, false, true, false),
+            modern_asset_frame_present_route(7, true, true, false, false, false, true, false),
             ModernAssetFramePresentRoute::Mode7Gpu
         );
         assert_eq!(
-            modern_asset_frame_present_route(1, true, true, false, false, true, false),
+            modern_asset_frame_present_route(7, true, true, false, true, false, true, false),
+            ModernAssetFramePresentRoute::Mode7SourceGpu
+        );
+        assert_eq!(
+            modern_asset_frame_present_route(1, true, true, false, false, false, true, false),
             ModernAssetFramePresentRoute::SourceGpu
         );
         assert_eq!(
-            modern_asset_frame_present_route(1, false, false, false, false, true, false),
+            modern_asset_frame_present_route(1, false, false, false, false, false, true, false),
             ModernAssetFramePresentRoute::VramGpu
         );
     }
@@ -4159,15 +4181,19 @@ mod tests {
     #[test]
     fn modern_asset_frame_route_preserves_explicit_non_gpu_fallbacks() {
         assert_eq!(
-            modern_asset_frame_present_route(1, true, true, false, false, false, false),
+            modern_asset_frame_present_route(1, true, true, false, false, false, false, false),
             ModernAssetFramePresentRoute::SourceSoftware
         );
         assert_eq!(
-            modern_asset_frame_present_route(7, true, true, false, true, false, false),
+            modern_asset_frame_present_route(7, true, true, false, true, false, false, false),
             ModernAssetFramePresentRoute::Unhandled
         );
         assert_eq!(
-            modern_asset_frame_present_route(1, false, false, false, false, false, false),
+            modern_asset_frame_present_route(7, true, true, true, true, true, false, true),
+            ModernAssetFramePresentRoute::Unhandled
+        );
+        assert_eq!(
+            modern_asset_frame_present_route(1, false, false, false, false, false, false, false),
             ModernAssetFramePresentRoute::Unhandled
         );
     }
