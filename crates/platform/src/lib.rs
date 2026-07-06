@@ -247,8 +247,8 @@ impl NativeFrontend {
     }
 
     /// Present one live modern-asset frame through the renderer-owned route
-    /// selector. Returns `Unhandled` when the caller should fall back to the
-    /// classic/modern PPU presentation path.
+    /// selector. `Unhandled` and `Unsupported` are policy results for the caller
+    /// to report; this path does not fall back to CPU/classic presentation.
     pub fn present_modern_asset_frame<S: renderer::modern_extract::SourceTableView + ?Sized>(
         &mut self,
         frame: &GpuFrame<'_>,

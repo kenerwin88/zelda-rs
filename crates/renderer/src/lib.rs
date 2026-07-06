@@ -3896,6 +3896,19 @@ mod tests {
     }
 
     #[test]
+    fn unsupported_asset_present_result_is_not_presented() {
+        let result = ModernAssetFramePresentResult::Unsupported {
+            via: "variant-gpu",
+            variant_stats: Some(modern_software::VariantAtlasRenderStats {
+                live_index_draws: 1,
+                ..Default::default()
+            }),
+        };
+
+        assert!(!result.is_presented());
+    }
+
+    #[test]
     fn variant_gpu_mode7_chars_come_from_canonical_atlas() {
         let atlas_chars = vec![7u8; 0x4000];
         let resources = ModernAssetFrameResources {
