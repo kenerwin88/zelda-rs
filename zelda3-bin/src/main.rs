@@ -1187,8 +1187,9 @@ fn run_replay_save(args: &[String]) {
     } else {
         None
     };
-    let mut render_hash_frame = if render_hash_log != 0
-        || gpu_render_compare.enabled()
+    let render_hash_cpu_debug = std::env::var_os("ZELDA3_RENDER_HASH_CPU_DEBUG").is_some();
+    let mut render_hash_frame = if gpu_render_compare.enabled()
+        || render_hash_cpu_debug
         || render_hash_dump_frame.is_some()
         || fingerprint_log.is_some()
     {
@@ -1329,7 +1330,7 @@ fn run_replay_save(args: &[String]) {
             // via HDMA (e.g. dungeon floor palettes). State is restored after the call
             // so zelda_draw_ppu_frame renders from the correct baseline.
             let render_hash_capture = gpu_readback.capture_replay_render_hash_frame(&mut game);
-            if std::env::var_os("ZELDA3_RENDER_HASH_CPU_DEBUG").is_none() {
+            if !render_hash_cpu_debug {
                 let gpu_rgba = render_hash_capture.render_gpu_rgba(&mut gpu_readback);
                 if should_dump_render_hash {
                     if let Some((_, dump_path)) = render_hash_dump_frame.as_ref() {

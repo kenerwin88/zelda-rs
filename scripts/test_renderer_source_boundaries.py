@@ -968,7 +968,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         source = """
             fn run_replay_save() {
                 if should_log_render_hash {
-                    if std::env::var_os("ZELDA3_RENDER_HASH_CPU_DEBUG").is_none() {
+                    if !render_hash_cpu_debug {
                         let gpu_rgba = render_hash_capture.render_gpu_rgba(&mut gpu_readback);
                         println!("{}", gpu_rgba.render_hash_log_line(frames));
                     } else {
@@ -981,6 +981,34 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         errors = module.check_main_text(textwrap.dedent(source))
 
         self.assertEqual(errors, [])
+
+    def test_rejects_replay_save_render_hash_log_cpu_frame_allocation(self):
+        module = load_module()
+        source = """
+            fn run_replay_save() {
+                let mut render_hash_frame = if render_hash_log != 0
+                    || gpu_render_compare.enabled()
+                    || fingerprint_log.is_some()
+                {
+                    Some(vec![0u8; 256 * 224 * 4])
+                } else {
+                    None
+                };
+                if !render_hash_cpu_debug {
+                    let gpu_rgba = render_hash_capture.render_gpu_rgba(&mut gpu_readback);
+                    println!("{}", gpu_rgba.render_hash_log_line(frames));
+                }
+            }
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertTrue(
+            any(
+                "render_hash_log must not allocate the CPU render frame" in error
+                for error in errors
+            )
+        )
 
     def test_rejects_replay_crash_classic_frame_replay(self):
         module = load_module()

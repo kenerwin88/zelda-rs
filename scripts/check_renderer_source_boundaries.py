@@ -1275,14 +1275,20 @@ def check_main_text(source: str) -> list[str]:
                     f"in {fn}: {line.strip()}"
                 )
     replay_save = function_source(source, "run_replay_save")
-    if "should_log_render_hash" in replay_save:
+    if "should_log_render_hash" in replay_save or "render_hash_log" in replay_save:
         gpu_default = 'println!("{}", gpu_rgba.render_hash_log_line(frames));'
-        cpu_debug_gate = 'ZELDA3_RENDER_HASH_CPU_DEBUG").is_none()'
+        cpu_debug_gate = "if !render_hash_cpu_debug"
         cpu_render = "render_replay_hash_cpu_frame_rgba("
+        cpu_buffer_for_log = "let mut render_hash_frame = if render_hash_log != 0"
         if gpu_default not in replay_save:
             errors.append(
                 "replay-save render-hash log escaped PNG-backed GPU path at "
                 "zelda3-bin/src/main.rs:run_replay_save: missing GPU RGBA render_hash_log_line default"
+            )
+        if cpu_buffer_for_log in replay_save:
+            errors.append(
+                "replay-save render-hash log escaped PNG-backed GPU path at "
+                "zelda3-bin/src/main.rs:run_replay_save: render_hash_log must not allocate the CPU render frame"
             )
         if cpu_render in replay_save:
             gate_index = replay_save.find(cpu_debug_gate)
