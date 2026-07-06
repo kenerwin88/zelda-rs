@@ -9,7 +9,7 @@ use crate::input_script::InputScript;
 use crate::{load_play_or_checkpoint, load_play_state, load_translated_replay_state};
 use renderer::modern_extract::{decode_snes_2bpp_tile_indices, decode_snes_4bpp_tile_indices};
 use renderer::modern_source_atlas::modern_source_key;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use zelda3::{
     chr_content_hash32, ZeldaState, CHR_KIND_BG, CHR_KIND_BG3, CHR_KIND_BG_STREAM, CHR_KIND_LINK,
     CHR_KIND_LINK_CONTENT, CHR_KIND_NONE, CHR_KIND_SPRITE,
@@ -34,6 +34,16 @@ struct ScriptedDumpCheckpoint {
     input_script: String,
 }
 
+#[derive(Debug)]
+struct DumpAssetsBySourceOptions {
+    max_frames: u32,
+    merge_existing: bool,
+    write_palette_usage: bool,
+    only_window: Option<String>,
+    skip_startup: bool,
+    skip_replay: bool,
+}
+
 #[derive(Debug, Serialize)]
 struct AssetsBySourceManifest {
     format: &'static str,
@@ -48,6 +58,17 @@ struct AssetsBySourceCell {
     kind: u8,
     pack: u16,
     tile_off: u16,
+}
+
+#[derive(Debug, Deserialize)]
+struct ExistingAssetsBySourceManifest {
+    cells: Vec<ExistingAssetsBySourceCell>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ExistingAssetsBySourceCell {
+    id: u32,
+    key: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -126,6 +147,131 @@ fn content_hash_source_key_for_kind(vram: &[u16], slot: usize, kind: u8) -> Opti
         (h >> 16) as u16,
         (h & 0xffff) as u16,
     ))
+}
+
+fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOptions {
+    let mut max_frames = 60_000;
+    let mut max_frames_set = false;
+    let mut merge_existing = false;
+    let mut write_palette_usage = false;
+    let mut only_window = None;
+    let mut skip_startup = false;
+    let mut skip_replay = false;
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--merge-existing" => {
+                merge_existing = true;
+                i += 1;
+            }
+            "--write-palette-usage" => {
+                write_palette_usage = true;
+                i += 1;
+            }
+            "--only-window" => {
+                let Some(name) = args.get(i + 1) else {
+                    eprintln!("--only-window requires an oracle window name");
+                    process::exit(2);
+                };
+                only_window = Some(name.clone());
+                i += 2;
+            }
+            "--skip-startup" => {
+                skip_startup = true;
+                i += 1;
+            }
+            "--skip-replay" => {
+                skip_replay = true;
+                i += 1;
+            }
+            value if !value.starts_with("--") && !max_frames_set => {
+                max_frames = value.parse::<u32>().unwrap_or_else(|_| {
+                    eprintln!("invalid frame count: {value}");
+                    process::exit(2);
+                });
+                max_frames_set = true;
+                i += 1;
+            }
+            other => {
+                eprintln!(
+                    "usage: zelda3 --dump-assets-by-source [frames] [--merge-existing] [--write-palette-usage] [--only-window <name>] [--skip-startup] [--skip-replay]"
+                );
+                eprintln!("unknown --dump-assets-by-source argument: {other}");
+                process::exit(2);
+            }
+        }
+    }
+    DumpAssetsBySourceOptions {
+        max_frames,
+        merge_existing,
+        write_palette_usage,
+        only_window,
+        skip_startup,
+        skip_replay,
+    }
+}
+
+fn load_existing_assets_by_source(
+    json_path: &Path,
+    png_path: &Path,
+) -> Result<Vec<(u64, [u8; 64])>, String> {
+    let manifest_bytes = fs::read(json_path)
+        .map_err(|e| format!("failed to read existing {}: {e}", json_path.display()))?;
+    let manifest: ExistingAssetsBySourceManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| format!("failed to parse existing {}: {e}", json_path.display()))?;
+
+    let file = fs::File::open(png_path)
+        .map_err(|e| format!("failed to open existing {}: {e}", png_path.display()))?;
+    let decoder = png::Decoder::new(std::io::BufReader::new(file));
+    let mut reader = decoder
+        .read_info()
+        .map_err(|e| format!("failed to read PNG header {}: {e}", png_path.display()))?;
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let info = reader
+        .next_frame(&mut buf)
+        .map_err(|e| format!("failed to decode {}: {e}", png_path.display()))?;
+    if info.bit_depth != png::BitDepth::Eight || info.color_type != png::ColorType::Indexed {
+        return Err(format!(
+            "{}: expected 8-bit indexed PNG, got {:?}/{:?}",
+            png_path.display(),
+            info.color_type,
+            info.bit_depth
+        ));
+    }
+    let width = info.width as usize;
+    let height = info.height as usize;
+    if width % 8 != 0 || height % 8 != 0 {
+        return Err(format!(
+            "{}: PNG size {}x{} is not aligned to 8x8 cells",
+            png_path.display(),
+            info.width,
+            info.height
+        ));
+    }
+    let cols = width / 8;
+    let data = &buf[..info.buffer_size()];
+    let mut cells = Vec::with_capacity(manifest.cells.len());
+    for cell in manifest.cells {
+        let id = cell.id as usize;
+        let cx = (id % cols) * 8;
+        let cy = (id / cols) * 8;
+        if cy + 8 > height || cx + 8 > width {
+            return Err(format!(
+                "{}: manifest cell {} is outside PNG grid {}x{}",
+                json_path.display(),
+                id,
+                info.width,
+                info.height
+            ));
+        }
+        let mut pattern = [0u8; 64];
+        for row in 0..8usize {
+            let src = (cy + row) * width + cx;
+            pattern[row * 8..row * 8 + 8].copy_from_slice(&data[src..src + 8]);
+        }
+        cells.push((cell.key, pattern));
+    }
+    Ok(cells)
 }
 
 fn index_pattern_hash32(indices: &[u8; 64]) -> u32 {
@@ -294,6 +440,7 @@ fn scripted_dump_routes(repo_root: &Path, frame_cap: u32) -> Vec<ScriptedDumpRou
 ///
 /// Emits `developer_tilesets/assets_by_source.{bin,json}`.
 pub(crate) fn run_dump_assets_by_source(args: &[String]) {
+    let options = parse_dump_assets_by_source_options(args);
     let rekey_content_hash = |vram: &[u16], slot: usize, src: zelda3::LogicalChrSrc| -> u64 {
         if src.kind == CHR_KIND_BG_STREAM {
             if let Some(key) = content_hash_source_key(vram, slot) {
@@ -333,15 +480,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
         "/../saves/zelda3-combined-route.sav"
     );
 
-    let max_frames = args
-        .first()
-        .map(|s| {
-            s.parse::<u32>().unwrap_or_else(|_| {
-                eprintln!("invalid frame count: {s}");
-                process::exit(2);
-            })
-        })
-        .unwrap_or(60_000);
+    let max_frames = options.max_frames;
     let startup_frames = std::env::var("ZELDA3_DUMP_STARTUP_FRAMES")
         .ok()
         .map(|s| {
@@ -364,20 +503,48 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
     let mut cell_by_key: HashMap<u64, usize> = HashMap::new();
     let mut cells: Vec<[u8; 64]> = Vec::new();
     let mut collisions: usize = 0;
+    let mut collision_patterns: std::collections::HashSet<(u64, u32)> =
+        std::collections::HashSet::new();
     let mut palette_usage_counts: HashMap<PaletteUsageKey, u32> = HashMap::new();
     let mut ambiguous_keys: std::collections::HashSet<u64> = std::collections::HashSet::new();
+
+    if options.merge_existing {
+        match load_existing_assets_by_source(Path::new(OUT_JSON), Path::new(OUT_PNG)) {
+            Ok(existing_cells) => {
+                for (key, pattern) in existing_cells {
+                    if cell_by_key.contains_key(&key) {
+                        continue;
+                    }
+                    let id = cells.len();
+                    cell_by_key.insert(key, id);
+                    cells.push(pattern);
+                }
+                eprintln!(
+                    "[dump] seeded existing assets-by-source cells={}",
+                    cells.len()
+                );
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                process::exit(1);
+            }
+        }
+    }
 
     let mut record_keyed =
         |key: u64, pattern: [u8; 64], dbg_slot: usize| match cell_by_key.get(&key) {
             Some(&id) => {
                 if cells[id] != pattern {
-                    collisions += 1;
-                    ambiguous_keys.insert(key);
-                    if collisions <= 10 {
-                        eprintln!(
-                            "[warn] key 0x{key:016x} decoded to a different pattern at \
-                             slot {dbg_slot:#x}; keeping first"
-                        );
+                    let pattern_hash = index_pattern_hash32(&pattern);
+                    if collision_patterns.insert((key, pattern_hash)) {
+                        collisions += 1;
+                        ambiguous_keys.insert(key);
+                        if collisions <= 10 {
+                            eprintln!(
+                                "[warn] key 0x{key:016x} decoded to a different pattern at \
+                                 slot {dbg_slot:#x}; keeping first"
+                            );
+                        }
                     }
                 }
             }
@@ -574,21 +741,30 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
 
     let walk = panic::catch_unwind(AssertUnwindSafe(|| {
         let repo_root = Path::new(REPO_ROOT);
-        let scripted_routes = scripted_dump_routes(repo_root, max_frames);
+        let mut scripted_routes = scripted_dump_routes(repo_root, max_frames);
+        if let Some(only_window) = options.only_window.as_deref() {
+            scripted_routes.retain(|route| route.name == only_window);
+            if scripted_routes.is_empty() {
+                eprintln!("--only-window did not match a passing oracle window: {only_window}");
+                process::exit(2);
+            }
+        }
         let mut startup_game = load_play_state(rom);
         let mut startup_walked = 0u32;
-        while startup_walked < startup_frames {
-            let step = panic::catch_unwind(AssertUnwindSafe(|| {
-                startup_game.zelda_run_frame(0);
-            }));
-            if step.is_err() {
-                eprintln!(
-                    "[warn] startup frame {startup_walked} panicked; stopping startup walk early"
-                );
-                break;
+        if !options.skip_startup {
+            while startup_walked < startup_frames {
+                let step = panic::catch_unwind(AssertUnwindSafe(|| {
+                    startup_game.zelda_run_frame(0);
+                }));
+                if step.is_err() {
+                    eprintln!(
+                        "[warn] startup frame {startup_walked} panicked; stopping startup walk early"
+                    );
+                    break;
+                }
+                startup_walked = startup_walked.wrapping_add(1);
+                collect_used_slots(&startup_game, startup_walked);
             }
-            startup_walked = startup_walked.wrapping_add(1);
-            collect_used_slots(&startup_game, startup_walked);
         }
 
         let mut scripted_walked = 0u32;
@@ -627,26 +803,29 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                 }
                 frames = frames.wrapping_add(1);
                 scripted_walked = scripted_walked.wrapping_add(1);
-                collect_used_slots(&game, frames);
+                collect_used_slots(&game, absolute_frame.wrapping_add(1));
             }
         }
 
-        let mut game = load_translated_replay_state(rom);
-        if let Err(e) = game.replay_save_file(Path::new(replay)) {
-            eprintln!("failed to load replay save {replay}: {e}");
-            process::exit(1);
-        }
-        let mut frames = game.state_recorder.replay_frame_counter;
-        while frames < max_frames && game.state_recorder.replay_mode {
-            let step = panic::catch_unwind(AssertUnwindSafe(|| {
-                game.zelda_run_frame_with_replay_input_override(0, None);
-            }));
-            if step.is_err() {
-                eprintln!("[warn] replay frame {frames} panicked; stopping walk early");
-                break;
+        let mut frames = 0u32;
+        if !options.skip_replay {
+            let mut game = load_translated_replay_state(rom);
+            if let Err(e) = game.replay_save_file(Path::new(replay)) {
+                eprintln!("failed to load replay save {replay}: {e}");
+                process::exit(1);
             }
-            frames = frames.wrapping_add(1);
-            collect_used_slots(&game, frames);
+            frames = game.state_recorder.replay_frame_counter;
+            while frames < max_frames && game.state_recorder.replay_mode {
+                let step = panic::catch_unwind(AssertUnwindSafe(|| {
+                    game.zelda_run_frame_with_replay_input_override(0, None);
+                }));
+                if step.is_err() {
+                    eprintln!("[warn] replay frame {frames} panicked; stopping walk early");
+                    break;
+                }
+                frames = frames.wrapping_add(1);
+                collect_used_slots(&game, frames);
+            }
         }
         (
             startup_walked
@@ -761,29 +940,31 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
             eprintln!("failed to write assets manifest {OUT_JSON}: {e}");
             process::exit(1);
         }
-        let usage_manifest = PaletteUsageManifest {
-            format: "zelda3_palette_usage_v1",
-            entries: palette_usage_entries_from_counts(&palette_usage_counts),
-        };
-        let usage_json = match serde_json::to_vec_pretty(&usage_manifest) {
-            Ok(j) => j,
-            Err(e) => {
-                eprintln!("failed to serialize palette usage manifest: {e}");
+        if !options.merge_existing || options.write_palette_usage {
+            let usage_manifest = PaletteUsageManifest {
+                format: "zelda3_palette_usage_v1",
+                entries: palette_usage_entries_from_counts(&palette_usage_counts),
+            };
+            let usage_json = match serde_json::to_vec_pretty(&usage_manifest) {
+                Ok(j) => j,
+                Err(e) => {
+                    eprintln!("failed to serialize palette usage manifest: {e}");
+                    process::exit(1);
+                }
+            };
+            if let Some(parent) = Path::new(PALETTE_USAGE_OUT_JSON).parent() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    eprintln!(
+                        "failed to create palette usage dir {}: {e}",
+                        parent.display()
+                    );
+                    process::exit(1);
+                }
+            }
+            if let Err(e) = fs::write(PALETTE_USAGE_OUT_JSON, &usage_json) {
+                eprintln!("failed to write palette usage manifest {PALETTE_USAGE_OUT_JSON}: {e}");
                 process::exit(1);
             }
-        };
-        if let Some(parent) = Path::new(PALETTE_USAGE_OUT_JSON).parent() {
-            if let Err(e) = fs::create_dir_all(parent) {
-                eprintln!(
-                    "failed to create palette usage dir {}: {e}",
-                    parent.display()
-                );
-                process::exit(1);
-            }
-        }
-        if let Err(e) = fs::write(PALETTE_USAGE_OUT_JSON, &usage_json) {
-            eprintln!("failed to write palette usage manifest {PALETTE_USAGE_OUT_JSON}: {e}");
-            process::exit(1);
         }
     }
     if no_write {
