@@ -55,7 +55,7 @@ use frame_dump_commands::{
     run_dump_frame, run_dump_overworld_screen, run_dump_replay_checkpoint_ppu,
     run_scan_replay_checkpoints,
 };
-use gpu_capture::render_live_game_gpu_frame_rgba;
+use gpu_capture::{render_live_game_gpu_frame_rgba, ModernAssetGpuReadbackRenderer};
 use gpu_compare::{
     replay_cpu_bgra_hash_line, replay_optional_gpu_readback_renderer, run_play_gpu_render_compare,
 };
@@ -3860,6 +3860,30 @@ fn run_smoke_render(args: &[String]) {
     );
 }
 
+fn load_modern_asset_gpu_readback_or_exit(context: &str) -> ModernAssetGpuReadbackRenderer {
+    match ModernAssetGpuReadbackRenderer::load_from_env() {
+        Ok(renderer) => renderer,
+        Err(e) => {
+            eprintln!("failed to initialize modern asset GPU readback for {context}: {e}");
+            process::exit(1);
+        }
+    }
+}
+
+fn render_modern_asset_gpu_frame_rgba_or_exit(
+    renderer: &ModernAssetGpuReadbackRenderer,
+    game: &mut ZeldaState,
+    context: &str,
+) -> Vec<u8> {
+    match renderer.render_game_rgba(game) {
+        Ok(frame) => frame.as_slice().to_vec(),
+        Err(e) => {
+            eprintln!("failed to render {context} via modern asset GPU path: {e}");
+            process::exit(1);
+        }
+    }
+}
+
 fn run_trace_startup_audio(args: &[String]) {
     let rom_path = match args.first() {
         Some(p) => p,
@@ -4377,10 +4401,23 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
         println!("leading rust audio by {lead_rust_audio_blocks} block(s) per compared frame");
     }
     let trace_poly_sched = std::env::var_os("TRACE_POLY_SCHED").is_some();
+    let gpu_video_readback = (compare_video || trace_video_pixel.is_some())
+        .then(|| load_modern_asset_gpu_readback_or_exit("libretro oracle video comparison"));
     for frame_index in 0..frames {
         let input = input_script.input_for_frame(frame_index);
+        let compare_this_frame = frame_index >= compare_from_frame;
         let pre_game = game.clone();
         run_diagnostic_play_frame_bgra(&mut game, input, &mut rust_frame, render_flags);
+        let rust_video_frame =
+            (trace_video_pixel.is_some() || (compare_this_frame && compare_video)).then(|| {
+                render_modern_asset_gpu_frame_rgba_or_exit(
+                    gpu_video_readback
+                        .as_ref()
+                        .expect("GPU readback allocated for libretro video comparison"),
+                    &mut game,
+                    "libretro oracle video comparison",
+                )
+            });
         let ports = game.zelda_debug_apu_write_ports();
         if trace_poly_sched {
             eprintln!(
@@ -4461,7 +4498,10 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
             let rust_offset = pixel_index.saturating_mul(4);
             let bsnes_offset = y.saturating_mul(capture.video_pitch)
                 + x * bsnes_pixel_stride(capture.pixel_format).unwrap_or(0);
-            let rust_pixel = rgba_pixel_at(&rust_frame, rust_offset).unwrap_or([0; 4]);
+            let rust_pixel = rust_video_frame
+                .as_deref()
+                .and_then(|frame| rgba_pixel_at(frame, rust_offset))
+                .unwrap_or([0; 4]);
             let oracle_pixel = bsnes_rgba_pixel_at(&capture, bsnes_offset).unwrap_or([0; 4]);
             let obj_pal = (0x90..=0x9f)
                 .map(|i| format!("{:04x}", game.ppu.cgram[i]))
@@ -4479,10 +4519,12 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
                 rust_stats,
             );
         }
-        let compare_this_frame = frame_index >= compare_from_frame;
         if compare_this_frame && compare_video {
+            let rust_video_frame = rust_video_frame
+                .as_deref()
+                .expect("GPU video frame rendered for libretro video comparison");
             let mut video_diff = compare_libretro_video_frame(
-                &rust_frame,
+                rust_video_frame,
                 width,
                 height,
                 &capture,
@@ -4493,7 +4535,7 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
                 let (aligned_capture, extra, matched) = align_bsnes_video_capture(
                     &mut oracle,
                     capture,
-                    &rust_frame,
+                    rust_video_frame,
                     width,
                     height,
                     input,
@@ -4509,7 +4551,7 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
                     video_diff = None;
                 } else {
                     video_diff = compare_libretro_video_frame(
-                        &rust_frame,
+                        rust_video_frame,
                         width,
                         height,
                         &capture,
@@ -4522,7 +4564,7 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
                 let artifact_dir = write_bsnes_parity_failure_artifacts(
                     &pre_game,
                     &game,
-                    &rust_frame,
+                    rust_video_frame,
                     &rust_audio,
                     &capture,
                     frame_index,
@@ -4546,10 +4588,25 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
         }
         if compare_this_frame && compare_audio {
             if let Some(audio_diff) = compare_bsnes_audio_frame(&rust_audio, &capture.audio) {
+                let audio_artifact_frame;
+                let rust_artifact_frame = match rust_video_frame.as_deref() {
+                    Some(frame) => frame,
+                    None => {
+                        let renderer = load_modern_asset_gpu_readback_or_exit(
+                            "libretro oracle audio artifact frame",
+                        );
+                        audio_artifact_frame = render_modern_asset_gpu_frame_rgba_or_exit(
+                            &renderer,
+                            &mut game,
+                            "libretro oracle audio artifact frame",
+                        );
+                        &audio_artifact_frame
+                    }
+                };
                 let artifact_dir = write_bsnes_parity_failure_artifacts(
                     &pre_game,
                     &game,
-                    &rust_frame,
+                    rust_artifact_frame,
                     &rust_audio,
                     &capture,
                     frame_index,
@@ -5311,7 +5368,7 @@ fn write_lockstep_parity_failure_artifacts(
 fn write_bsnes_parity_failure_artifacts(
     pre_game: &ZeldaState,
     post_game: &ZeldaState,
-    rust_frame: &[u8],
+    rust_frame_rgba: &[u8],
     rust_audio: &[i16],
     capture: &LibretroFrame,
     frame: u32,
@@ -5337,7 +5394,7 @@ fn write_bsnes_parity_failure_artifacts(
         b"bsnes libretro serialization is not wired in this zelda3-rs wrapper yet\n",
     )?;
 
-    write_argb_frame_png(&dir.join("rust_frame.png"), rust_frame, 256, 224)?;
+    write_rgba_frame_png(&dir.join("rust_frame.png"), rust_frame_rgba, 256, 224)?;
     let Some(stride) = bsnes_pixel_stride(capture.pixel_format) else {
         return Err(format!("unsupported bsnes pixel format {}", capture.pixel_format).into());
     };
@@ -6145,6 +6202,8 @@ fn run_play_lockstep(args: &[String]) {
     let mut input_history = Vec::new();
     let trace_live_input = env::var_os("ZELDA3_TRACE_LIVE_INPUT").is_some();
     let mut last_traced_live_input = u16::MAX;
+    let bsnes_gpu_video_readback = (config.bsnes_core.is_some() && config.compare_bsnes_video)
+        .then(|| load_modern_asset_gpu_readback_or_exit("play-lockstep bsnes video comparison"));
 
     while !renderer.quit_requested() && frame_limit.is_none_or(|limit| local_frame < limit) {
         let frame = start_frame.wrapping_add(local_frame);
@@ -6274,16 +6333,26 @@ fn run_play_lockstep(args: &[String]) {
                 .game
                 .zelda_render_audio(&mut audio, audio_samples as i32, audio_channels as i32);
         }
+        let mut bsnes_gpu_frame = None;
         if let Some(capture) = &bsnes_capture {
             let compare_this_frame = frame >= config.compare_from_frame;
             if compare_this_frame && config.compare_bsnes_video {
-                if let Some(video_diff) =
-                    compare_bsnes_video_frame(&game_frame, width, height, capture)
-                {
+                let gpu_frame = render_modern_asset_gpu_frame_rgba_or_exit(
+                    bsnes_gpu_video_readback
+                        .as_ref()
+                        .expect("GPU readback allocated for play-lockstep bsnes video comparison"),
+                    &mut oracle.game,
+                    "play-lockstep bsnes video comparison",
+                );
+                let video_diff = compare_bsnes_video_frame(&gpu_frame, width, height, capture);
+                bsnes_gpu_frame = Some(gpu_frame);
+                if let Some(video_diff) = video_diff {
                     let artifact_dir = write_bsnes_parity_failure_artifacts(
                         &pre_oracle.game,
                         &oracle.game,
-                        &game_frame,
+                        bsnes_gpu_frame
+                            .as_deref()
+                            .expect("GPU frame rendered for play-lockstep bsnes video artifact"),
                         &audio,
                         capture,
                         frame,
@@ -6311,10 +6380,25 @@ fn run_play_lockstep(args: &[String]) {
             }
             if compare_this_frame && config.compare_bsnes_audio {
                 if let Some(audio_diff) = compare_bsnes_audio_frame(&audio, &capture.audio) {
+                    let audio_artifact_frame;
+                    let rust_artifact_frame = match bsnes_gpu_frame.as_deref() {
+                        Some(frame) => frame,
+                        None => {
+                            let renderer = load_modern_asset_gpu_readback_or_exit(
+                                "play-lockstep bsnes audio artifact frame",
+                            );
+                            audio_artifact_frame = render_modern_asset_gpu_frame_rgba_or_exit(
+                                &renderer,
+                                &mut oracle.game,
+                                "play-lockstep bsnes audio artifact frame",
+                            );
+                            &audio_artifact_frame
+                        }
+                    };
                     let artifact_dir = write_bsnes_parity_failure_artifacts(
                         &pre_oracle.game,
                         &oracle.game,
-                        &game_frame,
+                        rust_artifact_frame,
                         &audio,
                         capture,
                         frame,

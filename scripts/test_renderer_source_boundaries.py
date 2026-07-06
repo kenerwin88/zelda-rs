@@ -833,6 +833,39 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(all("run_play_lockstep" in error for error in errors))
 
+    def test_rejects_libretro_video_compare_cpu_frame_sources(self):
+        module = load_module()
+        source = """
+            fn run_compare_libretro_oracle() {
+                run_diagnostic_play_frame_bgra(&mut game, input, &mut rust_frame, render_flags);
+                compare_libretro_video_frame(&rust_frame, width, height, &capture, 0, 0);
+                align_bsnes_video_capture(&mut oracle, capture, &rust_frame, width, height, input, 120, 0, 0);
+                write_bsnes_parity_failure_artifacts(&pre_game, &game, &rust_frame, &rust_audio, &capture);
+            }
+
+            fn run_play_lockstep() {
+                render_diagnostic_lockstep_oracle_frames_in_place(&mut oracle, &mut game_frame, &mut snes_frame, pitch);
+                compare_bsnes_video_frame(&game_frame, width, height, capture);
+                write_bsnes_parity_failure_artifacts(&pre_game, &game, &game_frame, &audio, capture);
+            }
+
+            fn compare_libretro_video_frame() {
+                compare_libretro_video_frame(&rust_frame, width, height, &capture, 0, 0);
+            }
+            """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 5)
+        self.assertTrue(
+            all(
+                "libretro video comparison escaped PNG-backed GPU path" in error
+                for error in errors
+            )
+        )
+        self.assertTrue(any("run_compare_libretro_oracle" in error for error in errors))
+        self.assertTrue(any("run_play_lockstep" in error for error in errors))
+
     def test_rejects_replay_classic_helpers_in_gpu_capture(self):
         module = load_module()
         source = """

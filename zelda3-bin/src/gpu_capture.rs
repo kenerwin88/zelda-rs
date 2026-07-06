@@ -26,6 +26,10 @@ struct ModernAssetGpuReadbackFrame {
     via: &'static str,
 }
 
+pub(crate) struct ModernAssetGpuReadbackRenderer {
+    resources: renderer::ModernIndexCompareResources,
+}
+
 impl LiveGpuFrameCapture {
     pub fn from_game(game: &mut ZeldaState) -> Self {
         let cgram = game.cgram_after_first_hdma_line();
@@ -121,6 +125,23 @@ impl GpuPlayRenderer {
     }
 }
 
+impl ModernAssetGpuReadbackRenderer {
+    pub(crate) fn load_from_env() -> Result<Self, String> {
+        let repo_root = repo_root();
+        let resources =
+            renderer::ModernIndexCompareResources::load_from_env(true, &repo_root, false)?;
+        Ok(Self { resources })
+    }
+
+    pub(crate) fn render_game_rgba(
+        &self,
+        game: &mut ZeldaState,
+    ) -> Result<GpuRgbaReadbackFrame, String> {
+        let capture = capture_gpu_frame_from_game(game);
+        render_modern_asset_capture_rgba(&capture, &self.resources).map(|render| render.frame)
+    }
+}
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -182,10 +203,11 @@ pub(crate) fn render_live_game_gpu_frame_rgba(
             "modern asset GPU readback is fixed at 256x224, got {width}x{height}"
         ));
     }
-    let render = render_live_game_modern_asset_frame_rgba(game)?;
-    Ok(render.frame)
+    let renderer = ModernAssetGpuReadbackRenderer::load_from_env()?;
+    renderer.render_game_rgba(game)
 }
 
+#[cfg(test)]
 fn render_live_game_modern_asset_frame_rgba(
     game: &mut ZeldaState,
 ) -> Result<ModernAssetGpuReadbackFrame, String> {

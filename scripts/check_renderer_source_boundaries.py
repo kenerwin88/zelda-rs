@@ -387,6 +387,11 @@ FORBIDDEN_PLAY_LOCKSTEP_CLASSIC_PRESENT_CALLS = (
     "frontend.present_frame(",
 )
 
+GPU_ASSET_LIBRETRO_VIDEO_FUNCTION_FORBIDDEN_FRAMES = {
+    "run_compare_libretro_oracle": ("&rust_frame,",),
+    "run_play_lockstep": ("&game_frame,",),
+}
+
 FORBIDDEN_FRAME_DUMP_CLASSIC_DEFAULT_CALLS = (
     "run_diagnostic_play_frame_bgra(",
     "render_diagnostic_overworld_screen_bgra(",
@@ -1051,6 +1056,13 @@ def check_main_text(source: str) -> list[str]:
                         f"zelda3-bin/src/main.rs:{index + 1} "
                         f"in {fn}: {line.strip()}"
                     )
+        for forbidden in GPU_ASSET_LIBRETRO_VIDEO_FUNCTION_FORBIDDEN_FRAMES.get(fn, ()):
+            if forbidden in line:
+                errors.append(
+                    "libretro video comparison escaped PNG-backed GPU path at "
+                    f"zelda3-bin/src/main.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
         for forbidden in FORBIDDEN_MAIN_FRAME_DUMP_COMMAND_OWNERSHIP:
             if forbidden in line:
                 fn = enclosing_function(lines, index) or "<module>"
