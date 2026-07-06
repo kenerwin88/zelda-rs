@@ -1043,6 +1043,46 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             self.assertEqual({ref["runtime_colors_per_row"] for ref in refs}, {32})
             self.assertEqual({ref["runtime_material_policy"] for ref in refs}, {"stable"})
 
+    def test_canonical_art_atlas_imports_mode7_asset66_as_direct_palette_art(self) -> None:
+        raw_pack = bytearray(1536)
+        raw_pack[0] = 0x80
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [f"#{index:02x}{index:02x}{index:02x}" for index in range(256)]
+        mode7_chars = bytearray(0x4000)
+        mode7_chars[0] = 110
+        mode7_chars[64] = 1
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            (assets_dir / "066-kOverworldMapGfx.bin").write_bytes(bytes(mode7_chars))
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_overworld_bg_main.json",
+                palette_colors,
+            )
+
+            _width, _height, _pixels, arts = build_canonical_art_atlas(asset_dir)
+
+            refs = [
+                source
+                for art in arts
+                for source in art["source_refs"]
+                if source["source_kind"] == "mode7"
+            ]
+            self.assertEqual(len(refs), 256)
+            self.assertEqual({ref["asset"] for ref in refs}, {"kOverworldMapGfx"})
+            self.assertEqual({ref["pack"] for ref in refs}, {0})
+            self.assertEqual({ref["bpp"] for ref in refs}, {8})
+            self.assertEqual({ref["preview_palette"] for ref in refs}, {"palette_overworld_bg_main"})
+            self.assertEqual({ref["runtime_material"] for ref in refs}, {"palette_lut"})
+            self.assertEqual({ref["runtime_material_policy"] for ref in refs}, {"stable"})
+            self.assertEqual({ref["runtime_colors_per_row"] for ref in refs}, {128})
+
     def test_canonical_art_atlas_imports_link_content_source_tiles(self) -> None:
         import json
         from PIL import Image

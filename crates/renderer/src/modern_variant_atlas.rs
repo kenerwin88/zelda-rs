@@ -1076,6 +1076,66 @@ mod tests {
     }
 
     #[test]
+    fn modern_canonical_art_atlas_loads_mode7_source_refs() {
+        let root = unique_temp_root();
+        let atlas_dir = root.join("atlas");
+        std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
+        let rgba = solid_rgba(8, 8, [110, 110, 110, 255]);
+        write_rgba_png(&atlas_dir.join("art_tiles.png"), 8, 8, &rgba);
+        std::fs::write(
+            atlas_dir.join("art_tiles.json"),
+            r#"{
+              "format": "zelda3_canonical_art_atlas_v1",
+              "tile_width": 8,
+              "tile_height": 8,
+              "width": 8,
+              "height": 8,
+              "art_count": 1,
+              "source_ref_count": 1,
+              "arts": [{
+                "art_id": "art:mode7",
+                "bpp": 8,
+                "rect": [0, 0, 8, 8],
+                "sha1_indices": "mode7",
+                "preview_palette": "palette_overworld_bg_main",
+                "preview_palette_row": 0,
+                "preview_source": "source_kind_default",
+                "source_refs": [{
+                  "source_kind": "mode7",
+                  "asset": "kOverworldMapGfx",
+                  "pack": 0,
+                  "tile": 42,
+                  "bpp": 8,
+                  "hflip": false,
+                  "vflip": false,
+                  "preview_palette": "palette_overworld_bg_main",
+                  "preview_palette_row": 0,
+                  "preview_source": "source_kind_default",
+                  "runtime_material": "palette_lut",
+                  "runtime_material_policy": "stable",
+                  "runtime_colors_per_row": 128
+                }]
+              }]
+            }"#,
+        )
+        .expect("write manifest");
+
+        let atlas = load_modern_canonical_art_atlas(&root).expect("load art atlas");
+
+        assert_eq!(atlas.entries.len(), 1);
+        let entry = &atlas.entries[0];
+        assert_eq!(entry.id, "mode7:kOverworldMapGfx:pack0:tile42:8bpp");
+        assert_eq!(entry.key.source_kind, "mode7");
+        assert_eq!(entry.key.asset, "kOverworldMapGfx");
+        assert_eq!(entry.key.bpp, 8);
+        assert_eq!(entry.runtime_material.as_deref(), Some("palette_lut"));
+        assert_eq!(entry.runtime_colors_per_row, Some(128));
+        assert_eq!(entry.dynamic_policy, "stable");
+
+        std::fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
     fn source_entry_lookup_ignores_live_palette_material() {
         let atlas = ModernVariantAtlas {
             width: 8,

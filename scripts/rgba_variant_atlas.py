@@ -163,6 +163,8 @@ def _asset_name_for_kind(kind: str) -> str:
         return "kSprGfx"
     if kind == "bg":
         return "kBgGfx"
+    if kind == "mode7":
+        return "kOverworldMapGfx"
     raise ValueError(f"unknown decoded CHR pack kind: {kind}")
 
 
@@ -184,6 +186,8 @@ def _rows_for_bpp(bpp: int) -> tuple[int, int]:
         return 16, 16
     if bpp == 5:
         return 8, 32
+    if bpp == 8:
+        return 2, 128
     raise ValueError(f"unsupported SNES tile bit depth: {bpp}")
 
 
@@ -196,6 +200,7 @@ def _default_preview_palette(
         "link": "palette_main_spr",
         "bg": "palette_overworld_bg_main",
         "bg3": "palette_overworld_bg_main",
+        "mode7": "palette_overworld_bg_main",
     }.get(kind)
     if preferred in available_palette_names:
         return preferred, 0
@@ -277,6 +282,27 @@ def _read_source_tile_indices(source_tiles_dir: Path) -> list[tuple[tuple[str, s
             indices = bytes(int(pixels[x0 + x, y0 + y]) for y in range(8) for x in range(8))
             source_tiles.append((key, indices))
     return source_tiles
+
+
+def _read_mode7_source_tile_indices(
+    asset_dir: Path,
+) -> list[tuple[tuple[str, str, int, int, int], bytes]]:
+    path = asset_dir / "assets" / "066-kOverworldMapGfx.bin"
+    if not path.is_file():
+        return []
+    data = path.read_bytes()
+    if len(data) % 64 != 0:
+        raise ValueError(f"{path}: Mode 7 character source must be divisible by 64 bytes")
+    tiles: list[tuple[tuple[str, str, int, int, int], bytes]] = []
+    for tile_index in range(len(data) // 64):
+        start = tile_index * 64
+        tiles.append(
+            (
+                ("mode7", "kOverworldMapGfx", 0, tile_index, 8),
+                data[start : start + 64],
+            )
+        )
+    return tiles
 
 
 def _palette_usage_paths(asset_dir: Path) -> list[Path]:
@@ -712,6 +738,13 @@ def build_canonical_art_atlas(
                 continue
             add_tile(kind, asset, pack, tile, bpp, indices)
             seen_source_keys.add(source_key)
+
+    for (kind, asset, pack, tile, bpp), indices in _read_mode7_source_tile_indices(asset_dir):
+        source_key = _tile_usage_key(kind, asset, pack, tile, bpp)
+        if source_key in seen_source_keys:
+            continue
+        add_tile(kind, asset, pack, tile, bpp, indices)
+        seen_source_keys.add(source_key)
 
     columns = 128
     art_groups = list(groups.values())
