@@ -2331,10 +2331,17 @@ impl ModernIndexCompareResources {
         if let Some(fallback) =
             modern_gpu::modern_gpu_path_fallback_reason(render.via, render.variant_stats.as_ref())
         {
+            let missing_report =
+                modern_extract::format_missing_asset_source_report(&render.missing_sources, 4);
+            let detail = if missing_report.is_empty() {
+                String::new()
+            } else {
+                format!(" {missing_report}")
+            };
             return Err(format!(
                 "modern asset GPU readback unsupported via={} reason={} count={}",
                 render.via, fallback.reason, fallback.count
-            ));
+            ) + &detail);
         }
         Ok(ModernAssetReadbackFrame {
             rgba: render.rgba,
@@ -2370,10 +2377,17 @@ impl ModernIndexCompareResources {
         if let Some(fallback) =
             modern_gpu::modern_gpu_path_fallback_reason(render.via, render.variant_stats.as_ref())
         {
+            let missing_report =
+                modern_extract::format_missing_asset_source_report(&render.missing_sources, 4);
+            let detail = if missing_report.is_empty() {
+                String::new()
+            } else {
+                format!(" {missing_report}")
+            };
             return Err(format!(
                 "modern asset GPU validation unsupported via={} reason={} count={}",
                 render.via, fallback.reason, fallback.count
-            ));
+            ) + &detail);
         }
         Ok(ModernAssetValidationFrame {
             via: render.via,

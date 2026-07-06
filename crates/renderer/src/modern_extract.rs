@@ -12,12 +12,95 @@ pub struct AssetResolvedModernFrame {
     pub bg_cells: Vec<ModernIndexTile>,
     pub sprite_cells: Vec<ModernIndexTile>,
     pub unresolved_stats: crate::modern_software::VariantAtlasRenderStats,
+    pub missing_sources: Vec<MissingAssetSource>,
 }
 
 impl AssetResolvedModernFrame {
     pub fn has_unresolved_sources(&self) -> bool {
         self.unresolved_stats.unkeyed_fallback_draws != 0
     }
+
+    pub fn missing_source_count(&self) -> usize {
+        self.missing_sources.len()
+    }
+
+    pub fn missing_source_report(&self, max_samples: usize) -> String {
+        format_missing_asset_source_report(&self.missing_sources, max_samples)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MissingAssetSurface {
+    Bg,
+    Sprite,
+}
+
+impl MissingAssetSurface {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bg => "bg",
+            Self::Sprite => "sprite",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MissingAssetSource {
+    pub surface: MissingAssetSurface,
+    pub layer_index: Option<u8>,
+    pub cell_id: u32,
+    pub screen_x: i16,
+    pub screen_y: i16,
+    pub palette: u8,
+    pub instance_source_key: u64,
+    pub cell_source_key: Option<u64>,
+}
+
+impl MissingAssetSource {
+    pub fn describe(&self) -> String {
+        let cell_key = self
+            .cell_source_key
+            .map(|key| format!("0x{key:016x}"))
+            .unwrap_or_else(|| "missing-cell".to_string());
+        match self.surface {
+            MissingAssetSurface::Bg => format!(
+                "bg{} cell={} xy=({}, {}) pal={} inst_key=0x{:016x} cell_key={}",
+                self.layer_index.unwrap_or(0),
+                self.cell_id,
+                self.screen_x,
+                self.screen_y,
+                self.palette,
+                self.instance_source_key,
+                cell_key
+            ),
+            MissingAssetSurface::Sprite => format!(
+                "sprite cell={} xy=({}, {}) pal={} cell_key={}",
+                self.cell_id, self.screen_x, self.screen_y, self.palette, cell_key
+            ),
+        }
+    }
+}
+
+pub fn format_missing_asset_source_report(
+    missing_sources: &[MissingAssetSource],
+    max_samples: usize,
+) -> String {
+    if missing_sources.is_empty() || max_samples == 0 {
+        return String::new();
+    }
+    let sample_count = missing_sources.len().min(max_samples);
+    let mut report = format!("missing_sources={} samples=[", missing_sources.len());
+    for (idx, missing) in missing_sources.iter().take(sample_count).enumerate() {
+        if idx != 0 {
+            report.push_str("; ");
+        }
+        report.push_str(&missing.describe());
+    }
+    if missing_sources.len() > sample_count {
+        report.push_str("; ...");
+    }
+    report.push(']');
+    report
 }
 
 // Per SNES PPU OBSEL: maps obj_size (3-bit index) to [small_px, large_px].
@@ -1627,45 +1710,70 @@ pub fn extract_asset_resolved_modern_frame_from_sources<S: SourceTableView + ?Si
     let (mut modern, bg_cells) = extract_modern_frame_from_sources(frame, src_table, atlas);
     let (sprite_cells, sprites) = extract_modern_sprites_from_sources(frame, src_table, atlas);
     modern.index_sprites = sprites;
-    let unresolved_stats =
-        unresolved_source_stats_for_modern_frame(&modern, &bg_cells, &sprite_cells);
+    let (unresolved_stats, missing_sources) =
+        unresolved_sources_for_modern_frame(&modern, &bg_cells, &sprite_cells);
     AssetResolvedModernFrame {
         frame: modern,
         bg_cells,
         sprite_cells,
         unresolved_stats,
+        missing_sources,
     }
 }
 
-fn unresolved_source_stats_for_modern_frame(
+fn unresolved_sources_for_modern_frame(
     frame: &ModernFrame,
     bg_cells: &[ModernIndexTile],
     sprite_cells: &[ModernIndexTile],
-) -> crate::modern_software::VariantAtlasRenderStats {
+) -> (
+    crate::modern_software::VariantAtlasRenderStats,
+    Vec<MissingAssetSource>,
+) {
     let mut stats = crate::modern_software::VariantAtlasRenderStats::default();
+    let mut missing_sources = Vec::new();
     for (layer_index, layer) in frame.bg_layers.iter().enumerate() {
         for inst in &layer.index_tiles {
             let instance_unkeyed = inst.source_key == crate::modern_hd_overrides::NO_SOURCE_KEY;
-            let cell_unkeyed = bg_cells
-                .get(inst.cell_id as usize)
+            let cell = bg_cells.get(inst.cell_id as usize);
+            let cell_unkeyed = cell
                 .is_none_or(|cell| cell.source_key == crate::modern_hd_overrides::NO_SOURCE_KEY);
             if instance_unkeyed || cell_unkeyed {
                 stats.record_bg_draw(
                     layer_index,
                     &crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed,
                 );
+                missing_sources.push(MissingAssetSource {
+                    surface: MissingAssetSurface::Bg,
+                    layer_index: Some(layer_index as u8),
+                    cell_id: inst.cell_id,
+                    screen_x: inst.screen_x,
+                    screen_y: inst.screen_y,
+                    palette: inst.palette,
+                    instance_source_key: inst.source_key,
+                    cell_source_key: cell.map(|cell| cell.source_key),
+                });
             }
         }
     }
     for inst in &frame.index_sprites {
-        let cell_unkeyed = sprite_cells
-            .get(inst.cell_id as usize)
-            .is_none_or(|cell| cell.source_key == crate::modern_hd_overrides::NO_SOURCE_KEY);
+        let cell = sprite_cells.get(inst.cell_id as usize);
+        let cell_unkeyed =
+            cell.is_none_or(|cell| cell.source_key == crate::modern_hd_overrides::NO_SOURCE_KEY);
         if cell_unkeyed {
             stats.record_sprite_draw(&crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed);
+            missing_sources.push(MissingAssetSource {
+                surface: MissingAssetSurface::Sprite,
+                layer_index: None,
+                cell_id: inst.cell_id,
+                screen_x: inst.screen_x,
+                screen_y: inst.screen_y,
+                palette: inst.palette,
+                instance_source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                cell_source_key: cell.map(|cell| cell.source_key),
+            });
         }
     }
-    stats
+    (stats, missing_sources)
 }
 
 #[cfg(test)]
@@ -1977,6 +2085,23 @@ mod tests {
             strict_fallback.unresolved_stats.unkeyed_bg12_fallback_draws,
             1
         );
+        assert_eq!(strict_fallback.missing_source_count(), 1);
+        assert_eq!(
+            strict_fallback.missing_sources[0],
+            MissingAssetSource {
+                surface: MissingAssetSurface::Bg,
+                layer_index: Some(0),
+                cell_id: 0,
+                screen_x: 0,
+                screen_y: -1,
+                palette: 0,
+                instance_source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                cell_source_key: Some(crate::modern_hd_overrides::NO_SOURCE_KEY),
+            }
+        );
+        assert!(strict_fallback
+            .missing_source_report(4)
+            .contains("missing_sources=1 samples=[bg0 cell=0 xy=(0, -1) pal=0"));
 
         let exact_pattern_cell = ModernIndexTile {
             id: 2,
@@ -2928,6 +3053,17 @@ mod tests {
         let strict = extract_asset_resolved_modern_frame_from_sources(&frame, &table, &atlas);
         assert!(strict.has_unresolved_sources());
         assert_eq!(strict.unresolved_stats.unkeyed_sprite_fallback_draws, 1);
+        assert_eq!(strict.missing_source_count(), 1);
+        assert_eq!(
+            strict.missing_sources[0].surface,
+            MissingAssetSurface::Sprite
+        );
+        assert_eq!(strict.missing_sources[0].cell_id, 0);
+        assert_eq!(strict.missing_sources[0].screen_x, 40);
+        assert_eq!(
+            strict.missing_sources[0].cell_source_key,
+            Some(crate::modern_hd_overrides::NO_SOURCE_KEY)
+        );
     }
 
     fn test_gpu_frame<'a>(

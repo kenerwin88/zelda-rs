@@ -3505,12 +3505,14 @@ pub struct ModernIndexCompareRender {
     pub rgba: Vec<u8>,
     pub via: &'static str,
     pub variant_stats: Option<crate::modern_software::VariantAtlasRenderStats>,
+    pub missing_sources: Vec<crate::modern_extract::MissingAssetSource>,
     pub variant_traces: Vec<crate::modern_variant_draw::VariantPixelTrace>,
 }
 
 pub struct ModernIndexCompareValidation {
     pub via: &'static str,
     pub variant_stats: Option<crate::modern_software::VariantAtlasRenderStats>,
+    pub missing_sources: Vec<crate::modern_extract::MissingAssetSource>,
     pub timings: ModernIndexCompareValidationTimings,
 }
 
@@ -3652,6 +3654,7 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
                     rgba: headless.render_mode7_source_rgba(frame, chars),
                     via: "mode7-source-gpu",
                     variant_stats: None,
+                    missing_sources: Vec::new(),
                     variant_traces: Vec::new(),
                 };
             }
@@ -3659,12 +3662,13 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
                 rgba: vec![0; 256 * 224 * 4],
                 via: "mode7-missing-source",
                 variant_stats: None,
+                missing_sources: Vec::new(),
                 variant_traces: Vec::new(),
             };
         }
         let atlas = source_atlas.expect("atlas loaded for gpu compare");
         let src_table = src_table.expect("source table loaded for gpu compare");
-        let (rgba, stats, traces) = variant_headless
+        let (rgba, stats, missing_sources, traces) = variant_headless
             .render_rgba_with_live_index_base_from_sources_traced(
                 frame,
                 src_table,
@@ -3677,6 +3681,7 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
             rgba,
             via: "variant-gpu",
             variant_stats: Some(stats),
+            missing_sources,
             variant_traces: traces,
         };
     }
@@ -3688,6 +3693,7 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
                     rgba: headless.render_mode7_source_rgba(frame, chars),
                     via: "mode7-source-gpu",
                     variant_stats: None,
+                    missing_sources: Vec::new(),
                     variant_traces: Vec::new(),
                 };
             }
@@ -3695,6 +3701,7 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
                 rgba: headless.render_mode7_rgba(frame),
                 via: "mode7-gpu",
                 variant_stats: None,
+                missing_sources: Vec::new(),
                 variant_traces: Vec::new(),
             };
         }
@@ -3704,6 +3711,7 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
             rgba: headless.render_rgba_from_sources(frame, src_table, atlas),
             via: "gpu",
             variant_stats: None,
+            missing_sources: Vec::new(),
             variant_traces: Vec::new(),
         };
     }
@@ -3713,6 +3721,7 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
             rgba: crate::modern_software::render_modern_mode7_frame(frame),
             via: "mode7-cpu",
             variant_stats: None,
+            missing_sources: Vec::new(),
             variant_traces: Vec::new(),
         };
     }
@@ -3726,6 +3735,7 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
                 ),
                 via: "sources",
                 variant_stats: None,
+                missing_sources: Vec::new(),
                 variant_traces: Vec::new(),
             };
         }
@@ -3735,6 +3745,7 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
         rgba: crate::modern_extract::render_modern_frame_full_from_vram(frame),
         via: "vram",
         variant_stats: None,
+        missing_sources: Vec::new(),
         variant_traces: Vec::new(),
     }
 }
@@ -3758,6 +3769,7 @@ pub fn validate_modern_index_compare_frame<S: crate::modern_extract::SourceTable
                     "mode7-missing-source"
                 },
                 variant_stats: None,
+                missing_sources: Vec::new(),
                 timings: ModernIndexCompareValidationTimings::default(),
             };
         }
@@ -3773,6 +3785,7 @@ pub fn validate_modern_index_compare_frame<S: crate::modern_extract::SourceTable
         return ModernIndexCompareValidation {
             via: "variant-gpu",
             variant_stats: Some(validation.stats),
+            missing_sources: validation.missing_sources,
             timings: validation.timings,
         };
     }
@@ -3786,12 +3799,14 @@ pub fn validate_modern_index_compare_frame<S: crate::modern_extract::SourceTable
                     "mode7-gpu"
                 },
                 variant_stats: None,
+                missing_sources: Vec::new(),
                 timings: ModernIndexCompareValidationTimings::default(),
             };
         }
         return ModernIndexCompareValidation {
             via: "gpu",
             variant_stats: None,
+            missing_sources: Vec::new(),
             timings: ModernIndexCompareValidationTimings::default(),
         };
     }
@@ -3800,6 +3815,7 @@ pub fn validate_modern_index_compare_frame<S: crate::modern_extract::SourceTable
         return ModernIndexCompareValidation {
             via: "mode7-cpu",
             variant_stats: None,
+            missing_sources: Vec::new(),
             timings: ModernIndexCompareValidationTimings::default(),
         };
     }
@@ -3808,6 +3824,7 @@ pub fn validate_modern_index_compare_frame<S: crate::modern_extract::SourceTable
         return ModernIndexCompareValidation {
             via: "sources",
             variant_stats: None,
+            missing_sources: Vec::new(),
             timings: ModernIndexCompareValidationTimings::default(),
         };
     }
@@ -3815,6 +3832,7 @@ pub fn validate_modern_index_compare_frame<S: crate::modern_extract::SourceTable
     ModernIndexCompareValidation {
         via: "vram",
         variant_stats: None,
+        missing_sources: Vec::new(),
         timings: ModernIndexCompareValidationTimings::default(),
     }
 }
@@ -4047,6 +4065,7 @@ pub struct ModernGpuVariantHeadless {
 
 pub struct ModernGpuVariantValidation {
     pub stats: crate::modern_software::VariantAtlasRenderStats,
+    pub missing_sources: Vec<crate::modern_extract::MissingAssetSource>,
     pub timings: ModernIndexCompareValidationTimings,
 }
 
@@ -4187,14 +4206,15 @@ impl ModernGpuVariantHeadless {
         bg_palette_name: &str,
         sprite_palette_name: &str,
     ) -> (Vec<u8>, crate::modern_software::VariantAtlasRenderStats) {
-        let (rgba, stats, _traces) = self.render_rgba_with_live_index_base_from_sources_traced(
-            frame,
-            src_table,
-            atlas,
-            bg_palette_name,
-            sprite_palette_name,
-            None,
-        );
+        let (rgba, stats, _missing_sources, _traces) = self
+            .render_rgba_with_live_index_base_from_sources_traced(
+                frame,
+                src_table,
+                atlas,
+                bg_palette_name,
+                sprite_palette_name,
+                None,
+            );
         (rgba, stats)
     }
 
@@ -4211,6 +4231,7 @@ impl ModernGpuVariantHeadless {
     ) -> (
         Vec<u8>,
         crate::modern_software::VariantAtlasRenderStats,
+        Vec<crate::modern_extract::MissingAssetSource>,
         Vec<crate::modern_variant_draw::VariantPixelTrace>,
     ) {
         debug_assert_ne!(frame.mode, 7);
@@ -4221,6 +4242,7 @@ impl ModernGpuVariantHeadless {
             return (
                 vec![0; 256 * 224 * 4],
                 modern_assets.unresolved_stats,
+                modern_assets.missing_sources,
                 Vec::new(),
             );
         }
@@ -4231,7 +4253,7 @@ impl ModernGpuVariantHeadless {
             crate::modern_extract::extract_modern_sprites_from_vram(frame);
         live_index_modern.index_sprites = live_index_sprites;
 
-        self.render_rgba_with_live_index_base_and_trace(
+        let (rgba, stats, traces) = self.render_rgba_with_live_index_base_and_trace(
             &modern_assets.frame,
             &modern_assets.bg_cells,
             &modern_assets.sprite_cells,
@@ -4241,7 +4263,8 @@ impl ModernGpuVariantHeadless {
             bg_palette_name,
             sprite_palette_name,
             trace_pixel,
-        )
+        );
+        (rgba, stats, Vec::new(), traces)
     }
 
     pub fn validate_from_sources<S: crate::modern_extract::SourceTableView + ?Sized>(
@@ -4262,6 +4285,7 @@ impl ModernGpuVariantHeadless {
         if modern_assets.has_unresolved_sources() {
             return ModernGpuVariantValidation {
                 stats: modern_assets.unresolved_stats,
+                missing_sources: modern_assets.missing_sources,
                 timings: ModernIndexCompareValidationTimings {
                     bg_extract_nanos,
                     sprite_extract_nanos,
@@ -4281,6 +4305,7 @@ impl ModernGpuVariantHeadless {
         let stats_nanos = stats_start.elapsed().as_nanos();
         ModernGpuVariantValidation {
             stats,
+            missing_sources: Vec::new(),
             timings: ModernIndexCompareValidationTimings {
                 bg_extract_nanos,
                 sprite_extract_nanos,
