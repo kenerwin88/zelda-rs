@@ -1296,22 +1296,6 @@ fn bg_packet_in_color_math_window(sx: u32, win: [u8; 4], windowsel_cm: u8) -> bo
     inside
 }
 
-fn frame_needs_material_prefinal_finalizer(frame: &ModernFrame) -> bool {
-    if frame.brightness != 15 || frame.clip_mode != 0 {
-        return true;
-    }
-    if frame.math_enabled == 0 {
-        return false;
-    }
-    frame.add_subscreen
-        || frame.half_color
-        || frame.fixed_color_r != 0
-        || frame.fixed_color_g != 0
-        || frame.fixed_color_b != 0
-        || frame.windowsel_cm != 0
-        || frame.prevent_math_mode != 3
-}
-
 fn frame_uses_direct_final_index_math(frame: &ModernFrame) -> bool {
     frame.screen_enabled_sub == 0
         && frame.math_enabled == 0
@@ -4098,13 +4082,8 @@ impl ModernGpuVariantHeadless {
         execution: &mut PreparedModernVariantExecution<'_, '_>,
     ) {
         match execution.render_path() {
-            ModernVariantRenderPath::EffectMaterialMode1Order
-                if frame_needs_material_prefinal_finalizer(execution.frame()) =>
-            {
-                self.render_effect_material_with_stable_overlay(live_index_base, execution);
-            }
             ModernVariantRenderPath::EffectMaterialMode1Order => {
-                self.render_effect_material_mode1_order(execution);
+                self.render_effect_material_with_stable_overlay(live_index_base, execution);
             }
             ModernVariantRenderPath::LiveIndexBaseWithOverlay => {
                 self.render_live_index_with_overlay(live_index_base, execution);
@@ -4116,18 +4095,6 @@ impl ModernGpuVariantHeadless {
                 self.render_stable_variant_frame(execution);
             }
         }
-    }
-
-    fn render_effect_material_mode1_order(
-        &self,
-        execution: &PreparedModernVariantExecution<'_, '_>,
-    ) {
-        self.renderer.render_effect_material_mode1_order(
-            &self.device,
-            &self.queue,
-            execution,
-            &self.target_view,
-        );
     }
 
     fn render_stable_variant_frame(&self, execution: &PreparedModernVariantExecution<'_, '_>) {
@@ -4215,16 +4182,12 @@ impl ModernGpuVariantHeadless {
 
     fn render_effect_material_with_stable_overlay(
         &self,
-        _live_index_base: &LiveIndexVariantBase<'_>,
+        live_index_base: &LiveIndexVariantBase<'_>,
         execution: &mut PreparedModernVariantExecution<'_, '_>,
     ) {
-        let frame = execution.frame();
-        if frame_needs_material_prefinal_finalizer(frame) {
-            let build_result = self.render_effect_material_with_prefinal_base(execution);
-            record_screen_builder_result(execution.stats_mut().as_mut(), build_result);
-        } else {
-            self.render_effect_material_mode1_order(execution);
-        }
+        let build_result =
+            self.render_effect_material_with_prefinal_base(live_index_base, execution);
+        record_screen_builder_result(execution.stats_mut().as_mut(), build_result);
         if execution.stats().needs_headless_stable_overlay() {
             self.renderer.renderer.render_overlay(
                 &self.device,
@@ -4237,6 +4200,7 @@ impl ModernGpuVariantHeadless {
 
     fn render_effect_material_with_prefinal_base(
         &self,
+        live_index_base: &LiveIndexVariantBase<'_>,
         execution: &mut PreparedModernVariantExecution<'_, '_>,
     ) -> ModernScreenBuilderResult {
         let frame = execution.frame();
@@ -4248,10 +4212,10 @@ impl ModernGpuVariantHeadless {
             return self.compositor.render_prefinal_screens_with_final_frame(
                 &self.device,
                 &self.queue,
-                frame,
-                frame,
-                execution.bg_cells(),
-                execution.sprite_cells(),
+                live_index_base.frame(),
+                live_index_base.frame(),
+                live_index_base.bg_cells(),
+                live_index_base.sprite_cells(),
                 &self.target,
             );
         }
@@ -4259,11 +4223,11 @@ impl ModernGpuVariantHeadless {
             .render_prefinal_overlay_screens_with_final_frame(
                 &self.device,
                 &self.queue,
+                live_index_base.frame(),
+                live_index_base.frame(),
                 frame,
-                frame,
-                frame,
-                execution.bg_cells(),
-                execution.sprite_cells(),
+                live_index_base.bg_cells(),
+                live_index_base.sprite_cells(),
                 &prefinal_packets,
                 &self.target,
             )
@@ -5658,6 +5622,7 @@ mod tests {
         }];
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.screen_enabled_main = 0x10;
         frame.cgram_rgba[0x80 + 16 + 9] = [248, 248, 248, 0xff];
         frame.index_sprites.push(ModernIndexSpriteInstance {
             cell_id: 0,
@@ -5715,6 +5680,9 @@ mod tests {
         assert_eq!(stats.effect_material_draws, 1);
         assert_eq!(stats.dynamic_material_draws, 1);
         assert_eq!(stats.fallback_draws, 0);
+        assert_eq!(stats.gpu_prefinal_base_frames, 1);
+        assert_eq!(stats.gpu_screen_builder_frames, 1);
+        assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(&variant[0..4], &[255, 255, 255, 0xff]);
     }
 
@@ -6772,6 +6740,8 @@ mod tests {
 
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.cgram_rgba[2 * 16 + 1] = [180, 40, 40, 0xff];
+        frame.cgram_rgba[0x80 + 16 + 1] = [40, 180, 40, 0xff];
         let mut layer = ModernBgLayer::new(0);
         layer.enabled_main = true;
         layer.index_tiles.push(ModernIndexTileInstance {
@@ -6785,6 +6755,7 @@ mod tests {
             priority: true,
         });
         frame.bg_layers[0] = layer;
+        frame.screen_enabled_main = 0x11;
         frame.index_sprites.push(ModernIndexSpriteInstance {
             cell_id: 0,
             screen_x: 0,
@@ -6891,7 +6862,7 @@ mod tests {
         assert_eq!(stats.effect_material_draws, 2);
         assert_eq!(stats.dynamic_material_draws, 2);
         assert_eq!(stats.fallback_draws, 0);
-        assert_eq!(&variant[0..4], &[180, 40, 40, 0xff]);
+        assert_eq!(&variant[0..4], &[181, 41, 41, 0xff]);
     }
 
     #[test]
@@ -7564,21 +7535,27 @@ mod tests {
 
         assert_eq!(params[1], 2);
         assert_eq!(params[2], 0);
-        assert_eq!(params[6], 128);
-        assert_eq!(params[7], 136);
+        assert_eq!(params[4], 128);
+        assert_eq!(params[5], 144);
+        assert_eq!(params[6], 145);
         assert_eq!(
             data_words[0],
             pack_variant_prefinal_pixel([248, 0, 0, 0xff], 0)
         );
+        assert_eq!(data_words[1], 0xffffffff,);
         assert_eq!(
             data_words[64],
             pack_variant_prefinal_pixel([0, 248, 0, 0xff], 1)
         );
         assert_eq!(
-            &data_words[params[6] as usize..params[6] as usize + 8],
-            &[0, 0, 4, 0, 8, 0, 3, 64]
+            &data_words[params[4] as usize..params[4] as usize + 8],
+            &[0, 0, 4, 0, 0, 0, 0, 0]
         );
-        assert_eq!(data_words[params[7] as usize], 0);
+        assert_eq!(
+            &data_words[params[4] as usize + 8..params[4] as usize + 16],
+            &[8, 0, 3, 64, 1, 0, 0, 0]
+        );
+        assert_eq!(data_words[params[5] as usize], 0);
     }
 
     #[test]
