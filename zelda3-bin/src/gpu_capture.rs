@@ -217,10 +217,18 @@ fn render_modern_asset_capture_rgba(
 pub(crate) fn render_hd_capture_from_game(
     game: &mut ZeldaState,
     atlas: &renderer::modern_source_atlas::ModernSourceAtlas,
-) -> Option<renderer::hd_authoring::HdCaptureFrame> {
+) -> Result<Option<renderer::hd_authoring::HdCaptureFrame>, String> {
     let capture = capture_gpu_frame_from_game(game);
     let gpu_frame = capture.gpu_frame();
-    (gpu_frame.mode != 7).then(|| render_hd_capture_from_gpu_capture(&capture, atlas))
+    if gpu_frame.mode == 7 {
+        return Ok(None);
+    }
+    let repo_root = repo_root();
+    let resources = renderer::ModernIndexCompareResources::load_from_env(true, &repo_root, false)?;
+    let gpu_render = render_modern_asset_capture_rgba(&capture, &resources)?;
+    let mut hd_capture = render_hd_capture_from_gpu_capture(&capture, atlas);
+    hd_capture.rgba = gpu_render.frame.as_slice().to_vec();
+    Ok(Some(hd_capture))
 }
 
 fn render_hd_capture_from_gpu_capture(
@@ -260,6 +268,27 @@ mod tests {
 
         assert_eq!(render.via, "variant-gpu");
         assert_eq!(render.frame.as_slice().len(), 256 * 224 * 4);
+    }
+
+    #[test]
+    fn hd_capture_visible_frame_uses_asset_gpu_readback() {
+        let repo_root = repo_root();
+        let atlas =
+            renderer::modern_source_atlas::load_modern_source_atlas(&repo_root).expect("atlas");
+        let (mut game, _) =
+            crate::developer_room_commands::load_developer_destination("preset-dev-sandbox")
+                .expect("developer sandbox should load");
+        game.zelda_run_frame(0);
+
+        let hd_capture = render_hd_capture_from_game(&mut game, &atlas)
+            .expect("HD capture GPU readback should render")
+            .expect("developer sandbox is not Mode 7");
+        let gpu_render = render_live_game_modern_asset_frame_rgba(&mut game)
+            .expect("GPU readback should render");
+
+        assert_eq!(gpu_render.via, "variant-gpu");
+        assert_eq!(hd_capture.rgba, gpu_render.frame.as_slice());
+        assert!(!hd_capture.placements.is_empty());
     }
 }
 

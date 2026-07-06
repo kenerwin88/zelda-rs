@@ -64,9 +64,16 @@ pub(crate) fn run_dump_hd_capture(args: &[String]) {
             continue;
         }
 
-        let Some(capture) = render_hd_capture_from_game(&mut game, &atlas) else {
-            eprintln!("frame {completed}: Mode 7 not supported by the sources path; skipping");
-            continue;
+        let capture = match render_hd_capture_from_game(&mut game, &atlas) {
+            Ok(Some(capture)) => capture,
+            Ok(None) => {
+                eprintln!("frame {completed}: Mode 7 placement metadata not supported; skipping");
+                continue;
+            }
+            Err(e) => {
+                eprintln!("failed to render HD capture frame {completed} via asset GPU path: {e}");
+                process::exit(1);
+            }
         };
         let png_path = format!("{OUT_DIR}/frame_{completed}.png");
         if let Err(e) = write_rgba_frame_png(Path::new(&png_path), &capture.rgba, 256, 224) {
