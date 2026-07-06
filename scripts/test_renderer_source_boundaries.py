@@ -311,6 +311,55 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         )
         self.assertTrue(all("run_play_with_state" in error for error in errors))
 
+    def test_rejects_live_gpu_mode_indexed_gpu_opt_in(self):
+        module = load_module()
+        source = """
+            pub fn live_gpu_asset_mode_from_env_value(
+                value: Option<&str>,
+            ) -> Result<EffectiveRendererMode<'static>, String> {
+                match value {
+                    None | Some("assets-variant-gpu") => Ok(EffectiveRendererMode::from_name(
+                        "assets-variant-gpu",
+                    )),
+                    Some("assets-anim-gpu") => Ok(EffectiveRendererMode::from_name("assets-anim-gpu")),
+                    Some(value) => Err(format!(
+                        "ZELDA3_RENDERER={value:?} is diagnostic-only for live play; expected assets-variant-gpu or assets-anim-gpu"
+                    )),
+                }
+            }
+        """
+
+        errors = module.check_renderer_mode_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(
+            any("assets-anim-gpu must remain diagnostic-only" in error for error in errors)
+        )
+        self.assertTrue(
+            any("must not advertise assets-anim-gpu" in error for error in errors)
+        )
+
+    def test_allows_live_gpu_mode_variant_only_gate(self):
+        module = load_module()
+        source = """
+            pub fn live_gpu_asset_mode_from_env_value(
+                value: Option<&str>,
+            ) -> Result<EffectiveRendererMode<'static>, String> {
+                match value {
+                    None | Some("assets-variant-gpu") => Ok(EffectiveRendererMode::from_name(
+                        "assets-variant-gpu",
+                    )),
+                    Some(value) => Err(format!(
+                        "ZELDA3_RENDERER={value:?} is diagnostic-only for live play; expected assets-variant-gpu"
+                    )),
+                }
+            }
+        """
+
+        errors = module.check_renderer_mode_text(textwrap.dedent(source))
+
+        self.assertEqual(errors, [])
+
     def test_rejects_hd_override_loading_policy_calls(self):
         module = load_module()
         source = source_with_required_calls(

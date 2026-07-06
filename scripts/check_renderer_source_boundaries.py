@@ -35,6 +35,7 @@ PLAY_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "play_commands.rs"
 REPLAY_DIAGNOSTICS_RS = REPO / "zelda3-bin" / "src" / "replay_diagnostics.rs"
 REPLAY_SAVE_CONFIG_RS = REPO / "zelda3-bin" / "src" / "replay_save_config.rs"
 CLASSIC_FRAME_RENDERER_RS = REPO / "zelda3-bin" / "src" / "classic_frame_renderer.rs"
+RENDERER_MODE_RS = REPO / "crates" / "renderer" / "src" / "renderer_mode.rs"
 BOUNDARY_SOURCE_FILES = (
     MAIN_RS,
     ASSET_PALETTE_COMMANDS_RS,
@@ -1411,6 +1412,30 @@ def check_gpu_capture_text(source: str) -> list[str]:
     return errors
 
 
+def check_renderer_mode_text(source: str) -> list[str]:
+    errors: list[str] = []
+    live_mode = function_source(source, "live_gpu_asset_mode_from_env_value")
+    if not live_mode:
+        errors.append(
+            "live GPU renderer mode boundary missing at "
+            "crates/renderer/src/renderer_mode.rs:live_gpu_asset_mode_from_env_value"
+        )
+        return errors
+    if 'Some("assets-anim-gpu") => Ok' in live_mode:
+        errors.append(
+            "live GPU renderer mode escaped RGBA variant path at "
+            "crates/renderer/src/renderer_mode.rs:live_gpu_asset_mode_from_env_value: "
+            "assets-anim-gpu must remain diagnostic-only"
+        )
+    if "expected assets-variant-gpu or assets-anim-gpu" in live_mode:
+        errors.append(
+            "live GPU renderer mode escaped RGBA variant path at "
+            "crates/renderer/src/renderer_mode.rs:live_gpu_asset_mode_from_env_value: "
+            "live error message must not advertise assets-anim-gpu"
+        )
+    return errors
+
+
 def boundary_source_text() -> str:
     return "\n".join(path.read_text() for path in BOUNDARY_SOURCE_FILES)
 
@@ -1424,6 +1449,7 @@ def main() -> int:
     errors.extend(check_gpu_capture_text(GPU_CAPTURE_RS.read_text()))
     errors.extend(check_play_renderer_text(PLAY_RENDERER_RS.read_text()))
     errors.extend(check_classic_frame_renderer_text(CLASSIC_FRAME_RENDERER_RS.read_text()))
+    errors.extend(check_renderer_mode_text(RENDERER_MODE_RS.read_text()))
     if errors:
         for error in errors:
             print(error, file=sys.stderr)

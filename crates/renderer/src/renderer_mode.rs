@@ -98,9 +98,8 @@ pub fn live_gpu_asset_mode_from_env_value(
         None | Some("assets-variant-gpu") => Ok(EffectiveRendererMode::from_name(
             "assets-variant-gpu",
         )),
-        Some("assets-anim-gpu") => Ok(EffectiveRendererMode::from_name("assets-anim-gpu")),
         Some(value) => Err(format!(
-            "ZELDA3_RENDERER={value:?} is diagnostic-only for live play; expected assets-variant-gpu or assets-anim-gpu"
+            "ZELDA3_RENDERER={value:?} is diagnostic-only for live play; expected assets-variant-gpu"
         )),
     }
 }
@@ -255,22 +254,9 @@ mod tests {
     }
 
     #[test]
-    fn live_gpu_asset_mode_allows_indexed_gpu_asset_mode() {
-        let mode = live_gpu_asset_mode_from_env_value(Some("assets-anim-gpu"))
-            .expect("indexed GPU live mode");
-
-        assert_eq!(mode.name(), "assets-anim-gpu");
-        assert!(mode.uses_gpu_assets());
-        assert!(!mode.uses_variant_atlas());
-        assert_eq!(
-            RendererMode::from_effective_mode(mode),
-            RendererMode::Modern
-        );
-    }
-
-    #[test]
     fn live_gpu_asset_mode_rejects_cpu_or_diagnostic_modes() {
         for value in [
+            "assets-anim-gpu",
             "assets-anim",
             "classic",
             "modern",
@@ -282,7 +268,7 @@ mod tests {
             assert_eq!(
                 error,
                 format!(
-                    "ZELDA3_RENDERER={value:?} is diagnostic-only for live play; expected assets-variant-gpu or assets-anim-gpu"
+                    "ZELDA3_RENDERER={value:?} is diagnostic-only for live play; expected assets-variant-gpu"
                 )
             );
         }
