@@ -75,16 +75,11 @@ pub struct ModernAssetLiveStats {
 
 pub struct ModernAssetLiveFrameReport {
     failure_line: Option<String>,
-    fallback_presentation_context: Option<crate::PresentationContext>,
 }
 
 impl ModernAssetLiveFrameReport {
     pub fn failure_line(&self) -> Option<&str> {
         self.failure_line.as_deref()
-    }
-
-    pub fn fallback_presentation_context(&self) -> Option<crate::PresentationContext> {
-        self.fallback_presentation_context
     }
 }
 
@@ -226,11 +221,6 @@ impl ModernAssetLiveStats {
                 .unhandled_gpu_asset_frame_line()
                 .map(ToString::to_string);
         }
-        if report.failure_line.is_none() && !output.result.is_presented() {
-            report.fallback_presentation_context = Some(crate::PresentationContext {
-                in_dungeon: output.in_dungeon,
-            });
-        }
         report
     }
 
@@ -252,10 +242,7 @@ impl ModernAssetLiveStats {
             }
             _ => None,
         };
-        ModernAssetLiveFrameReport {
-            failure_line,
-            fallback_presentation_context: None,
-        }
+        ModernAssetLiveFrameReport { failure_line }
     }
 
     fn full_gpu_violation(&self, stats: &VariantAtlasRenderStats) -> Option<ModernGpuPathFallback> {
@@ -429,7 +416,6 @@ mod tests {
             report.failure_line(),
             Some("gpu_path_unsupported_live reason=prefinal-overlay-cpu count=2")
         );
-        assert_eq!(report.fallback_presentation_context(), None);
     }
 
     #[test]
@@ -449,7 +435,6 @@ mod tests {
             report.failure_line(),
             Some("gpu_path_unsupported_live reason=mode7-live-vram count=1")
         );
-        assert_eq!(report.fallback_presentation_context(), None);
     }
 
     #[test]
@@ -469,7 +454,6 @@ mod tests {
         let report = live.record_present_output(&output, &live_resources(true));
 
         assert_eq!(report.failure_line(), None);
-        assert_eq!(report.fallback_presentation_context(), None);
         assert_eq!(live.frames, 1);
         assert_eq!(live.mode7_source_gpu_frames, 1);
     }
@@ -491,7 +475,6 @@ mod tests {
             report.failure_line(),
             Some("gpu_path_unsupported_live reason=vram-live-gpu count=1")
         );
-        assert_eq!(report.fallback_presentation_context(), None);
     }
 
     #[test]
@@ -508,11 +491,10 @@ mod tests {
             report.failure_line(),
             Some("modern asset renderer did not handle a GPU asset frame")
         );
-        assert_eq!(report.fallback_presentation_context(), None);
     }
 
     #[test]
-    fn record_present_output_owns_fallback_context() {
+    fn record_present_output_does_not_fallback_for_non_gpu_asset_frame() {
         let mut live = ModernAssetLiveStats::default();
         let output = crate::ModernAssetFramePresentOutput {
             result: crate::ModernAssetFramePresentResult::Unhandled,
@@ -522,9 +504,5 @@ mod tests {
         let report = live.record_present_output(&output, &live_resources(false));
 
         assert_eq!(report.failure_line(), None);
-        assert_eq!(
-            report.fallback_presentation_context(),
-            Some(crate::PresentationContext { in_dungeon: true })
-        );
     }
 }

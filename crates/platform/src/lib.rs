@@ -341,8 +341,9 @@ impl NativeFrontend {
     }
 
     /// Present one live modern-asset frame from a renderer capture input. The
-    /// platform owns surface handling and fallback presentation; the renderer
-    /// owns source adaptation and live-report policy.
+    /// platform owns surface handling; the renderer owns source adaptation and
+    /// live-report policy. This path never falls back to the older CPU/VRAM
+    /// presentation route.
     pub fn present_modern_asset_live_frame_from_entries<T>(
         &mut self,
         input: renderer::ModernAssetFrameLivePresentInput<'_, '_, T>,
@@ -360,9 +361,6 @@ impl NativeFrontend {
                 player_indoors: input.player_indoors,
             });
         let report = input.stats.record_present_output(&present, input.resources);
-        if let Some(presentation) = report.fallback_presentation_context() {
-            self.present_gpu_frame_with_context(&gpu_frame, presentation);
-        }
         report
     }
 
