@@ -2213,6 +2213,11 @@ pub struct ModernIndexCompareResources {
     variant_headless: Option<ModernGpuVariantHeadless>,
 }
 
+pub struct ModernAssetReadbackFrame {
+    pub rgba: Vec<u8>,
+    pub via: &'static str,
+}
+
 impl ModernIndexCompareResources {
     pub fn load_from_env(
         enabled: bool,
@@ -2270,6 +2275,42 @@ impl ModernIndexCompareResources {
 
     pub fn variant_headless(&self) -> Option<&ModernGpuVariantHeadless> {
         self.variant_headless.as_ref()
+    }
+
+    pub fn render_full_gpu_asset_rgba_from_entries<T>(
+        &self,
+        frame: &GpuFrame<'_>,
+        source_entries: &[T],
+        mode7_source_chars: Option<&[u8]>,
+        scene: ModernAssetFrameScene,
+    ) -> Result<ModernAssetReadbackFrame, String>
+    where
+        T: Copy + Into<(u8, u16, u16)>,
+    {
+        let src_table = source_table_from_entries(source_entries);
+        let render = modern_gpu::render_modern_index_compare_frame(
+            frame,
+            Some(&src_table),
+            self.source_atlas(),
+            self.gpu_headless(),
+            self.variant_headless(),
+            mode7_source_chars,
+            scene,
+            None,
+            false,
+        );
+        if let Some(fallback) =
+            modern_gpu::modern_gpu_path_fallback_reason(render.via, render.variant_stats.as_ref())
+        {
+            return Err(format!(
+                "modern asset GPU readback unsupported via={} reason={} count={}",
+                render.via, fallback.reason, fallback.count
+            ));
+        }
+        Ok(ModernAssetReadbackFrame {
+            rgba: render.rgba,
+            via: render.via,
+        })
     }
 }
 

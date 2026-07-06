@@ -265,6 +265,10 @@ impl ReplayRenderHashCapture {
 }
 
 impl GpuRgbaReadbackFrame {
+    pub(crate) fn from_rgba(rgba: Vec<u8>) -> Self {
+        Self { rgba }
+    }
+
     pub(crate) fn as_slice(&self) -> &[u8] {
         &self.rgba
     }

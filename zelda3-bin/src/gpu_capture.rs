@@ -1,7 +1,7 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process;
 
-use crate::gpu_readback::{GpuReadbackRenderer, GpuRgbaReadbackFrame};
+use crate::gpu_readback::GpuRgbaReadbackFrame;
 use platform::NativeFrontend;
 use renderer::{GpuFrame, RawScanlineFrame};
 use snes::ppu::PpuRenderFlags;
@@ -18,6 +18,12 @@ pub struct LiveGpuFrameCapture {
     mode7_source_chars: Option<Vec<u8>>,
     main_module: u8,
     player_indoors: u8,
+}
+
+struct ModernAssetGpuReadbackFrame {
+    frame: GpuRgbaReadbackFrame,
+    #[cfg(test)]
+    via: &'static str,
 }
 
 impl LiveGpuFrameCapture {
@@ -102,7 +108,8 @@ struct GpuPlayRenderer {
 
 impl GpuPlayRenderer {
     fn new() -> Self {
-        let modern_assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."))
+        let repo_root = repo_root();
+        let modern_assets = renderer::ModernAssetFrameResources::load_from_env(&repo_root)
             .unwrap_or_else(|e| {
                 eprintln!("modern asset load failed: {e}");
                 process::exit(2);
@@ -112,6 +119,13 @@ impl GpuPlayRenderer {
             variant_live_stats: renderer::ModernAssetLiveStats::from_env(),
         }
     }
+}
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("zelda3-bin lives under the workspace root")
+        .to_path_buf()
 }
 
 impl crate::play_renderer::PlayRendererBackend for GpuPlayRenderer {
@@ -161,10 +175,42 @@ pub(crate) fn render_live_game_gpu_frame_rgba(
     game: &mut ZeldaState,
     width: u32,
     height: u32,
-) -> GpuRgbaReadbackFrame {
+) -> Result<GpuRgbaReadbackFrame, String> {
+    if (width, height) != (256, 224) {
+        return Err(format!(
+            "modern asset GPU readback is fixed at 256x224, got {width}x{height}"
+        ));
+    }
+    let render = render_live_game_modern_asset_frame_rgba(game)?;
+    Ok(render.frame)
+}
+
+fn render_live_game_modern_asset_frame_rgba(
+    game: &mut ZeldaState,
+) -> Result<ModernAssetGpuReadbackFrame, String> {
     let capture = capture_gpu_frame_from_game(game);
-    let mut readback = GpuReadbackRenderer::new(width, height);
-    readback.render_live_gpu_capture_rgba(&capture)
+    let repo_root = repo_root();
+    let resources = renderer::ModernIndexCompareResources::load_from_env(true, &repo_root, false)?;
+    render_modern_asset_capture_rgba(&capture, &resources)
+}
+
+fn render_modern_asset_capture_rgba(
+    capture: &LiveGpuFrameCapture,
+    resources: &renderer::ModernIndexCompareResources,
+) -> Result<ModernAssetGpuReadbackFrame, String> {
+    let gpu_frame = capture.gpu_frame();
+    let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
+    let render = resources.render_full_gpu_asset_rgba_from_entries(
+        &gpu_frame,
+        capture.source_entries(),
+        capture.mode7_source_chars(),
+        scene,
+    )?;
+    Ok(ModernAssetGpuReadbackFrame {
+        frame: GpuRgbaReadbackFrame::from_rgba(render.rgba),
+        #[cfg(test)]
+        via: render.via,
+    })
 }
 
 pub(crate) fn render_hd_capture_from_game(
@@ -194,6 +240,25 @@ fn gpu_frame_capture_from_ppu<'a>(
         registers: gpu_frame_register_snapshot_from_ppu(ppu),
         cgram,
         raw_scanlines,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_game_gpu_frame_readback_uses_variant_asset_route() {
+        let (mut game, _) =
+            crate::developer_room_commands::load_developer_destination("preset-dev-sandbox")
+                .expect("developer sandbox should load");
+        game.zelda_run_frame(0);
+
+        let render = render_live_game_modern_asset_frame_rgba(&mut game)
+            .expect("GPU readback should render");
+
+        assert_eq!(render.via, "variant-gpu");
+        assert_eq!(render.frame.as_slice().len(), 256 * 224 * 4);
     }
 }
 

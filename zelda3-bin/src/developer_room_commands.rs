@@ -443,7 +443,13 @@ pub(crate) fn run_dump_developer_destination(args: &[String]) {
     }
 
     if let Some(path) = gpu_out_path.as_deref() {
-        let rgba = render_live_game_gpu_frame_rgba(&mut game, width, height);
+        let rgba = match render_live_game_gpu_frame_rgba(&mut game, width, height) {
+            Ok(rgba) => rgba,
+            Err(e) => {
+                eprintln!("failed to render developer GPU dump: {e}");
+                process::exit(1);
+            }
+        };
         if let Err(e) = write_rgba_frame_png(path, &rgba, width, height) {
             eprintln!("failed to write {}: {e}", path.display());
             process::exit(1);
