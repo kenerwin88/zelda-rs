@@ -41,6 +41,7 @@ struct DumpAssetsBySourceOptions {
     merge_existing: bool,
     write_palette_usage: bool,
     only_window: Option<String>,
+    window_frames: Option<u32>,
     developer_destination: Option<String>,
     skip_startup: bool,
     skip_replay: bool,
@@ -157,6 +158,7 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
     let mut merge_existing = false;
     let mut write_palette_usage = false;
     let mut only_window = None;
+    let mut window_frames = None;
     let mut developer_destination = None;
     let mut skip_startup = false;
     let mut skip_replay = false;
@@ -177,6 +179,17 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
                     process::exit(2);
                 };
                 only_window = Some(name.clone());
+                i += 2;
+            }
+            "--window-frames" => {
+                let Some(frames) = args.get(i + 1) else {
+                    eprintln!("--window-frames requires a frame count");
+                    process::exit(2);
+                };
+                window_frames = Some(frames.parse::<u32>().unwrap_or_else(|_| {
+                    eprintln!("invalid --window-frames value: {frames}");
+                    process::exit(2);
+                }));
                 i += 2;
             }
             "--developer-destination" => {
@@ -205,7 +218,7 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
             }
             other => {
                 eprintln!(
-                    "usage: zelda3 --dump-assets-by-source [frames] [--merge-existing] [--write-palette-usage] [--only-window <name>] [--developer-destination <id>] [--skip-startup] [--skip-replay]"
+                    "usage: zelda3 --dump-assets-by-source [frames] [--merge-existing] [--write-palette-usage] [--only-window <name>] [--window-frames <n>] [--developer-destination <id>] [--skip-startup] [--skip-replay]"
                 );
                 eprintln!("unknown --dump-assets-by-source argument: {other}");
                 process::exit(2);
@@ -220,6 +233,7 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
         merge_existing,
         write_palette_usage,
         only_window,
+        window_frames,
         developer_destination,
         skip_startup,
         skip_replay,
@@ -780,11 +794,20 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
         }
 
         let mut scripted_routes = scripted_dump_routes(repo_root, max_frames);
+        if options.window_frames.is_some() && options.only_window.is_none() {
+            eprintln!("--window-frames requires --only-window");
+            process::exit(2);
+        }
         if let Some(only_window) = options.only_window.as_deref() {
             scripted_routes.retain(|route| route.name == only_window);
             if scripted_routes.is_empty() {
                 eprintln!("--only-window did not match a passing oracle window: {only_window}");
                 process::exit(2);
+            }
+            if let Some(window_frames) = options.window_frames {
+                for route in &mut scripted_routes {
+                    route.frames = window_frames;
+                }
             }
         }
         let mut startup_game = load_play_state(rom);
@@ -1055,6 +1078,26 @@ mod palette_usage_tests {
             options.developer_destination.as_deref(),
             Some("preset-dev-sandbox")
         );
+    }
+
+    #[test]
+    fn only_window_dump_accepts_explicit_local_frame_count() {
+        let args = vec![
+            "--only-window".to_string(),
+            "coverage-branch-496311-pikit-shield-drop".to_string(),
+            "--window-frames".to_string(),
+            "10000".to_string(),
+            "--merge-existing".to_string(),
+        ];
+
+        let options = parse_dump_assets_by_source_options(&args);
+
+        assert_eq!(
+            options.only_window.as_deref(),
+            Some("coverage-branch-496311-pikit-shield-drop")
+        );
+        assert_eq!(options.window_frames, Some(10000));
+        assert!(options.merge_existing);
     }
 
     #[test]
