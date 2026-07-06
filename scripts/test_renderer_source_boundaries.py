@@ -974,6 +974,27 @@ class RendererSourceBoundaryTests(unittest.TestCase):
         self.assertTrue(any("run_dump_overworld_screen" in error for error in errors))
         self.assertFalse(any("run_dump_replay_checkpoint_ppu" in error for error in errors))
 
+    def test_rejects_classic_default_render_smoke_calls(self):
+        module = load_module()
+        source = """
+            fn run_smoke_render() {
+                run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+                write_argb_frame_png(&out_path, &frame, width, height);
+            }
+
+            fn run_trace_startup_audio() {
+                run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+            }
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(
+            all("default render smoke escaped PNG-backed GPU path" in error for error in errors)
+        )
+        self.assertTrue(all("run_smoke_render" in error for error in errors))
+
     def test_rejects_route_coverage_ownership_in_main(self):
         module = load_module()
         source = """

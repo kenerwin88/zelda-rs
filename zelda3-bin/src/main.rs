@@ -3768,13 +3768,19 @@ fn run_smoke_render(args: &[String]) {
     };
     let frames: u32 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(120);
     let mut game = load_play_state(rom_path);
-    let mut frame = vec![0u8; 256 * 224 * 4];
+    let mut frame = None;
     let mut audio = vec![0i16; 735 * 2];
     let mut audio_nonzero = 0usize;
     let mut audio_peak = 0i16;
-    let render_flags = PpuRenderFlags::empty();
     for _ in 0..frames {
-        run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
+        game.zelda_run_frame(0);
+        frame = Some(match render_live_game_gpu_frame_rgba(&mut game, 256, 224) {
+            Ok(rgba) => rgba,
+            Err(e) => {
+                eprintln!("failed to render smoke frame via modern asset GPU path: {e}");
+                process::exit(1);
+            }
+        });
         game.zelda_render_audio(&mut audio, 735, 2);
         game.zelda_discard_unused_audio_frames();
         audio_nonzero += audio.iter().filter(|&&sample| sample != 0).count();
@@ -3787,6 +3793,9 @@ fn run_smoke_render(args: &[String]) {
         );
     }
     let nonzero_pixels = frame
+        .as_ref()
+        .map(|frame| frame.as_slice())
+        .unwrap_or(&[])
         .chunks_exact(4)
         .filter(|pixel| pixel.iter().any(|&b| b != 0))
         .count();

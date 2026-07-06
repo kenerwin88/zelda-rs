@@ -373,9 +373,18 @@ GPU_ASSET_FRAME_DUMP_FUNCTIONS = {
     "run_dump_overworld_screen",
 }
 
+GPU_ASSET_MAIN_RENDER_FUNCTIONS = {
+    "run_smoke_render",
+}
+
 FORBIDDEN_FRAME_DUMP_CLASSIC_DEFAULT_CALLS = (
     "run_diagnostic_play_frame_bgra(",
     "render_diagnostic_overworld_screen_bgra(",
+    "write_argb_frame_png(",
+)
+
+FORBIDDEN_MAIN_GPU_ASSET_RENDER_CALLS = (
+    "run_diagnostic_play_frame_bgra(",
     "write_argb_frame_png(",
 )
 
@@ -1004,6 +1013,15 @@ def check_main_text(source: str) -> list[str]:
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
                 )
+        fn = enclosing_function(lines, index) or "<module>"
+        if fn in GPU_ASSET_MAIN_RENDER_FUNCTIONS:
+            for forbidden in FORBIDDEN_MAIN_GPU_ASSET_RENDER_CALLS:
+                if forbidden in line:
+                    errors.append(
+                        "default render smoke escaped PNG-backed GPU path at "
+                        f"zelda3-bin/src/main.rs:{index + 1} "
+                        f"in {fn}: {line.strip()}"
+                    )
         for forbidden in FORBIDDEN_MAIN_FRAME_DUMP_COMMAND_OWNERSHIP:
             if forbidden in line:
                 fn = enclosing_function(lines, index) or "<module>"
