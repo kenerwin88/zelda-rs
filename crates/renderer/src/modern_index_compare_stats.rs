@@ -791,21 +791,11 @@ macro_rules! define_variant_totals {
 
             fn append_fields(&self, out: &mut String) {
                 $(let _ = write!(out, concat!(" ", $label, "={}"), self.$field);)+
-                let _ = write!(
-                    out,
-                    " direct_gpu_fallback_frames={}",
-                    self.gpu_prefinal_base_frames
-                );
             }
         }
 
         fn append_variant_stats_fields(out: &mut String, stats: &VariantAtlasRenderStats) {
             $(let _ = write!(out, concat!(" ", $label, "={}"), stats.$field);)+
-            let _ = write!(
-                out,
-                " direct_gpu_fallback_frames={}",
-                stats.gpu_prefinal_base_frames
-            );
         }
     };
 }
@@ -857,7 +847,7 @@ mod tests {
         assert!(summary.contains("variant_draws=2"));
         assert!(summary.contains("fallback_draws=3"));
         assert!(summary.contains("gpu_prefinal_base_frames=1"));
-        assert!(summary.contains("direct_gpu_fallback_frames=1"));
+        assert!(!summary.contains("direct_gpu_fallback_frames"));
         assert!(summary.contains("cpu_prefinal_composite_frames=1"));
         assert!(summary.contains("mixed_overlay_bg_effect_reject_overlap=4"));
     }
@@ -877,7 +867,7 @@ mod tests {
         assert!(summary.starts_with(
             "modern_index_compare_summary compare_count=1 bad_count=0 bad_pixels=0 gpu_count=1 mode7_gpu_count=0 cpu_count=0"
         ));
-        assert!(summary.contains("direct_gpu_fallback_frames=0"));
+        assert!(!summary.contains("direct_gpu_fallback_frames"));
 
         let disabled = ModernIndexCompareStats::default();
         assert!(disabled.summary_line_if_enabled(true).is_none());

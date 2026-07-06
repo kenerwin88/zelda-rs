@@ -874,10 +874,12 @@ impl<'a> MixedVariantPrefinalPackets<'a> {
         plan: &crate::modern_variant_draw::VariantDrawPlan<'a>,
     ) -> Self {
         let mut bg = Vec::new();
+        let mut saw_bg_material_packet = false;
         for packet in plan
             .material_packets()
             .filter_map(|packet| packet.as_bg().map(|(_, packet)| packet))
         {
+            saw_bg_material_packet = true;
             let Ok(material) = bg_packet_prefinal_material(frame, packet) else {
                 continue;
             };
@@ -886,10 +888,13 @@ impl<'a> MixedVariantPrefinalPackets<'a> {
                 packet: packet.clone(),
             });
         }
-        Self {
-            bg,
-            sprites: Vec::new(),
-        }
+        let sprites =
+            if !saw_bg_material_packet && frame_needs_material_sprite_prefinal_finalizer(frame) {
+                plan.sprites.clone()
+            } else {
+                Vec::new()
+            };
+        Self { bg, sprites }
     }
 
     #[cfg(test)]
@@ -910,6 +915,10 @@ impl<'a> MixedVariantPrefinalPackets<'a> {
 
     fn is_bg_empty(&self) -> bool {
         self.bg.is_empty()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.bg.is_empty() && self.sprites.is_empty()
     }
 
     fn bg_len(&self) -> usize {
@@ -1521,6 +1530,23 @@ fn bg_packet_needs_prefinal_color_math(
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
 ) -> bool {
     bg_packet_prefinal_color_math_reason(frame, packet).is_some()
+}
+
+fn frame_needs_material_sprite_prefinal_finalizer(frame: &ModernFrame) -> bool {
+    if frame.brightness != 15 || frame.clip_mode != 0 {
+        return true;
+    }
+    if frame.math_enabled == 0 {
+        return false;
+    }
+    frame.add_subscreen
+        || frame.half_color
+        || frame.fixed_color_r != 0
+        || frame.fixed_color_g != 0
+        || frame.fixed_color_b != 0
+        || frame.windowsel_cm != 0
+        || frame.prevent_math_mode != 3
+        || frame.math_enabled & 0x10 != 0
 }
 
 fn bg_packet_prefinal_color_math_reason(
@@ -3367,38 +3393,6 @@ impl ModernGpuCompositor {
         ModernScreenBuilderResult::Gpu
     }
 
-    fn render_prefinal_screens_with_final_frame(
-        &self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        screen_frame: &ModernFrame,
-        final_frame: &ModernFrame,
-        bg_cells: &[ModernIndexTile],
-        sprite_cells: &[ModernIndexTile],
-        output_texture: &wgpu::Texture,
-    ) -> ModernScreenBuilderResult {
-        self.screen_builder.render_into(
-            device,
-            queue,
-            screen_frame,
-            bg_cells,
-            sprite_cells,
-            &self.finalizer.main_buffer,
-            &self.finalizer.sub_buffer,
-        );
-        self.finalizer.render_current_buffers_to_texture(
-            device,
-            queue,
-            final_frame,
-            u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
-                * u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT),
-            u32::from(crate::modern_frame::MODERN_FRAME_WIDTH),
-            1,
-            output_texture,
-        );
-        ModernScreenBuilderResult::Gpu
-    }
-
     fn render_prefinal_overlay_screens_with_final_frame(
         &self,
         device: &wgpu::Device,
@@ -4185,8 +4179,33 @@ impl ModernGpuVariantHeadless {
         live_index_base: &LiveIndexVariantBase<'_>,
         execution: &mut PreparedModernVariantExecution<'_, '_>,
     ) {
-        let build_result =
-            self.render_effect_material_with_prefinal_base(live_index_base, execution);
+        let frame = execution.frame();
+        let plan = execution.plan();
+        let has_material_bg_packets = plan
+            .material_packets()
+            .any(|packet| packet.as_bg().is_some());
+        let prefinal_packets = MixedVariantPrefinalPackets::from_material_plan(frame, plan);
+        if prefinal_packets.is_empty() {
+            if has_material_bg_packets {
+                let build_result = self.compositor.render_with_screen_builder_status(
+                    &self.device,
+                    &self.queue,
+                    live_index_base.frame(),
+                    live_index_base.bg_cells(),
+                    live_index_base.sprite_cells(),
+                    &self.target,
+                );
+                record_screen_builder_result(execution.stats_mut().as_mut(), build_result);
+            } else {
+                self.render_effect_material_mode1_order(execution);
+            }
+            return;
+        }
+        let build_result = self.render_effect_material_with_prefinal_base(
+            live_index_base,
+            execution,
+            &prefinal_packets,
+        );
         record_screen_builder_result(execution.stats_mut().as_mut(), build_result);
         if execution.stats().needs_headless_stable_overlay() {
             self.renderer.renderer.render_overlay(
@@ -4198,27 +4217,27 @@ impl ModernGpuVariantHeadless {
         }
     }
 
+    fn render_effect_material_mode1_order(
+        &self,
+        execution: &PreparedModernVariantExecution<'_, '_>,
+    ) {
+        self.renderer.render_effect_material_mode1_order(
+            &self.device,
+            &self.queue,
+            execution,
+            &self.target_view,
+        );
+    }
+
     fn render_effect_material_with_prefinal_base(
         &self,
         live_index_base: &LiveIndexVariantBase<'_>,
         execution: &mut PreparedModernVariantExecution<'_, '_>,
+        prefinal_packets: &MixedVariantPrefinalPackets<'_>,
     ) -> ModernScreenBuilderResult {
         let frame = execution.frame();
-        let plan = execution.plan();
-        let prefinal_packets = MixedVariantPrefinalPackets::from_material_plan(frame, plan);
         execution.stats_mut().as_mut().mixed_overlay_bg_effect_draws +=
             prefinal_packets.bg_len() as u32;
-        if prefinal_packets.is_bg_empty() {
-            return self.compositor.render_prefinal_screens_with_final_frame(
-                &self.device,
-                &self.queue,
-                live_index_base.frame(),
-                live_index_base.frame(),
-                live_index_base.bg_cells(),
-                live_index_base.sprite_cells(),
-                &self.target,
-            );
-        }
         self.compositor
             .render_prefinal_overlay_screens_with_final_frame(
                 &self.device,
@@ -4388,7 +4407,7 @@ mod tests {
         );
         assert_eq!(
             prepared.render_path(PreparedModernVariantOutput::Headless),
-            ModernVariantRenderPath::EffectMaterialWithStableOverlay
+            ModernVariantRenderPath::EffectMaterialMode1Order
         );
     }
 
@@ -4416,7 +4435,7 @@ mod tests {
             PreparedModernVariantExecution::new(&prepared, PreparedModernVariantOutput::Headless);
         assert_eq!(
             execution.render_path(),
-            ModernVariantRenderPath::EffectMaterialWithStableOverlay
+            ModernVariantRenderPath::EffectMaterialMode1Order
         );
 
         execution.stats_mut().as_mut().gpu_prefinal_base_frames += 1;
@@ -5680,8 +5699,8 @@ mod tests {
         assert_eq!(stats.effect_material_draws, 1);
         assert_eq!(stats.dynamic_material_draws, 1);
         assert_eq!(stats.fallback_draws, 0);
-        assert_eq!(stats.gpu_prefinal_base_frames, 1);
-        assert_eq!(stats.gpu_screen_builder_frames, 1);
+        assert_eq!(stats.gpu_prefinal_base_frames, 0);
+        assert_eq!(stats.gpu_screen_builder_frames, 0);
         assert_eq!(stats.cpu_prefinal_composite_frames, 0);
         assert_eq!(&variant[0..4], &[255, 255, 255, 0xff]);
     }
@@ -6607,6 +6626,7 @@ mod tests {
         ];
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+        frame.screen_enabled_main = 0x10;
         frame.cgram_rgba[0x80 + 16 + 9] = [9, 90, 9, 0xff];
         frame.index_sprites.push(ModernIndexSpriteInstance {
             cell_id: 0,
@@ -11430,6 +11450,8 @@ mod tests {
             }];
             let mut frame = ModernFrame::empty();
             frame.backdrop_color_rgba = [0, 0, 0, 0xff];
+            frame.screen_enabled_main = 0x11;
+            frame.cgram_rgba[2 * 16 + 1] = [90, 100, 110, 0xff];
             let mut layer = ModernBgLayer::new(0);
             layer.enabled_main = true;
             layer.index_tiles.push(ModernIndexTileInstance {

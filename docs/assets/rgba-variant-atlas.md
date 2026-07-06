@@ -271,8 +271,7 @@ renderer/oracle. Verification must report:
   packets.
 - `live_index_sprite_draws`: live-index draws from OBJ packets.
 - `gpu_prefinal_base_frames`: frames where the live-index/prefinal base stayed
-  on the GPU. This replaces the misleading internal name
-  `direct_gpu_fallback_frames`.
+  on the GPU.
 - `dynamic_material_fallback_draws`: source art exists, but the live material
   has no modeled stable effect, so the renderer uses the live indexed fallback.
 - `dynamic_material_fallback_instance_source_draws`: fallback draws forced by
@@ -398,8 +397,7 @@ material.
 of the five `dynamic_material_fallback_*` reason buckets above,
 `unsupported_material_draws` is a subset of
 `dynamic_material_fallback_unsupported_draws`, and `missing_variant_draws`
-mirrors `missing_art_draws`. Logs still print `direct_gpu_fallback_frames` as
-a legacy alias for `gpu_prefinal_base_frames`.
+mirrors `missing_art_draws`.
 
 The CHR/palette-index path remains the oracle until representative replay and
 oracle-window comparisons prove the base/effect path.
