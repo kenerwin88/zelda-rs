@@ -1227,12 +1227,11 @@ fn run_replay_save(args: &[String]) {
     // (extract_modern_sprites_from_vram); the static sprite atlas is no longer
     // loaded for rendering.
     //
-    // Off-VRAM atlas paths: unset uses `assets-variant-gpu`. The live frontend
-    // requires that RGBA variant path; explicit `assets-anim-gpu` remains a
-    // diagnostic compare path, and `assets-anim` keeps the CPU atlas compositor
-    // as an opt-out/debug oracle.
+    // Off-VRAM atlas paths: unset uses `assets-variant-gpu`. Replay-save
+    // compare keeps source-backed rendering on GPU; older CPU atlas comparison
+    // stays outside this route runner.
     modern_index_compare
-        .load_resources(Path::new("."), true)
+        .load_resources(Path::new("."), false)
         .unwrap_or_else(|e| {
             eprintln!("modern index compare resources load failed: {e}");
             process::exit(2);
