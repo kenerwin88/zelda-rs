@@ -113,11 +113,16 @@ pub(crate) enum ModernVariantRenderPath {
 }
 
 pub(crate) fn live_variant_render_path(stats: &VariantAtlasRenderStats) -> ModernVariantRenderPath {
-    if !stats.needs_live_index_base() && stats.effect_draws == stats.stable_draws {
+    let material_draws = stats.live_gpu_material_draws();
+    if *stats == VariantAtlasRenderStats::default() {
         ModernVariantRenderPath::EffectMaterialMode1Order
-    } else if stats.needs_live_index_base() {
+    } else if stats.needs_unresolved_live_index_base() {
         ModernVariantRenderPath::LiveIndexBaseWithOverlay
-    } else if stats.effect_draws != 0 {
+    } else if material_draws != 0
+        && (stats.effect_draws == stats.stable_draws || stats.stable_draws == 0)
+    {
+        ModernVariantRenderPath::EffectMaterialMode1Order
+    } else if material_draws != 0 {
         ModernVariantRenderPath::EffectMaterialWithStableOverlay
     } else {
         ModernVariantRenderPath::StableVariantFrame

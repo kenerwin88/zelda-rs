@@ -130,6 +130,14 @@ impl VariantAtlasRenderStats {
         self.fallback_draws != 0 || self.live_index_draws != 0
     }
 
+    pub fn needs_unresolved_live_index_base(&self) -> bool {
+        self.missing_art_draws != 0 || self.unkeyed_fallback_draws != 0
+    }
+
+    pub fn live_gpu_material_draws(&self) -> u32 {
+        self.effect_material_draws + self.dynamic_material_fallback_draws
+    }
+
     pub fn record_draw(&mut self, draw: &crate::modern_variant_atlas::VariantAtlasDraw<'_>) {
         match draw {
             crate::modern_variant_atlas::VariantAtlasDraw::Stable { .. } => {

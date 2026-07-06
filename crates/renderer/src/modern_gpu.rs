@@ -1512,6 +1512,13 @@ fn bg_effect_material_for_packet(
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
 ) -> EffectMaterial {
     let Some((_, effect)) = packet.draw.material_effect() else {
+        if matches!(
+            packet.draw,
+            crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. }
+        ) && bg_packet_can_use_live_cgram(packet, frame)
+        {
+            return EffectMaterial::LiveCgram;
+        }
         return EffectMaterial::StaticEffect;
     };
     if bg_effect_matches_live_cgram(packet.cell, packet.inst.palette, effect, frame) {
@@ -2784,7 +2791,28 @@ fn sprite_effect_material_packet<'packet, 'frame>(
     packet: &'packet crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>,
 ) -> Option<EffectMaterialPacket> {
     let Some((entry, effect)) = packet.draw.material_effect() else {
-        return None;
+        if !matches!(
+            packet.draw,
+            crate::modern_variant_atlas::VariantAtlasDraw::DynamicPalette { .. }
+        ) {
+            return None;
+        }
+        let entry = packet.draw.entry()?;
+        return Some(effect_material_packet(
+            EffectSurface::Sprite,
+            EffectMaterial::LiveCgram,
+            8 + u32::from(packet.inst.palette),
+            EffectInstanceSource {
+                cell_id: packet.inst.cell_id,
+                screen_x: packet.inst.screen_x,
+                screen_y: packet.inst.screen_y,
+                row_mask: packet.inst.row_mask,
+                hflip: packet.inst.hflip,
+                vflip: packet.inst.vflip,
+                source_hflip: entry.source_hflip,
+                source_vflip: entry.source_vflip,
+            },
+        ));
     };
     let static_effect_row = atlas.effect_row_for_effect(effect);
     let uses_static_effect =
@@ -4516,6 +4544,7 @@ mod tests {
         let all_effect = VariantAtlasRenderStats {
             stable_draws: 1,
             effect_draws: 1,
+            effect_material_draws: 1,
             ..Default::default()
         };
         assert_eq!(
@@ -4526,6 +4555,7 @@ mod tests {
         let mixed_stable_effect = VariantAtlasRenderStats {
             stable_draws: 2,
             effect_draws: 1,
+            effect_material_draws: 1,
             ..Default::default()
         };
         assert_eq!(
@@ -4534,12 +4564,37 @@ mod tests {
         );
 
         let live_index = VariantAtlasRenderStats {
-            fallback_draws: 1,
+            missing_art_draws: 1,
             ..Default::default()
         };
         assert_eq!(
             live_variant_render_path(&live_index),
             ModernVariantRenderPath::LiveIndexBaseWithOverlay
+        );
+
+        let live_cgram_material = VariantAtlasRenderStats {
+            fallback_draws: 1,
+            dynamic_material_draws: 1,
+            dynamic_material_fallback_draws: 1,
+            dynamic_material_fallback_missing_effect_draws: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            live_variant_render_path(&live_cgram_material),
+            ModernVariantRenderPath::EffectMaterialMode1Order
+        );
+
+        let stable_with_live_cgram_material = VariantAtlasRenderStats {
+            stable_draws: 1,
+            fallback_draws: 1,
+            dynamic_material_draws: 1,
+            dynamic_material_fallback_draws: 1,
+            dynamic_material_fallback_missing_effect_draws: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            live_variant_render_path(&stable_with_live_cgram_material),
+            ModernVariantRenderPath::EffectMaterialWithStableOverlay
         );
     }
 
@@ -4577,6 +4632,7 @@ mod tests {
         let stats = VariantAtlasRenderStats {
             stable_draws: 1,
             effect_draws: 1,
+            effect_material_draws: 1,
             ..Default::default()
         };
         let prepared = PreparedModernVariantRender::new(
@@ -4607,6 +4663,7 @@ mod tests {
         let stats = VariantAtlasRenderStats {
             stable_draws: 1,
             effect_draws: 1,
+            effect_material_draws: 1,
             ..Default::default()
         };
         let prepared = PreparedModernVariantRender::new(
@@ -6450,6 +6507,31 @@ mod tests {
         let live_groups = bg_effect_material_groups(&frame, std::slice::from_ref(&static_packet));
         assert_eq!(live_groups.len(), 1);
         assert_eq!(live_groups[0].material, EffectMaterial::LiveCgram);
+
+        let dynamic_packet = VariantBgDrawPacket {
+            layer_index: 0,
+            cell: &cell,
+            inst: &inst,
+            key: None,
+            draw: VariantAtlasDraw::DynamicPalette {
+                entry: &entry,
+                reason: crate::modern_variant_atlas::DynamicFallbackReason::MissingStableEffect,
+            },
+        };
+        let dynamic_groups =
+            bg_effect_material_groups(&frame, std::slice::from_ref(&dynamic_packet));
+        assert_eq!(dynamic_groups.len(), 1);
+        assert_eq!(dynamic_groups[0].material, EffectMaterial::LiveCgram);
+
+        let dynamic_batch = bg_effect_material_batch(
+            &atlas,
+            BgEffectMaterialGroup {
+                material: EffectMaterial::LiveCgram,
+                packets: std::slice::from_ref(&dynamic_packet),
+            },
+        );
+        assert_eq!(dynamic_batch.material(), Some(EffectMaterial::LiveCgram));
+        assert_eq!(dynamic_batch.instance_count(), 1);
     }
 
     #[test]
@@ -6599,6 +6681,21 @@ mod tests {
         assert_eq!(live_material.material, EffectMaterial::LiveCgram);
         assert_eq!(live_material.surface, EffectSurface::Sprite);
         assert_eq!(live_material.effect_row, 9);
+
+        let dynamic_packet = VariantSpriteDrawPacket {
+            cell: &live_cell,
+            inst: &live_inst,
+            key: None,
+            draw: VariantAtlasDraw::DynamicPalette {
+                entry: &entry,
+                reason: crate::modern_variant_atlas::DynamicFallbackReason::MissingStableEffect,
+            },
+        };
+        let dynamic_material = sprite_effect_material_packet(&atlas, &dynamic_packet)
+            .expect("dynamic sprite should use live CGRAM material");
+        assert_eq!(dynamic_material.material, EffectMaterial::LiveCgram);
+        assert_eq!(dynamic_material.surface, EffectSurface::Sprite);
+        assert_eq!(dynamic_material.effect_row, 9);
     }
 
     #[test]
