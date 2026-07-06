@@ -1,3 +1,6 @@
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process;
 
@@ -28,6 +31,9 @@ struct ModernAssetGpuReadbackFrame {
 
 pub(crate) struct ModernAssetGpuReadbackRenderer {
     resources: renderer::ModernIndexCompareResources,
+    validation_cache: HashMap<u64, Result<(), String>>,
+    validation_cache_hits: u64,
+    validation_cache_misses: u64,
 }
 
 impl LiveGpuFrameCapture {
@@ -134,7 +140,12 @@ impl ModernAssetGpuReadbackRenderer {
         let repo_root = repo_root();
         let resources =
             renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)?;
-        Ok(Self { resources })
+        Ok(Self {
+            resources,
+            validation_cache: HashMap::new(),
+            validation_cache_hits: 0,
+            validation_cache_misses: 0,
+        })
     }
 
     pub(crate) fn render_game_rgba(
@@ -143,6 +154,30 @@ impl ModernAssetGpuReadbackRenderer {
     ) -> Result<GpuRgbaReadbackFrame, String> {
         let capture = capture_gpu_frame_from_game(game);
         render_modern_asset_capture_rgba(&capture, &self.resources).map(|render| render.frame)
+    }
+
+    pub(crate) fn validate_game_full_gpu_path(
+        &mut self,
+        game: &mut ZeldaState,
+    ) -> Result<(), String> {
+        let capture = capture_gpu_frame_from_game(game);
+        let key = validation_cache_key(&capture);
+        if let Some(result) = self.validation_cache.get(&key) {
+            self.validation_cache_hits += 1;
+            return result.clone();
+        }
+        self.validation_cache_misses += 1;
+        let result = validate_modern_asset_capture(&capture, &self.resources).map(|_| ());
+        self.validation_cache.insert(key, result.clone());
+        result
+    }
+
+    pub(crate) fn validation_cache_stats(&self) -> (u64, u64, usize) {
+        (
+            self.validation_cache_hits,
+            self.validation_cache_misses,
+            self.validation_cache.len(),
+        )
     }
 }
 
@@ -233,6 +268,75 @@ fn render_modern_asset_capture_rgba(
         #[cfg(test)]
         via: render.via,
     })
+}
+
+fn validate_modern_asset_capture(
+    capture: &LiveGpuFrameCapture,
+    resources: &renderer::ModernIndexCompareResources,
+) -> Result<&'static str, String> {
+    let gpu_frame = capture.gpu_frame();
+    let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
+    resources.validate_full_gpu_asset_from_entries(
+        &gpu_frame,
+        capture.source_entries(),
+        capture.mode7_source_chars(),
+        scene,
+    )
+}
+
+fn validation_cache_key(capture: &LiveGpuFrameCapture) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    let input = capture.capture_input();
+    let registers = input.registers;
+
+    registers.vram.hash(&mut hasher);
+    input.cgram.hash(&mut hasher);
+    registers.oam.hash(&mut hasher);
+    registers.mode.hash(&mut hasher);
+    for bg in registers.bg {
+        bg.h_scroll.hash(&mut hasher);
+        bg.v_scroll.hash(&mut hasher);
+        bg.tilemap_wider.hash(&mut hasher);
+        bg.tilemap_higher.hash(&mut hasher);
+        bg.tilemap_adr.hash(&mut hasher);
+        bg.tile_adr.hash(&mut hasher);
+    }
+    registers.obj.tile_adr1.hash(&mut hasher);
+    registers.obj.tile_adr2.hash(&mut hasher);
+    registers.obj.obj_size.hash(&mut hasher);
+    registers.mosaic_enabled.hash(&mut hasher);
+    registers.mosaic_size.hash(&mut hasher);
+    registers.extra_left_right.hash(&mut hasher);
+    registers.mode7.matrix.hash(&mut hasher);
+    registers.mode7.large_field.hash(&mut hasher);
+    registers.mode7.char_fill.hash(&mut hasher);
+    registers.mode7.x_flip.hash(&mut hasher);
+    registers.mode7.y_flip.hash(&mut hasher);
+    registers.mode7.ext_bg_always_zero.hash(&mut hasher);
+    registers.screen_enabled.hash(&mut hasher);
+    registers.screen_windowed.hash(&mut hasher);
+    registers.brightness.hash(&mut hasher);
+    registers.forced_blank.hash(&mut hasher);
+    registers.math_enabled.hash(&mut hasher);
+    registers.subtract_color.hash(&mut hasher);
+    registers.half_color.hash(&mut hasher);
+    registers.fixed_color_r.hash(&mut hasher);
+    registers.fixed_color_g.hash(&mut hasher);
+    registers.fixed_color_b.hash(&mut hasher);
+    registers.add_subscreen.hash(&mut hasher);
+    registers.clip_mode.hash(&mut hasher);
+    registers.prevent_math_mode.hash(&mut hasher);
+    registers.windowsel.hash(&mut hasher);
+    input.raw_scanlines.hash(&mut hasher);
+    for src in capture.source_entries() {
+        src.kind.hash(&mut hasher);
+        src.pack.hash(&mut hasher);
+        src.tile_off.hash(&mut hasher);
+    }
+    capture.mode7_source_chars().hash(&mut hasher);
+    capture.player_indoors().hash(&mut hasher);
+
+    hasher.finish()
 }
 
 pub(crate) fn render_hd_capture_from_game(

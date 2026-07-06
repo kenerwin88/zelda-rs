@@ -2362,6 +2362,43 @@ impl ModernIndexCompareResources {
             via: render.via,
         })
     }
+
+    pub fn validate_full_gpu_asset_from_entries<T>(
+        &self,
+        frame: &GpuFrame<'_>,
+        source_entries: &[T],
+        mode7_source_chars: Option<&[u8]>,
+        scene: ModernAssetFrameScene,
+    ) -> Result<&'static str, String>
+    where
+        T: Copy + Into<(u8, u16, u16)>,
+    {
+        if self.variant_headless.is_none() {
+            return Err(
+                "modern asset GPU validation requires canonical RGBA variant atlas".to_string(),
+            );
+        }
+        let src_table = source_table_from_entries(source_entries);
+        let render = modern_gpu::validate_modern_index_compare_frame(
+            frame,
+            Some(&src_table),
+            self.source_atlas(),
+            self.gpu_headless(),
+            self.variant_headless(),
+            mode7_source_chars,
+            scene,
+            false,
+        );
+        if let Some(fallback) =
+            modern_gpu::modern_gpu_path_fallback_reason(render.via, render.variant_stats.as_ref())
+        {
+            return Err(format!(
+                "modern asset GPU validation unsupported via={} reason={} count={}",
+                render.via, fallback.reason, fallback.count
+            ));
+        }
+        Ok(render.via)
+    }
 }
 
 /// Renderer-owned resource bundle for the legacy modern-atlas compare path.
@@ -4093,6 +4130,62 @@ mod tests {
             ModernAssetFrameScene::from_in_dungeon(false),
         ) {
             Ok(_) => panic!("full asset readback must not use indexed GPU resources"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.contains("requires canonical RGBA variant atlas"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn full_gpu_asset_validation_requires_variant_atlas_resources() {
+        let resources = ModernIndexCompareResources {
+            source_atlas: None,
+            gpu_headless: None,
+            variant_headless: None,
+        };
+        let vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        let frame = GpuFrame {
+            vram: &vram,
+            cgram: &cgram,
+            oam: &oam,
+            mode: 1,
+            bg: Default::default(),
+            obj: Default::default(),
+            mosaic_enabled: 0,
+            mosaic_size: 0,
+            extra_left_right: 0,
+            mode7: Default::default(),
+            screen_enabled: [0, 0],
+            screen_windowed: [0, 0],
+            brightness: 15,
+            forced_blank: false,
+            math_enabled: 0,
+            subtract_color: false,
+            half_color: false,
+            fixed_color_r: 0,
+            fixed_color_g: 0,
+            fixed_color_b: 0,
+            add_subscreen: false,
+            clip_mode: 0,
+            prevent_math_mode: 0,
+            windowsel_cm: 0,
+            windowsel: 0,
+            scanlines: Box::new([gpu_frame::ScanlineRegs::default(); 224]),
+        };
+        let entries: [(u8, u16, u16); 0] = [];
+
+        let err = match resources.validate_full_gpu_asset_from_entries(
+            &frame,
+            &entries,
+            None,
+            ModernAssetFrameScene::from_in_dungeon(false),
+        ) {
+            Ok(_) => panic!("full asset validation must not use indexed GPU resources"),
             Err(err) => err,
         };
 

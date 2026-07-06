@@ -103,7 +103,7 @@ pub(crate) fn run_smoke_asset_gpu(args: &[String]) {
         let sram = read_file_or_exit(path, "SRAM");
         apply_sram_to_game_or_exit(&mut game, path, &sram);
     }
-    let renderer = match ModernAssetGpuReadbackRenderer::load_from_env() {
+    let mut renderer = match ModernAssetGpuReadbackRenderer::load_from_env() {
         Ok(renderer) => renderer,
         Err(e) => {
             eprintln!("failed to initialize modern asset GPU readback: {e}");
@@ -114,7 +114,7 @@ pub(crate) fn run_smoke_asset_gpu(args: &[String]) {
         let absolute_frame = start_frame.wrapping_add(frame_no);
         let input = input_script.input_for_frame(absolute_frame);
         game.zelda_run_frame(input as i32);
-        if let Err(e) = renderer.render_game_rgba(&mut game) {
+        if let Err(e) = renderer.validate_game_full_gpu_path(&mut game) {
             eprintln!(
                 "asset GPU smoke failed frame={} absolute_frame={} input=0x{input:04x}: {e}",
                 frame_no.wrapping_add(1),
@@ -123,8 +123,9 @@ pub(crate) fn run_smoke_asset_gpu(args: &[String]) {
             process::exit(1);
         }
     }
+    let (cache_hits, cache_misses, cache_entries) = renderer.validation_cache_stats();
     println!(
-        "asset GPU smoke passed frames={} start_frame={} end_frame={} main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; cgram_nonzero={}; oam_nonzero={}",
+        "asset GPU smoke passed frames={} start_frame={} end_frame={} main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; cgram_nonzero={}; oam_nonzero={}; validation_cache_hits={}; validation_cache_misses={}; validation_cache_entries={}",
         options.frames,
         start_frame,
         start_frame.wrapping_add(options.frames),
@@ -135,6 +136,9 @@ pub(crate) fn run_smoke_asset_gpu(args: &[String]) {
         game.ppu.screen_enabled[1],
         game.ppu.cgram.iter().filter(|&&v| v != 0).count(),
         game.ppu.oam.iter().filter(|&&v| v != 0).count(),
+        cache_hits,
+        cache_misses,
+        cache_entries,
     );
 }
 

@@ -3442,6 +3442,11 @@ pub struct ModernIndexCompareRender {
     pub variant_traces: Vec<crate::modern_variant_draw::VariantPixelTrace>,
 }
 
+pub struct ModernIndexCompareValidation {
+    pub via: &'static str,
+    pub variant_stats: Option<crate::modern_software::VariantAtlasRenderStats>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ModernGpuPathFallback {
     pub reason: &'static str,
@@ -3651,6 +3656,78 @@ pub fn render_modern_index_compare_frame<S: crate::modern_extract::SourceTableVi
         via: "vram",
         variant_stats: None,
         variant_traces: Vec::new(),
+    }
+}
+
+pub fn validate_modern_index_compare_frame<S: crate::modern_extract::SourceTableView + ?Sized>(
+    frame: &crate::gpu_frame::GpuFrame<'_>,
+    src_table: Option<&S>,
+    source_atlas: Option<&crate::modern_source_atlas::ModernSourceAtlas>,
+    headless: Option<&ModernGpuHeadless>,
+    variant_headless: Option<&ModernGpuVariantHeadless>,
+    mode7_source_chars: Option<&[u8]>,
+    scene: crate::ModernAssetFrameScene,
+    allow_source_cpu_fallback: bool,
+) -> ModernIndexCompareValidation {
+    if let Some(variant_headless) = variant_headless {
+        if frame.mode == 7 {
+            return ModernIndexCompareValidation {
+                via: if variant_headless.mode7_source_chars().is_some() {
+                    "mode7-source-gpu"
+                } else {
+                    "mode7-missing-source"
+                },
+                variant_stats: None,
+            };
+        }
+        let atlas = source_atlas.expect("atlas loaded for gpu compare");
+        let src_table = src_table.expect("source table loaded for gpu compare");
+        return ModernIndexCompareValidation {
+            via: "variant-gpu",
+            variant_stats: Some(variant_headless.validate_from_sources(
+                frame,
+                src_table,
+                atlas,
+                scene.bg_palette_name(),
+                scene.sprite_palette_name(),
+            )),
+        };
+    }
+
+    if headless.is_some() {
+        if frame.mode == 7 {
+            return ModernIndexCompareValidation {
+                via: if mode7_source_chars.is_some() {
+                    "mode7-source-gpu"
+                } else {
+                    "mode7-gpu"
+                },
+                variant_stats: None,
+            };
+        }
+        return ModernIndexCompareValidation {
+            via: "gpu",
+            variant_stats: None,
+        };
+    }
+
+    if frame.mode == 7 {
+        return ModernIndexCompareValidation {
+            via: "mode7-cpu",
+            variant_stats: None,
+        };
+    }
+
+    if allow_source_cpu_fallback && source_atlas.is_some() && src_table.is_some() {
+        return ModernIndexCompareValidation {
+            via: "sources",
+            variant_stats: None,
+        };
+    }
+
+    ModernIndexCompareValidation {
+        via: "vram",
+        variant_stats: None,
     }
 }
 
@@ -4067,6 +4144,31 @@ impl ModernGpuVariantHeadless {
             sprite_palette_name,
             trace_pixel,
         )
+    }
+
+    pub fn validate_from_sources<S: crate::modern_extract::SourceTableView + ?Sized>(
+        &self,
+        frame: &crate::gpu_frame::GpuFrame<'_>,
+        src_table: &S,
+        atlas: &crate::modern_source_atlas::ModernSourceAtlas,
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+    ) -> crate::modern_software::VariantAtlasRenderStats {
+        debug_assert_ne!(frame.mode, 7);
+        let (mut modern, bg_cells) =
+            crate::modern_extract::extract_modern_frame_from_sources(frame, src_table, atlas);
+        let (sprite_cells, sprites) =
+            crate::modern_extract::extract_modern_sprites_from_sources(frame, src_table, atlas);
+        modern.index_sprites = sprites;
+
+        let prepared = self.renderer.prepare_variant_render(
+            &modern,
+            &bg_cells,
+            &sprite_cells,
+            bg_palette_name,
+            sprite_palette_name,
+        );
+        prepared.initial_stats()
     }
 
     fn render_prepared_variant_rgba(
