@@ -945,6 +945,28 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_classic_default_frame_dump_calls(self):
+        module = load_module()
+        source = """
+            fn run_dump_frame() {
+                run_diagnostic_play_frame_bgra(&mut game, input, &mut frame, render_flags);
+                write_argb_frame_png(&out_path, &frame, width, height);
+            }
+
+            fn run_dump_overworld_screen() {
+                run_diagnostic_play_frame_bgra(&mut game, input, &mut frame, render_flags);
+                write_argb_frame_png(&out_path, &frame, width, height);
+            }
+        """
+
+        errors = module.check_frame_dump_commands_text(textwrap.dedent(source))
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(
+            all("default frame dump escaped PNG-backed GPU path" in error for error in errors)
+        )
+        self.assertTrue(all("run_dump_frame" in error for error in errors))
+
     def test_rejects_route_coverage_ownership_in_main(self):
         module = load_module()
         source = """

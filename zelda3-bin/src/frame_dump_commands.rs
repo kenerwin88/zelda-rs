@@ -4,7 +4,8 @@ use std::process;
 
 use snes::ppu::PpuRenderFlags;
 
-use crate::image_output::write_argb_frame_png;
+use crate::gpu_capture::render_live_game_gpu_frame_rgba;
+use crate::image_output::{write_argb_frame_png, write_rgba_frame_png};
 use crate::input_script::InputScript;
 use crate::render_diagnostics::{
     render_diagnostic_overworld_screen_bgra, run_diagnostic_play_frame_bgra,
@@ -44,7 +45,6 @@ pub(crate) fn run_dump_frame(args: &[String]) {
         }
     };
     let mut input_script = InputScript::default();
-    let render_flags = PpuRenderFlags::empty();
     let mut load_sram = None;
     let mut load_state = None;
     let mut i = 3usize;
@@ -98,12 +98,18 @@ pub(crate) fn run_dump_frame(args: &[String]) {
     }
     let width = 256u32;
     let height = 224u32;
-    let mut frame = vec![0u8; width as usize * height as usize * 4];
     for frame_no in 0..frames {
         let input = input_script.input_for_frame(start_frame.wrapping_add(frame_no));
-        run_diagnostic_play_frame_bgra(&mut game, input, &mut frame, render_flags);
+        game.zelda_run_frame(input as i32);
     }
-    if let Err(e) = write_argb_frame_png(&out_path, &frame, width, height) {
+    let rgba = match render_live_game_gpu_frame_rgba(&mut game, width, height) {
+        Ok(rgba) => rgba,
+        Err(e) => {
+            eprintln!("failed to render dump frame via modern asset GPU path: {e}");
+            process::exit(1);
+        }
+    };
+    if let Err(e) = write_rgba_frame_png(&out_path, &rgba, width, height) {
         eprintln!("failed to write {}: {e}", out_path.display());
         process::exit(1);
     }

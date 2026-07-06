@@ -55,6 +55,7 @@ use frame_dump_commands::{
     run_dump_frame, run_dump_overworld_screen, run_dump_replay_checkpoint_ppu,
     run_scan_replay_checkpoints,
 };
+use gpu_capture::render_live_game_gpu_frame_rgba;
 use gpu_compare::{
     replay_cpu_bgra_hash_line, replay_optional_gpu_readback_renderer, run_play_gpu_render_compare,
 };
@@ -1205,14 +1206,12 @@ fn run_replay_save(args: &[String]) {
     } else {
         None
     };
-    // GPU readback is used for dump-frame and the diagnostic gpu-render-hash
-    // line. The parity-facing render-hash line hashes the raw CPU BGRA display
-    // buffer, matching C PrintRenderHash exactly.
+    // Classic GPU readback is used for compare/hash diagnostics. Frame dumps
+    // render through the PNG-backed asset path below.
     let mut gpu_readback = replay_optional_gpu_readback_renderer(
         render_hash_log,
         &gpu_render_compare,
         render_hash_dump_frame.is_some(),
-        dump_frame_path.is_some(),
         &modern_index_compare,
     );
     let mut fingerprint_writer = match fingerprint_log.as_deref() {
@@ -2937,7 +2936,14 @@ fn run_replay_save(args: &[String]) {
     if let Some(path) = dump_frame_path.as_deref() {
         let width = 256u32;
         let height = 224u32;
-        let rgba = gpu_readback.render_replay_dump_frame_rgba(&game);
+        let mut dump_game = game.clone();
+        let rgba = match render_live_game_gpu_frame_rgba(&mut dump_game, width, height) {
+            Ok(rgba) => rgba,
+            Err(e) => {
+                eprintln!("failed to render replay-save dump frame via modern asset GPU path: {e}");
+                process::exit(1);
+            }
+        };
         if let Err(e) = write_rgba_frame_png(path, &rgba, width, height) {
             eprintln!("failed to write {}: {e}", path.display());
             process::exit(1);

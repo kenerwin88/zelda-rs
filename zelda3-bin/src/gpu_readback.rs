@@ -101,23 +101,6 @@ impl OptionalGpuReadbackRenderer {
         );
         self.render_cpu_bgra_frame_rgba(frame)
     }
-
-    pub(crate) fn render_replay_dump_frame_rgba(
-        &mut self,
-        game: &ZeldaState,
-    ) -> GpuRgbaReadbackFrame {
-        let width = 256usize;
-        let height = 224usize;
-        let mut frame = vec![0u8; width * height * 4];
-        let mut render_game = game.clone();
-        crate::classic_frame_renderer::render_play_frame_bgra(
-            &mut render_game,
-            &mut frame,
-            width * 4,
-            PpuRenderFlags::empty(),
-        );
-        self.render_cpu_bgra_frame_rgba(&frame)
-    }
 }
 
 impl ReplayRenderHashCapture {

@@ -19,6 +19,7 @@ ASSET_PALETTE_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "asset_palette_command
 ASSET_SOURCE_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "asset_source_dump_commands.rs"
 AUDIO_TRACE_RS = REPO / "zelda3-bin" / "src" / "audio_trace.rs"
 DEVELOPER_ROOM_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "developer_room_commands.rs"
+FRAME_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "frame_dump_commands.rs"
 SHEET_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "sheet_dump_commands.rs"
 INDEX_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "index_dump_commands.rs"
 OVERWORLD_DUMP_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "overworld_dump_commands.rs"
@@ -365,6 +366,11 @@ FORBIDDEN_MAIN_FRAME_DUMP_COMMAND_OWNERSHIP = (
     "fn run_dump_overworld_screen",
     "fn run_scan_replay_checkpoints",
     "fn run_dump_replay_checkpoint_ppu",
+)
+
+FORBIDDEN_FRAME_DUMP_CLASSIC_DEFAULT_CALLS = (
+    "run_diagnostic_play_frame_bgra(",
+    "write_argb_frame_png(",
 )
 
 FORBIDDEN_MAIN_ROUTE_COVERAGE_OWNERSHIP = (
@@ -1133,6 +1139,26 @@ def check_play_renderer_text(source: str) -> list[str]:
     return errors
 
 
+def check_frame_dump_commands_text(source: str) -> list[str]:
+    errors: list[str] = []
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith("//") or stripped.startswith("///"):
+            continue
+        fn = enclosing_function(lines, index)
+        if fn != "run_dump_frame":
+            continue
+        for forbidden in FORBIDDEN_FRAME_DUMP_CLASSIC_DEFAULT_CALLS:
+            if forbidden in line:
+                errors.append(
+                    "default frame dump escaped PNG-backed GPU path at "
+                    f"zelda3-bin/src/frame_dump_commands.rs:{index + 1} "
+                    f"in {fn}: {line.strip()}"
+                )
+    return errors
+
+
 def check_classic_frame_renderer_text(source: str) -> list[str]:
     errors: list[str] = []
     lines = source.splitlines()
@@ -1193,6 +1219,7 @@ def main() -> int:
     source = boundary_source_text()
     errors = check_source_text(source)
     errors.extend(check_main_text(MAIN_RS.read_text()))
+    errors.extend(check_frame_dump_commands_text(FRAME_DUMP_COMMANDS_RS.read_text()))
     errors.extend(check_gpu_capture_text(GPU_CAPTURE_RS.read_text()))
     errors.extend(check_play_renderer_text(PLAY_RENDERER_RS.read_text()))
     errors.extend(check_classic_frame_renderer_text(CLASSIC_FRAME_RENDERER_RS.read_text()))

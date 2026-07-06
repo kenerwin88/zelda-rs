@@ -290,14 +290,12 @@ pub(crate) fn replay_optional_gpu_readback_renderer(
     render_hash_log: u32,
     gpu_render_compare: &GpuRenderCompareRun,
     render_hash_dump_enabled: bool,
-    dump_frame_enabled: bool,
     modern_index_compare: &ModernIndexCompareRun,
 ) -> OptionalGpuReadbackRenderer {
     OptionalGpuReadbackRenderer::new(
         render_hash_log != 0
             || gpu_render_compare.enabled()
             || render_hash_dump_enabled
-            || dump_frame_enabled
             || modern_index_compare.enabled(),
         256,
         224,
