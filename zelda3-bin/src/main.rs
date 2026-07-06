@@ -1121,6 +1121,77 @@ fn count_nonzero(bytes: &[u8]) -> usize {
     bytes.iter().filter(|&&b| b != 0).count()
 }
 
+fn print_asset_gpu_smoke_progress(
+    label: &str,
+    frames: u32,
+    game: &ZeldaState,
+    renderer: &ModernAssetGpuReadbackRenderer,
+) {
+    let (
+        cache_hits,
+        cache_misses,
+        cache_entries,
+        cache_key_ms,
+        cache_miss_ms,
+        bg_extract_ms,
+        sprite_extract_ms,
+        stats_ms,
+    ) = renderer.validation_cache_stats();
+    eprintln!(
+        "{label} asset GPU smoke progress frames={frames} main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; validation_cache_hits={cache_hits}; validation_cache_misses={cache_misses}; validation_cache_entries={cache_entries}; validation_key_ms={cache_key_ms}; validation_miss_ms={cache_miss_ms}; validation_bg_extract_ms={bg_extract_ms}; validation_sprite_extract_ms={sprite_extract_ms}; validation_stats_ms={stats_ms}",
+        game.ram[0x10],
+        game.ram[0x11],
+        game.ppu.mode,
+        game.ppu.screen_enabled[0],
+        game.ppu.screen_enabled[1],
+    );
+}
+
+fn write_asset_gpu_missing_report_or_exit(
+    path: &Path,
+    command: &str,
+    frame: u32,
+    input: u16,
+    error: &str,
+) {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        if let Err(e) = fs::create_dir_all(parent) {
+            eprintln!(
+                "failed to create missing-assets output directory {}: {e}",
+                parent.display()
+            );
+            process::exit(2);
+        }
+    }
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .unwrap_or_else(|e| {
+            eprintln!(
+                "failed to open missing-assets output {}: {e}",
+                path.display()
+            );
+            process::exit(2);
+        });
+    let record = serde_json::json!({
+        "command": command,
+        "frame": frame,
+        "input": format!("0x{input:04x}"),
+        "error": error,
+    });
+    writeln!(file, "{record}").unwrap_or_else(|e| {
+        eprintln!(
+            "failed to write missing-assets output {}: {e}",
+            path.display()
+        );
+        process::exit(2);
+    });
+}
+
 fn run_replay_save(args: &[String]) {
     let ReplaySaveConfig {
         rom_path,
@@ -1135,6 +1206,8 @@ fn run_replay_save(args: &[String]) {
         mut gpu_render_compare,
         mut modern_index_compare,
         asset_gpu_smoke,
+        asset_gpu_progress_interval,
+        asset_gpu_missing_assets_out,
         ppu_mode_summary,
         render_hash_dump_frame,
         save_state_path,
@@ -1274,10 +1347,16 @@ fn run_replay_save(args: &[String]) {
         }
         if let Some(renderer) = asset_gpu_smoke_renderer.as_mut() {
             if let Err(e) = renderer.validate_game_full_gpu_path(&mut game) {
+                if let Some(path) = asset_gpu_missing_assets_out.as_deref() {
+                    write_asset_gpu_missing_report_or_exit(path, "replay-save", frames, input, &e);
+                }
                 eprintln!(
                     "replay-save asset GPU smoke failed frame={frames} input=0x{input:04x}: {e}"
                 );
                 process::exit(1);
+            }
+            if asset_gpu_progress_interval != 0 && frames % asset_gpu_progress_interval == 0 {
+                print_asset_gpu_smoke_progress("replay-save", frames, &game, renderer);
             }
         }
         last_frame_had_fingerprint_render = false;

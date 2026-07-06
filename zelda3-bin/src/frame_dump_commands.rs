@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process;
 
@@ -18,10 +19,12 @@ struct ScriptedAssetGpuSmokeOptions {
     input_script_path: Option<PathBuf>,
     load_sram: Option<PathBuf>,
     load_state: Option<PathBuf>,
+    progress_interval: u32,
+    missing_assets_out: Option<PathBuf>,
 }
 
 fn parse_scripted_asset_gpu_smoke_options(args: &[String]) -> ScriptedAssetGpuSmokeOptions {
-    let usage = "usage: zelda3 --smoke-asset-gpu <path-to-rom.sfc> <frames> [--input-script <path>] [--load-sram <path>] [--load-state <path>]";
+    let usage = "usage: zelda3 --smoke-asset-gpu <path-to-rom.sfc> <frames> [--input-script <path>] [--load-sram <path>] [--load-state <path>] [--asset-gpu-progress <stride>] [--missing-assets-out <path>] [--stop-after-first-missing]";
     let rom_path = match args.first() {
         Some(path) => path.clone(),
         None => {
@@ -39,6 +42,8 @@ fn parse_scripted_asset_gpu_smoke_options(args: &[String]) -> ScriptedAssetGpuSm
     let mut input_script_path = None;
     let mut load_sram = None;
     let mut load_state = None;
+    let mut progress_interval = 10_000u32;
+    let mut missing_assets_out = None::<PathBuf>;
     let mut i = 2usize;
     while i < args.len() {
         match args[i].as_str() {
@@ -66,6 +71,28 @@ fn parse_scripted_asset_gpu_smoke_options(args: &[String]) -> ScriptedAssetGpuSm
                 load_sram = Some(PathBuf::from(path));
                 i += 2;
             }
+            "--asset-gpu-progress" => {
+                let stride = args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--asset-gpu-progress requires a stride");
+                    process::exit(2);
+                });
+                progress_interval = stride.parse::<u32>().unwrap_or_else(|_| {
+                    eprintln!("invalid --asset-gpu-progress stride: {stride}");
+                    process::exit(2);
+                });
+                i += 2;
+            }
+            "--missing-assets-out" => {
+                let path = args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--missing-assets-out requires a path");
+                    process::exit(2);
+                });
+                missing_assets_out = Some(PathBuf::from(path));
+                i += 2;
+            }
+            "--stop-after-first-missing" => {
+                i += 1;
+            }
             flag => {
                 eprintln!("unknown smoke-asset-gpu option: {flag}");
                 process::exit(2);
@@ -82,7 +109,80 @@ fn parse_scripted_asset_gpu_smoke_options(args: &[String]) -> ScriptedAssetGpuSm
         input_script_path,
         load_sram,
         load_state,
+        progress_interval,
+        missing_assets_out,
     }
+}
+
+fn write_asset_gpu_missing_report_or_exit(
+    path: &Path,
+    command: &str,
+    frame: u32,
+    input: u16,
+    error: &str,
+) {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        if let Err(e) = fs::create_dir_all(parent) {
+            eprintln!(
+                "failed to create missing-assets output directory {}: {e}",
+                parent.display()
+            );
+            process::exit(2);
+        }
+    }
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .unwrap_or_else(|e| {
+            eprintln!(
+                "failed to open missing-assets output {}: {e}",
+                path.display()
+            );
+            process::exit(2);
+        });
+    let record = serde_json::json!({
+        "command": command,
+        "frame": frame,
+        "input": format!("0x{input:04x}"),
+        "error": error,
+    });
+    writeln!(file, "{record}").unwrap_or_else(|e| {
+        eprintln!(
+            "failed to write missing-assets output {}: {e}",
+            path.display()
+        );
+        process::exit(2);
+    });
+}
+
+fn print_asset_gpu_smoke_progress(
+    label: &str,
+    frames: u32,
+    game: &zelda3::ZeldaState,
+    renderer: &ModernAssetGpuReadbackRenderer,
+) {
+    let (
+        cache_hits,
+        cache_misses,
+        cache_entries,
+        cache_key_ms,
+        cache_miss_ms,
+        bg_extract_ms,
+        sprite_extract_ms,
+        stats_ms,
+    ) = renderer.validation_cache_stats();
+    eprintln!(
+        "{label} asset GPU smoke progress frames={frames} main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; validation_cache_hits={cache_hits}; validation_cache_misses={cache_misses}; validation_cache_entries={cache_entries}; validation_key_ms={cache_key_ms}; validation_miss_ms={cache_miss_ms}; validation_bg_extract_ms={bg_extract_ms}; validation_sprite_extract_ms={sprite_extract_ms}; validation_stats_ms={stats_ms}",
+        game.ram[0x10],
+        game.ram[0x11],
+        game.ppu.mode,
+        game.ppu.screen_enabled[0],
+        game.ppu.screen_enabled[1],
+    );
 }
 
 pub(crate) fn run_smoke_asset_gpu(args: &[String]) {
@@ -115,12 +215,25 @@ pub(crate) fn run_smoke_asset_gpu(args: &[String]) {
         let input = input_script.input_for_frame(absolute_frame);
         game.zelda_run_frame(input as i32);
         if let Err(e) = renderer.validate_game_full_gpu_path(&mut game) {
+            if let Some(path) = options.missing_assets_out.as_deref() {
+                write_asset_gpu_missing_report_or_exit(
+                    path,
+                    "smoke-asset-gpu",
+                    frame_no.wrapping_add(1),
+                    input,
+                    &e,
+                );
+            }
             eprintln!(
                 "asset GPU smoke failed frame={} absolute_frame={} input=0x{input:04x}: {e}",
                 frame_no.wrapping_add(1),
                 absolute_frame.wrapping_add(1),
             );
             process::exit(1);
+        }
+        let frames_done = frame_no.wrapping_add(1);
+        if options.progress_interval != 0 && frames_done % options.progress_interval == 0 {
+            print_asset_gpu_smoke_progress("scripted", frames_done, &game, &renderer);
         }
     }
     let (
@@ -475,6 +588,8 @@ mod tests {
                 input_script_path: Some(PathBuf::from("scripts/inputs/branch.txt")),
                 load_sram: None,
                 load_state: Some(PathBuf::from(".cache/branch.sav")),
+                progress_interval: 10_000,
+                missing_assets_out: None,
             }
         );
     }
@@ -498,6 +613,36 @@ mod tests {
                 input_script_path: None,
                 load_sram: Some(PathBuf::from("route.srm")),
                 load_state: None,
+                progress_interval: 10_000,
+                missing_assets_out: None,
+            }
+        );
+    }
+
+    #[test]
+    fn smoke_asset_gpu_options_accept_progress_and_missing_output() {
+        let args = vec![
+            "saves/zelda3.sfc".to_string(),
+            "5".to_string(),
+            "--asset-gpu-progress".to_string(),
+            "100".to_string(),
+            "--missing-assets-out".to_string(),
+            "target/missing-assets.jsonl".to_string(),
+            "--stop-after-first-missing".to_string(),
+        ];
+
+        let options = parse_scripted_asset_gpu_smoke_options(&args);
+
+        assert_eq!(
+            options,
+            ScriptedAssetGpuSmokeOptions {
+                rom_path: "saves/zelda3.sfc".to_string(),
+                frames: 5,
+                input_script_path: None,
+                load_sram: None,
+                load_state: None,
+                progress_interval: 100,
+                missing_assets_out: Some(PathBuf::from("target/missing-assets.jsonl")),
             }
         );
     }
