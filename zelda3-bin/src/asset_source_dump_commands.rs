@@ -1,13 +1,16 @@
 use std::collections::HashMap;
 use std::fs;
 use std::panic::{self, AssertUnwindSafe};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process;
 
 use crate::developer_room_commands::load_developer_destination;
 use crate::image_output::write_assets_index_png;
 use crate::input_script::InputScript;
-use crate::{load_play_or_checkpoint, load_play_state, load_translated_replay_state};
+use crate::{
+    apply_sram_to_game_or_exit, load_play_or_checkpoint, load_play_state,
+    load_translated_replay_state, read_file_or_exit,
+};
 use renderer::modern_extract::{decode_snes_2bpp_tile_indices, decode_snes_4bpp_tile_indices};
 use renderer::modern_source_atlas::modern_source_key;
 use serde::{Deserialize, Serialize};
@@ -23,8 +26,9 @@ const CHR_KIND_BG3_CONTENT: u8 = 7;
 struct ScriptedDumpRoute {
     name: String,
     frames: u32,
-    input_script: String,
-    checkpoint_path: Option<String>,
+    input_script: PathBuf,
+    checkpoint_path: Option<PathBuf>,
+    load_sram: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug)]
@@ -43,6 +47,8 @@ struct DumpAssetsBySourceOptions {
     only_window: Option<String>,
     window_frames: Option<u32>,
     developer_destination: Option<String>,
+    input_script_path: Option<PathBuf>,
+    load_sram: Option<PathBuf>,
     skip_startup: bool,
     skip_replay: bool,
 }
@@ -160,6 +166,8 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
     let mut only_window = None;
     let mut window_frames = None;
     let mut developer_destination = None;
+    let mut input_script_path = None;
+    let mut load_sram = None;
     let mut skip_startup = false;
     let mut skip_replay = false;
     let mut i = 0usize;
@@ -200,6 +208,22 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
                 developer_destination = Some(id.clone());
                 i += 2;
             }
+            "--input-script" => {
+                let Some(path) = args.get(i + 1) else {
+                    eprintln!("--input-script requires a path");
+                    process::exit(2);
+                };
+                input_script_path = Some(PathBuf::from(path));
+                i += 2;
+            }
+            "--load-sram" => {
+                let Some(path) = args.get(i + 1) else {
+                    eprintln!("--load-sram requires a path");
+                    process::exit(2);
+                };
+                load_sram = Some(PathBuf::from(path));
+                i += 2;
+            }
             "--skip-startup" => {
                 skip_startup = true;
                 i += 1;
@@ -218,7 +242,7 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
             }
             other => {
                 eprintln!(
-                    "usage: zelda3 --dump-assets-by-source [frames] [--merge-existing] [--write-palette-usage] [--only-window <name>] [--window-frames <n>] [--developer-destination <id>] [--skip-startup] [--skip-replay]"
+                    "usage: zelda3 --dump-assets-by-source [frames] [--merge-existing] [--write-palette-usage] [--only-window <name>] [--window-frames <n>] [--developer-destination <id>] [--input-script <path>] [--load-sram <path>] [--skip-startup] [--skip-replay]"
                 );
                 eprintln!("unknown --dump-assets-by-source argument: {other}");
                 process::exit(2);
@@ -228,6 +252,10 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
     if developer_destination.is_some() && !max_frames_set {
         max_frames = 1;
     }
+    if input_script_path.is_none() && load_sram.is_some() {
+        eprintln!("--load-sram requires --input-script");
+        process::exit(2);
+    }
     DumpAssetsBySourceOptions {
         max_frames,
         merge_existing,
@@ -235,6 +263,8 @@ fn parse_dump_assets_by_source_options(args: &[String]) -> DumpAssetsBySourceOpt
         only_window,
         window_frames,
         developer_destination,
+        input_script_path,
+        load_sram,
         skip_startup,
         skip_replay,
     }
@@ -447,8 +477,10 @@ fn scripted_dump_routes(repo_root: &Path, frame_cap: u32) -> Vec<ScriptedDumpRou
         routes.push(ScriptedDumpRoute {
             name: cols[0].to_owned(),
             frames: route_frames,
-            input_script,
-            checkpoint_path: checkpoint.map(|checkpoint| checkpoint.checkpoint_path.clone()),
+            input_script: PathBuf::from(input_script),
+            checkpoint_path: checkpoint
+                .map(|checkpoint| PathBuf::from(&checkpoint.checkpoint_path)),
+            load_sram: None,
         });
     }
     routes
@@ -793,7 +825,18 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
             return (frames, frames);
         }
 
-        let mut scripted_routes = scripted_dump_routes(repo_root, max_frames);
+        let mut scripted_routes =
+            if let Some(input_script_path) = options.input_script_path.as_ref() {
+                vec![ScriptedDumpRoute {
+                    name: input_script_path.display().to_string(),
+                    frames: max_frames,
+                    input_script: input_script_path.clone(),
+                    checkpoint_path: None,
+                    load_sram: options.load_sram.clone(),
+                }]
+            } else {
+                scripted_dump_routes(repo_root, max_frames)
+            };
         if options.window_frames.is_some() && options.only_window.is_none() {
             eprintln!("--window-frames requires --only-window");
             process::exit(2);
@@ -830,7 +873,11 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
 
         let mut scripted_walked = 0u32;
         for route in scripted_routes {
-            let script_path = repo_root.join(&route.input_script);
+            let script_path = if route.input_script.is_absolute() {
+                route.input_script.clone()
+            } else {
+                repo_root.join(&route.input_script)
+            };
             let script = match InputScript::from_path(&script_path) {
                 Ok(script) => script,
                 Err(e) => {
@@ -844,10 +891,24 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
             };
             let (mut game, start_frame) = match route.checkpoint_path.as_deref() {
                 Some(checkpoint_path) => {
-                    load_play_or_checkpoint(rom, Some(&repo_root.join(checkpoint_path)))
+                    let checkpoint_path = if checkpoint_path.is_absolute() {
+                        checkpoint_path.to_path_buf()
+                    } else {
+                        repo_root.join(checkpoint_path)
+                    };
+                    load_play_or_checkpoint(rom, Some(&checkpoint_path))
                 }
                 None => (load_play_state(rom), 0),
             };
+            if let Some(path) = route.load_sram.as_deref() {
+                let path = if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    repo_root.join(path)
+                };
+                let sram = read_file_or_exit(&path, "SRAM");
+                apply_sram_to_game_or_exit(&mut game, &path, &sram);
+            }
             let mut frames = 0u32;
             while frames < route.frames {
                 let absolute_frame = start_frame.wrapping_add(frames);
@@ -1098,6 +1159,35 @@ mod palette_usage_tests {
         );
         assert_eq!(options.window_frames, Some(10000));
         assert!(options.merge_existing);
+    }
+
+    #[test]
+    fn route_start_dump_accepts_input_script_and_sram() {
+        let args = vec![
+            "274263".to_string(),
+            "--input-script".to_string(),
+            "scripts/inputs/tas-us-full-completion-smv.txt".to_string(),
+            "--load-sram".to_string(),
+            "scripts/inputs/tas-us-full-completion-smv.sram".to_string(),
+            "--merge-existing".to_string(),
+            "--skip-startup".to_string(),
+            "--skip-replay".to_string(),
+        ];
+
+        let options = parse_dump_assets_by_source_options(&args);
+
+        assert_eq!(options.max_frames, 274263);
+        assert_eq!(
+            options.input_script_path.as_deref(),
+            Some(Path::new("scripts/inputs/tas-us-full-completion-smv.txt"))
+        );
+        assert_eq!(
+            options.load_sram.as_deref(),
+            Some(Path::new("scripts/inputs/tas-us-full-completion-smv.sram"))
+        );
+        assert!(options.merge_existing);
+        assert!(options.skip_startup);
+        assert!(options.skip_replay);
     }
 
     #[test]
