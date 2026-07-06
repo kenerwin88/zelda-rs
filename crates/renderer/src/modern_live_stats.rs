@@ -429,6 +429,7 @@ mod tests {
             hd_overrides: None,
             mode7_source_chars: None,
             gpu_asset_mode,
+            variant_gpu_mode: gpu_asset_mode,
         }
     }
 

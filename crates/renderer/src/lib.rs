@@ -2101,6 +2101,7 @@ pub struct ModernAssetFrameResources {
     hd_overrides: Option<modern_hd_overrides::ModernHdOverrides>,
     mode7_source_chars: Option<Vec<u8>>,
     gpu_asset_mode: bool,
+    variant_gpu_mode: bool,
 }
 
 impl ModernAssetFrameResources {
@@ -2129,6 +2130,7 @@ impl ModernAssetFrameResources {
             hd_overrides: modern_hd_overrides::ModernHdOverrides::from_env(),
             mode7_source_chars: None,
             gpu_asset_mode: mode.uses_gpu_assets(),
+            variant_gpu_mode: mode.uses_variant_atlas(),
         })
     }
 
@@ -2151,6 +2153,10 @@ impl ModernAssetFrameResources {
 
     fn gpu_asset_mode(&self) -> bool {
         self.gpu_asset_mode
+    }
+
+    fn variant_gpu_mode(&self) -> bool {
+        self.variant_gpu_mode
     }
 
     fn unhandled_gpu_asset_frame_line(&self) -> Option<&'static str> {
@@ -2421,15 +2427,20 @@ fn modern_asset_frame_present_route(
     has_variant_atlas: bool,
     has_mode7_source_chars: bool,
     gpu_asset_mode: bool,
+    variant_gpu_mode: bool,
 ) -> ModernAssetFramePresentRoute {
     if frame_mode == 7 {
         return if gpu_asset_mode && has_mode7_source_chars {
             ModernAssetFramePresentRoute::Mode7SourceGpu
-        } else if gpu_asset_mode {
+        } else if gpu_asset_mode && !variant_gpu_mode {
             ModernAssetFramePresentRoute::Mode7Gpu
         } else {
             ModernAssetFramePresentRoute::Unhandled
         };
+    }
+
+    if variant_gpu_mode && !(has_src_table && has_source_atlas && has_variant_atlas) {
+        return ModernAssetFramePresentRoute::Unhandled;
     }
 
     if has_src_table && has_source_atlas {
@@ -2873,11 +2884,11 @@ impl FrameRenderer {
         self.present_modern_rgba(&rgba, 256 * scale, 224 * scale)
     }
 
-    /// Present one live modern-asset frame using the highest available renderer
-    /// path. The caller supplies game-owned inputs (source table and semantic
-    /// scene state); this method owns the route and asset-palette choices across
-    /// Mode 7 GPU, source variant GPU, source GPU, source software, and VRAM GPU
-    /// fallback.
+    /// Present one live modern-asset frame using the route required by the
+    /// active asset mode. The caller supplies game-owned inputs (source table
+    /// and semantic scene state); this method owns the route and asset-palette
+    /// choices across source-backed variant GPU, explicit indexed GPU/CPU
+    /// opt-outs, and VRAM GPU fallback.
     pub fn present_modern_asset_frame<S: modern_extract::SourceTableView + ?Sized>(
         &mut self,
         frame: &GpuFrame<'_>,
@@ -2894,6 +2905,7 @@ impl FrameRenderer {
             resources.variant_atlas().is_some(),
             mode7_source_chars.is_some(),
             resources.gpu_asset_mode(),
+            resources.variant_gpu_mode(),
         ) {
             ModernAssetFramePresentRoute::Mode7SourceGpu => {
                 self.present_modern_mode7_source_gpu(
@@ -3801,6 +3813,7 @@ mod tests {
             hd_overrides: None,
             mode7_source_chars: None,
             gpu_asset_mode: true,
+            variant_gpu_mode: true,
         };
 
         assert_eq!(
@@ -3985,23 +3998,39 @@ mod tests {
     #[test]
     fn modern_asset_frame_route_keeps_default_paths_on_gpu() {
         assert_eq!(
-            modern_asset_frame_present_route(7, true, true, true, true, true),
+            modern_asset_frame_present_route(7, true, true, true, true, true, true),
             ModernAssetFramePresentRoute::Mode7SourceGpu
         );
         assert_eq!(
-            modern_asset_frame_present_route(7, true, true, true, false, true),
-            ModernAssetFramePresentRoute::Mode7Gpu
+            modern_asset_frame_present_route(7, true, true, true, false, true, true),
+            ModernAssetFramePresentRoute::Unhandled
         );
         assert_eq!(
-            modern_asset_frame_present_route(1, true, true, true, false, true),
+            modern_asset_frame_present_route(1, true, true, true, false, true, true),
             ModernAssetFramePresentRoute::SourceVariantGpu
         );
         assert_eq!(
-            modern_asset_frame_present_route(1, true, true, false, false, true),
+            modern_asset_frame_present_route(1, true, true, false, false, true, true),
+            ModernAssetFramePresentRoute::Unhandled
+        );
+        assert_eq!(
+            modern_asset_frame_present_route(1, false, false, false, false, true, true),
+            ModernAssetFramePresentRoute::Unhandled
+        );
+    }
+
+    #[test]
+    fn modern_asset_frame_route_preserves_explicit_indexed_gpu_fallbacks() {
+        assert_eq!(
+            modern_asset_frame_present_route(7, true, true, false, false, true, false),
+            ModernAssetFramePresentRoute::Mode7Gpu
+        );
+        assert_eq!(
+            modern_asset_frame_present_route(1, true, true, false, false, true, false),
             ModernAssetFramePresentRoute::SourceGpu
         );
         assert_eq!(
-            modern_asset_frame_present_route(1, false, false, false, false, true),
+            modern_asset_frame_present_route(1, false, false, false, false, true, false),
             ModernAssetFramePresentRoute::VramGpu
         );
     }
@@ -4009,15 +4038,15 @@ mod tests {
     #[test]
     fn modern_asset_frame_route_preserves_explicit_non_gpu_fallbacks() {
         assert_eq!(
-            modern_asset_frame_present_route(1, true, true, false, false, false),
+            modern_asset_frame_present_route(1, true, true, false, false, false, false),
             ModernAssetFramePresentRoute::SourceSoftware
         );
         assert_eq!(
-            modern_asset_frame_present_route(7, true, true, false, true, false),
+            modern_asset_frame_present_route(7, true, true, false, true, false, false),
             ModernAssetFramePresentRoute::Unhandled
         );
         assert_eq!(
-            modern_asset_frame_present_route(1, false, false, false, false, false),
+            modern_asset_frame_present_route(1, false, false, false, false, false, false),
             ModernAssetFramePresentRoute::Unhandled
         );
     }
