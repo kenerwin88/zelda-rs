@@ -2555,7 +2555,6 @@ enum ModernAssetFramePresentRoute {
     Mode7Gpu,
     SourceVariantGpu,
     SourceGpu,
-    VramGpu,
     Unhandled,
 }
 
@@ -2599,11 +2598,7 @@ fn modern_asset_frame_present_route(
         return ModernAssetFramePresentRoute::Unhandled;
     }
 
-    if gpu_asset_mode {
-        ModernAssetFramePresentRoute::VramGpu
-    } else {
-        ModernAssetFramePresentRoute::Unhandled
-    }
+    ModernAssetFramePresentRoute::Unhandled
 }
 
 impl FrameRenderer {
@@ -3033,8 +3028,9 @@ impl FrameRenderer {
     /// Present one live modern-asset frame using the route required by the
     /// active asset mode. The caller supplies game-owned inputs (source table
     /// and semantic scene state); this method owns the route and asset-palette
-    /// choices across source-backed variant GPU, explicit indexed GPU/CPU
-    /// opt-outs, and VRAM GPU fallback.
+    /// choices across source-backed variant GPU and explicit indexed GPU
+    /// diagnostics. Frames without source inputs are unhandled instead of
+    /// falling back to live-VRAM rendering.
     pub fn present_modern_asset_frame<S: modern_extract::SourceTableView + ?Sized>(
         &mut self,
         frame: &GpuFrame<'_>,
@@ -3099,13 +3095,6 @@ impl FrameRenderer {
                 )?;
                 Ok(ModernAssetFramePresentResult::Presented {
                     via: "gpu",
-                    variant_stats: None,
-                })
-            }
-            ModernAssetFramePresentRoute::VramGpu => {
-                self.present_modern_gpu_from_vram(frame)?;
-                Ok(ModernAssetFramePresentResult::Presented {
-                    via: "vram-gpu",
                     variant_stats: None,
                 })
             }
@@ -3221,10 +3210,8 @@ impl FrameRenderer {
         self.render()
     }
 
-    /// Live GPU present of a VRAM-decoded modern frame. This is the fallback
-    /// GPU asset path when the caller has no source atlas loaded: the renderer
-    /// owns VRAM extraction plus GPU presentation, keeping the binary out of
-    /// ModernFrame/cell assembly.
+    /// Diagnostic GPU present of a VRAM-decoded modern frame. The default
+    /// modern-asset path uses source-backed PNG/variant art instead.
     pub fn present_modern_gpu_from_vram(
         &mut self,
         frame: &GpuFrame<'_>,
@@ -4363,7 +4350,7 @@ mod tests {
         );
         assert_eq!(
             modern_asset_frame_present_route(1, false, false, false, false, false, true, false),
-            ModernAssetFramePresentRoute::VramGpu
+            ModernAssetFramePresentRoute::Unhandled
         );
     }
 
