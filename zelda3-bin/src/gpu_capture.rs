@@ -107,7 +107,6 @@ impl LiveGpuFrameCapture {
         renderer::ModernAssetFrameLivePresentInput {
             frame: self.capture_input(),
             source_entries: &self.source_entries,
-            mode7_source_chars: self.mode7_source_chars(),
             resources,
             stats,
             player_indoors: self.player_indoors,

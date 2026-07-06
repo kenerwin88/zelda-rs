@@ -258,8 +258,7 @@ impl NativeFrontend {
     ) -> renderer::ModernAssetFramePresentResult {
         let mut present_result = renderer::ModernAssetFramePresentResult::Unhandled;
         if let Some(renderer) = &mut self.handler.renderer {
-            let result =
-                renderer.present_modern_asset_frame(frame, src_table, resources, None, scene);
+            let result = renderer.present_modern_asset_frame(frame, src_table, resources, scene);
             match result {
                 Ok(result) => present_result = result,
                 Err(RenderError::SurfaceReconfigureNeeded) => {
@@ -356,7 +355,6 @@ impl NativeFrontend {
             self.present_modern_asset_frame_from_entries(renderer::ModernAssetFramePresentInput {
                 frame: &gpu_frame,
                 source_entries: input.source_entries,
-                mode7_source_chars: input.mode7_source_chars,
                 resources: input.resources,
                 player_indoors: input.player_indoors,
             });
