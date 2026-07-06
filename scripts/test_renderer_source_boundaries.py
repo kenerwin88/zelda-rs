@@ -939,9 +939,48 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 1)
+        self.assertGreaterEqual(len(errors), 1)
         self.assertIn("replay-save dump escaped PNG-backed GPU path", errors[0])
         self.assertIn("run_replay_save", errors[0])
+
+    def test_rejects_replay_save_cpu_default_render_hash_log(self):
+        module = load_module()
+        source = """
+            fn run_replay_save() {
+                if should_log_render_hash {
+                    let rgba = gpu_readback.render_replay_hash_cpu_frame_rgba(&mut game, frame);
+                    println!("{}", replay_cpu_bgra_hash_line(frames, frame));
+                }
+            }
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertTrue(
+            any(
+                "replay-save render-hash log escaped PNG-backed GPU path" in error
+                for error in errors
+            )
+        )
+
+    def test_allows_replay_save_gpu_default_render_hash_with_cpu_debug_gate(self):
+        module = load_module()
+        source = """
+            fn run_replay_save() {
+                if should_log_render_hash {
+                    if std::env::var_os("ZELDA3_RENDER_HASH_CPU_DEBUG").is_none() {
+                        let gpu_rgba = render_hash_capture.render_gpu_rgba(&mut gpu_readback);
+                        println!("{}", gpu_rgba.render_hash_log_line(frames));
+                    } else {
+                        let rgba = gpu_readback.render_replay_hash_cpu_frame_rgba(&mut game, frame);
+                    }
+                }
+            }
+        """
+
+        errors = module.check_main_text(textwrap.dedent(source))
+
+        self.assertEqual(errors, [])
 
     def test_rejects_replay_crash_classic_frame_replay(self):
         module = load_module()

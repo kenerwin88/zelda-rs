@@ -79,6 +79,14 @@ pub fn render_hash_frame_bgra(frame: u32, frame_bgra: &[u8]) -> RenderFrameHashR
     }
 }
 
+pub fn render_hash_frame_rgba(frame: u32, frame_rgba: &[u8]) -> RenderFrameHashReport {
+    let hash = render_frame_rgb_hash_rgba(frame_rgba);
+    RenderFrameHashReport {
+        hash,
+        line: render_hash_line("render-hash", frame, hash),
+    }
+}
+
 pub fn gpu_render_hash_frame_rgba(frame: u32, frame_rgba: &[u8]) -> RenderFrameHashReport {
     let hash = render_frame_rgb_hash_rgba(frame_rgba);
     RenderFrameHashReport {
@@ -310,11 +318,17 @@ mod tests {
         let rgba = [1, 2, 3, 0xff, 4, 5, 6, 0xff];
 
         let cpu = render_hash_frame_bgra(42, &bgra);
+        let gpu_as_render_hash = render_hash_frame_rgba(42, &rgba);
         let gpu = gpu_render_hash_frame_rgba(42, &rgba);
 
         assert_eq!(cpu.hash, render_frame_rgb_hash_bgra(&bgra));
+        assert_eq!(gpu_as_render_hash.hash, render_frame_rgb_hash_rgba(&rgba));
         assert_eq!(gpu.hash, render_frame_rgb_hash_rgba(&rgba));
         assert_eq!(cpu.line, "render-hash frame=42 hash=0x03d252aa");
+        assert_eq!(
+            gpu_as_render_hash.line,
+            "render-hash frame=42 hash=0x03d252aa"
+        );
         assert_eq!(gpu.line, "gpu-render-hash frame=42 hash=0x03d252aa");
     }
 

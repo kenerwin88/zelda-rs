@@ -785,6 +785,16 @@ def enclosing_function(lines: list[str], index: int) -> str | None:
     return None
 
 
+def function_source(source: str, name: str) -> str:
+    start = source.find(f"fn {name}")
+    if start == -1:
+        return ""
+    next_fn = re.search(r"\n\s*(?:pub\(crate\)\s+)?fn\s+", source[start + 1 :])
+    if not next_fn:
+        return source[start:]
+    return source[start : start + 1 + next_fn.start()]
+
+
 def context_window(lines: list[str], index: int, radius: int = 45) -> str:
     start = max(0, index - radius)
     end = min(len(lines), index + radius + 1)
@@ -1263,6 +1273,24 @@ def check_main_text(source: str) -> list[str]:
                     "overworld dump command ownership escaped overworld_dump_commands boundary at "
                     f"zelda3-bin/src/main.rs:{index + 1} "
                     f"in {fn}: {line.strip()}"
+                )
+    replay_save = function_source(source, "run_replay_save")
+    if "should_log_render_hash" in replay_save:
+        gpu_default = 'println!("{}", gpu_rgba.render_hash_log_line(frames));'
+        cpu_debug_gate = 'ZELDA3_RENDER_HASH_CPU_DEBUG").is_none()'
+        cpu_render = "render_replay_hash_cpu_frame_rgba("
+        if gpu_default not in replay_save:
+            errors.append(
+                "replay-save render-hash log escaped PNG-backed GPU path at "
+                "zelda3-bin/src/main.rs:run_replay_save: missing GPU RGBA render_hash_log_line default"
+            )
+        if cpu_render in replay_save:
+            gate_index = replay_save.find(cpu_debug_gate)
+            cpu_index = replay_save.find(cpu_render)
+            if gate_index == -1 or cpu_index < gate_index:
+                errors.append(
+                    "replay-save render-hash log escaped PNG-backed GPU path at "
+                    "zelda3-bin/src/main.rs:run_replay_save: CPU render hash path is not behind ZELDA3_RENDER_HASH_CPU_DEBUG"
                 )
     return errors
 

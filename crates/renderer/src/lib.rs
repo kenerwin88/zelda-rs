@@ -55,9 +55,9 @@ pub mod tile_atlas;
 pub use bg_layer::BgLayerRenderer;
 pub use frame_compare::{
     compare_gpu_render_frame_bgra_to_rgba, gpu_render_hash_frame_rgba,
-    render_fingerprint_leaf_bgra, render_hash_frame_bgra, render_hash_pair_bgra_rgba,
-    GpuRenderComparison, GpuRenderDiff, GpuRenderFrameComparison, RenderFrameHashReport,
-    RenderHashPair,
+    render_fingerprint_leaf_bgra, render_hash_frame_bgra, render_hash_frame_rgba,
+    render_hash_pair_bgra_rgba, GpuRenderComparison, GpuRenderDiff, GpuRenderFrameComparison,
+    RenderFrameHashReport, RenderHashPair,
 };
 pub use gpu_frame::{
     BgLayerRegs, GpuFrame, GpuFrameCaptureInput, GpuFrameRegisterSnapshot, GpuFrameSource,

@@ -1325,20 +1325,34 @@ fn run_replay_save(args: &[String]) {
         }
         if should_log_render_hash {
             let width = 256u32;
-            let frame = render_hash_frame
-                .as_mut()
-                .expect("render hash frame allocated");
             // Run HDMA channel 6+7 for one line to load CGRAM entries that ALttP sets
             // via HDMA (e.g. dungeon floor palettes). State is restored after the call
             // so zelda_draw_ppu_frame renders from the correct baseline.
             let render_hash_capture = gpu_readback.capture_replay_render_hash_frame(&mut game);
-            if frames == 800 {
-                // Dump DMA channel state to find which channel targets $212C (TM).
-                let hdmaen_copy = game.ram[0x9b];
-                eprintln!("[gpu-dbg] f800 HDMAEN_COPY={:#04x}", hdmaen_copy);
-                for ch in 0..8 {
-                    let dc = &game.dma.channel[ch];
-                    eprintln!(
+            if std::env::var_os("ZELDA3_RENDER_HASH_CPU_DEBUG").is_none() {
+                let gpu_rgba = render_hash_capture.render_gpu_rgba(&mut gpu_readback);
+                if should_dump_render_hash {
+                    if let Some((_, dump_path)) = render_hash_dump_frame.as_ref() {
+                        write_replay_save_render_hash_gpu_dump_or_exit(
+                            dump_path,
+                            &render_hash_capture,
+                            &mut gpu_readback,
+                            width,
+                        );
+                    }
+                }
+                println!("{}", gpu_rgba.render_hash_log_line(frames));
+            } else {
+                let frame = render_hash_frame
+                    .as_mut()
+                    .expect("render hash frame allocated");
+                if frames == 800 {
+                    // Dump DMA channel state to find which channel targets $212C (TM).
+                    let hdmaen_copy = game.ram[0x9b];
+                    eprintln!("[gpu-dbg] f800 HDMAEN_COPY={:#04x}", hdmaen_copy);
+                    for ch in 0..8 {
+                        let dc = &game.dma.channel[ch];
+                        eprintln!(
                         "[gpu-dbg] f800 dma[{}]: active(HDMAEN_COPY)={} b_adr={:#04x} a_bank={:#04x} a_adr={:#06x} mode={:#04x} indirect={} hdma_active_field={}",
                         ch,
                         (hdmaen_copy >> ch) & 1,
@@ -1349,14 +1363,14 @@ fn run_replay_save(args: &[String]) {
                         dc.indirect,
                         dc.hdma_active
                     );
-                }
-                // Dump per-scanline TM values from the simulation result.
-                eprintln!(
-                    "{}",
-                    render_hash_capture.debug_frame_800_scanline_screen_enabled_main_line()
-                );
-                for i in 0..3 {
+                    }
+                    // Dump per-scanline TM values from the simulation result.
                     eprintln!(
+                        "{}",
+                        render_hash_capture.debug_frame_800_scanline_screen_enabled_main_line()
+                    );
+                    for i in 0..3 {
+                        eprintln!(
                         "[gpu-dbg] f800 bg{} after-hdma-sim: h_scroll={} v_scroll={} tilemap_adr={} tile_adr={}",
                         i + 1,
                         game.ppu.bg_layer[i].h_scroll,
@@ -1364,56 +1378,56 @@ fn run_replay_save(args: &[String]) {
                         game.ppu.bg_layer[i].tilemap_adr,
                         game.ppu.bg_layer[i].tile_adr
                     );
-                }
-                // Manual tile lookup for BG1 at (126,65)
-                let bg1 = &game.ppu.bg_layer[0];
-                let h_scroll = bg1.h_scroll as u32;
-                let v_scroll = bg1.v_scroll as u32;
-                let sx = 126u32;
-                let sy = 65u32;
-                let map_px_w = if bg1.tilemap_wider { 512u32 } else { 256u32 };
-                let map_px_h = if bg1.tilemap_higher { 512u32 } else { 256u32 };
-                let scroll_x = (sx + h_scroll) % map_px_w;
-                let scroll_y = (sy + v_scroll + 1) % map_px_h;
-                let tile_x = scroll_x / 8;
-                let tile_y = scroll_y / 8;
-                let pixel_x = scroll_x % 8;
-                let pixel_y = scroll_y % 8;
-                let tilemap_width = if bg1.tilemap_wider { 64u32 } else { 32u32 };
-                let flat_idx = tile_y * tilemap_width + tile_x;
-                let vram_entry_idx = bg1.tilemap_adr as u32 + flat_idx;
-                let entry = game
-                    .ppu
-                    .vram
-                    .get(vram_entry_idx as usize)
-                    .copied()
-                    .unwrap_or(0);
-                let tile_num = entry & 0x3FF;
-                let palette_sub = (entry >> 10) & 7;
-                let priority = (entry >> 13) & 1;
-                let hflip = (entry >> 14) & 1;
-                let vflip = (entry >> 15) & 1;
-                let px = if hflip != 0 { 7 - pixel_x } else { pixel_x };
-                let py = if vflip != 0 { 7 - pixel_y } else { pixel_y };
-                let tile_base = bg1.tile_adr as u32 + tile_num as u32 * 16; // 4bpp = 16 VRAM words
-                let w01 = game
-                    .ppu
-                    .vram
-                    .get((tile_base + py) as usize & 0x7fff)
-                    .copied()
-                    .unwrap_or(0);
-                let w23 = game
-                    .ppu
-                    .vram
-                    .get((tile_base + 8 + py) as usize & 0x7fff)
-                    .copied()
-                    .unwrap_or(0);
-                let bit = 7 - px;
-                let pal_idx = ((w01 >> bit) & 1)
-                    | (((w01 >> (8 + bit)) & 1) << 1)
-                    | (((w23 >> bit) & 1) << 2)
-                    | (((w23 >> (8 + bit)) & 1) << 3);
-                eprintln!(
+                    }
+                    // Manual tile lookup for BG1 at (126,65)
+                    let bg1 = &game.ppu.bg_layer[0];
+                    let h_scroll = bg1.h_scroll as u32;
+                    let v_scroll = bg1.v_scroll as u32;
+                    let sx = 126u32;
+                    let sy = 65u32;
+                    let map_px_w = if bg1.tilemap_wider { 512u32 } else { 256u32 };
+                    let map_px_h = if bg1.tilemap_higher { 512u32 } else { 256u32 };
+                    let scroll_x = (sx + h_scroll) % map_px_w;
+                    let scroll_y = (sy + v_scroll + 1) % map_px_h;
+                    let tile_x = scroll_x / 8;
+                    let tile_y = scroll_y / 8;
+                    let pixel_x = scroll_x % 8;
+                    let pixel_y = scroll_y % 8;
+                    let tilemap_width = if bg1.tilemap_wider { 64u32 } else { 32u32 };
+                    let flat_idx = tile_y * tilemap_width + tile_x;
+                    let vram_entry_idx = bg1.tilemap_adr as u32 + flat_idx;
+                    let entry = game
+                        .ppu
+                        .vram
+                        .get(vram_entry_idx as usize)
+                        .copied()
+                        .unwrap_or(0);
+                    let tile_num = entry & 0x3FF;
+                    let palette_sub = (entry >> 10) & 7;
+                    let priority = (entry >> 13) & 1;
+                    let hflip = (entry >> 14) & 1;
+                    let vflip = (entry >> 15) & 1;
+                    let px = if hflip != 0 { 7 - pixel_x } else { pixel_x };
+                    let py = if vflip != 0 { 7 - pixel_y } else { pixel_y };
+                    let tile_base = bg1.tile_adr as u32 + tile_num as u32 * 16; // 4bpp = 16 VRAM words
+                    let w01 = game
+                        .ppu
+                        .vram
+                        .get((tile_base + py) as usize & 0x7fff)
+                        .copied()
+                        .unwrap_or(0);
+                    let w23 = game
+                        .ppu
+                        .vram
+                        .get((tile_base + 8 + py) as usize & 0x7fff)
+                        .copied()
+                        .unwrap_or(0);
+                    let bit = 7 - px;
+                    let pal_idx = ((w01 >> bit) & 1)
+                        | (((w01 >> (8 + bit)) & 1) << 1)
+                        | (((w23 >> bit) & 1) << 2)
+                        | (((w23 >> (8 + bit)) & 1) << 3);
+                    eprintln!(
                     "[gpu-dbg] f800 BG1 at (126,65): scroll=({},{}) scroll_xy=({},{}) tile=({},{}) flat_idx={} vram_idx={} entry={:#06x} tile_num={} pal_sub={} priority={} hflip={} vflip={} px={} py={} pal_idx={}",
                     h_scroll,
                     v_scroll,
@@ -1433,46 +1447,46 @@ fn run_replay_save(args: &[String]) {
                     py,
                     pal_idx
                 );
-                let cgram_idx = (palette_sub * 16 + pal_idx) as usize;
-                let cgram_val = render_hash_capture.cgram_color_hex(cgram_idx);
-                eprintln!(
-                    "[gpu-dbg] f800 BG1 at (126,65): cgram_idx={} cgram_val={}",
-                    cgram_idx, cgram_val
-                );
-            }
-            let pre_screen_enabled = game.ppu.screen_enabled[0];
-            let pre_scrolls: [(u16, u16); 4] = std::array::from_fn(|i| {
-                (game.ppu.bg_layer[i].h_scroll, game.ppu.bg_layer[i].v_scroll)
-            });
-            let pre_vram_hash: u32 = {
-                let mut h = 2166136261u32;
-                for &w in &game.ppu.vram {
-                    let [lo, hi] = w.to_le_bytes();
-                    h = h.wrapping_mul(16777619) ^ u32::from(lo);
-                    h = h.wrapping_mul(16777619) ^ u32::from(hi);
+                    let cgram_idx = (palette_sub * 16 + pal_idx) as usize;
+                    let cgram_val = render_hash_capture.cgram_color_hex(cgram_idx);
+                    eprintln!(
+                        "[gpu-dbg] f800 BG1 at (126,65): cgram_idx={} cgram_val={}",
+                        cgram_idx, cgram_val
+                    );
                 }
-                h
-            };
-            let rgba = gpu_readback.render_replay_hash_cpu_frame_rgba(&mut game, frame);
-            if frames == 800 {
-                let post_scrolls: [(u16, u16); 4] = std::array::from_fn(|i| {
+                let pre_screen_enabled = game.ppu.screen_enabled[0];
+                let pre_scrolls: [(u16, u16); 4] = std::array::from_fn(|i| {
                     (game.ppu.bg_layer[i].h_scroll, game.ppu.bg_layer[i].v_scroll)
                 });
-                for i in 0..3 {
-                    if pre_scrolls[i] != post_scrolls[i] {
-                        eprintln!(
-                            "[gpu-dbg] f800 bg{} scroll changed: pre=({},{}) post=({},{})",
-                            i + 1,
-                            pre_scrolls[i].0,
-                            pre_scrolls[i].1,
-                            post_scrolls[i].0,
-                            post_scrolls[i].1
-                        );
+                let pre_vram_hash: u32 = {
+                    let mut h = 2166136261u32;
+                    for &w in &game.ppu.vram {
+                        let [lo, hi] = w.to_le_bytes();
+                        h = h.wrapping_mul(16777619) ^ u32::from(lo);
+                        h = h.wrapping_mul(16777619) ^ u32::from(hi);
                     }
-                }
-                // Log post-render tilemap/tile_adr so we know what gpu_frame_from_ppu reads.
-                for i in 0..3 {
-                    eprintln!(
+                    h
+                };
+                let rgba = gpu_readback.render_replay_hash_cpu_frame_rgba(&mut game, frame);
+                if frames == 800 {
+                    let post_scrolls: [(u16, u16); 4] = std::array::from_fn(|i| {
+                        (game.ppu.bg_layer[i].h_scroll, game.ppu.bg_layer[i].v_scroll)
+                    });
+                    for i in 0..3 {
+                        if pre_scrolls[i] != post_scrolls[i] {
+                            eprintln!(
+                                "[gpu-dbg] f800 bg{} scroll changed: pre=({},{}) post=({},{})",
+                                i + 1,
+                                pre_scrolls[i].0,
+                                pre_scrolls[i].1,
+                                post_scrolls[i].0,
+                                post_scrolls[i].1
+                            );
+                        }
+                    }
+                    // Log post-render tilemap/tile_adr so we know what gpu_frame_from_ppu reads.
+                    for i in 0..3 {
+                        eprintln!(
                         "[gpu-dbg] f800 bg{} POST-RENDER: h_scroll={} v_scroll={} tilemap_adr={} tile_adr={}",
                         i + 1,
                         game.ppu.bg_layer[i].h_scroll,
@@ -1480,61 +1494,61 @@ fn run_replay_save(args: &[String]) {
                         game.ppu.bg_layer[i].tilemap_adr,
                         game.ppu.bg_layer[i].tile_adr
                     );
-                }
-                eprintln!(
+                    }
+                    eprintln!(
                     "[gpu-dbg] f800 screen_enabled: pre[0]={:#04x} post[0]={:#04x} post[1]={:#04x}",
                     pre_screen_enabled, game.ppu.screen_enabled[0], game.ppu.screen_enabled[1]
                 );
-                // Redo BG1 tile lookup at (126,65) using POST-RENDER state (= what GPU uses).
-                let bg1 = &game.ppu.bg_layer[0];
-                let h_scroll = bg1.h_scroll as u32;
-                let v_scroll = bg1.v_scroll as u32;
-                let sx = 126u32;
-                let sy = 65u32;
-                let map_px_w = if bg1.tilemap_wider { 512u32 } else { 256u32 };
-                let map_px_h = if bg1.tilemap_higher { 512u32 } else { 256u32 };
-                let scroll_x = (sx + h_scroll) % map_px_w;
-                let scroll_y = (sy + v_scroll + 1) % map_px_h;
-                let tile_x = scroll_x / 8;
-                let tile_y = scroll_y / 8;
-                let pixel_x = scroll_x % 8;
-                let pixel_y = scroll_y % 8;
-                let tilemap_width = if bg1.tilemap_wider { 64u32 } else { 32u32 };
-                let flat_idx = tile_y * tilemap_width + tile_x;
-                let vram_entry_idx = bg1.tilemap_adr as u32 + flat_idx;
-                let entry = game
-                    .ppu
-                    .vram
-                    .get(vram_entry_idx as usize)
-                    .copied()
-                    .unwrap_or(0);
-                let tile_num = entry & 0x3FF;
-                let palette_sub = (entry >> 10) & 7;
-                let hflip = (entry >> 14) & 1;
-                let vflip = (entry >> 15) & 1;
-                let px = if hflip != 0 { 7 - pixel_x } else { pixel_x };
-                let py = if vflip != 0 { 7 - pixel_y } else { pixel_y };
-                let tile_base = bg1.tile_adr as u32 + tile_num as u32 * 16;
-                let w01 = game
-                    .ppu
-                    .vram
-                    .get((tile_base + py) as usize & 0x7fff)
-                    .copied()
-                    .unwrap_or(0);
-                let w23 = game
-                    .ppu
-                    .vram
-                    .get((tile_base + 8 + py) as usize & 0x7fff)
-                    .copied()
-                    .unwrap_or(0);
-                let bit = 7 - px;
-                let pal_idx = ((w01 >> bit) & 1)
-                    | (((w01 >> (8 + bit)) & 1) << 1)
-                    | (((w23 >> bit) & 1) << 2)
-                    | (((w23 >> (8 + bit)) & 1) << 3);
-                let cgram_idx = (palette_sub * 16 + pal_idx) as usize;
-                let cgram_val = render_hash_capture.cgram_color_hex(cgram_idx);
-                eprintln!(
+                    // Redo BG1 tile lookup at (126,65) using POST-RENDER state (= what GPU uses).
+                    let bg1 = &game.ppu.bg_layer[0];
+                    let h_scroll = bg1.h_scroll as u32;
+                    let v_scroll = bg1.v_scroll as u32;
+                    let sx = 126u32;
+                    let sy = 65u32;
+                    let map_px_w = if bg1.tilemap_wider { 512u32 } else { 256u32 };
+                    let map_px_h = if bg1.tilemap_higher { 512u32 } else { 256u32 };
+                    let scroll_x = (sx + h_scroll) % map_px_w;
+                    let scroll_y = (sy + v_scroll + 1) % map_px_h;
+                    let tile_x = scroll_x / 8;
+                    let tile_y = scroll_y / 8;
+                    let pixel_x = scroll_x % 8;
+                    let pixel_y = scroll_y % 8;
+                    let tilemap_width = if bg1.tilemap_wider { 64u32 } else { 32u32 };
+                    let flat_idx = tile_y * tilemap_width + tile_x;
+                    let vram_entry_idx = bg1.tilemap_adr as u32 + flat_idx;
+                    let entry = game
+                        .ppu
+                        .vram
+                        .get(vram_entry_idx as usize)
+                        .copied()
+                        .unwrap_or(0);
+                    let tile_num = entry & 0x3FF;
+                    let palette_sub = (entry >> 10) & 7;
+                    let hflip = (entry >> 14) & 1;
+                    let vflip = (entry >> 15) & 1;
+                    let px = if hflip != 0 { 7 - pixel_x } else { pixel_x };
+                    let py = if vflip != 0 { 7 - pixel_y } else { pixel_y };
+                    let tile_base = bg1.tile_adr as u32 + tile_num as u32 * 16;
+                    let w01 = game
+                        .ppu
+                        .vram
+                        .get((tile_base + py) as usize & 0x7fff)
+                        .copied()
+                        .unwrap_or(0);
+                    let w23 = game
+                        .ppu
+                        .vram
+                        .get((tile_base + 8 + py) as usize & 0x7fff)
+                        .copied()
+                        .unwrap_or(0);
+                    let bit = 7 - px;
+                    let pal_idx = ((w01 >> bit) & 1)
+                        | (((w01 >> (8 + bit)) & 1) << 1)
+                        | (((w23 >> bit) & 1) << 2)
+                        | (((w23 >> (8 + bit)) & 1) << 3);
+                    let cgram_idx = (palette_sub * 16 + pal_idx) as usize;
+                    let cgram_val = render_hash_capture.cgram_color_hex(cgram_idx);
+                    eprintln!(
                     "[gpu-dbg] f800 BG1@(126,65) POST-RENDER: tilemap_adr={} tile_adr={} entry={:#06x} tile={} pal_sub={} pal_idx={} cgram[{}]={}",
                     bg1.tilemap_adr,
                     bg1.tile_adr,
@@ -1545,24 +1559,24 @@ fn run_replay_save(args: &[String]) {
                     cgram_idx,
                     cgram_val
                 );
-            }
-            if frames == 1000 {
-                let post_vram_hash: u32 = {
-                    let mut h = 2166136261u32;
-                    for &w in &game.ppu.vram {
-                        let [lo, hi] = w.to_le_bytes();
-                        h = h.wrapping_mul(16777619) ^ u32::from(lo);
-                        h = h.wrapping_mul(16777619) ^ u32::from(hi);
-                    }
-                    h
-                };
-                eprintln!(
-                    "[gpu-dbg] VRAM hash before={:#010x} after={:#010x} changed={}",
-                    pre_vram_hash,
-                    post_vram_hash,
-                    pre_vram_hash != post_vram_hash
-                );
-                eprintln!(
+                }
+                if frames == 1000 {
+                    let post_vram_hash: u32 = {
+                        let mut h = 2166136261u32;
+                        for &w in &game.ppu.vram {
+                            let [lo, hi] = w.to_le_bytes();
+                            h = h.wrapping_mul(16777619) ^ u32::from(lo);
+                            h = h.wrapping_mul(16777619) ^ u32::from(hi);
+                        }
+                        h
+                    };
+                    eprintln!(
+                        "[gpu-dbg] VRAM hash before={:#010x} after={:#010x} changed={}",
+                        pre_vram_hash,
+                        post_vram_hash,
+                        pre_vram_hash != post_vram_hash
+                    );
+                    eprintln!(
                     "[gpu-dbg] BG scroll before render: bg1=({},{}) bg2=({},{}) bg3=({},{}) bg4=({},{})",
                     pre_scrolls[0].0,
                     pre_scrolls[0].1,
@@ -1573,10 +1587,10 @@ fn run_replay_save(args: &[String]) {
                     pre_scrolls[3].0,
                     pre_scrolls[3].1
                 );
-                let post_scrolls: Vec<_> = (0..4)
-                    .map(|i| (game.ppu.bg_layer[i].h_scroll, game.ppu.bg_layer[i].v_scroll))
-                    .collect();
-                eprintln!(
+                    let post_scrolls: Vec<_> = (0..4)
+                        .map(|i| (game.ppu.bg_layer[i].h_scroll, game.ppu.bg_layer[i].v_scroll))
+                        .collect();
+                    eprintln!(
                     "[gpu-dbg] BG scroll  after render: bg1=({},{}) bg2=({},{}) bg3=({},{}) bg4=({},{})",
                     post_scrolls[0].0,
                     post_scrolls[0].1,
@@ -1587,191 +1601,191 @@ fn run_replay_save(args: &[String]) {
                     post_scrolls[3].0,
                     post_scrolls[3].1
                 );
-                for line in
-                    render_hash_capture.debug_cgram_render_diff_lines(frames, &game.ppu.cgram)
-                {
-                    eprintln!("{line}");
-                }
-                // BG1 tilemap entry at (0,0): what tile does BG1 show at screen x=0..7?
-                let bg1_tilemap_adr = game.ppu.bg_layer[0].tilemap_adr as usize;
-                let bg1_tile_adr = game.ppu.bg_layer[0].tile_adr as usize;
-                eprint!("[gpu-dbg] BG1 tilemap row0 tiles 0..7:");
-                for tx in 0..8usize {
-                    let entry = game
-                        .ppu
-                        .vram
-                        .get(bg1_tilemap_adr + tx)
-                        .copied()
-                        .unwrap_or(0);
-                    let tile_num = entry & 0x3ff;
-                    let palette_sub = (entry >> 10) & 7;
-                    let hflip = (entry >> 14) & 1;
-                    let vflip = (entry >> 15) & 1;
+                    for line in
+                        render_hash_capture.debug_cgram_render_diff_lines(frames, &game.ppu.cgram)
+                    {
+                        eprintln!("{line}");
+                    }
+                    // BG1 tilemap entry at (0,0): what tile does BG1 show at screen x=0..7?
+                    let bg1_tilemap_adr = game.ppu.bg_layer[0].tilemap_adr as usize;
+                    let bg1_tile_adr = game.ppu.bg_layer[0].tile_adr as usize;
+                    eprint!("[gpu-dbg] BG1 tilemap row0 tiles 0..7:");
+                    for tx in 0..8usize {
+                        let entry = game
+                            .ppu
+                            .vram
+                            .get(bg1_tilemap_adr + tx)
+                            .copied()
+                            .unwrap_or(0);
+                        let tile_num = entry & 0x3ff;
+                        let palette_sub = (entry >> 10) & 7;
+                        let hflip = (entry >> 14) & 1;
+                        let vflip = (entry >> 15) & 1;
+                        eprint!(
+                            " tile={} pal={} hflip={} vflip={}",
+                            tile_num, palette_sub, hflip, vflip
+                        );
+                    }
+                    eprintln!();
+                    // BG1 tile at (0,0): dump pixel palette indices for row 0
+                    let bg1_tile0_entry = game.ppu.vram.get(bg1_tilemap_adr).copied().unwrap_or(0);
+                    let bg1_tile0_num = (bg1_tile0_entry & 0x3ff) as usize;
+                    let bg1_hflip = (bg1_tile0_entry >> 14) & 1;
+                    let bg1_tbase = bg1_tile_adr + bg1_tile0_num * 16;
+                    let bg1_w01 = game.ppu.vram.get(bg1_tbase).copied().unwrap_or(0);
+                    let bg1_w23 = game.ppu.vram.get(bg1_tbase + 8).copied().unwrap_or(0);
                     eprint!(
-                        " tile={} pal={} hflip={} vflip={}",
-                        tile_num, palette_sub, hflip, vflip
+                        "[gpu-dbg] BG1 tile0 num={} hflip={} row0 palette indices:",
+                        bg1_tile0_num, bg1_hflip
                     );
-                }
-                eprintln!();
-                // BG1 tile at (0,0): dump pixel palette indices for row 0
-                let bg1_tile0_entry = game.ppu.vram.get(bg1_tilemap_adr).copied().unwrap_or(0);
-                let bg1_tile0_num = (bg1_tile0_entry & 0x3ff) as usize;
-                let bg1_hflip = (bg1_tile0_entry >> 14) & 1;
-                let bg1_tbase = bg1_tile_adr + bg1_tile0_num * 16;
-                let bg1_w01 = game.ppu.vram.get(bg1_tbase).copied().unwrap_or(0);
-                let bg1_w23 = game.ppu.vram.get(bg1_tbase + 8).copied().unwrap_or(0);
-                eprint!(
-                    "[gpu-dbg] BG1 tile0 num={} hflip={} row0 palette indices:",
-                    bg1_tile0_num, bg1_hflip
-                );
-                for px in 0..8usize {
-                    let bit = if bg1_hflip != 0 {
-                        px as u8
-                    } else {
-                        7 - px as u8
-                    };
-                    let bp0 = (bg1_w01 & 0xff) as u8;
-                    let bp1 = (bg1_w01 >> 8) as u8;
-                    let bp2 = (bg1_w23 & 0xff) as u8;
-                    let bp3 = (bg1_w23 >> 8) as u8;
-                    let idx = ((bp0 >> bit) & 1)
-                        | (((bp1 >> bit) & 1) << 1)
-                        | (((bp2 >> bit) & 1) << 2)
-                        | (((bp3 >> bit) & 1) << 3);
-                    eprint!(" {}", idx);
-                }
-                eprintln!();
-                eprintln!(
-                    "[gpu-dbg] screen_enabled[0]={:#04x} screen_enabled[1]={:#04x}",
-                    game.ppu.screen_enabled[0], game.ppu.screen_enabled[1]
-                );
-                // CGRAM sub-palette 5 (entries 80-95)
-                eprint!("[gpu-dbg] CGRAM sub-pal5 (80-95):");
-                for i in 80usize..96 {
-                    eprint!(" {:04x}", game.ppu.cgram.get(i).copied().unwrap_or(0));
-                }
-                eprintln!();
-                // BG3 tilemap entry at (0,0)
-                let bg3_tilemap_adr = game.ppu.bg_layer[2].tilemap_adr as usize;
-                let bg3_tile_adr = game.ppu.bg_layer[2].tile_adr as usize;
-                let bg3_tile0_entry = game.ppu.vram.get(bg3_tilemap_adr).copied().unwrap_or(0);
-                let bg3_tile0_num = (bg3_tile0_entry & 0x3ff) as usize;
-                let bg3_hflip = (bg3_tile0_entry >> 14) & 1;
-                let bg3_vflip = (bg3_tile0_entry >> 15) & 1;
-                let bg3_pal = (bg3_tile0_entry >> 10) & 7;
-                let bg3_prio = (bg3_tile0_entry >> 13) & 1;
-                // BG3 is 2bpp: 8 words per tile, bp0/bp1 only
-                let bg3_tbase = bg3_tile_adr + bg3_tile0_num * 8; // word index
-                let bg3_w01 = game.ppu.vram.get(bg3_tbase).copied().unwrap_or(0);
-                eprint!(
+                    for px in 0..8usize {
+                        let bit = if bg1_hflip != 0 {
+                            px as u8
+                        } else {
+                            7 - px as u8
+                        };
+                        let bp0 = (bg1_w01 & 0xff) as u8;
+                        let bp1 = (bg1_w01 >> 8) as u8;
+                        let bp2 = (bg1_w23 & 0xff) as u8;
+                        let bp3 = (bg1_w23 >> 8) as u8;
+                        let idx = ((bp0 >> bit) & 1)
+                            | (((bp1 >> bit) & 1) << 1)
+                            | (((bp2 >> bit) & 1) << 2)
+                            | (((bp3 >> bit) & 1) << 3);
+                        eprint!(" {}", idx);
+                    }
+                    eprintln!();
+                    eprintln!(
+                        "[gpu-dbg] screen_enabled[0]={:#04x} screen_enabled[1]={:#04x}",
+                        game.ppu.screen_enabled[0], game.ppu.screen_enabled[1]
+                    );
+                    // CGRAM sub-palette 5 (entries 80-95)
+                    eprint!("[gpu-dbg] CGRAM sub-pal5 (80-95):");
+                    for i in 80usize..96 {
+                        eprint!(" {:04x}", game.ppu.cgram.get(i).copied().unwrap_or(0));
+                    }
+                    eprintln!();
+                    // BG3 tilemap entry at (0,0)
+                    let bg3_tilemap_adr = game.ppu.bg_layer[2].tilemap_adr as usize;
+                    let bg3_tile_adr = game.ppu.bg_layer[2].tile_adr as usize;
+                    let bg3_tile0_entry = game.ppu.vram.get(bg3_tilemap_adr).copied().unwrap_or(0);
+                    let bg3_tile0_num = (bg3_tile0_entry & 0x3ff) as usize;
+                    let bg3_hflip = (bg3_tile0_entry >> 14) & 1;
+                    let bg3_vflip = (bg3_tile0_entry >> 15) & 1;
+                    let bg3_pal = (bg3_tile0_entry >> 10) & 7;
+                    let bg3_prio = (bg3_tile0_entry >> 13) & 1;
+                    // BG3 is 2bpp: 8 words per tile, bp0/bp1 only
+                    let bg3_tbase = bg3_tile_adr + bg3_tile0_num * 8; // word index
+                    let bg3_w01 = game.ppu.vram.get(bg3_tbase).copied().unwrap_or(0);
+                    eprint!(
                     "[gpu-dbg] BG3 tile0 num={} pal={} prio={} hflip={} vflip={} row0 2bpp indices:",
                     bg3_tile0_num, bg3_pal, bg3_prio, bg3_hflip, bg3_vflip
                 );
-                for px in 0..8usize {
-                    let bit = if bg3_hflip != 0 {
-                        px as u8
-                    } else {
-                        7 - px as u8
-                    };
-                    let bp0 = (bg3_w01 & 0xff) as u8;
-                    let bp1 = (bg3_w01 >> 8) as u8;
-                    let idx = ((bp0 >> bit) & 1) | (((bp1 >> bit) & 1) << 1);
-                    eprint!(" {}", idx);
-                }
-                eprintln!();
-                // Now manually simulate GPU atlas decode for BG3 tile0
-                // BG3 uses 2bpp; atlas_slot_base = bg3_tile_adr/16
-                let bg3_atlas_base = bg3_tile_adr / 16; // word units → slot
-                let bg3_slot = bg3_atlas_base + bg3_tile0_num / 2;
-                let bg3_vram_4bpp_base = bg3_slot * 16;
-                let bg3_4bpp_w01 = game.ppu.vram.get(bg3_vram_4bpp_base).copied().unwrap_or(0);
-                let bg3_4bpp_w23 = game
-                    .ppu
-                    .vram
-                    .get(bg3_vram_4bpp_base + 8)
-                    .copied()
-                    .unwrap_or(0);
-                let bg3_shift = (bg3_tile0_num & 1) as u8 * 2;
-                eprint!(
+                    for px in 0..8usize {
+                        let bit = if bg3_hflip != 0 {
+                            px as u8
+                        } else {
+                            7 - px as u8
+                        };
+                        let bp0 = (bg3_w01 & 0xff) as u8;
+                        let bp1 = (bg3_w01 >> 8) as u8;
+                        let idx = ((bp0 >> bit) & 1) | (((bp1 >> bit) & 1) << 1);
+                        eprint!(" {}", idx);
+                    }
+                    eprintln!();
+                    // Now manually simulate GPU atlas decode for BG3 tile0
+                    // BG3 uses 2bpp; atlas_slot_base = bg3_tile_adr/16
+                    let bg3_atlas_base = bg3_tile_adr / 16; // word units → slot
+                    let bg3_slot = bg3_atlas_base + bg3_tile0_num / 2;
+                    let bg3_vram_4bpp_base = bg3_slot * 16;
+                    let bg3_4bpp_w01 = game.ppu.vram.get(bg3_vram_4bpp_base).copied().unwrap_or(0);
+                    let bg3_4bpp_w23 = game
+                        .ppu
+                        .vram
+                        .get(bg3_vram_4bpp_base + 8)
+                        .copied()
+                        .unwrap_or(0);
+                    let bg3_shift = (bg3_tile0_num & 1) as u8 * 2;
+                    eprint!(
                     "[gpu-dbg] BG3 atlas: slot={} vram_4bpp_base={} w01={:#06x} w23={:#06x} shift={} → GPU 2bpp row0:",
                     bg3_slot, bg3_vram_4bpp_base, bg3_4bpp_w01, bg3_4bpp_w23, bg3_shift
                 );
-                for px in 0..8usize {
-                    let bit = 7 - px as u8;
-                    let bp0 = if bg3_shift == 0 {
-                        (bg3_4bpp_w01 & 0xff) as u8
-                    } else {
-                        (bg3_4bpp_w23 & 0xff) as u8
-                    };
-                    let bp1 = if bg3_shift == 0 {
-                        (bg3_4bpp_w01 >> 8) as u8
-                    } else {
-                        (bg3_4bpp_w23 >> 8) as u8
-                    };
-                    let raw_4bpp = ((bp0 >> bit) & 1) | (((bp1 >> bit) & 1) << 1);
-                    let bp2 = if bg3_shift == 0 {
-                        (bg3_4bpp_w23 & 0xff) as u8
-                    } else {
-                        (bg3_4bpp_w01 & 0xff) as u8
-                    };
-                    let bp3 = if bg3_shift == 0 {
-                        (bg3_4bpp_w23 >> 8) as u8
-                    } else {
-                        (bg3_4bpp_w01 >> 8) as u8
-                    };
-                    let full = raw_4bpp | (((bp2 >> bit) & 1) << 2) | (((bp3 >> bit) & 1) << 3);
-                    eprint!(" raw4={} shift2={}", full, (full >> bg3_shift) & 3);
-                }
-                eprintln!();
-            }
-            if should_dump_render_hash {
-                if let Some((_, dump_path)) = render_hash_dump_frame.as_ref() {
-                    write_replay_save_render_hash_gpu_dump_or_exit(
-                        dump_path,
-                        &render_hash_capture,
-                        &mut gpu_readback,
-                        width,
-                    );
-                }
-            }
-            if should_log_render_hash {
-                println!("{}", replay_cpu_bgra_hash_line(frames, frame));
-                if std::env::var_os("ZELDA3_PPU_STATE_HASH").is_some() {
-                    let fnv16 = |s: &[u16]| {
-                        let mut h = 2166136261u32;
-                        for &w in s {
-                            let [lo, hi] = w.to_le_bytes();
-                            h = h.wrapping_mul(16777619) ^ u32::from(lo);
-                            h = h.wrapping_mul(16777619) ^ u32::from(hi);
-                        }
-                        h
-                    };
-                    let mut dh = 2166136261u32;
-                    for ch in &game.dma.channel {
-                        for b in [
-                            ch.b_adr,
-                            ch.a_bank,
-                            ch.ind_bank,
-                            ch.rep_count,
-                            ch.unused_byte,
-                            ch.off_index,
-                            ch.mode,
-                            ch.hdma_active as u8,
-                            ch.indirect as u8,
-                            ch.do_transfer as u8,
-                            ch.terminated as u8,
-                            ch.from_b as u8,
-                            (ch.a_adr & 0xff) as u8,
-                            (ch.a_adr >> 8) as u8,
-                            (ch.size & 0xff) as u8,
-                            (ch.size >> 8) as u8,
-                            (ch.table_adr & 0xff) as u8,
-                            (ch.table_adr >> 8) as u8,
-                        ] {
-                            dh = dh.wrapping_mul(16777619) ^ u32::from(b);
-                        }
+                    for px in 0..8usize {
+                        let bit = 7 - px as u8;
+                        let bp0 = if bg3_shift == 0 {
+                            (bg3_4bpp_w01 & 0xff) as u8
+                        } else {
+                            (bg3_4bpp_w23 & 0xff) as u8
+                        };
+                        let bp1 = if bg3_shift == 0 {
+                            (bg3_4bpp_w01 >> 8) as u8
+                        } else {
+                            (bg3_4bpp_w23 >> 8) as u8
+                        };
+                        let raw_4bpp = ((bp0 >> bit) & 1) | (((bp1 >> bit) & 1) << 1);
+                        let bp2 = if bg3_shift == 0 {
+                            (bg3_4bpp_w23 & 0xff) as u8
+                        } else {
+                            (bg3_4bpp_w01 & 0xff) as u8
+                        };
+                        let bp3 = if bg3_shift == 0 {
+                            (bg3_4bpp_w23 >> 8) as u8
+                        } else {
+                            (bg3_4bpp_w01 >> 8) as u8
+                        };
+                        let full = raw_4bpp | (((bp2 >> bit) & 1) << 2) | (((bp3 >> bit) & 1) << 3);
+                        eprint!(" raw4={} shift2={}", full, (full >> bg3_shift) & 3);
                     }
-                    println!(
+                    eprintln!();
+                }
+                if should_dump_render_hash {
+                    if let Some((_, dump_path)) = render_hash_dump_frame.as_ref() {
+                        write_replay_save_render_hash_gpu_dump_or_exit(
+                            dump_path,
+                            &render_hash_capture,
+                            &mut gpu_readback,
+                            width,
+                        );
+                    }
+                }
+                if should_log_render_hash {
+                    println!("{}", replay_cpu_bgra_hash_line(frames, frame));
+                    if std::env::var_os("ZELDA3_PPU_STATE_HASH").is_some() {
+                        let fnv16 = |s: &[u16]| {
+                            let mut h = 2166136261u32;
+                            for &w in s {
+                                let [lo, hi] = w.to_le_bytes();
+                                h = h.wrapping_mul(16777619) ^ u32::from(lo);
+                                h = h.wrapping_mul(16777619) ^ u32::from(hi);
+                            }
+                            h
+                        };
+                        let mut dh = 2166136261u32;
+                        for ch in &game.dma.channel {
+                            for b in [
+                                ch.b_adr,
+                                ch.a_bank,
+                                ch.ind_bank,
+                                ch.rep_count,
+                                ch.unused_byte,
+                                ch.off_index,
+                                ch.mode,
+                                ch.hdma_active as u8,
+                                ch.indirect as u8,
+                                ch.do_transfer as u8,
+                                ch.terminated as u8,
+                                ch.from_b as u8,
+                                (ch.a_adr & 0xff) as u8,
+                                (ch.a_adr >> 8) as u8,
+                                (ch.size & 0xff) as u8,
+                                (ch.size >> 8) as u8,
+                                (ch.table_adr & 0xff) as u8,
+                                (ch.table_adr >> 8) as u8,
+                            ] {
+                                dh = dh.wrapping_mul(16777619) ^ u32::from(b);
+                            }
+                        }
+                        println!(
                         "ppu-state frame={frames} vram=0x{:08x} cgram=0x{:08x} oam=0x{:08x} dma=0x{:08x} fblank={} bright={} math={:02x} winsel={:08x}",
                         fnv16(&game.ppu.vram),
                         fnv16(&game.ppu.cgram),
@@ -1782,13 +1796,13 @@ fn run_replay_save(args: &[String]) {
                         game.ppu.math_enabled,
                         game.ppu.windowsel,
                     );
-                }
-                // GPU tile renderer path — parallel log line for comparison.
-                // Does not affect the parity gate (different prefix).
-                if frames == 1000 {
-                    eprintln!("[gpu-dbg] frame=1000 BG scrolls:");
-                    for i in 0..4 {
-                        eprintln!(
+                    }
+                    // GPU tile renderer path — parallel log line for comparison.
+                    // Does not affect the parity gate (different prefix).
+                    if frames == 1000 {
+                        eprintln!("[gpu-dbg] frame=1000 BG scrolls:");
+                        for i in 0..4 {
+                            eprintln!(
                             "[gpu-dbg]   bg{}: h_scroll={} v_scroll={} tilemap_adr={} tile_adr={} wider={} higher={}",
                             i + 1,
                             game.ppu.bg_layer[i].h_scroll,
@@ -1798,239 +1812,244 @@ fn run_replay_save(args: &[String]) {
                             game.ppu.bg_layer[i].tilemap_wider,
                             game.ppu.bg_layer[i].tilemap_higher
                         );
-                    }
-                    // Sample pixels at row 0, x=0..15 from CPU output
-                    eprint!("[gpu-dbg] CPU row0 x=0..15:");
-                    for x in 0..16usize {
-                        let px = &rgba[x * 4..x * 4 + 3];
-                        eprint!(" ({},{},{})", px[0], px[1], px[2]);
-                    }
-                    eprintln!();
-                    // BG2 tilemap entries 0..7 (first 8 tiles of row 0)
-                    let bg2_tilemap_adr = game.ppu.bg_layer[1].tilemap_adr as usize;
-                    eprint!("[gpu-dbg] BG2 tilemap row0 tiles 0..7:");
-                    for tx in 0..8usize {
-                        let entry = game
-                            .ppu
-                            .vram
-                            .get(bg2_tilemap_adr + tx)
-                            .copied()
-                            .unwrap_or(0);
-                        let tile_num = entry & 0x3ff;
-                        let palette_sub = (entry >> 10) & 7;
-                        eprint!(" tile={} pal={}", tile_num, palette_sub);
-                    }
-                    eprintln!();
-                    // BG2 tile 0 pixel data (tile_adr=8192)
-                    let bg2_tile_adr = game.ppu.bg_layer[1].tile_adr as usize;
-                    let tile_num0 =
-                        game.ppu.vram.get(bg2_tilemap_adr).copied().unwrap_or(0) & 0x3ff;
-                    let _tbase = bg2_tile_adr / 2 + tile_num0 as usize * 8; // word offset (tile_adr is a byte addr)
-                    let tbase_w = bg2_tile_adr + tile_num0 as usize * 16; // VRAM word index
-                    eprintln!(
-                        "[gpu-dbg] BG2 tile_adr={} tile_num0={} tbase_w={}",
-                        bg2_tile_adr, tile_num0, tbase_w
-                    );
-                    eprint!("[gpu-dbg] BG2 tile0 row0 palette indices (CPU compute):");
-                    let w01 = game.ppu.vram.get(tbase_w).copied().unwrap_or(0);
-                    let w23 = game.ppu.vram.get(tbase_w + 8).copied().unwrap_or(0);
-                    for px in 0..8usize {
-                        let bit = 7 - px;
-                        let bp0 = (w01 & 0xff) as u8;
-                        let bp1 = (w01 >> 8) as u8;
-                        let bp2 = (w23 & 0xff) as u8;
-                        let bp3 = (w23 >> 8) as u8;
-                        let idx = ((bp0 >> bit) & 1)
-                            | (((bp1 >> bit) & 1) << 1)
-                            | (((bp2 >> bit) & 1) << 2)
-                            | (((bp3 >> bit) & 1) << 3);
-                        eprint!(" {}", idx);
-                    }
-                    eprintln!();
-                    eprintln!("[gpu-dbg] BG2 tile0 w01={:#06x} w23={:#06x}", w01, w23);
-                }
-                if frames == 8000 {
-                    // Compare CPU vs GPU pixel at center of screen (128, 112)
-                    let cx = 128i32;
-                    let cy = 112i32;
-                    let cpu_px = &rgba[cy as usize * 256 * 4 + cx as usize * 4
-                        ..cy as usize * 256 * 4 + cx as usize * 4 + 4];
-                    eprintln!(
-                        "[gpu-dbg] CPU pixel ({cx},{cy}): R={} G={} B={} A={}",
-                        cpu_px[0], cpu_px[1], cpu_px[2], cpu_px[3]
-                    );
-                    eprintln!(
-                        "[gpu-dbg] bg1 tile_adr={} tilemap_adr={}",
-                        game.ppu.bg_layer[0].tile_adr, game.ppu.bg_layer[0].tilemap_adr
-                    );
-                    eprintln!(
-                        "[gpu-dbg] bg2 tile_adr={} tilemap_adr={}",
-                        game.ppu.bg_layer[1].tile_adr, game.ppu.bg_layer[1].tilemap_adr
-                    );
-                    eprintln!(
-                        "[gpu-dbg] obj tile_adr1={} tile_adr2={} obj_size={}",
-                        game.ppu.obj_tile_adr1, game.ppu.obj_tile_adr2, game.ppu.obj_size
-                    );
-                    // Scan OAM to find sprites covering (cx, cy) and dump their data
-                    let obj_sizes = [
-                        [8u32, 16],
-                        [8, 32],
-                        [8, 64],
-                        [16, 32],
-                        [16, 64],
-                        [32, 64],
-                        [16, 32],
-                        [16, 32],
-                    ];
-                    let sizes = obj_sizes[game.ppu.obj_size as usize & 7];
-                    for sprite_num in 0..128usize {
-                        let idx = sprite_num * 2;
-                        let oam0 = game.ppu.oam.get(idx).copied().unwrap_or(0);
-                        let oam1 = game.ppu.oam.get(idx + 1).copied().unwrap_or(0);
-                        let hi_word = game.ppu.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
-                        let hi_bits = (hi_word >> (idx % 16)) as i32;
-                        let x_high = hi_bits & 1;
-                        let size_bit = (hi_bits >> 1) & 1;
-                        let x_low = (oam0 & 0xFF) as i32;
-                        let y_pos = ((oam0 >> 8) & 0xFF) as i32;
-                        let y_screen = (y_pos + 1) & 0xFF;
-                        if y_screen == 0xF0 {
-                            continue;
                         }
-                        let x_screen = {
-                            let xs = x_low + x_high * 256;
-                            if xs >= 256 {
-                                xs - 512
-                            } else {
-                                xs
-                            }
-                        };
-                        let sprite_size = sizes[size_bit as usize] as i32;
-                        if cx >= x_screen
-                            && cx < x_screen + sprite_size
-                            && cy >= y_screen
-                            && cy < y_screen + sprite_size
-                        {
-                            let tile_byte = (oam1 & 0xFF) as u32;
-                            // SNES OAM attr byte = YXppccct: t=name_bit(bit0), ccc=palette(bits3-1)
-                            let name_bit = (oam1 & 0x0100) != 0; // bit 0 of attr
-                            let palette_sub = ((oam1 & 0x0e00) >> 9) as u32; // bits 3-1 of attr
-                            let hflip = (oam1 & 0x4000) != 0;
-                            let vflip = (oam1 & 0x8000) != 0;
-                            let num_tiles = sprite_size / 8;
-                            let gx = (cx - x_screen) / 8;
-                            let gy = (cy - y_screen) / 8;
-                            let tx_in_tile = (cx - x_screen) % 8;
-                            let ty_in_tile = (cy - y_screen) % 8;
-                            let tile_row_base = (tile_byte >> 4) as i32;
-                            let tile_col_base = (tile_byte & 0x0F) as i32;
-                            let src_gx = if hflip { num_tiles - 1 - gx } else { gx };
-                            let src_gy = if vflip { num_tiles - 1 - gy } else { gy };
-                            let tile_col = (tile_col_base + src_gx as i32) & 0x0F;
-                            let tile_row = tile_row_base + src_gy as i32;
-                            let tile_num = ((tile_row << 4) | tile_col) as u32;
-                            let obj_addr = if name_bit {
-                                game.ppu.obj_tile_adr2
-                            } else {
-                                game.ppu.obj_tile_adr1
-                            };
-                            let atlas_slot = u32::from(obj_addr) / 16 + tile_num;
-                            let actual_tx = if hflip { 7 - tx_in_tile } else { tx_in_tile };
-                            let actual_ty = if vflip { 7 - ty_in_tile } else { ty_in_tile };
-                            let vram_base = atlas_slot as usize * 16;
-                            let w01 = game
+                        // Sample pixels at row 0, x=0..15 from CPU output
+                        eprint!("[gpu-dbg] CPU row0 x=0..15:");
+                        for x in 0..16usize {
+                            let px = &rgba[x * 4..x * 4 + 3];
+                            eprint!(" ({},{},{})", px[0], px[1], px[2]);
+                        }
+                        eprintln!();
+                        // BG2 tilemap entries 0..7 (first 8 tiles of row 0)
+                        let bg2_tilemap_adr = game.ppu.bg_layer[1].tilemap_adr as usize;
+                        eprint!("[gpu-dbg] BG2 tilemap row0 tiles 0..7:");
+                        for tx in 0..8usize {
+                            let entry = game
                                 .ppu
                                 .vram
-                                .get(vram_base + actual_ty as usize)
+                                .get(bg2_tilemap_adr + tx)
                                 .copied()
                                 .unwrap_or(0);
-                            let w23 = game
-                                .ppu
-                                .vram
-                                .get(vram_base + 8 + actual_ty as usize)
-                                .copied()
-                                .unwrap_or(0);
-                            let bp0 = (w01 & 0xFF) as u8;
+                            let tile_num = entry & 0x3ff;
+                            let palette_sub = (entry >> 10) & 7;
+                            eprint!(" tile={} pal={}", tile_num, palette_sub);
+                        }
+                        eprintln!();
+                        // BG2 tile 0 pixel data (tile_adr=8192)
+                        let bg2_tile_adr = game.ppu.bg_layer[1].tile_adr as usize;
+                        let tile_num0 =
+                            game.ppu.vram.get(bg2_tilemap_adr).copied().unwrap_or(0) & 0x3ff;
+                        let _tbase = bg2_tile_adr / 2 + tile_num0 as usize * 8; // word offset (tile_adr is a byte addr)
+                        let tbase_w = bg2_tile_adr + tile_num0 as usize * 16; // VRAM word index
+                        eprintln!(
+                            "[gpu-dbg] BG2 tile_adr={} tile_num0={} tbase_w={}",
+                            bg2_tile_adr, tile_num0, tbase_w
+                        );
+                        eprint!("[gpu-dbg] BG2 tile0 row0 palette indices (CPU compute):");
+                        let w01 = game.ppu.vram.get(tbase_w).copied().unwrap_or(0);
+                        let w23 = game.ppu.vram.get(tbase_w + 8).copied().unwrap_or(0);
+                        for px in 0..8usize {
+                            let bit = 7 - px;
+                            let bp0 = (w01 & 0xff) as u8;
                             let bp1 = (w01 >> 8) as u8;
-                            let bp2 = (w23 & 0xFF) as u8;
+                            let bp2 = (w23 & 0xff) as u8;
                             let bp3 = (w23 >> 8) as u8;
-                            let bit = 7 - actual_tx;
-                            let pal_from_vram = ((bp0 >> bit) & 1)
+                            let idx = ((bp0 >> bit) & 1)
                                 | (((bp1 >> bit) & 1) << 1)
                                 | (((bp2 >> bit) & 1) << 2)
                                 | (((bp3 >> bit) & 1) << 3);
-                            eprintln!(
+                            eprint!(" {}", idx);
+                        }
+                        eprintln!();
+                        eprintln!("[gpu-dbg] BG2 tile0 w01={:#06x} w23={:#06x}", w01, w23);
+                    }
+                    if frames == 8000 {
+                        // Compare CPU vs GPU pixel at center of screen (128, 112)
+                        let cx = 128i32;
+                        let cy = 112i32;
+                        let cpu_px = &rgba[cy as usize * 256 * 4 + cx as usize * 4
+                            ..cy as usize * 256 * 4 + cx as usize * 4 + 4];
+                        eprintln!(
+                            "[gpu-dbg] CPU pixel ({cx},{cy}): R={} G={} B={} A={}",
+                            cpu_px[0], cpu_px[1], cpu_px[2], cpu_px[3]
+                        );
+                        eprintln!(
+                            "[gpu-dbg] bg1 tile_adr={} tilemap_adr={}",
+                            game.ppu.bg_layer[0].tile_adr, game.ppu.bg_layer[0].tilemap_adr
+                        );
+                        eprintln!(
+                            "[gpu-dbg] bg2 tile_adr={} tilemap_adr={}",
+                            game.ppu.bg_layer[1].tile_adr, game.ppu.bg_layer[1].tilemap_adr
+                        );
+                        eprintln!(
+                            "[gpu-dbg] obj tile_adr1={} tile_adr2={} obj_size={}",
+                            game.ppu.obj_tile_adr1, game.ppu.obj_tile_adr2, game.ppu.obj_size
+                        );
+                        // Scan OAM to find sprites covering (cx, cy) and dump their data
+                        let obj_sizes = [
+                            [8u32, 16],
+                            [8, 32],
+                            [8, 64],
+                            [16, 32],
+                            [16, 64],
+                            [32, 64],
+                            [16, 32],
+                            [16, 32],
+                        ];
+                        let sizes = obj_sizes[game.ppu.obj_size as usize & 7];
+                        for sprite_num in 0..128usize {
+                            let idx = sprite_num * 2;
+                            let oam0 = game.ppu.oam.get(idx).copied().unwrap_or(0);
+                            let oam1 = game.ppu.oam.get(idx + 1).copied().unwrap_or(0);
+                            let hi_word = game.ppu.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
+                            let hi_bits = (hi_word >> (idx % 16)) as i32;
+                            let x_high = hi_bits & 1;
+                            let size_bit = (hi_bits >> 1) & 1;
+                            let x_low = (oam0 & 0xFF) as i32;
+                            let y_pos = ((oam0 >> 8) & 0xFF) as i32;
+                            let y_screen = (y_pos + 1) & 0xFF;
+                            if y_screen == 0xF0 {
+                                continue;
+                            }
+                            let x_screen = {
+                                let xs = x_low + x_high * 256;
+                                if xs >= 256 {
+                                    xs - 512
+                                } else {
+                                    xs
+                                }
+                            };
+                            let sprite_size = sizes[size_bit as usize] as i32;
+                            if cx >= x_screen
+                                && cx < x_screen + sprite_size
+                                && cy >= y_screen
+                                && cy < y_screen + sprite_size
+                            {
+                                let tile_byte = (oam1 & 0xFF) as u32;
+                                // SNES OAM attr byte = YXppccct: t=name_bit(bit0), ccc=palette(bits3-1)
+                                let name_bit = (oam1 & 0x0100) != 0; // bit 0 of attr
+                                let palette_sub = ((oam1 & 0x0e00) >> 9) as u32; // bits 3-1 of attr
+                                let hflip = (oam1 & 0x4000) != 0;
+                                let vflip = (oam1 & 0x8000) != 0;
+                                let num_tiles = sprite_size / 8;
+                                let gx = (cx - x_screen) / 8;
+                                let gy = (cy - y_screen) / 8;
+                                let tx_in_tile = (cx - x_screen) % 8;
+                                let ty_in_tile = (cy - y_screen) % 8;
+                                let tile_row_base = (tile_byte >> 4) as i32;
+                                let tile_col_base = (tile_byte & 0x0F) as i32;
+                                let src_gx = if hflip { num_tiles - 1 - gx } else { gx };
+                                let src_gy = if vflip { num_tiles - 1 - gy } else { gy };
+                                let tile_col = (tile_col_base + src_gx as i32) & 0x0F;
+                                let tile_row = tile_row_base + src_gy as i32;
+                                let tile_num = ((tile_row << 4) | tile_col) as u32;
+                                let obj_addr = if name_bit {
+                                    game.ppu.obj_tile_adr2
+                                } else {
+                                    game.ppu.obj_tile_adr1
+                                };
+                                let atlas_slot = u32::from(obj_addr) / 16 + tile_num;
+                                let actual_tx = if hflip { 7 - tx_in_tile } else { tx_in_tile };
+                                let actual_ty = if vflip { 7 - ty_in_tile } else { ty_in_tile };
+                                let vram_base = atlas_slot as usize * 16;
+                                let w01 = game
+                                    .ppu
+                                    .vram
+                                    .get(vram_base + actual_ty as usize)
+                                    .copied()
+                                    .unwrap_or(0);
+                                let w23 = game
+                                    .ppu
+                                    .vram
+                                    .get(vram_base + 8 + actual_ty as usize)
+                                    .copied()
+                                    .unwrap_or(0);
+                                let bp0 = (w01 & 0xFF) as u8;
+                                let bp1 = (w01 >> 8) as u8;
+                                let bp2 = (w23 & 0xFF) as u8;
+                                let bp3 = (w23 >> 8) as u8;
+                                let bit = 7 - actual_tx;
+                                let pal_from_vram = ((bp0 >> bit) & 1)
+                                    | (((bp1 >> bit) & 1) << 1)
+                                    | (((bp2 >> bit) & 1) << 2)
+                                    | (((bp3 >> bit) & 1) << 3);
+                                eprintln!(
                                 "[gpu-dbg] sprite#{sprite_num} covers ({cx},{cy}): x={x_screen} y={y_screen} size={sprite_size} tile={tile_byte:#x} name_bit={name_bit} palette_sub={palette_sub} hflip={hflip} vflip={vflip}"
                             );
-                            eprintln!(
+                                eprintln!(
                                 "[gpu-dbg]   gx={gx} gy={gy} tx={tx_in_tile} ty={ty_in_tile} src_gx={src_gx} src_gy={src_gy} tile_num={tile_num} atlas_slot={atlas_slot} actual_tx={actual_tx} actual_ty={actual_ty}"
                             );
-                            eprintln!(
+                                eprintln!(
                                 "[gpu-dbg]   vram_base={vram_base} w01={w01:#06x} w23={w23:#06x} bit={bit} bp0={bp0:#010b} bp1={bp1:#010b} bp2={bp2:#010b} bp3={bp3:#010b}"
                             );
-                            eprintln!(
+                                eprintln!(
                                 "[gpu-dbg]   pal_from_vram={pal_from_vram} cpu_expected_cgram_idx={} gpu_result_cgram_idx=252",
                                 0x80u32 + 16 * palette_sub + u32::from(pal_from_vram)
                             );
-                            // Dump full 8x8 tile for atlas_slot and atlas_slot-1 to find where pal_idx=11 is
-                            for dump_slot in
-                                [atlas_slot.saturating_sub(1), atlas_slot, atlas_slot + 1]
-                            {
-                                let dbase = dump_slot as usize * 16;
-                                eprint!(
+                                // Dump full 8x8 tile for atlas_slot and atlas_slot-1 to find where pal_idx=11 is
+                                for dump_slot in
+                                    [atlas_slot.saturating_sub(1), atlas_slot, atlas_slot + 1]
+                                {
+                                    let dbase = dump_slot as usize * 16;
+                                    eprint!(
                                     "[gpu-dbg]   tile slot={dump_slot} (vram_base={dbase}) palette indices (rows 0-7):"
                                 );
-                                for dty in 0..8usize {
-                                    let dw01 = game.ppu.vram.get(dbase + dty).copied().unwrap_or(0);
-                                    let dw23 =
-                                        game.ppu.vram.get(dbase + 8 + dty).copied().unwrap_or(0);
-                                    let dbp0 = (dw01 & 0xFF) as u8;
-                                    let dbp1 = (dw01 >> 8) as u8;
-                                    let dbp2 = (dw23 & 0xFF) as u8;
-                                    let dbp3 = (dw23 >> 8) as u8;
-                                    eprint!(" [");
-                                    for dtx in 0..8usize {
-                                        let dbit = 7 - dtx;
-                                        let idx = ((dbp0 >> dbit) & 1)
-                                            | (((dbp1 >> dbit) & 1) << 1)
-                                            | (((dbp2 >> dbit) & 1) << 2)
-                                            | (((dbp3 >> dbit) & 1) << 3);
-                                        eprint!("{idx}");
-                                        if dtx < 7 {
-                                            eprint!(",");
+                                    for dty in 0..8usize {
+                                        let dw01 =
+                                            game.ppu.vram.get(dbase + dty).copied().unwrap_or(0);
+                                        let dw23 = game
+                                            .ppu
+                                            .vram
+                                            .get(dbase + 8 + dty)
+                                            .copied()
+                                            .unwrap_or(0);
+                                        let dbp0 = (dw01 & 0xFF) as u8;
+                                        let dbp1 = (dw01 >> 8) as u8;
+                                        let dbp2 = (dw23 & 0xFF) as u8;
+                                        let dbp3 = (dw23 >> 8) as u8;
+                                        eprint!(" [");
+                                        for dtx in 0..8usize {
+                                            let dbit = 7 - dtx;
+                                            let idx = ((dbp0 >> dbit) & 1)
+                                                | (((dbp1 >> dbit) & 1) << 1)
+                                                | (((dbp2 >> dbit) & 1) << 2)
+                                                | (((dbp3 >> dbit) & 1) << 3);
+                                            eprint!("{idx}");
+                                            if dtx < 7 {
+                                                eprint!(",");
+                                            }
                                         }
+                                        eprint!("]");
                                     }
-                                    eprint!("]");
+                                    eprintln!();
                                 }
-                                eprintln!();
                             }
                         }
                     }
-                }
-                if frames == 8000 {
-                    eprintln!("{}", render_hash_capture.debug_math_state_line());
-                    eprintln!(
+                    if frames == 8000 {
+                        eprintln!("{}", render_hash_capture.debug_math_state_line());
+                        eprintln!(
                         "[gpu-dbg] ppu.math_enabled={:#04x} ppu.add_subscreen={} ppu.subtract={} ppu.prevent_math_mode={}",
                         game.ppu.math_enabled,
                         game.ppu.add_subscreen,
                         game.ppu.subtract_color,
                         game.ppu.prevent_math_mode
                     );
-                }
-                let gpu_rgba = render_hash_capture.render_gpu_rgba(&mut gpu_readback);
-                if frames == 8000 {
-                    let cx = 128usize;
-                    let cy = 112usize;
-                    let gpu_px = &gpu_rgba[cy * 256 * 4 + cx * 4..cy * 256 * 4 + cx * 4 + 4];
-                    eprintln!(
-                        "[gpu-dbg] GPU pixel ({cx},{cy}): R={} G={} B={} A={}",
-                        gpu_px[0], gpu_px[1], gpu_px[2], gpu_px[3]
-                    );
-                }
-                if frames == 332 {
-                    // Print math/window params
-                    eprintln!("{}", render_hash_capture.debug_frame_332_math_line());
-                    eprintln!(
+                    }
+                    let gpu_rgba = render_hash_capture.render_gpu_rgba(&mut gpu_readback);
+                    if frames == 8000 {
+                        let cx = 128usize;
+                        let cy = 112usize;
+                        let gpu_px = &gpu_rgba[cy * 256 * 4 + cx * 4..cy * 256 * 4 + cx * 4 + 4];
+                        eprintln!(
+                            "[gpu-dbg] GPU pixel ({cx},{cy}): R={} G={} B={} A={}",
+                            gpu_px[0], gpu_px[1], gpu_px[2], gpu_px[3]
+                        );
+                    }
+                    if frames == 332 {
+                        // Print math/window params
+                        eprintln!("{}", render_hash_capture.debug_frame_332_math_line());
+                        eprintln!(
                         "[gpu-dbg] frame=332 ppu: math_enabled={:#04x} clip_mode={} prevent_math={} windowsel={:#010x} w1l={} w1r={}",
                         game.ppu.math_enabled,
                         game.ppu.clip_mode,
@@ -2039,172 +2058,174 @@ fn run_replay_save(args: &[String]) {
                         game.ppu.window1_left,
                         game.ppu.window1_right
                     );
-                    // Print scanline 0 window params
-                    eprintln!(
-                        "{}",
-                        render_hash_capture.debug_frame_332_scanline_window_line()
-                    );
-                    // Find CGRAM entry = 0x014D (the mystery color R=13,G=10,B=0)
-                    for line in
-                        render_hash_capture.debug_cgram_value_lines(frames, "hdma_cgram", 0x014d)
-                    {
-                        eprintln!("{line}");
-                    }
-                    for (ci, &cv) in game.ppu.cgram.iter().enumerate() {
-                        if cv == 0x014d {
-                            eprintln!("[gpu-dbg] frame=332 post_cgram[{ci}]=0x014d");
+                        // Print scanline 0 window params
+                        eprintln!(
+                            "{}",
+                            render_hash_capture.debug_frame_332_scanline_window_line()
+                        );
+                        // Find CGRAM entry = 0x014D (the mystery color R=13,G=10,B=0)
+                        for line in render_hash_capture.debug_cgram_value_lines(
+                            frames,
+                            "hdma_cgram",
+                            0x014d,
+                        ) {
+                            eprintln!("{line}");
                         }
-                    }
-                    // Print initial screen_enabled (before render) vs post-render
-                    eprintln!(
+                        for (ci, &cv) in game.ppu.cgram.iter().enumerate() {
+                            if cv == 0x014d {
+                                eprintln!("[gpu-dbg] frame=332 post_cgram[{ci}]=0x014d");
+                            }
+                        }
+                        // Print initial screen_enabled (before render) vs post-render
+                        eprintln!(
                         "[gpu-dbg] frame=332 pre-render screen_enabled[0]={:#04x} post-render={:#04x}",
                         pre_screen_enabled, game.ppu.screen_enabled[0]
                     );
-                    // Print obj_size to help debug sprite scan
-                    eprintln!(
+                        // Print obj_size to help debug sprite scan
+                        eprintln!(
                         "[gpu-dbg] frame=332 obj_size={} obj_tile_adr1={:#06x} obj_tile_adr2={:#06x}",
                         game.ppu.obj_size, game.ppu.obj_tile_adr1, game.ppu.obj_tile_adr2
                     );
-                    let sizes = [
-                        [8u32, 16u32],
-                        [8, 32],
-                        [8, 64],
-                        [16, 32],
-                        [16, 64],
-                        [32, 64],
-                        [16, 32],
-                        [16, 32],
-                    ];
-                    let objsz = sizes[game.ppu.obj_size as usize & 7];
-                    // Print first 5 sprites with non-0xF0 y_screen
-                    let mut printed = 0;
-                    for sprite_num in 0..128usize {
-                        let idx = sprite_num * 2;
-                        let oam0 = game.ppu.oam.get(idx).copied().unwrap_or(0);
-                        let hi_word = game.ppu.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
-                        let hi_bits = (hi_word >> (idx % 16)) as i32;
-                        let size_bit = ((hi_bits >> 1) & 1) as usize;
-                        let x_high = hi_bits & 1;
-                        let x_low = (oam0 & 0xFF) as i32;
-                        let y_pos = ((oam0 >> 8) & 0xFF) as i32;
-                        let y_screen = (y_pos + 1) & 0xFF;
-                        if y_screen == 0xF0 {
-                            continue;
-                        }
-                        let sprite_size = objsz[size_bit] as i32;
-                        let x_screen = {
-                            let xs = x_low + x_high * 256;
-                            if xs >= 256 {
-                                xs - 512
-                            } else {
-                                xs
+                        let sizes = [
+                            [8u32, 16u32],
+                            [8, 32],
+                            [8, 64],
+                            [16, 32],
+                            [16, 64],
+                            [32, 64],
+                            [16, 32],
+                            [16, 32],
+                        ];
+                        let objsz = sizes[game.ppu.obj_size as usize & 7];
+                        // Print first 5 sprites with non-0xF0 y_screen
+                        let mut printed = 0;
+                        for sprite_num in 0..128usize {
+                            let idx = sprite_num * 2;
+                            let oam0 = game.ppu.oam.get(idx).copied().unwrap_or(0);
+                            let hi_word = game.ppu.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
+                            let hi_bits = (hi_word >> (idx % 16)) as i32;
+                            let size_bit = ((hi_bits >> 1) & 1) as usize;
+                            let x_high = hi_bits & 1;
+                            let x_low = (oam0 & 0xFF) as i32;
+                            let y_pos = ((oam0 >> 8) & 0xFF) as i32;
+                            let y_screen = (y_pos + 1) & 0xFF;
+                            if y_screen == 0xF0 {
+                                continue;
                             }
-                        };
-                        if printed < 5 {
-                            eprintln!(
+                            let sprite_size = objsz[size_bit] as i32;
+                            let x_screen = {
+                                let xs = x_low + x_high * 256;
+                                if xs >= 256 {
+                                    xs - 512
+                                } else {
+                                    xs
+                                }
+                            };
+                            if printed < 5 {
+                                eprintln!(
                                 "[gpu-dbg] frame=332 sprite#{sprite_num}: x={x_screen} y_pos={y_pos} y_screen={y_screen} size={sprite_size}"
                             );
-                            printed += 1;
-                        }
-                    }
-                    // Print raw BGRA bytes at (126,0)
-                    let i = 126usize;
-                    eprintln!(
-                        "[gpu-dbg] frame=332 raw frame[126,0]: B={} G={} R={} A={}",
-                        frame[i * 4],
-                        frame[i * 4 + 1],
-                        frame[i * 4 + 2],
-                        frame[i * 4 + 3]
-                    );
-                    // Dump a range around (126,0) in the CPU frame
-                    eprint!("[gpu-dbg] frame=332 CPU x=120..135 y=0:");
-                    for x in 120..136usize {
-                        let r = frame[x * 4 + 2];
-                        let g = frame[x * 4 + 1];
-                        let b = frame[x * 4];
-                        eprint!(" ({r},{g},{b})");
-                    }
-                    eprintln!();
-                    eprint!("[gpu-dbg] frame=332 CPU x=120..135 y=1:");
-                    for x in 120..136usize {
-                        let r = frame[(256 + x) * 4 + 2];
-                        let g = frame[(256 + x) * 4 + 1];
-                        let b = frame[(256 + x) * 4];
-                        eprint!(" ({r},{g},{b})");
-                    }
-                    eprintln!();
-                    // Quick OAM scan for sprite covering (126, 0)
-                    let cx = 126i32;
-                    let cy = 0i32;
-                    let sizes = [
-                        [8u32, 16],
-                        [8, 32],
-                        [8, 64],
-                        [16, 32],
-                        [16, 64],
-                        [32, 64],
-                        [16, 32],
-                        [16, 32],
-                    ];
-                    let sizes = sizes[game.ppu.obj_size as usize & 7];
-                    for sprite_num in 0..128usize {
-                        let idx = sprite_num * 2;
-                        let oam0 = game.ppu.oam.get(idx).copied().unwrap_or(0);
-                        let oam1 = game.ppu.oam.get(idx + 1).copied().unwrap_or(0);
-                        let hi_word = game.ppu.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
-                        let hi_bits = (hi_word >> (idx % 16)) as i32;
-                        let x_high = hi_bits & 1;
-                        let size_bit = (hi_bits >> 1) & 1;
-                        let x_low = (oam0 & 0xFF) as i32;
-                        let y_pos = ((oam0 >> 8) & 0xFF) as i32;
-                        let y_screen = (y_pos + 1) & 0xFF;
-                        if y_screen == 0xF0 {
-                            continue;
-                        }
-                        let x_screen = {
-                            let xs = x_low + x_high * 256;
-                            if xs >= 256 {
-                                xs - 512
-                            } else {
-                                xs
+                                printed += 1;
                             }
-                        };
-                        let sprite_size = sizes[size_bit as usize] as i32;
-                        // CPU check: occupies output rows (y_screen-1)..(y_screen-1+sprite_size), but y_screen can be 0 meaning row -1..size-2
-                        let top_row = y_screen - 1; // output row where sprite top lands (can be -1)
-                        let bot_row = top_row + sprite_size;
-                        if cx >= x_screen
-                            && cx < x_screen + sprite_size
-                            && cy >= top_row
-                            && cy < bot_row
-                        {
-                            eprintln!(
+                        }
+                        // Print raw BGRA bytes at (126,0)
+                        let i = 126usize;
+                        eprintln!(
+                            "[gpu-dbg] frame=332 raw frame[126,0]: B={} G={} R={} A={}",
+                            frame[i * 4],
+                            frame[i * 4 + 1],
+                            frame[i * 4 + 2],
+                            frame[i * 4 + 3]
+                        );
+                        // Dump a range around (126,0) in the CPU frame
+                        eprint!("[gpu-dbg] frame=332 CPU x=120..135 y=0:");
+                        for x in 120..136usize {
+                            let r = frame[x * 4 + 2];
+                            let g = frame[x * 4 + 1];
+                            let b = frame[x * 4];
+                            eprint!(" ({r},{g},{b})");
+                        }
+                        eprintln!();
+                        eprint!("[gpu-dbg] frame=332 CPU x=120..135 y=1:");
+                        for x in 120..136usize {
+                            let r = frame[(256 + x) * 4 + 2];
+                            let g = frame[(256 + x) * 4 + 1];
+                            let b = frame[(256 + x) * 4];
+                            eprint!(" ({r},{g},{b})");
+                        }
+                        eprintln!();
+                        // Quick OAM scan for sprite covering (126, 0)
+                        let cx = 126i32;
+                        let cy = 0i32;
+                        let sizes = [
+                            [8u32, 16],
+                            [8, 32],
+                            [8, 64],
+                            [16, 32],
+                            [16, 64],
+                            [32, 64],
+                            [16, 32],
+                            [16, 32],
+                        ];
+                        let sizes = sizes[game.ppu.obj_size as usize & 7];
+                        for sprite_num in 0..128usize {
+                            let idx = sprite_num * 2;
+                            let oam0 = game.ppu.oam.get(idx).copied().unwrap_or(0);
+                            let oam1 = game.ppu.oam.get(idx + 1).copied().unwrap_or(0);
+                            let hi_word = game.ppu.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
+                            let hi_bits = (hi_word >> (idx % 16)) as i32;
+                            let x_high = hi_bits & 1;
+                            let size_bit = (hi_bits >> 1) & 1;
+                            let x_low = (oam0 & 0xFF) as i32;
+                            let y_pos = ((oam0 >> 8) & 0xFF) as i32;
+                            let y_screen = (y_pos + 1) & 0xFF;
+                            if y_screen == 0xF0 {
+                                continue;
+                            }
+                            let x_screen = {
+                                let xs = x_low + x_high * 256;
+                                if xs >= 256 {
+                                    xs - 512
+                                } else {
+                                    xs
+                                }
+                            };
+                            let sprite_size = sizes[size_bit as usize] as i32;
+                            // CPU check: occupies output rows (y_screen-1)..(y_screen-1+sprite_size), but y_screen can be 0 meaning row -1..size-2
+                            let top_row = y_screen - 1; // output row where sprite top lands (can be -1)
+                            let bot_row = top_row + sprite_size;
+                            if cx >= x_screen
+                                && cx < x_screen + sprite_size
+                                && cy >= top_row
+                                && cy < bot_row
+                            {
+                                eprintln!(
                                 "[gpu-dbg] frame=332 sprite#{sprite_num} covers ({cx},{cy}): y_pos={y_pos} y_screen={y_screen} top_row={top_row} x_screen={x_screen} size={sprite_size} tile={:#04x}",
                                 oam1 & 0xFF
                             );
+                            }
                         }
                     }
-                }
-                if frames == 733 || frames == 800 || frames == 900 || frames == 1050 {
-                    let mut ndiff_top = 0usize;
-                    let mut ndiff_bot = 0usize;
-                    let mut max_shown = 3usize;
-                    for i in 0..256 * 224 {
-                        let cr = frame[i * 4 + 2];
-                        let cg = frame[i * 4 + 1];
-                        let cb = frame[i * 4];
-                        let gr = gpu_rgba[i * 4];
-                        let gg = gpu_rgba[i * 4 + 1];
-                        let gb = gpu_rgba[i * 4 + 2];
-                        if cr != gr || cg != gg || cb != gb {
-                            let row = i / 256;
-                            if row < 128 {
-                                ndiff_top += 1;
-                            } else {
-                                ndiff_bot += 1;
-                            }
-                            if max_shown > 0 {
-                                eprintln!(
+                    if frames == 733 || frames == 800 || frames == 900 || frames == 1050 {
+                        let mut ndiff_top = 0usize;
+                        let mut ndiff_bot = 0usize;
+                        let mut max_shown = 3usize;
+                        for i in 0..256 * 224 {
+                            let cr = frame[i * 4 + 2];
+                            let cg = frame[i * 4 + 1];
+                            let cb = frame[i * 4];
+                            let gr = gpu_rgba[i * 4];
+                            let gg = gpu_rgba[i * 4 + 1];
+                            let gb = gpu_rgba[i * 4 + 2];
+                            if cr != gr || cg != gg || cb != gb {
+                                let row = i / 256;
+                                if row < 128 {
+                                    ndiff_top += 1;
+                                } else {
+                                    ndiff_bot += 1;
+                                }
+                                if max_shown > 0 {
+                                    eprintln!(
                                     "[gpu-dbg] f{frames} diff  ({},{}) cpu=({},{},{}) gpu=({},{},{})",
                                     i % 256,
                                     row,
@@ -2215,11 +2236,11 @@ fn run_replay_save(args: &[String]) {
                                     gg,
                                     gb
                                 );
-                                max_shown -= 1;
+                                    max_shown -= 1;
+                                }
                             }
                         }
-                    }
-                    eprintln!(
+                        eprintln!(
                         "[gpu-dbg] f{frames} total_ndiff={} top={} bot={} screen_enabled=[{:#04x},{:#04x}] screen_windowed=[{:#04x},{:#04x}] windowsel={:#010x}",
                         ndiff_top + ndiff_bot,
                         ndiff_top,
@@ -2230,30 +2251,32 @@ fn run_replay_save(args: &[String]) {
                         game.ppu.screen_windowed[1],
                         game.ppu.windowsel
                     );
-                    eprintln!(
-                        "{}",
-                        render_hash_capture.debug_effect_math_line(
-                            frames,
-                            game.ppu.bg_layer[0].h_scroll,
-                            game.ram[0xf9],
-                        )
-                    );
-                    if frames == 900 || frames == 1050 {
-                        let (cx, cy) = match frames {
-                            900 => (127i32, 56i32),
-                            1050 => (40i32, 40i32),
-                            _ => unreachable!(),
-                        };
-                        eprintln!("[gpu-dbg] f{frames} probe ({cx},{cy})");
                         eprintln!(
                             "{}",
-                            render_hash_capture.debug_scanline_tm_probe_line(frames, cy)
+                            render_hash_capture.debug_effect_math_line(
+                                frames,
+                                game.ppu.bg_layer[0].h_scroll,
+                                game.ram[0xf9],
+                            )
                         );
-                        let ppu_x = (cx + PPU_EXTRA_LEFT_RIGHT as i32) as usize;
-                        let main_z = game.ppu.bg_buffers[0].data.get(ppu_x).copied().unwrap_or(0);
-                        let sub_z = game.ppu.bg_buffers[1].data.get(ppu_x).copied().unwrap_or(0);
-                        let obj_z = game.ppu.obj_buffer.data.get(ppu_x).copied().unwrap_or(0);
-                        eprintln!(
+                        if frames == 900 || frames == 1050 {
+                            let (cx, cy) = match frames {
+                                900 => (127i32, 56i32),
+                                1050 => (40i32, 40i32),
+                                _ => unreachable!(),
+                            };
+                            eprintln!("[gpu-dbg] f{frames} probe ({cx},{cy})");
+                            eprintln!(
+                                "{}",
+                                render_hash_capture.debug_scanline_tm_probe_line(frames, cy)
+                            );
+                            let ppu_x = (cx + PPU_EXTRA_LEFT_RIGHT as i32) as usize;
+                            let main_z =
+                                game.ppu.bg_buffers[0].data.get(ppu_x).copied().unwrap_or(0);
+                            let sub_z =
+                                game.ppu.bg_buffers[1].data.get(ppu_x).copied().unwrap_or(0);
+                            let obj_z = game.ppu.obj_buffer.data.get(ppu_x).copied().unwrap_or(0);
+                            eprintln!(
                             "[gpu-dbg] f{frames} CPU buffers@({cx},{cy}): main={:#06x} layer={} cgram[{}]={:#06x} sub={:#06x} obj={:#06x}",
                             main_z,
                             (main_z >> 8) & 0x0f,
@@ -2266,83 +2289,86 @@ fn run_replay_save(args: &[String]) {
                             sub_z,
                             obj_z
                         );
-                        for layer in 0..3usize {
-                            let bg = &game.ppu.bg_layer[layer];
-                            let map_pw = if bg.tilemap_wider { 512u32 } else { 256u32 };
-                            let map_ph = if bg.tilemap_higher { 512u32 } else { 256u32 };
-                            let sx = (cx as u32 + bg.h_scroll as u32) % map_pw;
-                            let sy = (cy as u32 + bg.v_scroll as u32 + 1) % map_ph;
-                            let tile_x = sx / 8;
-                            let tile_y = sy / 8;
-                            let page_offset = if tile_x >= 32 && bg.tilemap_wider {
-                                0x400
-                            } else {
-                                0
-                            } + if tile_y >= 32 && bg.tilemap_higher {
-                                if bg.tilemap_wider {
-                                    0x800
-                                } else {
+                            for layer in 0..3usize {
+                                let bg = &game.ppu.bg_layer[layer];
+                                let map_pw = if bg.tilemap_wider { 512u32 } else { 256u32 };
+                                let map_ph = if bg.tilemap_higher { 512u32 } else { 256u32 };
+                                let sx = (cx as u32 + bg.h_scroll as u32) % map_pw;
+                                let sy = (cy as u32 + bg.v_scroll as u32 + 1) % map_ph;
+                                let tile_x = sx / 8;
+                                let tile_y = sy / 8;
+                                let page_offset = if tile_x >= 32 && bg.tilemap_wider {
                                     0x400
-                                }
-                            } else {
-                                0
-                            };
-                            let vram_idx = bg.tilemap_adr as u32
-                                + page_offset
-                                + (tile_y & 0x1f) * 32
-                                + (tile_x & 0x1f);
-                            let entry = game.ppu.vram.get(vram_idx as usize).copied().unwrap_or(0);
-                            let tile_num = entry & 0x03ff;
-                            let pal_sub = (entry >> 10) & 7;
-                            let prio = (entry >> 13) & 1;
-                            let hflip = (entry >> 14) & 1;
-                            let vflip = (entry >> 15) & 1;
-                            let px = if hflip != 0 { 7 - (sx % 8) } else { sx % 8 };
-                            let py = if vflip != 0 { 7 - (sy % 8) } else { sy % 8 };
-                            let (pal_idx, cgram_idx) = if frames == 1050 && layer == 2 {
-                                let tile_base = bg.tile_adr as u32 + tile_num as u32 * 8 + py;
-                                let w01 = game
-                                    .ppu
-                                    .vram
-                                    .get(tile_base as usize & 0x7fff)
-                                    .copied()
-                                    .unwrap_or(0);
-                                let bit = 7 - px;
-                                let pal_idx = ((w01 >> bit) & 1) | (((w01 >> (8 + bit)) & 1) << 1);
-                                (pal_idx, pal_sub * 4 + pal_idx)
-                            } else if layer == 2 {
-                                let tile_base = bg.tile_adr as u32 + tile_num as u32 * 8 + py;
-                                let w01 = game
-                                    .ppu
-                                    .vram
-                                    .get(tile_base as usize & 0x7fff)
-                                    .copied()
-                                    .unwrap_or(0);
-                                let bit = 7 - px;
-                                let pal_idx = ((w01 >> bit) & 1) | (((w01 >> (8 + bit)) & 1) << 1);
-                                (pal_idx, pal_sub * 4 + pal_idx)
-                            } else {
-                                let tile_base = bg.tile_adr as u32 + tile_num as u32 * 16 + py;
-                                let w01 = game
-                                    .ppu
-                                    .vram
-                                    .get(tile_base as usize & 0x7fff)
-                                    .copied()
-                                    .unwrap_or(0);
-                                let w23 = game
-                                    .ppu
-                                    .vram
-                                    .get((tile_base + 8) as usize & 0x7fff)
-                                    .copied()
-                                    .unwrap_or(0);
-                                let bit = 7 - px;
-                                let pal_idx = ((w01 >> bit) & 1)
-                                    | (((w01 >> (8 + bit)) & 1) << 1)
-                                    | (((w23 >> bit) & 1) << 2)
-                                    | (((w23 >> (8 + bit)) & 1) << 3);
-                                (pal_idx, 16 * pal_sub + pal_idx)
-                            };
-                            eprintln!(
+                                } else {
+                                    0
+                                } + if tile_y >= 32 && bg.tilemap_higher {
+                                    if bg.tilemap_wider {
+                                        0x800
+                                    } else {
+                                        0x400
+                                    }
+                                } else {
+                                    0
+                                };
+                                let vram_idx = bg.tilemap_adr as u32
+                                    + page_offset
+                                    + (tile_y & 0x1f) * 32
+                                    + (tile_x & 0x1f);
+                                let entry =
+                                    game.ppu.vram.get(vram_idx as usize).copied().unwrap_or(0);
+                                let tile_num = entry & 0x03ff;
+                                let pal_sub = (entry >> 10) & 7;
+                                let prio = (entry >> 13) & 1;
+                                let hflip = (entry >> 14) & 1;
+                                let vflip = (entry >> 15) & 1;
+                                let px = if hflip != 0 { 7 - (sx % 8) } else { sx % 8 };
+                                let py = if vflip != 0 { 7 - (sy % 8) } else { sy % 8 };
+                                let (pal_idx, cgram_idx) = if frames == 1050 && layer == 2 {
+                                    let tile_base = bg.tile_adr as u32 + tile_num as u32 * 8 + py;
+                                    let w01 = game
+                                        .ppu
+                                        .vram
+                                        .get(tile_base as usize & 0x7fff)
+                                        .copied()
+                                        .unwrap_or(0);
+                                    let bit = 7 - px;
+                                    let pal_idx =
+                                        ((w01 >> bit) & 1) | (((w01 >> (8 + bit)) & 1) << 1);
+                                    (pal_idx, pal_sub * 4 + pal_idx)
+                                } else if layer == 2 {
+                                    let tile_base = bg.tile_adr as u32 + tile_num as u32 * 8 + py;
+                                    let w01 = game
+                                        .ppu
+                                        .vram
+                                        .get(tile_base as usize & 0x7fff)
+                                        .copied()
+                                        .unwrap_or(0);
+                                    let bit = 7 - px;
+                                    let pal_idx =
+                                        ((w01 >> bit) & 1) | (((w01 >> (8 + bit)) & 1) << 1);
+                                    (pal_idx, pal_sub * 4 + pal_idx)
+                                } else {
+                                    let tile_base = bg.tile_adr as u32 + tile_num as u32 * 16 + py;
+                                    let w01 = game
+                                        .ppu
+                                        .vram
+                                        .get(tile_base as usize & 0x7fff)
+                                        .copied()
+                                        .unwrap_or(0);
+                                    let w23 = game
+                                        .ppu
+                                        .vram
+                                        .get((tile_base + 8) as usize & 0x7fff)
+                                        .copied()
+                                        .unwrap_or(0);
+                                    let bit = 7 - px;
+                                    let pal_idx = ((w01 >> bit) & 1)
+                                        | (((w01 >> (8 + bit)) & 1) << 1)
+                                        | (((w23 >> bit) & 1) << 2)
+                                        | (((w23 >> (8 + bit)) & 1) << 3);
+                                    (pal_idx, 16 * pal_sub + pal_idx)
+                                };
+                                eprintln!(
                                 "[gpu-dbg] f{frames} BG{}@({cx},{cy}): enabled_main={} tilemap={} tile_adr={} entry={:#06x} tile={} pal_sub={} prio={} px={} py={} pal_idx={} cgram[{}]={}",
                                 layer + 1,
                                 (game.ppu.screen_enabled[0] & (1 << layer)) != 0,
@@ -2358,258 +2384,60 @@ fn run_replay_save(args: &[String]) {
                                 cgram_idx,
                                 render_hash_capture.cgram_color_hex(cgram_idx as usize)
                             );
-                        }
-
-                        let obj_sizes = [
-                            [8i32, 16],
-                            [8, 32],
-                            [8, 64],
-                            [16, 32],
-                            [16, 64],
-                            [32, 64],
-                            [16, 32],
-                            [16, 32],
-                        ];
-                        let sizes = obj_sizes[(game.ppu.obj_size & 7) as usize];
-                        for sprite_num in 0..128usize {
-                            let idx = sprite_num * 2;
-                            let oam0 = game.ppu.oam.get(idx).copied().unwrap_or(0);
-                            let oam1 = game.ppu.oam.get(idx + 1).copied().unwrap_or(0);
-                            let hi_word = game.ppu.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
-                            let hi_bits = (hi_word >> (idx % 16)) as i32;
-                            let x_high = hi_bits & 1;
-                            let size_bit = ((hi_bits >> 1) & 1) as usize;
-                            let x_low = (oam0 & 0xff) as i32;
-                            let y_pos = ((oam0 >> 8) & 0xff) as i32;
-                            let y_screen = (y_pos + 1) & 0xff;
-                            if y_screen == 0xf0 {
-                                continue;
-                            }
-                            let x_screen = x_low + x_high * 256;
-                            let x_screen = if x_screen >= 256 {
-                                x_screen - 512
-                            } else {
-                                x_screen
-                            };
-                            let y_base = y_pos;
-                            let sprite_size = sizes[size_bit];
-                            if cx < x_screen
-                                || cx >= x_screen + sprite_size
-                                || cy < y_base
-                                || cy >= y_base + sprite_size
-                            {
-                                continue;
                             }
 
-                            let row = (cy + 1 - y_screen) & 0xff;
-                            if row >= sprite_size {
-                                continue;
-                            }
-                            let row = if oam1 & 0x8000 != 0 {
-                                sprite_size - 1 - row
-                            } else {
-                                row
-                            };
-                            let col = ((cx - x_screen) / 8) * 8;
-                            let used_col = if oam1 & 0x4000 != 0 {
-                                sprite_size - 1 - col
-                            } else {
-                                col
-                            };
-                            let used_tile = ((((oam1 & 0xff) >> 4) as i32 + (row >> 3)) << 4)
-                                | ((((oam1 & 0x0f) as i32) + (used_col >> 3)) & 0x0f);
-                            let obj_addr = if oam1 & 0x0100 != 0 {
-                                game.ppu.obj_tile_adr2
-                            } else {
-                                game.ppu.obj_tile_adr1
-                            };
-                            let addr = obj_addr
-                                .wrapping_add((used_tile as u16).wrapping_mul(16))
-                                .wrapping_add((row & 7) as u16)
-                                & 0x7fff;
-                            let plane = game.ppu.vram.get(addr as usize).copied().unwrap_or(0)
-                                as u32
-                                | ((game
-                                    .ppu
-                                    .vram
-                                    .get(addr.wrapping_add(8) as usize & 0x7fff)
-                                    .copied()
-                                    .unwrap_or(0) as u32)
-                                    << 16);
-                            let px = cx - (x_screen + col);
-                            let shift = if oam1 & 0x4000 != 0 { px } else { 7 - px };
-                            let bits = plane >> shift;
-                            let pixel = (bits & 1)
-                                | ((bits >> 7) & 2)
-                                | ((bits >> 14) & 4)
-                                | ((bits >> 21) & 8);
-                            let palette_sub = ((oam1 & 0x0e00) >> 9) as u32;
-                            let cgram_idx = 0x80 + 16 * palette_sub + pixel;
-                            eprintln!(
-                                "[gpu-dbg] f{frames} sprite#{} covers ({cx},{cy}): x={} y_base={} size={} oam1={:#06x} prio={} pal_sub={} row={} col={} used_tile={:#04x} pixel={} cgram[{}]={}",
-                                sprite_num,
-                                x_screen,
-                                y_base,
-                                sprite_size,
-                                oam1,
-                                (oam1 & 0x3000) >> 12,
-                                palette_sub,
-                                row,
-                                col,
-                                used_tile,
-                                pixel,
-                                cgram_idx,
-                                render_hash_capture.cgram_color_hex(cgram_idx as usize)
-                            );
-                        }
-                    }
-                    if frames == 800 {
-                        // BG3 lookup at (126,65) to check if it has a hi-priority tile that wins
-                        let bg3 = &game.ppu.bg_layer[2];
-                        let bg3_hscroll = bg3.h_scroll as u32;
-                        let bg3_vscroll = bg3.v_scroll as u32;
-                        let map_pw = if bg3.tilemap_wider { 512u32 } else { 256u32 };
-                        let map_ph = if bg3.tilemap_higher { 512u32 } else { 256u32 };
-                        let bg3_sx = (126u32 + bg3_hscroll) % map_pw;
-                        let bg3_sy = (65u32 + bg3_vscroll + 1) % map_ph;
-                        let bg3_tw = if bg3.tilemap_wider { 64u32 } else { 32u32 };
-                        let bg3_flat = (bg3_sy / 8) * bg3_tw + (bg3_sx / 8);
-                        let bg3_vram_idx = bg3.tilemap_adr as u32 + bg3_flat;
-                        let bg3_entry = game
-                            .ppu
-                            .vram
-                            .get(bg3_vram_idx as usize)
-                            .copied()
-                            .unwrap_or(0);
-                        let bg3_tile_num = bg3_entry & 0x3FF;
-                        let bg3_pal_sub = (bg3_entry >> 10) & 7;
-                        let bg3_prio = (bg3_entry >> 13) & 1;
-                        let bg3_hflip = (bg3_entry >> 14) & 1;
-                        let bg3_vflip = (bg3_entry >> 15) & 1;
-                        let bg3_px = if bg3_hflip != 0 {
-                            7 - (bg3_sx % 8)
-                        } else {
-                            bg3_sx % 8
-                        };
-                        let bg3_py = if bg3_vflip != 0 {
-                            7 - (bg3_sy % 8)
-                        } else {
-                            bg3_sy % 8
-                        };
-                        // 2bpp: 8 words per tile (bp0+bp1 only, no bp2/bp3)
-                        let bg3_tile_base = bg3.tile_adr as u32 + bg3_tile_num as u32 * 8;
-                        let bg3_w01 = game
-                            .ppu
-                            .vram
-                            .get((bg3_tile_base + bg3_py) as usize & 0x7fff)
-                            .copied()
-                            .unwrap_or(0);
-                        let bg3_bit = 7 - bg3_px;
-                        let bg3_pal_idx =
-                            ((bg3_w01 >> bg3_bit) & 1) | (((bg3_w01 >> (8 + bg3_bit)) & 1) << 1);
-                        let bg3_cgram_idx = (bg3_pal_sub * 4 + bg3_pal_idx) as usize;
-                        let bg3_cgram_val = render_hash_capture.cgram_color_hex(bg3_cgram_idx);
-                        eprintln!(
-                            "[gpu-dbg] f800 BG3@(126,65): tilemap_adr={} tile={} pal_sub={} prio={} pal_idx={} cgram[{}]={}",
-                            bg3.tilemap_adr,
-                            bg3_tile_num,
-                            bg3_pal_sub,
-                            bg3_prio,
-                            bg3_pal_idx,
-                            bg3_cgram_idx,
-                            bg3_cgram_val
-                        );
-                        // GPU atlas slot for BG3 2bpp: atlas_slot = tile_adr/16 + tile_num/2
-                        let bg3_atlas_slot = bg3.tile_adr as u32 / 16 + bg3_tile_num as u32 / 2;
-                        let bg3_atlas_sub = bg3_tile_num % 2; // 0 = lo half, 1 = hi half
-                        let bg3_vram_4bpp_base = bg3_atlas_slot * 16;
-                        let bg3_4bpp_w01 = game
-                            .ppu
-                            .vram
-                            .get((bg3_vram_4bpp_base + bg3_py) as usize & 0x7fff)
-                            .copied()
-                            .unwrap_or(0);
-                        let bg3_4bpp_w23 = game
-                            .ppu
-                            .vram
-                            .get((bg3_vram_4bpp_base + 8 + bg3_py) as usize & 0x7fff)
-                            .copied()
-                            .unwrap_or(0);
-                        // GPU 2bpp reads from the higher 2 bits of the atlas 4bpp entry if tile_num is odd
-                        let (gpu_w_lo, _gpu_w_hi) = if bg3_atlas_sub == 0 {
-                            (bg3_4bpp_w01, bg3_4bpp_w23)
-                        } else {
-                            (bg3_4bpp_w23, bg3_4bpp_w01)
-                        };
-                        let gpu_bit = 7 - bg3_px;
-                        let gpu_pal_idx =
-                            ((gpu_w_lo >> gpu_bit) & 1) | (((gpu_w_lo >> (8 + gpu_bit)) & 1) << 1);
-                        let gpu_bg3_cgram = bg3_pal_sub * 4 + gpu_pal_idx; // 2bpp: 4 colors per sub-palette
-                        eprintln!(
-                            "[gpu-dbg] f800 GPU BG3@(126,65): atlas_slot={} sub={} gpu_pal_idx={} gpu_cgram_idx={}",
-                            bg3_atlas_slot, bg3_atlas_sub, gpu_pal_idx, gpu_bg3_cgram
-                        );
-                        // Also log the specific GPU cgram value
-                        let gpu_bg3_cgram_val =
-                            render_hash_capture.cgram_color_hex(gpu_bg3_cgram as usize);
-                        eprintln!(
-                            "[gpu-dbg] f800 GPU BG3 cgram[{}]={}",
-                            gpu_bg3_cgram, gpu_bg3_cgram_val
-                        );
-                        // Check if any sprite covers (126,65) — that would explain the gold pixel
-                        let obj_sizes = [
-                            [8i32, 16],
-                            [8, 32],
-                            [8, 64],
-                            [16, 32],
-                            [16, 64],
-                            [32, 64],
-                            [16, 32],
-                            [16, 32],
-                        ];
-                        let sizes = obj_sizes[(game.ppu.obj_size & 7) as usize];
-                        eprintln!(
-                            "[gpu-dbg] f800 obj_size={} tile_adr1={:#06x} tile_adr2={:#06x}",
-                            game.ppu.obj_size, game.ppu.obj_tile_adr1, game.ppu.obj_tile_adr2
-                        );
-                        for sprite_num in 0..128usize {
-                            let idx = sprite_num * 2;
-                            let oam0 = game.ppu.oam.get(idx).copied().unwrap_or(0);
-                            let oam1 = game.ppu.oam.get(idx + 1).copied().unwrap_or(0);
-                            let hi_word = game.ppu.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
-                            let hi_bits = (hi_word >> (idx % 16)) as i32;
-                            let x_high = hi_bits & 1;
-                            let size_bit = ((hi_bits >> 1) & 1) as usize;
-                            let x_low = (oam0 & 0xFF) as i32;
-                            let y_pos = ((oam0 >> 8) & 0xFF) as i32;
-                            let y_screen = (y_pos + 1) & 0xFF;
-                            if y_screen == 0xF0 {
-                                continue;
-                            }
-                            let x_screen = x_low + x_high * 256;
-                            let x_screen = if x_screen >= 256 {
-                                x_screen - 512
-                            } else {
-                                x_screen
-                            };
-                            let y_base = if y_screen == 0 { y_pos - 256 } else { y_pos };
-                            let sprite_size = sizes[size_bit];
-                            // Check if (126,65) falls within this sprite
-                            if x_screen <= 126
-                                && 126 < x_screen + sprite_size
-                                && y_base <= 65
-                                && 65 < y_base + sprite_size
-                            {
-                                let tile_byte = (oam1 & 0xFF) as i32;
-                                let palette_sub = ((oam1 & 0x0e00) >> 9) as u32;
-                                let row = 65 - y_screen;
-                                let row = row & 0xff;
+                            let obj_sizes = [
+                                [8i32, 16],
+                                [8, 32],
+                                [8, 64],
+                                [16, 32],
+                                [16, 64],
+                                [32, 64],
+                                [16, 32],
+                                [16, 32],
+                            ];
+                            let sizes = obj_sizes[(game.ppu.obj_size & 7) as usize];
+                            for sprite_num in 0..128usize {
+                                let idx = sprite_num * 2;
+                                let oam0 = game.ppu.oam.get(idx).copied().unwrap_or(0);
+                                let oam1 = game.ppu.oam.get(idx + 1).copied().unwrap_or(0);
+                                let hi_word =
+                                    game.ppu.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
+                                let hi_bits = (hi_word >> (idx % 16)) as i32;
+                                let x_high = hi_bits & 1;
+                                let size_bit = ((hi_bits >> 1) & 1) as usize;
+                                let x_low = (oam0 & 0xff) as i32;
+                                let y_pos = ((oam0 >> 8) & 0xff) as i32;
+                                let y_screen = (y_pos + 1) & 0xff;
+                                if y_screen == 0xf0 {
+                                    continue;
+                                }
+                                let x_screen = x_low + x_high * 256;
+                                let x_screen = if x_screen >= 256 {
+                                    x_screen - 512
+                                } else {
+                                    x_screen
+                                };
+                                let y_base = y_pos;
+                                let sprite_size = sizes[size_bit];
+                                if cx < x_screen
+                                    || cx >= x_screen + sprite_size
+                                    || cy < y_base
+                                    || cy >= y_base + sprite_size
+                                {
+                                    continue;
+                                }
+
+                                let row = (cy + 1 - y_screen) & 0xff;
+                                if row >= sprite_size {
+                                    continue;
+                                }
                                 let row = if oam1 & 0x8000 != 0 {
                                     sprite_size - 1 - row
                                 } else {
                                     row
                                 };
-                                let col = ((126 - x_screen) / 8) * 8;
+                                let col = ((cx - x_screen) / 8) * 8;
                                 let used_col = if oam1 & 0x4000 != 0 {
                                     sprite_size - 1 - col
                                 } else {
@@ -2636,16 +2464,219 @@ fn run_replay_save(args: &[String]) {
                                         .unwrap_or(0)
                                         as u32)
                                         << 16);
-                                let px = 126 - (x_screen + col);
+                                let px = cx - (x_screen + col);
                                 let shift = if oam1 & 0x4000 != 0 { px } else { 7 - px };
                                 let bits = plane >> shift;
                                 let pixel = (bits & 1)
                                     | ((bits >> 7) & 2)
                                     | ((bits >> 14) & 4)
                                     | ((bits >> 21) & 8);
+                                let palette_sub = ((oam1 & 0x0e00) >> 9) as u32;
                                 let cgram_idx = 0x80 + 16 * palette_sub + pixel;
-                                let prio = (oam1 & 0x3000) >> 12;
                                 eprintln!(
+                                "[gpu-dbg] f{frames} sprite#{} covers ({cx},{cy}): x={} y_base={} size={} oam1={:#06x} prio={} pal_sub={} row={} col={} used_tile={:#04x} pixel={} cgram[{}]={}",
+                                sprite_num,
+                                x_screen,
+                                y_base,
+                                sprite_size,
+                                oam1,
+                                (oam1 & 0x3000) >> 12,
+                                palette_sub,
+                                row,
+                                col,
+                                used_tile,
+                                pixel,
+                                cgram_idx,
+                                render_hash_capture.cgram_color_hex(cgram_idx as usize)
+                            );
+                            }
+                        }
+                        if frames == 800 {
+                            // BG3 lookup at (126,65) to check if it has a hi-priority tile that wins
+                            let bg3 = &game.ppu.bg_layer[2];
+                            let bg3_hscroll = bg3.h_scroll as u32;
+                            let bg3_vscroll = bg3.v_scroll as u32;
+                            let map_pw = if bg3.tilemap_wider { 512u32 } else { 256u32 };
+                            let map_ph = if bg3.tilemap_higher { 512u32 } else { 256u32 };
+                            let bg3_sx = (126u32 + bg3_hscroll) % map_pw;
+                            let bg3_sy = (65u32 + bg3_vscroll + 1) % map_ph;
+                            let bg3_tw = if bg3.tilemap_wider { 64u32 } else { 32u32 };
+                            let bg3_flat = (bg3_sy / 8) * bg3_tw + (bg3_sx / 8);
+                            let bg3_vram_idx = bg3.tilemap_adr as u32 + bg3_flat;
+                            let bg3_entry = game
+                                .ppu
+                                .vram
+                                .get(bg3_vram_idx as usize)
+                                .copied()
+                                .unwrap_or(0);
+                            let bg3_tile_num = bg3_entry & 0x3FF;
+                            let bg3_pal_sub = (bg3_entry >> 10) & 7;
+                            let bg3_prio = (bg3_entry >> 13) & 1;
+                            let bg3_hflip = (bg3_entry >> 14) & 1;
+                            let bg3_vflip = (bg3_entry >> 15) & 1;
+                            let bg3_px = if bg3_hflip != 0 {
+                                7 - (bg3_sx % 8)
+                            } else {
+                                bg3_sx % 8
+                            };
+                            let bg3_py = if bg3_vflip != 0 {
+                                7 - (bg3_sy % 8)
+                            } else {
+                                bg3_sy % 8
+                            };
+                            // 2bpp: 8 words per tile (bp0+bp1 only, no bp2/bp3)
+                            let bg3_tile_base = bg3.tile_adr as u32 + bg3_tile_num as u32 * 8;
+                            let bg3_w01 = game
+                                .ppu
+                                .vram
+                                .get((bg3_tile_base + bg3_py) as usize & 0x7fff)
+                                .copied()
+                                .unwrap_or(0);
+                            let bg3_bit = 7 - bg3_px;
+                            let bg3_pal_idx = ((bg3_w01 >> bg3_bit) & 1)
+                                | (((bg3_w01 >> (8 + bg3_bit)) & 1) << 1);
+                            let bg3_cgram_idx = (bg3_pal_sub * 4 + bg3_pal_idx) as usize;
+                            let bg3_cgram_val = render_hash_capture.cgram_color_hex(bg3_cgram_idx);
+                            eprintln!(
+                            "[gpu-dbg] f800 BG3@(126,65): tilemap_adr={} tile={} pal_sub={} prio={} pal_idx={} cgram[{}]={}",
+                            bg3.tilemap_adr,
+                            bg3_tile_num,
+                            bg3_pal_sub,
+                            bg3_prio,
+                            bg3_pal_idx,
+                            bg3_cgram_idx,
+                            bg3_cgram_val
+                        );
+                            // GPU atlas slot for BG3 2bpp: atlas_slot = tile_adr/16 + tile_num/2
+                            let bg3_atlas_slot = bg3.tile_adr as u32 / 16 + bg3_tile_num as u32 / 2;
+                            let bg3_atlas_sub = bg3_tile_num % 2; // 0 = lo half, 1 = hi half
+                            let bg3_vram_4bpp_base = bg3_atlas_slot * 16;
+                            let bg3_4bpp_w01 = game
+                                .ppu
+                                .vram
+                                .get((bg3_vram_4bpp_base + bg3_py) as usize & 0x7fff)
+                                .copied()
+                                .unwrap_or(0);
+                            let bg3_4bpp_w23 = game
+                                .ppu
+                                .vram
+                                .get((bg3_vram_4bpp_base + 8 + bg3_py) as usize & 0x7fff)
+                                .copied()
+                                .unwrap_or(0);
+                            // GPU 2bpp reads from the higher 2 bits of the atlas 4bpp entry if tile_num is odd
+                            let (gpu_w_lo, _gpu_w_hi) = if bg3_atlas_sub == 0 {
+                                (bg3_4bpp_w01, bg3_4bpp_w23)
+                            } else {
+                                (bg3_4bpp_w23, bg3_4bpp_w01)
+                            };
+                            let gpu_bit = 7 - bg3_px;
+                            let gpu_pal_idx = ((gpu_w_lo >> gpu_bit) & 1)
+                                | (((gpu_w_lo >> (8 + gpu_bit)) & 1) << 1);
+                            let gpu_bg3_cgram = bg3_pal_sub * 4 + gpu_pal_idx; // 2bpp: 4 colors per sub-palette
+                            eprintln!(
+                            "[gpu-dbg] f800 GPU BG3@(126,65): atlas_slot={} sub={} gpu_pal_idx={} gpu_cgram_idx={}",
+                            bg3_atlas_slot, bg3_atlas_sub, gpu_pal_idx, gpu_bg3_cgram
+                        );
+                            // Also log the specific GPU cgram value
+                            let gpu_bg3_cgram_val =
+                                render_hash_capture.cgram_color_hex(gpu_bg3_cgram as usize);
+                            eprintln!(
+                                "[gpu-dbg] f800 GPU BG3 cgram[{}]={}",
+                                gpu_bg3_cgram, gpu_bg3_cgram_val
+                            );
+                            // Check if any sprite covers (126,65) — that would explain the gold pixel
+                            let obj_sizes = [
+                                [8i32, 16],
+                                [8, 32],
+                                [8, 64],
+                                [16, 32],
+                                [16, 64],
+                                [32, 64],
+                                [16, 32],
+                                [16, 32],
+                            ];
+                            let sizes = obj_sizes[(game.ppu.obj_size & 7) as usize];
+                            eprintln!(
+                                "[gpu-dbg] f800 obj_size={} tile_adr1={:#06x} tile_adr2={:#06x}",
+                                game.ppu.obj_size, game.ppu.obj_tile_adr1, game.ppu.obj_tile_adr2
+                            );
+                            for sprite_num in 0..128usize {
+                                let idx = sprite_num * 2;
+                                let oam0 = game.ppu.oam.get(idx).copied().unwrap_or(0);
+                                let oam1 = game.ppu.oam.get(idx + 1).copied().unwrap_or(0);
+                                let hi_word =
+                                    game.ppu.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
+                                let hi_bits = (hi_word >> (idx % 16)) as i32;
+                                let x_high = hi_bits & 1;
+                                let size_bit = ((hi_bits >> 1) & 1) as usize;
+                                let x_low = (oam0 & 0xFF) as i32;
+                                let y_pos = ((oam0 >> 8) & 0xFF) as i32;
+                                let y_screen = (y_pos + 1) & 0xFF;
+                                if y_screen == 0xF0 {
+                                    continue;
+                                }
+                                let x_screen = x_low + x_high * 256;
+                                let x_screen = if x_screen >= 256 {
+                                    x_screen - 512
+                                } else {
+                                    x_screen
+                                };
+                                let y_base = if y_screen == 0 { y_pos - 256 } else { y_pos };
+                                let sprite_size = sizes[size_bit];
+                                // Check if (126,65) falls within this sprite
+                                if x_screen <= 126
+                                    && 126 < x_screen + sprite_size
+                                    && y_base <= 65
+                                    && 65 < y_base + sprite_size
+                                {
+                                    let tile_byte = (oam1 & 0xFF) as i32;
+                                    let palette_sub = ((oam1 & 0x0e00) >> 9) as u32;
+                                    let row = 65 - y_screen;
+                                    let row = row & 0xff;
+                                    let row = if oam1 & 0x8000 != 0 {
+                                        sprite_size - 1 - row
+                                    } else {
+                                        row
+                                    };
+                                    let col = ((126 - x_screen) / 8) * 8;
+                                    let used_col = if oam1 & 0x4000 != 0 {
+                                        sprite_size - 1 - col
+                                    } else {
+                                        col
+                                    };
+                                    let used_tile = ((((oam1 & 0xff) >> 4) as i32 + (row >> 3))
+                                        << 4)
+                                        | ((((oam1 & 0x0f) as i32) + (used_col >> 3)) & 0x0f);
+                                    let obj_addr = if oam1 & 0x0100 != 0 {
+                                        game.ppu.obj_tile_adr2
+                                    } else {
+                                        game.ppu.obj_tile_adr1
+                                    };
+                                    let addr = obj_addr
+                                        .wrapping_add((used_tile as u16).wrapping_mul(16))
+                                        .wrapping_add((row & 7) as u16)
+                                        & 0x7fff;
+                                    let plane =
+                                        game.ppu.vram.get(addr as usize).copied().unwrap_or(0)
+                                            as u32
+                                            | ((game
+                                                .ppu
+                                                .vram
+                                                .get(addr.wrapping_add(8) as usize & 0x7fff)
+                                                .copied()
+                                                .unwrap_or(0)
+                                                as u32)
+                                                << 16);
+                                    let px = 126 - (x_screen + col);
+                                    let shift = if oam1 & 0x4000 != 0 { px } else { 7 - px };
+                                    let bits = plane >> shift;
+                                    let pixel = (bits & 1)
+                                        | ((bits >> 7) & 2)
+                                        | ((bits >> 14) & 4)
+                                        | ((bits >> 21) & 8);
+                                    let cgram_idx = 0x80 + 16 * palette_sub + pixel;
+                                    let prio = (oam1 & 0x3000) >> 12;
+                                    eprintln!(
                                     "[gpu-dbg] f800 sprite#{} covers (126,65): x={} y_base={} size={} tile={:#04x} pal_sub={} oam1={:#06x} prio={} row={} col={} used_tile={:#04x} addr={:#06x} plane={:#010x} px={} pixel={} cgram[{}]={:#06x}",
                                     sprite_num,
                                     x_screen,
@@ -2665,31 +2696,31 @@ fn run_replay_save(args: &[String]) {
                                     cgram_idx,
                                     game.ppu.cgram.get(cgram_idx as usize).copied().unwrap_or(0)
                                 );
+                                }
                             }
                         }
                     }
-                }
-                if frames == 675 {
-                    // investigate (132,65) mismatch
-                    let cpu_px = {
-                        let i = 65 * 256 + 132;
-                        (frame[i * 4 + 2], frame[i * 4 + 1], frame[i * 4])
-                    };
-                    let gpu_px = {
-                        let i = 65 * 256 + 132;
-                        (gpu_rgba[i * 4], gpu_rgba[i * 4 + 1], gpu_rgba[i * 4 + 2])
-                    };
-                    eprintln!(
-                        "[gpu-dbg] f675 (132,65) cpu_rgb={:?} gpu_rgb={:?}",
-                        cpu_px, gpu_px
-                    );
-                    eprintln!(
+                    if frames == 675 {
+                        // investigate (132,65) mismatch
+                        let cpu_px = {
+                            let i = 65 * 256 + 132;
+                            (frame[i * 4 + 2], frame[i * 4 + 1], frame[i * 4])
+                        };
+                        let gpu_px = {
+                            let i = 65 * 256 + 132;
+                            (gpu_rgba[i * 4], gpu_rgba[i * 4 + 1], gpu_rgba[i * 4 + 2])
+                        };
+                        eprintln!(
+                            "[gpu-dbg] f675 (132,65) cpu_rgb={:?} gpu_rgb={:?}",
+                            cpu_px, gpu_px
+                        );
+                        eprintln!(
                         "[gpu-dbg] f675 add_subscreen={} screen_enabled[0]={:#04x} screen_enabled[1]={:#04x}",
                         game.ppu.add_subscreen,
                         game.ppu.screen_enabled[0],
                         game.ppu.screen_enabled[1]
                     );
-                    eprintln!(
+                        eprintln!(
                         "[gpu-dbg] f675 math_enabled={:#04x} fixed=({},{},{}) subtract={} half={}",
                         game.ppu.math_enabled,
                         game.ppu.fixed_color_r,
@@ -2698,19 +2729,19 @@ fn run_replay_save(args: &[String]) {
                         game.ppu.subtract_color,
                         game.ppu.half_color
                     );
-                    // Count diffs in this frame
-                    let mut ndiff = 0usize;
-                    for i in 0..256 * 224 {
-                        let cr = frame[i * 4 + 2];
-                        let cg = frame[i * 4 + 1];
-                        let cb = frame[i * 4];
-                        let gr = gpu_rgba[i * 4];
-                        let gg = gpu_rgba[i * 4 + 1];
-                        let gb = gpu_rgba[i * 4 + 2];
-                        if cr != gr || cg != gg || cb != gb {
-                            ndiff += 1;
-                            if ndiff <= 12 {
-                                eprintln!(
+                        // Count diffs in this frame
+                        let mut ndiff = 0usize;
+                        for i in 0..256 * 224 {
+                            let cr = frame[i * 4 + 2];
+                            let cg = frame[i * 4 + 1];
+                            let cb = frame[i * 4];
+                            let gr = gpu_rgba[i * 4];
+                            let gg = gpu_rgba[i * 4 + 1];
+                            let gb = gpu_rgba[i * 4 + 2];
+                            if cr != gr || cg != gg || cb != gb {
+                                ndiff += 1;
+                                if ndiff <= 12 {
+                                    eprintln!(
                                     "[gpu-dbg] f675 diff#{} ({},{}) cpu=({},{},{}) gpu=({},{},{})",
                                     ndiff,
                                     i % 256,
@@ -2722,19 +2753,19 @@ fn run_replay_save(args: &[String]) {
                                     gg,
                                     gb
                                 );
+                                }
                             }
                         }
+                        eprintln!("[gpu-dbg] f675 total_ndiff={}", ndiff);
                     }
-                    eprintln!("[gpu-dbg] f675 total_ndiff={}", ndiff);
-                }
-                if frames == 332 {
-                    // extra debug
-                    eprintln!("{}", gpu_rgba.debug_hash_line_with_cpu_bgra(frames, frame));
-                    eprintln!(
-                        "[gpu-dbg] frame=332 ppu_mode={} screen_enabled={:#04x} brightness={}",
-                        game.ppu.mode, game.ppu.screen_enabled[0], game.ppu.brightness
-                    );
-                    eprintln!(
+                    if frames == 332 {
+                        // extra debug
+                        eprintln!("{}", gpu_rgba.debug_hash_line_with_cpu_bgra(frames, frame));
+                        eprintln!(
+                            "[gpu-dbg] frame=332 ppu_mode={} screen_enabled={:#04x} brightness={}",
+                            game.ppu.mode, game.ppu.screen_enabled[0], game.ppu.brightness
+                        );
+                        eprintln!(
                         "[gpu-dbg] frame=332 bg1: tilemap={} tile_adr={} h={} v={} wider={} higher={}",
                         game.ppu.bg_layer[0].tilemap_adr,
                         game.ppu.bg_layer[0].tile_adr,
@@ -2743,7 +2774,7 @@ fn run_replay_save(args: &[String]) {
                         game.ppu.bg_layer[0].tilemap_wider,
                         game.ppu.bg_layer[0].tilemap_higher
                     );
-                    eprintln!(
+                        eprintln!(
                         "[gpu-dbg] frame=332 bg3: tilemap={} tile_adr={} h={} v={} wider={} higher={}",
                         game.ppu.bg_layer[2].tilemap_adr,
                         game.ppu.bg_layer[2].tile_adr,
@@ -2752,68 +2783,69 @@ fn run_replay_save(args: &[String]) {
                         game.ppu.bg_layer[2].tilemap_wider,
                         game.ppu.bg_layer[2].tilemap_higher
                     );
-                    // Print first 16 pixels of CPU and GPU
-                    eprint!("[gpu-dbg] frame=332 CPU row0:");
-                    for x in 0..16usize {
-                        let b = frame[x * 4] as i32;
-                        let g_b = frame[x * 4 + 1] as i32;
-                        let r = frame[x * 4 + 2] as i32;
-                        eprint!(" ({},{},{})", r, g_b, b);
-                    }
-                    eprintln!();
-                    eprint!("[gpu-dbg] frame=332 GPU row0:");
-                    for x in 0..16usize {
-                        let px = &gpu_rgba[x * 4..x * 4 + 3];
-                        eprint!(" ({},{},{})", px[0], px[1], px[2]);
-                    }
-                    eprintln!();
-                    // Count pixel diffs
-                    let mut ndiff = 0usize;
-                    for i in 0..256 * 224 {
-                        let b = frame[i * 4] as u32;
-                        let g_b = frame[i * 4 + 1] as u32;
-                        let r = frame[i * 4 + 2] as u32;
-                        let gr = gpu_rgba[i * 4] as u32;
-                        let gg = gpu_rgba[i * 4 + 1] as u32;
-                        let gb = gpu_rgba[i * 4 + 2] as u32;
-                        let rr = ((r >> 3) << 3) | (r >> 3 >> 2);
-                        let gg2 = ((g_b >> 3) << 3) | (g_b >> 3 >> 2);
-                        let bb = ((b >> 3) << 3) | (b >> 3 >> 2);
-                        if gr != rr || gg != gg2 || gb != bb {
-                            ndiff += 1;
+                        // Print first 16 pixels of CPU and GPU
+                        eprint!("[gpu-dbg] frame=332 CPU row0:");
+                        for x in 0..16usize {
+                            let b = frame[x * 4] as i32;
+                            let g_b = frame[x * 4 + 1] as i32;
+                            let r = frame[x * 4 + 2] as i32;
+                            eprint!(" ({},{},{})", r, g_b, b);
                         }
-                    }
-                    eprintln!("[gpu-dbg] frame=332 pixel diffs: {ndiff}");
-                    // Find first differing pixel for frame 332
-                    for i in 0..256 * 224 {
-                        let cpu_r8 = ((frame[i * 4 + 2] as u32 >> 3) << 3)
-                            | (frame[i * 4 + 2] as u32 >> 3 >> 2);
-                        let cpu_g8 = ((frame[i * 4 + 1] as u32 >> 3) << 3)
-                            | (frame[i * 4 + 1] as u32 >> 3 >> 2);
-                        let cpu_b8 =
-                            ((frame[i * 4] as u32 >> 3) << 3) | (frame[i * 4] as u32 >> 3 >> 2);
-                        let gr = gpu_rgba[i * 4] as u32;
-                        let gg = gpu_rgba[i * 4 + 1] as u32;
-                        let gb = gpu_rgba[i * 4 + 2] as u32;
-                        if gr != cpu_r8 || gg != cpu_g8 || gb != cpu_b8 {
-                            let cx = i % 256;
-                            let cy = i / 256;
-                            eprintln!(
+                        eprintln!();
+                        eprint!("[gpu-dbg] frame=332 GPU row0:");
+                        for x in 0..16usize {
+                            let px = &gpu_rgba[x * 4..x * 4 + 3];
+                            eprint!(" ({},{},{})", px[0], px[1], px[2]);
+                        }
+                        eprintln!();
+                        // Count pixel diffs
+                        let mut ndiff = 0usize;
+                        for i in 0..256 * 224 {
+                            let b = frame[i * 4] as u32;
+                            let g_b = frame[i * 4 + 1] as u32;
+                            let r = frame[i * 4 + 2] as u32;
+                            let gr = gpu_rgba[i * 4] as u32;
+                            let gg = gpu_rgba[i * 4 + 1] as u32;
+                            let gb = gpu_rgba[i * 4 + 2] as u32;
+                            let rr = ((r >> 3) << 3) | (r >> 3 >> 2);
+                            let gg2 = ((g_b >> 3) << 3) | (g_b >> 3 >> 2);
+                            let bb = ((b >> 3) << 3) | (b >> 3 >> 2);
+                            if gr != rr || gg != gg2 || gb != bb {
+                                ndiff += 1;
+                            }
+                        }
+                        eprintln!("[gpu-dbg] frame=332 pixel diffs: {ndiff}");
+                        // Find first differing pixel for frame 332
+                        for i in 0..256 * 224 {
+                            let cpu_r8 = ((frame[i * 4 + 2] as u32 >> 3) << 3)
+                                | (frame[i * 4 + 2] as u32 >> 3 >> 2);
+                            let cpu_g8 = ((frame[i * 4 + 1] as u32 >> 3) << 3)
+                                | (frame[i * 4 + 1] as u32 >> 3 >> 2);
+                            let cpu_b8 =
+                                ((frame[i * 4] as u32 >> 3) << 3) | (frame[i * 4] as u32 >> 3 >> 2);
+                            let gr = gpu_rgba[i * 4] as u32;
+                            let gg = gpu_rgba[i * 4 + 1] as u32;
+                            let gb = gpu_rgba[i * 4 + 2] as u32;
+                            if gr != cpu_r8 || gg != cpu_g8 || gb != cpu_b8 {
+                                let cx = i % 256;
+                                let cy = i / 256;
+                                eprintln!(
                                 "[gpu-dbg] frame=332 first diff: ({cx},{cy}) cpu=({cpu_r8},{cpu_g8},{cpu_b8}) gpu=({gr},{gg},{gb})"
                             );
-                            break;
+                                break;
+                            }
                         }
                     }
-                }
-                if frames == 1000 {
-                    eprint!("[gpu-dbg] GPU row0 x=0..15:");
-                    for x in 0..16usize {
-                        let px = &gpu_rgba[x * 4..x * 4 + 3];
-                        eprint!(" ({},{},{})", px[0], px[1], px[2]);
+                    if frames == 1000 {
+                        eprint!("[gpu-dbg] GPU row0 x=0..15:");
+                        for x in 0..16usize {
+                            let px = &gpu_rgba[x * 4..x * 4 + 3];
+                            eprint!(" ({},{},{})", px[0], px[1], px[2]);
+                        }
+                        eprintln!();
                     }
-                    eprintln!();
+                    println!("{}", gpu_rgba.gpu_render_hash_log_line(frames));
                 }
-                println!("{}", gpu_rgba.gpu_render_hash_log_line(frames));
             }
         }
         if modern_index_compare.should_compare_frame(frames) {

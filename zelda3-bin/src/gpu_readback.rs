@@ -256,7 +256,11 @@ impl GpuRgbaReadbackFrame {
         &self.rgba
     }
 
-    fn render_hash_line(&self, frame: u32) -> String {
+    fn render_hash_log_line(&self, frame: u32) -> String {
+        renderer::render_hash_frame_rgba(frame, &self.rgba).line
+    }
+
+    fn gpu_render_hash_line(&self, frame: u32) -> String {
         renderer::gpu_render_hash_frame_rgba(frame, &self.rgba).line
     }
 
@@ -266,8 +270,12 @@ impl GpuRgbaReadbackFrame {
 }
 
 impl ReplayRenderHashGpuReadback {
+    pub(crate) fn render_hash_log_line(&self, frame: u32) -> String {
+        self.frame.render_hash_log_line(frame)
+    }
+
     pub(crate) fn gpu_render_hash_log_line(&self, frame: u32) -> String {
-        self.frame.render_hash_line(frame)
+        self.frame.gpu_render_hash_line(frame)
     }
 
     pub(crate) fn debug_hash_line_with_cpu_bgra(&self, frame: u32, cpu_bgra: &[u8]) -> String {
