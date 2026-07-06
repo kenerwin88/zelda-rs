@@ -240,6 +240,10 @@ impl ModernAssetLiveStats {
                     None
                 }
             }
+            crate::ModernAssetFramePresentResult::Unsupported { via, variant_stats } => self
+                .full_gpu_route_violation(via, variant_stats.as_ref())
+                .map(format_live_full_gpu_failure_line)
+                .or_else(|| Some(format!("gpu_path_unsupported_live reason={via} count=1"))),
             _ => None,
         };
         ModernAssetLiveFrameReport { failure_line }
@@ -413,6 +417,28 @@ mod tests {
         assert_eq!(
             report.failure_line(),
             Some("gpu_path_unsupported_live reason=prefinal-overlay-cpu count=2")
+        );
+    }
+
+    #[test]
+    fn record_present_output_owns_unsupported_variant_failure_line() {
+        let mut live = ModernAssetLiveStats::default();
+        let output = crate::ModernAssetFramePresentOutput {
+            result: crate::ModernAssetFramePresentResult::Unsupported {
+                via: "variant-gpu",
+                variant_stats: Some(VariantAtlasRenderStats {
+                    live_index_draws: 3,
+                    ..Default::default()
+                }),
+            },
+            in_dungeon: false,
+        };
+
+        let report = live.record_present_output(&output, &live_resources(true));
+
+        assert_eq!(
+            report.failure_line(),
+            Some("gpu_path_unsupported_live reason=live-index count=3")
         );
     }
 

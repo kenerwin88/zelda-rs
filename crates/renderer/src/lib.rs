@@ -2058,6 +2058,10 @@ pub enum ModernAssetFramePresentResult {
         via: &'static str,
         variant_stats: Option<modern_software::VariantAtlasRenderStats>,
     },
+    Unsupported {
+        via: &'static str,
+        variant_stats: Option<modern_software::VariantAtlasRenderStats>,
+    },
     #[default]
     Unhandled,
 }
@@ -3015,7 +3019,7 @@ impl FrameRenderer {
                 })
             }
             ModernAssetFramePresentRoute::SourceVariantGpu => {
-                let Some(stats) = self.present_modern_variant_gpu_from_sources(
+                let render = self.present_modern_variant_gpu_from_sources(
                     frame,
                     src_table.expect("route requires source table"),
                     resources
@@ -3026,13 +3030,16 @@ impl FrameRenderer {
                         .expect("route requires variant atlas"),
                     scene.bg_palette_name(),
                     scene.sprite_palette_name(),
-                )?
-                else {
-                    return Ok(ModernAssetFramePresentResult::Unhandled);
-                };
+                )?;
+                if !render.rendered {
+                    return Ok(ModernAssetFramePresentResult::Unsupported {
+                        via: "variant-gpu",
+                        variant_stats: Some(render.stats),
+                    });
+                }
                 Ok(ModernAssetFramePresentResult::Presented {
                     via: "variant-gpu",
-                    variant_stats: Some(stats),
+                    variant_stats: Some(render.stats),
                 })
             }
             ModernAssetFramePresentRoute::Unhandled => Ok(ModernAssetFramePresentResult::Unhandled),
@@ -3187,7 +3194,7 @@ impl FrameRenderer {
         atlas: &modern_variant_atlas::ModernVariantAtlas,
         bg_palette_name: &str,
         sprite_palette_name: &str,
-    ) -> Result<Option<modern_software::VariantAtlasRenderStats>, RenderError> {
+    ) -> Result<modern_gpu::ModernGpuVariantLiveRender, RenderError> {
         let format = wgpu::TextureFormat::Rgba8Unorm;
         if self.modern_variant_gpu.is_none() {
             self.modern_variant_gpu = Some(ModernGpuVariantRenderer::new(
@@ -3244,7 +3251,7 @@ impl FrameRenderer {
             target_view,
         );
         if !render.rendered {
-            return Ok(None);
+            return Ok(render);
         }
 
         let mut encoder = self
@@ -3274,7 +3281,7 @@ impl FrameRenderer {
         self.queue.submit([encoder.finish()]);
 
         self.render()?;
-        Ok(Some(render.stats))
+        Ok(render)
     }
 
     /// Live GPU present of the compact RGBA canonical-art/effect atlas path
@@ -3290,7 +3297,7 @@ impl FrameRenderer {
         variant_atlas: &modern_variant_atlas::ModernVariantAtlas,
         bg_palette_name: &str,
         sprite_palette_name: &str,
-    ) -> Result<Option<modern_software::VariantAtlasRenderStats>, RenderError> {
+    ) -> Result<modern_gpu::ModernGpuVariantLiveRender, RenderError> {
         debug_assert_ne!(frame.mode, 7);
         let (mut modern, bg_cells) =
             modern_extract::extract_modern_frame_from_sources(frame, src_table, source_atlas);
