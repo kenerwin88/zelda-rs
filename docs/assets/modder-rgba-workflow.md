@@ -82,11 +82,14 @@ cargo run --profile parity -p zelda3-bin
 Use these opt-outs when comparing behavior:
 
 ```bash
-ZELDA3_RENDERER=assets-anim-gpu cargo run --profile parity -p zelda3-bin
+ZELDA3_RENDERER=assets-variant-gpu cargo run --profile parity -p zelda3-bin
 ZELDA3_RENDERER=assets-anim cargo run --profile parity -p zelda3-bin
 ```
 
-`ZELDA3_RENDERER=assets-anim-gpu` keeps the older indexed GPU atlas path.
+Unset `ZELDA3_RENDERER` and `ZELDA3_RENDERER=assets-variant-gpu` both use the
+canonical RGBA variant GPU path for live play. The older
+`assets-anim-gpu` indexed GPU route is diagnostic-only and is not accepted by
+the live frontend.
 `ZELDA3_RENDERER=assets-anim` uses the CPU atlas compositor oracle.
 
 ## Dynamic Palette Fallback

@@ -9,6 +9,7 @@ pub struct ModernAssetLiveStats {
     require_full_gpu_path: bool,
     log_every_frames: u64,
     frames: u64,
+    mode7_source_gpu_frames: u64,
     stable_draws: u64,
     fallback_draws: u64,
     live_index_draws: u64,
@@ -212,7 +213,7 @@ impl ModernAssetLiveStats {
             u64::from(stats.mixed_overlay_bg_effect_reject_cgram_mismatch);
         self.mixed_overlay_bg_effect_reject_overlap +=
             u64::from(stats.mixed_overlay_bg_effect_reject_overlap);
-        if self.frames % self.log_every_frames == 0 {
+        if self.should_log_summary() {
             self.log_summary();
         }
         None
@@ -249,6 +250,7 @@ impl ModernAssetLiveStats {
                     self.record_variant_stats(*stats)
                         .map(|fallback| format_live_full_gpu_failure_line(fallback))
                 } else {
+                    self.record_non_variant_gpu_route(via);
                     None
                 }
             }
@@ -274,10 +276,28 @@ impl ModernAssetLiveStats {
             .flatten()
     }
 
+    fn record_non_variant_gpu_route(&mut self, via: &str) {
+        if !self.enabled {
+            return;
+        }
+        if via == "mode7-source-gpu" {
+            self.frames += 1;
+            self.mode7_source_gpu_frames += 1;
+            if self.should_log_summary() {
+                self.log_summary();
+            }
+        }
+    }
+
+    fn should_log_summary(&self) -> bool {
+        self.log_every_frames != 0 && self.frames % self.log_every_frames == 0
+    }
+
     fn log_summary(&self) {
         eprintln!(
-            "variant_live_summary frames={} variant_draws={} fallback_draws={} live_index_draws={} live_index_bg_draws={} live_index_bg12_draws={} live_index_bg3_draws={} live_index_sprite_draws={} gpu_prefinal_base_frames={} gpu_screen_builder_frames={} cpu_prefinal_composite_frames={} cpu_prefinal_overlay_frames={} dynamic_palette_draws={} missing_variant_draws={} stable_preview_draws={} stable_effect_draws={} dynamic_material_draws={} effect_material_draws={} dynamic_material_fallback_draws={} dynamic_material_fallback_instance_source_draws={} dynamic_material_fallback_brightness_draws={} dynamic_material_fallback_policy_draws={} dynamic_material_fallback_missing_effect_draws={} dynamic_material_fallback_unsupported_draws={} unsupported_material_draws={} missing_art_draws={} unkeyed_fallback_draws={} unkeyed_bg_fallback_draws={} unkeyed_bg12_fallback_draws={} unkeyed_bg3_fallback_draws={} unkeyed_sprite_fallback_draws={} mixed_overlay_bg_effect_draws={} mixed_overlay_bg_effect_candidates={} mixed_overlay_bg_effect_culled_invisible_main={} mixed_overlay_bg_effect_reject_complex_frame={} mixed_overlay_bg_effect_reject_complex_brightness={} mixed_overlay_bg_effect_reject_complex_invalid_layer={} mixed_overlay_bg_effect_reject_complex_mosaic={} mixed_overlay_bg_effect_reject_complex_sub_window={} mixed_overlay_bg_effect_reject_complex_effect_bounds={} mixed_overlay_bg_effect_reject_complex_scanline_main={} mixed_overlay_bg_effect_reject_complex_layer_window={} mixed_overlay_bg_effect_reject_complex_color_math={} mixed_overlay_bg_effect_reject_complex_color_math_clip={} mixed_overlay_bg_effect_reject_complex_color_math_subscreen={} mixed_overlay_bg_effect_reject_complex_color_math_fixed_color={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch={} mixed_overlay_bg_effect_reject_cgram_mismatch={} mixed_overlay_bg_effect_reject_overlap={}",
+            "variant_live_summary frames={} mode7_source_gpu_frames={} variant_draws={} fallback_draws={} live_index_draws={} live_index_bg_draws={} live_index_bg12_draws={} live_index_bg3_draws={} live_index_sprite_draws={} gpu_prefinal_base_frames={} gpu_screen_builder_frames={} cpu_prefinal_composite_frames={} cpu_prefinal_overlay_frames={} dynamic_palette_draws={} missing_variant_draws={} stable_preview_draws={} stable_effect_draws={} dynamic_material_draws={} effect_material_draws={} dynamic_material_fallback_draws={} dynamic_material_fallback_instance_source_draws={} dynamic_material_fallback_brightness_draws={} dynamic_material_fallback_policy_draws={} dynamic_material_fallback_missing_effect_draws={} dynamic_material_fallback_unsupported_draws={} unsupported_material_draws={} missing_art_draws={} unkeyed_fallback_draws={} unkeyed_bg_fallback_draws={} unkeyed_bg12_fallback_draws={} unkeyed_bg3_fallback_draws={} unkeyed_sprite_fallback_draws={} mixed_overlay_bg_effect_draws={} mixed_overlay_bg_effect_candidates={} mixed_overlay_bg_effect_culled_invisible_main={} mixed_overlay_bg_effect_reject_complex_frame={} mixed_overlay_bg_effect_reject_complex_brightness={} mixed_overlay_bg_effect_reject_complex_invalid_layer={} mixed_overlay_bg_effect_reject_complex_mosaic={} mixed_overlay_bg_effect_reject_complex_sub_window={} mixed_overlay_bg_effect_reject_complex_effect_bounds={} mixed_overlay_bg_effect_reject_complex_scanline_main={} mixed_overlay_bg_effect_reject_complex_layer_window={} mixed_overlay_bg_effect_reject_complex_color_math={} mixed_overlay_bg_effect_reject_complex_color_math_clip={} mixed_overlay_bg_effect_reject_complex_color_math_subscreen={} mixed_overlay_bg_effect_reject_complex_color_math_fixed_color={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_cgram_mismatch={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_obj={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_deeper_chain={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_mixed_static_live_order={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_no_effect={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_complex={} mixed_overlay_bg_effect_reject_complex_color_math_prefinal_overlap_bg_unrepresentable_front_cgram_mismatch={} mixed_overlay_bg_effect_reject_cgram_mismatch={} mixed_overlay_bg_effect_reject_overlap={}",
             self.frames,
+            self.mode7_source_gpu_frames,
             self.stable_draws,
             self.fallback_draws,
             self.live_index_draws,
@@ -485,6 +505,7 @@ mod tests {
     #[test]
     fn record_present_output_accepts_source_backed_mode7_route() {
         let mut live = ModernAssetLiveStats {
+            enabled: true,
             require_full_gpu_path: true,
             ..Default::default()
         };
@@ -500,6 +521,8 @@ mod tests {
 
         assert_eq!(report.failure_line(), None);
         assert_eq!(report.fallback_presentation_context(), None);
+        assert_eq!(live.frames, 1);
+        assert_eq!(live.mode7_source_gpu_frames, 1);
     }
 
     #[test]

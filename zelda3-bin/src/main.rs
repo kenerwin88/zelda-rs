@@ -1222,11 +1222,10 @@ fn run_replay_save(args: &[String]) {
     // (extract_modern_sprites_from_vram); the static sprite atlas is no longer
     // loaded for rendering.
     //
-    // Off-VRAM atlas paths: unset uses `assets-variant-gpu`. Explicit
-    // `ZELDA3_RENDERER=assets-anim-gpu` keeps the older indexed GPU path, and
-    // explicit `assets-anim` keeps the CPU atlas compositor as an opt-out/debug
-    // oracle. `assets-variant-gpu` uses compact base art plus LUT effects for
-    // stable draws and reports fallback counts.
+    // Off-VRAM atlas paths: unset uses `assets-variant-gpu`. The live frontend
+    // requires that RGBA variant path; explicit `assets-anim-gpu` remains a
+    // diagnostic compare path, and `assets-anim` keeps the CPU atlas compositor
+    // as an opt-out/debug oracle.
     modern_index_compare
         .load_resources(Path::new("."), true)
         .unwrap_or_else(|e| {

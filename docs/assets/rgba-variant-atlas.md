@@ -541,18 +541,22 @@ for rows that are not stable final pixels.
 
 Unset `ZELDA3_RENDERER` now chooses the variant atlas GPU path. Live play
 presents that path on the window renderer's GPU device without headless
-readback or CPU RGBA upload. Use `ZELDA3_RENDERER=assets-anim-gpu` to keep the
-older indexed GPU atlas path, or `ZELDA3_RENDERER=assets-anim` for the CPU
-atlas compositor oracle.
+readback or CPU RGBA upload. Live play accepts only that RGBA variant GPU
+route; `ZELDA3_RENDERER=assets-anim-gpu` is diagnostic-only for indexed GPU
+compare/debug tooling, and `ZELDA3_RENDERER=assets-anim` remains the CPU atlas
+compositor oracle.
 
 If `art_tiles.*` fails to load, the selected default mode reports a canonical
 art atlas error instead of silently switching to legacy base previews. Use
-`ZELDA3_RENDERER=assets-anim-gpu` for the older indexed GPU atlas path, or
-`ZELDA3_RENDERER=assets-anim` for the CPU atlas compositor oracle/debug mode.
+explicit diagnostic commands with `ZELDA3_RENDERER=assets-anim-gpu` for the
+older indexed GPU atlas path, or `ZELDA3_RENDERER=assets-anim` for the CPU atlas
+compositor oracle/debug mode.
 
 For a cheap live coverage check without a replay scan, set
 `ZELDA3_VARIANT_LIVE_STATS=1`. The play loop prints aggregate
-`variant_live_summary` lines every 300 presented variant frames by default.
+`variant_live_summary` lines every 300 accepted variant or source-backed Mode 7
+frames by default, including `mode7_source_gpu_frames` for Mode 7 frames that
+use asset-66 source pixels instead of live VRAM CHR.
 Those lines include both legacy counters and the source/material counters named
 above. Use `ZELDA3_VARIANT_LIVE_STATS_EVERY=<frames>` to change the interval.
 

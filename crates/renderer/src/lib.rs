@@ -2037,7 +2037,8 @@ pub struct FrameRenderer {
     /// `render_modern_frame` and `present_modern_frame_from_sources` call uses
     /// one consistent size.
     hd_scale: modern_hd_overrides::HdScale,
-    /// Lazily built on first `present_modern_gpu` call (assets-anim-gpu mode).
+    /// Lazily built on first diagnostic `present_modern_gpu` call
+    /// (`assets-anim-gpu` mode).
     modern_gpu: Option<ModernGpuCompositor>,
     /// Lazily built on first `present_modern_variant_gpu` call
     /// (`assets-variant-gpu`, the default modern asset path).
@@ -3066,7 +3067,8 @@ impl FrameRenderer {
         })
     }
 
-    /// Live GPU present of the PNG-atlas path (`ZELDA3_RENDERER=assets-anim-gpu`).
+    /// Diagnostic GPU present of the indexed source-atlas path
+    /// (`ZELDA3_RENDERER=assets-anim-gpu`).
     /// Renders the compositor into an offscreen 256x224 target, GPU-copies it
     /// into `game_texture`, then blits via the standard presentation path. No
     /// CPU readback.
