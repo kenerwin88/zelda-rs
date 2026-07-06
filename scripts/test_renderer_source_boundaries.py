@@ -20,10 +20,10 @@ def load_module():
 def source_with_required_calls(body: str) -> str:
     required = """
     fn run_play_with_state() {
-        let assets = renderer::ModernAssetFrameResources::load_from_env();
+        let assets = renderer::ModernAssetFrameResources::load_live_gpu_from_env();
         let live_present_input = renderer::ModernAssetFrameLivePresentInput {};
         frontend.present_modern_asset_live_frame_from_entries(live_present_input);
-        frontend.set_renderer_mode(renderer::RendererMode::from_effective_env());
+        frontend.set_renderer_mode(renderer::RendererMode::from_effective_mode(mode));
         let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(0);
         let stats = renderer::ModernAssetLiveStats::from_env();
         let compare = renderer::ModernIndexCompareStats::from_env();
@@ -1515,8 +1515,10 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             fn play_renderer_from_env() {
                 let backend_env = std::env::var("ZELDA3_RENDER_BACKEND");
                 let assets = renderer::ModernAssetFrameResources::load_from_env(Path::new("."));
+                let live_assets = renderer::ModernAssetFrameResources::load_live_gpu_from_env(Path::new("."));
                 let report = frontend.present_modern_asset_live_frame_from_entries(input);
                 frontend.set_renderer_mode(renderer::RendererMode::from_effective_env());
+                frontend.set_renderer_mode(renderer::RendererMode::from_effective_mode(mode));
             }
             struct CpuPlayRenderer;
             fn draw_play_ppu_frame() {}
@@ -1609,7 +1611,7 @@ class RendererSourceBoundaryTests(unittest.TestCase):
 
         errors = module.check_main_text(textwrap.dedent(source))
 
-        self.assertEqual(len(errors), 89)
+        self.assertEqual(len(errors), 91)
         self.assertTrue(
             all("live GPU play backend ownership escaped gpu_capture boundary" in error for error in errors)
         )

@@ -63,8 +63,8 @@ MANUAL_EXTRACT = "extract_modern_frame_from_sources"
 REQUIRED_RENDERER_OWNED_CALLS = (
     "ModernAssetFrameLivePresentInput",
     "present_modern_asset_live_frame_from_entries",
-    "ModernAssetFrameResources::load_from_env",
-    "RendererMode::from_effective_env",
+    "ModernAssetFrameResources::load_live_gpu_from_env",
+    "RendererMode::from_effective_mode",
     "ModernAssetFrameScene",
     "ModernAssetLiveStats",
     "ModernIndexCompareStats",
@@ -684,6 +684,7 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "struct GpuPlayRenderer",
     "impl PlayRendererBackend for GpuPlayRenderer",
     "ModernAssetFrameResources::load_from_env",
+    "ModernAssetFrameResources::load_live_gpu_from_env",
     "ModernAssetLiveStats::from_env()",
     "LiveGpuFrameCapture::from_game(",
     "present_modern_asset_live_frame_from_entries(",
@@ -724,6 +725,7 @@ FORBIDDEN_MAIN_GPU_PLAY_BACKEND_CALLS = (
     "RendererMode::ModernCompare",
     "RendererMode::Modern {",
     "RendererMode::from_effective_env()",
+    "RendererMode::from_effective_mode(",
     "modern asset load failed",
 )
 

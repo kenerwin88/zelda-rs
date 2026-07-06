@@ -106,6 +106,7 @@ impl LiveGpuFrameCapture {
 /// once. The renderer crate owns which atlases each renderer mode requires and
 /// how they route through GPU/software presentation.
 struct GpuPlayRenderer {
+    live_mode: renderer::EffectiveRendererMode<'static>,
     modern_assets: renderer::ModernAssetFrameResources,
     variant_live_stats: renderer::ModernAssetLiveStats,
 }
@@ -113,12 +114,15 @@ struct GpuPlayRenderer {
 impl GpuPlayRenderer {
     fn new() -> Self {
         let repo_root = repo_root();
-        let modern_assets = renderer::ModernAssetFrameResources::load_from_env(&repo_root)
-            .unwrap_or_else(|e| {
-                eprintln!("modern asset load failed: {e}");
-                process::exit(2);
-            });
+        let (modern_assets, live_mode) =
+            renderer::ModernAssetFrameResources::load_live_gpu_from_env(&repo_root).unwrap_or_else(
+                |e| {
+                    eprintln!("modern asset load failed: {e}");
+                    process::exit(2);
+                },
+            );
         Self {
+            live_mode,
             modern_assets,
             variant_live_stats: renderer::ModernAssetLiveStats::from_env(),
         }
@@ -155,16 +159,10 @@ impl crate::play_renderer::PlayRendererBackend for GpuPlayRenderer {
     }
 
     fn configure_frontend(&self, frontend: &mut NativeFrontend) {
-        // Default (unset) selects `assets-variant-gpu`. Explicit
-        // `ZELDA3_RENDERER=assets-anim-gpu` keeps the older indexed GPU path,
-        // and `ZELDA3_RENDERER=classic` opts back into the wgpu PPU.
-        // `ZELDA3_RENDERER=modern`/`modern-compare` route through the modern
-        // software live-VRAM path. Asset modes map to
-        // Modern because `RendererMode::parse` only recognizes "modern" and
-        // "modern-compare"; GPU asset modes intercept Mode 7 and source-atlas
-        // misses below, so the default path does not need
-        // `FrameRenderer::render_modern_frame`'s CPU compositor.
-        frontend.set_renderer_mode(renderer::RendererMode::from_effective_env());
+        // Live play is always PNG-backed GPU rendering. `classic`, `modern`,
+        // `modern-compare`, and CPU atlas modes remain available only through
+        // explicit diagnostic commands, not the default playable frontend.
+        frontend.set_renderer_mode(renderer::RendererMode::from_effective_mode(self.live_mode));
     }
 
     fn present_frame(

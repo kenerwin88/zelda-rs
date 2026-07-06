@@ -2109,6 +2109,14 @@ impl ModernAssetFrameResources {
         Self::load_for_mode(EffectiveRendererMode::from_env(), root)
     }
 
+    pub fn load_live_gpu_from_env(
+        root: &Path,
+    ) -> Result<(Self, EffectiveRendererMode<'static>), String> {
+        let mode = EffectiveRendererMode::live_gpu_asset_from_env()?;
+        let resources = Self::load_for_mode(mode, root)?;
+        Ok((resources, mode))
+    }
+
     pub fn load_for_mode(mode: EffectiveRendererMode<'_>, root: &Path) -> Result<Self, String> {
         let variant_atlas = if mode.uses_variant_atlas() {
             Some(modern_variant_atlas::load_modern_canonical_art_atlas(root)?)
