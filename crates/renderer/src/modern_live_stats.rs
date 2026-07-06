@@ -6,7 +6,6 @@ use crate::modern_software::VariantAtlasRenderStats;
 #[derive(Default)]
 pub struct ModernAssetLiveStats {
     enabled: bool,
-    require_full_gpu_path: bool,
     log_every_frames: u64,
     frames: u64,
     mode7_source_gpu_frames: u64,
@@ -97,11 +96,8 @@ impl ModernAssetLiveStats {
             .and_then(|value| value.parse::<u64>().ok())
             .filter(|value| *value != 0)
             .unwrap_or(300);
-        let require_full_gpu_path =
-            env_flag_default_true(env::var("ZELDA3_REQUIRE_FULL_GPU_PATH").ok().as_deref());
         Self {
             enabled,
-            require_full_gpu_path,
             log_every_frames,
             ..Self::default()
         }
@@ -271,9 +267,7 @@ impl ModernAssetLiveStats {
         via: &str,
         stats: Option<&VariantAtlasRenderStats>,
     ) -> Option<ModernGpuPathFallback> {
-        self.require_full_gpu_path
-            .then(|| modern_gpu_path_fallback_reason(via, stats))
-            .flatten()
+        modern_gpu_path_fallback_reason(via, stats)
     }
 
     fn record_non_variant_gpu_route(&mut self, via: &str) {
@@ -359,20 +353,6 @@ impl ModernAssetLiveStats {
     }
 }
 
-fn env_flag_default_true(value: Option<&str>) -> bool {
-    match value.map(str::trim) {
-        Some("0") => false,
-        Some(value)
-            if value.eq_ignore_ascii_case("false")
-                || value.eq_ignore_ascii_case("off")
-                || value.eq_ignore_ascii_case("no") =>
-        {
-            false
-        }
-        _ => true,
-    }
-}
-
 fn format_live_full_gpu_failure_line(fallback: ModernGpuPathFallback) -> String {
     format!(
         "gpu_path_unsupported_live reason={} count={}",
@@ -385,27 +365,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn full_gpu_live_guard_defaults_on_with_explicit_opt_out() {
-        assert!(env_flag_default_true(None));
-        assert!(env_flag_default_true(Some("1")));
-        assert!(env_flag_default_true(Some("true")));
-        assert!(env_flag_default_true(Some("yes")));
-        assert!(!env_flag_default_true(Some("0")));
-        assert!(!env_flag_default_true(Some("false")));
-        assert!(!env_flag_default_true(Some("OFF")));
-        assert!(!env_flag_default_true(Some(" no ")));
-    }
-
-    #[test]
     fn full_gpu_live_guard_reports_cpu_prefinal_violation() {
         let stats = VariantAtlasRenderStats {
             cpu_prefinal_composite_frames: 1,
             ..Default::default()
         };
-        let strict = ModernAssetLiveStats {
-            require_full_gpu_path: true,
-            ..Default::default()
-        };
+        let strict = ModernAssetLiveStats::default();
         assert_eq!(
             strict.full_gpu_violation(&stats),
             Some(ModernGpuPathFallback {
@@ -413,12 +378,6 @@ mod tests {
                 count: 1,
             })
         );
-
-        let opt_out = ModernAssetLiveStats {
-            require_full_gpu_path: false,
-            ..Default::default()
-        };
-        assert_eq!(opt_out.full_gpu_violation(&stats), None);
     }
 
     #[test]
@@ -428,10 +387,7 @@ mod tests {
             live_index_draws: 3,
             ..Default::default()
         };
-        let strict = ModernAssetLiveStats {
-            require_full_gpu_path: true,
-            ..Default::default()
-        };
+        let strict = ModernAssetLiveStats::default();
 
         assert_eq!(
             strict.full_gpu_violation(&stats),
@@ -455,10 +411,7 @@ mod tests {
 
     #[test]
     fn record_present_output_owns_live_gpu_failure_line() {
-        let mut live = ModernAssetLiveStats {
-            require_full_gpu_path: true,
-            ..Default::default()
-        };
+        let mut live = ModernAssetLiveStats::default();
         let output = crate::ModernAssetFramePresentOutput {
             result: crate::ModernAssetFramePresentResult::Presented {
                 via: "variant-gpu",
@@ -481,10 +434,7 @@ mod tests {
 
     #[test]
     fn record_present_output_rejects_mode7_live_vram_route() {
-        let mut live = ModernAssetLiveStats {
-            require_full_gpu_path: true,
-            ..Default::default()
-        };
+        let mut live = ModernAssetLiveStats::default();
         let output = crate::ModernAssetFramePresentOutput {
             result: crate::ModernAssetFramePresentResult::Presented {
                 via: "mode7-gpu",
@@ -506,7 +456,6 @@ mod tests {
     fn record_present_output_accepts_source_backed_mode7_route() {
         let mut live = ModernAssetLiveStats {
             enabled: true,
-            require_full_gpu_path: true,
             ..Default::default()
         };
         let output = crate::ModernAssetFramePresentOutput {
@@ -527,10 +476,7 @@ mod tests {
 
     #[test]
     fn record_present_output_rejects_vram_gpu_route() {
-        let mut live = ModernAssetLiveStats {
-            require_full_gpu_path: true,
-            ..Default::default()
-        };
+        let mut live = ModernAssetLiveStats::default();
         let output = crate::ModernAssetFramePresentOutput {
             result: crate::ModernAssetFramePresentResult::Presented {
                 via: "vram-gpu",

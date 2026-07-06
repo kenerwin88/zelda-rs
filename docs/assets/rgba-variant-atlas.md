@@ -407,9 +407,8 @@ and full source-art/material coverage. It exits with
 `gpu_path_unsupported_live` if variant stats report CPU-prefinal composition,
 missing source art, unsupported or unmodeled material fallback, unkeyed
 live-index fallback, Mode-7 live-VRAM GPU fallback, VRAM-only GPU rendering,
-or any other aggregate source-art fallback draw. Set
-`ZELDA3_REQUIRE_FULL_GPU_PATH=0` only for explicit debugging of unsupported
-escape hatches. Mode 7 now routes through `mode7-source-gpu` when the caller
+or any other aggregate source-art fallback draw. Mode 7 now routes through
+`mode7-source-gpu` when the caller
 supplies asset 66 character bytes: the shader reads character pixels from that
 source buffer while keeping live tilemap, CGRAM, matrix, window, sprite, and
 color-math metadata on the GPU path. If those source bytes are missing, the
