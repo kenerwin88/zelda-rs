@@ -82,6 +82,13 @@ pub struct GpuFrame<'a> {
     pub windowsel: u32,
     /// Per-scanline window 1 boundaries, from HDMA pre-simulation (224 entries).
     pub scanlines: Box<[ScanlineRegs; 224]>,
+    /// Optional source-art identity for dynamic BG3 text/glyph cells whose final pixels
+    /// still come from live VRAM but whose editable art should resolve through a
+    /// semantic source atlas entry.
+    pub bg3_source_tiles: &'a [GpuBg3SourceTile],
+    /// Exact dynamic VWF glyph placements in the BG3 message render buffer.
+    /// These preserve sub-tile x/y placement for the source-glyph renderer.
+    pub bg3_vwf_glyph_runs: &'a [GpuBg3VwfGlyphRun],
 }
 
 /// Raw register/slice snapshot used to construct a [`GpuFrame`] without tying
@@ -117,6 +124,24 @@ pub struct GpuFrameCaptureInput<'a> {
     pub registers: GpuFrameRegisterSnapshot<'a>,
     pub cgram: &'a [u16],
     pub raw_scanlines: &'a RawScanlineFrame,
+    pub bg3_source_tiles: &'a [GpuBg3SourceTile],
+    pub bg3_vwf_glyph_runs: &'a [GpuBg3VwfGlyphRun],
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GpuBg3SourceTile {
+    pub chr_base: u16,
+    pub tile_number: u16,
+    pub source_key: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GpuBg3VwfGlyphRun {
+    pub glyph_code: u16,
+    pub origin_tile_number: u16,
+    pub x: i16,
+    pub y: i16,
+    pub width: u8,
 }
 
 impl<'a> GpuFrame<'a> {
@@ -177,6 +202,8 @@ impl<'a> GpuFrame<'a> {
             windowsel_cm: ((registers.windowsel >> 20) & 0xF) as u8,
             windowsel: registers.windowsel,
             scanlines: Self::scanlines_from_raw(input.raw_scanlines),
+            bg3_source_tiles: input.bg3_source_tiles,
+            bg3_vwf_glyph_runs: input.bg3_vwf_glyph_runs,
         }
     }
 
@@ -229,6 +256,8 @@ impl<'a> GpuFrame<'a> {
             windowsel_cm: ((source.windowsel() >> 20) & 0xF) as u8,
             windowsel: source.windowsel(),
             scanlines,
+            bg3_source_tiles: source.bg3_source_tiles(),
+            bg3_vwf_glyph_runs: source.bg3_vwf_glyph_runs(),
         }
     }
 }
@@ -269,6 +298,12 @@ pub trait GpuFrameSource<'a> {
     fn clip_mode(&self) -> u8;
     fn prevent_math_mode(&self) -> u8;
     fn windowsel(&self) -> u32;
+    fn bg3_source_tiles(&self) -> &'a [GpuBg3SourceTile] {
+        &[]
+    }
+    fn bg3_vwf_glyph_runs(&self) -> &'a [GpuBg3VwfGlyphRun] {
+        &[]
+    }
 }
 
 /// Per-BG-layer register snapshot (mirrors `snes::ppu::BgLayer`).
@@ -611,6 +646,8 @@ mod tests {
             registers,
             cgram: &cgram,
             raw_scanlines: &raw,
+            bg3_source_tiles: &[],
+            bg3_vwf_glyph_runs: &[],
         });
 
         assert_eq!(frame.vram, &vram);

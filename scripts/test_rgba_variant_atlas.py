@@ -147,6 +147,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             (assets_dir / "065-kBgGfx.bin").write_bytes(
                 pack_arrays([compressed_literal(bytes(raw_pack))])
             )
+            (assets_dir / "095-kDialogueFont.bin").write_bytes(bytes(0x1000))
             write_palette_json(
                 asset_dir / "assets_src/palettes/palette_main_spr.json",
                 palette_colors,
@@ -188,6 +189,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             (assets_dir / "065-kBgGfx.bin").write_bytes(
                 pack_arrays([compressed_literal(bytes(raw_pack))])
             )
+            (assets_dir / "095-kDialogueFont.bin").write_bytes(bytes(0x1000))
             write_palette_json(
                 asset_dir / "assets_src/palettes/palette_main_spr.json",
                 palette_colors,
@@ -971,7 +973,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                 },
             )
 
-    def test_canonical_art_atlas_imports_bg3_source_tiles_as_32_color_art(self) -> None:
+    def test_canonical_art_atlas_splits_dynamic_bg3_source_tiles(self) -> None:
         import json
         from PIL import Image
 
@@ -1022,26 +1024,49 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             image.putdata(([14] + [0] * 63) * 2)
             image.save(source_dir / "assets_by_source.png")
 
-            _width, _height, _pixels, arts = build_canonical_art_atlas(
+            written = write_canonical_art_atlas(
                 asset_dir,
                 source_tiles_dir=source_dir,
             )
 
+            self.assertIn(asset_dir / "atlas/art_tiles.json", written)
+            self.assertIn(asset_dir / "atlas/dynamic_bg3_tiles.json", written)
+            main_manifest = json.loads((asset_dir / "atlas/art_tiles.json").read_text())
+            dynamic_manifest = json.loads(
+                (asset_dir / "atlas/dynamic_bg3_tiles.json").read_text()
+            )
+
             refs = [
                 source
-                for art in arts
+                for art in main_manifest["arts"]
                 for source in art["source_refs"]
                 if source["source_kind"] == "bg3"
             ]
-            self.assertEqual(len(refs), 2)
+            self.assertEqual(len(refs), 1)
             self.assertEqual({ref["asset"] for ref in refs}, {"kBg3Gfx"})
             self.assertEqual(
                 {(ref["pack"], ref["tile"]) for ref in refs},
-                {(0x0C07, 0), (0x1234, 0x5678)},
+                {(0x0C07, 0)},
             )
             self.assertEqual({ref["bpp"] for ref in refs}, {5})
             self.assertEqual({ref["runtime_colors_per_row"] for ref in refs}, {32})
             self.assertEqual({ref["runtime_material_policy"] for ref in refs}, {"stable"})
+
+            dynamic_refs = [
+                source
+                for art in dynamic_manifest["arts"]
+                for source in art["source_refs"]
+                if source["source_kind"] == "bg3_dynamic"
+            ]
+            self.assertEqual(dynamic_manifest["format"], "zelda3_dynamic_bg3_art_atlas_v1")
+            self.assertEqual(len(dynamic_refs), 1)
+            self.assertEqual({ref["asset"] for ref in dynamic_refs}, {"kBg3TextGfx"})
+            self.assertEqual(
+                {(ref["pack"], ref["tile"]) for ref in dynamic_refs},
+                {(0x1234, 0x5678)},
+            )
+            self.assertEqual({ref["bpp"] for ref in dynamic_refs}, {5})
+            self.assertEqual({ref["runtime_colors_per_row"] for ref in dynamic_refs}, {32})
 
     def test_canonical_art_atlas_imports_mode7_asset66_as_direct_palette_art(self) -> None:
         raw_pack = bytearray(1536)
@@ -1197,11 +1222,179 @@ class RgbaVariantAtlasTests(unittest.TestCase):
 
             self.assertIn(asset_dir / "atlas/art_tiles.png", written)
             self.assertIn(asset_dir / "atlas/art_tiles.json", written)
+            self.assertIn(asset_dir / "atlas/dynamic_bg3_tiles.png", written)
+            self.assertIn(asset_dir / "atlas/dynamic_bg3_tiles.json", written)
             with Image.open(asset_dir / "atlas/art_tiles.png") as image:
+                self.assertEqual(image.mode, "RGBA")
+            with Image.open(asset_dir / "atlas/dynamic_bg3_tiles.png") as image:
                 self.assertEqual(image.mode, "RGBA")
             manifest = json.loads((asset_dir / "atlas/art_tiles.json").read_text())
             self.assertEqual(manifest["format"], "zelda3_canonical_art_atlas_v1")
             self.assertLess(manifest["art_count"], manifest["source_ref_count"])
+            dynamic_manifest = json.loads(
+                (asset_dir / "atlas/dynamic_bg3_tiles.json").read_text()
+            )
+            self.assertEqual(dynamic_manifest["format"], "zelda3_dynamic_bg3_art_atlas_v1")
+
+    def test_write_canonical_art_atlas_emits_dialogue_glyph_source_when_available(self) -> None:
+        import json
+        from PIL import Image
+
+        raw_pack = bytearray(1536)
+        raw_pack[0] = 0x80
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = [
+            "#000000",
+            "#102030",
+            "#203040",
+            "#304050",
+            "#405060",
+            "#506070",
+            "#607080",
+            "#708090",
+        ] * 16
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            (assets_dir / "095-kDialogueFont.bin").write_bytes(bytes(0x1000))
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+            chr_dir = asset_dir / "assets_src/chr"
+            chr_dir.mkdir(parents=True)
+            (chr_dir / "1w-2d.json").write_text(
+                json.dumps(
+                    {
+                        "format": "zelda3_editable_chr_sheet_v1",
+                        "layout": {
+                            "columns": 2,
+                            "rows": 2,
+                            "tile_width": 8,
+                            "tile_height": 8,
+                        },
+                        "blocks": [
+                            {
+                                "block": "1w-2d.DAT3N",
+                                "source_bpp": 2,
+                                "source_kind": "sprite",
+                                "source_pack": 103,
+                                "tile_count": 2,
+                                "tile_start": 0,
+                            },
+                            {
+                                "block": "1w-2d.DAT8N",
+                                "source_bpp": 3,
+                                "source_kind": "bg",
+                                "source_pack": 0,
+                                "tile_count": 2,
+                                "tile_start": 2,
+                            },
+                        ],
+                    }
+                )
+            )
+            image = Image.new("P", (16, 16))
+            image.putpalette([0, 0, 0, 255, 255, 255] + [0, 0, 0] * 254)
+            image.putdata(([0] * 64) + ([1] * 64) + ([0] * 128))
+            image.save(chr_dir / "1w-2d.png")
+
+            written = write_canonical_art_atlas(asset_dir)
+
+            self.assertIn(asset_dir / "atlas/dialogue_glyph_tiles.png", written)
+            self.assertIn(asset_dir / "atlas/dialogue_glyph_tiles.json", written)
+            self.assertIn(asset_dir / "atlas/dialogue_vwf_font.json", written)
+            self.assertIn(asset_dir / "atlas/dialogue_font_tiles.png", written)
+            self.assertIn(asset_dir / "atlas/dialogue_font_tiles.json", written)
+            manifest = json.loads((asset_dir / "atlas/dialogue_glyph_tiles.json").read_text())
+            self.assertEqual(manifest["format"], "zelda3_dialogue_glyph_source_atlas_v1")
+            self.assertEqual(manifest["tile_count"], 2)
+            self.assertEqual(
+                [tile["source_block"] for tile in manifest["tiles"]],
+                ["1w-2d.DAT3N", "1w-2d.DAT3N"],
+            )
+            vwf_manifest = json.loads((asset_dir / "atlas/dialogue_vwf_font.json").read_text())
+            self.assertEqual(vwf_manifest["format"], "zelda3_dialogue_vwf_font_v1")
+            self.assertEqual(vwf_manifest["glyph_count"], 0)
+            font_tiles_manifest = json.loads(
+                (asset_dir / "atlas/dialogue_font_tiles.json").read_text()
+            )
+            self.assertEqual(
+                font_tiles_manifest["format"],
+                "zelda3_dialogue_font_tile_atlas_v1",
+            )
+            self.assertEqual(font_tiles_manifest["tile_count"], 256)
+            self.assertEqual(font_tiles_manifest["tiles"][0]["source_tile"], 0)
+
+    def test_write_canonical_art_atlas_emits_vwf_font_metadata_when_available(self) -> None:
+        import json
+        from PIL import Image
+
+        raw_pack = bytearray(1536)
+        raw_pack[0] = 0x80
+        sprite_items = [bytes(raw_pack)] * 12 + [compressed_literal(bytes(raw_pack))]
+        palette_colors = ["#000000", "#ffffff"] * 64
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            assets_dir = asset_dir / "assets"
+            assets_dir.mkdir()
+            (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
+            (assets_dir / "065-kBgGfx.bin").write_bytes(
+                pack_arrays([compressed_literal(bytes(raw_pack))])
+            )
+            (assets_dir / "095-kDialogueFont.bin").write_bytes(
+                bytes(range(256)) * 16 + bytes([0, 3, 5, 8])
+            )
+            write_palette_json(
+                asset_dir / "assets_src/palettes/palette_main_spr.json",
+                palette_colors,
+            )
+
+            written = write_canonical_art_atlas(asset_dir)
+
+            self.assertIn(asset_dir / "atlas/dialogue_vwf_font.json", written)
+            self.assertIn(asset_dir / "atlas/dialogue_vwf_glyphs.png", written)
+            self.assertIn(asset_dir / "atlas/dialogue_vwf_glyphs.json", written)
+            self.assertIn(asset_dir / "atlas/dialogue_font_tiles.png", written)
+            self.assertIn(asset_dir / "atlas/dialogue_font_tiles.json", written)
+            manifest = json.loads((asset_dir / "atlas/dialogue_vwf_font.json").read_text())
+            self.assertEqual(manifest["format"], "zelda3_dialogue_vwf_font_v1")
+            self.assertEqual(manifest["font_data_size"], 0x1000)
+            self.assertEqual(manifest["width_table_size"], 4)
+            self.assertEqual(manifest["glyph_count"], 4)
+            self.assertEqual(
+                [glyph["width"] for glyph in manifest["glyphs"]],
+                [0, 3, 5, 8],
+            )
+            self.assertEqual(manifest["glyphs"][2]["top_row_offset"], 32)
+            self.assertEqual(manifest["glyphs"][2]["bottom_row_offset"], 288)
+            glyph_manifest = json.loads(
+                (asset_dir / "atlas/dialogue_vwf_glyphs.json").read_text()
+            )
+            self.assertEqual(
+                glyph_manifest["format"], "zelda3_dialogue_vwf_glyph_atlas_v1"
+            )
+            self.assertEqual(glyph_manifest["glyph_count"], 4)
+            self.assertEqual(glyph_manifest["width_table_size"], 4)
+            self.assertEqual(glyph_manifest["width"], 256)
+            self.assertEqual(glyph_manifest["height"], 16)
+            self.assertEqual(glyph_manifest["glyphs"][2]["rect"], [32, 0, 16, 16])
+            font_tiles_manifest = json.loads(
+                (asset_dir / "atlas/dialogue_font_tiles.json").read_text()
+            )
+            self.assertEqual(font_tiles_manifest["tile_count"], 256)
+            self.assertEqual(font_tiles_manifest["tiles"][2]["rect"], [16, 0, 8, 8])
+            self.assertEqual(len(glyph_manifest["glyphs"][2]["indices_hex"]), 16 * 16 * 2)
+            with Image.open(asset_dir / "atlas/dialogue_vwf_glyphs.png") as image:
+                self.assertEqual(image.mode, "RGBA")
+                self.assertEqual(image.size, (256, 16))
 
     def test_write_base_effect_atlas_emits_compact_art_and_effect_table(self) -> None:
         import json

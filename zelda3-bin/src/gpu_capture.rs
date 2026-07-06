@@ -1,14 +1,18 @@
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process;
+use std::sync::OnceLock;
 use std::time::Duration;
 use std::time::Instant;
 
 use crate::gpu_readback::GpuRgbaReadbackFrame;
+use crate::image_output::decode_rgba_png;
 use platform::NativeFrontend;
 use renderer::{GpuFrame, RawScanlineFrame};
+use serde::Deserialize;
 use snes::ppu::PpuRenderFlags;
 use zelda3::ZeldaState;
 
@@ -20,6 +24,8 @@ pub struct LiveGpuFrameCapture {
     cgram: Vec<u16>,
     raw_scanlines: Box<RawScanlineFrame>,
     source_entries: Vec<zelda3::LogicalChrSrc>,
+    bg3_source_tiles: Vec<renderer::GpuBg3SourceTile>,
+    bg3_vwf_glyph_runs: Vec<renderer::GpuBg3VwfGlyphRun>,
     mode7_source_chars: Option<Vec<u8>>,
     main_module: u8,
     player_indoors: u8,
@@ -27,6 +33,8 @@ pub struct LiveGpuFrameCapture {
 
 struct ModernAssetGpuReadbackFrame {
     frame: GpuRgbaReadbackFrame,
+    #[cfg(test)]
+    variant_stats: Option<renderer::modern_software::VariantAtlasRenderStats>,
     #[cfg(test)]
     via: &'static str,
 }
@@ -49,6 +57,18 @@ impl LiveGpuFrameCapture {
         let raw_scanlines = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
         let source_entries = game.vram_chr_source().as_slice().to_vec();
+        let bg3_source_tiles = dialogue_glyph_source_tiles_from_ppu(&ppu);
+        let bg3_vwf_glyph_runs = game
+            .bg3_vwf_glyph_runs()
+            .iter()
+            .map(|run| renderer::GpuBg3VwfGlyphRun {
+                glyph_code: run.glyph_code,
+                origin_tile_number: run.origin_tile_number,
+                x: run.x,
+                y: run.y,
+                width: run.width,
+            })
+            .collect();
         let mode7_source_chars = game.mode7_character_source().map(<[u8]>::to_vec);
         let main_module = game.ram[MAIN_MODULE_INDEX];
         let player_indoors = game.ram[PLAYER_IS_INDOORS];
@@ -57,6 +77,8 @@ impl LiveGpuFrameCapture {
             cgram,
             raw_scanlines,
             source_entries,
+            bg3_source_tiles,
+            bg3_vwf_glyph_runs,
             mode7_source_chars,
             main_module,
             player_indoors,
@@ -64,7 +86,13 @@ impl LiveGpuFrameCapture {
     }
 
     pub fn capture_input(&self) -> renderer::GpuFrameCaptureInput<'_> {
-        gpu_frame_capture_from_ppu(&self.ppu, &self.cgram, self.raw_scanlines.as_ref())
+        gpu_frame_capture_from_ppu(
+            &self.ppu,
+            &self.cgram,
+            self.raw_scanlines.as_ref(),
+            &self.bg3_source_tiles,
+            &self.bg3_vwf_glyph_runs,
+        )
     }
 
     pub fn gpu_frame(&self) -> GpuFrame<'_> {
@@ -85,6 +113,10 @@ impl LiveGpuFrameCapture {
 
     pub fn source_entries(&self) -> &[zelda3::LogicalChrSrc] {
         &self.source_entries
+    }
+
+    pub fn bg3_source_tiles(&self) -> &[renderer::GpuBg3SourceTile] {
+        &self.bg3_source_tiles
     }
 
     pub fn mode7_source_chars(&self) -> Option<&[u8]> {
@@ -186,7 +218,7 @@ impl ModernAssetGpuReadbackRenderer {
                 self.validation_bg_extract_nanos += validation.timings.bg_extract_nanos;
                 self.validation_sprite_extract_nanos += validation.timings.sprite_extract_nanos;
                 self.validation_stats_nanos += validation.timings.stats_nanos;
-                Ok(())
+                validate_no_dynamic_bg3_text_chunks(&capture, &self.resources)
             }
             Err(e) => Err(e),
         };
@@ -214,6 +246,331 @@ fn repo_root() -> PathBuf {
         .parent()
         .expect("zelda3-bin lives under the workspace root")
         .to_path_buf()
+}
+
+#[derive(Deserialize)]
+struct DialogueGlyphAtlasManifest {
+    tiles: Vec<DialogueGlyphAtlasTile>,
+}
+
+#[derive(Deserialize)]
+struct DialogueGlyphAtlasTile {
+    rect: [u32; 4],
+    source_pack: u16,
+    source_tile: u16,
+}
+
+#[derive(Deserialize)]
+struct DialogueFontTileAtlasManifest {
+    tiles: Vec<DialogueFontTileAtlasTile>,
+}
+
+#[derive(Deserialize)]
+struct DialogueFontTileAtlasTile {
+    rect: [u32; 4],
+    source_pack: u16,
+    source_tile: u16,
+}
+
+#[derive(Deserialize)]
+struct ChrSourceManifest {
+    palette: ChrSourcePalette,
+}
+
+#[derive(Deserialize)]
+struct ChrSourcePalette {
+    index_to_rgb: Vec<[u8; 3]>,
+}
+
+#[derive(Clone, Copy)]
+#[cfg(test)]
+struct DialogueGlyphSourceTile {
+    source_key: u64,
+    indices: [u8; 64],
+}
+
+struct DialogueGlyphSourceMatcher {
+    #[cfg(test)]
+    tiles: Vec<DialogueGlyphSourceTile>,
+    source_key_by_indices: HashMap<[u8; 64], u64>,
+}
+
+impl DialogueGlyphSourceMatcher {
+    fn load(repo_root: &Path) -> Result<Self, String> {
+        let atlas_manifest_path =
+            repo_root.join("generated/zelda3_assets/atlas/dialogue_glyph_tiles.json");
+        let atlas_png_path =
+            repo_root.join("generated/zelda3_assets/atlas/dialogue_glyph_tiles.png");
+        let source_manifest_path =
+            repo_root.join("generated/zelda3_assets/assets_src/chr/1w-2d.json");
+
+        let atlas_manifest: DialogueGlyphAtlasManifest = serde_json::from_slice(
+            &fs::read(&atlas_manifest_path)
+                .map_err(|err| format!("{}: {err}", atlas_manifest_path.display()))?,
+        )
+        .map_err(|err| format!("{}: {err}", atlas_manifest_path.display()))?;
+        let source_manifest: ChrSourceManifest = serde_json::from_slice(
+            &fs::read(&source_manifest_path)
+                .map_err(|err| format!("{}: {err}", source_manifest_path.display()))?,
+        )
+        .map_err(|err| format!("{}: {err}", source_manifest_path.display()))?;
+        let palette = source_manifest.palette.index_to_rgb;
+        let (rgba, width, height) = decode_rgba_png(&atlas_png_path)
+            .ok_or_else(|| format!("{}: failed to decode RGBA PNG", atlas_png_path.display()))?;
+
+        #[cfg(test)]
+        let mut tiles = Vec::with_capacity(atlas_manifest.tiles.len());
+        let mut source_key_by_indices = HashMap::new();
+        for tile in atlas_manifest.tiles {
+            let indices = decode_dialogue_glyph_tile(&rgba, width, height, &palette, tile.rect)
+                .map_err(|err| format!("{}: {err}", atlas_png_path.display()))?;
+            let source_key = renderer::modern_source_atlas::modern_source_key(
+                9,
+                tile.source_pack,
+                tile.source_tile,
+            );
+            #[cfg(test)]
+            tiles.push(DialogueGlyphSourceTile {
+                source_key,
+                indices,
+            });
+            source_key_by_indices.entry(indices).or_insert(source_key);
+        }
+
+        let font_manifest_path =
+            repo_root.join("generated/zelda3_assets/atlas/dialogue_font_tiles.json");
+        let font_png_path = repo_root.join("generated/zelda3_assets/atlas/dialogue_font_tiles.png");
+        if font_manifest_path.is_file() || font_png_path.is_file() {
+            let font_manifest: DialogueFontTileAtlasManifest = serde_json::from_slice(
+                &fs::read(&font_manifest_path)
+                    .map_err(|err| format!("{}: {err}", font_manifest_path.display()))?,
+            )
+            .map_err(|err| format!("{}: {err}", font_manifest_path.display()))?;
+            let (font_rgba, font_width, font_height) = decode_rgba_png(&font_png_path)
+                .ok_or_else(|| format!("{}: failed to decode RGBA PNG", font_png_path.display()))?;
+            #[cfg(test)]
+            tiles.reserve(font_manifest.tiles.len());
+            for tile in font_manifest.tiles {
+                let indices =
+                    decode_dialogue_font_tile(&font_rgba, font_width, font_height, tile.rect)
+                        .map_err(|err| format!("{}: {err}", font_png_path.display()))?;
+                let source_key = renderer::modern_source_atlas::modern_source_key(
+                    11,
+                    tile.source_pack,
+                    tile.source_tile,
+                );
+                #[cfg(test)]
+                tiles.push(DialogueGlyphSourceTile {
+                    source_key,
+                    indices,
+                });
+                source_key_by_indices.entry(indices).or_insert(source_key);
+            }
+        }
+
+        Ok(Self {
+            #[cfg(test)]
+            tiles,
+            source_key_by_indices,
+        })
+    }
+
+    fn source_key_for_indices(&self, indices: &[u8; 64]) -> Option<u64> {
+        self.source_key_by_indices.get(indices).copied()
+    }
+
+    #[cfg(test)]
+    fn tile_for_source_key(&self, source_key: u64) -> Option<DialogueGlyphSourceTile> {
+        self.tiles
+            .iter()
+            .copied()
+            .find(|tile| tile.source_key == source_key)
+    }
+
+    #[cfg(test)]
+    fn unique_pattern_count(&self) -> usize {
+        self.source_key_by_indices.len()
+    }
+}
+
+fn decode_dialogue_glyph_tile(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    palette: &[[u8; 3]],
+    rect: [u32; 4],
+) -> Result<[u8; 64], String> {
+    let [x, y, w, h] = rect;
+    if w != 8 || h != 8 {
+        return Err(format!("expected 8x8 glyph tile rect, got {w}x{h}"));
+    }
+    if x + w > width || y + h > height {
+        return Err(format!(
+            "glyph tile rect [{x}, {y}, {w}, {h}] exceeds {width}x{height} atlas"
+        ));
+    }
+
+    let mut indices = [0u8; 64];
+    for py in 0..8u32 {
+        for px in 0..8u32 {
+            let pixel = (((y + py) * width + (x + px)) * 4) as usize;
+            let rgb = [rgba[pixel], rgba[pixel + 1], rgba[pixel + 2]];
+            let Some(index) = palette.iter().position(|candidate| *candidate == rgb) else {
+                return Err(format!(
+                    "glyph tile pixel {},{} uses color rgb({},{},{}) not found in 1w-2d palette",
+                    x + px,
+                    y + py,
+                    rgb[0],
+                    rgb[1],
+                    rgb[2]
+                ));
+            };
+            if index > 3 {
+                return Err(format!(
+                    "glyph tile pixel {},{} decoded to palette index {index}, expected 0..3",
+                    x + px,
+                    y + py
+                ));
+            }
+            indices[(py * 8 + px) as usize] = index as u8;
+        }
+    }
+    Ok(indices)
+}
+
+fn decode_dialogue_font_tile(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    rect: [u32; 4],
+) -> Result<[u8; 64], String> {
+    const INDEX_COLORS: [[u8; 4]; 4] = [
+        [0, 0, 0, 0],
+        [248, 248, 248, 255],
+        [88, 88, 88, 255],
+        [184, 184, 184, 255],
+    ];
+
+    let [x, y, w, h] = rect;
+    if w != 8 || h != 8 {
+        return Err(format!("expected 8x8 font tile rect, got {w}x{h}"));
+    }
+    if x + w > width || y + h > height {
+        return Err(format!(
+            "font tile rect [{x}, {y}, {w}, {h}] exceeds {width}x{height} atlas"
+        ));
+    }
+
+    let mut indices = [0u8; 64];
+    for py in 0..8u32 {
+        for px in 0..8u32 {
+            let pixel = (((y + py) * width + (x + px)) * 4) as usize;
+            let rgba_pixel = [
+                rgba[pixel],
+                rgba[pixel + 1],
+                rgba[pixel + 2],
+                rgba[pixel + 3],
+            ];
+            let Some(index) = INDEX_COLORS
+                .iter()
+                .position(|candidate| *candidate == rgba_pixel)
+            else {
+                return Err(format!(
+                    "font tile pixel {},{} uses rgba({},{},{},{}) not found in dialogue font palette",
+                    x + px,
+                    y + py,
+                    rgba_pixel[0],
+                    rgba_pixel[1],
+                    rgba_pixel[2],
+                    rgba_pixel[3]
+                ));
+            };
+            indices[(py * 8 + px) as usize] = index as u8;
+        }
+    }
+    Ok(indices)
+}
+
+fn dialogue_glyph_source_matcher() -> Option<&'static DialogueGlyphSourceMatcher> {
+    static MATCHER: OnceLock<Option<DialogueGlyphSourceMatcher>> = OnceLock::new();
+    MATCHER
+        .get_or_init(|| match DialogueGlyphSourceMatcher::load(&repo_root()) {
+            Ok(matcher) => Some(matcher),
+            Err(err) => {
+                eprintln!("dialogue glyph source PNG matcher disabled: {err}");
+                None
+            }
+        })
+        .as_ref()
+}
+
+fn dialogue_glyph_source_tiles_from_ppu(
+    ppu: &snes::ppu::PpuState,
+) -> Vec<renderer::GpuBg3SourceTile> {
+    if ppu.mode != 1 || (ppu.screen_enabled[0] | ppu.screen_enabled[1]) & 0x04 == 0 {
+        return Vec::new();
+    }
+    let Some(matcher) = dialogue_glyph_source_matcher() else {
+        return Vec::new();
+    };
+    dialogue_glyph_source_tiles_from_ppu_with_matcher(ppu, matcher)
+}
+
+fn dialogue_glyph_source_tiles_from_ppu_with_matcher(
+    ppu: &snes::ppu::PpuState,
+    matcher: &DialogueGlyphSourceMatcher,
+) -> Vec<renderer::GpuBg3SourceTile> {
+    let bg3 = &ppu.bg_layer[2];
+    let tilemap_base = bg3.tilemap_adr as usize;
+    let chr_base = bg3.tile_adr as usize;
+    let cols = if bg3.tilemap_wider { 64usize } else { 32 };
+    let rows = if bg3.tilemap_higher { 64usize } else { 32 };
+    let mut by_chr_tile = HashMap::<(u16, u16), u64>::new();
+
+    for ty in 0..rows {
+        for tx in 0..cols {
+            let q = (if bg3.tilemap_wider && tx >= 32 { 1 } else { 0 })
+                + (if bg3.tilemap_higher && ty >= 32 {
+                    if bg3.tilemap_wider {
+                        2
+                    } else {
+                        1
+                    }
+                } else {
+                    0
+                });
+            let within = (ty % 32) * 32 + (tx % 32);
+            let addr = tilemap_base + q * 0x400 + within;
+            let entry_word = ppu.vram.get(addr).copied().unwrap_or(0);
+            if entry_word == 0 {
+                continue;
+            }
+            let tile_number = entry_word & 0x03ff;
+            let indices = renderer::modern_extract::decode_snes_2bpp_tile_indices(
+                &ppu.vram,
+                chr_base,
+                tile_number,
+            );
+            if let Some(source_key) = matcher.source_key_for_indices(&indices) {
+                by_chr_tile
+                    .entry((bg3.tile_adr, tile_number))
+                    .or_insert(source_key);
+            }
+        }
+    }
+
+    let mut source_tiles = by_chr_tile
+        .into_iter()
+        .map(
+            |((chr_base, tile_number), source_key)| renderer::GpuBg3SourceTile {
+                chr_base,
+                tile_number,
+                source_key,
+            },
+        )
+        .collect::<Vec<_>>();
+    source_tiles.sort_by_key(|tile| (tile.chr_base, tile.tile_number, tile.source_key));
+    source_tiles
 }
 
 impl crate::play_renderer::PlayRendererBackend for GpuPlayRenderer {
@@ -293,6 +650,8 @@ fn render_modern_asset_capture_rgba(
     Ok(ModernAssetGpuReadbackFrame {
         frame: GpuRgbaReadbackFrame::from_rgba(render.rgba),
         #[cfg(test)]
+        variant_stats: render.variant_stats,
+        #[cfg(test)]
         via: render.via,
     })
 }
@@ -304,6 +663,155 @@ fn validate_modern_asset_capture(
     let gpu_frame = capture.gpu_frame();
     let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
     resources.validate_full_gpu_asset_from_entries(&gpu_frame, capture.source_entries(), scene)
+}
+
+fn validate_no_dynamic_bg3_text_chunks(
+    capture: &LiveGpuFrameCapture,
+    resources: &renderer::ModernIndexCompareResources,
+) -> Result<(), String> {
+    const BULK_BG3_FILL_INSTANCE_THRESHOLD: usize = 256;
+
+    let source_atlas = resources
+        .source_atlas()
+        .ok_or_else(|| "modern asset GPU validation requires source atlas".to_string())?;
+    let gpu_frame = capture.gpu_frame();
+    if gpu_frame.forced_blank || gpu_frame.brightness == 0 {
+        return Ok(());
+    }
+    let source_table = renderer::source_table_from_entries(capture.source_entries());
+    let modern_assets = renderer::modern_extract::extract_asset_resolved_modern_frame_from_sources(
+        &gpu_frame,
+        &source_table,
+        source_atlas,
+    );
+    let mut dynamic_key_counts = HashMap::<u64, usize>::new();
+    for inst in &modern_assets.frame.bg_layers[2].index_tiles {
+        if !bg3_tile_overlaps_viewport(inst) {
+            continue;
+        }
+        if let Some(key) = dynamic_bg3_text_key_for_instance(inst, &modern_assets.bg_cells) {
+            *dynamic_key_counts.entry(key).or_default() += 1;
+        }
+    }
+    let mut dynamic_count = 0usize;
+    let mut skipped_bulk_fill_count = 0usize;
+    let mut samples = Vec::new();
+    for inst in &modern_assets.frame.bg_layers[2].index_tiles {
+        if !bg3_tile_overlaps_viewport(inst) {
+            continue;
+        }
+        let Some(key) = dynamic_bg3_text_key_for_instance(inst, &modern_assets.bg_cells) else {
+            continue;
+        };
+        let cell_source_key = modern_assets
+            .bg_cells
+            .get(inst.cell_id as usize)
+            .map(|cell| cell.source_key)
+            .unwrap_or(renderer::modern_hd_overrides::NO_SOURCE_KEY);
+        if dynamic_key_counts.get(&key).copied().unwrap_or(0) >= BULK_BG3_FILL_INSTANCE_THRESHOLD {
+            skipped_bulk_fill_count += 1;
+            continue;
+        }
+        dynamic_count += 1;
+        if samples.len() < 4 {
+            let ppu_tile = bg3_ppu_tile_debug_for_screen(capture, inst.screen_x, inst.screen_y)
+                .unwrap_or_else(|| "ppu_tile=<none>".to_string());
+            samples.push(format!(
+                "cell={} xy=({}, {}) inst_key=0x{:016x} cell_key=0x{:016x} {}",
+                inst.cell_id,
+                inst.screen_x,
+                inst.screen_y,
+                inst.source_key,
+                cell_source_key,
+                ppu_tile
+            ));
+        }
+    }
+    if dynamic_count == 0 {
+        return Ok(());
+    }
+    Err(format!(
+        "modern asset GPU validation still has BG3 dynamic text chunks count={} skipped_bulk_fill={} samples=[{}]",
+        dynamic_count,
+        skipped_bulk_fill_count,
+        samples.join(", ")
+    ))
+}
+
+fn bg3_ppu_tile_debug_for_screen(
+    capture: &LiveGpuFrameCapture,
+    screen_x: i16,
+    screen_y: i16,
+) -> Option<String> {
+    let ppu = capture.ppu();
+    let bg3 = &ppu.bg_layer[2];
+    let cols = if bg3.tilemap_wider { 64usize } else { 32 };
+    let rows = if bg3.tilemap_higher { 64usize } else { 32 };
+    let map_w = (cols * 8) as i32;
+    let map_h = (rows * 8) as i32;
+    if map_w == 0 || map_h == 0 {
+        return None;
+    }
+    let sx = (i32::from(screen_x) + i32::from(bg3.h_scroll)).rem_euclid(map_w) as usize;
+    let sy = (i32::from(screen_y) + i32::from(bg3.v_scroll) + 1).rem_euclid(map_h) as usize;
+    let tx = sx / 8;
+    let ty = sy / 8;
+    let q = (if bg3.tilemap_wider && tx >= 32 { 1 } else { 0 })
+        + (if bg3.tilemap_higher && ty >= 32 {
+            if bg3.tilemap_wider {
+                2
+            } else {
+                1
+            }
+        } else {
+            0
+        });
+    let within = (ty % 32) * 32 + (tx % 32);
+    let tilemap_addr = bg3.tilemap_adr as usize + q * 0x400 + within;
+    let entry_word = ppu.vram.get(tilemap_addr).copied()?;
+    let tile_number = entry_word & 0x03ff;
+    let pal = (entry_word >> 10) & 7;
+    let raw = renderer::modern_extract::decode_snes_2bpp_tile_indices(
+        &ppu.vram,
+        bg3.tile_adr as usize,
+        tile_number,
+    );
+    let matcher_key = dialogue_glyph_source_matcher()
+        .and_then(|matcher| matcher.source_key_for_indices(&raw))
+        .map(|key| format!("0x{key:016x}"))
+        .unwrap_or_else(|| "none".to_string());
+    Some(format!(
+        "ppu_tile=map=0x{tilemap_addr:04x} entry=0x{entry_word:04x} chr=0x{:04x} tile=0x{tile_number:03x} pal={} matcher_key={matcher_key} raw={}",
+        bg3.tile_adr,
+        pal,
+        raw.iter()
+            .map(|value| char::from_digit(u32::from(*value), 16).unwrap_or('?'))
+            .collect::<String>()
+    ))
+}
+
+fn dynamic_bg3_text_key_for_instance(
+    inst: &renderer::modern_frame::ModernIndexTileInstance,
+    bg_cells: &[renderer::modern_index_atlas::ModernIndexTile],
+) -> Option<u64> {
+    if is_dynamic_or_unkeyed_bg3_text_key(inst.source_key) {
+        return Some(inst.source_key);
+    }
+    let cell_source_key = bg_cells
+        .get(inst.cell_id as usize)
+        .map(|cell| cell.source_key)
+        .unwrap_or(renderer::modern_hd_overrides::NO_SOURCE_KEY);
+    is_dynamic_or_unkeyed_bg3_text_key(cell_source_key).then_some(cell_source_key)
+}
+
+fn bg3_tile_overlaps_viewport(inst: &renderer::modern_frame::ModernIndexTileInstance) -> bool {
+    let x = i32::from(inst.screen_x);
+    let y = i32::from(inst.screen_y);
+    x < 256 && x + 8 > 0 && y < 224 && y + 8 > 0
+}
+
+fn is_dynamic_or_unkeyed_bg3_text_key(source_key: u64) -> bool {
+    source_key == renderer::modern_hd_overrides::NO_SOURCE_KEY || ((source_key >> 32) as u8) == 7
 }
 
 fn validation_cache_key(capture: &LiveGpuFrameCapture) -> u64 {
@@ -354,6 +862,18 @@ fn validation_cache_key(capture: &LiveGpuFrameCapture) -> u64 {
         src.kind.hash(&mut hasher);
         src.pack.hash(&mut hasher);
         src.tile_off.hash(&mut hasher);
+    }
+    for tile in capture.bg3_source_tiles() {
+        tile.chr_base.hash(&mut hasher);
+        tile.tile_number.hash(&mut hasher);
+        tile.source_key.hash(&mut hasher);
+    }
+    for run in &capture.bg3_vwf_glyph_runs {
+        run.glyph_code.hash(&mut hasher);
+        run.origin_tile_number.hash(&mut hasher);
+        run.x.hash(&mut hasher);
+        run.y.hash(&mut hasher);
+        run.width.hash(&mut hasher);
     }
     capture.player_indoors().hash(&mut hasher);
 
@@ -410,17 +930,297 @@ fn gpu_frame_capture_from_ppu<'a>(
     ppu: &'a snes::ppu::PpuState,
     cgram: &'a [u16],
     raw_scanlines: &'a RawScanlineFrame,
+    bg3_source_tiles: &'a [renderer::GpuBg3SourceTile],
+    bg3_vwf_glyph_runs: &'a [renderer::GpuBg3VwfGlyphRun],
 ) -> renderer::GpuFrameCaptureInput<'a> {
     renderer::GpuFrameCaptureInput {
         registers: gpu_frame_register_snapshot_from_ppu(ppu),
         cgram,
         raw_scanlines,
+        bg3_source_tiles,
+        bg3_vwf_glyph_runs,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SUBMODULE_INDEX: usize = 0x11;
+    const SAVED_MODULE_FOR_MENU: usize = 0x010c;
+    const MESSAGING_MODULE: usize = 0x1cd8;
+    const DIALOGUE_MESSAGE_INDEX: usize = 0x1cf0;
+
+    #[test]
+    fn dialogue_glyph_source_matcher_loads_generated_png_tiles() {
+        let matcher = DialogueGlyphSourceMatcher::load(&repo_root())
+            .expect("dialogue glyph source PNG matcher should load");
+        let glyph_source_key = renderer::modern_source_atlas::modern_source_key(9, 103, 128);
+        let font_source_key = renderer::modern_source_atlas::modern_source_key(11, 0, 0xc7);
+
+        assert_eq!(matcher.tiles.len(), 896);
+        assert!(matcher.unique_pattern_count() > 100);
+        assert!(matcher.tile_for_source_key(glyph_source_key).is_some());
+        assert!(matcher.tile_for_source_key(font_source_key).is_some());
+    }
+
+    #[test]
+    fn bg3_dialogue_glyph_sidecar_renders_from_png_in_default_gpu_path() {
+        let matcher = DialogueGlyphSourceMatcher::load(&repo_root())
+            .expect("dialogue glyph source PNG matcher should load");
+        let glyph = matcher
+            .tiles
+            .iter()
+            .copied()
+            .find(|tile| {
+                tile.indices.iter().any(|&index| index != 0)
+                    && matcher.source_key_for_indices(&tile.indices) == Some(tile.source_key)
+            })
+            .expect("nonblank canonical dialogue glyph source tile should exist");
+        let source_key = glyph.source_key;
+        let mut ppu = snes::ppu::PpuState::default();
+        ppu.mode = 1;
+        ppu.brightness = 15;
+        ppu.screen_enabled = [0x04, 0x00];
+        ppu.bg_layer[2].tilemap_adr = 0x0000;
+        ppu.bg_layer[2].tile_adr = 0x1000;
+        ppu.vram[0] = 7 | (3 << 10);
+        encode_2bpp_tile(&mut ppu.vram, 0x1000, 7, &glyph.indices);
+
+        let bg3_source_tiles = dialogue_glyph_source_tiles_from_ppu_with_matcher(&ppu, &matcher);
+        assert_eq!(
+            bg3_source_tiles,
+            vec![renderer::GpuBg3SourceTile {
+                chr_base: 0x1000,
+                tile_number: 7,
+                source_key,
+            }]
+        );
+
+        let mut raw_scanlines: Box<RawScanlineFrame> =
+            Box::new([(0, 0, 0, 0, 0x04, [0; 4], [0; 4], [0; 8]); 224]);
+        for scanline in raw_scanlines.iter_mut() {
+            scanline.5[2] = 0;
+            scanline.6[2] = 0;
+        }
+        let capture = LiveGpuFrameCapture {
+            ppu,
+            cgram: vec![0u16; 256],
+            raw_scanlines,
+            source_entries: Vec::new(),
+            bg3_source_tiles,
+            bg3_vwf_glyph_runs: Vec::new(),
+            mode7_source_chars: None,
+            main_module: 0,
+            player_indoors: 1,
+        };
+        let repo_root = repo_root();
+        let resources =
+            renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)
+                .expect("modern asset resources should load");
+
+        let render = render_modern_asset_capture_rgba(&capture, &resources)
+            .expect("GPU readback should render BG3 dialogue glyph from PNG source");
+        assert_eq!(render.via, "variant-gpu");
+        validate_no_dynamic_bg3_text_chunks(&capture, &resources)
+            .expect("dialogue glyph sidecar should remove BG3 dynamic text chunks");
+        let stats = render
+            .variant_stats
+            .expect("variant renderer should report draw stats");
+        assert_eq!(stats.missing_art_draws, 0);
+        assert!(
+            stats.stable_preview_draws > 0,
+            "expected dialogue glyph sidecar key to resolve to a stable PNG preview draw, got {stats:?}"
+        );
+    }
+
+    #[test]
+    fn bg3_dialogue_font_sidecar_renders_ending_font_tile_from_png() {
+        let matcher = DialogueGlyphSourceMatcher::load(&repo_root())
+            .expect("dialogue glyph source PNG matcher should load");
+        let source_key = renderer::modern_source_atlas::modern_source_key(11, 0, 0xc7);
+        let font_tile = matcher
+            .tile_for_source_key(source_key)
+            .expect("ending font tile should exist in dialogue font source atlas");
+        let mut ppu = snes::ppu::PpuState::default();
+        ppu.mode = 1;
+        ppu.brightness = 15;
+        ppu.screen_enabled = [0x04, 0x00];
+        ppu.bg_layer[2].tilemap_adr = 0x0000;
+        ppu.bg_layer[2].tile_adr = 0x7000;
+        ppu.vram[0] = 0xc7 | (3 << 10);
+        encode_2bpp_tile(&mut ppu.vram, 0x7000, 0xc7, &font_tile.indices);
+
+        let bg3_source_tiles = dialogue_glyph_source_tiles_from_ppu_with_matcher(&ppu, &matcher);
+        assert_eq!(
+            bg3_source_tiles,
+            vec![renderer::GpuBg3SourceTile {
+                chr_base: 0x7000,
+                tile_number: 0xc7,
+                source_key,
+            }]
+        );
+
+        let mut raw_scanlines: Box<RawScanlineFrame> =
+            Box::new([(0, 0, 0, 0, 0x04, [0; 4], [0; 4], [0; 8]); 224]);
+        for scanline in raw_scanlines.iter_mut() {
+            scanline.5[2] = 0;
+            scanline.6[2] = 0;
+        }
+        let capture = LiveGpuFrameCapture {
+            ppu,
+            cgram: vec![0u16; 256],
+            raw_scanlines,
+            source_entries: Vec::new(),
+            bg3_source_tiles,
+            bg3_vwf_glyph_runs: Vec::new(),
+            mode7_source_chars: None,
+            main_module: 0,
+            player_indoors: 1,
+        };
+        let repo_root = repo_root();
+        let resources =
+            renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)
+                .expect("modern asset resources should load");
+
+        let render = render_modern_asset_capture_rgba(&capture, &resources)
+            .expect("GPU readback should render BG3 font tile from PNG source");
+        assert_eq!(render.via, "variant-gpu");
+        validate_no_dynamic_bg3_text_chunks(&capture, &resources)
+            .expect("dialogue font sidecar should remove BG3 dynamic text chunks");
+        let stats = render
+            .variant_stats
+            .expect("variant renderer should report draw stats");
+        assert_eq!(stats.missing_art_draws, 0);
+        assert!(
+            stats.stable_preview_draws > 0,
+            "expected dialogue font sidecar key to resolve to a stable PNG preview draw, got {stats:?}"
+        );
+    }
+
+    #[test]
+    fn bg3_dynamic_text_chunk_validator_rejects_unkeyed_bg3_tiles() {
+        let mut ppu = snes::ppu::PpuState::default();
+        ppu.mode = 1;
+        ppu.brightness = 15;
+        ppu.screen_enabled = [0x04, 0x00];
+        ppu.bg_layer[2].tilemap_adr = 0x0000;
+        ppu.bg_layer[2].tile_adr = 0x1000;
+        ppu.vram[0] = 999 | (7 << 10);
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        indices[1] = 2;
+        indices[8] = 3;
+        encode_2bpp_tile(&mut ppu.vram, 0x1000, 999, &indices);
+        let capture = LiveGpuFrameCapture {
+            ppu,
+            cgram: vec![0u16; 256],
+            raw_scanlines: Box::new([(0, 0, 0, 0, 0x04, [0; 4], [0; 4], [0; 8]); 224]),
+            source_entries: Vec::new(),
+            bg3_source_tiles: Vec::new(),
+            bg3_vwf_glyph_runs: Vec::new(),
+            mode7_source_chars: None,
+            main_module: 0,
+            player_indoors: 1,
+        };
+        let repo_root = repo_root();
+        let resources =
+            renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)
+                .expect("modern asset resources should load");
+
+        let err = validate_no_dynamic_bg3_text_chunks(&capture, &resources)
+            .expect_err("unkeyed BG3 tile should be rejected");
+
+        assert!(err.contains("BG3 dynamic text chunks count=1"));
+    }
+
+    #[test]
+    fn bg3_dynamic_text_chunk_validator_ignores_offscreen_wrap_tiles() {
+        let mut ppu = snes::ppu::PpuState::default();
+        ppu.mode = 1;
+        ppu.brightness = 15;
+        ppu.screen_enabled = [0x04, 0x00];
+        ppu.bg_layer[2].tilemap_adr = 0x0000;
+        ppu.bg_layer[2].tile_adr = 0x1000;
+        ppu.bg_layer[2].tilemap_wider = true;
+        ppu.bg_layer[2].h_scroll = 96;
+        ppu.vram[0] = 999 | (7 << 10);
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        encode_2bpp_tile(&mut ppu.vram, 0x1000, 999, &indices);
+        let capture = test_bg3_capture(ppu);
+        let repo_root = repo_root();
+        let resources =
+            renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)
+                .expect("modern asset resources should load");
+
+        validate_no_dynamic_bg3_text_chunks(&capture, &resources)
+            .expect("fully offscreen BG3 wrap tiles should not be glyph failures");
+    }
+
+    #[test]
+    fn bg3_dynamic_text_chunk_validator_ignores_bulk_fill_tiles() {
+        let mut ppu = snes::ppu::PpuState::default();
+        ppu.mode = 1;
+        ppu.brightness = 15;
+        ppu.screen_enabled = [0x04, 0x00];
+        ppu.bg_layer[2].tilemap_adr = 0x0000;
+        ppu.bg_layer[2].tile_adr = 0x1000;
+        for entry in ppu.vram.iter_mut().take(32 * 32) {
+            *entry = 999 | (7 << 10);
+        }
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        indices[1] = 2;
+        indices[8] = 3;
+        encode_2bpp_tile(&mut ppu.vram, 0x1000, 999, &indices);
+        let capture = test_bg3_capture(ppu);
+        let repo_root = repo_root();
+        let resources =
+            renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)
+                .expect("modern asset resources should load");
+
+        validate_no_dynamic_bg3_text_chunks(&capture, &resources)
+            .expect("bulk repeated BG3 fill should not be treated as glyph text");
+    }
+
+    #[test]
+    fn bg3_dynamic_text_chunk_validator_ignores_invisible_blank_frames() {
+        let mut ppu = snes::ppu::PpuState::default();
+        ppu.mode = 1;
+        ppu.brightness = 0;
+        ppu.screen_enabled = [0x04, 0x00];
+        ppu.bg_layer[2].tilemap_adr = 0x0000;
+        ppu.bg_layer[2].tile_adr = 0x1000;
+        ppu.vram[0] = 999 | (7 << 10);
+        let mut indices = [0u8; 64];
+        indices[0] = 1;
+        indices[1] = 2;
+        indices[8] = 3;
+        encode_2bpp_tile(&mut ppu.vram, 0x1000, 999, &indices);
+        let capture = test_bg3_capture(ppu);
+        let repo_root = repo_root();
+        let resources =
+            renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)
+                .expect("modern asset resources should load");
+
+        validate_no_dynamic_bg3_text_chunks(&capture, &resources)
+            .expect("brightness-zero BG3 tiles are not visible glyph failures");
+    }
+
+    fn test_bg3_capture(ppu: snes::ppu::PpuState) -> LiveGpuFrameCapture {
+        LiveGpuFrameCapture {
+            ppu,
+            cgram: vec![0u16; 256],
+            raw_scanlines: Box::new([(0, 0, 0, 0, 0x04, [0; 4], [0; 4], [0; 8]); 224]),
+            source_entries: Vec::new(),
+            bg3_source_tiles: Vec::new(),
+            bg3_vwf_glyph_runs: Vec::new(),
+            mode7_source_chars: None,
+            main_module: 0,
+            player_indoors: 1,
+        }
+    }
 
     #[test]
     fn live_game_gpu_frame_readback_uses_variant_asset_route() {
@@ -434,6 +1234,53 @@ mod tests {
 
         assert_eq!(render.via, "variant-gpu");
         assert_eq!(render.frame.as_slice().len(), 256 * 224 * 4);
+        let capture = capture_gpu_frame_from_game(&mut game);
+        assert_no_dynamic_bg3_text_chunks(&capture);
+    }
+
+    #[test]
+    fn live_game_dialogue_vwf_runs_render_from_png_glyph_atlas() {
+        let (mut game, _) =
+            crate::developer_room_commands::load_developer_destination("preset-dev-sandbox")
+                .expect("developer sandbox should load");
+        game.ram[DIALOGUE_MESSAGE_INDEX] = 0xc8;
+        game.ram[DIALOGUE_MESSAGE_INDEX + 1] = 0x00;
+        game.ram[MESSAGING_MODULE] = 0;
+        game.ram[SUBMODULE_INDEX] = 2;
+        game.ram[SAVED_MODULE_FOR_MENU] = game.ram[MAIN_MODULE_INDEX];
+        game.ram[MAIN_MODULE_INDEX] = 14;
+
+        let repo_root = repo_root();
+        let resources =
+            renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)
+                .expect("modern asset resources should load");
+        let mut saw_glyph_runs = None;
+        for _ in 0..160 {
+            game.zelda_run_frame(0);
+            let frame_capture = capture_gpu_frame_from_game(&mut game);
+            if frame_capture.bg3_vwf_glyph_runs.is_empty() {
+                continue;
+            }
+            let glyph_run_count = frame_capture.bg3_vwf_glyph_runs.len();
+            saw_glyph_runs = Some(frame_capture.bg3_vwf_glyph_runs.clone());
+            let render = render_modern_asset_capture_rgba(&frame_capture, &resources)
+                .expect("GPU readback should render live dialogue from PNG glyphs");
+            assert_eq!(render.via, "variant-gpu");
+            assert_eq!(render.frame.as_slice().len(), 256 * 224 * 4);
+            let stats = render
+                .variant_stats
+                .expect("variant renderer should report draw stats");
+            if stats.stable_preview_draws == glyph_run_count as u32 * 4 {
+                assert_eq!(stats.missing_art_draws, 0);
+                assert_eq!(stats.unkeyed_bg3_fallback_draws, 0);
+                assert_no_dynamic_bg3_text_chunks(&frame_capture);
+                return;
+            }
+        }
+        panic!(
+            "live message renderer emitted VWF glyph runs but the default GPU path did not consume them from PNG: {:?}",
+            saw_glyph_runs
+        );
     }
 
     #[test]
@@ -467,12 +1314,16 @@ mod tests {
             cgram,
             raw_scanlines: Box::new([(0, 0, 0, 0, 0, [0; 4], [0; 4], [0; 8]); 224]),
             source_entries: Vec::new(),
+            bg3_source_tiles: Vec::new(),
+            bg3_vwf_glyph_runs: Vec::new(),
             mode7_source_chars: None,
             main_module: 0,
             player_indoors: 0,
         };
         let gpu_render = ModernAssetGpuReadbackFrame {
             frame: GpuRgbaReadbackFrame::from_rgba(vec![0x7f; 256 * 224 * 4]),
+            #[cfg(test)]
+            variant_stats: None,
             #[cfg(test)]
             via: "mode7-source-gpu",
         };
@@ -488,6 +1339,114 @@ mod tests {
             hd_capture.cgram_rgba[1],
             renderer::modern_palette::snes_cgram_to_rgba(0x7fff)
         );
+    }
+
+    fn encode_2bpp_tile(
+        vram: &mut [u16],
+        chr_base_words: usize,
+        tile_number: u16,
+        indices: &[u8; 64],
+    ) {
+        let tile_base = chr_base_words + usize::from(tile_number) * 8;
+        for y in 0..8usize {
+            let mut bp0 = 0u8;
+            let mut bp1 = 0u8;
+            for x in 0..8usize {
+                let index = indices[y * 8 + x];
+                let bit = 1u8 << (7 - x);
+                if index & 1 != 0 {
+                    bp0 |= bit;
+                }
+                if index & 2 != 0 {
+                    bp1 |= bit;
+                }
+            }
+            vram[tile_base + y] = u16::from(bp0) | (u16::from(bp1) << 8);
+        }
+    }
+
+    fn assert_no_dynamic_bg3_text_chunks(capture: &LiveGpuFrameCapture) {
+        let repo_root = repo_root();
+        let resources =
+            renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)
+                .expect("modern asset resources should load");
+        validate_no_dynamic_bg3_text_chunks(capture, &resources)
+            .expect("live frame should not retain BG3 dynamic text chunks");
+        let gpu_frame = capture.gpu_frame();
+        let source_table = renderer::source_table_from_entries(capture.source_entries());
+        let modern_assets =
+            renderer::modern_extract::extract_asset_resolved_modern_frame_from_sources(
+                &gpu_frame,
+                &source_table,
+                resources.source_atlas().expect("source atlas"),
+            );
+        let overlap_count = modern_assets.frame.bg_layers[2]
+            .index_tiles
+            .iter()
+            .filter(|inst| {
+                let cell_source_key = modern_assets
+                    .bg_cells
+                    .get(inst.cell_id as usize)
+                    .map(|cell| cell.source_key)
+                    .unwrap_or(renderer::modern_hd_overrides::NO_SOURCE_KEY);
+                (is_dynamic_or_unkeyed_bg3_text_key(inst.source_key)
+                    || is_dynamic_or_unkeyed_bg3_text_key(cell_source_key))
+                    && modern_assets.frame.bg3_vwf_glyph_runs.iter().any(|run| {
+                        rects_overlap(
+                            inst.screen_x,
+                            inst.screen_y,
+                            8,
+                            8,
+                            run.screen_x,
+                            run.screen_y,
+                            16,
+                            16,
+                        )
+                    })
+            })
+            .count();
+        let dynamic_bg3_count = modern_assets.frame.bg_layers[2]
+            .index_tiles
+            .iter()
+            .filter(|inst| {
+                let cell_source_key = modern_assets
+                    .bg_cells
+                    .get(inst.cell_id as usize)
+                    .map(|cell| cell.source_key)
+                    .unwrap_or(renderer::modern_hd_overrides::NO_SOURCE_KEY);
+                is_dynamic_or_unkeyed_bg3_text_key(inst.source_key)
+                    || is_dynamic_or_unkeyed_bg3_text_key(cell_source_key)
+            })
+            .count();
+
+        assert_eq!(
+            overlap_count, 0,
+            "VWF source glyph runs should own covered BG3 dynamic text chunks"
+        );
+        assert_eq!(
+            dynamic_bg3_count, 0,
+            "live frame still has BG3 dynamic text chunks outside source glyph ownership"
+        );
+    }
+
+    fn rects_overlap(
+        ax: i16,
+        ay: i16,
+        aw: i16,
+        ah: i16,
+        bx: i16,
+        by: i16,
+        bw: i16,
+        bh: i16,
+    ) -> bool {
+        let ax0 = i32::from(ax);
+        let ay0 = i32::from(ay);
+        let bx0 = i32::from(bx);
+        let by0 = i32::from(by);
+        ax0 < bx0 + i32::from(bw)
+            && bx0 < ax0 + i32::from(aw)
+            && ay0 < by0 + i32::from(bh)
+            && by0 < ay0 + i32::from(ah)
     }
 }
 

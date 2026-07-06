@@ -3462,6 +3462,14 @@ fn write_trailer_blob<W: std::io::Write>(file: &mut W, blob: &[u8]) -> std::io::
     Ok(())
 }
 
+fn read_optional_trailer_blob<R: std::io::Read>(file: &mut R) -> std::io::Result<Option<Vec<u8>>> {
+    match read_trailer_blob(file) {
+        Ok(blob) => Ok(Some(blob)),
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 pub(crate) fn load_replay_save_checkpoint(
     game: &mut ZeldaState,
     path: &Path,
@@ -3486,6 +3494,16 @@ pub(crate) fn load_replay_save_checkpoint(
         // Restore the pristine SAVELOAD scratch (0x1b00 + 0x654) for WRAM fidelity.
         let hdma_scratch = read_trailer_blob(&mut file)?;
         game.restore_saveload_hdma_scratch_bytes(&hdma_scratch);
+        if let Some(bg3_vwf_glyph_runs) = read_optional_trailer_blob(&mut file)? {
+            let runs: Vec<zelda3::Bg3VwfGlyphRun> = bincode::deserialize(&bg3_vwf_glyph_runs)
+                .map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("invalid BG3 VWF glyph-run checkpoint trailer: {e}"),
+                    )
+                })?;
+            game.restore_bg3_vwf_glyph_runs(runs);
+        }
     }
     Ok(())
 }
@@ -3498,6 +3516,12 @@ fn save_replay_save_checkpoint(game: &mut ZeldaState, path: &Path) -> std::io::R
     let audio_bytes = game.zelda_audio_snapshot_bytes();
     let hdma_dyn_bytes = game.hdma_dynamic_table_bytes();
     let hdma_scratch_bytes = game.saveload_hdma_scratch_bytes();
+    let bg3_vwf_glyph_runs = bincode::serialize(game.bg3_vwf_glyph_runs()).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("failed to encode BG3 VWF glyph-run checkpoint trailer: {e}"),
+        )
+    })?;
     let mut file = fs::File::create(path)?;
     let mut state_recorder = std::mem::take(&mut game.state_recorder);
     game.state_recorder_save(&mut state_recorder, &mut file);
@@ -3506,6 +3530,7 @@ fn save_replay_save_checkpoint(game: &mut ZeldaState, path: &Path) -> std::io::R
     write_trailer_blob(&mut file, &audio_bytes)?;
     write_trailer_blob(&mut file, &hdma_dyn_bytes)?;
     write_trailer_blob(&mut file, &hdma_scratch_bytes)?;
+    write_trailer_blob(&mut file, &bg3_vwf_glyph_runs)?;
     // CRITICAL: state_recorder_save (save_snes_state) MUTATES the live game --
     // zelda_save_music_state_to_ram_locked rewrites SPC RAM, and
     // backup_spotlight_hdma_to_saveload_buffer projects 0xff-padded entries into

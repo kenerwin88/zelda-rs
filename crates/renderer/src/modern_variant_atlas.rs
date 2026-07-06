@@ -45,6 +45,81 @@ pub struct ModernVariantAtlas {
     pub entries: Vec<VariantAtlasEntry>,
     pub effects: Vec<TileEffect>,
     pub mode7_source_chars: Option<Vec<u8>>,
+    pub dialogue_glyph_atlas: Option<DialogueGlyphAtlas>,
+    pub dialogue_vwf_font: Option<DialogueVwfFont>,
+    pub dialogue_vwf_glyph_atlas: Option<DialogueVwfGlyphAtlas>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DialogueGlyphAtlas {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+    pub tiles: Vec<DialogueGlyphTile>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct DialogueGlyphTile {
+    pub id: String,
+    pub rect: [u32; 4],
+    pub relative_tile: u16,
+    pub source_block: String,
+    pub source_bpp: u8,
+    pub source_kind: String,
+    pub source_pack: u16,
+    pub source_sheet: String,
+    pub source_tile: u16,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DialogueVwfFont {
+    pub glyph_count: u32,
+    pub width_table_size: u32,
+    pub glyphs: Vec<DialogueVwfGlyph>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DialogueVwfGlyph {
+    pub code: u8,
+    pub hex: String,
+    pub width: u8,
+    pub top_row_offset: u16,
+    pub bottom_row_offset: u16,
+    pub top_row_bytes: [u8; 16],
+    pub bottom_row_bytes: [u8; 16],
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DialogueVwfGlyphAtlas {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+    pub glyphs: Vec<DialogueVwfGlyphCell>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DialogueVwfGlyphCell {
+    pub code: u8,
+    pub hex: String,
+    pub width: u8,
+    pub rect: [u32; 4],
+    pub indices: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DialogueFontTileAtlas {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+    tiles: Vec<DialogueFontTile>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct DialogueFontTile {
+    id: String,
+    rect: [u32; 4],
+    source_pack: u16,
+    source_tile: u16,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -191,17 +266,31 @@ pub fn variant_key_for_source_key(
     let (source_kind, asset, bpp) = match kind {
         1 | 5 | 6 => ("bg", "kBgGfx", 3),
         2 => ("sprite", "kSprGfx", 3),
-        4 | 7 => ("bg3", "kBg3Gfx", 5),
+        4 => ("bg3", "kBg3Gfx", 5),
+        7 => ("bg3_dynamic", "kBg3TextGfx", 5),
         8 => ("link", "kLinkGfx", 3),
+        9 => ("dialogue_glyph", "kDialogueGlyphTiles", 2),
+        10 => ("dialogue_vwf", "kDialogueVwfGlyphs", 2),
+        11 => ("dialogue_font", "kDialogueFontTiles", 2),
         _ => return None,
     };
+    let is_dialogue_source = matches!(
+        source_kind,
+        "dialogue_glyph" | "dialogue_vwf" | "dialogue_font"
+    );
+    let palette = if is_dialogue_source {
+        "palette_bg3_text_main"
+    } else {
+        palette_name
+    };
+    let palette_row = if is_dialogue_source { 0 } else { palette_row };
     Some(VariantAtlasKey {
         source_kind: source_kind.to_string(),
         asset: asset.to_string(),
         pack,
         tile,
         bpp,
-        palette: palette_name.to_string(),
+        palette: palette.to_string(),
         palette_row,
     })
 }
@@ -499,6 +588,9 @@ pub fn load_modern_variant_atlas(root: &Path) -> Result<ModernVariantAtlas, Stri
         entries,
         effects: load_tile_effects_from_dir(&atlas_dir)?,
         mode7_source_chars: None,
+        dialogue_glyph_atlas: None,
+        dialogue_vwf_font: None,
+        dialogue_vwf_glyph_atlas: None,
     })
 }
 
@@ -551,144 +643,416 @@ fn load_modern_canonical_art_atlas_from_dir(
     let json_path = atlas_dir.join("art_tiles.json");
     let png_path = atlas_dir.join("art_tiles.png");
 
+    let manifest = load_art_manifest(&json_path, "zelda3_canonical_art_atlas_v1")?;
+    let png = load_rgba_png(&png_path)?;
+    if png.width != manifest.width || png.height != manifest.height {
+        return Err(format!(
+            "{}: PNG size {}x{} does not match manifest {}x{}",
+            png_path.display(),
+            png.width,
+            png.height,
+            manifest.width,
+            manifest.height
+        ));
+    }
+    validate_art_manifest_counts_and_rects(&json_path, &manifest, png.width, png.height)?;
+
+    let dynamic_json_path = atlas_dir.join("dynamic_bg3_tiles.json");
+    let dynamic_png_path = atlas_dir.join("dynamic_bg3_tiles.png");
+    let dynamic_manifest = if dynamic_json_path.is_file() {
+        let manifest = load_art_manifest(&dynamic_json_path, "zelda3_dynamic_bg3_art_atlas_v1")?;
+        validate_art_manifest_counts_and_rects(
+            &dynamic_json_path,
+            &manifest,
+            manifest.width,
+            manifest.height,
+        )?;
+        Some(manifest)
+    } else if dynamic_png_path.is_file() {
+        return Err(format!(
+            "dynamic BG3 manifest missing: expected {} for {}",
+            dynamic_json_path.display(),
+            dynamic_png_path.display()
+        ));
+    } else {
+        None
+    };
+
+    let dialogue_glyph_atlas = load_dialogue_glyph_atlas_from_dir(atlas_dir)?;
+    let dialogue_vwf_font = load_dialogue_vwf_font_from_dir(atlas_dir)?;
+    let dialogue_vwf_glyph_atlas = load_dialogue_vwf_glyph_atlas_from_dir(atlas_dir)?;
+    let dialogue_font_tile_atlas = load_dialogue_font_tile_atlas_from_dir(atlas_dir)?;
+
+    let atlas_width = [
+        png.width,
+        dialogue_glyph_atlas
+            .as_ref()
+            .map_or(0, |glyphs| glyphs.width),
+        dialogue_vwf_glyph_atlas
+            .as_ref()
+            .map_or(0, |glyphs| glyphs.width),
+        dialogue_font_tile_atlas
+            .as_ref()
+            .map_or(0, |tiles| tiles.width),
+    ]
+    .into_iter()
+    .max()
+    .unwrap_or(png.width);
+    let glyph_y_offset = png.height;
+    let vwf_glyph_y_offset = glyph_y_offset
+        + dialogue_glyph_atlas
+            .as_ref()
+            .map_or(0, |glyphs| glyphs.height);
+    let font_tile_y_offset = vwf_glyph_y_offset
+        + dialogue_vwf_glyph_atlas
+            .as_ref()
+            .map_or(0, |glyphs| glyphs.height);
+    let atlas_height = font_tile_y_offset
+        + dialogue_font_tile_atlas
+            .as_ref()
+            .map_or(0, |tiles| tiles.height);
+    let mut combined_rgba = vec![0; (atlas_width as usize) * (atlas_height as usize) * 4];
+    blit_rgba_sheet(
+        &mut combined_rgba,
+        atlas_width,
+        &png.rgba,
+        png.width,
+        png.height,
+        0,
+    );
+
+    let effects = load_tile_effects_from_dir(atlas_dir)?;
+    let mut entries = Vec::new();
+    let mut mode7_source_chars = vec![0u8; 0x4000];
+    let mut has_mode7_source_chars = false;
+    append_art_manifest_entries(
+        &json_path,
+        manifest.arts,
+        &effects,
+        0,
+        &mut entries,
+        &mut mode7_source_chars,
+        &mut has_mode7_source_chars,
+    )?;
+    if let Some(dynamic_manifest) = dynamic_manifest {
+        append_art_manifest_entries(
+            &dynamic_json_path,
+            dynamic_manifest.arts,
+            &effects,
+            0,
+            &mut entries,
+            &mut mode7_source_chars,
+            &mut has_mode7_source_chars,
+        )?;
+    }
+    if let Some(glyph_atlas) = &dialogue_glyph_atlas {
+        blit_rgba_sheet(
+            &mut combined_rgba,
+            atlas_width,
+            &glyph_atlas.rgba,
+            glyph_atlas.width,
+            glyph_atlas.height,
+            glyph_y_offset,
+        );
+        append_dialogue_glyph_entries(glyph_atlas, glyph_y_offset, &mut entries)?;
+    }
+    if let Some(vwf_glyph_atlas) = &dialogue_vwf_glyph_atlas {
+        blit_rgba_sheet(
+            &mut combined_rgba,
+            atlas_width,
+            &vwf_glyph_atlas.rgba,
+            vwf_glyph_atlas.width,
+            vwf_glyph_atlas.height,
+            vwf_glyph_y_offset,
+        );
+        append_dialogue_vwf_glyph_entries(vwf_glyph_atlas, vwf_glyph_y_offset, &mut entries)?;
+    }
+    if let Some(font_tile_atlas) = &dialogue_font_tile_atlas {
+        blit_rgba_sheet(
+            &mut combined_rgba,
+            atlas_width,
+            &font_tile_atlas.rgba,
+            font_tile_atlas.width,
+            font_tile_atlas.height,
+            font_tile_y_offset,
+        );
+        append_dialogue_font_tile_entries(font_tile_atlas, font_tile_y_offset, &mut entries)?;
+    }
+
+    Ok(ModernVariantAtlas {
+        width: atlas_width,
+        height: atlas_height,
+        rgba: combined_rgba,
+        entries,
+        effects,
+        mode7_source_chars: has_mode7_source_chars.then_some(mode7_source_chars),
+        dialogue_glyph_atlas,
+        dialogue_vwf_font,
+        dialogue_vwf_glyph_atlas,
+    })
+}
+
+fn load_dialogue_glyph_atlas_from_dir(
+    atlas_dir: &Path,
+) -> Result<Option<DialogueGlyphAtlas>, String> {
+    let json_path = atlas_dir.join("dialogue_glyph_tiles.json");
+    let png_path = atlas_dir.join("dialogue_glyph_tiles.png");
+    if !json_path.is_file() && !png_path.is_file() {
+        return Ok(None);
+    }
+
     let manifest_bytes = std::fs::read(&json_path)
         .map_err(|e| format!("failed to read {}: {e}", json_path.display()))?;
-    let manifest: ArtManifestJson = serde_json::from_slice(&manifest_bytes)
+    let manifest: DialogueGlyphManifestJson = serde_json::from_slice(&manifest_bytes)
         .map_err(|e| format!("failed to parse {}: {e}", json_path.display()))?;
-    if manifest.format != "zelda3_canonical_art_atlas_v1" {
+    if manifest.format != "zelda3_dialogue_glyph_source_atlas_v1" {
         return Err(format!(
             "{}: unsupported format {:?}",
             json_path.display(),
             manifest.format
         ));
     }
-
-    let file = std::fs::File::open(&png_path)
-        .map_err(|e| format!("failed to open {}: {e}", png_path.display()))?;
-    let decoder = png::Decoder::new(std::io::BufReader::new(file));
-    let mut reader = decoder
-        .read_info()
-        .map_err(|e| format!("failed to read PNG header {}: {e}", png_path.display()))?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
-    let info = reader
-        .next_frame(&mut buf)
-        .map_err(|e| format!("failed to decode {}: {e}", png_path.display()))?;
-    if info.bit_depth != png::BitDepth::Eight || info.color_type != png::ColorType::Rgba {
+    if manifest.tile_count != manifest.tiles.len() as u32 {
         return Err(format!(
-            "{}: expected an 8-bit RGBA PNG, got {:?}/{:?}",
-            png_path.display(),
-            info.color_type,
-            info.bit_depth
+            "{}: tile_count {} does not match {} tiles",
+            json_path.display(),
+            manifest.tile_count,
+            manifest.tiles.len()
         ));
     }
-    if info.width != manifest.width || info.height != manifest.height {
+
+    let png = load_rgba_png(&png_path)?;
+    if png.width != manifest.width || png.height != manifest.height {
         return Err(format!(
             "{}: PNG size {}x{} does not match manifest {}x{}",
             png_path.display(),
-            info.width,
-            info.height,
+            png.width,
+            png.height,
             manifest.width,
             manifest.height
         ));
     }
-    if manifest.art_count != manifest.arts.len() as u32 {
-        return Err(format!(
-            "{}: art_count {} does not match {} arts",
-            json_path.display(),
-            manifest.art_count,
-            manifest.arts.len()
-        ));
-    }
-    let source_ref_count: u32 = manifest
-        .arts
-        .iter()
-        .map(|art| art.source_refs.len() as u32)
-        .sum();
-    if manifest.source_ref_count != source_ref_count {
-        return Err(format!(
-            "{}: source_ref_count {} does not match {} source refs",
-            json_path.display(),
-            manifest.source_ref_count,
-            source_ref_count
-        ));
-    }
-    for art in &manifest.arts {
-        if !rect_within_atlas(art.rect, info.width, info.height) {
+    for tile in &manifest.tiles {
+        if !rect_within_atlas(tile.rect, png.width, png.height) {
             return Err(format!(
-                "{}: art rect {:?} for {} is outside PNG bounds {}x{}",
+                "{}: glyph rect {:?} for {} is outside PNG bounds {}x{}",
                 json_path.display(),
-                art.rect,
-                art.art_id,
-                info.width,
-                info.height
+                tile.rect,
+                tile.id,
+                png.width,
+                png.height
             ));
         }
     }
 
-    let effects = load_tile_effects_from_dir(atlas_dir)?;
-    let mut entries = Vec::new();
-    let mut mode7_source_chars = vec![0u8; 0x4000];
-    let mut has_mode7_source_chars = false;
-    for art in manifest.arts {
-        let art_indices = decode_art_indices_hex(&json_path, &art)?;
-        for source_ref in art.source_refs {
-            let dynamic_policy = dynamic_policy_for_source_ref(&effects, &source_ref);
-            let runtime_material = runtime_material_for_source_ref(&effects, &source_ref);
-            let is_mode7_source = source_ref.source_kind == "mode7"
-                && source_ref.asset == "kOverworldMapGfx"
-                && source_ref.pack == 0
-                && source_ref.bpp == 8
-                && usize::from(source_ref.tile) < 256;
-            let source_hflip = source_ref.hflip;
-            let source_vflip = source_ref.vflip;
-            let source_tile = source_ref.tile;
-            let id = format!(
-                "{}:{}:pack{}:tile{}:{}bpp",
-                source_ref.source_kind,
-                source_ref.asset,
-                source_ref.pack,
-                source_ref.tile,
-                source_ref.bpp
-            );
-            entries.push(VariantAtlasEntry {
-                id,
-                key: VariantAtlasKey {
-                    source_kind: source_ref.source_kind,
-                    asset: source_ref.asset,
-                    pack: source_ref.pack,
-                    tile: source_ref.tile,
-                    bpp: source_ref.bpp,
-                    palette: source_ref.preview_palette,
-                    palette_row: source_ref.preview_palette_row,
-                },
-                rect: art.rect,
-                sha1: art.sha1_indices.clone(),
-                duplicate_of: None,
-                dynamic_policy,
-                runtime_material,
-                runtime_colors_per_row: source_ref.runtime_colors_per_row,
-                source_hflip,
-                source_vflip,
-            });
-            if is_mode7_source {
-                if let Some(indices) = &art_indices {
-                    let source_indices = transform_art_indices(indices, source_hflip, source_vflip);
-                    let start = usize::from(source_tile) * 64;
-                    mode7_source_chars[start..start + 64].copy_from_slice(&source_indices);
-                    has_mode7_source_chars = true;
-                }
-            }
+    Ok(Some(DialogueGlyphAtlas {
+        width: png.width,
+        height: png.height,
+        rgba: png.rgba,
+        tiles: manifest.tiles,
+    }))
+}
+
+fn load_dialogue_font_tile_atlas_from_dir(
+    atlas_dir: &Path,
+) -> Result<Option<DialogueFontTileAtlas>, String> {
+    let json_path = atlas_dir.join("dialogue_font_tiles.json");
+    let png_path = atlas_dir.join("dialogue_font_tiles.png");
+    if !json_path.is_file() && !png_path.is_file() {
+        return Ok(None);
+    }
+
+    let manifest_bytes = std::fs::read(&json_path)
+        .map_err(|e| format!("failed to read {}: {e}", json_path.display()))?;
+    let manifest: DialogueFontTileManifestJson = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| format!("failed to parse {}: {e}", json_path.display()))?;
+    if manifest.format != "zelda3_dialogue_font_tile_atlas_v1" {
+        return Err(format!(
+            "{}: unsupported format {:?}",
+            json_path.display(),
+            manifest.format
+        ));
+    }
+    if manifest.tile_count != manifest.tiles.len() as u32 {
+        return Err(format!(
+            "{}: tile_count {} does not match {} tiles",
+            json_path.display(),
+            manifest.tile_count,
+            manifest.tiles.len()
+        ));
+    }
+
+    let png = load_rgba_png(&png_path)?;
+    if png.width != manifest.width || png.height != manifest.height {
+        return Err(format!(
+            "{}: PNG size {}x{} does not match manifest {}x{}",
+            png_path.display(),
+            png.width,
+            png.height,
+            manifest.width,
+            manifest.height
+        ));
+    }
+    for tile in &manifest.tiles {
+        if !rect_within_atlas(tile.rect, png.width, png.height) {
+            return Err(format!(
+                "{}: dialogue font rect {:?} for {} is outside PNG bounds {}x{}",
+                json_path.display(),
+                tile.rect,
+                tile.id,
+                png.width,
+                png.height
+            ));
         }
     }
 
-    Ok(ModernVariantAtlas {
-        width: info.width,
-        height: info.height,
-        rgba: buf[..info.buffer_size()].to_vec(),
-        entries,
-        effects,
-        mode7_source_chars: has_mode7_source_chars.then_some(mode7_source_chars),
-    })
+    Ok(Some(DialogueFontTileAtlas {
+        width: png.width,
+        height: png.height,
+        rgba: png.rgba,
+        tiles: manifest.tiles,
+    }))
+}
+
+fn load_dialogue_vwf_font_from_dir(atlas_dir: &Path) -> Result<Option<DialogueVwfFont>, String> {
+    let json_path = atlas_dir.join("dialogue_vwf_font.json");
+    if !json_path.is_file() {
+        return Ok(None);
+    }
+
+    let manifest_bytes = std::fs::read(&json_path)
+        .map_err(|e| format!("failed to read {}: {e}", json_path.display()))?;
+    let manifest: DialogueVwfFontJson = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| format!("failed to parse {}: {e}", json_path.display()))?;
+    if manifest.format != "zelda3_dialogue_vwf_font_v1" {
+        return Err(format!(
+            "{}: unsupported format {:?}",
+            json_path.display(),
+            manifest.format
+        ));
+    }
+    if manifest.glyph_count != manifest.glyphs.len() as u32 {
+        return Err(format!(
+            "{}: glyph_count {} does not match {} glyphs",
+            json_path.display(),
+            manifest.glyph_count,
+            manifest.glyphs.len()
+        ));
+    }
+    if manifest.width_table_size != manifest.glyphs.len() as u32 {
+        return Err(format!(
+            "{}: width_table_size {} does not match {} glyphs",
+            json_path.display(),
+            manifest.width_table_size,
+            manifest.glyphs.len()
+        ));
+    }
+
+    let glyphs = manifest
+        .glyphs
+        .into_iter()
+        .map(|glyph| {
+            Ok(DialogueVwfGlyph {
+                code: glyph.code,
+                hex: glyph.hex,
+                width: glyph.width,
+                top_row_offset: glyph.top_row_offset,
+                bottom_row_offset: glyph.bottom_row_offset,
+                top_row_bytes: parse_fixed_hex_16(
+                    &json_path,
+                    "top_row_bytes",
+                    &glyph.top_row_bytes,
+                )?,
+                bottom_row_bytes: parse_fixed_hex_16(
+                    &json_path,
+                    "bottom_row_bytes",
+                    &glyph.bottom_row_bytes,
+                )?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    Ok(Some(DialogueVwfFont {
+        glyph_count: manifest.glyph_count,
+        width_table_size: manifest.width_table_size,
+        glyphs,
+    }))
+}
+
+fn load_dialogue_vwf_glyph_atlas_from_dir(
+    atlas_dir: &Path,
+) -> Result<Option<DialogueVwfGlyphAtlas>, String> {
+    let json_path = atlas_dir.join("dialogue_vwf_glyphs.json");
+    let png_path = atlas_dir.join("dialogue_vwf_glyphs.png");
+    if !json_path.is_file() && !png_path.is_file() {
+        return Ok(None);
+    }
+
+    let manifest_bytes = std::fs::read(&json_path)
+        .map_err(|e| format!("failed to read {}: {e}", json_path.display()))?;
+    let manifest: DialogueVwfGlyphAtlasJson = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| format!("failed to parse {}: {e}", json_path.display()))?;
+    if manifest.format != "zelda3_dialogue_vwf_glyph_atlas_v1" {
+        return Err(format!(
+            "{}: unsupported format {:?}",
+            json_path.display(),
+            manifest.format
+        ));
+    }
+    if manifest.glyph_count != manifest.glyphs.len() as u32 {
+        return Err(format!(
+            "{}: glyph_count {} does not match {} glyphs",
+            json_path.display(),
+            manifest.glyph_count,
+            manifest.glyphs.len()
+        ));
+    }
+
+    let png = load_rgba_png(&png_path)?;
+    if png.width != manifest.width || png.height != manifest.height {
+        return Err(format!(
+            "{}: PNG size {}x{} does not match manifest {}x{}",
+            png_path.display(),
+            png.width,
+            png.height,
+            manifest.width,
+            manifest.height
+        ));
+    }
+
+    let mut glyphs = Vec::with_capacity(manifest.glyphs.len());
+    for glyph in manifest.glyphs {
+        if !rect_within_atlas(glyph.rect, png.width, png.height) {
+            return Err(format!(
+                "{}: VWF glyph rect {:?} for {} is outside PNG bounds {}x{}",
+                json_path.display(),
+                glyph.rect,
+                glyph.hex,
+                png.width,
+                png.height
+            ));
+        }
+        let indices = parse_hex_bytes_exact(
+            &json_path,
+            "indices_hex",
+            &glyph.indices_hex,
+            (manifest.cell_width as usize) * (manifest.cell_height as usize),
+        )?;
+        glyphs.push(DialogueVwfGlyphCell {
+            code: glyph.code,
+            hex: glyph.hex,
+            width: glyph.width,
+            rect: glyph.rect,
+            indices,
+        });
+    }
+
+    Ok(Some(DialogueVwfGlyphAtlas {
+        width: png.width,
+        height: png.height,
+        rgba: png.rgba,
+        glyphs,
+    }))
 }
 
 fn decode_art_indices_hex(
@@ -725,6 +1089,360 @@ fn decode_art_indices_hex(
         })?;
     }
     Ok(Some(indices))
+}
+
+fn parse_fixed_hex_16(json_path: &Path, field: &str, value: &str) -> Result<[u8; 16], String> {
+    let parsed = parse_hex_bytes_exact(json_path, field, value, 16)?;
+    parsed.try_into().map_err(|_| {
+        format!(
+            "{}: {field} expected 16 bytes after parsing",
+            json_path.display()
+        )
+    })
+}
+
+fn parse_hex_bytes_exact(
+    json_path: &Path,
+    field: &str,
+    value: &str,
+    expected_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    let expected_hex_chars = expected_bytes * 2;
+    if value.len() != expected_hex_chars {
+        return Err(format!(
+            "{}: {field} must be {expected_hex_chars} hex characters, got {}",
+            json_path.display(),
+            value.len()
+        ));
+    }
+    let mut bytes = vec![0u8; expected_bytes];
+    for (idx, chunk) in value.as_bytes().chunks_exact(2).enumerate() {
+        let text = std::str::from_utf8(chunk).map_err(|e| {
+            format!(
+                "{}: invalid UTF-8 in {field} at byte {idx}: {e}",
+                json_path.display()
+            )
+        })?;
+        bytes[idx] = u8::from_str_radix(text, 16).map_err(|e| {
+            format!(
+                "{}: invalid hex byte {:?} in {field}: {e}",
+                json_path.display(),
+                text
+            )
+        })?;
+    }
+    Ok(bytes)
+}
+
+struct RgbaSheet {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+}
+
+fn load_art_manifest(json_path: &Path, expected_format: &str) -> Result<ArtManifestJson, String> {
+    let manifest_bytes = std::fs::read(json_path)
+        .map_err(|e| format!("failed to read {}: {e}", json_path.display()))?;
+    let manifest: ArtManifestJson = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| format!("failed to parse {}: {e}", json_path.display()))?;
+    if manifest.format != expected_format {
+        return Err(format!(
+            "{}: unsupported format {:?}",
+            json_path.display(),
+            manifest.format
+        ));
+    }
+    Ok(manifest)
+}
+
+fn load_rgba_png(png_path: &Path) -> Result<RgbaSheet, String> {
+    let file = std::fs::File::open(png_path)
+        .map_err(|e| format!("failed to open {}: {e}", png_path.display()))?;
+    let decoder = png::Decoder::new(std::io::BufReader::new(file));
+    let mut reader = decoder
+        .read_info()
+        .map_err(|e| format!("failed to read PNG header {}: {e}", png_path.display()))?;
+    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let info = reader
+        .next_frame(&mut buf)
+        .map_err(|e| format!("failed to decode {}: {e}", png_path.display()))?;
+    if info.bit_depth != png::BitDepth::Eight || info.color_type != png::ColorType::Rgba {
+        return Err(format!(
+            "{}: expected an 8-bit RGBA PNG, got {:?}/{:?}",
+            png_path.display(),
+            info.color_type,
+            info.bit_depth
+        ));
+    }
+    Ok(RgbaSheet {
+        width: info.width,
+        height: info.height,
+        rgba: buf[..info.buffer_size()].to_vec(),
+    })
+}
+
+fn validate_art_manifest_counts_and_rects(
+    json_path: &Path,
+    manifest: &ArtManifestJson,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    if manifest.art_count != manifest.arts.len() as u32 {
+        return Err(format!(
+            "{}: art_count {} does not match {} arts",
+            json_path.display(),
+            manifest.art_count,
+            manifest.arts.len()
+        ));
+    }
+    let source_ref_count: u32 = manifest
+        .arts
+        .iter()
+        .map(|art| art.source_refs.len() as u32)
+        .sum();
+    if manifest.source_ref_count != source_ref_count {
+        return Err(format!(
+            "{}: source_ref_count {} does not match {} source refs",
+            json_path.display(),
+            manifest.source_ref_count,
+            source_ref_count
+        ));
+    }
+    for art in &manifest.arts {
+        if !rect_within_atlas(art.rect, width, height) {
+            return Err(format!(
+                "{}: art rect {:?} for {} is outside PNG bounds {}x{}",
+                json_path.display(),
+                art.rect,
+                art.art_id,
+                width,
+                height
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn blit_rgba_sheet(
+    destination: &mut [u8],
+    destination_width: u32,
+    source: &[u8],
+    source_width: u32,
+    source_height: u32,
+    destination_y: u32,
+) {
+    let destination_width = destination_width as usize;
+    let source_width = source_width as usize;
+    for row in 0..source_height as usize {
+        let src = row * source_width * 4;
+        let dst = ((destination_y as usize + row) * destination_width) * 4;
+        destination[dst..dst + source_width * 4]
+            .copy_from_slice(&source[src..src + source_width * 4]);
+    }
+}
+
+fn append_art_manifest_entries(
+    json_path: &Path,
+    arts: Vec<ArtEntryJson>,
+    effects: &[TileEffect],
+    y_offset: u32,
+    entries: &mut Vec<VariantAtlasEntry>,
+    mode7_source_chars: &mut [u8],
+    has_mode7_source_chars: &mut bool,
+) -> Result<(), String> {
+    for art in arts {
+        let art_indices = decode_art_indices_hex(json_path, &art)?;
+        let rect = [
+            art.rect[0],
+            art.rect[1].checked_add(y_offset).ok_or_else(|| {
+                format!(
+                    "{}: art rect y offset overflow for {}",
+                    json_path.display(),
+                    art.art_id
+                )
+            })?,
+            art.rect[2],
+            art.rect[3],
+        ];
+        for source_ref in art.source_refs {
+            let dynamic_policy = dynamic_policy_for_source_ref(effects, &source_ref);
+            let runtime_material = runtime_material_for_source_ref(effects, &source_ref);
+            let is_mode7_source = source_ref.source_kind == "mode7"
+                && source_ref.asset == "kOverworldMapGfx"
+                && source_ref.pack == 0
+                && source_ref.bpp == 8
+                && usize::from(source_ref.tile) < 256;
+            let source_hflip = source_ref.hflip;
+            let source_vflip = source_ref.vflip;
+            let source_tile = source_ref.tile;
+            let id = format!(
+                "{}:{}:pack{}:tile{}:{}bpp",
+                source_ref.source_kind,
+                source_ref.asset,
+                source_ref.pack,
+                source_ref.tile,
+                source_ref.bpp
+            );
+            entries.push(VariantAtlasEntry {
+                id,
+                key: VariantAtlasKey {
+                    source_kind: source_ref.source_kind,
+                    asset: source_ref.asset,
+                    pack: source_ref.pack,
+                    tile: source_ref.tile,
+                    bpp: source_ref.bpp,
+                    palette: source_ref.preview_palette,
+                    palette_row: source_ref.preview_palette_row,
+                },
+                rect,
+                sha1: art.sha1_indices.clone(),
+                duplicate_of: None,
+                dynamic_policy,
+                runtime_material,
+                runtime_colors_per_row: source_ref.runtime_colors_per_row,
+                source_hflip,
+                source_vflip,
+            });
+            if is_mode7_source {
+                if let Some(indices) = &art_indices {
+                    let source_indices = transform_art_indices(indices, source_hflip, source_vflip);
+                    let start = usize::from(source_tile) * 64;
+                    mode7_source_chars[start..start + 64].copy_from_slice(&source_indices);
+                    *has_mode7_source_chars = true;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn append_dialogue_glyph_entries(
+    atlas: &DialogueGlyphAtlas,
+    y_offset: u32,
+    entries: &mut Vec<VariantAtlasEntry>,
+) -> Result<(), String> {
+    for tile in &atlas.tiles {
+        entries.push(VariantAtlasEntry {
+            id: format!(
+                "dialogue_glyph:kDialogueGlyphTiles:pack{}:tile{}:2bpp",
+                tile.source_pack, tile.source_tile
+            ),
+            key: VariantAtlasKey {
+                source_kind: "dialogue_glyph".to_string(),
+                asset: "kDialogueGlyphTiles".to_string(),
+                pack: tile.source_pack,
+                tile: tile.source_tile,
+                bpp: 2,
+                palette: "palette_bg3_text_main".to_string(),
+                palette_row: 0,
+            },
+            rect: [
+                tile.rect[0],
+                tile.rect[1].checked_add(y_offset).ok_or_else(|| {
+                    format!("dialogue glyph rect y offset overflow for {}", tile.id)
+                })?,
+                tile.rect[2],
+                tile.rect[3],
+            ],
+            sha1: tile.id.clone(),
+            duplicate_of: None,
+            dynamic_policy: "stable".to_string(),
+            runtime_material: None,
+            runtime_colors_per_row: None,
+            source_hflip: false,
+            source_vflip: false,
+        });
+    }
+    Ok(())
+}
+
+fn append_dialogue_vwf_glyph_entries(
+    atlas: &DialogueVwfGlyphAtlas,
+    y_offset: u32,
+    entries: &mut Vec<VariantAtlasEntry>,
+) -> Result<(), String> {
+    for glyph in &atlas.glyphs {
+        for quadrant in 0..4u16 {
+            let qx = u32::from(quadrant & 1) * 8;
+            let qy = u32::from(quadrant >> 1) * 8;
+            entries.push(VariantAtlasEntry {
+                id: format!(
+                    "dialogue_vwf:kDialogueVwfGlyphs:pack{}:tile{}:2bpp",
+                    glyph.code, quadrant
+                ),
+                key: VariantAtlasKey {
+                    source_kind: "dialogue_vwf".to_string(),
+                    asset: "kDialogueVwfGlyphs".to_string(),
+                    pack: u16::from(glyph.code),
+                    tile: quadrant,
+                    bpp: 2,
+                    palette: "palette_bg3_text_main".to_string(),
+                    palette_row: 0,
+                },
+                rect: [
+                    glyph.rect[0].checked_add(qx).ok_or_else(|| {
+                        format!("dialogue VWF rect x offset overflow for {}", glyph.hex)
+                    })?,
+                    glyph.rect[1]
+                        .checked_add(y_offset)
+                        .and_then(|y| y.checked_add(qy))
+                        .ok_or_else(|| {
+                            format!("dialogue VWF rect y offset overflow for {}", glyph.hex)
+                        })?,
+                    8,
+                    8,
+                ],
+                sha1: format!("{}:{quadrant}", glyph.hex),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                runtime_material: None,
+                runtime_colors_per_row: None,
+                source_hflip: false,
+                source_vflip: false,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn append_dialogue_font_tile_entries(
+    atlas: &DialogueFontTileAtlas,
+    y_offset: u32,
+    entries: &mut Vec<VariantAtlasEntry>,
+) -> Result<(), String> {
+    for tile in &atlas.tiles {
+        entries.push(VariantAtlasEntry {
+            id: format!(
+                "dialogue_font:kDialogueFontTiles:pack{}:tile{}:2bpp",
+                tile.source_pack, tile.source_tile
+            ),
+            key: VariantAtlasKey {
+                source_kind: "dialogue_font".to_string(),
+                asset: "kDialogueFontTiles".to_string(),
+                pack: tile.source_pack,
+                tile: tile.source_tile,
+                bpp: 2,
+                palette: "palette_bg3_text_main".to_string(),
+                palette_row: 0,
+            },
+            rect: [
+                tile.rect[0],
+                tile.rect[1].checked_add(y_offset).ok_or_else(|| {
+                    format!("dialogue font rect y offset overflow for {}", tile.id)
+                })?,
+                tile.rect[2],
+                tile.rect[3],
+            ],
+            sha1: tile.id.clone(),
+            duplicate_of: None,
+            dynamic_policy: "stable".to_string(),
+            runtime_material: None,
+            runtime_colors_per_row: None,
+            source_hflip: false,
+            source_vflip: false,
+        });
+    }
+    Ok(())
 }
 
 fn transform_art_indices(indices: &[u8; 64], hflip: bool, vflip: bool) -> [u8; 64] {
@@ -932,6 +1650,63 @@ struct ArtSourceRefJson {
 }
 
 #[derive(Deserialize)]
+struct DialogueGlyphManifestJson {
+    format: String,
+    width: u32,
+    height: u32,
+    tile_count: u32,
+    tiles: Vec<DialogueGlyphTile>,
+}
+
+#[derive(Deserialize)]
+struct DialogueVwfFontJson {
+    format: String,
+    glyph_count: u32,
+    width_table_size: u32,
+    glyphs: Vec<DialogueVwfGlyphJson>,
+}
+
+#[derive(Deserialize)]
+struct DialogueVwfGlyphJson {
+    code: u8,
+    hex: String,
+    width: u8,
+    top_row_offset: u16,
+    bottom_row_offset: u16,
+    top_row_bytes: String,
+    bottom_row_bytes: String,
+}
+
+#[derive(Deserialize)]
+struct DialogueVwfGlyphAtlasJson {
+    format: String,
+    width: u32,
+    height: u32,
+    cell_width: u32,
+    cell_height: u32,
+    glyph_count: u32,
+    glyphs: Vec<DialogueVwfGlyphCellJson>,
+}
+
+#[derive(Deserialize)]
+struct DialogueVwfGlyphCellJson {
+    code: u8,
+    hex: String,
+    width: u8,
+    rect: [u32; 4],
+    indices_hex: String,
+}
+
+#[derive(Deserialize)]
+struct DialogueFontTileManifestJson {
+    format: String,
+    width: u32,
+    height: u32,
+    tile_count: u32,
+    tiles: Vec<DialogueFontTile>,
+}
+
+#[derive(Deserialize)]
 struct EffectsManifestJson {
     format: String,
     effects: Vec<EffectJson>,
@@ -1039,11 +1814,42 @@ mod tests {
             0,
         )
         .expect("BG3 content source key should resolve");
-        assert_eq!(content_key.source_kind, "bg3");
-        assert_eq!(content_key.asset, "kBg3Gfx");
+        assert_eq!(content_key.source_kind, "bg3_dynamic");
+        assert_eq!(content_key.asset, "kBg3TextGfx");
         assert_eq!(content_key.pack, 0x1234);
         assert_eq!(content_key.tile, 0x5678);
         assert_eq!(content_key.bpp, 5);
+    }
+
+    #[test]
+    fn dialogue_source_keys_map_to_fixed_text_palette_variant_keys() {
+        let glyph_key = variant_key_for_source_key(
+            crate::modern_source_atlas::modern_source_key(9, 103, 128),
+            "palette_overworld_bg_main",
+            3,
+        )
+        .expect("dialogue glyph source key should resolve");
+        assert_eq!(glyph_key.source_kind, "dialogue_glyph");
+        assert_eq!(glyph_key.asset, "kDialogueGlyphTiles");
+        assert_eq!(glyph_key.pack, 103);
+        assert_eq!(glyph_key.tile, 128);
+        assert_eq!(glyph_key.bpp, 2);
+        assert_eq!(glyph_key.palette, "palette_bg3_text_main");
+        assert_eq!(glyph_key.palette_row, 0);
+
+        let vwf_key = variant_key_for_source_key(
+            crate::modern_source_atlas::modern_source_key(10, 0x41, 2),
+            "palette_dung_bg_main",
+            7,
+        )
+        .expect("dialogue VWF source key should resolve");
+        assert_eq!(vwf_key.source_kind, "dialogue_vwf");
+        assert_eq!(vwf_key.asset, "kDialogueVwfGlyphs");
+        assert_eq!(vwf_key.pack, 0x41);
+        assert_eq!(vwf_key.tile, 2);
+        assert_eq!(vwf_key.bpp, 2);
+        assert_eq!(vwf_key.palette, "palette_bg3_text_main");
+        assert_eq!(vwf_key.palette_row, 0);
     }
 
     #[test]
@@ -1094,6 +1900,9 @@ mod tests {
             entries: vec![bg_test_entry_with_palette_row(entry_row)],
             effects,
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         }
     }
 
@@ -1256,6 +2065,289 @@ mod tests {
     }
 
     #[test]
+    fn modern_canonical_art_atlas_loads_dynamic_bg3_source_refs_without_runtime_png() {
+        let root = unique_temp_root();
+        let atlas_dir = root.join("atlas");
+        std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
+        let main_rgba = solid_rgba(8, 8, [1, 2, 3, 255]);
+        write_rgba_png(&atlas_dir.join("art_tiles.png"), 8, 8, &main_rgba);
+        std::fs::write(
+            atlas_dir.join("art_tiles.json"),
+            r#"{
+              "format": "zelda3_canonical_art_atlas_v1",
+              "tile_width": 8,
+              "tile_height": 8,
+              "width": 8,
+              "height": 8,
+              "art_count": 1,
+              "source_ref_count": 1,
+              "arts": [{
+                "art_id": "art:main",
+                "bpp": 3,
+                "rect": [0, 0, 8, 8],
+                "sha1_indices": "main",
+                "preview_palette": "palette_dung_bg_main",
+                "preview_palette_row": 0,
+                "preview_source": "source_kind_default",
+                "source_refs": [{
+                  "source_kind": "bg",
+                  "asset": "kBgGfx",
+                  "pack": 1,
+                  "tile": 2,
+                  "bpp": 3,
+                  "hflip": false,
+                  "vflip": false,
+                  "preview_palette": "palette_dung_bg_main",
+                  "preview_palette_row": 0,
+                  "preview_source": "source_kind_default"
+                }]
+              }]
+            }"#,
+        )
+        .expect("write main manifest");
+        std::fs::write(
+            atlas_dir.join("dynamic_bg3_tiles.json"),
+            r#"{
+              "format": "zelda3_dynamic_bg3_art_atlas_v1",
+              "tile_width": 8,
+              "tile_height": 8,
+              "width": 8,
+              "height": 8,
+              "art_count": 1,
+              "source_ref_count": 1,
+              "arts": [{
+                "art_id": "art:dynamic",
+                "bpp": 5,
+                "rect": [0, 0, 8, 8],
+                "sha1_indices": "dynamic",
+                "preview_palette": "palette_overworld_bg_main",
+                "preview_palette_row": 0,
+                "preview_source": "source_kind_default",
+                "source_refs": [{
+                  "source_kind": "bg3_dynamic",
+                  "asset": "kBg3TextGfx",
+                  "pack": 4660,
+                  "tile": 22136,
+                  "bpp": 5,
+                  "hflip": false,
+                  "vflip": false,
+                  "preview_palette": "palette_overworld_bg_main",
+                  "preview_palette_row": 0,
+                  "preview_source": "source_kind_default",
+                  "runtime_material": "palette_lut",
+                  "runtime_material_policy": "stable",
+                  "runtime_colors_per_row": 32
+                }]
+              }]
+            }"#,
+        )
+        .expect("write dynamic manifest");
+
+        let atlas = load_modern_canonical_art_atlas(&root).expect("load art atlas");
+
+        assert_eq!(atlas.width, 8);
+        assert_eq!(atlas.height, 8);
+        assert_eq!(atlas.rgba, main_rgba);
+        assert_eq!(atlas.entries.len(), 2);
+        assert_eq!(atlas.entries[1].key.source_kind, "bg3_dynamic");
+        assert_eq!(atlas.entries[1].key.asset, "kBg3TextGfx");
+        assert_eq!(atlas.entries[1].key.pack, 0x1234);
+        assert_eq!(atlas.entries[1].key.tile, 0x5678);
+        assert_eq!(atlas.entries[1].rect, [0, 0, 8, 8]);
+
+        std::fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn modern_canonical_art_atlas_loads_dialogue_source_assets() {
+        let root = unique_temp_root();
+        let atlas_dir = root.join("atlas");
+        std::fs::create_dir_all(&atlas_dir).expect("create atlas dir");
+        let art_rgba = solid_rgba(8, 8, [1, 2, 3, 255]);
+        let glyph_rgba = solid_rgba(8, 8, [9, 8, 7, 255]);
+        let vwf_glyph_rgba = solid_rgba(16, 16, [240, 240, 240, 255]);
+        write_rgba_png(&atlas_dir.join("art_tiles.png"), 8, 8, &art_rgba);
+        write_rgba_png(
+            &atlas_dir.join("dialogue_glyph_tiles.png"),
+            8,
+            8,
+            &glyph_rgba,
+        );
+        write_rgba_png(
+            &atlas_dir.join("dialogue_vwf_glyphs.png"),
+            16,
+            16,
+            &vwf_glyph_rgba,
+        );
+        std::fs::write(
+            atlas_dir.join("art_tiles.json"),
+            r#"{
+              "format": "zelda3_canonical_art_atlas_v1",
+              "tile_width": 8,
+              "tile_height": 8,
+              "width": 8,
+              "height": 8,
+              "art_count": 1,
+              "source_ref_count": 1,
+              "arts": [{
+                "art_id": "art:main",
+                "bpp": 3,
+                "rect": [0, 0, 8, 8],
+                "sha1_indices": "main",
+                "preview_palette": "palette_dung_bg_main",
+                "preview_palette_row": 0,
+                "preview_source": "source_kind_default",
+                "source_refs": [{
+                  "source_kind": "bg",
+                  "asset": "kBgGfx",
+                  "pack": 1,
+                  "tile": 2,
+                  "bpp": 3,
+                  "hflip": false,
+                  "vflip": false,
+                  "preview_palette": "palette_dung_bg_main",
+                  "preview_palette_row": 0,
+                  "preview_source": "source_kind_default"
+                }]
+              }]
+            }"#,
+        )
+        .expect("write art manifest");
+        std::fs::write(
+            atlas_dir.join("dialogue_glyph_tiles.json"),
+            r#"{
+              "format": "zelda3_dialogue_glyph_source_atlas_v1",
+              "width": 8,
+              "height": 8,
+              "tile_count": 1,
+              "tiles": [{
+                "id": "1w-2d.DAT3N:tile0",
+                "rect": [0, 0, 8, 8],
+                "relative_tile": 0,
+                "source_block": "1w-2d.DAT3N",
+                "source_bpp": 2,
+                "source_kind": "sprite",
+                "source_pack": 103,
+                "source_sheet": "1w-2d",
+                "source_tile": 128
+              }]
+            }"#,
+        )
+        .expect("write glyph manifest");
+        std::fs::write(
+            atlas_dir.join("dialogue_vwf_font.json"),
+            r#"{
+              "format": "zelda3_dialogue_vwf_font_v1",
+              "glyph_count": 1,
+              "width_table_size": 1,
+              "glyphs": [{
+                "code": 0,
+                "hex": "0x00",
+                "width": 5,
+                "top_row_offset": 0,
+                "bottom_row_offset": 256,
+                "top_row_bytes": "000102030405060708090a0b0c0d0e0f",
+                "bottom_row_bytes": "101112131415161718191a1b1c1d1e1f"
+              }]
+            }"#,
+        )
+        .expect("write vwf manifest");
+        let vwf_indices_hex = "01".repeat(16 * 16);
+        std::fs::write(
+            atlas_dir.join("dialogue_vwf_glyphs.json"),
+            format!(
+                r#"{{
+              "format": "zelda3_dialogue_vwf_glyph_atlas_v1",
+              "width": 16,
+              "height": 16,
+              "cell_width": 16,
+              "cell_height": 16,
+              "glyph_count": 1,
+              "width_table_size": 1,
+              "glyphs": [{{
+                "code": 0,
+                "hex": "0x00",
+                "width": 5,
+                "rect": [0, 0, 16, 16],
+                "indices_hex": "{vwf_indices_hex}"
+              }}]
+            }}"#
+            ),
+        )
+        .expect("write VWF glyph atlas manifest");
+
+        let atlas = load_modern_canonical_art_atlas(&root).expect("load art atlas");
+        let glyph_atlas = atlas
+            .dialogue_glyph_atlas
+            .as_ref()
+            .expect("dialogue glyph source atlas should load");
+        let vwf_font = atlas
+            .dialogue_vwf_font
+            .as_ref()
+            .expect("dialogue VWF metadata should load");
+        let vwf_glyph_atlas = atlas
+            .dialogue_vwf_glyph_atlas
+            .as_ref()
+            .expect("dialogue VWF glyph source atlas should load");
+
+        assert_eq!(glyph_atlas.width, 8);
+        assert_eq!(glyph_atlas.height, 8);
+        assert_eq!(glyph_atlas.rgba, glyph_rgba);
+        assert_eq!(glyph_atlas.tiles.len(), 1);
+        assert_eq!(glyph_atlas.tiles[0].source_sheet, "1w-2d");
+        assert_eq!(glyph_atlas.tiles[0].source_block, "1w-2d.DAT3N");
+        assert_eq!(glyph_atlas.tiles[0].source_tile, 128);
+        assert_eq!(vwf_font.glyph_count, 1);
+        assert_eq!(vwf_font.width_table_size, 1);
+        assert_eq!(vwf_font.glyphs[0].width, 5);
+        assert_eq!(vwf_font.glyphs[0].top_row_bytes[15], 0x0f);
+        assert_eq!(vwf_font.glyphs[0].bottom_row_bytes[0], 0x10);
+        assert_eq!(vwf_glyph_atlas.width, 16);
+        assert_eq!(vwf_glyph_atlas.height, 16);
+        assert_eq!(vwf_glyph_atlas.rgba, vwf_glyph_rgba);
+        assert_eq!(vwf_glyph_atlas.glyphs.len(), 1);
+        assert_eq!(vwf_glyph_atlas.glyphs[0].code, 0);
+        assert_eq!(vwf_glyph_atlas.glyphs[0].width, 5);
+        assert_eq!(vwf_glyph_atlas.glyphs[0].rect, [0, 0, 16, 16]);
+        assert_eq!(vwf_glyph_atlas.glyphs[0].indices.len(), 16 * 16);
+        assert_eq!(vwf_glyph_atlas.glyphs[0].indices[0], 1);
+        assert_eq!(atlas.width, 16);
+        assert_eq!(atlas.height, 32);
+        assert_eq!(
+            atlas
+                .entry_for_source_key(&VariantAtlasKey {
+                    source_kind: "dialogue_glyph".to_string(),
+                    asset: "kDialogueGlyphTiles".to_string(),
+                    pack: 103,
+                    tile: 128,
+                    bpp: 2,
+                    palette: "palette_bg3_text_main".to_string(),
+                    palette_row: 0,
+                })
+                .expect("dialogue source glyph tile should be in main atlas")
+                .rect,
+            [0, 8, 8, 8]
+        );
+        assert_eq!(
+            atlas
+                .entry_for_source_key(&VariantAtlasKey {
+                    source_kind: "dialogue_vwf".to_string(),
+                    asset: "kDialogueVwfGlyphs".to_string(),
+                    pack: 0,
+                    tile: 3,
+                    bpp: 2,
+                    palette: "palette_bg3_text_main".to_string(),
+                    palette_row: 0,
+                })
+                .expect("dialogue VWF glyph quadrant should be in main atlas")
+                .rect,
+            [8, 24, 8, 8]
+        );
+
+        std::fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
     fn modern_canonical_art_atlas_loads_mode7_source_refs() {
         let root = unique_temp_root();
         let atlas_dir = root.join("atlas");
@@ -1352,6 +2444,9 @@ mod tests {
             }],
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         assert!(!atlas.has_mode7_source_art());
@@ -1388,6 +2483,9 @@ mod tests {
             }],
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let live_key = VariantAtlasKey {
             source_kind: "bg".to_string(),
@@ -1447,6 +2545,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let live_key = VariantAtlasKey {
             source_kind: "sprite".to_string(),
@@ -1529,6 +2630,9 @@ mod tests {
             entries: vec![entry],
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let live_key = bg_test_key_with_palette_row(3);
 
@@ -1564,6 +2668,9 @@ mod tests {
             entries: vec![entry],
             effects: vec![bg_test_effect_with_palette_row(3)],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let live_key = bg_test_key_with_palette_row(3);
 
@@ -1586,6 +2693,9 @@ mod tests {
             entries: vec![entry],
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let live_key = bg_test_key_with_palette_row(3);
 

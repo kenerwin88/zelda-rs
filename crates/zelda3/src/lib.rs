@@ -29,4 +29,4 @@ pub use zelda_cpu_infra::{
     SemanticComparisonReport, SemanticDifference, SemanticFrame, SemanticPlayer, SemanticPpu,
     SemanticSnapshot, SemanticSpriteSlot, SemanticWorld, RUN_MAIN, RUN_POLY,
 };
-pub use zelda_rtl::{ZeldaState, SRAM_SIZE, VRAM_WORDS};
+pub use zelda_rtl::{Bg3VwfGlyphRun, ZeldaState, SRAM_SIZE, VRAM_WORDS};

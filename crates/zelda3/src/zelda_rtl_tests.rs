@@ -93,6 +93,31 @@ fn owns_oracle_compared_memory_regions() {
 }
 
 #[test]
+fn bg3_vwf_glyph_runs_track_unaligned_glyphs_and_scroll() {
+    let mut state = ZeldaState::new();
+    for i in 0..126 {
+        state.set_vwf_tile_word_at_byte_offset(i * 2, 0x3980 + i as u16);
+    }
+
+    state.record_bg3_vwf_glyph_run(0x41, 7, 0, 8);
+    assert_eq!(
+        state.bg3_vwf_glyph_runs(),
+        &[Bg3VwfGlyphRun {
+            glyph_code: 0x41,
+            origin_tile_number: 0x180,
+            x: 7,
+            y: 0,
+            width: 8,
+        }]
+    );
+    state.scroll_bg3_vwf_glyph_runs_up_one_pixel();
+    assert_eq!(state.bg3_vwf_glyph_runs()[0].y, -1);
+
+    state.clear_bg3_vwf_glyph_runs();
+    assert!(state.bg3_vwf_glyph_runs().is_empty());
+}
+
+#[test]
 fn scratch_word_high_does_not_alias_nmi_subroutine_index() {
     let mut state = ZeldaState::new();
     state.scratch_word_mut().set_word(0x0200);

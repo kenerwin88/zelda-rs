@@ -2847,6 +2847,7 @@ impl ZeldaState {
             .copy_from_slice(&TEXT_INITIALIZATION_DATA);
         self.messaging_state_mut()
             .init_msgbox_state_from(&TEXT_INITIALIZATION_DATA);
+        self.clear_bg3_vwf_glyph_runs();
         self.Text_InitVwfState();
         self.RenderText_SetDefaultWindowPosition();
         self.messaging_state_mut().set_text_tilemap_cur(0x3980);
@@ -3275,6 +3276,7 @@ impl ZeldaState {
         let r10 = ((c as usize & 0x70) * 2) + (c as usize & 0x0f);
         let r0 = arrval as usize * 2;
         let line_ptr = self.game_state.messaging.vwf_render.line_render_offset() as usize;
+        self.record_bg3_vwf_glyph_run(c, arrval, line_ptr, width);
         self.messaging_vwf_render_half(&font_data, r10, r0, line_ptr, width);
         self.messaging_vwf_render_half(&font_data, r10 + 16, r0, line_ptr + 0x150, width);
     }
@@ -3532,6 +3534,7 @@ impl ZeldaState {
             for i in (0x34f..=0x3ef).step_by(8) {
                 self.set_messaging_render_buffer_word_at_byte_offset(i * 2, 0);
             }
+            self.scroll_bg3_vwf_glyph_runs_up_one_pixel();
             let source_bank_offset = self
                 .dialogue_source_offset_mut()
                 .increment_bank_offset_low_nibble();

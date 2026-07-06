@@ -132,6 +132,13 @@ class VariantAtlasSummaryTests(unittest.TestCase):
                 summary["preview_sources"],
                 {"palette_usage": 1, "source_kind_default": 2},
             )
+            self.assertEqual(summary["dynamic_bg3_art_count"], 0)
+            self.assertEqual(summary["dynamic_bg3_source_refs"], 0)
+            self.assertEqual(summary["total_art_count"], 2)
+            self.assertEqual(summary["total_source_refs"], 3)
+            self.assertEqual(summary["dialogue_glyph_tile_count"], 0)
+            self.assertEqual(summary["dialogue_vwf_glyph_count"], 0)
+            self.assertEqual(summary["dialogue_vwf_glyph_atlas_count"], 0)
 
     def test_format_summary_is_stable_for_cli_use(self) -> None:
         text = format_summary(
@@ -153,6 +160,19 @@ class VariantAtlasSummaryTests(unittest.TestCase):
                 "stable_by_kind": {"bg": 1, "sprite": 1},
                 "source_refs_by_kind": {"bg": 1, "sprite": 2},
                 "preview_sources": {"palette_usage": 1, "source_kind_default": 2},
+                "dynamic_bg3_art_count": 0,
+                "dynamic_bg3_source_refs": 0,
+                "dynamic_bg3_manifest_width": 0,
+                "dynamic_bg3_manifest_height": 0,
+                "total_art_count": 2,
+                "total_source_refs": 3,
+                "dialogue_glyph_tile_count": 0,
+                "dialogue_glyph_width": 0,
+                "dialogue_glyph_height": 0,
+                "dialogue_vwf_glyph_count": 0,
+                "dialogue_vwf_glyph_atlas_count": 0,
+                "dialogue_vwf_glyph_atlas_width": 0,
+                "dialogue_vwf_glyph_atlas_height": 0,
             }
         )
 
@@ -166,6 +186,11 @@ class VariantAtlasSummaryTests(unittest.TestCase):
         self.assertIn("requires_live_material_refs=1", text)
         self.assertIn("stable_by_kind bg=1 sprite=1", text)
         self.assertIn("preview_sources palette_usage=1 source_kind_default=2", text)
+        self.assertIn("dynamic_bg3_art_count=0", text)
+        self.assertIn("total_art_count=2", text)
+        self.assertIn("dialogue_glyph_tile_count=0", text)
+        self.assertIn("dialogue_vwf_glyph_count=0", text)
+        self.assertIn("dialogue_vwf_glyph_atlas_count=0", text)
 
     def test_summary_uses_runtime_colors_per_row_metadata(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -295,6 +320,30 @@ class VariantAtlasSummaryTests(unittest.TestCase):
             "missing_effect_refs": 0,
             "invalid_rect_count": 0,
             "invalid_rects": [],
+            "dynamic_bg3_art_count": 0,
+            "dynamic_bg3_counted_art_entries": 0,
+            "dynamic_bg3_source_refs": 0,
+            "dynamic_bg3_manifest_source_refs": 0,
+            "dynamic_bg3_png_width": 0,
+            "dynamic_bg3_png_height": 0,
+            "dynamic_bg3_manifest_width": 0,
+            "dynamic_bg3_manifest_height": 0,
+            "dynamic_bg3_invalid_rect_count": 0,
+            "dynamic_bg3_invalid_rects": [],
+            "total_art_count": 2,
+            "total_source_refs": 3,
+            "dialogue_glyph_invalid_rect_count": 0,
+            "dialogue_glyph_invalid_rects": [],
+            "dialogue_glyph_tile_count": 0,
+            "dialogue_glyph_width": 0,
+            "dialogue_glyph_height": 0,
+            "dialogue_vwf_glyph_count": 0,
+            "dialogue_vwf_width_table_size": 0,
+            "dialogue_vwf_glyph_atlas_count": 0,
+            "dialogue_vwf_glyph_atlas_width": 0,
+            "dialogue_vwf_glyph_atlas_height": 0,
+            "dialogue_vwf_glyph_atlas_invalid_rect_count": 0,
+            "dialogue_vwf_glyph_atlas_invalid_rects": [],
         }
         self.assertEqual(
             coverage_errors(valid_summary, manifest_summary=valid_summary.copy()),
@@ -314,6 +363,30 @@ class VariantAtlasSummaryTests(unittest.TestCase):
                     "missing_effect_refs": 1,
                     "invalid_rect_count": 2,
                     "invalid_rects": ["art:a:[12, 0, 8, 8]", "art:b:['bad']"],
+                    "dynamic_bg3_art_count": 0,
+                    "dynamic_bg3_counted_art_entries": 0,
+                    "dynamic_bg3_source_refs": 0,
+                    "dynamic_bg3_manifest_source_refs": 0,
+                    "dynamic_bg3_png_width": 0,
+                    "dynamic_bg3_png_height": 0,
+                    "dynamic_bg3_manifest_width": 0,
+                    "dynamic_bg3_manifest_height": 0,
+                    "dynamic_bg3_invalid_rect_count": 0,
+                    "dynamic_bg3_invalid_rects": [],
+                    "total_art_count": 2,
+                    "total_source_refs": 3,
+                    "dialogue_glyph_invalid_rect_count": 0,
+                    "dialogue_glyph_invalid_rects": [],
+                    "dialogue_glyph_tile_count": 0,
+                    "dialogue_glyph_width": 0,
+                    "dialogue_glyph_height": 0,
+                    "dialogue_vwf_glyph_count": 0,
+                    "dialogue_vwf_width_table_size": 0,
+                    "dialogue_vwf_glyph_atlas_count": 0,
+                    "dialogue_vwf_glyph_atlas_width": 0,
+                    "dialogue_vwf_glyph_atlas_height": 0,
+                    "dialogue_vwf_glyph_atlas_invalid_rect_count": 0,
+                    "dialogue_vwf_glyph_atlas_invalid_rects": [],
                 }
             ),
             [

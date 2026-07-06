@@ -1398,6 +1398,10 @@ pub struct ZeldaState {
     /// excluded from serialization like `vram_chr_source`.
     #[serde(skip)]
     pub animated_tile_pack: u16,
+    /// Exact dynamic BG3 VWF glyph placements in message-buffer pixel space.
+    /// Unlike tile provenance, this can represent packed/unaligned glyphs.
+    #[serde(skip)]
+    bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
     pub dma: DmaState,
     pub frame_ctr_dbg: u32,
     rom: Vec<u8>,
@@ -1481,6 +1485,15 @@ struct DisplaySnapshot {
 
 pub type ZeldaRunFrameFunc = fn(&mut ZeldaState, u16, i32);
 pub type ZeldaSyncAllFunc = fn(&mut ZeldaState);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Bg3VwfGlyphRun {
+    pub glyph_code: u16,
+    pub origin_tile_number: u16,
+    pub x: i16,
+    pub y: i16,
+    pub width: u8,
+}
 
 fn default_gloves_color() -> [u16; 2] {
     [0x52f6, 0x0376]
@@ -5893,6 +5906,7 @@ impl ZeldaState {
             vram_chr_source: crate::chr_source::VramChrSourceTable::new(),
             vram_chr_preview_source: crate::chr_source::VramChrSourceTable::new(),
             animated_tile_pack: 0,
+            bg3_vwf_glyph_runs: Vec::new(),
             dma: DmaState::new(),
             frame_ctr_dbg: 0,
             rom: Vec::new(),
@@ -5961,6 +5975,7 @@ impl ZeldaState {
         self.frame_ctr_dbg = 0;
         self.dma.reset();
         self.ppu.reset();
+        self.bg3_vwf_glyph_runs.clear();
         self.ram.fill(0);
         if !preserve_sram {
             self.sram.fill(0);
@@ -6068,6 +6083,55 @@ impl ZeldaState {
     /// even when the render source table is content-hashed for correctness.
     pub fn vram_chr_preview_source(&self) -> &crate::chr_source::VramChrSourceTable {
         &self.vram_chr_preview_source
+    }
+
+    pub fn bg3_vwf_glyph_runs(&self) -> &[Bg3VwfGlyphRun] {
+        &self.bg3_vwf_glyph_runs
+    }
+
+    pub fn restore_bg3_vwf_glyph_runs(&mut self, runs: Vec<Bg3VwfGlyphRun>) {
+        self.bg3_vwf_glyph_runs = runs;
+    }
+
+    pub(crate) fn clear_bg3_vwf_glyph_runs(&mut self) {
+        self.bg3_vwf_glyph_runs.clear();
+    }
+
+    pub(crate) fn record_bg3_vwf_glyph_run(
+        &mut self,
+        glyph_code: u8,
+        glyph_x: u8,
+        line_ptr: usize,
+        width: u8,
+    ) {
+        const TEXT_TILE_ROW_BYTES: usize = 0x150;
+        const TILE_PIXEL_WIDTH: usize = 8;
+
+        if width == 0 {
+            return;
+        }
+
+        let tile_row = line_ptr / TEXT_TILE_ROW_BYTES;
+        let origin_tile_number = self
+            .game_state
+            .messaging
+            .vwf_render
+            .tile_word_at_byte_offset(0)
+            & 0x03ff;
+        self.bg3_vwf_glyph_runs.push(Bg3VwfGlyphRun {
+            glyph_code: u16::from(glyph_code),
+            origin_tile_number,
+            x: i16::from(glyph_x),
+            y: (tile_row * TILE_PIXEL_WIDTH) as i16,
+            width,
+        });
+    }
+
+    pub(crate) fn scroll_bg3_vwf_glyph_runs_up_one_pixel(&mut self) {
+        for run in &mut self.bg3_vwf_glyph_runs {
+            run.y -= 1;
+        }
+        self.bg3_vwf_glyph_runs.retain(|run| run.y > -16);
     }
 
     pub fn vram_mut(&mut self) -> &mut [u16] {

@@ -8,6 +8,7 @@ pub struct ModernFrame {
     pub bg_layers: Vec<ModernBgLayer>,
     pub sprites: Vec<ModernSpriteInstance>,
     pub index_sprites: Vec<ModernIndexSpriteInstance>,
+    pub bg3_vwf_glyph_runs: Vec<ModernVwfGlyphRun>,
     pub backdrop_color_rgba: [u8; 4],
     pub brightness: u8,
     pub forced_blank: bool,
@@ -85,6 +86,7 @@ impl ModernFrame {
             ],
             sprites: Vec::new(),
             index_sprites: Vec::new(),
+            bg3_vwf_glyph_runs: Vec::new(),
             backdrop_color_rgba: [0, 0, 0, 0xff],
             brightness: 15,
             forced_blank: false,
@@ -111,6 +113,14 @@ impl ModernFrame {
             bg_scroll_scanlines: Vec::new(),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModernVwfGlyphRun {
+    pub glyph_code: u16,
+    pub screen_x: i16,
+    pub screen_y: i16,
+    pub width: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

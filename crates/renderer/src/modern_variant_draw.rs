@@ -486,6 +486,7 @@ pub(crate) fn compile_variant_draws_with_source_index<'a>(
             draw,
         });
     }
+    record_vwf_glyph_run_stats(frame, atlas, &mut plan.stats);
 
     plan
 }
@@ -554,8 +555,37 @@ pub(crate) fn compile_variant_draw_stats_with_source_index(
         let draw = resolve_draw_for_frame(atlas, source_index, key.as_ref(), false);
         stats.record_sprite_draw(&draw);
     }
+    record_vwf_glyph_run_stats(frame, atlas, &mut stats);
 
     stats
+}
+
+fn record_vwf_glyph_run_stats(
+    frame: &ModernFrame,
+    atlas: &ModernVariantAtlas,
+    stats: &mut VariantAtlasRenderStats,
+) {
+    for run in &frame.bg3_vwf_glyph_runs {
+        if dialogue_vwf_glyph_has_all_quadrants(atlas, run.glyph_code) {
+            stats.stable_draws += 4;
+            stats.stable_preview_draws += 4;
+        } else {
+            stats.missing_art_draws += 1;
+        }
+    }
+}
+
+fn dialogue_vwf_glyph_has_all_quadrants(atlas: &ModernVariantAtlas, glyph_code: u16) -> bool {
+    (0..4u16).all(|quadrant| {
+        variant_key_for_source_key(
+            crate::modern_source_atlas::modern_source_key(10, glyph_code, quadrant),
+            "palette_bg3_text_main",
+            0,
+        )
+        .as_ref()
+        .and_then(|key| atlas.entry_for_source_key(key))
+        .is_some()
+    })
 }
 
 pub fn trace_variant_plan_pixel(
@@ -960,6 +990,29 @@ mod tests {
         }
     }
 
+    fn dialogue_vwf_entry(code: u16, quadrant: u16) -> VariantAtlasEntry {
+        VariantAtlasEntry {
+            id: format!("dialogue_vwf:kDialogueVwfGlyphs:pack{code}:tile{quadrant}:2bpp"),
+            key: VariantAtlasKey {
+                source_kind: "dialogue_vwf".to_string(),
+                asset: "kDialogueVwfGlyphs".to_string(),
+                pack: code,
+                tile: quadrant,
+                bpp: 2,
+                palette: "palette_bg3_text_main".to_string(),
+                palette_row: 0,
+            },
+            rect: [0, 0, 8, 8],
+            sha1: "test".to_string(),
+            duplicate_of: None,
+            dynamic_policy: "stable".to_string(),
+            runtime_material: None,
+            runtime_colors_per_row: None,
+            source_hflip: false,
+            source_vflip: false,
+        }
+    }
+
     fn effect(palette_row: u8) -> TileEffect {
         TileEffect {
             id: format!("palette_dung_bg_main:8color:row{palette_row}"),
@@ -990,6 +1043,52 @@ mod tests {
             hflip: false,
             vflip: false,
         }
+    }
+
+    #[test]
+    fn dialogue_vwf_source_key_resolves_as_stable_rgba_atlas_art() {
+        let mut frame = ModernFrame::empty();
+        let mut bg3 = ModernBgLayer::new(2);
+        bg3.enabled_main = true;
+        bg3.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: modern_source_key(10, 0x41, 3),
+            screen_x: 4,
+            screen_y: 8,
+            palette: 7,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        frame.bg_layers[2] = bg3;
+
+        let bg_cells = vec![index_cell(0, NO_SOURCE_KEY)];
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0u8; 8 * 8 * 4],
+            entries: vec![dialogue_vwf_entry(0x41, 3)],
+            effects: Vec::new(),
+            mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
+        };
+
+        let plan = compile_variant_draws(
+            &frame,
+            &bg_cells,
+            &[],
+            &atlas,
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
+
+        assert_eq!(plan.bg.len(), 1);
+        assert!(matches!(plan.bg[0].draw, VariantAtlasDraw::Stable { .. }));
+        assert_eq!(plan.stats.stable_draws, 1);
+        assert_eq!(plan.stats.fallback_draws, 0);
+        assert_eq!(plan.stats.unkeyed_bg3_fallback_draws, 0);
     }
 
     #[test]
@@ -1040,6 +1139,9 @@ mod tests {
             entries: vec![bg_entry(0, 0, 0)],
             effects: vec![effect(2)],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let plan = compile_variant_draws(
@@ -1138,6 +1240,9 @@ mod tests {
             entries: vec![bg_entry(0, 0, 0)],
             effects: vec![effect(2)],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let plan = compile_variant_draws(
@@ -1214,6 +1319,9 @@ mod tests {
             entries: vec![],
             effects: vec![],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let bg_cells = vec![bg_cell];
         let sprite_cells = vec![sprite_cell];
@@ -1263,6 +1371,9 @@ mod tests {
             entries: vec![],
             effects: vec![],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let plan = compile_variant_draws(
@@ -1311,6 +1422,9 @@ mod tests {
             entries: vec![bg_entry(3, 5, 2)],
             effects: vec![effect(2)],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let plan = compile_variant_draws(
@@ -1363,6 +1477,9 @@ mod tests {
             entries: vec![bg_entry(3, 5, 0)],
             effects: vec![effect(2)],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let plan = compile_variant_draws(
@@ -1412,6 +1529,9 @@ mod tests {
             entries: vec![bg_entry(3, 5, 2)],
             effects: vec![effect(2)],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let plan = compile_variant_draws(
@@ -1464,6 +1584,9 @@ mod tests {
             entries: vec![bg_entry(3, 5, 2)],
             effects: vec![],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let plan = compile_variant_draws(
@@ -1511,6 +1634,9 @@ mod tests {
             entries: vec![sprite_entry(3, 5, 4)],
             effects: vec![sprite_effect(4)],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let plan = compile_variant_draws(
@@ -1562,6 +1688,9 @@ mod tests {
             entries: vec![bg_entry(3, 5, 0)],
             effects: vec![effect],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let bg_cells = vec![cell];
         let plan = compile_variant_draws(
@@ -1632,6 +1761,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let plan = compile_variant_draws(

@@ -427,9 +427,47 @@ impl ModernGpuVariantRenderer {
                 crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {}
             }
         }
+        self.append_vwf_glyph_runs_to_variant_frame(frame, &mut out);
 
         out
     }
+
+    fn append_vwf_glyph_runs_to_variant_frame(&self, frame: &ModernFrame, out: &mut ModernFrame) {
+        if frame.bg3_vwf_glyph_runs.is_empty() {
+            return;
+        }
+        out.bg_layers[1].enabled_main = true;
+        for run in &frame.bg3_vwf_glyph_runs {
+            for quadrant in 0..4u16 {
+                let Some(entry) = dialogue_vwf_variant_entry(&self.atlas, run.glyph_code, quadrant)
+                else {
+                    continue;
+                };
+                let qx = i16::from((quadrant & 1) as u8) * 8;
+                let qy = i16::from((quadrant >> 1) as u8) * 8;
+                out.bg_layers[1].tiles.push(variant_tile_instance(
+                    entry,
+                    run.screen_x + qx,
+                    run.screen_y + qy,
+                    false,
+                    false,
+                ));
+            }
+        }
+    }
+}
+
+fn dialogue_vwf_variant_entry(
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+    glyph_code: u16,
+    quadrant: u16,
+) -> Option<&crate::modern_variant_atlas::VariantAtlasEntry> {
+    let key = crate::modern_variant_atlas::variant_key_for_source_key(
+        crate::modern_source_atlas::modern_source_key(10, glyph_code, quadrant),
+        "palette_bg3_text_main",
+        0,
+    )?;
+    atlas.entry_for_source_key(&key)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4636,6 +4674,70 @@ mod tests {
     }
 
     #[test]
+    fn headless_gpu_variant_draws_vwf_glyph_runs_from_source_png_entries() {
+        use crate::modern_frame::ModernVwfGlyphRun;
+        use crate::modern_variant_atlas::{ModernVariantAtlas, VariantAtlasEntry, VariantAtlasKey};
+
+        fn vwf_entry(code: u16, quadrant: u16) -> VariantAtlasEntry {
+            VariantAtlasEntry {
+                id: format!("dialogue_vwf:kDialogueVwfGlyphs:pack{code}:tile{quadrant}:2bpp"),
+                key: VariantAtlasKey {
+                    source_kind: "dialogue_vwf".to_string(),
+                    asset: "kDialogueVwfGlyphs".to_string(),
+                    pack: code,
+                    tile: quadrant,
+                    bpp: 2,
+                    palette: "palette_bg3_text_main".to_string(),
+                    palette_row: 0,
+                },
+                rect: [
+                    u32::from(quadrant & 1) * 8,
+                    u32::from(quadrant >> 1) * 8,
+                    8,
+                    8,
+                ],
+                sha1: format!("test:{quadrant}"),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                runtime_material: None,
+                runtime_colors_per_row: None,
+                source_hflip: false,
+                source_vflip: false,
+            }
+        }
+
+        let mut rgba = vec![0u8; 16 * 16 * 4];
+        let src = (3 * 16 + 2) * 4;
+        rgba[src..src + 4].copy_from_slice(&[248, 248, 248, 255]);
+        let atlas = ModernVariantAtlas {
+            width: 16,
+            height: 16,
+            rgba,
+            entries: (0..4).map(|quadrant| vwf_entry(0x41, quadrant)).collect(),
+            effects: Vec::new(),
+            mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
+        };
+        let mut frame = ModernFrame::empty();
+        frame.bg3_vwf_glyph_runs.push(ModernVwfGlyphRun {
+            glyph_code: 0x41,
+            screen_x: 10,
+            screen_y: 20,
+            width: 8,
+        });
+
+        let renderer = ModernGpuVariantHeadless::new(&atlas);
+        let (out, stats) = renderer.render_rgba(&frame, &[], &[], "unused", "unused");
+
+        let dst = ((20 + 3) * 256 + (10 + 2)) * 4;
+        assert_eq!(&out[dst..dst + 4], &[248, 248, 248, 255]);
+        assert_eq!(stats.stable_preview_draws, 4);
+        assert_eq!(stats.stable_draws, 4);
+    }
+
+    #[test]
     fn variant_render_path_preserves_headless_empty_frame_path() {
         let empty = VariantAtlasRenderStats::default();
         assert_eq!(
@@ -4816,6 +4918,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let render_plan = execution.mode1_effect_render_plan(&atlas);
         let rank_plans = render_plan.rank_plans();
@@ -4896,6 +5001,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let execution =
@@ -5812,6 +5920,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
             &frame,
@@ -5878,6 +5989,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let headless = ModernGpuVariantHeadless::new(&atlas);
         let (untraced, untraced_stats) = headless.render_rgba(
@@ -5974,6 +6088,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
@@ -6069,6 +6186,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas)
@@ -6442,6 +6562,9 @@ mod tests {
             entries: vec![entry.clone()],
             effects: vec![effect.clone()],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let cell = ModernIndexTile {
             id: 0,
@@ -6625,6 +6748,9 @@ mod tests {
             entries: vec![entry.clone()],
             effects: vec![effect.clone()],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let mut static_indices = [0u8; 64];
@@ -6780,6 +6906,9 @@ mod tests {
             entries: vec![entry.clone()],
             effects: vec![effect.clone()],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let mut static_indices = [0u8; 64];
@@ -7045,6 +7174,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
@@ -7203,6 +7335,9 @@ mod tests {
                 },
             ],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
@@ -7291,6 +7426,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas)
             .render_rgba_with_live_index_base(
@@ -7425,6 +7563,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas)
@@ -7606,6 +7747,9 @@ mod tests {
                 },
             ],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let plan = crate::modern_variant_draw::compile_variant_draws(
             &frame,
@@ -7994,6 +8138,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let plan = crate::modern_variant_draw::compile_variant_draws(
             &frame,
@@ -8091,6 +8238,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let plan = crate::modern_variant_draw::compile_variant_draws(
             &frame,
@@ -8189,6 +8339,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let plan = crate::modern_variant_draw::compile_variant_draws(
             &frame,
@@ -8275,6 +8428,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let plan = crate::modern_variant_draw::compile_variant_draws(
             &frame,
@@ -8393,6 +8549,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let plan = crate::modern_variant_draw::compile_variant_draws(
             &frame,
@@ -8451,6 +8610,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let (_variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
             &frame,
@@ -8553,6 +8715,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
             &frame,
@@ -8627,6 +8792,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
             &frame,
@@ -8693,6 +8861,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
             &frame,
@@ -8874,6 +9045,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas)
             .render_rgba_with_live_index_base(
@@ -8942,6 +9116,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba(
             &frame,
@@ -9068,6 +9245,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (variant, stats) = ModernGpuVariantHeadless::new(&atlas)
@@ -9225,6 +9405,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -9383,6 +9566,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -9510,6 +9696,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
@@ -9676,6 +9865,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -9815,6 +10007,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
@@ -9979,6 +10174,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -10184,6 +10382,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -10394,6 +10595,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -10616,6 +10820,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
@@ -10814,6 +11021,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
@@ -11048,6 +11258,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -11208,6 +11421,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
@@ -11375,6 +11591,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: Some(atlas_chars),
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let variant_headless = ModernGpuVariantHeadless::new(&variant_atlas);
 
@@ -11413,6 +11632,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
         let variant_headless = ModernGpuVariantHeadless::new(&variant_atlas);
 
@@ -11713,6 +11935,8 @@ mod tests {
             windowsel_cm: 0,
             windowsel: 0,
             scanlines: Box::new([crate::gpu_frame::ScanlineRegs::default(); 224]),
+            bg3_source_tiles: &[],
+            bg3_vwf_glyph_runs: &[],
         }
     }
 
@@ -11894,6 +12118,9 @@ mod tests {
                     },
                 ],
                 mode7_source_chars: None,
+                dialogue_glyph_atlas: None,
+                dialogue_vwf_font: None,
+                dialogue_vwf_glyph_atlas: None,
             };
 
             let cells = vec![ModernIndexTile {
@@ -12095,6 +12322,9 @@ mod tests {
                 entries: Vec::new(),
                 effects: Vec::new(),
                 mode7_source_chars: None,
+                dialogue_glyph_atlas: None,
+                dialogue_vwf_font: None,
+                dialogue_vwf_glyph_atlas: None,
             };
             let renderer = ModernGpuVariantRenderer::new(
                 &device,

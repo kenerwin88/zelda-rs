@@ -306,8 +306,69 @@ pub fn render_modern_frame_software_variant_atlas(
             }
         }
     }
+    draw_vwf_glyph_runs(&mut out, frame, atlas);
 
     (out, plan.stats)
+}
+
+fn draw_vwf_glyph_runs(
+    out: &mut [u8],
+    frame: &ModernFrame,
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+) {
+    for run in &frame.bg3_vwf_glyph_runs {
+        for quadrant in 0..4u16 {
+            let Some(entry) = dialogue_vwf_variant_entry(atlas, run.glyph_code, quadrant) else {
+                continue;
+            };
+            let qx = i16::from((quadrant & 1) as u8) * 8;
+            let qy = i16::from((quadrant >> 1) as u8) * 8;
+            draw_stable_variant_rect(out, atlas, entry, run.screen_x + qx, run.screen_y + qy);
+        }
+    }
+}
+
+fn dialogue_vwf_variant_entry(
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+    glyph_code: u16,
+    quadrant: u16,
+) -> Option<&crate::modern_variant_atlas::VariantAtlasEntry> {
+    let key = crate::modern_variant_atlas::variant_key_for_source_key(
+        crate::modern_source_atlas::modern_source_key(10, glyph_code, quadrant),
+        "palette_bg3_text_main",
+        0,
+    )?;
+    atlas.entry_for_source_key(&key)
+}
+
+fn draw_stable_variant_rect(
+    out: &mut [u8],
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
+    screen_x: i16,
+    screen_y: i16,
+) {
+    let width = usize::from(MODERN_FRAME_WIDTH);
+    for sy in 0..entry.rect[3] as usize {
+        for sx in 0..entry.rect[2] as usize {
+            let atlas_x = entry.rect[0] as usize + sx;
+            let atlas_y = entry.rect[1] as usize + sy;
+            if atlas_x >= atlas.width as usize || atlas_y >= atlas.height as usize {
+                continue;
+            }
+            let src = (atlas_y * atlas.width as usize + atlas_x) * 4;
+            if atlas.rgba[src + 3] == 0 {
+                continue;
+            }
+            let dst_x = screen_x + sx as i16;
+            let dst_y = screen_y + sy as i16;
+            if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                continue;
+            }
+            let dst = (dst_y as usize * width + dst_x as usize) * 4;
+            out[dst..dst + 4].copy_from_slice(&atlas.rgba[src..src + 4]);
+        }
+    }
 }
 
 fn draw_variant_bg_instance(
@@ -3090,6 +3151,76 @@ mod tests {
     }
 
     #[test]
+    fn variant_atlas_software_draws_vwf_glyph_runs_from_source_png_entries() {
+        use crate::modern_frame::ModernVwfGlyphRun;
+        use crate::modern_variant_atlas::{ModernVariantAtlas, VariantAtlasEntry, VariantAtlasKey};
+
+        fn vwf_entry(code: u16, quadrant: u16) -> VariantAtlasEntry {
+            VariantAtlasEntry {
+                id: format!("dialogue_vwf:kDialogueVwfGlyphs:pack{code}:tile{quadrant}:2bpp"),
+                key: VariantAtlasKey {
+                    source_kind: "dialogue_vwf".to_string(),
+                    asset: "kDialogueVwfGlyphs".to_string(),
+                    pack: code,
+                    tile: quadrant,
+                    bpp: 2,
+                    palette: "palette_bg3_text_main".to_string(),
+                    palette_row: 0,
+                },
+                rect: [
+                    u32::from(quadrant & 1) * 8,
+                    u32::from(quadrant >> 1) * 8,
+                    8,
+                    8,
+                ],
+                sha1: format!("test:{quadrant}"),
+                duplicate_of: None,
+                dynamic_policy: "stable".to_string(),
+                runtime_material: None,
+                runtime_colors_per_row: None,
+                source_hflip: false,
+                source_vflip: false,
+            }
+        }
+
+        let mut rgba = vec![0u8; 16 * 16 * 4];
+        let src = (3 * 16 + 2) * 4;
+        rgba[src..src + 4].copy_from_slice(&[248, 248, 248, 255]);
+        let atlas = ModernVariantAtlas {
+            width: 16,
+            height: 16,
+            rgba,
+            entries: (0..4).map(|quadrant| vwf_entry(0x41, quadrant)).collect(),
+            effects: Vec::new(),
+            mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
+        };
+        let mut frame = ModernFrame::empty();
+        frame.bg3_vwf_glyph_runs.push(ModernVwfGlyphRun {
+            glyph_code: 0x41,
+            screen_x: 10,
+            screen_y: 20,
+            width: 8,
+        });
+
+        let (out, stats) = render_modern_frame_software_variant_atlas(
+            &frame,
+            &[],
+            &[],
+            &atlas,
+            "unused",
+            "unused",
+        );
+
+        let dst = ((20 + 3) * 256 + (10 + 2)) * 4;
+        assert_eq!(&out[dst..dst + 4], &[248, 248, 248, 255]);
+        assert_eq!(stats.stable_preview_draws, 4);
+        assert_eq!(stats.stable_draws, 4);
+    }
+
+    #[test]
     fn variant_atlas_software_matches_indexed_bg_tile() {
         use crate::modern_source_atlas::modern_source_key;
         use crate::modern_variant_atlas::{ModernVariantAtlas, VariantAtlasEntry, VariantAtlasKey};
@@ -3147,6 +3278,9 @@ mod tests {
             }],
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let indexed = render_modern_frame_software_indexed(&frame, &cells);
@@ -3247,6 +3381,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (variant, stats) = render_modern_frame_software_variant_atlas(
@@ -3342,6 +3479,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (variant, stats) = render_modern_frame_software_variant_atlas(
@@ -3421,6 +3561,9 @@ mod tests {
             }],
             effects: Vec::new(),
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (variant, stats) = render_modern_frame_software_variant_atlas(
@@ -3517,6 +3660,9 @@ mod tests {
                 dynamic_policy: "stable".to_string(),
             }],
             mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         };
 
         let (variant, stats) = render_modern_frame_software_variant_atlas(

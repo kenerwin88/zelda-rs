@@ -191,6 +191,8 @@ mod tests {
             windowsel_cm: 0,
             windowsel: 0,
             scanlines: Box::new([ScanlineRegs::default(); 224]),
+            bg3_source_tiles: &[],
+            bg3_vwf_glyph_runs: &[],
         }
     }
 

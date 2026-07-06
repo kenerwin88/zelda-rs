@@ -60,8 +60,9 @@ pub use frame_compare::{
     RenderFrameHashReport, RenderHashPair,
 };
 pub use gpu_frame::{
-    BgLayerRegs, GpuFrame, GpuFrameCaptureInput, GpuFrameRegisterSnapshot, GpuFrameSource,
-    Mode7Regs, ObjRegs, RawScanlineFrame, RawScanlineRegs, ScanlineRegs,
+    BgLayerRegs, GpuBg3SourceTile, GpuBg3VwfGlyphRun, GpuFrame, GpuFrameCaptureInput,
+    GpuFrameRegisterSnapshot, GpuFrameSource, Mode7Regs, ObjRegs, RawScanlineFrame,
+    RawScanlineRegs, ScanlineRegs,
 };
 pub use gpu_renderer::GpuFrameRenderer;
 pub use mode7_renderer::Mode7Renderer;
@@ -2227,6 +2228,7 @@ pub struct ModernIndexCompareResources {
 pub struct ModernAssetReadbackFrame {
     pub rgba: Vec<u8>,
     pub via: &'static str,
+    pub variant_stats: Option<modern_software::VariantAtlasRenderStats>,
 }
 
 pub struct ModernAssetValidationFrame {
@@ -2346,6 +2348,7 @@ impl ModernIndexCompareResources {
         Ok(ModernAssetReadbackFrame {
             rgba: render.rgba,
             via: render.via,
+            variant_stats: render.variant_stats,
         })
     }
 
@@ -3880,6 +3883,9 @@ mod tests {
             entries: Vec::new(),
             effects: Vec::new(),
             mode7_source_chars: chars,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
         }
     }
 
@@ -4058,6 +4064,8 @@ mod tests {
             windowsel_cm: 0,
             windowsel: 0,
             scanlines: Box::new([gpu_frame::ScanlineRegs::default(); 224]),
+            bg3_source_tiles: &[],
+            bg3_vwf_glyph_runs: &[],
         };
         let entries: [(u8, u16, u16); 0] = [];
 
@@ -4113,6 +4121,8 @@ mod tests {
             windowsel_cm: 0,
             windowsel: 0,
             scanlines: Box::new([gpu_frame::ScanlineRegs::default(); 224]),
+            bg3_source_tiles: &[],
+            bg3_vwf_glyph_runs: &[],
         };
         let entries: [(u8, u16, u16); 0] = [];
 
@@ -4425,6 +4435,8 @@ mod tests {
             windowsel_cm: 0,
             windowsel: 0,
             scanlines,
+            bg3_source_tiles: &[],
+            bg3_vwf_glyph_runs: &[],
         };
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

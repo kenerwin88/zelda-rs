@@ -2,6 +2,7 @@ use crate::gpu_frame::GpuFrame;
 use crate::modern_assets::{atlas_entry_for_tilemap_entry, ModernTileAtlasAsset};
 use crate::modern_frame::{
     ModernFrame, ModernIndexSpriteInstance, ModernIndexTileInstance, ModernTileInstance,
+    ModernVwfGlyphRun,
 };
 use crate::modern_index_atlas::{index_cell_for_tilemap_entry, ModernIndexAtlas, ModernIndexTile};
 use crate::modern_source_atlas::source_cell_by_indices;
@@ -1249,6 +1250,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
     let mut dbg_samples: Vec<(usize, usize, u8, u16, u16)> = Vec::new();
     // key: (atlas cell id, hflip, vflip) -> local flip-baked cell id
     let mut cell_ids: HashMap<(u32, bool, bool), u32> = HashMap::new();
+    let mut bg3_tile_screen_xy: HashMap<u16, (i16, i16)> = HashMap::new();
     // BG3 (the HUD/message layer) is partly procedural: digit and item-icon glyphs can
     // be streamed into a small set of 2bpp CHR slots, so the same `(tile_number,
     // palette)` may hold different pixels across the route. The source dump keeps only
@@ -1311,69 +1313,100 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                         *b = if p == 0 { 0 } else { pal * 4 + p };
                     }
                     let content_hash = index_pattern_hash32(&baked);
-                    let source_hit = [
-                        (CHR_KIND_BG3, stable_pack, 0),
-                        (
-                            CHR_KIND_BG3_CONTENT,
-                            (content_hash >> 16) as u16,
-                            (content_hash & 0xffff) as u16,
-                        ),
-                    ]
-                    .into_iter()
-                    .find_map(|(kind, pack, tile_off)| {
-                        source_cell(atlas, kind, pack, tile_off)
-                            .map(|src| (kind, pack, tile_off, src))
-                    });
-                    match source_hit {
-                        Some((kind, pack, tile_off, src)) => {
-                            let source_key =
-                                crate::modern_source_atlas::modern_source_key(kind, pack, tile_off);
-                            let id = *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
-                                let indices = flip_index_pattern(&src.indices, hflip, vflip);
-                                let id = cells.len() as u32;
-                                cells.push(ModernIndexTile {
-                                    id,
-                                    indices,
-                                    source_key,
-                                    hflip,
-                                    vflip,
-                                });
-                                id
-                            });
-                            (id, 0u8, source_key, None)
-                        }
-                        None => {
-                            // Dedup key: chr_base + tile# + flip + palette (priority bit
-                            // dropped). The fallback uses the exact baked live pattern, flipped
-                            // to match the tilemap entry.
-                            let map_key = entry_word & 0xDFFF;
-                            let id =
-                                *bg3_cell_ids.entry((chr_base, map_key)).or_insert_with(|| {
-                                    let baked = flip_index_pattern(&baked, hflip, vflip);
-                                    let id = cells.len() as u32;
-                                    cells.push(ModernIndexTile {
-                                        id,
-                                        indices: baked,
-                                        source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
-                                        hflip: false,
-                                        vflip: false,
-                                    });
-                                    id
-                                });
-                            (
+                    let bg3_source_key = frame
+                        .bg3_source_tiles
+                        .iter()
+                        .find(|tile| {
+                            usize::from(tile.chr_base) == chr_base
+                                && usize::from(tile.tile_number) == tile_number
+                        })
+                        .map(|tile| tile.source_key)
+                        .filter(|&source_key| {
+                            source_key != crate::modern_hd_overrides::NO_SOURCE_KEY
+                        });
+                    if let Some(source_key) = bg3_source_key {
+                        let map_key = entry_word & 0xDFFF;
+                        let id = *bg3_cell_ids.entry((chr_base, map_key)).or_insert_with(|| {
+                            let baked = flip_index_pattern(&baked, hflip, vflip);
+                            let id = cells.len() as u32;
+                            cells.push(ModernIndexTile {
                                 id,
-                                0u8,
-                                crate::modern_hd_overrides::NO_SOURCE_KEY,
-                                Some(MissingAssetCandidate {
-                                    source_kind: CHR_KIND_BG3_CONTENT,
-                                    source_pack: (content_hash >> 16) as u16,
-                                    source_tile_off: (content_hash & 0xffff) as u16,
-                                    chr_slot: (chr_base / 8 + tile_number) as u32,
-                                    tile_number: tile_number as u16,
-                                    tilemap_word: entry_word,
-                                    pattern_hash: index_pattern_hash32(&baked),
-                                }),
-                            )
+                                indices: baked,
+                                source_key,
+                                hflip: false,
+                                vflip: false,
+                            });
+                            id
+                        });
+                        (id, 0u8, source_key, None)
+                    } else {
+                        let source_hit = [
+                            (CHR_KIND_BG3, stable_pack, 0),
+                            (
+                                CHR_KIND_BG3_CONTENT,
+                                (content_hash >> 16) as u16,
+                                (content_hash & 0xffff) as u16,
+                            ),
+                        ]
+                        .into_iter()
+                        .find_map(|(kind, pack, tile_off)| {
+                            source_cell(atlas, kind, pack, tile_off)
+                                .map(|src| (kind, pack, tile_off, src))
+                        });
+                        match source_hit {
+                            Some((kind, pack, tile_off, src)) => {
+                                let source_key = crate::modern_source_atlas::modern_source_key(
+                                    kind, pack, tile_off,
+                                );
+                                let id =
+                                    *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
+                                        let indices =
+                                            flip_index_pattern(&src.indices, hflip, vflip);
+                                        let id = cells.len() as u32;
+                                        cells.push(ModernIndexTile {
+                                            id,
+                                            indices,
+                                            source_key,
+                                            hflip,
+                                            vflip,
+                                        });
+                                        id
+                                    });
+                                (id, 0u8, source_key, None)
+                            }
+                            None => {
+                                // Dedup key: chr_base + tile# + flip + palette (priority bit
+                                // dropped). The fallback uses the exact baked live pattern, flipped
+                                // to match the tilemap entry.
+                                let map_key = entry_word & 0xDFFF;
+                                let id =
+                                    *bg3_cell_ids.entry((chr_base, map_key)).or_insert_with(|| {
+                                        let baked = flip_index_pattern(&baked, hflip, vflip);
+                                        let id = cells.len() as u32;
+                                        cells.push(ModernIndexTile {
+                                            id,
+                                            indices: baked,
+                                            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                            hflip: false,
+                                            vflip: false,
+                                        });
+                                        id
+                                    });
+                                (
+                                    id,
+                                    0u8,
+                                    crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                    Some(MissingAssetCandidate {
+                                        source_kind: CHR_KIND_BG3_CONTENT,
+                                        source_pack: (content_hash >> 16) as u16,
+                                        source_tile_off: (content_hash & 0xffff) as u16,
+                                        chr_slot: (chr_base / 8 + tile_number) as u32,
+                                        tile_number: tile_number as u16,
+                                        tilemap_word: entry_word,
+                                        pattern_hash: index_pattern_hash32(&baked),
+                                    }),
+                                )
+                            }
                         }
                     }
                 } else {
@@ -1593,6 +1626,11 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                 if sy >= 224 {
                     sy -= bg_h;
                 }
+                if layer_index == 2 {
+                    bg3_tile_screen_xy
+                        .entry(tile_number as u16)
+                        .or_insert((sx as i16, sy as i16));
+                }
                 modern.bg_layers[layer_index]
                     .index_tiles
                     .push(ModernIndexTileInstance {
@@ -1631,6 +1669,23 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
             }
         }
     }
+    modern.bg3_vwf_glyph_runs = frame
+        .bg3_vwf_glyph_runs
+        .iter()
+        .filter_map(|run| {
+            let (origin_x, origin_y) = bg3_tile_screen_xy
+                .get(&run.origin_tile_number)
+                .copied()
+                .or_else(|| bg3_tilemap_offset_screen_xy(frame, run.origin_tile_number))?;
+            Some(ModernVwfGlyphRun {
+                glyph_code: run.glyph_code,
+                screen_x: origin_x + run.x,
+                screen_y: origin_y + run.y,
+                width: run.width,
+            })
+        })
+        .collect();
+    cull_bg3_dynamic_tiles_covered_by_vwf_glyph_runs(&mut modern, &mut missing_sources);
     if dbg {
         eprintln!("[SRC_DEBUG] bg_tiles={dbg_total} wrong_cell={dbg_mismatch} gap={dbg_gap} stale_of_kind6={dbg_stale}");
         for (slot, tile, kind, pack, off) in &dbg_samples {
@@ -1640,6 +1695,90 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
         }
     }
     (modern, cells, missing_sources)
+}
+
+fn cull_bg3_dynamic_tiles_covered_by_vwf_glyph_runs(
+    modern: &mut ModernFrame,
+    missing_sources: &mut Vec<MissingAssetSource>,
+) {
+    if modern.bg3_vwf_glyph_runs.is_empty() {
+        return;
+    }
+    let Some(bg3) = modern.bg_layers.get_mut(2) else {
+        return;
+    };
+    bg3.index_tiles.retain(|inst| {
+        !is_dynamic_or_unkeyed_bg3_source(inst.source_key)
+            || !modern.bg3_vwf_glyph_runs.iter().any(|run| {
+                rects_overlap(
+                    inst.screen_x,
+                    inst.screen_y,
+                    8,
+                    8,
+                    run.screen_x,
+                    run.screen_y,
+                    16,
+                    16,
+                )
+            })
+    });
+    missing_sources.retain(|missing| {
+        missing.surface != MissingAssetSurface::Bg
+            || missing.layer_index != Some(2)
+            || !modern.bg3_vwf_glyph_runs.iter().any(|run| {
+                rects_overlap(
+                    missing.screen_x,
+                    missing.screen_y,
+                    8,
+                    8,
+                    run.screen_x,
+                    run.screen_y,
+                    16,
+                    16,
+                )
+            })
+    });
+}
+
+fn is_dynamic_or_unkeyed_bg3_source(source_key: u64) -> bool {
+    if source_key == crate::modern_hd_overrides::NO_SOURCE_KEY {
+        return true;
+    }
+    ((source_key >> 32) as u8) == CHR_KIND_BG3_CONTENT
+}
+
+fn rects_overlap(ax: i16, ay: i16, aw: i16, ah: i16, bx: i16, by: i16, bw: i16, bh: i16) -> bool {
+    let ax0 = i32::from(ax);
+    let ay0 = i32::from(ay);
+    let bx0 = i32::from(bx);
+    let by0 = i32::from(by);
+    ax0 < bx0 + i32::from(bw)
+        && bx0 < ax0 + i32::from(aw)
+        && ay0 < by0 + i32::from(bh)
+        && by0 < ay0 + i32::from(ah)
+}
+
+fn bg3_tilemap_offset_screen_xy(frame: &GpuFrame<'_>, tilemap_offset: u16) -> Option<(i16, i16)> {
+    let layer = frame.bg.get(2)?;
+    let cols = if layer.tilemap_wider { 64usize } else { 32 };
+    let rows = if layer.tilemap_higher { 64usize } else { 32 };
+    let offset = usize::from(tilemap_offset);
+    let tx = offset % 32;
+    let ty = offset / 32;
+    if tx >= cols || ty >= rows {
+        return None;
+    }
+    let bg_w = (cols * 8) as i32;
+    let bg_h = (rows * 8) as i32;
+    let mut sx = ((tx * 8) as i32 - i32::from(layer.h_scroll)).rem_euclid(bg_w);
+    if sx >= 256 {
+        sx -= bg_w;
+    }
+    let mut sy = ((ty * 8) as i32 - i32::from(layer.v_scroll) - 1).rem_euclid(bg_h);
+    if sy >= 224 {
+        sy -= bg_h;
+    }
+    Some((sx as i16, sy as i16))
 }
 
 /// Decode OAM into palette-index sprite-tile instances whose 8x8 patterns come
@@ -1918,7 +2057,7 @@ fn unresolved_sources_for_modern_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gpu_frame::{GpuFrame, ScanlineRegs};
+    use crate::gpu_frame::{GpuBg3VwfGlyphRun, GpuFrame, ScanlineRegs};
     use crate::modern_assets::{ModernTileAtlasAsset, ModernTileAtlasEntry};
     use crate::modern_index_atlas::ModernIndexTile;
     use crate::modern_palette::snes_cgram_to_rgba;
@@ -2356,6 +2495,43 @@ mod tests {
             tiles[0].source_key,
             modern_source_key(CHR_KIND_BG3, source_pack, 0)
         );
+    }
+
+    #[test]
+    fn extract_from_sources_prefers_bg3_source_tile_sidecar_key() {
+        use crate::gpu_frame::GpuBg3SourceTile;
+        use crate::modern_source_atlas::{modern_source_key, ModernSourceAtlas};
+
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![], &[]);
+        let table = |_slot: usize| -> (u8, u16, u16) { (0, 0, 0) };
+
+        let mut vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        vram[0] = 7 | (3 << 10);
+        vram[0x1038] = 0x8000;
+        let source_key = modern_source_key(10, 0x41, 3);
+        let sidecar = [GpuBg3SourceTile {
+            chr_base: 0x1000,
+            tile_number: 7,
+            source_key,
+        }];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        frame.bg[2].tilemap_adr = 0;
+        frame.bg[2].tile_adr = 0x1000;
+        frame.screen_enabled = [0x04, 0x00];
+        frame.bg3_source_tiles = &sidecar;
+
+        let (modern, cells) = extract_modern_frame_from_sources(&frame, &table, &atlas);
+
+        assert_eq!(cells.len(), 1, "BG3 live mask cell emitted");
+        assert_eq!(cells[0].indices[0], 14);
+        assert_eq!(cells[0].source_key, source_key);
+        let tiles = &modern.bg_layers[2].index_tiles;
+        assert_eq!(tiles.len(), 1);
+        assert_eq!(tiles[0].palette, 0);
+        assert_eq!(tiles[0].source_key, source_key);
     }
 
     #[test]
@@ -3212,6 +3388,129 @@ mod tests {
         );
     }
 
+    #[test]
+    fn extract_modern_frame_from_sources_places_vwf_glyph_runs_in_screen_space() {
+        use crate::modern_source_atlas::ModernSourceAtlas;
+
+        let mut vram = vec![0u16; 0x8000];
+        vram[0] = 0x3980; // BG3 tile number 0x180 at the VWF text-grid origin.
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        let runs = [GpuBg3VwfGlyphRun {
+            glyph_code: 0x41,
+            origin_tile_number: 0x180,
+            x: 7,
+            y: 2,
+            width: 8,
+        }];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.screen_enabled[0] = 1 << 2;
+        frame.bg[2].tilemap_adr = 0;
+        frame.bg[2].tile_adr = 0;
+        frame.bg3_vwf_glyph_runs = &runs;
+
+        let table = |_slot: usize| (0, 0, 0);
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![], &[]);
+        let (modern, _) = extract_modern_frame_from_sources(&frame, &table, &atlas);
+
+        assert_eq!(modern.bg3_vwf_glyph_runs.len(), 1);
+        assert_eq!(modern.bg3_vwf_glyph_runs[0].glyph_code, 0x41);
+        assert_eq!(modern.bg3_vwf_glyph_runs[0].screen_x, 7);
+        // BG extraction applies the SNES BG vertical fetch offset (`-1`).
+        assert_eq!(modern.bg3_vwf_glyph_runs[0].screen_y, 1);
+        assert_eq!(modern.bg3_vwf_glyph_runs[0].width, 8);
+    }
+
+    #[test]
+    fn extract_from_sources_culls_dynamic_bg3_tiles_covered_by_vwf_glyph_runs() {
+        use crate::gpu_frame::GpuBg3VwfGlyphRun;
+        use crate::modern_source_atlas::{modern_source_key, ModernSourceAtlas};
+
+        let mut baked = [0u8; 64];
+        baked[0] = 14;
+        let content_hash = index_pattern_hash32(&baked);
+        let source_pack = (content_hash >> 16) as u16;
+        let source_tile = (content_hash & 0xffff) as u16;
+        let source_cell = ModernIndexTile {
+            id: 0,
+            indices: baked,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        };
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
+            vec![source_cell],
+            &[(CHR_KIND_BG3_CONTENT, source_pack, source_tile, 0)],
+        );
+        let table = |_slot: usize| -> (u8, u16, u16) { (0, 0, 0) };
+
+        let mut vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        vram[0] = 7 | (3 << 10);
+        vram[0x1038] = 0x8000;
+        let runs = [GpuBg3VwfGlyphRun {
+            glyph_code: 0x41,
+            origin_tile_number: 7,
+            x: 0,
+            y: 0,
+            width: 8,
+        }];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        frame.bg[2].tilemap_adr = 0;
+        frame.bg[2].tile_adr = 0x1000;
+        frame.screen_enabled = [0x04, 0x00];
+        frame.bg3_vwf_glyph_runs = &runs;
+
+        let (modern, cells, missing_sources) =
+            extract_modern_frame_from_sources_with_missing_sources(&frame, &table, &atlas);
+
+        assert_eq!(cells.len(), 1, "dynamic BG3 content cell was decoded");
+        assert_eq!(
+            cells[0].source_key,
+            modern_source_key(CHR_KIND_BG3_CONTENT, source_pack, source_tile)
+        );
+        assert!(
+            modern.bg_layers[2].index_tiles.is_empty(),
+            "VWF source glyph run should own the covered dynamic BG3 text tile"
+        );
+        assert!(missing_sources.is_empty());
+        assert_eq!(modern.bg3_vwf_glyph_runs.len(), 1);
+        assert_eq!(modern.bg3_vwf_glyph_runs[0].glyph_code, 0x41);
+    }
+
+    #[test]
+    fn extract_modern_frame_from_sources_places_vwf_glyph_runs_from_tilemap_offset() {
+        use crate::modern_source_atlas::ModernSourceAtlas;
+
+        let vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        let runs = [GpuBg3VwfGlyphRun {
+            glyph_code: 0x18,
+            origin_tile_number: 0x180,
+            x: 7,
+            y: 0,
+            width: 7,
+        }];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.screen_enabled[0] = 1 << 2;
+        frame.bg[2].h_scroll = 0;
+        frame.bg[2].v_scroll = 0;
+        frame.bg3_vwf_glyph_runs = &runs;
+
+        let table = |_slot: usize| (0, 0, 0);
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![], &[]);
+        let (modern, _) = extract_modern_frame_from_sources(&frame, &table, &atlas);
+
+        assert_eq!(modern.bg3_vwf_glyph_runs.len(), 1);
+        assert_eq!(modern.bg3_vwf_glyph_runs[0].glyph_code, 0x18);
+        assert_eq!(modern.bg3_vwf_glyph_runs[0].screen_x, 7);
+        assert_eq!(modern.bg3_vwf_glyph_runs[0].screen_y, 95);
+        assert_eq!(modern.bg3_vwf_glyph_runs[0].width, 7);
+    }
+
     fn test_gpu_frame<'a>(
         vram: &'a [u16],
         cgram: &'a [u16],
@@ -3246,6 +3545,8 @@ mod tests {
             windowsel_cm: 0,
             windowsel: 0,
             scanlines: Box::new([ScanlineRegs::default(); 224]),
+            bg3_source_tiles: &[],
+            bg3_vwf_glyph_runs: &[],
         }
     }
 

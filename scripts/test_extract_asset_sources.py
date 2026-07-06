@@ -506,11 +506,18 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                         "image_file": "atlas/art_tiles.png",
                         "manifest_file": "atlas/art_tiles.json",
                         "source_format": "zelda3_canonical_art_atlas_v1",
-                    }
+                    },
+                    {
+                        "image_file": "atlas/dynamic_bg3_tiles.png",
+                        "manifest_file": "atlas/dynamic_bg3_tiles.json",
+                        "source_format": "zelda3_dynamic_bg3_art_atlas_v1",
+                    },
                 ],
             )
             self.assertTrue((out_dir / "atlas/art_tiles.png").is_file())
             self.assertTrue((out_dir / "atlas/art_tiles.json").is_file())
+            self.assertTrue((out_dir / "atlas/dynamic_bg3_tiles.png").is_file())
+            self.assertTrue((out_dir / "atlas/dynamic_bg3_tiles.json").is_file())
 
     def test_canonical_art_atlas_is_required_for_default_extraction(self) -> None:
         with TemporaryDirectory() as temp_dir:

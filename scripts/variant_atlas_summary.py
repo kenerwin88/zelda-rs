@@ -132,6 +132,10 @@ def summarize_variant_atlas(atlas_dir: Path) -> dict[str, Any]:
                 missing_effect_refs += 1
 
     manifest_source_refs = art_manifest.get("source_ref_count")
+    dynamic_bg3_summary = _summarize_dynamic_bg3_atlas(atlas_dir)
+    dialogue_glyph_summary = _summarize_dialogue_glyph_atlas(atlas_dir)
+    dialogue_vwf_summary = _summarize_dialogue_vwf_font(atlas_dir)
+    dialogue_vwf_glyph_summary = _summarize_dialogue_vwf_glyph_atlas(atlas_dir)
     return {
         "art_count": art_manifest.get("art_count", len(art_manifest.get("arts", []))),
         "counted_art_entries": counted_art_entries,
@@ -151,6 +155,150 @@ def summarize_variant_atlas(atlas_dir: Path) -> dict[str, Any]:
         "stable_by_kind": dict(sorted(stable_by_kind.items())),
         "source_refs_by_kind": dict(sorted(source_refs_by_kind.items())),
         "preview_sources": dict(sorted(preview_sources.items())),
+        "dynamic_bg3_art_count": dynamic_bg3_summary["art_count"],
+        "dynamic_bg3_counted_art_entries": dynamic_bg3_summary["counted_art_entries"],
+        "dynamic_bg3_source_refs": dynamic_bg3_summary["source_refs"],
+        "dynamic_bg3_manifest_source_refs": dynamic_bg3_summary["manifest_source_refs"],
+        "dynamic_bg3_png_width": dynamic_bg3_summary["png_width"],
+        "dynamic_bg3_png_height": dynamic_bg3_summary["png_height"],
+        "dynamic_bg3_manifest_width": dynamic_bg3_summary["manifest_width"],
+        "dynamic_bg3_manifest_height": dynamic_bg3_summary["manifest_height"],
+        "dynamic_bg3_invalid_rect_count": dynamic_bg3_summary["invalid_rect_count"],
+        "dynamic_bg3_invalid_rects": dynamic_bg3_summary["invalid_rects"],
+        "total_art_count": art_manifest.get("art_count", len(art_manifest.get("arts", [])))
+        + dynamic_bg3_summary["art_count"],
+        "total_source_refs": source_refs + dynamic_bg3_summary["source_refs"],
+        "dialogue_glyph_tile_count": dialogue_glyph_summary["tile_count"],
+        "dialogue_glyph_width": dialogue_glyph_summary["width"],
+        "dialogue_glyph_height": dialogue_glyph_summary["height"],
+        "dialogue_glyph_invalid_rect_count": dialogue_glyph_summary["invalid_rect_count"],
+        "dialogue_glyph_invalid_rects": dialogue_glyph_summary["invalid_rects"],
+        "dialogue_vwf_glyph_count": dialogue_vwf_summary["glyph_count"],
+        "dialogue_vwf_width_table_size": dialogue_vwf_summary["width_table_size"],
+        "dialogue_vwf_glyph_atlas_count": dialogue_vwf_glyph_summary["glyph_count"],
+        "dialogue_vwf_glyph_atlas_width": dialogue_vwf_glyph_summary["width"],
+        "dialogue_vwf_glyph_atlas_height": dialogue_vwf_glyph_summary["height"],
+        "dialogue_vwf_glyph_atlas_invalid_rect_count": dialogue_vwf_glyph_summary[
+            "invalid_rect_count"
+        ],
+        "dialogue_vwf_glyph_atlas_invalid_rects": dialogue_vwf_glyph_summary[
+            "invalid_rects"
+        ],
+    }
+
+
+def _summarize_dynamic_bg3_atlas(atlas_dir: Path) -> dict[str, Any]:
+    manifest_path = atlas_dir / "dynamic_bg3_tiles.json"
+    png_path = atlas_dir / "dynamic_bg3_tiles.png"
+    if not manifest_path.is_file() and not png_path.is_file():
+        return {
+            "art_count": 0,
+            "counted_art_entries": 0,
+            "source_refs": 0,
+            "manifest_source_refs": 0,
+            "png_width": 0,
+            "png_height": 0,
+            "manifest_width": 0,
+            "manifest_height": 0,
+            "invalid_rect_count": 0,
+            "invalid_rects": [],
+        }
+    manifest = _load_json(manifest_path)
+    png_width, png_height = _png_dimensions(png_path)
+    source_refs = 0
+    counted_art_entries = 0
+    invalid_rects: list[str] = []
+    for art in manifest.get("arts", []):
+        if not isinstance(art, dict):
+            continue
+        counted_art_entries += 1
+        art_id = str(art.get("art_id", f"dynamic_bg3_art_index:{counted_art_entries - 1}"))
+        rect = art.get("rect")
+        if not _rect_is_valid(rect, png_width, png_height):
+            invalid_rects.append(f"{art_id}:{rect!r}")
+        for ref in art.get("source_refs", []):
+            if isinstance(ref, dict):
+                source_refs += 1
+    return {
+        "art_count": int(manifest.get("art_count", len(manifest.get("arts", [])))),
+        "counted_art_entries": counted_art_entries,
+        "source_refs": source_refs,
+        "manifest_source_refs": int(manifest.get("source_ref_count", 0)),
+        "png_width": png_width,
+        "png_height": png_height,
+        "manifest_width": int(manifest.get("width", 0)),
+        "manifest_height": int(manifest.get("height", 0)),
+        "invalid_rect_count": len(invalid_rects),
+        "invalid_rects": invalid_rects[:5],
+    }
+
+
+def _summarize_dialogue_glyph_atlas(atlas_dir: Path) -> dict[str, Any]:
+    manifest_path = atlas_dir / "dialogue_glyph_tiles.json"
+    png_path = atlas_dir / "dialogue_glyph_tiles.png"
+    if not manifest_path.is_file() and not png_path.is_file():
+        return {
+            "tile_count": 0,
+            "width": 0,
+            "height": 0,
+            "invalid_rect_count": 0,
+            "invalid_rects": [],
+        }
+    manifest = _load_json(manifest_path)
+    png_width, png_height = _png_dimensions(png_path)
+    invalid_rects: list[str] = []
+    for index, tile in enumerate(manifest.get("tiles", [])):
+        if not isinstance(tile, dict):
+            continue
+        rect = tile.get("rect")
+        if not _rect_is_valid(rect, png_width, png_height):
+            invalid_rects.append(f"{tile.get('id', f'tile:{index}')}:{rect!r}")
+    return {
+        "tile_count": int(manifest.get("tile_count", len(manifest.get("tiles", [])))),
+        "width": int(manifest.get("width", 0)),
+        "height": int(manifest.get("height", 0)),
+        "invalid_rect_count": len(invalid_rects),
+        "invalid_rects": invalid_rects[:5],
+    }
+
+
+def _summarize_dialogue_vwf_font(atlas_dir: Path) -> dict[str, Any]:
+    manifest_path = atlas_dir / "dialogue_vwf_font.json"
+    if not manifest_path.is_file():
+        return {"glyph_count": 0, "width_table_size": 0}
+    manifest = _load_json(manifest_path)
+    return {
+        "glyph_count": int(manifest.get("glyph_count", len(manifest.get("glyphs", [])))),
+        "width_table_size": int(manifest.get("width_table_size", 0)),
+    }
+
+
+def _summarize_dialogue_vwf_glyph_atlas(atlas_dir: Path) -> dict[str, Any]:
+    manifest_path = atlas_dir / "dialogue_vwf_glyphs.json"
+    png_path = atlas_dir / "dialogue_vwf_glyphs.png"
+    if not manifest_path.is_file() and not png_path.is_file():
+        return {
+            "glyph_count": 0,
+            "width": 0,
+            "height": 0,
+            "invalid_rect_count": 0,
+            "invalid_rects": [],
+        }
+    manifest = _load_json(manifest_path)
+    png_width, png_height = _png_dimensions(png_path)
+    invalid_rects: list[str] = []
+    for index, glyph in enumerate(manifest.get("glyphs", [])):
+        if not isinstance(glyph, dict):
+            continue
+        rect = glyph.get("rect")
+        if not _rect_is_valid(rect, png_width, png_height):
+            invalid_rects.append(f"{glyph.get('hex', f'glyph:{index}')}:{rect!r}")
+    return {
+        "glyph_count": int(manifest.get("glyph_count", len(manifest.get("glyphs", [])))),
+        "width": int(manifest.get("width", 0)),
+        "height": int(manifest.get("height", 0)),
+        "invalid_rect_count": len(invalid_rects),
+        "invalid_rects": invalid_rects[:5],
     }
 
 
@@ -188,6 +336,16 @@ def format_summary(summary: dict[str, Any]) -> str:
         _format_counts("stable_by_kind", summary["stable_by_kind"]),
         _format_counts("source_refs_by_kind", summary["source_refs_by_kind"]),
         _format_counts("preview_sources", summary["preview_sources"]),
+        f"dynamic_bg3_art_count={summary['dynamic_bg3_art_count']}",
+        f"dynamic_bg3_source_refs={summary['dynamic_bg3_source_refs']}",
+        f"dynamic_bg3_size={summary['dynamic_bg3_manifest_width']}x{summary['dynamic_bg3_manifest_height']}",
+        f"total_art_count={summary['total_art_count']}",
+        f"total_source_refs={summary['total_source_refs']}",
+        f"dialogue_glyph_tile_count={summary['dialogue_glyph_tile_count']}",
+        f"dialogue_glyph_size={summary['dialogue_glyph_width']}x{summary['dialogue_glyph_height']}",
+        f"dialogue_vwf_glyph_count={summary['dialogue_vwf_glyph_count']}",
+        f"dialogue_vwf_glyph_atlas_count={summary['dialogue_vwf_glyph_atlas_count']}",
+        f"dialogue_vwf_glyph_atlas_size={summary['dialogue_vwf_glyph_atlas_width']}x{summary['dialogue_vwf_glyph_atlas_height']}",
     ]
     return "\n".join(lines)
 
@@ -227,6 +385,43 @@ def coverage_errors(
         errors.append(
             "canonical source refs without stable preview/effect coverage: "
             f"{summary['missing_effect_refs']}"
+        )
+    if (
+        summary["dynamic_bg3_manifest_width"] != summary["dynamic_bg3_png_width"]
+        or summary["dynamic_bg3_manifest_height"] != summary["dynamic_bg3_png_height"]
+    ):
+        errors.append(
+            "dynamic_bg3_tiles.png size does not match dynamic_bg3_tiles.json: "
+            f"{summary['dynamic_bg3_png_width']}x{summary['dynamic_bg3_png_height']} != "
+            f"{summary['dynamic_bg3_manifest_width']}x{summary['dynamic_bg3_manifest_height']}"
+        )
+    if summary["dynamic_bg3_art_count"] != summary["dynamic_bg3_counted_art_entries"]:
+        errors.append(
+            "dynamic BG3 manifest art_count does not match counted arts: "
+            f"{summary['dynamic_bg3_art_count']} != {summary['dynamic_bg3_counted_art_entries']}"
+        )
+    if summary["dynamic_bg3_manifest_source_refs"] != summary["dynamic_bg3_source_refs"]:
+        errors.append(
+            "dynamic BG3 manifest source_ref_count does not match counted source_refs: "
+            f"{summary['dynamic_bg3_manifest_source_refs']} != {summary['dynamic_bg3_source_refs']}"
+        )
+    if summary["dynamic_bg3_invalid_rect_count"] != 0:
+        examples = ", ".join(summary["dynamic_bg3_invalid_rects"])
+        errors.append(
+            "dynamic BG3 art rects outside dynamic_bg3_tiles.png bounds or malformed: "
+            f"{summary['dynamic_bg3_invalid_rect_count']} example(s): {examples}"
+        )
+    if summary["dialogue_glyph_invalid_rect_count"] != 0:
+        examples = ", ".join(summary["dialogue_glyph_invalid_rects"])
+        errors.append(
+            "dialogue glyph rects outside dialogue_glyph_tiles.png bounds or malformed: "
+            f"{summary['dialogue_glyph_invalid_rect_count']} example(s): {examples}"
+        )
+    if summary["dialogue_vwf_glyph_atlas_invalid_rect_count"] != 0:
+        examples = ", ".join(summary["dialogue_vwf_glyph_atlas_invalid_rects"])
+        errors.append(
+            "dialogue VWF glyph rects outside dialogue_vwf_glyphs.png bounds or malformed: "
+            f"{summary['dialogue_vwf_glyph_atlas_invalid_rect_count']} example(s): {examples}"
         )
     if manifest_summary is not None and manifest_summary != summary:
         errors.append("manifest canonical_art_atlas_summary does not match recomputed summary")

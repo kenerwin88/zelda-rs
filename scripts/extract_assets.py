@@ -504,13 +504,42 @@ def write_canonical_art_atlas(out_dir: Path) -> list[dict[str, str]]:
 
     if not written:
         raise RuntimeError("required canonical art atlas was not written")
-    return [
+    artifacts = [
         {
             "image_file": "atlas/art_tiles.png",
             "manifest_file": "atlas/art_tiles.json",
             "source_format": "zelda3_canonical_art_atlas_v1",
-        }
+        },
+        {
+            "image_file": "atlas/dynamic_bg3_tiles.png",
+            "manifest_file": "atlas/dynamic_bg3_tiles.json",
+            "source_format": "zelda3_dynamic_bg3_art_atlas_v1",
+        },
     ]
+    if out_dir / "atlas/dialogue_glyph_tiles.json" in written:
+        artifacts.append(
+            {
+                "image_file": "atlas/dialogue_glyph_tiles.png",
+                "manifest_file": "atlas/dialogue_glyph_tiles.json",
+                "source_format": "zelda3_dialogue_glyph_source_atlas_v1",
+            }
+        )
+    if out_dir / "atlas/dialogue_vwf_font.json" in written:
+        artifacts.append(
+            {
+                "manifest_file": "atlas/dialogue_vwf_font.json",
+                "source_format": "zelda3_dialogue_vwf_font_v1",
+            }
+        )
+    if out_dir / "atlas/dialogue_vwf_glyphs.json" in written:
+        artifacts.append(
+            {
+                "image_file": "atlas/dialogue_vwf_glyphs.png",
+                "manifest_file": "atlas/dialogue_vwf_glyphs.json",
+                "source_format": "zelda3_dialogue_vwf_glyph_atlas_v1",
+            }
+        )
+    return artifacts
 
 
 def validate_canonical_art_atlas(out_dir: Path) -> dict[str, object]:
