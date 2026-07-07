@@ -218,7 +218,7 @@ impl ModernAssetGpuReadbackRenderer {
                 self.validation_bg_extract_nanos += validation.timings.bg_extract_nanos;
                 self.validation_sprite_extract_nanos += validation.timings.sprite_extract_nanos;
                 self.validation_stats_nanos += validation.timings.stats_nanos;
-                validate_no_dynamic_bg3_text_chunks(&capture, &self.resources)
+                Ok(())
             }
             Err(e) => Err(e),
         };
@@ -662,28 +662,52 @@ fn validate_modern_asset_capture(
 ) -> Result<renderer::ModernAssetValidationFrame, String> {
     let gpu_frame = capture.gpu_frame();
     let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
-    resources.validate_full_gpu_asset_from_entries(&gpu_frame, capture.source_entries(), scene)
+    let source_atlas = resources
+        .source_atlas()
+        .ok_or_else(|| "modern asset GPU validation requires source atlas".to_string())?;
+    let source_table = renderer::source_table_from_entries(capture.source_entries());
+    let extract_start = Instant::now();
+    let modern_assets = renderer::modern_extract::extract_asset_resolved_modern_frame_from_sources(
+        &gpu_frame,
+        &source_table,
+        source_atlas,
+    );
+    let bg_extract_nanos = extract_start.elapsed().as_nanos();
+    let mut validation =
+        resources.validate_full_gpu_asset_from_resolved_frame(&modern_assets, scene)?;
+    validation.timings.bg_extract_nanos = bg_extract_nanos;
+    validate_no_dynamic_bg3_text_chunks_from_assets(capture, &modern_assets)?;
+    Ok(validation)
 }
 
+#[cfg(test)]
 fn validate_no_dynamic_bg3_text_chunks(
     capture: &LiveGpuFrameCapture,
     resources: &renderer::ModernIndexCompareResources,
 ) -> Result<(), String> {
-    const BULK_BG3_FILL_INSTANCE_THRESHOLD: usize = 256;
-
     let source_atlas = resources
         .source_atlas()
         .ok_or_else(|| "modern asset GPU validation requires source atlas".to_string())?;
     let gpu_frame = capture.gpu_frame();
-    if gpu_frame.forced_blank || gpu_frame.brightness == 0 {
-        return Ok(());
-    }
     let source_table = renderer::source_table_from_entries(capture.source_entries());
     let modern_assets = renderer::modern_extract::extract_asset_resolved_modern_frame_from_sources(
         &gpu_frame,
         &source_table,
         source_atlas,
     );
+    validate_no_dynamic_bg3_text_chunks_from_assets(capture, &modern_assets)
+}
+
+fn validate_no_dynamic_bg3_text_chunks_from_assets(
+    capture: &LiveGpuFrameCapture,
+    modern_assets: &renderer::modern_extract::AssetResolvedModernFrame,
+) -> Result<(), String> {
+    const BULK_BG3_FILL_INSTANCE_THRESHOLD: usize = 256;
+
+    let gpu_frame = capture.gpu_frame();
+    if gpu_frame.forced_blank || gpu_frame.brightness == 0 {
+        return Ok(());
+    }
     let mut dynamic_key_counts = HashMap::<u64, usize>::new();
     for inst in &modern_assets.frame.bg_layers[2].index_tiles {
         if !bg3_tile_overlaps_viewport(inst) {

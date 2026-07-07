@@ -122,10 +122,10 @@ struct DialogueFontTile {
     source_tile: u16,
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct VariantSourceLookupKey {
-    source_kind: String,
-    asset: String,
+    source_kind: u8,
+    asset: u8,
     pack: u16,
     tile: u16,
     bpp: u8,
@@ -134,8 +134,8 @@ pub(crate) struct VariantSourceLookupKey {
 impl VariantSourceLookupKey {
     pub(crate) fn from_key(key: &VariantAtlasKey) -> Self {
         Self {
-            source_kind: key.source_kind.clone(),
-            asset: key.asset.clone(),
+            source_kind: source_kind_lookup_id(&key.source_kind),
+            asset: asset_lookup_id(&key.asset),
             pack: key.pack,
             tile: key.tile,
             bpp: key.bpp,
@@ -144,8 +144,8 @@ impl VariantSourceLookupKey {
 
     pub(crate) fn from_entry(entry: &VariantAtlasEntry) -> Self {
         Self {
-            source_kind: entry.key.source_kind.clone(),
-            asset: entry.key.asset.clone(),
+            source_kind: source_kind_lookup_id(&entry.key.source_kind),
+            asset: asset_lookup_id(&entry.key.asset),
             pack: entry.key.pack,
             tile: entry.key.tile,
             bpp: entry.key.bpp,
@@ -153,7 +153,70 @@ impl VariantSourceLookupKey {
     }
 }
 
+impl<'a> From<&'a VariantAtlasKey> for VariantRuntimeKey<'a> {
+    fn from(key: &'a VariantAtlasKey) -> Self {
+        Self {
+            lookup: VariantSourceLookupKey::from_key(key),
+            source_kind: source_kind_lookup_id(&key.source_kind),
+            bpp: key.bpp,
+            palette: &key.palette,
+            palette_row: key.palette_row,
+        }
+    }
+}
+
+const SOURCE_KIND_BG_LOOKUP_ID: u8 = 1;
+const SOURCE_KIND_SPRITE_LOOKUP_ID: u8 = 2;
+
+fn source_kind_lookup_id(source_kind: &str) -> u8 {
+    match source_kind {
+        "bg" => SOURCE_KIND_BG_LOOKUP_ID,
+        "sprite" => SOURCE_KIND_SPRITE_LOOKUP_ID,
+        "mode7" => 3,
+        "bg3" => 4,
+        "bg3_dynamic" => 7,
+        "link" => 8,
+        "dialogue_glyph" => 9,
+        "dialogue_vwf" => 10,
+        "dialogue_font" => 11,
+        _ => 0xff,
+    }
+}
+
+fn asset_lookup_id(asset: &str) -> u8 {
+    match asset {
+        "kBgGfx" => 1,
+        "kSprGfx" => 2,
+        "kOverworldMapGfx" => 3,
+        "kBg3Gfx" => 4,
+        "kBg3TextGfx" => 7,
+        "kLinkGfx" => 8,
+        "kDialogueGlyphTiles" => 9,
+        "kDialogueVwfGlyphs" => 10,
+        "kDialogueFontTiles" => 11,
+        _ => 0xff,
+    }
+}
+
 pub(crate) type SourceEntryIndex = HashMap<VariantSourceLookupKey, usize>;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct VariantRuntimeKey<'a> {
+    lookup: VariantSourceLookupKey,
+    source_kind: u8,
+    bpp: u8,
+    palette: &'a str,
+    palette_row: u8,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub(crate) struct EffectLookupKey<'a> {
+    palette: &'a str,
+    palette_row: u8,
+    colors_per_row: u8,
+}
+
+pub(crate) type EffectLookupIndex<'a> = HashMap<EffectLookupKey<'a>, &'a TileEffect>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum VariantAtlasDraw<'a> {
@@ -295,6 +358,72 @@ pub fn variant_key_for_source_key(
     })
 }
 
+pub(crate) fn variant_runtime_key_for_source_key<'a>(
+    source_key: u64,
+    palette_name: &'a str,
+    palette_row: u8,
+) -> Option<VariantRuntimeKey<'a>> {
+    if source_key == crate::modern_hd_overrides::NO_SOURCE_KEY {
+        return None;
+    }
+    let kind = (source_key >> 32) as u8;
+    let pack = ((source_key >> 16) & 0xffff) as u16;
+    let tile = (source_key & 0xffff) as u16;
+    let (source_kind, asset, bpp) = match kind {
+        1 | 5 | 6 => (source_kind_lookup_id("bg"), asset_lookup_id("kBgGfx"), 3),
+        2 => (
+            source_kind_lookup_id("sprite"),
+            asset_lookup_id("kSprGfx"),
+            3,
+        ),
+        4 => (source_kind_lookup_id("bg3"), asset_lookup_id("kBg3Gfx"), 5),
+        7 => (
+            source_kind_lookup_id("bg3_dynamic"),
+            asset_lookup_id("kBg3TextGfx"),
+            5,
+        ),
+        8 => (
+            source_kind_lookup_id("link"),
+            asset_lookup_id("kLinkGfx"),
+            3,
+        ),
+        9 => (
+            source_kind_lookup_id("dialogue_glyph"),
+            asset_lookup_id("kDialogueGlyphTiles"),
+            2,
+        ),
+        10 => (
+            source_kind_lookup_id("dialogue_vwf"),
+            asset_lookup_id("kDialogueVwfGlyphs"),
+            2,
+        ),
+        11 => (
+            source_kind_lookup_id("dialogue_font"),
+            asset_lookup_id("kDialogueFontTiles"),
+            2,
+        ),
+        _ => return None,
+    };
+    let is_dialogue_source = matches!(kind, 9..=11);
+    Some(VariantRuntimeKey {
+        lookup: VariantSourceLookupKey {
+            source_kind,
+            asset,
+            pack,
+            tile,
+            bpp,
+        },
+        source_kind,
+        bpp,
+        palette: if is_dialogue_source {
+            "palette_bg3_text_main"
+        } else {
+            palette_name
+        },
+        palette_row: if is_dialogue_source { 0 } else { palette_row },
+    })
+}
+
 impl ModernVariantAtlas {
     pub fn entry_for_key(&self, key: &VariantAtlasKey) -> Option<&VariantAtlasEntry> {
         self.entries.iter().find(|entry| entry.key == *key)
@@ -320,6 +449,20 @@ impl ModernVariantAtlas {
         index
     }
 
+    pub(crate) fn build_effect_lookup_index(&self) -> EffectLookupIndex<'_> {
+        let mut index = EffectLookupIndex::with_capacity(self.effects.len());
+        for effect in &self.effects {
+            index
+                .entry(EffectLookupKey {
+                    palette: &effect.palette,
+                    palette_row: effect.palette_row,
+                    colors_per_row: effect.colors_per_row,
+                })
+                .or_insert(effect);
+        }
+        index
+    }
+
     pub(crate) fn entry_for_source_key_in_index(
         &self,
         key: &VariantAtlasKey,
@@ -328,6 +471,42 @@ impl ModernVariantAtlas {
         index
             .get(&VariantSourceLookupKey::from_key(key))
             .and_then(|entry_index| self.entries.get(*entry_index))
+    }
+
+    pub(crate) fn resolve_draw_for_runtime_key_in_indexes<'a>(
+        &'a self,
+        key: Option<VariantRuntimeKey<'_>>,
+        index: &SourceEntryIndex,
+        effect_index: Option<&EffectLookupIndex<'a>>,
+    ) -> VariantAtlasDraw<'a> {
+        let Some(key) = key else {
+            return VariantAtlasDraw::Unkeyed;
+        };
+        let Some(entry) = index
+            .get(&key.lookup)
+            .and_then(|entry_index| self.entries.get(*entry_index))
+        else {
+            return VariantAtlasDraw::MissingArt;
+        };
+        self.resolve_draw_for_runtime_entry(&key, entry, effect_index)
+    }
+
+    pub(crate) fn resolve_dynamic_draw_for_runtime_key_in_index<'a>(
+        &'a self,
+        key: Option<VariantRuntimeKey<'_>>,
+        reason: DynamicFallbackReason,
+        index: &SourceEntryIndex,
+    ) -> VariantAtlasDraw<'a> {
+        let Some(key) = key else {
+            return VariantAtlasDraw::Unkeyed;
+        };
+        let Some(entry) = index
+            .get(&key.lookup)
+            .and_then(|entry_index| self.entries.get(*entry_index))
+        else {
+            return VariantAtlasDraw::MissingArt;
+        };
+        VariantAtlasDraw::DynamicPalette { entry, reason }
     }
 
     pub fn has_mode7_source_art(&self) -> bool {
@@ -351,8 +530,7 @@ impl ModernVariantAtlas {
     }
 
     pub fn effect_for_key(&self, key: &VariantAtlasKey) -> Option<&TileEffect> {
-        let colors_per_row = runtime_effect_color_rows(key);
-        self.effect_for_key_with_color_rows(key, colors_per_row)
+        self.effect_for_key_with_color_rows(key, None)
     }
 
     fn effect_for_entry_and_key(
@@ -360,22 +538,74 @@ impl ModernVariantAtlas {
         entry: &VariantAtlasEntry,
         key: &VariantAtlasKey,
     ) -> Option<&TileEffect> {
-        let colors_per_row = entry_runtime_effect_color_rows(entry, key);
-        self.effect_for_key_with_color_rows(key, colors_per_row)
+        self.effect_for_key_with_color_rows(key, entry.runtime_colors_per_row)
+    }
+
+    fn effect_for_runtime_entry_and_key<'a>(
+        &'a self,
+        entry: &VariantAtlasEntry,
+        key: &VariantRuntimeKey<'_>,
+        effect_index: Option<&EffectLookupIndex<'a>>,
+    ) -> Option<&'a TileEffect> {
+        self.effect_for_runtime_key_with_color_rows(key, entry.runtime_colors_per_row, effect_index)
     }
 
     fn effect_for_key_with_color_rows(
         &self,
         key: &VariantAtlasKey,
-        colors_per_row: Option<Vec<u8>>,
+        runtime_colors_per_row: Option<u8>,
     ) -> Option<&TileEffect> {
-        let colors_per_row = colors_per_row?;
-        colors_per_row.into_iter().find_map(|colors_per_row| {
-            self.effects.iter().find(|effect| {
-                effect.palette == key.palette
-                    && effect.palette_row == key.palette_row
-                    && effect.colors_per_row == colors_per_row
-            })
+        self.effect_for_runtime_key_with_color_rows(
+            &VariantRuntimeKey::from(key),
+            runtime_colors_per_row,
+            None,
+        )
+    }
+
+    fn effect_for_runtime_key_with_color_rows<'a>(
+        &'a self,
+        key: &VariantRuntimeKey<'_>,
+        runtime_colors_per_row: Option<u8>,
+        effect_index: Option<&EffectLookupIndex<'a>>,
+    ) -> Option<&'a TileEffect> {
+        if let Some(colors_per_row) = runtime_colors_per_row {
+            return self.effect_for_color_row(key, colors_per_row, effect_index);
+        }
+
+        let source_stride = 1u8.checked_shl(u32::from(key.bpp))?;
+        if matches!(
+            key.source_kind,
+            SOURCE_KIND_BG_LOOKUP_ID | SOURCE_KIND_SPRITE_LOOKUP_ID
+        ) {
+            if let Some(effect) = self.effect_for_color_row(key, 16, effect_index) {
+                return Some(effect);
+            }
+            if source_stride == 16 {
+                return None;
+            }
+        }
+        self.effect_for_color_row(key, source_stride, effect_index)
+    }
+
+    fn effect_for_color_row<'a>(
+        &'a self,
+        key: &VariantRuntimeKey<'_>,
+        colors_per_row: u8,
+        effect_index: Option<&EffectLookupIndex<'a>>,
+    ) -> Option<&'a TileEffect> {
+        if let Some(index) = effect_index {
+            return index
+                .get(&EffectLookupKey {
+                    palette: key.palette,
+                    palette_row: key.palette_row,
+                    colors_per_row,
+                })
+                .copied();
+        }
+        self.effects.iter().find(|effect| {
+            effect.palette == key.palette
+                && effect.palette_row == key.palette_row
+                && effect.colors_per_row == colors_per_row
         })
     }
 
@@ -415,6 +645,15 @@ impl ModernVariantAtlas {
         key: &VariantAtlasKey,
         entry: &'a VariantAtlasEntry,
     ) -> VariantAtlasDraw<'a> {
+        self.resolve_draw_for_runtime_entry(&VariantRuntimeKey::from(key), entry, None)
+    }
+
+    fn resolve_draw_for_runtime_entry<'a>(
+        &'a self,
+        key: &VariantRuntimeKey<'_>,
+        entry: &'a VariantAtlasEntry,
+        effect_index: Option<&EffectLookupIndex<'a>>,
+    ) -> VariantAtlasDraw<'a> {
         if entry_dynamic_policy(entry) != DynamicPolicy::Stable {
             return VariantAtlasDraw::DynamicPalette {
                 entry,
@@ -430,18 +669,18 @@ impl ModernVariantAtlas {
             }
             RuntimeMaterial::PaletteLut => {
                 let stable_effect = self
-                    .effect_for_entry_and_key(entry, key)
+                    .effect_for_runtime_entry_and_key(entry, key, effect_index)
                     .filter(|effect| effect_dynamic_policy(effect) == DynamicPolicy::Stable);
                 if let Some(effect) = stable_effect {
                     return VariantAtlasDraw::MaterialEffect { entry, effect };
                 }
-                if entry_matches_material(entry, key) {
+                if entry_matches_runtime_material(entry, key) {
                     return VariantAtlasDraw::Stable { entry };
                 }
             }
-            RuntimeMaterial::LegacyPreview if !entry_matches_material(entry, key) => {
+            RuntimeMaterial::LegacyPreview if !entry_matches_runtime_material(entry, key) => {
                 let stable_effect = self
-                    .effect_for_entry_and_key(entry, key)
+                    .effect_for_runtime_entry_and_key(entry, key, effect_index)
                     .filter(|effect| effect_dynamic_policy(effect) == DynamicPolicy::Stable);
                 if let Some(effect) = stable_effect {
                     return VariantAtlasDraw::MaterialEffect { entry, effect };
@@ -499,7 +738,7 @@ fn entry_runtime_material(entry: &VariantAtlasEntry) -> RuntimeMaterial {
     RuntimeMaterial::from_manifest(entry.runtime_material.as_deref())
 }
 
-fn entry_matches_material(entry: &VariantAtlasEntry, key: &VariantAtlasKey) -> bool {
+fn entry_matches_runtime_material(entry: &VariantAtlasEntry, key: &VariantRuntimeKey<'_>) -> bool {
     entry.key.palette == key.palette && entry.key.palette_row == key.palette_row
 }
 
@@ -513,16 +752,6 @@ fn runtime_effect_color_rows(key: &VariantAtlasKey) -> Option<Vec<u8>> {
         rows.push(source_stride);
     }
     Some(rows)
-}
-
-fn entry_runtime_effect_color_rows(
-    entry: &VariantAtlasEntry,
-    key: &VariantAtlasKey,
-) -> Option<Vec<u8>> {
-    if let Some(colors_per_row) = entry.runtime_colors_per_row {
-        return Some(vec![colors_per_row]);
-    }
-    runtime_effect_color_rows(key)
 }
 
 pub fn load_modern_variant_atlas(root: &Path) -> Result<ModernVariantAtlas, String> {

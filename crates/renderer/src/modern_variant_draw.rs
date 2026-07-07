@@ -2,8 +2,9 @@ use crate::modern_frame::{ModernFrame, ModernIndexSpriteInstance, ModernIndexTil
 use crate::modern_index_atlas::ModernIndexTile;
 use crate::modern_software::VariantAtlasRenderStats;
 use crate::modern_variant_atlas::{
-    variant_key_for_index_tile, variant_key_for_source_key, DynamicFallbackReason,
-    ModernVariantAtlas, SourceEntryIndex, VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
+    variant_key_for_index_tile, variant_key_for_source_key, variant_runtime_key_for_source_key,
+    DynamicFallbackReason, ModernVariantAtlas, SourceEntryIndex, VariantAtlasDraw,
+    VariantAtlasEntry, VariantAtlasKey, VariantRuntimeKey,
 };
 
 #[derive(Clone, Debug)]
@@ -520,6 +521,8 @@ pub(crate) fn compile_variant_draw_stats_with_source_index(
     sprite_palette_name: &str,
 ) -> VariantAtlasRenderStats {
     let mut stats = VariantAtlasRenderStats::default();
+    let effect_index = source_index.map(|_| atlas.build_effect_lookup_index());
+    let effect_index = effect_index.as_ref();
 
     if frame.forced_blank {
         return stats;
@@ -540,9 +543,20 @@ pub(crate) fn compile_variant_draw_stats_with_source_index(
             } else {
                 cell.source_key
             };
-            let key = variant_key_for_source_key(source_key, bg_palette_name, inst.palette);
-            let draw =
-                resolve_draw_for_frame(atlas, source_index, key.as_ref(), uses_instance_source_key);
+            let draw = if source_index.is_some() {
+                let key =
+                    variant_runtime_key_for_source_key(source_key, bg_palette_name, inst.palette);
+                resolve_stats_draw_for_frame(
+                    atlas,
+                    source_index,
+                    effect_index,
+                    key,
+                    uses_instance_source_key,
+                )
+            } else {
+                let key = variant_key_for_source_key(source_key, bg_palette_name, inst.palette);
+                resolve_draw_for_frame(atlas, source_index, key.as_ref(), uses_instance_source_key)
+            };
             stats.record_bg_draw(layer_index, &draw);
         }
     }
@@ -551,8 +565,17 @@ pub(crate) fn compile_variant_draw_stats_with_source_index(
         let Some(cell) = sprite_cells.get(inst.cell_id as usize) else {
             continue;
         };
-        let key = variant_key_for_index_tile(cell, sprite_palette_name, inst.palette);
-        let draw = resolve_draw_for_frame(atlas, source_index, key.as_ref(), false);
+        let draw = if source_index.is_some() {
+            let key = variant_runtime_key_for_source_key(
+                cell.source_key,
+                sprite_palette_name,
+                inst.palette,
+            );
+            resolve_stats_draw_for_frame(atlas, source_index, effect_index, key, false)
+        } else {
+            let key = variant_key_for_index_tile(cell, sprite_palette_name, inst.palette);
+            resolve_draw_for_frame(atlas, source_index, key.as_ref(), false)
+        };
         stats.record_sprite_draw(&draw);
     }
     record_vwf_glyph_run_stats(frame, atlas, &mut stats);
@@ -922,6 +945,36 @@ fn resolve_draw_for_frame<'a>(
             Some(source_index) => atlas.resolve_draw_in_index(key, source_index),
             None => atlas.resolve_draw(key),
         }
+    }
+}
+
+fn resolve_stats_draw_for_frame<'a>(
+    atlas: &'a ModernVariantAtlas,
+    source_index: Option<&'a SourceEntryIndex>,
+    effect_index: Option<&'a crate::modern_variant_atlas::EffectLookupIndex<'a>>,
+    key: Option<VariantRuntimeKey<'_>>,
+    force_dynamic: bool,
+) -> VariantAtlasDraw<'a> {
+    let Some(source_index) = source_index else {
+        return VariantAtlasDraw::Unkeyed;
+    };
+
+    if force_dynamic {
+        let draw = atlas.resolve_draw_for_runtime_key_in_indexes(key, source_index, effect_index);
+        if matches!(
+            draw,
+            VariantAtlasDraw::MaterialEffect { .. } | VariantAtlasDraw::Stable { .. }
+        ) {
+            draw
+        } else {
+            atlas.resolve_dynamic_draw_for_runtime_key_in_index(
+                key,
+                DynamicFallbackReason::InstanceSourceKey,
+                source_index,
+            )
+        }
+    } else {
+        atlas.resolve_draw_for_runtime_key_in_indexes(key, source_index, effect_index)
     }
 }
 

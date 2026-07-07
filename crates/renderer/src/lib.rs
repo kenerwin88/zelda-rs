@@ -2397,6 +2397,48 @@ impl ModernIndexCompareResources {
             timings: render.timings,
         })
     }
+
+    pub fn validate_full_gpu_asset_from_resolved_frame(
+        &self,
+        modern_assets: &modern_extract::AssetResolvedModernFrame,
+        scene: ModernAssetFrameScene,
+    ) -> Result<ModernAssetValidationFrame, String> {
+        let Some(variant_headless) = self.variant_headless() else {
+            return Err(
+                "modern asset GPU validation requires canonical RGBA variant atlas".to_string(),
+            );
+        };
+        let validation = variant_headless.validate_asset_resolved_frame(
+            modern_assets,
+            scene.bg_palette_name(),
+            scene.sprite_palette_name(),
+        );
+        let render = modern_gpu::ModernIndexCompareValidation {
+            via: "variant-gpu",
+            variant_stats: Some(validation.stats),
+            missing_sources: validation.missing_sources,
+            timings: validation.timings,
+        };
+        if let Some(fallback) =
+            modern_gpu::modern_gpu_path_fallback_reason(render.via, render.variant_stats.as_ref())
+        {
+            let missing_report =
+                modern_extract::format_missing_asset_source_report(&render.missing_sources, 4);
+            let detail = if missing_report.is_empty() {
+                String::new()
+            } else {
+                format!(" {missing_report}")
+            };
+            return Err(format!(
+                "modern asset GPU validation unsupported via={} reason={} count={}",
+                render.via, fallback.reason, fallback.count
+            ) + &detail);
+        }
+        Ok(ModernAssetValidationFrame {
+            via: render.via,
+            timings: render.timings,
+        })
+    }
 }
 
 /// Renderer-owned resource bundle for the legacy modern-atlas compare path.

@@ -228,8 +228,39 @@ directly from the loaded `dialogue_vwf_glyphs.png/json` glyph table instead of
 rebuilding four source keys per glyph run; the final 1,070,000-to-end slice
 passed in 8.9 seconds with `validation_stats_ms=4326`.
 
+The full current-state gate was then rerun from the replay start with no
+explicit frame cap. The scan checkpointed every 100k frames under
+`/tmp/zelda3-asset-gpu-checkpoints-full-current` and ended naturally:
+
+```sh
+env \
+  ZELDA3_SMV_SUPPRESS_RENDER=1 \
+  ZELDA3_SMV_SUPPRESS_AUDIO=1 \
+  ZELDA3_SMV_SUPPRESS_INPUT=1 \
+  target/parity/zelda3 \
+  --replay-save saves/zelda3.sfc saves/zelda3-combined-route.sav \
+  --asset-gpu-smoke \
+  --asset-gpu-progress 100000 \
+  --missing-assets-out /tmp/zelda3-bg3-dynamic-report-full-current-no-frame-limit.jsonl \
+  --asset-gpu-checkpoint-dir /tmp/zelda3-asset-gpu-checkpoints-full-current \
+  --asset-gpu-checkpoint-interval 100000
+```
+
+Result:
+
+```text
+replay-save asset GPU smoke passed frames=1073092 ... validation_cache_hits=211679; validation_cache_misses=861413; validation_cache_entries=861413; validation_key_ms=45345; validation_miss_ms=1126926; validation_bg_extract_ms=809150; validation_stats_ms=311202
+replay-save completed frames=1073092 active=false ending=1 ... main=26 sub=38 ...
+```
+
+The full-run validator now reuses the source-resolved modern frame for the
+variant-stats gate and the BG3 dynamic-text guard, so validation misses no
+longer extract BG/source art twice. A 100k probe before this change reported
+`validation_miss_ms=169882`; the same 100k probe after the change reported
+`validation_miss_ms=96518`.
+
 ## Status
 
-This proves the source-glyph PNG gate over the full `saves/zelda3-combined-route.sav` replay. The route ends at frame 1,073,092, so the 1,100,000-frame cap was intentionally beyond the actual path length.
+This proves the source-glyph PNG gate over the full `saves/zelda3-combined-route.sav` replay from reset/start through natural completion. The route ends at frame 1,073,092, so the no-frame-limit run naturally stopped there.
 
 Visible BG3 message, VWF, and ending-credit font chunks are now source-owned by PNG atlases rather than dynamic BG3 content-hash chunks.

@@ -4319,14 +4319,28 @@ impl ModernGpuVariantHeadless {
             frame, src_table, atlas,
         );
         let bg_extract_nanos = bg_extract_start.elapsed().as_nanos();
-        let sprite_extract_nanos = 0;
+        let mut validation = self.validate_asset_resolved_frame(
+            &modern_assets,
+            bg_palette_name,
+            sprite_palette_name,
+        );
+        validation.timings.bg_extract_nanos = bg_extract_nanos;
+        validation
+    }
+
+    pub fn validate_asset_resolved_frame(
+        &self,
+        modern_assets: &crate::modern_extract::AssetResolvedModernFrame,
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+    ) -> ModernGpuVariantValidation {
         if modern_assets.has_unresolved_sources() {
             return ModernGpuVariantValidation {
                 stats: modern_assets.unresolved_stats,
-                missing_sources: modern_assets.missing_sources,
+                missing_sources: modern_assets.missing_sources.clone(),
                 timings: ModernIndexCompareValidationTimings {
-                    bg_extract_nanos,
-                    sprite_extract_nanos,
+                    bg_extract_nanos: 0,
+                    sprite_extract_nanos: 0,
                     stats_nanos: 0,
                 },
             };
@@ -4345,8 +4359,8 @@ impl ModernGpuVariantHeadless {
             stats,
             missing_sources: Vec::new(),
             timings: ModernIndexCompareValidationTimings {
-                bg_extract_nanos,
-                sprite_extract_nanos,
+                bg_extract_nanos: 0,
+                sprite_extract_nanos: 0,
                 stats_nanos,
             },
         }
