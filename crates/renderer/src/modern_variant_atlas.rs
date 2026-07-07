@@ -102,8 +102,53 @@ pub struct DialogueVwfGlyphCell {
     pub code: u8,
     pub hex: String,
     pub width: u8,
+    pub palette: String,
     pub rect: [u32; 4],
     pub indices: Vec<u8>,
+}
+
+pub const DIALOGUE_TEXT_MAIN_PALETTE: &str = "palette_bg3_text_main";
+
+pub fn dialogue_text_color_palette_name(color: u8) -> String {
+    format!("palette_bg3_text_color_{:02x}", color & 0x0f)
+}
+
+pub fn dialogue_vwf_variant_key(
+    glyph_code: u16,
+    quadrant: u16,
+    palette: impl Into<String>,
+) -> VariantAtlasKey {
+    VariantAtlasKey {
+        source_kind: "dialogue_vwf".to_string(),
+        asset: "kDialogueVwfGlyphs".to_string(),
+        pack: glyph_code,
+        tile: quadrant,
+        bpp: 2,
+        palette: palette.into(),
+        palette_row: 0,
+    }
+}
+
+pub fn dialogue_vwf_variant_entry(
+    atlas: &ModernVariantAtlas,
+    glyph_code: u16,
+    quadrant: u16,
+    dialogue_color: Option<u8>,
+) -> Option<&VariantAtlasEntry> {
+    if let Some(color) = dialogue_color {
+        let color_key = dialogue_vwf_variant_key(
+            glyph_code,
+            quadrant,
+            dialogue_text_color_palette_name(color),
+        );
+        if let Some(entry) = atlas.entry_for_key(&color_key) {
+            return Some(entry);
+        }
+    }
+    let main_key = dialogue_vwf_variant_key(glyph_code, quadrant, DIALOGUE_TEXT_MAIN_PALETTE);
+    atlas
+        .entry_for_key(&main_key)
+        .or_else(|| atlas.entry_for_source_key(&main_key))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -342,7 +387,7 @@ pub fn variant_key_for_source_key(
         "dialogue_glyph" | "dialogue_vwf" | "dialogue_font"
     );
     let palette = if is_dialogue_source {
-        "palette_bg3_text_main"
+        DIALOGUE_TEXT_MAIN_PALETTE
     } else {
         palette_name
     };
@@ -416,7 +461,7 @@ pub(crate) fn variant_runtime_key_for_source_key<'a>(
         source_kind,
         bpp,
         palette: if is_dialogue_source {
-            "palette_bg3_text_main"
+            DIALOGUE_TEXT_MAIN_PALETTE
         } else {
             palette_name
         },
@@ -1271,6 +1316,7 @@ fn load_dialogue_vwf_glyph_atlas_from_dir(
             code: glyph.code,
             hex: glyph.hex,
             width: glyph.width,
+            palette: glyph.palette,
             rect: glyph.rect,
             indices,
         });
@@ -1596,8 +1642,8 @@ fn append_dialogue_vwf_glyph_entries(
             let qy = u32::from(quadrant >> 1) * 8;
             entries.push(VariantAtlasEntry {
                 id: format!(
-                    "dialogue_vwf:kDialogueVwfGlyphs:pack{}:tile{}:2bpp",
-                    glyph.code, quadrant
+                    "dialogue_vwf:kDialogueVwfGlyphs:pack{}:tile{}:2bpp:{}",
+                    glyph.code, quadrant, glyph.palette
                 ),
                 key: VariantAtlasKey {
                     source_kind: "dialogue_vwf".to_string(),
@@ -1605,7 +1651,7 @@ fn append_dialogue_vwf_glyph_entries(
                     pack: u16::from(glyph.code),
                     tile: quadrant,
                     bpp: 2,
-                    palette: "palette_bg3_text_main".to_string(),
+                    palette: glyph.palette.clone(),
                     palette_row: 0,
                 },
                 rect: [
@@ -1621,7 +1667,7 @@ fn append_dialogue_vwf_glyph_entries(
                     8,
                     8,
                 ],
-                sha1: format!("{}:{quadrant}", glyph.hex),
+                sha1: format!("{}:{}:{quadrant}", glyph.hex, glyph.palette),
                 duplicate_of: None,
                 dynamic_policy: "stable".to_string(),
                 runtime_material: None,
@@ -1925,8 +1971,14 @@ struct DialogueVwfGlyphCellJson {
     code: u8,
     hex: String,
     width: u8,
+    #[serde(default = "default_dialogue_vwf_palette")]
+    palette: String,
     rect: [u32; 4],
     indices_hex: String,
+}
+
+fn default_dialogue_vwf_palette() -> String {
+    DIALOGUE_TEXT_MAIN_PALETTE.to_string()
 }
 
 #[derive(Deserialize)]
@@ -2023,6 +2075,25 @@ mod tests {
         }
     }
 
+    fn dialogue_vwf_test_entry(code: u16, quadrant: u16, palette: &str) -> VariantAtlasEntry {
+        VariantAtlasEntry {
+            id: format!("dialogue_vwf:kDialogueVwfGlyphs:pack{code}:tile{quadrant}:2bpp"),
+            key: dialogue_vwf_variant_key(code, quadrant, palette),
+            rect: if palette == DIALOGUE_TEXT_MAIN_PALETTE {
+                [0, 0, 8, 8]
+            } else {
+                [8, 0, 8, 8]
+            },
+            sha1: palette.to_string(),
+            duplicate_of: None,
+            dynamic_policy: "stable".to_string(),
+            runtime_material: None,
+            runtime_colors_per_row: None,
+            source_hflip: false,
+            source_vflip: false,
+        }
+    }
+
     #[test]
     fn bg3_source_key_maps_to_32_color_variant_key() {
         let key = variant_key_for_source_key(
@@ -2082,6 +2153,52 @@ mod tests {
         assert_eq!(vwf_key.bpp, 2);
         assert_eq!(vwf_key.palette, "palette_bg3_text_main");
         assert_eq!(vwf_key.palette_row, 0);
+    }
+
+    #[test]
+    fn dialogue_vwf_entry_prefers_semantic_color_palette_when_available() {
+        let color_palette = dialogue_text_color_palette_name(7);
+        let atlas = ModernVariantAtlas {
+            width: 16,
+            height: 8,
+            rgba: vec![0; 16 * 8 * 4],
+            entries: vec![
+                dialogue_vwf_test_entry(0x41, 0, DIALOGUE_TEXT_MAIN_PALETTE),
+                dialogue_vwf_test_entry(0x41, 0, &color_palette),
+            ],
+            effects: Vec::new(),
+            mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
+        };
+
+        let entry = dialogue_vwf_variant_entry(&atlas, 0x41, 0, Some(7))
+            .expect("colored VWF entry should resolve");
+
+        assert_eq!(entry.key.palette, "palette_bg3_text_color_07");
+        assert_eq!(entry.rect, [8, 0, 8, 8]);
+    }
+
+    #[test]
+    fn dialogue_vwf_entry_falls_back_to_main_palette_when_color_variant_is_missing() {
+        let atlas = ModernVariantAtlas {
+            width: 8,
+            height: 8,
+            rgba: vec![0; 8 * 8 * 4],
+            entries: vec![dialogue_vwf_test_entry(0x41, 0, DIALOGUE_TEXT_MAIN_PALETTE)],
+            effects: Vec::new(),
+            mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
+        };
+
+        let entry = dialogue_vwf_variant_entry(&atlas, 0x41, 0, Some(7))
+            .expect("main VWF entry should resolve as fallback");
+
+        assert_eq!(entry.key.palette, DIALOGUE_TEXT_MAIN_PALETTE);
+        assert_eq!(entry.rect, [0, 0, 8, 8]);
     }
 
     #[test]
@@ -2409,8 +2526,8 @@ mod tests {
         write_rgba_png(
             &atlas_dir.join("dialogue_vwf_glyphs.png"),
             16,
-            16,
-            &vwf_glyph_rgba,
+            32,
+            &[vwf_glyph_rgba.clone(), vwf_glyph_rgba.clone()].concat(),
         );
         std::fs::write(
             atlas_dir.join("art_tiles.json"),
@@ -2492,16 +2609,26 @@ mod tests {
                 r#"{{
               "format": "zelda3_dialogue_vwf_glyph_atlas_v1",
               "width": 16,
-              "height": 16,
+              "height": 32,
               "cell_width": 16,
               "cell_height": 16,
-              "glyph_count": 1,
+              "glyph_count": 2,
+              "source_glyph_count": 1,
               "width_table_size": 1,
+              "palette_variants": ["palette_bg3_text_main", "palette_bg3_text_color_07"],
               "glyphs": [{{
                 "code": 0,
                 "hex": "0x00",
                 "width": 5,
+                "palette": "palette_bg3_text_main",
                 "rect": [0, 0, 16, 16],
+                "indices_hex": "{vwf_indices_hex}"
+              }}, {{
+                "code": 0,
+                "hex": "0x00",
+                "width": 5,
+                "palette": "palette_bg3_text_color_07",
+                "rect": [0, 16, 16, 16],
                 "indices_hex": "{vwf_indices_hex}"
               }}]
             }}"#
@@ -2536,16 +2663,28 @@ mod tests {
         assert_eq!(vwf_font.glyphs[0].top_row_bytes[15], 0x0f);
         assert_eq!(vwf_font.glyphs[0].bottom_row_bytes[0], 0x10);
         assert_eq!(vwf_glyph_atlas.width, 16);
-        assert_eq!(vwf_glyph_atlas.height, 16);
-        assert_eq!(vwf_glyph_atlas.rgba, vwf_glyph_rgba);
-        assert_eq!(vwf_glyph_atlas.glyphs.len(), 1);
+        assert_eq!(vwf_glyph_atlas.height, 32);
+        assert_eq!(
+            vwf_glyph_atlas.rgba,
+            [vwf_glyph_rgba.clone(), vwf_glyph_rgba.clone()].concat()
+        );
+        assert_eq!(vwf_glyph_atlas.glyphs.len(), 2);
         assert_eq!(vwf_glyph_atlas.glyphs[0].code, 0);
         assert_eq!(vwf_glyph_atlas.glyphs[0].width, 5);
+        assert_eq!(
+            vwf_glyph_atlas.glyphs[0].palette,
+            DIALOGUE_TEXT_MAIN_PALETTE
+        );
         assert_eq!(vwf_glyph_atlas.glyphs[0].rect, [0, 0, 16, 16]);
+        assert_eq!(
+            vwf_glyph_atlas.glyphs[1].palette,
+            "palette_bg3_text_color_07"
+        );
+        assert_eq!(vwf_glyph_atlas.glyphs[1].rect, [0, 16, 16, 16]);
         assert_eq!(vwf_glyph_atlas.glyphs[0].indices.len(), 16 * 16);
         assert_eq!(vwf_glyph_atlas.glyphs[0].indices[0], 1);
         assert_eq!(atlas.width, 16);
-        assert_eq!(atlas.height, 32);
+        assert_eq!(atlas.height, 48);
         assert_eq!(
             atlas
                 .entry_for_source_key(&VariantAtlasKey {
@@ -2563,18 +2702,17 @@ mod tests {
         );
         assert_eq!(
             atlas
-                .entry_for_source_key(&VariantAtlasKey {
-                    source_kind: "dialogue_vwf".to_string(),
-                    asset: "kDialogueVwfGlyphs".to_string(),
-                    pack: 0,
-                    tile: 3,
-                    bpp: 2,
-                    palette: "palette_bg3_text_main".to_string(),
-                    palette_row: 0,
-                })
+                .entry_for_key(&dialogue_vwf_variant_key(0, 3, DIALOGUE_TEXT_MAIN_PALETTE))
                 .expect("dialogue VWF glyph quadrant should be in main atlas")
                 .rect,
             [8, 24, 8, 8]
+        );
+        assert_eq!(
+            atlas
+                .entry_for_key(&dialogue_vwf_variant_key(0, 3, "palette_bg3_text_color_07"))
+                .expect("colored dialogue VWF glyph quadrant should be in main atlas")
+                .rect,
+            [8, 40, 8, 8]
         );
 
         std::fs::remove_dir_all(root).expect("remove temp root");

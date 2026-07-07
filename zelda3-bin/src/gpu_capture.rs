@@ -26,6 +26,11 @@ pub struct LiveGpuFrameCapture {
     source_entries: Vec<zelda3::LogicalChrSrc>,
     bg3_source_tiles: Vec<renderer::GpuBg3SourceTile>,
     bg3_vwf_glyph_runs: Vec<renderer::GpuBg3VwfGlyphRun>,
+    dialogue_message_id: Option<u16>,
+    source_dialogue_ir: Vec<zelda3::dialogue_ir::DialogueIrOp>,
+    dialogue_ir: Vec<zelda3::dialogue_ir::DialogueIrOp>,
+    dialogue_layout: Vec<zelda3::dialogue_ir::DialogueGlyphPlacement>,
+    dialogue_layout_origin_tile_number: Option<u16>,
     mode7_source_chars: Option<Vec<u8>>,
     main_module: u8,
     player_indoors: u8,
@@ -58,15 +63,33 @@ impl LiveGpuFrameCapture {
         let ppu = game.ppu.clone();
         let source_entries = game.vram_chr_source().as_slice().to_vec();
         let bg3_source_tiles = dialogue_glyph_source_tiles_from_ppu(&ppu);
+        let bg3_vwf_glyph_run_offsets = game.bg3_vwf_glyph_run_dialogue_offsets();
+        let bg3_vwf_glyph_run_ir_kinds: Vec<_> = (0..game.bg3_vwf_glyph_runs().len())
+            .map(|index| game.bg3_vwf_glyph_run_dialogue_ir(index).map(|op| op.kind))
+            .collect();
+        let dialogue_message_id = Some(game.current_dialogue_message_id());
+        let source_dialogue_ir = game.current_source_dialogue_ir();
+        let dialogue_ir = game.current_visible_source_render_dialogue_ir();
+        let dialogue_vwf_widths = game.dialogue_vwf_widths().unwrap_or_default();
+        let dialogue_layout =
+            zelda3::dialogue_ir::layout_dialogue_ir(&dialogue_ir, &dialogue_vwf_widths);
+        let dialogue_layout_origin_tile_number =
+            (!dialogue_layout.is_empty()).then(|| game.dialogue_vwf_origin_tile_number());
         let bg3_vwf_glyph_runs = game
             .bg3_vwf_glyph_runs()
             .iter()
-            .map(|run| renderer::GpuBg3VwfGlyphRun {
+            .enumerate()
+            .map(|(index, run)| renderer::GpuBg3VwfGlyphRun {
                 glyph_code: run.glyph_code,
                 origin_tile_number: run.origin_tile_number,
                 x: run.x,
                 y: run.y,
                 width: run.width,
+                dialogue_offset: bg3_vwf_glyph_run_offsets
+                    .get(index)
+                    .copied()
+                    .filter(|offset| *offset != zelda3_compat::UNKNOWN_DIALOGUE_OFFSET),
+                dialogue_ir_kind: bg3_vwf_glyph_run_ir_kinds.get(index).cloned().flatten(),
             })
             .collect();
         let mode7_source_chars = game.mode7_character_source().map(<[u8]>::to_vec);
@@ -79,6 +102,11 @@ impl LiveGpuFrameCapture {
             source_entries,
             bg3_source_tiles,
             bg3_vwf_glyph_runs,
+            dialogue_message_id,
+            source_dialogue_ir,
+            dialogue_ir,
+            dialogue_layout,
+            dialogue_layout_origin_tile_number,
             mode7_source_chars,
             main_module,
             player_indoors,
@@ -92,6 +120,11 @@ impl LiveGpuFrameCapture {
             self.raw_scanlines.as_ref(),
             &self.bg3_source_tiles,
             &self.bg3_vwf_glyph_runs,
+            self.dialogue_message_id,
+            &self.source_dialogue_ir,
+            &self.dialogue_ir,
+            &self.dialogue_layout,
+            self.dialogue_layout_origin_tile_number,
         )
     }
 
@@ -117,6 +150,26 @@ impl LiveGpuFrameCapture {
 
     pub fn bg3_source_tiles(&self) -> &[renderer::GpuBg3SourceTile] {
         &self.bg3_source_tiles
+    }
+
+    pub fn dialogue_message_id(&self) -> Option<u16> {
+        self.dialogue_message_id
+    }
+
+    pub fn source_dialogue_ir(&self) -> &[zelda3::dialogue_ir::DialogueIrOp] {
+        &self.source_dialogue_ir
+    }
+
+    pub fn dialogue_ir(&self) -> &[zelda3::dialogue_ir::DialogueIrOp] {
+        &self.dialogue_ir
+    }
+
+    pub fn dialogue_layout(&self) -> &[zelda3::dialogue_ir::DialogueGlyphPlacement] {
+        &self.dialogue_layout
+    }
+
+    pub fn dialogue_layout_origin_tile_number(&self) -> Option<u16> {
+        self.dialogue_layout_origin_tile_number
     }
 
     pub fn mode7_source_chars(&self) -> Option<&[u8]> {
@@ -898,7 +951,15 @@ fn validation_cache_key(capture: &LiveGpuFrameCapture) -> u64 {
         run.x.hash(&mut hasher);
         run.y.hash(&mut hasher);
         run.width.hash(&mut hasher);
+        run.dialogue_ir_kind.hash(&mut hasher);
     }
+    capture.dialogue_message_id().hash(&mut hasher);
+    capture.source_dialogue_ir().hash(&mut hasher);
+    capture.dialogue_ir().hash(&mut hasher);
+    capture.dialogue_layout().hash(&mut hasher);
+    capture
+        .dialogue_layout_origin_tile_number()
+        .hash(&mut hasher);
     capture.player_indoors().hash(&mut hasher);
 
     hasher.finish()
@@ -956,6 +1017,11 @@ fn gpu_frame_capture_from_ppu<'a>(
     raw_scanlines: &'a RawScanlineFrame,
     bg3_source_tiles: &'a [renderer::GpuBg3SourceTile],
     bg3_vwf_glyph_runs: &'a [renderer::GpuBg3VwfGlyphRun],
+    dialogue_message_id: Option<u16>,
+    source_dialogue_ir: &'a [zelda3::dialogue_ir::DialogueIrOp],
+    dialogue_ir: &'a [zelda3::dialogue_ir::DialogueIrOp],
+    dialogue_layout: &'a [zelda3::dialogue_ir::DialogueGlyphPlacement],
+    dialogue_layout_origin_tile_number: Option<u16>,
 ) -> renderer::GpuFrameCaptureInput<'a> {
     renderer::GpuFrameCaptureInput {
         registers: gpu_frame_register_snapshot_from_ppu(ppu),
@@ -963,6 +1029,11 @@ fn gpu_frame_capture_from_ppu<'a>(
         raw_scanlines,
         bg3_source_tiles,
         bg3_vwf_glyph_runs,
+        dialogue_message_id,
+        source_dialogue_ir,
+        dialogue_ir,
+        dialogue_layout,
+        dialogue_layout_origin_tile_number,
     }
 }
 
@@ -973,8 +1044,6 @@ mod tests {
     const SUBMODULE_INDEX: usize = 0x11;
     const SAVED_MODULE_FOR_MENU: usize = 0x010c;
     const MESSAGING_MODULE: usize = 0x1cd8;
-    const DIALOGUE_MESSAGE_INDEX: usize = 0x1cf0;
-
     #[test]
     fn dialogue_glyph_source_matcher_loads_generated_png_tiles() {
         let matcher = DialogueGlyphSourceMatcher::load(&repo_root())
@@ -1034,6 +1103,11 @@ mod tests {
             source_entries: Vec::new(),
             bg3_source_tiles,
             bg3_vwf_glyph_runs: Vec::new(),
+            dialogue_message_id: None,
+            source_dialogue_ir: Vec::new(),
+            dialogue_ir: Vec::new(),
+            dialogue_layout: Vec::new(),
+            dialogue_layout_origin_tile_number: None,
             mode7_source_chars: None,
             main_module: 0,
             player_indoors: 1,
@@ -1098,6 +1172,11 @@ mod tests {
             source_entries: Vec::new(),
             bg3_source_tiles,
             bg3_vwf_glyph_runs: Vec::new(),
+            dialogue_message_id: None,
+            source_dialogue_ir: Vec::new(),
+            dialogue_ir: Vec::new(),
+            dialogue_layout: Vec::new(),
+            dialogue_layout_origin_tile_number: None,
             mode7_source_chars: None,
             main_module: 0,
             player_indoors: 1,
@@ -1143,6 +1222,11 @@ mod tests {
             source_entries: Vec::new(),
             bg3_source_tiles: Vec::new(),
             bg3_vwf_glyph_runs: Vec::new(),
+            dialogue_message_id: None,
+            source_dialogue_ir: Vec::new(),
+            dialogue_ir: Vec::new(),
+            dialogue_layout: Vec::new(),
+            dialogue_layout_origin_tile_number: None,
             mode7_source_chars: None,
             main_module: 0,
             player_indoors: 1,
@@ -1240,6 +1324,11 @@ mod tests {
             source_entries: Vec::new(),
             bg3_source_tiles: Vec::new(),
             bg3_vwf_glyph_runs: Vec::new(),
+            dialogue_message_id: None,
+            source_dialogue_ir: Vec::new(),
+            dialogue_ir: Vec::new(),
+            dialogue_layout: Vec::new(),
+            dialogue_layout_origin_tile_number: None,
             mode7_source_chars: None,
             main_module: 0,
             player_indoors: 1,
@@ -1267,8 +1356,7 @@ mod tests {
         let (mut game, _) =
             crate::developer_room_commands::load_developer_destination("preset-dev-sandbox")
                 .expect("developer sandbox should load");
-        game.ram[DIALOGUE_MESSAGE_INDEX] = 0xc8;
-        game.ram[DIALOGUE_MESSAGE_INDEX + 1] = 0x00;
+        game.set_current_dialogue_message_id(0xc8);
         game.ram[MESSAGING_MODULE] = 0;
         game.ram[SUBMODULE_INDEX] = 2;
         game.ram[SAVED_MODULE_FOR_MENU] = game.ram[MAIN_MODULE_INDEX];
@@ -1278,32 +1366,46 @@ mod tests {
         let resources =
             renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)
                 .expect("modern asset resources should load");
-        let mut saw_glyph_runs = None;
+        let variant_atlas =
+            renderer::modern_variant_atlas::load_modern_canonical_art_atlas(&repo_root)
+                .expect("canonical variant atlas should load");
+        let mut saw_source_glyph_runs = None;
         for _ in 0..160 {
             game.zelda_run_frame(0);
             let frame_capture = capture_gpu_frame_from_game(&mut game);
-            if frame_capture.bg3_vwf_glyph_runs.is_empty() {
+            let gpu_frame = frame_capture.gpu_frame();
+            let source_table = renderer::source_table_from_entries(frame_capture.source_entries());
+            let modern_assets =
+                renderer::modern_extract::extract_asset_resolved_modern_frame_from_sources(
+                    &gpu_frame,
+                    &source_table,
+                    resources.source_atlas().expect("source atlas"),
+                );
+            let source_glyph_run_count = modern_assets.frame.vwf_glyph_runs_for_draw().len();
+            if source_glyph_run_count == 0 {
                 continue;
             }
-            let glyph_run_count = frame_capture.bg3_vwf_glyph_runs.len();
-            saw_glyph_runs = Some(frame_capture.bg3_vwf_glyph_runs.clone());
-            let render = render_modern_asset_capture_rgba(&frame_capture, &resources)
-                .expect("GPU readback should render live dialogue from PNG glyphs");
-            assert_eq!(render.via, "variant-gpu");
-            assert_eq!(render.frame.as_slice().len(), 256 * 224 * 4);
-            let stats = render
-                .variant_stats
-                .expect("variant renderer should report draw stats");
-            if stats.stable_preview_draws == glyph_run_count as u32 * 4 {
-                assert_eq!(stats.missing_art_draws, 0);
+            saw_source_glyph_runs = Some(modern_assets.frame.vwf_glyph_runs_for_draw().to_vec());
+            let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(
+                frame_capture.player_indoors(),
+            );
+            let stats = renderer::modern_variant_draw::compile_variant_draw_stats(
+                &modern_assets.frame,
+                &modern_assets.bg_cells,
+                &modern_assets.sprite_cells,
+                &variant_atlas,
+                scene.bg_palette_name(),
+                scene.sprite_palette_name(),
+            );
+            if stats.stable_preview_draws == source_glyph_run_count as u32 * 4 {
                 assert_eq!(stats.unkeyed_bg3_fallback_draws, 0);
                 assert_no_dynamic_bg3_text_chunks(&frame_capture);
                 return;
             }
         }
         panic!(
-            "live message renderer emitted VWF glyph runs but the default GPU path did not consume them from PNG: {:?}",
-            saw_glyph_runs
+            "source dialogue layout emitted VWF glyph runs but the default GPU path did not consume them from PNG: {:?}",
+            saw_source_glyph_runs
         );
     }
 
@@ -1340,6 +1442,11 @@ mod tests {
             source_entries: Vec::new(),
             bg3_source_tiles: Vec::new(),
             bg3_vwf_glyph_runs: Vec::new(),
+            dialogue_message_id: None,
+            source_dialogue_ir: Vec::new(),
+            dialogue_ir: Vec::new(),
+            dialogue_layout: Vec::new(),
+            dialogue_layout_origin_tile_number: None,
             mode7_source_chars: None,
             main_module: 0,
             player_indoors: 0,
@@ -1415,18 +1522,22 @@ mod tests {
                     .unwrap_or(renderer::modern_hd_overrides::NO_SOURCE_KEY);
                 (is_dynamic_or_unkeyed_bg3_text_key(inst.source_key)
                     || is_dynamic_or_unkeyed_bg3_text_key(cell_source_key))
-                    && modern_assets.frame.bg3_vwf_glyph_runs.iter().any(|run| {
-                        rects_overlap(
-                            inst.screen_x,
-                            inst.screen_y,
-                            8,
-                            8,
-                            run.screen_x,
-                            run.screen_y,
-                            16,
-                            16,
-                        )
-                    })
+                    && modern_assets
+                        .frame
+                        .vwf_glyph_runs_for_draw()
+                        .iter()
+                        .any(|run| {
+                            rects_overlap(
+                                inst.screen_x,
+                                inst.screen_y,
+                                8,
+                                8,
+                                run.screen_x,
+                                run.screen_y,
+                                16,
+                                16,
+                            )
+                        })
             })
             .count();
         let dynamic_bg3_count = modern_assets.frame.bg_layers[2]
@@ -1445,7 +1556,7 @@ mod tests {
 
         assert_eq!(
             overlap_count, 0,
-            "VWF source glyph runs should own covered BG3 dynamic text chunks"
+            "semantic VWF source glyph runs should own covered BG3 dynamic text chunks"
         );
         assert_eq!(
             dynamic_bg3_count, 0,

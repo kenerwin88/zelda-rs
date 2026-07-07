@@ -89,6 +89,23 @@ pub struct GpuFrame<'a> {
     /// Exact dynamic VWF glyph placements in the BG3 message render buffer.
     /// These preserve sub-tile x/y placement for the source-glyph renderer.
     pub bg3_vwf_glyph_runs: &'a [GpuBg3VwfGlyphRun],
+    /// Active source message id from the legacy message index.
+    pub dialogue_message_id: Option<u16>,
+    /// Semantic IR for the source-authored message before runtime substitutions
+    /// such as player name or number expansion.
+    pub source_dialogue_ir: &'a [zelda3_dialogue::DialogueIrOp],
+    /// Full semantic dialogue IR for the current decoded message buffer.
+    /// This is the message-level authority that future layout code should
+    /// consume instead of reconstructing semantics from VRAM or glyph runs.
+    pub dialogue_ir: &'a [zelda3_dialogue::DialogueIrOp],
+    /// Semantic VWF glyph placements derived from `dialogue_ir` and the VWF
+    /// width table. Coordinates are message-buffer local, before BG3 tilemap
+    /// origin/scroll conversion.
+    pub dialogue_layout: &'a [zelda3_dialogue::DialogueGlyphPlacement],
+    /// BG3 tilemap offset for the first word of the VWF render buffer.
+    /// Lets the renderer place semantic dialogue layout without depending on
+    /// already materialized legacy glyph-run records.
+    pub dialogue_layout_origin_tile_number: Option<u16>,
 }
 
 /// Raw register/slice snapshot used to construct a [`GpuFrame`] without tying
@@ -126,6 +143,11 @@ pub struct GpuFrameCaptureInput<'a> {
     pub raw_scanlines: &'a RawScanlineFrame,
     pub bg3_source_tiles: &'a [GpuBg3SourceTile],
     pub bg3_vwf_glyph_runs: &'a [GpuBg3VwfGlyphRun],
+    pub dialogue_message_id: Option<u16>,
+    pub source_dialogue_ir: &'a [zelda3_dialogue::DialogueIrOp],
+    pub dialogue_ir: &'a [zelda3_dialogue::DialogueIrOp],
+    pub dialogue_layout: &'a [zelda3_dialogue::DialogueGlyphPlacement],
+    pub dialogue_layout_origin_tile_number: Option<u16>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -135,13 +157,15 @@ pub struct GpuBg3SourceTile {
     pub source_key: u64,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GpuBg3VwfGlyphRun {
     pub glyph_code: u16,
     pub origin_tile_number: u16,
     pub x: i16,
     pub y: i16,
     pub width: u8,
+    pub dialogue_offset: Option<u16>,
+    pub dialogue_ir_kind: Option<zelda3_dialogue::DialogueIrKind>,
 }
 
 impl<'a> GpuFrame<'a> {
@@ -204,6 +228,11 @@ impl<'a> GpuFrame<'a> {
             scanlines: Self::scanlines_from_raw(input.raw_scanlines),
             bg3_source_tiles: input.bg3_source_tiles,
             bg3_vwf_glyph_runs: input.bg3_vwf_glyph_runs,
+            dialogue_message_id: input.dialogue_message_id,
+            source_dialogue_ir: input.source_dialogue_ir,
+            dialogue_ir: input.dialogue_ir,
+            dialogue_layout: input.dialogue_layout,
+            dialogue_layout_origin_tile_number: input.dialogue_layout_origin_tile_number,
         }
     }
 
@@ -258,6 +287,11 @@ impl<'a> GpuFrame<'a> {
             scanlines,
             bg3_source_tiles: source.bg3_source_tiles(),
             bg3_vwf_glyph_runs: source.bg3_vwf_glyph_runs(),
+            dialogue_message_id: source.dialogue_message_id(),
+            source_dialogue_ir: source.source_dialogue_ir(),
+            dialogue_ir: source.dialogue_ir(),
+            dialogue_layout: source.dialogue_layout(),
+            dialogue_layout_origin_tile_number: source.dialogue_layout_origin_tile_number(),
         }
     }
 }
@@ -303,6 +337,21 @@ pub trait GpuFrameSource<'a> {
     }
     fn bg3_vwf_glyph_runs(&self) -> &'a [GpuBg3VwfGlyphRun] {
         &[]
+    }
+    fn dialogue_message_id(&self) -> Option<u16> {
+        None
+    }
+    fn source_dialogue_ir(&self) -> &'a [zelda3_dialogue::DialogueIrOp] {
+        &[]
+    }
+    fn dialogue_ir(&self) -> &'a [zelda3_dialogue::DialogueIrOp] {
+        &[]
+    }
+    fn dialogue_layout(&self) -> &'a [zelda3_dialogue::DialogueGlyphPlacement] {
+        &[]
+    }
+    fn dialogue_layout_origin_tile_number(&self) -> Option<u16> {
+        None
     }
 }
 
@@ -648,6 +697,11 @@ mod tests {
             raw_scanlines: &raw,
             bg3_source_tiles: &[],
             bg3_vwf_glyph_runs: &[],
+            dialogue_message_id: None,
+            source_dialogue_ir: &[],
+            dialogue_ir: &[],
+            dialogue_layout: &[],
+            dialogue_layout_origin_tile_number: None,
         });
 
         assert_eq!(frame.vram, &vram);

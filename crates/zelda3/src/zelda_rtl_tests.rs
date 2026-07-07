@@ -1,12 +1,16 @@
 use super::*;
+use crate::dialogue_ir::{
+    DialogueIrKind, TEXT_CMD_2, TEXT_CMD_COLOR, TEXT_CMD_END_MESSAGE, TEXT_CMD_NAME,
+    TEXT_CMD_NUMBER, TEXT_CMD_WAIT, TEXT_COMMAND_START_US,
+};
 use crate::game_state::constants::{
     ANCILLA_TYPE, ANCILLA_X_LO, ANCILLA_X_VELOCITY, ANIMATED_TILE_DATA_SRC,
-    BG_TILE_ANIMATION_COUNTDOWN, DMA_SOURCE_ADDR_0, DMA_SOURCE_ADDR_1, DMA_SOURCE_ADDR_10,
-    DMA_SOURCE_ADDR_11, DMA_SOURCE_ADDR_12, DMA_SOURCE_ADDR_13, DMA_SOURCE_ADDR_14,
-    DMA_SOURCE_ADDR_15, DMA_SOURCE_ADDR_16, DMA_SOURCE_ADDR_17, DMA_SOURCE_ADDR_18,
-    DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_2, DMA_SOURCE_ADDR_20, DMA_SOURCE_ADDR_21,
-    DMA_SOURCE_ADDR_3, DMA_SOURCE_ADDR_4, DMA_SOURCE_ADDR_5, DMA_SOURCE_ADDR_6, DMA_SOURCE_ADDR_7,
-    DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9, TM_COPY, TS_COPY,
+    BG_TILE_ANIMATION_COUNTDOWN, DIALOGUE_MESSAGE_INDEX, DMA_SOURCE_ADDR_0, DMA_SOURCE_ADDR_1,
+    DMA_SOURCE_ADDR_10, DMA_SOURCE_ADDR_11, DMA_SOURCE_ADDR_12, DMA_SOURCE_ADDR_13,
+    DMA_SOURCE_ADDR_14, DMA_SOURCE_ADDR_15, DMA_SOURCE_ADDR_16, DMA_SOURCE_ADDR_17,
+    DMA_SOURCE_ADDR_18, DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_2, DMA_SOURCE_ADDR_20,
+    DMA_SOURCE_ADDR_21, DMA_SOURCE_ADDR_3, DMA_SOURCE_ADDR_4, DMA_SOURCE_ADDR_5, DMA_SOURCE_ADDR_6,
+    DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9, TM_COPY, TS_COPY,
 };
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
 
@@ -36,6 +40,79 @@ fn put_test_asset(data: &mut Vec<u8>, ranges: &mut [(usize, usize)], index: usiz
     ranges[index] = (start, data.len());
 }
 
+fn pack_test_memblk_arrays(items: &[Vec<u8>]) -> Vec<u8> {
+    assert!(!items.is_empty());
+    let payload_before_last = items[..items.len() - 1].iter().map(Vec::len).sum::<usize>();
+    let wide_offsets = payload_before_last >= 65536;
+    let mut data = Vec::new();
+    let mut offset = 0usize;
+    for item in &items[..items.len() - 1] {
+        offset += item.len();
+        if wide_offsets {
+            data.extend_from_slice(&(offset as u32).to_le_bytes());
+        } else {
+            data.extend_from_slice(&(offset as u16).to_le_bytes());
+        }
+    }
+    for item in items {
+        data.extend_from_slice(item);
+    }
+    let marker = if wide_offsets {
+        8192 + items.len() - 1
+    } else {
+        items.len() - 1
+    };
+    data.extend_from_slice(&(marker as u16).to_le_bytes());
+    data
+}
+
+fn dialogue_source_sidecar_asset(messages: &[Vec<u8>]) -> Vec<u8> {
+    let state = ZeldaState::new();
+    let table = messages
+        .iter()
+        .map(|message| state.dialogue_ir_for_decoded_bytes(message))
+        .collect::<Vec<_>>();
+    let mut asset = DIALOGUE_SOURCE_SIDECAR_MAGIC.to_vec();
+    asset.extend(bincode::serialize(&table).unwrap());
+    asset
+}
+
+fn asset_pack_with_named_assets(
+    data: Vec<u8>,
+    ranges: Vec<(usize, usize)>,
+    named_assets: &[(usize, &str)],
+) -> AssetPack {
+    let mut names = vec![String::new(); ranges.len()];
+    for &(index, name) in named_assets {
+        names[index] = name.to_string();
+    }
+    AssetPack::from_named_data_ranges(data, ranges, names)
+}
+
+fn test_asset_pack_bytes(named_assets: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    let mut key_signature = Vec::new();
+    for &(name, _) in named_assets {
+        key_signature.extend_from_slice(name.as_bytes());
+        key_signature.push(0);
+    }
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(ASSET_SIGNATURE_PREFIX);
+    bytes.extend_from_slice(&[0; 64]);
+    bytes.extend_from_slice(&(named_assets.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(key_signature.len() as u32).to_le_bytes());
+    for (_, payload) in named_assets {
+        bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    }
+    bytes.extend_from_slice(&key_signature);
+    for (_, payload) in named_assets {
+        while bytes.len() & 3 != 0 {
+            bytes.push(0);
+        }
+        bytes.extend_from_slice(payload);
+    }
+    bytes
+}
+
 fn probe_entrance_asset_pack(entrance_index: usize, room: u16) -> AssetPack {
     let mut data = Vec::new();
     let mut ranges = vec![(0, 0); 56];
@@ -57,7 +134,7 @@ fn probe_entrance_asset_pack(entrance_index: usize, room: u16) -> AssetPack {
     put_test_asset(&mut data, &mut ranges, 54, vec![0; 116]);
     put_test_asset(&mut data, &mut ranges, 55, Vec::new());
 
-    AssetPack { data, ranges }
+    AssetPack::from_data_ranges(data, ranges)
 }
 
 fn probe_overworld_asset_pack(screen: usize) -> AssetPack {
@@ -65,7 +142,7 @@ fn probe_overworld_asset_pack(screen: usize) -> AssetPack {
     let mut ranges = vec![(0, 0); 109];
     put_test_asset(&mut data, &mut ranges, 107, vec![1; screen + 1]);
     put_test_asset(&mut data, &mut ranges, 108, vec![0; screen + 1]);
-    AssetPack { data, ranges }
+    AssetPack::from_data_ranges(data, ranges)
 }
 
 #[test]
@@ -95,26 +172,246 @@ fn owns_oracle_compared_memory_regions() {
 #[test]
 fn bg3_vwf_glyph_runs_track_unaligned_glyphs_and_scroll() {
     let mut state = ZeldaState::new();
+    state
+        .messaging_text_mut()
+        .load_decoded_dialogue(&[0, 1, 2, 0x78, 3]);
     for i in 0..126 {
         state.set_vwf_tile_word_at_byte_offset(i * 2, 0x3980 + i as u16);
     }
 
-    state.record_bg3_vwf_glyph_run(0x41, 7, 0, 8);
+    state.record_bg3_vwf_glyph_run(1, 7, 0, 8, 1);
     assert_eq!(
         state.bg3_vwf_glyph_runs(),
         &[Bg3VwfGlyphRun {
-            glyph_code: 0x41,
+            glyph_code: 1,
             origin_tile_number: 0x180,
             x: 7,
             y: 0,
             width: 8,
         }]
     );
+    assert_eq!(state.bg3_vwf_glyph_run_dialogue_offsets(), &[1]);
+    assert_eq!(
+        state.bg3_vwf_glyph_run_dialogue_ir(0).map(|op| op.kind),
+        Some(DialogueIrKind::Glyph { code: 1 })
+    );
     state.scroll_bg3_vwf_glyph_runs_up_one_pixel();
     assert_eq!(state.bg3_vwf_glyph_runs()[0].y, -1);
+    assert_eq!(state.bg3_vwf_glyph_run_dialogue_offsets(), &[1]);
 
     state.clear_bg3_vwf_glyph_runs();
     assert!(state.bg3_vwf_glyph_runs().is_empty());
+    assert!(state.bg3_vwf_glyph_run_dialogue_offsets().is_empty());
+}
+
+#[test]
+fn dialogue_ir_for_decoded_bytes_uses_runtime_dialogue_flags() {
+    let state = ZeldaState::new();
+
+    let ops = state.dialogue_ir_for_decoded_bytes(&[
+        0,
+        TEXT_COMMAND_START_US + TEXT_CMD_2,
+        TEXT_COMMAND_START_US + TEXT_CMD_WAIT,
+        3,
+    ]);
+
+    assert_eq!(ops[0].kind, DialogueIrKind::Glyph { code: 0 });
+    assert_eq!(ops[1].kind, DialogueIrKind::Line { line: 2 });
+    assert_eq!(ops[2].kind, DialogueIrKind::Wait { duration: 3 });
+}
+
+#[test]
+fn current_dialogue_message_id_setter_updates_native_state_and_ram() {
+    let mut state = ZeldaState::new();
+
+    state.set_current_dialogue_message_id(0x00c8);
+
+    assert_eq!(state.current_dialogue_message_id(), 0x00c8);
+    assert_eq!(read_le_u16(&state.ram, DIALOGUE_MESSAGE_INDEX), 0x00c8);
+}
+
+#[test]
+fn source_dialogue_ir_uses_authored_message_before_runtime_substitution() {
+    let mut data = Vec::new();
+    let mut ranges = vec![(0, 0); 96];
+    put_test_asset(
+        &mut data,
+        &mut ranges,
+        95,
+        dialogue_source_sidecar_asset(&[vec![
+            0,
+            TEXT_COMMAND_START_US + TEXT_CMD_NAME,
+            TEXT_COMMAND_START_US + TEXT_CMD_END_MESSAGE,
+        ]]),
+    );
+    let mut state = ZeldaState::new();
+    state.assets = Some(asset_pack_with_named_assets(
+        data,
+        ranges,
+        &[(95, DIALOGUE_SOURCE_SIDECAR_ASSET_NAME)],
+    ));
+    state.messaging_text_mut().load_decoded_dialogue(&[
+        0,
+        1,
+        TEXT_COMMAND_START_US + TEXT_CMD_END_MESSAGE,
+    ]);
+
+    let source_ir = state.current_source_dialogue_ir();
+    let rendered_ir = state.current_dialogue_ir();
+
+    assert_eq!(state.current_dialogue_message_id(), 0);
+    assert_eq!(source_ir[0].kind, DialogueIrKind::Glyph { code: 0 });
+    assert_eq!(source_ir[1].kind, DialogueIrKind::PlayerName);
+    assert_eq!(source_ir[2].kind, DialogueIrKind::EndMessage);
+    assert_eq!(rendered_ir[0].kind, DialogueIrKind::Glyph { code: 0 });
+    assert_eq!(rendered_ir[1].kind, DialogueIrKind::Glyph { code: 1 });
+    assert_eq!(rendered_ir[2].kind, DialogueIrKind::EndMessage);
+}
+
+#[test]
+fn source_dialogue_ir_requires_named_semantic_sidecar_asset() {
+    let legacy_dictionary = pack_test_memblk_arrays(&[vec![]]);
+    let legacy_messages =
+        pack_test_memblk_arrays(&[vec![0, TEXT_COMMAND_START_US + TEXT_CMD_END_MESSAGE]]);
+    let legacy_asset = pack_test_memblk_arrays(&[legacy_dictionary, legacy_messages]);
+    let mut data = Vec::new();
+    let mut ranges = vec![(0, 0); 96];
+    put_test_asset(&mut data, &mut ranges, 94, legacy_asset);
+    put_test_asset(
+        &mut data,
+        &mut ranges,
+        95,
+        dialogue_source_sidecar_asset(&[vec![1, TEXT_COMMAND_START_US + TEXT_CMD_END_MESSAGE]]),
+    );
+    let mut state = ZeldaState::new();
+    state.assets = Some(AssetPack::from_data_ranges(data, ranges));
+
+    let source_ir = state.current_source_dialogue_ir();
+
+    assert!(source_ir.is_empty());
+}
+
+#[test]
+fn source_dialogue_ir_reads_named_semantic_sidecar_asset() {
+    let mut data = Vec::new();
+    let mut ranges = vec![(0, 0); 96];
+    put_test_asset(
+        &mut data,
+        &mut ranges,
+        95,
+        dialogue_source_sidecar_asset(&[vec![1, TEXT_COMMAND_START_US + TEXT_CMD_END_MESSAGE]]),
+    );
+    let mut state = ZeldaState::new();
+    state.assets = Some(asset_pack_with_named_assets(
+        data,
+        ranges,
+        &[(95, DIALOGUE_SOURCE_SIDECAR_ASSET_NAME)],
+    ));
+
+    let source_ir = state.current_source_dialogue_ir();
+
+    assert_eq!(source_ir[0].kind, DialogueIrKind::Glyph { code: 1 });
+    assert_eq!(source_ir[1].kind, DialogueIrKind::EndMessage);
+}
+
+#[test]
+fn asset_pack_parse_requires_named_dialogue_semantic_sidecar_when_kdialogue_exists() {
+    let err = AssetPack::parse(&test_asset_pack_bytes(&[("kDialogue", vec![0])]))
+        .err()
+        .unwrap();
+
+    assert!(err.contains("missing required kDialogueSourceSemantic"));
+}
+
+#[test]
+fn asset_pack_parse_rejects_malformed_named_dialogue_semantic_sidecar() {
+    let err = AssetPack::parse(&test_asset_pack_bytes(&[
+        ("kDialogue", vec![0]),
+        ("kDialogueSourceSemantic", b"not semantic".to_vec()),
+    ]))
+    .err()
+    .unwrap();
+
+    assert!(err.contains("invalid semantic sidecar magic"));
+}
+
+#[test]
+fn source_render_dialogue_ir_expands_runtime_number_commands() {
+    let mut data = Vec::new();
+    let mut ranges = vec![(0, 0); 96];
+    put_test_asset(
+        &mut data,
+        &mut ranges,
+        95,
+        dialogue_source_sidecar_asset(&[vec![
+            TEXT_COMMAND_START_US + TEXT_CMD_NUMBER,
+            1,
+            TEXT_COMMAND_START_US + TEXT_CMD_END_MESSAGE,
+        ]]),
+    );
+    let mut state = ZeldaState::new();
+    state.assets = Some(asset_pack_with_named_assets(
+        data,
+        ranges,
+        &[(95, DIALOGUE_SOURCE_SIDECAR_ASSET_NAME)],
+    ));
+    state
+        .game_state
+        .messaging
+        .dialogue_number
+        .set_packed_digits(0x42, 0);
+
+    let source_ir = state.current_source_dialogue_ir();
+    let render_ir = state.current_source_render_dialogue_ir();
+
+    assert_eq!(source_ir[0].kind, DialogueIrKind::Number { slot: 1 });
+    assert_eq!(render_ir[0].kind, DialogueIrKind::Glyph { code: 0x38 });
+    assert_eq!(render_ir[1].kind, DialogueIrKind::EndMessage);
+}
+
+#[test]
+fn visible_source_render_dialogue_ir_tracks_live_read_position() {
+    let mut data = Vec::new();
+    let mut ranges = vec![(0, 0); 96];
+    put_test_asset(
+        &mut data,
+        &mut ranges,
+        95,
+        dialogue_source_sidecar_asset(&[vec![
+            TEXT_COMMAND_START_US + TEXT_CMD_COLOR,
+            2,
+            0,
+            1,
+            TEXT_COMMAND_START_US + TEXT_CMD_END_MESSAGE,
+        ]]),
+    );
+    let mut state = ZeldaState::new();
+    state.assets = Some(asset_pack_with_named_assets(
+        data,
+        ranges,
+        &[(95, DIALOGUE_SOURCE_SIDECAR_ASSET_NAME)],
+    ));
+    state.messaging_text_mut().load_decoded_dialogue(&[
+        0,
+        1,
+        TEXT_COMMAND_START_US + TEXT_CMD_END_MESSAGE,
+    ]);
+    state.messaging_state_mut().set_dialogue_msg_read_pos(1);
+
+    let render_ir = state.current_visible_source_render_dialogue_ir();
+    let visible_kinds = render_ir.iter().map(|op| &op.kind).collect::<Vec<_>>();
+
+    assert_eq!(
+        visible_kinds,
+        vec![
+            &DialogueIrKind::Color { color: 2 },
+            &DialogueIrKind::Glyph { code: 0 },
+        ]
+    );
+    assert_eq!(
+        render_ir.iter().map(|op| op.offset).collect::<Vec<_>>(),
+        vec![0, 0]
+    );
 }
 
 #[test]
@@ -217,10 +514,7 @@ fn rom_palette_words_fall_back_to_generated_assets_without_rom() {
         data.extend_from_slice(&(value ^ 0xffff).to_le_bytes());
         asset_ranges[asset] = (start, data.len());
     }
-    state.assets = Some(AssetPack {
-        data,
-        ranges: asset_ranges,
-    });
+    state.assets = Some(AssetPack::from_data_ranges(data, asset_ranges));
 
     for &(base, _, value) in &ranges {
         assert_eq!(state.rom_or_asset_word_snes(base), Some(value));
@@ -1087,7 +1381,7 @@ fn overworld_tile_attribute_uses_map16_and_map8_assets() {
     let mut ranges = vec![(0, 0); 164];
     ranges[70] = (0, 0x80);
     ranges[163] = (0x80, 0x100);
-    state.assets = Some(AssetPack { data, ranges });
+    state.assets = Some(AssetPack::from_data_ranges(data, ranges));
 
     assert_eq!(
         state.overworld_get_tile_attribute_at_location(4, 0x28),
@@ -2281,7 +2575,7 @@ fn mirror_item_crossing_and_follower_cleanup_match_core_state() {
     let mut ranges = vec![(0, 0); 164];
     ranges[70] = (0, 0x80);
     ranges[163] = (0x80, 0x100);
-    crossing.assets = Some(AssetPack { data, ranges });
+    crossing.assets = Some(AssetPack::from_data_ranges(data, ranges));
     crossing.link_state_crossing_worlds();
     assert_eq!(crossing.game_state.frame.submodule, 44);
     assert_eq!(crossing.game_state.player.follower_link.handler_state(), 20);
@@ -2575,7 +2869,7 @@ fn item_tile_behavior_routes_overworld_attr_to_tile_execute() {
     let mut ranges = vec![(0, 0); 164];
     ranges[70] = (0, 0x80);
     ranges[163] = (0x80, 0x100);
-    state.assets = Some(AssetPack { data, ranges });
+    state.assets = Some(AssetPack::from_data_ranges(data, ranges));
 
     state.tile_detect_main_handler(1);
 
@@ -2973,7 +3267,7 @@ fn graphics_half_slot_transforms_uncompressed_sprite_pack() {
     data.extend_from_slice(&8u16.to_le_bytes());
     let mut ranges = vec![(0, 0); 65];
     ranges[64] = (0, data.len());
-    state.assets = Some(AssetPack { data, ranges });
+    state.assets = Some(AssetPack::from_data_ranges(data, ranges));
 
     state.set_chr_halfslot_request(20);
     state.graphics_load_chr_half_slot();

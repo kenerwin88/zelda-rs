@@ -82,3 +82,55 @@ Each record includes the legacy table fields as named JSON numbers. Signed
 legacy fields, such as dungeon `floor`/`palace`, exit `unk1`/`unk3`, and special
 exit `tab4` through `tab7`, are stored as signed JSON numbers and packed back
 to the original little-endian byte representation by the build script.
+
+## Dialogue
+
+During ROM extraction, the dialogue asset gets two readable files under
+`generated/zelda3_assets/assets_src/dialogue/`:
+
+- `dialogue_catalog.json` uses `zelda3_dialogue_catalog_v1`.
+- `dialogue_source.json` uses `zelda3_dialogue_source_v1`.
+
+The catalog is the semantic bridge for inspection and parity work. It preserves:
+
+- source asset hashes for `kDialogue` and `kDialogueMap`;
+- language/map config from asset `096`;
+- dictionary expansion records for every message;
+- original raw message bytes and expanded bytes;
+- a parsed operation stream for glyphs and US dialogue commands such as
+  `player_name`, `number`, `color`, `wait`, `speed`, `line1` through `line3`,
+  `choose`, and `end_message`;
+- a lossy `preview_text` field for quick human inspection.
+
+Dynamic runtime values are intentionally kept as operations instead of being
+resolved during extraction. For example, a player-name command stays
+`player_name`; it is not replaced by a particular save-slot name.
+
+The source file is the editable authority for building `kDialogue`. Each message
+stores `source_text` using literal glyph text plus explicit control tags such as `[line1]`, `[wait 03]`,
+`[color 02]`, `[player_name]`, `[choose]`, and `[end_message]`. Bracketed
+button/symbol glyphs, such as `[A]` and `[Up]`, keep their glyph names.
+
+Extraction verifies each generated `source_text` by compiling it back to the
+expanded bytecode recorded in the catalog. The build script uses the shared
+`zelda3-dialogue` source compiler to pack `dialogue_source.json` into a valid
+`kDialogue` asset with uncompressed message bytecode and an empty dictionary
+table. This intentionally trades the original ROM compression for a simpler
+authoring path while keeping the runtime message-state machine unchanged.
+Generated messages also include `expanded_sha1`; when present, the Rust source
+compiler validates it against the compiled message bytes. This makes extracted
+source files parity-checked by default. Deliberate edits should update or remove
+that per-message hash so the source change is explicit.
+When `zelda3-bin` packs assets, `dialogue_source.json` is required for
+`kDialogue`; a stale `094-kDialogue.bin` is not used as a fallback. The packer
+also embeds a named `kDialogueSourceSemantic` sidecar derived from that source
+file. The sidecar payload is a self-identifying serialized table of
+`DialogueIrOp` messages, so the modern GPU dialogue path reads source-derived
+semantic IR directly without reparsing compiled `kDialogue` bytes.
+
+The canonical art atlas also exports editable dialogue VWF glyph sheets under
+`generated/zelda3_assets/atlas/`. `dialogue_vwf_glyphs.png` and
+`dialogue_vwf_glyphs.json` include the main grayscale glyph cells plus
+`palette_bg3_text_color_00` through `palette_bg3_text_color_0f` cells generated
+from `hud_pal_data.json`, so semantic `[color xx]` commands can select colored
+PNG glyph variants directly.

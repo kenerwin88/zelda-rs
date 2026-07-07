@@ -10,6 +10,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import extract_assets
+import dialogue_catalog
 import navigation_json
 import palette_json
 import tilemap_json
@@ -266,6 +267,118 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 (out_dir / "assets/069-kPredefinedTileData.bin").read_bytes(),
                 payload,
             )
+
+    def test_writes_dialogue_catalog_sidecar_from_extracted_assets(self) -> None:
+        dictionary = pack_arrays([bytes([0])])
+        messages = pack_arrays([bytes([0x88, 0x7F])])
+        dialogue_asset = pack_arrays([dictionary, messages]) + b"\0\0"
+        language_asset = pack_arrays([b"us", bytes([0, 0, 0])]) + b"\0\0"
+
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            assets = [(f"kUnused{i}", b"x") for i in range(94)]
+            assets.extend(
+                [
+                    ("kDialogue", dialogue_asset),
+                    ("kUnused95", b"x"),
+                    ("kDialogueMap", language_asset),
+                ]
+            )
+            manifest = extract_assets.write_asset_outputs(
+                out_dir,
+                assets,
+            )
+
+            artifacts = extract_assets.write_dialogue_catalog(out_dir)
+
+            self.assertEqual(
+                artifacts,
+                [
+                    {
+                        "file": "assets_src/dialogue/dialogue_catalog.json",
+                        "source_format": dialogue_catalog.FORMAT_DIALOGUE_CATALOG,
+                    },
+                    {
+                        "file": "assets_src/dialogue/dialogue_source.json",
+                        "source_format": dialogue_catalog.FORMAT_DIALOGUE_SOURCE,
+                    },
+                ],
+            )
+            dialogue_manifest = manifest[94]
+            self.assertEqual(
+                dialogue_manifest["source_file"],
+                "assets_src/dialogue/dialogue_source.json",
+            )
+            self.assertEqual(
+                dialogue_manifest["source_format"],
+                dialogue_catalog.FORMAT_DIALOGUE_SOURCE,
+            )
+            self.assertEqual(dialogue_manifest["file"], "assets/094-kDialogue.bin")
+            source_path = out_dir / "assets_src/dialogue/dialogue_catalog.json"
+            source_text_path = out_dir / "assets_src/dialogue/dialogue_source.json"
+            catalog = json.loads(source_path.read_text())
+            source = json.loads(source_text_path.read_text())
+            self.assertEqual(catalog["message_count"], 1)
+            self.assertEqual(catalog["messages"][0]["preview_text"], "A")
+            self.assertEqual(
+                source,
+                {
+                    "encoding": {
+                        "control_tags": (
+                            "commands use [name] or [name xx]; bracket glyphs keep "
+                            "their glyph names"
+                        ),
+                        "dictionary_strategy": "compile_uncompressed_messages",
+                        "mode": "us",
+                    },
+                    "format": dialogue_catalog.FORMAT_DIALOGUE_SOURCE,
+                    "language": {
+                        "dialogue_pack": 0,
+                        "flags": 0,
+                        "font_pack": 0,
+                        "language": "us",
+                        "raw_config": ["00", "00", "00"],
+                    },
+                    "message_count": 1,
+                    "messages": [
+                        {
+                            "expanded_sha1": "1d2725b53e3f3dff1b38a0a5e7710244ff8cc5fa",
+                            "id": 0,
+                            "source_text": "A[end_message]",
+                        }
+                    ],
+                },
+            )
+
+    def test_kdialogue_manifest_points_to_source_while_keeping_bin_evidence(self) -> None:
+        dictionary = pack_arrays([bytes([0])])
+        messages = pack_arrays([bytes([0x88, 0x7F])])
+        dialogue_asset = pack_arrays([dictionary, messages]) + b"\0\0"
+        language_asset = pack_arrays([b"us", bytes([0, 0, 0])]) + b"\0\0"
+
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            assets = [(f"kUnused{i}", b"x") for i in range(94)]
+            assets.extend(
+                [
+                    ("kDialogue", dialogue_asset),
+                    ("kUnused95", b"x"),
+                    ("kDialogueMap", language_asset),
+                ]
+            )
+
+            manifest = extract_assets.write_asset_outputs(out_dir, assets)
+
+            self.assertEqual(
+                manifest[94]["source_file"],
+                "assets_src/dialogue/dialogue_source.json",
+            )
+            self.assertEqual(
+                manifest[94]["source_format"],
+                dialogue_catalog.FORMAT_DIALOGUE_SOURCE,
+            )
+            self.assertEqual(manifest[94]["file"], "assets/094-kDialogue.bin")
+            self.assertTrue((out_dir / "assets/094-kDialogue.bin").is_file())
 
     def test_writes_chr_source_sheets_from_extracted_graphics_assets(self) -> None:
         raw_pack = bytes([0] * 1536)

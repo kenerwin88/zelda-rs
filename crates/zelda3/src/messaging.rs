@@ -7,17 +7,8 @@ mod messaging_shared;
 use messaging_shared::*;
 
 fn text_decode_cmd(a: u8, src: *const u8) -> u32 {
-    if a < TEXT_COMMAND_START_US || a >= 0x80 {
-        let param = if a >= 0x80 { 26 } else { a };
-        return ((param as u32) << 16) | ((TEXT_CMD_IS_LETTER as u32) << 8);
-    }
-    let cmd = a - TEXT_COMMAND_START_US;
-    let param = if TEXT_DECODE_COMMAND_LENGTHS_US[cmd as usize] != 0 {
-        unsafe { src.as_ref().copied().unwrap_or(0) }
-    } else {
-        0
-    };
-    ((param as u32) << 16) | ((cmd as u32) << 8)
+    let decoded = crate::dialogue_ir::decode_dialogue_byte(0, a, unsafe { src.as_ref().copied() });
+    ((decoded.param as u32) << 16) | ((decoded.command as u32) << 8)
 }
 
 impl ZeldaState {
@@ -2870,43 +2861,8 @@ impl ZeldaState {
     }
 
     fn text_decode_cmd(&self, a: u8, next: Option<u8>) -> (u8, u8, bool) {
-        if self.dialogue_flags & 1 == 0 {
-            if a < TEXT_COMMAND_START_US || a >= 0x80 {
-                return (if a >= 0x80 { 26 } else { a }, TEXT_CMD_IS_LETTER, false);
-            }
-            let cmd = a - TEXT_COMMAND_START_US;
-            if TEXT_RENDER_COMMAND_LENGTHS_US[cmd as usize] != 0 {
-                (next.unwrap_or(0), cmd, true)
-            } else {
-                (0, cmd, false)
-            }
-        } else if a < 0x7f {
-            (a, TEXT_CMD_IS_LETTER, false)
-        } else if a < 0x87 {
-            TEXT_RENDER_SIMPLE_COMMANDS[(a - 0x7f) as usize]
-        } else {
-            match next.unwrap_or(0) {
-                b @ 0x00..=0x0f => (b & 0x0f, TEXT_CMD_WAIT, true),
-                b @ 0x10..=0x1f => (b & 0x0f, TEXT_CMD_COLOR, true),
-                b @ 0x20..=0x2f => (b & 0x0f, TEXT_CMD_NUMBER, true),
-                b @ 0x30..=0x3f => (b & 0x0f, TEXT_CMD_SPEED, true),
-                b @ 0x40..=0x4f => (
-                    TEXT_RENDER_SOUND_COMMAND_PARAMS[(b & 0x0f) as usize],
-                    TEXT_CMD_SOUND,
-                    true,
-                ),
-                0x80 => (0, TEXT_CMD_CHOOSE, true),
-                0x81 => (0, TEXT_CMD_CHOOSE2, true),
-                0x82 => (0, TEXT_CMD_CHOOSE3, true),
-                0x83 => (0, TEXT_CMD_SELCHG, true),
-                0x84 => (0, TEXT_CMD_ITEM, true),
-                0x85 => (0, TEXT_CMD_NEXT_PIC, true),
-                0x86 => (2, TEXT_CMD_WINDOW, true),
-                0x87 => (0, TEXT_CMD_POSITION, true),
-                0x88 => (1, TEXT_CMD_POSITION, true),
-                _ => (26, TEXT_CMD_IS_LETTER, false),
-            }
-        }
+        let decoded = crate::dialogue_ir::decode_dialogue_byte(self.dialogue_flags, a, next);
+        (decoded.param, decoded.command, decoded.multibyte)
     }
 
     pub(super) fn Text_LoadCharacterBuffer(&mut self) {
@@ -3035,7 +2991,7 @@ impl ZeldaState {
         effective_len
     }
 
-    fn text_write_player_name_vec(&self, decoded: &mut Vec<u8>) {
+    pub(crate) fn text_write_player_name_vec(&self, decoded: &mut Vec<u8>) {
         let slot = self.selected_save_slot_byte();
         let offs = (((slot >> 1) as isize) - 1) * 0x500;
         let start = 0x3d9isize + offs;
@@ -3141,7 +3097,7 @@ impl ZeldaState {
                     if self.game_state.messaging.runtime.vwf_line_speed_cur() >= 2 {
                         self.messaging_state_mut().decrement_vwf_line_speed_cur();
                     } else {
-                        self.VWF_RenderSingle(param as i32);
+                        self.VWF_RenderSingle(param as i32, read_pos as u16);
                         command_done = true;
                         restart_if_zero_speed =
                             self.game_state.messaging.runtime.vwf_line_speed_cur() == 0;
@@ -3248,7 +3204,7 @@ impl ZeldaState {
         self.set_main_module(saved_module);
     }
 
-    pub(super) fn VWF_RenderSingle(&mut self, c: i32) {
+    pub(super) fn VWF_RenderSingle(&mut self, c: i32, dialogue_offset: u16) {
         let c = c as u8;
         if c != 0x59 {
             self.set_sound_effect_2(12);
@@ -3276,7 +3232,7 @@ impl ZeldaState {
         let r10 = ((c as usize & 0x70) * 2) + (c as usize & 0x0f);
         let r0 = arrval as usize * 2;
         let line_ptr = self.game_state.messaging.vwf_render.line_render_offset() as usize;
-        self.record_bg3_vwf_glyph_run(c, arrval, line_ptr, width);
+        self.record_bg3_vwf_glyph_run(c, arrval, line_ptr, width, dialogue_offset);
         self.messaging_vwf_render_half(&font_data, r10, r0, line_ptr, width);
         self.messaging_vwf_render_half(&font_data, r10 + 16, r0, line_ptr + 0x150, width);
     }

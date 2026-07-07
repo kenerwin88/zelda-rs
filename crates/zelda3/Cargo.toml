@@ -12,6 +12,8 @@ opus = "0.3.1"
 serde = { version = "1", features = ["derive"] }
 serde-big-array = "0.5"
 snes = { path = "../snes" }
+zelda3-compat = { path = "../zelda3-compat" }
+zelda3-dialogue = { path = "../zelda3-dialogue" }
 
 [lints]
 workspace = true

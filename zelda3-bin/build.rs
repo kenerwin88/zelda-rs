@@ -10,6 +10,8 @@ const FORMAT_DUNGEON_ENTRANCES: &str = "zelda3_dungeon_entrances_v1";
 const FORMAT_STARTING_POINTS: &str = "zelda3_starting_points_v1";
 const FORMAT_OVERWORLD_EXITS: &str = "zelda3_overworld_exits_v1";
 const FORMAT_SPECIAL_EXITS: &str = "zelda3_special_exits_v1";
+const DIALOGUE_SOURCE_SIDECAR_ASSET_NAME: &str = "kDialogueSourceSemantic";
+const DIALOGUE_SOURCE_SIDECAR_MAGIC: &[u8; 16] = b"Z3DLGSRCv1\0\0\0\0\0\0";
 
 struct NavigationField {
     asset: &'static str,
@@ -504,9 +506,9 @@ fn pack_assets(generated_dir: &Path) -> PathBuf {
         48,
         "generated asset_signature.bin must be 48 bytes"
     );
-    let key_signature = fs::read(generated_dir.join("asset_key_signature.bin"))
+    let mut key_signature = fs::read(generated_dir.join("asset_key_signature.bin"))
         .expect("failed to read generated asset_key_signature.bin");
-    let names = key_signature
+    let mut names = key_signature
         .split(|byte| *byte == 0)
         .filter(|name| !name.is_empty())
         .map(|name| String::from_utf8(name.to_vec()).expect("asset name is not utf8"))
@@ -537,6 +539,12 @@ fn pack_assets(generated_dir: &Path) -> PathBuf {
             &manifest_assets[index],
         ));
     }
+    if let Some(sidecar) = read_dialogue_source_sidecar(generated_dir) {
+        key_signature.extend_from_slice(DIALOGUE_SOURCE_SIDECAR_ASSET_NAME.as_bytes());
+        key_signature.push(0);
+        names.push(DIALOGUE_SOURCE_SIDECAR_ASSET_NAME.to_string());
+        assets.push(sidecar);
+    }
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let asset_pack = out_dir.join("zelda3_assets.dat");
@@ -558,6 +566,17 @@ fn pack_assets(generated_dir: &Path) -> PathBuf {
     fs::write(&asset_pack, file_data)
         .unwrap_or_else(|err| panic!("failed to write {}: {err}", asset_pack.display()));
     asset_pack
+}
+
+fn read_dialogue_source_sidecar(generated_dir: &Path) -> Option<Vec<u8>> {
+    let source_path = generated_dir.join("assets_src/dialogue/dialogue_source.json");
+    if !source_path.is_file() {
+        return None;
+    }
+    println!("cargo:rerun-if-changed={}", source_path.display());
+    let mut sidecar = DIALOGUE_SOURCE_SIDECAR_MAGIC.to_vec();
+    sidecar.extend(read_dialogue_source_ir_table(&source_path));
+    Some(sidecar)
 }
 
 fn read_manifest(generated_dir: &Path) -> serde_json::Value {
@@ -590,6 +609,16 @@ fn read_asset(
             .and_then(serde_json::Value::as_str),
     ) {
         return read_source_asset(generated_dir, source_format, source_file, name);
+    }
+    if name == "kDialogue" {
+        let (source_format, source_file) =
+            known_source(name).expect("kDialogue must have a known editable source");
+        return read_source_asset(generated_dir, source_format, source_file, name);
+    }
+    if let Some((source_format, source_file)) = known_source(name) {
+        if generated_dir.join(source_file).is_file() {
+            return read_source_asset(generated_dir, source_format, source_file, name);
+        }
     }
 
     let bin_path = generated_dir
@@ -737,6 +766,10 @@ fn known_source(name: &str) -> Option<(&'static str, &'static str)> {
             FORMAT_SNES_PALETTE,
             "assets_src/palettes/overworld_sprite_palettes.json",
         )),
+        "kDialogue" => Some((
+            zelda3_dialogue::FORMAT_DIALOGUE_SOURCE,
+            "assets_src/dialogue/dialogue_source.json",
+        )),
         _ => None,
     }
 }
@@ -753,6 +786,7 @@ fn read_source_asset(
         FORMAT_BYTE_TILEMAP => read_byte_tilemap_json(&source_path),
         FORMAT_BYTE_STREAM_TILEMAP => read_byte_stream_tilemap_json(&source_path),
         FORMAT_SNES_PALETTE => read_snes_palette_json(&source_path),
+        zelda3_dialogue::FORMAT_DIALOGUE_SOURCE => read_dialogue_source_json(&source_path),
         FORMAT_DUNGEON_ENTRANCES
         | FORMAT_STARTING_POINTS
         | FORMAT_OVERWORLD_EXITS
@@ -1029,6 +1063,30 @@ fn push_navigation_value(
         }
         other => panic!("unsupported navigation value type {other}"),
     }
+}
+
+fn read_dialogue_source_json(source_path: &Path) -> Vec<u8> {
+    let text = fs::read_to_string(source_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", source_path.display()));
+    let source: zelda3_dialogue::DialogueSourceDocument = serde_json::from_str(&text)
+        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", source_path.display()));
+    zelda3_dialogue::compile_dialogue_source_document(&source)
+        .unwrap_or_else(|err| panic!("failed to compile {}: {err}", source_path.display()))
+}
+
+fn read_dialogue_source_ir_table(source_path: &Path) -> Vec<u8> {
+    let text = fs::read_to_string(source_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", source_path.display()));
+    let source: zelda3_dialogue::DialogueSourceDocument = serde_json::from_str(&text)
+        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", source_path.display()));
+    let table = zelda3_dialogue::compile_dialogue_source_ir_table(&source)
+        .unwrap_or_else(|err| panic!("failed to compile {}: {err}", source_path.display()));
+    bincode::serialize(&table).unwrap_or_else(|err| {
+        panic!(
+            "failed to serialize {} semantic IR: {err}",
+            source_path.display()
+        )
+    })
 }
 
 fn read_byte_stream_tilemap_json(source_path: &Path) -> Vec<u8> {

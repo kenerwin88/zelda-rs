@@ -4108,6 +4108,11 @@ mod tests {
             scanlines: Box::new([gpu_frame::ScanlineRegs::default(); 224]),
             bg3_source_tiles: &[],
             bg3_vwf_glyph_runs: &[],
+            dialogue_message_id: None,
+            source_dialogue_ir: &[],
+            dialogue_ir: &[],
+            dialogue_layout: &[],
+            dialogue_layout_origin_tile_number: None,
         };
         let entries: [(u8, u16, u16); 0] = [];
 
@@ -4165,6 +4170,11 @@ mod tests {
             scanlines: Box::new([gpu_frame::ScanlineRegs::default(); 224]),
             bg3_source_tiles: &[],
             bg3_vwf_glyph_runs: &[],
+            dialogue_message_id: None,
+            source_dialogue_ir: &[],
+            dialogue_ir: &[],
+            dialogue_layout: &[],
+            dialogue_layout_origin_tile_number: None,
         };
         let entries: [(u8, u16, u16); 0] = [];
 
@@ -4479,6 +4489,11 @@ mod tests {
             scanlines,
             bg3_source_tiles: &[],
             bg3_vwf_glyph_runs: &[],
+            dialogue_message_id: None,
+            source_dialogue_ir: &[],
+            dialogue_ir: &[],
+            dialogue_layout: &[],
+            dialogue_layout_origin_tile_number: None,
         };
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

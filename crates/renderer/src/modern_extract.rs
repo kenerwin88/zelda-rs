@@ -7,6 +7,7 @@ use crate::modern_frame::{
 use crate::modern_index_atlas::{index_cell_for_tilemap_entry, ModernIndexAtlas, ModernIndexTile};
 use crate::modern_source_atlas::source_cell_by_indices;
 use crate::modern_sprite_atlas::{sprite_index_cell, ModernSpriteIndexAtlas};
+use std::collections::HashMap;
 
 pub struct AssetResolvedModernFrame {
     pub frame: ModernFrame,
@@ -1682,9 +1683,18 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                 screen_x: origin_x + run.x,
                 screen_y: origin_y + run.y,
                 width: run.width,
+                dialogue_offset: run.dialogue_offset,
+                dialogue_ir_kind: run.dialogue_ir_kind.clone(),
+                dialogue_color: None,
             })
         })
         .collect();
+    modern.dialogue_message_id = frame.dialogue_message_id;
+    modern.source_dialogue_ir = frame.source_dialogue_ir.to_vec();
+    modern.dialogue_ir = frame.dialogue_ir.to_vec();
+    modern.dialogue_layout = frame.dialogue_layout.to_vec();
+    modern.dialogue_layout_vwf_glyph_runs =
+        semantic_dialogue_layout_vwf_glyph_runs(frame, &bg3_tile_screen_xy);
     cull_bg3_dynamic_tiles_covered_by_vwf_glyph_runs(&mut modern, &mut missing_sources);
     if dbg {
         eprintln!("[SRC_DEBUG] bg_tiles={dbg_total} wrong_cell={dbg_mismatch} gap={dbg_gap} stale_of_kind6={dbg_stale}");
@@ -1701,7 +1711,8 @@ fn cull_bg3_dynamic_tiles_covered_by_vwf_glyph_runs(
     modern: &mut ModernFrame,
     missing_sources: &mut Vec<MissingAssetSource>,
 ) {
-    if modern.bg3_vwf_glyph_runs.is_empty() {
+    let vwf_glyph_runs = modern.vwf_glyph_runs_for_draw().to_vec();
+    if vwf_glyph_runs.is_empty() {
         return;
     }
     let Some(bg3) = modern.bg_layers.get_mut(2) else {
@@ -1709,7 +1720,7 @@ fn cull_bg3_dynamic_tiles_covered_by_vwf_glyph_runs(
     };
     bg3.index_tiles.retain(|inst| {
         !is_dynamic_or_unkeyed_bg3_source(inst.source_key)
-            || !modern.bg3_vwf_glyph_runs.iter().any(|run| {
+            || !vwf_glyph_runs.iter().any(|run| {
                 rects_overlap(
                     inst.screen_x,
                     inst.screen_y,
@@ -1725,7 +1736,7 @@ fn cull_bg3_dynamic_tiles_covered_by_vwf_glyph_runs(
     missing_sources.retain(|missing| {
         missing.surface != MissingAssetSurface::Bg
             || missing.layer_index != Some(2)
-            || !modern.bg3_vwf_glyph_runs.iter().any(|run| {
+            || !vwf_glyph_runs.iter().any(|run| {
                 rects_overlap(
                     missing.screen_x,
                     missing.screen_y,
@@ -1738,6 +1749,71 @@ fn cull_bg3_dynamic_tiles_covered_by_vwf_glyph_runs(
                 )
             })
     });
+}
+
+fn semantic_dialogue_layout_vwf_glyph_runs(
+    frame: &GpuFrame<'_>,
+    bg3_tile_screen_xy: &HashMap<u16, (i16, i16)>,
+) -> Vec<ModernVwfGlyphRun> {
+    let Some(origin_tile_number) = frame.dialogue_layout_origin_tile_number else {
+        return Vec::new();
+    };
+    let Some((origin_x, origin_y)) = bg3_tile_screen_xy
+        .get(&origin_tile_number)
+        .copied()
+        .or_else(|| bg3_tilemap_offset_screen_xy(frame, origin_tile_number))
+    else {
+        return Vec::new();
+    };
+    let runs = frame
+        .dialogue_layout
+        .iter()
+        .map(|placement| {
+            let dialogue_ir_kind = frame
+                .dialogue_ir
+                .iter()
+                .find(|op| op.offset == placement.op_offset)
+                .map(|op| op.kind.clone());
+            ModernVwfGlyphRun {
+                glyph_code: u16::from(placement.glyph_code),
+                screen_x: origin_x + placement.x,
+                screen_y: origin_y + placement.y,
+                width: placement.width,
+                dialogue_offset: u16::try_from(placement.op_offset).ok(),
+                dialogue_ir_kind,
+                dialogue_color: placement.color,
+            }
+        })
+        .collect::<Vec<_>>();
+    if !frame.bg3_vwf_glyph_runs.is_empty()
+        && !semantic_vwf_layout_matches_live_runs(&runs, frame, bg3_tile_screen_xy)
+    {
+        return Vec::new();
+    }
+    runs
+}
+
+fn semantic_vwf_layout_matches_live_runs(
+    semantic_runs: &[ModernVwfGlyphRun],
+    frame: &GpuFrame<'_>,
+    bg3_tile_screen_xy: &HashMap<u16, (i16, i16)>,
+) -> bool {
+    semantic_runs.len() == frame.bg3_vwf_glyph_runs.len()
+        && semantic_runs
+            .iter()
+            .zip(frame.bg3_vwf_glyph_runs.iter())
+            .all(|(semantic, live)| {
+                let Some((origin_x, origin_y)) = bg3_tile_screen_xy
+                    .get(&live.origin_tile_number)
+                    .copied()
+                    .or_else(|| bg3_tilemap_offset_screen_xy(frame, live.origin_tile_number))
+                else {
+                    return false;
+                };
+                semantic.screen_x == origin_x + live.x
+                    && semantic.screen_y == origin_y + live.y
+                    && semantic.width == live.width
+            })
 }
 
 fn is_dynamic_or_unkeyed_bg3_source(source_key: u64) -> bool {
@@ -3399,15 +3475,47 @@ mod tests {
         let runs = [GpuBg3VwfGlyphRun {
             glyph_code: 0x41,
             origin_tile_number: 0x180,
-            x: 7,
-            y: 2,
+            x: 0,
+            y: 0,
             width: 8,
+            dialogue_offset: Some(0x12),
+            dialogue_ir_kind: Some(zelda3_dialogue::DialogueIrKind::Glyph { code: 0x41 }),
+        }];
+        let dialogue_ir = vec![zelda3_dialogue::DialogueIrOp {
+            offset: 0x12,
+            raw: vec![0x41],
+            command: zelda3_dialogue::TEXT_CMD_IS_LETTER,
+            param: 0x41,
+            multibyte: false,
+            kind: zelda3_dialogue::DialogueIrKind::Glyph { code: 0x41 },
+        }];
+        let source_dialogue_ir = vec![zelda3_dialogue::DialogueIrOp {
+            offset: 0,
+            raw: vec![zelda3_dialogue::TEXT_COMMAND_START_US + zelda3_dialogue::TEXT_CMD_NAME],
+            command: zelda3_dialogue::TEXT_CMD_NAME,
+            param: 0,
+            multibyte: false,
+            kind: zelda3_dialogue::DialogueIrKind::PlayerName,
+        }];
+        let dialogue_layout = vec![zelda3_dialogue::DialogueGlyphPlacement {
+            op_offset: 0x12,
+            glyph_code: 0x41,
+            line: 0,
+            x: 0,
+            y: 0,
+            width: 8,
+            color: Some(2),
         }];
         let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
         frame.screen_enabled[0] = 1 << 2;
         frame.bg[2].tilemap_adr = 0;
         frame.bg[2].tile_adr = 0;
         frame.bg3_vwf_glyph_runs = &runs;
+        frame.dialogue_message_id = Some(0x12);
+        frame.source_dialogue_ir = &source_dialogue_ir;
+        frame.dialogue_ir = &dialogue_ir;
+        frame.dialogue_layout = &dialogue_layout;
+        frame.dialogue_layout_origin_tile_number = Some(0x180);
 
         let table = |_slot: usize| (0, 0, 0);
         let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![], &[]);
@@ -3415,10 +3523,141 @@ mod tests {
 
         assert_eq!(modern.bg3_vwf_glyph_runs.len(), 1);
         assert_eq!(modern.bg3_vwf_glyph_runs[0].glyph_code, 0x41);
-        assert_eq!(modern.bg3_vwf_glyph_runs[0].screen_x, 7);
+        assert_eq!(modern.bg3_vwf_glyph_runs[0].screen_x, 0);
         // BG extraction applies the SNES BG vertical fetch offset (`-1`).
-        assert_eq!(modern.bg3_vwf_glyph_runs[0].screen_y, 1);
+        assert_eq!(modern.bg3_vwf_glyph_runs[0].screen_y, -1);
         assert_eq!(modern.bg3_vwf_glyph_runs[0].width, 8);
+        assert_eq!(modern.bg3_vwf_glyph_runs[0].dialogue_offset, Some(0x12));
+        assert_eq!(
+            modern.bg3_vwf_glyph_runs[0].dialogue_ir_kind,
+            Some(zelda3_dialogue::DialogueIrKind::Glyph { code: 0x41 })
+        );
+        assert_eq!(modern.dialogue_layout_vwf_glyph_runs.len(), 1);
+        assert_eq!(modern.dialogue_layout_vwf_glyph_runs[0].glyph_code, 0x41);
+        assert_eq!(modern.dialogue_layout_vwf_glyph_runs[0].screen_x, 0);
+        assert_eq!(modern.dialogue_layout_vwf_glyph_runs[0].screen_y, -1);
+        assert_eq!(
+            modern.dialogue_layout_vwf_glyph_runs[0].dialogue_ir_kind,
+            Some(zelda3_dialogue::DialogueIrKind::Glyph { code: 0x41 })
+        );
+        assert_eq!(
+            modern.dialogue_layout_vwf_glyph_runs[0].dialogue_color,
+            Some(2)
+        );
+        assert_eq!(modern.dialogue_message_id, Some(0x12));
+        assert_eq!(modern.source_dialogue_ir, source_dialogue_ir);
+        assert_eq!(modern.dialogue_ir, dialogue_ir);
+        assert_eq!(modern.dialogue_layout, dialogue_layout);
+    }
+
+    #[test]
+    fn semantic_vwf_layout_uses_source_glyph_when_live_glyph_label_differs() {
+        use crate::modern_source_atlas::ModernSourceAtlas;
+
+        let mut vram = vec![0u16; 0x8000];
+        vram[0] = 0x3980;
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        let runs = [GpuBg3VwfGlyphRun {
+            glyph_code: 0x40,
+            origin_tile_number: 0x180,
+            x: 0,
+            y: 0,
+            width: 8,
+            dialogue_offset: Some(0),
+            dialogue_ir_kind: Some(zelda3_dialogue::DialogueIrKind::Glyph { code: 0x40 }),
+        }];
+        let dialogue_ir = vec![zelda3_dialogue::DialogueIrOp {
+            offset: 0,
+            raw: vec![0x41],
+            command: zelda3_dialogue::TEXT_CMD_IS_LETTER,
+            param: 0x41,
+            multibyte: false,
+            kind: zelda3_dialogue::DialogueIrKind::Glyph { code: 0x41 },
+        }];
+        let dialogue_layout = vec![zelda3_dialogue::DialogueGlyphPlacement {
+            op_offset: 0,
+            glyph_code: 0x41,
+            line: 0,
+            x: 0,
+            y: 0,
+            width: 8,
+            color: Some(3),
+        }];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.screen_enabled[0] = 1 << 2;
+        frame.bg[2].tilemap_adr = 0;
+        frame.bg[2].tile_adr = 0;
+        frame.bg3_vwf_glyph_runs = &runs;
+        frame.dialogue_ir = &dialogue_ir;
+        frame.dialogue_layout = &dialogue_layout;
+        frame.dialogue_layout_origin_tile_number = Some(0x180);
+
+        let table = |_slot: usize| (0, 0, 0);
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![], &[]);
+        let (modern, _) = extract_modern_frame_from_sources(&frame, &table, &atlas);
+
+        assert_eq!(modern.bg3_vwf_glyph_runs[0].source_glyph_code(), 0x40);
+        assert_eq!(modern.dialogue_layout_vwf_glyph_runs.len(), 1);
+        assert_eq!(
+            modern.dialogue_layout_vwf_glyph_runs[0].source_glyph_code(),
+            0x41
+        );
+        assert_eq!(
+            modern.dialogue_layout_vwf_glyph_runs[0].dialogue_color,
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn semantic_vwf_layout_mismatch_does_not_fall_back_to_live_glyph_runs() {
+        use crate::modern_source_atlas::ModernSourceAtlas;
+
+        let mut vram = vec![0u16; 0x8000];
+        vram[0] = 0x3980;
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        let runs = [GpuBg3VwfGlyphRun {
+            glyph_code: 0x40,
+            origin_tile_number: 0x180,
+            x: 0,
+            y: 0,
+            width: 8,
+            dialogue_offset: Some(0),
+            dialogue_ir_kind: Some(zelda3_dialogue::DialogueIrKind::Glyph { code: 0x40 }),
+        }];
+        let dialogue_ir = vec![zelda3_dialogue::DialogueIrOp {
+            offset: 0,
+            raw: vec![0x41],
+            command: zelda3_dialogue::TEXT_CMD_IS_LETTER,
+            param: 0x41,
+            multibyte: false,
+            kind: zelda3_dialogue::DialogueIrKind::Glyph { code: 0x41 },
+        }];
+        let dialogue_layout = vec![zelda3_dialogue::DialogueGlyphPlacement {
+            op_offset: 0,
+            glyph_code: 0x41,
+            line: 0,
+            x: 0,
+            y: 8,
+            width: 8,
+            color: None,
+        }];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.screen_enabled[0] = 1 << 2;
+        frame.bg[2].tilemap_adr = 0;
+        frame.bg[2].tile_adr = 0;
+        frame.bg3_vwf_glyph_runs = &runs;
+        frame.dialogue_ir = &dialogue_ir;
+        frame.dialogue_layout = &dialogue_layout;
+        frame.dialogue_layout_origin_tile_number = Some(0x180);
+
+        let table = |_slot: usize| (0, 0, 0);
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![], &[]);
+        let (modern, _) = extract_modern_frame_from_sources(&frame, &table, &atlas);
+
+        assert!(modern.dialogue_layout_vwf_glyph_runs.is_empty());
+        assert!(modern.vwf_glyph_runs_for_draw().is_empty());
     }
 
     #[test]
@@ -3455,6 +3694,90 @@ mod tests {
             x: 0,
             y: 0,
             width: 8,
+            dialogue_offset: None,
+            dialogue_ir_kind: None,
+        }];
+        let dialogue_ir = vec![zelda3_dialogue::DialogueIrOp {
+            offset: 0,
+            raw: vec![0x41],
+            command: zelda3_dialogue::TEXT_CMD_IS_LETTER,
+            param: 0x41,
+            multibyte: false,
+            kind: zelda3_dialogue::DialogueIrKind::Glyph { code: 0x41 },
+        }];
+        let dialogue_layout = vec![zelda3_dialogue::DialogueGlyphPlacement {
+            op_offset: 0,
+            glyph_code: 0x41,
+            line: 0,
+            x: 0,
+            y: 0,
+            width: 8,
+            color: None,
+        }];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        frame.bg[2].tilemap_adr = 0;
+        frame.bg[2].tile_adr = 0x1000;
+        frame.screen_enabled = [0x04, 0x00];
+        frame.bg3_vwf_glyph_runs = &runs;
+        frame.dialogue_ir = &dialogue_ir;
+        frame.dialogue_layout = &dialogue_layout;
+        frame.dialogue_layout_origin_tile_number = Some(7);
+
+        let (modern, cells, missing_sources) =
+            extract_modern_frame_from_sources_with_missing_sources(&frame, &table, &atlas);
+
+        assert_eq!(cells.len(), 1, "dynamic BG3 content cell was decoded");
+        assert_eq!(
+            cells[0].source_key,
+            modern_source_key(CHR_KIND_BG3_CONTENT, source_pack, source_tile)
+        );
+        assert!(
+            modern.bg_layers[2].index_tiles.is_empty(),
+            "VWF source glyph run should own the covered dynamic BG3 text tile"
+        );
+        assert!(missing_sources.is_empty());
+        assert_eq!(modern.bg3_vwf_glyph_runs.len(), 1);
+        assert_eq!(modern.bg3_vwf_glyph_runs[0].glyph_code, 0x41);
+        assert_eq!(modern.dialogue_layout_vwf_glyph_runs.len(), 1);
+    }
+
+    #[test]
+    fn extract_from_sources_does_not_cull_dynamic_bg3_tiles_without_semantic_vwf_layout() {
+        use crate::gpu_frame::GpuBg3VwfGlyphRun;
+        use crate::modern_source_atlas::{modern_source_key, ModernSourceAtlas};
+
+        let mut baked = [0u8; 64];
+        baked[0] = 14;
+        let content_hash = index_pattern_hash32(&baked);
+        let source_pack = (content_hash >> 16) as u16;
+        let source_tile = (content_hash & 0xffff) as u16;
+        let source_cell = ModernIndexTile {
+            id: 0,
+            indices: baked,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        };
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
+            vec![source_cell],
+            &[(CHR_KIND_BG3_CONTENT, source_pack, source_tile, 0)],
+        );
+        let table = |_slot: usize| -> (u8, u16, u16) { (0, 0, 0) };
+
+        let mut vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        vram[0] = 7 | (3 << 10);
+        vram[0x1038] = 0x8000;
+        let runs = [GpuBg3VwfGlyphRun {
+            glyph_code: 0x41,
+            origin_tile_number: 7,
+            x: 0,
+            y: 0,
+            width: 8,
+            dialogue_offset: None,
+            dialogue_ir_kind: None,
         }];
         let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
         frame.mode = 1;
@@ -3472,12 +3795,90 @@ mod tests {
             modern_source_key(CHR_KIND_BG3_CONTENT, source_pack, source_tile)
         );
         assert!(
-            modern.bg_layers[2].index_tiles.is_empty(),
-            "VWF source glyph run should own the covered dynamic BG3 text tile"
+            !modern.bg_layers[2].index_tiles.is_empty(),
+            "live VWF runs alone must not cull dynamic BG3 text tiles"
         );
+        assert!(modern.vwf_glyph_runs_for_draw().is_empty());
         assert!(missing_sources.is_empty());
-        assert_eq!(modern.bg3_vwf_glyph_runs.len(), 1);
-        assert_eq!(modern.bg3_vwf_glyph_runs[0].glyph_code, 0x41);
+    }
+
+    #[test]
+    fn semantic_vwf_layout_requires_explicit_origin_tile() {
+        use crate::gpu_frame::GpuBg3VwfGlyphRun;
+        use crate::modern_source_atlas::{modern_source_key, ModernSourceAtlas};
+
+        let mut baked = [0u8; 64];
+        baked[0] = 14;
+        let content_hash = index_pattern_hash32(&baked);
+        let source_pack = (content_hash >> 16) as u16;
+        let source_tile = (content_hash & 0xffff) as u16;
+        let source_cell = ModernIndexTile {
+            id: 0,
+            indices: baked,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        };
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
+            vec![source_cell],
+            &[(CHR_KIND_BG3_CONTENT, source_pack, source_tile, 0)],
+        );
+        let table = |_slot: usize| -> (u8, u16, u16) { (0, 0, 0) };
+
+        let mut vram = vec![0u16; 0x8000];
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        vram[0] = 7 | (3 << 10);
+        vram[0x1038] = 0x8000;
+        let runs = [GpuBg3VwfGlyphRun {
+            glyph_code: 0x41,
+            origin_tile_number: 7,
+            x: 0,
+            y: 0,
+            width: 8,
+            dialogue_offset: Some(0),
+            dialogue_ir_kind: Some(zelda3_dialogue::DialogueIrKind::Glyph { code: 0x41 }),
+        }];
+        let dialogue_ir = vec![zelda3_dialogue::DialogueIrOp {
+            offset: 0,
+            raw: vec![0x41],
+            command: zelda3_dialogue::TEXT_CMD_IS_LETTER,
+            param: 0x41,
+            multibyte: false,
+            kind: zelda3_dialogue::DialogueIrKind::Glyph { code: 0x41 },
+        }];
+        let dialogue_layout = vec![zelda3_dialogue::DialogueGlyphPlacement {
+            op_offset: 0,
+            glyph_code: 0x41,
+            line: 0,
+            x: 0,
+            y: 0,
+            width: 8,
+            color: None,
+        }];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.mode = 1;
+        frame.bg[2].tilemap_adr = 0;
+        frame.bg[2].tile_adr = 0x1000;
+        frame.screen_enabled = [0x04, 0x00];
+        frame.bg3_vwf_glyph_runs = &runs;
+        frame.dialogue_ir = &dialogue_ir;
+        frame.dialogue_layout = &dialogue_layout;
+
+        let (modern, cells, missing_sources) =
+            extract_modern_frame_from_sources_with_missing_sources(&frame, &table, &atlas);
+
+        assert_eq!(cells.len(), 1);
+        assert_eq!(
+            cells[0].source_key,
+            modern_source_key(CHR_KIND_BG3_CONTENT, source_pack, source_tile)
+        );
+        assert!(
+            !modern.bg_layers[2].index_tiles.is_empty(),
+            "semantic layout without an explicit origin must not borrow live VWF placement"
+        );
+        assert!(modern.vwf_glyph_runs_for_draw().is_empty());
+        assert!(missing_sources.is_empty());
     }
 
     #[test]
@@ -3493,6 +3894,8 @@ mod tests {
             x: 7,
             y: 0,
             width: 7,
+            dialogue_offset: None,
+            dialogue_ir_kind: None,
         }];
         let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
         frame.screen_enabled[0] = 1 << 2;
@@ -3547,6 +3950,11 @@ mod tests {
             scanlines: Box::new([ScanlineRegs::default(); 224]),
             bg3_source_tiles: &[],
             bg3_vwf_glyph_runs: &[],
+            dialogue_message_id: None,
+            source_dialogue_ir: &[],
+            dialogue_ir: &[],
+            dialogue_layout: &[],
+            dialogue_layout_origin_tile_number: None,
         }
     }
 

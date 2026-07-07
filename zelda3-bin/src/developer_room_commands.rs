@@ -6,7 +6,10 @@ use crate::developer_destinations;
 use crate::gpu_capture::render_live_game_gpu_frame_rgba;
 use crate::image_output::{write_argb_frame_png, write_rgba_frame_png};
 use crate::render_diagnostics::run_diagnostic_play_frame_bgra;
-use crate::{load_replay_save_checkpoint, load_translated_replay_state, read_le_u16, write_le_u16};
+use crate::{
+    load_embedded_asset_replay_state, load_replay_save_checkpoint, load_translated_replay_state,
+    read_le_u16, write_le_u16,
+};
 use platform::{DeveloperCurrentLocation, DeveloperThumbnail};
 use renderer::modern_extract::decode_snes_4bpp_tile_indices;
 use renderer::modern_palette::snes_cgram_to_rgba;
@@ -198,8 +201,10 @@ fn load_developer_synthetic_room(
     room: developer_destinations::DeveloperSyntheticRoom,
 ) -> Result<(ZeldaState, u32), String> {
     let manifest = developer_sandbox_tilemap_manifest(room)?;
-    let mut game =
-        load_translated_replay_state(concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc"));
+    let mut game = load_embedded_asset_replay_state(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../saves/zelda3.sfc"
+    ))?;
     load_replay_save_checkpoint(&mut game, Path::new(room.seed_checkpoint_path)).map_err(|e| {
         format!(
             "failed to load synthetic room seed checkpoint {}: {e}",
@@ -221,8 +226,10 @@ fn load_developer_synthetic_room(
 fn load_developer_room_theme_source(
     room: developer_destinations::DeveloperSyntheticRoom,
 ) -> Result<ZeldaState, String> {
-    let mut source =
-        load_translated_replay_state(concat!(env!("CARGO_MANIFEST_DIR"), "/../saves/zelda3.sfc"));
+    let mut source = load_embedded_asset_replay_state(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../saves/zelda3.sfc"
+    ))?;
     load_replay_save_checkpoint(&mut source, Path::new(room.theme_checkpoint_path)).map_err(
         |e| {
             format!(

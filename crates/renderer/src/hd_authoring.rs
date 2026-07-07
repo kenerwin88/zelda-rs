@@ -193,6 +193,11 @@ mod tests {
             scanlines: Box::new([ScanlineRegs::default(); 224]),
             bg3_source_tiles: &[],
             bg3_vwf_glyph_runs: &[],
+            dialogue_message_id: None,
+            source_dialogue_ir: &[],
+            dialogue_ir: &[],
+            dialogue_layout: &[],
+            dialogue_layout_origin_tile_number: None,
         }
     }
 

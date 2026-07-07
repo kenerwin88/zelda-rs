@@ -4,15 +4,56 @@
 from __future__ import annotations
 
 import os
+import json
 import shutil
 import subprocess
+import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import dialogue_catalog
+
 
 REPO = Path(__file__).resolve().parents[1]
 GENERATED_ASSETS = REPO / "generated/zelda3_assets"
+
+
+def built_asset_pack() -> Path:
+    candidates = sorted(
+        REPO.glob("target/debug/build/zelda3-bin-*/out/zelda3_assets.dat"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        raise AssertionError("cargo build did not produce zelda3_assets.dat")
+    return candidates[0]
+
+
+def split_built_asset_pack(asset_pack: Path) -> list[tuple[str, bytes]]:
+    data = asset_pack.read_bytes()
+    if len(data) < 88 or data[:16] != b"Zelda3_v0     \n\0":
+        raise AssertionError(f"{asset_pack} is not a zelda3 asset pack")
+    count = int.from_bytes(data[80:84], "little")
+    key_signature_len = int.from_bytes(data[84:88], "little")
+    sizes_start = 88
+    key_signature_start = sizes_start + count * 4
+    payload_offset = key_signature_start + key_signature_len
+    names = (
+        data[key_signature_start:payload_offset]
+        .rstrip(b"\0")
+        .decode("utf8")
+        .split("\0")
+    )
+    assets = []
+    offset = payload_offset
+    for index, name in enumerate(names):
+        size = int.from_bytes(data[sizes_start + index * 4 : sizes_start + index * 4 + 4], "little")
+        offset = (offset + 3) & ~3
+        end = offset + size
+        assets.append((name, data[offset:end]))
+        offset = end
+    return assets
 
 
 class AssetSourceBuildTests(unittest.TestCase):
@@ -41,6 +82,107 @@ class AssetSourceBuildTests(unittest.TestCase):
             )
 
         self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_build_packs_dialogue_from_editable_source_without_bin(self) -> None:
+        if not GENERATED_ASSETS.is_dir():
+            self.skipTest(f"missing generated assets: {GENERATED_ASSETS}")
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir) / "zelda3_assets"
+            shutil.copytree(GENERATED_ASSETS, asset_dir)
+            source_result = subprocess.run(
+                [
+                    "python3",
+                    "scripts/dialogue_catalog.py",
+                    "--asset-dir",
+                    str(asset_dir),
+                ],
+                cwd=REPO,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+            self.assertEqual(source_result.returncode, 0, source_result.stdout)
+
+            manifest_path = asset_dir / "manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            dialogue = manifest["assets"][94]
+            self.assertEqual(dialogue["name"], "kDialogue")
+            dialogue["source_file"] = "assets_src/dialogue/dialogue_source.json"
+            dialogue["source_format"] = "zelda3_dialogue_source_v1"
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+            (asset_dir / "assets/094-kDialogue.bin").unlink()
+
+            result = subprocess.run(
+                ["cargo", "build", "-p", "zelda3-bin"],
+                cwd=REPO,
+                env={**os.environ, "ZELDA3_ASSETS_DIR": str(asset_dir)},
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_build_packs_dialogue_from_source_even_when_stale_bin_exists(self) -> None:
+        if not GENERATED_ASSETS.is_dir():
+            self.skipTest(f"missing generated assets: {GENERATED_ASSETS}")
+
+        with TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir) / "zelda3_assets"
+            shutil.copytree(GENERATED_ASSETS, asset_dir)
+            source_result = subprocess.run(
+                [
+                    "python3",
+                    "scripts/dialogue_catalog.py",
+                    "--asset-dir",
+                    str(asset_dir),
+                ],
+                cwd=REPO,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+            self.assertEqual(source_result.returncode, 0, source_result.stdout)
+
+            manifest_path = asset_dir / "manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            dialogue = manifest["assets"][94]
+            self.assertEqual(dialogue["name"], "kDialogue")
+            dialogue.pop("source_file", None)
+            dialogue.pop("source_format", None)
+            manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+
+            source_path = asset_dir / "assets_src/dialogue/dialogue_source.json"
+            source = json.loads(source_path.read_text())
+            source["messages"][0]["source_text"] = "B[end_message]"
+            source["messages"][0].pop("expanded_sha1", None)
+            source_path.write_text(json.dumps(source, indent=2, sort_keys=True) + "\n")
+            stale_bin = (asset_dir / "assets/094-kDialogue.bin").read_bytes()
+            expected_dialogue_asset = dialogue_catalog.asset_from_dialogue_source(source)
+            self.assertNotEqual(stale_bin, expected_dialogue_asset)
+
+            build_started_at = time.time()
+            result = subprocess.run(
+                ["cargo", "build", "-p", "zelda3-bin"],
+                cwd=REPO,
+                env={**os.environ, "ZELDA3_ASSETS_DIR": str(asset_dir)},
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout)
+
+            asset_pack = built_asset_pack()
+            self.assertGreaterEqual(asset_pack.stat().st_mtime, build_started_at - 1)
+            assets = split_built_asset_pack(asset_pack)
+            self.assertEqual(assets[94][0], "kDialogue")
+            self.assertEqual(assets[94][1], expected_dialogue_asset)
+            sidecars = [
+                payload for name, payload in assets if name == "kDialogueSourceSemantic"
+            ]
+            self.assertEqual(len(sidecars), 1)
+            self.assertTrue(sidecars[0].startswith(b"Z3DLGSRCv1\0\0\0\0\0\0"))
 
     def test_generated_assets_store_all_tilemaps_as_json_sources(self) -> None:
         if not GENERATED_ASSETS.is_dir():

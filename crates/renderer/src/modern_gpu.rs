@@ -433,14 +433,20 @@ impl ModernGpuVariantRenderer {
     }
 
     fn append_vwf_glyph_runs_to_variant_frame(&self, frame: &ModernFrame, out: &mut ModernFrame) {
-        if frame.bg3_vwf_glyph_runs.is_empty() {
+        let vwf_glyph_runs = frame.vwf_glyph_runs_for_draw();
+        if vwf_glyph_runs.is_empty() {
             return;
         }
         out.bg_layers[1].enabled_main = true;
-        for run in &frame.bg3_vwf_glyph_runs {
+        for run in vwf_glyph_runs {
+            let glyph_code = run.source_glyph_code();
             for quadrant in 0..4u16 {
-                let Some(entry) = dialogue_vwf_variant_entry(&self.atlas, run.glyph_code, quadrant)
-                else {
+                let Some(entry) = crate::modern_variant_atlas::dialogue_vwf_variant_entry(
+                    &self.atlas,
+                    glyph_code,
+                    quadrant,
+                    run.dialogue_color,
+                ) else {
                     continue;
                 };
                 let qx = i16::from((quadrant & 1) as u8) * 8;
@@ -455,19 +461,6 @@ impl ModernGpuVariantRenderer {
             }
         }
     }
-}
-
-fn dialogue_vwf_variant_entry(
-    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
-    glyph_code: u16,
-    quadrant: u16,
-) -> Option<&crate::modern_variant_atlas::VariantAtlasEntry> {
-    let key = crate::modern_variant_atlas::variant_key_for_source_key(
-        crate::modern_source_atlas::modern_source_key(10, glyph_code, quadrant),
-        "palette_bg3_text_main",
-        0,
-    )?;
-    atlas.entry_for_source_key(&key)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4690,27 +4683,18 @@ mod tests {
     #[test]
     fn headless_gpu_variant_draws_vwf_glyph_runs_from_source_png_entries() {
         use crate::modern_frame::ModernVwfGlyphRun;
-        use crate::modern_variant_atlas::{ModernVariantAtlas, VariantAtlasEntry, VariantAtlasKey};
+        use crate::modern_variant_atlas::{
+            dialogue_text_color_palette_name, dialogue_vwf_variant_key, DialogueVwfGlyphAtlas,
+            DialogueVwfGlyphCell, ModernVariantAtlas, VariantAtlasEntry,
+            DIALOGUE_TEXT_MAIN_PALETTE,
+        };
 
-        fn vwf_entry(code: u16, quadrant: u16) -> VariantAtlasEntry {
+        fn vwf_entry(code: u16, quadrant: u16, palette: &str, rect: [u32; 4]) -> VariantAtlasEntry {
             VariantAtlasEntry {
                 id: format!("dialogue_vwf:kDialogueVwfGlyphs:pack{code}:tile{quadrant}:2bpp"),
-                key: VariantAtlasKey {
-                    source_kind: "dialogue_vwf".to_string(),
-                    asset: "kDialogueVwfGlyphs".to_string(),
-                    pack: code,
-                    tile: quadrant,
-                    bpp: 2,
-                    palette: "palette_bg3_text_main".to_string(),
-                    palette_row: 0,
-                },
-                rect: [
-                    u32::from(quadrant & 1) * 8,
-                    u32::from(quadrant >> 1) * 8,
-                    8,
-                    8,
-                ],
-                sha1: format!("test:{quadrant}"),
+                key: dialogue_vwf_variant_key(code, quadrant, palette),
+                rect,
+                sha1: format!("test:{quadrant}:{palette}"),
                 duplicate_of: None,
                 dynamic_policy: "stable".to_string(),
                 runtime_material: None,
@@ -4721,32 +4705,77 @@ mod tests {
         }
 
         let mut rgba = vec![0u8; 16 * 16 * 4];
-        let src = (3 * 16 + 2) * 4;
-        rgba[src..src + 4].copy_from_slice(&[248, 248, 248, 255]);
+        let main_src = (3 * 16 + 2) * 4;
+        rgba[main_src..main_src + 4].copy_from_slice(&[248, 248, 248, 255]);
+        let color_src = (3 * 16 + 10) * 4;
+        rgba[color_src..color_src + 4].copy_from_slice(&[248, 64, 64, 255]);
+        let color_palette = dialogue_text_color_palette_name(7);
+        let mut entries = (0..4)
+            .map(|quadrant| {
+                vwf_entry(
+                    0x41,
+                    quadrant,
+                    DIALOGUE_TEXT_MAIN_PALETTE,
+                    [
+                        u32::from(quadrant & 1) * 8,
+                        u32::from(quadrant >> 1) * 8,
+                        8,
+                        8,
+                    ],
+                )
+            })
+            .collect::<Vec<_>>();
+        entries.push(vwf_entry(0x41, 0, &color_palette, [8, 0, 8, 8]));
         let atlas = ModernVariantAtlas {
             width: 16,
             height: 16,
             rgba,
-            entries: (0..4).map(|quadrant| vwf_entry(0x41, quadrant)).collect(),
+            entries,
             effects: Vec::new(),
             mode7_source_chars: None,
             dialogue_glyph_atlas: None,
             dialogue_vwf_font: None,
-            dialogue_vwf_glyph_atlas: None,
+            dialogue_vwf_glyph_atlas: Some(DialogueVwfGlyphAtlas {
+                width: 16,
+                height: 16,
+                rgba: Vec::new(),
+                glyphs: vec![DialogueVwfGlyphCell {
+                    code: 0x41,
+                    hex: "41".to_string(),
+                    width: 8,
+                    palette: DIALOGUE_TEXT_MAIN_PALETTE.to_string(),
+                    rect: [0, 0, 16, 16],
+                    indices: Vec::new(),
+                }],
+            }),
         };
         let mut frame = ModernFrame::empty();
         frame.bg3_vwf_glyph_runs.push(ModernVwfGlyphRun {
-            glyph_code: 0x41,
-            screen_x: 10,
-            screen_y: 20,
+            glyph_code: 0xee,
+            screen_x: 40,
+            screen_y: 40,
             width: 8,
+            dialogue_offset: None,
+            dialogue_ir_kind: None,
+            dialogue_color: None,
         });
+        frame
+            .dialogue_layout_vwf_glyph_runs
+            .push(ModernVwfGlyphRun {
+                glyph_code: 0x41,
+                screen_x: 10,
+                screen_y: 20,
+                width: 8,
+                dialogue_offset: Some(0x12),
+                dialogue_ir_kind: Some(zelda3_dialogue::DialogueIrKind::Glyph { code: 0x41 }),
+                dialogue_color: Some(7),
+            });
 
         let renderer = ModernGpuVariantHeadless::new(&atlas);
         let (out, stats) = renderer.render_rgba(&frame, &[], &[], "unused", "unused");
 
         let dst = ((20 + 3) * 256 + (10 + 2)) * 4;
-        assert_eq!(&out[dst..dst + 4], &[248, 248, 248, 255]);
+        assert_eq!(&out[dst..dst + 4], &[248, 64, 64, 255]);
         assert_eq!(stats.stable_preview_draws, 4);
         assert_eq!(stats.stable_draws, 4);
     }
@@ -11951,6 +11980,11 @@ mod tests {
             scanlines: Box::new([crate::gpu_frame::ScanlineRegs::default(); 224]),
             bg3_source_tiles: &[],
             bg3_vwf_glyph_runs: &[],
+            dialogue_message_id: None,
+            source_dialogue_ir: &[],
+            dialogue_ir: &[],
+            dialogue_layout: &[],
+            dialogue_layout_origin_tile_number: None,
         }
     }
 

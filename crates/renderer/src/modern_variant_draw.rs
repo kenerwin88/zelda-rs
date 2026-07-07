@@ -589,9 +589,9 @@ fn record_vwf_glyph_run_stats(
     stats: &mut VariantAtlasRenderStats,
 ) {
     let vwf_glyphs = dialogue_vwf_glyph_presence(atlas);
-    for run in &frame.bg3_vwf_glyph_runs {
+    for run in frame.vwf_glyph_runs_for_draw() {
         if vwf_glyphs
-            .get(usize::from(run.glyph_code))
+            .get(usize::from(run.source_glyph_code()))
             .copied()
             .unwrap_or(false)
         {
@@ -990,7 +990,7 @@ mod tests {
     use crate::modern_source_atlas::modern_source_key;
     use crate::modern_variant_atlas::{
         DialogueVwfGlyphAtlas, DialogueVwfGlyphCell, ModernVariantAtlas, TileEffect,
-        VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
+        VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey, DIALOGUE_TEXT_MAIN_PALETTE,
     };
 
     fn bg_key(pack: u16, tile: u16, palette_row: u8) -> VariantAtlasKey {
@@ -1152,17 +1152,36 @@ mod tests {
     fn vwf_glyph_run_stats_use_loaded_source_png_glyph_atlas() {
         let mut frame = ModernFrame::empty();
         frame.bg3_vwf_glyph_runs.push(ModernVwfGlyphRun {
-            glyph_code: 0x41,
-            screen_x: 4,
-            screen_y: 8,
+            glyph_code: 0xee,
+            screen_x: 40,
+            screen_y: 40,
             width: 8,
+            dialogue_offset: None,
+            dialogue_ir_kind: None,
+            dialogue_color: None,
         });
-        frame.bg3_vwf_glyph_runs.push(ModernVwfGlyphRun {
-            glyph_code: 0x42,
-            screen_x: 12,
-            screen_y: 8,
-            width: 8,
-        });
+        frame
+            .dialogue_layout_vwf_glyph_runs
+            .push(ModernVwfGlyphRun {
+                glyph_code: 0x41,
+                screen_x: 4,
+                screen_y: 8,
+                width: 8,
+                dialogue_offset: Some(0x12),
+                dialogue_ir_kind: Some(zelda3_dialogue::DialogueIrKind::Glyph { code: 0x41 }),
+                dialogue_color: None,
+            });
+        frame
+            .dialogue_layout_vwf_glyph_runs
+            .push(ModernVwfGlyphRun {
+                glyph_code: 0xee,
+                screen_x: 12,
+                screen_y: 8,
+                width: 8,
+                dialogue_offset: Some(0x13),
+                dialogue_ir_kind: Some(zelda3_dialogue::DialogueIrKind::Glyph { code: 0x42 }),
+                dialogue_color: None,
+            });
         let atlas = ModernVariantAtlas {
             width: 16,
             height: 16,
@@ -1180,6 +1199,7 @@ mod tests {
                     code: 0x41,
                     hex: "41".to_string(),
                     width: 8,
+                    palette: DIALOGUE_TEXT_MAIN_PALETTE.to_string(),
                     rect: [0, 0, 16, 16],
                     indices: vec![0u8; 16 * 16],
                 }],

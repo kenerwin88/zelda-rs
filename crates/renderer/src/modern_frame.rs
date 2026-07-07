@@ -9,6 +9,11 @@ pub struct ModernFrame {
     pub sprites: Vec<ModernSpriteInstance>,
     pub index_sprites: Vec<ModernIndexSpriteInstance>,
     pub bg3_vwf_glyph_runs: Vec<ModernVwfGlyphRun>,
+    pub dialogue_message_id: Option<u16>,
+    pub source_dialogue_ir: Vec<zelda3_dialogue::DialogueIrOp>,
+    pub dialogue_ir: Vec<zelda3_dialogue::DialogueIrOp>,
+    pub dialogue_layout: Vec<zelda3_dialogue::DialogueGlyphPlacement>,
+    pub dialogue_layout_vwf_glyph_runs: Vec<ModernVwfGlyphRun>,
     pub backdrop_color_rgba: [u8; 4],
     pub brightness: u8,
     pub forced_blank: bool,
@@ -87,6 +92,11 @@ impl ModernFrame {
             sprites: Vec::new(),
             index_sprites: Vec::new(),
             bg3_vwf_glyph_runs: Vec::new(),
+            dialogue_message_id: None,
+            source_dialogue_ir: Vec::new(),
+            dialogue_ir: Vec::new(),
+            dialogue_layout: Vec::new(),
+            dialogue_layout_vwf_glyph_runs: Vec::new(),
             backdrop_color_rgba: [0, 0, 0, 0xff],
             brightness: 15,
             forced_blank: false,
@@ -113,14 +123,30 @@ impl ModernFrame {
             bg_scroll_scanlines: Vec::new(),
         }
     }
+
+    pub fn vwf_glyph_runs_for_draw(&self) -> &[ModernVwfGlyphRun] {
+        &self.dialogue_layout_vwf_glyph_runs
+    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModernVwfGlyphRun {
     pub glyph_code: u16,
     pub screen_x: i16,
     pub screen_y: i16,
     pub width: u8,
+    pub dialogue_offset: Option<u16>,
+    pub dialogue_ir_kind: Option<zelda3_dialogue::DialogueIrKind>,
+    pub dialogue_color: Option<u8>,
+}
+
+impl ModernVwfGlyphRun {
+    pub fn source_glyph_code(&self) -> u16 {
+        match &self.dialogue_ir_kind {
+            Some(zelda3_dialogue::DialogueIrKind::Glyph { code }) => u16::from(*code),
+            _ => self.glyph_code,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -292,6 +318,36 @@ mod tests {
         assert_eq!(frame.bg_layers.len(), 4);
         assert!(frame.sprites.is_empty());
         assert_eq!(frame.backdrop_color_rgba, [0, 0, 0, 0xff]);
+    }
+
+    #[test]
+    fn vwf_glyph_runs_for_draw_and_cull_never_fall_back_to_live_bg3_runs() {
+        let mut frame = ModernFrame::empty();
+        frame.bg3_vwf_glyph_runs.push(ModernVwfGlyphRun {
+            glyph_code: 0x41,
+            screen_x: 8,
+            screen_y: 16,
+            width: 8,
+            dialogue_offset: None,
+            dialogue_ir_kind: None,
+            dialogue_color: None,
+        });
+
+        assert!(frame.vwf_glyph_runs_for_draw().is_empty());
+
+        frame
+            .dialogue_layout_vwf_glyph_runs
+            .push(ModernVwfGlyphRun {
+                glyph_code: 0x42,
+                screen_x: 8,
+                screen_y: 16,
+                width: 8,
+                dialogue_offset: Some(0),
+                dialogue_ir_kind: Some(zelda3_dialogue::DialogueIrKind::Glyph { code: 0x42 }),
+                dialogue_color: Some(2),
+            });
+
+        assert_eq!(frame.vwf_glyph_runs_for_draw()[0].source_glyph_code(), 0x42);
     }
 
     #[test]

@@ -114,6 +114,8 @@ const BSNES_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER: u8 = 0x42;
 const BSNES_NMI_POLY_UPLOAD_DEFER_FRAMES: u8 = 3;
 
 const ASSET_SIGNATURE_PREFIX: &[u8; 16] = b"Zelda3_v0     \n\0";
+const DIALOGUE_SOURCE_SIDECAR_ASSET_NAME: &str = "kDialogueSourceSemantic";
+const DIALOGUE_SOURCE_SIDECAR_MAGIC: &[u8; 16] = b"Z3DLGSRCv1\0\0\0\0\0\0";
 const REFERENCE_SAVE_NAMES: [&str; 13] = [
     "Chapter 1 - Zelda's Rescue.sav",
     "Chapter 2 - After Eastern Palace.sav",
@@ -1325,6 +1327,10 @@ pub enum SaveLoadCommand {
 struct AssetPack {
     data: Vec<u8>,
     ranges: Vec<(usize, usize)>,
+    #[serde(default)]
+    names: Vec<String>,
+    #[serde(skip)]
+    dialogue_source_ir_table: Option<Vec<Vec<crate::dialogue_ir::DialogueIrOp>>>,
 }
 
 impl AssetPack {
@@ -1345,6 +1351,17 @@ impl AssetPack {
         if key_sig_start > data.len() || offset > data.len() {
             return Err("asset header extends past file".to_string());
         }
+        let names = data[key_sig_start..offset]
+            .split(|byte| *byte == 0)
+            .filter(|name| !name.is_empty())
+            .map(|name| String::from_utf8(name.to_vec()).map_err(|_| "asset name is not utf8"))
+            .collect::<Result<Vec<_>, _>>()?;
+        if names.len() != count {
+            return Err(format!(
+                "asset key signature has {} names, expected {count}",
+                names.len()
+            ));
+        }
 
         let mut ranges = Vec::with_capacity(count);
         for i in 0..count {
@@ -1358,15 +1375,113 @@ impl AssetPack {
             offset = end;
         }
 
+        let data = data.to_vec();
+        let dialogue_source_ir_table =
+            Self::parse_dialogue_source_ir_table_result(&data, &ranges, &names)?;
+        if names.iter().any(|name| name == "kDialogue") && dialogue_source_ir_table.is_none() {
+            return Err(format!(
+                "asset pack contains kDialogue but is missing required {DIALOGUE_SOURCE_SIDECAR_ASSET_NAME}"
+            ));
+        }
+
         Ok(Self {
-            data: data.to_vec(),
+            data,
             ranges,
+            names,
+            dialogue_source_ir_table,
         })
+    }
+
+    fn from_data_ranges(data: Vec<u8>, ranges: Vec<(usize, usize)>) -> Self {
+        Self::from_named_data_ranges(data, ranges, Vec::new())
+    }
+
+    fn from_named_data_ranges(
+        data: Vec<u8>,
+        ranges: Vec<(usize, usize)>,
+        names: Vec<String>,
+    ) -> Self {
+        let dialogue_source_ir_table = Self::parse_dialogue_source_ir_table(&data, &ranges, &names);
+        Self {
+            data,
+            ranges,
+            names,
+            dialogue_source_ir_table,
+        }
     }
 
     fn asset(&self, index: usize) -> Option<&[u8]> {
         let (start, end) = *self.ranges.get(index)?;
         Some(&self.data[start..end])
+    }
+
+    fn dialogue_source_sidecar_in<'a>(
+        data: &'a [u8],
+        ranges: &[(usize, usize)],
+        names: &[String],
+    ) -> Result<Option<&'a [u8]>, String> {
+        let Some(index) = names
+            .iter()
+            .position(|name| name == DIALOGUE_SOURCE_SIDECAR_ASSET_NAME)
+        else {
+            return Ok(None);
+        };
+        let (start, end) = *ranges
+            .get(index)
+            .ok_or_else(|| format!("{DIALOGUE_SOURCE_SIDECAR_ASSET_NAME} range is missing"))?;
+        let asset = data
+            .get(start..end)
+            .ok_or_else(|| format!("{DIALOGUE_SOURCE_SIDECAR_ASSET_NAME} range is invalid"))?;
+        let payload = asset
+            .strip_prefix(DIALOGUE_SOURCE_SIDECAR_MAGIC)
+            .ok_or_else(|| {
+                format!("{DIALOGUE_SOURCE_SIDECAR_ASSET_NAME} has invalid semantic sidecar magic")
+            })?;
+        if payload.is_empty() {
+            return Err(format!(
+                "{DIALOGUE_SOURCE_SIDECAR_ASSET_NAME} has empty semantic sidecar payload"
+            ));
+        }
+        Ok(Some(payload))
+    }
+
+    fn parse_dialogue_source_ir_table(
+        data: &[u8],
+        ranges: &[(usize, usize)],
+        names: &[String],
+    ) -> Option<Vec<Vec<crate::dialogue_ir::DialogueIrOp>>> {
+        Self::parse_dialogue_source_ir_table_result(data, ranges, names)
+            .ok()
+            .flatten()
+    }
+
+    fn parse_dialogue_source_ir_table_result(
+        data: &[u8],
+        ranges: &[(usize, usize)],
+        names: &[String],
+    ) -> Result<Option<Vec<Vec<crate::dialogue_ir::DialogueIrOp>>>, String> {
+        let Some(payload) = Self::dialogue_source_sidecar_in(data, ranges, names)? else {
+            return Ok(None);
+        };
+        let table = bincode::deserialize(payload).map_err(|err| {
+            format!("failed to deserialize {DIALOGUE_SOURCE_SIDECAR_ASSET_NAME}: {err}")
+        })?;
+        Ok(Some(table))
+    }
+
+    fn source_dialogue_ir_for_message(
+        &self,
+        message_id: u16,
+    ) -> Option<Vec<crate::dialogue_ir::DialogueIrOp>> {
+        let parsed_table;
+        let table = if let Some(table) = self.dialogue_source_ir_table.as_ref() {
+            table
+        } else {
+            parsed_table =
+                Self::parse_dialogue_source_ir_table(&self.data, &self.ranges, &self.names)?;
+            &parsed_table
+        };
+        table.get(usize::from(message_id)).cloned()
     }
 
     fn asset_mut(&mut self, index: usize) -> Option<&mut [u8]> {
@@ -1402,6 +1517,7 @@ pub struct ZeldaState {
     /// Unlike tile provenance, this can represent packed/unaligned glyphs.
     #[serde(skip)]
     bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
+    bg3_vwf_glyph_run_dialogue_offsets: Vec<u16>,
     pub dma: DmaState,
     pub frame_ctr_dbg: u32,
     rom: Vec<u8>,
@@ -5907,6 +6023,7 @@ impl ZeldaState {
             vram_chr_preview_source: crate::chr_source::VramChrSourceTable::new(),
             animated_tile_pack: 0,
             bg3_vwf_glyph_runs: Vec::new(),
+            bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
             dma: DmaState::new(),
             frame_ctr_dbg: 0,
             rom: Vec::new(),
@@ -5976,6 +6093,7 @@ impl ZeldaState {
         self.dma.reset();
         self.ppu.reset();
         self.bg3_vwf_glyph_runs.clear();
+        self.bg3_vwf_glyph_run_dialogue_offsets.clear();
         self.ram.fill(0);
         if !preserve_sram {
             self.sram.fill(0);
@@ -6089,12 +6207,122 @@ impl ZeldaState {
         &self.bg3_vwf_glyph_runs
     }
 
+    pub fn bg3_vwf_glyph_run_dialogue_offsets(&self) -> &[u16] {
+        &self.bg3_vwf_glyph_run_dialogue_offsets
+    }
+
+    pub fn dialogue_ir_for_decoded_bytes(
+        &self,
+        decoded: &[u8],
+    ) -> Vec<crate::dialogue_ir::DialogueIrOp> {
+        zelda3_compat::legacy_dialogue_ir(self.dialogue_flags, decoded)
+    }
+
+    pub fn current_dialogue_ir(&self) -> Vec<crate::dialogue_ir::DialogueIrOp> {
+        zelda3_compat::legacy_dialogue_ir(
+            self.dialogue_flags,
+            self.game_state.messaging.decoded_text.as_slice(),
+        )
+    }
+
+    pub fn current_dialogue_message_id(&self) -> u16 {
+        self.game_state.messaging.dialogue_message_index.value()
+    }
+
+    pub fn set_current_dialogue_message_id(&mut self, message_id: u16) {
+        self.dialogue_message_index_mut().set_value(message_id);
+    }
+
+    pub fn current_source_dialogue_ir(&self) -> Vec<crate::dialogue_ir::DialogueIrOp> {
+        self.source_dialogue_ir_for_message(self.current_dialogue_message_id())
+            .unwrap_or_default()
+    }
+
+    pub fn current_dialogue_runtime_substitutions(
+        &self,
+    ) -> crate::dialogue_ir::DialogueRuntimeSubstitutions {
+        let mut player_name = Vec::new();
+        self.text_write_player_name_vec(&mut player_name);
+        crate::dialogue_ir::DialogueRuntimeSubstitutions {
+            player_name,
+            number_pairs: [
+                self.game_state.messaging.dialogue_number.packed_digits(0),
+                self.game_state.messaging.dialogue_number.packed_digits(1),
+            ],
+        }
+    }
+
+    pub fn current_source_render_dialogue_ir(&self) -> Vec<crate::dialogue_ir::DialogueIrOp> {
+        let source_ir = self.current_source_dialogue_ir();
+        if source_ir.is_empty() {
+            return Vec::new();
+        }
+        crate::dialogue_ir::expand_runtime_dialogue_ir(
+            &source_ir,
+            &self.current_dialogue_runtime_substitutions(),
+        )
+    }
+
+    pub fn current_visible_source_render_dialogue_ir(
+        &self,
+    ) -> Vec<crate::dialogue_ir::DialogueIrOp> {
+        let source_ir = self.current_source_dialogue_ir();
+        if source_ir.is_empty() {
+            return Vec::new();
+        }
+        let render_ir = crate::dialogue_ir::expand_runtime_render_dialogue_ir(
+            &source_ir,
+            &self.current_dialogue_runtime_substitutions(),
+        );
+        crate::dialogue_ir::visible_dialogue_ir_prefix(
+            &render_ir,
+            usize::from(self.game_state.messaging.runtime.dialogue_msg_read_pos()),
+        )
+    }
+
+    pub fn source_dialogue_ir_for_message(
+        &self,
+        message_id: u16,
+    ) -> Option<Vec<crate::dialogue_ir::DialogueIrOp>> {
+        self.assets
+            .as_ref()
+            .and_then(|assets| assets.source_dialogue_ir_for_message(message_id))
+    }
+
+    pub fn dialogue_vwf_widths(&self) -> Option<Vec<u8>> {
+        let dialogue_font = self.asset_memblk(95, self.dialogue_font_blk_index)?;
+        Some(find_index_in_memblk(dialogue_font, 1).ptr.to_vec())
+    }
+
+    pub fn dialogue_vwf_origin_tile_number(&self) -> u16 {
+        self.game_state
+            .messaging
+            .vwf_render
+            .tile_word_at_byte_offset(0)
+            & 0x03ff
+    }
+
+    pub fn bg3_vwf_glyph_run_dialogue_ir(
+        &self,
+        run_index: usize,
+    ) -> Option<crate::dialogue_ir::DialogueIrOp> {
+        zelda3_compat::legacy_glyph_run_dialogue_ir(
+            self.dialogue_flags,
+            self.game_state.messaging.decoded_text.as_slice(),
+            &self.bg3_vwf_glyph_run_dialogue_offsets,
+            run_index,
+        )
+    }
+
     pub fn restore_bg3_vwf_glyph_runs(&mut self, runs: Vec<Bg3VwfGlyphRun>) {
         self.bg3_vwf_glyph_runs = runs;
+        self.bg3_vwf_glyph_run_dialogue_offsets =
+            vec![zelda3_compat::UNKNOWN_DIALOGUE_OFFSET; self.bg3_vwf_glyph_runs.len()];
     }
 
     pub(crate) fn clear_bg3_vwf_glyph_runs(&mut self) {
         self.bg3_vwf_glyph_runs.clear();
+        self.bg3_vwf_glyph_run_dialogue_offsets.clear();
     }
 
     pub(crate) fn record_bg3_vwf_glyph_run(
@@ -6103,6 +6331,7 @@ impl ZeldaState {
         glyph_x: u8,
         line_ptr: usize,
         width: u8,
+        dialogue_offset: u16,
     ) {
         const TEXT_TILE_ROW_BYTES: usize = 0x150;
         const TILE_PIXEL_WIDTH: usize = 8;
@@ -6125,13 +6354,29 @@ impl ZeldaState {
             y: (tile_row * TILE_PIXEL_WIDTH) as i16,
             width,
         });
+        self.bg3_vwf_glyph_run_dialogue_offsets
+            .push(dialogue_offset);
     }
 
     pub(crate) fn scroll_bg3_vwf_glyph_runs_up_one_pixel(&mut self) {
         for run in &mut self.bg3_vwf_glyph_runs {
             run.y -= 1;
         }
-        self.bg3_vwf_glyph_runs.retain(|run| run.y > -16);
+        let mut next_runs = Vec::with_capacity(self.bg3_vwf_glyph_runs.len());
+        let mut next_offsets = Vec::with_capacity(self.bg3_vwf_glyph_run_dialogue_offsets.len());
+        for (index, run) in self.bg3_vwf_glyph_runs.iter().copied().enumerate() {
+            if run.y > -16 {
+                next_runs.push(run);
+                next_offsets.push(
+                    self.bg3_vwf_glyph_run_dialogue_offsets
+                        .get(index)
+                        .copied()
+                        .unwrap_or(zelda3_compat::UNKNOWN_DIALOGUE_OFFSET),
+                );
+            }
+        }
+        self.bg3_vwf_glyph_runs = next_runs;
+        self.bg3_vwf_glyph_run_dialogue_offsets = next_offsets;
     }
 
     pub fn vram_mut(&mut self) -> &mut [u16] {
@@ -6147,7 +6392,6 @@ impl ZeldaState {
         self.gloves_color = default_gloves_color();
         Ok(())
     }
-
     pub fn apply_link_graphics(&mut self, file: &[u8]) -> bool {
         if file.len() < 27 || &file[0..4] != b"ZSPR" {
             return false;

@@ -1036,6 +1036,36 @@ def _dialogue_vwf_glyph_records(
     return font_bytes, widths, glyphs
 
 
+def _dialogue_text_color_palette_name(color: int) -> str:
+    return f"palette_bg3_text_color_{color & 0x0f:02x}"
+
+
+def _dialogue_text_color_variants(asset_dir: Path) -> list[tuple[str, dict[int, list[int]]]]:
+    palette_path = asset_dir / "assets_src/palettes/hud_pal_data.json"
+    if not palette_path.is_file():
+        return []
+    colors = read_palette_colors(palette_path)
+    variants: list[tuple[str, dict[int, list[int]]]] = []
+    colors_per_row = 4
+    for color in range(16):
+        base = color * colors_per_row
+        if base + colors_per_row > len(colors):
+            break
+        row = colors[base : base + colors_per_row]
+        variants.append(
+            (
+                _dialogue_text_color_palette_name(color),
+                {
+                    0: [row[0][0], row[0][1], row[0][2], 0],
+                    1: [row[1][0], row[1][1], row[1][2], 255],
+                    2: [row[2][0], row[2][1], row[2][2], 255],
+                    3: [row[3][0], row[3][1], row[3][2], 255],
+                },
+            )
+        )
+    return variants
+
+
 def _write_dialogue_vwf_font_metadata(asset_dir: Path, destination: Path) -> list[Path]:
     font_path = asset_dir / "assets/095-kDialogueFont.bin"
     if not font_path.is_file():
@@ -1079,21 +1109,32 @@ def _write_dialogue_vwf_glyph_atlas(asset_dir: Path, destination: Path) -> list[
         2: [88, 88, 88, 255],
         3: [184, 184, 184, 255],
     }
+    palette_variants = [("palette_bg3_text_main", index_colors)]
+    palette_variants.extend(_dialogue_text_color_variants(asset_dir))
+    total_cells = len(glyphs) * len(palette_variants)
+    rows = max(1, (total_cells + columns - 1) // columns)
+    height = rows * cell_height
     pixels = bytearray(width * height * 4)
+    atlas_glyphs = []
     for glyph_index, glyph in enumerate(glyphs):
         code = int(glyph["code"])
         glyph_indices = _render_dialogue_vwf_glyph_indices(
             font_bytes, code, int(glyph["width"])
         )
-        x = (glyph_index % columns) * cell_width
-        y = (glyph_index // columns) * cell_height
-        glyph["rect"] = [x, y, cell_width, cell_height]
-        glyph["indices_hex"] = glyph_indices.hex()
-        for row in range(cell_height):
-            for col in range(cell_width):
-                color = index_colors[glyph_indices[row * cell_width + col]]
-                dst = ((y + row) * width + x + col) * 4
-                pixels[dst : dst + 4] = bytes(color)
+        for palette_index, (palette_name, variant_colors) in enumerate(palette_variants):
+            cell_index = palette_index * len(glyphs) + glyph_index
+            x = (cell_index % columns) * cell_width
+            y = (cell_index // columns) * cell_height
+            atlas_glyph = dict(glyph)
+            atlas_glyph["palette"] = palette_name
+            atlas_glyph["rect"] = [x, y, cell_width, cell_height]
+            atlas_glyph["indices_hex"] = glyph_indices.hex()
+            atlas_glyphs.append(atlas_glyph)
+            for row in range(cell_height):
+                for col in range(cell_width):
+                    color = variant_colors[glyph_indices[row * cell_width + col]]
+                    dst = ((y + row) * width + x + col) * 4
+                    pixels[dst : dst + 4] = bytes(color)
 
     png_path = destination / "dialogue_vwf_glyphs.png"
     json_path = destination / "dialogue_vwf_glyphs.json"
@@ -1107,10 +1148,12 @@ def _write_dialogue_vwf_glyph_atlas(asset_dir: Path, destination: Path) -> list[
         "cell_height": cell_height,
         "width": width,
         "height": height,
-        "glyph_count": len(glyphs),
+        "glyph_count": len(atlas_glyphs),
+        "source_glyph_count": len(glyphs),
         "width_table_size": len(widths),
         "index_colors": index_colors,
-        "glyphs": glyphs,
+        "palette_variants": [palette for palette, _colors in palette_variants],
+        "glyphs": atlas_glyphs,
     }
     json_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return [png_path, json_path]

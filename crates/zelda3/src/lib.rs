@@ -24,6 +24,7 @@ pub use chr_source::{
     CHR_KIND_SPRITE, CHR_LINK_SRC_RAM_FLAG, VRAM_CHR_SLOTS,
 };
 pub use game_state::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
+pub use zelda3_dialogue as dialogue_ir;
 pub use zelda_cpu_infra::{
     ComparisonReport, Difference, LockstepOracle, OracleError, Region, SemanticAncillaSlot,
     SemanticComparisonReport, SemanticDifference, SemanticFrame, SemanticPlayer, SemanticPpu,

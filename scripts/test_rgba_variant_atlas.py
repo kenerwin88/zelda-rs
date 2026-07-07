@@ -1221,6 +1221,13 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                 asset_dir / "assets_src/palettes/palette_main_spr.json",
                 palette_colors,
             )
+            hud_colors = [
+                f"#{row:02x}{color:02x}80" for row in range(16) for color in range(4)
+            ]
+            write_palette_json(
+                asset_dir / "assets_src/palettes/hud_pal_data.json",
+                hud_colors,
+            )
 
             written = write_canonical_art_atlas(asset_dir)
 
@@ -1360,6 +1367,13 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                 asset_dir / "assets_src/palettes/palette_main_spr.json",
                 palette_colors,
             )
+            hud_colors = [
+                f"#{row:02x}{color:02x}80" for row in range(16) for color in range(4)
+            ]
+            write_palette_json(
+                asset_dir / "assets_src/palettes/hud_pal_data.json",
+                hud_colors,
+            )
 
             written = write_canonical_art_atlas(asset_dir)
 
@@ -1385,20 +1399,33 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             self.assertEqual(
                 glyph_manifest["format"], "zelda3_dialogue_vwf_glyph_atlas_v1"
             )
-            self.assertEqual(glyph_manifest["glyph_count"], 4)
+            self.assertEqual(glyph_manifest["glyph_count"], 4 * 17)
+            self.assertEqual(glyph_manifest["source_glyph_count"], 4)
             self.assertEqual(glyph_manifest["width_table_size"], 4)
             self.assertEqual(glyph_manifest["width"], 256)
-            self.assertEqual(glyph_manifest["height"], 16)
-            self.assertEqual(glyph_manifest["glyphs"][2]["rect"], [32, 0, 16, 16])
+            self.assertEqual(glyph_manifest["height"], 80)
+            self.assertIn("palette_bg3_text_color_07", glyph_manifest["palette_variants"])
+            main_glyph_2 = next(
+                glyph
+                for glyph in glyph_manifest["glyphs"]
+                if glyph["code"] == 2 and glyph["palette"] == "palette_bg3_text_main"
+            )
+            self.assertEqual(main_glyph_2["rect"], [32, 0, 16, 16])
+            color_7_glyph_2 = next(
+                glyph
+                for glyph in glyph_manifest["glyphs"]
+                if glyph["code"] == 2 and glyph["palette"] == "palette_bg3_text_color_07"
+            )
+            self.assertEqual(color_7_glyph_2["rect"], [32, 32, 16, 16])
             font_tiles_manifest = json.loads(
                 (asset_dir / "atlas/dialogue_font_tiles.json").read_text()
             )
             self.assertEqual(font_tiles_manifest["tile_count"], 256)
             self.assertEqual(font_tiles_manifest["tiles"][2]["rect"], [16, 0, 8, 8])
-            self.assertEqual(len(glyph_manifest["glyphs"][2]["indices_hex"]), 16 * 16 * 2)
+            self.assertEqual(len(main_glyph_2["indices_hex"]), 16 * 16 * 2)
             with Image.open(asset_dir / "atlas/dialogue_vwf_glyphs.png") as image:
                 self.assertEqual(image.mode, "RGBA")
-                self.assertEqual(image.size, (256, 16))
+                self.assertEqual(image.size, (256, 80))
 
     def test_write_base_effect_atlas_emits_compact_art_and_effect_table(self) -> None:
         import json

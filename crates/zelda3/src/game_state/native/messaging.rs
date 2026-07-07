@@ -527,6 +527,10 @@ impl DecodedMessageTextState {
         self.bytes.get(offset + 1).copied()
     }
 
+    pub(crate) fn as_slice(&self) -> &[u8] {
+        &self.bytes
+    }
+
     pub(crate) fn load_decoded_dialogue(&mut self, decoded: &[u8]) -> usize {
         let len = decoded.len().min(self.bytes.len());
         self.bytes[..len].copy_from_slice(&decoded[..len]);

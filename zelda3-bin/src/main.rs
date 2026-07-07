@@ -3791,6 +3791,18 @@ pub(crate) fn load_translated_replay_state(rom_path: &str) -> ZeldaState {
     load_game_state(rom_path, false)
 }
 
+pub(crate) fn load_embedded_asset_replay_state(rom_path: &str) -> Result<ZeldaState, String> {
+    let rom = fs::read(rom_path).map_err(|e| format!("failed to read {rom_path}: {e}"))?;
+
+    let mut game = ZeldaState::new();
+    game.set_rom(&rom);
+    game.set_assets(EMBEDDED_ASSETS)
+        .map_err(|e| format!("failed to load embedded zelda3_assets.dat: {e}"))?;
+    configure_game_runtime_defaults(&mut game);
+    game.zelda_read_sram();
+    Ok(game)
+}
+
 fn load_game_state(rom_path: &str, rom_startup_timing: bool) -> ZeldaState {
     let rom = match fs::read(rom_path) {
         Ok(b) => b,
