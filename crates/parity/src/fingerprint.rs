@@ -18,7 +18,19 @@ pub const FINGERPRINT_MASK: &[usize] = &[0x654, 0x68a];
 /// `0x1b00..0x1cc0` is the SAVELOAD spotlight/window HDMA projection table. The
 /// table is volatile projection scratch and is also excluded by the replay RAM
 /// checksum used for human-readable diagnostics.
-pub const FINGERPRINT_MASK_RANGES: &[(usize, usize)] = &[(0x1b00, 0x1b00 + 224 * 2)];
+///
+/// `0x171c0..0x1766a` is `TEXT_DIALOGUE_POINTERS`, the 398-entry × 3-byte message
+/// pointer table `Text_GenerateMessagePointers` stages into WRAM. Since the
+/// modern build authors `kDialogue` from editable source text as *uncompressed*
+/// bytecode (empty dictionary), these pointers are byte offsets into a differently
+/// sized message stream than the ROM-compressed C oracle, so they legitimately
+/// diverge. The divergence is transient scratch and provably non-cascading: the
+/// decoded message content is verified byte-identical (`expanded_sha1`), and
+/// from-scratch C-vs-Rust WRAM is zero-diff once the game runs (incl. active
+/// on-screen messages and the ending credits). See
+/// `docs/assets/readable-sources.md`.
+pub const FINGERPRINT_MASK_RANGES: &[(usize, usize)] =
+    &[(0x1b00, 0x1b00 + 224 * 2), (0x171c0, 0x171c0 + 398 * 3)];
 
 #[inline]
 pub fn fingerprint_mask_contains(offset: usize) -> bool {
@@ -194,10 +206,34 @@ mod tests {
 
     #[test]
     fn mask_audit() {
-        // Pinned set: only documented display/HDMA scratch bytes and ranges.
+        // Pinned set: documented display/HDMA scratch bytes and ranges, plus the
+        // uncompressed source-authored dialogue pointer table (0x171c0..0x1766a).
         assert_eq!(FINGERPRINT_MASK, &[0x654, 0x68a]);
-        assert_eq!(FINGERPRINT_MASK_RANGES, &[(0x1b00, 0x1b00 + 224 * 2)]);
-        assert_eq!(fingerprint_mask_offsets().len(), 2 + 224 * 2);
+        assert_eq!(
+            FINGERPRINT_MASK_RANGES,
+            &[(0x1b00, 0x1b00 + 224 * 2), (0x171c0, 0x171c0 + 398 * 3)]
+        );
+        assert_eq!(fingerprint_mask_offsets().len(), 2 + 224 * 2 + 398 * 3);
+    }
+
+    #[test]
+    fn mask_zeroes_dialogue_pointer_table() {
+        // Boot stages the dialogue pointer table at 0x171c0 (398 * 3-byte entries).
+        // Under uncompressed source-authored dialogue these byte offsets differ from
+        // the ROM-compressed C oracle, so the whole table span must be masked.
+        let a = vec![0u8; 0x20000];
+        let mut b = a.clone();
+        b[0x171c0] = 0xff; // first entry, low byte
+        b[0x1766a - 1] = 0xff; // last entry, high byte
+        let fa = FrameFingerprint::compute(0, &a, &[], &[], 0, 0);
+        let fb = FrameFingerprint::compute(0, &b, &[], &[], 0, 0);
+        assert_eq!(fa.wram[0x171c0 / PAGE], fb.wram[0x171c0 / PAGE]);
+        assert_eq!(fa.wram[(0x1766a - 1) / PAGE], fb.wram[(0x1766a - 1) / PAGE]);
+        // The byte immediately after the table (0x1766a) must NOT be masked.
+        let mut c = a.clone();
+        c[0x1766a] = 0xff;
+        let fc = FrameFingerprint::compute(0, &c, &[], &[], 0, 0);
+        assert_ne!(fa.wram[0x1766a / PAGE], fc.wram[0x1766a / PAGE]);
     }
 
     #[test]

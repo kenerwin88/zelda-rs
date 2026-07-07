@@ -106,27 +106,108 @@ Dynamic runtime values are intentionally kept as operations instead of being
 resolved during extraction. For example, a player-name command stays
 `player_name`; it is not replaced by a particular save-slot name.
 
-The source file is the editable authority for building `kDialogue`. Each message
-stores `source_text` using literal glyph text plus explicit control tags such as `[line1]`, `[wait 03]`,
-`[color 02]`, `[player_name]`, `[choose]`, and `[end_message]`. Bracketed
-button/symbol glyphs, such as `[A]` and `[Up]`, keep their glyph names.
+### The editable authority: `assets/dialogue/messages.toml`
 
-Extraction verifies each generated `source_text` by compiling it back to the
-expanded bytecode recorded in the catalog. The build script uses the shared
-`zelda3-dialogue` source compiler to pack `dialogue_source.json` into a valid
+The editable authority for building `kDialogue` is the **tracked, committed**
+`assets/dialogue/messages.toml` at the repo root — not the generated JSON. It is
+plain TOML: a `format = "zelda3_dialogue_source_v1"` header followed by one
+`[[message]]` table per message with an `id` and a `text` body. Bodies use TOML
+literal strings (`'''…'''`), so glyph text and bracketed control tags pass
+through verbatim with no escaping, and `#` comments are allowed between entries.
+Each `text` uses literal glyph text plus explicit control tags such as `[line1]`,
+`[wait 03]`, `[color 02]`, `[player_name]`, `[choose]`, and `[end_message]`;
+bracketed button/symbol glyphs such as `[A]` and `[Up]` keep their glyph names.
+
+Edit `messages.toml`, rebuild, and the change appears in-game: the build script
+uses the shared `zelda3-dialogue` compiler to pack the messages into a valid
 `kDialogue` asset with uncompressed message bytecode and an empty dictionary
 table. This intentionally trades the original ROM compression for a simpler
 authoring path while keeping the runtime message-state machine unchanged.
-Generated messages also include `expanded_sha1`; when present, the Rust source
-compiler validates it against the compiled message bytes. This makes extracted
-source files parity-checked by default. Deliberate edits should update or remove
-that per-message hash so the source change is explicit.
-When `zelda3-bin` packs assets, `dialogue_source.json` is required for
-`kDialogue`; a stale `094-kDialogue.bin` is not used as a fallback. The packer
-also embeds a named `kDialogueSourceSemantic` sidecar derived from that source
-file. The sidecar payload is a self-identifying serialized table of
-`DialogueIrOp` messages, so the modern GPU dialogue path reads source-derived
-semantic IR directly without reparsing compiled `kDialogue` bytes.
+
+The `generated/…/dialogue_source.json` written during extraction is now a
+bootstrap fallback and inspection artifact only; hand-edits belong in the tracked
+`messages.toml`, which the build reads first, so extraction never clobbers them.
+
+### The parity lock: `assets/dialogue/messages.sha1`
+
+Vanilla parity is enforced by a **separate** tracked lock file,
+`assets/dialogue/messages.sha1` (`format = "zelda3_dialogue_sha1_lock_v1"`, one
+`[[message]]` per id with an `expanded_sha1`). When the lock is present the build
+compiles each message and verifies its expanded bytecode against the blessed
+hash, failing the build with `drifted from the parity lock` (or `missing from the
+parity lock`) if an edit changes a message without re-blessing. Keeping the lock
+out of the content file means `messages.toml` stays a clean, diff-friendly text
+of just the dialogue.
+
+After a deliberate edit, regenerate the lock so the new bytes become the blessed
+baseline:
+
+```
+target/parity/zelda3 --bless-dialogue [<messages.toml> <messages.sha1>]
+```
+
+With no arguments it re-blesses `assets/dialogue/messages.toml` →
+`assets/dialogue/messages.sha1` in place.
+
+### Build precedence and overrides
+
+`build.rs` resolves the dialogue source and lock in this order:
+
+1. `ZELDA3_DIALOGUE_MESSAGES` / `ZELDA3_DIALOGUE_SHA_LOCK` env overrides — point
+   the build at an alternate dialogue file (alt-language packs, tests) without
+   touching the tracked authority. Overriding the messages **without** also
+   overriding the lock builds **unlocked** (the alternate file owns its own
+   parity contract).
+2. the tracked `assets/dialogue/messages.toml` + `assets/dialogue/messages.sha1`.
+3. the generated `dialogue_source.json` (unlocked) as a bootstrap fallback.
+
+`kDialogue` is always source-built; a stale `094-kDialogue.bin` is never a
+fallback. The packer also embeds a named `kDialogueSourceSemantic` sidecar
+derived from the same messages. The sidecar payload is a self-identifying
+serialized table of `DialogueIrOp` messages, so the modern GPU dialogue path
+reads source-derived semantic IR directly without reparsing compiled `kDialogue`
+bytes.
+
+### Regenerating the on-disk `zelda3_assets.dat`
+
+The replay/parity flows (`--replay-save`, `zparity`, `validate_all_parity.py`)
+load the on-disk `zelda3_assets.dat` via `find_asset_pack` (ROM dir, then cwd,
+then repo root) — not the binary's embedded pack. Because the source-authoritative
+build makes the `kDialogueSourceSemantic` sidecar **required**, a legacy restool
+pack (or any pack predating the sidecar) is rejected at load with
+`asset pack contains kDialogue but is missing required kDialogueSourceSemantic`,
+which fails every replay at frame 0. Regenerate the on-disk pack so it matches the
+current binary:
+
+```sh
+cargo build --profile parity -p zelda3-bin
+target/parity/zelda3 --dump-asset-pack zelda3_assets.dat
+```
+
+`--dump-asset-pack` writes the embedded (build.rs-packed, source-authoritative)
+pack, so the emitted file is byte-identical to what the binary runs with,
+sidecar included. The root `zelda3_assets.dat` is gitignored (a local artifact).
+
+### Dialogue parity under source authority
+
+The uncompressed source-authored `kDialogue` is **behaviorally byte-exact** with
+the C oracle. `Text_GenerateMessagePointers` stages a 3-byte-per-message pointer
+table at WRAM `TEXT_DIALOGUE_POINTERS` (`0x171c0`); because source messages are
+uncompressed, those pointers (byte offsets) differ from the ROM-compressed
+oracle. This divergence is transient and confined to that scratch region:
+from-scratch C-vs-Rust WRAM dumps differ only in the pointer table at boot
+(frame 2000: 848 bytes, all inside `0x171c0`), and are **zero-diff** once the
+game is running — including during an active on-screen message (frame 60000) and
+the ending credits where the table is regenerated (frame 1033000). It never
+cascades into game logic.
+
+Because the divergence is byte-exact-behavioral-equivalent scratch, the pointer
+table span `[0x171c0, 0x1766a)` is masked out of the parity fingerprint on both
+sides — `FINGERPRINT_MASK_RANGES` in `crates/parity/src/fingerprint.rs` and
+`IsFingerprintMaskedWramOffset` in the C oracle's `src/main.c` — and the golden
+was recaptured with the wider mask (`manifest.mask` length 450 → 1644). With that,
+`zparity check` no longer flags the transient dialogue pointers and can see past
+boot to any genuine divergence.
 
 The canonical art atlas also exports editable dialogue VWF glyph sheets under
 `generated/zelda3_assets/atlas/`. `dialogue_vwf_glyphs.png` and

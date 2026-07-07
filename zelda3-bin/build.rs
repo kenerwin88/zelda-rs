@@ -416,6 +416,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed=ZELDA3_ASSETS_DIR");
     println!("cargo:rerun-if-env-changed=ZELDA3_ROM");
     println!("cargo:rerun-if-env-changed=ZELDA3_C_SOURCE");
+    println!("cargo:rerun-if-env-changed=ZELDA3_DIALOGUE_MESSAGES");
+    println!("cargo:rerun-if-env-changed=ZELDA3_DIALOGUE_SHA_LOCK");
     println!(
         "cargo:rerun-if-changed={}",
         generated_dir.join("manifest.json").display()
@@ -568,14 +570,106 @@ fn pack_assets(generated_dir: &Path) -> PathBuf {
     asset_pack
 }
 
-fn read_dialogue_source_sidecar(generated_dir: &Path) -> Option<Vec<u8>> {
-    let source_path = generated_dir.join("assets_src/dialogue/dialogue_source.json");
-    if !source_path.is_file() {
+/// Repo root (parent of this crate's manifest dir). The authored dialogue source
+/// lives in the tracked repo tree, independent of the (possibly redirected)
+/// generated asset dir.
+fn dialogue_repo_root() -> PathBuf {
+    PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
+        .parent()
+        .unwrap()
+        .to_path_buf()
+}
+
+/// Load the authored dialogue messages, in precedence order:
+///   1. `ZELDA3_DIALOGUE_MESSAGES` env override (alt-dialogue / tests, never mutates
+///      the tracked authority),
+///   2. the tracked `assets/dialogue/messages.toml` (the authority),
+///   3. the legacy generated JSON source as a bootstrap fallback.
+/// `kDialogue` is always source-built (never the stale `.bin`), matching the runtime's
+/// required `kDialogueSourceSemantic` sidecar.
+fn read_dialogue_messages_document(generated_dir: &Path) -> zelda3_dialogue::DialogueMessagesDocument {
+    if let Some(override_path) = env::var_os("ZELDA3_DIALOGUE_MESSAGES") {
+        let override_path = PathBuf::from(override_path);
+        println!("cargo:rerun-if-changed={}", override_path.display());
+        let text = fs::read_to_string(&override_path)
+            .unwrap_or_else(|err| panic!("failed to read {}: {err}", override_path.display()));
+        return zelda3_dialogue::parse_messages_document(&text)
+            .unwrap_or_else(|err| panic!("failed to parse {}: {err}", override_path.display()));
+    }
+    let messages_path = dialogue_repo_root().join("assets/dialogue/messages.toml");
+    if messages_path.is_file() {
+        println!("cargo:rerun-if-changed={}", messages_path.display());
+        let text = fs::read_to_string(&messages_path)
+            .unwrap_or_else(|err| panic!("failed to read {}: {err}", messages_path.display()));
+        return zelda3_dialogue::parse_messages_document(&text)
+            .unwrap_or_else(|err| panic!("failed to parse {}: {err}", messages_path.display()));
+    }
+    let json_path = generated_dir.join("assets_src/dialogue/dialogue_source.json");
+    println!("cargo:rerun-if-changed={}", json_path.display());
+    let text = fs::read_to_string(&json_path).unwrap_or_else(|err| {
+        panic!(
+            "no authored dialogue source at {} and no fallback {}: {err}",
+            messages_path.display(),
+            json_path.display()
+        )
+    });
+    let source: zelda3_dialogue::DialogueSourceDocument = serde_json::from_str(&text)
+        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", json_path.display()));
+    zelda3_dialogue::DialogueMessagesDocument {
+        format: source.format,
+        messages: source
+            .messages
+            .into_iter()
+            .map(|message| zelda3_dialogue::DialogueMessageEntry {
+                id: message.id,
+                text: message.source_text,
+            })
+            .collect(),
+    }
+}
+
+/// Load the parity lock so each message's expanded bytecode is verified against the
+/// blessed vanilla hash. Precedence:
+///   1. `ZELDA3_DIALOGUE_SHA_LOCK` env override,
+///   2. if `ZELDA3_DIALOGUE_MESSAGES` overrode the source but no lock override was
+///      given, build UNLOCKED (an alt-dialogue file owns its own parity contract),
+///   3. the tracked `assets/dialogue/messages.sha1` when present.
+fn read_dialogue_sha_lock() -> Option<zelda3_dialogue::DialogueShaLock> {
+    let lock_path = if let Some(override_path) = env::var_os("ZELDA3_DIALOGUE_SHA_LOCK") {
+        PathBuf::from(override_path)
+    } else if env::var_os("ZELDA3_DIALOGUE_MESSAGES").is_some() {
+        return None;
+    } else {
+        dialogue_repo_root().join("assets/dialogue/messages.sha1")
+    };
+    if !lock_path.is_file() {
         return None;
     }
-    println!("cargo:rerun-if-changed={}", source_path.display());
+    println!("cargo:rerun-if-changed={}", lock_path.display());
+    let text = fs::read_to_string(&lock_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", lock_path.display()));
+    Some(
+        zelda3_dialogue::parse_sha_lock(&text)
+            .unwrap_or_else(|err| panic!("failed to parse {}: {err}", lock_path.display())),
+    )
+}
+
+fn read_dialogue_asset(generated_dir: &Path) -> Vec<u8> {
+    let doc = read_dialogue_messages_document(generated_dir);
+    let lock = read_dialogue_sha_lock();
+    zelda3_dialogue::compile_messages_document(&doc, lock.as_ref())
+        .unwrap_or_else(|err| panic!("failed to compile dialogue messages: {err}"))
+}
+
+fn read_dialogue_source_sidecar(generated_dir: &Path) -> Option<Vec<u8>> {
+    let doc = read_dialogue_messages_document(generated_dir);
+    let table = zelda3_dialogue::compile_messages_ir_table(&doc)
+        .unwrap_or_else(|err| panic!("failed to compile dialogue IR table: {err}"));
     let mut sidecar = DIALOGUE_SOURCE_SIDECAR_MAGIC.to_vec();
-    sidecar.extend(read_dialogue_source_ir_table(&source_path));
+    sidecar.extend(
+        bincode::serialize(&table)
+            .unwrap_or_else(|err| panic!("failed to serialize dialogue IR: {err}")),
+    );
     Some(sidecar)
 }
 
@@ -600,6 +694,9 @@ fn read_asset(
     {
         panic!("manifest asset {index:03} name does not match key signature {name}");
     }
+    if name == "kDialogue" {
+        return read_dialogue_asset(generated_dir);
+    }
     if let (Some(source_format), Some(source_file)) = (
         manifest_asset
             .get("source_format")
@@ -608,11 +705,6 @@ fn read_asset(
             .get("source_file")
             .and_then(serde_json::Value::as_str),
     ) {
-        return read_source_asset(generated_dir, source_format, source_file, name);
-    }
-    if name == "kDialogue" {
-        let (source_format, source_file) =
-            known_source(name).expect("kDialogue must have a known editable source");
         return read_source_asset(generated_dir, source_format, source_file, name);
     }
     if let Some((source_format, source_file)) = known_source(name) {
@@ -1072,21 +1164,6 @@ fn read_dialogue_source_json(source_path: &Path) -> Vec<u8> {
         .unwrap_or_else(|err| panic!("failed to parse {}: {err}", source_path.display()));
     zelda3_dialogue::compile_dialogue_source_document(&source)
         .unwrap_or_else(|err| panic!("failed to compile {}: {err}", source_path.display()))
-}
-
-fn read_dialogue_source_ir_table(source_path: &Path) -> Vec<u8> {
-    let text = fs::read_to_string(source_path)
-        .unwrap_or_else(|err| panic!("failed to read {}: {err}", source_path.display()));
-    let source: zelda3_dialogue::DialogueSourceDocument = serde_json::from_str(&text)
-        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", source_path.display()));
-    let table = zelda3_dialogue::compile_dialogue_source_ir_table(&source)
-        .unwrap_or_else(|err| panic!("failed to compile {}: {err}", source_path.display()));
-    bincode::serialize(&table).unwrap_or_else(|err| {
-        panic!(
-            "failed to serialize {} semantic IR: {err}",
-            source_path.display()
-        )
-    })
 }
 
 fn read_byte_stream_tilemap_json(source_path: &Path) -> Vec<u8> {

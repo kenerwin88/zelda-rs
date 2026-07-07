@@ -1,0 +1,1589 @@
+format = "zelda3_dialogue_source_v1"
+
+[[message]]
+id = 0
+text = ""
+
+[[message]]
+id = 1
+text = '''[speed 00][line3]      [line2]    >[choose]'''
+
+[[message]]
+id = 2
+text = '''[speed 00][line2]      [line3]    >[choose]'''
+
+[[message]]
+id = 3
+text = '''[speed 00]Save And Continue[line2]Save And Quit[line3]Do Not Save And Continue'''
+
+[[message]]
+id = 4
+text = '''[speed 00]0- [number 00]. 1- [number 01][line2]2- [number 02]. 3- [number 03]'''
+
+[[message]]
+id = 5
+text = '''You can't enter with something[line2]following you.'''
+
+[[message]]
+id = 6
+text = '''[speed 00][line1]>[line2]  [line3]  [choose3]'''
+
+[[message]]
+id = 7
+text = '''[speed 00][line1]  [line2]>[line3]  [choose3]'''
+
+[[message]]
+id = 8
+text = '''[speed 00][line1]  [line2]  [line3]>[choose3]'''
+
+[[message]]
+id = 9
+text = '''[speed 00][line1]>[line2]  [choose2]'''
+
+[[message]]
+id = 10
+text = '''[speed 00][line1]  [line2]>[choose2]'''
+
+[[message]]
+id = 11
+text = '''[speed 00][line3]    [line2]  >[selection_change]'''
+
+[[message]]
+id = 12
+text = '''[speed 00][line2]    [line3]  >[selection_change]'''
+
+[[message]]
+id = 13
+text = '''[player_name], I'm going out for a[line2]while.  I'll be back by morning.[line3]Don't leave the house.'''
+
+[[message]]
+id = 14
+text = '''Unnh[...] [player_name], I didn't want[line2]you involved in this[...]  I told[line3]you not to leave the house[...][wait_key][scroll]Take my sword and shield and[scroll]listen.  You can focus power in[scroll]the blade (hold the [B] Button).[wait_key][scroll][...]Then release it using the[scroll]secret technique handed down[scroll]by our people[...][wait_key][scroll][player_name], you can do it![scroll]Save the Princess[...][scroll]Zelda is your[...] [...] [...]'''
+
+[[message]]
+id = 15
+text = '''What're you doing up this late,[line2]kid?  You can stay up when[line3]you're grown up!  Now go home!'''
+
+[[message]]
+id = 16
+text = '''I see you brought a map so you[line2]don't get lost.  (Press the[line3][X] Button to see your map).'''
+
+[[message]]
+id = 17
+text = '''You look strong for a kid.  How[line2]much can you lift?  (Press the[line3][A] Button while touching a thing[wait_key][scroll]to lift it.)'''
+
+[[message]]
+id = 18
+text = '''I'll bet you can't wait until you[line2]are old enough to use a sword![line3](Press the [B] Button to use[wait_key][scroll]your sword when you get it.)'''
+
+[[message]]
+id = 19
+text = '''That mark on your map must be[line2]your destination.'''
+
+[[message]]
+id = 20
+text = '''You can often find valuables[line2]in chests.  (Press the [A][line3]Button in front of a chest to[wait_key][scroll]open it.)'''
+
+[[message]]
+id = 21
+text = '''Us soldiers have been around,[line2]kid.  You can learn a lot from[line3]us.  But you already know that!'''
+
+[[message]]
+id = 22
+text = '''Meet the elder of the village[line2]and get the Master Sword.'''
+
+[[message]]
+id = 23
+text = '''Princess Zelda, you are safe![line2]Is this your doing, [player_name]?'''
+
+[[message]]
+id = 24
+text = '''I sense that a mighty evil[line2]force guides the wizard's[line3]actions and augments his[wait_key][scroll]magical power.  The only[scroll]weapon potent enough to[scroll]defeat the wizard is the[wait_key][scroll]legendary Master Sword.[scroll]It is said that the village elder[scroll]is a descendant of one of the[wait_key][scroll]seven wise men.  Maybe[scroll]he can tell you more[...][scroll]I will mark his house on your[wait_key][scroll]map.  But watch your every[scroll]move!  I am certain that the[scroll]castle soldiers will be looking[wait_key][scroll]for you now!  [...]    [...]    [...][sound 2d][scroll]I will hide Princess Zelda here.[scroll]Do not worry!  Seek the elder![wait_key][scroll][...]    [...]    [...][scroll]Do you understand?[scroll]    > Yes[scroll]       Not at all[choose]'''
+
+[[message]]
+id = 25
+text = '''If you defeat the wizard, the[line2]soldiers may regain[line3]their sanity.[wait_key][scroll]Go, seek the Pendants!'''
+
+[[message]]
+id = 26
+text = '''Take the three Pendants into[line2]the Lost Woods.  The Master[line3]Sword awaits you there.'''
+
+[[message]]
+id = 27
+text = '''[player_name]!  You are a second too[line2]late.  I have failed[...] Zelda[...][line3]The soldiers have[wait_key][scroll]abducted her.[scroll]They have taken her to[scroll]the castle.[wait_key][scroll]You must find her before the[scroll]wizard works his magic.[scroll]Please[...]You are our only hope[...]'''
+
+[[message]]
+id = 28
+text = '''Thank you, [player_name].  I had a[line2]feeling you were getting close.'''
+
+[[message]]
+id = 29
+text = '''Yes, it was [player_name] who helped[line2]me escape from the dungeon![line3]When I was captive the wizard[wait_key][scroll]said, "Once I have finished with[scroll]you, the final one, the seal of[scroll]the wise men will open."[wait_key][scroll][...]    [...]    [...][scroll][player_name], you must not let the[scroll]land of Hyrule fall into the[wait_key][scroll]wizard's clutches.[scroll]If he releases the seal of the[scroll]seven wise men, evil power will[wait_key][scroll]overwhelm this land.[scroll]Before that happens[...][scroll]before it's too late[...] destroy[wait_key][scroll]the wizard before he destroys[scroll]all of Hyrule!  You can do it![scroll]You can[...]'''
+
+[[message]]
+id = 30
+text = '''[player_name], be careful out there![line2]I know you can save Hyrule!'''
+
+[[message]]
+id = 31
+text = '''[window 02][speed 03]Help me[...][wait 01][line3]Please help me[...][wait_key][scroll]I am a prisoner in the dungeon[scroll]of the castle.[scroll]My name is Zelda.[wait_key][scroll]The wizard, Agahnim, has done[...][scroll]something to the other missing[scroll]girls.  Now only I remain[...][wait_key][scroll]Agahnim has seized control of[scroll]the castle and is now trying to[scroll]open the seven wise men's[wait_key][scroll]seal.  [...]   [...][scroll]I am in the dungeon of the[scroll]castle.[wait_key][scroll]Please help me[...]'''
+
+[[message]]
+id = 32
+text = '''[window 02][speed 03]Help me[...][line2]I am in the dungeon of the[line3]castle.[wait_key][scroll]I know there is a hidden path[scroll]from outside of  the castle to[scroll]the garden inside.'''
+
+[[message]]
+id = 33
+text = '''There is a secret passage in[line2]the throne room that leads to[line3]Sanctuary.  I'm sure the old[wait_key][scroll]man there will help us.'''
+
+[[message]]
+id = 34
+text = '''That ornamental shelf should[line2]open.  Do you have a light?[line3]It's pitch dark inside and you[wait_key][scroll]can't see without one.[scroll]If you're ready, let's go![scroll]Help me push it from the left!'''
+
+[[message]]
+id = 35
+text = '''You have to pull the lever to[line2]open the door.  (Press the [A][line3]Button and hold Down on the[wait_key][scroll]Control Pad. )'''
+
+[[message]]
+id = 36
+text = '''All right,  let's get out of here[line2]before the wizard notices.  I[line3]know a secret path, but first[wait_key][scroll]we have to go to the[scroll]first floor.  Let's  go!'''
+
+[[message]]
+id = 37
+text = '''[player_name], listen carefully.  The[line2]wizard is magically controlling[line3]all the soldiers in the castle.[wait_key][scroll]I fear the worst for[scroll]my father[...][scroll]The wizard is an inhuman fiend[wait_key][scroll]with strong magical powers![scroll][...]   [...]   [...][wait_key][scroll]Do you understand?[scroll]    > Yes[scroll]       Not at all[choose]'''
+
+[[message]]
+id = 38
+text = '''You should follow the marks[line2]the elder made on your map[line3]when you explore.[wait_key][scroll]If you don't know what to do[scroll]next, you can also visit a[scroll]fortune teller.'''
+
+[[message]]
+id = 39
+text = '''[player_name], you are wonderful![line2]As I thought, you have the[line3]power of the Hero inside you![wait_key][scroll]Now, you should get the Master[scroll]Sword.  I am confident that you[scroll]can defeat the evil wizard!'''
+
+[[message]]
+id = 40
+text = '''[window 02][speed 03][player_name]!  Help!  The soldiers[line2]are coming to Sanctuary![line3]AIEEEEEEE![wait_key][scroll][...] [...] [...]'''
+
+[[message]]
+id = 41
+text = '''After passing through these[line2]sewers, we will be very close[line3]to Sanctuary![wait_key][scroll]Let's be careful!'''
+
+[[message]]
+id = 42
+text = '''Sanctuary is just beyond that[line2]door.  Pull the switch over[line3]there.'''
+
+[[message]]
+id = 43
+text = '''Who? Oh, it's you, [player_name]![line2]What can I do for you, young[line3]man?  The elder?  Oh, no one[wait_key][scroll]has seen him since the wizard[scroll]began collecting victims[...][scroll][...]   [...]   [...][wait_key][scroll]What?  Master Sword?  Well, I[scroll]don't remember the details[scroll]exactly, but[...]'''
+
+[[message]]
+id = 44
+text = '''Long ago, a prosperous people[line2]known as the Hylia inhabited[line3]this land[...][wait_key][scroll]Legends tell of many treasures[scroll]that the Hylia hid throughout[scroll]the land[...][wait_key][scroll]The Master Sword, a mighty[scroll]blade forged against those[scroll]with evil hearts, is one of[wait_key][scroll]them.  People say that now it[scroll]is sleeping deep in the forest[...][scroll][...] [...] [...][wait_key][scroll]Do you understand the legend?[scroll]    > Yes[scroll]       Not at all[choose]'''
+
+[[message]]
+id = 45
+text = '''Anyway, look for the elder.[line2]There must be someone in the[line3]village who knows where he is.[wait_key][scroll]You take care now, [player_name][...]'''
+
+[[message]]
+id = 46
+text = '''Ohhh,[player_name].  You've changed![line2]You look marvelous[...]  Please[line3]save us from Agahnim[wait_key][scroll]the wizard!'''
+
+[[message]]
+id = 47
+text = '''Hey!  Here is [player_name], the[line2]wanted man!  Soldiers!  Anyone![line3]Come quickly!'''
+
+[[message]]
+id = 48
+text = '''Incredible!  At last you have[line2]the three Pendants[...]  Now, you[line3]should go to the Lost Woods.[wait_key][scroll]If you are the true Hero, the[scroll]sword itself will select you.[scroll][...] [...] [...]'''
+
+[[message]]
+id = 49
+text = '''I am too old to fight.[line2]I can only rely on you.'''
+
+[[message]]
+id = 50
+text = '''I am, indeed, Sahasrahla, the[line2]village elder and a descendent[line3]of the seven wise men.[wait_key][scroll][...]   [...]     Oh really?[scroll][player_name], I am surprised a young[scroll]man like you is searching for[wait_key][scroll]the sword of evil's bane.[scroll]Not just anyone can use that[scroll]weapon.  Legends say only the[wait_key][scroll]Hero who has won the three[scroll]Pendants can wield the sword.[scroll][...]   [...]   [...][wait_key][scroll]Do you really want to find it?[scroll]    > Yeah![scroll]       Of Course![choose]'''
+
+[[message]]
+id = 51
+text = '''Good.  As a test, can you[line2]retrieve the Pendant Of[line3]Courage from the East Palace?[wait_key][scroll]If you bring it here, I will tell[scroll]you more of the legend and[scroll]give you a magical artifact.[sound 2d][wait_key][scroll]Now, go forward to the palace.'''
+
+[[message]]
+id = 52
+text = '''Other relatives of the wise men[line2]are hiding from the evil[line3]wizard's followers.[wait_key][scroll]You should find them.'''
+
+[[message]]
+id = 53
+text = '''[window 02][speed 03][player_name], it is I, Sahasrahla.[line2]I am communicating to you[line3]across the void through[wait_key][scroll]telepathy[...]  The place where[scroll]you now stand was the Golden[scroll]Land, but evil power turned it[wait_key][scroll]into the Dark World.  The[scroll]wizard has broken the wise[scroll]men's seal and opened a gate[wait_key][scroll]to link the worlds[scroll]at Hyrule Castle.  In[scroll]order to save this half of the[wait_key][scroll]world, the Light World, you[scroll]must win back the Golden[scroll]Power.  You must also rescue[wait_key][scroll]the seven maidens who Agahnim[scroll]sent to the Dark World.  As[scroll]members of the blood-line of[wait_key][scroll]the seven wise men, they have[scroll]power that will surely help you.[scroll]The maidens are locked in[wait_key][scroll]hidden dungeons full of evil[scroll]creatures and dangerous traps.[scroll]The Palace of Darkness should[wait_key][scroll]be your first goal in this world![sound 2d][scroll][player_name], I can rely on only[scroll]you.  Please make this old[wait_key][scroll]man's wishes come true.[scroll]I beg you!'''
+
+[[message]]
+id = 54
+text = '''[window 02][speed 03]But I sense your helplessness[...][line2]Before you go any further,[line3]find the Moon Pearl on[wait_key][scroll]Death Mountain.  It will protect[scroll]you from the Dark World's[scroll]magic so you can keep your[wait_key][scroll]heroic figure.'''
+
+[[message]]
+id = 55
+text = '''A helpful item is hidden in the[line2]cave on the east side of Lake[line3]Hylia.  Get it!'''
+
+[[message]]
+id = 56
+text = '''Oh!?  You got the Pendant Of[line2]Courage!  Now I will tell you[line3]more of the legend[...][wait_key][scroll]Three or four generations ago,[scroll]an order of knights protected[scroll]the royalty of the Hylia.[wait_key][scroll]These Knights Of Hyrule were[scroll]also guardians of the Pendant[scroll]Of Courage.[wait_key][scroll]Unfortunately, most of them[scroll]were destroyed in the great[scroll]war against evil that took[wait_key][scroll]place when the seven wise men[scroll]created their seal.  Among the[scroll]descendants of the Knights Of[wait_key][scroll]Hyrule a hero must appear.[scroll][...]I see.  [player_name], I believe you.[scroll]You should get the remaining[wait_key][scroll]Pendants.[scroll]And carry this with you.[scroll]This is a treasure passed down[wait_key][scroll]by the families of the wise[scroll]men.  I want you to have it.'''
+
+[[message]]
+id = 57
+text = '''You are correct, young man![line2]I am Sahasrahla, the village[line3]elder and a descendent of the[wait_key][scroll]seven wise men.[scroll][...] [...] [...] What?[scroll][player_name], I'm surprised a young[wait_key][scroll]man like you is looking for the[scroll]sword of evil's bane.  Not just[scroll]anyone can use that sword.[wait_key][scroll]According to the tales handed[scroll]down by the Hylia, only the[scroll]Hero who has destroyed three[wait_key][scroll]great evils and won the three[scroll]Pendants can wield the sword[...][scroll][...] [...] [...][wait_key][scroll]I see you have acquired the[scroll]Pendant of Courage.  I will tell[scroll]you about the legend behind it.[wait_key][scroll]Three or four generations ago,[scroll]an order of knights protected[scroll]the royalty of the Hylia.[wait_key][scroll]These Knights Of Hyrule were[scroll]also guardians of the Pendant[scroll]Of Courage.[wait_key][scroll]Unfortunately, most of them[scroll]were destroyed in the great[scroll]war against evil that took[wait_key][scroll]place when the seven wise men[scroll]created their seal.  Among the[scroll]descendants of the Knights Of[wait_key][scroll]Hyrule a hero must appear.[scroll][...]I see.  [player_name], I believe you.[scroll]You should get the remaining[wait_key][scroll]Pendants.[scroll]And carry this with you.[scroll]This is a treasure passed down[wait_key][scroll]by the families of the wise[scroll]men.  I want you to have it.'''
+
+[[message]]
+id = 58
+text = '''I will give 100 Rupees to the[line2]man who finds the descendants[line3]of the wise men.   THE KING'''
+
+[[message]]
+id = 59
+text = '''  [LinkL][LinkR]  WANTED!  This is the[line2]criminal who kidnapped Zelda.[line3]Call a soldier if you see him!'''
+
+[[message]]
+id = 60
+text = '''     DANGER![line2]Do not enter Death Mountain[line3]without the King's permission!'''
+
+[[message]]
+id = 61
+text = '''This way to the[line2]     Lost Woods'''
+
+[[message]]
+id = 62
+text = '''           DANGER![line2]Beware of deep water and Zora!'''
+
+[[message]]
+id = 63
+text = '''Welcome to the Magic Shop.[line2]The Waterfall Of Wishing is[line3]just ahead.  '''
+
+[[message]]
+id = 64
+text = '''This cave leads to the path[line2]back to Kakariko Village.'''
+
+[[message]]
+id = 65
+text = '''This way [Down][line2]         Lake Hylia[line3]         Shop'''
+
+[[message]]
+id = 66
+text = '''This way [Left][line2]         Kakariko Village'''
+
+[[message]]
+id = 67
+text = '''This way [Left][line2]         Desert Of Mystery'''
+
+[[message]]
+id = 68
+text = '''This way [Up] [Right][line2]         Magic Shop[line3]         Waterfall Of Wishing'''
+
+[[message]]
+id = 69
+text = '''This way [Right] Eastern Palace[line3]This way [Left] Hyrule Castle'''
+
+[[message]]
+id = 70
+text = '''[line2]        Lake Hylia'''
+
+[[message]]
+id = 71
+text = '''Pay no attention to the[line2]average middle-aged man[line3]standing by this sign.[wait_key][scroll]Leave him alone!'''
+
+[[message]]
+id = 72
+text = '''[line2]The House Of Lumberjacks[line3]A. Bumpkin and B. Bumpkin'''
+
+[[message]]
+id = 73
+text = '''This way [Down][line2]       Kakariko Village'''
+
+[[message]]
+id = 74
+text = '''Double, double toil and trouble,[line2]fire burn and cauldron bubble[...][line3]Making mushroom brew, I am[...]'''
+
+[[message]]
+id = 75
+text = '''Heh heh[...]  Thank you, young[line2]man[...]  Come back to the shop[line3]later for something good[...][wait_key][scroll]Heh heh[...]'''
+
+[[message]]
+id = 76
+text = '''Mmmmm[...]  The smell of rotten[line2]fruit[...]  If you give me that[line3]Mushroom, I can finish my brew.[wait_key][scroll]Heh heh[...]'''
+
+[[message]]
+id = 77
+text = '''If you want to buy the potion,[line2]you should bring a bottle to[line3]put it in[...]  He he he!'''
+
+[[message]]
+id = 78
+text = '''Red is the medicine of life.[line2]Green is the medicine of magic.[line3]Blue renews both life and[wait_key][scroll]magic.[scroll]Here, taste a sample of the[scroll]Red Potion[...]  He he!'''
+
+[[message]]
+id = 79
+text = '''Without a magic bottle, you can[line2]not buy any potions.[line3]He he he!'''
+
+[[message]]
+id = 80
+text = '''No,  no,  no[...]  I can't put[line2]anything into a full bottle.[line3]He he he!'''
+
+[[message]]
+id = 81
+text = '''You got the Lamp![line2]Now you can light torches and[line3]see your way in darkness.'''
+
+[[message]]
+id = 82
+text = '''You got the Boomerang![line2]Give it a try!  (To select an[line3]item, press the Start Button. )'''
+
+[[message]]
+id = 83
+text = '''You found the Bow![line2]You can shoot arrows until you[line3]run out!'''
+
+[[message]]
+id = 84
+text = '''You borrowed a shovel![line2]You can dig in many places.[line3]You never know what you'll[wait_key][scroll]find!'''
+
+[[message]]
+id = 85
+text = '''This is the Magic Cape![line2]You are invisible when you wear[line3]it! Watch your Magic Meter!'''
+
+[[message]]
+id = 86
+text = '''This is Magic Powder![line2]Try to sprinkle it on enemies[line3]and many other things!'''
+
+[[message]]
+id = 87
+text = '''You bought Zora's Flippers![line2]With these you should be able[line3]to swim even in deep water!'''
+
+[[message]]
+id = 88
+text = '''You got the Power Glove![line2]You can feel strength in both[line3]hands!  You can pick up and[wait_key][scroll]carry stones now!'''
+
+[[message]]
+id = 89
+text = '''You won the Pendant Of[line2]Courage!  Take it to[line3]Sahasrahla![wait_key][scroll]Two Pendants remain!'''
+
+[[message]]
+id = 90
+text = '''You won the Pendant Of Power![line2]Your goal of finding three[line3]Pendants is in sight![wait_key][scroll]Go for the last one!'''
+
+[[message]]
+id = 91
+text = '''You won the Pendant Of Wisdom![line2]With this, you have collected[line3]all three Pendants!  Go now to[wait_key][scroll]the Lost Woods to get[scroll]the Master Sword!'''
+
+[[message]]
+id = 92
+text = '''This Mushroom smells like sweet[line2]rotten fruit[...][line3]You can give this to anyone[wait_key][scroll]who wants it (Select it and[scroll]press the [Y] Button).'''
+
+[[message]]
+id = 93
+text = '''You found the Book of Mudora![line2]You can use it to read the[line3]ancient language of the Hylia!'''
+
+[[message]]
+id = 94
+text = '''You found the Moon Pearl![line2]This protects The Hero from[line3]the changing effects of the[wait_key][scroll]Golden Power.'''
+
+[[message]]
+id = 95
+text = '''You found the Compass![line2]Now you can pinpoint the[line3]lair of the dungeon's evil[wait_key][scroll]master!'''
+
+[[message]]
+id = 96
+text = '''You got the Map![line2]You can use it to see your[line3]current position and the rest[wait_key][scroll]of the dungeon (Press [X]).'''
+
+[[message]]
+id = 97
+text = '''You found the Ice Rod![line2]Its chill magic blasts the air![line3]But watch your Magic Meter!'''
+
+[[message]]
+id = 98
+text = '''You found the Fire Rod![line2]This rod commands the red fire![line3]But watch your Magic Meter!'''
+
+[[message]]
+id = 99
+text = '''This is the Ether Medallion![line2]Its magic controls the upper[line3]atmosphere and polar wind![wait_key][scroll]Watch your Magic Meter!'''
+
+[[message]]
+id = 100
+text = '''This is the Bombos Medallion![line2]Its magic makes the ground[line3]explode with power![wait_key][scroll]Watch your Magic Meter!'''
+
+[[message]]
+id = 101
+text = '''This is the Quake Medallion![line2]Its magic causes the ground[line3]to shake and defeats[wait_key][scroll]nearby enemies![scroll]Watch your Magic Meter!'''
+
+[[message]]
+id = 102
+text = '''You got the Magic Hammer![line2]You can drive the wooden[line3]stakes down into the ground![wait_key][scroll]You can use it to pound on[scroll]other things too!'''
+
+[[message]]
+id = 103
+text = '''Oh!  Here is the Flute![line2]Its music surely has some[line3]mysterious power!'''
+
+[[message]]
+id = 104
+text = '''You got the Cane Of Somaria![line2]It will be very helpful if you[line3]make proper use of it![wait_key][scroll]What a mysterious cane!'''
+
+[[message]]
+id = 105
+text = '''BOING!  This is the Hook Shot![line2]It extends and contracts and[...][line3]BOING!  It can grapple many[wait_key][scroll]things!'''
+
+[[message]]
+id = 106
+text = '''You got some Bombs![line2]You can pick up and throw[line3]a Bomb you placed[wait_key][scroll](Press the [A] Button)!'''
+
+[[message]]
+id = 107
+text = '''This is a Magic Bottle![line2]You can store an item[line3]inside and then use it later!'''
+
+[[message]]
+id = 108
+text = '''You got the Big Key![line2]This is the master key of the[line3]dungeon.  It can open many[wait_key][scroll]locks that small keys cannot.'''
+
+[[message]]
+id = 109
+text = '''You got the Titan's Mitt![line2]Now you can lift the heaviest[line3]stones that were once[wait_key][scroll]impossible to budge.'''
+
+[[message]]
+id = 110
+text = '''He gave you the Magic Mirror![line2]This mirror is blue, clear and[line3]beautiful[...][wait_key][scroll]You feel like it is going to[scroll]absorb you into another world[...]'''
+
+[[message]]
+id = 111
+text = '''This is it!  The Master Sword![line2][...]  [...]  [...][line3]No, this can't be it[...] Too bad.'''
+
+[[message]]
+id = 112
+text = '''[window 02][speed 03]Suddenly, Sahasrahla contacts[line2]you telepathically[...][line3][...]  [...]  [...][wait_key][scroll][player_name], it is extraordinary[scroll]that you won the Master Sword[scroll]that makes evil retreat[...][wait_key][scroll]With this shining sword, I[scroll]believe you can deflect the[scroll]wizard's evil powers.[wait_key][scroll][scroll]The destiny of this land[scroll]is in your hands.[wait_key][scroll]Please, [player_name][...]'''
+
+[[message]]
+id = 113
+text = '''Heh heh heh[...]  Thank you![line2]This is the Medicine of Life.[line3]Use it to regain your Life[wait_key][scroll]power.'''
+
+[[message]]
+id = 114
+text = '''Heh heh heh[...]  Thank you![line2]This is the Medicine of Magic.[line3]You can recharge your mystic[wait_key][scroll]energy with it.'''
+
+[[message]]
+id = 115
+text = '''Heh heh heh[...]  Thank you![line2]This is the Medicine of Life and[line3]Magic!  You can recover both!'''
+
+[[message]]
+id = 116
+text = '''You borrowed the Bug Catching[line2]Net!  There may be some other[line3]things you can catch with it,[wait_key][scroll]too.'''
+
+[[message]]
+id = 117
+text = '''You found the Blue Mail![line2]This armor reduces the damage[line3]that you take from enemies!'''
+
+[[message]]
+id = 118
+text = '''You found the Red Mail![line2]This provides even better[line3]protection than the Blue Mail!'''
+
+[[message]]
+id = 119
+text = '''Great!  Your sword is stronger![line2]You can feel the sheer power[line3]flowing through your body!'''
+
+[[message]]
+id = 120
+text = '''You found the Mirror Shield![line2]You can now reflect beams[line3]that your old shield[wait_key][scroll]couldn't block!'''
+
+[[message]]
+id = 121
+text = '''You got the Cane Of Byrna![line2]If you swing it once, a ring of[line3]light will protect you!'''
+
+[[message]]
+id = 122
+text = '''Eh?  It's locked![line2]If you had the Big Key, you[line3]might be able to open it!'''
+
+[[message]]
+id = 123
+text = '''You are short on Magic Power![line2]You can't use this item now.[line3]Watch your Magic Meter!'''
+
+[[message]]
+id = 124
+text = '''He gives you the Pegasus[line2]Shoes!  Now you can execute a[line3]devastating dash attack![wait_key][scroll](Hold the [A] Button[scroll]for a short time.)'''
+
+[[message]]
+id = 125
+text = '''Wow!  I haven't seen a normal[line2]person in a few hundred years![line3]Let me talk to you for a while.'''
+
+[[message]]
+id = 126
+text = '''Do you know about the[line2]Gargoyle statue in the village?[line3]People say they can hear a girl[wait_key][scroll]calling for help from under the[scroll]statue.  Isn't that a strange[scroll]story[...]'''
+
+[[message]]
+id = 127
+text = '''Surprisingly, the Triforce[line2]created this world to fulfill[line3]Ganon's wish.[wait_key][scroll]What is Ganon's wish,[scroll]you ask?  It is to rule the[scroll]entire cosmos!  Don't you think[wait_key][scroll]it might be possible with the[scroll]power of the Triforce[scroll]behind you?'''
+
+[[message]]
+id = 128
+text = '''I once lived in the Lost Woods,[line2]until the day I wandered into a[line3]magic transporter[...][wait_key][scroll]The power of the Dark World[scroll]quickly turned me into this[scroll]tree shape[...][wait_key][scroll]I guess the two forests are[scroll]connected with each other[...]'''
+
+[[message]]
+id = 129
+text = '''I heard that using Bombs is the[line2]best way to defeat the[line3]one-eyed giants.[wait_key][scroll]That's all I know!'''
+
+[[message]]
+id = 130
+text = '''Quit bothering me!  And watch[line2]where you're going when you[line3]dash around!'''
+
+[[message]]
+id = 131
+text = '''You got the Pendant Of Power![line2]You have now collected all[line3]three Pendants!  Go forth now[wait_key][scroll]to the Lost Woods for the[scroll]Master Sword!'''
+
+[[message]]
+id = 132
+text = '''You got the Pendant Of Wisdom![line2]Again your power has increased![line3]Now, go for the last one!'''
+
+[[message]]
+id = 133
+text = '''Well howdy, Light Worlder![line2]You look like a straight[line3]shooter[...]  Want to try your[wait_key][scroll]skill in my shooting gallery?[scroll]I'll give you five shots for 20[scroll]Rupees.  If you're as sharp[wait_key][scroll]as I think you are, you stand[scroll]to rake in the Rupees.[wait_key][scroll]How about it, stranger?[scroll]    > Play[scroll]       No way[choose]'''
+
+[[message]]
+id = 134
+text = '''All right!  Aim carefully![line2]Ready?  GO!'''
+
+[[message]]
+id = 135
+text = '''Well little partner, you can[line2]turn yourself right around and[line3]leave the same way you [wait_key][scroll]came in.[scroll]See you later!  Have a nice day!'''
+
+[[message]]
+id = 136
+text = '''Want to shoot again?[line2]    > Continue[line3]       Quit[choose]'''
+
+[[message]]
+id = 137
+text = '''--POND OF HAPPINESS--[line2]Throw some Rupees in and your[line3]wishes will surely come true.[wait_key][scroll]Do you want to throw Rupees?[scroll]    > Throw a few[scroll]       Don't feel like it[choose]'''
+
+[[message]]
+id = 138
+text = '''Select an item using the[line2]Control Pad and throw it using[line3]the [Y] Button.[item]'''
+
+[[message]]
+id = 139
+text = '''Hello there.  Did you drop this?[line2]    > Yes[line3]       No, I didn't[choose]'''
+
+[[message]]
+id = 140
+text = '''I like an honest person.[line2]I will give you something better[line3]in return.'''
+
+[[message]]
+id = 141
+text = '''Are you sure this is not yours?[line2]    > Really, it isn't[line3]       To tell the truth, it is[choose]'''
+
+[[message]]
+id = 142
+text = '''Now,  now, don't tell me a lie.[line2]Please take it back.'''
+
+[[message]]
+id = 143
+text = '''You got the Magical Boomerang![line2]You can throw this faster and[line3]farther than your old one!'''
+
+[[message]]
+id = 144
+text = '''Your shield is improved![line2]Now you can defend yourself[line3]against fireballs!'''
+
+[[message]]
+id = 145
+text = '''These are the Silver Arrows[line2]you need to defeat Ganon!'''
+
+[[message]]
+id = 146
+text = '''She filled your bottle with the[line2]Medicine Of Magic.  To get such[line3]a potion free is quite[wait_key][scroll]a bargain!'''
+
+[[message]]
+id = 147
+text = '''Your sword is stronger![line2]You can feel its power[line3]throbbing in your hand!'''
+
+[[message]]
+id = 148
+text = '''Happiness increased [number 03][number 02] Rupees.[line2]In total, your Happiness is [number 01][number 00].[line3]You became happier by one[wait_key][scroll]step.'''
+
+[[message]]
+id = 149
+text = '''I will make your wish come true.[line2]  >I want to carry more Bombs[line3]    I want to carry more Arrows[selection_change]'''
+
+[[message]]
+id = 150
+text = '''Then I will increase your[line2]carrying ability so you can[line3]carry [number 01][number 00] Bombs at maximum.[wait_key][scroll]This is just a small happiness[scroll]I can give to you.'''
+
+[[message]]
+id = 151
+text = '''Then I will increase your[line2]carrying ability so you can[line3]carry [number 01][number 00] Arrows at maximum.[wait_key][scroll]This is just a small happiness[scroll]I can give to you.'''
+
+[[message]]
+id = 152
+text = '''I cannot grant any more wishes[line2]for you, but a friend of mine[line3]might be able to[...][wait_key][scroll]She lives in the Waterfall Of[scroll]Wishing near Zora's lake.[scroll]I will return your Rupees to[wait_key][scroll]you.  May you be happy[...]'''
+
+[[message]]
+id = 153
+text = '''Uhhh[...]  Watch your step.[line2]There are holes in the ground.[line3]Could you turn right here?[wait_key][scroll]Young man, are you also going[scroll]to the mountain to look for the[scroll]Golden Power?[wait_key][scroll]Just ahead is a mountain full[scroll]of monsters.  Many people have[scroll]vanished in this mountain while[wait_key][scroll]looking for the Golden Power.[scroll][scroll][wait_key][scroll]I don't want to steer you[scroll]wrong, so please don't get too[scroll]involved in such a mad quest.'''
+
+[[message]]
+id = 154
+text = '''Uhh[...]  There must be a Heart in[line2]the bottle.'''
+
+[[message]]
+id = 155
+text = '''Uhh[...]  Turn right here[...]   [...][line2]You know, I have a[line3]granddaughter who is your[wait_key][scroll]age[...]  The King took her to the[scroll]castle and she never returned.[scroll]Kidnapping those maidens must[wait_key][scroll]be part of the wizard's plot![scroll]I'm sure he is trying to[scroll]somehow use the power of the[wait_key][scroll]descendants of the wise[scroll]men[...]'''
+
+[[message]]
+id = 156
+text = '''I don't know who you are, but[line2]if you are going to go up[line3]the mountain, will you take me[wait_key][scroll]with you?  I lost my lamp,[scroll]so[...]'''
+
+[[message]]
+id = 157
+text = '''The missing maidens are still[line2]alive somewhere.  I believe that[line3]a Hero will rescue them[...][wait_key][scroll]I wait for that day[...][scroll]Uhh[...]  These are dangerous[scroll]times[...]  I talked too much.[wait_key][scroll]Anyway[...]  Thank you for your[scroll]kindness to an old man like me.[scroll]Uhh[...]  I wanted to give you[wait_key][scroll]this.  If you wander into[scroll]a magical transporter, gaze[scroll]into this mirror.'''
+
+[[message]]
+id = 158
+text = '''The wizard has deceived the[line2]King, and now he is trying to[line3]open the way to the[wait_key][scroll]Dark World.  To complete[scroll]your quest, you will need[scroll]the Moon Pearl, which is in the[wait_key][scroll]tower on top of the mountain.[scroll]All I can do for you now is to[scroll]comfort your weariness[...][wait_key][scroll]Come back here any time.'''
+
+[[message]]
+id = 159
+text = '''[line1]The Moon Pearl will protect its[line2]bearer from the magical air of[line3]the Golden Land, so you can[wait_key][scroll]keep your human shape there.[scroll]All I can do for you now is[scroll]comfort your weariness[...] [wait_key][scroll]Come back here any time.'''
+
+[[message]]
+id = 160
+text = '''[player_name], I think the wizard[line2]connected the two worlds[line3]somewhere around the castle.[wait_key][scroll]All I can do for you now is to[scroll]comfort your weariness[...][scroll]Come back here any time.'''
+
+[[message]]
+id = 161
+text = '''[...]mumble mumble[...]  My son[line2]really liked to play the flute,[line3]but he went to look for the[wait_key][scroll]Golden Power and has not[scroll]returned[...] [...] [...][scroll]I wonder where he is and what[wait_key][scroll]he is doing now?[...][scroll][...]  Zzzzzz  Zzzzzz'''
+
+[[message]]
+id = 162
+text = '''[...]mumble mumble[...]  Oh?  This[line2]is my son's flute[...]![line3]Did you meet my son?[wait_key][scroll]Where is he?  Is he all right?[scroll][...] [...] [...] [...][scroll][wait_key][scroll]Oh, I see[...]  Well, I can tell[scroll]what you want to say by the[scroll]look in your eyes[...]'''
+
+[[message]]
+id = 163
+text = '''Would you keep the flute?[line2]And will you play its sweet[line3]melody for the bird in the[wait_key][scroll]village square?[scroll]I beg of you, please![scroll]My son would probably want it[wait_key][scroll]this way[...][scroll][...]But still, I wish I could[scroll]see him once more[...]'''
+
+[[message]]
+id = 164
+text = '''Zzzzzzz  Zzzzzzzz[line2][...]  [...]  [...][line3]Snore  Zzzzzz  Zzzzzz'''
+
+[[message]]
+id = 165
+text = '''Oh, [player_name].  The rumors say[line2]you kidnapped the Princess,[line3]but I still trust you.'''
+
+[[message]]
+id = 166
+text = '''I can't believe you caught me![line2]With your speed it must have[line3]been easy to kidnap Zelda[...][wait_key][scroll]You don't look like such a bad[scroll]guy, though[...][scroll]Anyway, because you have[wait_key][scroll]such quick feet, it might be a[scroll]good idea to run and bash into[scroll]many things[...][wait_key][scroll]For example, the trees in this[scroll]village have many useful things[scroll]hanging in their branches[...][wait_key][scroll]Well, just try it, OK?!'''
+
+[[message]]
+id = 167
+text = '''If you have enough time to[line2]read this sign, you should go[line3]to the goal immediately!'''
+
+[[message]]
+id = 168
+text = '''I'll give a piece of Heart to[line2]the person who wears the Cape.'''
+
+[[message]]
+id = 169
+text = '''Curses to anyone who throws[line2]something into my circle of[line3]stones.'''
+
+[[message]]
+id = 170
+text = '''This way [Up] Skeleton Forest[line3]This way [Down] Village Of Outcasts'''
+
+[[message]]
+id = 171
+text = '''[line2]This way [Right] Cave'''
+
+[[message]]
+id = 172
+text = '''[line2]This way [Right] Palace Of Darkness'''
+
+[[message]]
+id = 173
+text = '''[line2]This way [Left] Bomb Shop'''
+
+[[message]]
+id = 174
+text = '''[Left]  Swamp Of Evil[line2]         No Entrance[line3]         No Escape'''
+
+[[message]]
+id = 175
+text = '''This is the Village Of Outcasts.[line2]People without Rupees are not[line3]welcome here.'''
+
+[[message]]
+id = 176
+text = '''The Waterfall Of Wishing is just[line2]around the corner.'''
+
+[[message]]
+id = 177
+text = '''This way [Right][Up][line2]Lake Of Ill Omen'''
+
+[[message]]
+id = 178
+text = '''After Agahnim took over,[line2]everyone began to act[line3]strangely.[wait_key][scroll]I suppose it's only[scroll]a matter of time before[scroll]I'm affected, too.'''
+
+[[message]]
+id = 179
+text = '''Hey hey!  You're not allowed in[line2]the castle, son![line3]Go home and get some sleep!'''
+
+[[message]]
+id = 180
+text = '''[window 02][player_name], it is I, Sahasrahla.  I[line2]can talk to you telepathically[line3]when you touch these tiles.[wait_key][scroll]Here is a hint.  You can use the[scroll]treasure hidden in this palace[scroll]to defeat armored foes.'''
+
+[[message]]
+id = 181
+text = '''[window 02][player_name], it is I, Sahasrahla the[line2]elder.  An orb known as the[line3]Moon Pearl is in this tower.[wait_key][scroll]Whoever holds the Moon Pearl is[scroll]protected so that his form will[scroll]not change in the Dark World.[wait_key][scroll]You must find it and escape[scroll]from the tower![scroll]Don't forget the Moon Pearl[...]'''
+
+[[message]]
+id = 182
+text = '''[Ankh][Waves][Ankh][Snake][Ankh][Waves][Ankh][Snake][Ankh][Waves][Waves][Waves][Waves][Ankh][Snake][Ankh][Waves][Ankh][Snake][line2][Ankh][Snake][Ankh][Ankh][Waves][Ankh][Snake][Ankh][Waves][Ankh][Snake][line3][Ankh][Waves][Ankh][Snake][Ankh][Ankh][Waves][Ankh][Snake][Snake][Waves][Ankh][Ankh][Snake]'''
+
+[[message]]
+id = 183
+text = '''The Hero's triumph on[line2]Cataclysm's Eve[line3]Wins three symbols of virtue.[wait_key][scroll]The Master Sword he will then[scroll]retrieve,[scroll]Keeping the Knight's line true.'''
+
+[[message]]
+id = 184
+text = '''[window 02][player_name], it is I, Sahasrahla.[line2]You must somehow make your[line3]way to the top of Spectacle[wait_key][scroll]Rock.  From there you can[scroll]reach the Tower of Hera on[scroll]top of Death Mountain.'''
+
+[[message]]
+id = 185
+text = '''[window 02][player_name], it is I, Sahasrahla.[line2]Objects exist simultaneously in[line3]both worlds with similar shapes.[wait_key][scroll]If the form of a thing changes,[scroll]it will affect the shape of its[scroll]twin in the other world.'''
+
+[[message]]
+id = 186
+text = '''[window 02][player_name][...]  It's me, Zelda[...][line2]Don't be deceived by the magic[line3]of Blind the Thief!  Be careful!'''
+
+[[message]]
+id = 187
+text = '''[window 02][player_name],  it is I, Sahasrahla[line2]the elder!  You must set fire[line3]to four torches to open[wait_key][scroll]the way forward.'''
+
+[[message]]
+id = 188
+text = '''[Ankh][Snake][Ankh][Waves][Ankh][Snake][Ankh][Waves][Ankh][Waves][Ankh][line2][Ankh][Waves][Ankh][Snake][Ankh][Snake][Ankh][Waves][Ankh][Snake][line3][Ankh][Waves][Ankh][Snake][Ankh][Snake][Ankh][Waves][Ankh][Snake][Ankh]'''
+
+[[message]]
+id = 189
+text = '''To open the way to go forward,[line2]Make your wish here[line3]And it will be granted.'''
+
+[[message]]
+id = 190
+text = '''[window 02]When Ganon is stunned, give[line2]him his last moment with a[line3]Silver Arrow![wait_key][scroll]Do you understand, [player_name]?'''
+
+[[message]]
+id = 191
+text = '''[window 02][player_name], can you hear me?[line2]It's me, Zelda.  I am locked in[line3]Turtle Rock on top of Death[wait_key][scroll]Mountain.  I know you are doing[scroll]your best, but please hurry[...]'''
+
+[[message]]
+id = 192
+text = '''[window 02][player_name], it is I, Sahasrahla.[line2]You must never fail to find all[line3]the treasures in each dungeon.'''
+
+[[message]]
+id = 193
+text = '''[window 02]Listen well, [player_name].[line2]Even with the Master Sword,[line3]you cannot inflict physical[wait_key][scroll]harm on the wizard.[scroll]You must find a way to return[scroll]his own evil magic power to him.'''
+
+[[message]]
+id = 194
+text = '''[window 02][player_name], do not use all your[line2]magic power if you do not[line3]possess the Medicine Of Magic.[wait_key][scroll]Now, get ready to go into the[scroll]depths of this dungeon.'''
+
+[[message]]
+id = 195
+text = '''[window 02][player_name], do you possess the[line2]Medicine of Magic?  If not, I[line3]recommend against going any[wait_key][scroll]further.'''
+
+[[message]]
+id = 196
+text = '''[window 02][player_name], the magic flames will[line2]protect you inside this icy[line3]dungeon.'''
+
+[[message]]
+id = 197
+text = '''[window 02]You cannot destroy the[line2]Skeleton Knight with the sword[line3]alone.  When he collapses, he is[wait_key][scroll]vulnerable to another weapon.'''
+
+[[message]]
+id = 198
+text = '''[window 02][player_name], it is I, Sahasrahla the[line2]elder.  I have some advice[...][line3]In the dungeons, you can gaze[wait_key][scroll]into the Magic Mirror to return[scroll]to the entrance at any time.[scroll]Do not forget this!'''
+
+[[message]]
+id = 199
+text = '''My name is Chris Houlihan.[line2]This is my top secret room.[line3]Keep it between us, OK?'''
+
+[[message]]
+id = 200
+text = '''You caught a bee![wait_key][line2]What will you do?[line3]    > Keep it in a bottle[scroll]       Set it free[choose]'''
+
+[[message]]
+id = 201
+text = '''You caught a faerie![wait_key][line2]What will you do?[line3]    > Keep it in a bottle[scroll]       Set it free[choose]'''
+
+[[message]]
+id = 202
+text = '''You don't have any empty[line2]bottles.  You have no choice[...][line3]Just set it free.'''
+
+[[message]]
+id = 203
+text = '''This try your time was[line2][number 03][number 02] minutes [number 01][number 00] seconds.'''
+
+[[message]]
+id = 204
+text = '''If you can reach the goal[line2]within 15 seconds, we will give[line3]you something good.[wait_key][scroll]Ready, Set[...] [...]  GO!'''
+
+[[message]]
+id = 205
+text = '''You qualified![line2]Congratulations![line3]I present you with a piece of[wait_key][scroll]Heart!'''
+
+[[message]]
+id = 206
+text = '''You're not qualified.[line2]Too bad![line3]Why don't you try again?'''
+
+[[message]]
+id = 207
+text = '''I don't have anything more to[line2]give you.[line3]I'm sorry!'''
+
+[[message]]
+id = 208
+text = '''You have to enter the maze[line2]from the proper entrance or I[line3]can't clock your time[...]'''
+
+[[message]]
+id = 209
+text = '''You, sir!  Have you been going[line2]through life without one of my[line3]hold-anything bottles?[wait_key][scroll]Well step right up and make[scroll]your life complete!  I've got[scroll]one on sale now for the low,[wait_key][scroll]low price of 100 Rupees![wait_key][scroll]What do you say?  Interested?[scroll]    > I'll take one[scroll]       Don't need it[choose]'''
+
+[[message]]
+id = 210
+text = '''Good buy!  Thanks a lot![line2]Now, hold it above your head[line3]for the whole world to see, OK?[wait_key][scroll]It's good for business!'''
+
+[[message]]
+id = 211
+text = '''So you're broke, eh?  Too bad[...][line2]Come back after you earn more[line3]Rupees.  It might still be here.'''
+
+[[message]]
+id = 212
+text = '''I'm all sold out of bottles.[line2]Come back later, OK? [line3] [...] [...] [...]'''
+
+[[message]]
+id = 213
+text = '''Wow!  I've never seen such a[line2]rare bug!  I'll buy it for[line3]100 Rupees, OK?  Done!'''
+
+[[message]]
+id = 214
+text = '''Hey!  They say eating fish[line2]makes you smart.  You have to[line3]give me this fish for this[wait_key][scroll]stuff, OK?  Done!'''
+
+[[message]]
+id = 215
+text = '''Yo!  [player_name]! You seem to be in[line2]a heap of trouble, but this is[line3]all I can give you.'''
+
+[[message]]
+id = 216
+text = '''Hey you![line2]Welcome![line3][wait_key][scroll]Ask us to do anything![scroll]    > Temper my sword[scroll]       I just dropped by[choose]'''
+
+[[message]]
+id = 217
+text = '''I'll give you a big discount![line2]    >Sword Tempered[...] 10 Rupees[line3]      Wait a minute[choose]'''
+
+[[message]]
+id = 218
+text = '''Tempered, eh?  Are you sure?[line2]    > Yes[line3]       I changed my mind[choose]'''
+
+[[message]]
+id = 219
+text = '''Well, we can't make it any[line2]stronger than that[...] Sorry!'''
+
+[[message]]
+id = 220
+text = '''Drop by again anytime you[line2]want to.  Hi ho!  Hi ho![line3]We're off to work!'''
+
+[[message]]
+id = 221
+text = '''All right, no problem.[line2]We'll have to keep your sword[line3]for a while.'''
+
+[[message]]
+id = 222
+text = '''Your sword is tempered-up![line2]Now hold it!'''
+
+[[message]]
+id = 223
+text = '''If my lost partner returns,[line2]we can temper your sword,[line3]but now, I can't do[wait_key][scroll]anything for you.'''
+
+[[message]]
+id = 224
+text = '''Oh!  Happy days are here again![line2]You found my partner![line3][...]  We are very happy now[...][wait_key][scroll]Drop by here again![scroll]At that time, we will temper[scroll]your sword perfectly!'''
+
+[[message]]
+id = 225
+text = '''Ribbit ribbit[...]  Your body did[line2]not change!  You are not just[line3]an ordinary guy, are you?[wait_key][scroll]I used to live in Kakariko Town.[scroll]I wonder what my partner is[scroll]doing there without me[...][wait_key][scroll]Ribbit!  I have a request of[scroll]you.[scroll]Please take me to my partner![wait_key][scroll]Please!  Ribbit!  Please!'''
+
+[[message]]
+id = 226
+text = '''I'm sorry, we're not done yet.[line2]Come back after a while.'''
+
+[[message]]
+id = 227
+text = '''Thank you![line2][line3]Thank you!'''
+
+[[message]]
+id = 228
+text = '''Hey hey, amateurs shouldn't[line2]try to do this.  You're just[line3]getting in the way!'''
+
+[[message]]
+id = 229
+text = '''After wandering into this world[line2]I turned into this shape.[line3][...]  [...]  [...][wait_key][scroll]I enjoyed playing the flute in[scroll]the original world[...][scroll][...]  [...]  [...][wait_key][scroll]There was a small grove where[scroll]many animals gathered.  I want[scroll]to see that place again[...][wait_key][scroll]I buried my flute there with[scroll]some flower seeds.[scroll][wait_key][scroll]Will you try to find it for me?[scroll]    > Yes[scroll]       No way[choose]'''
+
+[[message]]
+id = 230
+text = '''Then I will lend you my shovel.[line2]Good luck!'''
+
+[[message]]
+id = 231
+text = '''[...]  [...]  [...][line2]I see.  I won't ask you again[...][line3]Good bye.'''
+
+[[message]]
+id = 232
+text = '''Did you find my flute?[line2][...]  [...]  [...][line3]Please keep looking for it[...]'''
+
+[[message]]
+id = 233
+text = '''Thank you, [player_name].  But it[line2]looks like I can't play my flute[line3]any more.  Please take it.[wait_key][scroll]If by chance you go to the[scroll]village I lived in, please give[scroll]it to a tired old man you will[wait_key][scroll]find there.[scroll][...]  [...]  [...][scroll]Well,  my mind is getting[wait_key][scroll]hazy[...][scroll]Please let me hear the sound of[scroll]the flute one last time[...]'''
+
+[[message]]
+id = 234
+text = '''[position 01]Hocus pocus![line2]You will find the elder[line3]Sahasrahla[...]'''
+
+[[message]]
+id = 235
+text = '''[position 01]Abracadabra alakazam![line2]You will open a desert lock with[line3]the Book of Mudora.'''
+
+[[message]]
+id = 236
+text = '''[position 01]Hocus pocus![line2]You will find a member of the[line3]wise men's line in the desert.'''
+
+[[message]]
+id = 237
+text = '''[position 01]Abracadabra alakazam![line2]You will find a mushroom lover[line3]at the Magic Shop[...]'''
+
+[[message]]
+id = 238
+text = '''[position 01]Hocus pocus![line2]You will meet Zora living in a[line3]lake at the river's source[...]'''
+
+[[message]]
+id = 239
+text = '''[position 01]Abracadabra alakazam![line2]The true Hero will find the[line3]Moon Pearl in the[wait_key][scroll]mountain tower.'''
+
+[[message]]
+id = 240
+text = '''[position 01]Hocus pocus![line2]Even the mighty Master Sword[line3]cannot harm the wizard's body.'''
+
+[[message]]
+id = 241
+text = '''[position 01]Abracadabra alakazam![line2]The true Hero will jump into the[line3]well near the smithy's shop.'''
+
+[[message]]
+id = 242
+text = '''[position 01]Well, I have to say my condition[line2]isn't very good today.  But I[line3]want you to come back again[...]'''
+
+[[message]]
+id = 243
+text = '''[position 01]Hmmm[...]  You look like you might[line2]have an interesting destiny[...][line3]May I tell your fortune?[wait_key][scroll]I'll make it cheap[...][scroll]    > Ask him to tell it[scroll]       Not interested[choose]'''
+
+[[message]]
+id = 244
+text = '''[position 01]Now I will take [number 00][number 01] Rupees.[line2]I hope you will be healthy.[line3]Yeehah ha hah!'''
+
+[[message]]
+id = 245
+text = '''[position 01]It is indeed a poor man who is[line2]not interested in his future[...][line3]I'll be waiting for your return.'''
+
+[[message]]
+id = 246
+text = '''[position 01]Hocus pocus![line2]You will meet a strange man[line3]standing in the desert[...]'''
+
+[[message]]
+id = 247
+text = '''[position 01]Abracadabra alakazam![line2]The gossip shop in the Dark[line3]World has treasure for the[wait_key][scroll]asking[...]'''
+
+[[message]]
+id = 248
+text = '''[position 01]Hocus pocus![line2]You will find the smith's[line3]partner in the[wait_key][scroll]Village Of Outcasts.'''
+
+[[message]]
+id = 249
+text = '''[position 01]Abracadabra alakazam![line2]You will find a treasure resting[line3]in peace in the graveyard.'''
+
+[[message]]
+id = 250
+text = '''[position 01]Hocus pocus![line2]You will buy a new kind of bomb[line3]in the Bomb Shop.'''
+
+[[message]]
+id = 251
+text = '''[position 01]Abracadabra alakazam![line2]You will find something inside[line3]the pyramid of the Dark World.'''
+
+[[message]]
+id = 252
+text = '''[position 01]Hocus pocus![line2]You will run into a barrier if[line3]you try to enter[wait_key][scroll]Ganon's tower.'''
+
+[[message]]
+id = 253
+text = '''[position 01]Abracadabra alakazam![line2]You will need Silver Arrows to[line3]give Ganon his last moment.'''
+
+[[message]]
+id = 254
+text = '''Hey!  I'll tell you a profitable[line2]story if you pay me 20 Rupees.[wait_key][scroll]How about it?[scroll]    > Pay Rupees[scroll]       Don't want to hear it[choose]'''
+
+[[message]]
+id = 255
+text = '''Hah!  Thank you.  They say[line2]there is a tiny circle of rocks[line3]in the lake at the source of[wait_key][scroll]the river.  I don't know what[scroll]will happen, but it might be fun[scroll]to throw something into it[...][wait_key][scroll]Heh heh.  See you[...]'''
+
+[[message]]
+id = 256
+text = '''Heh heh.  I see.  I'm not[line2]interested in talking to people[line3]who don't have Rupees[...]'''
+
+[[message]]
+id = 257
+text = '''Heh heh.  Thank you.  To tell[line2]you the truth, I used to be a[line3]thief in the Light World[...][wait_key][scroll]some of my fellow thieves went[scroll]into hiding because they were[scroll]afraid of being caught.[wait_key][scroll]One of them was a master[scroll]locksmith, but now he is hiding[scroll]the fact that he was a thief[...][wait_key][scroll][...]by pretending to be a[scroll]strange middle-aged guy![scroll]Ha ha ha[...]'''
+
+[[message]]
+id = 258
+text = '''Hah!  Thank you.  To tell you[line2]the truth, I found incredible[line3]beauty inside the pyramid,[wait_key][scroll]but someone sealed the door.[scroll]You can't do anything with a[scroll]standard bomb, they say[...]'''
+
+[[message]]
+id = 259
+text = '''Heh heh.  Thank you.  As a[line2]matter of fact, monster magic[line3]is making it rain in the swamp.[wait_key][scroll]If you can move the air with[scroll]more force than the monsters,[scroll]the rain may stop.'''
+
+[[message]]
+id = 260
+text = '''Sniffle[...] Hey brother [player_name]![line2]Do you have a bottle to keep[line3]a bug in?[wait_key][scroll][...][scroll]I see.  You don't have one[...][scroll]Cough cough[...]'''
+
+[[message]]
+id = 261
+text = '''I can't go out 'cause I'm sick[...][line2]Cough cough[...][line3]People say I caught this cold[wait_key][scroll]from the evil air that is coming[scroll]down off the mountain[...][scroll]Sniff sniff[...][wait_key][scroll]This is my bug-catching net.[scroll]I'll use it when I'm better, but[scroll]for now, I'll lend it to you.'''
+
+[[message]]
+id = 262
+text = '''Sniffle[...] I hope I get well[line2]soon[...][line3]Cough cough[...]'''
+
+[[message]]
+id = 263
+text = '''[...]  [...]  [...]  [...]  [...]  [...][line2][...]  [...]  [...]'''
+
+[[message]]
+id = 264
+text = '''Why did you take my sign?  It[line2]says plain as day to just leave[line3]me alone!  Sheeesh!'''
+
+[[message]]
+id = 265
+text = '''I heard that you know I used to[line2]be a thief, right?[line3][wait_key][scroll]Well, I'll open a chest for you.[scroll]Will you keep it secret from[scroll]everyone else?[wait_key][scroll]Would you please promise ?[scroll]    > Promise not to tell[scroll]       Tell it to everyone[choose]'''
+
+[[message]]
+id = 266
+text = '''OK, if that's the way you want[line2]it, I hope you drag that chest[line3]around forever!'''
+
+[[message]]
+id = 267
+text = '''Remember, you promised[...][line2]Don't tell anyone.'''
+
+[[message]]
+id = 268
+text = '''All right, bring that chest over[line2]here[...]  Seriously, keep this a[line3]secret from everyone.'''
+
+[[message]]
+id = 269
+text = '''[Waves][Snake][Waves][Snake][Waves][Snake][Waves][Snake][Waves][Snake][Waves][Waves][Waves][Snake][line2][Waves][Ankh][Snake][Snake][Ankh][Waves][Ankh][Snake][Waves][Ankh][Snake][Waves][Ankh][Snake][Waves][Ankh][line3][Waves][Snake][Waves][Snake][Waves][Snake][Waves][Ankh][Waves][Ankh]'''
+
+[[message]]
+id = 270
+text = '''Hold up the Master Sword and[line2]you will get the magic of[line3]Ether.'''
+
+[[message]]
+id = 271
+text = '''Hold up the Master Sword and[line2]you will get the magic of[line3]Bombos.'''
+
+[[message]]
+id = 272
+text = '''Hey!  Blast you for waking me[line2]from my deep, dark sleep![line3][...]I mean, thanks a lot, sir![wait_key][scroll]But now I will get my revenge[scroll]on you.  Get ready for it![scroll][...]Err, is that OK with you,[wait_key][scroll]sir?'''
+
+[[message]]
+id = 273
+text = '''Heh heh heh!  I laugh at your[line2]misfortune!  Now your magic[line3]power will drop by one half![wait_key][scroll]Congratulations![scroll]Now, do your best, even though[scroll]I'm sure it won't be enough![wait_key][scroll]Have a nice day!  See you!'''
+
+[[message]]
+id = 274
+text = '''[scroll_speed 00][color 07][speed 03][window 02][next_pic]Long ago, in the beautiful[line2]kingdom of Hyrule surrounded[line3]by mountains and forests[...][wait 09][scroll]legends told of an omnipotent[scroll]and omniscient Golden Power[scroll]that resided in a hidden land.[wait 09][next_pic][next_pic][scroll]Many people aggressively[scroll]sought to enter the hidden[scroll]Golden Land[...][wait 07][scroll]But no one ever returned.[scroll]One day evil power began to[scroll]flow from the Golden Land[...][wait 07][scroll]So the King commanded seven[scroll]wise men to seal the gate to[scroll]the Land of the Golden Power.[wait 09][next_pic][next_pic][scroll]That seal should have remained[scroll]for all time[...][scroll][wait 09][next_pic][next_pic][scroll][...]  [...]But, when these events[scroll]were obscured by the mists of[scroll]time and became legend[...]'''
+
+[[message]]
+id = 275
+text = '''[window 02][color 07][speed 03][line1]A mysterious wizard known as[line2]Agahnim came to Hyrule to[line3]release the seal.  He eliminated[wait 05][scroll]the good King of Hyrule[...][wait 05]'''
+
+[[message]]
+id = 276
+text = '''[window 02][color 07][speed 03][line1]Through evil magic, he began[line2]to make descendants of the[line3]seven wise men vanish, one[wait 05][scroll]after another.[wait 05]'''
+
+[[message]]
+id = 277
+text = '''[window 02][color 07][speed 03][line1]And the time of destiny for[line2]Princess Zelda is drawing[line3]near.[wait 05]'''
+
+[[message]]
+id = 278
+text = '''Because the key is locked[line2]inside this chest, you can[line3]never open it.[wait_key][scroll]Just take it with you.'''
+
+[[message]]
+id = 279
+text = '''100 Rupees for 30 Bombs!  30[line2]Bombs for just 100 Rupees![line3]Please buy 'em, mister!'''
+
+[[message]]
+id = 280
+text = '''100 Rupees for 30 Bombs!  I also[line2]have a new Super Bomb in stock[line3]for only 100 Rupees!  Please[wait_key][scroll]buy it too, mister!'''
+
+[[message]]
+id = 281
+text = '''Thank you very much.[line2]Thank you very much.'''
+
+[[message]]
+id = 282
+text = '''Thank you very much.  You can[line2]drop this Bomb off anywhere.[line3](Press the [A] Button.)[wait_key][scroll]Please don't forget it.'''
+
+[[message]]
+id = 283
+text = '''Ki ki ki!  If you give me 100[line2]Rupees,  I will open the[line3]entrance for you.  Ki ki ki![wait_key][scroll]  What will you do?[scroll]    > Ask him to open it[scroll]       Try to open it yourself[choose]'''
+
+[[message]]
+id = 284
+text = '''Ki ki ki!  Hmph![line2]Do it yourself, then![line3]Kik ki ki!'''
+
+[[message]]
+id = 285
+text = '''Ki ki!  Good choice!  Then I get[line2]100 of your Rupees.  Kik ki ki!'''
+
+[[message]]
+id = 286
+text = '''I'm Kiki the monkey ki ki![line2]I love Rupees more than[line3]anything.  Can you spare me[wait_key][scroll]10 Rupees?[wait_key][scroll] What will you do?[scroll]    > Give him 10 Rupees[scroll]       Never give him anything[choose]'''
+
+[[message]]
+id = 287
+text = '''Ki ki ki ki!  Good choice!  I[line2]will accompany you for a while.[line3]Kik kiki!'''
+
+[[message]]
+id = 288
+text = '''Ki ki!  Harumph!  I have no[line2]reason to talk to you, then.[line3]Bye bye!  Kik ki ki!'''
+
+[[message]]
+id = 289
+text = '''Ki ki?  What are you doing?[line2]I don't want to go there!'''
+
+[[message]]
+id = 290
+text = '''Ohh, thank you very much![line2]You saved my life.  Please take[line3]me outside.'''
+
+[[message]]
+id = 291
+text = '''Gyaaah![line2]Too bright!'''
+
+[[message]]
+id = 292
+text = '''Err[...]  Wait a minute[...][line2]Please don't go this way.'''
+
+[[message]]
+id = 293
+text = '''I am Aginah.  I sense something[line2]is happening in the Golden Land[line3]the seven wise men sealed[...][wait_key][scroll]This must be an omen of the[scroll]Great Cataclysm foretold by[scroll]the people of Hylian blood[...][wait_key][scroll][...] [...] [...][scroll]The prophecy says, "The Hero[scroll]will stand in the desert holding[wait_key][scroll]the Book Of Mudora."[scroll]If you have the Book Of Mudora[scroll]you can read the language of[wait_key][scroll]the Hylia People.[scroll]It should be in the house of[scroll]books in the village[...][wait_key][scroll]You must get it![scroll]If you are the person who will[scroll]be The Hero[...]'''
+
+[[message]]
+id = 294
+text = '''You have collected the three[line2]Pendants.[line3]If you are indeed the Hero who[wait_key][scroll]has Wisdom, Courage and Power,[scroll]the Master Sword sleeping in[scroll]the forest will be yours.'''
+
+[[message]]
+id = 295
+text = '''Aha!  It is the Book Of Mudora.[line2]With it, you can read the[line3]language of the Hylia people.'''
+
+[[message]]
+id = 296
+text = '''You are the true Hero[...][line2]I believe that you will return[line3]peace to this land again.'''
+
+[[message]]
+id = 297
+text = '''Your trial in the desert has[line2]made you stronger.  The blood[line3]of the Hero must be in your[wait_key][scroll]veins[...]'''
+
+[[message]]
+id = 298
+text = '''Was it you who disturbed my[line2]peaceful nap?  I will give this[line3]to you if you go away!'''
+
+[[message]]
+id = 299
+text = '''I don't have any more good[line2]presents for you.  Take this[line3]instead, pest!'''
+
+[[message]]
+id = 300
+text = '''Yo [player_name]!  A mysterious fog[line2]has recently fallen over the[line3]forest.  We have to be careful!'''
+
+[[message]]
+id = 301
+text = '''Maybe it's nothing, but this[line2]tree feels kind of strange as[line3]we cut it[...]'''
+
+[[message]]
+id = 302
+text = '''Yo!  The fog in the forest is[line2]clearing.  Thank you!  We can[line3]go there again!  Hey brother!'''
+
+[[message]]
+id = 303
+text = '''Yeah [player_name], now I'm[line2]quarreling with my younger[line3]brother.  I sealed the door to[wait_key][scroll]his room.'''
+
+[[message]]
+id = 304
+text = '''So the doorway is open again[...][line2]OK OK, maybe I should make up[line3]with my brother[...]'''
+
+[[message]]
+id = 305
+text = '''Hey [player_name], did you come from[line2]my older brother's room?  Is he[line3]still angry?'''
+
+[[message]]
+id = 306
+text = '''[speed 02][position 01][window 02][player_name], because of you,  I can[line2]escape from the clutches of[line3]the evil monsters.  Thank you![wait_key][scroll][...]This world used to be the[scroll]Golden Land where the Triforce[scroll]was hidden.[wait_key][scroll]But because Ganon, the boss[scroll]of thieves, wished it the world[scroll]was transformed[...][wait_key][scroll]I'm sure he's intending to[scroll]conquer even our Light World[scroll]after building his power here.[wait_key][scroll]He is trying to open a larger[scroll]gate between worlds near the[scroll]castle using our powers.[wait_key][scroll]But the gate is not open[scroll]completely yet[...][scroll]If we seven maidens come[wait_key][scroll]together, we can break the[scroll]barrier around Ganon's hiding[scroll]place.[wait_key][scroll]I will tell you where the other[scroll]girls are held.  I believe you[scroll]will destroy Ganon.[wait_key][scroll]I will return to my original[scroll]form at that time.[scroll] [...] [...] [...] [...] [...][sound 2d]'''
+
+[[message]]
+id = 307
+text = '''[speed 02][position 01][window 02][player_name], because of you, I can[line2]escape from the clutches of[line3]the evil monsters.  Thank you![wait_key][scroll][...]The Triforce will grant the[scroll]wishes of whoever touches it,[scroll]as long as that person lives[...][wait_key][scroll]That is why it was hidden in[scroll]the Golden Land.  Only a select[scroll]few knew of its location,[wait_key][scroll]but at some point that[scroll]knowledge was lost[...][scroll]The person who rediscovered[wait_key][scroll]the Golden Land was[scroll]Ganondorf the evil thief.[scroll]Luckily, he couldn't figure out[wait_key][scroll]how to return to the Light[scroll]World[...][scroll][...]Well, remember that you[wait_key][scroll]have magical powers, which only[scroll]The Hero can make the most of![scroll]There are some other magical[wait_key][scroll]warping points like the one you[scroll]saw on Death Mountain.[scroll]By using them you can go[wait_key][scroll]between the two worlds and[scroll]find the evils hidden in the[scroll]Dark World.  You are the only[wait_key][scroll]one who can destroy[scroll]Ganondorf, the thief-no,[scroll]Ganon, the evil King Of[wait_key][scroll]Darkness!'''
+
+[[message]]
+id = 308
+text = '''[speed 02][position 01][window 02][player_name], because of you, I can[line2]escape from the clutches of[line3]the evil monsters.  Thank you![wait_key][scroll][...]Do you know the prophecy of[scroll]the Great Cataclysm?[scroll]This is the way I heard it[...][wait_key][scroll]If a person who has an evil[scroll]heart gets the Triforce, a Hero[scroll]is destined to appear[...][wait_key][scroll][...]and he alone must face the[scroll]person who began the Great[scroll]Cataclysm.[wait_key][scroll]If the evil one destroys the[scroll]Hero, nothing can save the[scroll]world from his wicked reign.[wait_key][scroll]Only a person of the Knights Of[scroll]Hyrule, who protected the[scroll]royalty of Hylia, can become[wait_key][scroll]the Hero[...]  You are of their[scroll]blood-line, aren't you?  Then[scroll]you must rescue[wait_key][scroll]Zelda without fail.'''
+
+[[message]]
+id = 309
+text = '''[speed 02][position 01][window 02][player_name], because of you, I can[line2]escape from the clutches of[line3]the evil monsters.  Thank you![wait_key][scroll]As the wise men sealed the way[scroll]to the Dark World, the Knights[scroll]Of Hyrule defended them from[wait_key][scroll]the attacks of evil monsters.[wait_key][scroll]I heard that the Knights Of[scroll]Hyrule were nearly wiped out in[scroll]that battle[...][wait_key][scroll]You are perhaps the last one[scroll]to carry on the blood-line of[scroll]the Knights[...][wait_key][scroll]It is ironic that the last one in[scroll]the line has the potential to[scroll]become the Hero of legend.[wait_key][scroll]Surely you can destroy Ganon!'''
+
+[[message]]
+id = 310
+text = '''[speed 02][position 01][window 02][player_name], because of you, I can[line2]escape from the clutches of[line3]the evil monsters.  Thank you![wait_key][scroll]They say the Hylia people[scroll]controlled mysterious powers,[scroll]as did the seven wise men.[wait_key][scroll]But the blood of the Hylia has[scroll]become thin over time.  We who[scroll]carry the blood of the seven[wait_key][scroll]wise men do not possess strong[scroll]power any more, either.[wait_key][scroll]Our powers will increase if we[scroll]mix the courage of the Knights[scroll]with the wisdom of the wise[wait_key][scroll]men.  Only a short time remains[scroll]until the gate at the castle[scroll]linking the worlds opens[wait_key][scroll]completely.  If you defeat[scroll]Ganon, this world will vanish[scroll]and the Triforce will wait for[wait_key][scroll]a new holder.[scroll]I believe in you[...][scroll]Good luck!'''
+
+[[message]]
+id = 311
+text = '''[speed 02][position 01][window 02][player_name], because of you, I can[line2]escape from the clutches of[line3]the evil monsters.  Thank you![wait_key][scroll]Ganon captured us because he[scroll]couldn't break the seal of the[scroll]wise men with his power alone.[wait_key][scroll]And then, using the wizard[scroll]Agahnim as his pawn, he drew us[scroll]to the Dark World.[wait_key][scroll]After cracking the seal with[scroll]our powers, he sealed us inside[scroll]of these crystals.[wait_key][scroll]He then gave us to his loyal[scroll]monsters.  But Ganon didn't[scroll]plan on your getting this far.[wait_key][scroll]Now, Princess Zelda is waiting[scroll]for you inside of Turtle Rock.[scroll]Please hurry!'''
+
+[[message]]
+id = 312
+text = '''[speed 02][position 01][window 02]I appreciate your coming so far[line2]to rescue me.  As I thought,[line3]you are the legendary Hero.[wait_key][scroll]I have felt this from the first[scroll]time we met.[scroll][...]  [...]  [...][wait_key][scroll]Ganon is waiting inside of his[scroll]tower to pass through the[scroll]gate linking the two worlds.[wait_key][scroll]Once Ganon enters the Light[scroll]World, it is unlikely that[scroll]anyone can stop him.[wait_key][scroll]But if he stays in the closed[scroll]space of this world, you can[scroll]find him wherever he runs.[wait_key][scroll]Now, go to the Tower Of[scroll]Ganon!  We will use our[scroll]combined powers to break the[wait_key][scroll]barrier.  Let's return peace to[scroll]the country without fail[...][scroll][...]  [...]  [...][sound 2d]'''
+
+[[message]]
+id = 313
+text = '''[speed 02][position 01][window 02]May the way of the Hero lead[line2]to the Triforce.'''
+
+[[message]]
+id = 314
+text = '''[speed 02][position 01][window 02]Do you understand?[line2]    >  Yes[line3]        Not at all[choose]'''
+
+[[message]]
+id = 315
+text = '''[player_name], we are going to break[line2]the barrier of Ganon's Tower[line3]with our power.'''
+
+[[message]]
+id = 316
+text = '''[speed 02][position 01][window 02]I appreciate your coming so far[line2]to rescue me.  As I thought,[line3]you are the legendary Hero.[wait_key][scroll]I have felt this from the first[scroll]time we met.[scroll][...]  [...]  [...][wait_key][scroll]Ganon is waiting inside of his[scroll]tower to pass through the[scroll]gate linking the two worlds.[wait_key][scroll]Once Ganon enters the Light[scroll]World, it is unlikely that[scroll]anyone can stop him.[wait_key][scroll]But if he stays in the closed[scroll]space of this world, you can[scroll]find him wherever he runs.[wait_key][scroll]Some maidens still need your[scroll]help, though.  Once you rescue[scroll]them all, go to Ganon's Tower.[wait_key][scroll]We who are of the blood-line of[scroll]the wise men will then use our[scroll]power to break[wait_key][scroll]Ganon's barrier!  [scroll][player_name][...]  You must return[scroll]peace to this country[...]'''
+
+[[message]]
+id = 317
+text = '''Ahah[...] [player_name]![line2]I have been waiting for you![line3]Heh heh heh[...][wait_key][scroll]I was hoping I could make Zelda[scroll]vanish in front of your eyes.[scroll]Behold!  The last moment of[wait_key][scroll]Princess Zelda!'''
+
+[[message]]
+id = 318
+text = '''Ho ho ho[...]  With this, the[line2]seal of the seven wise men is[line3]at last broken.[wait_key][scroll]It is now only a matter of time[scroll]before evil power covers this[scroll]land[...][wait_key][scroll]After all, the legendary Hero[scroll]cannot defeat us, the tribe of[scroll]evil, when we are armed with[wait_key][scroll]the Power of Gold.[scroll]Ho ho ho[...] Now, I must go!'''
+
+[[message]]
+id = 319
+text = '''Oh, so?[...]  You mean to say you[line2]would like to be totally[line3]destroyed?  Well, I can make[wait_key][scroll]your wish come true!'''
+
+[[message]]
+id = 320
+text = '''Grrrrugh!  Well met!  Like the[line2]true Hero that you are[...][line3]But I am not ready to admit[wait_key][scroll]defeat yet.  I will draw you[scroll]into the Dark World!'''
+
+[[message]]
+id = 321
+text = '''Ho ho ho!  It's great that you[line2]could come all the way here,[line3][player_name].[wait_key][scroll]I'm very happy to see you[scroll]again, but[scroll]you'd better believe that we[wait_key][scroll]will not have a third meeting![scroll]Prepare to meet your doom!'''
+
+[[message]]
+id = 322
+text = '''Wah ha ha!  What do you want,[line2]little man?  Do you have[line3]something to ask me?[wait_key][scroll]    >  I want the flippers[scroll]        I just dropped by[choose]'''
+
+[[message]]
+id = 323
+text = '''Wah ha ha!  But I don't just[line2]give flippers away for free.[line3]I sell them for 500 Rupees a[wait_key][scroll]pair.[wait_key][scroll]What do you do?[scroll]    >  Pay 500 Rupees[scroll]        Quit after all[choose]'''
+
+[[message]]
+id = 324
+text = '''Wah ha ha!  One pair of[line2]flippers coming up.  I will[line3]give you a free bonus with[wait_key][scroll]your purchase.[scroll]I will let you use the magic[scroll]water ways of the sea folk[wait_key][scroll]which link lakes and rivers.[scroll]When you see a whirlpool, dive[scroll]into it.  You never know where[wait_key][scroll]you'll surface!  Wah ha ha!'''
+
+[[message]]
+id = 325
+text = '''Wade back this way when you[line2]have more Rupees[...][line3]Wah ha ha!  I'll see you again!'''
+
+[[message]]
+id = 326
+text = '''Great!  Whenever you want to[line2]see my fishy face, you are[line3]welcome here.[wait_key][scroll][...][scroll]Wah ha ha!  Good bye[...]!'''
+
+[[message]]
+id = 327
+text = '''Hi [player_name]![line2]Elder?  Are you talking about[line3]the grandpa?  OK,  but don't[wait_key][scroll]tell any of the bad people[scroll]about this.[scroll]He's hiding in the palace past[wait_key][scroll]the castle.[scroll]I will mark the spot on your[scroll]map.  Here you are[...][sound 2d]'''
+
+[[message]]
+id = 328
+text = '''Did you meet the grandpa?  If[line2]all the bad people go away, he[line3]can come back to the village.'''
+
+[[message]]
+id = 329
+text = '''You're new here, aren't you?[line2]Did you come here looking for[line3]the Power Of Gold?[wait_key][scroll]Well, you're too late.  It will[scroll]obey only the first person who[scroll]touches it.[wait_key][scroll]The man who last claimed the[scroll]Power Of Gold wished for this[scroll]world.  It reflects his heart.[wait_key][scroll]Yes, I came here because of[scroll]greed for the Golden Power,[scroll]and look what happened to me[...] [wait_key][scroll]To restore the Golden Land, a[scroll]person worthy of the Golden[scroll]Power must defeat the man who[wait_key][scroll]created this place[...][scroll]Until that time, I am stuck in[scroll]this bizarre shape.[wait_key][scroll]But what a mischievous thing[scroll]to leave lying around[...][scroll]The Power Of Gold[...][wait_key][scroll]Triforce[...]'''
+
+[[message]]
+id = 330
+text = '''     -Mysterious Pond-[line2]Won't you throw something in?[line3][wait_key][scroll]What will you do?[scroll]    > Throw an item[scroll]       Don't try it[choose]'''
+
+[[message]]
+id = 331
+text = '''Don't do it!'''
+
+[[message]]
+id = 332
+text = '''Don't do it!'''
+
+[[message]]
+id = 333
+text = '''I will give this back to you[line2]then.  Don't drop it again.'''
+
+[[message]]
+id = 334
+text = '''How many Rupees will you toss?[line2]    > [number 01][number 00] Rupees[line3]       [number 03][number 02] Rupees[choose]'''
+
+[[message]]
+id = 335
+text = '''You are an honest person.[line2]I like you.[line3]I will give you something[wait_key][scroll]important[...][scroll]These are the Silver Arrows.[scroll]To give Ganon his last[wait_key][scroll]moment, you definitely need[scroll]them!  I know I don't quite have[scroll]the figure of a faerie.[wait_key][scroll]Ganon's cruel power[scroll]is to blame![scroll]You must defeat Ganon!'''
+
+[[message]]
+id = 336
+text = '''[line2]   Great Luck.'''
+
+[[message]]
+id = 337
+text = '''[line2]   Good Luck.'''
+
+[[message]]
+id = 338
+text = '''[line2]   A Little Luck.'''
+
+[[message]]
+id = 339
+text = '''[line2]   Big Trouble.'''
+
+[[message]]
+id = 340
+text = '''For your reference, today you[line2]will have'''
+
+[[message]]
+id = 341
+text = '''You found a piece of Heart![line2]                 [1HeartL][1HeartR]'''
+
+[[message]]
+id = 342
+text = '''You found a piece of Heart![line2]                 [2HeartL][1HeartR]'''
+
+[[message]]
+id = 343
+text = '''You found a piece of Heart![line2]                 [3HeartL][3HeartR]'''
+
+[[message]]
+id = 344
+text = '''You found a piece of Heart![line2]                 [4HeartL][4HeartR][line3]Your Heart level increased!'''
+
+[[message]]
+id = 345
+text = '''You found a Heart Container![line2]                 [4HeartL][4HeartR][line3]Your Heart level increased!'''
+
+[[message]]
+id = 346
+text = '''I will sooth your wounds and[line2]comfort your weariness[...][line3]Close your eyes and relax[...]'''
+
+[[message]]
+id = 347
+text = '''Oh?  Who are you, Mr. Bunny?[line2]This world is like the real[line3]world, but evil has twisted it.[wait_key][scroll]The Golden Power is what[scroll]changed your shape to reflect[scroll]what is in your heart and mind.[wait_key][scroll]I am always changing my mind,[scroll]so I turned into a ball[...][scroll]But if you have a ball called[wait_key][scroll]the Moon Pearl, you can keep[scroll]your original shape here.'''
+
+[[message]]
+id = 348
+text = '''You didn't change your shape?[line2]You aren't just a normal guy,[line3]are you?'''
+
+[[message]]
+id = 349
+text = '''What do you want?![line2]Do you have something to say[line3]to me, silly rabbit?![wait_key][scroll]I came here to get the Power[scroll]Of Gold but now I'm a freak and[scroll]I can't go back to the real[wait_key][scroll]world!  If I only had the Moon[scroll]Pearl from the Tower Of Hera, I[scroll]could go back to my original[wait_key][scroll]shape!  I've got good reason[scroll]to be stressed out![scroll]So back off!  Shoo shoo!'''
+
+[[message]]
+id = 350
+text = '''WOW!  Your shape didn't change![line2]You got the Moon Pearl, huh?'''
+
+[[message]]
+id = 351
+text = '''In such a dangerous world you[line2]may need many things.  Select[line3]something that you like[...]'''
+
+[[message]]
+id = 352
+text = '''Hi, may I help you?  You can[line2]open two chests for 30 Rupees.[line3]Why don't you play?[wait_key][scroll]What will you do?[scroll]    > Play here[scroll]       Maybe next time[choose]'''
+
+[[message]]
+id = 353
+text = '''Well, come back and play some[line2]time.  I'll be waiting for you.[line3]Until then, good bye!'''
+
+[[message]]
+id = 354
+text = '''Hey kid![line2]You can open a chest after[line3]paying Rupees!'''
+
+[[message]]
+id = 355
+text = '''You can't open any more[line2]chests.  The game is over.'''
+
+[[message]]
+id = 356
+text = '''All right, kid.[line2]Choose well!  Good luck!'''
+
+[[message]]
+id = 357
+text = '''May I help you?  Select the[line2]thing you like (Press the [A][line3]Button).  Prices as marked!'''
+
+[[message]]
+id = 358
+text = '''You don't need that item[...][line2]Why not select something else?'''
+
+[[message]]
+id = 359
+text = '''Thank you very much.[line2]Whenever you lose your shield,[line3]come back here again.'''
+
+[[message]]
+id = 360
+text = '''Thank you very much.[line2]This is the Medicine of Life.[line3]It helps you recover your Life.'''
+
+[[message]]
+id = 361
+text = '''Thank you very much.[line2]These are Arrows.  You can't[line3]use them without a Bow.'''
+
+[[message]]
+id = 362
+text = '''These are Bombs.[line2]Did you know you can pick up[line3]a Bomb you already placed ?[wait_key][scroll](Press the [A] Button).'''
+
+[[message]]
+id = 363
+text = '''Thank you very much.[line2]That is a Bee.  Don't ask me[line3]what it is used for, either.'''
+
+[[message]]
+id = 364
+text = '''Thank you very much.[line2]You can recover one Heart.'''
+
+[[message]]
+id = 365
+text = '''No no no[...]  I can't sell the[line2]merchandise because you don't[line3]have an empty bottle.'''
+
+[[message]]
+id = 366
+text = '''You can't carry any more[line2]now, but you may need[line3]some later!'''
+
+[[message]]
+id = 367
+text = '''I never imagined a boy like you[line2]could give me so much trouble.[line3]It's unbelievable that you[wait_key][scroll]defeated my alterego, Agahnim[scroll]the Dark Wizard, twice![wait_key][scroll]But I will never give you the[scroll]Triforce.  I will destroy you[scroll]and make my wish to conquer[wait_key][scroll]both Light and Dark Worlds[scroll]come true without delay.'''
+
+[[message]]
+id = 368
+text = '''You are doing well, lad.  But[line2]can you break through this[line3]secret technique of Darkness?[wait_key][scroll]En Garde!'''
+
+[[message]]
+id = 369
+text = '''Hey kid, this is a secret hide-[line2]out for a gang of thieves![line3]Don't enter without permission![wait_key][scroll]By the way, I heard that one[scroll]of our ex-members is staying[scroll]at the entrance to the Desert.'''
+
+[[message]]
+id = 370
+text = '''Yo [player_name]!  This house used[line2]to be a hideout for a gang of[line3]thieves.[wait_key][scroll]What was their leader's name[...][scroll]Oh yeah, his name was Blind and[scroll]he hated bright light a lot.'''
+
+[[message]]
+id = 371
+text = '''[speed 02][position 00][window 02]Welcome, [player_name][...][line2]I   am   the   Essence   Of   The[line3]Triforce.[wait_key][scroll][...]   [...]   [...][speed 01][wait_key][line1]                                          [line2]                                          [line3]                                          [speed 02][line1]The Triforce will grant the[line2]wishes in the heart and mind of[line3]the person who touches it.[speed 01][wait_key][line1]                                          [line2]                                          [line3]                                          [speed 02][line1]If a person with a good heart[line2]touches it, it will make his good[line3]wishes come true[...]  If an evil-[wait_key][scroll]hearted person touches it, it[scroll]grants his evil wishes.[speed 01][wait_key][line1]                                          [line2]                                          [line3]                                          [speed 02][line1]The stronger the wish, the[line2]more powerful the Triforce's[line3]expression of that wish.[speed 01][wait_key][line1]                                          [line2]                                          [line3]                                          [speed 02][line1]Ganon's wish was to conquer[line2]the world.  That wish changed[line3]the Golden Land to the Dark[wait_key][scroll]World.[speed 01][wait_key][line1]                                          [line2]                                          [line3]                                          [speed 02][line1]Ganon was building up his[line2]power here so he could conquer[line3]the Light World and make his[wait_key][scroll]wish come completely true.[speed 01][wait_key][line1]                                          [line2]                                          [line3]                                          [speed 02][line1]But now, you have totally[line2]destroyed Ganon.  His Dark[line3]World will vanish.[speed 01][wait_key][line1]                                          [line2]                                          [line3]                                          [speed 02][line1]The Triforce is waiting for a[line2]new owner.  Its Golden Power is[line3]in your hands[...][speed 01][wait_key][line1]                                          [line2]                                          [line3]                                          [speed 02][line1]Now, touch it with a wish in[line2]your heart.[line3][...]  [...]  [...]  [...]'''
+
+[[message]]
+id = 372
+text = '''All right! Take it, thief!'''
+
+[[message]]
+id = 373
+text = '''Whoa[...]  I saw her.[line2]A very nice young lady at the[line3]Waterfall Of Wishing in the[wait_key][scroll]hills where the river[scroll]begins[...][scroll][player_name], you should meet her[wait_key][scroll]at least once.  I'm sure you will[scroll]like her.'''
+
+[[message]]
+id = 374
+text = '''Take some Rupees, but don't[line2]tell anyone I gave them to you.[line3]Keep it between us, OK?'''
+
+[[message]]
+id = 375
+text = '''Check out the cave east of[line2]Lake Hylia.  Strange and[line3]wonderful things live in it[...]'''
+
+[[message]]
+id = 376
+text = '''You can earn a lot of Rupees[line2]by defeating enemies.  It's[line3]the secret of my success[...]'''
+
+[[message]]
+id = 377
+text = '''[player_name], did you know that if[line2]you destroy frozen enemies[line3]with the Hammer, you will often[wait_key][scroll]get a Magic Decanter?'''
+
+[[message]]
+id = 378
+text = '''Tra la la, look for[line2]Sahasrahla.[line3][...]  [...]  [...]'''
+
+[[message]]
+id = 379
+text = '''Oh yah, you found Sahasrahla![line2][...]  [...]  [...][line3]Good job la la!'''
+
+[[message]]
+id = 380
+text = '''I'm sorry, but you don't[line2]seem to have enough Rupees[...]'''
+
+[[message]]
+id = 381
+text = '''Cluck cluck[...]  What?![line2]You turned me into a human.[line3]I can even speak![wait_key][scroll]Aha, it must be you who is[scroll]always teasing my friends.[scroll]The Weathercock is always[wait_key][scroll]watching you harass them.[scroll]Well, this human shape is[scroll]uncomfortable for me.[wait_key][scroll]Ahhh, I want to be a chicken[scroll]again!  Cluck cluck[...]'''
+
+[[message]]
+id = 382
+text = '''Pay me 20 Rupees and I'll let[line2]you open one chest.  You can[line3]keep what is inside.[wait_key][scroll]What will you do?[scroll]    >  Open A Chest[scroll]        Escape[choose]'''
+
+[[message]]
+id = 383
+text = '''All right!  Open the chest you[line2]like!'''
+
+[[message]]
+id = 384
+text = '''Oh, I see[...]  Too bad.[line2]Drop by again after collecting[line3]Rupees.'''
+
+[[message]]
+id = 385
+text = '''For 100 Rupees, I'll let you[line2]open one chest and keep the[line3]treasure that is inside.[wait_key][scroll]What will you do?[scroll]    >  Open A Chest[scroll]        Escape[choose]'''
+
+[[message]]
+id = 386
+text = '''Hi, [player_name].  Sorry about my[line2]yard.  It's a little over[line3]grown.  Thanks for visiting.[wait_key][scroll]I'm glad to have company to[scroll]talk to.  I will tell you an[scroll]interesting story.[wait_key][scroll]There is a lake swimming with[scroll]Zoras at the source of the[scroll]river, but it is hard to find.[wait_key][scroll]The treasure of Zora can turn[scroll]people into fish.  Heh heh heh.[scroll]I'd love to see that.'''
+
+[[message]]
+id = 387
+text = '''I haven't had a chance to trim[line2]my hedges recently.  Thanks[line3]for visiting anyway[...][wait_key][scroll]A while ago, there was a boy in[scroll]this village who could talk to[scroll]animals with his Flute.[wait_key][scroll]He had a pet bird that flew[scroll]with him everywhere, but[scroll]he went to the mountain and[wait_key][scroll]never returned.'''
+
+[[message]]
+id = 388
+text = '''[position 00][speed 00]>Start From [player_name]'s House[line2]  Start From Sanctuary[choose2]'''
+
+[[message]]
+id = 389
+text = '''[position 00][speed 00]>Start From [player_name]'s House[line2]  Start From Sanctuary[line3]  Start From The Mountain Cave[choose3]'''
+
+[[message]]
+id = 390
+text = '''[speed 00]> Continue Game[line2]   Save and Quit[choose2]'''
+
+[[message]]
+id = 391
+text = '''Welcome to the treasure field.[line2]The object is to dig as many[line3]holes as you can in 30 seconds.[wait_key][scroll]Any treasures you dig up will[scroll]be yours to keep.[scroll]It's only 80 Rupees to play.[wait_key][scroll]What do you say?[scroll]    > I want to dig[scroll]       I don't want to dig[choose]'''
+
+[[message]]
+id = 392
+text = '''Then I will lend you a shovel.[line2]When you have it in your hand,[line3]start digging! (Press the[wait_key][scroll][Y] Button to dig.)'''
+
+[[message]]
+id = 393
+text = '''I see.  Then I give up.  Save[line2]some Rupees and come back.'''
+
+[[message]]
+id = 394
+text = '''OK!  Time's up, game over.[line2]Come back again.  Good bye[...]'''
+
+[[message]]
+id = 395
+text = '''Come back again![line2]I will be waiting for you.'''
+
+[[message]]
+id = 396
+text = '''I can't tell you details, but[line2]it's not a convenient time for[line3]me now.  Come back here again.[wait_key][scroll]Sorry.'''

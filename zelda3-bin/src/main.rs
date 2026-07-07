@@ -254,6 +254,14 @@ fn main() {
         run_dump_assets_by_source(&args[2..]);
         return;
     }
+    if args.get(1).map(String::as_str) == Some("--dump-asset-pack") {
+        run_dump_asset_pack(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--bless-dialogue") {
+        run_bless_dialogue(&args[2..]);
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("--dump-reference-palette") {
         run_dump_reference_palette(&args[2..]);
         return;
@@ -295,6 +303,62 @@ fn main() {
     } else {
         run_standalone_play();
     }
+}
+
+/// Write the embedded, source-authoritative asset pack to disk. This is the
+/// canonical way to (re)generate the on-disk `zelda3_assets.dat` that the
+/// replay/parity flows load via `find_asset_pack`. Since the pack is embedded
+/// at build time (build.rs), the emitted file is byte-identical to what this
+/// binary runs with — including the required `kDialogueSourceSemantic` sidecar
+/// that older restool packs lack. Defaults to `zelda3_assets.dat` in the cwd.
+fn run_dump_asset_pack(args: &[String]) {
+    let out = args
+        .first()
+        .map(String::as_str)
+        .unwrap_or("zelda3_assets.dat");
+    if let Err(e) = fs::write(out, EMBEDDED_ASSETS) {
+        eprintln!("failed to write asset pack {out}: {e}");
+        process::exit(1);
+    }
+    println!("wrote {} bytes to {out}", EMBEDDED_ASSETS.len());
+}
+
+const DEFAULT_DIALOGUE_MESSAGES: &str = "assets/dialogue/messages.toml";
+const DEFAULT_DIALOGUE_SHA_LOCK: &str = "assets/dialogue/messages.sha1";
+
+/// Regenerate the dialogue parity lock from the authored `messages.toml`. This is
+/// the "accept my edits" step: after changing message text, the build fails until
+/// the lock is refreshed to match. Usage:
+/// `zelda3 --bless-dialogue [<messages.toml> <messages.sha1>]`.
+fn run_bless_dialogue(args: &[String]) {
+    let toml_path = args
+        .first()
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_DIALOGUE_MESSAGES);
+    let lock_path = args
+        .get(1)
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_DIALOGUE_SHA_LOCK);
+    let content = fs::read_to_string(toml_path).unwrap_or_else(|e| {
+        eprintln!("failed to read {toml_path}: {e}");
+        process::exit(1);
+    });
+    let doc = zelda3_dialogue::parse_messages_document(&content).unwrap_or_else(|e| {
+        eprintln!("failed to parse {toml_path}: {e}");
+        process::exit(1);
+    });
+    let lock = zelda3_dialogue::generate_sha_lock(&doc).unwrap_or_else(|e| {
+        eprintln!("failed to compile {toml_path}: {e}");
+        process::exit(1);
+    });
+    if let Err(e) = fs::write(lock_path, zelda3_dialogue::serialize_sha_lock_toml(&lock)) {
+        eprintln!("failed to write {lock_path}: {e}");
+        process::exit(1);
+    }
+    println!(
+        "blessed {} messages: {toml_path} -> {lock_path}",
+        doc.messages.len()
+    );
 }
 
 pub(crate) fn read_le_u16(bytes: &[u8], index: usize) -> u16 {
