@@ -247,6 +247,12 @@ preview-RGBA atlas overlay until those material cases are modeled.
 - `requires_live_palette`: unknown/runtime-derived effect must stay on the live
   palette path until replay evidence proves a stable policy.
 
+Captured `bg3_dynamic`/`kBg3TextGfx` content-hash chunks are always
+`requires_live_palette`, even if an older manifest marks them stable. They are
+diagnostic leftovers for procedurally composed BG3 VRAM, not source glyph PNG
+art. Message, VWF, and ending-credit glyphs should instead resolve through the
+dedicated source PNG atlases.
+
 ## Parity Rule
 
 The base/effect path is not correct just because `base_tiles.png` looks right.

@@ -1458,6 +1458,9 @@ fn transform_art_indices(indices: &[u8; 64], hflip: bool, vflip: bool) -> [u8; 6
 }
 
 fn dynamic_policy_for_source_ref(effects: &[TileEffect], source_ref: &ArtSourceRefJson) -> String {
+    if source_ref.source_kind == "bg3_dynamic" {
+        return "requires_live_palette".to_string();
+    }
     if source_ref.runtime_material.as_deref() == Some("palette_lut") {
         match source_ref.runtime_material_policy.as_deref() {
             Some("stable") => return "stable".to_string(),
@@ -2154,6 +2157,7 @@ mod tests {
         assert_eq!(atlas.entries[1].key.pack, 0x1234);
         assert_eq!(atlas.entries[1].key.tile, 0x5678);
         assert_eq!(atlas.entries[1].rect, [0, 0, 8, 8]);
+        assert_eq!(atlas.entries[1].dynamic_policy, "requires_live_palette");
 
         std::fs::remove_dir_all(root).expect("remove temp root");
     }

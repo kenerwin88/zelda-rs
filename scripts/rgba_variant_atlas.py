@@ -397,7 +397,11 @@ def _source_ref(
         "preview_palette_row": preview_row,
         "preview_source": preview_source,
         "runtime_material": "palette_lut",
-        "runtime_material_policy": classify_palette_policy(preview_palette),
+        "runtime_material_policy": (
+            "requires_live_palette"
+            if kind == "bg3_dynamic"
+            else classify_palette_policy(preview_palette)
+        ),
         "runtime_colors_per_row": colors_per_row,
     }
     if usage is not None and "evidence_count" in usage:

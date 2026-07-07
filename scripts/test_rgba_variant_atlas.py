@@ -1067,6 +1067,10 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             )
             self.assertEqual({ref["bpp"] for ref in dynamic_refs}, {5})
             self.assertEqual({ref["runtime_colors_per_row"] for ref in dynamic_refs}, {32})
+            self.assertEqual(
+                {ref["runtime_material_policy"] for ref in dynamic_refs},
+                {"requires_live_palette"},
+            )
 
     def test_canonical_art_atlas_imports_mode7_asset66_as_direct_palette_art(self) -> None:
         raw_pack = bytearray(1536)
