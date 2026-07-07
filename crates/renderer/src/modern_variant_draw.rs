@@ -565,8 +565,13 @@ fn record_vwf_glyph_run_stats(
     atlas: &ModernVariantAtlas,
     stats: &mut VariantAtlasRenderStats,
 ) {
+    let vwf_glyphs = dialogue_vwf_glyph_presence(atlas);
     for run in &frame.bg3_vwf_glyph_runs {
-        if dialogue_vwf_glyph_has_all_quadrants(atlas, run.glyph_code) {
+        if vwf_glyphs
+            .get(usize::from(run.glyph_code))
+            .copied()
+            .unwrap_or(false)
+        {
             stats.stable_draws += 4;
             stats.stable_preview_draws += 4;
         } else {
@@ -575,17 +580,14 @@ fn record_vwf_glyph_run_stats(
     }
 }
 
-fn dialogue_vwf_glyph_has_all_quadrants(atlas: &ModernVariantAtlas, glyph_code: u16) -> bool {
-    (0..4u16).all(|quadrant| {
-        variant_key_for_source_key(
-            crate::modern_source_atlas::modern_source_key(10, glyph_code, quadrant),
-            "palette_bg3_text_main",
-            0,
-        )
-        .as_ref()
-        .and_then(|key| atlas.entry_for_source_key(key))
-        .is_some()
-    })
+fn dialogue_vwf_glyph_presence(atlas: &ModernVariantAtlas) -> [bool; 256] {
+    let mut present = [false; 256];
+    if let Some(glyphs) = &atlas.dialogue_vwf_glyph_atlas {
+        for glyph in &glyphs.glyphs {
+            present[usize::from(glyph.code)] = true;
+        }
+    }
+    present
 }
 
 pub fn trace_variant_plan_pixel(
@@ -928,12 +930,14 @@ mod tests {
     use super::*;
     use crate::modern_frame::{
         ModernBgLayer, ModernFrame, ModernIndexSpriteInstance, ModernIndexTileInstance,
+        ModernVwfGlyphRun,
     };
     use crate::modern_hd_overrides::NO_SOURCE_KEY;
     use crate::modern_index_atlas::ModernIndexTile;
     use crate::modern_source_atlas::modern_source_key;
     use crate::modern_variant_atlas::{
-        ModernVariantAtlas, TileEffect, VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
+        DialogueVwfGlyphAtlas, DialogueVwfGlyphCell, ModernVariantAtlas, TileEffect,
+        VariantAtlasDraw, VariantAtlasEntry, VariantAtlasKey,
     };
 
     fn bg_key(pack: u16, tile: u16, palette_row: u8) -> VariantAtlasKey {
@@ -1089,6 +1093,53 @@ mod tests {
         assert_eq!(plan.stats.stable_draws, 1);
         assert_eq!(plan.stats.fallback_draws, 0);
         assert_eq!(plan.stats.unkeyed_bg3_fallback_draws, 0);
+    }
+
+    #[test]
+    fn vwf_glyph_run_stats_use_loaded_source_png_glyph_atlas() {
+        let mut frame = ModernFrame::empty();
+        frame.bg3_vwf_glyph_runs.push(ModernVwfGlyphRun {
+            glyph_code: 0x41,
+            screen_x: 4,
+            screen_y: 8,
+            width: 8,
+        });
+        frame.bg3_vwf_glyph_runs.push(ModernVwfGlyphRun {
+            glyph_code: 0x42,
+            screen_x: 12,
+            screen_y: 8,
+            width: 8,
+        });
+        let atlas = ModernVariantAtlas {
+            width: 16,
+            height: 16,
+            rgba: vec![0u8; 16 * 16 * 4],
+            entries: Vec::new(),
+            effects: Vec::new(),
+            mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: Some(DialogueVwfGlyphAtlas {
+                width: 16,
+                height: 16,
+                rgba: vec![0u8; 16 * 16 * 4],
+                glyphs: vec![DialogueVwfGlyphCell {
+                    code: 0x41,
+                    hex: "41".to_string(),
+                    width: 8,
+                    rect: [0, 0, 16, 16],
+                    indices: vec![0u8; 16 * 16],
+                }],
+            }),
+        };
+
+        let stats =
+            compile_variant_draw_stats_with_source_index(&frame, &[], &[], &atlas, None, "", "");
+
+        assert_eq!(stats.stable_draws, 4);
+        assert_eq!(stats.stable_preview_draws, 4);
+        assert_eq!(stats.missing_art_draws, 1);
+        assert_eq!(stats.fallback_draws, 0);
     }
 
     #[test]

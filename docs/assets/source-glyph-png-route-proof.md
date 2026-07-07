@@ -213,6 +213,21 @@ replay-save completed frames=1073092 active=false ending=1 ... main=26 sub=38 ..
 
 This run wrote continuation checkpoints through `/tmp/zelda3-asset-gpu-checkpoints/asset-gpu-frame-001070000.sav`.
 
+After `bg3_dynamic`/`kBg3TextGfx` content-hash chunks were made explicit
+`requires_live_palette` entries, the strict continuation was rerun from the
+1,030,000 checkpoint to the natural route end:
+
+```text
+replay-save asset GPU smoke passed frames=1073092 ... validation_cache_hits=15416; validation_cache_misses=27676; validation_cache_entries=27676; validation_miss_ms=119072; validation_bg_extract_ms=23440; validation_stats_ms=72034
+replay-save completed frames=1073092 active=false ending=1 ... main=26 sub=38 ...
+```
+
+This stricter run proves the ending/message tail is not passing through the
+dynamic BG3 side atlas. The validation stats path now counts VWF glyph runs
+directly from the loaded `dialogue_vwf_glyphs.png/json` glyph table instead of
+rebuilding four source keys per glyph run; the final 1,070,000-to-end slice
+passed in 8.9 seconds with `validation_stats_ms=4326`.
+
 ## Status
 
 This proves the source-glyph PNG gate over the full `saves/zelda3-combined-route.sav` replay. The route ends at frame 1,073,092, so the 1,100,000-frame cap was intentionally beyond the actual path length.
