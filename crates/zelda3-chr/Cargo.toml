@@ -1,0 +1,16 @@
+[package]
+name = "zelda3-chr"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+png = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha1 = "0.10"
+toml = "0.8"
+
+[lints]
+workspace = true

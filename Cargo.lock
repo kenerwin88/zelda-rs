@@ -3265,6 +3265,7 @@ dependencies = [
  "snes",
  "zelda3-compat",
  "zelda3-dialogue",
+ "zelda3-palette",
 ]
 
 [[package]]
@@ -3283,8 +3284,20 @@ dependencies = [
  "serde_json",
  "snes",
  "zelda3",
+ "zelda3-chr",
  "zelda3-compat",
  "zelda3-dialogue",
+]
+
+[[package]]
+name = "zelda3-chr"
+version = "0.0.0"
+dependencies = [
+ "png",
+ "serde",
+ "serde_json",
+ "sha1",
+ "toml",
 ]
 
 [[package]]
@@ -3302,6 +3315,10 @@ dependencies = [
  "sha1",
  "toml",
 ]
+
+[[package]]
+name = "zelda3-palette"
+version = "0.0.0"
 
 [[package]]
 name = "zerocopy"

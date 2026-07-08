@@ -258,6 +258,10 @@ fn main() {
         run_dump_asset_pack(&args[2..]);
         return;
     }
+    if args.get(1).map(String::as_str) == Some("--bless-chr") {
+        run_bless_chr(&args[2..]);
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("--dump-reference-palette") {
         run_dump_reference_palette(&args[2..]);
         return;
@@ -317,6 +321,50 @@ fn run_dump_asset_pack(args: &[String]) {
         process::exit(1);
     }
     println!("wrote {} bytes to {out}", EMBEDDED_ASSETS.len());
+}
+
+/// Regenerate the CHR parity lock from the tracked editable sheets. This is the
+/// "accept my edits" step: after changing a sheet PNG, the build fails until the
+/// lock is refreshed to match. Usage: `zelda3 --bless-chr [<sheets-dir> <lock-path>]`.
+/// Defaults the sheets dir to the repo's `assets/chr` and the lock to
+/// `<sheets-dir>/chr.sha1`.
+fn run_bless_chr(args: &[String]) {
+    let default_sheets_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("zelda3-bin lives under the workspace root")
+        .join("assets/chr");
+    let sheets_dir = args
+        .first()
+        .map(std::path::PathBuf::from)
+        .unwrap_or(default_sheets_dir);
+    if !sheets_dir.is_dir() {
+        eprintln!(
+            "CHR sheets directory {} does not exist; pass a sheets dir or create the tracked assets/chr",
+            sheets_dir.display()
+        );
+        process::exit(1);
+    }
+    let lock_path = args
+        .get(1)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| sheets_dir.join("chr.sha1"));
+
+    let sheets = zelda3_chr::read_sheets_dir(&sheets_dir).unwrap_or_else(|e| {
+        eprintln!("failed to read CHR sheets from {}: {e}", sheets_dir.display());
+        process::exit(1);
+    });
+    let lock = zelda3_chr::generate_sha_lock(&sheets);
+    if let Err(e) = fs::write(&lock_path, &lock) {
+        eprintln!("failed to write {}: {e}", lock_path.display());
+        process::exit(1);
+    }
+    let block_count: usize = sheets.iter().map(|sheet| sheet.blocks.len()).sum();
+    println!(
+        "blessed {} CHR sheets ({block_count} blocks): {} -> {}",
+        sheets.len(),
+        sheets_dir.display(),
+        lock_path.display()
+    );
 }
 
 pub(crate) fn read_le_u16(bytes: &[u8], index: usize) -> u16 {

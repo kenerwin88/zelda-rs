@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 const FORMAT_BYTE_TILEMAP: &str = "zelda3_byte_tilemap_v1";
 const FORMAT_BYTE_STREAM_TILEMAP: &str = "zelda3_byte_stream_tilemap_v1";
@@ -417,6 +418,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed=ZELDA3_ROM");
     println!("cargo:rerun-if-env-changed=ZELDA3_C_SOURCE");
     println!("cargo:rerun-if-env-changed=ZELDA3_DIALOGUE_MESSAGES");
+    println!("cargo:rerun-if-env-changed=ZELDA3_CHR_SHEETS");
+    println!("cargo:rerun-if-env-changed=ZELDA3_CHR_SHA_LOCK");
     println!(
         "cargo:rerun-if-changed={}",
         generated_dir.join("manifest.json").display()
@@ -633,6 +636,91 @@ fn read_dialogue_asset(generated_dir: &Path) -> Vec<u8> {
         .unwrap_or_else(|err| panic!("failed to compile dialogue messages: {err}"))
 }
 
+/// Return the source-authoritative `kSprGfx`/`kBgGfx` payload. The tracked
+/// editable CHR sheets (when present) are the authority: they compile to the
+/// packed containers, and an unedited sheet tree reproduces the donor `.bin`
+/// bytes exactly. With no sheets, the donor payload is embedded unchanged.
+fn read_chr_gfx_asset(generated_dir: &Path, name: &str) -> Vec<u8> {
+    let (spr, bg) = chr_gfx_payloads(generated_dir);
+    match name {
+        "kSprGfx" => spr.clone(),
+        "kBgGfx" => bg.clone(),
+        other => panic!("read_chr_gfx_asset called for non-CHR asset {other}"),
+    }
+}
+
+/// Compile the CHR packs once per build and memoize, so `kSprGfx` and `kBgGfx`
+/// don't each pay the full compile.
+fn chr_gfx_payloads(generated_dir: &Path) -> &'static (Vec<u8>, Vec<u8>) {
+    static CELL: OnceLock<(Vec<u8>, Vec<u8>)> = OnceLock::new();
+    CELL.get_or_init(|| compute_chr_gfx_payloads(generated_dir))
+}
+
+/// Sheet-directory precedence: `ZELDA3_CHR_SHEETS` env override, then the tracked
+/// `<repo>/assets/chr` directory. `None` means "no editable sheets" -> donor
+/// pass-through.
+fn resolve_chr_sheets_dir() -> Option<PathBuf> {
+    if let Some(env_dir) = env::var_os("ZELDA3_CHR_SHEETS") {
+        return Some(PathBuf::from(env_dir));
+    }
+    let tracked = dialogue_repo_root().join("assets/chr");
+    tracked.is_dir().then_some(tracked)
+}
+
+/// Lock-file path: `ZELDA3_CHR_SHA_LOCK` env override, else `<sheets-dir>/chr.sha1`.
+fn chr_lock_path(sheets_dir: &Path) -> PathBuf {
+    env::var_os("ZELDA3_CHR_SHA_LOCK")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| sheets_dir.join("chr.sha1"))
+}
+
+fn compute_chr_gfx_payloads(generated_dir: &Path) -> (Vec<u8>, Vec<u8>) {
+    let assets_dir = generated_dir.join("assets");
+    let spr_path = assets_dir.join("064-kSprGfx.bin");
+    let bg_path = assets_dir.join("065-kBgGfx.bin");
+    println!("cargo:rerun-if-changed={}", spr_path.display());
+    println!("cargo:rerun-if-changed={}", bg_path.display());
+    let donor_spr = fs::read(&spr_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", spr_path.display()));
+    let donor_bg = fs::read(&bg_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", bg_path.display()));
+
+    let Some(sheets_dir) = resolve_chr_sheets_dir() else {
+        // No editable CHR sheets: embed the donor payloads unchanged.
+        return (donor_spr, donor_bg);
+    };
+
+    for name in zelda3_chr::SHEET_NAMES {
+        println!(
+            "cargo:rerun-if-changed={}",
+            sheets_dir.join(format!("{name}.png")).display()
+        );
+        println!(
+            "cargo:rerun-if-changed={}",
+            sheets_dir.join(format!("{name}.json")).display()
+        );
+    }
+    let lock_path = chr_lock_path(&sheets_dir);
+    println!("cargo:rerun-if-changed={}", lock_path.display());
+
+    let sheets = zelda3_chr::read_sheets_dir(&sheets_dir).unwrap_or_else(|err| {
+        panic!(
+            "failed to read CHR sheets from {}: {err}",
+            sheets_dir.display()
+        )
+    });
+    let lock_toml = fs::read_to_string(&lock_path).unwrap_or_else(|err| {
+        panic!(
+            "missing CHR parity lock {} ({err}); run `zelda3 --bless-chr` to generate it",
+            lock_path.display()
+        )
+    });
+    zelda3_chr::verify_against_lock(&sheets, &lock_toml)
+        .unwrap_or_else(|err| panic!("CHR sheet parity check failed: {err}"));
+    zelda3_chr::compile_chr_packs(&sheets, &donor_spr, &donor_bg)
+        .unwrap_or_else(|err| panic!("failed to compile CHR packs: {err}"))
+}
+
 fn read_dialogue_source_sidecar(generated_dir: &Path) -> Option<Vec<u8>> {
     let doc = read_dialogue_messages_document(generated_dir);
     let table = zelda3_dialogue::compile_messages_ir_table(&doc)
@@ -668,6 +756,9 @@ fn read_asset(
     }
     if name == "kDialogue" {
         return read_dialogue_asset(generated_dir);
+    }
+    if name == "kSprGfx" || name == "kBgGfx" {
+        return read_chr_gfx_asset(generated_dir, name);
     }
     if let (Some(source_format), Some(source_file)) = (
         manifest_asset

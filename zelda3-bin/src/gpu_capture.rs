@@ -328,11 +328,61 @@ struct DialogueFontTileAtlasTile {
 #[derive(Deserialize)]
 struct ChrSourceManifest {
     palette: ChrSourcePalette,
+    // v2 sidecars carry per-row palettes and per-block tile->row assignments; v1
+    // sidecars have neither (the flat `palette.index_to_rgb` is authoritative).
+    #[serde(default)]
+    palette_rows: Vec<ChrSourcePaletteRow>,
+    #[serde(default)]
+    blocks: Vec<ChrSourceBlock>,
 }
 
 #[derive(Deserialize)]
 struct ChrSourcePalette {
     index_to_rgb: Vec<[u8; 3]>,
+}
+
+#[derive(Deserialize)]
+struct ChrSourcePaletteRow {
+    id: u32,
+    #[serde(default)]
+    index_to_rgb: Vec<[u8; 3]>,
+}
+
+#[derive(Deserialize)]
+struct ChrSourceBlock {
+    tile_start: u32,
+    tile_count: u32,
+    #[serde(default)]
+    tile_palette_rows: Vec<u32>,
+}
+
+impl ChrSourceManifest {
+    /// Colors used to decode one glyph atlas tile back to CHR indices. In v2 the
+    /// tile's palette row (resolved via its sidecar block's `tile_palette_rows`)
+    /// supplies exactly its 4 colors; in v1 the flat combined palette is used.
+    fn glyph_tile_palette(&self, source_tile: u16) -> Result<&[[u8; 3]], String> {
+        if self.palette_rows.is_empty() {
+            return Ok(&self.palette.index_to_rgb);
+        }
+        let source_tile = source_tile as u32;
+        let block = self
+            .blocks
+            .iter()
+            .find(|b| source_tile >= b.tile_start && source_tile < b.tile_start + b.tile_count)
+            .ok_or_else(|| {
+                format!("glyph source_tile {source_tile} not covered by any sidecar block")
+            })?;
+        let offset = (source_tile - block.tile_start) as usize;
+        let row_id = *block.tile_palette_rows.get(offset).ok_or_else(|| {
+            format!("glyph source_tile {source_tile} beyond block tile_palette_rows")
+        })?;
+        let row = self
+            .palette_rows
+            .iter()
+            .find(|r| r.id == row_id)
+            .ok_or_else(|| format!("glyph palette row {row_id} undefined in sidecar"))?;
+        Ok(&row.index_to_rgb)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -367,7 +417,6 @@ impl DialogueGlyphSourceMatcher {
                 .map_err(|err| format!("{}: {err}", source_manifest_path.display()))?,
         )
         .map_err(|err| format!("{}: {err}", source_manifest_path.display()))?;
-        let palette = source_manifest.palette.index_to_rgb;
         let (rgba, width, height) = decode_rgba_png(&atlas_png_path)
             .ok_or_else(|| format!("{}: failed to decode RGBA PNG", atlas_png_path.display()))?;
 
@@ -375,7 +424,10 @@ impl DialogueGlyphSourceMatcher {
         let mut tiles = Vec::with_capacity(atlas_manifest.tiles.len());
         let mut source_key_by_indices = HashMap::new();
         for tile in atlas_manifest.tiles {
-            let indices = decode_dialogue_glyph_tile(&rgba, width, height, &palette, tile.rect)
+            let palette = source_manifest
+                .glyph_tile_palette(tile.source_tile)
+                .map_err(|err| format!("{}: {err}", source_manifest_path.display()))?;
+            let indices = decode_dialogue_glyph_tile(&rgba, width, height, palette, tile.rect)
                 .map_err(|err| format!("{}: {err}", atlas_png_path.display()))?;
             let source_key = renderer::modern_source_atlas::modern_source_key(
                 9,
