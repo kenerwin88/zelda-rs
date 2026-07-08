@@ -610,7 +610,10 @@ impl ZeldaState {
             .palette_buffer
             .aux_visible_slice()
             .to_vec();
-        self.copy_mapbak_palette_from(&palette[..palette.len().min(256)]);
+        self.copy_mapbak_palette_from(
+            &palette[..palette.len().min(256)],
+            crate::game_state::PaletteSliceSource::MirrorBank(zelda3_palette::Bank::Aux),
+        );
         self.clear_aux_visible_subpalettes();
         self.set_countdown_word(0);
         self.set_darkening_or_lightening_screen_word(0);
@@ -644,8 +647,7 @@ impl ZeldaState {
 
     pub(super) fn GameOver_IrisWipe(&mut self) {
         self.PaletteFilter_RestoreBGSubstractiveStrict();
-        let bg = self.game_state.display.palette_buffer.main_color(32);
-        self.set_main_color(0, bg);
+        self.copy_color((zelda3_palette::Bank::Main, 32), (zelda3_palette::Bank::Main, 0));
         let bak = self.game_state.frame.main_module;
         self.IrisSpotlight_ConfigureTable();
         self.set_main_module(bak);
@@ -654,11 +656,11 @@ impl ZeldaState {
         }
         for base in [0x20usize, 0x30, 0x40, 0x50, 0x60, 0x70] {
             for i in 0..16 {
-                self.set_main_color(base + i, 0x18);
+                self.set_main_color_constant(base + i, 0x18);
             }
         }
-        self.set_main_color(0, 0x18);
-        self.set_main_color(32, 0x18);
+        self.set_main_color_constant(0, 0x18);
+        self.set_main_color_constant(32, 0x18);
         self.IrisSpotlight_ResetTable();
         self.set_fixed_color_red(32);
         self.set_fixed_color_green(64);
@@ -684,8 +686,7 @@ impl ZeldaState {
             return;
         }
         self.PaletteFilter_RestoreBGSubstractiveStrict();
-        let bg = self.game_state.display.palette_buffer.main_color(32);
-        self.set_main_color(0, bg);
+        self.copy_color((zelda3_palette::Bank::Main, 32), (zelda3_palette::Bank::Main, 0));
         if self
             .game_state
             .display
@@ -931,9 +932,12 @@ impl ZeldaState {
                 .ppu_scroll_copy
                 .mapbak_palette_slice()[..256]
                 .to_vec();
-            self.copy_aux_visible_from(&palette);
+            self.copy_aux_visible_from_tagged(
+                &palette,
+                crate::game_state::PaletteSliceSource::MirrorBank(zelda3_palette::Bank::Backup),
+            );
             self.clear_main_visible_subpalettes();
-            self.set_main_color(0, 0);
+            self.set_main_color_constant(0, 0);
             self.set_countdown_word(0);
             self.set_darkening_or_lightening_screen_word(2);
             let cgwsel = self.game_state.display.ppu_scroll_copy.mapbak_cgwsel_word();
@@ -965,8 +969,7 @@ impl ZeldaState {
 
     pub(super) fn GameOver_ResituateLink(&mut self) {
         self.PaletteFilter_RestoreBGAdditiveStrict();
-        let bg = self.game_state.display.palette_buffer.main_color(32);
-        self.set_main_color(0, bg);
+        self.copy_color((zelda3_palette::Bank::Main, 32), (zelda3_palette::Bank::Main, 0));
         if self.game_state.display.palette_filter.countdown() != 32 {
             return;
         }
@@ -1351,7 +1354,10 @@ impl ZeldaState {
             .palette_buffer
             .aux_full_slice()
             .to_vec();
-        self.copy_main_full_from(&aux);
+        self.copy_main_full_from_tagged(
+            &aux,
+            crate::game_state::PaletteSliceSource::MirrorBank(zelda3_palette::Bank::Aux),
+        );
         let cgwsel_cgadsub = self.game_state.display.ppu_scroll_copy.mapbak_cgwsel_word();
         self.set_color_window_and_math_word(cgwsel_cgadsub);
         self.set_bg3_h_copy2(0);
@@ -2585,7 +2591,10 @@ impl ZeldaState {
             .ppu_scroll_copy
             .mapbak_palette_slice()
             .to_vec();
-        self.copy_main_full_from(&mapbak_palette);
+        self.copy_main_full_from_tagged(
+            &mapbak_palette,
+            crate::game_state::PaletteSliceSource::MirrorBank(zelda3_palette::Bank::Backup),
+        );
         let fixed_color_plusminus = self.game_state.display.overworld_fixed_color_adjustment;
         self.or_fixed_color_red(fixed_color_plusminus);
         self.or_fixed_color_green(fixed_color_plusminus);
@@ -2659,7 +2668,10 @@ impl ZeldaState {
             .palette_buffer
             .main_full_slice()
             .to_vec();
-        self.copy_mapbak_palette_from(&palette);
+        self.copy_mapbak_palette_from(
+            &palette,
+            crate::game_state::PaletteSliceSource::MirrorBank(zelda3_palette::Bank::Main),
+        );
         let bg1_x_offset = self.game_state.world.scroll.bg1_x_offset();
         let bg1_y_offset = self.game_state.world.scroll.bg1_y_offset();
         self.set_mapbak_bg1_x_offset(bg1_x_offset);

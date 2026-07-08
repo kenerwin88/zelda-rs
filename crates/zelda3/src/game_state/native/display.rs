@@ -954,10 +954,29 @@ impl Eq for PaletteProvenance {}
 /// mirror so mid-filter colors stay provenance-clean.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PaletteTransform {
-    FilterRangeStep { countdown: u16, darkening: bool },
+    FilterRangeStep {
+        countdown: u16,
+        darkening: bool,
+    },
     RestoreAdditiveStep,
     RestoreSubtractiveStep,
-    WhitenStep { amount: u16 },
+    WhitenStep {
+        amount: u16,
+    },
+    /// One `PaletteFilter_Whirlpool*` conditional whole-word channel step.
+    WhirlpoolChannelStep {
+        channel_mask: u16,
+        step: u16,
+        up: bool,
+        reference: zelda3_palette::ChannelReference,
+    },
+    /// One `Trinexx_*ShellPalette_*` masked channel flash/unflash step.
+    TrinexxChannelStep {
+        channel_mask: u16,
+        step: u16,
+        up: bool,
+        reference: zelda3_palette::ChannelReference,
+    },
 }
 
 impl PaletteTransform {
@@ -974,6 +993,32 @@ impl PaletteTransform {
                 zelda3_palette::restore_subtractive_step_word(main, aux)
             }
             PaletteTransform::WhitenStep { amount } => zelda3_palette::whiten_word(aux, amount),
+            PaletteTransform::WhirlpoolChannelStep {
+                channel_mask,
+                step,
+                up,
+                reference,
+            } => zelda3_palette::whirlpool_channel_step_word(
+                main,
+                aux,
+                channel_mask,
+                step,
+                up,
+                reference,
+            ),
+            PaletteTransform::TrinexxChannelStep {
+                channel_mask,
+                step,
+                up,
+                reference,
+            } => zelda3_palette::trinexx_channel_step_word(
+                main,
+                aux,
+                channel_mask,
+                step,
+                up,
+                reference,
+            ),
         }
     }
 }
@@ -1455,6 +1500,43 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
         self.mirror().copy_word(from, to);
     }
 
+    /// Swap two palette words within one shadow bank, updating shadow, RAM, and
+    /// the provenance mirror (each swapped word keeps its own value + source
+    /// tag). Backdrop of the translucency A<->B band swap.
+    pub(crate) fn swap_colors(
+        &mut self,
+        a: (zelda3_palette::Bank, usize),
+        b: (zelda3_palette::Bank, usize),
+    ) {
+        debug_assert_eq!(a.0, b.0, "swap_colors operates within a single bank");
+        let read = |buffer: &PaletteBufferState, bank: zelda3_palette::Bank, index: usize| match bank
+        {
+            zelda3_palette::Bank::Main => buffer.main_color(index),
+            zelda3_palette::Bank::Aux => buffer.aux_color(index),
+            zelda3_palette::Bank::Backup => {
+                let bytes = buffer.overworld_palette_backup();
+                let offset = index * 2;
+                u16::from(bytes[offset]) | (u16::from(bytes[offset + 1]) << 8)
+            }
+        };
+        let va = read(&self.display.palette_buffer, a.0, a.1);
+        let vb = read(&self.display.palette_buffer, b.0, b.1);
+        let mut write = |bank: zelda3_palette::Bank, index: usize, value: u16| match bank {
+            zelda3_palette::Bank::Main => {
+                self.display.palette_buffer.set_main_color(index, value);
+                write_le_u16(self.ram, MAIN_PALETTE_BUFFER + index * 2, value);
+            }
+            zelda3_palette::Bank::Aux => {
+                self.display.palette_buffer.set_aux_color(index, value);
+                write_le_u16(self.ram, AUX_PALETTE_BUFFER + index * 2, value);
+            }
+            zelda3_palette::Bank::Backup => unreachable!("no single-word backup swaps exist"),
+        };
+        write(a.0, a.1, vb);
+        write(b.0, b.1, va);
+        self.mirror().swap_words(a, b);
+    }
+
     /// Apply one of the game's pure palette transforms to a main-bank word
     /// range (word indices), updating shadow, RAM, and mirror with the same
     /// math. Replaces the filter/restore/whiten loops.
@@ -1512,6 +1594,22 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
         self.ram[MAIN_PALETTE_BUFFER..MAIN_PALETTE_BUFFER + PALETTE_BANK_BYTES].fill(0);
         self.mirror()
             .fill_constant_range(zelda3_palette::Bank::Main, 0, zelda3_palette::PALETTE_WORDS, 0);
+    }
+
+    /// Establish the power-on provenance of the palette buffers: at boot the
+    /// WRAM palette shadow is zero, so every word is a known `constant 0` until
+    /// something writes it. Mirror-only (the shadow is already zero, so no RAM
+    /// write) — this seeds the Backup/Aux banks whose transparent color-0 slots
+    /// the game never explicitly loads, so transforms that read them stay clean.
+    pub(crate) fn initialize_mirror_from_zeroed_buffers(&mut self) {
+        for bank in [
+            zelda3_palette::Bank::Main,
+            zelda3_palette::Bank::Aux,
+            zelda3_palette::Bank::Backup,
+        ] {
+            self.mirror()
+                .fill_constant_range(bank, 0, zelda3_palette::PALETTE_WORDS, 0);
+        }
     }
 
     #[track_caller]
@@ -1696,6 +1794,21 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
         self.ram[MAIN_PALETTE_BUFFER + start..MAIN_PALETTE_BUFFER + start + len]
             .copy_from_slice(&src[..len]);
         self.mirror_slice_write(zelda3_palette::Bank::Main, start, len, src, source);
+    }
+
+    /// Update ONLY the provenance mirror's Backup bank from a tagged byte
+    /// slice, leaving shadow and RAM untouched. The MAPBAK_PALETTE (0x1dd80)
+    /// backup region is written to RAM by `PpuScrollCopyState`'s write-through
+    /// (`copy_mapbak_palette_from`), which does not touch the mirror; this
+    /// carries the provenance into the Backup bank so later reads of the mapbak
+    /// slice stay clean. `len` is the byte length actually written.
+    pub(crate) fn tag_backup_bank_from(
+        &mut self,
+        src: &[u8],
+        len: usize,
+        source: PaletteSliceSource,
+    ) {
+        self.mirror_slice_write(zelda3_palette::Bank::Backup, 0, len, src, source);
     }
 
     /// Mirror a bulk byte-slice write into a shadow bank. `start`/`len` are

@@ -59,7 +59,7 @@ impl ZeldaState {
         self.palette_load_ow_bg_main();
         self.palette_load_hud();
         self.palette_load_link_armor_and_gloves();
-        self.set_main_color(0x1d, 0x3800);
+        self.set_main_color_constant(0x1d, 0x3800);
         self.increment_cgram_update_flag();
         self.set_bg3_v_copy2_low(20);
         self.attract_build_backgrounds();
@@ -142,7 +142,7 @@ impl ZeldaState {
         self.set_sp6l(3);
         self.dungeon_save_and_load_load_all_palettes(0, 0x7e);
 
-        self.set_main_color(0x1d, 0x3800);
+        self.set_main_color_constant(0x1d, 0x3800);
         self.messaging_state_mut().clear_module();
         self.dialogue_message_index_mut().set_value(0x113);
         self.attract_scene_mut().set_scene_timer(2);
@@ -168,7 +168,7 @@ impl ZeldaState {
         self.set_sp5l(14);
         self.set_sp6l(3);
         self.dungeon_save_and_load_load_all_palettes(1, 0x7f);
-        self.set_main_color(0x1d, 0x3800);
+        self.set_main_color_constant(0x1d, 0x3800);
 
         self.messaging_state_mut().clear_module();
         self.dialogue_message_index_mut().set_value(0x114);
@@ -206,8 +206,8 @@ impl ZeldaState {
         self.palette_load_hud();
         self.palette_load_dungeon_set();
         self.dungeon_save_and_load_load_all_palettes(2, 0x7f);
-        self.set_aux_color(0x1d, 0x3800);
-        self.set_main_color(0x1d, 0x3800);
+        self.set_aux_color_constant(0x1d, 0x3800);
+        self.set_main_color_constant(0x1d, 0x3800);
 
         self.messaging_state_mut().clear_module();
         self.dialogue_message_index_mut().set_value(0x115);

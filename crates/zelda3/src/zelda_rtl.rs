@@ -2542,8 +2542,18 @@ impl ZeldaState {
     /// mapbak_palette): a scroll-register sync would otherwise re-run that projection every
     /// frame and clobber a freshly-written overworld palette backup (f335672). Mirrors the
     /// old projection's RAM effect (the native field is fill-padded to MAPBAK_PALETTE_BYTES).
-    pub(crate) fn copy_mapbak_palette_from(&mut self, palette: &[u8]) {
+    pub(crate) fn copy_mapbak_palette_from(
+        &mut self,
+        palette: &[u8],
+        source: crate::game_state::PaletteSliceSource,
+    ) {
         self.ppu_scroll_copy_mut().copy_mapbak_palette_from(palette);
+        // The write-through above updated RAM[MAPBAK_PALETTE] and the scroll-copy
+        // model but not the provenance mirror; carry the source provenance into
+        // the mirror's Backup bank so later mapbak reads resolve clean.
+        let len = palette.len().min(0x200);
+        self.palette_buffer_mut()
+            .tag_backup_bank_from(palette, len, source);
     }
 
     pub(crate) fn multiselect_choice(&self) -> MultiselectChoiceRead<'_> {
@@ -4294,6 +4304,15 @@ impl ZeldaState {
         self.palette_buffer_mut().copy_color(from, to);
     }
 
+    /// Swap two palette words within one shadow bank, mirroring provenance.
+    pub(crate) fn swap_colors(
+        &mut self,
+        a: (zelda3_palette::Bank, usize),
+        b: (zelda3_palette::Bank, usize),
+    ) {
+        self.palette_buffer_mut().swap_colors(a, b);
+    }
+
     /// Apply one of the game's pure palette transforms to a main-bank word
     /// range, updating shadow, RAM, and mirror with the same math.
     pub(crate) fn transform_main_range(
@@ -4325,9 +4344,23 @@ impl ZeldaState {
         self.palette_buffer_mut().clear_main_full();
     }
 
+    pub(crate) fn initialize_palette_mirror_from_zeroed_buffers(&mut self) {
+        self.palette_buffer_mut()
+            .initialize_mirror_from_zeroed_buffers();
+    }
+
     #[track_caller]
     pub(crate) fn copy_aux_visible_from(&mut self, palette: &[u8]) {
         self.palette_buffer_mut().copy_aux_visible_from(palette);
+    }
+
+    pub(crate) fn copy_aux_visible_from_tagged(
+        &mut self,
+        palette: &[u8],
+        source: crate::game_state::PaletteSliceSource,
+    ) {
+        self.palette_buffer_mut()
+            .copy_aux_visible_from_tagged(palette, source);
     }
 
     #[track_caller]
@@ -4335,10 +4368,28 @@ impl ZeldaState {
         self.palette_buffer_mut().copy_aux_full_from(palette);
     }
 
+    pub(crate) fn copy_aux_full_from_tagged(
+        &mut self,
+        palette: &[u8],
+        source: crate::game_state::PaletteSliceSource,
+    ) {
+        self.palette_buffer_mut()
+            .copy_aux_full_from_tagged(palette, source);
+    }
+
     #[track_caller]
     pub(crate) fn backup_overworld_palette_from(&mut self, palette: &[u8]) {
         self.palette_buffer_mut()
             .backup_overworld_palette_from(palette);
+    }
+
+    pub(crate) fn backup_overworld_palette_from_tagged(
+        &mut self,
+        palette: &[u8],
+        source: crate::game_state::PaletteSliceSource,
+    ) {
+        self.palette_buffer_mut()
+            .backup_overworld_palette_from_tagged(palette, source);
     }
 
     #[track_caller]
@@ -6059,7 +6110,16 @@ impl ZeldaState {
     }
 
     pub(crate) fn sync_native_game_state_from_ram(&mut self) {
+        // The palette-provenance mirror is derived metadata that RAM cannot
+        // reconstruct (load_from_ram defaults it to all-Unknown). The palette
+        // shadow is only ever written through the provenance-aware bridge, so
+        // the mirror stays valid across a native resync — carry it over
+        // instead of poisoning it (the ZELDA3_PALETTE_PROVENANCE_CHECK gate
+        // would catch any drift this assumption misses).
+        let palette_provenance =
+            std::mem::take(&mut self.game_state.display.palette_provenance);
         self.game_state = GameState::load_from_ram(&self.ram);
+        self.game_state.display.palette_provenance = palette_provenance;
     }
 
     pub(crate) fn project_native_game_state_to_ram(&mut self) {
@@ -8102,7 +8162,11 @@ impl ZeldaState {
 
     fn startup_initialize_memory(&mut self) {
         SystemWorkArea::clear_startup_low_memory(&mut self.ram);
-        self.set_main_color(0, 0);
+        // WRAM palette buffers are zero at power-on: seed the provenance mirror
+        // so words the game never explicitly writes (transparent color-0 slots)
+        // read as a known constant 0 rather than Unknown.
+        self.initialize_palette_mirror_from_zeroed_buffers();
+        self.set_main_color_constant(0, 0);
         self.clear_selected_save_slot();
 
         for offset in [0x03e5, 0x08e5, 0x0de5] {

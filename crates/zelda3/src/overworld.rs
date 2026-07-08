@@ -431,10 +431,10 @@ impl ZeldaState {
                 p = if si & 0x40 != 0 { 0x2a32 } else { 0x2669 };
             }
         }
-        self.set_main_color(0, p);
-        self.set_aux_color(0, p);
-        self.set_main_color(32, p);
-        self.set_aux_color(32, p);
+        self.set_main_color_constant(0, p);
+        self.set_aux_color_constant(0, p);
+        self.set_main_color_constant(32, p);
+        self.set_aux_color_constant(32, p);
         self.set_fixed_color_red(0x20);
         self.set_fixed_color_green(0x40);
         self.set_fixed_color_blue(0x80);
@@ -1267,8 +1267,8 @@ impl ZeldaState {
             3 => self.turtle_rock_vram_common(0x1c),
             4 => {
                 for i in 0..8 {
-                    self.set_main_color(0x58 + i, 0);
-                    self.set_aux_color(0x68 + i, 0);
+                    self.set_main_color_constant(0x58 + i, 0);
+                    self.set_aux_color_constant(0x68 + i, 0);
                 }
                 self.copy_bg2_live_to_bg1_live();
                 self.increment_subsubmodule();
@@ -2181,12 +2181,12 @@ impl ZeldaState {
             self.set_sub_screen_layers(1);
         }
         for i in 0..16 * 6 {
-            self.set_main_color(32 + i, 0x7fff);
+            self.set_main_color_constant(32 + i, 0x7fff);
         }
-        self.set_main_color(0, 0x7fff);
+        self.set_main_color_constant(0, 0x7fff);
         if u16::from(self.game_state.world.location.overworld_screen_index()) == 0x5b {
-            self.set_main_color(0, 0);
-            self.set_main_color(32, 0);
+            self.set_main_color_constant(0, 0);
+            self.set_main_color_constant(32, 0);
         }
         self.sprite_reset_all();
         self.sprite_reload_all_overworld();
@@ -4314,12 +4314,14 @@ impl ZeldaState {
             .palette_buffer
             .aux_full_slice()
             .to_vec();
-        self.backup_overworld_palette_from(&aux);
+        self.backup_overworld_palette_from_tagged(
+            &aux,
+            crate::game_state::PaletteSliceSource::MirrorBank(zelda3_palette::Bank::Aux),
+        );
         for i in 0..256 {
-            self.set_aux_color(i, 0x7fff);
+            self.set_aux_color_constant(i, 0x7fff);
         }
-        let main_backdrop = self.game_state.display.palette_buffer.main_color(0);
-        self.set_main_color(32, main_backdrop);
+        self.copy_color((zelda3_palette::Bank::Main, 0), (zelda3_palette::Bank::Main, 32));
         self.set_countdown(0);
         self.set_darkening_or_lightening_screen(2);
         self.increment_subsubmodule();
@@ -4340,8 +4342,8 @@ impl ZeldaState {
             == 0xff
         {
             for i in 0..8 {
-                self.set_main_color(0x58 + i, 0);
-                self.set_aux_color(0x58 + i, 0);
+                self.set_main_color_constant(0x58 + i, 0);
+                self.set_aux_color_constant(0x58 + i, 0);
             }
             self.set_countdown(0);
             self.set_darkening_or_lightening_screen(0);
@@ -4368,7 +4370,10 @@ impl ZeldaState {
             .palette_buffer
             .overworld_palette_backup()
             .to_vec();
-        self.copy_aux_full_from(&mapbak);
+        self.copy_aux_full_from_tagged(
+            &mapbak,
+            crate::game_state::PaletteSliceSource::MirrorBank(zelda3_palette::Bank::Backup),
+        );
         self.set_sub_screen_layers(0);
     }
 
@@ -4545,27 +4550,23 @@ impl ZeldaState {
         let fc = self.game_state.frame.frame_counter;
         if matches!(fc, 5 | 44 | 90) {
             for i in 1..8 {
-                let color = self.game_state.display.palette_buffer.aux_color(0x30 + i);
-                self.set_main_color(0x30 + i, color);
-                let color = self.game_state.display.palette_buffer.aux_color(0x38 + i);
-                self.set_main_color(0x38 + i, color);
-                let color = self.game_state.display.palette_buffer.aux_color(0x48 + i);
-                self.set_main_color(0x48 + i, color);
-                let color = self.game_state.display.palette_buffer.aux_color(0x70 + i);
-                self.set_main_color(0x70 + i, color);
-                let color = self.game_state.display.palette_buffer.aux_color(0x78 + i);
-                self.set_main_color(0x78 + i, color);
+                for base in [0x30, 0x38, 0x48, 0x70, 0x78] {
+                    self.copy_color(
+                        (zelda3_palette::Bank::Aux, base + i),
+                        (zelda3_palette::Bank::Main, base + i),
+                    );
+                }
             }
         } else if matches!(fc, 3 | 36 | 88) {
             if fc == 36 {
                 self.set_sound_effect_1(54);
             }
             for i in 1..8 {
-                self.set_main_color(0x30 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1]);
-                self.set_main_color(0x38 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 7]);
-                self.set_main_color(0x48 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 14]);
-                self.set_main_color(0x70 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 21]);
-                self.set_main_color(0x78 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 28]);
+                self.set_main_color_asset(0x30 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1]);
+                self.set_main_color_asset(0x38 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 7]);
+                self.set_main_color_asset(0x48 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 14]);
+                self.set_main_color_asset(0x70 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 21]);
+                self.set_main_color_asset(0x78 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 28]);
             }
         }
 
@@ -4578,7 +4579,7 @@ impl ZeldaState {
             yy = ((self.game_state.frame.frame_counter & 0x0c) as usize) * 2;
         }
         for i in 0..8 {
-            self.set_main_color(0x68 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE2[yy + i]);
+            self.set_main_color_asset(0x68 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE2[yy + i]);
         }
     }
 

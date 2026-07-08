@@ -4,7 +4,7 @@ use super::*;
 
 use crate::chr_source;
 use crate::game_state::{PaletteSliceSource, PaletteTransform};
-use zelda3_palette::Bank;
+use zelda3_palette::{Bank, ChannelReference};
 
 mod load_gfx_shared;
 use load_gfx_shared::*;
@@ -2292,13 +2292,16 @@ impl ZeldaState {
 
     pub(super) fn PaletteFilter_WhirlpoolBlue(&mut self) {
         if self.game_state.frame.frame_counter & 1 != 0 {
-            for i in 0x20..0x100 {
-                let mut color = self.game_state.display.palette_buffer.main_color(i);
-                if (color & 0x7c00) != 0x7c00 {
-                    color = color.wrapping_add(0x400);
-                }
-                self.set_main_color(i, color);
-            }
+            self.transform_main_range(
+                0x20,
+                0x100,
+                PaletteTransform::WhirlpoolChannelStep {
+                    channel_mask: 0x7c00,
+                    step: 0x400,
+                    up: true,
+                    reference: ChannelReference::Max,
+                },
+            );
             self.copy_color((Bank::Main, 32), (Bank::Main, 0));
             if self.game_state.display.palette_filter.countdown() & 1 == 0 {
                 self.increment_mosaic_level_by(16);
@@ -2316,16 +2319,28 @@ impl ZeldaState {
     }
 
     pub(super) fn PaletteFilter_IsolateWhirlpoolBlue(&mut self) {
-        for i in 0x20..0x100 {
-            let mut color = self.game_state.display.palette_buffer.main_color(i);
-            if color & 0x03e0 != 0 {
-                color = color.wrapping_sub(0x20);
-            }
-            if color & 0x001f != 0 {
-                color = color.wrapping_sub(1);
-            }
-            self.set_main_color(i, color);
-        }
+        // Green then red, both stepped toward 0; the two channels are disjoint
+        // and non-interacting so two passes equal the original single loop.
+        self.transform_main_range(
+            0x20,
+            0x100,
+            PaletteTransform::WhirlpoolChannelStep {
+                channel_mask: 0x03e0,
+                step: 0x20,
+                up: false,
+                reference: ChannelReference::Zero,
+            },
+        );
+        self.transform_main_range(
+            0x20,
+            0x100,
+            PaletteTransform::WhirlpoolChannelStep {
+                channel_mask: 0x001f,
+                step: 1,
+                up: false,
+                reference: ChannelReference::Zero,
+            },
+        );
         self.copy_color((Bank::Main, 32), (Bank::Main, 0));
         self.increment_countdown();
         if self.game_state.display.palette_filter.countdown() == 31 {
@@ -2340,14 +2355,16 @@ impl ZeldaState {
 
     pub(super) fn PaletteFilter_WhirlpoolRestoreBlue(&mut self) {
         if self.game_state.frame.frame_counter & 1 != 0 {
-            for i in 0x20..0x100 {
-                let aux = self.game_state.display.palette_buffer.aux_color(i) & 0x7c00;
-                let mut color = self.game_state.display.palette_buffer.main_color(i);
-                if color & 0x7c00 != aux {
-                    color = color.wrapping_sub(0x400);
-                }
-                self.set_main_color(i, color);
-            }
+            self.transform_main_range(
+                0x20,
+                0x100,
+                PaletteTransform::WhirlpoolChannelStep {
+                    channel_mask: 0x7c00,
+                    step: 0x400,
+                    up: false,
+                    reference: ChannelReference::Aux,
+                },
+            );
             self.copy_color((Bank::Main, 32), (Bank::Main, 0));
             if self.game_state.display.palette_filter.countdown() & 1 == 0 {
                 self.decrement_mosaic_level_by(16);
@@ -2365,17 +2382,28 @@ impl ZeldaState {
     }
 
     pub(super) fn PaletteFilter_WhirlpoolRestoreRedGreen(&mut self) {
-        for i in 0x20..0x100 {
-            let aux = self.game_state.display.palette_buffer.aux_color(i);
-            let mut color = self.game_state.display.palette_buffer.main_color(i);
-            if color & 0x03e0 != aux & 0x03e0 {
-                color = color.wrapping_add(0x20);
-            }
-            if color & 0x001f != aux & 0x001f {
-                color = color.wrapping_add(1);
-            }
-            self.set_main_color(i, color);
-        }
+        // Green then red, both stepped toward aux; disjoint channels, so two
+        // passes equal the original single loop.
+        self.transform_main_range(
+            0x20,
+            0x100,
+            PaletteTransform::WhirlpoolChannelStep {
+                channel_mask: 0x03e0,
+                step: 0x20,
+                up: true,
+                reference: ChannelReference::Aux,
+            },
+        );
+        self.transform_main_range(
+            0x20,
+            0x100,
+            PaletteTransform::WhirlpoolChannelStep {
+                channel_mask: 0x001f,
+                step: 1,
+                up: true,
+                reference: ChannelReference::Aux,
+            },
+        );
         self.copy_color((Bank::Main, 32), (Bank::Main, 0));
         self.increment_countdown();
         if self.game_state.display.palette_filter.countdown() == 31 {
@@ -2412,11 +2440,16 @@ impl ZeldaState {
 
     pub(super) fn Trinexx_FlashShellPalette_Red(&mut self) {
         if self.game_state.display.trinexx_palette.red_shell_delay == 0 {
-            for i in 0..7 {
-                let v = self.game_state.display.palette_buffer.main_color(0x41 + i);
-                let red = (v & 0x1f).wrapping_add(u16::from((v & 0x1f) != 0x1f));
-                self.set_main_color(0x41 + i, (v & 0xffe0) | red);
-            }
+            self.transform_main_range(
+                0x41,
+                0x48,
+                PaletteTransform::TrinexxChannelStep {
+                    channel_mask: 0x1f,
+                    step: 1,
+                    up: true,
+                    reference: ChannelReference::Max,
+                },
+            );
             self.increment_cgram_update_flag();
             let step = self.increment_trinexx_red_shell_palette_step();
             if step >= 12 {
@@ -2431,12 +2464,16 @@ impl ZeldaState {
 
     pub(super) fn Trinexx_UnflashShellPalette_Red(&mut self) {
         if self.game_state.display.trinexx_palette.red_shell_delay == 0 {
-            for i in 0..7 {
-                let u = self.game_state.display.palette_buffer.aux_color(0x41 + i);
-                let v = self.game_state.display.palette_buffer.main_color(0x41 + i);
-                let red = (v & 0x1f).wrapping_sub(u16::from((v & 0x1f) != (u & 0x1f)));
-                self.set_main_color(0x41 + i, (v & 0xffe0) | red);
-            }
+            self.transform_main_range(
+                0x41,
+                0x48,
+                PaletteTransform::TrinexxChannelStep {
+                    channel_mask: 0x1f,
+                    step: 1,
+                    up: false,
+                    reference: ChannelReference::Aux,
+                },
+            );
             self.increment_cgram_update_flag();
             let step = self.increment_trinexx_red_shell_palette_step();
             if step >= 12 {
@@ -2451,12 +2488,16 @@ impl ZeldaState {
 
     pub(super) fn Trinexx_FlashShellPalette_Blue(&mut self) {
         if self.game_state.display.trinexx_palette.blue_shell_delay == 0 {
-            for i in 0..7 {
-                let v = self.game_state.display.palette_buffer.main_color(0x41 + i);
-                let blue =
-                    (v & 0x7c00).wrapping_add(if (v & 0x7c00) != 0x7c00 { 0x0400 } else { 0 });
-                self.set_main_color(0x41 + i, (v & !0x7c00) | blue);
-            }
+            self.transform_main_range(
+                0x41,
+                0x48,
+                PaletteTransform::TrinexxChannelStep {
+                    channel_mask: 0x7c00,
+                    step: 0x400,
+                    up: true,
+                    reference: ChannelReference::Max,
+                },
+            );
             self.increment_cgram_update_flag();
             let step = self.increment_trinexx_blue_shell_palette_step();
             if step >= 12 {
@@ -2471,16 +2512,16 @@ impl ZeldaState {
 
     pub(super) fn Trinexx_UnflashShellPalette_Blue(&mut self) {
         if self.game_state.display.trinexx_palette.blue_shell_delay == 0 {
-            for i in 0..7 {
-                let u = self.game_state.display.palette_buffer.aux_color(0x41 + i);
-                let v = self.game_state.display.palette_buffer.main_color(0x41 + i);
-                let blue = (v & 0x7c00).wrapping_sub(if (v & 0x7c00) != (u & 0x7c00) {
-                    0x0400
-                } else {
-                    0
-                });
-                self.set_main_color(0x41 + i, (v & !0x7c00) | blue);
-            }
+            self.transform_main_range(
+                0x41,
+                0x48,
+                PaletteTransform::TrinexxChannelStep {
+                    channel_mask: 0x7c00,
+                    step: 0x400,
+                    up: false,
+                    reference: ChannelReference::Aux,
+                },
+            );
             self.increment_cgram_update_flag();
             let step = self.increment_trinexx_blue_shell_palette_step();
             if step >= 12 {
@@ -2917,12 +2958,12 @@ impl ZeldaState {
         self.follower_state_mut().set_palette_swap_flag(value as u8);
         for i in 0..8 {
             for (a_base, b_base) in [(0x80, 0xf0), (0x88, 0xf8), (0xb8, 0xd8)] {
-                let a = self.game_state.display.palette_buffer.aux_color(a_base + i);
-                let b = self.game_state.display.palette_buffer.aux_color(b_base + i);
-                self.set_aux_color(b_base + i, a);
-                self.set_main_color(b_base + i, a);
-                self.set_aux_color(a_base + i, b);
-                self.set_main_color(a_base + i, b);
+                // Swap the two aux words, then mirror each into main — the
+                // original reads both aux words up front and writes the swapped
+                // values into both aux and main.
+                self.swap_colors((Bank::Aux, a_base + i), (Bank::Aux, b_base + i));
+                self.copy_color((Bank::Aux, a_base + i), (Bank::Main, a_base + i));
+                self.copy_color((Bank::Aux, b_base + i), (Bank::Main, b_base + i));
             }
         }
         self.increment_cgram_update_flag();
@@ -3452,8 +3493,9 @@ impl ZeldaState {
         self.follower_state_mut()
             .set_palette_swap_flag(if v { 1 } else { 0 });
         // Three banded swaps over 8 consecutive entries each: 0x80<->0xF0, 0x88<->0xF8, 0xB8<->0xD8.
-        // For each pair (a from low band, b from high band), write `a` into the high
-        // band slot of both buffers and `b` into the low band slot of both buffers.
+        // For each pair, swap the two aux words and mirror each into main (the
+        // original reads both aux words up front, then writes the swapped values
+        // into both aux and main).
         for i in 0..8 {
             let pairs: [(usize, usize); 3] = [
                 (0x80 + i, 0xf0 + i),
@@ -3461,12 +3503,9 @@ impl ZeldaState {
                 (0xb8 + i, 0xd8 + i),
             ];
             for (low, high) in pairs {
-                let a = self.game_state.display.palette_buffer.aux_color(low);
-                let b = self.game_state.display.palette_buffer.aux_color(high);
-                self.set_main_color(high, a);
-                self.set_aux_color(high, a);
-                self.set_main_color(low, b);
-                self.set_aux_color(low, b);
+                self.swap_colors((Bank::Aux, low), (Bank::Aux, high));
+                self.copy_color((Bank::Aux, low), (Bank::Main, low));
+                self.copy_color((Bank::Aux, high), (Bank::Main, high));
             }
         }
         self.increment_cgram_update_flag();

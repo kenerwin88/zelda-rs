@@ -10861,8 +10861,7 @@ impl ZeldaState {
         match self.game_state.frame.subsubmodule {
             0 => {
                 self.PaletteFilter_RestoreBGSubstractiveStrict();
-                let c = self.game_state.display.palette_buffer.main_color(32);
-                self.set_main_color(0, c);
+                self.copy_color((zelda3_palette::Bank::Main, 32), (zelda3_palette::Bank::Main, 0));
                 if self
                     .game_state
                     .display
@@ -12136,7 +12135,7 @@ impl ZeldaState {
             .iter()
             .enumerate()
         {
-            self.set_main_color(112 + i, *color);
+            self.set_main_color_asset(112 + i, *color);
         }
         self.increment_cgram_update_flag();
         self.CrystalCutscene_SpawnMaiden();
@@ -12476,19 +12475,16 @@ impl ZeldaState {
     pub(super) fn LayerEffect_Agahnim2(&mut self) {
         let j = self.game_state.frame.frame_counter & 0x7f;
         if j == 3 || j == 36 {
-            self.set_main_color(0x6d, 0x1d59);
-            self.set_main_color(0x6e, 0x25ff);
-            self.set_main_color(0x6f, 0x001a);
-            self.set_main_color(0x77, 0x001a);
+            self.set_main_color_constant(0x6d, 0x1d59);
+            self.set_main_color_constant(0x6e, 0x25ff);
+            self.set_main_color_constant(0x6f, 0x001a);
+            self.set_main_color_constant(0x77, 0x001a);
             self.increment_cgram_update_flag();
         } else if j == 5 || j == 38 {
-            let p6d = self.game_state.display.palette_buffer.aux_color(0x6d);
-            let p6e = self.game_state.display.palette_buffer.aux_color(0x6e);
-            let p6f = self.game_state.display.palette_buffer.aux_color(0x6f);
-            self.set_main_color(0x6d, p6d);
-            self.set_main_color(0x6e, p6e);
-            self.set_main_color(0x6f, p6f);
-            self.set_main_color(0x77, p6f);
+            self.copy_color((zelda3_palette::Bank::Aux, 0x6d), (zelda3_palette::Bank::Main, 0x6d));
+            self.copy_color((zelda3_palette::Bank::Aux, 0x6e), (zelda3_palette::Bank::Main, 0x6e));
+            self.copy_color((zelda3_palette::Bank::Aux, 0x6f), (zelda3_palette::Bank::Main, 0x6f));
+            self.copy_color((zelda3_palette::Bank::Aux, 0x6f), (zelda3_palette::Bank::Main, 0x77));
             self.increment_cgram_update_flag();
         }
         self.set_sub_screen_layers(2);
@@ -12510,10 +12506,10 @@ impl ZeldaState {
         }
         let (x, y) = if count == 0 { (0, 0) } else { (0x2940, 0x4e60) };
         if self.game_state.display.palette_buffer.aux_color(0x7b) != x {
-            self.set_main_color(0x7b, x);
-            self.set_aux_color(0x7b, x);
-            self.set_main_color(0x7c, y);
-            self.set_aux_color(0x7c, y);
+            self.set_main_color_constant(0x7b, x);
+            self.set_aux_color_constant(0x7b, x);
+            self.set_main_color_constant(0x7c, y);
+            self.set_aux_color_constant(0x7c, y);
             self.increment_cgram_update_flag();
         }
         self.set_sub_screen_layers(2);

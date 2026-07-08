@@ -660,7 +660,7 @@ impl ZeldaState {
                     self.increment_subsubmodule();
                     self.attract_scene_mut().increment_intro_step_index();
                     self.set_sound_effect_1(44);
-                    self.set_main_color(0xd7, 0x7fff);
+                    self.set_main_color_constant(0xd7, 0x7fff);
                     self.increment_cgram_update_flag();
                     self.attract_scene_mut().set_intro_step_timer(6);
                     break_triforce_handle_poly(self);
@@ -672,7 +672,7 @@ impl ZeldaState {
             3 => {
                 self.attract_scene_mut().decrement_intro_step_timer();
                 if self.game_state.ending.attract_scene.intro_step_timer() == 0 {
-                    self.set_main_color(0xd7, POLYHEDRAL_PALETTE[7]);
+                    self.set_main_color_asset(0xd7, POLYHEDRAL_PALETTE[7]);
                     self.increment_cgram_update_flag();
                     self.attract_scene_mut().increment_intro_step_index();
                 }
@@ -1970,10 +1970,10 @@ impl ZeldaState {
         self.player_resources_mut().set_current_health(health);
         self.save_progress_mut().set_dark_world_state(0x40);
         self.SaveGameFile();
-        self.set_aux_color(38, 0);
-        self.set_main_color(38, 0);
-        self.set_aux_color(0, 0);
-        self.set_main_color(0, 0);
+        self.set_aux_color_constant(38, 0);
+        self.set_main_color_constant(38, 0);
+        self.set_aux_color_constant(0, 0);
+        self.set_main_color_constant(0, 0);
         self.set_main_screen_layers(0x16);
         self.set_sub_screen_layers(0);
         self.ending_scratch_mut().set_primary_word(0x6800);
@@ -2258,7 +2258,7 @@ impl ZeldaState {
 
     pub(super) fn load_triforce_sprite_palette(&mut self) {
         for (i, color) in POLYHEDRAL_PALETTE.iter().enumerate() {
-            self.set_main_color(0xd0 + i, *color);
+            self.set_main_color_asset(0xd0 + i, *color);
         }
         self.increment_cgram_update_flag();
     }
@@ -2531,7 +2531,7 @@ impl ZeldaState {
         self.LoadOWMusicIfNeeded();
 
         for i in 0..17 {
-            self.set_main_color(144 + i, 0x7fff);
+            self.set_main_color_constant(144 + i, 0x7fff);
             self.ppu.vram[0x27f0 + i] = 0;
         }
 

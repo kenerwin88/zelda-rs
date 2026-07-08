@@ -317,8 +317,8 @@ impl ZeldaState {
         self.dungeon_savegame_state_mut()
             .clear_savegame_state_bits();
         self.follower_link_state_mut().clear_movement_velocity();
-        self.set_main_color(0, 0x7fff);
-        self.set_main_color(32, 0x7fff);
+        self.set_main_color_constant(0, 0x7fff);
+        self.set_main_color_constant(32, 0x7fff);
         self.ancilla_terminate_select_interactives(0);
         self.link_reset_properties_a();
     }
