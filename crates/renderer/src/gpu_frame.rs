@@ -258,7 +258,15 @@ impl<'a> GpuFrame<'a> {
     /// The provenance mirror's CGRAM words, only when EVERY word is known —
     /// the condition under which the modern path may substitute them for live
     /// CGRAM (incomplete mirrors fall back; M7 enforcement forbids that).
+    /// `ZELDA3_DISABLE_PROVENANCE_SUBSTITUTION=1` forces the live-CGRAM path —
+    /// the A/B lever for attributing pixel differences to the substitution.
     pub fn complete_provenance_words(&self) -> Option<&'a [u16; zelda3_palette::PALETTE_WORDS]> {
+        static DISABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *DISABLED.get_or_init(|| {
+            std::env::var("ZELDA3_DISABLE_PROVENANCE_SUBSTITUTION").is_ok_and(|v| v == "1")
+        }) {
+            return None;
+        }
         self.cgram_provenance
             .filter(|snapshot| snapshot.known.iter().all(|known| *known))
             .map(|snapshot| &snapshot.words)
