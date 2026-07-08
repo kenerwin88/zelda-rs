@@ -435,7 +435,7 @@ def write_chr_source_sheets(out_dir: Path) -> list[dict[str, str]]:
                 "sheet": image_path.stem,
                 "image_file": image_path.relative_to(out_dir).as_posix(),
                 "manifest_file": manifest_path.relative_to(out_dir).as_posix(),
-                "source_format": "zelda3_editable_chr_sheet_v1",
+                "source_format": "zelda3_editable_chr_sheet_v2",
             }
         )
     return entries
@@ -512,6 +512,18 @@ def write_tile_effect_table(out_dir: Path) -> list[dict[str, str]]:
     ]
 
 
+def chr_sheet_authority_dir(out_dir: Path) -> Path:
+    """The editable CHR sheets the atlas builds from.
+
+    Tracked `assets/chr/` is the authority once promoted; until then the
+    ROM-extracted sheets in the generated tree serve as bootstrap.
+    """
+    tracked = REPO_ROOT / "assets/chr"
+    if tracked.is_dir():
+        return tracked
+    return out_dir / "assets_src/chr"
+
+
 def write_canonical_art_atlas(out_dir: Path) -> list[dict[str, str]]:
     import rgba_variant_atlas
 
@@ -519,6 +531,7 @@ def write_canonical_art_atlas(out_dir: Path) -> list[dict[str, str]]:
         written = rgba_variant_atlas.write_canonical_art_atlas(
             out_dir,
             source_tiles_dir=REPO_ROOT / "zelda3-bin/developer_tilesets",
+            chr_sheet_dir=chr_sheet_authority_dir(out_dir),
         )
     except FileNotFoundError as exc:
         raise RuntimeError(

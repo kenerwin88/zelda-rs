@@ -2106,6 +2106,7 @@ where
 pub struct ModernAssetFrameResources {
     source_atlas: Option<modern_source_atlas::ModernSourceAtlas>,
     variant_atlas: Option<modern_variant_atlas::ModernVariantAtlas>,
+    variant_headless: Option<ModernGpuVariantHeadless>,
     gpu_asset_mode: bool,
     variant_gpu_mode: bool,
 }
@@ -2138,9 +2139,12 @@ impl ModernAssetFrameResources {
             None
         };
 
+        let variant_headless = variant_atlas.as_ref().map(ModernGpuVariantHeadless::new);
+
         Ok(Self {
             source_atlas,
             variant_atlas,
+            variant_headless,
             gpu_asset_mode: mode.uses_gpu_assets(),
             variant_gpu_mode: mode.uses_variant_atlas(),
         })
@@ -2152,6 +2156,10 @@ impl ModernAssetFrameResources {
 
     pub fn variant_atlas(&self) -> Option<&modern_variant_atlas::ModernVariantAtlas> {
         self.variant_atlas.as_ref()
+    }
+
+    pub fn variant_headless(&self) -> Option<&ModernGpuVariantHeadless> {
+        self.variant_headless.as_ref()
     }
 
     pub fn mode7_source_chars(&self) -> Option<&[u8]> {

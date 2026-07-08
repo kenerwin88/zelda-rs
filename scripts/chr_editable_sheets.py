@@ -32,6 +32,42 @@ class PreviewPalette:
     colors: list[list[int]]
 
 
+@dataclass(frozen=True)
+class SheetPaletteRow:
+    """One palette row shown by the sheet PNG.
+
+    `base` is the PNG palette slot of the row's color 0: a tile assigned to this
+    row stores pixel values `base + raw_chr_index`, so decoding back to CHR
+    indices never depends on the colors themselves.
+    """
+
+    id: int
+    palette: str
+    palette_row: int
+    colors_per_row: int
+    base: int
+    index_to_rgb: list[list[int]]
+    preview_source: str
+
+
+@dataclass(frozen=True)
+class SheetPalettePlan:
+    rows: list[SheetPaletteRow]
+    tile_row_ids: list[int]
+
+    def combined_colors(self) -> list[list[int]]:
+        colors: list[list[int]] = []
+        for row in self.rows:
+            colors.extend(row.index_to_rgb)
+        return colors
+
+    def transparency_bytes(self) -> bytes:
+        alphas = bytearray([255] * 256)
+        for row in self.rows:
+            alphas[row.base] = 0
+        return bytes(alphas)
+
+
 CHR_SHEET_BLOCK_NUMBERS: list[tuple[str, list[int], bool]] = [
     ("2m-2q", [1], False),
     ("2r-2w", list(range(1, 13)), False),
@@ -178,6 +214,134 @@ def _parse_rgb888(value: str) -> list[int]:
     return [int(value[index : index + 2], 16) for index in (1, 3, 5)]
 
 
+def read_palette_colors(path: Path) -> list[list[int]]:
+    data = json.loads(path.read_text())
+    colors_by_index: dict[int, list[int]] = {}
+    for color in data.get("colors", []):
+        colors_by_index[int(color["index"])] = _parse_rgb888(str(color["rgb888"]))
+    if not colors_by_index:
+        raise ValueError(f"{path}: palette has no colors")
+    return [colors_by_index.get(index, [0, 0, 0]) for index in range(max(colors_by_index) + 1)]
+
+
+def _default_palette_names(asset_dir: Path) -> list[str]:
+    palettes_dir = asset_dir / "assets_src/palettes"
+    preferred = ["palette_main_spr", "palette_dung_bg_main", "palette_overworld_bg_main"]
+    available = sorted(path.stem for path in palettes_dir.glob("*.json"))
+    ordered = [name for name in preferred if name in available]
+    ordered.extend(name for name in available if name not in ordered)
+    return ordered
+
+
+def _rows_for_bpp(bpp: int) -> tuple[int, int]:
+    if bpp == 2:
+        return 4, 4
+    if bpp == 3:
+        return 8, 8
+    if bpp == 4:
+        return 16, 16
+    if bpp == 5:
+        return 8, 32
+    if bpp == 8:
+        return 2, 128
+    raise ValueError(f"unsupported SNES tile bit depth: {bpp}")
+
+
+def _default_preview_palette(
+    kind: str,
+    available_palette_names: list[str],
+) -> tuple[str, int]:
+    preferred = {
+        "sprite": "palette_main_spr",
+        "link": "palette_main_spr",
+        "bg": "palette_overworld_bg_main",
+        "bg3": "palette_overworld_bg_main",
+        "bg3_dynamic": "palette_overworld_bg_main",
+        "mode7": "palette_overworld_bg_main",
+    }.get(kind)
+    if preferred in available_palette_names:
+        return preferred, 0
+    if "palette_dung_bg_main" in available_palette_names and kind in ("bg", "bg3"):
+        return "palette_dung_bg_main", 0
+    if available_palette_names:
+        return available_palette_names[0], 0
+    raise FileNotFoundError("no extracted palettes available for base atlas")
+
+
+def _asset_name_for_kind(kind: str) -> str:
+    if kind == "sprite":
+        return "kSprGfx"
+    if kind == "bg":
+        return "kBgGfx"
+    if kind == "mode7":
+        return "kOverworldMapGfx"
+    raise ValueError(f"unknown decoded CHR pack kind: {kind}")
+
+
+def _tile_usage_key(
+    kind: str,
+    asset: str,
+    pack: int,
+    tile: int,
+    bpp: int,
+) -> tuple[str, str, int, int, int]:
+    return kind, asset, pack, tile, bpp
+
+
+def _palette_usage_paths(asset_dir: Path) -> list[Path]:
+    return [
+        asset_dir / "atlas/palette_usage.json",
+        asset_dir / "assets_src/palette_usage.json",
+    ]
+
+
+def read_palette_usage_map(asset_dir: Path) -> dict[tuple[str, str, int, int, int], dict[str, object]]:
+    for path in _palette_usage_paths(asset_dir):
+        if not path.is_file():
+            continue
+        data = json.loads(path.read_text())
+        if data.get("format") != "zelda3_palette_usage_v1":
+            raise ValueError(f"{path}: unsupported palette usage format {data.get('format')!r}")
+        usage = {}
+        for entry in data.get("entries", []):
+            source_kind = str(entry["source_kind"])
+            asset = str(entry["asset"])
+            pack = int(entry["pack"])
+            tile = int(entry["tile"])
+            bpp = int(entry["bpp"])
+            usage[_tile_usage_key(source_kind, asset, pack, tile, bpp)] = entry
+        return usage
+    return {}
+
+
+def _preview_palette_for_tile(
+    *,
+    kind: str,
+    asset: str,
+    pack: int,
+    tile: int,
+    bpp: int,
+    colors_per_row: int,
+    available_palette_names: list[str],
+    palettes: dict[str, list[list[int]]],
+    palette_usage: dict[tuple[str, str, int, int, int], dict[str, object]],
+) -> tuple[str, int, str, dict[str, object] | None]:
+    usage = palette_usage.get(_tile_usage_key(kind, asset, pack, tile, bpp))
+    if usage is not None:
+        usage_palette = str(usage.get("preview_palette", ""))
+        usage_row = int(usage.get("preview_palette_row", -1))
+        if usage_palette in palettes and usage_row >= 0:
+            colors = palettes[usage_palette]
+            if (usage_row + 1) * colors_per_row <= len(colors):
+                return usage_palette, usage_row, "palette_usage", usage
+
+    preview_palette, preview_row = _default_preview_palette(kind, available_palette_names)
+    colors = palettes[preview_palette]
+    if (preview_row + 1) * colors_per_row > len(colors):
+        preview_row = 0
+    return preview_palette, preview_row, "source_kind_default", None
+
+
 def _read_extracted_palette(asset_dir: Path, palette_name: str) -> PreviewPalette | None:
     path = asset_dir / "assets_src/palettes" / f"{palette_name}.json"
     if not path.is_file():
@@ -204,11 +368,131 @@ def preview_palette_for_sheet(asset_dir: Path, sheet: EditableChrSheet) -> Previ
     )
 
 
+def _row_colors(
+    palettes: dict[str, list[list[int]]],
+    palette_name: str,
+    palette_row: int,
+    colors_per_row: int,
+) -> list[list[int]]:
+    colors = palettes[palette_name]
+    row = [list(color) for color in colors[palette_row * colors_per_row : (palette_row + 1) * colors_per_row]]
+    row.extend([[0, 0, 0]] * (colors_per_row - len(row)))
+    return row
+
+
+def _read_sheet_palettes(asset_dir: Path) -> tuple[list[str], dict[str, list[list[int]]]]:
+    palettes_dir = asset_dir / "assets_src/palettes"
+    available = _default_palette_names(asset_dir) if palettes_dir.is_dir() else []
+    palettes = {
+        name: read_palette_colors(palettes_dir / f"{name}.json") for name in available
+    }
+    if not palettes:
+        available = ["developer_default"]
+        palettes = {"developer_default": preview_palette_colors()}
+    return available, palettes
+
+
+def compute_sheet_palette_plan(asset_dir: Path, sheet: EditableChrSheet) -> SheetPalettePlan:
+    """Assign every sheet tile its usual in-game palette row.
+
+    Row choice mirrors the canonical-art atlas (`palette_usage.json` evidence,
+    then per-kind defaults). All rows share one <=256-slot PNG palette; when the
+    combined rows overflow it, the least-evidenced rows are demoted to the
+    tile's per-kind default row — decode never depends on the demotion because
+    the raw CHR index is always `pixel - base`.
+    """
+    available, palettes = _read_sheet_palettes(asset_dir)
+    palette_usage = read_palette_usage_map(asset_dir)
+
+    row_key_of_tile: list[tuple[str, int, int]] = []
+    default_key_of_tile: list[tuple[str, int, int]] = []
+    row_meta: dict[tuple[str, int, int], dict[str, object]] = {}
+
+    def note_row(key: tuple[str, int, int], source: str, evidence: int, order: int) -> None:
+        meta = row_meta.setdefault(
+            key,
+            {"source": source, "evidence": evidence, "order": order, "default": False},
+        )
+        meta["evidence"] = max(int(meta["evidence"]), evidence)
+        if source == "palette_usage":
+            meta["source"] = "palette_usage"
+
+    order = 0
+    for block in sheet.blocks:
+        kind = str(block["source_kind"])
+        asset = _asset_name_for_kind(kind)
+        pack = int(block["source_pack"])
+        bpp = int(block["source_bpp"])
+        tile_count = int(block["tile_count"])
+        _, colors_per_row = _rows_for_bpp(bpp)
+        default_palette, default_row = _default_preview_palette(kind, available)
+        if (default_row + 1) * colors_per_row > len(palettes[default_palette]):
+            default_row = 0
+        default_key = (default_palette, default_row, colors_per_row)
+        row_meta.setdefault(
+            default_key,
+            {"source": "source_kind_default", "evidence": 0, "order": order, "default": True},
+        )["default"] = True
+        for tile in range(tile_count):
+            palette_name, palette_row, source, usage = _preview_palette_for_tile(
+                kind=kind,
+                asset=asset,
+                pack=pack,
+                tile=tile,
+                bpp=bpp,
+                colors_per_row=colors_per_row,
+                available_palette_names=available,
+                palettes=palettes,
+                palette_usage=palette_usage,
+            )
+            evidence = int(usage.get("evidence_count", 0)) if usage is not None else 0
+            key = (palette_name, palette_row, colors_per_row)
+            order += 1
+            note_row(key, source, evidence, order)
+            row_key_of_tile.append(key)
+            default_key_of_tile.append(default_key)
+
+    # Allocate PNG palette slots: per-kind default rows first (demotion targets
+    # must always fit), then observed rows by evidence.
+    defaults = [key for key, meta in row_meta.items() if meta["default"]]
+    defaults.sort(key=lambda key: int(row_meta[key]["order"]))
+    observed = [key for key, meta in row_meta.items() if not meta["default"]]
+    observed.sort(key=lambda key: (-int(row_meta[key]["evidence"]), int(row_meta[key]["order"])))
+
+    rows: list[SheetPaletteRow] = []
+    row_id_by_key: dict[tuple[str, int, int], int] = {}
+    base = 0
+    for key in defaults + observed:
+        palette_name, palette_row, colors_per_row = key
+        if base + colors_per_row > 256:
+            continue
+        row_id_by_key[key] = len(rows)
+        rows.append(
+            SheetPaletteRow(
+                id=len(rows),
+                palette=palette_name,
+                palette_row=palette_row,
+                colors_per_row=colors_per_row,
+                base=base,
+                index_to_rgb=_row_colors(palettes, palette_name, palette_row, colors_per_row),
+                preview_source=str(row_meta[key]["source"]),
+            )
+        )
+        base += colors_per_row
+
+    tile_row_ids = [
+        row_id_by_key.get(key, row_id_by_key[default_key])
+        for key, default_key in zip(row_key_of_tile, default_key_of_tile)
+    ]
+    return SheetPalettePlan(rows=rows, tile_row_ids=tile_row_ids)
+
+
 def write_chr_sheet_png(
     path: Path,
     tiles: list[bytes],
     columns: int,
     palette: list[int] | None = None,
+    transparency: bytes | None = None,
 ) -> None:
     from PIL import Image
 
@@ -217,7 +501,10 @@ def write_chr_sheet_png(
     image = Image.new("P", (width, height))
     image.putpalette(palette or preview_palette())
     image.putdata(pixels)
-    image.save(path)
+    if transparency is None:
+        image.save(path)
+    else:
+        image.save(path, transparency=transparency)
 
 
 def write_chr_sheet_sidecar(path: Path, manifest: dict[str, object]) -> None:
@@ -276,12 +563,18 @@ def sidecar_for_sheet(
     asset_dir: Path,
     sheet: EditableChrSheet,
     columns: int,
-    palette: PreviewPalette | None = None,
+    plan: SheetPalettePlan,
 ) -> dict[str, object]:
     rows = (len(sheet.tiles) + columns - 1) // columns
-    palette = palette or PreviewPalette(name="developer_default", colors=preview_palette_colors())
+    blocks = []
+    for block in sheet.blocks:
+        tile_start = int(block["tile_start"])
+        tile_count = int(block["tile_count"])
+        block_v2 = dict(block)
+        block_v2["tile_palette_rows"] = plan.tile_row_ids[tile_start : tile_start + tile_count]
+        blocks.append(block_v2)
     return {
-        "format": "zelda3_editable_chr_sheet_v1",
+        "format": "zelda3_editable_chr_sheet_v2",
         "sheet": sheet.name,
         "source": {
             "kind": "rom_extracted_assets",
@@ -294,12 +587,31 @@ def sidecar_for_sheet(
             "rows": rows,
         },
         "palette": {
-            "preview": palette.name,
-            "mode": "indexed_png",
-            "index_to_rgb": palette.colors,
+            "mode": "indexed_png_per_tile_rows",
+            "index_to_rgb": plan.combined_colors(),
         },
-        "blocks": sheet.blocks,
+        "palette_rows": [
+            {
+                "id": row.id,
+                "palette": row.palette,
+                "palette_row": row.palette_row,
+                "colors_per_row": row.colors_per_row,
+                "base": row.base,
+                "index_to_rgb": row.index_to_rgb,
+                "preview_source": row.preview_source,
+            }
+            for row in plan.rows
+        ],
+        "blocks": blocks,
     }
+
+
+def remap_tiles_for_plan(sheet: EditableChrSheet, plan: SheetPalettePlan) -> list[bytes]:
+    remapped = []
+    for tile, row_id in zip(sheet.tiles, plan.tile_row_ids):
+        base = plan.rows[row_id].base
+        remapped.append(bytes(base + value for value in tile))
+    return remapped
 
 
 def write_editable_chr_sheets(asset_dir: Path, out_dir: Path | None = None) -> list[Path]:
@@ -312,11 +624,131 @@ def write_editable_chr_sheets(asset_dir: Path, out_dir: Path | None = None) -> l
             continue
         png_path = destination / f"{sheet.name}.png"
         json_path = destination / f"{sheet.name}.json"
-        palette = preview_palette_for_sheet(asset_dir, sheet)
-        write_chr_sheet_png(png_path, sheet.tiles, columns=16, palette=palette_bytes(palette.colors))
-        write_chr_sheet_sidecar(json_path, sidecar_for_sheet(asset_dir, sheet, columns=16, palette=palette))
+        plan = compute_sheet_palette_plan(asset_dir, sheet)
+        write_chr_sheet_png(
+            png_path,
+            remap_tiles_for_plan(sheet, plan),
+            columns=16,
+            palette=palette_bytes(plan.combined_colors()),
+            transparency=plan.transparency_bytes(),
+        )
+        write_chr_sheet_sidecar(json_path, sidecar_for_sheet(asset_dir, sheet, columns=16, plan=plan))
         written.extend([png_path, json_path])
     return written
+
+
+def _sheet_tiles_from_png(png_path: Path, columns: int, tile_total: int) -> list[bytes]:
+    from PIL import Image
+
+    with Image.open(png_path) as image:
+        if image.mode != "P":
+            raise ValueError(f"{png_path}: editable CHR sheets must be indexed (P-mode) PNGs")
+        width, height = image.size
+        if width != columns * 8:
+            raise ValueError(f"{png_path}: expected width {columns * 8}, found {width}")
+        pixels = image.tobytes()
+    tiles = []
+    for tile_index in range(tile_total):
+        tile_x = tile_index % columns
+        tile_y = tile_index // columns
+        tile = bytearray()
+        for y in range(8):
+            src = (tile_y * 8 + y) * width + tile_x * 8
+            tile.extend(pixels[src : src + 8])
+        tiles.append(bytes(tile))
+    return tiles
+
+
+def read_editable_chr_sheet(png_path: Path, json_path: Path) -> EditableChrSheet:
+    """Decode an editable sheet PNG back to raw CHR indices per tile.
+
+    Supports v1 (pixels are raw indices) and v2 (pixels are `base + index` per
+    the sidecar's palette-row assignment). Pixels outside a tile's assigned row
+    are hard errors — they mark an edit that crossed palette-row boundaries.
+    """
+    manifest = json.loads(json_path.read_text())
+    fmt = manifest.get("format")
+    if fmt not in ("zelda3_editable_chr_sheet_v1", "zelda3_editable_chr_sheet_v2"):
+        raise ValueError(f"{json_path}: unsupported editable CHR sheet format {fmt!r}")
+    columns = int(manifest["layout"]["columns"])
+    blocks = list(manifest["blocks"])
+    tile_total = max(
+        int(block["tile_start"]) + int(block["tile_count"]) for block in blocks
+    )
+    raw_tiles = _sheet_tiles_from_png(png_path, columns, tile_total)
+
+    if fmt == "zelda3_editable_chr_sheet_v1":
+        tiles = raw_tiles
+    else:
+        rows_by_id = {int(row["id"]): row for row in manifest["palette_rows"]}
+        tiles = list(raw_tiles)
+        for block in blocks:
+            tile_start = int(block["tile_start"])
+            tile_count = int(block["tile_count"])
+            row_ids = block["tile_palette_rows"]
+            if len(row_ids) != tile_count:
+                raise ValueError(
+                    f"{json_path}: block {block['block']} tile_palette_rows length "
+                    f"{len(row_ids)} != tile_count {tile_count}"
+                )
+            for offset, row_id in enumerate(row_ids):
+                row = rows_by_id[int(row_id)]
+                base = int(row["base"])
+                colors_per_row = int(row["colors_per_row"])
+                decoded = bytearray()
+                for value in raw_tiles[tile_start + offset]:
+                    index = value - base
+                    if not 0 <= index < colors_per_row:
+                        raise ValueError(
+                            f"{png_path}: tile {tile_start + offset} pixel value {value} is "
+                            f"outside its palette row (base {base}, {colors_per_row} colors); "
+                            "edits must stay within the tile's assigned row"
+                        )
+                    decoded.append(index)
+                tiles[tile_start + offset] = bytes(decoded)
+
+    return EditableChrSheet(
+        name=str(manifest["sheet"]),
+        tiles=tiles,
+        blocks=blocks,
+    )
+
+
+def read_decoded_chr_packs_from_sheets(
+    asset_dir: Path,
+    sheet_dir: Path,
+) -> tuple[list[DecodedPack], list[DecodedPack]]:
+    """Reconstruct the decoded CHR packs with the editable sheets as authority.
+
+    Packs covered by no sheet (bg pack 114) are read from the packed binaries.
+    """
+    bin_sprite_packs, bin_bg_packs = read_decoded_chr_packs(asset_dir)
+    packs_by_key: dict[tuple[str, int], DecodedPack] = {}
+    for sheet_name, _block_numbers, _has_n_suffix in CHR_SHEET_BLOCK_NUMBERS:
+        json_path = sheet_dir / f"{sheet_name}.json"
+        png_path = sheet_dir / f"{sheet_name}.png"
+        if not json_path.is_file() or not png_path.is_file():
+            raise FileNotFoundError(json_path if not json_path.is_file() else png_path)
+        sheet = read_editable_chr_sheet(png_path, json_path)
+        for block in sheet.blocks:
+            kind = str(block["source_kind"])
+            pack_index = int(block["source_pack"])
+            bpp = int(block["source_bpp"])
+            tile_start = int(block["tile_start"])
+            tile_count = int(block["tile_count"])
+            packs_by_key[(kind, pack_index)] = DecodedPack(
+                kind=kind,
+                pack_index=pack_index,
+                bpp=bpp,
+                tiles=sheet.tiles[tile_start : tile_start + tile_count],
+            )
+
+    def merged(bin_packs: list[DecodedPack]) -> list[DecodedPack]:
+        return [
+            packs_by_key.get((pack.kind, pack.pack_index), pack) for pack in bin_packs
+        ]
+
+    return merged(bin_sprite_packs), merged(bin_bg_packs)
 
 
 def main() -> int:

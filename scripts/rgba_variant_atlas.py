@@ -11,6 +11,20 @@ from pathlib import Path
 
 import chr_editable_sheets
 
+# Shared with the editable-sheet writer: per-tile canonical palette selection
+# lives in chr_editable_sheets (this module already imports it; the reverse
+# import would be circular).
+_parse_rgb888 = chr_editable_sheets._parse_rgb888
+read_palette_colors = chr_editable_sheets.read_palette_colors
+_asset_name_for_kind = chr_editable_sheets._asset_name_for_kind
+_default_palette_names = chr_editable_sheets._default_palette_names
+_rows_for_bpp = chr_editable_sheets._rows_for_bpp
+_default_preview_palette = chr_editable_sheets._default_preview_palette
+_tile_usage_key = chr_editable_sheets._tile_usage_key
+_palette_usage_paths = chr_editable_sheets._palette_usage_paths
+read_palette_usage_map = chr_editable_sheets.read_palette_usage_map
+_preview_palette_for_tile = chr_editable_sheets._preview_palette_for_tile
+
 
 @dataclass(frozen=True)
 class VariantKey:
@@ -142,88 +156,8 @@ def pack_rgba_variants(
     return width, height, bytes(atlas), entries
 
 
-def _parse_rgb888(value: str) -> list[int]:
-    if len(value) != 7 or not value.startswith("#"):
-        raise ValueError(f"invalid rgb888 color: {value}")
-    return [int(value[index : index + 2], 16) for index in (1, 3, 5)]
-
-
-def read_palette_colors(path: Path) -> list[list[int]]:
-    data = json.loads(path.read_text())
-    colors_by_index: dict[int, list[int]] = {}
-    for color in data.get("colors", []):
-        colors_by_index[int(color["index"])] = _parse_rgb888(str(color["rgb888"]))
-    if not colors_by_index:
-        raise ValueError(f"{path}: palette has no colors")
-    return [colors_by_index.get(index, [0, 0, 0]) for index in range(max(colors_by_index) + 1)]
-
-
-def _asset_name_for_kind(kind: str) -> str:
-    if kind == "sprite":
-        return "kSprGfx"
-    if kind == "bg":
-        return "kBgGfx"
-    if kind == "mode7":
-        return "kOverworldMapGfx"
-    raise ValueError(f"unknown decoded CHR pack kind: {kind}")
-
-
-def _default_palette_names(asset_dir: Path) -> list[str]:
-    palettes_dir = asset_dir / "assets_src/palettes"
-    preferred = ["palette_main_spr", "palette_dung_bg_main", "palette_overworld_bg_main"]
-    available = sorted(path.stem for path in palettes_dir.glob("*.json"))
-    ordered = [name for name in preferred if name in available]
-    ordered.extend(name for name in available if name not in ordered)
-    return ordered
-
-
-def _rows_for_bpp(bpp: int) -> tuple[int, int]:
-    if bpp == 2:
-        return 4, 4
-    if bpp == 3:
-        return 8, 8
-    if bpp == 4:
-        return 16, 16
-    if bpp == 5:
-        return 8, 32
-    if bpp == 8:
-        return 2, 128
-    raise ValueError(f"unsupported SNES tile bit depth: {bpp}")
-
-
-def _default_preview_palette(
-    kind: str,
-    available_palette_names: list[str],
-) -> tuple[str, int]:
-    preferred = {
-        "sprite": "palette_main_spr",
-        "link": "palette_main_spr",
-        "bg": "palette_overworld_bg_main",
-        "bg3": "palette_overworld_bg_main",
-        "bg3_dynamic": "palette_overworld_bg_main",
-        "mode7": "palette_overworld_bg_main",
-    }.get(kind)
-    if preferred in available_palette_names:
-        return preferred, 0
-    if "palette_dung_bg_main" in available_palette_names and kind in ("bg", "bg3"):
-        return "palette_dung_bg_main", 0
-    if available_palette_names:
-        return available_palette_names[0], 0
-    raise FileNotFoundError("no extracted palettes available for base atlas")
-
-
 def _tile_entry_id(kind: str, asset: str, pack: int, tile: int, bpp: int) -> str:
     return f"{kind}:{asset}:pack{pack}:tile{tile}:{bpp}bpp"
-
-
-def _tile_usage_key(
-    kind: str,
-    asset: str,
-    pack: int,
-    tile: int,
-    bpp: int,
-) -> tuple[str, str, int, int, int]:
-    return kind, asset, pack, tile, bpp
 
 
 def _source_tile_key_for_kind(
@@ -306,60 +240,6 @@ def _read_mode7_source_tile_indices(
             )
         )
     return tiles
-
-
-def _palette_usage_paths(asset_dir: Path) -> list[Path]:
-    return [
-        asset_dir / "atlas/palette_usage.json",
-        asset_dir / "assets_src/palette_usage.json",
-    ]
-
-
-def read_palette_usage_map(asset_dir: Path) -> dict[tuple[str, str, int, int, int], dict[str, object]]:
-    for path in _palette_usage_paths(asset_dir):
-        if not path.is_file():
-            continue
-        data = json.loads(path.read_text())
-        if data.get("format") != "zelda3_palette_usage_v1":
-            raise ValueError(f"{path}: unsupported palette usage format {data.get('format')!r}")
-        usage = {}
-        for entry in data.get("entries", []):
-            source_kind = str(entry["source_kind"])
-            asset = str(entry["asset"])
-            pack = int(entry["pack"])
-            tile = int(entry["tile"])
-            bpp = int(entry["bpp"])
-            usage[_tile_usage_key(source_kind, asset, pack, tile, bpp)] = entry
-        return usage
-    return {}
-
-
-def _preview_palette_for_tile(
-    *,
-    kind: str,
-    asset: str,
-    pack: int,
-    tile: int,
-    bpp: int,
-    colors_per_row: int,
-    available_palette_names: list[str],
-    palettes: dict[str, list[list[int]]],
-    palette_usage: dict[tuple[str, str, int, int, int], dict[str, object]],
-) -> tuple[str, int, str, dict[str, object] | None]:
-    usage = palette_usage.get(_tile_usage_key(kind, asset, pack, tile, bpp))
-    if usage is not None:
-        usage_palette = str(usage.get("preview_palette", ""))
-        usage_row = int(usage.get("preview_palette_row", -1))
-        if usage_palette in palettes and usage_row >= 0:
-            colors = palettes[usage_palette]
-            if (usage_row + 1) * colors_per_row <= len(colors):
-                return usage_palette, usage_row, "palette_usage", usage
-
-    preview_palette, preview_row = _default_preview_palette(kind, available_palette_names)
-    colors = palettes[preview_palette]
-    if (preview_row + 1) * colors_per_row > len(colors):
-        preview_row = 0
-    return preview_palette, preview_row, "source_kind_default", None
 
 
 def _indices_fit_palette(
@@ -702,10 +582,28 @@ def _pack_canonical_art_groups(
     return width, height, bytes(pixels), arts
 
 
+def _read_canonical_art_chr_packs(
+    asset_dir: Path,
+    chr_sheet_dir: Path | None,
+) -> tuple[list[object], list[object]]:
+    """Read the decoded CHR packs, preferring the editable PNG sheets.
+
+    The sheets are the art authority when a directory with a complete set is
+    supplied; packs no sheet covers (bg pack 114) always come from the packed
+    binaries. Falls back to the binaries when the directory is absent.
+    """
+    if chr_sheet_dir is not None and chr_sheet_dir.is_dir():
+        return chr_editable_sheets.read_decoded_chr_packs_from_sheets(
+            asset_dir, chr_sheet_dir
+        )
+    return chr_editable_sheets.read_decoded_chr_packs(asset_dir)
+
+
 def build_canonical_art_atlases(
     asset_dir: Path,
     palette_names: list[str] | None = None,
     source_tiles_dir: Path | None = None,
+    chr_sheet_dir: Path | None = None,
 ) -> tuple[
     tuple[int, int, bytes, list[dict[str, object]]],
     tuple[int, int, bytes, list[dict[str, object]]],
@@ -720,7 +618,7 @@ def build_canonical_art_atlases(
         for name in palette_names
     }
     palette_usage = read_palette_usage_map(asset_dir)
-    sprite_packs, bg_packs = chr_editable_sheets.read_decoded_chr_packs(asset_dir)
+    sprite_packs, bg_packs = _read_canonical_art_chr_packs(asset_dir, chr_sheet_dir)
 
     groups: dict[str, dict[str, object]] = {}
     dynamic_bg3_groups: dict[str, dict[str, object]] = {}
@@ -890,11 +788,13 @@ def build_canonical_art_atlas(
     asset_dir: Path,
     palette_names: list[str] | None = None,
     source_tiles_dir: Path | None = None,
+    chr_sheet_dir: Path | None = None,
 ) -> tuple[int, int, bytes, list[dict[str, object]]]:
     main_atlas, _dynamic_bg3_atlas = build_canonical_art_atlases(
         asset_dir,
         palette_names=palette_names,
         source_tiles_dir=source_tiles_dir,
+        chr_sheet_dir=chr_sheet_dir,
     )
     return main_atlas
 
@@ -903,6 +803,7 @@ def write_canonical_art_atlas(
     asset_dir: Path,
     out_dir: Path | None = None,
     source_tiles_dir: Path | None = None,
+    chr_sheet_dir: Path | None = None,
 ) -> list[Path]:
     from PIL import Image
 
@@ -915,6 +816,7 @@ def write_canonical_art_atlas(
     ) = build_canonical_art_atlases(
         asset_dir,
         source_tiles_dir=source_tiles_dir,
+        chr_sheet_dir=chr_sheet_dir,
     )
     destination.mkdir(parents=True, exist_ok=True)
     png_path = destination / "art_tiles.png"
@@ -952,7 +854,7 @@ def write_canonical_art_atlas(
         json.dumps(dynamic_manifest, indent=2, sort_keys=True) + "\n"
     )
     written = [png_path, json_path, dynamic_png_path, dynamic_json_path]
-    written.extend(_write_dialogue_glyph_source_atlas(asset_dir, destination))
+    written.extend(_write_dialogue_glyph_source_atlas(asset_dir, destination, chr_sheet_dir))
     written.extend(_write_dialogue_vwf_font_metadata(asset_dir, destination))
     written.extend(_write_dialogue_vwf_glyph_atlas(asset_dir, destination))
     written.extend(_write_dialogue_font_tile_atlas(asset_dir, destination))
@@ -1295,11 +1197,20 @@ def _render_dialogue_vwf_glyph_indices(
     return bytes(indices)
 
 
-def _write_dialogue_glyph_source_atlas(asset_dir: Path, destination: Path) -> list[Path]:
+def _write_dialogue_glyph_source_atlas(
+    asset_dir: Path,
+    destination: Path,
+    chr_sheet_dir: Path | None = None,
+) -> list[Path]:
     from PIL import Image
 
-    source_manifest_path = asset_dir / "assets_src/chr/1w-2d.json"
-    source_png_path = asset_dir / "assets_src/chr/1w-2d.png"
+    sheet_dir = (
+        chr_sheet_dir
+        if chr_sheet_dir is not None and chr_sheet_dir.is_dir()
+        else asset_dir / "assets_src/chr"
+    )
+    source_manifest_path = sheet_dir / "1w-2d.json"
+    source_png_path = sheet_dir / "1w-2d.png"
     if not source_manifest_path.is_file() or not source_png_path.is_file():
         return []
 
@@ -1316,6 +1227,10 @@ def _write_dialogue_glyph_source_atlas(asset_dir: Path, destination: Path) -> li
 
     with Image.open(source_png_path) as source_image:
         source_rgba = source_image.convert("RGBA")
+        # v2 sheets mark each palette row's color 0 transparent (tRNS) for
+        # editing comfort; the glyph atlas contract predates that and matches
+        # tiles by RGB with opaque alpha, so flatten it back.
+        source_rgba.putalpha(255)
         source_width, source_height = source_rgba.size
         layout = source_manifest.get("layout", {})
         tile_width = int(layout.get("tile_width", 8))

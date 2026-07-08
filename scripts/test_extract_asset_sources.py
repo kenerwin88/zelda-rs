@@ -398,7 +398,7 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                     "sheet": "a-h",
                     "image_file": "assets_src/chr/a-h.png",
                     "manifest_file": "assets_src/chr/a-h.json",
-                    "source_format": "zelda3_editable_chr_sheet_v1",
+                    "source_format": "zelda3_editable_chr_sheet_v2",
                 },
                 sheets,
             )
