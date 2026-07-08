@@ -35,6 +35,10 @@ impl GpuFramePlanBackend for GpuFrameRendererBackend<'_, '_> {
                 self.cgram_palette.update(self.queue, words);
                 return;
             }
+            crate::modern_extract::note_live_cgram_fallback(
+                "mode7-source palette upload",
+                self.frame.cgram_provenance,
+            );
         }
         self.cgram_palette.update(self.queue, self.frame.cgram);
     }

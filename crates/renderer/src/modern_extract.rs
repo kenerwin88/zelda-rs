@@ -954,10 +954,55 @@ pub fn extract_modern_frame_with_dungeon_atlas(
 /// is from live CGRAM at extract time (the transitional M5 gate before any
 /// LUT source is swapped).
 fn forbid_live_cgram_compare_enabled() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        std::env::var("ZELDA3_FORBID_LIVE_CGRAM").is_ok_and(|value| value == "compare")
+    forbid_live_cgram_mode() == ForbidLiveCgramMode::Compare
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ForbidLiveCgramMode {
+    Off,
+    /// Report resolved-vs-live divergence, keep rendering from live CGRAM
+    /// where the mirror is incomplete.
+    Compare,
+    /// Zero-CGRAM enforcement: any modern-path fallback to live CGRAM panics.
+    Enforce,
+}
+
+pub(crate) fn forbid_live_cgram_mode() -> ForbidLiveCgramMode {
+    static MODE: std::sync::OnceLock<ForbidLiveCgramMode> = std::sync::OnceLock::new();
+    *MODE.get_or_init(|| match std::env::var("ZELDA3_FORBID_LIVE_CGRAM").as_deref() {
+        Ok("compare") => ForbidLiveCgramMode::Compare,
+        Ok("1") | Ok("panic") | Ok("enforce") => ForbidLiveCgramMode::Enforce,
+        _ => ForbidLiveCgramMode::Off,
     })
+}
+
+static LIVE_CGRAM_FALLBACKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Modern-path frames that had to read live CGRAM because the provenance
+/// mirror was absent or incomplete. The zero-CGRAM end state is this staying
+/// at 0 over the full route.
+pub fn live_cgram_fallback_count() -> u64 {
+    LIVE_CGRAM_FALLBACKS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Record (and under enforcement, reject) a modern-path fallback to live
+/// CGRAM.
+pub(crate) fn note_live_cgram_fallback(
+    context: &str,
+    provenance: Option<&zelda3_palette::CgramProvenanceSnapshot>,
+) {
+    LIVE_CGRAM_FALLBACKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if forbid_live_cgram_mode() == ForbidLiveCgramMode::Enforce {
+        let reason = match provenance {
+            None => "no provenance snapshot attached to the frame".to_string(),
+            Some(snapshot) => format!(
+                "provenance incomplete: {} of {} words unknown",
+                zelda3_palette::PALETTE_WORDS - snapshot.known_count(),
+                zelda3_palette::PALETTE_WORDS
+            ),
+        };
+        panic!("ZELDA3_FORBID_LIVE_CGRAM: modern path read live CGRAM ({context}); {reason}");
+    }
 }
 
 fn report_cgram_provenance_compare(
@@ -995,7 +1040,10 @@ pub(crate) fn fill_modern_cgram_colors(
 ) {
     let words: &[u16] = match frame.complete_provenance_words() {
         Some(words) => words,
-        None => frame.cgram,
+        None => {
+            note_live_cgram_fallback("cgram_rgba fill", frame.cgram_provenance);
+            frame.cgram
+        }
     };
     modern.cgram_rgba = crate::modern_palette::cgram_words_to_rgba256(words);
     if set_backdrop {
