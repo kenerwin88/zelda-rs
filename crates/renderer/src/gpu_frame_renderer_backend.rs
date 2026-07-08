@@ -27,6 +27,15 @@ pub(crate) struct GpuFrameRendererBackend<'a, 'frame> {
 
 impl GpuFramePlanBackend for GpuFrameRendererBackend<'_, '_> {
     fn prepare_cgram_palette(&mut self) {
+        // The modern mode7-source route (identified by source chars) resolves
+        // colors from the provenance mirror when it is complete — the classic
+        // route (no source chars) always keeps live CGRAM.
+        if self.mode7_source_chars.is_some() {
+            if let Some(words) = self.frame.complete_provenance_words() {
+                self.cgram_palette.update(self.queue, words);
+                return;
+            }
+        }
         self.cgram_palette.update(self.queue, self.frame.cgram);
     }
 

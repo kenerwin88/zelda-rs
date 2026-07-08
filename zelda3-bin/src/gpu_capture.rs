@@ -1169,6 +1169,7 @@ mod tests {
             mode7_source_chars: None,
             main_module: 0,
             player_indoors: 1,
+            cgram_provenance: Default::default(),
         };
         let repo_root = repo_root();
         let resources =
@@ -1238,6 +1239,7 @@ mod tests {
             mode7_source_chars: None,
             main_module: 0,
             player_indoors: 1,
+            cgram_provenance: Default::default(),
         };
         let repo_root = repo_root();
         let resources =
@@ -1288,6 +1290,7 @@ mod tests {
             mode7_source_chars: None,
             main_module: 0,
             player_indoors: 1,
+            cgram_provenance: Default::default(),
         };
         let repo_root = repo_root();
         let resources =
@@ -1390,6 +1393,7 @@ mod tests {
             mode7_source_chars: None,
             main_module: 0,
             player_indoors: 1,
+            cgram_provenance: Default::default(),
         }
     }
 
@@ -1508,6 +1512,7 @@ mod tests {
             mode7_source_chars: None,
             main_module: 0,
             player_indoors: 0,
+            cgram_provenance: Default::default(),
         };
         let gpu_render = ModernAssetGpuReadbackFrame {
             frame: GpuRgbaReadbackFrame::from_rgba(vec![0x7f; 256 * 224 * 4]),

@@ -393,6 +393,7 @@ mod tests {
         crate::ModernAssetFrameResources {
             source_atlas: None,
             variant_atlas: None,
+            variant_headless: None,
             gpu_asset_mode,
             variant_gpu_mode: gpu_asset_mode,
         }

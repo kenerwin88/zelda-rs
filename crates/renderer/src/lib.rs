@@ -3989,6 +3989,7 @@ mod tests {
         let resources = ModernAssetFrameResources {
             source_atlas: None,
             variant_atlas: None,
+            variant_headless: None,
             gpu_asset_mode: true,
             variant_gpu_mode: true,
         };
@@ -4018,6 +4019,7 @@ mod tests {
         let resources = ModernAssetFrameResources {
             source_atlas: None,
             variant_atlas: Some(test_variant_atlas_with_mode7_chars(Some(atlas_chars))),
+            variant_headless: None,
             gpu_asset_mode: true,
             variant_gpu_mode: true,
         };
@@ -4034,6 +4036,7 @@ mod tests {
         let resources = ModernAssetFrameResources {
             source_atlas: None,
             variant_atlas: Some(test_variant_atlas_with_mode7_chars(None)),
+            variant_headless: None,
             gpu_asset_mode: true,
             variant_gpu_mode: true,
         };
@@ -4046,6 +4049,7 @@ mod tests {
         let resources = ModernAssetFrameResources {
             source_atlas: None,
             variant_atlas: None,
+            variant_headless: None,
             gpu_asset_mode: true,
             variant_gpu_mode: false,
         };

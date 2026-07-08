@@ -457,9 +457,7 @@ pub fn extract_modern_dungeon_frame_from_vram(
 ) -> (ModernFrame, Vec<ModernIndexTile>) {
     use std::collections::HashMap;
     let mut modern = extract_modern_frame(frame);
-    modern.cgram_rgba = crate::modern_palette::cgram_words_to_rgba256(frame.cgram);
-    modern.backdrop_color_rgba =
-        crate::modern_palette::snes_cgram_to_rgba(*frame.cgram.first().unwrap_or(&0));
+    fill_modern_cgram_colors(&mut modern, frame, true);
 
     let mut cells: Vec<ModernIndexTile> = Vec::new();
     // key: (CHR word base, tilemap word masked to tile#+flip) -> cell id
@@ -826,7 +824,7 @@ pub fn extract_modern_frame_with_index_atlas(
     atlas: &ModernIndexAtlas,
 ) -> ModernFrame {
     let mut modern = extract_modern_frame(frame);
-    modern.cgram_rgba = crate::modern_palette::cgram_words_to_rgba256(frame.cgram);
+    fill_modern_cgram_colors(&mut modern, frame, false);
     for layer_index in 0..3usize {
         let enabled_main = frame.screen_enabled[0] & (1 << layer_index) != 0;
         modern.bg_layers[layer_index].enabled_main = enabled_main;
@@ -883,7 +881,7 @@ pub fn extract_modern_frame_with_dungeon_atlas(
     theme: u16,
 ) -> ModernFrame {
     let mut modern = extract_modern_frame(frame);
-    modern.cgram_rgba = crate::modern_palette::cgram_words_to_rgba256(frame.cgram);
+    fill_modern_cgram_colors(&mut modern, frame, false);
     for layer_index in 0..3usize {
         let enabled_main = frame.screen_enabled[0] & (1 << layer_index) != 0;
         let enabled_sub = frame.screen_enabled[1] & (1 << layer_index) != 0;
@@ -980,6 +978,29 @@ fn report_cgram_provenance_compare(
     let packed = ((mismatches as u64) << 32) | unknown as u64;
     if LAST.swap(packed, Ordering::Relaxed) != packed {
         eprintln!("cgram_provenance_compare mismatches={mismatches} unknown={unknown}");
+    }
+}
+
+/// Fill `cgram_rgba` (and optionally the backdrop) for the modern path,
+/// preferring the game's provenance-clean CGRAM mirror when it is COMPLETE
+/// (every word known). `ModernFrame::cgram_rgba` is the single CGRAM-shaped
+/// input of the whole modern path, so once the mirror is complete every
+/// downstream consumer (effect LUTs, indexed fallbacks, screen composites)
+/// becomes CGRAM-free through this one substitution point. Incomplete mirrors
+/// fall back to live CGRAM (the M7 enforcement mode will forbid that).
+pub(crate) fn fill_modern_cgram_colors(
+    modern: &mut ModernFrame,
+    frame: &GpuFrame<'_>,
+    set_backdrop: bool,
+) {
+    let words: &[u16] = match frame.complete_provenance_words() {
+        Some(words) => words,
+        None => frame.cgram,
+    };
+    modern.cgram_rgba = crate::modern_palette::cgram_words_to_rgba256(words);
+    if set_backdrop {
+        modern.backdrop_color_rgba =
+            crate::modern_palette::snes_cgram_to_rgba(*words.first().unwrap_or(&0));
     }
 }
 
@@ -1270,9 +1291,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
 ) -> (ModernFrame, Vec<ModernIndexTile>, Vec<MissingAssetSource>) {
     use std::collections::HashMap;
     let mut modern = extract_modern_frame(frame);
-    modern.cgram_rgba = crate::modern_palette::cgram_words_to_rgba256(frame.cgram);
-    modern.backdrop_color_rgba =
-        crate::modern_palette::snes_cgram_to_rgba(*frame.cgram.first().unwrap_or(&0));
+    fill_modern_cgram_colors(&mut modern, frame, true);
 
     let mut cells: Vec<ModernIndexTile> = Vec::new();
     let mut missing_sources = Vec::new();
@@ -3992,6 +4011,7 @@ mod tests {
             dialogue_ir: &[],
             dialogue_layout: &[],
             dialogue_layout_origin_tile_number: None,
+            cgram_provenance: None,
         }
     }
 

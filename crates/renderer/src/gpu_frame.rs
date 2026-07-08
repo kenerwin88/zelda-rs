@@ -255,6 +255,15 @@ impl<'a> GpuFrame<'a> {
         self
     }
 
+    /// The provenance mirror's CGRAM words, only when EVERY word is known —
+    /// the condition under which the modern path may substitute them for live
+    /// CGRAM (incomplete mirrors fall back; M7 enforcement forbids that).
+    pub fn complete_provenance_words(&self) -> Option<&'a [u16; zelda3_palette::PALETTE_WORDS]> {
+        self.cgram_provenance
+            .filter(|snapshot| snapshot.known.iter().all(|known| *known))
+            .map(|snapshot| &snapshot.words)
+    }
+
     pub fn from_source<S>(source: &S, cgram: &'a [u16], scanlines: Box<[ScanlineRegs; 224]>) -> Self
     where
         S: GpuFrameSource<'a> + ?Sized,

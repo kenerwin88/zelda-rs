@@ -2135,9 +2135,7 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
     let len = width * height;
 
     let mut modern = crate::modern_extract::extract_modern_frame(frame);
-    modern.cgram_rgba = crate::modern_palette::cgram_words_to_rgba256(frame.cgram);
-    modern.backdrop_color_rgba =
-        crate::modern_palette::snes_cgram_to_rgba(*frame.cgram.first().unwrap_or(&0));
+    crate::modern_extract::fill_modern_cgram_colors(&mut modern, frame, true);
 
     if modern.forced_blank {
         let mut out = vec![0u8; len * 4];

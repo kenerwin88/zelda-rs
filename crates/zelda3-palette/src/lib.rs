@@ -132,6 +132,77 @@ pub fn whiten_word(color: u16, amt: u16) -> u16 {
     r | g | b
 }
 
+/// What a conditional channel step compares the current channel against to
+/// decide whether to move.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChannelReference {
+    /// The channel's maximum (all channel bits set).
+    Max,
+    /// Zero.
+    Zero,
+    /// The same channel of the reference `aux` word.
+    Aux,
+}
+
+fn channel_target(aux: u16, channel_mask: u16, reference: ChannelReference) -> u16 {
+    match reference {
+        ChannelReference::Max => channel_mask,
+        ChannelReference::Zero => 0,
+        ChannelReference::Aux => aux & channel_mask,
+    }
+}
+
+/// One whirlpool-filter channel step: if `main`'s masked channel differs from
+/// the reference, step the WHOLE word by `step` (the game's whirlpool loops do
+/// `color +/- step` without re-masking, so an at-boundary step carries into the
+/// neighbouring channel exactly as the original does). Byte-exact port of the
+/// `PaletteFilter_Whirlpool*` loop bodies.
+pub fn whirlpool_channel_step_word(
+    main: u16,
+    aux: u16,
+    channel_mask: u16,
+    step: u16,
+    up: bool,
+    reference: ChannelReference,
+) -> u16 {
+    if (main & channel_mask) != channel_target(aux, channel_mask, reference) {
+        if up {
+            main.wrapping_add(step)
+        } else {
+            main.wrapping_sub(step)
+        }
+    } else {
+        main
+    }
+}
+
+/// One Trinexx flash/unflash channel step: rebuild the word from its untouched
+/// other channels OR'd with the stepped channel value. The channel arithmetic
+/// wraps within the u16 before the OR (matching `(v & !mask) | (chan +/- step)`
+/// in the game, which can spill high bits when the channel underflows). Byte-
+/// exact port of the `Trinexx_*ShellPalette_*` loop bodies.
+pub fn trinexx_channel_step_word(
+    main: u16,
+    aux: u16,
+    channel_mask: u16,
+    step: u16,
+    up: bool,
+    reference: ChannelReference,
+) -> u16 {
+    let chan = main & channel_mask;
+    let delta = if chan != channel_target(aux, channel_mask, reference) {
+        step
+    } else {
+        0
+    };
+    let new_chan = if up {
+        chan.wrapping_add(delta)
+    } else {
+        chan.wrapping_sub(delta)
+    };
+    (main & !channel_mask) | new_chan
+}
+
 /// The three shadow banks plus the last committed CGRAM image, all as mirror
 /// words. Indices are CGRAM word indices (0..256); the banks correspond to
 /// `MAIN_PALETTE_BUFFER`, `AUX_PALETTE_BUFFER`, and `MAPBAK_PALETTE`.
@@ -219,6 +290,16 @@ impl PaletteMirror {
         }
     }
 
+    /// Swap two mirror words, preserving each word's value and source tag.
+    pub fn swap_words(&mut self, a: (Bank, usize), b: (Bank, usize)) {
+        let wa = self.bank(a.0).get(a.1).copied();
+        let wb = self.bank(b.0).get(b.1).copied();
+        if let (Some(wa), Some(wb)) = (wa, wb) {
+            self.bank_mut(a.0)[a.1] = wb;
+            self.bank_mut(b.0)[b.1] = wa;
+        }
+    }
+
     pub fn copy_range(&mut self, from_bank: Bank, to_bank: Bank, start_word: usize, words: usize) {
         for index in start_word..(start_word + words).min(PALETTE_WORDS) {
             self.copy_word((from_bank, index), (to_bank, index));
@@ -300,6 +381,15 @@ pub struct CgramProvenanceSnapshot {
     pub known: [bool; PALETTE_WORDS],
 }
 
+impl Default for CgramProvenanceSnapshot {
+    fn default() -> Self {
+        Self {
+            words: [0; PALETTE_WORDS],
+            known: [false; PALETTE_WORDS],
+        }
+    }
+}
+
 impl CgramProvenanceSnapshot {
     pub fn known_count(&self) -> usize {
         self.known.iter().filter(|known| **known).count()
@@ -370,6 +460,157 @@ mod tests {
     fn whiten_clamps_channels() {
         assert_eq!(whiten_word(0x7fff, 14), 0x7fff);
         assert_eq!(whiten_word(0x0000, 14), (14) | (14 << 5) | (14 << 10));
+    }
+
+    /// Words covering channel minimums, maximums, mid-values, and out-of-range
+    /// high bits so the wrap/carry edge cases are exercised.
+    const SAMPLE_WORDS: [u16; 12] = [
+        0x0000, 0x7fff, 0xffff, 0x7c00, 0x03e0, 0x001f, 0x7800, 0x03c0, 0x001e, 0x1234, 0x4210,
+        0x8421,
+    ];
+
+    #[test]
+    fn whirlpool_blue_step_matches_original() {
+        // PaletteFilter_WhirlpoolBlue body.
+        for &main in &SAMPLE_WORDS {
+            let expected = if (main & 0x7c00) != 0x7c00 {
+                main.wrapping_add(0x400)
+            } else {
+                main
+            };
+            assert_eq!(
+                whirlpool_channel_step_word(main, 0, 0x7c00, 0x400, true, ChannelReference::Max),
+                expected,
+                "main={main:#06x}"
+            );
+        }
+    }
+
+    #[test]
+    fn whirlpool_isolate_blue_step_matches_original() {
+        // PaletteFilter_IsolateWhirlpoolBlue body: green then red, disjoint
+        // channels, so two passes equal the single sequential loop.
+        for &main in &SAMPLE_WORDS {
+            let mut expected = main;
+            if expected & 0x03e0 != 0 {
+                expected = expected.wrapping_sub(0x20);
+            }
+            if expected & 0x001f != 0 {
+                expected = expected.wrapping_sub(1);
+            }
+            let g =
+                whirlpool_channel_step_word(main, 0, 0x03e0, 0x20, false, ChannelReference::Zero);
+            let gr = whirlpool_channel_step_word(g, 0, 0x001f, 1, false, ChannelReference::Zero);
+            assert_eq!(gr, expected, "main={main:#06x}");
+        }
+    }
+
+    #[test]
+    fn whirlpool_restore_blue_step_matches_original() {
+        // PaletteFilter_WhirlpoolRestoreBlue body.
+        for &main in &SAMPLE_WORDS {
+            for &aux in &SAMPLE_WORDS {
+                let expected = if (main & 0x7c00) != (aux & 0x7c00) {
+                    main.wrapping_sub(0x400)
+                } else {
+                    main
+                };
+                assert_eq!(
+                    whirlpool_channel_step_word(
+                        main,
+                        aux,
+                        0x7c00,
+                        0x400,
+                        false,
+                        ChannelReference::Aux
+                    ),
+                    expected,
+                    "main={main:#06x} aux={aux:#06x}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn whirlpool_restore_red_green_step_matches_original() {
+        // PaletteFilter_WhirlpoolRestoreRedGreen body.
+        for &main in &SAMPLE_WORDS {
+            for &aux in &SAMPLE_WORDS {
+                let mut expected = main;
+                if expected & 0x03e0 != aux & 0x03e0 {
+                    expected = expected.wrapping_add(0x20);
+                }
+                if expected & 0x001f != aux & 0x001f {
+                    expected = expected.wrapping_add(1);
+                }
+                let g =
+                    whirlpool_channel_step_word(main, aux, 0x03e0, 0x20, true, ChannelReference::Aux);
+                let gr =
+                    whirlpool_channel_step_word(g, aux, 0x001f, 1, true, ChannelReference::Aux);
+                assert_eq!(gr, expected, "main={main:#06x} aux={aux:#06x}");
+            }
+        }
+    }
+
+    #[test]
+    fn trinexx_flash_red_step_matches_original() {
+        for &main in &SAMPLE_WORDS {
+            let v = main;
+            let red = (v & 0x1f).wrapping_add(u16::from((v & 0x1f) != 0x1f));
+            let expected = (v & 0xffe0) | red;
+            assert_eq!(
+                trinexx_channel_step_word(main, 0, 0x1f, 1, true, ChannelReference::Max),
+                expected,
+                "main={main:#06x}"
+            );
+        }
+    }
+
+    #[test]
+    fn trinexx_unflash_red_step_matches_original() {
+        for &main in &SAMPLE_WORDS {
+            for &aux in &SAMPLE_WORDS {
+                let (v, u) = (main, aux);
+                let red = (v & 0x1f).wrapping_sub(u16::from((v & 0x1f) != (u & 0x1f)));
+                let expected = (v & 0xffe0) | red;
+                assert_eq!(
+                    trinexx_channel_step_word(main, aux, 0x1f, 1, false, ChannelReference::Aux),
+                    expected,
+                    "main={main:#06x} aux={aux:#06x}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn trinexx_flash_blue_step_matches_original() {
+        for &main in &SAMPLE_WORDS {
+            let v = main;
+            let blue = (v & 0x7c00).wrapping_add(if (v & 0x7c00) != 0x7c00 { 0x0400 } else { 0 });
+            let expected = (v & !0x7c00) | blue;
+            assert_eq!(
+                trinexx_channel_step_word(main, 0, 0x7c00, 0x400, true, ChannelReference::Max),
+                expected,
+                "main={main:#06x}"
+            );
+        }
+    }
+
+    #[test]
+    fn trinexx_unflash_blue_step_matches_original() {
+        for &main in &SAMPLE_WORDS {
+            for &aux in &SAMPLE_WORDS {
+                let (v, u) = (main, aux);
+                let blue = (v & 0x7c00)
+                    .wrapping_sub(if (v & 0x7c00) != (u & 0x7c00) { 0x0400 } else { 0 });
+                let expected = (v & !0x7c00) | blue;
+                assert_eq!(
+                    trinexx_channel_step_word(main, aux, 0x7c00, 0x400, false, ChannelReference::Aux),
+                    expected,
+                    "main={main:#06x} aux={aux:#06x}"
+                );
+            }
+        }
     }
 
     #[test]
