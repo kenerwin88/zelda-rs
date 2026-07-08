@@ -6115,7 +6115,10 @@ impl ZeldaState {
         // shadow is only ever written through the provenance-aware bridge, so
         // the mirror stays valid across a native resync — carry it over
         // instead of poisoning it (the ZELDA3_PALETTE_PROVENANCE_CHECK gate
-        // would catch any drift this assumption misses).
+        // would catch any drift this assumption misses). The one exception is a
+        // full-state snapshot restore, which bulk-writes the palette shadow
+        // outside the bridge; `load_snes_state` reconstitutes the mirror after
+        // resync to cover it.
         let palette_provenance =
             std::mem::take(&mut self.game_state.display.palette_provenance);
         self.game_state = GameState::load_from_ram(&self.ram);
@@ -7427,10 +7430,41 @@ impl ZeldaState {
         self.restore_spotlight_hdma_from_saveload_buffer();
         self.zelda_restore_music_after_load_locked(false);
         self.sync_native_game_state_from_ram();
+        // `internal_save_load` bulk-restores the whole WRAM (including the
+        // palette buffers) from a full-state snapshot, bypassing the
+        // provenance-aware palette bridge. `sync_native_game_state_from_ram`
+        // carries the old mirror forward on the assumption that the palette
+        // shadow only ever changes through that bridge — false here, so the
+        // carried mirror is stale. A snapshot restore is a full-state reload
+        // point (like power-on): the restored shadow is authoritative and has
+        // no asset-derivation path, so reconstitute the mirror to mirror it.
+        self.reconstitute_palette_mirror_from_shadow();
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();
         self.sync_overworld_map16_state_from_ram();
         self.emu_synchronize_whole_state();
+    }
+
+    /// Rebuild the palette-provenance mirror from the restored palette shadow
+    /// after a full-state snapshot load. Each word is tagged `Copied` with its
+    /// restored value, so the mirror equals the shadow (coherence check clean,
+    /// no `Unknown`) and the renderer's mirror substitution stays valid. Only
+    /// used at snapshot-restore boundaries, where the shadow is the authority.
+    fn reconstitute_palette_mirror_from_shadow(&mut self) {
+        use zelda3_palette::{Bank, MirrorWord, SourceTag, PALETTE_WORDS};
+        let pb = &self.game_state.display.palette_buffer;
+        let main: Vec<u16> = (0..PALETTE_WORDS).map(|i| pb.main_color(i)).collect();
+        let aux: Vec<u16> = (0..PALETTE_WORDS).map(|i| pb.aux_color(i)).collect();
+        let backup = pb.overworld_palette_backup().to_vec();
+        let mirror = &mut self.game_state.display.palette_provenance.0;
+        for i in 0..PALETTE_WORDS {
+            mirror.bank_mut(Bank::Main)[i] = MirrorWord::Known(main[i], SourceTag::Copied);
+            mirror.bank_mut(Bank::Aux)[i] = MirrorWord::Known(aux[i], SourceTag::Copied);
+            let off = i * 2;
+            let bv = u16::from(backup.get(off).copied().unwrap_or(0))
+                | (u16::from(backup.get(off + 1).copied().unwrap_or(0)) << 8);
+            mirror.bank_mut(Bank::Backup)[i] = MirrorWord::Known(bv, SourceTag::Copied);
+        }
     }
 
     fn save_snes_state(&mut self, func: &mut SaveLoadFunc<'_, '_>) {
