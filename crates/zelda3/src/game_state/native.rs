@@ -20,13 +20,14 @@ mod system;
 mod world;
 
 pub(crate) use display::{
-    DisplayState, GraphicsDecompressionScratch, HudStateRead, HudTilemapState, LinkDmaSourceSlot,
-    NativeAttractVramDestinationBridgeMut, NativeDisplayStateBridgeMut,
-    NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
+    palette_provenance_check_mode, DisplayState, GraphicsDecompressionScratch, HudStateRead,
+    HudTilemapState, LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut,
+    NativeDisplayStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativePaletteBufferBridgeMut,
     NativePaletteFilterBridgeMut, NativePpuScrollCopyBridgeMut, NativeSpotlightHdmaBridgeMut,
     NativeTrinexxPaletteBridgeMut, NativeVramUploadBufferBridgeMut, NativeWaterHdmaWindowBridgeMut,
-    PpuScrollCopyState, SpotlightHdmaState,
+    PaletteSliceSource, PaletteTransform, PpuScrollCopyState, ProvenanceCheckMode,
+    SpotlightHdmaState,
 };
 pub(crate) use dungeon::{
     loaded_room_data_word, DungeonStairList, DungeonState, NativeDungeonBg2AttributeBridgeMut,

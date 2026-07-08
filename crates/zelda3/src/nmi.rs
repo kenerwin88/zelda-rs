@@ -126,6 +126,7 @@ impl ZeldaState {
             for i in 0..0x100 {
                 self.ppu.cgram[i] = read_le_u16(&self.ram, MAIN_PALETTE_BUFFER + i * 2);
             }
+            self.commit_palette_provenance_cgram();
         }
 
         if self.game_state.system_signals.should_update_hud() {

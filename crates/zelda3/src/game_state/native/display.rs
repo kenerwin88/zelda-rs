@@ -934,6 +934,82 @@ impl OverworldPaletteBackupState {
     }
 }
 
+/// Provenance-clean mirror of the palette shadow banks (see `zelda3-palette`).
+/// Derived metadata, not game state: it never projects to RAM, compares equal
+/// to everything (so native<->RAM coherence checks ignore it), and is skipped
+/// in snapshots (a restored state starts all-Unknown).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PaletteProvenance(pub(crate) zelda3_palette::PaletteMirror);
+
+impl PartialEq for PaletteProvenance {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for PaletteProvenance {}
+
+/// Pure palette transforms the game applies to the main shadow bank; the
+/// bridge applies the same math to the shadow words and the provenance
+/// mirror so mid-filter colors stay provenance-clean.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PaletteTransform {
+    FilterRangeStep { countdown: u16, darkening: bool },
+    RestoreAdditiveStep,
+    RestoreSubtractiveStep,
+    WhitenStep { amount: u16 },
+}
+
+impl PaletteTransform {
+    fn apply(self, main: u16, aux: u16) -> u16 {
+        match self {
+            PaletteTransform::FilterRangeStep {
+                countdown,
+                darkening,
+            } => zelda3_palette::filter_range_step_word(main, aux, countdown, darkening),
+            PaletteTransform::RestoreAdditiveStep => {
+                zelda3_palette::restore_additive_step_word(main, aux)
+            }
+            PaletteTransform::RestoreSubtractiveStep => {
+                zelda3_palette::restore_subtractive_step_word(main, aux)
+            }
+            PaletteTransform::WhitenStep { amount } => zelda3_palette::whiten_word(aux, amount),
+        }
+    }
+}
+
+fn provenance_trace_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("ZELDA3_PALETTE_PROVENANCE_TRACE").is_some())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ProvenanceCheckMode {
+    Log,
+    Panic,
+}
+
+/// `ZELDA3_PALETTE_PROVENANCE_CHECK=1|panic` — audit the provenance mirror
+/// against the WRAM shadow at every CGRAM commit.
+pub(crate) fn palette_provenance_check_mode() -> Option<ProvenanceCheckMode> {
+    static MODE: std::sync::OnceLock<Option<ProvenanceCheckMode>> = std::sync::OnceLock::new();
+    *MODE.get_or_init(|| match std::env::var("ZELDA3_PALETTE_PROVENANCE_CHECK") {
+        Ok(value) if value == "panic" => Some(ProvenanceCheckMode::Panic),
+        Ok(value) if !value.is_empty() && value != "0" => Some(ProvenanceCheckMode::Log),
+        _ => None,
+    })
+}
+
+#[track_caller]
+fn provenance_trace_unannotated(what: &str, index: usize) {
+    if provenance_trace_enabled() {
+        eprintln!(
+            "[PPROV] unannotated {what}[{index}] caller={}",
+            std::panic::Location::caller()
+        );
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PaletteBufferState {
     main: Vec<u8>,
@@ -1219,6 +1295,20 @@ fn write_palette_word(bank: &mut [u8], index: usize, value: u16) {
     }
 }
 
+/// Where the bytes of a bulk palette copy come from, for the provenance
+/// mirror. `Unannotated` poisons the destination range (the checker surfaces
+/// it); the other variants keep the mirror provenance-clean.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PaletteSliceSource {
+    /// ROM/asset palette data: the copied words are baked constants.
+    AssetBytes,
+    /// The source slice is the current content of this mirror bank
+    /// (e.g. restoring from the overworld backup bank).
+    MirrorBank(zelda3_palette::Bank),
+    /// Not yet annotated.
+    Unannotated,
+}
+
 pub(crate) struct NativePaletteBufferBridgeMut<'a> {
     display: &'a mut DisplayState,
     ram: &'a mut [u8],
@@ -1229,11 +1319,33 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
         Self { display, ram }
     }
 
+    fn mirror(&mut self) -> &mut zelda3_palette::PaletteMirror {
+        &mut self.display.palette_provenance.0
+    }
+
+    /// AUX_PALETTE_BUFFER + 0x200 == MAIN_PALETTE_BUFFER: aux word writes at
+    /// index >= 0x100 land in the main bank in WRAM (the game exploits this
+    /// via `overworld_palette_aux_or_main = 0x200`). The mirror must track the
+    /// bank the bytes actually land in.
+    fn aux_alias_target(index: usize) -> (zelda3_palette::Bank, usize) {
+        if index >= 0x100 {
+            (zelda3_palette::Bank::Main, index - 0x100)
+        } else {
+            (zelda3_palette::Bank::Aux, index)
+        }
+    }
+
     pub(crate) fn clear_aux_visible_subpalettes(&mut self) {
         self.display.palette_buffer.clear_aux_visible_subpalettes();
         self.ram[AUX_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START
             ..AUX_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
             .fill(0);
+        self.mirror().fill_constant_range(
+            zelda3_palette::Bank::Aux,
+            VISIBLE_SUBPALETTE_CLEAR_START / 2,
+            VISIBLE_SUBPALETTE_CLEAR_LEN / 2,
+            0,
+        );
     }
 
     pub(crate) fn clear_main_visible_subpalettes(&mut self) {
@@ -1241,6 +1353,12 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
         self.ram[MAIN_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START
             ..MAIN_PALETTE_BUFFER + VISIBLE_SUBPALETTE_CLEAR_START + VISIBLE_SUBPALETTE_CLEAR_LEN]
             .fill(0);
+        self.mirror().fill_constant_range(
+            zelda3_palette::Bank::Main,
+            VISIBLE_SUBPALETTE_CLEAR_START / 2,
+            VISIBLE_SUBPALETTE_CLEAR_LEN / 2,
+            0,
+        );
     }
 
     pub(crate) fn clear_aux_sprite_subpalettes(&mut self) {
@@ -1248,16 +1366,113 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
         self.ram[AUX_PALETTE_BUFFER + SPRITE_SUBPALETTE_CLEAR_START
             ..AUX_PALETTE_BUFFER + SPRITE_SUBPALETTE_CLEAR_START + SPRITE_SUBPALETTE_CLEAR_LEN]
             .fill(0);
+        self.mirror().fill_constant_range(
+            zelda3_palette::Bank::Aux,
+            SPRITE_SUBPALETTE_CLEAR_START / 2,
+            SPRITE_SUBPALETTE_CLEAR_LEN / 2,
+            0,
+        );
     }
 
+    #[track_caller]
     pub(crate) fn set_main_color(&mut self, index: usize, value: u16) {
         self.display.palette_buffer.set_main_color(index, value);
         write_le_u16(self.ram, MAIN_PALETTE_BUFFER + index * 2, value);
+        provenance_trace_unannotated("main", index);
+        self.mirror()
+            .set_unknown_word(zelda3_palette::Bank::Main, index);
     }
 
+    #[track_caller]
     pub(crate) fn set_aux_color(&mut self, index: usize, value: u16) {
         self.display.palette_buffer.set_aux_color(index, value);
         write_le_u16(self.ram, AUX_PALETTE_BUFFER + index * 2, value);
+        provenance_trace_unannotated("aux", index);
+        let (bank, word) = Self::aux_alias_target(index);
+        self.mirror().set_unknown_word(bank, word);
+    }
+
+    /// Word setter for values read from ROM/asset palette data.
+    pub(crate) fn set_main_color_asset(&mut self, index: usize, value: u16) {
+        self.display.palette_buffer.set_main_color(index, value);
+        write_le_u16(self.ram, MAIN_PALETTE_BUFFER + index * 2, value);
+        self.mirror()
+            .set_asset_word(zelda3_palette::Bank::Main, index, value);
+    }
+
+    pub(crate) fn set_aux_color_asset(&mut self, index: usize, value: u16) {
+        self.display.palette_buffer.set_aux_color(index, value);
+        write_le_u16(self.ram, AUX_PALETTE_BUFFER + index * 2, value);
+        let (bank, word) = Self::aux_alias_target(index);
+        self.mirror().set_asset_word(bank, word, value);
+    }
+
+    /// Word setter for literal constants the game writes (0 clears, 0x7fff
+    /// white fills, fixed flash colors, ...).
+    pub(crate) fn set_main_color_constant(&mut self, index: usize, value: u16) {
+        self.display.palette_buffer.set_main_color(index, value);
+        write_le_u16(self.ram, MAIN_PALETTE_BUFFER + index * 2, value);
+        self.mirror()
+            .set_constant_word(zelda3_palette::Bank::Main, index, value);
+    }
+
+    pub(crate) fn set_aux_color_constant(&mut self, index: usize, value: u16) {
+        self.display.palette_buffer.set_aux_color(index, value);
+        write_le_u16(self.ram, AUX_PALETTE_BUFFER + index * 2, value);
+        let (bank, word) = Self::aux_alias_target(index);
+        self.mirror().set_constant_word(bank, word, value);
+    }
+
+    /// Copy one palette word between shadow banks, mirroring provenance.
+    /// Replaces the `let c = ...color(i); set_..._color(j, c)` pattern.
+    pub(crate) fn copy_color(
+        &mut self,
+        from: (zelda3_palette::Bank, usize),
+        to: (zelda3_palette::Bank, usize),
+    ) {
+        let value = match from.0 {
+            zelda3_palette::Bank::Main => self.display.palette_buffer.main_color(from.1),
+            zelda3_palette::Bank::Aux => self.display.palette_buffer.aux_color(from.1),
+            zelda3_palette::Bank::Backup => {
+                let bytes = self.display.palette_buffer.overworld_palette_backup();
+                let offset = from.1 * 2;
+                u16::from(bytes[offset]) | (u16::from(bytes[offset + 1]) << 8)
+            }
+        };
+        match to.0 {
+            zelda3_palette::Bank::Main => {
+                self.display.palette_buffer.set_main_color(to.1, value);
+                write_le_u16(self.ram, MAIN_PALETTE_BUFFER + to.1 * 2, value);
+            }
+            zelda3_palette::Bank::Aux => {
+                self.display.palette_buffer.set_aux_color(to.1, value);
+                write_le_u16(self.ram, AUX_PALETTE_BUFFER + to.1 * 2, value);
+            }
+            zelda3_palette::Bank::Backup => {
+                unreachable!("no single-word backup writes exist");
+            }
+        }
+        self.mirror().copy_word(from, to);
+    }
+
+    /// Apply one of the game's pure palette transforms to a main-bank word
+    /// range (word indices), updating shadow, RAM, and mirror with the same
+    /// math. Replaces the filter/restore/whiten loops.
+    pub(crate) fn transform_main_range(
+        &mut self,
+        from_word: usize,
+        to_word: usize,
+        transform: PaletteTransform,
+    ) {
+        for index in from_word..to_word {
+            let main = self.display.palette_buffer.main_color(index);
+            let aux = self.display.palette_buffer.aux_color(index);
+            let next = transform.apply(main, aux);
+            self.display.palette_buffer.set_main_color(index, next);
+            write_le_u16(self.ram, MAIN_PALETTE_BUFFER + index * 2, next);
+        }
+        self.mirror()
+            .transform_main_range(from_word, to_word, |main, aux| transform.apply(main, aux));
     }
 
     pub(crate) fn set_overworld_aux_or_main_offset(&mut self, value: u16) {
@@ -1295,30 +1510,100 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
     pub(crate) fn clear_main_full(&mut self) {
         self.display.palette_buffer.clear_main_full();
         self.ram[MAIN_PALETTE_BUFFER..MAIN_PALETTE_BUFFER + PALETTE_BANK_BYTES].fill(0);
+        self.mirror()
+            .fill_constant_range(zelda3_palette::Bank::Main, 0, zelda3_palette::PALETTE_WORDS, 0);
     }
 
+    #[track_caller]
     pub(crate) fn copy_aux_visible_from(&mut self, palette: &[u8]) {
-        self.copy_aux_range_from(0, PALETTE_VISIBLE_BYTES, palette);
+        self.copy_aux_range_from_tagged(
+            0,
+            PALETTE_VISIBLE_BYTES,
+            palette,
+            PaletteSliceSource::Unannotated,
+        );
     }
 
+    #[track_caller]
     pub(crate) fn copy_aux_full_from(&mut self, palette: &[u8]) {
-        self.copy_aux_range_from(0, PALETTE_BANK_BYTES, palette);
+        self.copy_aux_range_from_tagged(
+            0,
+            PALETTE_BANK_BYTES,
+            palette,
+            PaletteSliceSource::Unannotated,
+        );
     }
 
+    #[track_caller]
+    pub(crate) fn copy_aux_visible_from_tagged(
+        &mut self,
+        palette: &[u8],
+        source: PaletteSliceSource,
+    ) {
+        self.copy_aux_range_from_tagged(0, PALETTE_VISIBLE_BYTES, palette, source);
+    }
+
+    #[track_caller]
+    pub(crate) fn copy_aux_full_from_tagged(&mut self, palette: &[u8], source: PaletteSliceSource) {
+        self.copy_aux_range_from_tagged(0, PALETTE_BANK_BYTES, palette, source);
+    }
+
+    #[track_caller]
     pub(crate) fn backup_overworld_palette_from(&mut self, palette: &[u8]) {
+        self.backup_overworld_palette_from_tagged(palette, PaletteSliceSource::Unannotated);
+    }
+
+    #[track_caller]
+    pub(crate) fn backup_overworld_palette_from_tagged(
+        &mut self,
+        palette: &[u8],
+        source: PaletteSliceSource,
+    ) {
         let len = self
             .display
             .palette_buffer
             .backup_overworld_palette_from(palette);
         self.ram[MAPBAK_PALETTE..MAPBAK_PALETTE + len].copy_from_slice(&palette[..len]);
+        self.mirror_slice_write(zelda3_palette::Bank::Backup, 0, len, palette, source);
     }
 
+    #[track_caller]
     pub(crate) fn copy_main_full_from(&mut self, palette: &[u8]) {
-        self.copy_main_range_from(0, PALETTE_BANK_BYTES, palette);
+        self.copy_main_range_from_tagged(
+            0,
+            PALETTE_BANK_BYTES,
+            palette,
+            PaletteSliceSource::Unannotated,
+        );
     }
 
+    #[track_caller]
+    pub(crate) fn copy_main_full_from_tagged(
+        &mut self,
+        palette: &[u8],
+        source: PaletteSliceSource,
+    ) {
+        self.copy_main_range_from_tagged(0, PALETTE_BANK_BYTES, palette, source);
+    }
+
+    #[track_caller]
     pub(crate) fn copy_main_palette_bytes(&mut self, src: &[u8], len: usize) {
-        self.copy_main_range_from(0, len.min(PALETTE_BANK_BYTES), src);
+        self.copy_main_range_from_tagged(
+            0,
+            len.min(PALETTE_BANK_BYTES),
+            src,
+            PaletteSliceSource::Unannotated,
+        );
+    }
+
+    #[track_caller]
+    pub(crate) fn copy_main_palette_bytes_tagged(
+        &mut self,
+        src: &[u8],
+        len: usize,
+        source: PaletteSliceSource,
+    ) {
+        self.copy_main_range_from_tagged(0, len.min(PALETTE_BANK_BYTES), src, source);
     }
 
     pub(crate) fn set_sp0l(&mut self, value: u8) {
@@ -1379,22 +1664,84 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
         self.ram[OVERWORLD_PALETTE_MODE] = value;
     }
 
-    fn copy_aux_range_from(&mut self, start: usize, len: usize, src: &[u8]) {
+    #[track_caller]
+    pub(crate) fn copy_aux_range_from_tagged(
+        &mut self,
+        start: usize,
+        len: usize,
+        src: &[u8],
+        source: PaletteSliceSource,
+    ) {
         let len = self
             .display
             .palette_buffer
             .copy_aux_range_from(start, len, src);
         self.ram[AUX_PALETTE_BUFFER + start..AUX_PALETTE_BUFFER + start + len]
             .copy_from_slice(&src[..len]);
+        self.mirror_slice_write(zelda3_palette::Bank::Aux, start, len, src, source);
     }
 
-    fn copy_main_range_from(&mut self, start: usize, len: usize, src: &[u8]) {
+    #[track_caller]
+    pub(crate) fn copy_main_range_from_tagged(
+        &mut self,
+        start: usize,
+        len: usize,
+        src: &[u8],
+        source: PaletteSliceSource,
+    ) {
         let len = self
             .display
             .palette_buffer
             .copy_main_range_from(start, len, src);
         self.ram[MAIN_PALETTE_BUFFER + start..MAIN_PALETTE_BUFFER + start + len]
             .copy_from_slice(&src[..len]);
+        self.mirror_slice_write(zelda3_palette::Bank::Main, start, len, src, source);
+    }
+
+    /// Mirror a bulk byte-slice write into a shadow bank. `start`/`len` are
+    /// byte offsets/lengths within the bank (as the shadow copies use).
+    #[track_caller]
+    fn mirror_slice_write(
+        &mut self,
+        bank: zelda3_palette::Bank,
+        start: usize,
+        len: usize,
+        src: &[u8],
+        source: PaletteSliceSource,
+    ) {
+        let start_word = start / 2;
+        let words = len / 2;
+        match source {
+            PaletteSliceSource::AssetBytes => {
+                for word in 0..words {
+                    let offset = word * 2;
+                    if offset + 1 >= src.len() {
+                        break;
+                    }
+                    let value = u16::from(src[offset]) | (u16::from(src[offset + 1]) << 8);
+                    self.mirror().set_asset_word(bank, start_word + word, value);
+                }
+            }
+            PaletteSliceSource::MirrorBank(from_bank) => {
+                // The source slice starts at the source bank's word 0; the
+                // destination starts at `start_word`.
+                for word in 0..words {
+                    self.mirror()
+                        .copy_word((from_bank, word), (bank, start_word + word));
+                }
+            }
+            PaletteSliceSource::Unannotated => {
+                provenance_trace_unannotated(
+                    match bank {
+                        zelda3_palette::Bank::Main => "main-range",
+                        zelda3_palette::Bank::Aux => "aux-range",
+                        zelda3_palette::Bank::Backup => "backup-range",
+                    },
+                    start_word,
+                );
+                self.mirror().set_unknown_range(bank, start_word, words);
+            }
+        }
     }
 }
 
@@ -2515,6 +2862,8 @@ pub(crate) struct DisplayState {
     pub(crate) overworld_palette_backup: OverworldPaletteBackupState,
     pub(crate) ppu_scroll_copy: PpuScrollCopyState,
     pub(crate) spotlight_hdma: SpotlightHdmaState,
+    #[serde(skip)]
+    pub(crate) palette_provenance: PaletteProvenance,
 }
 
 impl DisplayState {
@@ -2575,6 +2924,8 @@ impl DisplayState {
             overworld_palette_backup: OverworldPaletteBackupState::load_from_ram(ram),
             ppu_scroll_copy: PpuScrollCopyState::load_from_ram(ram),
             spotlight_hdma: SpotlightHdmaState::load_from_ram(ram),
+            // Derived metadata: RAM cannot tell us where colors came from.
+            palette_provenance: PaletteProvenance::default(),
         }
     }
 

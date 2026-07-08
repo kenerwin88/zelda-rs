@@ -4,6 +4,8 @@ members = [
     "crates/snes",
     "crates/zelda3-dialogue",
     "crates/zelda3-compat",
+    "crates/zelda3-chr",
+    "crates/zelda3-palette",
     "crates/zelda3",
     "crates/platform",
     "crates/assets",

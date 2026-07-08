@@ -1711,6 +1711,60 @@ impl ZeldaState {
         self.frame_ctr_dbg == target || self.state_recorder.replay_frame_counter == target
     }
 
+    /// Snapshot the palette-provenance mirror at a CGRAM upload (the mirror's
+    /// equivalent of `memcpy(cgram, main_palette_buffer)`), and under
+    /// `ZELDA3_PALETTE_PROVENANCE_CHECK=1|panic` audit the mirror's main bank
+    /// against the WRAM shadow the upload actually read. The audit line is
+    /// rate-limited to changes in the (mismatch, unknown) counts.
+    pub(crate) fn commit_palette_provenance_cgram(&mut self) {
+        self.game_state.display.palette_provenance.0.commit_cgram();
+        let Some(mode) = crate::game_state::palette_provenance_check_mode() else {
+            return;
+        };
+        let shadow = &self.ram[crate::game_state::constants::MAIN_PALETTE_BUFFER
+            ..crate::game_state::constants::MAIN_PALETTE_BUFFER + 0x200];
+        let audit = self
+            .game_state
+            .display
+            .palette_provenance
+            .0
+            .audit_bank(zelda3_palette::Bank::Main, shadow);
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static LAST: AtomicU64 = AtomicU64::new(u64::MAX);
+        let packed = ((audit.mismatches.len() as u64) << 32) | audit.unknown.len() as u64;
+        if LAST.swap(packed, Ordering::Relaxed) != packed {
+            let first_mismatch = audit.mismatches.first().map(|w| {
+                format!(
+                    " first_mismatch=idx{}:mirror={:04x}:actual={:04x}",
+                    w.index,
+                    w.mirror.unwrap_or(0),
+                    w.actual
+                )
+            });
+            let first_unknown = audit
+                .unknown
+                .first()
+                .map(|w| format!(" first_unknown=idx{}", w.index));
+            eprintln!(
+                "palette_provenance_coherence frame={} mismatches={} unknown={}{}{}",
+                self.frame_ctr_dbg,
+                audit.mismatches.len(),
+                audit.unknown.len(),
+                first_mismatch.unwrap_or_default(),
+                first_unknown.unwrap_or_default(),
+            );
+        }
+        if mode == crate::game_state::ProvenanceCheckMode::Panic && !audit.is_clean() {
+            panic!(
+                "palette provenance mirror diverged from the WRAM shadow at frame {} \
+                 (mismatches={} unknown={})",
+                self.frame_ctr_dbg,
+                audit.mismatches.len(),
+                audit.unknown.len()
+            );
+        }
+    }
+
     fn replay_assert_native_coherent(&self, label: &str) {
         let Ok(mode) = std::env::var("ZELDA3_ASSERT_NATIVE_COHERENT") else {
             return;

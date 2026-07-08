@@ -14,6 +14,7 @@ serde-big-array = "0.5"
 snes = { path = "../snes" }
 zelda3-compat = { path = "../zelda3-compat" }
 zelda3-dialogue = { path = "../zelda3-dialogue" }
+zelda3-palette = { path = "../zelda3-palette" }
 
 [lints]
 workspace = true

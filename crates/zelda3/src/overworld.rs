@@ -58,6 +58,7 @@ impl ZeldaState {
         for i in 0..0x100usize {
             self.ppu.cgram[i] = read_le_u16(&self.ram, MAIN_PALETTE_BUFFER + i * 2);
         }
+        self.commit_palette_provenance_cgram();
         self.Overworld_LoadAndBuildScreen();
         u16::from(self.game_state.world.location.overworld_screen_index())
     }
