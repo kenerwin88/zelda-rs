@@ -3091,9 +3091,37 @@ impl FrameRenderer {
                     scene.sprite_palette_name(),
                 )?;
                 if !render.rendered {
-                    return Ok(ModernAssetFramePresentResult::Unsupported {
+                    // The on-GPU stable path can't present this frame: un-keyed
+                    // content-hash BG (CHR_KIND_BG_STREAM) has no canonical-atlas
+                    // entry, so the variant plan degrades to a live-index base. Rather
+                    // than refuse, resolve BG from the SOURCE atlas via the proven
+                    // headless variant renderer — the same path `--modern-index-compare`
+                    // uses at mismatch_px=0. Only genuinely un-keyable tiles
+                    // (NO_SOURCE_KEY -> non-empty missing_sources) still refuse.
+                    let headless = resources
+                        .variant_headless()
+                        .expect("variant-gpu route requires the headless variant renderer");
+                    let (rgba, stats, missing_sources, _traces) = headless
+                        .render_rgba_with_live_index_base_from_sources_traced(
+                            frame,
+                            src_table.expect("route requires source table"),
+                            resources
+                                .source_atlas()
+                                .expect("route requires source atlas"),
+                            scene.bg_palette_name(),
+                            scene.sprite_palette_name(),
+                            None,
+                        );
+                    if !missing_sources.is_empty() {
+                        return Ok(ModernAssetFramePresentResult::Unsupported {
+                            via: "variant-gpu",
+                            variant_stats: Some(stats),
+                        });
+                    }
+                    self.present_modern_rgba(&rgba, 256, 224)?;
+                    return Ok(ModernAssetFramePresentResult::Presented {
                         via: "variant-gpu",
-                        variant_stats: Some(render.stats),
+                        variant_stats: Some(stats),
                     });
                 }
                 Ok(ModernAssetFramePresentResult::Presented {

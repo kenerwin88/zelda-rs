@@ -417,7 +417,6 @@ fn main() {
     println!("cargo:rerun-if-env-changed=ZELDA3_ROM");
     println!("cargo:rerun-if-env-changed=ZELDA3_C_SOURCE");
     println!("cargo:rerun-if-env-changed=ZELDA3_DIALOGUE_MESSAGES");
-    println!("cargo:rerun-if-env-changed=ZELDA3_DIALOGUE_SHA_LOCK");
     println!(
         "cargo:rerun-if-changed={}",
         generated_dir.join("manifest.json").display()
@@ -628,36 +627,9 @@ fn read_dialogue_messages_document(generated_dir: &Path) -> zelda3_dialogue::Dia
     }
 }
 
-/// Load the parity lock so each message's expanded bytecode is verified against the
-/// blessed vanilla hash. Precedence:
-///   1. `ZELDA3_DIALOGUE_SHA_LOCK` env override,
-///   2. if `ZELDA3_DIALOGUE_MESSAGES` overrode the source but no lock override was
-///      given, build UNLOCKED (an alt-dialogue file owns its own parity contract),
-///   3. the tracked `assets/dialogue/messages.sha1` when present.
-fn read_dialogue_sha_lock() -> Option<zelda3_dialogue::DialogueShaLock> {
-    let lock_path = if let Some(override_path) = env::var_os("ZELDA3_DIALOGUE_SHA_LOCK") {
-        PathBuf::from(override_path)
-    } else if env::var_os("ZELDA3_DIALOGUE_MESSAGES").is_some() {
-        return None;
-    } else {
-        dialogue_repo_root().join("assets/dialogue/messages.sha1")
-    };
-    if !lock_path.is_file() {
-        return None;
-    }
-    println!("cargo:rerun-if-changed={}", lock_path.display());
-    let text = fs::read_to_string(&lock_path)
-        .unwrap_or_else(|err| panic!("failed to read {}: {err}", lock_path.display()));
-    Some(
-        zelda3_dialogue::parse_sha_lock(&text)
-            .unwrap_or_else(|err| panic!("failed to parse {}: {err}", lock_path.display())),
-    )
-}
-
 fn read_dialogue_asset(generated_dir: &Path) -> Vec<u8> {
     let doc = read_dialogue_messages_document(generated_dir);
-    let lock = read_dialogue_sha_lock();
-    zelda3_dialogue::compile_messages_document(&doc, lock.as_ref())
+    zelda3_dialogue::compile_messages_document(&doc)
         .unwrap_or_else(|err| panic!("failed to compile dialogue messages: {err}"))
 }
 

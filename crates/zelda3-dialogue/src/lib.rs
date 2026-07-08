@@ -763,15 +763,12 @@ fn ir_kind(command: u8, param: u8) -> DialogueIrKind {
 }
 
 // -------------------------------------------------------------------------
-// Editable TOML message source + a separate SHA parity lock.
+// Editable TOML message source.
 //
-// `messages.toml` is the human-authored content (id + literal-string text, with
-// `#` comments allowed). `messages.sha1` is a machine-generated lock mapping each
-// id to the sha1 of its expanded bytecode, so unedited messages stay provably
-// vanilla and deliberate edits are surfaced (build fails until re-blessed).
+// `messages.toml` is the human-authored dialogue content (id + literal-string
+// text, with `#` comments allowed). Editing it and rebuilding is all that is
+// needed to change the dialogue — the text compiles straight to `kDialogue`.
 // -------------------------------------------------------------------------
-
-pub const FORMAT_DIALOGUE_SHA_LOCK: &str = "zelda3_dialogue_sha1_lock_v1";
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DialogueMessagesDocument {
@@ -786,32 +783,13 @@ pub struct DialogueMessageEntry {
     pub text: String,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DialogueShaLock {
-    pub format: String,
-    #[serde(default, rename = "message")]
-    pub entries: Vec<DialogueShaEntry>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct DialogueShaEntry {
-    pub id: usize,
-    pub expanded_sha1: String,
-}
-
 /// Parse `messages.toml` into a [`DialogueMessagesDocument`].
 pub fn parse_messages_document(toml_str: &str) -> Result<DialogueMessagesDocument, String> {
     toml::from_str(toml_str).map_err(|err| err.to_string())
 }
 
-/// Parse `messages.sha1` into a [`DialogueShaLock`].
-pub fn parse_sha_lock(toml_str: &str) -> Result<DialogueShaLock, String> {
-    toml::from_str(toml_str).map_err(|err| err.to_string())
-}
-
 fn compile_messages_to_bytes(
     doc: &DialogueMessagesDocument,
-    lock: Option<&DialogueShaLock>,
 ) -> Result<Vec<Vec<u8>>, DialogueSourceCompileError> {
     if doc.format != FORMAT_DIALOGUE_SOURCE {
         return Err(DialogueSourceCompileError::new(
@@ -819,13 +797,6 @@ fn compile_messages_to_bytes(
             format!("dialogue messages format is {}, expected {FORMAT_DIALOGUE_SOURCE}", doc.format),
         ));
     }
-    let lock_by_id: Option<std::collections::HashMap<usize, &str>> = lock.map(|lock| {
-        lock.entries
-            .iter()
-            .map(|entry| (entry.id, entry.expanded_sha1.as_str()))
-            .collect()
-    });
-
     let mut compiled = Vec::with_capacity(doc.messages.len());
     for (expected_id, message) in doc.messages.iter().enumerate() {
         if message.id != expected_id {
@@ -840,41 +811,16 @@ fn compile_messages_to_bytes(
                 format!("message {expected_id} text compile failed: {err}"),
             )
         })?;
-        if let Some(lock_by_id) = &lock_by_id {
-            match lock_by_id.get(&message.id) {
-                Some(expected_sha1) => {
-                    let actual_sha1 = sha1_hex(&bytes);
-                    if !expected_sha1.eq_ignore_ascii_case(&actual_sha1) {
-                        return Err(DialogueSourceCompileError::new(
-                            expected_id,
-                            format!(
-                                "message {expected_id} drifted from the parity lock: expanded_sha1 is {expected_sha1} but the text compiles to {actual_sha1}; run `zelda3 --bless-dialogue` to accept the edit"
-                            ),
-                        ));
-                    }
-                }
-                None => {
-                    return Err(DialogueSourceCompileError::new(
-                        expected_id,
-                        format!(
-                            "message {expected_id} is missing from the parity lock; run `zelda3 --bless-dialogue`"
-                        ),
-                    ));
-                }
-            }
-        }
         compiled.push(bytes);
     }
     Ok(compiled)
 }
 
 /// Compile a [`DialogueMessagesDocument`] into an uncompressed `kDialogue` asset.
-/// When `lock` is supplied, every message's expanded sha1 is verified against it.
 pub fn compile_messages_document(
     doc: &DialogueMessagesDocument,
-    lock: Option<&DialogueShaLock>,
 ) -> Result<Vec<u8>, DialogueSourceCompileError> {
-    let compiled_messages = compile_messages_to_bytes(doc, lock)?;
+    let compiled_messages = compile_messages_to_bytes(doc)?;
     let empty_dictionary = pack_memblk_arrays(&[Vec::new()]);
     let dialogue_pack =
         pack_memblk_arrays(&[empty_dictionary, pack_memblk_arrays(&compiled_messages)]);
@@ -886,31 +832,11 @@ pub fn compile_messages_document(
 pub fn compile_messages_ir_table(
     doc: &DialogueMessagesDocument,
 ) -> Result<Vec<Vec<DialogueIrOp>>, DialogueSourceCompileError> {
-    let compiled_messages = compile_messages_to_bytes(doc, None)?;
+    let compiled_messages = compile_messages_to_bytes(doc)?;
     Ok(compiled_messages
         .iter()
         .map(|message| parse_dialogue_ir(0, message))
         .collect())
-}
-
-/// Regenerate the parity lock (`messages.sha1`) from the authored content.
-pub fn generate_sha_lock(
-    doc: &DialogueMessagesDocument,
-) -> Result<DialogueShaLock, DialogueSourceCompileError> {
-    let compiled_messages = compile_messages_to_bytes(doc, None)?;
-    let entries = doc
-        .messages
-        .iter()
-        .zip(compiled_messages.iter())
-        .map(|(message, bytes)| DialogueShaEntry {
-            id: message.id,
-            expanded_sha1: sha1_hex(bytes),
-        })
-        .collect();
-    Ok(DialogueShaLock {
-        format: FORMAT_DIALOGUE_SHA_LOCK.to_string(),
-        entries,
-    })
 }
 
 /// Emit `messages.toml`, preferring escape-free literal strings for the text.
@@ -920,17 +846,6 @@ pub fn serialize_messages_toml(doc: &DialogueMessagesDocument) -> String {
         out.push_str("\n[[message]]\n");
         out.push_str(&format!("id = {}\n", message.id));
         out.push_str(&format!("text = {}\n", toml_string_scalar(&message.text)));
-    }
-    out
-}
-
-/// Emit `messages.sha1` (the machine-generated parity lock).
-pub fn serialize_sha_lock_toml(lock: &DialogueShaLock) -> String {
-    let mut out = format!("format = \"{}\"\n", lock.format);
-    for entry in &lock.entries {
-        out.push_str("\n[[message]]\n");
-        out.push_str(&format!("id = {}\n", entry.id));
-        out.push_str(&format!("expanded_sha1 = \"{}\"\n", entry.expanded_sha1));
     }
     out
 }
@@ -984,7 +899,7 @@ mod tests {
     #[test]
     fn toml_messages_compile_identically_to_legacy_source_document() {
         let messages = sample_messages_document();
-        let via_toml = compile_messages_document(&messages, None).unwrap();
+        let via_toml = compile_messages_document(&messages).unwrap();
 
         let via_json = compile_dialogue_source_document(&DialogueSourceDocument {
             format: FORMAT_DIALOGUE_SOURCE.to_string(),
@@ -1026,49 +941,6 @@ mod tests {
         let text = serialize_messages_toml(&doc);
         assert!(text.contains("text = \"\""));
         assert_eq!(parse_messages_document(&text).unwrap(), doc);
-    }
-
-    #[test]
-    fn sha_lock_round_trips_and_verifies() {
-        let doc = sample_messages_document();
-        let lock = generate_sha_lock(&doc).unwrap();
-        assert_eq!(lock.format, FORMAT_DIALOGUE_SHA_LOCK);
-        assert_eq!(lock.entries.len(), 2);
-
-        let lock_text = serialize_sha_lock_toml(&lock);
-        assert_eq!(parse_sha_lock(&lock_text).unwrap(), lock);
-
-        // Compiling with the freshly generated lock passes.
-        compile_messages_document(&doc, Some(&lock)).unwrap();
-    }
-
-    #[test]
-    fn drifted_message_fails_against_the_lock() {
-        let doc = sample_messages_document();
-        let lock = generate_sha_lock(&doc).unwrap();
-
-        let mut edited = doc.clone();
-        edited.messages[1].text = "totally different[end_message]".to_string();
-        let err = compile_messages_document(&edited, Some(&lock)).unwrap_err();
-        assert_eq!(err.offset, 1);
-        assert!(
-            err.message.contains("drifted from the parity lock"),
-            "unexpected error: {}",
-            err.message
-        );
-    }
-
-    #[test]
-    fn missing_lock_entry_fails() {
-        let doc = sample_messages_document();
-        let mut lock = generate_sha_lock(&doc).unwrap();
-        lock.entries.pop(); // drop the entry for message 1
-        let err = compile_messages_document(&doc, Some(&lock)).unwrap_err();
-        assert!(
-            err.message.contains("missing from the parity lock"),
-            "unexpected error: {}",
-            err.message
-        );
     }
 
     #[test]
