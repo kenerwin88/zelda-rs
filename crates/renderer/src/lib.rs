@@ -4149,6 +4149,7 @@ mod tests {
             dialogue_ir: &[],
             dialogue_layout: &[],
             dialogue_layout_origin_tile_number: None,
+            cgram_provenance: None,
         };
         let entries: [(u8, u16, u16); 0] = [];
 
@@ -4211,6 +4212,7 @@ mod tests {
             dialogue_ir: &[],
             dialogue_layout: &[],
             dialogue_layout_origin_tile_number: None,
+            cgram_provenance: None,
         };
         let entries: [(u8, u16, u16); 0] = [];
 
@@ -4530,6 +4532,7 @@ mod tests {
             dialogue_ir: &[],
             dialogue_layout: &[],
             dialogue_layout_origin_tile_number: None,
+            cgram_provenance: None,
         };
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

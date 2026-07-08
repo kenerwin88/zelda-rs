@@ -18,6 +18,10 @@ pub struct ModernFrame {
     pub brightness: u8,
     pub forced_blank: bool,
     pub cgram_rgba: [[u8; 4]; 256],
+    /// Provenance-clean CGRAM mirror committed at the last CGRAM upload —
+    /// the zero-CGRAM color source that replaces `cgram_rgba` once complete.
+    /// `None` on paths without game state (unit frames, dumps).
+    pub cgram_provenance: Option<zelda3_palette::CgramProvenanceSnapshot>,
     /// Raw main-screen layer-enable bits (TM/$212C): 0=BG1..3=BG4, 4=OBJ.
     /// Used by the full (color-math) software path to build the MAIN composite;
     /// distinct from the per-layer `enabled_main`, which the dungeon extractor
@@ -101,6 +105,7 @@ impl ModernFrame {
             brightness: 15,
             forced_blank: false,
             cgram_rgba: [[0, 0, 0, 0xff]; 256],
+            cgram_provenance: None,
             screen_enabled_main: 0,
             screen_enabled_sub: 0,
             math_enabled: 0,

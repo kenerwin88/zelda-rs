@@ -952,10 +952,47 @@ pub fn extract_modern_frame_with_dungeon_atlas(
 
 /// Extract frame-level visual state from a `GpuFrame` into a `ModernFrame`.
 ///
+/// `ZELDA3_FORBID_LIVE_CGRAM=compare` — report how far the provenance mirror
+/// is from live CGRAM at extract time (the transitional M5 gate before any
+/// LUT source is swapped).
+fn forbid_live_cgram_compare_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("ZELDA3_FORBID_LIVE_CGRAM").is_ok_and(|value| value == "compare")
+    })
+}
+
+fn report_cgram_provenance_compare(
+    snapshot: &zelda3_palette::CgramProvenanceSnapshot,
+    cgram: &[u16],
+) {
+    let mut mismatches = 0usize;
+    let mut unknown = 0usize;
+    for (index, word) in cgram.iter().enumerate().take(zelda3_palette::PALETTE_WORDS) {
+        if !snapshot.known[index] {
+            unknown += 1;
+        } else if snapshot.words[index] != *word {
+            mismatches += 1;
+        }
+    }
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static LAST: AtomicU64 = AtomicU64::new(u64::MAX);
+    let packed = ((mismatches as u64) << 32) | unknown as u64;
+    if LAST.swap(packed, Ordering::Relaxed) != packed {
+        eprintln!("cgram_provenance_compare mismatches={mismatches} unknown={unknown}");
+    }
+}
+
 /// This function copies brightness and forced-blank from the GPU frame.
 /// BG layer tile extraction will be added in a subsequent task.
 pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
     let mut modern = ModernFrame::empty();
+    modern.cgram_provenance = frame.cgram_provenance.cloned();
+    if forbid_live_cgram_compare_enabled() {
+        if let Some(snapshot) = frame.cgram_provenance {
+            report_cgram_provenance_compare(snapshot, frame.cgram);
+        }
+    }
     modern.brightness = frame.brightness;
     modern.forced_blank = frame.forced_blank;
     // Raw screen-enable bits + color-math registers for the full software path.

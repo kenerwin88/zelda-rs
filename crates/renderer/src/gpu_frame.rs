@@ -106,6 +106,11 @@ pub struct GpuFrame<'a> {
     /// Lets the renderer place semantic dialogue layout without depending on
     /// already materialized legacy glyph-run records.
     pub dialogue_layout_origin_tile_number: Option<u16>,
+    /// Provenance-clean CGRAM mirror committed at the last CGRAM upload
+    /// (derived from baked palette data + pure transforms, never read from
+    /// live CGRAM). The zero-CGRAM modern path resolves colors from this
+    /// instead of `cgram`; `None` on paths that don't carry game state.
+    pub cgram_provenance: Option<&'a zelda3_palette::CgramProvenanceSnapshot>,
 }
 
 /// Raw register/slice snapshot used to construct a [`GpuFrame`] without tying
@@ -148,6 +153,9 @@ pub struct GpuFrameCaptureInput<'a> {
     pub dialogue_ir: &'a [zelda3_dialogue::DialogueIrOp],
     pub dialogue_layout: &'a [zelda3_dialogue::DialogueGlyphPlacement],
     pub dialogue_layout_origin_tile_number: Option<u16>,
+    /// Provenance-clean CGRAM mirror snapshot from the game (see
+    /// `GpuFrame::cgram_provenance`).
+    pub cgram_provenance: Option<&'a zelda3_palette::CgramProvenanceSnapshot>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -233,7 +241,18 @@ impl<'a> GpuFrame<'a> {
             dialogue_ir: input.dialogue_ir,
             dialogue_layout: input.dialogue_layout,
             dialogue_layout_origin_tile_number: input.dialogue_layout_origin_tile_number,
+            cgram_provenance: input.cgram_provenance,
         }
+    }
+
+    /// Attach the game's provenance-clean CGRAM mirror snapshot (builder-style
+    /// so construction sites without game state stay unchanged).
+    pub fn with_cgram_provenance(
+        mut self,
+        snapshot: Option<&'a zelda3_palette::CgramProvenanceSnapshot>,
+    ) -> Self {
+        self.cgram_provenance = snapshot;
+        self
     }
 
     pub fn from_source<S>(source: &S, cgram: &'a [u16], scanlines: Box<[ScanlineRegs; 224]>) -> Self
@@ -292,6 +311,7 @@ impl<'a> GpuFrame<'a> {
             dialogue_ir: source.dialogue_ir(),
             dialogue_layout: source.dialogue_layout(),
             dialogue_layout_origin_tile_number: source.dialogue_layout_origin_tile_number(),
+            cgram_provenance: None,
         }
     }
 }
@@ -702,6 +722,7 @@ mod tests {
             dialogue_ir: &[],
             dialogue_layout: &[],
             dialogue_layout_origin_tile_number: None,
+            cgram_provenance: None,
         });
 
         assert_eq!(frame.vram, &vram);

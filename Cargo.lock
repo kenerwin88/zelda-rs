@@ -1929,6 +1929,7 @@ dependencies = [
  "wgpu",
  "winit",
  "zelda3-dialogue",
+ "zelda3-palette",
 ]
 
 [[package]]
@@ -3287,6 +3288,7 @@ dependencies = [
  "zelda3-chr",
  "zelda3-compat",
  "zelda3-dialogue",
+ "zelda3-palette",
 ]
 
 [[package]]

@@ -319,6 +319,7 @@ mod tests {
             dialogue_ir: &[],
             dialogue_layout: &[],
             dialogue_layout_origin_tile_number: None,
+            cgram_provenance: None,
         }
     }
 

@@ -34,6 +34,7 @@ pub struct LiveGpuFrameCapture {
     mode7_source_chars: Option<Vec<u8>>,
     main_module: u8,
     player_indoors: u8,
+    cgram_provenance: zelda3_palette::CgramProvenanceSnapshot,
 }
 
 struct ModernAssetGpuReadbackFrame {
@@ -95,6 +96,7 @@ impl LiveGpuFrameCapture {
         let mode7_source_chars = game.mode7_character_source().map(<[u8]>::to_vec);
         let main_module = game.ram[MAIN_MODULE_INDEX];
         let player_indoors = game.ram[PLAYER_IS_INDOORS];
+        let cgram_provenance = game.cgram_provenance_snapshot();
         Self {
             ppu,
             cgram,
@@ -110,6 +112,7 @@ impl LiveGpuFrameCapture {
             mode7_source_chars,
             main_module,
             player_indoors,
+            cgram_provenance,
         }
     }
 
@@ -125,6 +128,7 @@ impl LiveGpuFrameCapture {
             &self.dialogue_ir,
             &self.dialogue_layout,
             self.dialogue_layout_origin_tile_number,
+            Some(&self.cgram_provenance),
         )
     }
 
@@ -1074,6 +1078,7 @@ fn gpu_frame_capture_from_ppu<'a>(
     dialogue_ir: &'a [zelda3::dialogue_ir::DialogueIrOp],
     dialogue_layout: &'a [zelda3::dialogue_ir::DialogueGlyphPlacement],
     dialogue_layout_origin_tile_number: Option<u16>,
+    cgram_provenance: Option<&'a zelda3_palette::CgramProvenanceSnapshot>,
 ) -> renderer::GpuFrameCaptureInput<'a> {
     renderer::GpuFrameCaptureInput {
         registers: gpu_frame_register_snapshot_from_ppu(ppu),
@@ -1086,6 +1091,7 @@ fn gpu_frame_capture_from_ppu<'a>(
         dialogue_ir,
         dialogue_layout,
         dialogue_layout_origin_tile_number,
+        cgram_provenance,
     }
 }
 

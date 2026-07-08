@@ -3,6 +3,8 @@
 use super::*;
 
 use crate::chr_source;
+use crate::game_state::{PaletteSliceSource, PaletteTransform};
+use zelda3_palette::Bank;
 
 mod load_gfx_shared;
 use load_gfx_shared::*;
@@ -14,20 +16,6 @@ use load_gfx_shared::{
 
 const LOAD_GFX_FEATURES0_MISC_BUG_FIXES: u32 = 4096;
 const LOAD_GFX_FEATURES0_DIM_FLASHES: u32 = 65536;
-
-const PALETTE_FILTERING_BITS: [u16; 64] = [
-    0xffff, 0xffff, 0xfffe, 0xffff, 0x7fff, 0x7fff, 0x7fdf, 0xfbff, 0x7f7f, 0x7f7f, 0x7df7, 0xefbf,
-    0x7bdf, 0x7bdf, 0x77bb, 0xddef, 0x7777, 0x7777, 0x6edd, 0xbb77, 0x6db7, 0x6db7, 0x5b6d, 0xb6db,
-    0x5b5b, 0x5b5b, 0x56b6, 0xad6b, 0x5555, 0xad6b, 0x5555, 0xaaab, 0x5555, 0x5555, 0x2a55, 0x5555,
-    0x2a55, 0x2a55, 0x294a, 0x5295, 0x2525, 0x2525, 0x2492, 0x4925, 0x1249, 0x1249, 0x1122, 0x4489,
-    0x1111, 0x1111, 0x0844, 0x2211, 0x0421, 0x0421, 0x0208, 0x1041, 0x0101, 0x0101, 0x0020, 0x0401,
-    0x0001, 0x0001, 0x0000, 0x0001,
-];
-
-const PALETTE_FILTER_UPPER_BITMASKS: [u16; 16] = [
-    0x8000, 0x4000, 0x2000, 0x1000, 0x0800, 0x0400, 0x0200, 0x0100, 0x0080, 0x0040, 0x0020, 0x0010,
-    0x0008, 0x0004, 0x0002, 0x0001,
-];
 
 const ITEM_ANIMATION_GFX_SOURCE_GROUPS: [usize; 10] = [0, 11, 8, 38, 42, 45, 34, 3, 33, 46];
 const FOLLOWER_GFX_DECOMPRESSION_OFFSETS: [usize; 14] = [
@@ -137,7 +125,11 @@ impl ZeldaState {
                 0
             };
             let len = 0x100.min(palette.len().saturating_sub(offset));
-            self.copy_main_palette_bytes(&palette[offset..offset + len], len);
+            self.copy_main_palette_bytes_tagged(
+                &palette[offset..offset + len],
+                len,
+                PaletteSliceSource::AssetBytes,
+            );
         }
     }
 
@@ -192,8 +184,8 @@ impl ZeldaState {
         let gloves = self.game_state.inventory.items.gloves();
         if gloves != 0 {
             let color = self.gloves_color(gloves.wrapping_sub(1) as usize);
-            self.set_aux_color(0xfd, color);
-            self.set_main_color(0xfd, color);
+            self.set_aux_color_asset(0xfd, color);
+            self.set_main_color_asset(0xfd, color);
         }
         self.increment_cgram_update_flag();
     }
@@ -216,12 +208,12 @@ impl ZeldaState {
         };
         for i in 0..7 {
             let color = read_word_from_slice(&main_sprite_palette, (7 + i) * 2);
-            self.set_aux_color(0xe8 + i, color);
-            self.set_main_color(0xe8 + i, color);
+            self.set_aux_color_asset(0xe8 + i, color);
+            self.set_main_color_asset(0xe8 + i, color);
 
             let color = read_word_from_slice(&main_sprite_palette, (15 + 7 + i) * 2);
-            self.set_aux_color(0xf8 + i, color);
-            self.set_main_color(0xf8 + i, color);
+            self.set_aux_color_asset(0xf8 + i, color);
+            self.set_main_color_asset(0xf8 + i, color);
         }
     }
 
@@ -232,13 +224,13 @@ impl ZeldaState {
         let src = armor as usize * 15 * 2;
         for i in 0..15 {
             let color = read_word_from_slice(&palette, src + i * 2);
-            self.set_aux_color(k + 0x81 + i, color);
-            self.set_main_color(k + 0x81 + i, color);
+            self.set_aux_color_asset(k + 0x81 + i, color);
+            self.set_main_color_asset(k + 0x81 + i, color);
         }
         if gloves != 0 {
             let color = self.gloves_color(gloves.wrapping_sub(1) as usize);
-            self.set_aux_color(k + 0x8d, color);
-            self.set_main_color(k + 0x8d, color);
+            self.set_aux_color_asset(k + 0x8d, color);
+            self.set_main_color_asset(k + 0x8d, color);
         }
     }
 
@@ -254,8 +246,8 @@ impl ZeldaState {
         let src = sword * 3 * 2;
         for i in 0..3 {
             let color = read_word_from_slice(&palette, src + i * 2);
-            self.set_aux_color(k + 0x99 + i, color);
-            self.set_main_color(k + 0x99 + i, color);
+            self.set_aux_color_asset(k + 0x99 + i, color);
+            self.set_main_color_asset(k + 0x99 + i, color);
         }
     }
 
@@ -271,8 +263,8 @@ impl ZeldaState {
         let src = shield * 4 * 2;
         for i in 0..4 {
             let color = read_word_from_slice(&palette, src + i * 2);
-            self.set_aux_color(k + 0x9c + i, color);
-            self.set_main_color(k + 0x9c + i, color);
+            self.set_aux_color_asset(k + 0x9c + i, color);
+            self.set_main_color_asset(k + 0x9c + i, color);
         }
     }
 
@@ -290,14 +282,14 @@ impl ZeldaState {
         let dst_index = dst >> 1;
         for i in 0..=x_ents {
             let color = read_word_from_slice(&palette, base + i * 2);
-            self.set_aux_color(dst_index + i, color);
-            self.set_main_color(dst_index + i, color);
+            self.set_aux_color_asset(dst_index + i, color);
+            self.set_main_color_asset(dst_index + i, color);
         }
     }
 
     pub(super) fn reset_hud_palettes_4_and_5(&mut self) {
         for i in 0..8 {
-            self.set_main_color(16 + i, 0);
+            self.set_main_color_constant(16 + i, 0);
         }
         self.set_countdown_word(0);
         self.set_darkening_or_lightening_screen_word(2);
@@ -311,34 +303,20 @@ impl ZeldaState {
 
     pub(super) fn palette_filter_range(&mut self, from: usize, to: usize) {
         let countdown = self.game_state.display.palette_filter.countdown_word();
-        let load_ptr_offset = usize::from(countdown >= 0x10);
-        let mask = PALETTE_FILTER_UPPER_BITMASKS[(countdown & 0x0f) as usize];
-        let dt = if self
+        let darkening = self
             .game_state
             .display
             .palette_filter
             .darkening_or_lightening_screen_word()
-            != 0
-        {
-            1u16
-        } else {
-            0xffff
-        };
-
-        for j in from..to {
-            let mut c = self.game_state.display.palette_buffer.main_color(j);
-            let a = self.game_state.display.palette_buffer.aux_color(j);
-            if PALETTE_FILTERING_BITS[load_ptr_offset + ((a & 0x001f) as usize) * 2] & mask == 0 {
-                c = c.wrapping_add(dt);
-            }
-            if PALETTE_FILTERING_BITS[load_ptr_offset + ((a & 0x03e0) >> 4) as usize] & mask == 0 {
-                c = c.wrapping_add(dt.wrapping_shl(5));
-            }
-            if PALETTE_FILTERING_BITS[load_ptr_offset + ((a & 0x7c00) >> 9) as usize] & mask == 0 {
-                c = c.wrapping_add(dt.wrapping_shl(10));
-            }
-            self.set_main_color(j, c);
-        }
+            != 0;
+        self.transform_main_range(
+            from,
+            to,
+            PaletteTransform::FilterRangeStep {
+                countdown,
+                darkening,
+            },
+        );
     }
 
     pub(super) fn palette_filter_incr_countdown(&mut self) {
@@ -381,38 +359,25 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_filter_restore_additive(&mut self, from: usize, to: usize) {
-        let mut i = from >> 1;
-        let end = to >> 1;
-        while i != end {
-            let c = self.game_state.display.palette_buffer.main_color(i);
-            let d = self.game_state.display.palette_buffer.aux_color(i);
-            let mut cx = c;
-            if (c & 0x001f) != (d & 0x001f) {
-                cx = cx.wrapping_add(1);
-            }
-            if (c & 0x03e0) != (d & 0x03e0) {
-                cx = cx.wrapping_add(0x20);
-            }
-            if (c & 0x7c00) != (d & 0x7c00) {
-                cx = cx.wrapping_add(0x400);
-            }
-            self.set_main_color(i, cx);
-            i += 1;
-        }
+        self.transform_main_range(from >> 1, to >> 1, PaletteTransform::RestoreAdditiveStep);
     }
 
     pub(super) fn filter_majorly_whiten_bg(&mut self) {
-        for i in 32..128 {
-            let color = self.game_state.display.palette_buffer.aux_color(i);
-            let white = self.filter_majorly_whiten_color(color);
-            self.set_main_color(i, white);
-        }
-        let color0 = if self.game_state.display.palette_buffer.aux_color(0) != 0 {
-            self.game_state.display.palette_buffer.main_color(32)
+        let amount = if self
+            .game_state
+            .enhanced_features
+            .has(LOAD_GFX_FEATURES0_DIM_FLASHES)
+        {
+            3
         } else {
-            0
+            14
         };
-        self.set_main_color(0, color0);
+        self.transform_main_range(32, 128, PaletteTransform::WhitenStep { amount });
+        if self.game_state.display.palette_buffer.aux_color(0) != 0 {
+            self.copy_color((Bank::Main, 32), (Bank::Main, 0));
+        } else {
+            self.set_main_color_constant(0, 0);
+        }
     }
 
     fn filter_majorly_whiten_color(&self, color: u16) -> u16 {
@@ -433,17 +398,15 @@ impl ZeldaState {
 
     pub(super) fn palette_restore_bg_from_flash(&mut self) {
         for i in 32..128 {
-            let color = self.game_state.display.palette_buffer.aux_color(i);
-            self.set_main_color(i, color);
+            self.copy_color((Bank::Aux, i), (Bank::Main, i));
         }
-        let color = self.game_state.display.palette_buffer.main_color(32);
-        self.set_main_color(0, color);
+        self.copy_color((Bank::Main, 32), (Bank::Main, 0));
         self.palette_restore_coldata();
     }
 
     pub(super) fn palette_restore_bg_and_hud(&mut self) {
         let src = self.game_state.display.palette_buffer.aux_full_slice()[..0x100].to_vec();
-        self.copy_main_palette_bytes(&src, 0x100);
+        self.copy_main_palette_bytes_tagged(&src, 0x100, PaletteSliceSource::MirrorBank(Bank::Aux));
         self.increment_cgram_update_flag();
         self.palette_restore_coldata();
     }
@@ -488,8 +451,7 @@ impl ZeldaState {
         self.palette_load_hud();
 
         for i in 0..8 {
-            let color = self.game_state.display.palette_buffer.aux_color(0xe8 + i);
-            self.set_main_color(0xd8 + i, color);
+            self.copy_color((Bank::Aux, 0xe8 + i), (Bank::Main, 0xd8 + i));
         }
     }
 
@@ -709,8 +671,8 @@ impl ZeldaState {
         let dst_index = dst >> 1;
         for i in 0..=x_ents {
             let color = read_word_from_slice(&palette, (color_offset + i) * 2);
-            self.set_aux_color(dst_index + i, color);
-            self.set_main_color(dst_index + i, color);
+            self.set_aux_color_asset(dst_index + i, color);
+            self.set_main_color_asset(dst_index + i, color);
         }
     }
 
@@ -725,8 +687,8 @@ impl ZeldaState {
             let Some(color) = self.rom_or_asset_word_snes(src + i as u32 * 2) else {
                 return;
             };
-            self.set_aux_color(dst_index + i, color);
-            self.set_main_color(dst_index + i, color);
+            self.set_aux_color_asset(dst_index + i, color);
+            self.set_main_color_asset(dst_index + i, color);
         }
     }
 
@@ -757,8 +719,8 @@ impl ZeldaState {
         let src = armor * 15 * 2;
         for i in 0..15 {
             let color = read_word_from_slice(&palette, src + i * 2);
-            self.set_aux_color((0x1e2 >> 1) + i, color);
-            self.set_main_color((0x1e2 >> 1) + i, color);
+            self.set_aux_color_asset((0x1e2 >> 1) + i, color);
+            self.set_main_color_asset((0x1e2 >> 1) + i, color);
         }
         self.palette_update_gloves_color();
     }
@@ -777,7 +739,7 @@ impl ZeldaState {
             let Some(color) = self.rom_or_asset_word_snes(src + i as u32 * 2) else {
                 return;
             };
-            self.set_aux_color(base_idx + i, color);
+            self.set_aux_color_asset(base_idx + i, color);
         }
     }
 
@@ -2125,7 +2087,7 @@ impl ZeldaState {
 
     pub(super) fn PaletteFilter_WishPonds_Inner(&mut self) {
         for i in 0..8 {
-            self.set_main_color(0xd0 + i, 0);
+            self.set_main_color_constant(0xd0 + i, 0);
         }
         self.set_countdown_word(0);
         self.set_darkening_or_lightening_screen_word(2);
@@ -2134,8 +2096,7 @@ impl ZeldaState {
 
     pub(super) fn PaletteFilter_RestoreSP5F(&mut self) {
         for i in 0..8 {
-            let color = self.game_state.display.palette_buffer.aux_color(208 + i);
-            self.set_main_color(208 + i, color);
+            self.copy_color((Bank::Aux, 208 + i), (Bank::Main, 208 + i));
         }
         self.set_sub_screen_layers(0);
         self.set_color_math_control(32);
@@ -2164,8 +2125,7 @@ impl ZeldaState {
         };
         if self.game_state.frame.subsubmodule == 0 {
             for i in 0..8 {
-                let color = self.game_state.display.palette_buffer.aux_color(t + i);
-                self.set_main_color(t + i, color);
+                self.copy_color((Bank::Aux, t + i), (Bank::Main, t + i));
             }
             self.set_countdown_word(0);
             self.set_darkening_or_lightening_screen_word(0);
@@ -2234,39 +2194,25 @@ impl ZeldaState {
     }
 
     pub(super) fn PaletteFilter_RestoreSubtractive(&mut self, from: usize, to: usize) {
-        let mut i = from >> 1;
-        let end = to >> 1;
-        while i != end {
-            let c = self.game_state.display.palette_buffer.main_color(i);
-            let d = self.game_state.display.palette_buffer.aux_color(i);
-            let mut cx = c;
-            if (c & 0x001f) != (d & 0x001f) {
-                cx = cx.wrapping_sub(1);
-            }
-            if (c & 0x03e0) != (d & 0x03e0) {
-                cx = cx.wrapping_sub(0x20);
-            }
-            if (c & 0x7c00) != (d & 0x7c00) {
-                cx = cx.wrapping_sub(0x400);
-            }
-            self.set_main_color(i, cx);
-            i += 1;
-        }
+        self.transform_main_range(
+            from >> 1,
+            to >> 1,
+            PaletteTransform::RestoreSubtractiveStep,
+        );
     }
 
     pub(super) fn PaletteFilter_InitializeWhiteFilter(&mut self) {
         for i in 0..256 {
-            self.set_aux_color(i, 0x7fff);
+            self.set_aux_color_constant(i, 0x7fff);
         }
-        let color = self.game_state.display.palette_buffer.main_color(0);
-        self.set_main_color(32, color);
+        self.copy_color((Bank::Main, 0), (Bank::Main, 32));
         self.set_countdown_word(0);
         self.set_darkening_or_lightening_screen_word(2);
         if self.game_state.world.location.overworld_screen_index() == 27 {
-            self.set_aux_color(0, 0);
-            self.set_aux_color(32, 0);
-            self.set_main_color(0, 0);
-            self.set_main_color(32, 0);
+            self.set_aux_color_constant(0, 0);
+            self.set_aux_color_constant(32, 0);
+            self.set_main_color_constant(0, 0);
+            self.set_main_color_constant(32, 0);
         }
         self.mirror_warp_scratch_mut().set_animation_counter(8);
         self.mirror_warp_scratch_mut().reset_load_step_counter();
@@ -2309,8 +2255,7 @@ impl ZeldaState {
     }
 
     pub(super) fn PaletteFilter_StartBlindingWhite(&mut self) {
-        let color = self.game_state.display.palette_buffer.main_color(32);
-        self.set_main_color(0, color);
+        self.copy_color((Bank::Main, 32), (Bank::Main, 0));
         if self
             .game_state
             .display
@@ -2354,8 +2299,7 @@ impl ZeldaState {
                 }
                 self.set_main_color(i, color);
             }
-            let color = self.game_state.display.palette_buffer.main_color(32);
-            self.set_main_color(0, color);
+            self.copy_color((Bank::Main, 32), (Bank::Main, 0));
             if self.game_state.display.palette_filter.countdown() & 1 == 0 {
                 self.increment_mosaic_level_by(16);
             }
@@ -2382,8 +2326,7 @@ impl ZeldaState {
             }
             self.set_main_color(i, color);
         }
-        let color = self.game_state.display.palette_buffer.main_color(32);
-        self.set_main_color(0, color);
+        self.copy_color((Bank::Main, 32), (Bank::Main, 0));
         self.increment_countdown();
         if self.game_state.display.palette_filter.countdown() == 31 {
             self.set_countdown(0);
@@ -2405,8 +2348,7 @@ impl ZeldaState {
                 }
                 self.set_main_color(i, color);
             }
-            let color = self.game_state.display.palette_buffer.main_color(32);
-            self.set_main_color(0, color);
+            self.copy_color((Bank::Main, 32), (Bank::Main, 0));
             if self.game_state.display.palette_filter.countdown() & 1 == 0 {
                 self.decrement_mosaic_level_by(16);
             }
@@ -2434,8 +2376,7 @@ impl ZeldaState {
             }
             self.set_main_color(i, color);
         }
-        let color = self.game_state.display.palette_buffer.main_color(32);
-        self.set_main_color(0, color);
+        self.copy_color((Bank::Main, 32), (Bank::Main, 0));
         self.increment_countdown();
         if self.game_state.display.palette_filter.countdown() == 31 {
             self.set_countdown(0);
@@ -2893,12 +2834,11 @@ impl ZeldaState {
 
     pub(super) fn SpecialOverworld_CopyPalettesToCache(&mut self) {
         for i in 32..(32 * 8) {
-            self.set_main_color(i, 0);
+            self.set_main_color_constant(i, 0);
         }
         for i in 0..8 {
             for base in [0x00, 0x08, 0x10, 0x18, 0xd8, 0xe8, 0xf0, 0xf8] {
-                let color = self.game_state.display.palette_buffer.aux_color(base + i);
-                self.set_main_color(base + i, color);
+                self.copy_color((Bank::Aux, base + i), (Bank::Main, base + i));
             }
         }
         self.set_mosaic_copy(0xf7);
@@ -2942,10 +2882,10 @@ impl ZeldaState {
     }
 
     pub(super) fn Palette_SetBgAndFixedColor(&mut self, color: u16) {
-        self.set_main_color(0, color);
-        self.set_main_color(32, color);
-        self.set_aux_color(0, color);
-        self.set_aux_color(32, color);
+        self.set_main_color_constant(0, color);
+        self.set_main_color_constant(32, color);
+        self.set_aux_color_constant(0, color);
+        self.set_aux_color_constant(32, color);
         self.set_backdrop_color_black();
     }
 
@@ -2960,8 +2900,8 @@ impl ZeldaState {
 
     pub(super) fn Palette_SpecialOw(&mut self) {
         let color = self.Palette_GetOwBgColor();
-        self.set_aux_color(0, color);
-        self.set_aux_color(32, color);
+        self.set_aux_color_constant(0, color);
+        self.set_aux_color_constant(32, color);
         self.set_backdrop_color_black();
     }
 
@@ -3085,7 +3025,7 @@ impl ZeldaState {
                 for i in 0..=6 {
                     let color = read_word_from_slice(&palette, (pal * 7 + i) * 2);
                     let idx = ((0x182 + aux_or_main) >> 1) + pal * 0x10 + i;
-                    self.set_aux_color(idx, color);
+                    self.set_aux_color_asset(idx, color);
                 }
             }
         }
@@ -3110,7 +3050,7 @@ impl ZeldaState {
                 for i in 0..=15 {
                     let color = read_word_from_slice(&palette, (pal * 16 + i) * 2);
                     let idx = ((0x40 + aux_or_main) >> 1) + pal * 0x10 + i;
-                    self.set_aux_color(idx, color);
+                    self.set_aux_color_asset(idx, color);
                 }
             }
         }
@@ -3446,7 +3386,7 @@ impl ZeldaState {
             .palette_buffer
             .aux_full_slice()
             .to_vec();
-        self.copy_main_full_from(&aux);
+        self.copy_main_full_from_tagged(&aux, PaletteSliceSource::MirrorBank(Bank::Aux));
         self.increment_cgram_update_flag();
     }
 
@@ -3463,10 +3403,10 @@ impl ZeldaState {
     }
 
     pub(super) fn palette_set_bg_and_fixed_color(&mut self, color: u16) {
-        self.set_main_color(0, color);
-        self.set_main_color(32, color);
-        self.set_aux_color(0, color);
-        self.set_aux_color(32, color);
+        self.set_main_color_constant(0, color);
+        self.set_main_color_constant(32, color);
+        self.set_aux_color_constant(0, color);
+        self.set_aux_color_constant(32, color);
         self.set_backdropcolor_black();
     }
 
@@ -3483,8 +3423,8 @@ impl ZeldaState {
 
     pub(super) fn palette_special_ow(&mut self) {
         let c = self.palette_get_ow_bg_color();
-        self.set_aux_color(0, c);
-        self.set_aux_color(32, c);
+        self.set_aux_color_constant(0, c);
+        self.set_aux_color_constant(32, c);
         self.set_backdropcolor_black();
     }
 

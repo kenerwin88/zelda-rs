@@ -13,6 +13,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 png = "0.17"
 zelda3-dialogue = { path = "../zelda3-dialogue" }
+zelda3-palette = { path = "../zelda3-palette" }
 
 [lints]
 workspace = true

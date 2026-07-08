@@ -289,6 +289,37 @@ impl PaletteMirror {
     }
 }
 
+/// The committed-CGRAM mirror exported to the renderer: provenance-clean
+/// words plus a per-word known mask. Once the known mask is all-true over the
+/// full route, this is a complete CGRAM replacement derived purely from baked
+/// data + semantic parameters.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CgramProvenanceSnapshot {
+    /// bgr15 words; unknown slots hold 0.
+    pub words: [u16; PALETTE_WORDS],
+    pub known: [bool; PALETTE_WORDS],
+}
+
+impl CgramProvenanceSnapshot {
+    pub fn known_count(&self) -> usize {
+        self.known.iter().filter(|known| **known).count()
+    }
+}
+
+impl PaletteMirror {
+    pub fn cgram_snapshot(&self) -> CgramProvenanceSnapshot {
+        let mut words = [0u16; PALETTE_WORDS];
+        let mut known = [false; PALETTE_WORDS];
+        for (index, word) in self.cgram.iter().enumerate() {
+            if let MirrorWord::Known(value, _) = word {
+                words[index] = *value;
+                known[index] = true;
+            }
+        }
+        CgramProvenanceSnapshot { words, known }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct WordAudit {
     pub index: usize,

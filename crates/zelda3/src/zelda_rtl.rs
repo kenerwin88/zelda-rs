@@ -1711,6 +1711,12 @@ impl ZeldaState {
         self.frame_ctr_dbg == target || self.state_recorder.replay_frame_counter == target
     }
 
+    /// The committed provenance-clean CGRAM mirror for the renderer (the
+    /// zero-CGRAM color source; see `zelda3_palette`).
+    pub fn cgram_provenance_snapshot(&self) -> zelda3_palette::CgramProvenanceSnapshot {
+        self.game_state.display.palette_provenance.0.cgram_snapshot()
+    }
+
     /// Snapshot the palette-provenance mirror at a CGRAM upload (the mirror's
     /// equivalent of `memcpy(cgram, main_palette_buffer)`), and under
     /// `ZELDA3_PALETTE_PROVENANCE_CHECK=1|panic` audit the mirror's main bank
@@ -4249,12 +4255,55 @@ impl ZeldaState {
         self.palette_buffer_mut().clear_aux_sprite_subpalettes();
     }
 
+    #[track_caller]
     pub(crate) fn set_main_color(&mut self, index: usize, value: u16) {
         self.palette_buffer_mut().set_main_color(index, value);
     }
 
+    #[track_caller]
     pub(crate) fn set_aux_color(&mut self, index: usize, value: u16) {
         self.palette_buffer_mut().set_aux_color(index, value);
+    }
+
+    /// Palette word read from ROM or a palette asset (baked constant data).
+    pub(crate) fn set_main_color_asset(&mut self, index: usize, value: u16) {
+        self.palette_buffer_mut().set_main_color_asset(index, value);
+    }
+
+    pub(crate) fn set_aux_color_asset(&mut self, index: usize, value: u16) {
+        self.palette_buffer_mut().set_aux_color_asset(index, value);
+    }
+
+    /// Literal constant the game writes (0 clears, white fills, fixed colors).
+    pub(crate) fn set_main_color_constant(&mut self, index: usize, value: u16) {
+        self.palette_buffer_mut()
+            .set_main_color_constant(index, value);
+    }
+
+    pub(crate) fn set_aux_color_constant(&mut self, index: usize, value: u16) {
+        self.palette_buffer_mut()
+            .set_aux_color_constant(index, value);
+    }
+
+    /// Copy one palette word between shadow banks, mirroring provenance.
+    pub(crate) fn copy_color(
+        &mut self,
+        from: (zelda3_palette::Bank, usize),
+        to: (zelda3_palette::Bank, usize),
+    ) {
+        self.palette_buffer_mut().copy_color(from, to);
+    }
+
+    /// Apply one of the game's pure palette transforms to a main-bank word
+    /// range, updating shadow, RAM, and mirror with the same math.
+    pub(crate) fn transform_main_range(
+        &mut self,
+        from_word: usize,
+        to_word: usize,
+        transform: crate::game_state::PaletteTransform,
+    ) {
+        self.palette_buffer_mut()
+            .transform_main_range(from_word, to_word, transform);
     }
 
     pub(crate) fn clear_overworld_aux_or_main_offset(&mut self) {
@@ -4276,25 +4325,49 @@ impl ZeldaState {
         self.palette_buffer_mut().clear_main_full();
     }
 
+    #[track_caller]
     pub(crate) fn copy_aux_visible_from(&mut self, palette: &[u8]) {
         self.palette_buffer_mut().copy_aux_visible_from(palette);
     }
 
+    #[track_caller]
     pub(crate) fn copy_aux_full_from(&mut self, palette: &[u8]) {
         self.palette_buffer_mut().copy_aux_full_from(palette);
     }
 
+    #[track_caller]
     pub(crate) fn backup_overworld_palette_from(&mut self, palette: &[u8]) {
         self.palette_buffer_mut()
             .backup_overworld_palette_from(palette);
     }
 
+    #[track_caller]
     pub(crate) fn copy_main_full_from(&mut self, palette: &[u8]) {
         self.palette_buffer_mut().copy_main_full_from(palette);
     }
 
+    pub(crate) fn copy_main_full_from_tagged(
+        &mut self,
+        palette: &[u8],
+        source: crate::game_state::PaletteSliceSource,
+    ) {
+        self.palette_buffer_mut()
+            .copy_main_full_from_tagged(palette, source);
+    }
+
+    #[track_caller]
     pub(crate) fn copy_main_palette_bytes(&mut self, src: &[u8], len: usize) {
         self.palette_buffer_mut().copy_main_palette_bytes(src, len);
+    }
+
+    pub(crate) fn copy_main_palette_bytes_tagged(
+        &mut self,
+        src: &[u8],
+        len: usize,
+        source: crate::game_state::PaletteSliceSource,
+    ) {
+        self.palette_buffer_mut()
+            .copy_main_palette_bytes_tagged(src, len, source);
     }
 
     pub(crate) fn set_sp0l(&mut self, value: u8) {
