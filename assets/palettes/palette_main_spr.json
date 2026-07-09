@@ -1,0 +1,609 @@
+{
+  "asset": "kPalette_MainSpr",
+  "asset_index": 80,
+  "canonical_sha1": "c5f023d0e30e772c448e0c0f423636872d9611ec",
+  "color_encoding": "SNES BGR555 little-endian",
+  "colors": [
+    {
+      "index": 0,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 1,
+      "rgb888": "#ce3110",
+      "snes_bgr15": "0x08d9"
+    },
+    {
+      "index": 2,
+      "rgb888": "#398439",
+      "snes_bgr15": "0x1e07"
+    },
+    {
+      "index": 3,
+      "rgb888": "#52b594",
+      "snes_bgr15": "0x4aca"
+    },
+    {
+      "index": 4,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 5,
+      "rgb888": "#ffce21",
+      "snes_bgr15": "0x133f"
+    },
+    {
+      "index": 6,
+      "rgb888": "#ff7331",
+      "snes_bgr15": "0x19df"
+    },
+    {
+      "index": 7,
+      "rgb888": "#000000",
+      "snes_bgr15": "0x0000"
+    },
+    {
+      "index": 8,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 9,
+      "rgb888": "#ce5a31",
+      "snes_bgr15": "0x1979"
+    },
+    {
+      "index": 10,
+      "rgb888": "#b52929",
+      "snes_bgr15": "0x14b6"
+    },
+    {
+      "index": 11,
+      "rgb888": "#e77373",
+      "snes_bgr15": "0x39dc"
+    },
+    {
+      "index": 12,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 13,
+      "rgb888": "#bdbdce",
+      "snes_bgr15": "0x66f7"
+    },
+    {
+      "index": 14,
+      "rgb888": "#7b7b8c",
+      "snes_bgr15": "0x45ef"
+    },
+    {
+      "index": 15,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 16,
+      "rgb888": "#4a52d6",
+      "snes_bgr15": "0x6949"
+    },
+    {
+      "index": 17,
+      "rgb888": "#63bdc6",
+      "snes_bgr15": "0x62ec"
+    },
+    {
+      "index": 18,
+      "rgb888": "#a5ffde",
+      "snes_bgr15": "0x6ff4"
+    },
+    {
+      "index": 19,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 20,
+      "rgb888": "#8cd6ff",
+      "snes_bgr15": "0x7f51"
+    },
+    {
+      "index": 21,
+      "rgb888": "#7b94ff",
+      "snes_bgr15": "0x7e4f"
+    },
+    {
+      "index": 22,
+      "rgb888": "#000000",
+      "snes_bgr15": "0x0000"
+    },
+    {
+      "index": 23,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 24,
+      "rgb888": "#ff84b5",
+      "snes_bgr15": "0x5a1f"
+    },
+    {
+      "index": 25,
+      "rgb888": "#526bad",
+      "snes_bgr15": "0x55aa"
+    },
+    {
+      "index": 26,
+      "rgb888": "#94adef",
+      "snes_bgr15": "0x76b2"
+    },
+    {
+      "index": 27,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 28,
+      "rgb888": "#ffb552",
+      "snes_bgr15": "0x2adf"
+    },
+    {
+      "index": 29,
+      "rgb888": "#bd6329",
+      "snes_bgr15": "0x1597"
+    },
+    {
+      "index": 30,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 31,
+      "rgb888": "#b5bd31",
+      "snes_bgr15": "0x1af6"
+    },
+    {
+      "index": 32,
+      "rgb888": "#b56329",
+      "snes_bgr15": "0x1596"
+    },
+    {
+      "index": 33,
+      "rgb888": "#f7a56b",
+      "snes_bgr15": "0x369e"
+    },
+    {
+      "index": 34,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 35,
+      "rgb888": "#f77b84",
+      "snes_bgr15": "0x41fe"
+    },
+    {
+      "index": 36,
+      "rgb888": "#bd424a",
+      "snes_bgr15": "0x2517"
+    },
+    {
+      "index": 37,
+      "rgb888": "#000000",
+      "snes_bgr15": "0x0000"
+    },
+    {
+      "index": 38,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 39,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 40,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 41,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 42,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 43,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 44,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 45,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 46,
+      "rgb888": "#de6363",
+      "snes_bgr15": "0x319b"
+    },
+    {
+      "index": 47,
+      "rgb888": "#b56329",
+      "snes_bgr15": "0x1596"
+    },
+    {
+      "index": 48,
+      "rgb888": "#f7a56b",
+      "snes_bgr15": "0x369e"
+    },
+    {
+      "index": 49,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 50,
+      "rgb888": "#b594ff",
+      "snes_bgr15": "0x7e56"
+    },
+    {
+      "index": 51,
+      "rgb888": "#5273ce",
+      "snes_bgr15": "0x65ca"
+    },
+    {
+      "index": 52,
+      "rgb888": "#000000",
+      "snes_bgr15": "0x0000"
+    },
+    {
+      "index": 53,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 54,
+      "rgb888": "#ce3118",
+      "snes_bgr15": "0x0cd9"
+    },
+    {
+      "index": 55,
+      "rgb888": "#4a9431",
+      "snes_bgr15": "0x1a49"
+    },
+    {
+      "index": 56,
+      "rgb888": "#9cd673",
+      "snes_bgr15": "0x3b53"
+    },
+    {
+      "index": 57,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 58,
+      "rgb888": "#ffd639",
+      "snes_bgr15": "0x1f5f"
+    },
+    {
+      "index": 59,
+      "rgb888": "#bd8c21",
+      "snes_bgr15": "0x1237"
+    },
+    {
+      "index": 60,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 61,
+      "rgb888": "#ce3110",
+      "snes_bgr15": "0x08d9"
+    },
+    {
+      "index": 62,
+      "rgb888": "#7b8c31",
+      "snes_bgr15": "0x1a2f"
+    },
+    {
+      "index": 63,
+      "rgb888": "#adbd63",
+      "snes_bgr15": "0x32f5"
+    },
+    {
+      "index": 64,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 65,
+      "rgb888": "#ffce21",
+      "snes_bgr15": "0x133f"
+    },
+    {
+      "index": 66,
+      "rgb888": "#ff7331",
+      "snes_bgr15": "0x19df"
+    },
+    {
+      "index": 67,
+      "rgb888": "#000000",
+      "snes_bgr15": "0x0000"
+    },
+    {
+      "index": 68,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 69,
+      "rgb888": "#ce5a31",
+      "snes_bgr15": "0x1979"
+    },
+    {
+      "index": 70,
+      "rgb888": "#b52929",
+      "snes_bgr15": "0x14b6"
+    },
+    {
+      "index": 71,
+      "rgb888": "#e77373",
+      "snes_bgr15": "0x39dc"
+    },
+    {
+      "index": 72,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 73,
+      "rgb888": "#bdbdce",
+      "snes_bgr15": "0x66f7"
+    },
+    {
+      "index": 74,
+      "rgb888": "#7b7b8c",
+      "snes_bgr15": "0x45ef"
+    },
+    {
+      "index": 75,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 76,
+      "rgb888": "#21735a",
+      "snes_bgr15": "0x2dc4"
+    },
+    {
+      "index": 77,
+      "rgb888": "#7bb5ce",
+      "snes_bgr15": "0x66cf"
+    },
+    {
+      "index": 78,
+      "rgb888": "#adf7ff",
+      "snes_bgr15": "0x7fd5"
+    },
+    {
+      "index": 79,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 80,
+      "rgb888": "#84d6bd",
+      "snes_bgr15": "0x5f50"
+    },
+    {
+      "index": 81,
+      "rgb888": "#52a58c",
+      "snes_bgr15": "0x468a"
+    },
+    {
+      "index": 82,
+      "rgb888": "#000000",
+      "snes_bgr15": "0x0000"
+    },
+    {
+      "index": 83,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 84,
+      "rgb888": "#ff84b5",
+      "snes_bgr15": "0x5a1f"
+    },
+    {
+      "index": 85,
+      "rgb888": "#526bad",
+      "snes_bgr15": "0x55aa"
+    },
+    {
+      "index": 86,
+      "rgb888": "#94adef",
+      "snes_bgr15": "0x76b2"
+    },
+    {
+      "index": 87,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 88,
+      "rgb888": "#ffb552",
+      "snes_bgr15": "0x2adf"
+    },
+    {
+      "index": 89,
+      "rgb888": "#bd6329",
+      "snes_bgr15": "0x1597"
+    },
+    {
+      "index": 90,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 91,
+      "rgb888": "#debd18",
+      "snes_bgr15": "0x0efb"
+    },
+    {
+      "index": 92,
+      "rgb888": "#b56329",
+      "snes_bgr15": "0x1596"
+    },
+    {
+      "index": 93,
+      "rgb888": "#f7a56b",
+      "snes_bgr15": "0x369e"
+    },
+    {
+      "index": 94,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 95,
+      "rgb888": "#f77b84",
+      "snes_bgr15": "0x41fe"
+    },
+    {
+      "index": 96,
+      "rgb888": "#bd424a",
+      "snes_bgr15": "0x2517"
+    },
+    {
+      "index": 97,
+      "rgb888": "#000000",
+      "snes_bgr15": "0x0000"
+    },
+    {
+      "index": 98,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 99,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 100,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 101,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 102,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 103,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 104,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 105,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 106,
+      "rgb888": "#de6363",
+      "snes_bgr15": "0x319b"
+    },
+    {
+      "index": 107,
+      "rgb888": "#b56329",
+      "snes_bgr15": "0x1596"
+    },
+    {
+      "index": 108,
+      "rgb888": "#f7a56b",
+      "snes_bgr15": "0x369e"
+    },
+    {
+      "index": 109,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 110,
+      "rgb888": "#b594ff",
+      "snes_bgr15": "0x7e56"
+    },
+    {
+      "index": 111,
+      "rgb888": "#5273ce",
+      "snes_bgr15": "0x65ca"
+    },
+    {
+      "index": 112,
+      "rgb888": "#000000",
+      "snes_bgr15": "0x0000"
+    },
+    {
+      "index": 113,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 114,
+      "rgb888": "#ce3118",
+      "snes_bgr15": "0x0cd9"
+    },
+    {
+      "index": 115,
+      "rgb888": "#4a9431",
+      "snes_bgr15": "0x1a49"
+    },
+    {
+      "index": 116,
+      "rgb888": "#9cd673",
+      "snes_bgr15": "0x3b53"
+    },
+    {
+      "index": 117,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 118,
+      "rgb888": "#ffd639",
+      "snes_bgr15": "0x1f5f"
+    },
+    {
+      "index": 119,
+      "rgb888": "#bd8c21",
+      "snes_bgr15": "0x1237"
+    }
+  ],
+  "format": "zelda3_snes_palette_v1"
+}

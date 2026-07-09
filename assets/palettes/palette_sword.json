@@ -1,0 +1,69 @@
+{
+  "asset": "kPalette_Sword",
+  "asset_index": 82,
+  "canonical_sha1": "e4a0ab7b076e51158751ed19132e20e314ae769d",
+  "color_encoding": "SNES BGR555 little-endian",
+  "colors": [
+    {
+      "index": 0,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 1,
+      "rgb888": "#ffff4a",
+      "snes_bgr15": "0x27ff"
+    },
+    {
+      "index": 2,
+      "rgb888": "#6b8cbd",
+      "snes_bgr15": "0x5e2d"
+    },
+    {
+      "index": 3,
+      "rgb888": "#7394ff",
+      "snes_bgr15": "0x7e4e"
+    },
+    {
+      "index": 4,
+      "rgb888": "#a5ffde",
+      "snes_bgr15": "0x6ff4"
+    },
+    {
+      "index": 5,
+      "rgb888": "#ad3939",
+      "snes_bgr15": "0x1cf5"
+    },
+    {
+      "index": 6,
+      "rgb888": "#de4a10",
+      "snes_bgr15": "0x093b"
+    },
+    {
+      "index": 7,
+      "rgb888": "#ffa529",
+      "snes_bgr15": "0x169f"
+    },
+    {
+      "index": 8,
+      "rgb888": "#6ba5ff",
+      "snes_bgr15": "0x7e8d"
+    },
+    {
+      "index": 9,
+      "rgb888": "#ffce00",
+      "snes_bgr15": "0x033f"
+    },
+    {
+      "index": 10,
+      "rgb888": "#ffffce",
+      "snes_bgr15": "0x67ff"
+    },
+    {
+      "index": 11,
+      "rgb888": "#00944a",
+      "snes_bgr15": "0x2640"
+    }
+  ],
+  "format": "zelda3_snes_palette_v1"
+}

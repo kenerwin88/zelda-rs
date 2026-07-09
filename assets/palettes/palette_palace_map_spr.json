@@ -1,0 +1,114 @@
+{
+  "asset": "kPalette_PalaceMapSpr",
+  "asset_index": 91,
+  "canonical_sha1": "d07898f08c84b61fd83ced0ee7bbcb09ac5741c5",
+  "color_encoding": "SNES BGR555 little-endian",
+  "colors": [
+    {
+      "index": 0,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 1,
+      "rgb888": "#ce0000",
+      "snes_bgr15": "0x0019"
+    },
+    {
+      "index": 2,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 3,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 4,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 5,
+      "rgb888": "#000000",
+      "snes_bgr15": "0x0000"
+    },
+    {
+      "index": 6,
+      "rgb888": "#000000",
+      "snes_bgr15": "0x0000"
+    },
+    {
+      "index": 7,
+      "rgb888": "#ffffff",
+      "snes_bgr15": "0x7fff"
+    },
+    {
+      "index": 8,
+      "rgb888": "#ffff29",
+      "snes_bgr15": "0x17ff"
+    },
+    {
+      "index": 9,
+      "rgb888": "#94d6ff",
+      "snes_bgr15": "0x7f52"
+    },
+    {
+      "index": 10,
+      "rgb888": "#735a42",
+      "snes_bgr15": "0x216e"
+    },
+    {
+      "index": 11,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 12,
+      "rgb888": "#000000",
+      "snes_bgr15": "0x0000"
+    },
+    {
+      "index": 13,
+      "rgb888": "#000000",
+      "snes_bgr15": "0x0000"
+    },
+    {
+      "index": 14,
+      "rgb888": "#9c73ff",
+      "snes_bgr15": "0x7dd3"
+    },
+    {
+      "index": 15,
+      "rgb888": "#73e7ff",
+      "snes_bgr15": "0x7f8e"
+    },
+    {
+      "index": 16,
+      "rgb888": "#6badce",
+      "snes_bgr15": "0x66ad"
+    },
+    {
+      "index": 17,
+      "rgb888": "#bd395a",
+      "snes_bgr15": "0x2cf7"
+    },
+    {
+      "index": 18,
+      "rgb888": "#292929",
+      "snes_bgr15": "0x14a5"
+    },
+    {
+      "index": 19,
+      "rgb888": "#c6b5ff",
+      "snes_bgr15": "0x7ed8"
+    },
+    {
+      "index": 20,
+      "rgb888": "#000000",
+      "snes_bgr15": "0x0000"
+    }
+  ],
+  "format": "zelda3_snes_palette_v1"
+}

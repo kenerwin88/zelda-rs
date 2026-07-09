@@ -218,8 +218,16 @@ def read_palette_colors(path: Path) -> list[list[int]]:
     return [colors_by_index.get(index, [0, 0, 0]) for index in range(max(colors_by_index) + 1)]
 
 
-def _default_palette_names(asset_dir: Path) -> list[str]:
-    palettes_dir = asset_dir / "assets_src/palettes"
+def palette_authority_dir() -> Path:
+    """The tracked palette authority everything reads: `assets/palettes/`.
+
+    Promoted out of the generated tree (was `assets_src/palettes/`); callers pass
+    an explicit `palettes_dir` for hermetic tests, else default here.
+    """
+    return extract_assets.REPO_ROOT / "assets/palettes"
+
+
+def _default_palette_names(palettes_dir: Path) -> list[str]:
     preferred = ["palette_main_spr", "palette_dung_bg_main", "palette_overworld_bg_main"]
     available = sorted(path.stem for path in palettes_dir.glob("*.json"))
     ordered = [name for name in preferred if name in available]
@@ -348,9 +356,8 @@ def _row_colors(
     return row
 
 
-def _read_sheet_palettes(asset_dir: Path) -> tuple[list[str], dict[str, list[list[int]]]]:
-    palettes_dir = asset_dir / "assets_src/palettes"
-    available = _default_palette_names(asset_dir) if palettes_dir.is_dir() else []
+def _read_sheet_palettes(palettes_dir: Path) -> tuple[list[str], dict[str, list[list[int]]]]:
+    available = _default_palette_names(palettes_dir) if palettes_dir.is_dir() else []
     palettes = {
         name: read_palette_colors(palettes_dir / f"{name}.json") for name in available
     }
@@ -360,7 +367,11 @@ def _read_sheet_palettes(asset_dir: Path) -> tuple[list[str], dict[str, list[lis
     return available, palettes
 
 
-def compute_sheet_palette_plan(asset_dir: Path, sheet: EditableChrSheet) -> SheetPalettePlan:
+def compute_sheet_palette_plan(
+    asset_dir: Path,
+    sheet: EditableChrSheet,
+    palettes_dir: Path | None = None,
+) -> SheetPalettePlan:
     """Assign every sheet tile its usual in-game palette row.
 
     Row choice mirrors the canonical-art atlas (`palette_usage.json` evidence,
@@ -368,8 +379,13 @@ def compute_sheet_palette_plan(asset_dir: Path, sheet: EditableChrSheet) -> Shee
     combined rows overflow it, the least-evidenced rows are demoted to the
     tile's per-kind default row — decode never depends on the demotion because
     the raw CHR index is always `pixel - base`.
+
+    `palettes_dir` is the tracked palette authority (`assets/palettes/`); tests
+    pass a fixture dir. `asset_dir` still supplies the `palette_usage.json`
+    evidence and decoded CHR packs.
     """
-    available, palettes = _read_sheet_palettes(asset_dir)
+    palettes_dir = palettes_dir or palette_authority_dir()
+    available, palettes = _read_sheet_palettes(palettes_dir)
     palette_usage = read_palette_usage_map(asset_dir)
 
     row_key_of_tile: list[tuple[str, int, int]] = []
@@ -582,7 +598,11 @@ def remap_tiles_for_plan(sheet: EditableChrSheet, plan: SheetPalettePlan) -> lis
     return remapped
 
 
-def write_editable_chr_sheets(asset_dir: Path, out_dir: Path) -> list[Path]:
+def write_editable_chr_sheets(
+    asset_dir: Path,
+    out_dir: Path,
+    palettes_dir: Path | None = None,
+) -> list[Path]:
     sprite_packs, bg_packs = read_decoded_chr_packs(asset_dir)
     sheets = build_editable_chr_sheets(sprite_packs, bg_packs)
     destination = out_dir
@@ -592,7 +612,7 @@ def write_editable_chr_sheets(asset_dir: Path, out_dir: Path) -> list[Path]:
             continue
         png_path = destination / f"{sheet.name}.png"
         json_path = destination / f"{sheet.name}.json"
-        plan = compute_sheet_palette_plan(asset_dir, sheet)
+        plan = compute_sheet_palette_plan(asset_dir, sheet, palettes_dir=palettes_dir)
         write_chr_sheet_png(
             png_path,
             remap_tiles_for_plan(sheet, plan),

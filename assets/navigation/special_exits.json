@@ -1,0 +1,25 @@
+{
+  "asset": "kSpExit",
+  "asset_index_range": [143, 156],
+  "canonical_sha1": "2103c929b294429bcdf8914e0351f169a489e9d2",
+  "field_encoding": "parallel legacy asset arrays; numeric values pack little-endian",
+  "format": "zelda3_special_exits_v1",
+  "records": [
+    {"aux_gfx": 47, "bottom": 288, "dir": 0, "index": 0, "left": 0, "left_edge_of_map": 0, "pal_bg": 10, "pal_spr": 1, "right": 0, "spr_gfx": 12, "tab4": -224, "tab5": -224, "tab6": -4, "tab7": 4, "top": 0},
+    {"aux_gfx": 47, "bottom": 32, "dir": 4, "index": 1, "left": 256, "left_edge_of_map": 0, "pal_bg": 10, "pal_spr": 8, "right": 256, "spr_gfx": 12, "tab4": -224, "tab5": -224, "tab6": 256, "tab7": 260, "top": 0},
+    {"aux_gfx": 47, "bottom": 800, "dir": 0, "index": 2, "left": 512, "left_edge_of_map": 512, "pal_bg": 10, "pal_spr": 8, "right": 1280, "spr_gfx": 14, "tab4": -224, "tab5": -224, "tab6": 768, "tab7": 768, "top": 0},
+    {"aux_gfx": 0, "bottom": 0, "dir": 0, "index": 3, "left": 0, "left_edge_of_map": 0, "pal_bg": 0, "pal_spr": 0, "right": 0, "spr_gfx": 0, "tab4": 0, "tab5": 0, "tab6": 0, "tab7": 0, "top": 0},
+    {"aux_gfx": 0, "bottom": 0, "dir": 0, "index": 4, "left": 0, "left_edge_of_map": 0, "pal_bg": 0, "pal_spr": 0, "right": 0, "spr_gfx": 0, "tab4": 0, "tab5": 0, "tab6": 0, "tab7": 0, "top": 0},
+    {"aux_gfx": 0, "bottom": 0, "dir": 0, "index": 5, "left": 0, "left_edge_of_map": 0, "pal_bg": 0, "pal_spr": 0, "right": 0, "spr_gfx": 0, "tab4": 0, "tab5": 0, "tab6": 0, "tab7": 0, "top": 0},
+    {"aux_gfx": 0, "bottom": 0, "dir": 0, "index": 6, "left": 0, "left_edge_of_map": 0, "pal_bg": 0, "pal_spr": 0, "right": 0, "spr_gfx": 0, "tab4": 0, "tab5": 0, "tab6": 0, "tab7": 0, "top": 0},
+    {"aux_gfx": 0, "bottom": 0, "dir": 0, "index": 7, "left": 0, "left_edge_of_map": 0, "pal_bg": 0, "pal_spr": 0, "right": 0, "spr_gfx": 0, "tab4": 0, "tab5": 0, "tab6": 0, "tab7": 0, "top": 0},
+    {"aux_gfx": 0, "bottom": 0, "dir": 0, "index": 8, "left": 0, "left_edge_of_map": 0, "pal_bg": 0, "pal_spr": 0, "right": 0, "spr_gfx": 0, "tab4": 0, "tab5": 0, "tab6": 0, "tab7": 0, "top": 0},
+    {"aux_gfx": 47, "bottom": 544, "dir": 0, "index": 9, "left": 256, "left_edge_of_map": 0, "pal_bg": 2, "pal_spr": 0, "right": 256, "spr_gfx": 14, "tab4": -224, "tab5": -224, "tab6": 256, "tab7": 260, "top": 512},
+    {"aux_gfx": 0, "bottom": 0, "dir": 0, "index": 10, "left": 0, "left_edge_of_map": 0, "pal_bg": 0, "pal_spr": 0, "right": 0, "spr_gfx": 0, "tab4": 0, "tab5": 0, "tab6": 0, "tab7": 0, "top": 0},
+    {"aux_gfx": 0, "bottom": 0, "dir": 0, "index": 11, "left": 0, "left_edge_of_map": 0, "pal_bg": 0, "pal_spr": 0, "right": 0, "spr_gfx": 0, "tab4": 0, "tab5": 0, "tab6": 0, "tab7": 0, "top": 0},
+    {"aux_gfx": 0, "bottom": 0, "dir": 0, "index": 12, "left": 0, "left_edge_of_map": 0, "pal_bg": 0, "pal_spr": 0, "right": 0, "spr_gfx": 0, "tab4": 0, "tab5": 0, "tab6": 0, "tab7": 0, "top": 0},
+    {"aux_gfx": 0, "bottom": 0, "dir": 0, "index": 13, "left": 0, "left_edge_of_map": 0, "pal_bg": 0, "pal_spr": 0, "right": 0, "spr_gfx": 0, "tab4": 0, "tab5": 0, "tab6": 0, "tab7": 0, "top": 0},
+    {"aux_gfx": 0, "bottom": 0, "dir": 0, "index": 14, "left": 0, "left_edge_of_map": 0, "pal_bg": 0, "pal_spr": 0, "right": 0, "spr_gfx": 0, "tab4": 0, "tab5": 0, "tab6": 0, "tab7": 0, "top": 0},
+    {"aux_gfx": 0, "bottom": 0, "dir": 0, "index": 15, "left": 0, "left_edge_of_map": 0, "pal_bg": 0, "pal_spr": 0, "right": 0, "spr_gfx": 0, "tab4": 0, "tab5": 0, "tab6": 0, "tab7": 0, "top": 0}
+  ]
+}

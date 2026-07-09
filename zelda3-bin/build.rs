@@ -754,7 +754,7 @@ fn read_asset(
         return read_source_asset(generated_dir, source_format, source_file, name);
     }
     if let Some((source_format, source_file)) = known_source(name) {
-        if generated_dir.join(source_file).is_file() {
+        if resolve_source_path(generated_dir, source_file).is_file() {
             return read_source_asset(generated_dir, source_format, source_file, name);
         }
     }
@@ -782,7 +782,7 @@ fn known_source(name: &str) -> Option<(&'static str, &'static str)> {
     if ENTRANCE_FIELDS.iter().any(|field| field.asset == name) {
         return Some((
             FORMAT_DUNGEON_ENTRANCES,
-            "assets_src/navigation/dungeon_entrances.json",
+            "assets/navigation/dungeon_entrances.json",
         ));
     }
     if STARTING_POINT_FIELDS
@@ -791,120 +791,132 @@ fn known_source(name: &str) -> Option<(&'static str, &'static str)> {
     {
         return Some((
             FORMAT_STARTING_POINTS,
-            "assets_src/navigation/starting_points.json",
+            "assets/navigation/starting_points.json",
         ));
     }
     if EXIT_FIELDS.iter().any(|field| field.asset == name) {
         return Some((
             FORMAT_OVERWORLD_EXITS,
-            "assets_src/navigation/overworld_exits.json",
+            "assets/navigation/overworld_exits.json",
         ));
     }
     if SPECIAL_EXIT_FIELDS.iter().any(|field| field.asset == name) {
         return Some((
             FORMAT_SPECIAL_EXITS,
-            "assets_src/navigation/special_exits.json",
+            "assets/navigation/special_exits.json",
         ));
     }
     match name {
         "kLightOverworldTilemap" => Some((
             FORMAT_BYTE_TILEMAP,
-            "assets_src/tilemaps/light_overworld_tilemap.json",
+            "assets/tilemaps/light_overworld_tilemap.json",
         )),
         "kDarkOverworldTilemap" => Some((
             FORMAT_BYTE_TILEMAP,
-            "assets_src/tilemaps/dark_overworld_tilemap.json",
+            "assets/tilemaps/dark_overworld_tilemap.json",
         )),
         "kBgTilemap_0" => Some((
             FORMAT_BYTE_STREAM_TILEMAP,
-            "assets_src/tilemaps/bg_tilemap_0.json",
+            "assets/tilemaps/bg_tilemap_0.json",
         )),
         "kBgTilemap_1" => Some((
             FORMAT_BYTE_STREAM_TILEMAP,
-            "assets_src/tilemaps/bg_tilemap_1.json",
+            "assets/tilemaps/bg_tilemap_1.json",
         )),
         "kBgTilemap_2" => Some((
             FORMAT_BYTE_STREAM_TILEMAP,
-            "assets_src/tilemaps/bg_tilemap_2.json",
+            "assets/tilemaps/bg_tilemap_2.json",
         )),
         "kBgTilemap_3" => Some((
             FORMAT_BYTE_STREAM_TILEMAP,
-            "assets_src/tilemaps/bg_tilemap_3.json",
+            "assets/tilemaps/bg_tilemap_3.json",
         )),
         "kBgTilemap_4" => Some((
             FORMAT_BYTE_STREAM_TILEMAP,
-            "assets_src/tilemaps/bg_tilemap_4.json",
+            "assets/tilemaps/bg_tilemap_4.json",
         )),
         "kBgTilemap_5" => Some((
             FORMAT_BYTE_STREAM_TILEMAP,
-            "assets_src/tilemaps/bg_tilemap_5.json",
+            "assets/tilemaps/bg_tilemap_5.json",
         )),
         "kPalette_DungBgMain" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/palette_dung_bg_main.json",
+            "assets/palettes/palette_dung_bg_main.json",
         )),
         "kPalette_MainSpr" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/palette_main_spr.json",
+            "assets/palettes/palette_main_spr.json",
         )),
         "kPalette_ArmorAndGloves" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/palette_armor_and_gloves.json",
+            "assets/palettes/palette_armor_and_gloves.json",
         )),
         "kPalette_Sword" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/palette_sword.json",
+            "assets/palettes/palette_sword.json",
         )),
         "kPalette_Shield" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/palette_shield.json",
+            "assets/palettes/palette_shield.json",
         )),
         "kPalette_SpriteAux3" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/palette_sprite_aux3.json",
+            "assets/palettes/palette_sprite_aux3.json",
         )),
         "kPalette_MiscSprite_Indoors" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/palette_misc_sprite_indoors.json",
+            "assets/palettes/palette_misc_sprite_indoors.json",
         )),
         "kPalette_SpriteAux1" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/palette_sprite_aux1.json",
+            "assets/palettes/palette_sprite_aux1.json",
         )),
         "kPalette_OverworldBgMain" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/palette_overworld_bg_main.json",
+            "assets/palettes/palette_overworld_bg_main.json",
         )),
         "kPalette_OverworldBgAux12" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/palette_overworld_bg_aux12.json",
+            "assets/palettes/palette_overworld_bg_aux12.json",
         )),
         "kPalette_OverworldBgAux3" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/palette_overworld_bg_aux3.json",
+            "assets/palettes/palette_overworld_bg_aux3.json",
         )),
         "kPalette_PalaceMapBg" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/palette_palace_map_bg.json",
+            "assets/palettes/palette_palace_map_bg.json",
         )),
         "kPalette_PalaceMapSpr" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/palette_palace_map_spr.json",
+            "assets/palettes/palette_palace_map_spr.json",
         )),
-        "kHudPalData" => Some((FORMAT_SNES_PALETTE, "assets_src/palettes/hud_pal_data.json")),
+        "kHudPalData" => Some((FORMAT_SNES_PALETTE, "assets/palettes/hud_pal_data.json")),
         "kOverworldMapPaletteData" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/overworld_map_palette_data.json",
+            "assets/palettes/overworld_map_palette_data.json",
         )),
         "kOverworldBgPalettes" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/overworld_bg_palettes.json",
+            "assets/palettes/overworld_bg_palettes.json",
         )),
         "kOverworldSpritePalettes" => Some((
             FORMAT_SNES_PALETTE,
-            "assets_src/palettes/overworld_sprite_palettes.json",
+            "assets/palettes/overworld_sprite_palettes.json",
         )),
         _ => None,
+    }
+}
+
+/// Resolve a manifest/known `source_file` to an on-disk path. Tracked readable
+/// authorities live in the repo tree (`assets/...`) and are resolved against the
+/// repo root, independent of the (possibly redirected) generated asset dir;
+/// everything else resolves against `generated_dir`.
+fn resolve_source_path(generated_dir: &Path, source_file: &str) -> PathBuf {
+    if source_file.starts_with("assets/") {
+        dialogue_repo_root().join(source_file)
+    } else {
+        generated_dir.join(source_file)
     }
 }
 
@@ -914,7 +926,7 @@ fn read_source_asset(
     source_file: &str,
     asset_name: &str,
 ) -> Vec<u8> {
-    let source_path = generated_dir.join(source_file);
+    let source_path = resolve_source_path(generated_dir, source_file);
     println!("cargo:rerun-if-changed={}", source_path.display());
     match source_format {
         FORMAT_BYTE_TILEMAP => read_byte_tilemap_json(&source_path),

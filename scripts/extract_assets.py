@@ -32,114 +32,114 @@ ASSET_SIGNATURE_PREFIX = b"Zelda3_v0     \n\0"
 READABLE_ASSET_SOURCES = {
     "kLightOverworldTilemap": {
         "format": tilemap_json.FORMAT_BYTE_TILEMAP,
-        "file": "assets_src/tilemaps/light_overworld_tilemap.json",
+        "file": "assets/tilemaps/light_overworld_tilemap.json",
         "width": 64,
         "height": 64,
     },
     "kDarkOverworldTilemap": {
         "format": tilemap_json.FORMAT_BYTE_TILEMAP,
-        "file": "assets_src/tilemaps/dark_overworld_tilemap.json",
+        "file": "assets/tilemaps/dark_overworld_tilemap.json",
         "width": 32,
         "height": 32,
     },
     "kBgTilemap_0": {
         "format": tilemap_json.FORMAT_BYTE_STREAM_TILEMAP,
-        "file": "assets_src/tilemaps/bg_tilemap_0.json",
+        "file": "assets/tilemaps/bg_tilemap_0.json",
     },
     "kBgTilemap_1": {
         "format": tilemap_json.FORMAT_BYTE_STREAM_TILEMAP,
-        "file": "assets_src/tilemaps/bg_tilemap_1.json",
+        "file": "assets/tilemaps/bg_tilemap_1.json",
     },
     "kBgTilemap_2": {
         "format": tilemap_json.FORMAT_BYTE_STREAM_TILEMAP,
-        "file": "assets_src/tilemaps/bg_tilemap_2.json",
+        "file": "assets/tilemaps/bg_tilemap_2.json",
     },
     "kBgTilemap_3": {
         "format": tilemap_json.FORMAT_BYTE_STREAM_TILEMAP,
-        "file": "assets_src/tilemaps/bg_tilemap_3.json",
+        "file": "assets/tilemaps/bg_tilemap_3.json",
     },
     "kBgTilemap_4": {
         "format": tilemap_json.FORMAT_BYTE_STREAM_TILEMAP,
-        "file": "assets_src/tilemaps/bg_tilemap_4.json",
+        "file": "assets/tilemaps/bg_tilemap_4.json",
     },
     "kBgTilemap_5": {
         "format": tilemap_json.FORMAT_BYTE_STREAM_TILEMAP,
-        "file": "assets_src/tilemaps/bg_tilemap_5.json",
+        "file": "assets/tilemaps/bg_tilemap_5.json",
     },
     "kPalette_DungBgMain": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/palette_dung_bg_main.json",
+        "file": "assets/palettes/palette_dung_bg_main.json",
     },
     "kPalette_MainSpr": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/palette_main_spr.json",
+        "file": "assets/palettes/palette_main_spr.json",
     },
     "kPalette_ArmorAndGloves": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/palette_armor_and_gloves.json",
+        "file": "assets/palettes/palette_armor_and_gloves.json",
     },
     "kPalette_Sword": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/palette_sword.json",
+        "file": "assets/palettes/palette_sword.json",
     },
     "kPalette_Shield": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/palette_shield.json",
+        "file": "assets/palettes/palette_shield.json",
     },
     "kPalette_SpriteAux3": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/palette_sprite_aux3.json",
+        "file": "assets/palettes/palette_sprite_aux3.json",
     },
     "kPalette_MiscSprite_Indoors": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/palette_misc_sprite_indoors.json",
+        "file": "assets/palettes/palette_misc_sprite_indoors.json",
     },
     "kPalette_SpriteAux1": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/palette_sprite_aux1.json",
+        "file": "assets/palettes/palette_sprite_aux1.json",
     },
     "kPalette_OverworldBgMain": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/palette_overworld_bg_main.json",
+        "file": "assets/palettes/palette_overworld_bg_main.json",
     },
     "kPalette_OverworldBgAux12": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/palette_overworld_bg_aux12.json",
+        "file": "assets/palettes/palette_overworld_bg_aux12.json",
     },
     "kPalette_OverworldBgAux3": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/palette_overworld_bg_aux3.json",
+        "file": "assets/palettes/palette_overworld_bg_aux3.json",
     },
     "kPalette_PalaceMapBg": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/palette_palace_map_bg.json",
+        "file": "assets/palettes/palette_palace_map_bg.json",
     },
     "kPalette_PalaceMapSpr": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/palette_palace_map_spr.json",
+        "file": "assets/palettes/palette_palace_map_spr.json",
     },
     "kHudPalData": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/hud_pal_data.json",
+        "file": "assets/palettes/hud_pal_data.json",
     },
     "kOverworldMapPaletteData": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/overworld_map_palette_data.json",
+        "file": "assets/palettes/overworld_map_palette_data.json",
     },
     "kOverworldBgPalettes": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/overworld_bg_palettes.json",
+        "file": "assets/palettes/overworld_bg_palettes.json",
     },
     "kOverworldSpritePalettes": {
         "format": palette_json.FORMAT_SNES_PALETTE,
-        "file": "assets_src/palettes/overworld_sprite_palettes.json",
+        "file": "assets/palettes/overworld_sprite_palettes.json",
     },
 }
 
 NAVIGATION_SOURCE_GROUPS = [
     {
         "format": navigation_json.FORMAT_DUNGEON_ENTRANCES,
-        "file": "assets_src/navigation/dungeon_entrances.json",
+        "file": "assets/navigation/dungeon_entrances.json",
         "asset_index_range": [11, 27],
         "asset_names": [field[0] for field in navigation_json.ENTRANCE_FIELDS],
         "source_from_assets": navigation_json.entrance_source_from_assets,
@@ -147,7 +147,7 @@ NAVIGATION_SOURCE_GROUPS = [
     },
     {
         "format": navigation_json.FORMAT_STARTING_POINTS,
-        "file": "assets_src/navigation/starting_points.json",
+        "file": "assets/navigation/starting_points.json",
         "asset_index_range": [28, 45],
         "asset_names": [field[0] for field in navigation_json.STARTING_POINT_FIELDS],
         "source_from_assets": navigation_json.starting_point_source_from_assets,
@@ -155,7 +155,7 @@ NAVIGATION_SOURCE_GROUPS = [
     },
     {
         "format": navigation_json.FORMAT_OVERWORLD_EXITS,
-        "file": "assets_src/navigation/overworld_exits.json",
+        "file": "assets/navigation/overworld_exits.json",
         "asset_index_range": [130, 142],
         "asset_names": [field[0] for field in navigation_json.EXIT_FIELDS],
         "source_from_assets": navigation_json.exit_source_from_assets,
@@ -163,7 +163,7 @@ NAVIGATION_SOURCE_GROUPS = [
     },
     {
         "format": navigation_json.FORMAT_SPECIAL_EXITS,
-        "file": "assets_src/navigation/special_exits.json",
+        "file": "assets/navigation/special_exits.json",
         "asset_index_range": [143, 156],
         "asset_names": [field[0] for field in navigation_json.SPECIAL_EXIT_FIELDS],
         "source_from_assets": navigation_json.special_exit_source_from_assets,
@@ -293,9 +293,31 @@ def restore_palette_usage(out_dir: Path, data: bytes | None) -> None:
     path.write_bytes(data)
 
 
+def bootstrap_source_file(source_root: Path, source_file: str, write) -> None:
+    """Write a tracked readable-source file, bootstrap-only.
+
+    `source_file` is a repo-relative path like `assets/palettes/foo.json`; it is
+    resolved against `source_root` (the repo root in production, a temp fixture
+    in tests). When the tracked file already exists it is the authority (possibly
+    user-edited, guarded by its parity lock) and extraction must NOT overwrite
+    it — mirrors `write_chr_source_sheets`.
+    """
+    target = source_root / source_file
+    if target.exists():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    write(target)
+
+
 def write_asset_output(
-    out_dir: Path, *, index: int, name: str, payload: bytes
+    out_dir: Path,
+    *,
+    index: int,
+    name: str,
+    payload: bytes,
+    source_root: Path | None = None,
 ) -> dict[str, object]:
+    source_root = source_root or REPO_ROOT
     source = READABLE_ASSET_SOURCES.get(name)
     manifest_asset: dict[str, object] = {
         "index": index,
@@ -332,20 +354,33 @@ def write_asset_output(
             asset_index=index,
         )
         source_file = str(source["file"])
-        palette_json.write_palette_json(out_dir / source_file, palette)
+        bootstrap_source_file(
+            source_root,
+            source_file,
+            lambda path: palette_json.write_palette_json(path, palette),
+        )
         manifest_asset["source_file"] = source_file
         manifest_asset["source_format"] = source["format"]
         return manifest_asset
     else:
         raise RuntimeError(f"unsupported readable asset source format: {source['format']}")
     source_file = str(source["file"])
-    tilemap_json.write_tilemap_json(out_dir / source_file, tilemap)
+    bootstrap_source_file(
+        source_root,
+        source_file,
+        lambda path: tilemap_json.write_tilemap_json(path, tilemap),
+    )
     manifest_asset["source_file"] = source_file
     manifest_asset["source_format"] = source["format"]
     return manifest_asset
 
 
-def write_asset_outputs(out_dir: Path, assets: list[tuple[str, bytes]]) -> list[dict[str, object]]:
+def write_asset_outputs(
+    out_dir: Path,
+    assets: list[tuple[str, bytes]],
+    source_root: Path | None = None,
+) -> list[dict[str, object]]:
+    source_root = source_root or REPO_ROOT
     navigation_groups = {}
     assets_by_name = dict(assets)
     for group in NAVIGATION_SOURCE_GROUPS:
@@ -360,7 +395,11 @@ def write_asset_outputs(out_dir: Path, assets: list[tuple[str, bytes]]) -> list[
                 **group["source_kwargs"],
             )
             source_file = str(group["file"])
-            navigation_json.write_navigation_json(out_dir / source_file, source)
+            bootstrap_source_file(
+                source_root,
+                source_file,
+                lambda path, source=source: navigation_json.write_navigation_json(path, source),
+            )
             navigation_groups[group["format"]] = source
 
     manifest_assets = []
@@ -379,7 +418,9 @@ def write_asset_outputs(out_dir: Path, assets: list[tuple[str, bytes]]) -> list[
                 }
             )
             continue
-        manifest_asset = write_asset_output(out_dir, index=index, name=name, payload=payload)
+        manifest_asset = write_asset_output(
+            out_dir, index=index, name=name, payload=payload, source_root=source_root
+        )
         if name == "kDialogue":
             # The tracked authority; the build compiles kDialogue from it directly.
             manifest_asset["source_file"] = "assets/dialogue/messages.toml"
@@ -430,6 +471,7 @@ def write_rgba_variant_atlas(
     out_dir: Path,
     *,
     write_diagnostic_variants: bool = False,
+    palettes_dir: Path | None = None,
 ) -> list[dict[str, str]]:
     if not write_diagnostic_variants:
         return []
@@ -437,7 +479,7 @@ def write_rgba_variant_atlas(
     import rgba_variant_atlas
 
     try:
-        written = rgba_variant_atlas.write_rom_variant_atlas(out_dir)
+        written = rgba_variant_atlas.write_rom_variant_atlas(out_dir, palettes_dir=palettes_dir)
     except FileNotFoundError as exc:
         print(f"skipping RGBA variant atlas: missing {exc.filename}", file=sys.stderr)
         return []
@@ -453,13 +495,16 @@ def write_rgba_variant_atlas(
     ]
 
 
-def write_base_effect_atlas(out_dir: Path) -> list[dict[str, str]]:
+def write_base_effect_atlas(
+    out_dir: Path, palettes_dir: Path | None = None
+) -> list[dict[str, str]]:
     import rgba_variant_atlas
 
     try:
         written = rgba_variant_atlas.write_base_effect_atlas(
             out_dir,
             source_tiles_dir=REPO_ROOT / "zelda3-bin/developer_tilesets",
+            palettes_dir=palettes_dir,
         )
     except FileNotFoundError as exc:
         print(f"skipping base/effect atlas: missing {exc.filename}", file=sys.stderr)
@@ -477,11 +522,13 @@ def write_base_effect_atlas(out_dir: Path) -> list[dict[str, str]]:
     ]
 
 
-def write_tile_effect_table(out_dir: Path) -> list[dict[str, str]]:
+def write_tile_effect_table(
+    out_dir: Path, palettes_dir: Path | None = None
+) -> list[dict[str, str]]:
     import rgba_variant_atlas
 
     try:
-        written = rgba_variant_atlas.write_tile_effect_table(out_dir)
+        written = rgba_variant_atlas.write_tile_effect_table(out_dir, palettes_dir=palettes_dir)
     except FileNotFoundError as exc:
         raise RuntimeError(
             f"required tile effect table input missing: {exc.filename}"
@@ -511,6 +558,7 @@ def chr_sheet_authority_dir(out_dir: Path) -> Path:
 def write_canonical_art_atlas(
     out_dir: Path,
     chr_sheet_dir: Path | None = None,
+    palettes_dir: Path | None = None,
 ) -> list[dict[str, str]]:
     import rgba_variant_atlas
 
@@ -519,6 +567,7 @@ def write_canonical_art_atlas(
             out_dir,
             source_tiles_dir=REPO_ROOT / "zelda3-bin/developer_tilesets",
             chr_sheet_dir=chr_sheet_dir or chr_sheet_authority_dir(out_dir),
+            palettes_dir=palettes_dir,
         )
     except FileNotFoundError as exc:
         raise RuntimeError(
@@ -735,8 +784,9 @@ def main() -> int:
     print(f"wrote {bin_count} binary asset files to {assets_dir}")
     if source_count:
         print(
-            f"wrote {source_count} readable asset entries "
-            f"across {source_file_count} source files to {out_dir / 'assets_src'}"
+            f"tracked {source_count} readable asset entries "
+            f"across {source_file_count} source files under {REPO_ROOT / 'assets'} "
+            "(bootstrap-only; existing tracked files preserved)"
         )
     if chr_source_sheets:
         print(f"tracked CHR sheet authority: {len(chr_source_sheets)} sheets at {REPO_ROOT / 'assets/chr'}")

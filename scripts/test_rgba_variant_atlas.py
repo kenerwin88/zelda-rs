@@ -153,7 +153,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                 palette_colors,
             )
 
-            written = write_rom_variant_atlas(asset_dir)
+            written = write_rom_variant_atlas(asset_dir, palettes_dir=asset_dir / "assets_src/palettes")
 
             self.assertIn(asset_dir / "atlas/tile_variants.png", written)
             self.assertIn(asset_dir / "atlas/tile_variants.json", written)
@@ -195,7 +195,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                 palette_colors,
             )
 
-            width, height, pixels, entries, effects = build_base_effect_atlas(asset_dir)
+            width, height, pixels, entries, effects = build_base_effect_atlas(asset_dir, palettes_dir=asset_dir / "assets_src/palettes")
 
             self.assertEqual((width, height), (256, 8))
             self.assertLess(len(entries), 2000)
@@ -265,7 +265,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                 )
             )
 
-            _width, _height, pixels, entries, _effects = build_base_effect_atlas(asset_dir)
+            _width, _height, pixels, entries, _effects = build_base_effect_atlas(asset_dir, palettes_dir=asset_dir / "assets_src/palettes")
 
             self.assertEqual(entries[0]["preview_palette"], "palette_main_spr")
             self.assertEqual(entries[0]["preview_palette_row"], 1)
@@ -301,7 +301,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                 palette_colors,
             )
 
-            _width, _height, _pixels, entries, _effects = build_base_effect_atlas(asset_dir)
+            _width, _height, _pixels, entries, _effects = build_base_effect_atlas(asset_dir, palettes_dir=asset_dir / "assets_src/palettes")
 
             self.assertEqual(entries[0]["preview_palette"], "palette_main_spr")
             self.assertEqual(entries[0]["preview_source"], "source_kind_default")
@@ -390,6 +390,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
 
             width, _height, pixels, entries, _effects = build_base_effect_atlas(
                 asset_dir,
+                palettes_dir=asset_dir / "assets_src/palettes",
                 source_tiles_dir=source_dir,
             )
 
@@ -489,6 +490,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
 
             _width, _height, _pixels, entries, _effects = build_base_effect_atlas(
                 asset_dir,
+                palettes_dir=asset_dir / "assets_src/palettes",
                 source_tiles_dir=source_dir,
             )
 
@@ -576,7 +578,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                 )
             )
 
-            _width, _height, pixels, entries, effects = build_base_effect_atlas(asset_dir)
+            _width, _height, pixels, entries, effects = build_base_effect_atlas(asset_dir, palettes_dir=asset_dir / "assets_src/palettes")
 
             self.assertEqual(entries[0]["preview_palette"], "palette_sprite_aux1")
             self.assertEqual(entries[0]["preview_palette_row"], 1)
@@ -649,6 +651,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
 
             _width, _height, _pixels, arts = build_canonical_art_atlas(
                 asset_dir,
+                palettes_dir=asset_dir / "assets_src/palettes",
                 source_tiles_dir=source_dir,
             )
 
@@ -724,6 +727,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
 
             _width, _height, _pixels, arts = build_canonical_art_atlas(
                 asset_dir,
+                palettes_dir=asset_dir / "assets_src/palettes",
                 source_tiles_dir=source_dir,
             )
 
@@ -824,6 +828,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
 
             width, _height, pixels, arts = build_canonical_art_atlas(
                 asset_dir,
+                palettes_dir=asset_dir / "assets_src/palettes",
                 source_tiles_dir=source_dir,
             )
 
@@ -946,6 +951,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
 
             _width, _height, _pixels, arts = build_canonical_art_atlas(
                 asset_dir,
+                palettes_dir=asset_dir / "assets_src/palettes",
                 source_tiles_dir=source_dir,
             )
 
@@ -1026,6 +1032,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
 
             written = write_canonical_art_atlas(
                 asset_dir,
+                palettes_dir=asset_dir / "assets_src/palettes",
                 source_tiles_dir=source_dir,
             )
 
@@ -1095,7 +1102,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                 palette_colors,
             )
 
-            _width, _height, _pixels, arts = build_canonical_art_atlas(asset_dir)
+            _width, _height, _pixels, arts = build_canonical_art_atlas(asset_dir, palettes_dir=asset_dir / "assets_src/palettes")
 
             mode7_arts = [
                 art
@@ -1174,6 +1181,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
 
             _width, _height, _pixels, arts = build_canonical_art_atlas(
                 asset_dir,
+                palettes_dir=asset_dir / "assets_src/palettes",
                 source_tiles_dir=source_dir,
             )
 
@@ -1229,7 +1237,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                 hud_colors,
             )
 
-            written = write_canonical_art_atlas(asset_dir)
+            written = write_canonical_art_atlas(asset_dir, palettes_dir=asset_dir / "assets_src/palettes")
 
             self.assertIn(asset_dir / "atlas/art_tiles.png", written)
             self.assertIn(asset_dir / "atlas/art_tiles.json", written)
@@ -1317,7 +1325,9 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             image.save(chr_dir / "1w-2d.png")
 
             written = write_canonical_art_atlas(
-                asset_dir, chr_sheet_dir=asset_dir / "assets_src/chr"
+                asset_dir,
+                chr_sheet_dir=asset_dir / "assets_src/chr",
+                palettes_dir=asset_dir / "assets_src/palettes",
             )
 
             self.assertIn(asset_dir / "atlas/dialogue_glyph_tiles.png", written)
@@ -1377,7 +1387,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                 hud_colors,
             )
 
-            written = write_canonical_art_atlas(asset_dir)
+            written = write_canonical_art_atlas(asset_dir, palettes_dir=asset_dir / "assets_src/palettes")
 
             self.assertIn(asset_dir / "atlas/dialogue_vwf_font.json", written)
             self.assertIn(asset_dir / "atlas/dialogue_vwf_glyphs.png", written)
@@ -1460,7 +1470,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                 palette_colors,
             )
 
-            written = write_base_effect_atlas(asset_dir)
+            written = write_base_effect_atlas(asset_dir, palettes_dir=asset_dir / "assets_src/palettes")
 
             self.assertIn(asset_dir / "atlas/base_tiles.png", written)
             self.assertIn(asset_dir / "atlas/base_tiles.json", written)
@@ -1506,7 +1516,7 @@ class RgbaVariantAtlasTests(unittest.TestCase):
                 palette_colors,
             )
 
-            written = write_tile_effect_table(asset_dir)
+            written = write_tile_effect_table(asset_dir, palettes_dir=asset_dir / "assets_src/palettes")
 
             self.assertEqual(written, [asset_dir / "atlas/tile_effects.json"])
             self.assertFalse((asset_dir / "atlas/base_tiles.png").exists())

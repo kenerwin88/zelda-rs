@@ -108,14 +108,15 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 index=67,
                 name="kLightOverworldTilemap",
                 payload=payload,
+                source_root=out_dir,
             )
 
-            source_path = out_dir / "assets_src/tilemaps/light_overworld_tilemap.json"
+            source_path = out_dir / "assets/tilemaps/light_overworld_tilemap.json"
 
             self.assertEqual(manifest["source_format"], "zelda3_byte_tilemap_v1")
             self.assertEqual(
                 manifest["source_file"],
-                "assets_src/tilemaps/light_overworld_tilemap.json",
+                "assets/tilemaps/light_overworld_tilemap.json",
             )
             self.assertFalse((out_dir / "assets/067-kLightOverworldTilemap.bin").exists())
             self.assertEqual(
@@ -133,9 +134,10 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 index=68,
                 name="kDarkOverworldTilemap",
                 payload=payload,
+                source_root=out_dir,
             )
 
-            source_path = out_dir / "assets_src/tilemaps/dark_overworld_tilemap.json"
+            source_path = out_dir / "assets/tilemaps/dark_overworld_tilemap.json"
 
             self.assertEqual(manifest["source_format"], "zelda3_byte_tilemap_v1")
             self.assertFalse((out_dir / "assets/068-kDarkOverworldTilemap.bin").exists())
@@ -154,9 +156,10 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 index=99,
                 name="kBgTilemap_0",
                 payload=payload,
+                source_root=out_dir,
             )
 
-            source_path = out_dir / "assets_src/tilemaps/bg_tilemap_0.json"
+            source_path = out_dir / "assets/tilemaps/bg_tilemap_0.json"
 
             self.assertEqual(manifest["source_format"], "zelda3_byte_stream_tilemap_v1")
             self.assertFalse((out_dir / "assets/099-kBgTilemap_0.bin").exists())
@@ -175,9 +178,10 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 index=80,
                 name="kPalette_MainSpr",
                 payload=payload,
+                source_root=out_dir,
             )
 
-            source_path = out_dir / "assets_src/palettes/palette_main_spr.json"
+            source_path = out_dir / "assets/palettes/palette_main_spr.json"
 
             self.assertEqual(manifest["source_format"], "zelda3_snes_palette_v1")
             self.assertFalse((out_dir / "assets/080-kPalette_MainSpr.bin").exists())
@@ -196,9 +200,10 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 index=92,
                 name="kHudPalData",
                 payload=payload,
+                source_root=out_dir,
             )
 
-            source_path = out_dir / "assets_src/palettes/hud_pal_data.json"
+            source_path = out_dir / "assets/palettes/hud_pal_data.json"
 
             self.assertEqual(manifest["source_format"], "zelda3_snes_palette_v1")
             self.assertFalse((out_dir / "assets/092-kHudPalData.bin").exists())
@@ -230,9 +235,11 @@ class ExtractAssetSourcesTests(unittest.TestCase):
 
         with TemporaryDirectory() as temp_dir:
             out_dir = Path(temp_dir)
-            manifest = extract_assets.write_asset_outputs(out_dir, assets)
+            manifest = extract_assets.write_asset_outputs(
+                out_dir, assets, source_root=out_dir
+            )
 
-            source_path = out_dir / "assets_src/navigation/dungeon_entrances.json"
+            source_path = out_dir / "assets/navigation/dungeon_entrances.json"
 
             self.assertTrue(source_path.is_file())
             self.assertFalse((out_dir / "assets/000-kEntranceData_rooms.bin").exists())
@@ -241,7 +248,7 @@ class ExtractAssetSourcesTests(unittest.TestCase):
             )
             self.assertEqual(
                 manifest[0]["source_file"],
-                "assets_src/navigation/dungeon_entrances.json",
+                "assets/navigation/dungeon_entrances.json",
             )
             source = navigation_json.read_navigation_json(source_path)
             self.assertEqual(
@@ -390,6 +397,7 @@ class ExtractAssetSourcesTests(unittest.TestCase):
             atlas = extract_assets.write_rgba_variant_atlas(
                 out_dir,
                 write_diagnostic_variants=True,
+                palettes_dir=out_dir / "assets_src/palettes",
             )
 
             self.assertEqual(
@@ -433,7 +441,9 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 )
             )
 
-            atlas = extract_assets.write_rgba_variant_atlas(out_dir)
+            atlas = extract_assets.write_rgba_variant_atlas(
+                out_dir, palettes_dir=out_dir / "assets_src/palettes"
+            )
 
             self.assertEqual(atlas, [])
             self.assertFalse((out_dir / "atlas/tile_variants.png").exists())
@@ -467,7 +477,9 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 )
             )
 
-            atlas = extract_assets.write_base_effect_atlas(out_dir)
+            atlas = extract_assets.write_base_effect_atlas(
+                out_dir, palettes_dir=out_dir / "assets_src/palettes"
+            )
 
             self.assertEqual(
                 atlas,
@@ -535,7 +547,9 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 RuntimeError,
                 "required tile effect table input missing",
             ):
-                extract_assets.write_tile_effect_table(out_dir)
+                extract_assets.write_tile_effect_table(
+                out_dir, palettes_dir=out_dir / "assets_src/palettes"
+            )
 
     def test_writes_canonical_art_atlas_from_extracted_graphics_assets(self) -> None:
         raw_pack = bytes([0] * 1536)
@@ -566,7 +580,9 @@ class ExtractAssetSourcesTests(unittest.TestCase):
             )
 
             atlas = extract_assets.write_canonical_art_atlas(
-                out_dir, chr_sheet_dir=out_dir / "assets_src/chr"
+                out_dir,
+                chr_sheet_dir=out_dir / "assets_src/chr",
+                palettes_dir=out_dir / "assets_src/palettes",
             )
 
             self.assertEqual(
@@ -597,7 +613,9 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 RuntimeError,
                 "required canonical art atlas input missing",
             ):
-                extract_assets.write_canonical_art_atlas(out_dir)
+                extract_assets.write_canonical_art_atlas(
+                out_dir, palettes_dir=out_dir / "assets_src/palettes"
+            )
 
     def test_canonical_art_validation_requires_default_outputs(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -636,8 +654,12 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                     }
                 )
             )
-            extract_assets.write_tile_effect_table(out_dir)
-            extract_assets.write_canonical_art_atlas(out_dir)
+            extract_assets.write_tile_effect_table(
+                out_dir, palettes_dir=out_dir / "assets_src/palettes"
+            )
+            extract_assets.write_canonical_art_atlas(
+                out_dir, palettes_dir=out_dir / "assets_src/palettes"
+            )
 
             summary = extract_assets.validate_canonical_art_atlas(out_dir)
 
@@ -673,8 +695,12 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                     }
                 )
             )
-            extract_assets.write_tile_effect_table(out_dir)
-            extract_assets.write_canonical_art_atlas(out_dir)
+            extract_assets.write_tile_effect_table(
+                out_dir, palettes_dir=out_dir / "assets_src/palettes"
+            )
+            extract_assets.write_canonical_art_atlas(
+                out_dir, palettes_dir=out_dir / "assets_src/palettes"
+            )
             manifest_path = out_dir / "atlas/art_tiles.json"
             manifest = json.loads(manifest_path.read_text())
             manifest["art_count"] += 1

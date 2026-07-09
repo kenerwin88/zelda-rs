@@ -115,7 +115,7 @@ class ChrEditableSheetsTests(unittest.TestCase):
             (assets_dir / "065-kBgGfx.bin").write_bytes(pack_arrays([compressed_literal(raw_pack)]))
 
             written = chr_editable_sheets.write_editable_chr_sheets(
-                asset_dir, asset_dir / "assets_src/chr"
+                asset_dir, asset_dir / "assets_src/chr", palettes_dir=asset_dir / "assets_src/palettes"
             )
 
             self.assertIn(asset_dir / "assets_src/chr/a-h.png", written)
@@ -150,7 +150,7 @@ class ChrEditableSheetsTests(unittest.TestCase):
             )
 
             chr_editable_sheets.write_editable_chr_sheets(
-                asset_dir, asset_dir / "assets_src/chr"
+                asset_dir, asset_dir / "assets_src/chr", palettes_dir=asset_dir / "assets_src/palettes"
             )
 
             image = Image.open(asset_dir / "assets_src/chr/a-h.png")
@@ -212,7 +212,7 @@ class ChrEditableSheetsTests(unittest.TestCase):
             )
 
             chr_editable_sheets.write_editable_chr_sheets(
-                asset_dir, asset_dir / "assets_src/chr"
+                asset_dir, asset_dir / "assets_src/chr", palettes_dir=asset_dir / "assets_src/palettes"
             )
 
             sidecar = json.loads((asset_dir / "assets_src/chr/a-h.json").read_text())
@@ -258,7 +258,7 @@ class ChrEditableSheetsTests(unittest.TestCase):
             (assets_dir / "065-kBgGfx.bin").write_bytes(pack_arrays(bg_items))
 
             chr_editable_sheets.write_editable_chr_sheets(
-                asset_dir, asset_dir / "assets_src/chr"
+                asset_dir, asset_dir / "assets_src/chr", palettes_dir=asset_dir / "assets_src/palettes"
             )
 
             from_bins = chr_editable_sheets.read_decoded_chr_packs(asset_dir)
@@ -313,7 +313,9 @@ class ChrEditableSheetsTests(unittest.TestCase):
                 ],
             )
 
-            plan = chr_editable_sheets.compute_sheet_palette_plan(asset_dir, sheet)
+            plan = chr_editable_sheets.compute_sheet_palette_plan(
+                asset_dir, sheet, palettes_dir=asset_dir / "assets_src/palettes"
+            )
 
             # 33 distinct 8-color rows (264 colors) cannot all fit in 256
             # slots; the plan keeps the highest-evidence rows and demotes the
@@ -343,7 +345,7 @@ class ChrEditableSheetsTests(unittest.TestCase):
             (assets_dir / "065-kBgGfx.bin").write_bytes(pack_arrays([compressed_literal(raw_pack)]))
 
             chr_editable_sheets.write_editable_chr_sheets(
-                asset_dir, asset_dir / "assets_src/chr"
+                asset_dir, asset_dir / "assets_src/chr", palettes_dir=asset_dir / "assets_src/palettes"
             )
 
             png_path = asset_dir / "assets_src/chr/a-h.png"
@@ -399,7 +401,9 @@ class ChrEditableSheetsTests(unittest.TestCase):
             ],
         )
         with TemporaryDirectory() as temp_dir:
-            plan = chr_editable_sheets.compute_sheet_palette_plan(Path(temp_dir), sheet)
+            plan = chr_editable_sheets.compute_sheet_palette_plan(
+                Path(temp_dir), sheet, palettes_dir=Path(temp_dir) / "assets_src/palettes"
+            )
 
             manifest = chr_editable_sheets.sidecar_for_sheet(
                 Path(temp_dir), sheet, columns=16, plan=plan

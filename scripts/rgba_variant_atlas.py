@@ -345,12 +345,13 @@ def build_base_effect_atlas(
     asset_dir: Path,
     palette_names: list[str] | None = None,
     source_tiles_dir: Path | None = None,
+    palettes_dir: Path | None = None,
 ) -> tuple[int, int, bytes, list[dict[str, object]], dict[str, object]]:
-    palette_names = palette_names or _default_palette_names(asset_dir)
+    palettes_dir = palettes_dir or chr_editable_sheets.palette_authority_dir()
+    palette_names = palette_names or _default_palette_names(palettes_dir)
     if not palette_names:
-        raise FileNotFoundError(asset_dir / "assets_src/palettes")
+        raise FileNotFoundError(palettes_dir)
 
-    palettes_dir = asset_dir / "assets_src/palettes"
     palettes = {
         name: read_palette_colors(palettes_dir / f"{name}.json")
         for name in palette_names
@@ -481,12 +482,13 @@ def build_base_effect_atlas(
 def build_tile_effect_table(
     asset_dir: Path,
     palette_names: list[str] | None = None,
+    palettes_dir: Path | None = None,
 ) -> dict[str, object]:
-    palette_names = palette_names or _default_palette_names(asset_dir)
+    palettes_dir = palettes_dir or chr_editable_sheets.palette_authority_dir()
+    palette_names = palette_names or _default_palette_names(palettes_dir)
     if not palette_names:
-        raise FileNotFoundError(asset_dir / "assets_src/palettes")
+        raise FileNotFoundError(palettes_dir)
 
-    palettes_dir = asset_dir / "assets_src/palettes"
     palettes = {
         name: read_palette_colors(palettes_dir / f"{name}.json")
         for name in palette_names
@@ -497,9 +499,10 @@ def build_tile_effect_table(
 def write_tile_effect_table(
     asset_dir: Path,
     out_dir: Path | None = None,
+    palettes_dir: Path | None = None,
 ) -> list[Path]:
     destination = out_dir or asset_dir / "atlas"
-    effects = build_tile_effect_table(asset_dir)
+    effects = build_tile_effect_table(asset_dir, palettes_dir=palettes_dir)
     destination.mkdir(parents=True, exist_ok=True)
     effects_path = destination / "tile_effects.json"
     effects_path.write_text(json.dumps(effects, indent=2, sort_keys=True) + "\n")
@@ -510,6 +513,7 @@ def write_base_effect_atlas(
     asset_dir: Path,
     out_dir: Path | None = None,
     source_tiles_dir: Path | None = None,
+    palettes_dir: Path | None = None,
 ) -> list[Path]:
     from PIL import Image
 
@@ -517,6 +521,7 @@ def write_base_effect_atlas(
     width, height, pixels, entries, effects = build_base_effect_atlas(
         asset_dir,
         source_tiles_dir=source_tiles_dir,
+        palettes_dir=palettes_dir,
     )
     destination.mkdir(parents=True, exist_ok=True)
     png_path = destination / "base_tiles.png"
@@ -609,15 +614,16 @@ def build_canonical_art_atlases(
     palette_names: list[str] | None = None,
     source_tiles_dir: Path | None = None,
     chr_sheet_dir: Path | None = None,
+    palettes_dir: Path | None = None,
 ) -> tuple[
     tuple[int, int, bytes, list[dict[str, object]]],
     tuple[int, int, bytes, list[dict[str, object]]],
 ]:
-    palette_names = palette_names or _default_palette_names(asset_dir)
+    palettes_dir = palettes_dir or chr_editable_sheets.palette_authority_dir()
+    palette_names = palette_names or _default_palette_names(palettes_dir)
     if not palette_names:
-        raise FileNotFoundError(asset_dir / "assets_src/palettes")
+        raise FileNotFoundError(palettes_dir)
 
-    palettes_dir = asset_dir / "assets_src/palettes"
     palettes = {
         name: read_palette_colors(palettes_dir / f"{name}.json")
         for name in palette_names
@@ -794,12 +800,14 @@ def build_canonical_art_atlas(
     palette_names: list[str] | None = None,
     source_tiles_dir: Path | None = None,
     chr_sheet_dir: Path | None = None,
+    palettes_dir: Path | None = None,
 ) -> tuple[int, int, bytes, list[dict[str, object]]]:
     main_atlas, _dynamic_bg3_atlas = build_canonical_art_atlases(
         asset_dir,
         palette_names=palette_names,
         source_tiles_dir=source_tiles_dir,
         chr_sheet_dir=chr_sheet_dir,
+        palettes_dir=palettes_dir,
     )
     return main_atlas
 
@@ -809,6 +817,7 @@ def write_canonical_art_atlas(
     out_dir: Path | None = None,
     source_tiles_dir: Path | None = None,
     chr_sheet_dir: Path | None = None,
+    palettes_dir: Path | None = None,
 ) -> list[Path]:
     from PIL import Image
 
@@ -822,6 +831,7 @@ def write_canonical_art_atlas(
         asset_dir,
         source_tiles_dir=source_tiles_dir,
         chr_sheet_dir=chr_sheet_dir,
+        palettes_dir=palettes_dir,
     )
     destination.mkdir(parents=True, exist_ok=True)
     png_path = destination / "art_tiles.png"
@@ -861,7 +871,7 @@ def write_canonical_art_atlas(
     written = [png_path, json_path, dynamic_png_path, dynamic_json_path]
     written.extend(_write_dialogue_glyph_source_atlas(asset_dir, destination, chr_sheet_dir))
     written.extend(_write_dialogue_vwf_font_metadata(asset_dir, destination))
-    written.extend(_write_dialogue_vwf_glyph_atlas(asset_dir, destination))
+    written.extend(_write_dialogue_vwf_glyph_atlas(asset_dir, destination, palettes_dir))
     written.extend(_write_dialogue_font_tile_atlas(asset_dir, destination))
     return written
 
@@ -947,8 +957,11 @@ def _dialogue_text_color_palette_name(color: int) -> str:
     return f"palette_bg3_text_color_{color & 0x0f:02x}"
 
 
-def _dialogue_text_color_variants(asset_dir: Path) -> list[tuple[str, dict[int, list[int]]]]:
-    palette_path = asset_dir / "assets_src/palettes/hud_pal_data.json"
+def _dialogue_text_color_variants(
+    palettes_dir: Path | None = None,
+) -> list[tuple[str, dict[int, list[int]]]]:
+    palettes_dir = palettes_dir or chr_editable_sheets.palette_authority_dir()
+    palette_path = palettes_dir / "hud_pal_data.json"
     if not palette_path.is_file():
         return []
     colors = read_palette_colors(palette_path)
@@ -994,7 +1007,11 @@ def _write_dialogue_vwf_font_metadata(asset_dir: Path, destination: Path) -> lis
     return [json_path]
 
 
-def _write_dialogue_vwf_glyph_atlas(asset_dir: Path, destination: Path) -> list[Path]:
+def _write_dialogue_vwf_glyph_atlas(
+    asset_dir: Path,
+    destination: Path,
+    palettes_dir: Path | None = None,
+) -> list[Path]:
     from PIL import Image
 
     font_path = asset_dir / "assets/095-kDialogueFont.bin"
@@ -1017,7 +1034,7 @@ def _write_dialogue_vwf_glyph_atlas(asset_dir: Path, destination: Path) -> list[
         3: [184, 184, 184, 255],
     }
     palette_variants = [("palette_bg3_text_main", index_colors)]
-    palette_variants.extend(_dialogue_text_color_variants(asset_dir))
+    palette_variants.extend(_dialogue_text_color_variants(palettes_dir))
     total_cells = len(glyphs) * len(palette_variants)
     rows = max(1, (total_cells + columns - 1) // columns)
     height = rows * cell_height
@@ -1307,12 +1324,13 @@ def _write_dialogue_glyph_source_atlas(
 def build_rom_variant_atlas(
     asset_dir: Path,
     palette_names: list[str] | None = None,
+    palettes_dir: Path | None = None,
 ) -> tuple[int, int, bytes, list[AtlasEntry]]:
-    palette_names = palette_names or _default_palette_names(asset_dir)
+    palettes_dir = palettes_dir or chr_editable_sheets.palette_authority_dir()
+    palette_names = palette_names or _default_palette_names(palettes_dir)
     if not palette_names:
-        raise FileNotFoundError(asset_dir / "assets_src/palettes")
+        raise FileNotFoundError(palettes_dir)
 
-    palettes_dir = asset_dir / "assets_src/palettes"
     palettes = {
         name: read_palette_colors(palettes_dir / f"{name}.json")
         for name in palette_names
@@ -1356,11 +1374,15 @@ def _entry_to_json(entry: AtlasEntry) -> dict[str, object]:
     }
 
 
-def write_rom_variant_atlas(asset_dir: Path, out_dir: Path | None = None) -> list[Path]:
+def write_rom_variant_atlas(
+    asset_dir: Path,
+    out_dir: Path | None = None,
+    palettes_dir: Path | None = None,
+) -> list[Path]:
     from PIL import Image
 
     destination = out_dir or asset_dir / "atlas"
-    width, height, pixels, entries = build_rom_variant_atlas(asset_dir)
+    width, height, pixels, entries = build_rom_variant_atlas(asset_dir, palettes_dir=palettes_dir)
     destination.mkdir(parents=True, exist_ok=True)
     png_path = destination / "tile_variants.png"
     json_path = destination / "tile_variants.json"

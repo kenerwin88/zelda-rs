@@ -1,0 +1,16 @@
+{
+  "asset": "kStartingPoint",
+  "asset_index_range": [28, 45],
+  "canonical_sha1": "241f88a08746f14967f192f65692bcab833de746",
+  "field_encoding": "parallel legacy asset arrays; numeric values pack little-endian",
+  "format": "zelda3_starting_points_v1",
+  "records": [
+    {"blockset": 3, "camera_x": 383, "camera_y": 383, "door_settings": 2070, "doorway_orientation": 0, "entrance": 0, "floor": 0, "index": 0, "music_track": 7, "palace": -1, "player_x": 2424, "player_y": 8568, "quadrant1": 0, "quadrant2": 2, "relative_coords": [33, 32, 33, 33, 9, 9, 9, 10], "room": 260, "scroll_x": 2304, "scroll_y": 8464, "starting_bg": 0},
+    {"blockset": 4, "camera_x": 255, "camera_y": 167, "door_settings": 0, "doorway_orientation": 0, "entrance": 2, "floor": 0, "index": 1, "music_track": 20, "palace": 0, "player_x": 1272, "player_y": 668, "quadrant1": 34, "quadrant2": 0, "relative_coords": [2, 2, 2, 3, 4, 4, 4, 5], "room": 18, "scroll_x": 1152, "scroll_y": 561, "starting_bg": 0},
+    {"blockset": 4, "camera_x": 359, "camera_y": 131, "door_settings": 0, "doorway_orientation": 0, "entrance": 2, "floor": -3, "index": 2, "music_track": 16, "palace": 2, "player_x": 352, "player_y": 4161, "quadrant1": 32, "quadrant2": 16, "relative_coords": [16, 16, 16, 17, 1, 0, 1, 1], "room": 128, "scroll_x": 219, "scroll_y": 4096, "starting_bg": 0},
+    {"blockset": 1, "camera_x": 269, "camera_y": 123, "door_settings": 0, "doorway_orientation": 0, "entrance": 50, "floor": -1, "index": 3, "music_track": 3, "palace": -1, "player_x": 2822, "player_y": 2672, "quadrant1": 32, "quadrant2": 16, "relative_coords": [10, 10, 10, 11, 11, 10, 11, 11], "room": 85, "scroll_x": 2702, "scroll_y": 2563, "starting_bg": 1},
+    {"blockset": 4, "camera_x": 255, "camera_y": 154, "door_settings": 0, "doorway_orientation": 0, "entrance": 4, "floor": 1, "index": 4, "music_track": 16, "palace": 2, "player_x": 760, "player_y": 2703, "quadrant1": 34, "quadrant2": 0, "relative_coords": [10, 10, 10, 11, 2, 2, 2, 3], "room": 81, "scroll_x": 640, "scroll_y": 2594, "starting_bg": 0},
+    {"blockset": 6, "camera_x": 383, "camera_y": 259, "door_settings": 0, "doorway_orientation": 0, "entrance": 6, "floor": 0, "index": 5, "music_track": 18, "palace": -1, "player_x": 424, "player_y": 7928, "quadrant1": 34, "quadrant2": 16, "relative_coords": [30, 30, 30, 31, 1, 0, 1, 1], "room": 240, "scroll_x": 256, "scroll_y": 7820, "starting_bg": 0},
+    {"blockset": 20, "camera_x": 127, "camera_y": 391, "door_settings": 0, "doorway_orientation": 0, "entrance": 48, "floor": 0, "index": 6, "music_track": 18, "palace": -1, "player_x": 2168, "player_y": 7576, "quadrant1": 2, "quadrant2": 2, "relative_coords": [29, 28, 29, 29, 8, 8, 8, 9], "room": 228, "scroll_x": 2048, "scroll_y": 7440, "starting_bg": 1}
+  ]
+}
