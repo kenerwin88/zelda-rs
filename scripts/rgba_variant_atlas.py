@@ -1227,10 +1227,10 @@ def _write_dialogue_glyph_source_atlas(
 
     with Image.open(source_png_path) as source_image:
         source_rgba = source_image.convert("RGBA")
-        # v2 sheets mark each palette row's color 0 transparent (tRNS) for
-        # editing comfort; the glyph atlas contract predates that and matches
-        # tiles by RGB with opaque alpha, so flatten it back.
-        source_rgba.putalpha(255)
+        # v2 sheets mark each palette row's color 0 transparent (tRNS); BG tiles
+        # composite color 0 as transparent on hardware, so preserve that alpha in
+        # the render art. (Live BG3 chunks are keyed to a glyph tile by identity,
+        # not by RGB, so the atlas RGBA is render-only.)
         source_width, source_height = source_rgba.size
         layout = source_manifest.get("layout", {})
         tile_width = int(layout.get("tile_width", 8))
