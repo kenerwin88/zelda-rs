@@ -17,7 +17,7 @@
 /// Where a mirror word's value came from. Diagnostic only — the word itself is
 /// what the renderer consumes; the tag exists to audit and to burn `Unknown`
 /// writes down to zero.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SourceTag {
     /// A word read from a named palette asset (or ROM palette data).
     Asset,
@@ -32,7 +32,7 @@ pub enum SourceTag {
 }
 
 /// One CGRAM-shadow word in the mirror: a provenance-clean value or a gap.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum MirrorWord {
     Known(u16, SourceTag),
     #[default]
@@ -206,13 +206,17 @@ pub fn trinexx_channel_step_word(
 /// The three shadow banks plus the last committed CGRAM image, all as mirror
 /// words. Indices are CGRAM word indices (0..256); the banks correspond to
 /// `MAIN_PALETTE_BUFFER`, `AUX_PALETTE_BUFFER`, and `MAPBAK_PALETTE`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PaletteMirror {
+    #[serde(with = "serde_big_array::BigArray")]
     pub main: [MirrorWord; PALETTE_WORDS],
+    #[serde(with = "serde_big_array::BigArray")]
     pub aux: [MirrorWord; PALETTE_WORDS],
+    #[serde(with = "serde_big_array::BigArray")]
     pub backup: [MirrorWord; PALETTE_WORDS],
     /// Snapshot of `main` taken at each CGRAM upload; what the renderer may
     /// consume instead of live CGRAM.
+    #[serde(with = "serde_big_array::BigArray")]
     pub cgram: [MirrorWord; PALETTE_WORDS],
 }
 
@@ -351,6 +355,35 @@ impl PaletteMirror {
             self.cgram[index] =
                 MirrorWord::Known(cgram.get(index).copied().unwrap_or(0), SourceTag::Copied);
         }
+    }
+
+    /// Compact per-bank source-tag histogram, e.g.
+    /// `main{asset=12 const=200 copied=0 computed=44 unknown=0} aux{..} backup{..} cgram{..}`.
+    /// Diagnostic only — confirms a restored mirror carries its true derivation tags rather
+    /// than an all-`Copied` shadow reconstitution.
+    pub fn tag_histogram_line(&self) -> String {
+        fn bank_counts(words: &[MirrorWord; PALETTE_WORDS]) -> String {
+            let (mut asset, mut constant, mut copied, mut computed, mut unknown) = (0, 0, 0, 0, 0);
+            for w in words {
+                match w {
+                    MirrorWord::Known(_, SourceTag::Asset) => asset += 1,
+                    MirrorWord::Known(_, SourceTag::Constant) => constant += 1,
+                    MirrorWord::Known(_, SourceTag::Copied) => copied += 1,
+                    MirrorWord::Known(_, SourceTag::Computed) => computed += 1,
+                    MirrorWord::Unknown => unknown += 1,
+                }
+            }
+            format!(
+                "asset={asset} const={constant} copied={copied} computed={computed} unknown={unknown}"
+            )
+        }
+        format!(
+            "main{{{}}} aux{{{}}} backup{{{}}} cgram{{{}}}",
+            bank_counts(&self.main),
+            bank_counts(&self.aux),
+            bank_counts(&self.backup),
+            bank_counts(&self.cgram),
+        )
     }
 
     /// Audit the committed CGRAM image against the live PPU CGRAM (the values classic renders).
@@ -697,5 +730,28 @@ mod tests {
         mirror.set_constant_word(Bank::Main, 3, 0x7fff);
         mirror.commit_cgram();
         assert_eq!(mirror.cgram[3].value(), Some(0x7fff));
+    }
+
+    #[test]
+    fn bincode_round_trip_preserves_words_and_tags() {
+        // A mirror with a mix of Known (each SourceTag variant) and Unknown words
+        // across all four banks must survive a bincode round trip byte-for-byte.
+        let mut mirror = PaletteMirror::default();
+        mirror.set_asset_word(Bank::Main, 1, 0x1234);
+        mirror.set_constant_word(Bank::Main, 2, 0x7fff);
+        mirror.set_asset_word(Bank::Aux, 5, 0x0abc);
+        mirror.copy_word((Bank::Main, 1), (Bank::Backup, 9));
+        mirror.commit_cgram();
+        // Also exercise the Computed tag directly so all four SourceTag variants
+        // and Unknown are represented in the payload.
+        mirror.main[3] = MirrorWord::Known(0x0f0f, SourceTag::Computed);
+
+        let bytes = bincode::serialize(&mirror).expect("serialize mirror");
+        let restored: PaletteMirror = bincode::deserialize(&bytes).expect("deserialize mirror");
+
+        for bank in [Bank::Main, Bank::Aux, Bank::Backup] {
+            assert_eq!(mirror.bank(bank), restored.bank(bank), "{bank:?} bank differs");
+        }
+        assert_eq!(mirror.cgram, restored.cgram, "cgram bank differs");
     }
 }

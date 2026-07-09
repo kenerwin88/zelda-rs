@@ -1728,6 +1728,35 @@ impl ZeldaState {
             .audit_cgram(ppu_cgram)
     }
 
+    /// Serialize the provenance mirror for a checkpoint trailer. The mirror is
+    /// `#[serde(skip)]` in the state snapshot (a restore reconstitutes it from the
+    /// shadow, tagged `Copied`); a checkpoint that carries these bytes can instead
+    /// restore the mirror exactly as-derived — true provenance tags and no live-CGRAM
+    /// read at the boundary. See [`Self::restore_palette_mirror_from_bytes`].
+    pub fn palette_mirror_snapshot_bytes(&self) -> Vec<u8> {
+        bincode::serialize(&self.game_state.display.palette_provenance.0)
+            .expect("palette mirror is a fixed-size POD struct and always serializes")
+    }
+
+    /// Install a provenance mirror captured by [`Self::palette_mirror_snapshot_bytes`],
+    /// overwriting whatever the snapshot restore reconstituted from the shadow.
+    pub fn restore_palette_mirror_from_bytes(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let mirror = bincode::deserialize(bytes).map_err(|e| e.to_string())?;
+        self.game_state.display.palette_provenance.0 = mirror;
+        Ok(())
+    }
+
+    /// Diagnostic: compact per-bank source-tag histogram of the provenance mirror. Confirms a
+    /// checkpoint-restored mirror carries its true derivation tags (asset/constant/computed)
+    /// rather than an all-`Copied` shadow reconstitution.
+    pub fn palette_mirror_tag_histogram(&self) -> String {
+        self.game_state
+            .display
+            .palette_provenance
+            .0
+            .tag_histogram_line()
+    }
+
     /// Snapshot the palette-provenance mirror at a CGRAM upload (the mirror's
     /// equivalent of `memcpy(cgram, main_palette_buffer)`), and under
     /// `ZELDA3_PALETTE_PROVENANCE_CHECK=1|panic` audit the mirror's main bank
