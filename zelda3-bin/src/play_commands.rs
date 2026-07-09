@@ -1,5 +1,6 @@
 use std::env;
 use std::panic::{self, AssertUnwindSafe};
+use std::path::Path;
 use std::process;
 
 use platform::{HostMenuAction, HostMenuInput, HostMenuMode, HostMenuState, NativeFrontendOptions};
@@ -8,24 +9,109 @@ use zelda3::ZeldaState;
 use crate::developer_room_commands::{
     current_developer_location_from_ram, load_developer_destination,
 };
+use crate::input_script::InputScript;
 use crate::{
-    captured_panic_from, developer_destinations, install_crash_panic_hook,
-    load_embedded_play_state, load_play_state, play_renderer, select_run_what,
-    write_play_crash_report, TRACE_FILTERED_JOYPAD_H, TRACE_FILTERED_JOYPAD_L, TRACE_JOYPAD1H_LAST,
-    TRACE_JOYPAD1L_LAST, TRACE_MAIN_MODULE_INDEX, TRACE_SELECTFILE_ARR2_1, TRACE_SELECTFILE_VAR10,
-    TRACE_SELECTFILE_VAR11, TRACE_SELECTFILE_VAR3, TRACE_SELECTFILE_VAR5, TRACE_SELECTFILE_VAR7,
-    TRACE_SELECTFILE_VAR9, TRACE_SUBMODULE_INDEX, TRACE_SUBSUBMODULE_INDEX,
+    apply_sram_to_game_or_exit, captured_panic_from, developer_destinations,
+    install_crash_panic_hook, load_embedded_play_state, load_play_state, play_renderer,
+    read_file_or_exit, select_run_what, write_play_crash_report, TRACE_FILTERED_JOYPAD_H,
+    TRACE_FILTERED_JOYPAD_L, TRACE_JOYPAD1H_LAST, TRACE_JOYPAD1L_LAST, TRACE_MAIN_MODULE_INDEX,
+    TRACE_SELECTFILE_ARR2_1, TRACE_SELECTFILE_VAR10, TRACE_SELECTFILE_VAR11,
+    TRACE_SELECTFILE_VAR3, TRACE_SELECTFILE_VAR5, TRACE_SELECTFILE_VAR7, TRACE_SELECTFILE_VAR9,
+    TRACE_SUBMODULE_INDEX, TRACE_SUBSUBMODULE_INDEX,
 };
 
+#[derive(Debug)]
+struct FrontendSmokeOptions {
+    frames: u32,
+    frame_pacing: bool,
+    rom_path: Option<String>,
+    input_script: InputScript,
+    load_sram: Option<String>,
+}
+
+fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions, String> {
+    let mut frames = 2u32;
+    let mut frames_set = false;
+    let mut frame_pacing = true;
+    let mut rom_path = None;
+    let mut input_script = InputScript::default();
+    let mut load_sram = None;
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--no-frame-pacing" => frame_pacing = false,
+            "--rom" => {
+                let value = args.get(i + 1).ok_or_else(|| {
+                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; --rom requires a path".to_string()
+                })?;
+                rom_path = Some(value.clone());
+                i += 1;
+            }
+            "--input-script" => {
+                let value = args.get(i + 1).ok_or_else(|| {
+                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; --input-script requires a path".to_string()
+                })?;
+                input_script = InputScript::from_path(Path::new(value))
+                    .map_err(|err| format!("failed to parse input script {value}: {err}"))?;
+                i += 1;
+            }
+            "--load-sram" => {
+                let value = args.get(i + 1).ok_or_else(|| {
+                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; --load-sram requires a path".to_string()
+                })?;
+                load_sram = Some(value.clone());
+                i += 1;
+            }
+            value if value.starts_with("--") => {
+                return Err(format!(
+                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; unknown option {value:?}"
+                ));
+            }
+            value if !frames_set => {
+                frames = value.parse().map_err(|_| {
+                    format!(
+                        "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; invalid frames={value:?}"
+                    )
+                })?;
+                frames_set = true;
+            }
+            value => {
+                return Err(format!(
+                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; unknown option {value:?}"
+                ));
+            }
+        }
+        i += 1;
+    }
+    Ok(FrontendSmokeOptions {
+        frames,
+        frame_pacing,
+        rom_path,
+        input_script,
+        load_sram,
+    })
+}
+
 pub(crate) fn run_frontend_smoke(args: &[String]) {
-    let frames: u32 = args.first().map(|s| s.parse().unwrap_or(2)).unwrap_or(2);
-    let mut game = load_embedded_play_state();
+    let options = parse_frontend_smoke_options(args).unwrap_or_else(|message| {
+        eprintln!("{message}");
+        process::exit(2);
+    });
+    let mut game = options
+        .rom_path
+        .as_deref()
+        .map(load_play_state)
+        .unwrap_or_else(load_embedded_play_state);
+    if let Some(path) = options.load_sram.as_deref() {
+        let sram = read_file_or_exit(Path::new(path), "SRAM");
+        apply_sram_to_game_or_exit(&mut game, Path::new(path), &sram);
+    }
     let width = 256u32;
     let height = 224u32;
     let mut renderer = match play_renderer::configured_from_env(
         width,
         height,
-        NativeFrontendOptions::from_env(3, false),
+        NativeFrontendOptions::from_env(3, false).with_frame_pacing(options.frame_pacing),
     ) {
         Ok(frontend) => frontend,
         Err(e) => {
@@ -36,11 +122,18 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
     let renderer_name = renderer.name();
 
     let mut completed = 0u32;
-    while completed < frames && !renderer.quit_requested() {
-        let live_input = renderer.poll_input();
+    while completed < options.frames && !renderer.quit_requested() {
+        let live_input = if options.input_script.is_empty() {
+            renderer.poll_input()
+        } else {
+            options.input_script.input_for_frame(completed)
+        };
         game.zelda_run_frame(live_input as i32);
         renderer.present_frame(&mut game);
         completed += 1;
+    }
+    if !options.frame_pacing {
+        renderer.wait_idle();
     }
 
     println!("frontend smoke completed frames={completed} renderer={renderer_name}");
@@ -263,6 +356,56 @@ fn apply_host_menu_action_for_test(
 #[cfg(test)]
 mod host_menu_play_tests {
     use super::*;
+
+    #[test]
+    fn frontend_smoke_defaults_to_two_paced_frames() {
+        let options = parse_frontend_smoke_options(&[]).unwrap();
+        assert_eq!(options.frames, 2);
+        assert!(options.frame_pacing);
+        assert!(options.rom_path.is_none());
+        assert!(options.input_script.is_empty());
+        assert!(options.load_sram.is_none());
+    }
+
+    #[test]
+    fn frontend_smoke_accepts_no_frame_pacing() {
+        let args = vec!["600".to_string(), "--no-frame-pacing".to_string()];
+        let options = parse_frontend_smoke_options(&args).unwrap();
+        assert_eq!(options.frames, 600);
+        assert!(!options.frame_pacing);
+        assert!(options.rom_path.is_none());
+        assert!(options.input_script.is_empty());
+        assert!(options.load_sram.is_none());
+    }
+
+    #[test]
+    fn frontend_smoke_accepts_live_scripted_paths() {
+        let args = vec![
+            "120".to_string(),
+            "--rom".to_string(),
+            "saves/zelda3.sfc".to_string(),
+            "--load-sram".to_string(),
+            "scripts/inputs/tas-us-full-completion-smv.sram".to_string(),
+        ];
+        let options = parse_frontend_smoke_options(&args).unwrap();
+        assert_eq!(options.frames, 120);
+        assert_eq!(options.rom_path.as_deref(), Some("saves/zelda3.sfc"));
+        assert!(options.input_script.is_empty());
+        assert_eq!(
+            options.load_sram.as_deref(),
+            Some("scripts/inputs/tas-us-full-completion-smv.sram")
+        );
+    }
+
+    #[test]
+    fn frontend_smoke_rejects_unknown_options() {
+        let args = vec!["--fast".to_string()];
+        let error = parse_frontend_smoke_options(&args).unwrap_err();
+        assert_eq!(
+            error,
+            "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; unknown option \"--fast\""
+        );
+    }
 
     #[test]
     fn menu_resume_action_closes_ingame_menu() {

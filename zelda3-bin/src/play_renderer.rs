@@ -2,8 +2,12 @@ use std::env;
 use std::process;
 
 use platform::{Frontend, HostMenuInput, HostMenuState, NativeFrontend, NativeFrontendOptions};
+use renderer::RendererMode;
 use snes::ppu::PpuRenderFlags;
 use zelda3::ZeldaState;
+
+const PLAY_WIDTH: u32 = 256;
+const PLAY_HEIGHT: u32 = 224;
 
 pub(crate) trait PlayRendererBackend {
     fn name(&self) -> &'static str;
@@ -68,6 +72,10 @@ impl ConfiguredPlayRenderer {
             .present_frame(game, &mut self.frontend, &mut self.frame, self.render_flags);
     }
 
+    pub(crate) fn wait_idle(&self) {
+        self.frontend.wait_idle();
+    }
+
     pub(crate) fn push_audio(&mut self, audio: &[i16]) {
         self.frontend.push_audio(audio);
     }
@@ -75,27 +83,68 @@ impl ConfiguredPlayRenderer {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PlayRendererBackendChoice {
+    Cpu,
     Gpu,
 }
 
 impl PlayRendererBackendChoice {
     fn from_env_value(value: Option<&str>) -> Result<Self, String> {
         match value {
-            Some(value) if value.eq_ignore_ascii_case("cpu") => Err(
-                "ZELDA3_RENDER_BACKEND=cpu is diagnostic-only; live play requires gpu".to_string(),
-            ),
+            Some(value) if value.eq_ignore_ascii_case("cpu") => Ok(Self::Cpu),
             Some(value) if value.eq_ignore_ascii_case("gpu") => Ok(Self::Gpu),
             Some(value) => Err(format!(
-                "unknown ZELDA3_RENDER_BACKEND={value:?}; expected gpu"
+                "unknown ZELDA3_RENDER_BACKEND={value:?}; expected cpu or gpu"
             )),
             None => Ok(Self::Gpu),
         }
     }
 }
 
+struct CpuPlayRenderer {
+    pixels: Vec<u32>,
+}
+
+impl CpuPlayRenderer {
+    fn new() -> Self {
+        Self {
+            pixels: vec![0u32; (PLAY_WIDTH * PLAY_HEIGHT) as usize],
+        }
+    }
+}
+
+impl PlayRendererBackend for CpuPlayRenderer {
+    fn name(&self) -> &'static str {
+        "cpu_render"
+    }
+
+    fn configure_frontend(&self, frontend: &mut NativeFrontend) {
+        frontend.set_renderer_mode(RendererMode::Classic);
+    }
+
+    fn present_frame(
+        &mut self,
+        game: &mut ZeldaState,
+        frontend: &mut NativeFrontend,
+        frame: &mut [u8],
+        render_flags: PpuRenderFlags,
+    ) {
+        crate::classic_frame_renderer::render_play_frame_bgra(
+            game,
+            frame,
+            PLAY_WIDTH as usize * 4,
+            render_flags,
+        );
+        for (dst, src) in self.pixels.iter_mut().zip(frame.chunks_exact(4)) {
+            *dst = u32::from_le_bytes([src[0], src[1], src[2], src[3]]);
+        }
+        frontend.present_frame(&self.pixels, PLAY_WIDTH, PLAY_HEIGHT);
+    }
+}
+
 fn from_env() -> Box<dyn PlayRendererBackend> {
     let value = env::var("ZELDA3_RENDER_BACKEND").ok();
     match PlayRendererBackendChoice::from_env_value(value.as_deref()) {
+        Ok(PlayRendererBackendChoice::Cpu) => Box::new(CpuPlayRenderer::new()),
         Ok(PlayRendererBackendChoice::Gpu) => crate::gpu_capture::new_gpu_play_renderer(),
         Err(message) => {
             eprintln!("{message}");
@@ -122,7 +171,9 @@ pub(crate) fn configured_from_env(
 
 #[cfg(test)]
 mod tests {
-    use super::{PlayRendererBackendChoice, PlayRendererBackendChoice::Gpu};
+    use super::{
+        PlayRendererBackendChoice, PlayRendererBackendChoice::Cpu, PlayRendererBackendChoice::Gpu,
+    };
 
     #[test]
     fn unset_backend_defaults_to_gpu() {
@@ -138,12 +189,10 @@ mod tests {
     }
 
     #[test]
-    fn live_backend_rejects_cpu_renderer() {
-        let error = PlayRendererBackendChoice::from_env_value(Some("cpu")).unwrap_err();
-
+    fn explicit_backend_accepts_cpu_case_insensitively() {
         assert_eq!(
-            error,
-            "ZELDA3_RENDER_BACKEND=cpu is diagnostic-only; live play requires gpu"
+            PlayRendererBackendChoice::from_env_value(Some("CPU")),
+            Ok(Cpu)
         );
     }
 
@@ -153,7 +202,7 @@ mod tests {
 
         assert_eq!(
             error,
-            "unknown ZELDA3_RENDER_BACKEND=\"software\"; expected gpu"
+            "unknown ZELDA3_RENDER_BACKEND=\"software\"; expected cpu or gpu"
         );
     }
 }

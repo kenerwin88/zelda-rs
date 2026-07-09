@@ -9,6 +9,7 @@ use crate::modern_source_atlas::source_cell_by_indices;
 use crate::modern_sprite_atlas::{sprite_index_cell, ModernSpriteIndexAtlas};
 use std::collections::HashMap;
 
+#[derive(Clone)]
 pub struct AssetResolvedModernFrame {
     pub frame: ModernFrame,
     pub bg_cells: Vec<ModernIndexTile>,
@@ -969,11 +970,13 @@ pub(crate) enum ForbidLiveCgramMode {
 
 pub(crate) fn forbid_live_cgram_mode() -> ForbidLiveCgramMode {
     static MODE: std::sync::OnceLock<ForbidLiveCgramMode> = std::sync::OnceLock::new();
-    *MODE.get_or_init(|| match std::env::var("ZELDA3_FORBID_LIVE_CGRAM").as_deref() {
-        Ok("compare") => ForbidLiveCgramMode::Compare,
-        Ok("1") | Ok("panic") | Ok("enforce") => ForbidLiveCgramMode::Enforce,
-        _ => ForbidLiveCgramMode::Off,
-    })
+    *MODE.get_or_init(
+        || match std::env::var("ZELDA3_FORBID_LIVE_CGRAM").as_deref() {
+            Ok("compare") => ForbidLiveCgramMode::Compare,
+            Ok("1") | Ok("panic") | Ok("enforce") => ForbidLiveCgramMode::Enforce,
+            _ => ForbidLiveCgramMode::Off,
+        },
+    )
 }
 
 static LIVE_CGRAM_FALLBACKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -1218,6 +1221,18 @@ fn index_pattern_hash32(indices: &[u8; 64]) -> u32 {
     h
 }
 
+fn screen_tile_visible(screen_x: i32, screen_y: i32) -> bool {
+    screen_x < 256 && screen_x + 7 >= 0 && screen_y < 224 && screen_y + 7 >= 0
+}
+
+fn bg_scroll_varies_by_scanline(frame: &GpuFrame<'_>, layer: usize) -> bool {
+    let base_x = frame.bg[layer].h_scroll;
+    let base_y = frame.bg[layer].v_scroll;
+    frame.scanlines.iter().any(|scanline| {
+        scanline.bg_h_scroll[layer] != base_x || scanline.bg_v_scroll[layer] != base_y
+    })
+}
+
 /// BG3/HUD/message-layer cells. The source dump keys these by `(tile_number,
 /// palette)` only when that baked 2bpp pattern is injective over the route; ambiguous
 /// UI glyph slots are dropped and continue to decode from live VRAM.
@@ -1382,6 +1397,8 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
         let tall = frame.bg[layer_index].tilemap_higher;
         let cols = if wide { 64usize } else { 32 };
         let rows = if tall { 64usize } else { 32 };
+        let can_cull_to_base_scroll =
+            !bg_scroll_varies_by_scanline(frame, layer_index) && frame.mosaic_enabled == 0;
         for ty in 0..rows {
             for tx in 0..cols {
                 let q = (if wide && tx >= 32 { 1 } else { 0 })
@@ -1445,7 +1462,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                         });
                         (id, 0u8, source_key, None)
                     } else {
-                        let source_hit = [
+                        let mut source_hit = [
                             (CHR_KIND_BG3, stable_pack, 0),
                             (
                                 CHR_KIND_BG3_CONTENT,
@@ -1456,13 +1473,20 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                         .into_iter()
                         .find_map(|(kind, pack, tile_off)| {
                             source_cell(atlas, kind, pack, tile_off)
-                                .map(|src| (kind, pack, tile_off, src))
+                                .map(|src| {
+                                    (
+                                        crate::modern_source_atlas::modern_source_key(
+                                            kind, pack, tile_off,
+                                        ),
+                                        src,
+                                    )
+                                })
                         });
+                        if source_hit.is_some_and(|(_, src)| src.indices != baked) {
+                            source_hit = source_cell_by_indices(atlas, &baked);
+                        }
                         match source_hit {
-                            Some((kind, pack, tile_off, src)) => {
-                                let source_key = crate::modern_source_atlas::modern_source_key(
-                                    kind, pack, tile_off,
-                                );
+                            Some((source_key, src)) => {
                                 let id =
                                     *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
                                         let indices =
@@ -1544,7 +1568,23 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                         pack = (h >> 16) as u16;
                         tile_off = (h & 0xffff) as u16;
                     }
-                    if injective || source_cell(atlas, kind, pack, tile_off).is_some() {
+                    let mut source_hit = source_cell(atlas, kind, pack, tile_off).map(|src| {
+                        (
+                            crate::modern_source_atlas::modern_source_key(kind, pack, tile_off),
+                            src,
+                        )
+                    });
+                    if kind == CHR_KIND_BG_STREAM {
+                        let live = decode_snes_4bpp_tile_indices(
+                            frame.vram,
+                            frame.bg[layer_index].tile_adr as usize,
+                            tile_number as u16,
+                        );
+                        if source_hit.is_some_and(|(_, src)| src.indices != live) {
+                            source_hit = source_cell_by_indices(atlas, &live);
+                        }
+                    }
+                    if injective || source_hit.is_some() {
                         if dbg && layer_index < 2 {
                             dbg_total += 1;
                             let live = decode_snes_4bpp_tile_indices(
@@ -1552,7 +1592,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                                 frame.bg[layer_index].tile_adr as usize,
                                 tile_number as u16,
                             );
-                            match source_cell(atlas, kind, pack, tile_off) {
+                            match source_hit.map(|(_, src)| src) {
                                 None => {
                                     dbg_gap += 1;
                                     if dbg_samples.len() < 24 {
@@ -1588,11 +1628,8 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                                 _ => {}
                             }
                         }
-                        match source_cell(atlas, kind, pack, tile_off) {
-                            Some(src) => {
-                                let source_key = crate::modern_source_atlas::modern_source_key(
-                                    kind, pack, tile_off,
-                                );
+                        match source_hit {
+                            Some((source_key, src)) => {
                                 let id =
                                     *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
                                         let indices =
@@ -1735,6 +1772,9 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                     bg3_tile_screen_xy
                         .entry(tile_number as u16)
                         .or_insert((sx as i16, sy as i16));
+                }
+                if can_cull_to_base_scroll && !screen_tile_visible(sx, sy) {
+                    continue;
                 }
                 modern.bg_layers[layer_index]
                     .index_tiles
@@ -2139,6 +2179,11 @@ pub fn extract_asset_resolved_modern_frame_from_sources<S: SourceTableView + ?Si
 ) -> AssetResolvedModernFrame {
     let (mut modern, bg_cells, mut rich_bg_missing_sources) =
         extract_modern_frame_from_sources_with_missing_sources(frame, src_table, atlas);
+    let mut bg_cells = bg_cells;
+    if frame_has_semantic_bg3(frame) {
+        replace_bg3_with_live_keyed_cells(frame, atlas, &mut modern, &mut bg_cells);
+        rich_bg_missing_sources.retain(|missing| missing.layer_index != Some(2));
+    }
     let (sprite_cells, sprites) = extract_modern_sprites_from_sources(frame, src_table, atlas);
     modern.index_sprites = sprites;
     let (unresolved_stats, fallback_missing_sources) =
@@ -2162,6 +2207,71 @@ pub fn extract_asset_resolved_modern_frame_from_sources<S: SourceTableView + ?Si
         sprite_cells,
         unresolved_stats,
         missing_sources: rich_bg_missing_sources,
+    }
+}
+
+fn frame_has_semantic_bg3(frame: &GpuFrame<'_>) -> bool {
+    frame.dialogue_message_id.is_some()
+        || frame.dialogue_layout_origin_tile_number.is_some()
+        || !frame.bg3_source_tiles.is_empty()
+        || !frame.bg3_vwf_glyph_runs.is_empty()
+        || !frame.source_dialogue_ir.is_empty()
+        || !frame.dialogue_ir.is_empty()
+        || !frame.dialogue_layout.is_empty()
+}
+
+fn replace_bg3_with_live_keyed_cells(
+    frame: &GpuFrame<'_>,
+    atlas: &ModernSourceAtlas,
+    modern: &mut ModernFrame,
+    bg_cells: &mut Vec<ModernIndexTile>,
+) {
+    let (vram_modern, vram_bg_cells) = extract_modern_frame_from_vram(frame);
+    let Some(vram_bg3) = vram_modern.bg_layers.get(2) else {
+        return;
+    };
+    let Some(modern_bg3) = modern.bg_layers.get_mut(2) else {
+        return;
+    };
+    modern_bg3.enabled_main = vram_bg3.enabled_main;
+    modern_bg3.enabled_sub = vram_bg3.enabled_sub;
+    modern_bg3.scroll_x = vram_bg3.scroll_x;
+    modern_bg3.scroll_y = vram_bg3.scroll_y;
+    modern_bg3.wrap_w = vram_bg3.wrap_w;
+    modern_bg3.wrap_h = vram_bg3.wrap_h;
+    modern_bg3.tiles.clear();
+    modern_bg3.index_tiles.clear();
+
+    let mut remap = HashMap::<u32, (u32, u64)>::new();
+    for inst in &vram_bg3.index_tiles {
+        let (cell_id, source_key) = if let Some(mapped) = remap.get(&inst.cell_id).copied() {
+            mapped
+        } else {
+            let Some(source_cell) = vram_bg_cells.get(inst.cell_id as usize) else {
+                continue;
+            };
+            let source_key = source_cell_by_indices(atlas, &source_cell.indices)
+                .map(|(key, _)| key)
+                .unwrap_or_else(|| {
+                    let hash = index_pattern_hash32(&source_cell.indices);
+                    crate::modern_source_atlas::modern_source_key(
+                        CHR_KIND_BG3_CONTENT,
+                        (hash >> 16) as u16,
+                        (hash & 0xffff) as u16,
+                    )
+                });
+            let cell_id = bg_cells.len() as u32;
+            let mut cell = source_cell.clone();
+            cell.id = cell_id;
+            cell.source_key = source_key;
+            bg_cells.push(cell);
+            remap.insert(inst.cell_id, (cell_id, source_key));
+            (cell_id, source_key)
+        };
+        let mut inst = *inst;
+        inst.cell_id = cell_id;
+        inst.source_key = source_key;
+        modern_bg3.index_tiles.push(inst);
     }
 }
 
@@ -2375,9 +2485,7 @@ mod tests {
         }
         vram[0] = 4; // tile# 4, palette 0, no flip, at row0 col0
         let h = content_hash32_slot(&vram, 0x204);
-        let mut indices = [0u8; 64];
-        indices[0] = 7;
-        indices[63] = 9;
+        let indices = decode_snes_4bpp_tile_indices(&vram, 0x2000, 4);
         let cell = ModernIndexTile {
             id: 0,
             indices,
@@ -2398,8 +2506,7 @@ mod tests {
 
         let (modern, cells) = extract_modern_frame_from_sources(&frame, &table, &atlas);
         assert_eq!(cells.len(), 1, "one cell emitted from the atlas source");
-        assert_eq!(cells[0].indices[0], 7);
-        assert_eq!(cells[0].indices[63], 9);
+        assert_eq!(cells[0].indices, indices);
         let tiles = &modern.bg_layers[0].index_tiles;
         assert_eq!(tiles.len(), 1);
         assert_eq!(tiles[0].cell_id, 0);
@@ -2416,8 +2523,8 @@ mod tests {
         // +1 vertical fetch offset, no scroll: (0-0-1).rem_euclid(256)=255 → -=256 → -1.
         assert_eq!(tiles[0].screen_y, -1);
         assert_eq!(tiles[0].palette, 0);
-        // The CELL pixels came from the atlas (7,9), not the VRAM tile pixels; only the
-        // KEY was derived from VRAM (the frame-end content hash).
+        // The source cell is accepted only when it is byte-exact for the frame-end
+        // content hash.
 
         // A BG_STREAM tile whose content hash is NOT in the atlas must remain visible
         // by falling back to a live-VRAM indexed cell. This keeps existing assets
@@ -2631,6 +2738,57 @@ mod tests {
             tiles[0].source_key,
             crate::modern_hd_overrides::NO_SOURCE_KEY
         );
+    }
+
+    #[test]
+    fn asset_resolved_semantic_bg3_uses_live_keyed_cells_over_stale_source_hit() {
+        use crate::modern_source_atlas::ModernSourceAtlas;
+
+        let stale_cell = ModernIndexTile {
+            id: 0,
+            indices: [0u8; 64],
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        };
+        let source_pack = 7 | (6 << 10);
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
+            vec![stale_cell],
+            &[(CHR_KIND_BG3, source_pack, 0, 0)],
+        );
+        let table = |_slot: usize| -> (u8, u16, u16) { (0, 0, 0) };
+
+        let mut vram = vec![0u16; 0x8000];
+        let mut cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        cgram[25] = 0x3800;
+        let tilemap_addr = 19 * 32 + 5;
+        vram[tilemap_addr] = 7 | (6 << 10) | 0x2000;
+        vram[7 * 8 + 1] = 0x0080; // local (0,1): pal_idx 1 -> baked CGRAM index 25.
+
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.bg[2].tilemap_adr = 0;
+        frame.bg[2].tile_adr = 0;
+        frame.screen_enabled = [0x04, 0x00];
+        for scanline in frame.scanlines.iter_mut() {
+            scanline.screen_enabled_main = 0x04;
+        }
+        frame.dialogue_message_id = Some(0x1f);
+
+        let resolved = extract_asset_resolved_modern_frame_from_sources(&frame, &table, &atlas);
+        assert!(
+            !resolved.has_unresolved_sources(),
+            "semantic BG3 live cells should stay keyed for the GPU path"
+        );
+        let source_rgba = crate::modern_software::render_modern_frame_full(
+            &resolved.frame,
+            &resolved.bg_cells,
+            &resolved.sprite_cells,
+        );
+        let vram_rgba = render_modern_frame_full_from_vram(&frame);
+        let offset = (152 * 256 + 40) * 4;
+        assert_eq!(&source_rgba[offset..offset + 4], &vram_rgba[offset..offset + 4]);
+        assert_eq!(&source_rgba[offset..offset + 3], &[0, 0, 115]);
     }
 
     #[test]

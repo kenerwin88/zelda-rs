@@ -49,6 +49,7 @@ pub struct NativeFrontendOptions {
     pub scale: u32,
     pub enable_audio: bool,
     pub fullscreen: bool,
+    pub frame_pacing: bool,
 }
 
 impl NativeFrontendOptions {
@@ -73,7 +74,13 @@ impl NativeFrontendOptions {
             scale,
             enable_audio,
             fullscreen,
+            frame_pacing: true,
         }
+    }
+
+    pub fn with_frame_pacing(mut self, frame_pacing: bool) -> Self {
+        self.frame_pacing = frame_pacing;
+        self
     }
 }
 
@@ -91,6 +98,7 @@ pub struct NativeFrontend {
     next_frame_tick: Instant,
     presented_frames: u32,
     renderer_mode: RendererMode,
+    frame_pacing: bool,
 }
 
 impl NativeFrontend {
@@ -145,6 +153,7 @@ impl NativeFrontend {
             next_frame_tick: Instant::now(),
             presented_frames: 0,
             renderer_mode: RendererMode::Classic,
+            frame_pacing: options.frame_pacing,
         };
 
         // Pump the event loop until Resumed fires and creates the window + renderer.
@@ -413,6 +422,19 @@ impl NativeFrontend {
         }
     }
 
+    pub fn wait_idle(&self) {
+        if let Some(renderer) = &self.handler.renderer {
+            renderer.wait_idle();
+        }
+    }
+
+    pub fn read_modern_gpu_target_rgba(&self) -> Option<Vec<u8>> {
+        self.handler
+            .renderer
+            .as_ref()
+            .and_then(FrameRenderer::read_modern_gpu_target_rgba)
+    }
+
     pub fn present_menu_overlay(&mut self, menu: &HostMenuState) {
         let overlay = renderer::MenuOverlayModel {
             tab: match menu.active_tab() {
@@ -460,6 +482,10 @@ impl NativeFrontend {
         // scripts/test_standard_replay_parity.py greps for both literals.
         self.next_frame_tick += frame_delay(self.presented_frames);
         self.presented_frames = self.presented_frames.wrapping_add(1);
+        if !self.frame_pacing {
+            self.next_frame_tick = Instant::now();
+            return;
+        }
         let now = Instant::now();
         if self.next_frame_tick > now {
             std::thread::sleep(self.next_frame_tick - now);
@@ -1225,6 +1251,7 @@ mod tests {
                 scale: 3,
                 enable_audio: true,
                 fullscreen: true,
+                frame_pacing: true,
             }
         );
     }
@@ -1234,6 +1261,22 @@ mod tests {
         let options =
             NativeFrontendOptions::from_values(3, true, Some("1".into()), Some("0".into()));
         assert!(!options.fullscreen);
+        assert!(options.frame_pacing);
+    }
+
+    #[test]
+    fn frontend_options_can_disable_frame_pacing() {
+        let options =
+            NativeFrontendOptions::from_values(3, false, None, None).with_frame_pacing(false);
+        assert_eq!(
+            options,
+            NativeFrontendOptions {
+                scale: 3,
+                enable_audio: false,
+                fullscreen: false,
+                frame_pacing: false,
+            }
+        );
     }
 
     #[test]

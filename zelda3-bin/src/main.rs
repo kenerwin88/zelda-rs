@@ -57,7 +57,8 @@ use frame_dump_commands::{
 };
 use gpu_capture::{render_live_game_gpu_frame_rgba, ModernAssetGpuReadbackRenderer};
 use gpu_compare::{
-    replay_cpu_bgra_hash_line, replay_optional_gpu_readback_renderer, run_play_gpu_render_compare,
+    replay_cpu_bgra_hash_line, replay_optional_gpu_readback_renderer,
+    run_play_default_gpu_pixel_parity, run_play_gpu_render_compare,
 };
 use hd_authoring_commands::{run_dump_hd_capture, run_slice_hd_cells};
 use image_output::{write_argb_frame_png, write_rgba_frame_png};
@@ -280,6 +281,10 @@ fn main() {
     }
     if args.get(1).map(String::as_str) == Some("--play-gpu-render-compare") {
         run_play_gpu_render_compare(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--play-default-gpu-pixel-parity") {
+        run_play_default_gpu_pixel_parity(&args[2..]);
         return;
     }
     if args.get(1).map(String::as_str) == Some("--play-lockstep") {

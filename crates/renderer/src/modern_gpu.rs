@@ -635,9 +635,10 @@ impl<'a> Mode1EffectRankDispatch<'a> {
 
     fn sprite_material_groups(
         &self,
+        frame: &ModernFrame,
         atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
     ) -> Vec<SpriteEffectMaterialGroup<'_, 'a>> {
-        sprite_effect_material_groups(atlas, &self.sprites)
+        sprite_effect_material_groups(frame, atlas, &self.sprites)
     }
 
     pub(crate) fn render_plan(
@@ -647,7 +648,7 @@ impl<'a> Mode1EffectRankDispatch<'a> {
         rendered_any: bool,
     ) -> Mode1EffectRankRenderPlan<'_, 'a> {
         let bg_groups = self.bg_material_groups(frame);
-        let sprite_groups = self.sprite_material_groups(atlas);
+        let sprite_groups = self.sprite_material_groups(frame, atlas);
         let clear_before_sprites =
             !rendered_any && bg_groups.is_empty() && !sprite_groups.is_empty();
         let mut work_items = Vec::new();
@@ -2246,9 +2247,12 @@ fn stable_matches_live_cgram(
             } else {
                 y
             };
-            let Some(baked) =
-                crate::modern_variant_draw::atlas_entry_rgba(atlas, entry, source_x as u8, source_y as u8)
-            else {
+            let Some(baked) = crate::modern_variant_draw::atlas_entry_rgba(
+                atlas,
+                entry,
+                source_x as u8,
+                source_y as u8,
+            ) else {
                 return false;
             };
             let Some(live) = frame.cgram_rgba.get(palette_base + usize::from(index)) else {
@@ -2713,7 +2717,8 @@ impl ModernGpuVariantEffectRenderer {
         for group in groups {
             let mut batch = EffectMaterialBatch::default();
             for packet in group.packets {
-                let Some(material_packet) = sprite_effect_material_packet(atlas, packet) else {
+                let Some(material_packet) = sprite_effect_material_packet(atlas, frame, packet)
+                else {
                     continue;
                 };
                 debug_assert_eq!(material_packet.material, group.material);
@@ -2835,6 +2840,55 @@ fn sprite_effect_covers_cell(
         })
 }
 
+fn sprite_effect_matches_live_cgram(
+    cell: &ModernIndexTile,
+    palette: u8,
+    effect: &crate::modern_variant_atlas::TileEffect,
+    frame: &ModernFrame,
+) -> bool {
+    let palette_base = 0x80 + usize::from(palette) * EFFECT_LUT_WIDTH as usize;
+    for index in cell.indices {
+        if index == 0 {
+            continue;
+        }
+        let index = usize::from(index);
+        if index >= effect.colors_per_row as usize || index >= effect.index_to_rgba.len() {
+            return false;
+        }
+        let Some(live) = frame.cgram_rgba.get(palette_base + index) else {
+            return false;
+        };
+        let effect_color = effect.index_to_rgba[index];
+        if effect_color[0..3] != live[0..3] {
+            return false;
+        }
+    }
+    true
+}
+
+fn sprite_packet_can_use_live_cgram(
+    packet: &crate::modern_variant_draw::VariantSpriteDrawPacket<'_>,
+    frame: &ModernFrame,
+) -> bool {
+    let palette_base = 0x80 + usize::from(packet.inst.palette) * EFFECT_LUT_WIDTH as usize;
+    for index in packet.cell.indices {
+        if index == 0 {
+            continue;
+        }
+        if usize::from(index) >= EFFECT_LUT_WIDTH as usize {
+            return false;
+        }
+        if frame
+            .cgram_rgba
+            .get(palette_base + usize::from(index))
+            .is_none()
+        {
+            return false;
+        }
+    }
+    true
+}
+
 fn static_bg_effect_material_packet<'packet, 'frame>(
     atlas: &'frame crate::modern_variant_atlas::ModernVariantAtlas,
     packet: &'packet crate::modern_variant_draw::VariantBgDrawPacket<'frame>,
@@ -2939,6 +2993,7 @@ fn bg_effect_material_groups<'dispatch, 'frame>(
 }
 
 fn sprite_effect_material_groups<'dispatch, 'frame>(
+    frame: &ModernFrame,
     atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
     packets: &'dispatch [crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>],
 ) -> Vec<SpriteEffectMaterialGroup<'dispatch, 'frame>> {
@@ -2947,7 +3002,7 @@ fn sprite_effect_material_groups<'dispatch, 'frame>(
     let mut current_start = 0;
 
     for (index, packet) in packets.iter().enumerate() {
-        let Some(material_packet) = sprite_effect_material_packet(atlas, packet) else {
+        let Some(material_packet) = sprite_effect_material_packet(atlas, frame, packet) else {
             continue;
         };
         match current_material {
@@ -3048,6 +3103,7 @@ fn append_effect_instance_words(out: &mut Vec<u8>, packet: EffectInstancePacket)
 
 fn sprite_effect_material_packet<'packet, 'frame>(
     atlas: &'frame crate::modern_variant_atlas::ModernVariantAtlas,
+    frame: &ModernFrame,
     packet: &'packet crate::modern_variant_draw::VariantSpriteDrawPacket<'frame>,
 ) -> Option<EffectMaterialPacket> {
     let Some((entry, effect)) = packet.draw.material_effect() else {
@@ -3058,6 +3114,9 @@ fn sprite_effect_material_packet<'packet, 'frame>(
             return None;
         }
         let entry = packet.draw.entry()?;
+        if !sprite_packet_can_use_live_cgram(packet, frame) {
+            return None;
+        }
         return Some(effect_material_packet(
             EffectSurface::Sprite,
             EffectMaterial::LiveCgram,
@@ -3075,18 +3134,22 @@ fn sprite_effect_material_packet<'packet, 'frame>(
         ));
     };
     let static_effect_row = atlas.effect_row_for_effect(effect);
-    let uses_static_effect =
-        static_effect_row.is_some_and(|_| sprite_effect_covers_cell(packet.cell, effect));
+    let uses_static_effect = static_effect_row.is_some_and(|_| {
+        sprite_effect_covers_cell(packet.cell, effect)
+            && sprite_effect_matches_live_cgram(packet.cell, packet.inst.palette, effect, frame)
+    });
     let (material, effect_row) = if uses_static_effect {
         (
             EffectMaterial::StaticEffect,
             static_effect_row.expect("checked above"),
         )
-    } else {
+    } else if sprite_packet_can_use_live_cgram(packet, frame) {
         (
             EffectMaterial::LiveCgram,
             8 + u32::from(packet.inst.palette),
         )
+    } else {
+        (EffectMaterial::StaticEffect, static_effect_row?)
     };
     Some(effect_material_packet(
         EffectSurface::Sprite,
@@ -7072,6 +7135,9 @@ mod tests {
             dialogue_vwf_font: None,
             dialogue_vwf_glyph_atlas: None,
         };
+        let mut frame = ModernFrame::empty();
+        frame.cgram_rgba[0x80 + 16 + 1] = [200, 20, 20, 0xff];
+        frame.cgram_rgba[0x80 + 16 + 9] = [90, 91, 92, 0xff];
 
         let mut static_indices = [0u8; 64];
         static_indices[0] = 1;
@@ -7101,7 +7167,7 @@ mod tests {
                 effect: &effect,
             },
         };
-        let static_material = sprite_effect_material_packet(&atlas, &static_packet)
+        let static_material = sprite_effect_material_packet(&atlas, &frame, &static_packet)
             .expect("static sprite should produce a material packet");
 
         assert_eq!(static_material.material, EffectMaterial::StaticEffect);
@@ -7158,7 +7224,7 @@ mod tests {
                 effect: &effect,
             },
         };
-        let live_material = sprite_effect_material_packet(&atlas, &live_packet)
+        let live_material = sprite_effect_material_packet(&atlas, &frame, &live_packet)
             .expect("live sprite should produce a material packet");
 
         assert_eq!(live_material.material, EffectMaterial::LiveCgram);
@@ -7174,7 +7240,7 @@ mod tests {
                 reason: crate::modern_variant_atlas::DynamicFallbackReason::MissingStableEffect,
             },
         };
-        let dynamic_material = sprite_effect_material_packet(&atlas, &dynamic_packet)
+        let dynamic_material = sprite_effect_material_packet(&atlas, &frame, &dynamic_packet)
             .expect("dynamic sprite should use live CGRAM material");
         assert_eq!(dynamic_material.material, EffectMaterial::LiveCgram);
         assert_eq!(dynamic_material.surface, EffectSurface::Sprite);
@@ -7297,7 +7363,8 @@ mod tests {
             },
         ];
 
-        let groups = sprite_effect_material_groups(&atlas, &packets);
+        let frame = ModernFrame::empty();
+        let groups = sprite_effect_material_groups(&frame, &atlas, &packets);
 
         assert_eq!(groups.len(), 3);
         assert_eq!(groups[0].material, EffectMaterial::StaticEffect);

@@ -94,8 +94,10 @@ pub use tile_atlas::{
 };
 
 use std::{
+    collections::hash_map::DefaultHasher,
     env,
     fs::File,
+    hash::{Hash, Hasher},
     io::BufReader,
     path::{Path, PathBuf},
     sync::Arc,
@@ -1806,6 +1808,141 @@ impl GameTexture {
     }
 }
 
+struct ModernGpuTarget {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+}
+
+struct ModernSourceExtractionCache {
+    fingerprint: u64,
+    assets: modern_extract::AssetResolvedModernFrame,
+}
+
+const MODERN_SOURCE_FINGERPRINT_SLOTS: usize = 4096;
+
+fn modern_source_extraction_fingerprint<S: modern_extract::SourceTableView + ?Sized>(
+    frame: &GpuFrame<'_>,
+    src_table: &S,
+) -> Option<u64> {
+    if frame.dialogue_message_id.is_some()
+        || frame.dialogue_layout_origin_tile_number.is_some()
+        || !frame.bg3_vwf_glyph_runs.is_empty()
+        || !frame.source_dialogue_ir.is_empty()
+        || !frame.dialogue_ir.is_empty()
+        || !frame.dialogue_layout.is_empty()
+    {
+        return None;
+    }
+
+    let mut hasher = DefaultHasher::new();
+    frame.vram.hash(&mut hasher);
+    frame.cgram.hash(&mut hasher);
+    frame.oam.hash(&mut hasher);
+    frame.mode.hash(&mut hasher);
+    for bg in frame.bg {
+        bg.h_scroll.hash(&mut hasher);
+        bg.v_scroll.hash(&mut hasher);
+        bg.tilemap_wider.hash(&mut hasher);
+        bg.tilemap_higher.hash(&mut hasher);
+        bg.tilemap_adr.hash(&mut hasher);
+        bg.tile_adr.hash(&mut hasher);
+    }
+    frame.obj.tile_adr1.hash(&mut hasher);
+    frame.obj.tile_adr2.hash(&mut hasher);
+    frame.obj.obj_size.hash(&mut hasher);
+    frame.mosaic_enabled.hash(&mut hasher);
+    frame.mosaic_size.hash(&mut hasher);
+    frame.extra_left_right.hash(&mut hasher);
+    frame.mode7.matrix.hash(&mut hasher);
+    frame.mode7.large_field.hash(&mut hasher);
+    frame.mode7.char_fill.hash(&mut hasher);
+    frame.mode7.x_flip.hash(&mut hasher);
+    frame.mode7.y_flip.hash(&mut hasher);
+    frame.mode7.ext_bg_always_zero.hash(&mut hasher);
+    frame.screen_enabled.hash(&mut hasher);
+    frame.screen_windowed.hash(&mut hasher);
+    frame.brightness.hash(&mut hasher);
+    frame.forced_blank.hash(&mut hasher);
+    frame.math_enabled.hash(&mut hasher);
+    frame.subtract_color.hash(&mut hasher);
+    frame.half_color.hash(&mut hasher);
+    frame.fixed_color_r.hash(&mut hasher);
+    frame.fixed_color_g.hash(&mut hasher);
+    frame.fixed_color_b.hash(&mut hasher);
+    frame.add_subscreen.hash(&mut hasher);
+    frame.clip_mode.hash(&mut hasher);
+    frame.prevent_math_mode.hash(&mut hasher);
+    frame.windowsel_cm.hash(&mut hasher);
+    frame.windowsel.hash(&mut hasher);
+    for scanline in frame.scanlines.iter() {
+        scanline.window1_left.hash(&mut hasher);
+        scanline.window1_right.hash(&mut hasher);
+        scanline.window2_left.hash(&mut hasher);
+        scanline.window2_right.hash(&mut hasher);
+        scanline.screen_enabled_main.hash(&mut hasher);
+        scanline.bg_h_scroll.hash(&mut hasher);
+        scanline.bg_v_scroll.hash(&mut hasher);
+        scanline.mode7_matrix.hash(&mut hasher);
+    }
+    for tile in frame.bg3_source_tiles {
+        tile.chr_base.hash(&mut hasher);
+        tile.tile_number.hash(&mut hasher);
+        tile.source_key.hash(&mut hasher);
+    }
+    if let Some(snapshot) = frame.cgram_provenance {
+        snapshot.words.hash(&mut hasher);
+        snapshot.known.hash(&mut hasher);
+    } else {
+        0u8.hash(&mut hasher);
+    }
+    for slot in 0..MODERN_SOURCE_FINGERPRINT_SLOTS {
+        src_table.get(slot).hash(&mut hasher);
+    }
+    Some(hasher.finish())
+}
+
+fn create_modern_gpu_target(
+    device: &wgpu::Device,
+    bind_group_layout: &wgpu::BindGroupLayout,
+    presentation_buf: &wgpu::Buffer,
+    presentation: PresentationMode,
+    format: wgpu::TextureFormat,
+) -> ModernGpuTarget {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("modern_gpu_live_target"),
+        size: wgpu::Extent3d {
+            width: 256,
+            height: 224,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let sampler = create_presentation_sampler(device, presentation, "modern_gpu_blit");
+    let bind_group = create_blit_bind_group(
+        device,
+        bind_group_layout,
+        &view,
+        &sampler,
+        presentation_buf,
+        "modern_gpu_blit",
+    );
+    ModernGpuTarget {
+        texture,
+        view,
+        bind_group,
+    }
+}
+
 /// Creates the game-frame input texture, its bind group layout, and bind group.
 ///
 /// The texture is `Rgba8Unorm` (TEXTURE_BINDING | COPY_DST). Callers upload
@@ -2063,8 +2200,9 @@ pub struct FrameRenderer {
     /// (`assets-variant-gpu`, the default modern asset path).
     modern_variant_gpu: Option<ModernGpuVariantRenderer>,
     /// Offscreen Rgba8Unorm 256x224 target the compositor renders into before
-    /// it is GPU-copied into `game_texture` and blit by `render()`.
-    modern_gpu_target: Option<(wgpu::Texture, wgpu::TextureView)>,
+    /// it is sampled directly by the presentation blit.
+    modern_gpu_target: Option<ModernGpuTarget>,
+    modern_source_extraction_cache: Option<ModernSourceExtractionCache>,
 }
 
 #[derive(Debug, Default)]
@@ -2773,6 +2911,7 @@ impl FrameRenderer {
             modern_gpu: None,
             modern_variant_gpu: None,
             modern_gpu_target: None,
+            modern_source_extraction_cache: None,
         }
     }
 
@@ -2890,6 +3029,22 @@ impl FrameRenderer {
             &self.gpu_presentation_buf,
             "gpu_blit",
         );
+
+        if let Some(target) = &mut self.modern_gpu_target {
+            let modern_sampler = create_presentation_sampler(
+                &self.device,
+                self.presentation_params.presentation,
+                "modern_gpu_blit",
+            );
+            target.bind_group = create_blit_bind_group(
+                &self.device,
+                &self.bind_group_layout,
+                &target.view,
+                &modern_sampler,
+                &self.presentation_buf,
+                "modern_gpu_blit",
+            );
+        }
     }
 
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
@@ -2906,6 +3061,68 @@ impl FrameRenderer {
             self.game_height,
             self.scale_mode,
         );
+    }
+
+    pub fn wait_idle(&self) {
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+    }
+
+    pub fn read_modern_gpu_target_rgba(&self) -> Option<Vec<u8>> {
+        let target = self.modern_gpu_target.as_ref()?;
+        let width = 256u32;
+        let height = 224u32;
+        let row_bytes = width * 4;
+        let readback_bytes_per_row =
+            row_bytes.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("modern_gpu_live_target_readback"),
+            size: (readback_bytes_per_row * height) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("modern_gpu_live_target_readback"),
+            });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &target.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(readback_bytes_per_row),
+                    rows_per_image: None,
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([encoder.finish()]);
+
+        let slice = readback.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("GPU poll failed during live target readback");
+        let mapped = slice.get_mapped_range();
+        let mut out = Vec::with_capacity((row_bytes * height) as usize);
+        let stride = readback_bytes_per_row as usize;
+        let row_bytes = row_bytes as usize;
+        for row in 0..height as usize {
+            out.extend_from_slice(&mapped[row * stride..row * stride + row_bytes]);
+        }
+        drop(mapped);
+        readback.unmap();
+        Some(out)
     }
 
     fn maybe_log_viewport(&mut self) {
@@ -3174,9 +3391,8 @@ impl FrameRenderer {
 
     /// Diagnostic GPU present of the indexed source-atlas path
     /// (`ZELDA3_RENDERER=assets-anim-gpu`).
-    /// Renders the compositor into an offscreen 256x224 target, GPU-copies it
-    /// into `game_texture`, then blits via the standard presentation path. No
-    /// CPU readback.
+    /// Renders the compositor into an offscreen 256x224 target, then samples
+    /// that target directly in the presentation blit. No CPU readback.
     pub fn present_modern_gpu(
         &mut self,
         frame: &modern_frame::ModernFrame,
@@ -3187,75 +3403,20 @@ impl FrameRenderer {
         if self.modern_gpu.is_none() {
             self.modern_gpu = Some(ModernGpuCompositor::new(&self.device, &self.queue, format));
         }
-        if self.modern_gpu_target.is_none() {
-            let target = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("modern_gpu_live_target"),
-                size: wgpu::Extent3d {
-                    width: 256,
-                    height: 224,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::COPY_SRC
-                    | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
-            let view = target.create_view(&wgpu::TextureViewDescriptor::default());
-            self.modern_gpu_target = Some((target, view));
-        }
-
-        self.game_texture.ensure_size(
-            &self.device,
-            &self.bind_group_layout,
-            &self.presentation_buf,
-            self.presentation_params.presentation,
-            256,
-            224,
-        );
+        self.ensure_modern_gpu_target(format);
 
         let compositor = self.modern_gpu.as_ref().expect("compositor built above");
-        let (target_texture, _target_view) =
-            self.modern_gpu_target.as_ref().expect("target built above");
+        let target = self.modern_gpu_target.as_ref().expect("target built above");
         compositor.render(
             &self.device,
             &self.queue,
             frame,
             bg_cells,
             sprite_cells,
-            target_texture,
+            &target.texture,
         );
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("modern_gpu_copy_to_game_texture"),
-            });
-        encoder.copy_texture_to_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: target_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.game_texture.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::Extent3d {
-                width: 256,
-                height: 224,
-                depth_or_array_layers: 1,
-            },
-        );
-        self.queue.submit([encoder.finish()]);
-
-        self.render()
+        self.present_modern_gpu_target_to_surface()
     }
 
     /// Diagnostic GPU present of a VRAM-decoded modern frame. The default
@@ -3313,42 +3474,13 @@ impl FrameRenderer {
                 format,
             ));
         }
-        if self.modern_gpu_target.is_none() {
-            let target = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("modern_gpu_live_target"),
-                size: wgpu::Extent3d {
-                    width: 256,
-                    height: 224,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::COPY_SRC
-                    | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
-            let view = target.create_view(&wgpu::TextureViewDescriptor::default());
-            self.modern_gpu_target = Some((target, view));
-        }
-
-        self.game_texture.ensure_size(
-            &self.device,
-            &self.bind_group_layout,
-            &self.presentation_buf,
-            self.presentation_params.presentation,
-            256,
-            224,
-        );
+        self.ensure_modern_gpu_target(format);
 
         let variant = self
             .modern_variant_gpu
             .as_ref()
             .expect("variant renderer built above");
-        let (target_texture, target_view) =
-            self.modern_gpu_target.as_ref().expect("target built above");
+        let target = self.modern_gpu_target.as_ref().expect("target built above");
         let render = variant.render(
             &self.device,
             &self.queue,
@@ -3357,40 +3489,146 @@ impl FrameRenderer {
             sprite_cells,
             bg_palette_name,
             sprite_palette_name,
-            target_view,
+            &target.view,
         );
         if !render.rendered {
             return Ok(render);
         }
 
+        self.present_modern_gpu_target_to_surface()?;
+        Ok(render)
+    }
+
+    fn ensure_modern_gpu_target(&mut self, format: wgpu::TextureFormat) {
+        if self.modern_gpu_target.is_some() {
+            return;
+        }
+        self.modern_gpu_target = Some(create_modern_gpu_target(
+            &self.device,
+            &self.bind_group_layout,
+            &self.presentation_buf,
+            self.presentation_params.presentation,
+            format,
+        ));
+    }
+
+    fn present_modern_gpu_target_to_surface(&mut self) -> Result<(), RenderError> {
+        self.maybe_log_viewport();
+        if self.presentation_notice.frames_remaining() > 0 {
+            self.write_cpu_presentation_params();
+        }
+        let surface_texture = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(t) => t,
+            wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                return Err(RenderError::SurfaceReconfigureNeeded);
+            }
+            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+                return Ok(());
+            }
+            wgpu::CurrentSurfaceTexture::Validation => {
+                return Err(RenderError::Fatal(
+                    "wgpu validation error in get_current_texture".to_string(),
+                ));
+            }
+        };
+
+        let view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("modern_variant_gpu_copy_to_game_texture"),
+                label: Some("modern_gpu_target_blit"),
             });
-        encoder.copy_texture_to_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: target_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.game_texture.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::Extent3d {
-                width: 256,
-                height: 224,
-                depth_or_array_layers: 1,
-            },
-        );
-        self.queue.submit([encoder.finish()]);
 
-        self.render()?;
-        Ok(render)
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("modern_gpu_target_blit"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            let target = self.modern_gpu_target.as_ref().expect("target built above");
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &target.bind_group, &[]);
+            pass.set_viewport(
+                self.viewport.x,
+                self.viewport.y,
+                self.viewport.w,
+                self.viewport.h,
+                0.0,
+                1.0,
+            );
+            pass.draw(0..3, 0..1);
+        }
+
+        self.queue.submit([encoder.finish()]);
+        surface_texture.present();
+        self.tick_presentation_notice();
+        Ok(())
+    }
+
+    fn modern_live_timings_enabled() -> bool {
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ENABLED.get_or_init(|| std::env::var_os("ZELDA3_RENDER_TIMINGS").is_some())
+    }
+
+    fn modern_live_variant_stats_enabled() -> bool {
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ENABLED.get_or_init(|| std::env::var_os("ZELDA3_VARIANT_LIVE_STATS").is_some())
+    }
+
+    fn modern_live_timing_mark(last: &mut Option<std::time::Instant>) -> u128 {
+        let Some(previous) = last else {
+            return 0;
+        };
+        let elapsed = previous.elapsed().as_micros();
+        *previous = std::time::Instant::now();
+        elapsed
+    }
+
+    fn extract_asset_resolved_modern_frame_from_sources_cached<
+        S: modern_extract::SourceTableView + ?Sized,
+    >(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        src_table: &S,
+        source_atlas: &modern_source_atlas::ModernSourceAtlas,
+    ) -> modern_extract::AssetResolvedModernFrame {
+        let Some(fingerprint) = modern_source_extraction_fingerprint(frame, src_table) else {
+            self.modern_source_extraction_cache = None;
+            return modern_extract::extract_asset_resolved_modern_frame_from_sources(
+                frame,
+                src_table,
+                source_atlas,
+            );
+        };
+        if let Some(cache) = &self.modern_source_extraction_cache {
+            if cache.fingerprint == fingerprint {
+                return cache.assets.clone();
+            }
+        }
+        let assets = modern_extract::extract_asset_resolved_modern_frame_from_sources(
+            frame,
+            src_table,
+            source_atlas,
+        );
+        self.modern_source_extraction_cache = Some(ModernSourceExtractionCache {
+            fingerprint,
+            assets: assets.clone(),
+        });
+        assets
     }
 
     /// Live GPU present of the compact RGBA canonical-art/effect atlas path
@@ -3408,25 +3646,78 @@ impl FrameRenderer {
         sprite_palette_name: &str,
     ) -> Result<modern_gpu::ModernGpuVariantLiveRender, RenderError> {
         debug_assert_ne!(frame.mode, 7);
-        let modern_assets = modern_extract::extract_asset_resolved_modern_frame_from_sources(
+        let timings_enabled = Self::modern_live_timings_enabled();
+        let mut timing_last = timings_enabled.then(std::time::Instant::now);
+        let modern_assets = self.extract_asset_resolved_modern_frame_from_sources_cached(
             frame,
             src_table,
             source_atlas,
         );
+        let extract_us = Self::modern_live_timing_mark(&mut timing_last);
         if modern_assets.has_unresolved_sources() {
+            if timings_enabled {
+                eprintln!(
+                    "modern_live_timing rendered=false extract_us={extract_us} reason=unresolved_sources"
+                );
+            }
             return Ok(modern_gpu::ModernGpuVariantLiveRender {
                 stats: modern_assets.unresolved_stats,
                 rendered: false,
             });
         }
-        self.present_modern_variant_gpu(
-            &modern_assets.frame,
-            &modern_assets.bg_cells,
-            &modern_assets.sprite_cells,
-            variant_atlas,
-            bg_palette_name,
-            sprite_palette_name,
-        )
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        if self.modern_gpu.is_none() {
+            self.modern_gpu = Some(ModernGpuCompositor::new(&self.device, &self.queue, format));
+        }
+        self.ensure_modern_gpu_target(format);
+        let target = self.modern_gpu_target.as_ref().expect("target built above");
+        let rendered = self
+            .modern_gpu
+            .as_ref()
+            .expect("modern compositor built above")
+            .render(
+                &self.device,
+                &self.queue,
+                &modern_assets.frame,
+                &modern_assets.bg_cells,
+                &modern_assets.sprite_cells,
+                &target.texture,
+            );
+        let render_us = Self::modern_live_timing_mark(&mut timing_last);
+        let mut stats = if Self::modern_live_variant_stats_enabled() {
+            modern_variant_draw::compile_variant_draw_stats(
+                &modern_assets.frame,
+                &modern_assets.bg_cells,
+                &modern_assets.sprite_cells,
+                variant_atlas,
+                bg_palette_name,
+                sprite_palette_name,
+            )
+        } else {
+            modern_software::VariantAtlasRenderStats::default()
+        };
+        let stats_us = Self::modern_live_timing_mark(&mut timing_last);
+        if rendered {
+            stats.gpu_prefinal_base_frames += 1;
+            stats.gpu_screen_builder_frames += 1;
+            self.present_modern_gpu_target_to_surface()?;
+        }
+        let present_us = Self::modern_live_timing_mark(&mut timing_last);
+        if timings_enabled {
+            eprintln!(
+                "modern_live_timing rendered={rendered} bg_cells={} sprite_cells={} bg_tiles={} sprites={} extract_us={extract_us} render_us={render_us} stats_us={stats_us} present_us={present_us}",
+                modern_assets.bg_cells.len(),
+                modern_assets.sprite_cells.len(),
+                modern_assets
+                    .frame
+                    .bg_layers
+                    .iter()
+                    .map(|layer| layer.index_tiles.len())
+                    .sum::<usize>(),
+                modern_assets.frame.index_sprites.len(),
+            );
+        }
+        Ok(modern_gpu::ModernGpuVariantLiveRender { stats, rendered })
     }
 
     /// Present a source-backed Mode-7 frame through the live GPU PPU path, then
@@ -3459,38 +3750,9 @@ impl FrameRenderer {
     ) -> Result<(), RenderError> {
         debug_assert_eq!(frame.mode, 7);
         let format = wgpu::TextureFormat::Rgba8Unorm;
-        if self.modern_gpu_target.is_none() {
-            let target = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("modern_gpu_live_target"),
-                size: wgpu::Extent3d {
-                    width: 256,
-                    height: 224,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::COPY_SRC
-                    | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
-            let view = target.create_view(&wgpu::TextureViewDescriptor::default());
-            self.modern_gpu_target = Some((target, view));
-        }
+        self.ensure_modern_gpu_target(format);
 
-        self.game_texture.ensure_size(
-            &self.device,
-            &self.bind_group_layout,
-            &self.presentation_buf,
-            self.presentation_params.presentation,
-            256,
-            224,
-        );
-
-        let (target_texture, target_view) =
-            self.modern_gpu_target.as_ref().expect("target built above");
+        let target = self.modern_gpu_target.as_ref().expect("target built above");
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -3501,35 +3763,16 @@ impl FrameRenderer {
                 &mut encoder,
                 &self.queue,
                 frame,
-                target_view,
+                &target.view,
                 chars,
             ),
             None => self
                 .gpu_renderer
-                .render_frame(&mut encoder, &self.queue, frame, target_view),
+                .render_frame(&mut encoder, &self.queue, frame, &target.view),
         }
-        encoder.copy_texture_to_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: target_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.game_texture.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::Extent3d {
-                width: 256,
-                height: 224,
-                depth_or_array_layers: 1,
-            },
-        );
         self.queue.submit([encoder.finish()]);
 
-        self.render()
+        self.present_modern_gpu_target_to_surface()
     }
 
     pub fn render(&mut self) -> Result<(), RenderError> {

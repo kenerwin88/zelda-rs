@@ -286,6 +286,29 @@ pub(crate) fn run_play_gpu_render_compare(args: &[String]) {
     compare_session.emit_summaries(start_frame);
 }
 
+fn strict_default_gpu_pixel_parity_args(args: &[String]) -> Vec<String> {
+    let mut strict = args.to_vec();
+    strict.extend([
+        "--stride".to_string(),
+        u32::MAX.to_string(),
+        "--modern-index-compare".to_string(),
+        "1".to_string(),
+        "--require-full-gpu-path".to_string(),
+        "--require-modern-index-parity".to_string(),
+    ]);
+    strict
+}
+
+pub(crate) fn run_play_default_gpu_pixel_parity(args: &[String]) {
+    if args.is_empty() {
+        eprintln!(
+            "usage: zelda3 --play-default-gpu-pixel-parity <path-to-rom.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--load-state <path>]"
+        );
+        process::exit(2);
+    }
+    run_play_gpu_render_compare(&strict_default_gpu_pixel_parity_args(args));
+}
+
 pub(crate) fn replay_optional_gpu_readback_renderer(
     render_hash_log: u32,
     gpu_render_compare: &GpuRenderCompareRun,
@@ -730,7 +753,7 @@ fn cgram_match(cgram: &[u16], rgb: (u8, u8, u8)) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::gpu_render_compare_run;
+    use super::{gpu_render_compare_run, strict_default_gpu_pixel_parity_args};
 
     #[test]
     fn quiet_summary_requires_enabled_compare() {
@@ -746,6 +769,32 @@ mod tests {
         assert_eq!(
             compare.play_summary_line(1234),
             "play-gpu-render-compare completed compared=0 start_frame=1234 last_frame=1234 last_hash=0x00000000 mismatched_pixels=0"
+        );
+    }
+
+    #[test]
+    fn default_gpu_pixel_parity_enables_strict_every_frame_modern_compare() {
+        let args = vec![
+            "zelda3.sfc".to_string(),
+            "120".to_string(),
+            "--input-script".to_string(),
+            "route.txt".to_string(),
+        ];
+
+        assert_eq!(
+            strict_default_gpu_pixel_parity_args(&args),
+            vec![
+                "zelda3.sfc",
+                "120",
+                "--input-script",
+                "route.txt",
+                "--stride",
+                "4294967295",
+                "--modern-index-compare",
+                "1",
+                "--require-full-gpu-path",
+                "--require-modern-index-parity",
+            ]
         );
     }
 }

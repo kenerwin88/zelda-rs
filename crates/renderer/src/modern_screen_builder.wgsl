@@ -11,6 +11,7 @@ struct Params {
     p5: vec4<u32>,
     p6: vec4<u32>,
     p7: vec4<u32>,
+    p8: vec4<u32>,
 };
 @group(0) @binding(3) var<uniform> params: Params;
 
@@ -154,6 +155,24 @@ fn bg_pixel(layer: u32, sx: u32, sy: u32, hi_priority: bool, is_main: bool) -> u
         sample_sy = mosaic_snap(sy);
     }
     var out = 0xffffffffu;
+    if (((params.p8.y >> layer) & 1u) != 0u) {
+        let bucket_x = min(sample_sx / 8u, 31u);
+        let bucket_y = min(sample_sy / 8u, 27u);
+        let priority_index = select(0u, 1u, hi_priority);
+        let bucket = (((layer * 2u + priority_index) * 28u + bucket_y) * 32u + bucket_x);
+        let header = params.p8.x + bucket * 2u;
+        let offset = data[header];
+        let count = data[header + 1u];
+        let candidates = params.p8.x + params.p8.z + offset;
+        for (var i = 0u; i < count; i = i + 1u) {
+            let inst_index = data[candidates + i];
+            let px = bg_instance_pixel(params.p5.y + inst_index * 8u, layer, sample_sx, sample_sy, hi_priority);
+            if (px != 0xffffffffu) {
+                out = px;
+            }
+        }
+        return out;
+    }
     let count = params.p0.z;
     for (var i = 0u; i < count; i = i + 1u) {
         let px = bg_instance_pixel(params.p5.y + i * 8u, layer, sample_sx, sample_sy, hi_priority);
