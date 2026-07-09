@@ -4357,6 +4357,12 @@ pub struct ModernGpuVariantHeadless {
     renderer: ModernGpuVariantRenderer,
     target: wgpu::Texture,
     target_view: wgpu::TextureView,
+    /// Persistent index renderer (pipeline + bind-group layout only) reused every
+    /// frame — recompiling its pipeline per frame was pure allocation churn.
+    index_renderer: ModernGpuIndexRenderer,
+    /// Persistent 256x224 RGBA readback buffer, reused every `read_target_rgba`
+    /// instead of allocating a fresh MAP_READ buffer per frame.
+    readback_buf: wgpu::Buffer,
 }
 
 pub struct ModernGpuVariantValidation {
@@ -4390,6 +4396,13 @@ impl ModernGpuVariantHeadless {
             view_formats: &[],
         });
         let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+        let index_renderer = ModernGpuIndexRenderer::new(&device, &queue, format);
+        let readback_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("modern_gpu_variant_headless_readback"),
+            size: (256 * 224 * 4) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         Self {
             device,
             queue,
@@ -4397,6 +4410,8 @@ impl ModernGpuVariantHeadless {
             renderer,
             target,
             target_view,
+            index_renderer,
+            readback_buf,
         }
     }
 
@@ -4697,11 +4712,7 @@ impl ModernGpuVariantHeadless {
                 ))
         {
             execution.stats_mut().as_mut().gpu_prefinal_base_frames += 1;
-            let bg = ModernGpuIndexRenderer::new(
-                &self.device,
-                &self.queue,
-                wgpu::TextureFormat::Rgba8Unorm,
-            );
+            let bg = &self.index_renderer;
             let mut final_live_index_frame = live_index_base.frame().clone();
             finalize_modern_frame_colors_for_direct_index(&mut final_live_index_frame);
             bg.render(
@@ -4823,12 +4834,7 @@ impl ModernGpuVariantHeadless {
     fn read_target_rgba(&self) -> Vec<u8> {
         let (width, height) = (256u32, 224u32);
         let bytes_per_row = width * 4;
-        let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("modern_gpu_variant_headless_readback"),
-            size: (bytes_per_row * height) as u64,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let readback = &self.readback_buf;
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -4840,7 +4846,7 @@ impl ModernGpuVariantHeadless {
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::TexelCopyBufferInfo {
-                buffer: &readback,
+                buffer: readback,
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(bytes_per_row),
