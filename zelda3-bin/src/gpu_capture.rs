@@ -70,7 +70,7 @@ impl LiveGpuFrameCapture {
             .collect();
         let dialogue_message_id = Some(game.current_dialogue_message_id());
         let source_dialogue_ir = game.current_source_dialogue_ir();
-        let dialogue_ir = game.current_visible_source_render_dialogue_ir();
+        let dialogue_ir = game.current_displayed_source_render_dialogue_ir();
         let dialogue_vwf_widths = game.dialogue_vwf_widths().unwrap_or_default();
         let dialogue_layout =
             zelda3::dialogue_ir::layout_dialogue_ir(&dialogue_ir, &dialogue_vwf_widths);

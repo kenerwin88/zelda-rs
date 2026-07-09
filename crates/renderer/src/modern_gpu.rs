@@ -460,6 +460,9 @@ impl ModernGpuVariantRenderer {
     }
 
     fn append_vwf_glyph_runs_to_variant_frame(&self, frame: &ModernFrame, out: &mut ModernFrame) {
+        if !vwf_hd_glyph_overlay_enabled() {
+            return;
+        }
         let vwf_glyph_runs = frame.vwf_glyph_runs_for_draw();
         if vwf_glyph_runs.is_empty() {
             return;
@@ -1082,6 +1085,24 @@ enum PrefinalBgMaterial {
     /// [`stable_art_in_base_enabled`]; packets that would need a transform the prefinal
     /// path cannot represent stay on the flat overlay (see [`bg_stable_packet_reject`]).
     Stable,
+}
+
+/// Whether the hi-res VWF dialogue-glyph overlay is composited on top of the base frame.
+///
+/// The overlay is an *enhancement*: it substitutes hi-res variable-width-font glyph art for the
+/// game's bitmap dialogue text, so it deliberately does not match the classic PPU pixel-for-pixel.
+/// It is therefore OFF by default — at the default/1x-parity configuration the live-index base
+/// renders dialogue text (already pixel-exact vs classic), and `--modern-index-compare` measures
+/// true parity. Opt in with `ZELDA3_VWF_HD_GLYPHS=1`.
+///
+/// This is a dedicated flag rather than a tie to `ZELDA3_HD_SCALE`: `HdScale` is process-global and
+/// defaults to 2 even for the 256x224 parity-compare headless renderer (which never consults it),
+/// so gating on `HdScale > 1` would wrongly enable the overlay while measuring parity.
+fn vwf_hd_glyph_overlay_enabled() -> bool {
+    matches!(
+        std::env::var("ZELDA3_VWF_HD_GLYPHS").ok().as_deref(),
+        Some("1") | Some("true")
+    )
 }
 
 /// Whether Stable (baked PNG) BG art is folded into the priority-ranked prefinal overlay
@@ -4929,6 +4950,9 @@ mod tests {
 
     #[test]
     fn headless_gpu_variant_draws_vwf_glyph_runs_from_source_png_entries() {
+        // The hi-res VWF glyph overlay is an opt-in enhancement (off at 1x parity); this test
+        // exercises the enhancement path, so it enables the overlay explicitly.
+        std::env::set_var("ZELDA3_VWF_HD_GLYPHS", "1");
         use crate::modern_frame::ModernVwfGlyphRun;
         use crate::modern_variant_atlas::{
             dialogue_text_color_palette_name, dialogue_vwf_variant_key, DialogueVwfGlyphAtlas,

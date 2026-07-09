@@ -6470,6 +6470,23 @@ impl ZeldaState {
         )
     }
 
+    /// Dialogue render IR that is actually on screen right now.
+    ///
+    /// Returns empty unless the text engine is currently handling a message
+    /// (`MESSAGING_MODULE != 0`). The message id, read position, cached layout, and even the
+    /// game's live BG3 glyph-run list all persist after a message closes, so a renderer keying off
+    /// any of those would paint phantom glyphs over a closed box. The messaging module is the
+    /// game's own "message open/rendering" state — what classic's BG3 content reflects — so gating
+    /// on it keeps the hi-res VWF overlay in step with what the box actually shows.
+    pub fn current_displayed_source_render_dialogue_ir(
+        &self,
+    ) -> Vec<crate::dialogue_ir::DialogueIrOp> {
+        if self.game_state.messaging.runtime.module() == 0 {
+            return Vec::new();
+        }
+        self.current_visible_source_render_dialogue_ir()
+    }
+
     pub fn source_dialogue_ir_for_message(
         &self,
         message_id: u16,
