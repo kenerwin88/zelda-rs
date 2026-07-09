@@ -289,67 +289,19 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 assets,
             )
 
-            artifacts = extract_assets.write_dialogue_catalog(out_dir)
-
-            self.assertEqual(
-                artifacts,
-                [
-                    {
-                        "file": "assets_src/dialogue/dialogue_catalog.json",
-                        "source_format": dialogue_catalog.FORMAT_DIALOGUE_CATALOG,
-                    },
-                    {
-                        "file": "assets_src/dialogue/dialogue_source.json",
-                        "source_format": dialogue_catalog.FORMAT_DIALOGUE_SOURCE,
-                    },
-                ],
-            )
+            # Extraction no longer writes generated dialogue sources; the
+            # manifest references the tracked authority instead.
+            self.assertFalse((out_dir / "assets_src/dialogue").exists())
             dialogue_manifest = manifest[94]
             self.assertEqual(
                 dialogue_manifest["source_file"],
-                "assets_src/dialogue/dialogue_source.json",
+                "assets/dialogue/messages.toml",
             )
             self.assertEqual(
                 dialogue_manifest["source_format"],
                 dialogue_catalog.FORMAT_DIALOGUE_SOURCE,
             )
             self.assertEqual(dialogue_manifest["file"], "assets/094-kDialogue.bin")
-            source_path = out_dir / "assets_src/dialogue/dialogue_catalog.json"
-            source_text_path = out_dir / "assets_src/dialogue/dialogue_source.json"
-            catalog = json.loads(source_path.read_text())
-            source = json.loads(source_text_path.read_text())
-            self.assertEqual(catalog["message_count"], 1)
-            self.assertEqual(catalog["messages"][0]["preview_text"], "A")
-            self.assertEqual(
-                source,
-                {
-                    "encoding": {
-                        "control_tags": (
-                            "commands use [name] or [name xx]; bracket glyphs keep "
-                            "their glyph names"
-                        ),
-                        "dictionary_strategy": "compile_uncompressed_messages",
-                        "mode": "us",
-                    },
-                    "format": dialogue_catalog.FORMAT_DIALOGUE_SOURCE,
-                    "language": {
-                        "dialogue_pack": 0,
-                        "flags": 0,
-                        "font_pack": 0,
-                        "language": "us",
-                        "raw_config": ["00", "00", "00"],
-                    },
-                    "message_count": 1,
-                    "messages": [
-                        {
-                            "expanded_sha1": "1d2725b53e3f3dff1b38a0a5e7710244ff8cc5fa",
-                            "id": 0,
-                            "source_text": "A[end_message]",
-                        }
-                    ],
-                },
-            )
-
     def test_kdialogue_manifest_points_to_source_while_keeping_bin_evidence(self) -> None:
         dictionary = pack_arrays([bytes([0])])
         messages = pack_arrays([bytes([0x88, 0x7F])])
@@ -371,7 +323,7 @@ class ExtractAssetSourcesTests(unittest.TestCase):
 
             self.assertEqual(
                 manifest[94]["source_file"],
-                "assets_src/dialogue/dialogue_source.json",
+                "assets/dialogue/messages.toml",
             )
             self.assertEqual(
                 manifest[94]["source_format"],

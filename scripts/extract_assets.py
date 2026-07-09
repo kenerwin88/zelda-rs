@@ -381,30 +381,11 @@ def write_asset_outputs(out_dir: Path, assets: list[tuple[str, bytes]]) -> list[
             continue
         manifest_asset = write_asset_output(out_dir, index=index, name=name, payload=payload)
         if name == "kDialogue":
-            manifest_asset["source_file"] = "assets_src/dialogue/dialogue_source.json"
+            # The tracked authority; the build compiles kDialogue from it directly.
+            manifest_asset["source_file"] = "assets/dialogue/messages.toml"
             manifest_asset["source_format"] = dialogue_catalog.FORMAT_DIALOGUE_SOURCE
         manifest_assets.append(manifest_asset)
     return manifest_assets
-
-
-def write_dialogue_catalog(out_dir: Path) -> list[dict[str, str]]:
-    try:
-        written = dialogue_catalog.write_dialogue_sources_for_asset_dir(out_dir)
-    except FileNotFoundError as exc:
-        print(f"skipping dialogue catalog: missing {exc.filename}", file=sys.stderr)
-        return []
-
-    return [
-        {
-            "file": path.relative_to(out_dir).as_posix(),
-            "source_format": (
-                dialogue_catalog.FORMAT_DIALOGUE_CATALOG
-                if path.name == "dialogue_catalog.json"
-                else dialogue_catalog.FORMAT_DIALOGUE_SOURCE
-            ),
-        }
-        for path in written
-    ]
 
 
 def write_chr_source_sheets(out_dir: Path) -> list[dict[str, str]]:
@@ -713,7 +694,6 @@ def main() -> int:
     key_signature_path.write_bytes(key_signature)
 
     manifest_assets = write_asset_outputs(out_dir, assets)
-    dialogue_catalog_artifacts = write_dialogue_catalog(out_dir)
     chr_source_sheets = write_chr_source_sheets(out_dir)
     tile_effect_table = write_tile_effect_table(out_dir)
     base_effect_atlas = (
@@ -736,7 +716,6 @@ def main() -> int:
                 "canonical_art_atlas": canonical_art_atlas,
                 "canonical_art_atlas_summary": canonical_art_atlas_summary,
                 "chr_source_sheets": chr_source_sheets,
-                "dialogue_catalog": dialogue_catalog_artifacts,
                 "rgba_variant_atlas": rgba_variant_atlas,
                 "restool_pack_sha1": sha1(source_pack),
                 "rom_sha1": sha1(rom),
@@ -761,8 +740,6 @@ def main() -> int:
         )
     if chr_source_sheets:
         print(f"tracked CHR sheet authority: {len(chr_source_sheets)} sheets at {REPO_ROOT / 'assets/chr'}")
-    if dialogue_catalog_artifacts:
-        print(f"wrote dialogue catalog to {out_dir / 'assets_src/dialogue'}")
     if base_effect_atlas:
         print(f"wrote legacy base/effect atlas to {out_dir / 'atlas'}")
     elif tile_effect_table:

@@ -585,11 +585,11 @@ fn dialogue_repo_root() -> PathBuf {
 /// Load the authored dialogue messages, in precedence order:
 ///   1. `ZELDA3_DIALOGUE_MESSAGES` env override (alt-dialogue / tests, never mutates
 ///      the tracked authority),
-///   2. the tracked `assets/dialogue/messages.toml` (the authority),
-///   3. the legacy generated JSON source as a bootstrap fallback.
+///   2. the tracked `assets/dialogue/messages.toml` (the sole authority; it is
+///      committed, so every clone has it — there is no generated fallback).
 /// `kDialogue` is always source-built (never the stale `.bin`), matching the runtime's
 /// required `kDialogueSourceSemantic` sidecar.
-fn read_dialogue_messages_document(generated_dir: &Path) -> zelda3_dialogue::DialogueMessagesDocument {
+fn read_dialogue_messages_document(_generated_dir: &Path) -> zelda3_dialogue::DialogueMessagesDocument {
     if let Some(override_path) = env::var_os("ZELDA3_DIALOGUE_MESSAGES") {
         let override_path = PathBuf::from(override_path);
         println!("cargo:rerun-if-changed={}", override_path.display());
@@ -606,28 +606,11 @@ fn read_dialogue_messages_document(generated_dir: &Path) -> zelda3_dialogue::Dia
         return zelda3_dialogue::parse_messages_document(&text)
             .unwrap_or_else(|err| panic!("failed to parse {}: {err}", messages_path.display()));
     }
-    let json_path = generated_dir.join("assets_src/dialogue/dialogue_source.json");
-    println!("cargo:rerun-if-changed={}", json_path.display());
-    let text = fs::read_to_string(&json_path).unwrap_or_else(|err| {
-        panic!(
-            "no authored dialogue source at {} and no fallback {}: {err}",
-            messages_path.display(),
-            json_path.display()
-        )
-    });
-    let source: zelda3_dialogue::DialogueSourceDocument = serde_json::from_str(&text)
-        .unwrap_or_else(|err| panic!("failed to parse {}: {err}", json_path.display()));
-    zelda3_dialogue::DialogueMessagesDocument {
-        format: source.format,
-        messages: source
-            .messages
-            .into_iter()
-            .map(|message| zelda3_dialogue::DialogueMessageEntry {
-                id: message.id,
-                text: message.source_text,
-            })
-            .collect(),
-    }
+    panic!(
+        "no dialogue source: the tracked authority {} is missing \
+         (set ZELDA3_DIALOGUE_MESSAGES to override, or restore the file from git)",
+        messages_path.display()
+    );
 }
 
 fn read_dialogue_asset(generated_dir: &Path) -> Vec<u8> {
@@ -920,10 +903,6 @@ fn known_source(name: &str) -> Option<(&'static str, &'static str)> {
         "kOverworldSpritePalettes" => Some((
             FORMAT_SNES_PALETTE,
             "assets_src/palettes/overworld_sprite_palettes.json",
-        )),
-        "kDialogue" => Some((
-            zelda3_dialogue::FORMAT_DIALOGUE_SOURCE,
-            "assets_src/dialogue/dialogue_source.json",
         )),
         _ => None,
     }
