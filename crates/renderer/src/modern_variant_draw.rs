@@ -893,7 +893,7 @@ fn sprite_live_cgram_rgba(
         .copied()
 }
 
-fn atlas_entry_rgba(
+pub(crate) fn atlas_entry_rgba(
     atlas: &ModernVariantAtlas,
     entry: &crate::modern_variant_atlas::VariantAtlasEntry,
     source_x: u8,

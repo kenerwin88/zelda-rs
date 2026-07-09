@@ -409,6 +409,18 @@ impl ModernGpuVariantRenderer {
                         crate::modern_variant_draw::VariantDrawSurface::Bg => 0,
                         crate::modern_variant_draw::VariantDrawSurface::Sprite => 1,
                     };
+                    // When Stable BG art is folded into the priority-ranked prefinal overlay,
+                    // eligible BG packets are composited there — keep them off the flat overlay
+                    // so they are not drawn twice (and unoccluded). Rejected BG packets and all
+                    // sprite Stable art still ride the flat overlay.
+                    if target_layer == 0
+                        && stable_art_in_base_enabled()
+                        && packet
+                            .as_bg()
+                            .is_some_and(|(_, bg)| bg_stable_packet_reject(frame, bg, entry).is_none())
+                    {
+                        continue;
+                    }
                     let (screen_x, screen_y) = packet.screen_origin();
                     let (hflip, vflip) = packet.source_flip_with_entry(entry);
                     out.bg_layers[target_layer]
@@ -427,6 +439,24 @@ impl ModernGpuVariantRenderer {
                 crate::modern_variant_atlas::VariantAtlasDraw::Unkeyed => {}
             }
         }
+        if std::env::var("ZELDA3_STABLE_REJECT_STATS").is_ok() {
+            let mut total = 0u32;
+            let mut rejected = 0u32;
+            for packet in plan.material_packets() {
+                if let crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry } =
+                    packet.draw()
+                {
+                    if let Some((_, bg)) = packet.as_bg() {
+                        total += 1;
+                        if bg_stable_packet_reject(frame, bg, entry).is_some() {
+                            rejected += 1;
+                        }
+                    }
+                }
+            }
+            eprintln!("[STABLE_REJECT] stable_bg_total={total} stable_bg_rejected={rejected}");
+        }
+
         self.append_vwf_glyph_runs_to_variant_frame(frame, &mut out);
 
         out
@@ -1034,6 +1064,26 @@ enum MixedOverlayOverlapRejectReason {
 enum PrefinalBgMaterial {
     StaticEffect,
     LiveCgram,
+    /// Baked PNG art (VariantAtlasDraw::Stable) composited through the priority-ranked
+    /// prefinal overlay instead of the flat top overlay, so BG layer priority/occlusion,
+    /// per-scanline main-screen TM, windows, and index-0 transparency all apply. Gated by
+    /// [`stable_art_in_base_enabled`]; packets that would need a transform the prefinal
+    /// path cannot represent stay on the flat overlay (see [`bg_stable_packet_reject`]).
+    Stable,
+}
+
+/// Whether Stable (baked PNG) BG art is folded into the priority-ranked prefinal overlay
+/// (default) rather than drawn by the flat post-finalize overlay. `ZELDA3_STABLE_ART_IN_BASE=0`
+/// restores the legacy flat overlay for A/B comparison.
+pub(crate) fn stable_art_in_base_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        !matches!(
+            std::env::var("ZELDA3_STABLE_ART_IN_BASE").ok().as_deref(),
+            Some("0") | Some("false")
+        )
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1591,6 +1641,9 @@ fn overlay_mixed_variant_bg_packets_on_main_screen(
                     &mut bg_overlay_ranks,
                 )
             }
+            // Stable (baked-atlas) packets are composited on the GPU prefinal path, which is
+            // authoritative for them; this CPU reference is not exercised with Stable material.
+            PrefinalBgMaterial::Stable => {}
         }
     }
     overlay_front_variant_sprite_packets_on_main_screen(
@@ -2062,10 +2115,92 @@ fn sprite_packet_visible_on_main_at_pixel(frame: &ModernFrame, sx: u32, sy: usiz
     !bg_layer_window_masks_packet_pixel(frame, 4, sx, sy)
 }
 
+/// Reasons a Stable (baked PNG) BG packet cannot be represented by the prefinal overlay
+/// (so it stays on the flat overlay). Mirrors [`bg_effect_packet_complex_reject_reason`] but
+/// drops the effect-LUT bounds check (Stable art is raw RGBA) and does NOT reject on color
+/// math — the finalizer applies CGADSUB to the composited pixel exactly as the classic PPU
+/// does, which the post-finalize flat overlay never could.
+fn bg_stable_packet_reject(
+    frame: &ModernFrame,
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
+) -> Option<MixedOverlayComplexRejectReason> {
+    if frame.brightness != 15 {
+        return Some(MixedOverlayComplexRejectReason::Brightness);
+    }
+    let layer = u8::try_from(packet.layer_index)
+        .ok()
+        .filter(|&l| l < 4)?
+        .min(3);
+    let layer_bit = 1u8 << layer;
+    if frame.mosaic_size > 1 && (frame.mosaic_enabled & layer_bit) != 0 {
+        return Some(MixedOverlayComplexRejectReason::Mosaic);
+    }
+    if frame.screen_windowed_sub != 0 {
+        return Some(MixedOverlayComplexRejectReason::SubWindow);
+    }
+
+    let mut saw_visible_pixel = false;
+    let mut saw_scanline_disabled_pixel = false;
+    let mut saw_layer_window_pixel = false;
+    for y in 0..8usize {
+        for x in 0..8usize {
+            if bg_effect_packet_index_at_local(packet, entry, x, y) == 0 {
+                continue;
+            }
+            let dst_x = packet.inst.screen_x + x as i16;
+            let dst_y = packet.inst.screen_y + y as i16;
+            if dst_x < 0 || dst_y < 0 || dst_x >= 256 || dst_y >= 224 {
+                continue;
+            }
+            let sx = dst_x as u32;
+            let sy = dst_y as usize;
+            if frame.screen_enabled_main != 0 && frame.screen_enabled_main & layer_bit == 0 {
+                saw_scanline_disabled_pixel = true;
+                continue;
+            }
+            if frame
+                .main_tm_scanlines
+                .get(sy)
+                .is_some_and(|tm| tm & layer_bit == 0)
+            {
+                saw_scanline_disabled_pixel = true;
+                continue;
+            }
+            if bg_layer_window_masks_packet_pixel(frame, layer, sx, sy) {
+                saw_layer_window_pixel = true;
+                continue;
+            }
+            saw_visible_pixel = true;
+        }
+    }
+
+    if !saw_visible_pixel {
+        if saw_scanline_disabled_pixel {
+            return Some(MixedOverlayComplexRejectReason::InvisibleMain);
+        }
+        if saw_layer_window_pixel {
+            return Some(MixedOverlayComplexRejectReason::LayerWindow);
+        }
+    }
+
+    None
+}
+
 fn bg_packet_prefinal_material(
     frame: &ModernFrame,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
 ) -> Result<PrefinalBgMaterial, PrefinalBgMaterialRejectReason> {
+    if let crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry } = packet.draw {
+        if !stable_art_in_base_enabled() {
+            // Legacy behavior: Stable art draws through the flat overlay.
+            return Err(PrefinalBgMaterialRejectReason::NoEffect);
+        }
+        return match bg_stable_packet_reject(frame, packet, entry) {
+            Some(_) => Err(PrefinalBgMaterialRejectReason::Complex),
+            None => Ok(PrefinalBgMaterial::Stable),
+        };
+    }
     let Some((entry, effect)) = packet.draw.material_effect() else {
         return Err(PrefinalBgMaterialRejectReason::NoEffect);
     };
@@ -3024,10 +3159,11 @@ impl ModernGpuPrefinalOverlay {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         main_buffer: &wgpu::Buffer,
+        atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
         frame: &ModernFrame,
         packets: &MixedVariantPrefinalPackets<'_>,
     ) {
-        let (data_words, params) = modern_prefinal_overlay_data_words(frame, packets);
+        let (data_words, params) = modern_prefinal_overlay_data_words(atlas, frame, packets);
         let data_buffer =
             storage_buffer_with_words(device, queue, "modern_prefinal_overlay_data", &data_words);
         let params_buffer =
@@ -3117,6 +3253,7 @@ fn uniform_buffer_with_words(
 }
 
 fn modern_prefinal_overlay_data_words(
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
     frame: &ModernFrame,
     packets: &MixedVariantPrefinalPackets<'_>,
 ) -> (Vec<u32>, [u32; 32]) {
@@ -3127,7 +3264,9 @@ fn modern_prefinal_overlay_data_words(
     for bg_packet in packets.bg_material_packets() {
         let packet = &bg_packet.packet;
         let cell_offset = data.len() as u32;
-        data.extend_from_slice(&modern_prefinal_overlay_bg_packet_pixels(frame, bg_packet));
+        data.extend_from_slice(&modern_prefinal_overlay_bg_packet_pixels(
+            atlas, frame, bg_packet,
+        ));
         if let Some(rank) = packet.mode1_rank() {
             bg_packet_words.extend_from_slice(&[
                 i32::from(packet.inst.screen_x) as u32,
@@ -3292,6 +3431,7 @@ fn modern_prefinal_overlay_layer_needs_scroll(frame: &ModernFrame, layer: usize)
 }
 
 fn modern_prefinal_overlay_bg_packet_pixels(
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
     frame: &ModernFrame,
     packet: &MixedVariantPrefinalBgPacket<'_>,
 ) -> [u32; 64] {
@@ -3302,7 +3442,35 @@ fn modern_prefinal_overlay_bg_packet_pixels(
         PrefinalBgMaterial::LiveCgram => {
             modern_prefinal_overlay_live_bg_pixels(frame, &packet.packet)
         }
+        PrefinalBgMaterial::Stable => {
+            modern_prefinal_overlay_stable_bg_pixels(atlas, frame, &packet.packet)
+        }
     }
+}
+
+/// Pack a Stable (baked PNG) BG packet's 8x8 pixels for the prefinal overlay: sample the
+/// variant atlas at the entry rect (transparency comes from the baked alpha, index-0 → alpha 0).
+fn modern_prefinal_overlay_stable_bg_pixels(
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+    frame: &ModernFrame,
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+) -> [u32; 64] {
+    let Some(entry) = packet.draw.entry() else {
+        return [0xffffffff; 64];
+    };
+    modern_prefinal_overlay_bg_pixels(frame, packet, |x, y| {
+        let source_x = if packet.cell.hflip ^ entry.source_hflip {
+            7 - x
+        } else {
+            x
+        };
+        let source_y = if packet.cell.vflip ^ entry.source_vflip {
+            7 - y
+        } else {
+            y
+        };
+        crate::modern_variant_draw::atlas_entry_rgba(atlas, entry, source_x as u8, source_y as u8)
+    })
 }
 
 fn modern_prefinal_overlay_static_bg_pixels(
@@ -3490,10 +3658,12 @@ impl ModernGpuCompositor {
         ModernScreenBuilderResult::Gpu
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_prefinal_overlay_screens_with_final_frame(
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
         screen_frame: &ModernFrame,
         final_frame: &ModernFrame,
         overlay_frame: &ModernFrame,
@@ -3515,6 +3685,7 @@ impl ModernGpuCompositor {
             device,
             queue,
             &self.finalizer.main_buffer,
+            atlas,
             overlay_frame,
             packets,
         );
@@ -4462,6 +4633,7 @@ impl ModernGpuVariantHeadless {
                 .render_prefinal_overlay_screens_with_final_frame(
                     &self.device,
                     &self.queue,
+                    &self.renderer.atlas,
                     live_index_base.frame(),
                     live_index_base.frame(),
                     execution.frame(),
@@ -4542,6 +4714,7 @@ impl ModernGpuVariantHeadless {
             .render_prefinal_overlay_screens_with_final_frame(
                 &self.device,
                 &self.queue,
+                &self.renderer.atlas,
                 live_index_base.frame(),
                 live_index_base.frame(),
                 frame,
@@ -8076,7 +8249,18 @@ mod tests {
             sprites: Vec::new(),
         };
 
-        let (data_words, params) = modern_prefinal_overlay_data_words(&frame, &packets);
+        let atlas = crate::modern_variant_atlas::ModernVariantAtlas {
+            width: 1,
+            height: 1,
+            rgba: vec![0u8; 4],
+            entries: Vec::new(),
+            effects: Vec::new(),
+            mode7_source_chars: None,
+            dialogue_glyph_atlas: None,
+            dialogue_vwf_font: None,
+            dialogue_vwf_glyph_atlas: None,
+        };
+        let (data_words, params) = modern_prefinal_overlay_data_words(&atlas, &frame, &packets);
 
         assert_eq!(params[1], 2);
         assert_eq!(params[2], 0);
