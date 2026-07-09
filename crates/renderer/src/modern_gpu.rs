@@ -409,16 +409,13 @@ impl ModernGpuVariantRenderer {
                         crate::modern_variant_draw::VariantDrawSurface::Bg => 0,
                         crate::modern_variant_draw::VariantDrawSurface::Sprite => 1,
                     };
-                    // When Stable BG art is folded into the priority-ranked prefinal overlay,
-                    // eligible BG packets are composited there — keep them off the flat overlay
-                    // so they are not drawn twice (and unoccluded). Rejected BG packets and all
-                    // sprite Stable art still ride the flat overlay.
-                    if target_layer == 0
-                        && stable_art_in_base_enabled()
-                        && packet
-                            .as_bg()
-                            .is_some_and(|(_, bg)| bg_stable_packet_reject(frame, bg, entry).is_none())
-                    {
+                    // When Stable BG art is folded into the base + priority-ranked prefinal
+                    // overlay, BG Stable packets leave the flat overlay entirely: the live-index
+                    // base renders each cell authoritatively (priority/window/cgram-correct), and
+                    // the prefinal overlay substitutes baked or cgram-mirror art where it applies
+                    // (see `stable_prefinal_material`). Complex packets simply fall through to the
+                    // base. Only sprite Stable art still rides the flat overlay.
+                    if target_layer == 0 && stable_art_in_base_enabled() {
                         continue;
                     }
                     let (screen_x, screen_y) = packet.screen_origin();
@@ -969,6 +966,7 @@ impl<'a> MixedVariantPrefinalPackets<'a> {
     }
 
     fn from_material_plan(
+        atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
         frame: &ModernFrame,
         plan: &crate::modern_variant_draw::VariantDrawPlan<'a>,
     ) -> Self {
@@ -979,8 +977,22 @@ impl<'a> MixedVariantPrefinalPackets<'a> {
             .filter_map(|packet| packet.as_bg().map(|(_, packet)| packet))
         {
             saw_bg_material_packet = true;
-            let Ok(material) = bg_packet_prefinal_material(frame, packet) else {
-                continue;
+            let material = if let crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry } =
+                packet.draw
+            {
+                if !stable_art_in_base_enabled() {
+                    // Legacy: Stable art is drawn by the flat overlay.
+                    continue;
+                }
+                match stable_prefinal_material(atlas, frame, packet, entry) {
+                    Some(material) => material,
+                    None => continue, // base renders this tile authoritatively
+                }
+            } else {
+                match bg_packet_prefinal_material(frame, packet) {
+                    Ok(material) => material,
+                    Err(_) => continue,
+                }
             };
             bg.push(MixedVariantPrefinalBgPacket {
                 material,
@@ -2187,20 +2199,81 @@ fn bg_stable_packet_reject(
     None
 }
 
+/// True when a Stable packet's baked atlas colors match the mirror palette (`cgram_rgba`) for
+/// every visible pixel — i.e. the baked PNG art is already palette-correct, so it can be composited
+/// as-is. Mirrors [`bg_effect_matches_live_cgram`] but reads the baked color from the atlas.
+fn stable_matches_live_cgram(
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+    frame: &ModernFrame,
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
+) -> bool {
+    let palette_base = usize::from(packet.inst.palette) * 16;
+    for y in 0..8usize {
+        for x in 0..8usize {
+            let index = bg_effect_packet_index_at_local(packet, entry, x, y);
+            if index == 0 {
+                continue;
+            }
+            let source_x = if packet.cell.hflip ^ entry.source_hflip {
+                7 - x
+            } else {
+                x
+            };
+            let source_y = if packet.cell.vflip ^ entry.source_vflip {
+                7 - y
+            } else {
+                y
+            };
+            let Some(baked) =
+                crate::modern_variant_draw::atlas_entry_rgba(atlas, entry, source_x as u8, source_y as u8)
+            else {
+                return false;
+            };
+            let Some(live) = frame.cgram_rgba.get(palette_base + usize::from(index)) else {
+                return false;
+            };
+            if baked[0..3] != live[0..3] {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Classify a Stable (baked PNG) BG packet for the prefinal overlay. `None` means "drop it": the
+/// priority-ranked base (raw-VRAM tile + mirror palette) already renders that tile exactly like the
+/// classic PPU, so leaving the packet out lets the correct base pixel show through. Returns:
+/// - `Stable` when the baked art is palette-correct (composite the PNG art as-is);
+/// - `LiveCgram` when the baked art is palette-wrong but the cell indices can be recolored through
+///   the mirror palette (the same fallback effect materials use);
+/// - `None` when the packet is complex (base handles it) or its indices can't drive the mirror
+///   palette (e.g. dialogue-glyph cells) — the base render is authoritative.
+fn stable_prefinal_material(
+    atlas: &crate::modern_variant_atlas::ModernVariantAtlas,
+    frame: &ModernFrame,
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+    entry: &crate::modern_variant_atlas::VariantAtlasEntry,
+) -> Option<PrefinalBgMaterial> {
+    if bg_stable_packet_reject(frame, packet, entry).is_some() {
+        return None;
+    }
+    if stable_matches_live_cgram(atlas, frame, packet, entry) {
+        return Some(PrefinalBgMaterial::Stable);
+    }
+    if bg_packet_can_use_live_cgram(packet, frame) {
+        return Some(PrefinalBgMaterial::LiveCgram);
+    }
+    None
+}
+
 fn bg_packet_prefinal_material(
     frame: &ModernFrame,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
 ) -> Result<PrefinalBgMaterial, PrefinalBgMaterialRejectReason> {
-    if let crate::modern_variant_atlas::VariantAtlasDraw::Stable { entry } = packet.draw {
-        if !stable_art_in_base_enabled() {
-            // Legacy behavior: Stable art draws through the flat overlay.
-            return Err(PrefinalBgMaterialRejectReason::NoEffect);
-        }
-        return match bg_stable_packet_reject(frame, packet, entry) {
-            Some(_) => Err(PrefinalBgMaterialRejectReason::Complex),
-            None => Ok(PrefinalBgMaterial::Stable),
-        };
-    }
+    // Stable (baked PNG) BG packets are classified by `stable_prefinal_material` (which needs the
+    // atlas to compare baked colors against the mirror palette); this function stays effect-only so
+    // the color-math overlap callers keep their existing behavior.
     let Some((entry, effect)) = packet.draw.material_effect() else {
         return Err(PrefinalBgMaterialRejectReason::NoEffect);
     };
@@ -4656,7 +4729,8 @@ impl ModernGpuVariantHeadless {
         let has_material_bg_packets = plan
             .material_packets()
             .any(|packet| packet.as_bg().is_some());
-        let prefinal_packets = MixedVariantPrefinalPackets::from_material_plan(frame, plan);
+        let prefinal_packets =
+            MixedVariantPrefinalPackets::from_material_plan(&self.renderer.atlas, frame, plan);
         if prefinal_packets.is_empty() {
             if has_material_bg_packets {
                 let build_result = self.compositor.render_with_screen_builder_status(
