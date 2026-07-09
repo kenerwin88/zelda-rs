@@ -1717,6 +1717,17 @@ impl ZeldaState {
         self.game_state.display.palette_provenance.0.cgram_snapshot()
     }
 
+    /// Audit the mirror's committed CGRAM image (what the renderer substitutes) against the live
+    /// PPU CGRAM. Used at render-capture points to catch a stale committed image between upload
+    /// commits (the main-vs-shadow audit cannot see it).
+    pub fn audit_cgram_mirror(&self, ppu_cgram: &[u16]) -> zelda3_palette::BankAudit {
+        self.game_state
+            .display
+            .palette_provenance
+            .0
+            .audit_cgram(ppu_cgram)
+    }
+
     /// Snapshot the palette-provenance mirror at a CGRAM upload (the mirror's
     /// equivalent of `memcpy(cgram, main_palette_buffer)`), and under
     /// `ZELDA3_PALETTE_PROVENANCE_CHECK=1|panic` audit the mirror's main bank
@@ -1735,9 +1746,23 @@ impl ZeldaState {
             .palette_provenance
             .0
             .audit_bank(zelda3_palette::Bank::Main, shadow);
+        // Also audit the committed CGRAM image (what the renderer actually consumes) against the
+        // live PPU CGRAM. The main-vs-shadow audit alone provably misses a stale CGRAM image (a
+        // restore that bulk-loads ppu.cgram without a following upload — see
+        // `reconstitute_palette_mirror_from_shadow`). At an upload commit these agree by
+        // construction; the audit guards the upload/restore paths against regressing.
+        let cgram_audit = self
+            .game_state
+            .display
+            .palette_provenance
+            .0
+            .audit_cgram(&self.ppu.cgram);
         use std::sync::atomic::{AtomicU64, Ordering};
         static LAST: AtomicU64 = AtomicU64::new(u64::MAX);
-        let packed = ((audit.mismatches.len() as u64) << 32) | audit.unknown.len() as u64;
+        let packed = ((audit.mismatches.len() as u64) << 48)
+            | ((audit.unknown.len() as u64) << 32)
+            | ((cgram_audit.mismatches.len() as u64) << 16)
+            | cgram_audit.unknown.len() as u64;
         if LAST.swap(packed, Ordering::Relaxed) != packed {
             let first_mismatch = audit.mismatches.first().map(|w| {
                 format!(
@@ -1752,21 +1777,27 @@ impl ZeldaState {
                 .first()
                 .map(|w| format!(" first_unknown=idx{}", w.index));
             eprintln!(
-                "palette_provenance_coherence frame={} mismatches={} unknown={}{}{}",
+                "palette_provenance_coherence frame={} mismatches={} unknown={} cgram_mismatches={} cgram_unknown={}{}{}",
                 self.frame_ctr_dbg,
                 audit.mismatches.len(),
                 audit.unknown.len(),
+                cgram_audit.mismatches.len(),
+                cgram_audit.unknown.len(),
                 first_mismatch.unwrap_or_default(),
                 first_unknown.unwrap_or_default(),
             );
         }
-        if mode == crate::game_state::ProvenanceCheckMode::Panic && !audit.is_clean() {
+        if mode == crate::game_state::ProvenanceCheckMode::Panic
+            && (!audit.is_clean() || !cgram_audit.is_clean())
+        {
             panic!(
-                "palette provenance mirror diverged from the WRAM shadow at frame {} \
-                 (mismatches={} unknown={})",
+                "palette provenance mirror diverged at frame {} (main: mismatches={} unknown={}; \
+                 cgram: mismatches={} unknown={})",
                 self.frame_ctr_dbg,
                 audit.mismatches.len(),
-                audit.unknown.len()
+                audit.unknown.len(),
+                cgram_audit.mismatches.len(),
+                cgram_audit.unknown.len(),
             );
         }
     }
@@ -7469,6 +7500,9 @@ impl ZeldaState {
     /// used at snapshot-restore boundaries, where the shadow is the authority.
     fn reconstitute_palette_mirror_from_shadow(&mut self) {
         use zelda3_palette::{Bank, MirrorWord, SourceTag, PALETTE_WORDS};
+        // The committed CGRAM image the renderer consumes tracks what the PPU holds, which the
+        // restore bulk-loads directly; capture it before borrowing the mirror.
+        let cgram: Vec<u16> = self.ppu.cgram.to_vec();
         let pb = &self.game_state.display.palette_buffer;
         let main: Vec<u16> = (0..PALETTE_WORDS).map(|i| pb.main_color(i)).collect();
         let aux: Vec<u16> = (0..PALETTE_WORDS).map(|i| pb.aux_color(i)).collect();
@@ -7482,6 +7516,10 @@ impl ZeldaState {
                 | (u16::from(backup.get(off + 1).copied().unwrap_or(0)) << 8);
             mirror.bank_mut(Bank::Backup)[i] = MirrorWord::Known(bv, SourceTag::Copied);
         }
+        // A restore also bulk-loads ppu.cgram; the committed CGRAM image is otherwise only
+        // refreshed at upload commits (which may not run for many frames during a fade), so
+        // reconstitute it here too or the renderer substitutes a stale palette.
+        mirror.reconstitute_cgram(&cgram);
     }
 
     fn save_snes_state(&mut self, func: &mut SaveLoadFunc<'_, '_>) {

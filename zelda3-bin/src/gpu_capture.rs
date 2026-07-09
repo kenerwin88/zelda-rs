@@ -60,6 +60,36 @@ pub(crate) struct ModernAssetGpuReadbackRenderer {
 impl LiveGpuFrameCapture {
     pub fn from_game(game: &mut ZeldaState) -> Self {
         let cgram = game.cgram_after_first_hdma_line();
+        // Capture-point audit (see also the commit-point audit in `commit_palette_provenance_cgram`):
+        // the modern renderer substitutes the mirror's committed CGRAM image for the live PPU CGRAM,
+        // so audit them here — every captured frame — against the base (pre-HDMA) PPU CGRAM. This is
+        // the check that catches a stale committed image between upload commits (e.g. a snapshot
+        // restore during a fade). `=panic` aborts on the first divergence.
+        if let Ok(audit_mode) = std::env::var("ZELDA3_PALETTE_CGRAM_AUDIT") {
+            let audit = game.audit_cgram_mirror(&game.ppu.cgram);
+            if !audit.is_clean() {
+                let first = audit
+                    .mismatches
+                    .first()
+                    .map(|w| {
+                        format!(
+                            " first=idx{}:mirror={:04x}:ppu={:04x}",
+                            w.index,
+                            w.mirror.unwrap_or(0),
+                            w.actual
+                        )
+                    })
+                    .unwrap_or_default();
+                eprintln!(
+                    "palette_cgram_capture_audit mirror_vs_ppu_cgram: mismatches={} unknown={}{first}",
+                    audit.mismatches.len(),
+                    audit.unknown.len(),
+                );
+                if audit_mode == "panic" {
+                    panic!("mirror CGRAM image diverged from live PPU CGRAM at a render capture");
+                }
+            }
+        }
         let raw_scanlines = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
         let source_entries = game.vram_chr_source().as_slice().to_vec();

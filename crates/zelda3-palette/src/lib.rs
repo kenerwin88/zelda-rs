@@ -337,6 +337,54 @@ impl PaletteMirror {
         self.cgram = self.main;
     }
 
+    /// Reconstitute the committed CGRAM image at a full-state restore boundary from the
+    /// authoritative restored PPU CGRAM.
+    ///
+    /// `commit_cgram` (main → cgram) only runs at CGRAM-upload commits. A snapshot restore
+    /// bulk-loads `ppu.cgram` directly and may be followed by many frames where
+    /// `should_update_cgram` stays false (e.g. a fade), so without this the committed CGRAM image
+    /// stays stale — the renderer consumes this image, so it must track what the PPU actually
+    /// holds after the restore, not the last pre-restore upload. Tagged `Copied`: a restore is a
+    /// full-state reload point (like power-on) where the restored PPU state is authoritative.
+    pub fn reconstitute_cgram(&mut self, cgram: &[u16]) {
+        for index in 0..PALETTE_WORDS {
+            self.cgram[index] =
+                MirrorWord::Known(cgram.get(index).copied().unwrap_or(0), SourceTag::Copied);
+        }
+    }
+
+    /// Audit the committed CGRAM image against the live PPU CGRAM (the values classic renders).
+    ///
+    /// The main-bank/shadow audit cannot see a stale committed CGRAM image (the image is only
+    /// refreshed at upload commits, but the renderer reads it every frame). This closes that
+    /// blind spot.
+    pub fn audit_cgram(&self, ppu_cgram: &[u16]) -> BankAudit {
+        let mut mismatches = Vec::new();
+        let mut unknown = Vec::new();
+        for index in 0..PALETTE_WORDS {
+            let Some(&actual) = ppu_cgram.get(index) else {
+                break;
+            };
+            match self.cgram[index] {
+                MirrorWord::Known(value, _) if value == actual => {}
+                MirrorWord::Known(value, _) => mismatches.push(WordAudit {
+                    index,
+                    mirror: Some(value),
+                    actual,
+                }),
+                MirrorWord::Unknown => unknown.push(WordAudit {
+                    index,
+                    mirror: None,
+                    actual,
+                }),
+            }
+        }
+        BankAudit {
+            mismatches,
+            unknown,
+        }
+    }
+
     /// Compare a mirror bank against the real shadow bytes (little-endian
     /// words). Returns (mismatched indices, unknown indices).
     pub fn audit_bank(&self, bank: Bank, shadow_bytes: &[u8]) -> BankAudit {
