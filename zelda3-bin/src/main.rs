@@ -3282,11 +3282,19 @@ fn run_replay_save(args: &[String]) {
     // the final frame and logs its per-bank source-tag histogram. Diffing two dumps (from-scratch
     // vs checkpoint-resumed at the same frame) proves the mirror trailer restores it exactly.
     if let Some(path) = std::env::var_os("ZELDA3_PALETTE_MIRROR_DUMP") {
-        if let Err(e) = std::fs::write(&path, game.palette_mirror_snapshot_bytes()) {
+        let bytes = game.palette_mirror_snapshot_bytes();
+        // Stable FNV-1a over the serialized mirror (values + tags) — a single observable
+        // to compare from-scratch@N vs checkpoint-resumed@N without diffing files.
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for &b in &bytes {
+            hash ^= u64::from(b);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        if let Err(e) = std::fs::write(&path, &bytes) {
             eprintln!("failed to write palette mirror dump to {path:?}: {e}");
         }
         eprintln!(
-            "palette_mirror_dump frame={frames} {}",
+            "palette_mirror_dump frame={frames} hash=0x{hash:016x} {}",
             game.palette_mirror_tag_histogram()
         );
     }
