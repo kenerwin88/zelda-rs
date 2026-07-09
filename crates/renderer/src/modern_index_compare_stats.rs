@@ -123,12 +123,16 @@ struct ModernIndexCompareFrameRecord<'a> {
     pub comparison: ModernIndexCompareFrameDiff,
     pub run_config: ModernIndexCompareRunConfig,
     pub include_diff_in_frame_line: bool,
+    /// Number of asset sources the modern path could not resolve for this frame.
+    /// Non-zero means a black placeholder was rendered instead of real content.
+    pub missing_source_count: usize,
 }
 
 pub struct ModernIndexCompareFrameReport {
     mismatch: u32,
     parity_failure_line: Option<String>,
     full_gpu_failure_line: Option<String>,
+    error_line: Option<String>,
     frame_line: Option<String>,
     progress_line: Option<String>,
 }
@@ -142,6 +146,10 @@ impl ModernIndexCompareFrameReport {
         self.parity_failure_line
             .as_deref()
             .or(self.full_gpu_failure_line.as_deref())
+    }
+
+    pub fn error_line(&self) -> Option<&str> {
+        self.error_line.as_deref()
     }
 
     pub fn frame_line(&self) -> Option<&str> {
@@ -233,6 +241,12 @@ impl ModernIndexCompareFrameRenderedReport {
                 .map(ModernIndexCompareOutputLine::stderr),
         );
 
+        // A degraded (black/placeholder) render is surfaced explicitly and
+        // unconditionally, even if the frame also trips a require-* failure below.
+        if let Some(line) = self.report.error_line() {
+            lines.push(ModernIndexCompareOutputLine::stderr(line));
+        }
+
         if let Some(line) = self.report.failure_line() {
             lines.push(ModernIndexCompareOutputLine::stderr(line));
             return ModernIndexCompareOutputLines {
@@ -310,6 +324,12 @@ pub struct ModernIndexCompareStats {
     compare_count: u64,
     bad_count: u64,
     bad_pixels: u64,
+    /// Frames the modern path could NOT actually render (a black/placeholder was
+    /// compared instead of a real render): mode7 with no source chars, or a frame
+    /// with unresolved asset sources. These are degraded compares, not parity
+    /// results — counted separately and surfaced in the summary so a run with any
+    /// of them is never mistaken for clean.
+    error_count: u64,
     gpu_count: u64,
     mode7_gpu_count: u64,
     cpu_count: u64,
@@ -438,6 +458,24 @@ impl ModernIndexCompareStats {
         let mismatch = record.comparison.mismatch;
         self.record(record.via, mismatch, record.variant_stats);
 
+        // A frame the modern path could not actually render (black placeholder)
+        // is a degraded compare, not a parity result. Flag it explicitly and count
+        // it, always — independent of the require-* strict gates below.
+        let vacuous_reason = if record.missing_source_count > 0 {
+            Some(format!("missing-sources:{}", record.missing_source_count))
+        } else if record.via == "mode7-missing-source" {
+            Some("mode7-missing-source".to_string())
+        } else {
+            None
+        };
+        let error_line = vacuous_reason.map(|reason| {
+            self.error_count += 1;
+            format!(
+                "compare_error frame={} mode={} ppumode={} via={} reason={} mismatch_px={}",
+                record.frame, record.mode_label, record.ppu_mode, record.via, reason, mismatch
+            )
+        });
+
         let line = ModernIndexCompareFrameLine {
             frame: record.frame,
             mode_label: record.mode_label,
@@ -481,6 +519,7 @@ impl ModernIndexCompareStats {
             mismatch,
             parity_failure_line,
             full_gpu_failure_line,
+            error_line,
             frame_line,
             progress_line,
         }
@@ -492,6 +531,7 @@ impl ModernIndexCompareStats {
     ) -> ModernIndexCompareFrameRenderedReport {
         let via = record.modern_render.via;
         let variant_stats = record.modern_render.variant_stats;
+        let missing_source_count = record.modern_render.missing_sources.len();
         let comparison = compare_modern_index_rgba(record.classic_rgba, &record.modern_render.rgba);
         let report = self.record_frame(ModernIndexCompareFrameRecord {
             frame: record.frame,
@@ -502,6 +542,7 @@ impl ModernIndexCompareStats {
             comparison,
             run_config: record.run_config,
             include_diff_in_frame_line: record.include_diff_in_frame_line,
+            missing_source_count,
         });
 
         ModernIndexCompareFrameRenderedReport {
@@ -527,6 +568,56 @@ impl ModernIndexCompareStats {
             trace_pixel.map(|trace| (trace.x, trace.y)),
             input.allow_source_cpu_fallback,
         );
+        // Determinism check: re-render the identical frame N times and report any divergence.
+        // Rendering the same inputs must be bit-identical; a difference means the GPU
+        // render/compare path has per-render state pollution or a synchronization race.
+        // Permanent env-gated diagnostic: `ZELDA3_VARIANT_RERENDER_CHECK=<N>`.
+        if let Some(iters) = std::env::var("ZELDA3_VARIANT_RERENDER_CHECK")
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+            .filter(|&n| n > 1)
+        {
+            let ref_hash = crate::frame_compare::render_frame_rgb_hash_rgba(&modern_render.rgba);
+            for i in 1..iters {
+                let again = crate::modern_gpu::render_modern_index_compare_frame(
+                    input.gpu_frame,
+                    input.src_table,
+                    input.resources.source_atlas(),
+                    input.resources.gpu_headless(),
+                    input.resources.variant_headless(),
+                    input.mode7_source_chars,
+                    input.scene,
+                    None,
+                    input.allow_source_cpu_fallback,
+                );
+                if crate::frame_compare::render_frame_rgb_hash_rgba(&again.rgba) != ref_hash {
+                    let (mut n, mut x0, mut y0, mut x1, mut y1) =
+                        (0u32, 256i32, 224i32, -1i32, -1i32);
+                    for (idx, (a, b)) in modern_render
+                        .rgba
+                        .chunks_exact(4)
+                        .zip(again.rgba.chunks_exact(4))
+                        .enumerate()
+                    {
+                        if a[..3] != b[..3] {
+                            n += 1;
+                            let (px, py) = ((idx % 256) as i32, (idx / 256) as i32);
+                            x0 = x0.min(px);
+                            y0 = y0.min(py);
+                            x1 = x1.max(px);
+                            y1 = y1.max(py);
+                        }
+                    }
+                    eprintln!(
+                        "[RERENDER_FLAKE] frame={} iter={i}/{iters} diff_px={n} bbox=({x0},{y0})-({x1},{y1}) via={}",
+                        input.frame, again.via
+                    );
+                    std::fs::write("/tmp/rerender_ref.rgba", &modern_render.rgba).ok();
+                    std::fs::write("/tmp/rerender_bad.rgba", &again.rgba).ok();
+                    break;
+                }
+            }
+        }
         self.record_rendered_frame(ModernIndexCompareFrameRenderedRecord {
             frame: input.frame,
             mode_label: input.mode_label,
@@ -628,21 +719,27 @@ impl ModernIndexCompareStats {
 
     fn summary_line(&self) -> String {
         let mut out = format!(
-            "modern_index_compare_summary compare_count={} bad_count={} bad_pixels={} gpu_count={} mode7_gpu_count={} cpu_count={} unsupported_count={}",
+            "modern_index_compare_summary compare_count={} bad_count={} bad_pixels={} gpu_count={} mode7_gpu_count={} cpu_count={} unsupported_count={} error_count={}",
             self.compare_count,
             self.bad_count,
             self.bad_pixels,
             self.gpu_count,
             self.mode7_gpu_count,
             self.cpu_count,
-            self.unsupported_count
+            self.unsupported_count,
+            self.error_count
         );
         self.variant_totals.append_fields(&mut out);
         out
     }
 
+    /// Emits the terminal summary whenever the compare ran — independent of the
+    /// verbose-detail env toggle. This guarantees every compare run ends with an
+    /// authoritative `compare_count`/`error_count` line, so a vacuous run (nothing
+    /// compared) or a degraded one (black placeholders) can never be mistaken for
+    /// clean by a gate that only greps per-frame mismatch lines.
     pub fn summary_line_if_enabled(&self, compare_enabled: bool) -> Option<String> {
-        (compare_enabled && self.summary_enabled).then(|| self.summary_line())
+        compare_enabled.then(|| self.summary_line())
     }
 }
 
@@ -870,12 +967,15 @@ mod tests {
             .summary_line_if_enabled(true)
             .expect("enabled summary returns a line");
         assert!(summary.starts_with(
-            "modern_index_compare_summary compare_count=1 bad_count=0 bad_pixels=0 gpu_count=1 mode7_gpu_count=0 cpu_count=0 unsupported_count=0"
+            "modern_index_compare_summary compare_count=1 bad_count=0 bad_pixels=0 gpu_count=1 mode7_gpu_count=0 cpu_count=0 unsupported_count=0 error_count=0"
         ));
         assert!(!summary.contains("direct_gpu_fallback_frames"));
 
-        let disabled = ModernIndexCompareStats::default();
-        assert!(disabled.summary_line_if_enabled(true).is_none());
+        // The terminal summary is emitted whenever the compare ran, even without
+        // the verbose-detail env toggle — so a vacuous run cannot read as clean.
+        let quiet = ModernIndexCompareStats::default();
+        assert!(quiet.summary_line_if_enabled(true).is_some());
+        assert!(quiet.summary_line_if_enabled(false).is_none());
     }
 
     #[test]
@@ -1004,6 +1104,7 @@ mod tests {
             comparison,
             run_config: run_config_with_requirements(true, true),
             include_diff_in_frame_line: false,
+            missing_source_count: 0,
         });
 
         assert_eq!(report.mismatch(), 3);
@@ -1037,6 +1138,7 @@ mod tests {
             },
             run_config: run_config_with_requirements(true, true),
             include_diff_in_frame_line: false,
+            missing_source_count: 0,
         });
 
         assert_eq!(
@@ -1067,6 +1169,7 @@ mod tests {
             },
             run_config: run_config_with_requirements(true, true),
             include_diff_in_frame_line: false,
+            missing_source_count: 0,
         });
 
         assert_eq!(
@@ -1092,6 +1195,7 @@ mod tests {
             },
             run_config: run_config_with_requirements(true, true),
             include_diff_in_frame_line: false,
+            missing_source_count: 0,
         });
 
         assert_eq!(
@@ -1117,6 +1221,7 @@ mod tests {
             },
             run_config: run_config_with_requirements(true, true),
             include_diff_in_frame_line: false,
+            missing_source_count: 0,
         });
 
         assert_eq!(report.failure_line(), None);
@@ -1144,6 +1249,7 @@ mod tests {
             comparison,
             run_config: run_config_with_requirements(false, false),
             include_diff_in_frame_line: true,
+            missing_source_count: 0,
         });
 
         assert!(report.failure_line().is_none());
