@@ -610,7 +610,9 @@ class ExtractAssetSourcesTests(unittest.TestCase):
                 )
             )
 
-            atlas = extract_assets.write_canonical_art_atlas(out_dir)
+            atlas = extract_assets.write_canonical_art_atlas(
+                out_dir, chr_sheet_dir=out_dir / "assets_src/chr"
+            )
 
             self.assertEqual(
                 atlas,

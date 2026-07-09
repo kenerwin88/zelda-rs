@@ -3515,16 +3515,4 @@ impl ZeldaState {
         self.palette_set_translucency_swap(false);
     }
 
-    /// memcpy `n` u16 entries from `src` into both palette buffers at byte
-    /// offset `dst`. Matches `LoadGearPalette(int dst, const uint16 *src, int n)`
-    /// at load_gfx.c:1913; not called in the C codebase but ported for parity.
-    pub(super) fn load_gear_palette(&mut self, dst: i32, src: &[u16], n: i32) {
-        let base = (dst as usize) & !1;
-        let base_idx = base >> 1;
-        for i in 0..n as usize {
-            let v = src[i];
-            self.set_aux_color(base_idx + i, v);
-            self.set_main_color(base_idx + i, v);
-        }
-    }
 }

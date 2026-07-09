@@ -27,12 +27,6 @@ class EditableChrSheet:
 
 
 @dataclass(frozen=True)
-class PreviewPalette:
-    name: str
-    colors: list[list[int]]
-
-
-@dataclass(frozen=True)
 class SheetPaletteRow:
     """One palette row shown by the sheet PNG.
 
@@ -340,32 +334,6 @@ def _preview_palette_for_tile(
     if (preview_row + 1) * colors_per_row > len(colors):
         preview_row = 0
     return preview_palette, preview_row, "source_kind_default", None
-
-
-def _read_extracted_palette(asset_dir: Path, palette_name: str) -> PreviewPalette | None:
-    path = asset_dir / "assets_src/palettes" / f"{palette_name}.json"
-    if not path.is_file():
-        return None
-    data = json.loads(path.read_text())
-    colors_by_index: dict[int, list[int]] = {}
-    for color in data.get("colors", []):
-        colors_by_index[int(color["index"])] = _parse_rgb888(str(color["rgb888"]))
-    if not colors_by_index:
-        return None
-    color_count = min(max(colors_by_index) + 1, 256)
-    colors = [colors_by_index.get(index, [0, 0, 0]) for index in range(color_count)]
-    return PreviewPalette(name=palette_name, colors=colors)
-
-
-def preview_palette_for_sheet(asset_dir: Path, sheet: EditableChrSheet) -> PreviewPalette:
-    source_kinds = [str(block.get("source_kind")) for block in sheet.blocks]
-    bg_count = source_kinds.count("bg")
-    sprite_count = source_kinds.count("sprite")
-    preferred = "palette_dung_bg_main" if bg_count > sprite_count else "palette_main_spr"
-    return _read_extracted_palette(asset_dir, preferred) or PreviewPalette(
-        name="developer_default",
-        colors=preview_palette_colors(),
-    )
 
 
 def _row_colors(

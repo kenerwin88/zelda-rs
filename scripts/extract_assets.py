@@ -524,14 +524,17 @@ def chr_sheet_authority_dir(out_dir: Path) -> Path:
     return out_dir / "assets_src/chr"
 
 
-def write_canonical_art_atlas(out_dir: Path) -> list[dict[str, str]]:
+def write_canonical_art_atlas(
+    out_dir: Path,
+    chr_sheet_dir: Path | None = None,
+) -> list[dict[str, str]]:
     import rgba_variant_atlas
 
     try:
         written = rgba_variant_atlas.write_canonical_art_atlas(
             out_dir,
             source_tiles_dir=REPO_ROOT / "zelda3-bin/developer_tilesets",
-            chr_sheet_dir=chr_sheet_authority_dir(out_dir),
+            chr_sheet_dir=chr_sheet_dir or chr_sheet_authority_dir(out_dir),
         )
     except FileNotFoundError as exc:
         raise RuntimeError(
