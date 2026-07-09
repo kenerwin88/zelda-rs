@@ -393,16 +393,19 @@ class ExtractAssetSourcesTests(unittest.TestCase):
 
             sheets = extract_assets.write_chr_source_sheets(out_dir)
 
+            # The tracked authority exists in this repo, so extraction must
+            # NOT write sheets (they may carry user edits); it reports the
+            # tracked files instead.
             self.assertIn(
                 {
                     "sheet": "a-h",
-                    "image_file": "assets_src/chr/a-h.png",
-                    "manifest_file": "assets_src/chr/a-h.json",
+                    "image_file": "assets/chr/a-h.png",
+                    "manifest_file": "assets/chr/a-h.json",
                     "source_format": "zelda3_editable_chr_sheet_v2",
                 },
                 sheets,
             )
-            self.assertTrue((out_dir / "assets_src/chr/a-h.png").is_file())
+            self.assertFalse((out_dir / "assets_src/chr").exists())
 
     def test_writes_rgba_variant_atlas_from_extracted_graphics_assets(self) -> None:
         raw_pack = bytes([0] * 1536)

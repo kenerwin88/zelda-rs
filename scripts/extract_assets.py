@@ -29,15 +29,6 @@ ASSET_COUNT = 165
 DEFAULT_C_SOURCE = REPO_ROOT.parent / "zelda3"
 DEFAULT_OUT_DIR = Path("generated/zelda3_assets")
 ASSET_SIGNATURE_PREFIX = b"Zelda3_v0     \n\0"
-PREVIEW_ASSETS = {
-    "kLinkGraphics",
-    "kSprGfx",
-    "kBgGfx",
-    "kOverworldMapGfx",
-    "kGeneratedWishPondItem",
-    "kGeneratedBombosArr",
-    "kGeneratedEndSequence15",
-}
 READABLE_ASSET_SOURCES = {
     "kLightOverworldTilemap": {
         "format": tilemap_json.FORMAT_BYTE_TILEMAP,
@@ -417,24 +408,37 @@ def write_dialogue_catalog(out_dir: Path) -> list[dict[str, str]]:
 
 
 def write_chr_source_sheets(out_dir: Path) -> list[dict[str, str]]:
+    """Bootstrap the tracked `assets/chr/` sheet authority from the ROM.
+
+    When the tracked sheets already exist they are the authority (possibly
+    user-edited, guarded by chr.sha1) and extraction must not overwrite them;
+    the manifest entries then just record the tracked files.
+    """
     import chr_editable_sheets
 
-    try:
-        written = chr_editable_sheets.write_editable_chr_sheets(out_dir)
-    except FileNotFoundError as exc:
-        print(f"skipping editable CHR sheets: missing {exc.filename}", file=sys.stderr)
-        return []
+    authority = chr_sheet_authority_dir(out_dir)
+    if not authority.is_dir():
+        try:
+            chr_editable_sheets.write_editable_chr_sheets(out_dir, authority)
+            print(
+                f"bootstrapped tracked CHR sheet authority at {authority}; "
+                "run `zelda3 --bless-chr` and commit it",
+                file=sys.stderr,
+            )
+        except FileNotFoundError as exc:
+            print(f"skipping editable CHR sheets: missing {exc.filename}", file=sys.stderr)
+            return []
 
     entries = []
-    for image_path in written:
-        if image_path.suffix != ".png":
+    for png_path in sorted(authority.glob("*.png")):
+        manifest_path = png_path.with_suffix(".json")
+        if not manifest_path.is_file():
             continue
-        manifest_path = image_path.with_suffix(".json")
         entries.append(
             {
-                "sheet": image_path.stem,
-                "image_file": image_path.relative_to(out_dir).as_posix(),
-                "manifest_file": manifest_path.relative_to(out_dir).as_posix(),
+                "sheet": png_path.stem,
+                "image_file": png_path.relative_to(REPO_ROOT).as_posix(),
+                "manifest_file": manifest_path.relative_to(REPO_ROOT).as_posix(),
                 "source_format": "zelda3_editable_chr_sheet_v2",
             }
         )
@@ -513,15 +517,14 @@ def write_tile_effect_table(out_dir: Path) -> list[dict[str, str]]:
 
 
 def chr_sheet_authority_dir(out_dir: Path) -> Path:
-    """The editable CHR sheets the atlas builds from.
+    """The editable CHR sheets everything builds from: tracked `assets/chr/`.
 
-    Tracked `assets/chr/` is the authority once promoted; until then the
-    ROM-extracted sheets in the generated tree serve as bootstrap.
+    `write_chr_source_sheets` bootstraps the directory from the ROM on a
+    fresh clone; after that the tracked sheets are the sole authority
+    (`out_dir` is unused but kept for call-site stability).
     """
-    tracked = REPO_ROOT / "assets/chr"
-    if tracked.is_dir():
-        return tracked
-    return out_dir / "assets_src/chr"
+    del out_dir
+    return REPO_ROOT / "assets/chr"
 
 
 def write_canonical_art_atlas(
@@ -670,165 +673,6 @@ def unpack_packed_arrays(data: bytes) -> list[bytes]:
     return [payload[start:end] for start, end in zip(starts, ends)]
 
 
-def decode_planar_tiles(data: bytes, bpp: int, columns: int = 16) -> tuple[int, int, bytearray]:
-    bytes_per_tile = {2: 16, 3: 24, 4: 32}[bpp]
-    tile_count = len(data) // bytes_per_tile
-    rows = (tile_count + columns - 1) // columns
-    width = columns * 8
-    height = rows * 8
-    pixels = bytearray(width * height)
-    for tile in range(tile_count):
-        tile_base = tile * bytes_per_tile
-        tile_x = (tile % columns) * 8
-        tile_y = (tile // columns) * 8
-        for y in range(8):
-            plane0 = data[tile_base + y * 2]
-            plane1 = data[tile_base + y * 2 + 1]
-            plane2 = data[tile_base + 16 + y] if bpp >= 3 else 0
-            plane3 = data[tile_base + 16 + y * 2 + 1] if bpp >= 4 else 0
-            for x in range(8):
-                bit = 7 - x
-                value = ((plane0 >> bit) & 1) | (((plane1 >> bit) & 1) << 1)
-                value |= ((plane2 >> bit) & 1) << 2
-                value |= ((plane3 >> bit) & 1) << 3
-                pixels[(tile_y + y) * width + tile_x + x] = value
-    return width, height, pixels
-
-
-def preview_palette() -> list[int]:
-    # Most generated graphics assets are raw SNES tile planes: they contain
-    # palette indices, not the palette/attribute context needed for final
-    # in-game colors. Use a neutral ramp so previews show shape without
-    # pretending to be authoritative color renders.
-    colors = [
-        (0, 0, 0),
-        (34, 34, 34),
-        (51, 51, 51),
-        (68, 68, 68),
-        (85, 85, 85),
-        (102, 102, 102),
-        (119, 119, 119),
-        (136, 136, 136),
-        (153, 153, 153),
-        (170, 170, 170),
-        (187, 187, 187),
-        (204, 204, 204),
-        (221, 221, 221),
-        (238, 238, 238),
-        (255, 255, 255),
-        (255, 255, 255),
-    ]
-    palette = [channel for color in colors for channel in color]
-    palette.extend([0] * (256 * 3 - len(palette)))
-    return palette
-
-
-def link_palette() -> list[int]:
-    snes_colors = [
-        0,
-        0x7FFF,
-        0x237E,
-        0x11B7,
-        0x369E,
-        0x14A5,
-        0x01FF,
-        0x1078,
-        0x599D,
-        0x3647,
-        0x3B68,
-        0x0A4A,
-        0x12EF,
-        0x2A5C,
-        0x1571,
-        0x7A18,
-    ]
-    palette = []
-    for color in snes_colors:
-        r = color & 0x1F
-        g = (color >> 5) & 0x1F
-        b = (color >> 10) & 0x1F
-        palette.extend([r << 3 | r >> 2, g << 3 | g >> 2, b << 3 | b >> 2])
-    palette.extend([0] * (256 * 3 - len(palette)))
-    return palette
-
-
-def choose_bpp(data: bytes) -> int:
-    if len(data) % 32 == 0:
-        return 4
-    if len(data) % 24 == 0:
-        return 3
-    if len(data) % 16 == 0:
-        return 2
-    raise RuntimeError(f"cannot infer SNES tile bit depth for {len(data)} bytes")
-
-
-def save_indexed_png(path: Path, size: tuple[int, int], pixels: bytes, palette: list[int]) -> None:
-    from PIL import Image
-
-    image = Image.new("P", size)
-    image.putpalette(palette)
-    image.putdata(pixels)
-    image.save(path)
-
-
-def save_planar_preview(path: Path, data: bytes, palette: list[int], bpp: int | None = None) -> None:
-    width, height, pixels = decode_planar_tiles(data, bpp or choose_bpp(data))
-    save_indexed_png(path, (width, height), pixels, palette)
-
-
-def decode_packed_graphics(data: bytes, uncompressed_prefix_count: int = 0) -> bytearray:
-    rows = []
-    for index, item in enumerate(unpack_packed_arrays(data)):
-        decoded = item if index < uncompressed_prefix_count else decomp_asset(item)
-        width, height, pixels = decode_planar_tiles(decoded, choose_bpp(decoded))
-        rows.append((width, height, pixels))
-    width = max(row[0] for row in rows)
-    height = sum(row[1] for row in rows)
-    out = bytearray(width * height)
-    y_offset = 0
-    for row_width, row_height, pixels in rows:
-        for y in range(row_height):
-            dst = (y_offset + y) * width
-            src = y * row_width
-            out[dst : dst + row_width] = pixels[src : src + row_width]
-        y_offset += row_height
-    return width, height, out
-
-
-def write_preview_images(out_dir: Path, assets: list[tuple[str, bytes]]) -> list[dict[str, str]]:
-    try:
-        from PIL import Image  # noqa: F401
-    except ImportError:
-        print("Pillow is not installed; skipping generated PNG previews", file=sys.stderr)
-        return []
-
-    images_dir = out_dir / "images"
-    images_dir.mkdir(parents=True, exist_ok=True)
-    previews = []
-    generic_palette = preview_palette()
-    for index, (name, payload) in enumerate(assets):
-        if name not in PREVIEW_ASSETS:
-            continue
-        file_name = f"{index:03d}-{name}.png"
-        path = images_dir / file_name
-        if name == "kLinkGraphics":
-            save_planar_preview(path, payload, link_palette(), bpp=4)
-        elif name == "kSprGfx":
-            width, height, pixels = decode_packed_graphics(payload, uncompressed_prefix_count=12)
-            save_indexed_png(path, (width, height), pixels, generic_palette)
-        elif name == "kBgGfx":
-            width, height, pixels = decode_packed_graphics(payload)
-            save_indexed_png(path, (width, height), pixels, generic_palette)
-        else:
-            try:
-                save_planar_preview(path, payload, generic_palette)
-            except RuntimeError as exc:
-                print(f"skipping PNG preview for {name}: {exc}", file=sys.stderr)
-                continue
-        previews.append({"asset": name, "file": f"images/{file_name}"})
-    return previews
-
-
 def main() -> int:
     args = parse_args()
     rom = args.rom.expanduser().resolve()
@@ -881,8 +725,6 @@ def main() -> int:
         out_dir,
         write_diagnostic_variants=args.write_diagnostic_variants,
     )
-    previews = write_preview_images(out_dir, assets)
-
     manifest.write_text(
         json.dumps(
             {
@@ -895,7 +737,6 @@ def main() -> int:
                 "canonical_art_atlas_summary": canonical_art_atlas_summary,
                 "chr_source_sheets": chr_source_sheets,
                 "dialogue_catalog": dialogue_catalog_artifacts,
-                "image_previews": previews,
                 "rgba_variant_atlas": rgba_variant_atlas,
                 "restool_pack_sha1": sha1(source_pack),
                 "rom_sha1": sha1(rom),
@@ -918,10 +759,8 @@ def main() -> int:
             f"wrote {source_count} readable asset entries "
             f"across {source_file_count} source files to {out_dir / 'assets_src'}"
         )
-    if previews:
-        print(f"wrote {len(previews)} PNG previews to {out_dir / 'images'}")
     if chr_source_sheets:
-        print(f"wrote {len(chr_source_sheets)} editable CHR sheets to {out_dir / 'assets_src/chr'}")
+        print(f"tracked CHR sheet authority: {len(chr_source_sheets)} sheets at {REPO_ROOT / 'assets/chr'}")
     if dialogue_catalog_artifacts:
         print(f"wrote dialogue catalog to {out_dir / 'assets_src/dialogue'}")
     if base_effect_atlas:

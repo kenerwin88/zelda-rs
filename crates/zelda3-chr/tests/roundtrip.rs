@@ -33,7 +33,7 @@ fn container_round_trips_real_bins() {
 fn unedited_sheets_compile_to_donor_bins() {
     let root = repo_root();
     let assets = root.join("generated/zelda3_assets/assets");
-    let chr_dir = root.join("generated/zelda3_assets/assets_src/chr");
+    let chr_dir = root.join("assets/chr");
     let spr_path = assets.join("064-kSprGfx.bin");
     let bg_path = assets.join("065-kBgGfx.bin");
     if !spr_path.is_file() || !bg_path.is_file() || !chr_dir.join("1w-2d.json").is_file() {

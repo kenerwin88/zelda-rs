@@ -593,9 +593,14 @@ def _read_canonical_art_chr_packs(
     binaries. Falls back to the binaries when the directory is absent.
     """
     if chr_sheet_dir is not None and chr_sheet_dir.is_dir():
-        return chr_editable_sheets.read_decoded_chr_packs_from_sheets(
-            asset_dir, chr_sheet_dir
-        )
+        try:
+            return chr_editable_sheets.read_decoded_chr_packs_from_sheets(
+                asset_dir, chr_sheet_dir
+            )
+        except FileNotFoundError:
+            # Incomplete sheet set (e.g. a fixture with a single sheet):
+            # tile art falls back to the packed binaries.
+            pass
     return chr_editable_sheets.read_decoded_chr_packs(asset_dir)
 
 
@@ -1204,11 +1209,9 @@ def _write_dialogue_glyph_source_atlas(
 ) -> list[Path]:
     from PIL import Image
 
-    sheet_dir = (
-        chr_sheet_dir
-        if chr_sheet_dir is not None and chr_sheet_dir.is_dir()
-        else asset_dir / "assets_src/chr"
-    )
+    if chr_sheet_dir is None or not chr_sheet_dir.is_dir():
+        return []
+    sheet_dir = chr_sheet_dir
     source_manifest_path = sheet_dir / "1w-2d.json"
     source_png_path = sheet_dir / "1w-2d.png"
     if not source_manifest_path.is_file() or not source_png_path.is_file():
@@ -1287,7 +1290,7 @@ def _write_dialogue_glyph_source_atlas(
     Image.frombytes("RGBA", (width, height), bytes(pixels)).save(png_path)
     manifest = {
         "format": "zelda3_dialogue_glyph_source_atlas_v1",
-        "source_sheet": "assets_src/chr/1w-2d.png",
+        "source_sheet": str(source_png_path),
         "description": "Proper source glyph/menu text blocks used as the target for replacing dynamic BG3 text chunks.",
         "tile_width": 8,
         "tile_height": 8,

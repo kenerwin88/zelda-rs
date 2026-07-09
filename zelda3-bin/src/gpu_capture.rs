@@ -439,7 +439,7 @@ impl DialogueGlyphSourceMatcher {
         let atlas_png_path =
             repo_root.join("generated/zelda3_assets/atlas/dialogue_glyph_tiles.png");
         let source_manifest_path =
-            repo_root.join("generated/zelda3_assets/assets_src/chr/1w-2d.json");
+            repo_root.join("assets/chr/1w-2d.json");
 
         let atlas_manifest: DialogueGlyphAtlasManifest = serde_json::from_slice(
             &fs::read(&atlas_manifest_path)

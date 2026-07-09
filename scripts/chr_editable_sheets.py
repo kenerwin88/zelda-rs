@@ -582,10 +582,10 @@ def remap_tiles_for_plan(sheet: EditableChrSheet, plan: SheetPalettePlan) -> lis
     return remapped
 
 
-def write_editable_chr_sheets(asset_dir: Path, out_dir: Path | None = None) -> list[Path]:
+def write_editable_chr_sheets(asset_dir: Path, out_dir: Path) -> list[Path]:
     sprite_packs, bg_packs = read_decoded_chr_packs(asset_dir)
     sheets = build_editable_chr_sheets(sprite_packs, bg_packs)
-    destination = out_dir or asset_dir / "assets_src/chr"
+    destination = out_dir
     written = []
     for sheet in sheets:
         if not sheet.tiles:
@@ -722,7 +722,12 @@ def read_decoded_chr_packs_from_sheets(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--asset-dir", required=True, type=Path)
-    parser.add_argument("--out-dir", type=Path)
+    parser.add_argument(
+        "--out-dir",
+        required=True,
+        type=Path,
+        help="Sheet destination (the tracked authority is assets/chr)",
+    )
     args = parser.parse_args()
     for path in write_editable_chr_sheets(args.asset_dir, args.out_dir):
         print(path)

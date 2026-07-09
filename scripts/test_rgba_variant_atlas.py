@@ -1316,7 +1316,9 @@ class RgbaVariantAtlasTests(unittest.TestCase):
             image.putdata(([0] * 64) + ([1] * 64) + ([0] * 128))
             image.save(chr_dir / "1w-2d.png")
 
-            written = write_canonical_art_atlas(asset_dir)
+            written = write_canonical_art_atlas(
+                asset_dir, chr_sheet_dir=asset_dir / "assets_src/chr"
+            )
 
             self.assertIn(asset_dir / "atlas/dialogue_glyph_tiles.png", written)
             self.assertIn(asset_dir / "atlas/dialogue_glyph_tiles.json", written)

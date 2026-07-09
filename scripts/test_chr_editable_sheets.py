@@ -114,7 +114,9 @@ class ChrEditableSheetsTests(unittest.TestCase):
             (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
             (assets_dir / "065-kBgGfx.bin").write_bytes(pack_arrays([compressed_literal(raw_pack)]))
 
-            written = chr_editable_sheets.write_editable_chr_sheets(asset_dir)
+            written = chr_editable_sheets.write_editable_chr_sheets(
+                asset_dir, asset_dir / "assets_src/chr"
+            )
 
             self.assertIn(asset_dir / "assets_src/chr/a-h.png", written)
             self.assertTrue((asset_dir / "assets_src/chr/a-h.json").is_file())
@@ -147,7 +149,9 @@ class ChrEditableSheetsTests(unittest.TestCase):
                 preview_colors,
             )
 
-            chr_editable_sheets.write_editable_chr_sheets(asset_dir)
+            chr_editable_sheets.write_editable_chr_sheets(
+                asset_dir, asset_dir / "assets_src/chr"
+            )
 
             image = Image.open(asset_dir / "assets_src/chr/a-h.png")
             sidecar = json.loads((asset_dir / "assets_src/chr/a-h.json").read_text())
@@ -207,7 +211,9 @@ class ChrEditableSheetsTests(unittest.TestCase):
                 )
             )
 
-            chr_editable_sheets.write_editable_chr_sheets(asset_dir)
+            chr_editable_sheets.write_editable_chr_sheets(
+                asset_dir, asset_dir / "assets_src/chr"
+            )
 
             sidecar = json.loads((asset_dir / "assets_src/chr/a-h.json").read_text())
             # Row 0 is the sheet default (palette row 0); the observed row 2
@@ -251,7 +257,9 @@ class ChrEditableSheetsTests(unittest.TestCase):
             (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
             (assets_dir / "065-kBgGfx.bin").write_bytes(pack_arrays(bg_items))
 
-            chr_editable_sheets.write_editable_chr_sheets(asset_dir)
+            chr_editable_sheets.write_editable_chr_sheets(
+                asset_dir, asset_dir / "assets_src/chr"
+            )
 
             from_bins = chr_editable_sheets.read_decoded_chr_packs(asset_dir)
             from_sheets = chr_editable_sheets.read_decoded_chr_packs_from_sheets(
@@ -334,7 +342,9 @@ class ChrEditableSheetsTests(unittest.TestCase):
             (assets_dir / "064-kSprGfx.bin").write_bytes(pack_arrays(sprite_items))
             (assets_dir / "065-kBgGfx.bin").write_bytes(pack_arrays([compressed_literal(raw_pack)]))
 
-            chr_editable_sheets.write_editable_chr_sheets(asset_dir)
+            chr_editable_sheets.write_editable_chr_sheets(
+                asset_dir, asset_dir / "assets_src/chr"
+            )
 
             png_path = asset_dir / "assets_src/chr/a-h.png"
             image = Image.open(png_path)
