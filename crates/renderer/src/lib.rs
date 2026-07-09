@@ -1720,6 +1720,20 @@ async fn create_device_queue(
         })
         .await
         .expect("failed to create wgpu device");
+    // Make GPU resource-load / validation / out-of-memory failures LOUD on the
+    // offscreen devices (compare, validation, capture). wgpu's default
+    // uncaptured-error behavior only logs and then hands back an "error resource"
+    // that renders defined-but-garbage output; under GPU memory pressure (e.g. a
+    // concurrent GPU process exhausting the shared pool) that silently corrupts a
+    // single compare frame and surfaces as a nondeterministic parity mismatch with
+    // no panic. Panicking converts any such failure into a hard, attributable
+    // abort. The live windowed device (the only caller passing a surface) keeps
+    // the default glitch-don't-crash behavior.
+    if compatible_surface.is_none() {
+        device.on_uncaptured_error(std::sync::Arc::new(|error: wgpu::Error| {
+            panic!("wgpu uncaptured error on offscreen device: {error}");
+        }));
+    }
     (adapter, device, queue)
 }
 
