@@ -1682,6 +1682,28 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             )
         )
 
+    def test_rejects_default_audio_direct_dsp_boundary(self):
+        module = load_module()
+        source = """
+            fn live_audio() {
+                game.zelda_render_audio_trace_dsp(&mut audio, 735, 2);
+                crate::spc_player::spc_player_generate_samples(player);
+                crate::spc_player::dsp_get_samples(player.dsp, audio, 735, 2);
+            }
+            struct DspState {}
+        """
+
+        errors = module.check_default_audio_output_boundary_text(
+            textwrap.dedent(source), "zelda3-bin/src/main.rs"
+        )
+
+        self.assertEqual(len(errors), 6)
+        self.assertTrue(
+            all(
+                "default audio output escaped typed audio boundary" in error for error in errors
+            )
+        )
+
     def test_rejects_gpu_frame_assembly_calls(self):
         module = load_module()
         source = source_with_required_calls(

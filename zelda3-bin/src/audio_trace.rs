@@ -1,6 +1,13 @@
 use std::env;
 
-use zelda3::ZeldaState;
+use zelda3::{
+    game_output::{
+        checksum_dsp_write_values, checksum_dsp_writes, checksum_samples, AudioSampleStats,
+        AudioTraceFrameSummary, DspWriteEvent,
+    },
+    modern_audio_sequence::ModernAudioSequencer,
+    ZeldaState,
+};
 
 use crate::{TRACE_MAIN_MODULE_INDEX, TRACE_SUBMODULE_INDEX, TRACE_SUBSUBMODULE_INDEX};
 
@@ -14,29 +21,12 @@ pub(crate) struct AudioFrameStats {
 
 impl AudioFrameStats {
     pub(crate) fn from_interleaved_stereo(samples: &[i16]) -> Self {
-        let mut sum = 0u64;
-        let mut peak = 0i16;
-        let mut first_nonzero = None;
-        for (i, &sample) in samples.iter().enumerate() {
-            let abs = sample.saturating_abs();
-            if abs > peak {
-                peak = abs;
-            }
-            if sample != 0 && first_nonzero.is_none() {
-                first_nonzero = Some(i);
-            }
-            sum += abs as u64;
-        }
-        let mean_abs = if samples.is_empty() {
-            0
-        } else {
-            (sum / samples.len() as u64) as u32
-        };
+        let stats = AudioSampleStats::from_interleaved(samples, 2);
         Self {
-            samples_per_channel: samples.len() / 2,
-            peak,
-            first_nonzero,
-            mean_abs,
+            samples_per_channel: stats.samples_per_channel,
+            peak: stats.peak,
+            first_nonzero: stats.first_nonzero,
+            mean_abs: stats.mean_abs,
         }
     }
 }
@@ -83,13 +73,7 @@ pub(crate) fn print_audio_window(
 }
 
 pub(crate) fn replay_checksum_samples(samples: &[i16]) -> u32 {
-    let mut hash = 2166136261u32;
-    for sample in samples {
-        for byte in sample.to_le_bytes() {
-            hash = (hash ^ u32::from(byte)).wrapping_mul(16777619);
-        }
-    }
-    hash
+    checksum_samples(samples)
 }
 
 pub(crate) fn should_write_fingerprint(fingerprint_frame: Option<u32>, frame: u32) -> bool {
@@ -103,8 +87,20 @@ pub(crate) fn print_replay_audio_trace(
     samples: usize,
     channels: usize,
     dsp_pre_hash: u32,
-    dsp_writes: &[(u8, u8, i32, u8)],
+    dsp_writes: &[DspWriteEvent],
 ) {
+    let event_frame = game.zelda_audio_event_frame_from_dsp_writes(&dsp_writes);
+    let mut modern_sequence = ModernAudioSequencer::default();
+    let modern_event_frame = modern_sequence.sequence_route(game.zelda_audio_route_state());
+    let modern_sequence_stats = modern_sequence.last_stats();
+    let summary = AudioTraceFrameSummary::from_parts(
+        audio,
+        channels,
+        dsp_pre_hash,
+        game.zelda_audio_dsp_hash(),
+        dsp_writes,
+        &event_frame,
+    );
     let stats = AudioFrameStats::from_interleaved_stereo(audio);
     let mean_abs = if audio.is_empty() {
         0.0
@@ -125,64 +121,88 @@ pub(crate) fn print_replay_audio_trace(
         print!("null");
     }
     println!(
-        ",\"mean_abs\":{mean_abs:.6},\"hash\":\"0x{:08x}\",\"apui\":[{},{},{},{}],\"music\":[{},{},{}],\"main\":{},\"sub\":{},\"subsub\":{},\"inidisp\":{},\"dsp_pre\":\"0x{dsp_pre_hash:08x}\",\"dsp_post\":\"0x{:08x}\",\"dsp_writes\":{},\"dsp_write_hash\":\"0x{:08x}\",\"dsp_write_values_hash\":\"0x{:08x}\"{},{}{}",
-        replay_checksum_samples(audio),
-        game.ram[0x0648],
-        game.ram[0x012c],
-        game.ram[0x012d],
-        game.ram[0x012e],
-        game.ram[0x012f],
-        game.ram[0x0132],
-        game.ram[0x0133],
+        ",\"mean_abs\":{mean_abs:.6},\"hash\":\"0x{:08x}\",\"apui\":[{},{},{},{}],\"music\":[{},{},{}],\"main\":{},\"sub\":{},\"subsub\":{},\"inidisp\":{},\"dsp_pre\":\"0x{:08x}\",\"dsp_post\":\"0x{:08x}\",\"dsp_writes\":{},\"dsp_write_hash\":\"0x{:08x}\",\"dsp_write_values_hash\":\"0x{:08x}\",\"command_events\":{},\"command_hash\":\"0x{:08x}\",\"unresolved_dsp_writes\":{},\"modern_sfx_known\":{},\"modern_sfx_unknown\":{},\"modern_program_hash\":\"0x{:08x}\",\"modern_command_events\":{},\"modern_command_hash\":\"0x{:08x}\"{},{}{}",
+        summary.sample_stats.checksum,
+        event_frame.music.apui00,
+        event_frame.music.music_control,
+        event_frame.music.sound_effect_ambient,
+        event_frame.music.sound_effect_1,
+        event_frame.music.sound_effect_2,
+        event_frame.music.queued_music_control,
+        event_frame.music.last_music_control,
         game.ram[TRACE_MAIN_MODULE_INDEX],
         game.ram[TRACE_SUBMODULE_INDEX],
         game.ram[TRACE_SUBSUBMODULE_INDEX],
         game.ram[0x13],
-        game.zelda_audio_dsp_hash(),
-        dsp_writes.len(),
-        replay_checksum_dsp_writes(dsp_writes),
-        replay_checksum_dsp_write_values(dsp_writes),
+        summary.dsp_pre_hash,
+        summary.dsp_post_hash,
+        summary.dsp_write_count,
+        summary.dsp_write_hash,
+        summary.dsp_write_values_hash,
+        summary.command_event_count,
+        summary.command_event_hash,
+        summary.unresolved_dsp_writes,
+        modern_sequence_stats.known_sfx_commands,
+        modern_sequence_stats.unknown_sfx_commands,
+        modern_sequence_stats.program_hash,
+        modern_event_frame.events.len(),
+        modern_event_frame.command_hash(),
         replay_dsp_write_events_json(frame, dsp_writes),
         game.zelda_audio_route_debug_json(),
         "}",
     );
 }
 
-fn replay_dsp_write_events_json(frame: u32, writes: &[(u8, u8, i32, u8)]) -> String {
+fn replay_dsp_write_events_json(frame: u32, writes: &[DspWriteEvent]) -> String {
     let target = env::var("ZELDA3_AUDIO_TRACE_DSP_WRITES_FRAME")
         .ok()
         .and_then(|value| value.parse::<u32>().ok());
-    if target != Some(frame) {
+    let range = env::var("ZELDA3_AUDIO_TRACE_DSP_WRITES_FRAME_RANGE").ok();
+    if !should_write_dsp_write_events(target, range.as_deref(), frame) {
         return String::new();
     }
     let events = writes
         .iter()
-        .map(|(addr, val, sample_offset, timer)| format!("[{addr},{val},{sample_offset},{timer}]"))
+        .map(|write| {
+            format!(
+                "[{},{},{},{}]",
+                write.addr, write.value, write.sample_offset, write.timer_cycles
+            )
+        })
         .collect::<Vec<_>>()
         .join(",");
     format!(",\"dsp_write_events\":[{events}]")
 }
 
-pub(crate) fn replay_checksum_dsp_writes(writes: &[(u8, u8, i32, u8)]) -> u32 {
-    let mut hash = 2166136261u32;
-    for &(addr, val, sample_offset, timer_cycles) in writes {
-        hash = (hash ^ u32::from(addr)).wrapping_mul(16777619);
-        hash = (hash ^ u32::from(val)).wrapping_mul(16777619);
-        for byte in sample_offset.to_le_bytes() {
-            hash = (hash ^ u32::from(byte)).wrapping_mul(16777619);
-        }
-        hash = (hash ^ u32::from(timer_cycles)).wrapping_mul(16777619);
+fn should_write_dsp_write_events(target: Option<u32>, range: Option<&str>, frame: u32) -> bool {
+    if target == Some(frame) {
+        return true;
     }
-    hash
+    let Some(range) = range else {
+        return false;
+    };
+    let Some((start, end)) = parse_dsp_write_frame_range(range) else {
+        return false;
+    };
+    start <= frame && frame <= end
 }
 
-pub(crate) fn replay_checksum_dsp_write_values(writes: &[(u8, u8, i32, u8)]) -> u32 {
-    let mut hash = 2166136261u32;
-    for &(addr, val, _, _) in writes {
-        hash = (hash ^ u32::from(addr)).wrapping_mul(16777619);
-        hash = (hash ^ u32::from(val)).wrapping_mul(16777619);
-    }
-    hash
+fn parse_dsp_write_frame_range(value: &str) -> Option<(u32, u32)> {
+    let (start, end) = value
+        .split_once(':')
+        .or_else(|| value.split_once("..="))
+        .or_else(|| value.split_once(".."))?;
+    let start = start.parse::<u32>().ok()?;
+    let end = end.parse::<u32>().ok()?;
+    (start <= end).then_some((start, end))
+}
+
+pub(crate) fn replay_checksum_dsp_writes(writes: &[DspWriteEvent]) -> u32 {
+    checksum_dsp_writes(writes)
+}
+
+pub(crate) fn replay_checksum_dsp_write_values(writes: &[DspWriteEvent]) -> u32 {
+    checksum_dsp_write_values(writes)
 }
 
 /// Per-frame audio leaf hash: folds the same DSP/sample quantities the audio
@@ -224,5 +244,16 @@ mod tests {
         assert_eq!(stats.peak, 7);
         assert_eq!(stats.first_nonzero, Some(1));
         assert_eq!(stats.mean_abs, 2);
+    }
+
+    #[test]
+    fn dsp_write_event_filter_accepts_exact_frame_or_range() {
+        assert!(should_write_dsp_write_events(Some(41), None, 41));
+        assert!(!should_write_dsp_write_events(Some(41), None, 42));
+        assert!(should_write_dsp_write_events(None, Some("10:12"), 11));
+        assert!(should_write_dsp_write_events(None, Some("10..=12"), 12));
+        assert!(!should_write_dsp_write_events(None, Some("10..12"), 13));
+        assert!(!should_write_dsp_write_events(None, Some("12:10"), 11));
+        assert!(!should_write_dsp_write_events(None, Some("bad"), 11));
     }
 }

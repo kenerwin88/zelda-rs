@@ -32,6 +32,7 @@ INPUT_SCRIPT_RS = REPO / "zelda3-bin" / "src" / "input_script.rs"
 GPU_READBACK_RS = REPO / "zelda3-bin" / "src" / "gpu_readback.rs"
 PLAY_RENDERER_RS = REPO / "zelda3-bin" / "src" / "play_renderer.rs"
 PLAY_COMMANDS_RS = REPO / "zelda3-bin" / "src" / "play_commands.rs"
+PLATFORM_RS = REPO / "crates" / "platform" / "src" / "lib.rs"
 REPLAY_DIAGNOSTICS_RS = REPO / "zelda3-bin" / "src" / "replay_diagnostics.rs"
 REPLAY_SAVE_CONFIG_RS = REPO / "zelda3-bin" / "src" / "replay_save_config.rs"
 CLASSIC_FRAME_RENDERER_RS = REPO / "zelda3-bin" / "src" / "classic_frame_renderer.rs"
@@ -525,6 +526,32 @@ AUDIO_TRACE_ADVANCE_FUNCTIONS = {
 FORBIDDEN_AUDIO_TRACE_CPU_RENDER_CALLS = (
     "run_diagnostic_play_frame_bgra(",
 )
+
+DEFAULT_AUDIO_OUTPUT_BOUNDARY_FILES = (
+    (MAIN_RS, "zelda3-bin/src/main.rs"),
+    (PLAY_COMMANDS_RS, "zelda3-bin/src/play_commands.rs"),
+    (PLATFORM_RS, "crates/platform/src/lib.rs"),
+)
+
+FORBIDDEN_DEFAULT_AUDIO_DSP_CALLS = (
+    "zelda_render_audio_trace_dsp(",
+    "DspRegWriteHistory",
+    "dsp_write_history",
+    "dsp_get_samples",
+    "spc_player_generate_samples",
+    "spc_player::",
+    "DspState",
+)
+
+ALLOWED_DEFAULT_AUDIO_DSP_FUNCTIONS = {
+    "run_trace_rom_apu_upload",
+    "run_capture_rom_apu_bootstrap",
+    "run_compare_bootstrap_apu_startup",
+    "run_trace_bootstrap_apu_direct_frame",
+    "raw_rom_apu_bootstrap_ready",
+    "print_rom_apu_trace_line",
+    "run_compare_startup_apu_impls",
+}
 
 FORBIDDEN_MAIN_IMAGE_OUTPUT_OWNERSHIP = (
     "fn write_argb_frame_png",
@@ -1320,6 +1347,25 @@ def check_play_renderer_text(source: str) -> list[str]:
     return errors
 
 
+def check_default_audio_output_boundary_text(source: str, path_label: str) -> list[str]:
+    errors: list[str] = []
+    lines = source.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith("//") or stripped.startswith("///"):
+            continue
+        fn = enclosing_function(lines, index) or "<module>"
+        if fn in ALLOWED_DEFAULT_AUDIO_DSP_FUNCTIONS:
+            continue
+        for forbidden in FORBIDDEN_DEFAULT_AUDIO_DSP_CALLS:
+            if forbidden in line:
+                errors.append(
+                    "default audio output escaped typed audio boundary at "
+                    f"{path_label}:{index + 1} in {fn}: {line.strip()}"
+                )
+    return errors
+
+
 def check_frame_dump_commands_text(source: str) -> list[str]:
     errors: list[str] = []
     lines = source.splitlines()
@@ -1450,6 +1496,8 @@ def main() -> int:
     errors.extend(check_play_renderer_text(PLAY_RENDERER_RS.read_text()))
     errors.extend(check_classic_frame_renderer_text(CLASSIC_FRAME_RENDERER_RS.read_text()))
     errors.extend(check_renderer_mode_text(RENDERER_MODE_RS.read_text()))
+    for path, path_label in DEFAULT_AUDIO_OUTPUT_BOUNDARY_FILES:
+        errors.extend(check_default_audio_output_boundary_text(path.read_text(), path_label))
     if errors:
         for error in errors:
             print(error, file=sys.stderr)

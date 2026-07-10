@@ -2,6 +2,12 @@
 
 use super::*;
 use crate::config::{config_value_path, MSU_FEATURE_MSU_DELUXE, MSU_FEATURE_OPUZ};
+use crate::game_output::{
+    AudioBackendMode, AudioEventFrame, AudioQueueState, AudioRouteState, DspWriteEvent,
+    GameFrameOutput, MusicControlState, RenderOutputFacts, RuntimeOutputFacts, SpcSequencerState,
+};
+use crate::modern_audio::{ModernAudioEngine, ModernAudioFrameStats};
+use crate::modern_audio_sequence::{ModernAudioSequenceStats, ModernAudioSequencer};
 use opus::{Channels, Decoder as OpusDecoder};
 use std::fs;
 
@@ -139,6 +145,8 @@ struct ApuWriteEnt {
 pub(super) struct AudioState {
     spc_player: *mut crate::spc_player::SpcPlayer,
     msu_player: MsuPlayer,
+    modern_audio: ModernAudioEngine,
+    modern_sequence: ModernAudioSequencer,
     apu_write_ents: [ApuWriteEnt; 16],
     apu_write: ApuWriteEnt,
     apu_write_ent_pos: u8,
@@ -162,6 +170,8 @@ impl Default for AudioState {
         Self {
             spc_player,
             msu_player: MsuPlayer::default(),
+            modern_audio: ModernAudioEngine::default(),
+            modern_sequence: ModernAudioSequencer::default(),
             apu_write_ents: [ApuWriteEnt::default(); 16],
             apu_write: ApuWriteEnt::default(),
             apu_write_ent_pos: 0,
@@ -185,6 +195,8 @@ impl Clone for AudioState {
         Self {
             spc_player: crate::spc_player::spc_player_clone(self.spc_player),
             msu_player: self.msu_player.clone(),
+            modern_audio: self.modern_audio.clone(),
+            modern_sequence: self.modern_sequence.clone(),
             apu_write_ents: self.apu_write_ents,
             apu_write: self.apu_write,
             apu_write_ent_pos: self.apu_write_ent_pos,
@@ -266,6 +278,8 @@ impl<'de> serde::Deserialize<'de> for AudioState {
         Ok(Self {
             spc_player,
             msu_player: MsuPlayer::default(),
+            modern_audio: ModernAudioEngine::default(),
+            modern_sequence: ModernAudioSequencer::default(),
             apu_write_ents: snapshot.apu_write_ents,
             apu_write: snapshot.apu_write,
             apu_write_ent_pos: snapshot.apu_write_ent_pos,
@@ -795,6 +809,82 @@ impl ZeldaState {
         self.audio.apu_write.ports
     }
 
+    pub fn zelda_audio_route_state(&self) -> AudioRouteState {
+        let pending_pos = self
+            .audio
+            .apu_write_ent_pos
+            .wrapping_sub(self.audio.apu_write_count)
+            & 0xf;
+        let queue = AudioQueueState {
+            pos: self.audio.apu_write_ent_pos,
+            count: self.audio.apu_write_count,
+            total: self.audio.apu_total_write,
+            write: self.audio.apu_write.ports,
+            pending: self.audio.apu_write_ents[pending_pos as usize].ports,
+            input: self.audio.input_ports,
+        };
+        let spc = unsafe { self.audio.spc_player.as_ref() }.map(|player| SpcSequencerState {
+            spc_in: player.input_ports,
+            spc_out: player.port_to_snes,
+            timer_cycles: player.timer_cycles,
+            main_tempo_accum: player.main_tempo_accum,
+            block_count: player.block_count,
+            key_on: player.key_ON,
+            key_off: player.key_OFF,
+            current_bit: player.current_bit,
+            port1_active: player.port1_active,
+            port2_active: player.port2_active,
+            port3_active: player.port3_active,
+            is_chan_on: player.is_chan_on,
+            vol_dirty: player.vol_dirty,
+            ch7_sfx: player.channel[7].sfx_which_sound,
+            ch7_sfx_ptr: player.channel[7].sfx_sound_ptr,
+            ch7_pattern: player.channel[7].pattern_order_ptr_for_chan,
+            ch7_ticks: player.channel[7].note_ticks_left,
+            ch7_keyoff_ticks: player.channel[7].note_keyoff_ticks_left,
+        });
+        AudioRouteState {
+            music: MusicControlState::from_game(self),
+            queue,
+            spc,
+        }
+    }
+
+    pub fn zelda_audio_event_frame_from_dsp_writes(
+        &self,
+        writes: &[DspWriteEvent],
+    ) -> AudioEventFrame {
+        AudioEventFrame::from_route_and_dsp_writes(self.zelda_audio_route_state(), writes)
+    }
+
+    pub fn zelda_game_frame_output(&self) -> GameFrameOutput {
+        let frame = &self.game_state.frame;
+        GameFrameOutput {
+            runtime: RuntimeOutputFacts {
+                frame_counter: frame.frame_counter,
+                main_module: frame.main_module,
+                submodule: frame.submodule,
+                subsubmodule: frame.subsubmodule,
+                inidisp: self.ram[0x13],
+            },
+            render: RenderOutputFacts {
+                mode: self.ppu.mode,
+                forced_blank: self.ppu.forced_blank,
+                brightness: self.ppu.brightness,
+                screen_enabled: self.ppu.screen_enabled,
+            },
+            audio: AudioEventFrame::from_route_and_dsp_writes(self.zelda_audio_route_state(), &[]),
+        }
+    }
+
+    pub fn zelda_modern_audio_last_stats(&self) -> ModernAudioFrameStats {
+        self.audio.modern_audio.last_stats()
+    }
+
+    pub fn zelda_modern_audio_sequence_last_stats(&self) -> ModernAudioSequenceStats {
+        self.audio.modern_sequence.last_stats()
+    }
+
     pub fn zelda_audio_route_debug_json(&self) -> String {
         let pending_pos = self
             .audio
@@ -1041,6 +1131,55 @@ impl ZeldaState {
             self.msu_player_mix(audio_buffer, samples);
         }
         writes
+    }
+
+    pub fn zelda_render_audio_trace_dsp_events(
+        &mut self,
+        audio_buffer: &mut [i16],
+        samples: i32,
+        channels: i32,
+    ) -> Vec<DspWriteEvent> {
+        self.zelda_render_audio_trace_dsp(audio_buffer, samples, channels)
+            .into_iter()
+            .map(|(addr, value, sample_offset, timer_cycles)| {
+                DspWriteEvent::new(addr, value, sample_offset, timer_cycles)
+            })
+            .collect()
+    }
+
+    pub fn zelda_render_audio_with_backend(
+        &mut self,
+        backend: AudioBackendMode,
+        audio_buffer: &mut [i16],
+        samples: i32,
+        channels: i32,
+    ) -> AudioEventFrame {
+        match backend {
+            AudioBackendMode::DspParity => {
+                let writes =
+                    self.zelda_render_audio_trace_dsp_events(audio_buffer, samples, channels);
+                self.zelda_audio_event_frame_from_dsp_writes(&writes)
+            }
+            AudioBackendMode::TraceOnly => {
+                let count = (samples.max(0) as usize).saturating_mul(channels.max(0) as usize);
+                let mut scratch = vec![0i16; count];
+                let writes =
+                    self.zelda_render_audio_trace_dsp_events(&mut scratch, samples, channels);
+                for value in audio_buffer.iter_mut().take(count) {
+                    *value = 0;
+                }
+                self.zelda_audio_event_frame_from_dsp_writes(&writes)
+            }
+            AudioBackendMode::Modern => {
+                self.zelda_pop_apu_state();
+                let route = self.zelda_audio_route_state();
+                let frame = self.audio.modern_sequence.sequence_route(route);
+                self.audio
+                    .modern_audio
+                    .render_frame(&frame, audio_buffer, samples, channels);
+                frame
+            }
+        }
     }
 
     pub fn zelda_set_rom_startup_audio_phase(&mut self, enabled: bool) {

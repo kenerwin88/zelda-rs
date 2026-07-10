@@ -89,7 +89,8 @@ use serde::{Deserialize, Serialize};
 use sheet_dump_commands::{run_dump_dungeon_sheet_png, run_dump_sprite_sheet_png};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, Snes};
 use zelda3::{
-    config::parse_config_file_context, LockstepOracle, OracleError, ZeldaState, RUN_MAIN, RUN_POLY,
+    config::parse_config_file_context, game_output::DspWriteEvent, LockstepOracle, OracleError,
+    ZeldaState, RUN_MAIN, RUN_POLY,
 };
 
 const LOCKSTEP_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSLS01";
@@ -355,7 +356,10 @@ fn run_bless_chr(args: &[String]) {
         .unwrap_or_else(|| sheets_dir.join("chr.sha1"));
 
     let sheets = zelda3_chr::read_sheets_dir(&sheets_dir).unwrap_or_else(|e| {
-        eprintln!("failed to read CHR sheets from {}: {e}", sheets_dir.display());
+        eprintln!(
+            "failed to read CHR sheets from {}: {e}",
+            sheets_dir.display()
+        );
         process::exit(1);
     });
     let lock = zelda3_chr::generate_sha_lock(&sheets);
@@ -1465,7 +1469,7 @@ fn run_replay_save(args: &[String]) {
             fingerprint_log.is_some() && should_write_fingerprint(fingerprint_frame, frames);
         if let Some(audio) = audio_trace_buffer.as_mut() {
             let dsp_pre = game.zelda_audio_dsp_hash();
-            let writes = game.zelda_render_audio_trace_dsp(audio, 735, 2);
+            let writes = game.zelda_render_audio_trace_dsp_events(audio, 735, 2);
             game.zelda_discard_unused_audio_frames();
             if should_fingerprint_frame {
                 let dsp_post = game.zelda_audio_dsp_hash();
@@ -4811,8 +4815,11 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
                 game.zelda_render_audio(&mut rust_audio, sample_frames as i32, 2);
             }
             if trace_dsp_writes {
-                dsp_writes =
-                    game.zelda_render_audio_trace_dsp(&mut rust_audio, sample_frames as i32, 2);
+                dsp_writes = game.zelda_render_audio_trace_dsp_events(
+                    &mut rust_audio,
+                    sample_frames as i32,
+                    2,
+                );
             } else {
                 game.zelda_render_audio(&mut rust_audio, sample_frames as i32, 2);
             }
@@ -4821,7 +4828,7 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
             dsp_writes.clear();
             discard_audio.resize(last_sample_frames.saturating_mul(2), 0);
             if trace_dsp_writes {
-                dsp_writes = game.zelda_render_audio_trace_dsp(
+                dsp_writes = game.zelda_render_audio_trace_dsp_events(
                     &mut discard_audio,
                     last_sample_frames as i32,
                     2,
@@ -5226,11 +5233,14 @@ fn compare_bsnes_audio_frame(rust_audio: &[i16], bsnes_audio: &[i16]) -> Option<
     None
 }
 
-fn format_dsp_writes(writes: &[(u8, u8, i32, u8)]) -> String {
+fn format_dsp_writes(writes: &[DspWriteEvent]) -> String {
     writes
         .iter()
-        .map(|(addr, value, sample_offset, timer_cycles)| {
-            format!("{addr:02x}:{value:02x}@{sample_offset}/{timer_cycles}")
+        .map(|write| {
+            format!(
+                "{:02x}:{:02x}@{}/{}",
+                write.addr, write.value, write.sample_offset, write.timer_cycles
+            )
         })
         .collect::<Vec<_>>()
         .join(",")

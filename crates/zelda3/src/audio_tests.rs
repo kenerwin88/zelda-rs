@@ -217,3 +217,98 @@ fn msu_pcm_non_repeating_track_finishes_like_c() {
     let _ = fs::remove_file(path);
     let _ = fs::remove_dir(dir);
 }
+
+#[test]
+fn audio_route_state_exposes_queued_apu_ports_without_rendering() {
+    let mut state = ZeldaState::new();
+    state.zelda_apu_write(0x2140, 0x12);
+    state.zelda_apu_write(0x2141, 0x34);
+    state.zelda_push_apu_state();
+
+    let route = state.zelda_audio_route_state();
+
+    assert_eq!(route.queue.pos, 1);
+    assert_eq!(route.queue.count, 1);
+    assert_eq!(route.queue.total, 1);
+    assert_eq!(route.queue.write, [0x12, 0x34, 0, 0]);
+    assert_eq!(route.queue.pending, [0x12, 0x34, 0, 0]);
+    assert_eq!(route.queue.input, [0, 0, 0, 0]);
+    assert!(route.spc.is_some());
+}
+
+#[test]
+fn game_frame_output_collects_runtime_render_and_audio_facts() {
+    let mut state = ZeldaState::new();
+    state.zelda_apu_write(0x2142, 0x56);
+    state.zelda_push_apu_state();
+    state.ppu.mode = 7;
+    state.ppu.forced_blank = true;
+    state.ppu.brightness = 0x0f;
+    state.ppu.screen_enabled = [0x11, 0x04];
+
+    let output = state.zelda_game_frame_output();
+
+    assert_eq!(output.render.mode, 7);
+    assert!(output.render.forced_blank);
+    assert_eq!(output.render.brightness, 0x0f);
+    assert_eq!(output.render.screen_enabled, [0x11, 0x04]);
+    assert_eq!(output.audio.queue.pending, [0, 0, 0x56, 0]);
+    assert!(output.audio.events.len() >= 2);
+}
+
+#[test]
+fn trace_only_backend_returns_events_but_silences_host_samples() {
+    let mut state = ZeldaState::new();
+    state.zelda_apu_write(0x2140, 0x77);
+    state.zelda_push_apu_state();
+    let mut audio = [123i16; 8];
+
+    let frame = state.zelda_render_audio_with_backend(
+        crate::game_output::AudioBackendMode::TraceOnly,
+        &mut audio,
+        4,
+        2,
+    );
+
+    assert_eq!(audio, [0; 8]);
+    assert_eq!(frame.queue.input, [0x77, 0, 0, 0]);
+    assert!(frame.events.len() >= 2);
+}
+
+#[test]
+fn modern_backend_renders_from_typed_events_without_advancing_dsp_parity_state() {
+    let mut state = ZeldaState::new();
+    state.zelda_apu_write(0x2141, 0x88);
+    state.zelda_push_apu_state();
+    let dsp_pre = state.zelda_audio_dsp_hash();
+    let mut audio = [123i16; 8];
+
+    let frame = state.zelda_render_audio_with_backend(
+        crate::game_output::AudioBackendMode::Modern,
+        &mut audio,
+        4,
+        2,
+    );
+    let stats = state.zelda_modern_audio_last_stats();
+    let sequence = state.zelda_modern_audio_sequence_last_stats();
+
+    assert!(audio.iter().any(|sample| *sample != 0));
+    assert_eq!(state.zelda_audio_dsp_hash(), dsp_pre);
+    assert_eq!(frame.queue.input, [0, 0x88, 0, 0]);
+    assert_eq!(frame.unresolved_dsp_writes, 0);
+    assert_eq!(stats.triggered_voices, 1);
+    assert_eq!(stats.ignored_events, 0);
+    assert_eq!(stats.samples_per_channel, 4);
+    assert_eq!(stats.channels, 2);
+    assert_ne!(stats.checksum, 0);
+    assert!(frame.events.iter().any(|event| matches!(
+        event.kind,
+        crate::game_output::AudioEventKind::PlaySfx { id: 0x88, .. }
+    )));
+    assert!(frame.events.iter().any(|event| matches!(
+        event.kind,
+        crate::game_output::AudioEventKind::NoteOn { voice: 1, .. }
+    )));
+    assert_eq!(sequence.sfx_commands, 1);
+    assert_eq!(sequence.note_events, 1);
+}

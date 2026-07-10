@@ -8,7 +8,11 @@
 
 pub mod chr_source;
 pub mod config;
+pub mod game_output;
 pub(crate) mod game_state;
+pub mod modern_audio;
+pub mod modern_audio_sequence;
+pub mod modern_sfx_catalog;
 pub mod oracle;
 pub mod spc_player;
 pub mod types;
