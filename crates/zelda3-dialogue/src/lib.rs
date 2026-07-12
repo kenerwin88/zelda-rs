@@ -794,7 +794,10 @@ fn compile_messages_to_bytes(
     if doc.format != FORMAT_DIALOGUE_SOURCE {
         return Err(DialogueSourceCompileError::new(
             0,
-            format!("dialogue messages format is {}, expected {FORMAT_DIALOGUE_SOURCE}", doc.format),
+            format!(
+                "dialogue messages format is {}, expected {FORMAT_DIALOGUE_SOURCE}",
+                doc.format
+            ),
         ));
     }
     let mut compiled = Vec::with_capacity(doc.messages.len());

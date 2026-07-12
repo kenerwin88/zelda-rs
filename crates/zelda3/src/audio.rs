@@ -6,6 +6,7 @@ use crate::game_output::{
     AudioBackendMode, AudioEventFrame, AudioQueueState, AudioRouteState, DspWriteEvent,
     GameFrameOutput, MusicControlState, RenderOutputFacts, RuntimeOutputFacts, SpcSequencerState,
 };
+use crate::game_state::constants::INIDISP_COPY;
 use crate::modern_audio::{ModernAudioEngine, ModernAudioFrameStats};
 use crate::modern_audio_sequence::{ModernAudioSequenceStats, ModernAudioSequencer};
 use opus::{Channels, Decoder as OpusDecoder};
@@ -144,6 +145,8 @@ struct ApuWriteEnt {
 
 pub(super) struct AudioState {
     spc_player: *mut crate::spc_player::SpcPlayer,
+    backend: AudioBackendMode,
+    audio_has_rendered: bool,
     msu_player: MsuPlayer,
     modern_audio: ModernAudioEngine,
     modern_sequence: ModernAudioSequencer,
@@ -154,7 +157,7 @@ pub(super) struct AudioState {
     apu_total_write: u8,
     input_ports: [u8; 4],
     port_to_snes: [u8; 4],
-    spc_ram: [u8; 0x10000],
+    modern_sample_ram: [u8; 0x10000],
     volume_transition_step_float: [f32; 4],
     volume_transition_target_float: [f32; 4],
     config_audio_freq: u32,
@@ -169,6 +172,8 @@ impl Default for AudioState {
         crate::spc_player::spc_player_initialize(spc_player);
         Self {
             spc_player,
+            backend: AudioBackendMode::default(),
+            audio_has_rendered: false,
             msu_player: MsuPlayer::default(),
             modern_audio: ModernAudioEngine::default(),
             modern_sequence: ModernAudioSequencer::default(),
@@ -179,7 +184,7 @@ impl Default for AudioState {
             apu_total_write: 0,
             input_ports: [0; 4],
             port_to_snes: [0; 4],
-            spc_ram: [0; 0x10000],
+            modern_sample_ram: [0; 0x10000],
             volume_transition_step_float: [0.0; 4],
             volume_transition_target_float: [0.0; 4],
             config_audio_freq: 0,
@@ -194,6 +199,8 @@ impl Clone for AudioState {
     fn clone(&self) -> Self {
         Self {
             spc_player: crate::spc_player::spc_player_clone(self.spc_player),
+            backend: self.backend,
+            audio_has_rendered: self.audio_has_rendered,
             msu_player: self.msu_player.clone(),
             modern_audio: self.modern_audio.clone(),
             modern_sequence: self.modern_sequence.clone(),
@@ -204,7 +211,7 @@ impl Clone for AudioState {
             apu_total_write: self.apu_total_write,
             input_ports: self.input_ports,
             port_to_snes: self.port_to_snes,
-            spc_ram: self.spc_ram,
+            modern_sample_ram: self.modern_sample_ram,
             volume_transition_step_float: self.volume_transition_step_float,
             volume_transition_target_float: self.volume_transition_target_float,
             config_audio_freq: self.config_audio_freq,
@@ -227,9 +234,35 @@ impl Drop for AudioState {
 /// `msu_player` is intentionally NOT round-tripped: MSU (external music
 /// streaming) is disabled in headless replay, it owns non-serde state
 /// (`OpusDecoder`), and on restore it is reconstructed as `MsuPlayer::default()`.
-/// Every other field is byte-faithful.
+/// Runtime backend selection is host configuration and is likewise rebuilt
+/// from its modern default or an operator override after restore. Every other
+/// field is byte-faithful.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct AudioStateSnapshot {
+    spc_player: crate::spc_player::SpcPlayerSnapshot,
+    apu_write_ents: [ApuWriteEnt; 16],
+    apu_write: ApuWriteEnt,
+    apu_write_ent_pos: u8,
+    apu_write_count: u8,
+    apu_total_write: u8,
+    input_ports: [u8; 4],
+    port_to_snes: [u8; 4],
+    #[serde(with = "serde_big_array::BigArray")]
+    modern_sample_ram: [u8; 0x10000],
+    volume_transition_step_float: [f32; 4],
+    volume_transition_target_float: [f32; 4],
+    config_audio_freq: u32,
+    config_msuvolume: u8,
+    config_resume_msu: bool,
+    config_msu_path: Option<String>,
+    #[serde(default)]
+    modern_audio: ModernAudioEngine,
+    #[serde(default)]
+    modern_sequence: ModernAudioSequencer,
+}
+
+#[derive(serde::Deserialize)]
+struct LegacyAudioStateSnapshot {
     spc_player: crate::spc_player::SpcPlayerSnapshot,
     apu_write_ents: [ApuWriteEnt; 16],
     apu_write: ApuWriteEnt,
@@ -248,10 +281,15 @@ struct AudioStateSnapshot {
     config_msu_path: Option<String>,
 }
 
-impl serde::Serialize for AudioState {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let snapshot = AudioStateSnapshot {
-            spc_player: crate::spc_player::spc_player_snapshot(self.spc_player),
+impl LegacyAudioStateSnapshot {
+    fn into_audio_state(self) -> AudioState {
+        AudioState {
+            spc_player: crate::spc_player::spc_player_from_snapshot(self.spc_player),
+            backend: AudioBackendMode::default(),
+            audio_has_rendered: false,
+            msu_player: MsuPlayer::default(),
+            modern_audio: ModernAudioEngine::default(),
+            modern_sequence: ModernAudioSequencer::default(),
             apu_write_ents: self.apu_write_ents,
             apu_write: self.apu_write,
             apu_write_ent_pos: self.apu_write_ent_pos,
@@ -259,7 +297,31 @@ impl serde::Serialize for AudioState {
             apu_total_write: self.apu_total_write,
             input_ports: self.input_ports,
             port_to_snes: self.port_to_snes,
-            spc_ram: self.spc_ram,
+            modern_sample_ram: self.spc_ram,
+            volume_transition_step_float: self.volume_transition_step_float,
+            volume_transition_target_float: self.volume_transition_target_float,
+            config_audio_freq: self.config_audio_freq,
+            config_msuvolume: self.config_msuvolume,
+            config_resume_msu: self.config_resume_msu,
+            config_msu_path: self.config_msu_path,
+        }
+    }
+}
+
+impl serde::Serialize for AudioState {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let snapshot = AudioStateSnapshot {
+            spc_player: crate::spc_player::spc_player_snapshot(self.spc_player),
+            modern_audio: self.modern_audio.clone(),
+            modern_sequence: self.modern_sequence.clone(),
+            apu_write_ents: self.apu_write_ents,
+            apu_write: self.apu_write,
+            apu_write_ent_pos: self.apu_write_ent_pos,
+            apu_write_count: self.apu_write_count,
+            apu_total_write: self.apu_total_write,
+            input_ports: self.input_ports,
+            port_to_snes: self.port_to_snes,
+            modern_sample_ram: self.modern_sample_ram,
             volume_transition_step_float: self.volume_transition_step_float,
             volume_transition_target_float: self.volume_transition_target_float,
             config_audio_freq: self.config_audio_freq,
@@ -277,9 +339,11 @@ impl<'de> serde::Deserialize<'de> for AudioState {
         let spc_player = crate::spc_player::spc_player_from_snapshot(snapshot.spc_player);
         Ok(Self {
             spc_player,
+            backend: AudioBackendMode::default(),
+            audio_has_rendered: false,
             msu_player: MsuPlayer::default(),
-            modern_audio: ModernAudioEngine::default(),
-            modern_sequence: ModernAudioSequencer::default(),
+            modern_audio: snapshot.modern_audio,
+            modern_sequence: snapshot.modern_sequence,
             apu_write_ents: snapshot.apu_write_ents,
             apu_write: snapshot.apu_write,
             apu_write_ent_pos: snapshot.apu_write_ent_pos,
@@ -287,7 +351,7 @@ impl<'de> serde::Deserialize<'de> for AudioState {
             apu_total_write: snapshot.apu_total_write,
             input_ports: snapshot.input_ports,
             port_to_snes: snapshot.port_to_snes,
-            spc_ram: snapshot.spc_ram,
+            modern_sample_ram: snapshot.modern_sample_ram,
             volume_transition_step_float: snapshot.volume_transition_step_float,
             volume_transition_target_float: snapshot.volume_transition_target_float,
             config_audio_freq: snapshot.config_audio_freq,
@@ -810,23 +874,43 @@ impl ZeldaState {
     }
 
     pub fn zelda_audio_route_state(&self) -> AudioRouteState {
+        AudioRouteState {
+            music: MusicControlState::from_game(self),
+            queue: self.zelda_audio_queue_state(),
+            spc: self.zelda_audio_spc_route_state(),
+        }
+    }
+
+    fn zelda_modern_audio_route_state(&self) -> AudioRouteState {
+        AudioRouteState {
+            music: MusicControlState::from_game(self),
+            queue: self.zelda_audio_queue_state(),
+            spc: None,
+        }
+    }
+
+    fn zelda_audio_queue_state(&self) -> AudioQueueState {
         let pending_pos = self
             .audio
             .apu_write_ent_pos
             .wrapping_sub(self.audio.apu_write_count)
             & 0xf;
-        let queue = AudioQueueState {
+        AudioQueueState {
             pos: self.audio.apu_write_ent_pos,
             count: self.audio.apu_write_count,
             total: self.audio.apu_total_write,
             write: self.audio.apu_write.ports,
             pending: self.audio.apu_write_ents[pending_pos as usize].ports,
             input: self.audio.input_ports,
-        };
-        let spc = unsafe { self.audio.spc_player.as_ref() }.map(|player| SpcSequencerState {
+        }
+    }
+
+    fn zelda_audio_spc_route_state(&self) -> Option<SpcSequencerState> {
+        unsafe { self.audio.spc_player.as_ref() }.map(|player| SpcSequencerState {
             spc_in: player.input_ports,
             spc_out: player.port_to_snes,
             timer_cycles: player.timer_cycles,
+            sfx_timer_accum: player.sfx_timer_accum,
             main_tempo_accum: player.main_tempo_accum,
             block_count: player.block_count,
             key_on: player.key_ON,
@@ -836,18 +920,92 @@ impl ZeldaState {
             port2_active: player.port2_active,
             port3_active: player.port3_active,
             is_chan_on: player.is_chan_on,
+            echo_enable_mask: player.semantic_echo_enable_mask,
+            echo_enable_frame_start: player.semantic_echo_enable_frame_start,
+            echo_enable_values: player.semantic_echo_enable_values,
+            echo_enable_offsets: player.semantic_echo_enable_offsets,
+            echo_enable_count: player.semantic_echo_enable_count,
+            echo_volume_registers: player.semantic_echo_volume_registers,
+            echo_volume_values: player.semantic_echo_volume_values,
+            echo_volume_offsets: player.semantic_echo_volume_offsets,
+            echo_volume_count: player.semantic_echo_volume_count,
+            global_registers: player.semantic_global_registers,
+            global_values: player.semantic_global_values,
+            global_offsets: player.semantic_global_offsets,
+            global_count: player.semantic_global_count,
+            voice_sources: player.semantic_voice_sources,
+            voice_adsr1: player.semantic_voice_adsr1,
+            voice_adsr2: player.semantic_voice_adsr2,
+            voice_gain: player.semantic_voice_gain,
+            voice_volume_left: player.semantic_voice_volume_left,
+            voice_volume_right: player.semantic_voice_volume_right,
             vol_dirty: player.vol_dirty,
             ch7_sfx: player.channel[7].sfx_which_sound,
             ch7_sfx_ptr: player.channel[7].sfx_sound_ptr,
             ch7_pattern: player.channel[7].pattern_order_ptr_for_chan,
             ch7_ticks: player.channel[7].note_ticks_left,
             ch7_keyoff_ticks: player.channel[7].note_keyoff_ticks_left,
-        });
-        AudioRouteState {
-            music: MusicControlState::from_game(self),
-            queue,
-            spc,
-        }
+            sfx_kof_masks: player.semantic_sfx_kof_masks,
+            sfx_kof_offsets: player.semantic_sfx_kof_offsets,
+            sfx_kof_count: player.semantic_sfx_kof_count,
+            raw_kof_masks: player.semantic_raw_kof_masks,
+            raw_kof_offsets: player.semantic_raw_kof_offsets,
+            raw_kof_count: player.semantic_raw_kof_count,
+            sfx_kon_masks: player.semantic_sfx_kon_masks,
+            sfx_kon_owned_masks: player.semantic_sfx_kon_owned_masks,
+            sfx_kon_offsets: player.semantic_sfx_kon_offsets,
+            sfx_kon_rate_counters: player.semantic_sfx_kon_rate_counters,
+            sfx_kon_sources: player.semantic_sfx_kon_sources,
+            sfx_kon_adsr1: player.semantic_sfx_kon_adsr1,
+            sfx_kon_adsr2: player.semantic_sfx_kon_adsr2,
+            sfx_kon_gain: player.semantic_sfx_kon_gain,
+            sfx_kon_volume_left: player.semantic_sfx_kon_volume_left,
+            sfx_kon_volume_right: player.semantic_sfx_kon_volume_right,
+            sfx_kon_count: player.semantic_sfx_kon_count,
+            sfx_echo_masks: player.semantic_sfx_echo_masks,
+            sfx_echo_enabled: player.semantic_sfx_echo_enabled,
+            sfx_echo_offsets: player.semantic_sfx_echo_offsets,
+            sfx_echo_count: player.semantic_sfx_echo_count,
+            sfx_pitch_masks: player.semantic_sfx_pitch_masks,
+            sfx_pitch_words: player.semantic_sfx_pitch_words,
+            sfx_pitch_offsets: player.semantic_sfx_pitch_offsets,
+            sfx_pitch_count: player.semantic_sfx_pitch_count,
+            raw_pitch_masks: player.semantic_raw_pitch_masks,
+            raw_pitch_words: player.semantic_raw_pitch_words,
+            raw_pitch_offsets: player.semantic_raw_pitch_offsets,
+            raw_pitch_masks_hi: player.semantic_raw_pitch_masks_hi,
+            raw_pitch_words_hi: player.semantic_raw_pitch_words_hi,
+            raw_pitch_offsets_hi: player.semantic_raw_pitch_offsets_hi,
+            raw_pitch_masks_hi2: player.semantic_raw_pitch_masks_hi2,
+            raw_pitch_words_hi2: player.semantic_raw_pitch_words_hi2,
+            raw_pitch_offsets_hi2: player.semantic_raw_pitch_offsets_hi2,
+            raw_pitch_masks_hi3: player.semantic_raw_pitch_masks_hi3,
+            raw_pitch_words_hi3: player.semantic_raw_pitch_words_hi3,
+            raw_pitch_offsets_hi3: player.semantic_raw_pitch_offsets_hi3,
+            raw_pitch_count: player.semantic_raw_pitch_count,
+            sfx_volume_masks: player.semantic_sfx_volume_masks,
+            sfx_volume_left: player.semantic_sfx_volume_left,
+            sfx_volume_right: player.semantic_sfx_volume_right,
+            sfx_volume_offsets: player.semantic_sfx_volume_offsets,
+            sfx_volume_count: player.semantic_sfx_volume_count,
+            raw_volume_masks: player.semantic_raw_volume_masks,
+            raw_volume_left: player.semantic_raw_volume_left,
+            raw_volume_right: player.semantic_raw_volume_right,
+            raw_volume_offsets: player.semantic_raw_volume_offsets,
+            raw_volume_count: player.semantic_raw_volume_count,
+            raw_envelope_masks: player.semantic_raw_envelope_masks,
+            raw_envelope_registers: player.semantic_raw_envelope_registers,
+            raw_envelope_values: player.semantic_raw_envelope_values,
+            raw_envelope_offsets: player.semantic_raw_envelope_offsets,
+            raw_envelope_count: player.semantic_raw_envelope_count,
+            sfx_setup_masks: player.semantic_sfx_setup_masks,
+            sfx_setup_sources: player.semantic_sfx_setup_sources,
+            sfx_setup_adsr1: player.semantic_sfx_setup_adsr1,
+            sfx_setup_adsr2: player.semantic_sfx_setup_adsr2,
+            sfx_setup_gain: player.semantic_sfx_setup_gain,
+            sfx_setup_offsets: player.semantic_sfx_setup_offsets,
+            sfx_setup_count: player.semantic_sfx_setup_count,
+        })
     }
 
     pub fn zelda_audio_event_frame_from_dsp_writes(
@@ -865,7 +1023,7 @@ impl ZeldaState {
                 main_module: frame.main_module,
                 submodule: frame.submodule,
                 subsubmodule: frame.subsubmodule,
-                inidisp: self.ram[0x13],
+                inidisp: self.ram[INIDISP_COPY],
             },
             render: RenderOutputFacts {
                 mode: self.ppu.mode,
@@ -912,7 +1070,7 @@ impl ZeldaState {
         );
         if let Some(player) = unsafe { self.audio.spc_player.as_ref() } {
             out.push_str(&format!(
-                ",\"spc_in\":[{},{},{},{}],\"spc_out\":[{},{},{},{}],\"timer\":{},\"main_tempo_accum\":{},\"block_count\":{},\"key_on\":{},\"key_off\":{},\"current_bit\":{},\"port1_active\":{},\"port2_active\":{},\"port3_active\":{}",
+                ",\"spc_in\":[{},{},{},{}],\"spc_out\":[{},{},{},{}],\"timer\":{},\"sfx_timer_accum\":{},\"main_tempo_accum\":{},\"block_count\":{},\"key_on\":{},\"key_off\":{},\"current_bit\":{},\"port1_active\":{},\"port2_active\":{},\"port3_active\":{}",
                 player.input_ports[0],
                 player.input_ports[1],
                 player.input_ports[2],
@@ -922,6 +1080,7 @@ impl ZeldaState {
                 player.port_to_snes[2],
                 player.port_to_snes[3],
                 player.timer_cycles,
+                player.sfx_timer_accum,
                 player.main_tempo_accum,
                 player.block_count,
                 player.key_ON,
@@ -932,15 +1091,40 @@ impl ZeldaState {
                 player.port3_active,
             ));
             out.push_str(&format!(
-                ",\"is_chan_on\":{},\"vol_dirty\":{},\"ch7_sfx\":{},\"ch7_sfx_ptr\":{},\"ch7_pattern\":{},\"ch7_ticks\":{},\"ch7_keyoff_ticks\":{}",
+                ",\"is_chan_on\":{},\"vol_dirty\":{},\"sfx_sound_ptr_cur\":{},\"ch7_sfx\":{},\"ch7_sfx_ptr\":{},\"ch7_pattern\":{},\"ch7_ticks\":{},\"ch7_keyoff_ticks\":{},\"sfx_kof_count\":{},\"sfx_kof_masks\":{:?},\"sfx_kof_offsets\":{:?},\"sfx_echo_count\":{},\"sfx_echo_masks\":{:?},\"sfx_echo_enabled\":{:?},\"sfx_echo_offsets\":{:?}",
                 player.is_chan_on,
                 player.vol_dirty,
+                player.sfx_sound_ptr_cur,
                 player.channel[7].sfx_which_sound,
                 player.channel[7].sfx_sound_ptr,
                 player.channel[7].pattern_order_ptr_for_chan,
                 player.channel[7].note_ticks_left,
                 player.channel[7].note_keyoff_ticks_left,
+                player.semantic_sfx_kof_count,
+                player.semantic_sfx_kof_masks,
+                player.semantic_sfx_kof_offsets,
+                player.semantic_sfx_echo_count,
+                player.semantic_sfx_echo_masks,
+                player.semantic_sfx_echo_enabled,
+                player.semantic_sfx_echo_offsets,
             ));
+            out.push_str(",\"sfx_channels\":[");
+            for (index, channel) in player.channel.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push_str(&format!(
+                    "{{\"voice\":{},\"sound\":{},\"sound_ptr\":{},\"pan\":{},\"countdown\":{},\"note_length_left\":{},\"active\":{}}}",
+                    index,
+                    channel.sfx_which_sound,
+                    channel.sfx_sound_ptr,
+                    channel.sfx_pan,
+                    channel.sfx_arr_countdown,
+                    channel.sfx_note_length_left,
+                    u8::from(player.is_chan_on & (1u8 << index) != 0),
+                ));
+            }
+            out.push(']');
         }
         out.push('}');
         out
@@ -973,13 +1157,65 @@ impl ZeldaState {
         bytes
     }
 
+    pub fn zelda_modern_audio_state(&self) -> (ModernAudioSequencer, ModernAudioEngine) {
+        (
+            self.audio.modern_sequence.clone(),
+            self.audio.modern_audio.clone(),
+        )
+    }
+
+    /// Clone Modern state and align its echo history to the legacy DSP oracle
+    /// for side-by-side trace diagnostics.
+    pub fn zelda_oracle_aligned_modern_audio_trace_state(
+        &self,
+    ) -> (ModernAudioSequencer, ModernAudioEngine) {
+        let mut engine = self.audio.modern_audio.clone();
+        self.zelda_sync_modern_audio_trace_engine(&mut engine, 0);
+        (self.audio.modern_sequence.clone(), engine)
+    }
+
+    pub fn zelda_sync_modern_audio_trace_engine(
+        &self,
+        engine: &mut ModernAudioEngine,
+        rewind_samples: u16,
+    ) {
+        let dsp = crate::spc_player::spc_player_save_dsp_c_saveload(self.audio.spc_player);
+        let ram = crate::spc_player::spc_player_save_ram(self.audio.spc_player);
+        let word = |offset| i16::from_le_bytes([dsp[offset], dsp[offset + 1]]);
+        engine.seed_echo_checkpoint_state(
+            &ram,
+            dsp[0x6d],
+            dsp[0x7d],
+            u16::from_le_bytes([dsp[840], dsp[841]]),
+            u16::from_le_bytes([dsp[838], dsp[839]]),
+            dsp[842],
+            std::array::from_fn(|index| word(852 + index * 2)),
+            std::array::from_fn(|index| word(868 + index * 2)),
+            rewind_samples,
+        );
+    }
+
+    pub fn zelda_modern_audio_sample_ram(&self) -> &[u8] {
+        &self.audio.modern_sample_ram
+    }
+
+    pub fn zelda_audio_live_spc_ram(&self) -> [u8; 0x10000] {
+        crate::spc_player::spc_player_save_ram(self.audio.spc_player)
+    }
+
     /// Restore the full live audio state previously captured by
     /// `zelda_audio_snapshot_bytes`. Replaces `self.audio` wholesale (its `Drop`
     /// frees the prior SPC player); the deserialized `AudioState` re-creates the
     /// SPC player + DSP with all raw pointers correctly re-linked.
     pub fn zelda_audio_restore_from_bytes(&mut self, bytes: &[u8]) -> Result<(), String> {
-        let restored: AudioState =
-            bincode::deserialize(bytes).map_err(|e| format!("audio snapshot decode: {e}"))?;
+        let restored: AudioState = match bincode::deserialize(bytes) {
+            Ok(state) => state,
+            Err(current_error) => bincode::deserialize::<LegacyAudioStateSnapshot>(bytes)
+                .map(LegacyAudioStateSnapshot::into_audio_state)
+                .map_err(|legacy_error| {
+                    format!("audio snapshot decode: current={current_error}; legacy={legacy_error}")
+                })?,
+        };
         if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
             let tc = unsafe { restored.spc_player.as_ref() }
                 .map(|p| p.timer_cycles)
@@ -1007,6 +1243,63 @@ impl ZeldaState {
         hash
     }
 
+    pub fn zelda_audio_dsp_snapshot(&self) -> Vec<u8> {
+        crate::spc_player::spc_player_save_dsp_c_saveload(self.audio.spc_player)
+    }
+
+    pub fn zelda_audio_dsp_global_state(&self) -> crate::game_output::ClassicDspGlobalState {
+        let bytes = crate::spc_player::spc_player_save_dsp_c_saveload(self.audio.spc_player);
+        crate::game_output::ClassicDspGlobalState {
+            master_volume_left: bytes[821] as i8,
+            master_volume_right: bytes[822] as i8,
+            echo_volume_left: bytes[831] as i8,
+            echo_volume_right: bytes[832] as i8,
+            echo_feedback: bytes[833] as i8,
+            flags: bytes[0x6c],
+            echo_enable_mask: bytes[0x4d],
+            pitch_modulation_mask: bytes[0x2d],
+            noise_enable_mask: bytes[0x3d],
+            echo_start_page: bytes[0x6d],
+            echo_delay: bytes[0x7d],
+            fir: std::array::from_fn(|index| bytes[843 + index] as i8),
+            echo_buffer_index: u16::from_le_bytes([bytes[840], bytes[841]]),
+            echo_remaining: u16::from_le_bytes([bytes[838], bytes[839]]),
+            fir_history_index: bytes[842],
+            fir_history_left: std::array::from_fn(|index| {
+                let offset = 852 + index * 2;
+                i16::from_le_bytes([bytes[offset], bytes[offset + 1]])
+            }),
+            fir_history_right: std::array::from_fn(|index| {
+                let offset = 868 + index * 2;
+                i16::from_le_bytes([bytes[offset], bytes[offset + 1]])
+            }),
+        }
+    }
+
+    pub fn zelda_audio_dsp_voice_states(&self) -> [crate::game_output::ClassicDspVoiceState; 8] {
+        let bytes = crate::spc_player::spc_player_save_dsp_c_saveload(self.audio.spc_player);
+        std::array::from_fn(|voice| {
+            let base = 0x80 + voice * 86;
+            let word =
+                |offset| u16::from_le_bytes([bytes[base + offset], bytes[base + offset + 1]]);
+            crate::game_output::ClassicDspVoiceState {
+                pitch: word(0),
+                pitch_counter: word(2),
+                source: bytes[base + 44],
+                envelope_state: bytes[base + 66],
+                envelope_rate_counter: word(64),
+                gain: word(76),
+                sample_out: word(80) as i16,
+                volume_left: bytes[base + 82] as i8,
+                volume_right: bytes[base + 83] as i8,
+            }
+        })
+    }
+
+    pub fn zelda_audio_dsp_debug_voice_samples(&self) -> [Vec<i16>; 8] {
+        crate::spc_player::spc_player_dsp_debug_voice_samples(self.audio.spc_player)
+    }
+
     pub fn zelda_push_apu_state(&mut self) {
         let pos = (self.audio.apu_write_ent_pos & 0xf) as usize;
         self.audio.apu_write_ents[pos] = self.audio.apu_write;
@@ -1025,9 +1318,6 @@ impl ZeldaState {
                 .wrapping_sub(self.audio.apu_write_count)
                 & 0xf;
             self.audio.input_ports = self.audio.apu_write_ents[pos as usize].ports;
-            if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
-                player.input_ports = self.audio.input_ports;
-            }
             self.audio.apu_write_count -= 1;
         }
     }
@@ -1061,6 +1351,9 @@ impl ZeldaState {
     }
 
     pub fn zelda_apu_read(&self, adr: u32) -> u8 {
+        if self.audio.backend == AudioBackendMode::Modern {
+            return self.audio.port_to_snes[(adr as usize) & 3];
+        }
         if let Some(player) = unsafe { self.audio.spc_player.as_ref() } {
             player.port_to_snes[(adr as usize) & 3]
         } else {
@@ -1069,26 +1362,22 @@ impl ZeldaState {
     }
 
     pub fn zelda_render_audio(&mut self, audio_buffer: &mut [i16], samples: i32, channels: i32) {
-        self.zelda_pop_apu_state();
-        let count = (samples.max(0) as usize).saturating_mul(channels.max(0) as usize);
-        if samples > 0 && channels > 0 {
-            if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
-                crate::spc_player::spc_player_generate_samples(player);
-                crate::spc_player::dsp_get_samples(
-                    player.dsp,
-                    audio_buffer,
-                    samples as usize,
-                    channels as usize,
-                );
-            } else {
-                for value in audio_buffer.iter_mut().take(count) {
-                    *value = 0;
-                }
-            }
+        self.zelda_render_audio_with_backend(self.audio.backend, audio_buffer, samples, channels);
+    }
+
+    pub fn zelda_audio_backend(&self) -> AudioBackendMode {
+        self.audio.backend
+    }
+
+    pub fn zelda_set_audio_backend(
+        &mut self,
+        backend: AudioBackendMode,
+    ) -> Result<(), &'static str> {
+        if self.audio.audio_has_rendered && backend != self.audio.backend {
+            return Err("audio backend selection is locked after rendering begins");
         }
-        if self.audio.msu_player.has_file && channels == 2 {
-            self.msu_player_mix(audio_buffer, samples);
-        }
+        self.audio.backend = backend;
+        Ok(())
     }
 
     pub fn zelda_render_audio_trace_dsp(
@@ -1102,6 +1391,7 @@ impl ZeldaState {
         let mut writes = Vec::new();
         if samples > 0 && channels > 0 {
             if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
+                player.input_ports = self.audio.input_ports;
                 let mut hist = crate::spc_player::DspRegWriteHistory::default();
                 player.reg_write_history = &mut hist;
                 crate::spc_player::spc_player_generate_samples(player);
@@ -1154,6 +1444,9 @@ impl ZeldaState {
         samples: i32,
         channels: i32,
     ) -> AudioEventFrame {
+        if samples > 0 && channels > 0 {
+            self.audio.audio_has_rendered = true;
+        }
         match backend {
             AudioBackendMode::DspParity => {
                 let writes =
@@ -1171,12 +1464,26 @@ impl ZeldaState {
                 self.zelda_audio_event_frame_from_dsp_writes(&writes)
             }
             AudioBackendMode::Modern => {
+                if samples <= 0 || channels <= 0 {
+                    return AudioEventFrame::from_route_and_dsp_writes(
+                        self.zelda_modern_audio_route_state(),
+                        &[],
+                    );
+                }
                 self.zelda_pop_apu_state();
-                let route = self.zelda_audio_route_state();
+                self.audio.port_to_snes = self.audio.input_ports;
+                let route = self.zelda_modern_audio_route_state();
                 let frame = self.audio.modern_sequence.sequence_route(route);
-                self.audio
-                    .modern_audio
-                    .render_frame(&frame, audio_buffer, samples, channels);
+                self.audio.modern_audio.render_frame_with_sample_ram(
+                    &frame,
+                    audio_buffer,
+                    samples,
+                    channels,
+                    Some(&self.audio.modern_sample_ram),
+                );
+                if self.audio.msu_player.has_file && channels == 2 {
+                    self.msu_player_mix(audio_buffer, samples);
+                }
                 frame
             }
         }
@@ -1193,7 +1500,7 @@ impl ZeldaState {
             player.timer_cycles = timer_cycles.min(64);
             player.ram[0x0043] = sfx_timer_accum;
         }
-        self.audio.spc_ram[0x0043] = sfx_timer_accum;
+        self.audio.modern_sample_ram[0x0043] = sfx_timer_accum;
     }
 
     pub fn zelda_is_music_playing(&self) -> bool {
@@ -1205,6 +1512,9 @@ impl ZeldaState {
     }
 
     pub fn zelda_restore_music_after_load_locked(&mut self, is_reset: bool) {
+        self.audio.modern_audio = ModernAudioEngine::default();
+        self.audio.modern_sequence = ModernAudioSequencer::default();
+        self.audio.modern_audio.sample_ram_changed();
         crate::spc_player::spc_player_copy_variables_from_ram(self.audio.spc_player);
         if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
             player.timer_cycles = 0;
@@ -1220,7 +1530,7 @@ impl ZeldaState {
             self.audio
                 .apu_write
                 .ports
-                .copy_from_slice(&self.audio.spc_ram[0x410..0x414]);
+                .copy_from_slice(&self.audio.modern_sample_ram[0x410..0x414]);
         }
         if is_reset {
             self.audio.port_to_snes = [0; 4];
@@ -1260,10 +1570,9 @@ impl ZeldaState {
         crate::spc_player::spc_player_copy_variables_to_ram(self.audio.spc_player);
         if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
             player.ram[0x410..0x414].copy_from_slice(&self.audio.apu_write.ports);
-            self.audio.spc_ram = player.ram;
-        } else {
-            self.audio.spc_ram[0x410..0x414].copy_from_slice(&self.audio.apu_write.ports);
         }
+        self.audio.modern_sample_ram[0x410..0x414]
+            .copy_from_slice(&self.audio.apu_write.ports);
         let msu_volume = (self.audio.msu_player.volume * 255.0) as u8;
         self.set_msu_volume(msu_volume);
         self.save_msu_resume_info(MsuResumeSlot::Primary, self.audio.msu_player.resume_info);
@@ -1301,8 +1610,8 @@ impl ZeldaState {
     }
 
     pub fn load_song_bank(&mut self, p: &[u8]) {
-        let len = p.len().min(self.audio.spc_ram.len());
-        self.audio.spc_ram[..len].copy_from_slice(&p[..len]);
+        upload_song_bank_to_ram(&mut self.audio.modern_sample_ram, p);
+        self.audio.modern_audio.sample_ram_changed();
         if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
             crate::spc_player::spc_player_upload(player, p.as_ptr());
         }
@@ -1323,16 +1632,24 @@ impl ZeldaState {
     }
 
     pub(super) fn save_audio_apu_ram_c_saveload(&self) -> [u8; 0x10000] {
-        crate::spc_player::spc_player_save_ram(self.audio.spc_player)
+        if self.audio.backend == AudioBackendMode::Modern || self.audio.spc_player.is_null() {
+            self.audio.modern_sample_ram
+        } else {
+            crate::spc_player::spc_player_save_ram(self.audio.spc_player)
+        }
     }
 
     pub(super) fn load_audio_apu_ram_c_saveload(&mut self, data: &[u8]) {
-        let len = data.len().min(self.audio.spc_ram.len());
-        self.audio.spc_ram[..len].copy_from_slice(&data[..len]);
-        if len < self.audio.spc_ram.len() {
-            self.audio.spc_ram[len..].fill(0);
+        let len = data.len().min(self.audio.modern_sample_ram.len());
+        self.audio.modern_sample_ram[..len].copy_from_slice(&data[..len]);
+        if len < self.audio.modern_sample_ram.len() {
+            self.audio.modern_sample_ram[len..].fill(0);
         }
-        crate::spc_player::spc_player_load_ram(self.audio.spc_player, &self.audio.spc_ram);
+        self.audio.modern_audio.sample_ram_changed();
+        crate::spc_player::spc_player_load_ram(
+            self.audio.spc_player,
+            &self.audio.modern_sample_ram,
+        );
     }
 
     pub(super) fn save_audio_dsp_c_saveload(&self) -> Vec<u8> {
@@ -1349,6 +1666,48 @@ impl ZeldaState {
 
     fn save_msu_resume_info(&mut self, slot: MsuResumeSlot, info: MsuResumeInfoState) {
         self.set_msu_resume_info(slot, info);
+    }
+}
+
+fn upload_song_bank_to_ram(ram: &mut [u8; 0x10000], data: &[u8]) {
+    let mut cursor = 0usize;
+    while cursor + 2 <= data.len() {
+        let length = usize::from(u16::from_le_bytes([data[cursor], data[cursor + 1]]));
+        if length == 0 {
+            break;
+        }
+        if cursor + 4 > data.len() || cursor + 4 + length > data.len() {
+            break;
+        }
+        let mut target = u16::from_le_bytes([data[cursor + 2], data[cursor + 3]]);
+        cursor += 4;
+        for &byte in &data[cursor..cursor + length] {
+            ram[usize::from(target)] = byte;
+            target = target.wrapping_add(1);
+        }
+        cursor += length;
+    }
+}
+
+#[cfg(test)]
+mod song_bank_upload_tests {
+    use super::upload_song_bank_to_ram;
+
+    #[test]
+    fn materializes_upload_blocks_at_their_spc_addresses() {
+        let mut ram = [0u8; 0x10000];
+        let upload = [
+            3, 0, 0x00, 0x3c, 1, 2, 3, // directory block
+            2, 0, 0xfe, 0xff, 4, 5, // wrapping block
+            0, 0,
+        ];
+
+        upload_song_bank_to_ram(&mut ram, &upload);
+
+        assert_eq!(&ram[0x3c00..0x3c03], &[1, 2, 3]);
+        assert_eq!(ram[0xfffe], 4);
+        assert_eq!(ram[0xffff], 5);
+        assert_eq!(&ram[..8], &[0; 8]);
     }
 }
 

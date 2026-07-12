@@ -4,8 +4,9 @@ use std::path::Path;
 use std::process;
 
 use platform::{HostMenuAction, HostMenuInput, HostMenuMode, HostMenuState, NativeFrontendOptions};
-use zelda3::ZeldaState;
+use zelda3::{game_output::AudioBackendMode, ZeldaState};
 
+use crate::audio_trace::replay_checksum_samples;
 use crate::developer_room_commands::{
     current_developer_location_from_ram, load_developer_destination,
 };
@@ -15,24 +16,43 @@ use crate::{
     install_crash_panic_hook, load_embedded_play_state, load_play_state, play_renderer,
     read_file_or_exit, select_run_what, write_play_crash_report, TRACE_FILTERED_JOYPAD_H,
     TRACE_FILTERED_JOYPAD_L, TRACE_JOYPAD1H_LAST, TRACE_JOYPAD1L_LAST, TRACE_MAIN_MODULE_INDEX,
-    TRACE_SELECTFILE_ARR2_1, TRACE_SELECTFILE_VAR10, TRACE_SELECTFILE_VAR11,
-    TRACE_SELECTFILE_VAR3, TRACE_SELECTFILE_VAR5, TRACE_SELECTFILE_VAR7, TRACE_SELECTFILE_VAR9,
-    TRACE_SUBMODULE_INDEX, TRACE_SUBSUBMODULE_INDEX,
+    TRACE_SELECTFILE_ARR2_1, TRACE_SELECTFILE_VAR10, TRACE_SELECTFILE_VAR11, TRACE_SELECTFILE_VAR3,
+    TRACE_SELECTFILE_VAR5, TRACE_SELECTFILE_VAR7, TRACE_SELECTFILE_VAR9, TRACE_SUBMODULE_INDEX,
+    TRACE_SUBSUBMODULE_INDEX,
 };
 
 #[derive(Debug)]
 struct FrontendSmokeOptions {
     frames: u32,
     frame_pacing: bool,
+    require_audio: bool,
     rom_path: Option<String>,
     input_script: InputScript,
     load_sram: Option<String>,
+}
+
+fn configure_audio_backend_from_env(game: &mut ZeldaState) -> Result<AudioBackendMode, String> {
+    let Some(value) = env::var_os("ZELDA3_AUDIO_BACKEND") else {
+        return Ok(game.zelda_audio_backend());
+    };
+    let value = value
+        .into_string()
+        .map_err(|_| "ZELDA3_AUDIO_BACKEND must be valid UTF-8".to_string())?;
+    let backend = AudioBackendMode::parse(&value).ok_or_else(|| {
+        format!(
+            "invalid ZELDA3_AUDIO_BACKEND={value:?}; expected modern, dsp-parity, or trace-only"
+        )
+    })?;
+    game.zelda_set_audio_backend(backend)
+        .map_err(str::to_string)?;
+    Ok(backend)
 }
 
 fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions, String> {
     let mut frames = 2u32;
     let mut frames_set = false;
     let mut frame_pacing = true;
+    let mut require_audio = false;
     let mut rom_path = None;
     let mut input_script = InputScript::default();
     let mut load_sram = None;
@@ -40,6 +60,7 @@ fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions,
     while i < args.len() {
         match args[i].as_str() {
             "--no-frame-pacing" => frame_pacing = false,
+            "--require-audio" => require_audio = true,
             "--rom" => {
                 let value = args.get(i + 1).ok_or_else(|| {
                     "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; --rom requires a path".to_string()
@@ -86,6 +107,7 @@ fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions,
     Ok(FrontendSmokeOptions {
         frames,
         frame_pacing,
+        require_audio,
         rom_path,
         input_script,
         load_sram,
@@ -102,6 +124,10 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
         .as_deref()
         .map(load_play_state)
         .unwrap_or_else(load_embedded_play_state);
+    let audio_backend = configure_audio_backend_from_env(&mut game).unwrap_or_else(|message| {
+        eprintln!("{message}");
+        process::exit(2);
+    });
     if let Some(path) = options.load_sram.as_deref() {
         let sram = read_file_or_exit(Path::new(path), "SRAM");
         apply_sram_to_game_or_exit(&mut game, Path::new(path), &sram);
@@ -120,6 +146,15 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
         }
     };
     let renderer_name = renderer.name();
+    let audio_samples = renderer.audio_samples_per_frame();
+    let audio_channels = renderer.audio_channels();
+    let mut audio = vec![0i16; audio_samples * audio_channels];
+    let mut audio_peak = 0i16;
+    let mut triggered_voices = 0u64;
+    let mut understood_events = 0u64;
+    let mut note_events = 0u64;
+    let mut sfx_commands = 0u64;
+    let mut audio_hash = 0u32;
 
     let mut completed = 0u32;
     while completed < options.frames && !renderer.quit_requested() {
@@ -130,13 +165,36 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
         };
         game.zelda_run_frame(live_input as i32);
         renderer.present_frame(&mut game);
+        game.zelda_render_audio(&mut audio, audio_samples as i32, audio_channels as i32);
+        let stats = game.zelda_modern_audio_last_stats();
+        triggered_voices += u64::from(stats.triggered_voices);
+        understood_events += u64::from(stats.understood_events);
+        let sequence_stats = game.zelda_modern_audio_sequence_last_stats();
+        note_events += u64::from(sequence_stats.note_events);
+        sfx_commands += u64::from(sequence_stats.sfx_commands);
+        audio_peak = audio_peak.max(
+            audio
+                .iter()
+                .map(|sample| sample.saturating_abs())
+                .max()
+                .unwrap_or(0),
+        );
+        audio_hash = audio_hash.rotate_left(5) ^ replay_checksum_samples(&audio);
+        renderer.push_audio(&audio);
+        game.zelda_discard_unused_audio_frames();
         completed += 1;
     }
     if !options.frame_pacing {
         renderer.wait_idle();
     }
 
-    println!("frontend smoke completed frames={completed} renderer={renderer_name}");
+    println!(
+        "frontend smoke completed frames={completed} renderer={renderer_name} audio_backend={audio_backend:?} audio_peak={audio_peak} audio_hash=0x{audio_hash:08x} triggered_voices={triggered_voices} understood_events={understood_events} note_events={note_events} sfx_commands={sfx_commands}"
+    );
+    if options.require_audio && audio_peak == 0 {
+        eprintln!("frontend smoke failed: requested audio verification but output was silent");
+        process::exit(1);
+    }
 }
 
 pub(crate) fn run_play(rom_path: &str) {
@@ -148,6 +206,13 @@ pub(crate) fn run_standalone_play() {
 }
 
 fn run_play_with_state(mut game: ZeldaState) {
+    let audio_backend = configure_audio_backend_from_env(&mut game).unwrap_or_else(|message| {
+        eprintln!("{message}");
+        process::exit(2);
+    });
+    if env::var_os("ZELDA3_AUDIO_BACKEND").is_some() {
+        eprintln!("audio backend override: {audio_backend:?}");
+    }
     let last_panic = install_crash_panic_hook();
     let width = 256u32;
     let height = 224u32;
@@ -219,6 +284,8 @@ fn run_play_with_state(mut game: ZeldaState) {
                             match load_developer_destination(id) {
                                 Ok((next_game, next_frame)) => {
                                     game = next_game;
+                                    game.zelda_set_audio_backend(audio_backend)
+                                        .expect("fresh developer state accepts backend selection");
                                     host_frame = next_frame;
                                     game_started = true;
                                     host_menu.close();
@@ -362,6 +429,7 @@ mod host_menu_play_tests {
         let options = parse_frontend_smoke_options(&[]).unwrap();
         assert_eq!(options.frames, 2);
         assert!(options.frame_pacing);
+        assert!(!options.require_audio);
         assert!(options.rom_path.is_none());
         assert!(options.input_script.is_empty());
         assert!(options.load_sram.is_none());
@@ -369,10 +437,15 @@ mod host_menu_play_tests {
 
     #[test]
     fn frontend_smoke_accepts_no_frame_pacing() {
-        let args = vec!["600".to_string(), "--no-frame-pacing".to_string()];
+        let args = vec![
+            "600".to_string(),
+            "--no-frame-pacing".to_string(),
+            "--require-audio".to_string(),
+        ];
         let options = parse_frontend_smoke_options(&args).unwrap();
         assert_eq!(options.frames, 600);
         assert!(!options.frame_pacing);
+        assert!(options.require_audio);
         assert!(options.rom_path.is_none());
         assert!(options.input_script.is_empty());
         assert!(options.load_sram.is_none());

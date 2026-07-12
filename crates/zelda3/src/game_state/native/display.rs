@@ -1509,16 +1509,16 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
         b: (zelda3_palette::Bank, usize),
     ) {
         debug_assert_eq!(a.0, b.0, "swap_colors operates within a single bank");
-        let read = |buffer: &PaletteBufferState, bank: zelda3_palette::Bank, index: usize| match bank
-        {
-            zelda3_palette::Bank::Main => buffer.main_color(index),
-            zelda3_palette::Bank::Aux => buffer.aux_color(index),
-            zelda3_palette::Bank::Backup => {
-                let bytes = buffer.overworld_palette_backup();
-                let offset = index * 2;
-                u16::from(bytes[offset]) | (u16::from(bytes[offset + 1]) << 8)
-            }
-        };
+        let read =
+            |buffer: &PaletteBufferState, bank: zelda3_palette::Bank, index: usize| match bank {
+                zelda3_palette::Bank::Main => buffer.main_color(index),
+                zelda3_palette::Bank::Aux => buffer.aux_color(index),
+                zelda3_palette::Bank::Backup => {
+                    let bytes = buffer.overworld_palette_backup();
+                    let offset = index * 2;
+                    u16::from(bytes[offset]) | (u16::from(bytes[offset + 1]) << 8)
+                }
+            };
         let va = read(&self.display.palette_buffer, a.0, a.1);
         let vb = read(&self.display.palette_buffer, b.0, b.1);
         let mut write = |bank: zelda3_palette::Bank, index: usize, value: u16| match bank {
@@ -1592,8 +1592,12 @@ impl<'a> NativePaletteBufferBridgeMut<'a> {
     pub(crate) fn clear_main_full(&mut self) {
         self.display.palette_buffer.clear_main_full();
         self.ram[MAIN_PALETTE_BUFFER..MAIN_PALETTE_BUFFER + PALETTE_BANK_BYTES].fill(0);
-        self.mirror()
-            .fill_constant_range(zelda3_palette::Bank::Main, 0, zelda3_palette::PALETTE_WORDS, 0);
+        self.mirror().fill_constant_range(
+            zelda3_palette::Bank::Main,
+            0,
+            zelda3_palette::PALETTE_WORDS,
+            0,
+        );
     }
 
     /// Establish the power-on provenance of the palette buffers: at boot the

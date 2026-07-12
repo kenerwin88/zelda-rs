@@ -1294,6 +1294,35 @@ fn write_asset_gpu_checkpoint_or_exit(game: &ZeldaState, frames: u32, dir: &Path
     });
 }
 
+fn modern_audio_sample_asset_hash(sample_ram: &[u8], source: u8) -> u32 {
+    const DIRECTORY: usize = 0x3c00;
+    let mut hash = 2166136261u32;
+    let entry = DIRECTORY + usize::from(source) * 4;
+    let Some(directory) = sample_ram.get(entry..entry + 4) else {
+        return hash;
+    };
+    for &byte in directory {
+        hash = (hash ^ u32::from(byte)).wrapping_mul(16777619);
+    }
+    let mut address = usize::from(directory[0]) | (usize::from(directory[1]) << 8);
+    if address == 0 {
+        return hash;
+    }
+    for _ in 0..4096 {
+        let Some(block) = sample_ram.get(address..address + 9) else {
+            break;
+        };
+        for &byte in block {
+            hash = (hash ^ u32::from(byte)).wrapping_mul(16777619);
+        }
+        if block[0] & 1 != 0 {
+            break;
+        }
+        address += 9;
+    }
+    hash
+}
+
 fn run_replay_save(args: &[String]) {
     let ReplaySaveConfig {
         rom_path,
@@ -1369,6 +1398,11 @@ fn run_replay_save(args: &[String]) {
     } else {
         None
     };
+    let (mut modern_audio_trace_sequence, mut modern_audio_trace_engine) =
+        game.zelda_oracle_aligned_modern_audio_trace_state();
+    let mut modern_audio_trace_last_dsp_post = None;
+    let mut modern_audio_trace_sample_assets = [None; 256];
+    let mut modern_audio_trace_has_checkpoint_seed = false;
     let render_hash_cpu_debug = std::env::var_os("ZELDA3_RENDER_HASH_CPU_DEBUG").is_some();
     let mut render_hash_frame = if gpu_render_compare.enabled()
         || render_hash_cpu_debug
@@ -1469,8 +1503,32 @@ fn run_replay_save(args: &[String]) {
             fingerprint_log.is_some() && should_write_fingerprint(fingerprint_frame, frames);
         if let Some(audio) = audio_trace_buffer.as_mut() {
             let dsp_pre = game.zelda_audio_dsp_hash();
+            let dsp_pre_snapshot = game.zelda_audio_dsp_snapshot();
+            let spc_ram_pre = game.zelda_audio_live_spc_ram();
+            let dsp_changed = modern_audio_trace_last_dsp_post
+                .is_some_and(|previous| previous != dsp_pre);
+            let mut sample_ram_changed = false;
+            for voice in 0..8 {
+                let state_base = 0x80 + voice * 86;
+                let Some(&source) = dsp_pre_snapshot.get(state_base + 44) else {
+                    continue;
+                };
+                let hash = modern_audio_sample_asset_hash(&spc_ram_pre, source);
+                let previous = &mut modern_audio_trace_sample_assets[usize::from(source)];
+                sample_ram_changed |= modern_audio_trace_has_checkpoint_seed
+                    && previous.is_some_and(|value| value != hash);
+                *previous = Some(hash);
+            }
+            if dsp_changed || sample_ram_changed
+            {
+                modern_audio_trace_engine
+                    .seed_dsp_checkpoint_state(&spc_ram_pre, &dsp_pre_snapshot);
+                game.zelda_sync_modern_audio_trace_engine(&mut modern_audio_trace_engine, 0);
+            }
+            modern_audio_trace_has_checkpoint_seed |= dsp_changed;
             let writes = game.zelda_render_audio_trace_dsp_events(audio, 735, 2);
             game.zelda_discard_unused_audio_frames();
+            modern_audio_trace_last_dsp_post = Some(game.zelda_audio_dsp_hash());
             if should_fingerprint_frame {
                 let dsp_post = game.zelda_audio_dsp_hash();
                 let s_samples = replay_checksum_samples(audio);
@@ -1492,7 +1550,18 @@ fn run_replay_save(args: &[String]) {
                 );
             }
             if audio_trace_log != 0 && frames % audio_trace_log == 0 {
-                print_replay_audio_trace(frames, &game, audio, 735, 2, dsp_pre, &writes);
+                print_replay_audio_trace(
+                    frames,
+                    &game,
+                    audio,
+                    735,
+                    2,
+                    dsp_pre,
+                    &writes,
+                    &spc_ram_pre,
+                    &mut modern_audio_trace_sequence,
+                    &mut modern_audio_trace_engine,
+                );
             }
         }
         let should_log_render_hash = render_hash_log != 0 && frames % render_hash_log == 0;
@@ -3085,10 +3154,7 @@ fn run_replay_save(args: &[String]) {
         if let Some(coverage) = route_coverage.as_mut() {
             coverage.record(route_coverage_frame_from_game(frames, &game));
         }
-        if asset_gpu_smoke_renderer.is_some()
-            && asset_gpu_checkpoint_interval != 0
-            && frames % asset_gpu_checkpoint_interval == 0
-        {
+        if asset_gpu_checkpoint_interval != 0 && frames % asset_gpu_checkpoint_interval == 0 {
             if let Some(dir) = asset_gpu_checkpoint_dir.as_deref() {
                 write_asset_gpu_checkpoint_or_exit(&game, frames, dir);
             }

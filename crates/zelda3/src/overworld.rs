@@ -4321,7 +4321,10 @@ impl ZeldaState {
         for i in 0..256 {
             self.set_aux_color_constant(i, 0x7fff);
         }
-        self.copy_color((zelda3_palette::Bank::Main, 0), (zelda3_palette::Bank::Main, 32));
+        self.copy_color(
+            (zelda3_palette::Bank::Main, 0),
+            (zelda3_palette::Bank::Main, 32),
+        );
         self.set_countdown(0);
         self.set_darkening_or_lightening_screen(2);
         self.increment_subsubmodule();
@@ -4564,9 +4567,18 @@ impl ZeldaState {
             for i in 1..8 {
                 self.set_main_color_asset(0x30 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1]);
                 self.set_main_color_asset(0x38 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 7]);
-                self.set_main_color_asset(0x48 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 14]);
-                self.set_main_color_asset(0x70 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 21]);
-                self.set_main_color_asset(0x78 + i, DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 28]);
+                self.set_main_color_asset(
+                    0x48 + i,
+                    DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 14],
+                );
+                self.set_main_color_asset(
+                    0x70 + i,
+                    DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 21],
+                );
+                self.set_main_color_asset(
+                    0x78 + i,
+                    DARK_WORLD_PALETTE_ANIMATION_PHASE1[i - 1 + 28],
+                );
             }
         }
 

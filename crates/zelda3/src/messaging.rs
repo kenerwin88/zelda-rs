@@ -647,7 +647,10 @@ impl ZeldaState {
 
     pub(super) fn GameOver_IrisWipe(&mut self) {
         self.PaletteFilter_RestoreBGSubstractiveStrict();
-        self.copy_color((zelda3_palette::Bank::Main, 32), (zelda3_palette::Bank::Main, 0));
+        self.copy_color(
+            (zelda3_palette::Bank::Main, 32),
+            (zelda3_palette::Bank::Main, 0),
+        );
         let bak = self.game_state.frame.main_module;
         self.IrisSpotlight_ConfigureTable();
         self.set_main_module(bak);
@@ -686,7 +689,10 @@ impl ZeldaState {
             return;
         }
         self.PaletteFilter_RestoreBGSubstractiveStrict();
-        self.copy_color((zelda3_palette::Bank::Main, 32), (zelda3_palette::Bank::Main, 0));
+        self.copy_color(
+            (zelda3_palette::Bank::Main, 32),
+            (zelda3_palette::Bank::Main, 0),
+        );
         if self
             .game_state
             .display
@@ -969,7 +975,10 @@ impl ZeldaState {
 
     pub(super) fn GameOver_ResituateLink(&mut self) {
         self.PaletteFilter_RestoreBGAdditiveStrict();
-        self.copy_color((zelda3_palette::Bank::Main, 32), (zelda3_palette::Bank::Main, 0));
+        self.copy_color(
+            (zelda3_palette::Bank::Main, 32),
+            (zelda3_palette::Bank::Main, 0),
+        );
         if self.game_state.display.palette_filter.countdown() != 32 {
             return;
         }

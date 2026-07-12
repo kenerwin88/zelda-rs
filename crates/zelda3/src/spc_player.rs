@@ -235,6 +235,162 @@ pub struct SpcPlayer {
     pub cutk_always_zero: uint8,
     pub last_written_edl: uint8,
     pub input_ports: [uint8; 4],
+    #[serde(default)]
+    pub semantic_sfx_kof_masks: [uint8; 8],
+    #[serde(default)]
+    pub semantic_sfx_kof_offsets: [uint16; 8],
+    #[serde(default)]
+    pub semantic_sfx_kof_count: uint8,
+    #[serde(default)]
+    pub semantic_raw_kof_masks: [uint8; 32],
+    #[serde(default)]
+    pub semantic_raw_kof_offsets: [uint16; 32],
+    #[serde(default)]
+    pub semantic_raw_kof_count: uint8,
+    #[serde(default)]
+    pub semantic_sfx_kon_masks: [uint8; 8],
+    #[serde(default)]
+    pub semantic_sfx_kon_owned_masks: [uint8; 8],
+    #[serde(default)]
+    pub semantic_sfx_kon_offsets: [uint16; 8],
+    #[serde(default)]
+    pub semantic_sfx_kon_rate_counters: [[uint16; 8]; 8],
+    #[serde(default)]
+    pub semantic_sfx_kon_sources: [[uint8; 8]; 8],
+    #[serde(default)]
+    pub semantic_sfx_kon_adsr1: [[uint8; 8]; 8],
+    #[serde(default)]
+    pub semantic_sfx_kon_adsr2: [[uint8; 8]; 8],
+    #[serde(default)]
+    pub semantic_sfx_kon_gain: [[uint8; 8]; 8],
+    #[serde(default)]
+    pub semantic_sfx_kon_volume_left: [[i8; 8]; 8],
+    #[serde(default)]
+    pub semantic_sfx_kon_volume_right: [[i8; 8]; 8],
+    #[serde(default)]
+    pub semantic_sfx_kon_count: uint8,
+    #[serde(default)]
+    pub semantic_sfx_echo_masks: [uint8; 8],
+    #[serde(default)]
+    pub semantic_sfx_echo_enabled: [bool; 8],
+    #[serde(default)]
+    pub semantic_sfx_echo_offsets: [uint16; 8],
+    #[serde(default)]
+    pub semantic_sfx_echo_count: uint8,
+    #[serde(default)]
+    pub semantic_sfx_pitch_masks: [uint8; 32],
+    #[serde(default)]
+    pub semantic_sfx_pitch_words: [uint16; 32],
+    #[serde(default)]
+    pub semantic_sfx_pitch_offsets: [uint16; 32],
+    #[serde(default)]
+    pub semantic_sfx_pitch_count: uint8,
+    #[serde(default)]
+    pub semantic_voice_pitch_low: [uint8; 8],
+    #[serde(default)]
+    pub semantic_raw_pitch_masks: [uint8; 32],
+    #[serde(default)]
+    pub semantic_raw_pitch_words: [uint16; 32],
+    #[serde(default)]
+    pub semantic_raw_pitch_offsets: [uint16; 32],
+    #[serde(default)]
+    pub semantic_raw_pitch_masks_hi: [uint8; 32],
+    #[serde(default)]
+    pub semantic_raw_pitch_words_hi: [uint16; 32],
+    #[serde(default)]
+    pub semantic_raw_pitch_offsets_hi: [uint16; 32],
+    #[serde(default)]
+    pub semantic_raw_pitch_masks_hi2: [uint8; 32],
+    #[serde(default)]
+    pub semantic_raw_pitch_words_hi2: [uint16; 32],
+    #[serde(default)]
+    pub semantic_raw_pitch_offsets_hi2: [uint16; 32],
+    #[serde(default)]
+    pub semantic_raw_pitch_masks_hi3: [uint8; 32],
+    #[serde(default)]
+    pub semantic_raw_pitch_words_hi3: [uint16; 32],
+    #[serde(default)]
+    pub semantic_raw_pitch_offsets_hi3: [uint16; 32],
+    #[serde(default)]
+    pub semantic_raw_pitch_count: uint8,
+    #[serde(default)]
+    pub semantic_sfx_volume_masks: [uint8; 32],
+    #[serde(default)]
+    pub semantic_sfx_volume_left: [i8; 32],
+    #[serde(default)]
+    pub semantic_sfx_volume_right: [i8; 32],
+    #[serde(default)]
+    pub semantic_sfx_volume_offsets: [uint16; 32],
+    #[serde(default)]
+    pub semantic_sfx_volume_count: uint8,
+    #[serde(default)]
+    pub semantic_voice_volume_left: [i8; 8],
+    #[serde(default)]
+    pub semantic_voice_volume_right: [i8; 8],
+    #[serde(default)]
+    pub semantic_raw_volume_masks: [uint8; 32],
+    #[serde(default)]
+    pub semantic_raw_volume_left: [i8; 32],
+    #[serde(default)]
+    pub semantic_raw_volume_right: [i8; 32],
+    #[serde(default)]
+    pub semantic_raw_volume_offsets: [uint16; 32],
+    #[serde(default)]
+    pub semantic_raw_volume_count: uint8,
+    #[serde(default)]
+    pub semantic_raw_envelope_masks: [uint8; 32],
+    #[serde(default)]
+    pub semantic_raw_envelope_registers: [uint8; 32],
+    #[serde(default)]
+    pub semantic_raw_envelope_values: [uint8; 32],
+    #[serde(default)]
+    pub semantic_raw_envelope_offsets: [uint16; 32],
+    #[serde(default)]
+    pub semantic_raw_envelope_count: uint8,
+    #[serde(default)]
+    pub semantic_voice_sources: [uint8; 8],
+    #[serde(default)]
+    pub semantic_voice_adsr1: [uint8; 8],
+    #[serde(default)]
+    pub semantic_voice_adsr2: [uint8; 8],
+    #[serde(default)]
+    pub semantic_voice_gain: [uint8; 8],
+    #[serde(default)]
+    pub semantic_sfx_setup_masks: [uint8; 8],
+    #[serde(default)]
+    pub semantic_sfx_setup_sources: [uint8; 8],
+    #[serde(default)]
+    pub semantic_sfx_setup_adsr1: [uint8; 8],
+    #[serde(default)]
+    pub semantic_sfx_setup_adsr2: [uint8; 8],
+    #[serde(default)]
+    pub semantic_sfx_setup_gain: [uint8; 8],
+    #[serde(default)]
+    pub semantic_sfx_setup_offsets: [uint16; 8],
+    #[serde(default)]
+    pub semantic_sfx_setup_count: uint8,
+    #[serde(default)]
+    pub semantic_echo_enable_mask: uint8,
+    #[serde(default)]
+    pub semantic_echo_enable_frame_start: uint8,
+    #[serde(default)]
+    pub semantic_echo_enable_values: [uint8; 16],
+    #[serde(default)]
+    pub semantic_echo_enable_offsets: [uint16; 16],
+    #[serde(default)]
+    pub semantic_echo_enable_count: uint8,
+    #[serde(default)]
+    pub semantic_echo_volume_registers: [uint8; 32],
+    #[serde(default)]
+    pub semantic_echo_volume_values: [uint8; 32],
+    #[serde(default)]
+    pub semantic_echo_volume_offsets: [uint16; 32],
+    #[serde(default)]
+    pub semantic_echo_volume_count: uint8,
+    pub semantic_global_registers: [uint8; 32],
+    pub semantic_global_values: [uint8; 32],
+    pub semantic_global_offsets: [uint16; 32],
+    pub semantic_global_count: uint8,
     pub channel: [Channel; 8],
     #[serde(with = "serde_big_array::BigArray")]
     pub ram: [uint8; 65536],
@@ -318,6 +474,86 @@ impl Default for SpcPlayer {
             cutk_always_zero: 0,
             last_written_edl: 0,
             input_ports: [0; 4],
+            semantic_sfx_kof_masks: [0; 8],
+            semantic_sfx_kof_offsets: [0; 8],
+            semantic_sfx_kof_count: 0,
+            semantic_raw_kof_masks: [0; 32],
+            semantic_raw_kof_offsets: [0; 32],
+            semantic_raw_kof_count: 0,
+            semantic_sfx_kon_masks: [0; 8],
+            semantic_sfx_kon_owned_masks: [0; 8],
+            semantic_sfx_kon_offsets: [0; 8],
+            semantic_sfx_kon_rate_counters: [[0; 8]; 8],
+            semantic_sfx_kon_sources: [[0; 8]; 8],
+            semantic_sfx_kon_adsr1: [[0; 8]; 8],
+            semantic_sfx_kon_adsr2: [[0; 8]; 8],
+            semantic_sfx_kon_gain: [[0; 8]; 8],
+            semantic_sfx_kon_volume_left: [[0; 8]; 8],
+            semantic_sfx_kon_volume_right: [[0; 8]; 8],
+            semantic_sfx_kon_count: 0,
+            semantic_sfx_echo_masks: [0; 8],
+            semantic_sfx_echo_enabled: [false; 8],
+            semantic_sfx_echo_offsets: [0; 8],
+            semantic_sfx_echo_count: 0,
+            semantic_sfx_pitch_masks: [0; 32],
+            semantic_sfx_pitch_words: [0; 32],
+            semantic_sfx_pitch_offsets: [0; 32],
+            semantic_sfx_pitch_count: 0,
+            semantic_voice_pitch_low: [0; 8],
+            semantic_raw_pitch_masks: [0; 32],
+            semantic_raw_pitch_words: [0; 32],
+            semantic_raw_pitch_offsets: [0; 32],
+            semantic_raw_pitch_masks_hi: [0; 32],
+            semantic_raw_pitch_words_hi: [0; 32],
+            semantic_raw_pitch_offsets_hi: [0; 32],
+            semantic_raw_pitch_masks_hi2: [0; 32],
+            semantic_raw_pitch_words_hi2: [0; 32],
+            semantic_raw_pitch_offsets_hi2: [0; 32],
+            semantic_raw_pitch_masks_hi3: [0; 32],
+            semantic_raw_pitch_words_hi3: [0; 32],
+            semantic_raw_pitch_offsets_hi3: [0; 32],
+            semantic_raw_pitch_count: 0,
+            semantic_sfx_volume_masks: [0; 32],
+            semantic_sfx_volume_left: [0; 32],
+            semantic_sfx_volume_right: [0; 32],
+            semantic_sfx_volume_offsets: [0; 32],
+            semantic_sfx_volume_count: 0,
+            semantic_voice_volume_left: [0; 8],
+            semantic_voice_volume_right: [0; 8],
+            semantic_raw_volume_masks: [0; 32],
+            semantic_raw_volume_left: [0; 32],
+            semantic_raw_volume_right: [0; 32],
+            semantic_raw_volume_offsets: [0; 32],
+            semantic_raw_volume_count: 0,
+            semantic_raw_envelope_masks: [0; 32],
+            semantic_raw_envelope_registers: [0; 32],
+            semantic_raw_envelope_values: [0; 32],
+            semantic_raw_envelope_offsets: [0; 32],
+            semantic_raw_envelope_count: 0,
+            semantic_voice_sources: [0; 8],
+            semantic_voice_adsr1: [0; 8],
+            semantic_voice_adsr2: [0; 8],
+            semantic_voice_gain: [0; 8],
+            semantic_sfx_setup_masks: [0; 8],
+            semantic_sfx_setup_sources: [0; 8],
+            semantic_sfx_setup_adsr1: [0; 8],
+            semantic_sfx_setup_adsr2: [0; 8],
+            semantic_sfx_setup_gain: [0; 8],
+            semantic_sfx_setup_offsets: [0; 8],
+            semantic_sfx_setup_count: 0,
+            semantic_echo_enable_mask: 0,
+            semantic_echo_enable_frame_start: 0,
+            semantic_echo_enable_values: [0; 16],
+            semantic_echo_enable_offsets: [0; 16],
+            semantic_echo_enable_count: 0,
+            semantic_echo_volume_registers: [0; 32],
+            semantic_echo_volume_values: [0; 32],
+            semantic_echo_volume_offsets: [0; 32],
+            semantic_echo_volume_count: 0,
+            semantic_global_registers: [0; 32],
+            semantic_global_values: [0; 32],
+            semantic_global_offsets: [0; 32],
+            semantic_global_count: 0,
             channel: std::array::from_fn(|i| Channel {
                 index: i as uint8,
                 ..Channel::default()
@@ -721,6 +957,13 @@ pub fn spc_player_save_dsp_c_saveload(p: *const SpcPlayer) -> Vec<uint8> {
         .unwrap_or_else(|| vec![0; snes::apu::DSP_SAVELOAD_SIZE])
 }
 
+pub fn spc_player_dsp_debug_voice_samples(p: *const SpcPlayer) -> [Vec<i16>; 8] {
+    unsafe { p.as_ref() }
+        .and_then(|p_ref| unsafe { p_ref.dsp.as_ref() })
+        .map(|dsp| dsp.core.debug_voice_samples.clone())
+        .unwrap_or_else(|| std::array::from_fn(|_| Vec::new()))
+}
+
 pub fn spc_player_load_dsp_c_saveload(p: *mut SpcPlayer, data: &[uint8]) -> Result<(), String> {
     let Some(p_ref) = (unsafe { p.as_mut() }) else {
         return Ok(());
@@ -742,6 +985,218 @@ fn not_implemented() -> ! {
 
 fn dsp_write(p: *mut SpcPlayer, reg: uint8_t, value: uint8) {
     let p = unsafe { &mut *p };
+    let global_reg = reg & 0x7f;
+    let global_changed =
+        p.dsp.is_null() || unsafe { (&(*p.dsp).core.ram)[usize::from(global_reg)] != value };
+    if global_changed
+        && (matches!(
+            global_reg,
+            0x0c | 0x1c | 0x0d | 0x2d | 0x3d | 0x6c | 0x6d | 0x7d
+        ) || global_reg & 0x0f == 0x0f)
+    {
+        let event_index = usize::from(p.semantic_global_count);
+        if event_index < p.semantic_global_registers.len() {
+            p.semantic_global_registers[event_index] = global_reg;
+            p.semantic_global_values[event_index] = value;
+            p.semantic_global_offsets[event_index] = if p.dsp.is_null() {
+                0
+            } else {
+                unsafe { (*p.dsp).sampleOffset.max(0) as u16 }
+            };
+            p.semantic_global_count += 1;
+        }
+    }
+    if reg & 0x7f == EON {
+        p.semantic_echo_enable_mask = value;
+        let event_index = usize::from(p.semantic_echo_enable_count);
+        if event_index < p.semantic_echo_enable_values.len() {
+            p.semantic_echo_enable_values[event_index] = value;
+            p.semantic_echo_enable_offsets[event_index] = if p.dsp.is_null() {
+                0
+            } else {
+                unsafe { (*p.dsp).sampleOffset.max(0) as u16 }
+            };
+            p.semantic_echo_enable_count += 1;
+        }
+    }
+    if matches!(reg & 0x7f, EVOLL | EVOLR) {
+        let event_index = usize::from(p.semantic_echo_volume_count);
+        if event_index < p.semantic_echo_volume_registers.len() {
+            p.semantic_echo_volume_registers[event_index] = reg & 0x7f;
+            p.semantic_echo_volume_values[event_index] = value;
+            p.semantic_echo_volume_offsets[event_index] = if p.dsp.is_null() {
+                0
+            } else {
+                unsafe { (*p.dsp).sampleOffset.max(0) as u16 }
+            };
+            p.semantic_echo_volume_count += 1;
+        }
+    }
+    if reg < 0x80 {
+        let voice = usize::from(reg >> 4);
+        match reg & 0x0f {
+            V0VOLL => p.semantic_voice_volume_left[voice] = value as i8,
+            V0VOLR => {
+                p.semantic_voice_volume_right[voice] = value as i8;
+                let mask = 1 << voice;
+                let left = p.semantic_voice_volume_left[voice];
+                let right = value as i8;
+                let duplicate = (0..usize::from(p.semantic_raw_volume_count))
+                    .rev()
+                    .find(|&index| p.semantic_raw_volume_masks[index] == mask)
+                    .is_some_and(|index| {
+                        p.semantic_raw_volume_left[index] == left
+                            && p.semantic_raw_volume_right[index] == right
+                    });
+                if !duplicate {
+                    let event_index = usize::from(p.semantic_raw_volume_count);
+                    if event_index < p.semantic_raw_volume_masks.len() {
+                        p.semantic_raw_volume_masks[event_index] = mask;
+                        p.semantic_raw_volume_left[event_index] = left;
+                        p.semantic_raw_volume_right[event_index] = right;
+                        p.semantic_raw_volume_offsets[event_index] = if p.dsp.is_null() {
+                            0
+                        } else {
+                            unsafe { (*p.dsp).sampleOffset.max(0) as u16 }
+                        };
+                        p.semantic_raw_volume_count += 1;
+                    }
+                }
+            }
+            V0PITCHL => p.semantic_voice_pitch_low[voice] = value,
+            V0PITCHH => {
+                let event_index = usize::from(p.semantic_raw_pitch_count);
+                if event_index < 128 {
+                    let pitch_word = u16::from(p.semantic_voice_pitch_low[voice])
+                        | (u16::from(value & 0x3f) << 8);
+                    let offset = if p.dsp.is_null() {
+                        0
+                    } else {
+                        unsafe { (*p.dsp).sampleOffset.max(0) as u16 }
+                    };
+                    if event_index < 32 {
+                        p.semantic_raw_pitch_masks[event_index] = 1 << voice;
+                        p.semantic_raw_pitch_words[event_index] = pitch_word;
+                        p.semantic_raw_pitch_offsets[event_index] = offset;
+                    } else if event_index < 64 {
+                        let high_index = event_index - 32;
+                        p.semantic_raw_pitch_masks_hi[high_index] = 1 << voice;
+                        p.semantic_raw_pitch_words_hi[high_index] = pitch_word;
+                        p.semantic_raw_pitch_offsets_hi[high_index] = offset;
+                    } else if event_index < 96 {
+                        let high_index = event_index - 64;
+                        p.semantic_raw_pitch_masks_hi2[high_index] = 1 << voice;
+                        p.semantic_raw_pitch_words_hi2[high_index] = pitch_word;
+                        p.semantic_raw_pitch_offsets_hi2[high_index] = offset;
+                    } else {
+                        let high_index = event_index - 96;
+                        p.semantic_raw_pitch_masks_hi3[high_index] = 1 << voice;
+                        p.semantic_raw_pitch_words_hi3[high_index] = pitch_word;
+                        p.semantic_raw_pitch_offsets_hi3[high_index] = offset;
+                    }
+                    p.semantic_raw_pitch_count += 1;
+                }
+            }
+            V0SRCN => p.semantic_voice_sources[voice] = value,
+            V0ADSR1 => p.semantic_voice_adsr1[voice] = value,
+            V0ADSR2 => p.semantic_voice_adsr2[voice] = value,
+            V0GAIN => {
+                p.semantic_voice_gain[voice] = value;
+                let event_index = usize::from(p.semantic_sfx_setup_count);
+                if event_index < p.semantic_sfx_setup_masks.len() {
+                    p.semantic_sfx_setup_masks[event_index] = 1 << voice;
+                    p.semantic_sfx_setup_sources[event_index] = p.semantic_voice_sources[voice];
+                    p.semantic_sfx_setup_adsr1[event_index] = p.semantic_voice_adsr1[voice];
+                    p.semantic_sfx_setup_adsr2[event_index] = p.semantic_voice_adsr2[voice];
+                    p.semantic_sfx_setup_gain[event_index] = value;
+                    p.semantic_sfx_setup_offsets[event_index] = if p.dsp.is_null() {
+                        0
+                    } else {
+                        unsafe { (*p.dsp).sampleOffset.max(0) as u16 }
+                    };
+                    p.semantic_sfx_setup_count += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    if reg & 0x7f == KON {
+        let sfx_mask = value;
+        if sfx_mask != 0 {
+            let event_index = usize::from(p.semantic_sfx_kon_count);
+            if event_index < p.semantic_sfx_kon_masks.len() {
+                p.semantic_sfx_kon_masks[event_index] = sfx_mask;
+                p.semantic_sfx_kon_owned_masks[event_index] = value & p.is_chan_on;
+                p.semantic_sfx_kon_offsets[event_index] = if p.dsp.is_null() {
+                    0
+                } else {
+                    unsafe { (*p.dsp).sampleOffset.max(0) as u16 }
+                };
+                if !p.dsp.is_null() {
+                    for voice in 0..8 {
+                        p.semantic_sfx_kon_rate_counters[event_index][voice] =
+                            unsafe { (*p.dsp).core.channel[voice].rate_counter };
+                        let base = voice * 0x10;
+                        p.semantic_sfx_kon_sources[event_index][voice] =
+                            unsafe { (&(*p.dsp).core.ram)[base + 4] };
+                        p.semantic_sfx_kon_adsr1[event_index][voice] =
+                            unsafe { (&(*p.dsp).core.ram)[base + 5] };
+                        p.semantic_sfx_kon_adsr2[event_index][voice] =
+                            unsafe { (&(*p.dsp).core.ram)[base + 6] };
+                        p.semantic_sfx_kon_gain[event_index][voice] =
+                            unsafe { (&(*p.dsp).core.ram)[base + 7] };
+                        p.semantic_sfx_kon_volume_left[event_index][voice] =
+                            unsafe { (*p.dsp).core.channel[voice].volume_l };
+                        p.semantic_sfx_kon_volume_right[event_index][voice] =
+                            unsafe { (*p.dsp).core.channel[voice].volume_r };
+                    }
+                }
+                p.semantic_sfx_kon_count += 1;
+            }
+        }
+    }
+    if reg < 0x80 && matches!(reg & 0x0f, 5 | 6 | 7) {
+        let mask = 1 << (reg >> 4);
+        let register = reg & 0x0f;
+        let sample_offset = if p.dsp.is_null() {
+            0
+        } else {
+            unsafe { (*p.dsp).sampleOffset.max(0) as u16 }
+        };
+        let existing = (0..usize::from(p.semantic_raw_envelope_count)).find(|&index| {
+            p.semantic_raw_envelope_masks[index] == mask
+                && p.semantic_raw_envelope_registers[index] == register
+                && p.semantic_raw_envelope_offsets[index] == sample_offset
+        });
+        if let Some(event_index) = existing {
+            // Only the final value at a DSP sample survives. Setup code may
+            // clear every voice register and immediately replace it before a
+            // shared KON; retaining both would replay the staging value after
+            // the semantic key-on.
+            p.semantic_raw_envelope_values[event_index] = value;
+        } else {
+            let event_index = usize::from(p.semantic_raw_envelope_count);
+            if event_index < p.semantic_raw_envelope_masks.len() {
+                p.semantic_raw_envelope_masks[event_index] = mask;
+                p.semantic_raw_envelope_registers[event_index] = register;
+                p.semantic_raw_envelope_values[event_index] = value;
+                p.semantic_raw_envelope_offsets[event_index] = sample_offset;
+                p.semantic_raw_envelope_count += 1;
+            }
+        }
+    }
+    if reg & 0x7f == KOF && value != 0 {
+        let event_index = usize::from(p.semantic_raw_kof_count);
+        if event_index < p.semantic_raw_kof_masks.len() {
+            p.semantic_raw_kof_masks[event_index] = value;
+            p.semantic_raw_kof_offsets[event_index] = if p.dsp.is_null() {
+                0
+            } else {
+                unsafe { (*p.dsp).sampleOffset.max(0) as u16 }
+            };
+            p.semantic_raw_kof_count += 1;
+        }
+    }
     if let Some(hist) = unsafe { p.reg_write_history.as_mut() } {
         if hist.count < 256 {
             hist.addr[hist.count] = reg;
@@ -826,6 +1281,7 @@ fn write_volume_to_dsp(p: *mut SpcPlayer, c: *mut Channel, mut volume: uint16) {
     if p_ref.is_chan_on & p_ref.cur_chan_bit != 0 {
         return;
     }
+    let mut stereo = [0u8; 2];
     for i in 0..2u8 {
         let j = (volume >> 8) as usize;
         let mut t = if j >= 21 {
@@ -846,8 +1302,20 @@ fn write_volume_to_dsp(p: *mut SpcPlayer, c: *mut Channel, mut volume: uint16) {
         if (c_ref.pan_flag_with_phase_invert << i) & 0x80 != 0 {
             t = 0u8.wrapping_sub(t);
         }
+        stereo[usize::from(i)] = t;
         dsp_write(p, V0VOLL + i + c_ref.index * 16, t);
         volume = 0x1400u16.wrapping_sub(volume);
+    }
+    if c_ref.sfx_which_sound != 0 {
+        let event_index = usize::from(p_ref.semantic_sfx_volume_count);
+        if event_index < p_ref.semantic_sfx_volume_masks.len() {
+            p_ref.semantic_sfx_volume_masks[event_index] = 1 << c_ref.index;
+            p_ref.semantic_sfx_volume_left[event_index] = stereo[0] as i8;
+            p_ref.semantic_sfx_volume_right[event_index] = stereo[1] as i8;
+            p_ref.semantic_sfx_volume_offsets[event_index] =
+                unsafe { (*p_ref.dsp).sampleOffset.max(0) as u16 };
+            p_ref.semantic_sfx_volume_count += 1;
+        }
     }
 }
 
@@ -878,6 +1346,16 @@ fn write_pitch(p: *mut SpcPlayer, c: *mut Channel, mut pitch: uint16) {
     t = (((c_ref.instrument_pitch_base as u32) * (t as u32)) >> 8) as uint16;
     let p_ref = unsafe { &mut *p };
     if p_ref.cur_chan_bit & p_ref.is_chan_on == 0 {
+        if c_ref.sfx_which_sound != 0 {
+            let event_index = usize::from(p_ref.semantic_sfx_pitch_count);
+            if event_index < p_ref.semantic_sfx_pitch_masks.len() {
+                p_ref.semantic_sfx_pitch_masks[event_index] = 1 << c_ref.index;
+                p_ref.semantic_sfx_pitch_words[event_index] = t;
+                p_ref.semantic_sfx_pitch_offsets[event_index] =
+                    unsafe { (*p_ref.dsp).sampleOffset.max(0) as u16 };
+                p_ref.semantic_sfx_pitch_count += 1;
+            }
+        }
         let reg = c_ref.index * 16;
         dsp_write(p, reg + V0PITCHL, t as uint8);
         dsp_write(p, reg + V0PITCHH, (t >> 8) as uint8);
@@ -1639,9 +2117,23 @@ fn sfx_turn_off_channel(p: *mut SpcPlayer, c: *mut Channel) {
     channel_set_instrument(p, c, c_ref.instrument_id);
     if p_ref.echo_channels & p_ref.current_bit != 0 && p_ref.reg_EON & p_ref.current_bit == 0 {
         p_ref.reg_EON |= p_ref.current_bit;
+        record_semantic_sfx_echo(p, p_ref.current_bit, true);
         dsp_write(p, EON, p_ref.reg_EON);
         p_ref.sfx_channels_echo_mask2 &= !p_ref.current_bit;
     }
+}
+
+fn record_semantic_sfx_echo(p: *mut SpcPlayer, mask: u8, enabled: bool) {
+    let p_ref = unsafe { &mut *p };
+    let event_index = usize::from(p_ref.semantic_sfx_echo_count);
+    if event_index >= p_ref.semantic_sfx_echo_masks.len() {
+        return;
+    }
+    p_ref.semantic_sfx_echo_masks[event_index] = mask;
+    p_ref.semantic_sfx_echo_enabled[event_index] = enabled;
+    p_ref.semantic_sfx_echo_offsets[event_index] =
+        unsafe { (*p_ref.dsp).sampleOffset.max(0) as u16 };
+    p_ref.semantic_sfx_echo_count += 1;
 }
 
 fn write_key_on(p: *mut SpcPlayer, bit: uint8) {
@@ -1692,6 +2184,7 @@ fn sfx_maybe_disable_echo(p: *mut SpcPlayer) {
     if p_ref.port_to_snes[0] & 0x10 == 0 || p_ref.current_bit & p_ref.sfx_channels_echo_mask2 != 0 {
         if p_ref.current_bit & p_ref.reg_EON != 0 {
             p_ref.reg_EON ^= p_ref.current_bit;
+            record_semantic_sfx_echo(p, p_ref.current_bit, false);
             dsp_write(p, EON, p_ref.reg_EON);
         }
     }
@@ -1821,8 +2314,21 @@ fn sfx_note_continue(p: *mut SpcPlayer, c: *mut Channel) {
         p_ref.cur_chan_bit = 0;
         write_pitch(p, c, c_ref.pitch);
     } else if c_ref.sfx_note_length_left == 2 {
+        record_semantic_sfx_kof(p, p_ref.current_bit);
         dsp_write(p, KOF, p_ref.current_bit);
     }
+}
+
+fn record_semantic_sfx_kof(p: *mut SpcPlayer, mask: u8) {
+    let p_ref = unsafe { &mut *p };
+    let event_index = usize::from(p_ref.semantic_sfx_kof_count);
+    if event_index >= p_ref.semantic_sfx_kof_masks.len() {
+        return;
+    }
+    p_ref.semantic_sfx_kof_masks[event_index] = mask;
+    p_ref.semantic_sfx_kof_offsets[event_index] =
+        unsafe { (*p_ref.dsp).sampleOffset.max(0) as u16 };
+    p_ref.semantic_sfx_kof_count += 1;
 }
 
 fn port1_play_inner(p: *mut SpcPlayer) {
@@ -1833,6 +2339,7 @@ fn port1_play_inner(p: *mut SpcPlayer) {
     p_ref.channel[7].pitch_envelope_num_ticks = 0;
     p_ref.port1_active = 0x80;
     p_ref.is_chan_on |= 0x80;
+    record_semantic_sfx_kof(p, 0x80);
     dsp_write(p, KOF, 0x80);
     p_ref.new_value_from_snes[1] = p_ref.ram[0x1800 + p_ref.new_value_from_snes[1] as usize - 1];
     if p_ref.new_value_from_snes[1] == 0 {
@@ -1843,6 +2350,7 @@ fn port1_play_inner(p: *mut SpcPlayer) {
     p_ref.channel[6].pitch_envelope_num_ticks = 0;
     p_ref.port1_active = 0x40;
     p_ref.is_chan_on |= 0x40;
+    record_semantic_sfx_kof(p, 0x40);
     dsp_write(p, KOF, 0x40);
     p_ref.port1_active = 0xc0;
     p_ref.sfx_channels_echo_mask2 |= 0xc0;
@@ -2014,6 +2522,7 @@ fn port2_handle_cmd(p: *mut SpcPlayer) {
         c_ref.sfx_arr_countdown = 3;
         c_ref.pitch_envelope_num_ticks = 0;
         p_ref.port2_active |= p_ref.current_bit;
+        record_semantic_sfx_kof(p, p_ref.current_bit);
         dsp_write(p, KOF, p_ref.current_bit);
         p_ref.new_value_from_snes[2] = p_ref.ram[0x189e + c_ref.sfx_which_sound as usize - 1];
     }
@@ -2070,6 +2579,7 @@ fn port3_handle_cmd(p: *mut SpcPlayer) {
         c_ref.sfx_arr_countdown = 3;
         c_ref.pitch_envelope_num_ticks = 0;
         p_ref.port3_active |= p_ref.current_bit;
+        record_semantic_sfx_kof(p, p_ref.current_bit);
         dsp_write(p, KOF, p_ref.current_bit);
         p_ref.new_value_from_snes[3] = p_ref.ram[0x199a + c_ref.sfx_which_sound as usize - 1];
     }
@@ -2285,6 +2795,20 @@ pub fn spc_player_copy_variables_from_ram(p: *mut SpcPlayer) {
 
 pub fn spc_player_generate_samples(p: *mut SpcPlayer) {
     let p_ref = unsafe { &mut *p };
+    p_ref.semantic_sfx_kof_count = 0;
+    p_ref.semantic_raw_kof_count = 0;
+    p_ref.semantic_sfx_kon_count = 0;
+    p_ref.semantic_sfx_echo_count = 0;
+    p_ref.semantic_sfx_pitch_count = 0;
+    p_ref.semantic_raw_pitch_count = 0;
+    p_ref.semantic_sfx_volume_count = 0;
+    p_ref.semantic_raw_volume_count = 0;
+    p_ref.semantic_raw_envelope_count = 0;
+    p_ref.semantic_sfx_setup_count = 0;
+    p_ref.semantic_echo_enable_frame_start = p_ref.semantic_echo_enable_mask;
+    p_ref.semantic_echo_enable_count = 0;
+    p_ref.semantic_echo_volume_count = 0;
+    p_ref.semantic_global_count = 0;
     assert!(p_ref.timer_cycles <= 64);
     assert!(!p_ref.dsp.is_null());
     assert!(unsafe { (*p_ref.dsp).sampleOffset } <= 534);

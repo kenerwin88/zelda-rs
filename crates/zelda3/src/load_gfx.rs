@@ -2194,11 +2194,7 @@ impl ZeldaState {
     }
 
     pub(super) fn PaletteFilter_RestoreSubtractive(&mut self, from: usize, to: usize) {
-        self.transform_main_range(
-            from >> 1,
-            to >> 1,
-            PaletteTransform::RestoreSubtractiveStep,
-        );
+        self.transform_main_range(from >> 1, to >> 1, PaletteTransform::RestoreSubtractiveStep);
     }
 
     pub(super) fn PaletteFilter_InitializeWhiteFilter(&mut self) {
@@ -3514,5 +3510,4 @@ impl ZeldaState {
     pub(super) fn palette_revert_translucency_swap(&mut self) {
         self.palette_set_translucency_swap(false);
     }
-
 }

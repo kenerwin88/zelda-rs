@@ -284,11 +284,8 @@ impl LiveWindowPixelParity {
             );
             process::exit(1);
         };
-        let report = renderer::compare_gpu_render_frame_bgra_to_rgba(
-            self.frame,
-            &self.cpu_bgra,
-            &live_rgba,
-        );
+        let report =
+            renderer::compare_gpu_render_frame_bgra_to_rgba(self.frame, &self.cpu_bgra, &live_rgba);
         if let Some(line) = report.divergence_line() {
             eprintln!("live-window-pixel-parity {line}");
             if let Some(diff) = report.diff() {
@@ -394,7 +391,11 @@ fn cgram_match_indices(cgram: &[u16], rgb: (u8, u8, u8)) -> String {
             let r5 = (color & 0x1f) as u8;
             let g5 = ((color >> 5) & 0x1f) as u8;
             let b5 = ((color >> 10) & 0x1f) as u8;
-            let decoded = ((r5 << 3) | (r5 >> 2), (g5 << 3) | (g5 >> 2), (b5 << 3) | (b5 >> 2));
+            let decoded = (
+                (r5 << 3) | (r5 >> 2),
+                (g5 << 3) | (g5 >> 2),
+                (b5 << 3) | (b5 >> 2),
+            );
             (decoded == rgb).then_some(format!("{index:02x}:{color:04x}"))
         })
         .take(8)
@@ -427,8 +428,10 @@ fn trace_live_asset_bg_pixel(
         &assets.bg_cells,
         &assets.sprite_cells,
     );
-    let (vram_frame, vram_bg_cells) = renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
-    let (vram_sprite_cells, vram_sprites) = renderer::modern_extract::extract_modern_sprites_from_vram(&gpu_frame);
+    let (vram_frame, vram_bg_cells) =
+        renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
+    let (vram_sprite_cells, vram_sprites) =
+        renderer::modern_extract::extract_modern_sprites_from_vram(&gpu_frame);
     let mut vram_frame_for_render = vram_frame.clone();
     vram_frame_for_render.index_sprites = vram_sprites;
     let vram_rgba = renderer::modern_software::render_modern_frame_full(
@@ -439,11 +442,21 @@ fn trace_live_asset_bg_pixel(
     let pixel_offset = (y as usize * 256 + x as usize) * 4;
     let software_pixel = software_rgba
         .get(pixel_offset..pixel_offset + 4)
-        .map(|px| format!("source_software_rgba=({},{},{},{})", px[0], px[1], px[2], px[3]))
+        .map(|px| {
+            format!(
+                "source_software_rgba=({},{},{},{})",
+                px[0], px[1], px[2], px[3]
+            )
+        })
         .unwrap_or_else(|| "software_rgba=oob".to_string());
     let vram_pixel = vram_rgba
         .get(pixel_offset..pixel_offset + 4)
-        .map(|px| format!("vram_software_rgba=({},{},{},{})", px[0], px[1], px[2], px[3]))
+        .map(|px| {
+            format!(
+                "vram_software_rgba=({},{},{},{})",
+                px[0], px[1], px[2], px[3]
+            )
+        })
         .unwrap_or_else(|| "vram_software_rgba=oob".to_string());
     let Some(x) = i16::try_from(x).ok() else {
         return "x-out-of-range".to_string();
@@ -527,7 +540,12 @@ fn trace_live_asset_bg_pixel(
         for (_, inst) in nearest.into_iter().take(6) {
             traces.push(format!(
                 "nearest_bg2 xy=({}, {}) cell={} pal={} key=0x{:016x} priority={}",
-                inst.screen_x, inst.screen_y, inst.cell_id, inst.palette, inst.source_key, inst.priority
+                inst.screen_x,
+                inst.screen_y,
+                inst.cell_id,
+                inst.palette,
+                inst.source_key,
+                inst.priority
             ));
         }
     }

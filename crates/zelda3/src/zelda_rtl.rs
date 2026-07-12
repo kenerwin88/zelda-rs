@@ -1714,7 +1714,11 @@ impl ZeldaState {
     /// The committed provenance-clean CGRAM mirror for the renderer (the
     /// zero-CGRAM color source; see `zelda3_palette`).
     pub fn cgram_provenance_snapshot(&self) -> zelda3_palette::CgramProvenanceSnapshot {
-        self.game_state.display.palette_provenance.0.cgram_snapshot()
+        self.game_state
+            .display
+            .palette_provenance
+            .0
+            .cgram_snapshot()
     }
 
     /// Audit the mirror's committed CGRAM image (what the renderer substitutes) against the live
@@ -6179,8 +6183,7 @@ impl ZeldaState {
         // full-state snapshot restore, which bulk-writes the palette shadow
         // outside the bridge; `load_snes_state` reconstitutes the mirror after
         // resync to cover it.
-        let palette_provenance =
-            std::mem::take(&mut self.game_state.display.palette_provenance);
+        let palette_provenance = std::mem::take(&mut self.game_state.display.palette_provenance);
         self.game_state = GameState::load_from_ram(&self.ram);
         self.game_state.display.palette_provenance = palette_provenance;
     }

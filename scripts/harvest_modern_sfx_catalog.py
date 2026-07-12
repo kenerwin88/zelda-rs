@@ -13,6 +13,7 @@ This is the orchestration layer above `extract_modern_sfx_catalog.py`:
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import subprocess
@@ -31,6 +32,8 @@ DEFAULT_SAVE = ROOT / "saves" / "zelda3-combined-route.sav"
 DEFAULT_RUST_BIN = ROOT / "target" / "release" / "zelda3"
 DEFAULT_FINAL_FRAME = 1_073_092
 DEFAULT_OUTPUT_DIR = ROOT / "target" / "modern-sfx-harvest"
+DEFAULT_CHECKPOINT_DIR = ROOT / "target" / "asset-gpu-checkpoints"
+DEFAULT_BISECT_CHECKPOINT_DIR = ROOT / ".cache" / "replay-bisect"
 
 
 class HarvestFailure(RuntimeError):
@@ -46,6 +49,7 @@ def run_replay_trace(
     audio_trace_log: int,
     dsp_writes_frame: int | None = None,
     dsp_writes_frame_range: tuple[int, int] | None = None,
+    load_state: Path | None = None,
 ) -> list[dict]:
     command = [
         str(rust_bin),
@@ -56,6 +60,8 @@ def run_replay_trace(
         "--audio-trace-log",
         str(audio_trace_log),
     ]
+    if load_state is not None:
+        command.extend(["--load-state", str(load_state)])
     env = os.environ.copy()
     env.setdefault("SDL_VIDEODRIVER", "dummy")
     env.setdefault("SDL_AUDIODRIVER", "dummy")
@@ -116,8 +122,24 @@ def read_or_run_broad_trace(args: argparse.Namespace) -> tuple[list[dict], Path]
 def occurrence_focus_frames(
     occurrences: list[extractor.SfxOccurrence],
     max_occurrences: int | None,
+    max_occurrences_per_program: int | None = None,
+    only_programs: set[tuple[int, int]] | None = None,
 ) -> list[extractor.SfxOccurrence]:
-    selected = occurrences
+    selected = [
+        occurrence
+        for occurrence in occurrences
+        if only_programs is None or (occurrence.bank, occurrence.sfx_id) in only_programs
+    ]
+    if max_occurrences_per_program is not None:
+        counts: dict[tuple[int, int], int] = {}
+        limited = []
+        for occurrence in selected:
+            key = (occurrence.bank, occurrence.sfx_id)
+            if counts.get(key, 0) >= max_occurrences_per_program:
+                continue
+            counts[key] = counts.get(key, 0) + 1
+            limited.append(occurrence)
+        selected = limited
     if max_occurrences is not None:
         selected = selected[:max_occurrences]
     return selected
@@ -131,15 +153,35 @@ def focused_trace_path(output_dir: Path, occurrence: extractor.SfxOccurrence) ->
     )
 
 
+def checkpoint_for_frame(checkpoint_dirs: list[Path], frame: int) -> Path | None:
+    candidates: list[tuple[int, Path]] = []
+    prefixes = ("asset-gpu-frame-", "rust-frame-")
+    for checkpoint_dir in checkpoint_dirs:
+        if not checkpoint_dir.is_dir():
+            continue
+        for path in checkpoint_dir.glob("*.sav"):
+            suffix = next(
+                (path.stem.removeprefix(prefix) for prefix in prefixes if path.stem.startswith(prefix)),
+                "",
+            )
+            if suffix.isdigit():
+                checkpoint_frame = int(suffix)
+                if checkpoint_frame <= frame:
+                    candidates.append((checkpoint_frame, path))
+    best = max(candidates, default=None, key=lambda item: item[0])
+    return None if best is None else best[1]
+
+
 def load_or_run_focused_trace(
     args: argparse.Namespace,
     occurrence: extractor.SfxOccurrence,
-) -> tuple[list[dict], Path, bool]:
+) -> tuple[list[dict], Path, bool, Path | None]:
     path = focused_trace_path(args.output_dir, occurrence)
+    checkpoint = checkpoint_for_frame(args.checkpoint_dir, occurrence.frame)
     if path.exists() and not args.force:
-        return extractor.load_trace([path]), path, True
+        return extractor.load_trace([path]), path, True, checkpoint
     if args.skip_focused_runs:
-        return [], path, False
+        return [], path, False, checkpoint
 
     frames = run_replay_trace(
         rust_bin=args.rust_bin,
@@ -148,9 +190,10 @@ def load_or_run_focused_trace(
         frames=occurrence.frame + args.window_frames,
         audio_trace_log=1,
         dsp_writes_frame_range=(occurrence.frame, occurrence.frame + args.window_frames),
+        load_state=checkpoint,
     )
     write_jsonl(path, frames)
-    return frames, path, False
+    return frames, path, False, checkpoint
 
 
 def lift_from_focused_trace(
@@ -212,7 +255,8 @@ def merge_harvested_variants(bank: int, sfx_id: int, variants: list[dict]) -> di
     supported = [
         variant
         for variant in variants
-        if variant["status"] in {"lifted", "ambiguous", "missing_dsp_events", "no_key_on"}
+        if variant["status"]
+        in {"lifted", "ambiguous", "missing_dsp_events", "no_key_on", "context_only"}
     ]
     if supported:
         return extractor.merge_variants(bank, sfx_id, supported)
@@ -227,6 +271,7 @@ def merge_harvested_variants(bank: int, sfx_id: int, variants: list[dict]) -> di
         "first_frames": [variant["first_frame"] for variant in variants],
         "status": variants[0]["status"] if variants else "missing_focused_trace",
         "steps": [],
+        "sequence_provenance": extractor.merge_sequence_provenance(variants),
         "notes": sorted(set(notes)),
     }
 
@@ -247,6 +292,7 @@ def coverage_for(
             1 for program in programs if program["status"] == "missing_dsp_events"
         ),
         "no_key_on": sum(1 for program in programs if program["status"] == "no_key_on"),
+        "context_only": sum(1 for program in programs if program["status"] == "context_only"),
         "missing_focused_trace": sum(
             1 for program in programs if program["status"] == "missing_focused_trace"
         ),
@@ -267,25 +313,41 @@ def harvest(args: argparse.Namespace) -> dict:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     broad_frames, broad_path = read_or_run_broad_trace(args)
     occurrences = extractor.discover_sfx_occurrences(broad_frames)
-    selected = occurrence_focus_frames(occurrences, args.max_occurrences)
-    variants = []
-    focused = []
-
-    for occurrence in selected:
-        frames, path, reused = load_or_run_focused_trace(args, occurrence)
+    only_programs = None
+    if args.only_unknown_programs:
+        only_programs = {
+            (int(bank), int(sfx_id))
+            for frame in broad_frames
+            for bank, sfx_id in frame.get("modern_sfx_unknown_programs") or []
+        }
+    selected = occurrence_focus_frames(
+        occurrences,
+        args.max_occurrences,
+        args.max_occurrences_per_program,
+        only_programs,
+    )
+    def capture(occurrence: extractor.SfxOccurrence) -> tuple[dict, dict]:
+        frames, path, reused, checkpoint = load_or_run_focused_trace(args, occurrence)
         variant = lift_from_focused_trace(frames, occurrence, args.window_frames)
-        variants.append(variant)
-        focused.append(
-            {
-                "frame": occurrence.frame,
-                "bank": occurrence.bank,
-                "id": occurrence.sfx_id,
-                "source": occurrence.source,
-                "path": str(path),
-                "reused": reused,
-                "status": variant["status"],
-            }
-        )
+        return variant, {
+            "frame": occurrence.frame,
+            "bank": occurrence.bank,
+            "id": occurrence.sfx_id,
+            "source": occurrence.source,
+            "path": str(path),
+            "reused": reused,
+            "checkpoint": str(checkpoint) if checkpoint is not None else None,
+            "status": variant["status"],
+            "sequence_provenance": variant.get("sequence_provenance", []),
+        }
+
+    if args.jobs == 1:
+        captured = [capture(occurrence) for occurrence in selected]
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as executor:
+            captured = list(executor.map(capture, selected))
+    variants = [variant for variant, _ in captured]
+    focused = [metadata for _, metadata in captured]
 
     programs = merge_harvested_programs(variants)
     coverage = coverage_for(programs, selected, variants)
@@ -311,15 +373,17 @@ def render_report(result: dict) -> str:
         f"- Lifted: {coverage['lifted']}",
         f"- Gaps: {coverage['gaps']}",
         "",
-        "| Status | Bank | Id | Occurrences | Frames | Notes |",
-        "|---|---:|---:|---:|---|---|",
+        "| Status | Bank | Id | Occurrences | Variants | Sequence links | Frames | Notes |",
+        "|---|---:|---:|---:|---:|---:|---|---|",
     ]
     for program in result["programs"]:
         notes = "; ".join(program.get("notes", []))
         frames = ", ".join(str(frame) for frame in program.get("first_frames", []))
+        sequence_links = len(program.get("sequence_provenance", []))
         lines.append(
             f"| {program['status']} | {program['bank']} | 0x{program['id']:02x} | "
-            f"{program.get('occurrences', 0)} | {frames} | {notes} |"
+            f"{program.get('occurrences', 0)} | {program.get('variant_count', 0)} | "
+            f"{sequence_links} | {frames} | {notes} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -329,6 +393,8 @@ def default_output_paths(args: argparse.Namespace) -> None:
         args.json_out = args.output_dir / "modern-sfx-harvest.json"
     if args.rust_out is None:
         args.rust_out = args.output_dir / "modern-sfx-candidates.rs"
+    if args.module_rust_out is None:
+        args.module_rust_out = args.output_dir / "modern-sfx-catalog-module.rs"
     if args.report_out is None:
         args.report_out = args.output_dir / "modern-sfx-harvest.md"
 
@@ -337,8 +403,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--broad-trace-jsonl", type=Path)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=Path,
+        action="append",
+        help="use the nearest asset-gpu-frame-*.sav at or before each focused command",
+    )
     parser.add_argument("--json-out", type=Path)
     parser.add_argument("--rust-out", type=Path)
+    parser.add_argument("--module-rust-out", type=Path)
     parser.add_argument("--report-out", type=Path)
     parser.add_argument("--rust-bin", type=Path, default=DEFAULT_RUST_BIN)
     parser.add_argument("--rom", type=Path, default=DEFAULT_ROM)
@@ -347,6 +420,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--audio-trace-log", type=int, default=1)
     parser.add_argument("--window-frames", type=int, default=12)
     parser.add_argument("--max-occurrences", type=int)
+    parser.add_argument("--jobs", type=int, default=1)
+    parser.add_argument("--max-occurrences-per-program", type=int)
+    parser.add_argument(
+        "--only-unknown-programs",
+        action="store_true",
+        help="focus only pairs identified by modern_sfx_unknown_programs in the broad trace",
+    )
     parser.add_argument("--force", action="store_true", help="re-run focused traces even when cached traces exist")
     parser.add_argument(
         "--skip-focused-runs",
@@ -363,6 +443,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         parser.error("--window-frames must be greater than zero")
     if args.max_occurrences is not None and args.max_occurrences < 0:
         parser.error("--max-occurrences must be zero or greater")
+    if args.max_occurrences_per_program is not None and args.max_occurrences_per_program <= 0:
+        parser.error("--max-occurrences-per-program must be greater than zero")
+    if args.jobs <= 0:
+        parser.error("--jobs must be greater than zero")
+    if args.checkpoint_dir is None:
+        args.checkpoint_dir = [DEFAULT_CHECKPOINT_DIR, DEFAULT_BISECT_CHECKPOINT_DIR]
     default_output_paths(args)
     return args
 
@@ -382,6 +468,11 @@ def main(argv: list[str] | None = None) -> int:
         extractor.render_rust_catalog(result["programs"]) + "\n",
         encoding="utf-8",
     )
+    args.module_rust_out.parent.mkdir(parents=True, exist_ok=True)
+    args.module_rust_out.write_text(
+        extractor.render_rust_module(result["programs"], "FULL_ROUTE_PROGRAMS"),
+        encoding="utf-8",
+    )
     args.report_out.parent.mkdir(parents=True, exist_ok=True)
     args.report_out.write_text(render_report(result), encoding="utf-8")
 
@@ -393,6 +484,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"json: {args.json_out}")
     print(f"rust: {args.rust_out}")
+    print(f"module rust: {args.module_rust_out}")
     print(f"report: {args.report_out}")
     if args.fail_on_gaps and coverage["gaps"]:
         return 1

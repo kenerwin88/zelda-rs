@@ -624,8 +624,14 @@ mod tests {
                 if expected & 0x001f != aux & 0x001f {
                     expected = expected.wrapping_add(1);
                 }
-                let g =
-                    whirlpool_channel_step_word(main, aux, 0x03e0, 0x20, true, ChannelReference::Aux);
+                let g = whirlpool_channel_step_word(
+                    main,
+                    aux,
+                    0x03e0,
+                    0x20,
+                    true,
+                    ChannelReference::Aux,
+                );
                 let gr =
                     whirlpool_channel_step_word(g, aux, 0x001f, 1, true, ChannelReference::Aux);
                 assert_eq!(gr, expected, "main={main:#06x} aux={aux:#06x}");
@@ -682,11 +688,21 @@ mod tests {
         for &main in &SAMPLE_WORDS {
             for &aux in &SAMPLE_WORDS {
                 let (v, u) = (main, aux);
-                let blue = (v & 0x7c00)
-                    .wrapping_sub(if (v & 0x7c00) != (u & 0x7c00) { 0x0400 } else { 0 });
+                let blue = (v & 0x7c00).wrapping_sub(if (v & 0x7c00) != (u & 0x7c00) {
+                    0x0400
+                } else {
+                    0
+                });
                 let expected = (v & !0x7c00) | blue;
                 assert_eq!(
-                    trinexx_channel_step_word(main, aux, 0x7c00, 0x400, false, ChannelReference::Aux),
+                    trinexx_channel_step_word(
+                        main,
+                        aux,
+                        0x7c00,
+                        0x400,
+                        false,
+                        ChannelReference::Aux
+                    ),
                     expected,
                     "main={main:#06x} aux={aux:#06x}"
                 );
@@ -750,7 +766,11 @@ mod tests {
         let restored: PaletteMirror = bincode::deserialize(&bytes).expect("deserialize mirror");
 
         for bank in [Bank::Main, Bank::Aux, Bank::Backup] {
-            assert_eq!(mirror.bank(bank), restored.bank(bank), "{bank:?} bank differs");
+            assert_eq!(
+                mirror.bank(bank),
+                restored.bank(bank),
+                "{bank:?} bank differs"
+            );
         }
         assert_eq!(mirror.cgram, restored.cgram, "cgram bank differs");
     }

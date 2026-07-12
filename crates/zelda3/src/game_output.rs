@@ -57,6 +57,40 @@ pub struct DspWriteEvent {
     pub timer_cycles: u8,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ClassicDspGlobalState {
+    pub master_volume_left: i8,
+    pub master_volume_right: i8,
+    pub echo_volume_left: i8,
+    pub echo_volume_right: i8,
+    pub echo_feedback: i8,
+    pub flags: u8,
+    pub echo_enable_mask: u8,
+    pub pitch_modulation_mask: u8,
+    pub noise_enable_mask: u8,
+    pub echo_start_page: u8,
+    pub echo_delay: u8,
+    pub fir: [i8; 8],
+    pub echo_buffer_index: u16,
+    pub echo_remaining: u16,
+    pub fir_history_index: u8,
+    pub fir_history_left: [i16; 8],
+    pub fir_history_right: [i16; 8],
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ClassicDspVoiceState {
+    pub pitch: u16,
+    pub pitch_counter: u16,
+    pub source: u8,
+    pub envelope_state: u8,
+    pub envelope_rate_counter: u16,
+    pub gain: u16,
+    pub sample_out: i16,
+    pub volume_left: i8,
+    pub volume_right: i8,
+}
+
 impl DspWriteEvent {
     pub fn new(addr: u8, value: u8, sample_offset: i32, timer_cycles: u8) -> Self {
         Self {
@@ -125,6 +159,7 @@ pub struct SpcSequencerState {
     pub spc_in: [u8; 4],
     pub spc_out: [u8; 4],
     pub timer_cycles: u8,
+    pub sfx_timer_accum: u8,
     pub main_tempo_accum: u8,
     pub block_count: u8,
     pub key_on: u8,
@@ -134,12 +169,91 @@ pub struct SpcSequencerState {
     pub port2_active: u8,
     pub port3_active: u8,
     pub is_chan_on: u8,
+    pub echo_enable_mask: u8,
+    pub echo_enable_frame_start: u8,
+    pub echo_enable_values: [u8; 16],
+    pub echo_enable_offsets: [u16; 16],
+    pub echo_enable_count: u8,
+    pub echo_volume_registers: [u8; 32],
+    pub echo_volume_values: [u8; 32],
+    pub echo_volume_offsets: [u16; 32],
+    pub echo_volume_count: u8,
+    pub global_registers: [u8; 32],
+    pub global_values: [u8; 32],
+    pub global_offsets: [u16; 32],
+    pub global_count: u8,
+    pub voice_sources: [u8; 8],
+    pub voice_adsr1: [u8; 8],
+    pub voice_adsr2: [u8; 8],
+    pub voice_gain: [u8; 8],
+    pub voice_volume_left: [i8; 8],
+    pub voice_volume_right: [i8; 8],
     pub vol_dirty: u8,
     pub ch7_sfx: u8,
     pub ch7_sfx_ptr: u16,
     pub ch7_pattern: u16,
     pub ch7_ticks: u8,
     pub ch7_keyoff_ticks: u8,
+    pub sfx_kof_masks: [u8; 8],
+    pub sfx_kof_offsets: [u16; 8],
+    pub sfx_kof_count: u8,
+    pub raw_kof_masks: [u8; 32],
+    pub raw_kof_offsets: [u16; 32],
+    pub raw_kof_count: u8,
+    pub sfx_kon_masks: [u8; 8],
+    pub sfx_kon_owned_masks: [u8; 8],
+    pub sfx_kon_offsets: [u16; 8],
+    pub sfx_kon_rate_counters: [[u16; 8]; 8],
+    pub sfx_kon_sources: [[u8; 8]; 8],
+    pub sfx_kon_adsr1: [[u8; 8]; 8],
+    pub sfx_kon_adsr2: [[u8; 8]; 8],
+    pub sfx_kon_gain: [[u8; 8]; 8],
+    pub sfx_kon_volume_left: [[i8; 8]; 8],
+    pub sfx_kon_volume_right: [[i8; 8]; 8],
+    pub sfx_kon_count: u8,
+    pub sfx_echo_masks: [u8; 8],
+    pub sfx_echo_enabled: [bool; 8],
+    pub sfx_echo_offsets: [u16; 8],
+    pub sfx_echo_count: u8,
+    pub sfx_pitch_masks: [u8; 32],
+    pub sfx_pitch_words: [u16; 32],
+    pub sfx_pitch_offsets: [u16; 32],
+    pub sfx_pitch_count: u8,
+    pub raw_pitch_masks: [u8; 32],
+    pub raw_pitch_words: [u16; 32],
+    pub raw_pitch_offsets: [u16; 32],
+    pub raw_pitch_masks_hi: [u8; 32],
+    pub raw_pitch_words_hi: [u16; 32],
+    pub raw_pitch_offsets_hi: [u16; 32],
+    pub raw_pitch_masks_hi2: [u8; 32],
+    pub raw_pitch_words_hi2: [u16; 32],
+    pub raw_pitch_offsets_hi2: [u16; 32],
+    pub raw_pitch_masks_hi3: [u8; 32],
+    pub raw_pitch_words_hi3: [u16; 32],
+    pub raw_pitch_offsets_hi3: [u16; 32],
+    pub raw_pitch_count: u8,
+    pub sfx_volume_masks: [u8; 32],
+    pub sfx_volume_left: [i8; 32],
+    pub sfx_volume_right: [i8; 32],
+    pub sfx_volume_offsets: [u16; 32],
+    pub sfx_volume_count: u8,
+    pub raw_volume_masks: [u8; 32],
+    pub raw_volume_left: [i8; 32],
+    pub raw_volume_right: [i8; 32],
+    pub raw_volume_offsets: [u16; 32],
+    pub raw_volume_count: u8,
+    pub raw_envelope_masks: [u8; 32],
+    pub raw_envelope_registers: [u8; 32],
+    pub raw_envelope_values: [u8; 32],
+    pub raw_envelope_offsets: [u16; 32],
+    pub raw_envelope_count: u8,
+    pub sfx_setup_masks: [u8; 8],
+    pub sfx_setup_sources: [u8; 8],
+    pub sfx_setup_adsr1: [u8; 8],
+    pub sfx_setup_adsr2: [u8; 8],
+    pub sfx_setup_gain: [u8; 8],
+    pub sfx_setup_offsets: [u16; 8],
+    pub sfx_setup_count: u8,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -155,6 +269,12 @@ pub struct AudioEventFrame {
     pub queue: AudioQueueState,
     pub events: Vec<AudioEvent>,
     pub unresolved_dsp_writes: usize,
+    /// True when a semantic sequencer has already interpreted the route state.
+    ///
+    /// The renderer uses this to avoid interpreting the raw APU ports a second
+    /// time on quiet frames that happen not to contain a note command.
+    #[serde(default)]
+    pub sequenced: bool,
 }
 
 impl AudioEventFrame {
@@ -197,6 +317,7 @@ impl AudioEventFrame {
             queue: route.queue,
             events,
             unresolved_dsp_writes,
+            sequenced: false,
         }
     }
 
@@ -221,6 +342,12 @@ pub struct AudioEvent {
     pub parity_dsp: Option<DspWriteEvent>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum AudioNoteOrigin {
+    Music,
+    Sfx,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AudioEventKind {
     MusicState(MusicControlState),
@@ -242,18 +369,54 @@ pub enum AudioEventKind {
     SetTempo {
         value: u8,
     },
+    SetNoteOrigin {
+        voice: u8,
+        origin: AudioNoteOrigin,
+    },
+    SetPitchWord {
+        voice: u8,
+        pitch_word: u16,
+    },
+    SetPitchRegisterWord {
+        voice: u8,
+        pitch_word: u16,
+    },
+    SetStereoVolume {
+        voice: u8,
+        left: i8,
+        right: i8,
+    },
+    SetDspEnvelope {
+        voice: u8,
+        adsr1: u8,
+        adsr2: u8,
+        gain: u8,
+    },
     NoteOn {
         voice: u8,
         pitch: u8,
         instrument: u8,
         volume: u8,
     },
+    KeyOnVoice {
+        voice: u8,
+        source: u8,
+        adsr1: u8,
+        adsr2: u8,
+        gain: u8,
+        volume_left: i8,
+        volume_right: i8,
+        rate_counter: u16,
+    },
+    ResetEchoVolume {
+        restore_offset: u16,
+    },
     NoteOff {
         voice: u8,
     },
     SetDuration {
         voice: u8,
-        frames: u8,
+        frames: u16,
     },
     PitchSlide {
         voice: u8,
@@ -261,6 +424,14 @@ pub enum AudioEventKind {
         frames: u8,
     },
     SetNoise {
+        voice: u8,
+        enabled: bool,
+    },
+    SetPan {
+        voice: u8,
+        pan: i8,
+    },
+    SetEchoSend {
         voice: u8,
         enabled: bool,
     },
@@ -352,7 +523,18 @@ pub enum AudioBackendMode {
 
 impl Default for AudioBackendMode {
     fn default() -> Self {
-        Self::DspParity
+        Self::Modern
+    }
+}
+
+impl AudioBackendMode {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "modern" => Some(Self::Modern),
+            "dsp-parity" => Some(Self::DspParity),
+            "trace-only" => Some(Self::TraceOnly),
+            _ => None,
+        }
     }
 }
 
@@ -583,6 +765,47 @@ fn hash_audio_event(mut hash: u32, event: &AudioEvent) -> u32 {
             hash = fnv1a32_byte(hash, 12);
             fnv1a32_byte(hash, *value)
         }
+        AudioEventKind::SetNoteOrigin { voice, origin } => {
+            hash = fnv1a32_byte(hash, 21);
+            hash = fnv1a32_byte(hash, *voice);
+            fnv1a32_byte(
+                hash,
+                match origin {
+                    AudioNoteOrigin::Music => 0,
+                    AudioNoteOrigin::Sfx => 1,
+                },
+            )
+        }
+        AudioEventKind::SetPitchWord { voice, pitch_word } => {
+            hash = fnv1a32_byte(hash, 22);
+            hash = fnv1a32_byte(hash, *voice);
+            let [lo, hi] = pitch_word.to_le_bytes();
+            fnv1a32_byte(fnv1a32_byte(hash, lo), hi)
+        }
+        AudioEventKind::SetPitchRegisterWord { voice, pitch_word } => {
+            hash = fnv1a32_byte(hash, 26);
+            hash = fnv1a32_byte(hash, *voice);
+            let [lo, hi] = pitch_word.to_le_bytes();
+            fnv1a32_byte(fnv1a32_byte(hash, lo), hi)
+        }
+        AudioEventKind::SetStereoVolume { voice, left, right } => {
+            hash = fnv1a32_byte(hash, 23);
+            hash = fnv1a32_byte(hash, *voice);
+            hash = fnv1a32_byte(hash, *left as u8);
+            fnv1a32_byte(hash, *right as u8)
+        }
+        AudioEventKind::SetDspEnvelope {
+            voice,
+            adsr1,
+            adsr2,
+            gain,
+        } => {
+            hash = fnv1a32_byte(hash, 24);
+            hash = fnv1a32_byte(hash, *voice);
+            hash = fnv1a32_byte(hash, *adsr1);
+            hash = fnv1a32_byte(hash, *adsr2);
+            fnv1a32_byte(hash, *gain)
+        }
         AudioEventKind::NoteOn {
             voice,
             pitch,
@@ -594,6 +817,32 @@ fn hash_audio_event(mut hash: u32, event: &AudioEvent) -> u32 {
             hash = fnv1a32_byte(hash, *pitch);
             hash = fnv1a32_byte(hash, *instrument);
             fnv1a32_byte(hash, *volume)
+        }
+        AudioEventKind::KeyOnVoice {
+            voice,
+            source,
+            adsr1,
+            adsr2,
+            gain,
+            volume_left,
+            volume_right,
+            rate_counter,
+        } => {
+            hash = fnv1a32_byte(hash, 25);
+            hash = fnv1a32_byte(hash, *voice);
+            hash = fnv1a32_byte(hash, *source);
+            hash = fnv1a32_byte(hash, *adsr1);
+            hash = fnv1a32_byte(hash, *adsr2);
+            hash = fnv1a32_byte(hash, *gain);
+            hash = fnv1a32_byte(hash, *volume_left as u8);
+            hash = fnv1a32_byte(hash, *volume_right as u8);
+            hash = fnv1a32_byte(hash, *rate_counter as u8);
+            fnv1a32_byte(hash, (*rate_counter >> 8) as u8)
+        }
+        AudioEventKind::ResetEchoVolume { restore_offset } => {
+            hash = fnv1a32_byte(hash, 27);
+            let [lo, hi] = restore_offset.to_le_bytes();
+            fnv1a32_byte(fnv1a32_byte(hash, lo), hi)
         }
         AudioEventKind::NoteOff { voice } => {
             hash = fnv1a32_byte(hash, 14);
@@ -616,7 +865,8 @@ fn hash_audio_event(mut hash: u32, event: &AudioEvent) -> u32 {
         AudioEventKind::SetDuration { voice, frames } => {
             hash = fnv1a32_byte(hash, 16);
             hash = fnv1a32_byte(hash, *voice);
-            fnv1a32_byte(hash, *frames)
+            let [lo, hi] = frames.to_le_bytes();
+            fnv1a32_byte(fnv1a32_byte(hash, lo), hi)
         }
         AudioEventKind::PitchSlide {
             voice,
@@ -633,12 +883,39 @@ fn hash_audio_event(mut hash: u32, event: &AudioEvent) -> u32 {
             hash = fnv1a32_byte(hash, *voice);
             fnv1a32_byte(hash, u8::from(*enabled))
         }
+        AudioEventKind::SetPan { voice, pan } => {
+            hash = fnv1a32_byte(hash, 19);
+            hash = fnv1a32_byte(hash, *voice);
+            fnv1a32_byte(hash, *pan as u8)
+        }
+        AudioEventKind::SetEchoSend { voice, enabled } => {
+            hash = fnv1a32_byte(hash, 20);
+            hash = fnv1a32_byte(hash, *voice);
+            fnv1a32_byte(hash, u8::from(*enabled))
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audio_backend_names_parse_for_host_overrides() {
+        assert_eq!(
+            AudioBackendMode::parse("modern"),
+            Some(AudioBackendMode::Modern)
+        );
+        assert_eq!(
+            AudioBackendMode::parse("dsp-parity"),
+            Some(AudioBackendMode::DspParity)
+        );
+        assert_eq!(
+            AudioBackendMode::parse("trace-only"),
+            Some(AudioBackendMode::TraceOnly)
+        );
+        assert_eq!(AudioBackendMode::parse("legacy"), None);
+    }
 
     #[test]
     fn sample_stats_match_legacy_audio_stats_shape() {

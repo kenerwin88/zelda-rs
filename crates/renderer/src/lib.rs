@@ -3072,8 +3072,7 @@ impl FrameRenderer {
         let width = 256u32;
         let height = 224u32;
         let row_bytes = width * 4;
-        let readback_bytes_per_row =
-            row_bytes.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+        let readback_bytes_per_row = row_bytes.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
         let readback = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("modern_gpu_live_target_readback"),
             size: (readback_bytes_per_row * height) as u64,

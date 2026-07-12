@@ -10861,7 +10861,10 @@ impl ZeldaState {
         match self.game_state.frame.subsubmodule {
             0 => {
                 self.PaletteFilter_RestoreBGSubstractiveStrict();
-                self.copy_color((zelda3_palette::Bank::Main, 32), (zelda3_palette::Bank::Main, 0));
+                self.copy_color(
+                    (zelda3_palette::Bank::Main, 32),
+                    (zelda3_palette::Bank::Main, 0),
+                );
                 if self
                     .game_state
                     .display
@@ -12481,10 +12484,22 @@ impl ZeldaState {
             self.set_main_color_constant(0x77, 0x001a);
             self.increment_cgram_update_flag();
         } else if j == 5 || j == 38 {
-            self.copy_color((zelda3_palette::Bank::Aux, 0x6d), (zelda3_palette::Bank::Main, 0x6d));
-            self.copy_color((zelda3_palette::Bank::Aux, 0x6e), (zelda3_palette::Bank::Main, 0x6e));
-            self.copy_color((zelda3_palette::Bank::Aux, 0x6f), (zelda3_palette::Bank::Main, 0x6f));
-            self.copy_color((zelda3_palette::Bank::Aux, 0x6f), (zelda3_palette::Bank::Main, 0x77));
+            self.copy_color(
+                (zelda3_palette::Bank::Aux, 0x6d),
+                (zelda3_palette::Bank::Main, 0x6d),
+            );
+            self.copy_color(
+                (zelda3_palette::Bank::Aux, 0x6e),
+                (zelda3_palette::Bank::Main, 0x6e),
+            );
+            self.copy_color(
+                (zelda3_palette::Bank::Aux, 0x6f),
+                (zelda3_palette::Bank::Main, 0x6f),
+            );
+            self.copy_color(
+                (zelda3_palette::Bank::Aux, 0x6f),
+                (zelda3_palette::Bank::Main, 0x77),
+            );
             self.increment_cgram_update_flag();
         }
         self.set_sub_screen_layers(2);

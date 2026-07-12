@@ -1472,15 +1472,14 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                         ]
                         .into_iter()
                         .find_map(|(kind, pack, tile_off)| {
-                            source_cell(atlas, kind, pack, tile_off)
-                                .map(|src| {
-                                    (
-                                        crate::modern_source_atlas::modern_source_key(
-                                            kind, pack, tile_off,
-                                        ),
-                                        src,
-                                    )
-                                })
+                            source_cell(atlas, kind, pack, tile_off).map(|src| {
+                                (
+                                    crate::modern_source_atlas::modern_source_key(
+                                        kind, pack, tile_off,
+                                    ),
+                                    src,
+                                )
+                            })
                         });
                         if source_hit.is_some_and(|(_, src)| src.indices != baked) {
                             source_hit = source_cell_by_indices(atlas, &baked);
@@ -2787,7 +2786,10 @@ mod tests {
         );
         let vram_rgba = render_modern_frame_full_from_vram(&frame);
         let offset = (152 * 256 + 40) * 4;
-        assert_eq!(&source_rgba[offset..offset + 4], &vram_rgba[offset..offset + 4]);
+        assert_eq!(
+            &source_rgba[offset..offset + 4],
+            &vram_rgba[offset..offset + 4]
+        );
         assert_eq!(&source_rgba[offset..offset + 3], &[0, 0, 115]);
     }
 

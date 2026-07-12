@@ -189,7 +189,6 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
                     eprintln!("--asset-gpu-checkpoint-dir requires a directory");
                     process::exit(2);
                 });
-                asset_gpu_smoke = true;
                 asset_gpu_checkpoint_dir = Some(PathBuf::from(path));
                 i += 2;
             }

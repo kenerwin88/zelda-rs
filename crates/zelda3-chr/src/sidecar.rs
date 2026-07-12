@@ -111,7 +111,10 @@ fn tiles_from_pixels(
 ) -> Result<Vec<[u8; 64]>, String> {
     let width = width as usize;
     if width != columns * 8 {
-        return Err(format!("expected sheet width {}, found {width}", columns * 8));
+        return Err(format!(
+            "expected sheet width {}, found {width}",
+            columns * 8
+        ));
     }
     let mut tiles = Vec::with_capacity(tile_total);
     for tile_index in 0..tile_total {
@@ -208,11 +211,12 @@ pub fn read_sheets_dir(dir: &Path) -> Result<Vec<DecodedSheet>, String> {
     for name in SHEET_NAMES {
         let json_path = dir.join(format!("{name}.json"));
         let png_path = dir.join(format!("{name}.png"));
-        let json = std::fs::read(&json_path)
-            .map_err(|err| format!("{}: {err}", json_path.display()))?;
-        let png = std::fs::read(&png_path)
-            .map_err(|err| format!("{}: {err}", png_path.display()))?;
-        let manifest = parse_manifest(&json).map_err(|err| format!("{}: {err}", json_path.display()))?;
+        let json =
+            std::fs::read(&json_path).map_err(|err| format!("{}: {err}", json_path.display()))?;
+        let png =
+            std::fs::read(&png_path).map_err(|err| format!("{}: {err}", png_path.display()))?;
+        let manifest =
+            parse_manifest(&json).map_err(|err| format!("{}: {err}", json_path.display()))?;
         let sheet = decode_sheet(&png, &manifest)
             .map_err(|err| format!("{}: {err}", png_path.display()))?;
         sheets.push(sheet);

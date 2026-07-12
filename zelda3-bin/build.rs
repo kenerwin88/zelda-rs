@@ -589,7 +589,9 @@ fn dialogue_repo_root() -> PathBuf {
 ///      committed, so every clone has it — there is no generated fallback).
 /// `kDialogue` is always source-built (never the stale `.bin`), matching the runtime's
 /// required `kDialogueSourceSemantic` sidecar.
-fn read_dialogue_messages_document(_generated_dir: &Path) -> zelda3_dialogue::DialogueMessagesDocument {
+fn read_dialogue_messages_document(
+    _generated_dir: &Path,
+) -> zelda3_dialogue::DialogueMessagesDocument {
     if let Some(override_path) = env::var_os("ZELDA3_DIALOGUE_MESSAGES") {
         let override_path = PathBuf::from(override_path);
         println!("cargo:rerun-if-changed={}", override_path.display());
@@ -801,10 +803,7 @@ fn known_source(name: &str) -> Option<(&'static str, &'static str)> {
         ));
     }
     if SPECIAL_EXIT_FIELDS.iter().any(|field| field.asset == name) {
-        return Some((
-            FORMAT_SPECIAL_EXITS,
-            "assets/navigation/special_exits.json",
-        ));
+        return Some((FORMAT_SPECIAL_EXITS, "assets/navigation/special_exits.json"));
     }
     match name {
         "kLightOverworldTilemap" => Some((
@@ -843,22 +842,13 @@ fn known_source(name: &str) -> Option<(&'static str, &'static str)> {
             FORMAT_SNES_PALETTE,
             "assets/palettes/palette_dung_bg_main.json",
         )),
-        "kPalette_MainSpr" => Some((
-            FORMAT_SNES_PALETTE,
-            "assets/palettes/palette_main_spr.json",
-        )),
+        "kPalette_MainSpr" => Some((FORMAT_SNES_PALETTE, "assets/palettes/palette_main_spr.json")),
         "kPalette_ArmorAndGloves" => Some((
             FORMAT_SNES_PALETTE,
             "assets/palettes/palette_armor_and_gloves.json",
         )),
-        "kPalette_Sword" => Some((
-            FORMAT_SNES_PALETTE,
-            "assets/palettes/palette_sword.json",
-        )),
-        "kPalette_Shield" => Some((
-            FORMAT_SNES_PALETTE,
-            "assets/palettes/palette_shield.json",
-        )),
+        "kPalette_Sword" => Some((FORMAT_SNES_PALETTE, "assets/palettes/palette_sword.json")),
+        "kPalette_Shield" => Some((FORMAT_SNES_PALETTE, "assets/palettes/palette_shield.json")),
         "kPalette_SpriteAux3" => Some((
             FORMAT_SNES_PALETTE,
             "assets/palettes/palette_sprite_aux3.json",

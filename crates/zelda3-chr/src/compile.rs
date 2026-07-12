@@ -119,7 +119,14 @@ mod tests {
         [fill & 0x7; 64]
     }
 
-    fn block(name: &str, kind: &str, pack: u32, bpp: u8, start: usize, count: usize) -> SidecarBlock {
+    fn block(
+        name: &str,
+        kind: &str,
+        pack: u32,
+        bpp: u8,
+        start: usize,
+        count: usize,
+    ) -> SidecarBlock {
         SidecarBlock {
             block: name.to_string(),
             source_kind: kind.to_string(),
@@ -175,7 +182,10 @@ mod tests {
     fn unedited_sheets_reproduce_donor_byte_for_byte() {
         let (sheets, donor_spr, donor_bg) = synthetic();
         let (spr, bg) = compile_chr_packs(&sheets, &donor_spr, &donor_bg).unwrap();
-        assert_eq!(spr, donor_spr, "unedited sprite pack must be byte-identical");
+        assert_eq!(
+            spr, donor_spr,
+            "unedited sprite pack must be byte-identical"
+        );
         assert_eq!(bg, donor_bg, "unedited bg pack must be byte-identical");
     }
 
@@ -188,14 +198,20 @@ mod tests {
 
         let donor_items = unpack_packed_arrays(&donor_spr).unwrap();
         let out_items = unpack_packed_arrays(&spr).unwrap();
-        assert_eq!(out_items[0], donor_items[0], "untouched item stays verbatim");
+        assert_eq!(
+            out_items[0], donor_items[0],
+            "untouched item stays verbatim"
+        );
         assert_ne!(out_items[1], donor_items[1], "edited item must change");
 
         // Sprite pack 1 has index 1 (< 103) and 4 tiles * 24 bytes = 96 bytes,
         // not 0x600, so it is re-encoded as a literal-compressed stream.
         let decoded = decompress_asset(&out_items[1]).unwrap();
         let tiles = decode_planar_tile_indices(&decoded, 3).unwrap();
-        assert_eq!(tiles, sheets[1].tiles, "edited item re-decodes to sheet indices");
+        assert_eq!(
+            tiles, sheets[1].tiles,
+            "edited item re-decodes to sheet indices"
+        );
     }
 
     #[test]
@@ -212,7 +228,11 @@ mod tests {
         sheet.tiles[0][0] = 4; // edit
         let (spr, _bg) = compile_chr_packs(&[sheet.clone()], &donor_spr, &donor_bg).unwrap();
         let items = unpack_packed_arrays(&spr).unwrap();
-        assert_eq!(items[0].len(), SPR_RAW_LEN, "edited raw-eligible item stays 0x600 raw");
+        assert_eq!(
+            items[0].len(),
+            SPR_RAW_LEN,
+            "edited raw-eligible item stays 0x600 raw"
+        );
         let tiles = decode_planar_tile_indices(&items[0], 3).unwrap();
         assert_eq!(tiles, sheet.tiles);
     }

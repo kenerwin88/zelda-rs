@@ -97,10 +97,16 @@ mod tests {
         let tiles = decode_planar_tile_indices(&data, bpp).unwrap();
         assert_eq!(tiles.len(), tile_count);
         for tile in &tiles {
-            assert!(tile.iter().all(|&v| v < max), "index exceeds {bpp}bpp range");
+            assert!(
+                tile.iter().all(|&v| v < max),
+                "index exceeds {bpp}bpp range"
+            );
         }
         let re = encode_planar_tiles(&tiles, bpp).unwrap();
-        assert_eq!(re, data, "{bpp}bpp planar round-trip must be byte-identical");
+        assert_eq!(
+            re, data,
+            "{bpp}bpp planar round-trip must be byte-identical"
+        );
     }
 
     #[test]

@@ -57,8 +57,14 @@ class HarvestModernSfxCatalogTests(unittest.TestCase):
             self.assertEqual(result["coverage"]["program_gaps"], 0)
             self.assertEqual(result["focused_traces"][0]["frame"], 10)
             self.assertTrue(Path(result["focused_traces"][0]["path"]).exists())
+            self.assertEqual(
+                result["programs"][0]["sequence_provenance"][0]["rom_sequence_address"],
+                0x2100,
+            )
             self.assertIn("TRACE_SFX_00_34_STEPS", (output_dir / "modern-sfx-candidates.rs").read_text())
-            self.assertIn("0x34", (output_dir / "modern-sfx-harvest.md").read_text())
+            report = (output_dir / "modern-sfx-harvest.md").read_text()
+            self.assertIn("0x34", report)
+            self.assertIn("| lifted | 0 | 0x34 | 1 | 1 | 1 | 10 |", report)
 
     def test_reads_existing_broad_trace_and_marks_skipped_focus_as_gap(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -115,6 +121,43 @@ class HarvestModernSfxCatalogTests(unittest.TestCase):
             self.assertTrue(result["focused_traces"][0]["reused"])
             self.assertEqual(result["programs"][0]["steps"][0]["volume"], 32)
 
+    def test_focused_replay_uses_nearest_prior_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            fake_replay = write_fake_replay(tmp_path)
+            broad = tmp_path / "broad.jsonl"
+            broad.write_text(
+                json.dumps(trace_frame(250, queue_input=[0, 0x34, 0, 0])) + "\n",
+                encoding="utf-8",
+            )
+            checkpoints = tmp_path / "checkpoints"
+            checkpoints.mkdir()
+            prior = checkpoints / "asset-gpu-frame-000000200.sav"
+            future = checkpoints / "asset-gpu-frame-000000300.sav"
+            prior.touch()
+            future.touch()
+
+            status = run_harvester(
+                "--broad-trace-jsonl",
+                str(broad),
+                "--rust-bin",
+                str(fake_replay),
+                "--rom",
+                str(tmp_path / "zelda3.sfc"),
+                "--save",
+                str(tmp_path / "route.sav"),
+                "--checkpoint-dir",
+                str(checkpoints),
+                "--output-dir",
+                str(tmp_path / "harvest"),
+            )
+
+            self.assertEqual(status, 0)
+            result = json.loads(
+                (tmp_path / "harvest" / "modern-sfx-harvest.json").read_text()
+            )
+            self.assertEqual(result["focused_traces"][0]["checkpoint"], str(prior))
+
 
 def write_fake_replay(tmp_path: Path) -> Path:
     script = tmp_path / "fake_zelda3.py"
@@ -155,6 +198,9 @@ def write_fake_replay(tmp_path: Path) -> Path:
                             [22, 228, 0, 0],
                             [61, 2, 0, 0],
                             [76, 2, 0, 0],
+                        ],
+                        "sfx_channels": [
+                            {"voice": 1, "sound": 52, "sound_ptr": 8448, "pan": 0}
                         ],
                     },
                     {
@@ -200,7 +246,13 @@ def focused_trace_frame(frame_no: int, *, volume: int) -> dict:
             [0x11, 0, 0, 0],
             [0x12, 0, 0, 0],
             [0x13, 8, 0, 0],
+            [0x14, 2, 0, 0],
+            [0x15, 143, 0, 0],
+            [0x16, 228, 0, 0],
             [0x4C, 2, 0, 0],
+        ],
+        "sfx_channels": [
+            {"voice": 1, "sound": 0x34, "sound_ptr": 0x2100, "pan": 0}
         ],
     }
 

@@ -101,6 +101,18 @@ fn clip_15(value: i32) -> i16 {
     (((value & 0x7fff) << 1) as i16 >> 1) as i16
 }
 
+/// Apply the SNES DSP's four-tap Gaussian interpolation to four consecutive
+/// decoded BRR samples. `offset` is the eight-bit fractional sample position.
+pub fn dsp_gaussian_interpolate(oldest: i16, older: i16, old: i16, new: i16, offset: u8) -> i16 {
+    let offset = usize::from(offset);
+    let mut out = (DSP_GAUSS_VALUES[0xff - offset] * i32::from(oldest)) >> 10;
+    out += (DSP_GAUSS_VALUES[0x1ff - offset] * i32::from(older)) >> 10;
+    out += (DSP_GAUSS_VALUES[0x100 + offset] * i32::from(old)) >> 10;
+    out = clip_i16_cast(out);
+    out += (DSP_GAUSS_VALUES[offset] * i32::from(new)) >> 10;
+    (clip_i16(out) >> 1) as i16
+}
+
 fn dsp_exp_decrease_gain(gain: u16) -> u16 {
     let step = (((gain as i32 - 1) >> 8) + 1) as i32;
     (gain as i32 - step) as u16
@@ -291,6 +303,8 @@ pub struct DspState {
     pub fir_buffer_r: [i16; 8],
     pub sample_buffer: Vec<i16>,
     pub sample_offset: u16,
+    #[serde(skip, default)]
+    pub debug_voice_samples: [Vec<i16>; 8],
 }
 
 impl Default for DspState {
@@ -321,6 +335,7 @@ impl Default for DspState {
             fir_buffer_r: [0; 8],
             sample_buffer: vec![0; DSP_SAMPLE_BUFFER_LEN],
             sample_offset: 0,
+            debug_voice_samples: std::array::from_fn(|_| Vec::new()),
         };
         dsp.reset();
         dsp
@@ -568,10 +583,16 @@ impl DspState {
     }
 
     pub fn cycle(&mut self, apu_ram: &mut [u8]) {
+        if self.sample_offset == 0 {
+            for samples in &mut self.debug_voice_samples {
+                samples.clear();
+            }
+        }
         let mut total_l = 0;
         let mut total_r = 0;
         for i in 0..8 {
             self.cycle_channel(apu_ram, i);
+            self.debug_voice_samples[i].push(self.channel[i].sample_out);
             total_l += (self.channel[i].sample_out as i32 * self.channel[i].volume_l as i32) >> 6;
             total_r += (self.channel[i].sample_out as i32 * self.channel[i].volume_r as i32) >> 6;
             total_l = clip_i16(total_l);
@@ -781,12 +802,13 @@ impl DspState {
         let olds = self.channel[ch].decode_buffer[sample_num + 2] as i32;
         let olders = self.channel[ch].decode_buffer[sample_num + 1] as i32;
         let oldests = self.channel[ch].decode_buffer[sample_num] as i32;
-        let mut out = (DSP_GAUSS_VALUES[0xff - offset] * oldests) >> 10;
-        out += (DSP_GAUSS_VALUES[0x1ff - offset] * olders) >> 10;
-        out += (DSP_GAUSS_VALUES[0x100 + offset] * olds) >> 10;
-        out = clip_i16_cast(out);
-        out += (DSP_GAUSS_VALUES[offset] * news) >> 10;
-        (clip_i16(out) >> 1) as i16
+        dsp_gaussian_interpolate(
+            oldests as i16,
+            olders as i16,
+            olds as i16,
+            news as i16,
+            offset as u8,
+        )
     }
 
     fn decode_brr(&mut self, apu_ram: &[u8], ch: usize) {
@@ -908,6 +930,7 @@ impl DspState {
         }
         self.sample_offset = 0;
     }
+
 }
 
 #[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
