@@ -35,6 +35,9 @@ jobs:
       - name: Test ROM-free packages
         run: cargo test -p snes -p zelda3 -p platform -p renderer -p assets
 
+      - name: Test audio oracle feature
+        run: cargo test -p zelda3 --features audio-oracle
+
       - name: Create placeholder binary assets
         run: python3 scripts/create_ci_assets.py --out-dir "$GITHUB_WORKSPACE/target/ci-assets/zelda3_assets"
 
@@ -43,8 +46,18 @@ jobs:
         env:
           ZELDA3_ASSETS_DIR: ${{ github.workspace }}/target/ci-assets/zelda3_assets
 
+      - name: Check audio oracle binary and modern-only symbols
+        run: python3 scripts/check_audio_build_modes.py
+        env:
+          ZELDA3_ASSETS_DIR: ${{ github.workspace }}/target/ci-assets/zelda3_assets
+
       - name: Smoke ROM-free binary package
         run: cargo run -p zelda3-bin -- --standalone-smoke 2
+        env:
+          ZELDA3_ASSETS_DIR: ${{ github.workspace }}/target/ci-assets/zelda3_assets
+
+      - name: Smoke audio oracle binary package
+        run: cargo run -p zelda3-bin --features audio-oracle -- --standalone-smoke 2
         env:
           ZELDA3_ASSETS_DIR: ${{ github.workspace }}/target/ci-assets/zelda3_assets
 
