@@ -26,7 +26,7 @@ const MSU_STATE_RESUMING: u8 = 2;
 const MSU_STATE_PLAYING: u8 = 3;
 const AUDIO_SNAPSHOT_MAGIC: [u8; 4] = *b"Z3AU";
 const AUDIO_SNAPSHOT_VERSION: u16 = 1;
-const AUDIO_SNAPSHOT_HEADER_BYTES: usize = 8;
+const AUDIO_SNAPSHOT_HEADER_BYTES: usize = 12;
 
 const MSU_TRACK_REPEATS: [u8; 48] = [
     1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
@@ -519,6 +519,7 @@ impl ZeldaState {
         bytes.extend_from_slice(&AUDIO_SNAPSHOT_MAGIC);
         bytes.extend_from_slice(&AUDIO_SNAPSHOT_VERSION.to_le_bytes());
         bytes.extend_from_slice(&[0; 2]);
+        bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&payload);
         if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
             let tc = unsafe { self.audio.spc_player.as_ref() }
@@ -558,7 +559,7 @@ impl ZeldaState {
     /// frees the prior SPC player); the deserialized `AudioState` re-creates the
     /// SPC player + DSP with all raw pointers correctly re-linked.
     pub fn zelda_audio_restore_from_bytes(&mut self, bytes: &[u8]) -> Result<(), String> {
-        let payload = if bytes.starts_with(&AUDIO_SNAPSHOT_MAGIC) {
+        let (payload, allow_legacy_fallback) = if bytes.starts_with(&AUDIO_SNAPSHOT_MAGIC) {
             if bytes.len() < AUDIO_SNAPSHOT_HEADER_BYTES {
                 return Err("audio snapshot header is truncated".to_string());
             }
@@ -566,17 +567,38 @@ impl ZeldaState {
             if version != AUDIO_SNAPSHOT_VERSION {
                 return Err(format!("unsupported audio snapshot version {version}"));
             }
-            &bytes[AUDIO_SNAPSHOT_HEADER_BYTES..]
+            let flags = u16::from_le_bytes([bytes[6], bytes[7]]);
+            if flags != 0 {
+                return Err(format!("unsupported audio snapshot flags {flags}"));
+            }
+            let payload_len = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+            let expected_len = AUDIO_SNAPSHOT_HEADER_BYTES
+                .checked_add(payload_len)
+                .ok_or_else(|| "audio snapshot length overflow".to_string())?;
+            if bytes.len() != expected_len {
+                return Err(format!(
+                    "audio snapshot length mismatch: declared={payload_len} actual={}",
+                    bytes.len().saturating_sub(AUDIO_SNAPSHOT_HEADER_BYTES)
+                ));
+            }
+            (&bytes[AUDIO_SNAPSHOT_HEADER_BYTES..], false)
         } else {
-            bytes
+            (bytes, true)
         };
         let restored: AudioState = match bincode::deserialize(payload) {
             Ok(state) => state,
-            Err(current_error) => bincode::deserialize::<LegacyAudioStateSnapshot>(payload)
-                .map(LegacyAudioStateSnapshot::into_audio_state)
-                .map_err(|legacy_error| {
-                    format!("audio snapshot decode: current={current_error}; legacy={legacy_error}")
-                })?,
+            Err(current_error) if allow_legacy_fallback => {
+                bincode::deserialize::<LegacyAudioStateSnapshot>(payload)
+                    .map(LegacyAudioStateSnapshot::into_audio_state)
+                    .map_err(|legacy_error| {
+                        format!(
+                            "audio snapshot decode: current={current_error}; legacy={legacy_error}"
+                        )
+                    })?
+            }
+            Err(current_error) => {
+                return Err(format!("audio snapshot v1 decode: {current_error}"));
+            }
         };
         if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
             let tc = unsafe { restored.spc_player.as_ref() }

@@ -421,38 +421,10 @@ fn modern_backend_renders_without_a_legacy_spc_player() {
 
 #[test]
 fn modern_backend_uses_owned_brr_bank_and_observes_bank_replacement() {
-    fn render(bank: &[u8]) -> Vec<i16> {
-        let mut state = ZeldaState::new();
-        state.load_audio_apu_ram_c_saveload(bank);
-        crate::spc_player::spc_player_destroy(state.audio.spc_player);
-        state.audio.spc_player = std::ptr::null_mut();
-        let mut frame = crate::game_output::AudioEventFrame::from_route_and_dsp_writes(
-            crate::game_output::AudioRouteState::default(),
-            &[],
-        );
-        frame.events.push(crate::game_output::AudioEvent {
-            sample_offset: 0,
-            timer_cycles: 0,
-            kind: crate::game_output::AudioEventKind::SetPitchWord {
-                voice: 0,
-                pitch_word: 0x1000,
-            },
-            parity_dsp: None,
-        });
-        frame.events.push(crate::game_output::AudioEvent {
-            sample_offset: 4,
-            timer_cycles: 0,
-            kind: crate::game_output::AudioEventKind::NoteOn {
-                voice: 0,
-                pitch: 60,
-                instrument: 3,
-                volume: 127,
-            },
-            parity_dsp: None,
-        });
+    fn render(state: &mut ZeldaState, frame: &crate::game_output::AudioEventFrame) -> Vec<i16> {
         let mut audio = vec![0i16; 735 * 2];
         state.audio.modern_audio.render_frame_with_sample_ram(
-            &frame,
+            frame,
             &mut audio,
             735,
             2,
@@ -461,12 +433,46 @@ fn modern_backend_uses_owned_brr_bank_and_observes_bank_replacement() {
         audio
     }
 
-    let bank_a = render(&distinctive_brr_bank(0x11));
-    let bank_b = render(&distinctive_brr_bank(0x77));
+    let mut frame = crate::game_output::AudioEventFrame::from_route_and_dsp_writes(
+        crate::game_output::AudioRouteState::default(),
+        &[],
+    );
+    frame.events.push(crate::game_output::AudioEvent {
+        sample_offset: 0,
+        timer_cycles: 0,
+        kind: crate::game_output::AudioEventKind::SetPitchWord {
+            voice: 0,
+            pitch_word: 0x1000,
+        },
+        parity_dsp: None,
+    });
+    frame.events.push(crate::game_output::AudioEvent {
+        sample_offset: 4,
+        timer_cycles: 0,
+        kind: crate::game_output::AudioEventKind::NoteOn {
+            voice: 0,
+            pitch: 60,
+            instrument: 3,
+            volume: 127,
+        },
+        parity_dsp: None,
+    });
+    let bank_a = distinctive_brr_bank(0x11);
+    let bank_b = distinctive_brr_bank(0x77);
+    let mut replaced = ZeldaState::new();
+    replaced.load_audio_apu_ram_c_saveload(&bank_a);
+    crate::spc_player::spc_player_destroy(replaced.audio.spc_player);
+    replaced.audio.spc_player = std::ptr::null_mut();
+    let first_a = render(&mut replaced, &frame);
+    let mut unchanged = replaced.clone();
 
-    assert!(bank_a.iter().any(|sample| *sample != 0));
-    assert!(bank_b.iter().any(|sample| *sample != 0));
-    assert_ne!(bank_a, bank_b);
+    replaced.load_audio_apu_ram_c_saveload(&bank_b);
+    unchanged.load_audio_apu_ram_c_saveload(&bank_a);
+    let after_b = render(&mut replaced, &frame);
+    let after_a = render(&mut unchanged, &frame);
+
+    assert!(first_a.iter().any(|sample| *sample != 0));
+    assert_ne!(after_a, after_b);
 }
 
 #[test]
@@ -619,11 +625,28 @@ fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner() {
     let snapshot = state.zelda_audio_snapshot_bytes();
     assert_eq!(&snapshot[..4], b"Z3AU");
     assert_eq!(u16::from_le_bytes([snapshot[4], snapshot[5]]), 1);
+    assert_eq!(u16::from_le_bytes([snapshot[6], snapshot[7]]), 0);
+    assert_eq!(
+        u32::from_le_bytes(snapshot[8..12].try_into().unwrap()) as usize,
+        snapshot.len() - 12
+    );
 
     let mut restored = ZeldaState::new();
     restored
-        .zelda_audio_restore_from_bytes(&snapshot[8..])
+        .zelda_audio_restore_from_bytes(&snapshot[12..])
         .expect("preheader current snapshot remains readable");
+
+    let truncated = &snapshot[..snapshot.len() - 1];
+    assert!(restored
+        .zelda_audio_restore_from_bytes(truncated)
+        .unwrap_err()
+        .contains("length mismatch"));
+    let mut appended = snapshot.clone();
+    appended.push(0);
+    assert!(restored
+        .zelda_audio_restore_from_bytes(&appended)
+        .unwrap_err()
+        .contains("length mismatch"));
 
     let mut unsupported = snapshot;
     unsupported[4..6].copy_from_slice(&2u16.to_le_bytes());

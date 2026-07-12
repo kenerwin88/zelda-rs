@@ -10303,7 +10303,8 @@ mod tests {
 
     #[test]
     fn catalog_contains_initial_named_sfx_programs() {
-        assert!(catalog_program_count() >= 8);
+        assert_eq!(catalog_program_count(), 170);
+        assert_eq!(full_route_catalog::FULL_ROUTE_PROGRAMS.len(), 172);
         assert_eq!(lookup_sfx_program(0, 0x01).unwrap().name, "menu_cursor");
         assert_eq!(lookup_sfx_program(0, 0x22).unwrap().name, "sword");
         assert_eq!(lookup_sfx_program(0, 0x2b).unwrap().name, "rupee_pickup");
