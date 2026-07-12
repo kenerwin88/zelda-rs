@@ -300,12 +300,18 @@ This file records the current implementation status for
   acknowledgements, while ordinary reset/C-style load restarts Modern sequence
   and renderer state at a defined command boundary instead of retaining future
   voices or echo state.
+  Audio checkpoint blobs now carry a `Z3AU` header and explicit format version;
+  the loader still accepts pre-header payloads and rejects unknown future
+  versions deterministically.
 - `ModernSfxCatalog` adds the first data-backed SFX programs for menu cursor,
   sword, rupee pickup, door/stairs, and damage. Known `PlaySfx` commands expand
   into typed program events including envelope, note duration, pitch slide, and
   noise selection; unknown commands still use a marked heuristic fallback.
   Audio trace output now reports modern SFX known/unknown counts and the modern
   program hash beside the existing DSP/sample parity fields.
+  The generated full-route Rust body lives under `assets/audio/generated/` as
+  an explicit build input and is emitted into Cargo `OUT_DIR`; runtime source
+  retains the stable catalog types, lookup policy, and curated programs.
 - `scripts/extract_modern_sfx_catalog.py` is the bridge from DSP parity to
   modern SFX authoring. It reads Rust audio trace JSONL, detects SFX command
   transitions with the same slot mapping as `ModernAudioSequencer`, and lifts

@@ -1,5 +1,18 @@
 use super::*;
 
+fn distinctive_brr_bank(nibble: u8) -> Vec<u8> {
+    let mut ram = vec![0u8; 0x10000];
+    for source in 0..=u8::MAX {
+        let address = 0x5000usize + usize::from(source) * 9;
+        let entry = 0x3c00usize + usize::from(source) * 4;
+        ram[entry..entry + 2].copy_from_slice(&(address as u16).to_le_bytes());
+        ram[entry + 2..entry + 4].copy_from_slice(&(address as u16).to_le_bytes());
+        ram[address] = 0x81;
+        ram[address + 1..address + 9].fill(nibble);
+    }
+    ram
+}
+
 fn msu1_header(repeat_position: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"MSU1");
@@ -306,7 +319,7 @@ fn trace_only_backend_returns_events_but_silences_host_samples() {
 }
 
 #[test]
-fn modern_backend_renders_from_typed_events_with_compatibility_receipts() {
+fn modern_backend_renders_from_typed_events() {
     let mut state = ZeldaState::new();
     state.zelda_apu_write(0x2141, 0x88);
     state.zelda_push_apu_state();
@@ -404,6 +417,56 @@ fn modern_backend_renders_without_a_legacy_spc_player() {
     assert!(expected_audio.iter().any(|sample| *sample != 0));
     assert_eq!(actual_audio, expected_audio);
     assert_eq!(without_legacy.save_audio_apu_ram_c_saveload()[0x2222], 0xa5);
+}
+
+#[test]
+fn modern_backend_uses_owned_brr_bank_and_observes_bank_replacement() {
+    fn render(bank: &[u8]) -> Vec<i16> {
+        let mut state = ZeldaState::new();
+        state.load_audio_apu_ram_c_saveload(bank);
+        crate::spc_player::spc_player_destroy(state.audio.spc_player);
+        state.audio.spc_player = std::ptr::null_mut();
+        let mut frame = crate::game_output::AudioEventFrame::from_route_and_dsp_writes(
+            crate::game_output::AudioRouteState::default(),
+            &[],
+        );
+        frame.events.push(crate::game_output::AudioEvent {
+            sample_offset: 0,
+            timer_cycles: 0,
+            kind: crate::game_output::AudioEventKind::SetPitchWord {
+                voice: 0,
+                pitch_word: 0x1000,
+            },
+            parity_dsp: None,
+        });
+        frame.events.push(crate::game_output::AudioEvent {
+            sample_offset: 4,
+            timer_cycles: 0,
+            kind: crate::game_output::AudioEventKind::NoteOn {
+                voice: 0,
+                pitch: 60,
+                instrument: 3,
+                volume: 127,
+            },
+            parity_dsp: None,
+        });
+        let mut audio = vec![0i16; 735 * 2];
+        state.audio.modern_audio.render_frame_with_sample_ram(
+            &frame,
+            &mut audio,
+            735,
+            2,
+            Some(&state.audio.modern_sample_ram),
+        );
+        audio
+    }
+
+    let bank_a = render(&distinctive_brr_bank(0x11));
+    let bank_b = render(&distinctive_brr_bank(0x77));
+
+    assert!(bank_a.iter().any(|sample| *sample != 0));
+    assert!(bank_b.iter().any(|sample| *sample != 0));
+    assert_ne!(bank_a, bank_b);
 }
 
 #[test]
@@ -538,6 +601,36 @@ fn audio_snapshot_restores_modern_sequence_and_renderer_phase() {
         .unwrap()
         .join()
         .unwrap();
+}
+
+#[test]
+fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload() {
+    std::thread::Builder::new()
+        .name("versioned-audio-snapshot".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner)
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner() {
+    let state = ZeldaState::new();
+    let snapshot = state.zelda_audio_snapshot_bytes();
+    assert_eq!(&snapshot[..4], b"Z3AU");
+    assert_eq!(u16::from_le_bytes([snapshot[4], snapshot[5]]), 1);
+
+    let mut restored = ZeldaState::new();
+    restored
+        .zelda_audio_restore_from_bytes(&snapshot[8..])
+        .expect("preheader current snapshot remains readable");
+
+    let mut unsupported = snapshot;
+    unsupported[4..6].copy_from_slice(&2u16.to_le_bytes());
+    assert_eq!(
+        restored.zelda_audio_restore_from_bytes(&unsupported),
+        Err("unsupported audio snapshot version 2".to_string())
+    );
 }
 
 fn audio_snapshot_restores_modern_sequence_and_renderer_phase_inner() {
