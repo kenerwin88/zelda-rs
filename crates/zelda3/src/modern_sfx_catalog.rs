@@ -60,7 +60,10 @@ pub struct ModernSfxRuntimeContext {
 }
 
 mod full_route_catalog {
-    include!(concat!(env!("OUT_DIR"), "/modern_sfx_full_route_catalog.rs"));
+    include!(concat!(
+        env!("OUT_DIR"),
+        "/modern_sfx_full_route_catalog.rs"
+    ));
 }
 
 const EMPTY_CONTEXT: ModernSfxContextSignature = ModernSfxContextSignature {
@@ -7664,12 +7667,7 @@ const AMBIENT_REPLACEMENT_START_STEPS: &[ModernSfxStep] = &[
     trace_sfx_00_05_step(7, 56, 13, 18),
 ];
 
-const fn trace_sfx_00_05_step(
-    voice: u8,
-    pitch: u8,
-    instrument: u8,
-    volume: u8,
-) -> ModernSfxStep {
+const fn trace_sfx_00_05_step(voice: u8, pitch: u8, instrument: u8, volume: u8) -> ModernSfxStep {
     ModernSfxStep {
         voice,
         pitch,
@@ -10179,6 +10177,18 @@ pub fn lookup_sfx_program(bank: u8, id: u8) -> Option<&'static ModernSfxProgram>
             active_voice_mask: 0,
         },
     )
+}
+
+#[cfg(test)]
+pub(crate) fn conformance_commands() -> Vec<(u8, u8)> {
+    let mut commands = PROGRAMS
+        .iter()
+        .chain(full_route_catalog::FULL_ROUTE_PROGRAMS.iter())
+        .map(|program| (program.bank, program.id))
+        .collect::<Vec<_>>();
+    commands.sort_unstable();
+    commands.dedup();
+    commands
 }
 
 pub fn lookup_sfx_program_for_context(

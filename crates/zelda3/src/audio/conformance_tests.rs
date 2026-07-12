@@ -232,6 +232,30 @@ fn semantic_audio_matrix_is_engine_driven_and_uses_catalog_only() {
     }
 }
 
+#[test]
+fn every_catalogued_sfx_command_is_reachable_from_an_engine_port() {
+    for (bank, id) in crate::modern_sfx_catalog::conformance_commands() {
+        assert!(
+            bank < 3,
+            "catalogued SFX bank {bank} has no engine APUI port"
+        );
+        let mut state = ZeldaState::new();
+        state.zelda_apu_write(0x2141 + u32::from(bank), id);
+        state.zelda_push_apu_state();
+
+        let (frame, _) = render_modern_frame(&mut state);
+        assert_render_invariants("catalog-wide SFX command", &state);
+        assert_sfx_was_emitted("catalog-wide SFX command", &[frame], bank, id);
+        assert_eq!(
+            state
+                .zelda_modern_audio_sequence_last_stats()
+                .known_sfx_commands,
+            1,
+            "catalogued SFX ({bank}, {id:#04x}) did not resolve through the engine path"
+        );
+    }
+}
+
 fn assert_music_was_actively_interrupted(frames: &[AudioEventFrame]) {
     let has_event = |frame: &AudioEventFrame, predicate: &dyn Fn(&AudioEventKind) -> bool| {
         frame.events.iter().any(|event| predicate(&event.kind))
