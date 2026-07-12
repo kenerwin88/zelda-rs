@@ -981,3 +981,7 @@ fn read_le_u32(bytes: &[u8], offset: usize) -> Option<u32> {
 #[cfg(test)]
 #[path = "audio_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "audio/conformance_tests.rs"]
+mod conformance_tests;

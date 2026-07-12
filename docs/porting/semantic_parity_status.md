@@ -303,6 +303,14 @@ This file records the current implementation status for
   Audio checkpoint blobs now carry a `Z3AU` header and explicit format version;
   the loader still accepts pre-header payloads and rejects unknown future
   versions deterministically.
+  A semantic conformance matrix now complements the full-route DSP oracle gate.
+  Its named scenarios inject APUI engine commands directly—without replay-frame
+  coordinates—and cover catalogued SFX, overlapping effects, music
+  interruption, sample-exact snapshot continuation, and ordinary music restore.
+  Every rendered scenario requires zero unknown SFX programs, zero heuristic
+  fallbacks, and zero ignored modern-renderer events. The route oracle remains
+  the independent sample-level proof, while this matrix prevents that proof
+  from becoming coupled to the timing of one recorded route.
 - `ModernSfxCatalog` adds the first data-backed SFX programs for menu cursor,
   sword, rupee pickup, door/stairs, and damage. Known `PlaySfx` commands expand
   into typed program events including envelope, note duration, pitch slide, and
