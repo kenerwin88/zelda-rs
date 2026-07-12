@@ -18,6 +18,7 @@ pub mod modern_sfx_catalog;
 pub mod modern_sfx_dsp_catalog;
 pub mod modern_sfx_pitch_catalog;
 pub mod oracle;
+#[cfg(feature = "audio-oracle")]
 pub mod spc_player;
 pub mod types;
 pub mod util;

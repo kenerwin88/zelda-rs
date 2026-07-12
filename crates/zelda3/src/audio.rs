@@ -12,12 +12,17 @@ use crate::modern_audio_sequence::{ModernAudioSequenceStats, ModernAudioSequence
 use opus::{Channels, Decoder as OpusDecoder};
 use std::fs;
 
-#[path = "audio/snapshot_state.rs"]
-mod snapshot_state;
-#[path = "audio/oracle_runtime.rs"]
-mod oracle_runtime;
+#[cfg(not(feature = "audio-oracle"))]
+#[path = "audio/modern_only_runtime.rs"]
+mod modern_only_runtime;
 #[path = "audio/msu_runtime.rs"]
 mod msu_runtime;
+#[cfg(feature = "audio-oracle")]
+#[path = "audio/oracle_runtime.rs"]
+mod oracle_runtime;
+#[path = "audio/snapshot_state.rs"]
+mod snapshot_state;
+#[cfg(feature = "audio-oracle")]
 use snapshot_state::LegacyAudioStateSnapshot;
 
 const MSU_STATE_IDLE: u8 = 0;
@@ -25,7 +30,7 @@ const MSU_STATE_FINISHED_PLAYING: u8 = 1;
 const MSU_STATE_RESUMING: u8 = 2;
 const MSU_STATE_PLAYING: u8 = 3;
 const AUDIO_SNAPSHOT_MAGIC: [u8; 4] = *b"Z3AU";
-const AUDIO_SNAPSHOT_VERSION: u16 = 1;
+const AUDIO_SNAPSHOT_VERSION: u16 = if cfg!(feature = "audio-oracle") { 1 } else { 2 };
 const AUDIO_SNAPSHOT_HEADER_BYTES: usize = 12;
 
 const MSU_TRACK_REPEATS: [u8; 48] = [
@@ -155,6 +160,7 @@ struct ApuWriteEnt {
 }
 
 pub(super) struct AudioState {
+    #[cfg(feature = "audio-oracle")]
     spc_player: *mut crate::spc_player::SpcPlayer,
     backend: AudioBackendMode,
     audio_has_rendered: bool,
@@ -179,9 +185,12 @@ pub(super) struct AudioState {
 
 impl Default for AudioState {
     fn default() -> Self {
+        #[cfg(feature = "audio-oracle")]
         let spc_player = crate::spc_player::spc_player_create();
+        #[cfg(feature = "audio-oracle")]
         crate::spc_player::spc_player_initialize(spc_player);
         Self {
+            #[cfg(feature = "audio-oracle")]
             spc_player,
             backend: AudioBackendMode::default(),
             audio_has_rendered: false,
@@ -209,6 +218,7 @@ impl Default for AudioState {
 impl Clone for AudioState {
     fn clone(&self) -> Self {
         Self {
+            #[cfg(feature = "audio-oracle")]
             spc_player: crate::spc_player::spc_player_clone(self.spc_player),
             backend: self.backend,
             audio_has_rendered: self.audio_has_rendered,
@@ -235,8 +245,11 @@ impl Clone for AudioState {
 
 impl Drop for AudioState {
     fn drop(&mut self) {
-        crate::spc_player::spc_player_destroy(self.spc_player);
-        self.spc_player = std::ptr::null_mut();
+        #[cfg(feature = "audio-oracle")]
+        {
+            crate::spc_player::spc_player_destroy(self.spc_player);
+            self.spc_player = std::ptr::null_mut();
+        }
     }
 }
 
@@ -281,6 +294,12 @@ impl ZeldaState {
         }
     }
 
+    #[cfg(not(feature = "audio-oracle"))]
+    fn zelda_audio_spc_route_state(&self) -> Option<SpcSequencerState> {
+        None
+    }
+
+    #[cfg(feature = "audio-oracle")]
     fn zelda_audio_spc_route_state(&self) -> Option<SpcSequencerState> {
         unsafe { self.audio.spc_player.as_ref() }.map(|player| SpcSequencerState {
             spc_in: player.input_ports,
@@ -444,6 +463,7 @@ impl ZeldaState {
             self.audio.input_ports[2],
             self.audio.input_ports[3],
         );
+        #[cfg(feature = "audio-oracle")]
         if let Some(player) = unsafe { self.audio.spc_player.as_ref() } {
             out.push_str(&format!(
                 ",\"spc_in\":[{},{},{},{}],\"spc_out\":[{},{},{},{}],\"timer\":{},\"sfx_timer_accum\":{},\"main_tempo_accum\":{},\"block_count\":{},\"key_on\":{},\"key_off\":{},\"current_bit\":{},\"port1_active\":{},\"port2_active\":{},\"port3_active\":{}",
@@ -521,6 +541,7 @@ impl ZeldaState {
         bytes.extend_from_slice(&[0; 2]);
         bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&payload);
+        #[cfg(feature = "audio-oracle")]
         if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
             let tc = unsafe { self.audio.spc_player.as_ref() }
                 .map(|p| p.timer_cycles)
@@ -551,7 +572,14 @@ impl ZeldaState {
     }
 
     pub fn zelda_audio_live_spc_ram(&self) -> [u8; 0x10000] {
-        crate::spc_player::spc_player_save_ram(self.audio.spc_player)
+        #[cfg(feature = "audio-oracle")]
+        {
+            crate::spc_player::spc_player_save_ram(self.audio.spc_player)
+        }
+        #[cfg(not(feature = "audio-oracle"))]
+        {
+            panic!("live SPC RAM requires the audio-oracle feature")
+        }
     }
 
     /// Restore the full live audio state previously captured by
@@ -585,21 +613,25 @@ impl ZeldaState {
         } else {
             (bytes, true)
         };
+        #[cfg(not(feature = "audio-oracle"))]
+        let _ = allow_legacy_fallback;
         let restored: AudioState = match bincode::deserialize(payload) {
             Ok(state) => state,
-            Err(current_error) if allow_legacy_fallback => {
-                bincode::deserialize::<LegacyAudioStateSnapshot>(payload)
-                    .map(LegacyAudioStateSnapshot::into_audio_state)
-                    .map_err(|legacy_error| {
-                        format!(
-                            "audio snapshot decode: current={current_error}; legacy={legacy_error}"
-                        )
-                    })?
-            }
+            #[cfg(feature = "audio-oracle")]
+            Err(current_error) if allow_legacy_fallback => bincode::deserialize::<
+                LegacyAudioStateSnapshot,
+            >(payload)
+            .map(LegacyAudioStateSnapshot::into_audio_state)
+            .map_err(|legacy_error| {
+                format!("audio snapshot decode: current={current_error}; legacy={legacy_error}")
+            })?,
             Err(current_error) => {
-                return Err(format!("audio snapshot v1 decode: {current_error}"));
+                return Err(format!(
+                    "audio snapshot v{AUDIO_SNAPSHOT_VERSION} decode: {current_error}"
+                ));
             }
         };
+        #[cfg(feature = "audio-oracle")]
         if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
             let tc = unsafe { restored.spc_player.as_ref() }
                 .map(|p| p.timer_cycles)
@@ -673,11 +705,11 @@ impl ZeldaState {
         if self.audio.backend == AudioBackendMode::Modern {
             return self.audio.port_to_snes[(adr as usize) & 3];
         }
+        #[cfg(feature = "audio-oracle")]
         if let Some(player) = unsafe { self.audio.spc_player.as_ref() } {
-            player.port_to_snes[(adr as usize) & 3]
-        } else {
-            self.audio.port_to_snes[(adr as usize) & 3]
+            return player.port_to_snes[(adr as usize) & 3];
         }
+        self.audio.port_to_snes[(adr as usize) & 3]
     }
 
     pub fn zelda_render_audio(&mut self, audio_buffer: &mut [i16], samples: i32, channels: i32) {
@@ -688,10 +720,18 @@ impl ZeldaState {
         self.audio.backend
     }
 
+    pub const fn zelda_audio_oracle_available() -> bool {
+        cfg!(feature = "audio-oracle")
+    }
+
     pub fn zelda_set_audio_backend(
         &mut self,
         backend: AudioBackendMode,
     ) -> Result<(), &'static str> {
+        #[cfg(not(feature = "audio-oracle"))]
+        if backend != AudioBackendMode::Modern {
+            return Err("DSP audio backends require the audio-oracle feature");
+        }
         if self.audio.audio_has_rendered && backend != self.audio.backend {
             return Err("audio backend selection is locked after rendering begins");
         }
@@ -710,11 +750,13 @@ impl ZeldaState {
             self.audio.audio_has_rendered = true;
         }
         match backend {
+            #[cfg(feature = "audio-oracle")]
             AudioBackendMode::DspParity => {
                 let writes =
                     self.zelda_render_audio_trace_dsp_events(audio_buffer, samples, channels);
                 self.zelda_audio_event_frame_from_dsp_writes(&writes)
             }
+            #[cfg(feature = "audio-oracle")]
             AudioBackendMode::TraceOnly => {
                 let count = (samples.max(0) as usize).saturating_mul(channels.max(0) as usize);
                 let mut scratch = vec![0i16; count];
@@ -748,6 +790,10 @@ impl ZeldaState {
                 }
                 frame
             }
+            #[cfg(not(feature = "audio-oracle"))]
+            AudioBackendMode::DspParity | AudioBackendMode::TraceOnly => {
+                panic!("DSP audio rendering requires the audio-oracle feature")
+            }
         }
     }
 
@@ -757,11 +803,14 @@ impl ZeldaState {
     }
 
     pub fn zelda_set_spc_startup_phase(&mut self, sfx_timer_accum: u8, timer_cycles: u8) {
+        #[cfg(feature = "audio-oracle")]
         if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
             player.sfx_timer_accum = sfx_timer_accum;
             player.timer_cycles = timer_cycles.min(64);
             player.ram[0x0043] = sfx_timer_accum;
         }
+        #[cfg(not(feature = "audio-oracle"))]
+        let _ = timer_cycles;
         self.audio.modern_sample_ram[0x0043] = sfx_timer_accum;
     }
 
@@ -777,7 +826,9 @@ impl ZeldaState {
         self.audio.modern_audio = ModernAudioEngine::default();
         self.audio.modern_sequence = ModernAudioSequencer::default();
         self.audio.modern_audio.sample_ram_changed();
+        #[cfg(feature = "audio-oracle")]
         crate::spc_player::spc_player_copy_variables_from_ram(self.audio.spc_player);
+        #[cfg(feature = "audio-oracle")]
         if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
             player.timer_cycles = 0;
             player
@@ -794,8 +845,16 @@ impl ZeldaState {
                 .ports
                 .copy_from_slice(&self.audio.modern_sample_ram[0x410..0x414]);
         }
+        #[cfg(not(feature = "audio-oracle"))]
+        {
+            self.audio
+                .input_ports
+                .copy_from_slice(&self.audio.modern_sample_ram[0x410..0x414]);
+            self.audio.apu_write.ports = self.audio.input_ports;
+        }
         if is_reset {
             self.audio.port_to_snes = [0; 4];
+            #[cfg(feature = "audio-oracle")]
             crate::spc_player::spc_player_initialize(self.audio.spc_player);
         }
         if self.audio.msu_player.enabled != 0 {
@@ -829,12 +888,13 @@ impl ZeldaState {
     }
 
     pub fn zelda_save_music_state_to_ram_locked(&mut self) {
+        #[cfg(feature = "audio-oracle")]
         crate::spc_player::spc_player_copy_variables_to_ram(self.audio.spc_player);
+        #[cfg(feature = "audio-oracle")]
         if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
             player.ram[0x410..0x414].copy_from_slice(&self.audio.apu_write.ports);
         }
-        self.audio.modern_sample_ram[0x410..0x414]
-            .copy_from_slice(&self.audio.apu_write.ports);
+        self.audio.modern_sample_ram[0x410..0x414].copy_from_slice(&self.audio.apu_write.ports);
         let msu_volume = (self.audio.msu_player.volume * 255.0) as u8;
         self.set_msu_volume(msu_volume);
         self.save_msu_resume_info(MsuResumeSlot::Primary, self.audio.msu_player.resume_info);
@@ -874,19 +934,30 @@ impl ZeldaState {
     pub fn load_song_bank(&mut self, p: &[u8]) {
         upload_song_bank_to_ram(&mut self.audio.modern_sample_ram, p);
         self.audio.modern_audio.sample_ram_changed();
+        #[cfg(feature = "audio-oracle")]
         if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
             crate::spc_player::spc_player_upload(player, p.as_ptr());
         }
     }
 
     pub fn zelda_audio_debug_summary(&self) -> String {
-        crate::spc_player::spc_player_debug_summary(self.audio.spc_player)
+        #[cfg(feature = "audio-oracle")]
+        {
+            crate::spc_player::spc_player_debug_summary(self.audio.spc_player)
+        }
+        #[cfg(not(feature = "audio-oracle"))]
+        {
+            "audio-oracle feature disabled; modern backend active".to_string()
+        }
     }
 
     pub fn zelda_debug_full_apu_from_spc(&self) -> snes::apu::ApuState {
         let mut apu = snes::apu::ApuState::new();
         apu.reset();
+        #[cfg(feature = "audio-oracle")]
         let spc_ram = crate::spc_player::spc_player_save_ram(self.audio.spc_player);
+        #[cfg(not(feature = "audio-oracle"))]
+        let spc_ram = self.audio.modern_sample_ram;
         apu.ram.copy_from_slice(&spc_ram);
         apu.rom_readable = false;
         apu.spc.pc = 0x800;
@@ -894,11 +965,14 @@ impl ZeldaState {
     }
 
     pub(super) fn save_audio_apu_ram_c_saveload(&self) -> [u8; 0x10000] {
+        #[cfg(feature = "audio-oracle")]
         if self.audio.backend == AudioBackendMode::Modern || self.audio.spc_player.is_null() {
-            self.audio.modern_sample_ram
-        } else {
-            crate::spc_player::spc_player_save_ram(self.audio.spc_player)
+            return self.audio.modern_sample_ram;
         }
+        #[cfg(feature = "audio-oracle")]
+        return crate::spc_player::spc_player_save_ram(self.audio.spc_player);
+        #[cfg(not(feature = "audio-oracle"))]
+        self.audio.modern_sample_ram
     }
 
     pub(super) fn load_audio_apu_ram_c_saveload(&mut self, data: &[u8]) {
@@ -908,18 +982,39 @@ impl ZeldaState {
             self.audio.modern_sample_ram[len..].fill(0);
         }
         self.audio.modern_audio.sample_ram_changed();
+        #[cfg(feature = "audio-oracle")]
         crate::spc_player::spc_player_load_ram(
             self.audio.spc_player,
             &self.audio.modern_sample_ram,
         );
     }
 
+    #[cfg(feature = "audio-oracle")]
     pub(super) fn save_audio_dsp_c_saveload(&self) -> Vec<u8> {
         crate::spc_player::spc_player_save_dsp_c_saveload(self.audio.spc_player)
     }
 
+    #[cfg(not(feature = "audio-oracle"))]
+    pub(super) fn save_audio_dsp_c_saveload(&self) -> Vec<u8> {
+        vec![0; snes::apu::DSP_SAVELOAD_SIZE]
+    }
+
+    #[cfg(feature = "audio-oracle")]
     pub(super) fn load_audio_dsp_c_saveload(&mut self, data: &[u8]) -> Result<(), String> {
         crate::spc_player::spc_player_load_dsp_c_saveload(self.audio.spc_player, data)
+    }
+
+    #[cfg(not(feature = "audio-oracle"))]
+    pub(super) fn load_audio_dsp_c_saveload(&mut self, data: &[u8]) -> Result<(), String> {
+        if data.len() == snes::apu::DSP_SAVELOAD_SIZE {
+            Ok(())
+        } else {
+            Err(format!(
+                "invalid inert DSP compatibility block: expected {}, got {}",
+                snes::apu::DSP_SAVELOAD_SIZE,
+                data.len()
+            ))
+        }
     }
 
     fn msu_resume_info(&self, slot: MsuResumeSlot) -> MsuResumeInfoState {

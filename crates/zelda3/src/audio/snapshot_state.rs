@@ -1,16 +1,17 @@
 use super::*;
 
-
-/// Serializable mirror of `AudioState`. The `spc_player` raw pointer is replaced
-/// by a deep, pointer-free snapshot (see `spc_player::SpcPlayerSnapshot`). The
-/// `msu_player` is intentionally NOT round-tripped: MSU (external music
+/// Feature-selected wire payload for `AudioState`. Version 1 (oracle builds)
+/// replaces the `spc_player` raw pointer with a deep pointer-free snapshot;
+/// version 2 (normal builds) omits legacy SPC/DSP state. The `msu_player` is
+/// intentionally not round-tripped: MSU (external music
 /// streaming) is disabled in headless replay, it owns non-serde state
 /// (`OpusDecoder`), and on restore it is reconstructed as `MsuPlayer::default()`.
 /// Runtime backend selection is host configuration and is likewise rebuilt
-/// from its modern default or an operator override after restore. Every other
-/// field is byte-faithful.
+/// from its modern default or an operator override after restore. Modern-owned
+/// sample RAM, sequencing, rendering, queue, and configuration state remain.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct AudioStateSnapshot {
+    #[cfg(feature = "audio-oracle")]
     spc_player: crate::spc_player::SpcPlayerSnapshot,
     apu_write_ents: [ApuWriteEnt; 16],
     apu_write: ApuWriteEnt,
@@ -34,6 +35,7 @@ struct AudioStateSnapshot {
 }
 
 #[derive(serde::Deserialize)]
+#[cfg(feature = "audio-oracle")]
 pub(super) struct LegacyAudioStateSnapshot {
     spc_player: crate::spc_player::SpcPlayerSnapshot,
     apu_write_ents: [ApuWriteEnt; 16],
@@ -53,6 +55,7 @@ pub(super) struct LegacyAudioStateSnapshot {
     config_msu_path: Option<String>,
 }
 
+#[cfg(feature = "audio-oracle")]
 impl LegacyAudioStateSnapshot {
     pub(super) fn into_audio_state(self) -> AudioState {
         AudioState {
@@ -83,6 +86,7 @@ impl LegacyAudioStateSnapshot {
 impl serde::Serialize for AudioState {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let snapshot = AudioStateSnapshot {
+            #[cfg(feature = "audio-oracle")]
             spc_player: crate::spc_player::spc_player_snapshot(self.spc_player),
             modern_audio: self.modern_audio.clone(),
             modern_sequence: self.modern_sequence.clone(),
@@ -108,8 +112,10 @@ impl serde::Serialize for AudioState {
 impl<'de> serde::Deserialize<'de> for AudioState {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let snapshot = AudioStateSnapshot::deserialize(deserializer)?;
+        #[cfg(feature = "audio-oracle")]
         let spc_player = crate::spc_player::spc_player_from_snapshot(snapshot.spc_player);
         Ok(Self {
+            #[cfg(feature = "audio-oracle")]
             spc_player,
             backend: AudioBackendMode::default(),
             audio_has_rendered: false,

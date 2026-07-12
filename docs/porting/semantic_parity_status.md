@@ -300,6 +300,21 @@ This file records the current implementation status for
   acknowledgements, while ordinary reset/C-style load restarts Modern sequence
   and renderer state at a defined command boundary instead of retaining future
   voices or echo state.
+  Normal Cargo builds are now modern-only: the `SpcPlayer` module, raw pointer,
+  DSP interpreter, and legacy DSP snapshot payload are compiled only with the
+  `audio-oracle` feature. `zelda3-bin --features audio-oracle` retains trace and
+  parity diagnostics; a default build rejects DSP backend selection and
+  `--audio-trace-log` instead of silently constructing the legacy runtime.
+  The fixed C save-state byte layout keeps an inert DSP-sized slot in
+  modern-only builds, while authoritative audio state comes from the owned
+  modern sample RAM, sequencer, and renderer snapshot.
+  Audio checkpoint payloads deliberately identify their capability: version 1
+  is the oracle schema with legacy SPC/DSP continuation state, while version 2
+  is the smaller modern-only schema. They are not interchangeable; use an
+  oracle build to resume historical version-1 audio checkpoints.
+  `scripts/check_audio_build_modes.py` is the build gate: it checks the
+  oracle-enabled binary, builds the default binary, and rejects any default
+  executable that still exports `spc_player` or `SpcPlayer` symbols.
   Audio checkpoint blobs now carry a `Z3AU` header and explicit format version;
   the loader still accepts pre-header payloads and rejects unknown future
   versions deterministically.

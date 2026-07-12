@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 build = "build.rs"
 
+[features]
+default = []
+audio-oracle = ["zelda3/audio-oracle"]
+
 [[bin]]
 name = "zelda3"
 path = "src/main.rs"
@@ -13,7 +17,7 @@ path = "src/main.rs"
 [dependencies]
 bincode = "1"
 snes = { path = "../crates/snes" }
-zelda3 = { path = "../crates/zelda3" }
+zelda3 = { path = "../crates/zelda3", default-features = false }
 zelda3-compat = { path = "../crates/zelda3-compat" }
 platform = { path = "../crates/platform" }
 renderer = { path = "../crates/renderer" }

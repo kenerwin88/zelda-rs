@@ -181,10 +181,12 @@ fn main() {
         return;
     }
     if args.get(1).map(String::as_str) == Some("--compare-startup-apu-impls") {
+        require_audio_oracle("--compare-startup-apu-impls");
         run_compare_startup_apu_impls(&args[2..]);
         return;
     }
     if args.get(1).map(String::as_str) == Some("--trace-song-bank") {
+        require_audio_oracle("--trace-song-bank");
         run_trace_song_bank(&args[2..]);
         return;
     }
@@ -197,6 +199,7 @@ fn main() {
         return;
     }
     if args.get(1).map(String::as_str) == Some("--compare-bootstrap-apu-startup") {
+        require_audio_oracle("--compare-bootstrap-apu-startup");
         run_compare_bootstrap_apu_startup(&args[2..]);
         return;
     }
@@ -309,6 +312,15 @@ fn main() {
     } else {
         run_standalone_play();
     }
+}
+
+#[cfg(feature = "audio-oracle")]
+fn require_audio_oracle(_operation: &str) {}
+
+#[cfg(not(feature = "audio-oracle"))]
+fn require_audio_oracle(operation: &str) {
+    eprintln!("{operation} requires an audio-oracle build; rebuild with --features audio-oracle");
+    process::exit(2);
 }
 
 /// Write the embedded, source-authoritative asset pack to disk. This is the
@@ -1351,6 +1363,17 @@ fn run_replay_save(args: &[String]) {
         input_script_overlay,
         stop_replay_after_load,
     } = parse_replay_save_args_or_exit(args);
+    #[cfg(not(feature = "audio-oracle"))]
+    if audio_trace_log != 0 || fingerprint_log.is_some() {
+        eprintln!(
+            "audio trace and fingerprint diagnostics require an audio-oracle build; rebuild with --features audio-oracle"
+        );
+        process::exit(2);
+    }
+    #[cfg(not(feature = "audio-oracle"))]
+    if std::env::var_os("ZELDA3_DBG_AUDIO_FP").is_some() {
+        require_audio_oracle("ZELDA3_DBG_AUDIO_FP");
+    }
     let mut ppu_mode_counts = [0u64; 8];
     let mut first_mode7_frame = None::<u32>;
     let mut last_mode7_frame = None::<u32>;
@@ -1398,8 +1421,14 @@ fn run_replay_save(args: &[String]) {
     } else {
         None
     };
+    #[cfg(feature = "audio-oracle")]
     let (mut modern_audio_trace_sequence, mut modern_audio_trace_engine) =
         game.zelda_oracle_aligned_modern_audio_trace_state();
+    #[cfg(not(feature = "audio-oracle"))]
+    let (mut modern_audio_trace_sequence, mut modern_audio_trace_engine) = (
+        zelda3::modern_audio_sequence::ModernAudioSequencer::default(),
+        zelda3::modern_audio::ModernAudioEngine::default(),
+    );
     let mut modern_audio_trace_last_dsp_post = None;
     let mut modern_audio_trace_sample_assets = [None; 256];
     let mut modern_audio_trace_has_checkpoint_seed = false;
@@ -4766,6 +4795,9 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
                 process::exit(2);
             }
         }
+    }
+    if trace_dsp_writes {
+        require_audio_oracle("--trace-dsp-writes");
     }
     if auto_align_video && compare_audio {
         eprintln!("--auto-align-video is video-only; pass --ignore-audio for this mode");
