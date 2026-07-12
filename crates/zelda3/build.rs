@@ -13,6 +13,18 @@ fn main() {
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let source = manifest_dir.join("../../assets/audio/modern_music.tsv");
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+
+    let full_route_sfx_source = manifest_dir
+        .join("../../assets/audio/generated/modern_sfx_full_route_catalog.rs.inc");
+    println!(
+        "cargo:rerun-if-changed={}",
+        full_route_sfx_source.display()
+    );
+    let full_route_sfx = fs::read(&full_route_sfx_source).unwrap();
+    write_if_changed(
+        &out_dir.join("modern_sfx_full_route_catalog.rs"),
+        &full_route_sfx,
+    );
     println!("cargo:rerun-if-changed={}", source.display());
 
     let text = fs::read_to_string(&source).unwrap();

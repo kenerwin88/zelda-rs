@@ -59,8 +59,9 @@ pub struct ModernSfxRuntimeContext {
     pub active_voice_mask: u8,
 }
 
-#[path = "modern_sfx_full_route_catalog.rs"]
-mod full_route_catalog;
+mod full_route_catalog {
+    include!(concat!(env!("OUT_DIR"), "/modern_sfx_full_route_catalog.rs"));
+}
 
 const EMPTY_CONTEXT: ModernSfxContextSignature = ModernSfxContextSignature {
     source_slot: 0xff,
