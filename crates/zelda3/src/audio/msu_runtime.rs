@@ -78,7 +78,7 @@ impl ZeldaState {
     pub fn zelda_play_msu_audio_track(&mut self, music_ctrl: u8) {
         if self.audio.msu_player.enabled == 0 {
             self.audio.msu_player.resume_info.tag = 0;
-            self.zelda_apu_write(0x2140, music_ctrl);
+            self.zelda_emit_audio_command(EngineAudioCommand::from_music_port_value(music_ctrl));
             return;
         }
         if music_ctrl & 0xf0 != 0xf0 {
@@ -89,9 +89,9 @@ impl ZeldaState {
             self.audio.msu_player.volume_step = self.audio.volume_transition_step_float[i];
         }
         if self.audio.msu_player.state == 0 {
-            self.zelda_apu_write(0x2140, music_ctrl);
+            self.zelda_emit_audio_command(EngineAudioCommand::from_music_port_value(music_ctrl));
         } else {
-            self.zelda_apu_write(0x2140, 0xf0);
+            self.zelda_emit_audio_command(EngineAudioCommand::StopMusic);
         }
     }
 
@@ -421,7 +421,9 @@ impl ZeldaState {
                         }
                         OpuzPacketStatus::ReadError => {
                             Self::msu_player_close_file(&mut self.audio.msu_player);
-                            self.zelda_apu_write(0x2140, orig_track);
+                            self.zelda_emit_audio_command(
+                                EngineAudioCommand::from_music_port_value(orig_track),
+                            );
                             return;
                         }
                     }
@@ -443,7 +445,9 @@ impl ZeldaState {
                         if self.audio.msu_player.samples_until_repeat == 0 {
                             let orig_track = self.audio.msu_player.resume_info.orig_track;
                             Self::msu_player_close_file(&mut self.audio.msu_player);
-                            self.zelda_apu_write(0x2140, orig_track);
+                            self.zelda_emit_audio_command(
+                                EngineAudioCommand::from_music_port_value(orig_track),
+                            );
                             return;
                         }
                         self.audio.msu_player.cur_file_offs = self.audio.msu_player.repeat_position;
@@ -455,7 +459,9 @@ impl ZeldaState {
                     if data_end > self.audio.msu_player.pcm_data.len() {
                         let orig_track = self.audio.msu_player.resume_info.orig_track;
                         Self::msu_player_close_file(&mut self.audio.msu_player);
-                        self.zelda_apu_write(0x2140, orig_track);
+                        self.zelda_emit_audio_command(EngineAudioCommand::from_music_port_value(
+                            orig_track,
+                        ));
                         return;
                     }
                     let source = self.audio.msu_player.pcm_data[data_start..data_end].to_vec();
@@ -502,5 +508,4 @@ impl ZeldaState {
             audio_offset = dst_end;
         }
     }
-
 }

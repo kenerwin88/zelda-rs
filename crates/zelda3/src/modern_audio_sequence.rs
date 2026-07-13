@@ -1,6 +1,7 @@
 use crate::game_output::{
-    AudioEvent, AudioEventFrame, AudioEventKind, AudioNoteOrigin, AudioRouteState, DspWriteEvent,
-    MusicControlState, VoiceParameterKind,
+    AudioEvent, AudioEventFrame, AudioEventKind, AudioMusicCommand, AudioNoteOrigin,
+    AudioRouteState, AudioSfxBank, DspWriteEvent, EngineAudioCommandBatch, MusicControlState,
+    VoiceParameterKind,
 };
 use crate::modern_music_catalog::{decode_note, packed_track, ModernMusicNote, PACKED_NOTE_BYTES};
 use crate::modern_music_globals::events_at as music_global_events_at;
@@ -148,74 +149,20 @@ impl Default for ModernAudioSequencer {
 }
 
 impl ModernAudioSequencer {
+    /// Compatibility entry point for oracle traces and older callers that only
+    /// expose APUI state. The playable runtime uses `sequence_engine_commands`.
     pub fn sequence_route(&mut self, route: AudioRouteState) -> AudioEventFrame {
-        if route.queue.input[1] == 0x05 && self.last_sfx[0] != 0x05 {
-            for voice in 0..8 {
-                self.cancel_sfx_schedules(voice);
-            }
-        }
-        self.semantic_bank1_command_voice = semantic_bank1_allocator_voice(route);
-        self.semantic_bank2_command_voice = semantic_bank2_allocator_voice(route);
-        if let Some(spc) = route.spc {
-            self.engine_receipt_mode |= spc.sfx_kon_count != 0
-                || spc.raw_kof_count != 0
-                || spc.raw_pitch_count != 0
-                || spc.raw_volume_count != 0
-                || spc.raw_envelope_count != 0;
-            self.semantic_pitch_latch_mask &= spc.port2_active;
-        }
-        self.initialize_timer(route);
-        let mut frame = AudioEventFrame::from_route_and_dsp_writes(route, &[]);
-        frame.sequenced = true;
-        let mut stats = ModernAudioSequenceStats::default();
-        let mut processed_semantic_keyons = [0u8; 8];
-        let mut semantic_pitch_latch_release = [None; 8];
-        self.advance_music_keyoffs(&mut frame, &mut stats);
-        self.advance_sfx_pitch_changes(&mut frame);
-        self.emit_semantic_sfx_echo_changes(route.spc, &mut frame);
-        self.emit_semantic_sfx_keyons(
-            route.spc,
-            &mut processed_semantic_keyons,
-            &mut semantic_pitch_latch_release,
-            &mut frame,
-            &mut stats,
-        );
-        self.advance_voice_lifetimes(&mut frame, &mut stats);
+        let commands = EngineAudioCommandBatch::from_legacy_ports(route.queue.input);
+        self.sequence_commands_with_writes(route, commands, &[])
+    }
 
-        self.sequence_music(route.music, route.queue.input[0], &mut frame, &mut stats);
-        self.emit_ambient_music_reset(route, &mut frame, &mut stats);
-        self.sequence_sfx(
-            route.music,
-            route.queue.input,
-            route.spc.map_or(0, |spc| spc.is_chan_on),
-            route.spc.map(|spc| (spc.timer_cycles, spc.sfx_timer_accum)),
-            &mut frame,
-            &mut stats,
-        );
-        self.emit_semantic_sfx_keyons(
-            route.spc,
-            &mut processed_semantic_keyons,
-            &mut semantic_pitch_latch_release,
-            &mut frame,
-            &mut stats,
-        );
-        self.emit_engine_music_keyons(route.spc, &mut frame, &mut stats);
-        self.emit_semantic_sfx_pitch_changes(route.spc, &mut frame);
-        self.emit_raw_pitch_changes(route.spc, semantic_pitch_latch_release, &mut frame);
-        self.emit_raw_echo_enable_changes(route.spc, &mut frame);
-        self.emit_raw_echo_volume_changes(route.spc, &mut frame);
-        self.emit_raw_global_changes(route.spc, &mut frame);
-        self.emit_semantic_sfx_volume_changes(route.spc, &mut frame);
-        self.emit_raw_volume_changes(route.spc, &mut frame);
-        self.emit_raw_envelope_changes(route.spc, &mut frame);
-        self.emit_raw_music_keyoffs(route.spc, &mut frame, &mut stats);
-        self.reconcile_semantic_sfx_keyoffs(route.spc, &mut frame);
-
-        stats.active_voice_mask = self.active_voice_mask;
-        self.last_stats = stats;
-        self.advance_dsp_timer();
-        self.previous_sfx_clock = route.spc.map(|spc| (spc.timer_cycles, spc.sfx_timer_accum));
-        frame
+    /// Expand gameplay-authored commands without decoding the APUI projection.
+    pub fn sequence_engine_commands(
+        &mut self,
+        route: AudioRouteState,
+        commands: EngineAudioCommandBatch,
+    ) -> AudioEventFrame {
+        self.sequence_commands_with_writes(route, commands, &[])
     }
 
     pub fn sequence_parity_writes(
@@ -223,13 +170,26 @@ impl ModernAudioSequencer {
         route: AudioRouteState,
         writes: &[DspWriteEvent],
     ) -> AudioEventFrame {
-        if route.queue.input[1] == 0x05 && self.last_sfx[0] != 0x05 {
+        let commands = EngineAudioCommandBatch::from_legacy_ports(route.queue.input);
+        self.sequence_commands_with_writes(route, commands, writes)
+    }
+
+    fn sequence_commands_with_writes(
+        &mut self,
+        route: AudioRouteState,
+        commands: EngineAudioCommandBatch,
+        writes: &[DspWriteEvent],
+    ) -> AudioEventFrame {
+        let ambient_command = commands
+            .sfx(AudioSfxBank::Ambient)
+            .map_or(0, |command| command.legacy_value());
+        if ambient_command == 0x05 && self.last_sfx[0] != 0x05 {
             for voice in 0..8 {
                 self.cancel_sfx_schedules(voice);
             }
         }
-        self.semantic_bank1_command_voice = semantic_bank1_allocator_voice(route);
-        self.semantic_bank2_command_voice = semantic_bank2_allocator_voice(route);
+        self.semantic_bank1_command_voice = semantic_bank1_allocator_voice(route, commands);
+        self.semantic_bank2_command_voice = semantic_bank2_allocator_voice(route, commands);
         if let Some(spc) = route.spc {
             self.engine_receipt_mode |= spc.sfx_kon_count != 0
                 || spc.raw_kof_count != 0
@@ -255,11 +215,12 @@ impl ModernAudioSequencer {
             &mut stats,
         );
         self.advance_voice_lifetimes(&mut frame, &mut stats);
-        self.sequence_music(route.music, route.queue.input[0], &mut frame, &mut stats);
-        self.emit_ambient_music_reset(route, &mut frame, &mut stats);
+
+        self.sequence_music(route.music, commands.music(), &mut frame, &mut stats);
+        self.emit_ambient_music_reset(route, commands, &mut frame, &mut stats);
         self.sequence_sfx(
             route.music,
-            route.queue.input,
+            commands,
             route.spc.map_or(0, |spc| spc.is_chan_on),
             route.spc.map(|spc| (spc.timer_cycles, spc.sfx_timer_accum)),
             &mut frame,
@@ -283,6 +244,7 @@ impl ModernAudioSequencer {
         self.emit_raw_envelope_changes(route.spc, &mut frame);
         self.emit_raw_music_keyoffs(route.spc, &mut frame, &mut stats);
         self.reconcile_semantic_sfx_keyoffs(route.spc, &mut frame);
+
         stats.active_voice_mask = self.active_voice_mask;
         self.last_stats = stats;
         self.advance_dsp_timer();
@@ -319,12 +281,13 @@ impl ModernAudioSequencer {
     fn sequence_music(
         &mut self,
         music: MusicControlState,
-        port0: u8,
+        command: AudioMusicCommand,
         frame: &mut AudioEventFrame,
         stats: &mut ModernAudioSequenceStats,
     ) {
+        let command_track = command.legacy_value();
         let track = first_nonzero([
-            port0,
+            command_track,
             music.apui00,
             music.last_music_control,
             music.queued_music_control,
@@ -586,16 +549,21 @@ impl ModernAudioSequencer {
     fn sequence_sfx(
         &mut self,
         music: MusicControlState,
-        ports: [u8; 4],
+        commands: EngineAudioCommandBatch,
         sfx_voice_mask: u8,
         sfx_clock: Option<(u8, u8)>,
         frame: &mut AudioEventFrame,
         stats: &mut ModernAudioSequenceStats,
     ) {
+        let engine_sfx = AudioSfxBank::ALL.map(|bank| {
+            commands
+                .sfx(bank)
+                .map_or(0, |command| command.legacy_value())
+        });
         let candidates = [
-            ports[1],
-            ports[2],
-            ports[3],
+            engine_sfx[0],
+            engine_sfx[1],
+            engine_sfx[2],
             music.sound_effect_ambient,
             music.sound_effect_1,
             music.sound_effect_2,
@@ -668,10 +636,14 @@ impl ModernAudioSequencer {
     fn emit_ambient_music_reset(
         &mut self,
         route: AudioRouteState,
+        commands: EngineAudioCommandBatch,
         frame: &mut AudioEventFrame,
         stats: &mut ModernAudioSequenceStats,
     ) {
-        let should_reset = route.queue.input[1] == 0x03
+        let ambient_command = commands
+            .sfx(AudioSfxBank::Ambient)
+            .map_or(0, |command| command.legacy_value());
+        let should_reset = ambient_command == 0x03
             && route
                 .spc
                 .is_some_and(|spc| spc.spc_out[0] == 0 && spc.block_count == 0xff);
@@ -685,21 +657,13 @@ impl ModernAudioSequencer {
                 u16::from(spc.timer_cycles.wrapping_neg() & 0x3f)
             }
         });
-        push_event_at(
-            frame,
-            0,
-            AudioEventKind::ResetEchoVolume { restore_offset },
-        );
+        push_event_at(frame, 0, AudioEventKind::ResetEchoVolume { restore_offset });
         let active_voices = self.active_voice_mask | route.spc.map_or(0, |spc| spc.is_chan_on);
         for voice in 0..8 {
             if active_voices & (1 << voice) == 0 {
                 continue;
             }
-            push_event_at(
-                frame,
-                0,
-                AudioEventKind::NoteOff { voice: voice as u8 },
-            );
+            push_event_at(frame, 0, AudioEventKind::NoteOff { voice: voice as u8 });
             self.active_voice_mask &= !(1 << voice);
             self.music_voice_mask &= !(1 << voice);
             self.music_keyoff_frames_remaining[voice] = 0;
@@ -752,10 +716,7 @@ impl ModernAudioSequencer {
             if program.bank == 1 && program.id == 0x1e {
                 self.engine_automated_sfx_volume_mask |= voice_bit;
             }
-            if program.bank == 0
-                && program.id == 0x05
-                && program.variant_hash == 0x5c065005
-            {
+            if program.bank == 0 && program.id == 0x05 && program.variant_hash == 0x5c065005 {
                 self.engine_automated_sfx_volume_mask |= voice_bit;
             }
             let voice = usize::from(step.voice);
@@ -828,22 +789,13 @@ impl ModernAudioSequencer {
             {
                 self.semantic_sfx_repeat_steps[voice] = Some(pending);
             }
-            if program.bank == 0
-                && program.id == 0x01
-                && program.variant_hash == 0x6f23aa01
-            {
+            if program.bank == 0 && program.id == 0x01 && program.variant_hash == 0x6f23aa01 {
                 self.semantic_sfx_repeat_steps[voice] = Some(pending);
             }
-            if program.bank == 2
-                && program.id == 0x1b
-                && program.variant_hash == 0xa44764fc
-            {
+            if program.bank == 2 && program.id == 0x1b && program.variant_hash == 0xa44764fc {
                 self.semantic_sfx_repeat_steps[voice] = Some(pending);
             }
-            if program.bank == 0
-                && program.id == 0x05
-                && program.variant_hash == 0x5c065005
-            {
+            if program.bank == 0 && program.id == 0x05 && program.variant_hash == 0x5c065005 {
                 self.semantic_sfx_repeat_steps[voice] = Some(pending);
             }
             if let (Some(exact), Some((initial_overflow, active_overflows, gap_overflows))) =
@@ -863,13 +815,61 @@ impl ModernAudioSequencer {
             }
             if self.engine_receipt_mode && uses_semantic_sfx_keyons(program) {
                 let allocator_voice = if program.bank == 2
-                    && matches!(program.id, 0x04 | 0x08 | 0x09 | 0x0b | 0x0c | 0x0d | 0x0e | 0x0f | 0x11 | 0x14 | 0x15 | 0x16 | 0x17 | 0x1c | 0x24 | 0x31 | 0x44 | 0x49 | 0x4b | 0x57 | 0x5c | 0x89 | 0x8b | 0x97)
-                {
+                    && matches!(
+                        program.id,
+                        0x04 | 0x08
+                            | 0x09
+                            | 0x0b
+                            | 0x0c
+                            | 0x0d
+                            | 0x0e
+                            | 0x0f
+                            | 0x11
+                            | 0x14
+                            | 0x15
+                            | 0x16
+                            | 0x17
+                            | 0x1c
+                            | 0x24
+                            | 0x31
+                            | 0x44
+                            | 0x49
+                            | 0x4b
+                            | 0x57
+                            | 0x5c
+                            | 0x89
+                            | 0x8b
+                            | 0x97
+                    ) {
                     self.semantic_bank2_command_voice
                 } else if program.bank == 1
                     && (matches!(
                         program.id,
-                        0x01 | 0x05 | 0x16 | 0x17 | 0x18 | 0x19 | 0x1d | 0x20 | 0x22 | 0x26 | 0x29 | 0x2a | 0x2d | 0x3c | 0x41 | 0x45 | 0x56 | 0x57 | 0x5f | 0x6a | 0x81 | 0x85 | 0x96 | 0x97 | 0x9e | 0x9f
+                        0x01 | 0x05
+                            | 0x16
+                            | 0x17
+                            | 0x18
+                            | 0x19
+                            | 0x1d
+                            | 0x20
+                            | 0x22
+                            | 0x26
+                            | 0x29
+                            | 0x2a
+                            | 0x2d
+                            | 0x3c
+                            | 0x41
+                            | 0x45
+                            | 0x56
+                            | 0x57
+                            | 0x5f
+                            | 0x6a
+                            | 0x81
+                            | 0x85
+                            | 0x96
+                            | 0x97
+                            | 0x9e
+                            | 0x9f
                     ) || (program.id == 0x2b && program.variant_hash == 0x4b866332))
                 {
                     self.semantic_bank1_command_voice
@@ -1686,9 +1686,8 @@ impl ModernAudioSequencer {
                     !conflicting_note_on && !conflicting_automation
                 });
             }
-            let mask = spc.sfx_kon_masks[event_index]
-                & spc.is_chan_on
-                & !processed_masks[event_index];
+            let mask =
+                spc.sfx_kon_masks[event_index] & spc.is_chan_on & !processed_masks[event_index];
             let sample_offset = i32::from(spc.sfx_kon_offsets[event_index]);
             for voice in 0..8 {
                 if mask & (1 << voice) == 0 {
@@ -1707,12 +1706,12 @@ impl ModernAudioSequencer {
                     .map(|index| raw_pitch_event(&spc, index).1)
                     .or_else(|| {
                         (0..usize::from(spc.sfx_pitch_count.min(32)))
-                    .rev()
-                    .find(|&index| {
-                        spc.sfx_pitch_masks[index] & (1 << voice) != 0
-                            && i32::from(spc.sfx_pitch_offsets[index]) == sample_offset
-                    })
-                    .map(|index| spc.sfx_pitch_words[index])
+                            .rev()
+                            .find(|&index| {
+                                spc.sfx_pitch_masks[index] & (1 << voice) != 0
+                                    && i32::from(spc.sfx_pitch_offsets[index]) == sample_offset
+                            })
+                            .map(|index| spc.sfx_pitch_words[index])
                     });
                 if !self.semantic_sfx_pending_steps[voice].is_empty()
                     || self.semantic_sfx_repeat_steps[voice].is_some()
@@ -1723,20 +1722,21 @@ impl ModernAudioSequencer {
                     frame.events.retain(|event| {
                         !(event.sample_offset >= sample_offset
                             && matches!(
-                                event.kind,
-                                AudioEventKind::NoteOn {
-                                    voice: event_voice,
-                                    ..
-                                } if usize::from(event_voice) == voice
-                        ))
+                                    event.kind,
+                                    AudioEventKind::NoteOn {
+                                        voice: event_voice,
+                                        ..
+                                    } if usize::from(event_voice) == voice
+                            ))
                     });
                 }
-                let setup_index = (0..usize::from(spc.sfx_setup_count.min(8)))
-                    .rev()
-                    .find(|&index| {
-                        spc.sfx_setup_masks[index] & (1 << voice) != 0
-                            && i32::from(spc.sfx_setup_offsets[index]) <= sample_offset
-                    });
+                let setup_index =
+                    (0..usize::from(spc.sfx_setup_count.min(8)))
+                        .rev()
+                        .find(|&index| {
+                            spc.sfx_setup_masks[index] & (1 << voice) != 0
+                                && i32::from(spc.sfx_setup_offsets[index]) <= sample_offset
+                        });
                 let setup_index = setup_index.filter(|&index| {
                     if i32::from(spc.sfx_setup_offsets[index]) < sample_offset {
                         return true;
@@ -1754,20 +1754,22 @@ impl ModernAudioSequencer {
                         return true;
                     }
                     let source = spc.sfx_setup_sources[index];
-                    let pending_matches = self.semantic_sfx_pending_steps[voice]
-                        .iter()
-                        .any(|pending| {
-                            pending.step.instrument == source
+                    let pending_matches =
+                        self.semantic_sfx_pending_steps[voice]
+                            .iter()
+                            .any(|pending| {
+                                pending.step.instrument == source
+                                    && receipt_pitch.is_none_or(|pitch| {
+                                        pending.exact.is_some_and(|exact| exact.dsp_pitch == pitch)
+                                    })
+                            });
+                    let repeat_matches =
+                        self.semantic_sfx_repeat_steps[voice].is_some_and(|repeat| {
+                            repeat.step.instrument == source
                                 && receipt_pitch.is_none_or(|pitch| {
-                                    pending.exact.is_some_and(|exact| exact.dsp_pitch == pitch)
+                                    repeat.exact.is_some_and(|exact| exact.dsp_pitch == pitch)
                                 })
                         });
-                    let repeat_matches = self.semantic_sfx_repeat_steps[voice].is_some_and(|repeat| {
-                        repeat.step.instrument == source
-                            && receipt_pitch.is_none_or(|pitch| {
-                                repeat.exact.is_some_and(|exact| exact.dsp_pitch == pitch)
-                            })
-                    });
                     !pending_matches && !repeat_matches
                 });
                 if let Some(setup_index) = setup_index {
@@ -1807,8 +1809,9 @@ impl ModernAudioSequencer {
                             },
                         );
                     }
-                    let setup_volume_index =
-                        (0..usize::from(spc.sfx_volume_count.min(32))).rev().find(|&index| {
+                    let setup_volume_index = (0..usize::from(spc.sfx_volume_count.min(32)))
+                        .rev()
+                        .find(|&index| {
                             spc.sfx_volume_masks[index] & (1 << voice) != 0
                                 && i32::from(spc.sfx_volume_offsets[index]) <= sample_offset
                                 && i32::from(spc.sfx_volume_offsets[index]) >= setup_offset
@@ -1894,12 +1897,8 @@ impl ModernAudioSequencer {
                         exact.echo = pending.step.echo;
                         pending.exact = Some(exact);
                     }
-                    let has_volume_receipt = apply_semantic_volume(
-                        &mut pending,
-                        &spc,
-                        voice,
-                        sample_offset,
-                    );
+                    let has_volume_receipt =
+                        apply_semantic_volume(&mut pending, &spc, voice, sample_offset);
                     if !has_volume_receipt {
                         pending.preserve_existing_volume = true;
                     }
@@ -1928,12 +1927,8 @@ impl ModernAudioSequencer {
                         exact.echo = pending.step.echo;
                         pending.exact = Some(exact);
                     }
-                    let has_volume_receipt = apply_semantic_volume(
-                        &mut pending,
-                        &spc,
-                        voice,
-                        sample_offset,
-                    );
+                    let has_volume_receipt =
+                        apply_semantic_volume(&mut pending, &spc, voice, sample_offset);
                     if !has_volume_receipt {
                         pending.preserve_existing_volume = true;
                     }
@@ -2080,9 +2075,10 @@ impl ModernAudioSequencer {
         };
         let ambient_reset_owns_keyoffs = spc.spc_out[0] == 0
             && spc.block_count == 0xff
-            && frame.events.iter().any(|event| {
-                matches!(event.kind, AudioEventKind::PlaySfx { bank: 0, id: 0x03 })
-            });
+            && frame
+                .events
+                .iter()
+                .any(|event| matches!(event.kind, AudioEventKind::PlaySfx { bank: 0, id: 0x03 }));
         if ambient_reset_owns_keyoffs {
             return;
         }
@@ -2457,10 +2453,7 @@ fn semantic_echo_mask_at(spc: &crate::game_output::SpcSequencerState, sample_off
     mask
 }
 
-fn raw_pitch_event(
-    spc: &crate::game_output::SpcSequencerState,
-    index: usize,
-) -> (u8, u16, u16) {
+fn raw_pitch_event(spc: &crate::game_output::SpcSequencerState, index: usize) -> (u8, u16, u16) {
     if index < 32 {
         (
             spc.raw_pitch_masks[index],
@@ -2555,8 +2548,11 @@ fn semantic_volume_at(
     })
 }
 
-fn semantic_bank2_allocator_voice(route: AudioRouteState) -> Option<u8> {
-    if route.queue.input[3] == 0 {
+fn semantic_bank2_allocator_voice(
+    route: AudioRouteState,
+    commands: EngineAudioCommandBatch,
+) -> Option<u8> {
+    if commands.sfx(AudioSfxBank::Effect2).is_none() {
         return None;
     }
     let spc = route.spc?;
@@ -2570,8 +2566,11 @@ fn semantic_bank2_allocator_voice(route: AudioRouteState) -> Option<u8> {
         .map(|(_, voice)| voice)
 }
 
-fn semantic_bank1_allocator_voice(route: AudioRouteState) -> Option<u8> {
-    if route.queue.input[2] == 0 {
+fn semantic_bank1_allocator_voice(
+    route: AudioRouteState,
+    commands: EngineAudioCommandBatch,
+) -> Option<u8> {
+    if commands.sfx(AudioSfxBank::Effect1).is_none() {
         return None;
     }
     let spc = route.spc?;
@@ -3296,8 +3295,7 @@ mod tests {
         let command = sequencer.sequence_route(command_route);
         assert!(!command.events.iter().any(|event| matches!(
             event.kind,
-            AudioEventKind::NoteOn { voice: 7, .. }
-                | AudioEventKind::SetEchoSend { voice: 7, .. }
+            AudioEventKind::NoteOn { voice: 7, .. } | AudioEventKind::SetEchoSend { voice: 7, .. }
         )));
 
         let mut sfx_kon_sources = [[0; 8]; 8];
@@ -3351,8 +3349,7 @@ mod tests {
         });
 
         assert!(frame.events.iter().any(|event| {
-            event.sample_offset == 298
-                && matches!(event.kind, AudioEventKind::NoteOff { voice: 1 })
+            event.sample_offset == 298 && matches!(event.kind, AudioEventKind::NoteOff { voice: 1 })
         }));
     }
 
@@ -3488,9 +3485,10 @@ mod tests {
         let mut fallback =
             AudioEventFrame::from_route_and_dsp_writes(AudioRouteState::default(), &[]);
         sequencer.emit_music_globals_at_position(1, 6, &mut fallback);
-        assert!(fallback.events.iter().any(|event| {
-            matches!(event.kind, AudioEventKind::VoiceParameter { .. })
-        }));
+        assert!(fallback
+            .events
+            .iter()
+            .any(|event| { matches!(event.kind, AudioEventKind::VoiceParameter { .. }) }));
 
         sequencer.engine_receipt_mode = true;
         let mut live = AudioEventFrame::from_route_and_dsp_writes(AudioRouteState::default(), &[]);
@@ -3498,8 +3496,7 @@ mod tests {
         assert!(!live.events.iter().any(|event| {
             matches!(
                 event.kind,
-                AudioEventKind::VoiceParameter { .. }
-                    | AudioEventKind::GlobalParameter { .. }
+                AudioEventKind::VoiceParameter { .. } | AudioEventKind::GlobalParameter { .. }
             )
         }));
     }

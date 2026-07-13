@@ -1,6 +1,7 @@
 // Methods ported from zelda3/src/nmi.c and included inside ZeldaState.
 
 use super::*;
+use crate::game_output::{AudioSfxBank, EngineAudioCommand};
 
 impl ZeldaState {
     pub(super) fn interrupt_nmi(&mut self, input: u16) {
@@ -46,16 +47,28 @@ impl ZeldaState {
         let ambient_sound_effect = self.game_state.system_signals.ambient_sound_effect();
         if ambient_sound_effect != 0 {
             self.save_ambient_sound_effect_as_last();
-            self.zelda_apu_write(0x2141, ambient_sound_effect);
+            self.zelda_emit_audio_command(EngineAudioCommand::from_sfx_port_value(
+                AudioSfxBank::Ambient,
+                ambient_sound_effect,
+            ));
             self.clear_ambient_sound_effect();
-        } else if self.zelda_apu_read(0x2141)
-            == self.game_state.system_signals.last_ambient_sound_effect()
-        {
-            self.zelda_apu_write(0x2141, 0);
+        } else if self.zelda_audio_command_acknowledged(EngineAudioCommand::from_sfx_port_value(
+            AudioSfxBank::Ambient,
+            self.game_state.system_signals.last_ambient_sound_effect(),
+        )) {
+            self.zelda_emit_audio_command(EngineAudioCommand::ClearSfx {
+                bank: AudioSfxBank::Ambient,
+            });
         }
 
-        self.zelda_apu_write(0x2142, self.game_state.system_signals.sound_effect_1());
-        self.zelda_apu_write(0x2143, self.game_state.system_signals.sound_effect_2());
+        self.zelda_emit_audio_command(EngineAudioCommand::from_sfx_port_value(
+            AudioSfxBank::Effect1,
+            self.game_state.system_signals.sound_effect_1(),
+        ));
+        self.zelda_emit_audio_command(EngineAudioCommand::from_sfx_port_value(
+            AudioSfxBank::Effect2,
+            self.game_state.system_signals.sound_effect_2(),
+        ));
         self.clear_sound_effect_1();
         self.clear_sound_effect_2();
     }

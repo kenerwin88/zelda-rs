@@ -289,32 +289,38 @@ This file records the current implementation status for
   from SPC RAM with bounded storage rather than relying on a static predecode
   cycle or a later checkpoint refresh.
 - `ModernAudioSequencer` now sits before that engine in the modern backend. It
-  translates APUI/music route state into typed `PlayMusic`, `PlaySfx`,
-  `SetTempo`, `SetEnvelope`, `NoteOn`, and `NoteOff` events, so the default
-  modern path is no longer deriving its primary intent from DSP register writes.
+  consumes a typed, engine-authored command bus and expands `PlayMusic` and
+  panned `PlaySfx` commands into `SetTempo`, `SetEnvelope`, `NoteOn`, and
+  `NoteOff` events. Gameplay's last-write-wins sound latches become typed
+  commands at NMI; APUI bytes are projected from the same commands only for the
+  legacy oracle, diagnostics, and old save formats. The default modern path is
+  therefore no longer deriving primary intent from APUI or DSP register bytes.
   Same-voice catalog steps are scheduled across their declared frame durations
   instead of being flattened into one frame, while steps on different voices
   still begin together. Per-voice lifetimes and pending steps are checkpointed,
   and expired voices no longer contaminate context-dependent variant selection.
   The full modern sequencer and renderer state—including music phase, oscillator
   phase, envelopes, slides, and echo history—is now part of audio save states.
-  Snapshot v5 stores the compact typed APUI bridge and active canonical
-  sample-bank ID without embedding a 64 KiB SPC address space. Version 1-4
-  payloads remain readable, and legacy payloads recover a bank from their echo
-  seed when one is present.
+  Snapshot v6 stores `ModernAudioRuntime` directly: its typed command queue,
+  sequencer, renderer, canonical sample-bank ID, and compatibility-only C-save
+  fields, without embedding APUI transport bytes or a 64 KiB SPC address
+  space. Version 1-5 payloads remain readable, and legacy payloads are decoded
+  once through the compatibility gateway before entering typed runtime state.
   The modern sequencer and renderer are checkpointed; backend selection remains
   host configuration and returns to Modern unless the host reapplies an override.
   Legacy checkpoints still decode through the prior audio snapshot schema, with
   modern state initialized only where those older files had no such payload.
   The DSP-compatible path remains the exact parity oracle and still feeds trace
   diagnostics. The playable Modern backend no longer advances the legacy SPC
-  control interpreter or DSP: queued APUI commands go directly through
-  `ModernAudioSequencer`, and all host PCM is rendered by `ModernAudioEngine`.
+  control interpreter or DSP: queued `EngineAudioCommand` values go directly
+  through `ModernAudioSequencer`, and all host PCM is rendered by
+  `ModernAudioEngine`.
   Modern callbacks do not require a live `SpcPlayer`; regression tests pin both
   that ownership boundary and the legacy SPC/DSP state across Modern callbacks.
-  Modern also owns APUI
-  acknowledgements, while ordinary reset/C-style load restarts Modern sequence
-  and renderer state at a defined command boundary instead of retaining future
+  Modern acknowledgements are typed command batches. Normal NMI and
+  `zelda_is_music_playing` inspect that semantic state instead of reading APUI
+  ports, while ordinary reset/C-style load restarts Modern sequence and
+  renderer state at a defined command boundary instead of retaining future
   voices or echo state.
   Normal Cargo builds are now modern-only: the `SpcPlayer` module, raw pointer,
   DSP interpreter, and legacy DSP snapshot payload are compiled only with the
@@ -322,18 +328,20 @@ This file records the current implementation status for
   parity diagnostics; a default build rejects DSP backend selection and
   `--audio-trace-log` instead of silently constructing the legacy runtime.
   The fixed C save-state byte layout keeps inert APU/DSP-sized compatibility
-  slots, but modern-only `AudioState` no longer owns raw SPC RAM. Its typed
-  `ModernApuState` owns the command history, pending write, ports, saved-music
-  ports, and startup timer; C-style loads import only those meaningful fields.
+  slots, but modern-only `AudioState` no longer owns raw SPC RAM. Its
+  `ModernAudioRuntime` owns a typed 16-entry command history, pending batch,
+  input batch, acknowledgement batch, sequencer, and renderer. Saved-music
+  ports and the startup timer live in an explicitly compatibility-only record;
+  C-style loads import those fields through the legacy gateway.
   Raw song-bank uploads and the shadow RAM used by trace tools now compile only
   with `audio-oracle`.
-  Audio checkpoints use the portable version-5 schema in both build modes. Its
-  required payload contains the compact APUI bridge, sequencer, renderer,
-  canonical sample-bank ID, and configuration state. Oracle builds append
+  Audio checkpoints use the portable version-6 schema in both build modes. Its
+  required payload contains the typed modern runtime, canonical sample-bank ID,
+  compatibility record, and configuration state. Oracle builds append
   legacy SPC/DSP continuation as an explicitly flagged opaque sidecar; normal
   builds can load those checkpoints by ignoring the sidecar, and oracle builds
   can load normal checkpoints by constructing a fresh diagnostic oracle.
-  Versions 2-4 migrate in either build. Historical version-1 oracle checkpoints
+  Versions 2-5 migrate in either build. Historical version-1 oracle checkpoints
   migrate through an oracle build.
   `scripts/check_audio_build_modes.py` is the build gate: it checks the
   oracle-enabled binary, builds the default binary, and rejects any default
@@ -342,9 +350,18 @@ This file records the current implementation status for
   length, and capability flags. The loader still accepts supported pre-header
   payloads and rejects malformed or unknown future versions deterministically.
   A semantic conformance matrix now complements the full-route DSP oracle gate.
-  Its named scenarios inject APUI engine commands directly—without replay-frame
-  coordinates—and cover catalogued SFX, overlapping effects, music
+  Its named scenarios inject typed engine commands directly—without APUI bytes
+  or replay-frame coordinates—and cover catalogued SFX, overlapping effects, music
   interruption, sample-exact snapshot continuation, and ordinary music restore.
+  A shrinking property-based command-state generator now complements those
+  named cases. It draws legal batches from the full set of lifted music tracks
+  and catalogued SFX commands, mixes in clear/stop/control transitions, queue
+  backlogs, render gaps, and arbitrary snapshot round-trips, then compares a
+  continuous modern engine with the restored engine event-for-event and
+  sample-for-sample across 256 generated programs per test run. Each rendered
+  frame also requires bounded voice counts, zero unknown or fallback SFX, and
+  zero events ignored by the renderer. Proptest retains and shrinks any failure
+  into a small command sequence that can be promoted to a named regression.
   Every rendered scenario requires zero unknown SFX programs, zero heuristic
   fallbacks, and zero ignored modern-renderer events. The route oracle remains
   the independent sample-level proof, while this matrix prevents that proof

@@ -6,9 +6,9 @@ impl ZeldaState {
     pub fn zelda_oracle_aligned_modern_audio_trace_state(
         &self,
     ) -> (ModernAudioSequencer, ModernAudioEngine) {
-        let mut engine = self.audio.modern_audio.clone();
+        let mut engine = self.audio.modern.renderer.clone();
         self.zelda_sync_modern_audio_trace_engine(&mut engine, 0);
-        (self.audio.modern_sequence.clone(), engine)
+        (self.audio.modern.sequencer.clone(), engine)
     }
 
     pub fn zelda_sync_modern_audio_trace_engine(
@@ -108,7 +108,7 @@ impl ZeldaState {
         let mut writes = Vec::new();
         if samples > 0 && channels > 0 {
             if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
-                player.input_ports = self.audio.modern_apu.input_ports;
+                player.input_ports = self.audio.modern.queue.input_commands.legacy_ports();
                 let mut hist = crate::spc_player::DspRegWriteHistory::default();
                 player.reg_write_history = &mut hist;
                 crate::spc_player::spc_player_generate_samples(player);

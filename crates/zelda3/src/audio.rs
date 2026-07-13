@@ -4,7 +4,8 @@ use super::*;
 use crate::config::{config_value_path, MSU_FEATURE_MSU_DELUXE, MSU_FEATURE_OPUZ};
 use crate::game_output::{
     AudioBackendMode, AudioEventFrame, AudioQueueState, AudioRouteState, DspWriteEvent,
-    GameFrameOutput, MusicControlState, RenderOutputFacts, RuntimeOutputFacts, SpcSequencerState,
+    EngineAudioCommand, EngineAudioCommandBatch, GameFrameOutput, MusicControlState,
+    RenderOutputFacts, RuntimeOutputFacts, SpcSequencerState,
 };
 use crate::game_state::constants::INIDISP_COPY;
 use crate::modern_audio::{ModernAudioEngine, ModernAudioFrameStats};
@@ -28,7 +29,7 @@ const MSU_STATE_FINISHED_PLAYING: u8 = 1;
 const MSU_STATE_RESUMING: u8 = 2;
 const MSU_STATE_PLAYING: u8 = 3;
 const AUDIO_SNAPSHOT_MAGIC: [u8; 4] = *b"Z3AU";
-const AUDIO_SNAPSHOT_VERSION: u16 = 5;
+const AUDIO_SNAPSHOT_VERSION: u16 = 6;
 const AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR: u16 = 1;
 const AUDIO_SNAPSHOT_HEADER_BYTES: usize = 12;
 
@@ -158,25 +159,134 @@ struct ApuWriteEnt {
     ports: [u8; 4],
 }
 
-/// Compact modern-owned state for the SNES/APU command bridge.
-///
-/// The modern renderer consumes semantic commands and canonical sample banks;
-/// it does not emulate the SPC700 address space. The two legacy RAM locations
-/// retained here are compatibility fields used by old C-style save blocks.
+impl ApuWriteEnt {
+    fn from_commands(commands: EngineAudioCommandBatch) -> Self {
+        Self {
+            ports: commands.legacy_ports(),
+        }
+    }
+
+    fn decoded_commands(self) -> EngineAudioCommandBatch {
+        EngineAudioCommandBatch::from_legacy_ports(self.ports)
+    }
+}
+
+/// Production command transport. Typed batches are authoritative; APUI bytes
+/// are projected only by legacy snapshot and oracle adapters.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-struct ModernApuState {
-    write_history: [ApuWriteEnt; 16],
-    pending_write: ApuWriteEnt,
+struct ModernAudioCommandQueue {
+    write_history: [EngineAudioCommandBatch; 16],
+    pending_write: EngineAudioCommandBatch,
     write_position: u8,
     write_count: u8,
     total_writes: u8,
-    input_ports: [u8; 4],
-    output_ports: [u8; 4],
+    input_commands: EngineAudioCommandBatch,
+    acknowledged_commands: EngineAudioCommandBatch,
+}
+
+impl ModernAudioCommandQueue {
+    fn from_legacy_transport(
+        write_history: [ApuWriteEnt; 16],
+        pending_write: ApuWriteEnt,
+        write_position: u8,
+        write_count: u8,
+        total_writes: u8,
+        input_ports: [u8; 4],
+        output_ports: [u8; 4],
+    ) -> Self {
+        Self {
+            write_history: write_history.map(ApuWriteEnt::decoded_commands),
+            pending_write: pending_write.decoded_commands(),
+            write_position,
+            write_count,
+            total_writes,
+            input_commands: EngineAudioCommandBatch::from_legacy_ports(input_ports),
+            acknowledged_commands: EngineAudioCommandBatch::from_legacy_ports(output_ports),
+        }
+    }
+
+    fn legacy_write_history(&self) -> [ApuWriteEnt; 16] {
+        self.write_history.map(ApuWriteEnt::from_commands)
+    }
+
+    fn emit(&mut self, command: EngineAudioCommand) {
+        self.pending_write.apply(command);
+    }
+
+    fn push(&mut self) {
+        let pos = (self.write_position & 0xf) as usize;
+        self.write_history[pos] = self.pending_write;
+        self.write_position = self.write_position.wrapping_add(1);
+        if self.write_count < 16 {
+            self.write_count += 1;
+        }
+        self.total_writes = self.total_writes.wrapping_add(1);
+    }
+
+    fn pop(&mut self) {
+        if self.write_count != 0 {
+            let pos = self.write_position.wrapping_sub(self.write_count) & 0xf;
+            self.input_commands = self.write_history[pos as usize];
+            self.write_count -= 1;
+        }
+    }
+
+    fn acknowledge_input(&mut self) {
+        self.acknowledged_commands = self.input_commands;
+    }
+
+    fn reset(&mut self) {
+        self.write_position = 0;
+        self.total_writes = 0;
+        self.write_count = 0;
+    }
+
+    fn discard_unused_frames(&mut self) {
+        if self.write_count != 0 {
+            let pos = self.write_position.wrapping_sub(self.write_count) & 0xf;
+            if self.input_commands == self.write_history[pos as usize] {
+                if self.total_writes >= 16 {
+                    self.total_writes = 14;
+                    self.write_count -= 1;
+                }
+                return;
+            }
+        }
+        self.total_writes = 0;
+    }
+
+    fn pending_commands(&self) -> EngineAudioCommandBatch {
+        let pos = self.write_position.wrapping_sub(self.write_count) & 0xf;
+        self.write_history[pos as usize]
+    }
+
+    fn route_state(&self) -> AudioQueueState {
+        AudioQueueState {
+            pos: self.write_position,
+            count: self.write_count,
+            total: self.total_writes,
+            write: self.pending_write.legacy_ports(),
+            pending: self.pending_commands().legacy_ports(),
+            input: self.input_commands.legacy_ports(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct ModernAudioRuntime {
+    queue: ModernAudioCommandQueue,
+    renderer: ModernAudioEngine,
+    sequencer: ModernAudioSequencer,
+}
+
+/// Fields retained only for importing and exporting old C-style save blocks.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct LegacyAudioCompatibilityState {
     saved_music_ports: [u8; 4],
     startup_sfx_timer_accum: u8,
 }
 
-impl ModernApuState {
+impl LegacyAudioCompatibilityState {
     fn import_legacy_ram(&mut self, ram: &[u8]) {
         self.startup_sfx_timer_accum = ram.get(0x43).copied().unwrap_or(0);
         self.saved_music_ports = ram
@@ -199,9 +309,8 @@ pub(super) struct AudioState {
     backend: AudioBackendMode,
     audio_has_rendered: bool,
     msu_player: MsuPlayer,
-    modern_audio: ModernAudioEngine,
-    modern_sequence: ModernAudioSequencer,
-    modern_apu: ModernApuState,
+    modern: ModernAudioRuntime,
+    legacy_compatibility: LegacyAudioCompatibilityState,
     #[cfg(feature = "audio-oracle")]
     modern_sample_ram: [u8; 0x10000],
     volume_transition_step_float: [f32; 4],
@@ -224,9 +333,8 @@ impl Default for AudioState {
             backend: AudioBackendMode::default(),
             audio_has_rendered: false,
             msu_player: MsuPlayer::default(),
-            modern_audio: ModernAudioEngine::default(),
-            modern_sequence: ModernAudioSequencer::default(),
-            modern_apu: ModernApuState::default(),
+            modern: ModernAudioRuntime::default(),
+            legacy_compatibility: LegacyAudioCompatibilityState::default(),
             #[cfg(feature = "audio-oracle")]
             modern_sample_ram: [0; 0x10000],
             volume_transition_step_float: [0.0; 4],
@@ -247,9 +355,8 @@ impl Clone for AudioState {
             backend: self.backend,
             audio_has_rendered: self.audio_has_rendered,
             msu_player: self.msu_player.clone(),
-            modern_audio: self.modern_audio.clone(),
-            modern_sequence: self.modern_sequence.clone(),
-            modern_apu: self.modern_apu,
+            modern: self.modern.clone(),
+            legacy_compatibility: self.legacy_compatibility,
             #[cfg(feature = "audio-oracle")]
             modern_sample_ram: self.modern_sample_ram,
             volume_transition_step_float: self.volume_transition_step_float,
@@ -269,7 +376,7 @@ impl AudioState {
             return self.modern_sample_ram;
         }
         #[cfg(not(feature = "audio-oracle"))]
-        self.modern_apu.export_legacy_ram()
+        self.legacy_compatibility.export_legacy_ram()
     }
 }
 
@@ -284,12 +391,41 @@ impl Drop for AudioState {
 }
 
 impl ZeldaState {
+    /// Legacy APUI input adapter used by oracle and compatibility tests.
+    #[cfg(any(test, feature = "audio-oracle"))]
     pub fn zelda_apu_write(&mut self, adr: u32, val: u8) {
-        self.audio.modern_apu.pending_write.ports[(adr as usize) & 3] = val;
+        self.zelda_emit_audio_command(EngineAudioCommand::from_apui_write((adr as usize) & 3, val));
+    }
+
+    pub fn zelda_emit_audio_command(&mut self, command: EngineAudioCommand) {
+        self.audio.modern.queue.emit(command);
     }
 
     pub fn zelda_debug_apu_write_ports(&self) -> [u8; 4] {
-        self.audio.modern_apu.pending_write.ports
+        self.audio.modern.queue.pending_write.legacy_ports()
+    }
+
+    pub fn zelda_engine_audio_commands(&self) -> EngineAudioCommandBatch {
+        self.audio.modern.queue.input_commands
+    }
+
+    pub fn zelda_audio_command_acknowledged(&self, command: EngineAudioCommand) -> bool {
+        let acknowledged = self.audio.modern.queue.acknowledged_commands;
+        match command {
+            EngineAudioCommand::ClearMusic
+            | EngineAudioCommand::PlayMusic { .. }
+            | EngineAudioCommand::StopMusic
+            | EngineAudioCommand::MusicControl { .. } => {
+                let mut expected = EngineAudioCommandBatch::default();
+                expected.apply(command);
+                acknowledged.music() == expected.music()
+            }
+            EngineAudioCommand::ClearSfx { bank } | EngineAudioCommand::PlaySfx { bank, .. } => {
+                let mut expected = EngineAudioCommandBatch::default();
+                expected.apply(command);
+                acknowledged.sfx(bank) == expected.sfx(bank)
+            }
+        }
     }
 
     pub fn zelda_audio_route_state(&self) -> AudioRouteState {
@@ -309,16 +445,7 @@ impl ZeldaState {
     }
 
     fn zelda_audio_queue_state(&self) -> AudioQueueState {
-        let apu = &self.audio.modern_apu;
-        let pending_pos = apu.write_position.wrapping_sub(apu.write_count) & 0xf;
-        AudioQueueState {
-            pos: apu.write_position,
-            count: apu.write_count,
-            total: apu.total_writes,
-            write: apu.pending_write.ports,
-            pending: apu.write_history[pending_pos as usize].ports,
-            input: apu.input_ports,
-        }
+        self.audio.modern.queue.route_state()
     }
 
     #[cfg(not(feature = "audio-oracle"))]
@@ -458,34 +585,35 @@ impl ZeldaState {
     }
 
     pub fn zelda_modern_audio_last_stats(&self) -> ModernAudioFrameStats {
-        self.audio.modern_audio.last_stats()
+        self.audio.modern.renderer.last_stats()
     }
 
     pub fn zelda_modern_audio_sequence_last_stats(&self) -> ModernAudioSequenceStats {
-        self.audio.modern_sequence.last_stats()
+        self.audio.modern.sequencer.last_stats()
     }
 
     pub fn zelda_audio_route_debug_json(&self) -> String {
-        let apu = &self.audio.modern_apu;
-        let pending_pos = apu.write_position.wrapping_sub(apu.write_count) & 0xf;
-        let pending = apu.write_history[pending_pos as usize].ports;
+        let queue = &self.audio.modern.queue;
+        let write = queue.pending_write.legacy_ports();
+        let pending = queue.pending_commands().legacy_ports();
+        let input = queue.input_commands.legacy_ports();
         let mut out = format!(
             "\"queue\":{{\"pos\":{},\"count\":{},\"total\":{},\"write\":[{},{},{},{}],\"pending\":[{},{},{},{}],\"input\":[{},{},{},{}]",
-            apu.write_position,
-            apu.write_count,
-            apu.total_writes,
-            apu.pending_write.ports[0],
-            apu.pending_write.ports[1],
-            apu.pending_write.ports[2],
-            apu.pending_write.ports[3],
+            queue.write_position,
+            queue.write_count,
+            queue.total_writes,
+            write[0],
+            write[1],
+            write[2],
+            write[3],
             pending[0],
             pending[1],
             pending[2],
             pending[3],
-            apu.input_ports[0],
-            apu.input_ports[1],
-            apu.input_ports[2],
-            apu.input_ports[3],
+            input[0],
+            input[1],
+            input[2],
+            input[3],
         );
         #[cfg(feature = "audio-oracle")]
         if let Some(player) = unsafe { self.audio.spc_player.as_ref() } {
@@ -559,7 +687,7 @@ impl ZeldaState {
     /// runtime state instead.
     pub fn zelda_audio_snapshot_bytes(&self) -> Vec<u8> {
         let (payload, has_oracle_sidecar) =
-            snapshot_state::encode_v5(&self.audio).expect("audio snapshot serialize failed");
+            snapshot_state::encode_v6(&self.audio).expect("audio snapshot serialize failed");
         let flags = if has_oracle_sidecar {
             AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR
         } else {
@@ -583,8 +711,8 @@ impl ZeldaState {
             eprintln!(
                 "[AUDIO_FP] snapshot: bytes={} timer_cycles={tc} dsp.sampleOffset={so} apu_total_write={} input_ports={:?}",
                 bytes.len(),
-                self.audio.modern_apu.total_writes,
-                self.audio.modern_apu.input_ports
+                self.audio.modern.queue.total_writes,
+                self.audio.modern.queue.input_commands.legacy_ports()
             );
         }
         bytes
@@ -592,8 +720,8 @@ impl ZeldaState {
 
     pub fn zelda_modern_audio_state(&self) -> (ModernAudioSequencer, ModernAudioEngine) {
         (
-            self.audio.modern_sequence.clone(),
-            self.audio.modern_audio.clone(),
+            self.audio.modern.sequencer.clone(),
+            self.audio.modern.renderer.clone(),
         )
     }
 
@@ -603,7 +731,7 @@ impl ZeldaState {
             return Cow::Borrowed(&self.audio.modern_sample_ram);
         }
         #[cfg(not(feature = "audio-oracle"))]
-        Cow::Owned(self.audio.modern_apu.export_legacy_ram().to_vec())
+        Cow::Owned(self.audio.legacy_compatibility.export_legacy_ram().to_vec())
     }
 
     pub fn zelda_audio_live_spc_ram(&self) -> [u8; 0x10000] {
@@ -627,7 +755,7 @@ impl ZeldaState {
                 return Err("audio snapshot header is truncated".to_string());
             }
             let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-            if !matches!(version, 1 | 2 | 3 | 4 | AUDIO_SNAPSHOT_VERSION) {
+            if !matches!(version, 1 | 2 | 3 | 4 | 5 | AUDIO_SNAPSHOT_VERSION) {
                 return Err(format!("unsupported audio snapshot version {version}"));
             }
             let flags = u16::from_le_bytes([bytes[6], bytes[7]]);
@@ -655,6 +783,14 @@ impl ZeldaState {
         };
         let restored = match version {
             AUDIO_SNAPSHOT_VERSION => {
+                let (state, has_oracle_sidecar) = snapshot_state::decode_v6(payload)?;
+                let flag_has_sidecar = flags & AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR != 0;
+                if flag_has_sidecar != has_oracle_sidecar {
+                    return Err("audio snapshot oracle sidecar flag mismatch".to_string());
+                }
+                state
+            }
+            5 => {
                 let (state, has_oracle_sidecar) = snapshot_state::decode_v5(payload)?;
                 let flag_has_sidecar = flags & AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR != 0;
                 if flag_has_sidecar != has_oracle_sidecar {
@@ -716,8 +852,8 @@ impl ZeldaState {
             eprintln!(
                 "[AUDIO_FP] restore: bytes={} timer_cycles={tc} dsp.sampleOffset={so} apu_total_write={} input_ports={:?}",
                 bytes.len(),
-                restored.modern_apu.total_writes,
-                restored.modern_apu.input_ports
+                restored.modern.queue.total_writes,
+                restored.modern.queue.input_commands.legacy_ports()
             );
         }
         self.audio = restored;
@@ -725,59 +861,37 @@ impl ZeldaState {
     }
 
     pub fn zelda_push_apu_state(&mut self) {
-        let apu = &mut self.audio.modern_apu;
-        let pos = (apu.write_position & 0xf) as usize;
-        apu.write_history[pos] = apu.pending_write;
-        apu.write_position = apu.write_position.wrapping_add(1);
-        if apu.write_count < 16 {
-            apu.write_count += 1;
-        }
-        apu.total_writes = apu.total_writes.wrapping_add(1);
+        self.audio.modern.queue.push();
     }
 
     fn zelda_pop_apu_state(&mut self) {
-        let apu = &mut self.audio.modern_apu;
-        if apu.write_count != 0 {
-            let pos = apu.write_position.wrapping_sub(apu.write_count) & 0xf;
-            apu.input_ports = apu.write_history[pos as usize].ports;
-            apu.write_count -= 1;
-        }
+        self.audio.modern.queue.pop();
     }
 
     pub fn zelda_discard_unused_audio_frames(&mut self) {
-        let apu = &mut self.audio.modern_apu;
-        if apu.write_count != 0 {
-            let pos = apu.write_position.wrapping_sub(apu.write_count) & 0xf;
-            if apu.input_ports == apu.write_history[pos as usize].ports {
-                if apu.total_writes >= 16 {
-                    apu.total_writes = 14;
-                    apu.write_count -= 1;
-                }
-                return;
-            }
-        }
-        apu.total_writes = 0;
+        self.audio.modern.queue.discard_unused_frames();
     }
 
     fn zelda_reset_apu_queue(&mut self) {
-        self.audio.modern_apu.write_position = 0;
-        self.audio.modern_apu.total_writes = 0;
-        self.audio.modern_apu.write_count = 0;
+        self.audio.modern.queue.reset();
     }
 
     pub fn zelda_read_apui00(&self) -> u8 {
         self.game_state.system_signals.apui00()
     }
 
+    /// Legacy APUI acknowledgement projection used by oracle and compatibility tests.
+    #[cfg(any(test, feature = "audio-oracle"))]
     pub fn zelda_apu_read(&self, adr: u32) -> u8 {
         if self.audio.backend == AudioBackendMode::Modern {
-            return self.audio.modern_apu.output_ports[(adr as usize) & 3];
+            return self.audio.modern.queue.acknowledged_commands.legacy_ports()
+                [(adr as usize) & 3];
         }
         #[cfg(feature = "audio-oracle")]
         if let Some(player) = unsafe { self.audio.spc_player.as_ref() } {
             return player.port_to_snes[(adr as usize) & 3];
         }
-        self.audio.modern_apu.output_ports[(adr as usize) & 3]
+        self.audio.modern.queue.acknowledged_commands.legacy_ports()[(adr as usize) & 3]
     }
 
     pub fn zelda_render_audio(&mut self, audio_buffer: &mut [i16], samples: i32, channels: i32) {
@@ -843,11 +957,16 @@ impl ZeldaState {
                     );
                 }
                 self.zelda_pop_apu_state();
-                self.audio.modern_apu.output_ports = self.audio.modern_apu.input_ports;
+                self.audio.modern.queue.acknowledge_input();
                 let route = self.zelda_modern_audio_route_state();
-                let frame = self.audio.modern_sequence.sequence_route(route);
+                let frame = self
+                    .audio
+                    .modern
+                    .sequencer
+                    .sequence_engine_commands(route, self.audio.modern.queue.input_commands);
                 self.audio
-                    .modern_audio
+                    .modern
+                    .renderer
                     .render_frame(&frame, audio_buffer, samples, channels);
                 if self.audio.msu_player.has_file && channels == 2 {
                     self.msu_player_mix(audio_buffer, samples);
@@ -875,7 +994,7 @@ impl ZeldaState {
         }
         #[cfg(not(feature = "audio-oracle"))]
         let _ = timer_cycles;
-        self.audio.modern_apu.startup_sfx_timer_accum = sfx_timer_accum;
+        self.audio.legacy_compatibility.startup_sfx_timer_accum = sfx_timer_accum;
         #[cfg(feature = "audio-oracle")]
         {
             self.audio.modern_sample_ram[0x0043] = sfx_timer_accum;
@@ -886,14 +1005,17 @@ impl ZeldaState {
         if self.audio.msu_player.state != MSU_STATE_IDLE {
             self.audio.msu_player.state != MSU_STATE_FINISHED_PLAYING
         } else {
-            self.zelda_apu_read(0x2140) != 0
+            !matches!(
+                self.audio.modern.queue.acknowledged_commands.music(),
+                crate::game_output::AudioMusicCommand::Clear
+            )
         }
     }
 
     pub fn zelda_restore_music_after_load_locked(&mut self, is_reset: bool) {
-        self.audio.modern_audio = ModernAudioEngine::default();
-        self.audio.modern_sequence = ModernAudioSequencer::default();
-        self.audio.modern_audio.sample_ram_changed();
+        self.audio.modern.renderer = ModernAudioEngine::default();
+        self.audio.modern.sequencer = ModernAudioSequencer::default();
+        self.audio.modern.renderer.sample_ram_changed();
         #[cfg(feature = "audio-oracle")]
         crate::spc_player::spc_player_copy_variables_from_ram(self.audio.spc_player);
         #[cfg(feature = "audio-oracle")]
@@ -902,19 +1024,26 @@ impl ZeldaState {
             player
                 .input_ports
                 .copy_from_slice(&player.ram[0x410..0x414]);
-            self.audio.modern_apu.input_ports = player.input_ports;
-            self.audio.modern_apu.pending_write.ports = player.input_ports;
+            let commands = EngineAudioCommandBatch::from_legacy_ports(player.input_ports);
+            self.audio.modern.queue.input_commands = commands;
+            self.audio.modern.queue.pending_write = commands;
         } else {
-            self.audio.modern_apu.input_ports = self.audio.modern_apu.saved_music_ports;
-            self.audio.modern_apu.pending_write.ports = self.audio.modern_apu.saved_music_ports;
+            let commands = EngineAudioCommandBatch::from_legacy_ports(
+                self.audio.legacy_compatibility.saved_music_ports,
+            );
+            self.audio.modern.queue.input_commands = commands;
+            self.audio.modern.queue.pending_write = commands;
         }
         #[cfg(not(feature = "audio-oracle"))]
         {
-            self.audio.modern_apu.input_ports = self.audio.modern_apu.saved_music_ports;
-            self.audio.modern_apu.pending_write.ports = self.audio.modern_apu.saved_music_ports;
+            let commands = EngineAudioCommandBatch::from_legacy_ports(
+                self.audio.legacy_compatibility.saved_music_ports,
+            );
+            self.audio.modern.queue.input_commands = commands;
+            self.audio.modern.queue.pending_write = commands;
         }
         if is_reset {
-            self.audio.modern_apu.output_ports = [0; 4];
+            self.audio.modern.queue.acknowledged_commands = EngineAudioCommandBatch::default();
             #[cfg(feature = "audio-oracle")]
             crate::spc_player::spc_player_initialize(self.audio.spc_player);
         }
@@ -942,7 +1071,7 @@ impl ZeldaState {
                 }
             }
             if self.audio.msu_player.state != 0 {
-                self.zelda_apu_write(0x2140, 0xf0);
+                self.zelda_emit_audio_command(EngineAudioCommand::StopMusic);
             }
         }
         self.zelda_reset_apu_queue();
@@ -953,12 +1082,14 @@ impl ZeldaState {
         crate::spc_player::spc_player_copy_variables_to_ram(self.audio.spc_player);
         #[cfg(feature = "audio-oracle")]
         if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
-            player.ram[0x410..0x414].copy_from_slice(&self.audio.modern_apu.pending_write.ports);
+            player.ram[0x410..0x414]
+                .copy_from_slice(&self.audio.modern.queue.pending_write.legacy_ports());
         }
-        self.audio.modern_apu.saved_music_ports = self.audio.modern_apu.pending_write.ports;
+        self.audio.legacy_compatibility.saved_music_ports =
+            self.audio.modern.queue.pending_write.legacy_ports();
         #[cfg(feature = "audio-oracle")]
         self.audio.modern_sample_ram[0x410..0x414]
-            .copy_from_slice(&self.audio.modern_apu.saved_music_ports);
+            .copy_from_slice(&self.audio.legacy_compatibility.saved_music_ports);
         let msu_volume = (self.audio.msu_player.volume * 255.0) as u8;
         self.set_msu_volume(msu_volume);
         self.save_msu_resume_info(MsuResumeSlot::Primary, self.audio.msu_player.resume_info);
@@ -998,9 +1129,9 @@ impl ZeldaState {
     pub fn load_song_bank(&mut self, p: &[u8]) {
         let bank_id = (0..3).find(|&bank_id| self.asset_raw(bank_id) == Some(p));
         if let Some(bank_id) = bank_id {
-            self.audio.modern_audio.select_sample_bank(bank_id as u8);
+            self.audio.modern.renderer.select_sample_bank(bank_id as u8);
         }
-        self.audio.modern_audio.sample_ram_changed();
+        self.audio.modern.renderer.sample_ram_changed();
         #[cfg(feature = "audio-oracle")]
         {
             upload_song_bank_to_ram(&mut self.audio.modern_sample_ram, p);
@@ -1011,7 +1142,7 @@ impl ZeldaState {
     }
 
     pub(crate) fn select_modern_sample_bank(&mut self, bank_id: u8) {
-        self.audio.modern_audio.select_sample_bank(bank_id);
+        self.audio.modern.renderer.select_sample_bank(bank_id);
     }
 
     pub fn zelda_audio_debug_summary(&self) -> String {
@@ -1031,7 +1162,7 @@ impl ZeldaState {
         #[cfg(feature = "audio-oracle")]
         let spc_ram = crate::spc_player::spc_player_save_ram(self.audio.spc_player);
         #[cfg(not(feature = "audio-oracle"))]
-        let spc_ram = self.audio.modern_apu.export_legacy_ram();
+        let spc_ram = self.audio.legacy_compatibility.export_legacy_ram();
         apu.ram.copy_from_slice(&spc_ram);
         apu.rom_readable = false;
         apu.spc.pc = 0x800;
@@ -1046,15 +1177,15 @@ impl ZeldaState {
         #[cfg(feature = "audio-oracle")]
         return crate::spc_player::spc_player_save_ram(self.audio.spc_player);
         #[cfg(not(feature = "audio-oracle"))]
-        self.audio.modern_apu.export_legacy_ram()
+        self.audio.legacy_compatibility.export_legacy_ram()
     }
 
     pub(super) fn load_audio_apu_ram_c_saveload(&mut self, data: &[u8]) {
-        self.audio.modern_apu.import_legacy_ram(data);
+        self.audio.legacy_compatibility.import_legacy_ram(data);
         if let Some(bank_id) = crate::modern_sample_bank::identify_spc_ram(data) {
-            self.audio.modern_audio.select_sample_bank(bank_id);
+            self.audio.modern.renderer.select_sample_bank(bank_id);
         }
-        self.audio.modern_audio.sample_ram_changed();
+        self.audio.modern.renderer.sample_ram_changed();
         #[cfg(feature = "audio-oracle")]
         {
             let len = data.len().min(self.audio.modern_sample_ram.len());

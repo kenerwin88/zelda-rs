@@ -154,6 +154,240 @@ pub struct AudioQueueState {
     pub input: [u8; 4],
 }
 
+/// Stereo placement encoded by the original engine in the high two bits of an
+/// SFX command byte.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum AudioPan {
+    #[default]
+    Center,
+    Right,
+    Left,
+    Reserved,
+}
+
+impl AudioPan {
+    pub const fn from_legacy_bits(value: u8) -> Self {
+        match value & 0xc0 {
+            0x40 => Self::Right,
+            0x80 => Self::Left,
+            0xc0 => Self::Reserved,
+            _ => Self::Center,
+        }
+    }
+
+    pub const fn legacy_bits(self) -> u8 {
+        match self {
+            Self::Center => 0,
+            Self::Right => 0x40,
+            Self::Left => 0x80,
+            Self::Reserved => 0xc0,
+        }
+    }
+}
+
+/// Semantic SFX latches used by the engine. Their numeric order intentionally
+/// matches the modern catalog banks and APUI ports 1 through 3.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum AudioSfxBank {
+    Ambient,
+    Effect1,
+    Effect2,
+}
+
+impl AudioSfxBank {
+    pub const ALL: [Self; 3] = [Self::Ambient, Self::Effect1, Self::Effect2];
+
+    pub const fn catalog_id(self) -> u8 {
+        match self {
+            Self::Ambient => 0,
+            Self::Effect1 => 1,
+            Self::Effect2 => 2,
+        }
+    }
+
+    pub const fn port_index(self) -> usize {
+        self.catalog_id() as usize + 1
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AudioSfxCommand {
+    pub effect: u8,
+    pub pan: AudioPan,
+}
+
+impl AudioSfxCommand {
+    pub const fn from_legacy_value(value: u8) -> Option<Self> {
+        if value == 0 {
+            None
+        } else {
+            Some(Self {
+                effect: value & 0x3f,
+                pan: AudioPan::from_legacy_bits(value),
+            })
+        }
+    }
+
+    pub const fn legacy_value(self) -> u8 {
+        (self.effect & 0x3f) | self.pan.legacy_bits()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum AudioMusicCommand {
+    #[default]
+    Clear,
+    Play {
+        track: u8,
+    },
+    Stop,
+    Control {
+        value: u8,
+    },
+}
+
+impl AudioMusicCommand {
+    pub const fn from_legacy_value(value: u8) -> Self {
+        match value {
+            0 => Self::Clear,
+            0xf0 => Self::Stop,
+            1..=0xef => Self::Play { track: value },
+            _ => Self::Control { value },
+        }
+    }
+
+    pub const fn legacy_value(self) -> u8 {
+        match self {
+            Self::Clear => 0,
+            Self::Play { track } => track,
+            Self::Stop => 0xf0,
+            Self::Control { value } => value,
+        }
+    }
+}
+
+/// A gameplay-authored audio command. The modern path consumes these commands
+/// directly; APUI bytes are only a compatibility projection for the oracle and
+/// legacy save formats.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum EngineAudioCommand {
+    ClearMusic,
+    PlayMusic {
+        track: u8,
+    },
+    StopMusic,
+    MusicControl {
+        value: u8,
+    },
+    ClearSfx {
+        bank: AudioSfxBank,
+    },
+    PlaySfx {
+        bank: AudioSfxBank,
+        effect: u8,
+        pan: AudioPan,
+    },
+}
+
+impl EngineAudioCommand {
+    pub const fn from_music_port_value(value: u8) -> Self {
+        match AudioMusicCommand::from_legacy_value(value) {
+            AudioMusicCommand::Clear => Self::ClearMusic,
+            AudioMusicCommand::Play { track } => Self::PlayMusic { track },
+            AudioMusicCommand::Stop => Self::StopMusic,
+            AudioMusicCommand::Control { value } => Self::MusicControl { value },
+        }
+    }
+
+    pub const fn from_sfx_port_value(bank: AudioSfxBank, value: u8) -> Self {
+        match AudioSfxCommand::from_legacy_value(value) {
+            Some(command) => Self::PlaySfx {
+                bank,
+                effect: command.effect,
+                pan: command.pan,
+            },
+            None => Self::ClearSfx { bank },
+        }
+    }
+
+    pub const fn from_apui_write(port: usize, value: u8) -> Self {
+        match port & 3 {
+            0 => Self::from_music_port_value(value),
+            1 => Self::from_sfx_port_value(AudioSfxBank::Ambient, value),
+            2 => Self::from_sfx_port_value(AudioSfxBank::Effect1, value),
+            _ => Self::from_sfx_port_value(AudioSfxBank::Effect2, value),
+        }
+    }
+
+    pub const fn legacy_port_write(self) -> (usize, u8) {
+        match self {
+            Self::ClearMusic => (0, 0),
+            Self::PlayMusic { track } => (0, track),
+            Self::StopMusic => (0, 0xf0),
+            Self::MusicControl { value } => (0, value),
+            Self::ClearSfx { bank } => (bank.port_index(), 0),
+            Self::PlaySfx { bank, effect, pan } => (
+                bank.port_index(),
+                AudioSfxCommand { effect, pan }.legacy_value(),
+            ),
+        }
+    }
+}
+
+/// One frame's four engine command latches. Each slot is last-write-wins, just
+/// like the original hardware ports, so replacing a command before NMI does not
+/// accidentally play both effects.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct EngineAudioCommandBatch {
+    music: AudioMusicCommand,
+    sfx: [Option<AudioSfxCommand>; 3],
+}
+
+impl EngineAudioCommandBatch {
+    pub fn from_legacy_ports(ports: [u8; 4]) -> Self {
+        let mut batch = Self::default();
+        for (port, value) in ports.into_iter().enumerate() {
+            batch.apply(EngineAudioCommand::from_apui_write(port, value));
+        }
+        batch
+    }
+
+    pub fn apply(&mut self, command: EngineAudioCommand) {
+        match command {
+            EngineAudioCommand::ClearMusic => self.music = AudioMusicCommand::Clear,
+            EngineAudioCommand::PlayMusic { track } => {
+                self.music = AudioMusicCommand::from_legacy_value(track);
+            }
+            EngineAudioCommand::StopMusic => self.music = AudioMusicCommand::Stop,
+            EngineAudioCommand::MusicControl { value } => {
+                self.music = AudioMusicCommand::from_legacy_value(value);
+            }
+            EngineAudioCommand::ClearSfx { bank } => {
+                self.sfx[usize::from(bank.catalog_id())] = None;
+            }
+            EngineAudioCommand::PlaySfx { bank, effect, pan } => {
+                self.sfx[usize::from(bank.catalog_id())] = Some(AudioSfxCommand { effect, pan });
+            }
+        }
+    }
+
+    pub const fn music(self) -> AudioMusicCommand {
+        self.music
+    }
+
+    pub fn sfx(self, bank: AudioSfxBank) -> Option<AudioSfxCommand> {
+        self.sfx[usize::from(bank.catalog_id())]
+    }
+
+    pub fn legacy_ports(self) -> [u8; 4] {
+        let mut ports = [self.music.legacy_value(), 0, 0, 0];
+        for (index, command) in self.sfx.into_iter().enumerate() {
+            ports[index + 1] = command.map_or(0, AudioSfxCommand::legacy_value);
+        }
+        ports
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SpcSequencerState {
     pub spc_in: [u8; 4],
@@ -915,6 +1149,46 @@ mod tests {
             Some(AudioBackendMode::TraceOnly)
         );
         assert_eq!(AudioBackendMode::parse("legacy"), None);
+    }
+
+    #[test]
+    fn engine_audio_commands_round_trip_legacy_ports_without_losing_semantics() {
+        let ports = [0x12, 0, 0x4a, 0x8b];
+        let batch = EngineAudioCommandBatch::from_legacy_ports(ports);
+
+        assert_eq!(batch.legacy_ports(), ports);
+        assert_eq!(batch.music(), AudioMusicCommand::Play { track: 0x12 });
+        assert_eq!(
+            batch.sfx(AudioSfxBank::Effect1),
+            Some(AudioSfxCommand {
+                effect: 0x0a,
+                pan: AudioPan::Right,
+            })
+        );
+        assert_eq!(
+            batch.sfx(AudioSfxBank::Effect2),
+            Some(AudioSfxCommand {
+                effect: 0x0b,
+                pan: AudioPan::Left,
+            })
+        );
+    }
+
+    #[test]
+    fn engine_audio_command_batch_is_last_write_wins_per_semantic_bank() {
+        let mut batch = EngineAudioCommandBatch::default();
+        batch.apply(EngineAudioCommand::PlaySfx {
+            bank: AudioSfxBank::Effect1,
+            effect: 1,
+            pan: AudioPan::Center,
+        });
+        batch.apply(EngineAudioCommand::PlaySfx {
+            bank: AudioSfxBank::Effect1,
+            effect: 2,
+            pan: AudioPan::Right,
+        });
+
+        assert_eq!(batch.legacy_ports(), [0, 0, 0x42, 0]);
     }
 
     #[test]

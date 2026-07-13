@@ -134,7 +134,10 @@ pub(crate) fn print_replay_audio_trace(
             .join(",")
     );
     let event_frame = game.zelda_audio_event_frame_from_dsp_writes(&dsp_writes);
-    let modern_event_frame = modern_sequence.sequence_route(game.zelda_audio_route_state());
+    let modern_event_frame = modern_sequence.sequence_engine_commands(
+        game.zelda_audio_route_state(),
+        game.zelda_engine_audio_commands(),
+    );
     let modern_sequence_stats = modern_sequence.last_stats();
     let mut modern_audio = vec![0i16; samples.saturating_mul(channels)];
     let static_compat_ram = std::env::var_os("ZELDA3_MODERN_AUDIO_STATIC_SAMPLE_RAM")
@@ -328,7 +331,10 @@ pub(crate) fn print_replay_audio_trace(
         .and_then(|value| value.parse::<u32>().ok())
         == Some(frame)
     {
-        eprintln!("modern audio events frame {frame}: {:#?}", modern_event_frame.events);
+        eprintln!(
+            "modern audio events frame {frame}: {:#?}",
+            modern_event_frame.events
+        );
         eprintln!(
             "semantic SPC receipts frame {frame}: {:#?}",
             game.zelda_audio_route_state().spc

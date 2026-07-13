@@ -1,6 +1,7 @@
 use super::*;
 use crate::game_output::{
-    AudioBackendMode, AudioEventFrame, AudioEventKind, AUDIO_INTERNAL_SAMPLES_PER_FRAME,
+    AudioBackendMode, AudioEventFrame, AudioEventKind, AudioSfxBank, EngineAudioCommand,
+    AUDIO_INTERNAL_SAMPLES_PER_FRAME,
 };
 
 const CHANNELS: usize = 2;
@@ -32,22 +33,34 @@ impl SfxBank {
             Self::World => 1,
         }
     }
+
+    const fn engine_bank(self) -> AudioSfxBank {
+        match self {
+            Self::Menu => AudioSfxBank::Ambient,
+            Self::World => AudioSfxBank::Effect1,
+        }
+    }
 }
 
 impl EngineCommand {
-    fn ports(self) -> [u8; 4] {
-        let mut ports = [0; 4];
+    fn emit(self, state: &mut ZeldaState) {
         match self {
-            Self::Music(track) => ports[0] = track,
-            Self::StopMusic => ports[0] = 0xf0,
-            Self::Sfx { bank, id } => ports[usize::from(bank.catalog_id()) + 1] = id,
+            Self::Music(track) => {
+                state.zelda_emit_audio_command(EngineAudioCommand::PlayMusic { track })
+            }
+            Self::StopMusic => state.zelda_emit_audio_command(EngineAudioCommand::StopMusic),
+            Self::Sfx { bank, id } => state.zelda_emit_audio_command(
+                EngineAudioCommand::from_sfx_port_value(bank.engine_bank(), id),
+            ),
             Self::SimultaneousSfx(commands) => {
                 for (bank, id) in commands {
-                    ports[usize::from(bank.catalog_id()) + 1] = id;
+                    state.zelda_emit_audio_command(EngineAudioCommand::from_sfx_port_value(
+                        bank.engine_bank(),
+                        id,
+                    ));
                 }
             }
         }
-        ports
     }
 }
 
@@ -72,9 +85,7 @@ fn run_scenario(scenario: SemanticAudioScenario) -> ScenarioResult {
     for step in scenario.steps {
         match *step {
             ScenarioStep::EngineCommand(command) => {
-                for (port, value) in command.ports().into_iter().enumerate() {
-                    state.zelda_apu_write(0x2140 + port as u32, value);
-                }
+                command.emit(&mut state);
                 state.zelda_push_apu_state();
                 pending_command = Some(command);
             }
@@ -233,14 +244,17 @@ fn semantic_audio_matrix_is_engine_driven_and_uses_catalog_only() {
 }
 
 #[test]
-fn every_catalogued_sfx_command_is_reachable_from_an_engine_port() {
+fn every_catalogued_sfx_command_is_reachable_from_the_typed_engine_bus() {
     for (bank, id) in crate::modern_sfx_catalog::conformance_commands() {
         assert!(
             bank < 3,
             "catalogued SFX bank {bank} has no engine APUI port"
         );
         let mut state = ZeldaState::new();
-        state.zelda_apu_write(0x2141 + u32::from(bank), id);
+        state.zelda_emit_audio_command(EngineAudioCommand::from_sfx_port_value(
+            AudioSfxBank::ALL[usize::from(bank)],
+            id,
+        ));
         state.zelda_push_apu_state();
 
         let (frame, _) = render_modern_frame(&mut state);
@@ -351,4 +365,164 @@ fn ordinary_music_restore_clears_modern_scenario_state() {
     )));
     assert_eq!(state.zelda_modern_audio_last_stats().triggered_voices, 0);
     assert!(post_restore_pcm.iter().all(|sample| *sample == 0));
+}
+
+#[derive(Clone, Debug)]
+enum GeneratedAudioOperation {
+    EmitBatch(Vec<EngineAudioCommand>),
+    RenderFrames(u8),
+    SnapshotRoundTrip,
+}
+
+fn generated_audio_command_strategy() -> proptest::strategy::BoxedStrategy<EngineAudioCommand> {
+    use proptest::prelude::*;
+
+    let tracks = (1..=0xef)
+        .filter(|track| crate::modern_music_catalog::packed_track(*track).is_some())
+        .collect::<Vec<_>>();
+    let sfx_commands = crate::modern_sfx_catalog::conformance_commands();
+
+    prop_oneof![
+        5 => proptest::sample::select(sfx_commands).prop_map(|(bank, id)| {
+            EngineAudioCommand::from_sfx_port_value(
+                AudioSfxBank::ALL[usize::from(bank)],
+                id,
+            )
+        }),
+        3 => proptest::sample::select(tracks)
+            .prop_map(|track| EngineAudioCommand::PlayMusic { track }),
+        1 => Just(EngineAudioCommand::StopMusic),
+        1 => Just(EngineAudioCommand::ClearMusic),
+        1 => (0xf1u8..=0xff).prop_map(|value| EngineAudioCommand::MusicControl { value }),
+        2 => proptest::sample::select(AudioSfxBank::ALL.to_vec())
+            .prop_map(|bank| EngineAudioCommand::ClearSfx { bank }),
+    ]
+    .boxed()
+}
+
+fn generated_audio_operation_strategy() -> proptest::strategy::BoxedStrategy<GeneratedAudioOperation>
+{
+    use proptest::prelude::*;
+
+    prop_oneof![
+        5 => proptest::collection::vec(generated_audio_command_strategy(), 1..=4)
+            .prop_map(GeneratedAudioOperation::EmitBatch),
+        4 => (1u8..=4).prop_map(GeneratedAudioOperation::RenderFrames),
+        1 => Just(GeneratedAudioOperation::SnapshotRoundTrip),
+    ]
+    .boxed()
+}
+
+fn generated_audio_program_strategy(
+) -> impl proptest::strategy::Strategy<Value = Vec<GeneratedAudioOperation>> {
+    use proptest::prelude::*;
+
+    proptest::collection::vec(generated_audio_operation_strategy(), 1..=24).prop_map(
+        |mut operations| {
+            operations.insert(
+                operations.len() / 2,
+                GeneratedAudioOperation::SnapshotRoundTrip,
+            );
+            // The queue is a 16-entry hardware-shaped latch. Drain it completely
+            // so every retained generated command reaches the sequencer.
+            operations.push(GeneratedAudioOperation::RenderFrames(16));
+            operations
+        },
+    )
+}
+
+fn check_generated_render_invariants(
+    operation_index: usize,
+    state: &ZeldaState,
+) -> proptest::test_runner::TestCaseResult {
+    let sequence = state.zelda_modern_audio_sequence_last_stats();
+    let renderer = state.zelda_modern_audio_last_stats();
+    proptest::prop_assert_eq!(
+        sequence.unknown_sfx_commands,
+        0,
+        "operation {} used unknown SFX programs: {:?}",
+        operation_index,
+        sequence.unknown_sfx_programs
+    );
+    proptest::prop_assert_eq!(
+        sequence.fallback_sfx_commands,
+        0,
+        "operation {} entered the heuristic SFX fallback",
+        operation_index
+    );
+    proptest::prop_assert_eq!(
+        renderer.ignored_events,
+        0,
+        "operation {} emitted unsupported renderer events",
+        operation_index
+    );
+    proptest::prop_assert!(
+        renderer.active_voices <= 8,
+        "operation {operation_index} reported {} active voices",
+        renderer.active_voices
+    );
+    Ok(())
+}
+
+fn run_generated_audio_program(
+    program: &[GeneratedAudioOperation],
+) -> proptest::test_runner::TestCaseResult {
+    let mut uninterrupted = ZeldaState::new();
+    let mut checkpointed = ZeldaState::new();
+
+    for (operation_index, operation) in program.iter().enumerate() {
+        match operation {
+            GeneratedAudioOperation::EmitBatch(commands) => {
+                for command in commands {
+                    uninterrupted.zelda_emit_audio_command(*command);
+                    checkpointed.zelda_emit_audio_command(*command);
+                }
+                uninterrupted.zelda_push_apu_state();
+                checkpointed.zelda_push_apu_state();
+            }
+            GeneratedAudioOperation::RenderFrames(count) => {
+                for render_index in 0..*count {
+                    let (expected_events, expected_pcm) = render_modern_frame(&mut uninterrupted);
+                    let (actual_events, actual_pcm) = render_modern_frame(&mut checkpointed);
+                    check_generated_render_invariants(operation_index, &uninterrupted)?;
+                    check_generated_render_invariants(operation_index, &checkpointed)?;
+                    proptest::prop_assert_eq!(
+                        &actual_events,
+                        &expected_events,
+                        "event drift after operation {}, render {}",
+                        operation_index,
+                        render_index
+                    );
+                    proptest::prop_assert_eq!(
+                        &actual_pcm,
+                        &expected_pcm,
+                        "PCM drift after operation {}, render {}",
+                        operation_index,
+                        render_index
+                    );
+                }
+            }
+            GeneratedAudioOperation::SnapshotRoundTrip => {
+                let snapshot = checkpointed.zelda_audio_snapshot_bytes();
+                let mut restored = ZeldaState::new();
+                restored
+                    .zelda_audio_restore_from_bytes(&snapshot)
+                    .map_err(proptest::test_runner::TestCaseError::fail)?;
+                checkpointed = restored;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(256))]
+
+    #[test]
+    fn generated_audio_programs_are_deterministic_and_snapshot_stable(
+        program in generated_audio_program_strategy(),
+    ) {
+        run_generated_audio_program(&program)?;
+    }
 }
