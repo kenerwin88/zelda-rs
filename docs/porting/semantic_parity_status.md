@@ -298,8 +298,9 @@ This file records the current implementation status for
   and expired voices no longer contaminate context-dependent variant selection.
   The full modern sequencer and renderer state—including music phase, oscillator
   phase, envelopes, slides, and echo history—is now part of audio save states.
-  Snapshot v4 also records the active canonical sample-bank ID; v1-v3 payloads
-  remain readable, and legacy oracle payloads recover a bank from their echo
+  Snapshot v5 stores the compact typed APUI bridge and active canonical
+  sample-bank ID without embedding a 64 KiB SPC address space. Version 1-4
+  payloads remain readable, and legacy payloads recover a bank from their echo
   seed when one is present.
   The modern sequencer and renderer are checkpointed; backend selection remains
   host configuration and returns to Modern unless the host reapplies an override.
@@ -320,17 +321,20 @@ This file records the current implementation status for
   `audio-oracle` feature. `zelda3-bin --features audio-oracle` retains trace and
   parity diagnostics; a default build rejects DSP backend selection and
   `--audio-trace-log` instead of silently constructing the legacy runtime.
-  The fixed C save-state byte layout keeps an inert DSP-sized slot in
-  modern-only builds, while authoritative audio state comes from the owned
-  modern sample RAM, sequencer, and renderer snapshot.
-  Audio checkpoints now use one portable version-3 schema in both build modes.
-  Its required payload contains the owned modern sample RAM, sequencer, renderer,
-  command queue, ports, and configuration state. Oracle builds append legacy
-  SPC/DSP continuation as an explicitly flagged opaque sidecar; normal builds
-  can load those checkpoints by ignoring the sidecar, and oracle builds can load
-  normal checkpoints by constructing a fresh diagnostic oracle. Version-2
-  modern-only checkpoints migrate in either build. Historical version-1 oracle
-  checkpoints migrate through an oracle build.
+  The fixed C save-state byte layout keeps inert APU/DSP-sized compatibility
+  slots, but modern-only `AudioState` no longer owns raw SPC RAM. Its typed
+  `ModernApuState` owns the command history, pending write, ports, saved-music
+  ports, and startup timer; C-style loads import only those meaningful fields.
+  Raw song-bank uploads and the shadow RAM used by trace tools now compile only
+  with `audio-oracle`.
+  Audio checkpoints use the portable version-5 schema in both build modes. Its
+  required payload contains the compact APUI bridge, sequencer, renderer,
+  canonical sample-bank ID, and configuration state. Oracle builds append
+  legacy SPC/DSP continuation as an explicitly flagged opaque sidecar; normal
+  builds can load those checkpoints by ignoring the sidecar, and oracle builds
+  can load normal checkpoints by constructing a fresh diagnostic oracle.
+  Versions 2-4 migrate in either build. Historical version-1 oracle checkpoints
+  migrate through an oracle build.
   `scripts/check_audio_build_modes.py` is the build gate: it checks the
   oracle-enabled binary, builds the default binary, and rejects any default
   executable that still exports `spc_player` or `SpcPlayer` symbols.

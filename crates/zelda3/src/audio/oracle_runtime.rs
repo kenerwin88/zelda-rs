@@ -108,7 +108,7 @@ impl ZeldaState {
         let mut writes = Vec::new();
         if samples > 0 && channels > 0 {
             if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
-                player.input_ports = self.audio.input_ports;
+                player.input_ports = self.audio.modern_apu.input_ports;
                 let mut hist = crate::spc_player::DspRegWriteHistory::default();
                 player.reg_write_history = &mut hist;
                 crate::spc_player::spc_player_generate_samples(player);
@@ -153,6 +153,4 @@ impl ZeldaState {
             })
             .collect()
     }
-
 }
-

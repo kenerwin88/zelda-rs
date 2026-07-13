@@ -389,6 +389,36 @@ fn modern_only_build_rejects_oracle_backends() {
 }
 
 #[test]
+#[cfg(not(feature = "audio-oracle"))]
+fn modern_only_audio_state_does_not_embed_an_spc_address_space() {
+    assert!(
+        std::mem::size_of::<super::AudioState>() < 32 * 1024,
+        "modern-only AudioState should contain typed bridge state, not 64 KiB of SPC RAM"
+    );
+}
+
+#[test]
+#[cfg(not(feature = "audio-oracle"))]
+fn modern_only_audio_snapshot_is_compact() {
+    let mut state = ZeldaState::new();
+    state.zelda_set_spc_startup_phase(72, 0);
+    state.zelda_apu_write(0x2140, 0x34);
+    state.zelda_apu_write(0x2141, 0x56);
+    state.zelda_save_music_state_to_ram_locked();
+    let snapshot = state.zelda_audio_snapshot_bytes();
+    assert!(
+        snapshot.len() < 32 * 1024,
+        "modern-only audio snapshot unexpectedly contains an SPC RAM image: {} bytes",
+        snapshot.len()
+    );
+    let mut restored = ZeldaState::new();
+    restored.zelda_audio_restore_from_bytes(&snapshot).unwrap();
+    let compat = restored.zelda_modern_audio_compat_ram();
+    assert_eq!(compat[0x43], 72);
+    assert_eq!(&compat[0x410..0x414], &[0x34, 0x56, 0, 0]);
+}
+
+#[test]
 #[cfg(feature = "audio-oracle")]
 fn audio_backend_selection_locks_after_rendering_starts() {
     assert!(ZeldaState::zelda_audio_oracle_available());
@@ -447,16 +477,13 @@ fn modern_backend_renders_without_a_legacy_spc_player() {
 }
 
 #[test]
-fn modern_backend_uses_owned_brr_bank_and_observes_bank_replacement() {
+fn modern_backend_uses_owned_brr_bank_and_ignores_legacy_ram_replacement() {
     fn render(state: &mut ZeldaState, frame: &crate::game_output::AudioEventFrame) -> Vec<i16> {
         let mut audio = vec![0i16; 735 * 2];
-        state.audio.modern_audio.render_frame_with_sample_ram(
-            frame,
-            &mut audio,
-            735,
-            2,
-            Some(&state.audio.modern_sample_ram),
-        );
+        state
+            .audio
+            .modern_audio
+            .render_frame(frame, &mut audio, 735, 2);
         audio
     }
 
@@ -502,7 +529,7 @@ fn modern_backend_uses_owned_brr_bank_and_observes_bank_replacement() {
     let after_a = render(&mut unchanged, &frame);
 
     assert!(first_a.iter().any(|sample| *sample != 0));
-    assert_ne!(after_a, after_b);
+    assert_eq!(after_a, after_b);
 }
 
 #[test]
@@ -668,6 +695,12 @@ fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner() {
 
     let mut state = ZeldaState::new();
     state.select_modern_sample_bank(2);
+    #[cfg(feature = "audio-oracle")]
+    {
+        let mut legacy_ram = vec![0; 0x10000];
+        legacy_ram[0x2222] = 0xa5;
+        state.load_audio_apu_ram_c_saveload(&legacy_ram);
+    }
     let snapshot = state.zelda_audio_snapshot_bytes();
     assert_eq!(&snapshot[..4], b"Z3AU");
     assert_eq!(
@@ -694,6 +727,8 @@ fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner() {
         restored.zelda_modern_audio_state(),
         state.zelda_modern_audio_state()
     );
+    #[cfg(feature = "audio-oracle")]
+    assert_eq!(restored.zelda_modern_audio_compat_ram()[0x2222], 0xa5);
 
     let v2_payload = snapshot_state::encode_v2_for_test(&state.audio);
     let v2 = with_header(2, 0, &v2_payload);
@@ -703,6 +738,22 @@ fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner() {
     restored
         .zelda_audio_restore_from_bytes(&v2_payload)
         .expect("preheader modern snapshot remains readable");
+
+    #[cfg(feature = "audio-oracle")]
+    {
+        state.audio.modern_sample_ram[0x2222] = 0x5a;
+    }
+    let (v4_payload, v4_has_sidecar) = snapshot_state::encode_v4_for_test(&state.audio);
+    let v4_flags = if v4_has_sidecar {
+        AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR
+    } else {
+        0
+    };
+    restored
+        .zelda_audio_restore_from_bytes(&with_header(4, v4_flags, &v4_payload))
+        .expect("version-4 sample-bank snapshot migrates");
+    #[cfg(feature = "audio-oracle")]
+    assert_eq!(restored.zelda_modern_audio_compat_ram()[0x2222], 0x5a);
 
     #[cfg(feature = "audio-oracle")]
     {

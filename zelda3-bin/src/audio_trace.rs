@@ -137,11 +137,9 @@ pub(crate) fn print_replay_audio_trace(
     let modern_event_frame = modern_sequence.sequence_route(game.zelda_audio_route_state());
     let modern_sequence_stats = modern_sequence.last_stats();
     let mut modern_audio = vec![0i16; samples.saturating_mul(channels)];
-    let modern_sample_ram = if std::env::var_os("ZELDA3_MODERN_AUDIO_STATIC_SAMPLE_RAM").is_some() {
-        game.zelda_modern_audio_sample_ram()
-    } else {
-        spc_ram_pre
-    };
+    let static_compat_ram = std::env::var_os("ZELDA3_MODERN_AUDIO_STATIC_SAMPLE_RAM")
+        .map(|_| game.zelda_modern_audio_compat_ram());
+    let modern_sample_ram = static_compat_ram.as_deref().unwrap_or(spc_ram_pre);
     if frame == 1 {
         game.zelda_sync_modern_audio_trace_engine(modern_engine, 534);
     }
