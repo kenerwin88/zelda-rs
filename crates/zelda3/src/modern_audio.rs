@@ -51,6 +51,9 @@ pub struct ModernAudioEngine {
     voices: [ModernVoice; MODERN_AUDIO_VOICES],
     last_music: MusicControlState,
     last_ports: [u8; 4],
+    /// Canonical instrument/echo context selected by the game state.
+    #[serde(skip, default)]
+    sample_bank_id: u8,
     #[serde(default)]
     echo_left: Vec<i16>,
     #[serde(default)]
@@ -125,6 +128,7 @@ impl Default for ModernAudioEngine {
             voices: std::array::from_fn(|_| ModernVoice::default()),
             last_music: MusicControlState::default(),
             last_ports: [0; 4],
+            sample_bank_id: 0,
             echo_left: Vec::new(),
             echo_right: Vec::new(),
             echo_mix_left: default_echo_mix(),
@@ -153,6 +157,18 @@ impl Default for ModernAudioEngine {
 }
 
 impl ModernAudioEngine {
+    pub fn select_sample_bank(&mut self, bank_id: u8) {
+        // Validate eagerly so a corrupt route cannot fail much later in mixing.
+        let _ = crate::modern_sample_bank::bank_name(bank_id);
+        if self.sample_bank_id != bank_id {
+            self.sample_bank_id = bank_id;
+            self.echo_ram_initialized = false;
+        }
+    }
+
+    pub fn sample_bank_id(&self) -> u8 {
+        self.sample_bank_id
+    }
     pub fn seed_dsp_checkpoint_state(&mut self, sample_ram: &[u8], dsp: &[u8]) {
         if dsp.len() < 884 {
             return;
@@ -435,9 +451,7 @@ impl ModernAudioEngine {
                     if let Some(voice) = self.voices.get_mut(*voice as usize) {
                         voice.start_delay_samples = event.sample_offset.max(0) as usize;
                     }
-                    if let Some(sample_ram) = sample_ram {
-                        self.load_voice_sample(*voice as usize, *instrument, *pitch, sample_ram);
-                    }
+                    self.load_voice_sample(*voice as usize, *instrument, *pitch, sample_ram);
                     stats.triggered_voices += 1;
                 }
                 AudioEventKind::KeyOnVoice {
@@ -609,9 +623,7 @@ impl ModernAudioEngine {
         deferred_globals.sort_unstable_by_key(|event| event.0);
         deferred_voice_events.sort_by_key(|event| event.sample_offset);
         if samples_per_channel != 0 && channels != 0 {
-            if let Some(sample_ram) = sample_ram {
-                self.initialize_echo_ring_from_ram(sample_ram);
-            }
+            self.initialize_echo_ring_from_source(sample_ram);
             let mut native_audio = vec![0i16; DSP_SAMPLES_PER_FRAME.saturating_mul(channels)];
             self.mix(
                 &mut native_audio,
@@ -731,7 +743,7 @@ impl ModernAudioEngine {
         self.echo_start_page = start_page;
         self.echo_delay_samples = u16::from(delay_register & 0x0f).saturating_mul(512).max(1);
         self.echo_ram_initialized = false;
-        self.initialize_echo_ring_from_ram(sample_ram);
+        self.initialize_echo_ring_from_source(Some(sample_ram));
         let echo_len = self.echo_left.len().max(1);
         self.echo_ring_index = (usize::from(ring_index) + echo_len
             - usize::from(rewind_samples) % echo_len)
@@ -865,7 +877,7 @@ impl ModernAudioEngine {
         true
     }
 
-    fn initialize_echo_ring_from_ram(&mut self, sample_ram: &[u8]) {
+    fn initialize_echo_ring_from_source(&mut self, sample_ram: Option<&[u8]>) {
         if self.echo_ram_initialized {
             return;
         }
@@ -875,7 +887,7 @@ impl ModernAudioEngine {
         let start = usize::from(self.echo_start_page) << 8;
         for index in 0..delay {
             let address = start + index * 4;
-            if let Some(bytes) = sample_ram.get(address..address + 4) {
+            if let Some(bytes) = sample_source_bytes(self.sample_bank_id, sample_ram, address) {
                 self.echo_left[index] = i16::from_le_bytes([bytes[0], bytes[1]]);
                 self.echo_right[index] = i16::from_le_bytes([bytes[2], bytes[3]]);
             } else {
@@ -893,19 +905,17 @@ impl ModernAudioEngine {
 
     fn resize_echo_ring_from_ram(&mut self, sample_ram: Option<&[u8]>) {
         if !self.echo_ram_initialized {
-            if let Some(sample_ram) = sample_ram {
-                let ring_index = self.echo_ring_index;
-                let remaining = self.echo_remaining_samples;
-                let fir_index = self.fir_history_index;
-                let fir_left = self.fir_history_left;
-                let fir_right = self.fir_history_right;
-                self.initialize_echo_ring_from_ram(sample_ram);
-                self.echo_ring_index = ring_index % self.echo_left.len().max(1);
-                self.echo_remaining_samples = remaining.max(1);
-                self.fir_history_index = fir_index;
-                self.fir_history_left = fir_left;
-                self.fir_history_right = fir_right;
-            }
+            let ring_index = self.echo_ring_index;
+            let remaining = self.echo_remaining_samples;
+            let fir_index = self.fir_history_index;
+            let fir_left = self.fir_history_left;
+            let fir_right = self.fir_history_right;
+            self.initialize_echo_ring_from_source(sample_ram);
+            self.echo_ring_index = ring_index % self.echo_left.len().max(1);
+            self.echo_remaining_samples = remaining.max(1);
+            self.fir_history_index = fir_index;
+            self.fir_history_left = fir_left;
+            self.fir_history_right = fir_right;
         }
         let echo_delay = usize::from(self.echo_delay_samples.max(1));
         if self.echo_left.len() == echo_delay {
@@ -915,14 +925,12 @@ impl ModernAudioEngine {
         self.echo_left.resize(echo_delay, 0);
         self.echo_right.resize(echo_delay, 0);
         if echo_delay > previous_len {
-            if let Some(sample_ram) = sample_ram {
-                let start = usize::from(self.echo_start_page) << 8;
-                for index in previous_len..echo_delay {
-                    let address = start + index * 4;
-                    if let Some(bytes) = sample_ram.get(address..address + 4) {
-                        self.echo_left[index] = i16::from_le_bytes([bytes[0], bytes[1]]);
-                        self.echo_right[index] = i16::from_le_bytes([bytes[2], bytes[3]]);
-                    }
+            let start = usize::from(self.echo_start_page) << 8;
+            for index in previous_len..echo_delay {
+                let address = start + index * 4;
+                if let Some(bytes) = sample_source_bytes(self.sample_bank_id, sample_ram, address) {
+                    self.echo_left[index] = i16::from_le_bytes([bytes[0], bytes[1]]);
+                    self.echo_right[index] = i16::from_le_bytes([bytes[2], bytes[3]]);
                 }
             }
         }
@@ -1031,9 +1039,7 @@ impl ModernAudioEngine {
                 volume,
             } => {
                 self.trigger_voice_with_params(*voice as usize, *pitch, *instrument, *volume);
-                if let Some(sample_ram) = sample_ram {
-                    self.load_voice_sample(*voice as usize, *instrument, *pitch, sample_ram);
-                }
+                self.load_voice_sample(*voice as usize, *instrument, *pitch, sample_ram);
             }
             AudioEventKind::KeyOnVoice {
                 voice,
@@ -1154,16 +1160,23 @@ impl ModernAudioEngine {
             state.amplitude = state.peak_amplitude;
             state.begin_decay_or_sustain();
         }
-        if let Some(sample_ram) = sample_ram {
-            self.load_voice_sample(voice, source, 0, sample_ram);
-        }
+        self.load_voice_sample(voice, source, 0, sample_ram);
     }
 
-    fn load_voice_sample(&mut self, voice: usize, instrument: u8, pitch: u8, sample_ram: &[u8]) {
+    fn load_voice_sample(
+        &mut self,
+        voice: usize,
+        instrument: u8,
+        pitch: u8,
+        sample_ram: Option<&[u8]>,
+    ) {
         let Some(voice) = self.voices.get_mut(voice) else {
             return;
         };
-        let Some(sample) = decode_brr_sample(sample_ram, instrument) else {
+        let sample = sample_ram
+            .and_then(|ram| decode_brr_sample(ram, instrument))
+            .or_else(|| decode_brr_bank_sample(self.sample_bank_id, instrument));
+        let Some(sample) = sample else {
             return;
         };
         if sample
@@ -1966,6 +1979,112 @@ fn decode_brr_checkpoint_continuation(
     ))
 }
 
+fn sample_source_bytes(bank_id: u8, ram: Option<&[u8]>, address: usize) -> Option<[u8; 4]> {
+    if let Some(ram) = ram {
+        return Some(ram.get(address..address + 4)?.try_into().unwrap());
+    }
+    crate::modern_sample_bank::echo_bytes(bank_id, address)
+}
+
+fn decode_brr_bank_sample(bank_id: u8, source: u8) -> Option<DecodedBrrSample> {
+    let sample = crate::modern_sample_bank::sample(bank_id, source)?;
+    decode_brr_asset(sample.brr, sample.loop_offset)
+}
+
+fn decode_brr_asset(brr: &[u8], loop_offset: usize) -> Option<DecodedBrrSample> {
+    const MAX_BLOCKS: usize = 4096;
+    if brr.is_empty() || brr.len() % 9 != 0 || loop_offset % 9 != 0 {
+        return None;
+    }
+    let mut pcm = Vec::new();
+    let mut block_addresses = Vec::new();
+    let mut address = 0usize;
+    let mut loop_states = Vec::new();
+    let mut old = 0i32;
+    let mut older = 0i32;
+    for _ in 0..MAX_BLOCKS {
+        if address + 9 > brr.len() {
+            return None;
+        }
+        if address == loop_offset {
+            if let Some((_, loop_start)) = loop_states
+                .iter()
+                .find(|((seen_old, seen_older), _)| *seen_old == old && *seen_older == older)
+            {
+                if pcm.iter().all(|sample| *sample == 0) {
+                    return None;
+                }
+                return Some(DecodedBrrSample {
+                    pcm,
+                    block_addresses,
+                    loop_start: *loop_start,
+                    loops: true,
+                });
+            }
+            loop_states.push(((old, older), pcm.len()));
+        }
+        let header = brr[address];
+        block_addresses.push(address);
+        decode_brr_block(
+            &brr[address + 1..address + 9],
+            header,
+            &mut old,
+            &mut older,
+            &mut pcm,
+        );
+        address += 9;
+        if header & 1 != 0 {
+            let loops = header & 2 != 0;
+            if loops && loop_offset + 9 <= brr.len() {
+                address = loop_offset;
+                continue;
+            }
+            if pcm.iter().all(|sample| *sample == 0) {
+                return None;
+            }
+            return Some(DecodedBrrSample {
+                pcm,
+                block_addresses,
+                loop_start: 0,
+                loops,
+            });
+        }
+    }
+    None
+}
+
+fn decode_brr_block(data: &[u8], header: u8, old: &mut i32, older: &mut i32, pcm: &mut Vec<i16>) {
+    let shift = header >> 4;
+    let filter = (header >> 2) & 3;
+    for nibble_index in 0..16 {
+        let byte = data[nibble_index / 2];
+        let mut sample = if nibble_index & 1 == 0 {
+            i32::from(byte >> 4)
+        } else {
+            i32::from(byte & 0x0f)
+        };
+        if sample > 7 {
+            sample -= 16;
+        }
+        sample = if shift <= 12 {
+            (sample << shift) >> 1
+        } else {
+            (sample >> 3) << 12
+        };
+        match filter {
+            1 => sample += *old + (-*old >> 4),
+            2 => sample += 2 * *old + ((-3 * *old) >> 5) - *older + (*older >> 4),
+            3 => sample += 2 * *old + ((-13 * *old) >> 6) - *older + ((3 * *older) >> 4),
+            _ => {}
+        }
+        sample = sample.clamp(i16::MIN as i32, i16::MAX as i32);
+        let decoded = (((sample & 0x7fff) << 1) as i16 >> 1) as i16;
+        *older = *old;
+        *old = i32::from(decoded);
+        pcm.push(decoded);
+    }
+}
+
 fn decode_brr_sample(ram: &[u8], source: u8) -> Option<DecodedBrrSample> {
     const DIRECTORY: usize = 0x3c00;
     const MAX_BLOCKS: usize = 4096;
@@ -2008,35 +2127,13 @@ fn decode_brr_sample(ram: &[u8], source: u8) -> Option<DecodedBrrSample> {
         }
         let header = ram[address];
         block_addresses.push(address);
-        let shift = header >> 4;
-        let filter = (header >> 2) & 3;
-        for nibble_index in 0..16 {
-            let byte = ram[address + 1 + nibble_index / 2];
-            let mut sample = if nibble_index & 1 == 0 {
-                i32::from(byte >> 4)
-            } else {
-                i32::from(byte & 0x0f)
-            };
-            if sample > 7 {
-                sample -= 16;
-            }
-            sample = if shift <= 12 {
-                (sample << shift) >> 1
-            } else {
-                (sample >> 3) << 12
-            };
-            match filter {
-                1 => sample += old + (-old >> 4),
-                2 => sample += 2 * old + ((-3 * old) >> 5) - older + (older >> 4),
-                3 => sample += 2 * old + ((-13 * old) >> 6) - older + ((3 * older) >> 4),
-                _ => {}
-            }
-            sample = sample.clamp(i16::MIN as i32, i16::MAX as i32);
-            let decoded = (((sample & 0x7fff) << 1) as i16 >> 1) as i16;
-            older = old;
-            old = i32::from(decoded);
-            pcm.push(decoded);
-        }
+        decode_brr_block(
+            &ram[address + 1..address + 9],
+            header,
+            &mut old,
+            &mut older,
+            &mut pcm,
+        );
         address += 9;
         if header & 1 != 0 {
             let loops = header & 2 != 0;
@@ -2154,6 +2251,26 @@ mod tests {
     }
 
     #[test]
+    fn canonical_bank_decoder_matches_spc_directory_decoder() {
+        let source = 3u8;
+        let asset = crate::modern_sample_bank::sample(0, source).unwrap();
+        let start = 0x5000usize;
+        let mut ram = vec![0u8; 0x10000];
+        let entry = 0x3c00 + usize::from(source) * 4;
+        ram[entry..entry + 2].copy_from_slice(&(start as u16).to_le_bytes());
+        ram[entry + 2..entry + 4]
+            .copy_from_slice(&((start + asset.loop_offset) as u16).to_le_bytes());
+        ram[start..start + asset.brr.len()].copy_from_slice(asset.brr);
+
+        let canonical = decode_brr_bank_sample(0, source).unwrap();
+        let legacy = decode_brr_sample(&ram, source).unwrap();
+
+        assert_eq!(canonical.pcm, legacy.pcm);
+        assert_eq!(canonical.loop_start, legacy.loop_start);
+        assert_eq!(canonical.loops, legacy.loops);
+    }
+
+    #[test]
     fn decodes_out_of_line_brr_loop_body_after_first_end_block() {
         let source = 3u8;
         let mut ram = single_block_sample_ram(source, 0x03, [0x17; 8]);
@@ -2267,6 +2384,31 @@ mod tests {
             sample_step_for_pitch_word(0x1000, 32_000)
         );
         assert_eq!(&audio[..10], &[0; 10]);
+        assert!(audio.iter().any(|sample| *sample != 0));
+    }
+
+    #[test]
+    fn normal_render_uses_canonical_bank_without_sample_ram() {
+        let mut engine = ModernAudioEngine::default();
+        engine.select_sample_bank(1);
+        let mut frame = empty_frame_with_writes(&[]);
+        frame.events.push(AudioEvent {
+            sample_offset: 0,
+            timer_cycles: 0,
+            kind: AudioEventKind::NoteOn {
+                voice: 0,
+                pitch: 60,
+                instrument: 3,
+                volume: 127,
+            },
+            parity_dsp: None,
+        });
+        let mut audio = [0i16; 1470];
+
+        engine.render_frame(&frame, &mut audio, 735, 2);
+
+        assert_eq!(engine.sample_bank_id(), 1);
+        assert!(engine.voices[0].sample_backed);
         assert!(audio.iter().any(|sample| *sample != 0));
     }
 

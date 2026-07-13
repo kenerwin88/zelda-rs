@@ -14,6 +14,7 @@ pub mod modern_audio;
 pub mod modern_audio_sequence;
 pub mod modern_music_catalog;
 pub mod modern_music_globals;
+mod modern_sample_bank;
 pub mod modern_sfx_catalog;
 pub mod modern_sfx_dsp_catalog;
 pub mod modern_sfx_pitch_catalog;

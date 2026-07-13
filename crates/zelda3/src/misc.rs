@@ -245,6 +245,8 @@ impl ZeldaState {
     }
 
     fn load_song_bank_asset(&mut self, asset: usize) {
+        self.select_modern_sample_bank(asset as u8);
+        #[cfg(feature = "audio-oracle")]
         if let Some(bank) = self.asset_raw(asset).map(<[u8]>::to_vec) {
             self.load_song_bank(&bank);
         }

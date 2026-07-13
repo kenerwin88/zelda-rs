@@ -60,6 +60,10 @@ impl ModernAudioStateSnapshot {
         state.input_ports = self.input_ports;
         state.port_to_snes = self.port_to_snes;
         state.modern_sample_ram = self.modern_sample_ram;
+        if let Some(bank_id) = crate::modern_sample_bank::identify_spc_ram(&state.modern_sample_ram)
+        {
+            state.modern_audio.select_sample_bank(bank_id);
+        }
         state.volume_transition_step_float = self.volume_transition_step_float;
         state.volume_transition_target_float = self.volume_transition_target_float;
         state.config_audio_freq = self.config_audio_freq;
@@ -74,6 +78,13 @@ impl ModernAudioStateSnapshot {
 struct AudioSnapshotV3 {
     modern: ModernAudioStateSnapshot,
     oracle_sidecar: Option<Vec<u8>>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct AudioSnapshotV4 {
+    modern: ModernAudioStateSnapshot,
+    oracle_sidecar: Option<Vec<u8>>,
+    sample_bank_id: u8,
 }
 
 fn capture_v3(state: &AudioState) -> Result<AudioSnapshotV3, String> {
@@ -108,34 +119,71 @@ fn restore_v3(snapshot: AudioSnapshotV3) -> Result<(AudioState, bool), String> {
     Ok((state, has_oracle_sidecar))
 }
 
-pub(super) fn encode_v3(state: &AudioState) -> Result<(Vec<u8>, bool), String> {
-    let snapshot = capture_v3(state)?;
-    let has_oracle_sidecar = snapshot.oracle_sidecar.is_some();
-    let payload = bincode::serialize(&snapshot)
-        .map_err(|error| format!("audio snapshot v3 encode: {error}"))?;
-    Ok((payload, has_oracle_sidecar))
-}
-
 pub(super) fn decode_v3(payload: &[u8]) -> Result<(AudioState, bool), String> {
     let snapshot: AudioSnapshotV3 = bincode::deserialize(payload)
         .map_err(|error| format!("audio snapshot v3 decode: {error}"))?;
     restore_v3(snapshot)
 }
 
+pub(super) fn encode_v4(state: &AudioState) -> Result<(Vec<u8>, bool), String> {
+    let snapshot = capture_v3(state)?;
+    let has_oracle_sidecar = snapshot.oracle_sidecar.is_some();
+    let payload = bincode::serialize(&AudioSnapshotV4 {
+        modern: snapshot.modern,
+        oracle_sidecar: snapshot.oracle_sidecar,
+        sample_bank_id: state.modern_audio.sample_bank_id(),
+    })
+    .map_err(|error| format!("audio snapshot v4 encode: {error}"))?;
+    Ok((payload, has_oracle_sidecar))
+}
+
+pub(super) fn decode_v4(payload: &[u8]) -> Result<(AudioState, bool), String> {
+    let snapshot: AudioSnapshotV4 = bincode::deserialize(payload)
+        .map_err(|error| format!("audio snapshot v4 decode: {error}"))?;
+    let sample_bank_id = snapshot.sample_bank_id;
+    if !crate::modern_sample_bank::is_valid_bank(sample_bank_id) {
+        return Err(format!(
+            "audio snapshot v4 has unknown sample bank {sample_bank_id}"
+        ));
+    }
+    let (mut state, has_oracle_sidecar) = restore_v3(AudioSnapshotV3 {
+        modern: snapshot.modern,
+        oracle_sidecar: snapshot.oracle_sidecar,
+    })?;
+    state.modern_audio.select_sample_bank(sample_bank_id);
+    Ok((state, has_oracle_sidecar))
+}
+
 impl serde::Serialize for AudioState {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        capture_v3(self)
-            .map_err(serde::ser::Error::custom)?
-            .serialize(serializer)
+        let snapshot = capture_v3(self).map_err(serde::ser::Error::custom)?;
+        AudioSnapshotV4 {
+            modern: snapshot.modern,
+            oracle_sidecar: snapshot.oracle_sidecar,
+            sample_bank_id: self.modern_audio.sample_bank_id(),
+        }
+        .serialize(serializer)
     }
 }
 
 impl<'de> serde::Deserialize<'de> for AudioState {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let snapshot = AudioSnapshotV3::deserialize(deserializer)?;
-        restore_v3(snapshot)
-            .map(|(state, _)| state)
-            .map_err(serde::de::Error::custom)
+        let snapshot = AudioSnapshotV4::deserialize(deserializer)?;
+        let sample_bank_id = snapshot.sample_bank_id;
+        if !crate::modern_sample_bank::is_valid_bank(sample_bank_id) {
+            return Err(serde::de::Error::custom(format!(
+                "audio state has unknown sample bank {sample_bank_id}"
+            )));
+        }
+        restore_v3(AudioSnapshotV3 {
+            modern: snapshot.modern,
+            oracle_sidecar: snapshot.oracle_sidecar,
+        })
+        .map(|(mut state, _)| {
+            state.modern_audio.select_sample_bank(sample_bank_id);
+            state
+        })
+        .map_err(serde::de::Error::custom)
     }
 }
 

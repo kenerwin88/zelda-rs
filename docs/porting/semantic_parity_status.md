@@ -49,6 +49,18 @@ This file records the current implementation status for
   envelope, echo, and global-parameter events. It reports per-frame coverage
   stats for understood, ignored, triggered, and active events; the complete
   standard-route quality gate has zero ignored events.
+  Instrument playback is now owned by the modern path. The checked-in
+  `assets/audio/modern_samples/manifest.json` maps 25 source slots in each of
+  the overworld, dungeon, and credits contexts to 23 deduplicated BRR files,
+  with compact echo-memory seeds for the same contexts. The build validates
+  every mapping, loop offset, BRR terminator, range, and SHA-256 before packing
+  the catalog. At runtime the game selects a bank when the corresponding
+  engine event occurs and the mixer decodes the typed asset directly; normal
+  playback no longer looks instruments up in a materialized SPC address space.
+  `scripts/export_modern_sample_bank.py` is the reproducible offline importer
+  for refreshing this reviewed pack from the reference upload blobs. Normal
+  gameplay never loads those blobs; the raw upload API remains as a compatibility
+  and oracle/checkpoint surface.
   Typed pitch slides now retain their target and duration in checkpoint state,
   advance once per rendered game frame, and land exactly on the target instead
   of treating `PitchSlide.frames` as an immediate jump.
@@ -286,6 +298,9 @@ This file records the current implementation status for
   and expired voices no longer contaminate context-dependent variant selection.
   The full modern sequencer and renderer state—including music phase, oscillator
   phase, envelopes, slides, and echo history—is now part of audio save states.
+  Snapshot v4 also records the active canonical sample-bank ID; v1-v3 payloads
+  remain readable, and legacy oracle payloads recover a bank from their echo
+  seed when one is present.
   The modern sequencer and renderer are checkpointed; backend selection remains
   host configuration and returns to Modern unless the host reapplies an override.
   Legacy checkpoints still decode through the prior audio snapshot schema, with
@@ -294,9 +309,9 @@ This file records the current implementation status for
   diagnostics. The playable Modern backend no longer advances the legacy SPC
   control interpreter or DSP: queued APUI commands go directly through
   `ModernAudioSequencer`, and all host PCM is rendered by `ModernAudioEngine`.
-  Modern callbacks read checkpointed `modern_sample_ram` directly and do not
-  require a live `SpcPlayer`; regression tests pin both that ownership boundary
-  and the legacy SPC/DSP state across Modern callbacks. Modern also owns APUI
+  Modern callbacks do not require a live `SpcPlayer`; regression tests pin both
+  that ownership boundary and the legacy SPC/DSP state across Modern callbacks.
+  Modern also owns APUI
   acknowledgements, while ordinary reset/C-style load restarts Modern sequence
   and renderer state at a defined command boundary instead of retaining future
   voices or echo state.

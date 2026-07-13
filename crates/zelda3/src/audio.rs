@@ -27,7 +27,7 @@ const MSU_STATE_FINISHED_PLAYING: u8 = 1;
 const MSU_STATE_RESUMING: u8 = 2;
 const MSU_STATE_PLAYING: u8 = 3;
 const AUDIO_SNAPSHOT_MAGIC: [u8; 4] = *b"Z3AU";
-const AUDIO_SNAPSHOT_VERSION: u16 = 3;
+const AUDIO_SNAPSHOT_VERSION: u16 = 4;
 const AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR: u16 = 1;
 const AUDIO_SNAPSHOT_HEADER_BYTES: usize = 12;
 
@@ -533,7 +533,7 @@ impl ZeldaState {
     /// runtime state instead.
     pub fn zelda_audio_snapshot_bytes(&self) -> Vec<u8> {
         let (payload, has_oracle_sidecar) =
-            snapshot_state::encode_v3(&self.audio).expect("audio snapshot serialize failed");
+            snapshot_state::encode_v4(&self.audio).expect("audio snapshot serialize failed");
         let flags = if has_oracle_sidecar {
             AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR
         } else {
@@ -596,11 +596,11 @@ impl ZeldaState {
                 return Err("audio snapshot header is truncated".to_string());
             }
             let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-            if !matches!(version, 1 | 2 | AUDIO_SNAPSHOT_VERSION) {
+            if !matches!(version, 1 | 2 | 3 | AUDIO_SNAPSHOT_VERSION) {
                 return Err(format!("unsupported audio snapshot version {version}"));
             }
             let flags = u16::from_le_bytes([bytes[6], bytes[7]]);
-            let supported_flags = if version == AUDIO_SNAPSHOT_VERSION {
+            let supported_flags = if version >= 3 {
                 AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR
             } else {
                 0
@@ -624,6 +624,14 @@ impl ZeldaState {
         };
         let restored = match version {
             AUDIO_SNAPSHOT_VERSION => {
+                let (state, has_oracle_sidecar) = snapshot_state::decode_v4(payload)?;
+                let flag_has_sidecar = flags & AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR != 0;
+                if flag_has_sidecar != has_oracle_sidecar {
+                    return Err("audio snapshot oracle sidecar flag mismatch".to_string());
+                }
+                state
+            }
+            3 => {
                 let (state, has_oracle_sidecar) = snapshot_state::decode_v3(payload)?;
                 let flag_has_sidecar = flags & AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR != 0;
                 if flag_has_sidecar != has_oracle_sidecar {
@@ -804,13 +812,9 @@ impl ZeldaState {
                 self.audio.port_to_snes = self.audio.input_ports;
                 let route = self.zelda_modern_audio_route_state();
                 let frame = self.audio.modern_sequence.sequence_route(route);
-                self.audio.modern_audio.render_frame_with_sample_ram(
-                    &frame,
-                    audio_buffer,
-                    samples,
-                    channels,
-                    Some(&self.audio.modern_sample_ram),
-                );
+                self.audio
+                    .modern_audio
+                    .render_frame(&frame, audio_buffer, samples, channels);
                 if self.audio.msu_player.has_file && channels == 2 {
                     self.msu_player_mix(audio_buffer, samples);
                 }
@@ -958,12 +962,20 @@ impl ZeldaState {
     }
 
     pub fn load_song_bank(&mut self, p: &[u8]) {
+        let bank_id = (0..3).find(|&bank_id| self.asset_raw(bank_id) == Some(p));
+        if let Some(bank_id) = bank_id {
+            self.audio.modern_audio.select_sample_bank(bank_id as u8);
+        }
         upload_song_bank_to_ram(&mut self.audio.modern_sample_ram, p);
         self.audio.modern_audio.sample_ram_changed();
         #[cfg(feature = "audio-oracle")]
         if let Some(player) = unsafe { self.audio.spc_player.as_mut() } {
             crate::spc_player::spc_player_upload(player, p.as_ptr());
         }
+    }
+
+    pub(crate) fn select_modern_sample_bank(&mut self, bank_id: u8) {
+        self.audio.modern_audio.select_sample_bank(bank_id);
     }
 
     pub fn zelda_audio_debug_summary(&self) -> String {

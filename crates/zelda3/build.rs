@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
@@ -100,6 +101,196 @@ struct PitchEvent {
     pitch_word: u16,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SampleBankManifest {
+    format: String,
+    sample_rate: u32,
+    samples: Vec<SampleManifest>,
+    banks: Vec<BankManifest>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SampleManifest {
+    id: String,
+    file: String,
+    sha256: String,
+    blocks: usize,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BankManifest {
+    id: u8,
+    name: String,
+    instruments: Vec<InstrumentManifest>,
+    echo_seed: EchoSeedManifest,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InstrumentManifest {
+    source: u8,
+    sample: String,
+    loop_offset: usize,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EchoSeedManifest {
+    start_address: usize,
+    file: String,
+    sha256: String,
+}
+
+#[derive(serde::Serialize)]
+struct PackedSampleBank {
+    sample_rate: u32,
+    samples: Vec<PackedSample>,
+    banks: Vec<PackedBank>,
+}
+#[derive(serde::Serialize)]
+struct PackedSample {
+    brr: Vec<u8>,
+}
+#[derive(serde::Serialize)]
+struct PackedBank {
+    id: u8,
+    name: String,
+    instruments: Vec<PackedInstrument>,
+    echo_start: usize,
+    echo_seed: Vec<u8>,
+}
+#[derive(serde::Serialize)]
+struct PackedInstrument {
+    source: u8,
+    sample_index: usize,
+    loop_offset: usize,
+}
+
+fn compile_sample_bank(manifest_dir: &Path, out_dir: &Path) {
+    let root = manifest_dir.join("../../assets/audio/modern_samples");
+    let source = root.join("manifest.json");
+    println!("cargo:rerun-if-changed={}", source.display());
+    let manifest: SampleBankManifest = serde_json::from_slice(&fs::read(&source).unwrap())
+        .unwrap_or_else(|error| panic!("{}: {error}", source.display()));
+    assert_eq!(manifest.format, "zelda3_modern_sample_bank_v1");
+    assert_eq!(manifest.sample_rate, 32_000);
+
+    let mut sample_ids = BTreeMap::new();
+    let mut samples = Vec::new();
+    for sample in manifest.samples {
+        assert!(
+            sample_ids
+                .insert(sample.id.clone(), samples.len())
+                .is_none(),
+            "duplicate sample {}",
+            sample.id
+        );
+        let path = root.join(&sample.file);
+        println!("cargo:rerun-if-changed={}", path.display());
+        let brr = fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        assert_eq!(
+            brr.len(),
+            sample.blocks * 9,
+            "{}: BRR block count",
+            path.display()
+        );
+        assert!(
+            !brr.is_empty() && brr.len() % 9 == 0,
+            "{}: invalid BRR stream",
+            path.display()
+        );
+        assert!(
+            brr.chunks_exact(9).last().unwrap()[0] & 1 != 0,
+            "{}: missing BRR end flag",
+            path.display()
+        );
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&brr)),
+            sample.sha256,
+            "{}: sha256",
+            path.display()
+        );
+        samples.push(PackedSample { brr });
+    }
+
+    let mut bank_ids = BTreeSet::new();
+    let mut banks = Vec::new();
+    for bank in manifest.banks {
+        assert!(bank_ids.insert(bank.id), "duplicate bank {}", bank.id);
+        assert!(!bank.name.is_empty(), "bank {} has no name", bank.id);
+        let mut sources = BTreeSet::new();
+        let mut instruments = Vec::new();
+        for instrument in bank.instruments {
+            assert!(
+                sources.insert(instrument.source),
+                "duplicate source {} in bank {}",
+                instrument.source,
+                bank.id
+            );
+            let sample_index = *sample_ids
+                .get(&instrument.sample)
+                .unwrap_or_else(|| panic!("unknown sample {}", instrument.sample));
+            let sample_len = samples[sample_index].brr.len();
+            assert!(
+                instrument.loop_offset % 9 == 0 && instrument.loop_offset < sample_len,
+                "invalid loop offset for source {} in bank {}",
+                instrument.source,
+                bank.id
+            );
+            instruments.push(PackedInstrument {
+                source: instrument.source,
+                sample_index,
+                loop_offset: instrument.loop_offset,
+            });
+        }
+        assert_eq!(
+            sources.into_iter().collect::<Vec<_>>(),
+            (0..25).collect::<Vec<_>>(),
+            "bank {} must map sources 0..24",
+            bank.id
+        );
+        instruments.sort_by_key(|instrument| instrument.source);
+        let echo_path = root.join(&bank.echo_seed.file);
+        println!("cargo:rerun-if-changed={}", echo_path.display());
+        let echo_seed =
+            fs::read(&echo_path).unwrap_or_else(|error| panic!("{}: {error}", echo_path.display()));
+        assert_eq!(
+            bank.echo_seed.start_address + echo_seed.len(),
+            0x10000,
+            "{}: echo seed range",
+            echo_path.display()
+        );
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&echo_seed)),
+            bank.echo_seed.sha256,
+            "{}: sha256",
+            echo_path.display()
+        );
+        banks.push(PackedBank {
+            id: bank.id,
+            name: bank.name,
+            instruments,
+            echo_start: bank.echo_seed.start_address,
+            echo_seed,
+        });
+    }
+    banks.sort_by_key(|bank| bank.id);
+    assert_eq!(
+        banks.iter().map(|bank| bank.id).collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+    let packed = bincode::serialize(&PackedSampleBank {
+        sample_rate: manifest.sample_rate,
+        samples,
+        banks,
+    })
+    .expect("pack modern sample bank");
+    write_if_changed(&out_dir.join("modern_sample_bank.bin"), &packed);
+}
+
 fn compile_sfx_assets(manifest_dir: &Path, out_dir: &Path) {
     let source = manifest_dir.join("../../assets/audio/modern_sfx.json");
     println!("cargo:rerun-if-changed={}", source.display());
@@ -184,6 +375,7 @@ fn main() {
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
 
     compile_sfx_assets(&manifest_dir, &out_dir);
+    compile_sample_bank(&manifest_dir, &out_dir);
     println!("cargo:rerun-if-changed={}", source.display());
 
     let text = fs::read_to_string(&source).unwrap();
