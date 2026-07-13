@@ -1,17 +1,181 @@
 use super::*;
 
-/// Feature-selected wire payload for `AudioState`. Version 1 (oracle builds)
-/// replaces the `spc_player` raw pointer with a deep pointer-free snapshot;
-/// version 2 (normal builds) omits legacy SPC/DSP state. The `msu_player` is
-/// intentionally not round-tripped: MSU (external music
-/// streaming) is disabled in headless replay, it owns non-serde state
-/// (`OpusDecoder`), and on restore it is reconstructed as `MsuPlayer::default()`.
-/// Runtime backend selection is host configuration and is likewise rebuilt
-/// from its modern default or an operator override after restore. Modern-owned
-/// sample RAM, sequencing, rendering, queue, and configuration state remain.
+/// Stable, feature-independent modern audio payload used by snapshot v2 and
+/// nested inside v3. Host backend selection and MSU streaming resources are
+/// intentionally rebuilt after restore.
 #[derive(serde::Serialize, serde::Deserialize)]
-struct AudioStateSnapshot {
+struct ModernAudioStateSnapshot {
+    apu_write_ents: [ApuWriteEnt; 16],
+    apu_write: ApuWriteEnt,
+    apu_write_ent_pos: u8,
+    apu_write_count: u8,
+    apu_total_write: u8,
+    input_ports: [u8; 4],
+    port_to_snes: [u8; 4],
+    #[serde(with = "serde_big_array::BigArray")]
+    modern_sample_ram: [u8; 0x10000],
+    volume_transition_step_float: [f32; 4],
+    volume_transition_target_float: [f32; 4],
+    config_audio_freq: u32,
+    config_msuvolume: u8,
+    config_resume_msu: bool,
+    config_msu_path: Option<String>,
+    #[serde(default)]
+    modern_audio: ModernAudioEngine,
+    #[serde(default)]
+    modern_sequence: ModernAudioSequencer,
+}
+
+impl ModernAudioStateSnapshot {
+    fn capture(state: &AudioState) -> Self {
+        Self {
+            modern_audio: state.modern_audio.clone(),
+            modern_sequence: state.modern_sequence.clone(),
+            apu_write_ents: state.apu_write_ents,
+            apu_write: state.apu_write,
+            apu_write_ent_pos: state.apu_write_ent_pos,
+            apu_write_count: state.apu_write_count,
+            apu_total_write: state.apu_total_write,
+            input_ports: state.input_ports,
+            port_to_snes: state.port_to_snes,
+            modern_sample_ram: state.modern_sample_ram,
+            volume_transition_step_float: state.volume_transition_step_float,
+            volume_transition_target_float: state.volume_transition_target_float,
+            config_audio_freq: state.config_audio_freq,
+            config_msuvolume: state.config_msuvolume,
+            config_resume_msu: state.config_resume_msu,
+            config_msu_path: state.config_msu_path.clone(),
+        }
+    }
+
+    fn into_audio_state(self) -> AudioState {
+        let mut state = AudioState::default();
+        state.modern_audio = self.modern_audio;
+        state.modern_sequence = self.modern_sequence;
+        state.apu_write_ents = self.apu_write_ents;
+        state.apu_write = self.apu_write;
+        state.apu_write_ent_pos = self.apu_write_ent_pos;
+        state.apu_write_count = self.apu_write_count;
+        state.apu_total_write = self.apu_total_write;
+        state.input_ports = self.input_ports;
+        state.port_to_snes = self.port_to_snes;
+        state.modern_sample_ram = self.modern_sample_ram;
+        state.volume_transition_step_float = self.volume_transition_step_float;
+        state.volume_transition_target_float = self.volume_transition_target_float;
+        state.config_audio_freq = self.config_audio_freq;
+        state.config_msuvolume = self.config_msuvolume;
+        state.config_resume_msu = self.config_resume_msu;
+        state.config_msu_path = self.config_msu_path;
+        state
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct AudioSnapshotV3 {
+    modern: ModernAudioStateSnapshot,
+    oracle_sidecar: Option<Vec<u8>>,
+}
+
+fn capture_v3(state: &AudioState) -> Result<AudioSnapshotV3, String> {
     #[cfg(feature = "audio-oracle")]
+    let oracle_sidecar = Some(
+        bincode::serialize(&crate::spc_player::spc_player_snapshot(state.spc_player))
+            .map_err(|error| format!("oracle snapshot sidecar encode: {error}"))?,
+    );
+    #[cfg(not(feature = "audio-oracle"))]
+    let oracle_sidecar = None;
+    Ok(AudioSnapshotV3 {
+        modern: ModernAudioStateSnapshot::capture(state),
+        oracle_sidecar,
+    })
+}
+
+fn restore_v3(snapshot: AudioSnapshotV3) -> Result<(AudioState, bool), String> {
+    let has_oracle_sidecar = snapshot.oracle_sidecar.is_some();
+    let state = snapshot.modern.into_audio_state();
+    #[cfg(feature = "audio-oracle")]
+    {
+        let mut state = state;
+        if let Some(sidecar) = snapshot.oracle_sidecar {
+            let oracle = bincode::deserialize(&sidecar)
+                .map_err(|error| format!("oracle snapshot sidecar decode: {error}"))?;
+            crate::spc_player::spc_player_destroy(state.spc_player);
+            state.spc_player = crate::spc_player::spc_player_from_snapshot(oracle);
+        }
+        return Ok((state, has_oracle_sidecar));
+    }
+    #[cfg(not(feature = "audio-oracle"))]
+    Ok((state, has_oracle_sidecar))
+}
+
+pub(super) fn encode_v3(state: &AudioState) -> Result<(Vec<u8>, bool), String> {
+    let snapshot = capture_v3(state)?;
+    let has_oracle_sidecar = snapshot.oracle_sidecar.is_some();
+    let payload = bincode::serialize(&snapshot)
+        .map_err(|error| format!("audio snapshot v3 encode: {error}"))?;
+    Ok((payload, has_oracle_sidecar))
+}
+
+pub(super) fn decode_v3(payload: &[u8]) -> Result<(AudioState, bool), String> {
+    let snapshot: AudioSnapshotV3 = bincode::deserialize(payload)
+        .map_err(|error| format!("audio snapshot v3 decode: {error}"))?;
+    restore_v3(snapshot)
+}
+
+impl serde::Serialize for AudioState {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        capture_v3(self)
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for AudioState {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let snapshot = AudioSnapshotV3::deserialize(deserializer)?;
+        restore_v3(snapshot)
+            .map(|(state, _)| state)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+pub(super) fn decode_v2(payload: &[u8]) -> Result<AudioState, String> {
+    bincode::deserialize::<ModernAudioStateSnapshot>(payload)
+        .map(ModernAudioStateSnapshot::into_audio_state)
+        .map_err(|error| format!("audio snapshot v2 decode: {error}"))
+}
+
+#[cfg(test)]
+pub(super) fn encode_v2_for_test(state: &AudioState) -> Vec<u8> {
+    bincode::serialize(&ModernAudioStateSnapshot::capture(state)).unwrap()
+}
+
+#[cfg(test)]
+pub(super) fn encode_v3_without_sidecar_for_test(state: &AudioState) -> Vec<u8> {
+    bincode::serialize(&AudioSnapshotV3 {
+        modern: ModernAudioStateSnapshot::capture(state),
+        oracle_sidecar: None,
+    })
+    .unwrap()
+}
+
+#[cfg(all(test, not(feature = "audio-oracle")))]
+pub(super) fn encode_v3_with_opaque_sidecar_for_test(
+    state: &AudioState,
+    sidecar: Vec<u8>,
+) -> Vec<u8> {
+    bincode::serialize(&AudioSnapshotV3 {
+        modern: ModernAudioStateSnapshot::capture(state),
+        oracle_sidecar: Some(sidecar),
+    })
+    .unwrap()
+}
+
+/// Version-1 oracle payload. Its field order is frozen to the former
+/// feature-selected `AudioStateSnapshot` representation.
+#[cfg(feature = "audio-oracle")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct OracleAudioStateSnapshotV1 {
     spc_player: crate::spc_player::SpcPlayerSnapshot,
     apu_write_ents: [ApuWriteEnt; 16],
     apu_write: ApuWriteEnt,
@@ -34,9 +198,72 @@ struct AudioStateSnapshot {
     modern_sequence: ModernAudioSequencer,
 }
 
+#[cfg(feature = "audio-oracle")]
+impl OracleAudioStateSnapshotV1 {
+    #[cfg(test)]
+    fn capture(state: &AudioState) -> Self {
+        Self {
+            spc_player: crate::spc_player::spc_player_snapshot(state.spc_player),
+            apu_write_ents: state.apu_write_ents,
+            apu_write: state.apu_write,
+            apu_write_ent_pos: state.apu_write_ent_pos,
+            apu_write_count: state.apu_write_count,
+            apu_total_write: state.apu_total_write,
+            input_ports: state.input_ports,
+            port_to_snes: state.port_to_snes,
+            modern_sample_ram: state.modern_sample_ram,
+            volume_transition_step_float: state.volume_transition_step_float,
+            volume_transition_target_float: state.volume_transition_target_float,
+            config_audio_freq: state.config_audio_freq,
+            config_msuvolume: state.config_msuvolume,
+            config_resume_msu: state.config_resume_msu,
+            config_msu_path: state.config_msu_path.clone(),
+            modern_audio: state.modern_audio.clone(),
+            modern_sequence: state.modern_sequence.clone(),
+        }
+    }
+
+    fn into_audio_state(self) -> AudioState {
+        AudioState {
+            spc_player: crate::spc_player::spc_player_from_snapshot(self.spc_player),
+            backend: AudioBackendMode::default(),
+            audio_has_rendered: false,
+            msu_player: MsuPlayer::default(),
+            modern_audio: self.modern_audio,
+            modern_sequence: self.modern_sequence,
+            apu_write_ents: self.apu_write_ents,
+            apu_write: self.apu_write,
+            apu_write_ent_pos: self.apu_write_ent_pos,
+            apu_write_count: self.apu_write_count,
+            apu_total_write: self.apu_total_write,
+            input_ports: self.input_ports,
+            port_to_snes: self.port_to_snes,
+            modern_sample_ram: self.modern_sample_ram,
+            volume_transition_step_float: self.volume_transition_step_float,
+            volume_transition_target_float: self.volume_transition_target_float,
+            config_audio_freq: self.config_audio_freq,
+            config_msuvolume: self.config_msuvolume,
+            config_resume_msu: self.config_resume_msu,
+            config_msu_path: self.config_msu_path,
+        }
+    }
+}
+
+#[cfg(feature = "audio-oracle")]
+pub(super) fn decode_v1(payload: &[u8]) -> Result<AudioState, String> {
+    bincode::deserialize::<OracleAudioStateSnapshotV1>(payload)
+        .map(OracleAudioStateSnapshotV1::into_audio_state)
+        .map_err(|error| format!("audio snapshot v1 decode: {error}"))
+}
+
+#[cfg(all(test, feature = "audio-oracle"))]
+pub(super) fn encode_v1_for_test(state: &AudioState) -> Vec<u8> {
+    bincode::serialize(&OracleAudioStateSnapshotV1::capture(state)).unwrap()
+}
+
 #[derive(serde::Deserialize)]
 #[cfg(feature = "audio-oracle")]
-pub(super) struct LegacyAudioStateSnapshot {
+struct LegacyAudioStateSnapshot {
     spc_player: crate::spc_player::SpcPlayerSnapshot,
     apu_write_ents: [ApuWriteEnt; 16],
     apu_write: ApuWriteEnt,
@@ -57,7 +284,7 @@ pub(super) struct LegacyAudioStateSnapshot {
 
 #[cfg(feature = "audio-oracle")]
 impl LegacyAudioStateSnapshot {
-    pub(super) fn into_audio_state(self) -> AudioState {
+    fn into_audio_state(self) -> AudioState {
         AudioState {
             spc_player: crate::spc_player::spc_player_from_snapshot(self.spc_player),
             backend: AudioBackendMode::default(),
@@ -83,59 +310,17 @@ impl LegacyAudioStateSnapshot {
     }
 }
 
-impl serde::Serialize for AudioState {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let snapshot = AudioStateSnapshot {
-            #[cfg(feature = "audio-oracle")]
-            spc_player: crate::spc_player::spc_player_snapshot(self.spc_player),
-            modern_audio: self.modern_audio.clone(),
-            modern_sequence: self.modern_sequence.clone(),
-            apu_write_ents: self.apu_write_ents,
-            apu_write: self.apu_write,
-            apu_write_ent_pos: self.apu_write_ent_pos,
-            apu_write_count: self.apu_write_count,
-            apu_total_write: self.apu_total_write,
-            input_ports: self.input_ports,
-            port_to_snes: self.port_to_snes,
-            modern_sample_ram: self.modern_sample_ram,
-            volume_transition_step_float: self.volume_transition_step_float,
-            volume_transition_target_float: self.volume_transition_target_float,
-            config_audio_freq: self.config_audio_freq,
-            config_msuvolume: self.config_msuvolume,
-            config_resume_msu: self.config_resume_msu,
-            config_msu_path: self.config_msu_path.clone(),
-        };
-        snapshot.serialize(serializer)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for AudioState {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let snapshot = AudioStateSnapshot::deserialize(deserializer)?;
-        #[cfg(feature = "audio-oracle")]
-        let spc_player = crate::spc_player::spc_player_from_snapshot(snapshot.spc_player);
-        Ok(Self {
-            #[cfg(feature = "audio-oracle")]
-            spc_player,
-            backend: AudioBackendMode::default(),
-            audio_has_rendered: false,
-            msu_player: MsuPlayer::default(),
-            modern_audio: snapshot.modern_audio,
-            modern_sequence: snapshot.modern_sequence,
-            apu_write_ents: snapshot.apu_write_ents,
-            apu_write: snapshot.apu_write,
-            apu_write_ent_pos: snapshot.apu_write_ent_pos,
-            apu_write_count: snapshot.apu_write_count,
-            apu_total_write: snapshot.apu_total_write,
-            input_ports: snapshot.input_ports,
-            port_to_snes: snapshot.port_to_snes,
-            modern_sample_ram: snapshot.modern_sample_ram,
-            volume_transition_step_float: snapshot.volume_transition_step_float,
-            volume_transition_target_float: snapshot.volume_transition_target_float,
-            config_audio_freq: snapshot.config_audio_freq,
-            config_msuvolume: snapshot.config_msuvolume,
-            config_resume_msu: snapshot.config_resume_msu,
-            config_msu_path: snapshot.config_msu_path,
-        })
-    }
+#[cfg(feature = "audio-oracle")]
+pub(super) fn decode_headerless(payload: &[u8]) -> Result<AudioState, String> {
+    decode_v1(payload).or_else(|v1_error| {
+        bincode::deserialize::<LegacyAudioStateSnapshot>(payload)
+            .map(LegacyAudioStateSnapshot::into_audio_state)
+            .or_else(|legacy_error| {
+                decode_v2(payload).map_err(|v2_error| {
+                    format!(
+                        "audio snapshot decode: v1={v1_error}; legacy={legacy_error}; v2={v2_error}"
+                    )
+                })
+            })
+    })
 }

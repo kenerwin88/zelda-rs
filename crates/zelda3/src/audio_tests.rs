@@ -656,6 +656,16 @@ fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload() {
 }
 
 fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner() {
+    fn with_header(version: u16, flags: u16, payload: &[u8]) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(AUDIO_SNAPSHOT_HEADER_BYTES + payload.len());
+        bytes.extend_from_slice(&AUDIO_SNAPSHOT_MAGIC);
+        bytes.extend_from_slice(&version.to_le_bytes());
+        bytes.extend_from_slice(&flags.to_le_bytes());
+        bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(payload);
+        bytes
+    }
+
     let state = ZeldaState::new();
     let snapshot = state.zelda_audio_snapshot_bytes();
     assert_eq!(&snapshot[..4], b"Z3AU");
@@ -663,16 +673,65 @@ fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner() {
         u16::from_le_bytes([snapshot[4], snapshot[5]]),
         AUDIO_SNAPSHOT_VERSION
     );
-    assert_eq!(u16::from_le_bytes([snapshot[6], snapshot[7]]), 0);
+    let expected_flags = if ZeldaState::zelda_audio_oracle_available() {
+        AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR
+    } else {
+        0
+    };
+    assert_eq!(
+        u16::from_le_bytes([snapshot[6], snapshot[7]]),
+        expected_flags
+    );
     assert_eq!(
         u32::from_le_bytes(snapshot[8..12].try_into().unwrap()) as usize,
         snapshot.len() - 12
     );
 
     let mut restored = ZeldaState::new();
+    restored.zelda_audio_restore_from_bytes(&snapshot).unwrap();
+    assert_eq!(
+        restored.zelda_modern_audio_state(),
+        state.zelda_modern_audio_state()
+    );
+
+    let v2_payload = snapshot_state::encode_v2_for_test(&state.audio);
+    let v2 = with_header(2, 0, &v2_payload);
     restored
-        .zelda_audio_restore_from_bytes(&snapshot[12..])
-        .expect("preheader current snapshot remains readable");
+        .zelda_audio_restore_from_bytes(&v2)
+        .expect("version-2 modern snapshot migrates");
+    restored
+        .zelda_audio_restore_from_bytes(&v2_payload)
+        .expect("preheader modern snapshot remains readable");
+
+    #[cfg(feature = "audio-oracle")]
+    {
+        let v1_payload = snapshot_state::encode_v1_for_test(&state.audio);
+        restored
+            .zelda_audio_restore_from_bytes(&with_header(1, 0, &v1_payload))
+            .expect("version-1 oracle snapshot migrates");
+
+        let modern_v3_payload = snapshot_state::encode_v3_without_sidecar_for_test(&state.audio);
+        restored
+            .zelda_audio_restore_from_bytes(&with_header(
+                AUDIO_SNAPSHOT_VERSION,
+                0,
+                &modern_v3_payload,
+            ))
+            .expect("oracle build accepts portable modern-only v3 snapshot");
+    }
+
+    #[cfg(not(feature = "audio-oracle"))]
+    {
+        let portable_payload =
+            snapshot_state::encode_v3_with_opaque_sidecar_for_test(&state.audio, vec![1, 2, 3, 4]);
+        restored
+            .zelda_audio_restore_from_bytes(&with_header(
+                AUDIO_SNAPSHOT_VERSION,
+                AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR,
+                &portable_payload,
+            ))
+            .expect("modern build ignores opaque oracle sidecar");
+    }
 
     let truncated = &snapshot[..snapshot.len() - 1];
     assert!(restored
@@ -686,7 +745,7 @@ fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner() {
         .unwrap_err()
         .contains("length mismatch"));
 
-    let mut unsupported = snapshot;
+    let mut unsupported = snapshot.clone();
     let unsupported_version = AUDIO_SNAPSHOT_VERSION + 1;
     unsupported[4..6].copy_from_slice(&unsupported_version.to_le_bytes());
     assert_eq!(
@@ -696,16 +755,13 @@ fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner() {
         ))
     );
 
-    let opposite_version: u16 = if AUDIO_SNAPSHOT_VERSION == 1 { 2 } else { 1 };
-    unsupported[4..6].copy_from_slice(&opposite_version.to_le_bytes());
-    let state_before_rejection = restored.zelda_modern_audio_state();
+    let mut mismatched_flag = snapshot;
+    let mismatched_flags = expected_flags ^ AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR;
+    mismatched_flag[6..8].copy_from_slice(&mismatched_flags.to_le_bytes());
     assert_eq!(
-        restored.zelda_audio_restore_from_bytes(&unsupported),
-        Err(format!(
-            "unsupported audio snapshot version {opposite_version}"
-        ))
+        restored.zelda_audio_restore_from_bytes(&mismatched_flag),
+        Err("audio snapshot oracle sidecar flag mismatch".to_string())
     );
-    assert_eq!(restored.zelda_modern_audio_state(), state_before_rejection);
 }
 
 fn audio_snapshot_restores_modern_sequence_and_renderer_phase_inner() {

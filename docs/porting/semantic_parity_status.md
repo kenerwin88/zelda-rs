@@ -308,16 +308,20 @@ This file records the current implementation status for
   The fixed C save-state byte layout keeps an inert DSP-sized slot in
   modern-only builds, while authoritative audio state comes from the owned
   modern sample RAM, sequencer, and renderer snapshot.
-  Audio checkpoint payloads deliberately identify their capability: version 1
-  is the oracle schema with legacy SPC/DSP continuation state, while version 2
-  is the smaller modern-only schema. They are not interchangeable; use an
-  oracle build to resume historical version-1 audio checkpoints.
+  Audio checkpoints now use one portable version-3 schema in both build modes.
+  Its required payload contains the owned modern sample RAM, sequencer, renderer,
+  command queue, ports, and configuration state. Oracle builds append legacy
+  SPC/DSP continuation as an explicitly flagged opaque sidecar; normal builds
+  can load those checkpoints by ignoring the sidecar, and oracle builds can load
+  normal checkpoints by constructing a fresh diagnostic oracle. Version-2
+  modern-only checkpoints migrate in either build. Historical version-1 oracle
+  checkpoints migrate through an oracle build.
   `scripts/check_audio_build_modes.py` is the build gate: it checks the
   oracle-enabled binary, builds the default binary, and rejects any default
   executable that still exports `spc_player` or `SpcPlayer` symbols.
-  Audio checkpoint blobs now carry a `Z3AU` header and explicit format version;
-  the loader still accepts pre-header payloads and rejects unknown future
-  versions deterministically.
+  Audio checkpoint blobs carry a `Z3AU` header, explicit format version, payload
+  length, and capability flags. The loader still accepts supported pre-header
+  payloads and rejects malformed or unknown future versions deterministically.
   A semantic conformance matrix now complements the full-route DSP oracle gate.
   Its named scenarios inject APUI engine commands directly—without replay-frame
   coordinates—and cover catalogued SFX, overlapping effects, music

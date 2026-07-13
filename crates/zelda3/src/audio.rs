@@ -22,15 +22,13 @@ mod msu_runtime;
 mod oracle_runtime;
 #[path = "audio/snapshot_state.rs"]
 mod snapshot_state;
-#[cfg(feature = "audio-oracle")]
-use snapshot_state::LegacyAudioStateSnapshot;
-
 const MSU_STATE_IDLE: u8 = 0;
 const MSU_STATE_FINISHED_PLAYING: u8 = 1;
 const MSU_STATE_RESUMING: u8 = 2;
 const MSU_STATE_PLAYING: u8 = 3;
 const AUDIO_SNAPSHOT_MAGIC: [u8; 4] = *b"Z3AU";
-const AUDIO_SNAPSHOT_VERSION: u16 = if cfg!(feature = "audio-oracle") { 1 } else { 2 };
+const AUDIO_SNAPSHOT_VERSION: u16 = 3;
+const AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR: u16 = 1;
 const AUDIO_SNAPSHOT_HEADER_BYTES: usize = 12;
 
 const MSU_TRACK_REPEATS: [u8; 48] = [
@@ -534,11 +532,17 @@ impl ZeldaState {
     /// so the next frame's audio render diverges. This snapshot captures the exact
     /// runtime state instead.
     pub fn zelda_audio_snapshot_bytes(&self) -> Vec<u8> {
-        let payload = bincode::serialize(&self.audio).expect("audio snapshot serialize failed");
+        let (payload, has_oracle_sidecar) =
+            snapshot_state::encode_v3(&self.audio).expect("audio snapshot serialize failed");
+        let flags = if has_oracle_sidecar {
+            AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR
+        } else {
+            0
+        };
         let mut bytes = Vec::with_capacity(AUDIO_SNAPSHOT_HEADER_BYTES + payload.len());
         bytes.extend_from_slice(&AUDIO_SNAPSHOT_MAGIC);
         bytes.extend_from_slice(&AUDIO_SNAPSHOT_VERSION.to_le_bytes());
-        bytes.extend_from_slice(&[0; 2]);
+        bytes.extend_from_slice(&flags.to_le_bytes());
         bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&payload);
         #[cfg(feature = "audio-oracle")]
@@ -587,16 +591,21 @@ impl ZeldaState {
     /// frees the prior SPC player); the deserialized `AudioState` re-creates the
     /// SPC player + DSP with all raw pointers correctly re-linked.
     pub fn zelda_audio_restore_from_bytes(&mut self, bytes: &[u8]) -> Result<(), String> {
-        let (payload, allow_legacy_fallback) = if bytes.starts_with(&AUDIO_SNAPSHOT_MAGIC) {
+        let (version, flags, payload) = if bytes.starts_with(&AUDIO_SNAPSHOT_MAGIC) {
             if bytes.len() < AUDIO_SNAPSHOT_HEADER_BYTES {
                 return Err("audio snapshot header is truncated".to_string());
             }
             let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-            if version != AUDIO_SNAPSHOT_VERSION {
+            if !matches!(version, 1 | 2 | AUDIO_SNAPSHOT_VERSION) {
                 return Err(format!("unsupported audio snapshot version {version}"));
             }
             let flags = u16::from_le_bytes([bytes[6], bytes[7]]);
-            if flags != 0 {
+            let supported_flags = if version == AUDIO_SNAPSHOT_VERSION {
+                AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR
+            } else {
+                0
+            };
+            if flags & !supported_flags != 0 {
                 return Err(format!("unsupported audio snapshot flags {flags}"));
             }
             let payload_len = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
@@ -609,27 +618,44 @@ impl ZeldaState {
                     bytes.len().saturating_sub(AUDIO_SNAPSHOT_HEADER_BYTES)
                 ));
             }
-            (&bytes[AUDIO_SNAPSHOT_HEADER_BYTES..], false)
+            (version, flags, &bytes[AUDIO_SNAPSHOT_HEADER_BYTES..])
         } else {
-            (bytes, true)
+            (0, 0, bytes)
         };
-        #[cfg(not(feature = "audio-oracle"))]
-        let _ = allow_legacy_fallback;
-        let restored: AudioState = match bincode::deserialize(payload) {
-            Ok(state) => state,
-            #[cfg(feature = "audio-oracle")]
-            Err(current_error) if allow_legacy_fallback => bincode::deserialize::<
-                LegacyAudioStateSnapshot,
-            >(payload)
-            .map(LegacyAudioStateSnapshot::into_audio_state)
-            .map_err(|legacy_error| {
-                format!("audio snapshot decode: current={current_error}; legacy={legacy_error}")
-            })?,
-            Err(current_error) => {
-                return Err(format!(
-                    "audio snapshot v{AUDIO_SNAPSHOT_VERSION} decode: {current_error}"
-                ));
+        let restored = match version {
+            AUDIO_SNAPSHOT_VERSION => {
+                let (state, has_oracle_sidecar) = snapshot_state::decode_v3(payload)?;
+                let flag_has_sidecar = flags & AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR != 0;
+                if flag_has_sidecar != has_oracle_sidecar {
+                    return Err("audio snapshot oracle sidecar flag mismatch".to_string());
+                }
+                state
             }
+            2 => snapshot_state::decode_v2(payload)?,
+            1 => {
+                #[cfg(feature = "audio-oracle")]
+                {
+                    snapshot_state::decode_v1(payload)?
+                }
+                #[cfg(not(feature = "audio-oracle"))]
+                {
+                    return Err(
+                        "audio snapshot v1 requires an audio-oracle build for migration"
+                            .to_string(),
+                    );
+                }
+            }
+            0 => {
+                #[cfg(feature = "audio-oracle")]
+                {
+                    snapshot_state::decode_headerless(payload)?
+                }
+                #[cfg(not(feature = "audio-oracle"))]
+                {
+                    snapshot_state::decode_v2(payload)?
+                }
+            }
+            _ => unreachable!(),
         };
         #[cfg(feature = "audio-oracle")]
         if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
