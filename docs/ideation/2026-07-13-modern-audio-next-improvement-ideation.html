@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Modern Audio Next Improvement</title>
+  <style>
+    :root { color-scheme: light dark; --bg:#f6f7fb; --card:#fff; --ink:#18202b; --muted:#586577; --line:#d9deea; --accent:#3157d5; --soft:#eaf0ff; --warn:#fff3d8; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#11141a; --card:#1a1f28; --ink:#edf1f7; --muted:#abb5c5; --line:#333b49; --accent:#8ca8ff; --soft:#202c4e; --warn:#44391f; } }
+    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.58 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { max-width:940px; margin:0 auto; padding:48px 24px 72px; } h1 { font-size:2rem; margin:.2rem 0 .5rem; } h2 { margin-top:2.5rem; font-size:1.35rem; } p { max-width:74ch; }
+    .eyebrow { color:var(--accent); font-weight:750; letter-spacing:.08em; text-transform:uppercase; font-size:.75rem; }
+    .meta,.stats { display:flex; flex-wrap:wrap; gap:8px; margin:18px 0; } .pill { background:var(--soft); color:var(--ink); padding:5px 10px; border-radius:999px; border:1px solid var(--line); }
+    nav { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 20px; } nav a { color:var(--accent); }
+    article { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px; margin:16px 0; }
+    article.top { background:var(--soft); } article h3 { margin:0 0 12px; font-size:1.16rem; } dl { display:grid; grid-template-columns:110px 1fr; gap:7px 14px; margin:0; } dt { font-weight:700; color:var(--muted); } dd { margin:0; }
+    table { width:100%; border-collapse:collapse; background:var(--card); } th,td { text-align:left; vertical-align:top; padding:10px 12px; border:1px solid var(--line); } th { background:var(--soft); }
+    code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.92em; } .flow { display:grid; grid-template-columns:1fr auto 1fr auto 1fr; align-items:center; gap:9px; margin:18px 0; } .node { border:1px solid var(--line); border-radius:12px; padding:12px; text-align:center; background:var(--card); } .arrow { color:var(--accent); font-size:1.4rem; }
+    footer { margin-top:42px; padding-top:18px; border-top:1px solid var(--line); color:var(--muted); font-size:.85rem; }
+    @media (max-width:680px) { main { padding:30px 16px 54px; } dl { grid-template-columns:1fr; } dt { margin-top:8px; } .flow { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); text-align:center; } table { font-size:.88rem; } }
+  </style>
+</head>
+<body><main>
+  <header>
+    <div class="eyebrow">Repository-grounded ideation</div>
+    <h1>Modern Audio: Next Big Improvement</h1>
+    <p>The strongest next move is to finish the SFX asset boundary: one reviewed, versioned authoring source compiled into compact runtime data.</p>
+    <div class="meta"><span class="pill">Date: <time datetime="2026-07-13">2026-07-13</time></span><span class="pill">Topic: modern-audio-next-improvement</span><span class="pill">Mode: repo-grounded</span></div>
+    <div class="stats"><span class="pill">12 candidates</span><span class="pill">6 survivors</span><span class="pill">Top confidence: 96%</span></div>
+  </header>
+
+  <section id="grounding-context"><h2>Grounding Context</h2>
+    <p>The music catalog already follows the desired pattern: a compact, reviewable TSV is validated and packed at build time, while the runtime Rust module is a small typed decoder. SFX has not completed that migration. <code>modern_sfx_catalog.rs</code> is 10,527 lines, the generated full-route Rust include is another 7,653 lines, and exact SFX behavior is split across generated Rust, DSP TSV, pitch TSV, curated constants, and an offline promotion manifest.</p>
+    <p>The standard route and semantic conformance gates are strong, snapshots are portable, and the oracle runtime is isolated. That shifts the highest leverage from proving one more route to removing duplicated SFX truth and making reviewed assets the thing the runtime actually consumes.</p>
+    <p>External grounding is modest but supportive: Cargo explicitly supports build-time code generation, and typed Serde deserialization is a conventional way to validate human-readable authoring data before packing it. The repository already uses this exact pattern successfully for music.</p>
+  </section>
+
+  <section id="topic-axes"><h2>Topic Axes</h2><ul><li>Authoring and review</li><li>Runtime independence</li><li>Coverage and validation</li><li>Diagnosis and observability</li><li>Failure policy</li></ul></section>
+
+  <section id="ranked-ideas"><h2>Ranked Ideas</h2>
+    <nav aria-label="Ranked ideas"><ol><li><a href="#idea-1">Unified reviewed SFX asset compiler</a></li><li><a href="#idea-2">Modern-owned instrument sample pack</a></li><li><a href="#idea-3">Route-independent command generation</a></li><li><a href="#idea-4">Audio parity workbench</a></li><li><a href="#idea-5">Strict no-fallback release policy</a></li><li><a href="#idea-6">Compact semantic PCM fixtures</a></li></ol></nav>
+
+    <article class="top" id="idea-1"><h3>1. Unified reviewed SFX asset compiler</h3>
+      <div class="flow" aria-label="SFX asset compilation flow"><div class="node">Reviewed versioned SFX source</div><div class="arrow">→</div><div class="node">Build-time validator and packer</div><div class="arrow">→</div><div class="node">Small typed runtime decoder</div></div>
+      <dl><dt>Description</dt><dd>Make one checked-in SFX asset file the canonical source for program steps, exact DSP parameters, pitch changes, context signatures, names, hashes, and promotion status. The build validates it, rejects non-review-ready runtime entries, and packs it into compact bytes consumed by a small decoder.</dd><dt>Axis</dt><dd>Authoring and review</dd><dt>Basis</dt><dd><strong>direct:</strong> SFX truth is currently split across a 10,527-line Rust catalog, a 7,653-line generated Rust include, two TSVs, and an offline manifest whose reviewed subset is not yet the runtime source.</dd><dt>Rationale</dt><dd>This removes the largest remaining duplication, makes review status enforceable, shrinks runtime source, and turns future parity discoveries into data changes instead of Rust surgery.</dd><dt>Downsides</dt><dd>Requires a careful lossless schema and migration parity gate; choosing JSON versus TSV is secondary to defining one canonical typed model.</dd><dt>Confidence</dt><dd>96%</dd><dt>Complexity</dt><dd>Medium</dd></dl>
+    </article>
+
+    <article id="idea-2"><h3>2. Modern-owned instrument sample pack</h3><dl><dt>Description</dt><dd>Promote BRR sample bytes, loop metadata, and instrument directory entries into a reviewed modern asset pack so playable audio no longer depends on SPC-shaped sample RAM as its data container.</dd><dt>Axis</dt><dd>Runtime independence</dd><dt>Basis</dt><dd><strong>direct:</strong> the modern renderer is independent of the SPC interpreter but still models original sample-directory and BRR data.</dd><dt>Rationale</dt><dd>This completes the conceptual separation between modern playback assets and the oracle's machine-state layout.</dd><dt>Downsides</dt><dd>Higher migration risk than the SFX compiler and should follow a stable SFX schema.</dd><dt>Confidence</dt><dd>88%</dd><dt>Complexity</dt><dd>High</dd></dl></article>
+
+    <article id="idea-3"><h3>3. Route-independent command generation</h3><dl><dt>Description</dt><dd>Generate legal engine music/SFX command sequences and context transitions, then require deterministic rendering, zero unknown commands, bounded voices, and snapshot-continuation equivalence.</dd><dt>Axis</dt><dd>Coverage and validation</dd><dt>Basis</dt><dd><strong>direct:</strong> semantic scenarios already prove commands can be injected without replay-frame coordinates, but the matrix is hand-selected.</dd><dt>Rationale</dt><dd>It finds context combinations that no recorded route happens to exercise and directly addresses the concern that behavior not be hardcoded to one replay.</dd><dt>Downsides</dt><dd>Needs a validity model to avoid spending time on impossible command combinations.</dd><dt>Confidence</dt><dd>91%</dd><dt>Complexity</dt><dd>Medium</dd></dl></article>
+
+    <article id="idea-4"><h3>4. Audio parity workbench</h3><dl><dt>Description</dt><dd>Build a small offline report that aligns engine events, voice lifetimes, waveform deltas, and catalog provenance around the first mismatch, with optional short A/B WAV exports.</dd><dt>Axis</dt><dd>Diagnosis and observability</dd><dt>Basis</dt><dd><strong>direct:</strong> parity tooling already emits trace JSON and sample differences, but investigation still spans multiple scripts and raw traces.</dd><dt>Rationale</dt><dd>It compounds every future parity and asset-review task by shortening diagnosis.</dd><dt>Downsides</dt><dd>Improves iteration speed rather than playback capability itself.</dd><dt>Confidence</dt><dd>84%</dd><dt>Complexity</dt><dd>Medium</dd></dl></article>
+
+    <article id="idea-5"><h3>5. Strict no-fallback release policy</h3><dl><dt>Description</dt><dd>Keep heuristic fallback only behind an explicit development diagnostic switch; release builds reject or silence unknown commands with a precise error and telemetry.</dd><dt>Axis</dt><dd>Failure policy</dd><dt>Basis</dt><dd><strong>direct:</strong> current docs still describe a marked heuristic fallback even though covered gates require zero fallback.</dd><dt>Rationale</dt><dd>It prevents missing catalog coverage from masquerading as acceptable audio.</dd><dt>Downsides</dt><dd>Must land after asset coverage is represented canonically or it could turn rare gaps into harsh user-visible failures.</dd><dt>Confidence</dt><dd>86%</dd><dt>Complexity</dt><dd>Low</dd></dl></article>
+
+    <article id="idea-6"><h3>6. Compact semantic PCM fixtures</h3><dl><dt>Description</dt><dd>Store short, named golden PCM windows for engine-level scenarios and verify exact or tolerance-bounded output across platforms.</dd><dt>Axis</dt><dd>Coverage and validation</dd><dt>Basis</dt><dd><strong>reasoned:</strong> route digests prove long executions, while small fixtures localize renderer regressions and make failures reproducible without a million-frame run.</dd><dt>Rationale</dt><dd>This makes audio output tests faster and easier to diagnose.</dd><dt>Downsides</dt><dd>Golden audio can be brittle across deliberate renderer changes and platform arithmetic unless its contract is explicit.</dd><dt>Confidence</dt><dd>79%</dd><dt>Complexity</dt><dd>Low</dd></dl></article>
+  </section>
+
+  <section id="rejection-summary"><h2>Rejection Summary</h2><table><thead><tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr></thead><tbody>
+    <tr><td>1</td><td>Runtime JSON loading</td><td>Duplicates validation at startup and weakens the current compile-time, no-runtime-dependency boundary.</td></tr>
+    <tr><td>2</td><td>Replace catalogs with MIDI</td><td>MIDI does not naturally preserve the exact DSP envelope, BRR source, context variant, echo, and intra-frame timing data this renderer needs.</td></tr>
+    <tr><td>3</td><td>Hot reload immediately</td><td>Useful later, but premature until one canonical SFX schema exists.</td></tr>
+    <tr><td>4</td><td>Delete the oracle runtime</td><td>Would discard the strongest independent evidence source while asset coverage is still evolving.</td></tr>
+    <tr><td>5</td><td>Third-party mod packs now</td><td>Scope overrun; stabilize the internal asset contract before making it public.</td></tr>
+    <tr><td>6</td><td>Another replay route first</td><td>Lower leverage than removing duplicated truth; route-independent conformance is the stronger next coverage move.</td></tr>
+  </tbody></table></section>
+  <footer>Composed 2026-07-13T00:00:00-04:00 by ce-ideate from the current modern-audio improvement discussion and repository evidence.</footer>
+</main></body></html>

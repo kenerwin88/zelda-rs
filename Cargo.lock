@@ -3263,6 +3263,7 @@ dependencies = [
  "opus",
  "serde",
  "serde-big-array",
+ "serde_json",
  "snes",
  "zelda3-compat",
  "zelda3-dialogue",

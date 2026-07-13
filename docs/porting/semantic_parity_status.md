@@ -336,9 +336,17 @@ This file records the current implementation status for
   noise selection; unknown commands still use a marked heuristic fallback.
   Audio trace output now reports modern SFX known/unknown counts and the modern
   program hash beside the existing DSP/sample parity fields.
-  The generated full-route Rust body lives under `assets/audio/generated/` as
-  an explicit build input and is emitted into Cargo `OUT_DIR`; runtime source
-  retains the stable catalog types, lookup policy, and curated programs.
+  SFX authoring now has one versioned source of truth:
+  `assets/audio/modern_sfx.json`. It contains all 342 reviewed programs, their
+  contextual variants and steps, 570 exact DSP records, and 80 intra-step pitch
+  events. The build rejects an unknown schema, unreviewed runtime programs,
+  invalid voices, and invalid waveform names, then serializes the validated
+  document into a compact bincode asset in Cargo `OUT_DIR`. The runtime embeds
+  only that binary and lazily reconstructs the typed lookup tables; it does not
+  parse JSON, load ROM data, or compile generated SFX struct literals.
+  `modern_sfx_catalog.rs` now retains only the stable types, asset decoder,
+  lookup policy, hashes, and focused regression tests. The former generated
+  full-route Rust catalog and separate DSP/pitch TSV inputs have been removed.
 - `scripts/extract_modern_sfx_catalog.py` is the bridge from DSP parity to
   modern SFX authoring. It reads Rust audio trace JSONL, detects SFX command
   transitions with the same slot mapping as `ModernAudioSequencer`, and lifts
@@ -415,8 +423,9 @@ This file records the current implementation status for
   `target/modern-sound-assets/modern-sound-assets.json` and `.md` with `33`
   assets, `33/33` primary sequence links, `8` review-ready assets, `25`
   low-confidence needs-review assets, and `0` blocked assets. This remains an
-  offline promotion artifact; runtime promotion should consume reviewed modern
-  program data rather than query ROM structure.
+  offline evidence/promotion artifact. Review-ready programs are copied into
+  the canonical `modern_sfx.json` authoring source; low-confidence evidence
+  remains outside the runtime asset until reviewed.
 
 ## Graduated Subsystems
 

@@ -24,8 +24,6 @@ pub struct ExactSfxDspStep {
     pub duration_samples: u32,
 }
 
-include!(concat!(env!("OUT_DIR"), "/modern_sfx_dsp_assets.rs"));
-
 pub fn exact_sfx_dsp_step(
     bank: u8,
     id: u8,
@@ -33,7 +31,8 @@ pub fn exact_sfx_dsp_step(
     step: usize,
     shape: crate::modern_sfx_catalog::ModernSfxStep,
 ) -> Option<ExactSfxDspStep> {
-    if let Some(exact) = EXACT_SFX_DSP_STEPS.iter().copied().find(|candidate| {
+    let exact_steps = crate::modern_sfx_catalog::exact_dsp_steps();
+    if let Some(exact) = exact_steps.iter().copied().find(|candidate| {
         candidate.bank == bank
             && candidate.id == id
             && candidate.variant_hash == variant_hash
@@ -42,7 +41,7 @@ pub fn exact_sfx_dsp_step(
         return Some(exact);
     }
 
-    let mut matches = EXACT_SFX_DSP_STEPS.iter().copied().filter(|candidate| {
+    let mut matches = exact_steps.iter().copied().filter(|candidate| {
         candidate.bank == bank
             && candidate.id == id
             && candidate.voice == shape.voice
