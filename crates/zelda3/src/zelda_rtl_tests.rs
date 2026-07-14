@@ -3075,6 +3075,59 @@ fn hdma_setup_and_simple_hdma_line_write_ppu() {
 }
 
 #[test]
+fn cgram_capture_preserves_dma_state() {
+    let mut state = ZeldaState::new();
+    state.set_hdma_enable_mask(0);
+    state.dma.channel[1].hdma_active = true;
+    state.dma.channel[6].hdma_active = true;
+    let dma_before = state.dma.save_c_saveload();
+
+    state.cgram_after_first_hdma_line();
+
+    assert_eq!(state.dma.save_c_saveload(), dma_before);
+}
+
+#[test]
+fn repeated_display_captures_preserve_dma_and_ppu_latches() {
+    let mut state = ZeldaState::new();
+    state.set_hdma_enable_mask(1 << 6);
+    state.hdma_setup(0x0cfa87, 0, 0, 0x0d, 0, 0);
+    state.dma.channel[2].hdma_active = true;
+    state.dma.channel[7].hdma_active = true;
+    state.ppu.scroll_prev = 0x12;
+    state.ppu.scroll_prev2 = 0x34;
+    let dma_before = state.dma.save_c_saveload();
+    let scroll_latches_before = (state.ppu.scroll_prev, state.ppu.scroll_prev2);
+    let bg_scrolls_before: [(u16, u16); 4] = std::array::from_fn(|i| {
+        (
+            state.ppu.bg_layer[i].h_scroll,
+            state.ppu.bg_layer[i].v_scroll,
+        )
+    });
+    let mode7_before = (state.ppu.m7_matrix, state.ppu.m7_prev);
+
+    for _ in 0..3 {
+        state.cgram_after_first_hdma_line();
+        state.ppu_scanline_windows();
+        assert_eq!(state.dma.save_c_saveload(), dma_before);
+        assert_eq!(
+            (state.ppu.scroll_prev, state.ppu.scroll_prev2),
+            scroll_latches_before
+        );
+        assert_eq!(
+            std::array::from_fn::<_, 4, _>(|i| {
+                (
+                    state.ppu.bg_layer[i].h_scroll,
+                    state.ppu.bg_layer[i].v_scroll,
+                )
+            }),
+            bg_scrolls_before
+        );
+        assert_eq!((state.ppu.m7_matrix, state.ppu.m7_prev), mode7_before);
+    }
+}
+
+#[test]
 fn simple_hdma_get_ptr_maps_mode7_zoom_tables() {
     let state = ZeldaState::new();
 

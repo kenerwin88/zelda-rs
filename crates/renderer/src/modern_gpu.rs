@@ -1257,6 +1257,12 @@ fn mixed_variant_overlay_bg_packets_with_policy<'a>(
             out.reject_cgram_mismatch += 1;
         }
     }
+    if allow_color_math && out.reject_overlap_bg_unrepresentable_front_no_effect != 0 {
+        // A partial prefinal overlay is unsafe when one overlap chain depends on a
+        // front packet that only the live-index base can represent. Keep the whole
+        // frame on that authoritative base instead of mixing incompatible ordering.
+        out.effects = OverlayBgEffectDispatch::default();
+    }
     out
 }
 
@@ -10288,7 +10294,7 @@ mod tests {
     }
 
     #[test]
-    fn modern_gpu_variant_headless_counts_prefinal_overlap_color_math_reject() {
+    fn modern_gpu_variant_headless_falls_back_atomically_for_unrepresentable_front_overlap() {
         use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
         use crate::modern_index_atlas::ModernIndexTile;
         use crate::modern_source_atlas::modern_source_key;
@@ -10343,6 +10349,16 @@ mod tests {
             screen_x: 0,
             screen_y: 0,
             palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: false,
+        });
+        main_layer.index_tiles.push(ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            screen_x: 8,
+            screen_y: 0,
+            palette: 2,
             hflip: false,
             vflip: false,
             priority: false,
@@ -10410,19 +10426,20 @@ mod tests {
             dialogue_vwf_glyph_atlas: None,
         };
 
-        let (_rgba, stats) = ModernGpuVariantHeadless::new(&atlas)
-            .render_rgba_with_live_index_base(
-                &frame,
-                &bg_cells,
-                &[],
-                &frame,
-                &bg_cells,
-                &[],
-                "palette_dung_bg_main",
-                "palette_main_spr",
-            );
+        let (rgba, stats) = ModernGpuVariantHeadless::new(&atlas).render_rgba_with_live_index_base(
+            &frame,
+            &bg_cells,
+            &[],
+            &frame,
+            &bg_cells,
+            &[],
+            "palette_dung_bg_main",
+            "palette_main_spr",
+        );
 
-        assert_eq!(stats.mixed_overlay_bg_effect_candidates, 1);
+        assert_eq!(&rgba[0..4], &[49, 0, 0, 0xff]);
+        assert_eq!(stats.mixed_overlay_bg_effect_candidates, 2);
+        assert_eq!(stats.mixed_overlay_bg_effect_draws, 0);
         assert_eq!(
             stats.mixed_overlay_bg_effect_reject_complex_color_math_subscreen,
             0

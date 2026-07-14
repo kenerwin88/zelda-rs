@@ -6965,8 +6965,9 @@ impl ZeldaState {
     /// any channel depending on the room. Saves and restores all PPU state modified
     /// by HDMA so the actual render call (`zelda_draw_ppu_frame`) is unaffected.
     pub fn cgram_after_first_hdma_line(&mut self) -> Vec<u16> {
+        let mut channels = self.dma.channel;
         for i in 0..8 {
-            self.dma.channel[i].hdma_active = self.game_state.display.is_hdma_channel_enabled(i);
+            channels[i].hdma_active = self.game_state.display.is_hdma_channel_enabled(i);
         }
 
         let saved_cgram = self.ppu.cgram.clone();
@@ -6980,8 +6981,13 @@ impl ZeldaState {
         let saved_window1_right = self.ppu.window1_right;
         let saved_window2_left = self.ppu.window2_left;
         let saved_window2_right = self.ppu.window2_right;
+        let saved_scroll_prev = self.ppu.scroll_prev;
+        let saved_scroll_prev2 = self.ppu.scroll_prev2;
+        let saved_bg_scrolls: [(u16, u16); 4] =
+            std::array::from_fn(|i| (self.ppu.bg_layer[i].h_scroll, self.ppu.bg_layer[i].v_scroll));
+        let saved_m7_matrix = self.ppu.m7_matrix;
+        let saved_m7_prev = self.ppu.m7_prev;
 
-        let channels: [_; 8] = std::array::from_fn(|i| self.dma.channel[i]);
         let mut hdma: [SimpleHdma; 8] = Default::default();
         for i in 0..8 {
             self.simple_hdma_init(&mut hdma[i], &channels[i]);
@@ -7003,6 +7009,14 @@ impl ZeldaState {
         self.ppu.window1_right = saved_window1_right;
         self.ppu.window2_left = saved_window2_left;
         self.ppu.window2_right = saved_window2_right;
+        self.ppu.scroll_prev = saved_scroll_prev;
+        self.ppu.scroll_prev2 = saved_scroll_prev2;
+        for (i, &(h_scroll, v_scroll)) in saved_bg_scrolls.iter().enumerate() {
+            self.ppu.bg_layer[i].h_scroll = h_scroll;
+            self.ppu.bg_layer[i].v_scroll = v_scroll;
+        }
+        self.ppu.m7_matrix = saved_m7_matrix;
+        self.ppu.m7_prev = saved_m7_prev;
 
         result
     }
@@ -7040,6 +7054,8 @@ impl ZeldaState {
         let saved_window1_right = self.ppu.window1_right;
         let saved_window2_left = self.ppu.window2_left;
         let saved_window2_right = self.ppu.window2_right;
+        let saved_scroll_prev = self.ppu.scroll_prev;
+        let saved_scroll_prev2 = self.ppu.scroll_prev2;
         let saved_bg_scrolls: [(u16, u16); 4] =
             std::array::from_fn(|i| (self.ppu.bg_layer[i].h_scroll, self.ppu.bg_layer[i].v_scroll));
         let saved_m7_matrix = self.ppu.m7_matrix;
@@ -7093,6 +7109,8 @@ impl ZeldaState {
         self.ppu.window1_right = saved_window1_right;
         self.ppu.window2_left = saved_window2_left;
         self.ppu.window2_right = saved_window2_right;
+        self.ppu.scroll_prev = saved_scroll_prev;
+        self.ppu.scroll_prev2 = saved_scroll_prev2;
         for (i, &(h_scroll, v_scroll)) in saved_bg_scrolls.iter().enumerate() {
             self.ppu.bg_layer[i].h_scroll = h_scroll;
             self.ppu.bg_layer[i].v_scroll = v_scroll;
