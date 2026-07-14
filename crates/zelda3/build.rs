@@ -88,6 +88,14 @@ struct ExactDspStep {
     sample_offset: u16,
     #[serde(default)]
     duration_samples: u32,
+    #[serde(default)]
+    interrupt_voice: bool,
+    #[serde(default)]
+    interrupt_delay_frames: u8,
+    #[serde(default)]
+    interrupt_scheduler_tick_index: u8,
+    #[serde(default)]
+    ownership_duration_samples: u32,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]

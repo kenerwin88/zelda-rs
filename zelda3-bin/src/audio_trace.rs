@@ -134,18 +134,25 @@ pub(crate) fn print_replay_audio_trace(
             .join(",")
     );
     let event_frame = game.zelda_audio_event_frame_from_dsp_writes(&dsp_writes);
-    let modern_event_frame = modern_sequence.sequence_engine_commands(
-        game.zelda_audio_route_state(),
-        game.zelda_engine_audio_commands(),
-    );
+    let mut modern_route = game.zelda_audio_route_state();
+    // C SPC receipts are reference observations. Feeding them into the
+    // candidate sequencer would replace modern scheduling decisions with
+    // oracle KON/KOF timing and make lifecycle regressions invisible.
+    modern_route.spc = None;
+    let modern_event_frame =
+        modern_sequence.sequence_engine_commands(modern_route, game.zelda_engine_audio_commands());
     let modern_sequence_stats = modern_sequence.last_stats();
+    let classic_spc = game.zelda_audio_route_state().spc;
+    let (classic_sfx_events_json, classic_sfx_voice_mask) = classic_sfx_events_json(classic_spc);
+    let modern_sfx_events_json = modern_sfx_events_json(&modern_event_frame, modern_sequence_stats);
+    let sfx_lockstep_json = format!(
+        ",\"classic_sfx_events\":{classic_sfx_events_json},\"modern_sfx_events\":{modern_sfx_events_json},\"classic_sfx_voice_mask\":{classic_sfx_voice_mask},\"modern_sfx_voice_mask\":{}",
+        modern_sequence_stats.sfx_voice_mask,
+    );
     let mut modern_audio = vec![0i16; samples.saturating_mul(channels)];
     let static_compat_ram = std::env::var_os("ZELDA3_MODERN_AUDIO_STATIC_SAMPLE_RAM")
         .map(|_| game.zelda_modern_audio_compat_ram());
     let modern_sample_ram = static_compat_ram.as_deref().unwrap_or(spc_ram_pre);
-    if frame == 1 {
-        game.zelda_sync_modern_audio_trace_engine(modern_engine, 534);
-    }
     if std::env::var("ZELDA3_AUDIO_GLOBAL_DUMP_FRAME")
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
@@ -369,7 +376,7 @@ pub(crate) fn print_replay_audio_trace(
         print!("null");
     }
     println!(
-        ",\"mean_abs\":{mean_abs:.6},\"hash\":\"0x{:08x}\",\"apui\":[{},{},{},{}],\"music\":[{},{},{}],\"main\":{},\"sub\":{},\"subsub\":{},\"inidisp\":{},\"dsp_pre\":\"0x{:08x}\",\"dsp_post\":\"0x{:08x}\",\"dsp_globals\":{},\"dsp_voices\":{},\"dsp_writes\":{},\"dsp_write_hash\":\"0x{:08x}\",\"dsp_write_values_hash\":\"0x{:08x}\",\"command_events\":{},\"command_hash\":\"0x{:08x}\",\"unresolved_dsp_writes\":{},\"modern_sfx_known\":{},\"modern_sfx_unknown\":{},\"modern_sfx_exact_steps\":{},\"modern_sfx_known_programs\":{},\"modern_sfx_unknown_programs\":{},\"modern_voice_mask\":{},\"modern_program_hash\":\"0x{:08x}\",\"modern_command_events\":{},\"modern_command_hash\":\"0x{:08x}\",\"modern_note_events\":{},\"modern_pitch_events\":{},\"modern_voices\":{},\"modern_echo_index\":{},\"modern_fir_index\":{},\"modern_echo_remaining\":{},\"classic_echo_value\":[{},{}],\"modern_echo_value\":[{},{}],\"modern_audio\":{{\"peak\":{},\"hash\":\"0x{:08x}\",\"active_voices\":{},\"understood_events\":{},\"ignored_events\":{},\"left_abs\":{},\"right_abs\":{},\"oracle_mean_abs_diff\":{:.6},\"oracle_max_abs_diff\":{},\"oracle_exact_samples\":{}}} {},{}{}",
+        ",\"mean_abs\":{mean_abs:.6},\"hash\":\"0x{:08x}\",\"apui\":[{},{},{},{}],\"music\":[{},{},{}],\"main\":{},\"sub\":{},\"subsub\":{},\"inidisp\":{},\"dsp_pre\":\"0x{:08x}\",\"dsp_post\":\"0x{:08x}\",\"dsp_globals\":{},\"dsp_voices\":{},\"dsp_writes\":{},\"dsp_write_hash\":\"0x{:08x}\",\"dsp_write_values_hash\":\"0x{:08x}\",\"command_events\":{},\"command_hash\":\"0x{:08x}\",\"unresolved_dsp_writes\":{},\"modern_sfx_known\":{},\"modern_sfx_unknown\":{},\"modern_sfx_exact_steps\":{},\"modern_sfx_known_programs\":{},\"modern_sfx_unknown_programs\":{},\"modern_voice_mask\":{},\"modern_program_hash\":\"0x{:08x}\",\"modern_command_events\":{},\"modern_command_hash\":\"0x{:08x}\",\"modern_note_events\":{},\"modern_pitch_events\":{},\"modern_voices\":{},\"modern_echo_index\":{},\"modern_fir_index\":{},\"modern_echo_remaining\":{},\"classic_echo_value\":[{},{}],\"modern_echo_value\":[{},{}],\"modern_audio\":{{\"peak\":{},\"hash\":\"0x{:08x}\",\"active_voices\":{},\"understood_events\":{},\"ignored_events\":{},\"left_abs\":{},\"right_abs\":{},\"oracle_mean_abs_diff\":{:.6},\"oracle_max_abs_diff\":{},\"oracle_exact_samples\":{}}}{} {},{}{}",
         summary.sample_stats.checksum,
         event_frame.music.apui00,
         event_frame.music.music_control,
@@ -427,10 +434,210 @@ pub(crate) fn print_replay_audio_trace(
         modern_oracle_diff.mean_abs,
         modern_oracle_diff.max_abs,
         modern_oracle_diff.exact_samples,
+        sfx_lockstep_json,
         replay_dsp_write_events_json(frame, dsp_writes),
         game.zelda_audio_route_debug_json(),
         "}",
     );
+}
+
+#[derive(Debug)]
+struct NormalizedSfxEvent {
+    offset: i32,
+    order: u8,
+    voice: u8,
+    json: String,
+}
+
+fn normalized_sfx_events_json(mut events: Vec<NormalizedSfxEvent>) -> String {
+    events.sort_by_key(|event| (event.offset, event.order, event.voice));
+    format!(
+        "[{}]",
+        events
+            .into_iter()
+            .map(|event| event.json)
+            .collect::<Vec<_>>()
+            .join(",")
+    )
+}
+
+fn classic_sfx_events_json(spc: Option<zelda3::game_output::SpcSequencerState>) -> (String, u8) {
+    let Some(spc) = spc else {
+        return ("[]".to_owned(), 0);
+    };
+    let mut events = Vec::new();
+    for index in 0..usize::from(spc.sfx_kon_count.min(8)) {
+        let mask = spc.sfx_kon_owned_masks[index];
+        for voice in 0..8usize {
+            if mask & (1 << voice) == 0 {
+                continue;
+            }
+            let offset = i32::from(spc.sfx_kon_offsets[index]);
+            events.push(NormalizedSfxEvent {
+                offset,
+                order: 0,
+                voice: voice as u8,
+                json: format!(
+                    "[\"on\",{offset},{voice},{},{},{},{},{},{}]",
+                    spc.sfx_kon_sources[index][voice],
+                    spc.sfx_kon_adsr1[index][voice],
+                    spc.sfx_kon_adsr2[index][voice],
+                    spc.sfx_kon_gain[index][voice],
+                    spc.sfx_kon_volume_left[index][voice],
+                    spc.sfx_kon_volume_right[index][voice],
+                ),
+            });
+        }
+    }
+    for index in 0..usize::from(spc.sfx_pitch_count.min(32)) {
+        for voice in 0..8usize {
+            if spc.sfx_pitch_masks[index] & (1 << voice) == 0 {
+                continue;
+            }
+            let offset = i32::from(spc.sfx_pitch_offsets[index]);
+            let pitch = spc.sfx_pitch_words[index];
+            events.push(NormalizedSfxEvent {
+                offset,
+                order: 1,
+                voice: voice as u8,
+                json: format!("[\"pitch\",{offset},{voice},{pitch}]"),
+            });
+        }
+    }
+    for index in 0..usize::from(spc.sfx_volume_count.min(32)) {
+        for voice in 0..8usize {
+            if spc.sfx_volume_masks[index] & (1 << voice) == 0 {
+                continue;
+            }
+            let offset = i32::from(spc.sfx_volume_offsets[index]);
+            let left = spc.sfx_volume_left[index];
+            let right = spc.sfx_volume_right[index];
+            events.push(NormalizedSfxEvent {
+                offset,
+                order: 2,
+                voice: voice as u8,
+                json: format!("[\"volume\",{offset},{voice},{left},{right}]"),
+            });
+        }
+    }
+    for index in 0..usize::from(spc.sfx_kof_count.min(8)) {
+        for voice in 0..8usize {
+            if spc.sfx_kof_masks[index] & (1 << voice) == 0 {
+                continue;
+            }
+            let offset = i32::from(spc.sfx_kof_offsets[index]);
+            events.push(NormalizedSfxEvent {
+                offset,
+                order: 3,
+                voice: voice as u8,
+                json: format!("[\"off\",{offset},{voice}]"),
+            });
+        }
+    }
+    (normalized_sfx_events_json(events), spc.is_chan_on)
+}
+
+fn modern_sfx_events_json(
+    frame: &zelda3::game_output::AudioEventFrame,
+    stats: zelda3::modern_audio_sequence::ModernAudioSequenceStats,
+) -> String {
+    use zelda3::game_output::{AudioEventKind, AudioNoteOrigin};
+
+    let mut relevant_mask = stats.sfx_voice_mask_start | stats.sfx_voice_mask;
+    for event in &frame.events {
+        if let AudioEventKind::SetNoteOrigin {
+            voice,
+            origin: AudioNoteOrigin::Sfx,
+        } = event.kind
+        {
+            relevant_mask |= 1 << voice;
+        }
+    }
+    let mut envelope = [[0u8; 3]; 8];
+    let mut volume = [[0i8; 2]; 8];
+    let mut events = Vec::new();
+    for event in &frame.events {
+        match event.kind {
+            AudioEventKind::SetDspEnvelope {
+                voice,
+                adsr1,
+                adsr2,
+                gain,
+            } if relevant_mask & (1 << voice) != 0 => {
+                envelope[usize::from(voice)] = [adsr1, adsr2, gain];
+            }
+            AudioEventKind::SetStereoVolume { voice, left, right }
+                if relevant_mask & (1 << voice) != 0 =>
+            {
+                volume[usize::from(voice)] = [left, right];
+                let offset = event.sample_offset;
+                events.push(NormalizedSfxEvent {
+                    offset,
+                    order: 2,
+                    voice,
+                    json: format!("[\"volume\",{offset},{voice},{left},{right}]"),
+                });
+            }
+            AudioEventKind::SetPitchWord { voice, pitch_word }
+            | AudioEventKind::SetPitchRegisterWord { voice, pitch_word }
+                if relevant_mask & (1 << voice) != 0 =>
+            {
+                let offset = event.sample_offset;
+                events.push(NormalizedSfxEvent {
+                    offset,
+                    order: 1,
+                    voice,
+                    json: format!("[\"pitch\",{offset},{voice},{pitch_word}]"),
+                });
+            }
+            AudioEventKind::NoteOn {
+                voice, instrument, ..
+            } if relevant_mask & (1 << voice) != 0 => {
+                let offset = event.sample_offset;
+                let [adsr1, adsr2, gain] = envelope[usize::from(voice)];
+                let [left, right] = volume[usize::from(voice)];
+                events.push(NormalizedSfxEvent {
+                    offset,
+                    order: 0,
+                    voice,
+                    json: format!(
+                        "[\"on\",{offset},{voice},{instrument},{adsr1},{adsr2},{gain},{left},{right}]"
+                    ),
+                });
+            }
+            AudioEventKind::KeyOnVoice {
+                voice,
+                source,
+                adsr1,
+                adsr2,
+                gain,
+                volume_left,
+                volume_right,
+                ..
+            } if relevant_mask & (1 << voice) != 0 => {
+                let offset = event.sample_offset;
+                events.push(NormalizedSfxEvent {
+                    offset,
+                    order: 0,
+                    voice,
+                    json: format!(
+                        "[\"on\",{offset},{voice},{source},{adsr1},{adsr2},{gain},{volume_left},{volume_right}]"
+                    ),
+                });
+            }
+            AudioEventKind::NoteOff { voice } if relevant_mask & (1 << voice) != 0 => {
+                let offset = event.sample_offset;
+                events.push(NormalizedSfxEvent {
+                    offset,
+                    order: 3,
+                    voice,
+                    json: format!("[\"off\",{offset},{voice}]"),
+                });
+            }
+            _ => {}
+        }
+    }
+    normalized_sfx_events_json(events)
 }
 
 fn maybe_dump_audio_samples(frame: u32, classic: &[i16], modern: &[i16]) {

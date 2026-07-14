@@ -8931,17 +8931,21 @@
       "command_delay_frames": 2,
       "dsp_pitch": 3606,
       "duration_frames": 1,
-      "duration_samples": 0,
+      "duration_samples": 9920,
       "echo": false,
       "gain": 112,
       "id": 17,
       "instrument": 6,
+      "interrupt_delay_frames": 0,
+      "interrupt_scheduler_tick_index": 4,
+      "interrupt_voice": true,
+      "ownership_duration_samples": 12288,
       "pan": 0,
       "pitch": 113,
       "sample_offset": 0,
-      "scheduler_tick_index": 5,
+      "scheduler_tick_index": 1,
       "step": 0,
-      "variant_hash": 205601549,
+      "variant_hash": 43732355,
       "voice": 7,
       "volume": 31,
       "volume_left": 31,
@@ -13752,6 +13756,326 @@
       "relative_sample": 2304,
       "step": 0,
       "variant_hash": 2714820795
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3564,
+      "relative_sample": 0,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3525,
+      "relative_sample": 256,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3483,
+      "relative_sample": 576,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3441,
+      "relative_sample": 896,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3402,
+      "relative_sample": 1152,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3363,
+      "relative_sample": 1472,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3324,
+      "relative_sample": 1728,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3285,
+      "relative_sample": 2048,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3246,
+      "relative_sample": 2304,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3207,
+      "relative_sample": 2624,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3171,
+      "relative_sample": 2944,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3135,
+      "relative_sample": 3200,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3096,
+      "relative_sample": 3520,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3060,
+      "relative_sample": 3776,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 3024,
+      "relative_sample": 4096,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2991,
+      "relative_sample": 4352,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2955,
+      "relative_sample": 4672,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2922,
+      "relative_sample": 4992,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2886,
+      "relative_sample": 5248,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2853,
+      "relative_sample": 5568,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2820,
+      "relative_sample": 5824,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2787,
+      "relative_sample": 6144,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2754,
+      "relative_sample": 6400,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2721,
+      "relative_sample": 6720,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2691,
+      "relative_sample": 7040,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2658,
+      "relative_sample": 7296,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2628,
+      "relative_sample": 7616,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2598,
+      "relative_sample": 7872,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2568,
+      "relative_sample": 8192,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2538,
+      "relative_sample": 8448,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2508,
+      "relative_sample": 8768,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2478,
+      "relative_sample": 9088,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2448,
+      "relative_sample": 9344,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2406,
+      "relative_sample": 9664,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 2145,
+      "relative_sample": 10496,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 1911,
+      "relative_sample": 10816,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 1701,
+      "relative_sample": 11136,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 1515,
+      "relative_sample": 11392,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 1350,
+      "relative_sample": 11712,
+      "step": 0,
+      "variant_hash": 43732355
+    },
+    {
+      "bank": 2,
+      "id": 17,
+      "pitch_word": 1203,
+      "relative_sample": 11968,
+      "step": 0,
+      "variant_hash": 43732355
     }
   ],
   "programs": [

@@ -7034,6 +7034,9 @@ impl ZeldaState {
     /// ALttP writes TM via HDMA to enable/disable layers (OBJ, BG3, etc.) on a
     /// per-scanline basis, and can update BG scroll during rendering; the GPU
     /// uses this to match the CPU's per-row rendering.
+    ///
+    /// PPU and DMA latches are restored after capture, but a one-shot V-counter
+    /// IRQ is consumed just as it is by `zelda_draw_ppu_frame` and real hardware.
     pub fn ppu_scanline_windows(
         &mut self,
     ) -> Box<[(u8, u8, u8, u8, u8, [u16; 4], [u16; 4], [i16; 8]); 224]> {
@@ -7042,7 +7045,6 @@ impl ZeldaState {
             self.dma.channel[i].hdma_active = self.game_state.display.is_hdma_channel_enabled(i);
         }
 
-        let saved_irq_control_flag = self.game_state.display.irq_control_flag;
         let saved_cgram = self.ppu.cgram.clone();
         let saved_cgram_pointer = self.ppu.cgram_pointer;
         let saved_cgram_second_write = self.ppu.cgram_second_write;
@@ -7096,7 +7098,6 @@ impl ZeldaState {
             self.simple_hdma_do_line(&mut hdma_chans[1]);
         }
 
-        self.set_irq_control_flag(saved_irq_control_flag);
         self.dma.channel = saved_channels;
         self.ppu.cgram = saved_cgram;
         self.ppu.cgram_pointer = saved_cgram_pointer;

@@ -22,6 +22,14 @@ pub struct ExactSfxDspStep {
     pub sample_offset: u16,
     #[serde(default)]
     pub duration_samples: u32,
+    #[serde(default)]
+    pub interrupt_voice: bool,
+    #[serde(default)]
+    pub interrupt_delay_frames: u8,
+    #[serde(default)]
+    pub interrupt_scheduler_tick_index: u8,
+    #[serde(default)]
+    pub ownership_duration_samples: u32,
 }
 
 pub fn exact_sfx_dsp_step(
@@ -72,5 +80,9 @@ impl ExactSfxDspStep {
             && self.gain == other.gain
             && self.sample_offset == other.sample_offset
             && self.duration_samples == other.duration_samples
+            && self.interrupt_voice == other.interrupt_voice
+            && self.interrupt_delay_frames == other.interrupt_delay_frames
+            && self.interrupt_scheduler_tick_index == other.interrupt_scheduler_tick_index
+            && self.ownership_duration_samples == other.ownership_duration_samples
     }
 }

@@ -1421,17 +1421,11 @@ fn run_replay_save(args: &[String]) {
     } else {
         None
     };
-    #[cfg(feature = "audio-oracle")]
+    // The diagnostic renderer must evolve independently. C DSP output is the
+    // comparison target, never a source of modern voice/envelope state.
     let (mut modern_audio_trace_sequence, mut modern_audio_trace_engine) =
-        game.zelda_oracle_aligned_modern_audio_trace_state();
-    #[cfg(not(feature = "audio-oracle"))]
-    let (mut modern_audio_trace_sequence, mut modern_audio_trace_engine) = (
-        zelda3::modern_audio_sequence::ModernAudioSequencer::default(),
-        zelda3::modern_audio::ModernAudioEngine::default(),
-    );
-    let mut modern_audio_trace_last_dsp_post = None;
+        game.zelda_modern_audio_state();
     let mut modern_audio_trace_sample_assets = [None; 256];
-    let mut modern_audio_trace_has_checkpoint_seed = false;
     let render_hash_cpu_debug = std::env::var_os("ZELDA3_RENDER_HASH_CPU_DEBUG").is_some();
     let mut render_hash_frame = if gpu_render_compare.enabled()
         || render_hash_cpu_debug
@@ -1534,8 +1528,6 @@ fn run_replay_save(args: &[String]) {
             let dsp_pre = game.zelda_audio_dsp_hash();
             let dsp_pre_snapshot = game.zelda_audio_dsp_snapshot();
             let spc_ram_pre = game.zelda_audio_live_spc_ram();
-            let dsp_changed = modern_audio_trace_last_dsp_post
-                .is_some_and(|previous| previous != dsp_pre);
             let mut sample_ram_changed = false;
             for voice in 0..8 {
                 let state_base = 0x80 + voice * 86;
@@ -1544,20 +1536,14 @@ fn run_replay_save(args: &[String]) {
                 };
                 let hash = modern_audio_sample_asset_hash(&spc_ram_pre, source);
                 let previous = &mut modern_audio_trace_sample_assets[usize::from(source)];
-                sample_ram_changed |= modern_audio_trace_has_checkpoint_seed
-                    && previous.is_some_and(|value| value != hash);
+                sample_ram_changed |= previous.is_some_and(|value| value != hash);
                 *previous = Some(hash);
             }
-            if dsp_changed || sample_ram_changed
-            {
-                modern_audio_trace_engine
-                    .seed_dsp_checkpoint_state(&spc_ram_pre, &dsp_pre_snapshot);
-                game.zelda_sync_modern_audio_trace_engine(&mut modern_audio_trace_engine, 0);
+            if sample_ram_changed {
+                modern_audio_trace_engine.sample_ram_changed();
             }
-            modern_audio_trace_has_checkpoint_seed |= dsp_changed;
             let writes = game.zelda_render_audio_trace_dsp_events(audio, 735, 2);
             game.zelda_discard_unused_audio_frames();
-            modern_audio_trace_last_dsp_post = Some(game.zelda_audio_dsp_hash());
             if should_fingerprint_frame {
                 let dsp_post = game.zelda_audio_dsp_hash();
                 let s_samples = replay_checksum_samples(audio);
@@ -7581,6 +7567,20 @@ fn libretro_memory_name(id: c_uint) -> &'static str {
 }
 
 fn find_asset_pack(rom_path: &str) -> Option<PathBuf> {
+    find_asset_pack_with_override(
+        rom_path,
+        std::env::var_os("ZELDA3_ASSET_PACK").map(PathBuf::from),
+    )
+}
+
+fn find_asset_pack_with_override(
+    rom_path: &str,
+    explicit_asset: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if explicit_asset.is_some() {
+        return explicit_asset;
+    }
+
     let rom_dir_asset = Path::new(rom_path).with_file_name("zelda3_assets.dat");
     if rom_dir_asset.is_file() {
         return Some(rom_dir_asset);
@@ -7600,6 +7600,15 @@ fn find_asset_pack(rom_path: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_asset_pack_wins_over_rom_neighbor_discovery() {
+        let explicit = PathBuf::from("current-modern-assets.dat");
+        assert_eq!(
+            find_asset_pack_with_override("oracle/zelda3.sfc", Some(explicit.clone())),
+            Some(explicit)
+        );
+    }
 
     #[test]
     fn parses_optional_lockstep_frames() {

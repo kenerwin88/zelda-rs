@@ -3128,6 +3128,24 @@ fn repeated_display_captures_preserve_dma_and_ppu_latches() {
 }
 
 #[test]
+fn scanline_capture_consumes_one_shot_vcounter_irq() {
+    let mut state = ZeldaState::new();
+    state.set_irq_control_flag(0x80);
+    state.set_select_file_name_scroll_x(0x01f0);
+    state.ppu.bg_layer[2].v_scroll = 0x0318;
+
+    let first = state.ppu_scanline_windows();
+
+    assert_eq!(first[126].6[2], 0x0318);
+    assert_eq!(first[127].6[2], 0);
+    assert_eq!(state.game_state.display.irq_control_flag, 0);
+    assert_eq!(state.ram[0x0128], 0);
+
+    let second = state.ppu_scanline_windows();
+    assert_eq!(second[127].6[2], 0x0318);
+}
+
+#[test]
 fn simple_hdma_get_ptr_maps_mode7_zoom_tables() {
     let state = ZeldaState::new();
 

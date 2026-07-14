@@ -31,8 +31,27 @@ DEFAULT_RUST_BIN = ROOT / "target" / "release" / "zelda3"
 DEFAULT_CHECKPOINT_DIR = ROOT / ".cache" / "replay-bisect"
 DISPLAY_FRAME = 1_045_814
 DISPLAY_CHECKPOINT_FRAME = DISPLAY_FRAME - 1
-MENU_CHECKPOINT_FRAME = 700_000
+TITLE_FADE_FRAMES = (680, 700, 800)
+TITLE_WHITE_FRAME = 800
+TITLE_MENU_LIVE_REPLAY_START = 900
+TITLE_MENU_LIVE_FRAMES = 250
+TITLE_MENU_LIVE_DUMP_FRAME = 90
+# Verified free-play overworld checkpoint (main=9, sub=0). The previous
+# 700,000 checkpoint was already in module 14 dialogue and could not open the
+# equipment menu, so that gate compared an unrelated attract/dialogue scene.
+MENU_CHECKPOINT_FRAME = 356_445
 MENU_DISPLAY_FRAME = MENU_CHECKPOINT_FRAME + 90
+MENU_LIVE_FRAMES = 100
+MENU_LIVE_DUMP_FRAME = 90
+MENU_AUDIO_LOCKSTEP_END_FRAME = MENU_CHECKPOINT_FRAME + 175
+# Each render hash must come from a fresh replay process. The C diagnostic
+# renderer mutates scratch RAM while producing a frame, so sampling every frame
+# in one process changes the later oracle frames. These points cover the start,
+# middle, and fully-open inventory animation without letting observation alter
+# the route being observed.
+MENU_RENDER_HASH_FRAMES = tuple(
+    MENU_CHECKPOINT_FRAME + offset for offset in (1, 13, 25, 37, 49, 61, 73, 85, 90)
+)
 NAME_ENTRY_CHECKPOINT_FRAME = 12_000
 NAME_ENTRY_RELEASE_FRAME = NAME_ENTRY_CHECKPOINT_FRAME + 180
 STANDARD_REGRESSION_FRAMES = (
@@ -256,6 +275,22 @@ def compare_common_state_fields(c_output: str, r_output: str, fields: list[str])
     ]
 
 
+def inventory_menu_state_failures(output: str, label: str) -> list[str]:
+    state = parse_replay_state(output)
+    expected = {
+        "main": "14",
+        "sub": "1",
+        "map": "4",
+        # BG3 has reached the C equipment-menu fully-open stop at -232.
+        "bg3v": str(0xFF18),
+    }
+    return [
+        f"{label} menu state {field} expected={value} actual={state.get(field, 'missing')}"
+        for field, value in expected.items()
+        if state.get(field) != value
+    ]
+
+
 def run_pacing_gate(args: argparse.Namespace) -> int:
     rust_platform = ROOT / "crates" / "platform" / "src" / "lib.rs"
     c_main = args.c_root / "src" / "main.c"
@@ -443,6 +478,74 @@ def compare_c_r_render(c_ppm: pathlib.Path, rust_png: pathlib.Path) -> tuple[int
     return diff_count, bbox
 
 
+def title_subtitle_palette_failure(
+    label: str, width: int, height: int, pixels: bytes, channels: int
+) -> str | None:
+    if width < 210 or height < 148:
+        return f"{label} title frame is too small for subtitle palette check: {width}x{height}"
+    white_pixels = 0
+    red_pixels = 0
+    for y in range(135, 148):
+        for x in range(90, 210):
+            offset = (y * width + x) * channels
+            red, green, blue = pixels[offset : offset + 3]
+            white_pixels += int(red >= 240 and green >= 240 and blue >= 240)
+            red_pixels += int(red >= 120 and red >= green * 2 and red >= blue * 2)
+    if white_pixels < 200 or red_pixels > 5:
+        return (
+            f"{label} title subtitle palette expected white text "
+            f"white_pixels>=200 red_pixels<=5 actual={white_pixels}/{red_pixels}"
+        )
+    return None
+
+
+def menu_vertical_coverage_failure(
+    label: str, width: int, height: int, pixels: bytes
+) -> str | None:
+    if width != 256 or height != 224:
+        return f"{label} menu frame expected 256x224, actual={width}x{height}"
+    lower_colored = 0
+    for y in range(height // 2, height):
+        for x in range(width):
+            offset = (y * width + x) * 4
+            if max(pixels[offset : offset + 3]) >= 24:
+                lower_colored += 1
+    if lower_colored < 10_000:
+        return (
+            f"{label} menu did not extend through the lower half "
+            f"colored_pixels>=10000 actual={lower_colored}"
+        )
+    return None
+
+
+def inventory_menu_panel_geometry_failure(
+    label: str, width: int, height: int, pixels: bytes
+) -> str | None:
+    if width != 256 or height != 224:
+        return f"{label} inventory frame expected 256x224, actual={width}x{height}"
+
+    # Fully open, BG3-scrolled inventory geometry. These rectangles exclude the
+    # colored borders and cover the black interiors of the lower ability and
+    # equipment panels. A pause-colored or overworld backdrop can look busy
+    # enough to fool a generic lower-half pixel count, but cannot satisfy this
+    # panel-specific contract.
+    panel_interiors = ((16, 152, 152, 208), (176, 152, 240, 208))
+    near_black = 0
+    sampled = 0
+    for left, top, right, bottom in panel_interiors:
+        for y in range(top, bottom):
+            for x in range(left, right):
+                sampled += 1
+                offset = (y * width + x) * 4
+                near_black += int(max(pixels[offset : offset + 3]) <= 16)
+    if near_black < 8_000:
+        return (
+            f"{label} inventory lower panels are missing or clipped "
+            f"near_black_pixels>=8000/{sampled} actual={near_black}/{sampled}"
+        )
+    return None
+
+
 def dump_render_frame(args: argparse.Namespace, frame: int, *, env: dict[str, str], label: str) -> int:
     out_dir = ROOT / "target" / "standard-replay-render" / label
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -490,6 +593,173 @@ def dump_render_frame(args: argparse.Namespace, frame: int, *, env: dict[str, st
         print(f"  R: {rust_png}", file=sys.stderr)
         return 1
     print(f"render ok frame={frame} pixels=0")
+    return 0
+
+
+def run_title_palette_gate(args: argparse.Namespace, *, env: dict[str, str]) -> int:
+    for frame in TITLE_FADE_FRAMES:
+        rc = dump_render_frame(args, frame, env=env, label="title")
+        if rc != 0:
+            return rc
+
+    out_dir = ROOT / "target" / "standard-replay-render" / "title"
+    c_width, c_height, c_rgb = read_ppm_rgb(out_dir / f"c-{TITLE_WHITE_FRAME}.ppm")
+    r_width, r_height, r_rgba = read_png_rgba(out_dir / f"rust-{TITLE_WHITE_FRAME}.png")
+    failures = [
+        failure
+        for failure in [
+            title_subtitle_palette_failure("C", c_width, c_height, c_rgb, 3),
+            title_subtitle_palette_failure("Rust", r_width, r_height, r_rgba, 4),
+        ]
+        if failure is not None
+    ]
+    if failures:
+        print("title palette gate failed:", file=sys.stderr)
+        for failure in failures:
+            print(f"  {failure}", file=sys.stderr)
+        return 1
+    print(
+        f"title palette ok frames={','.join(map(str, TITLE_FADE_FRAMES))} "
+        f"white_frame={TITLE_WHITE_FRAME}"
+    )
+    return 0
+
+
+def run_title_menu_live_present_gate(args: argparse.Namespace, *, env: dict[str, str]) -> int:
+    out_dir = ROOT / "target" / "standard-replay-render" / "title-menu"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    live_dump = out_dir / "live-gpu-menu.png"
+    live_env = env.copy()
+    live_env.update(
+        {
+            # Exercise the validation mode that previously rejected dynamic
+            # title/file-entry art using counters from a different renderer.
+            "ZELDA3_VARIANT_LIVE_STATS": "1",
+            "ZELDA3_LIVE_WINDOW_PIXEL_PARITY": "1",
+            "ZELDA3_LIVE_WINDOW_PIXEL_DUMP_FRAME": str(TITLE_MENU_LIVE_DUMP_FRAME),
+            "ZELDA3_LIVE_WINDOW_PIXEL_DUMP": str(live_dump),
+        }
+    )
+    command = [
+        str(args.rust_bin),
+        "--frontend-smoke",
+        str(TITLE_MENU_LIVE_FRAMES),
+        "--no-frame-pacing",
+        "--rom",
+        str(args.rom),
+        "--replay-save",
+        str(args.save),
+        "--replay-start-frame",
+        str(TITLE_MENU_LIVE_REPLAY_START),
+    ]
+    result = run_capture(command, cwd=ROOT, env=live_env)
+    if result.returncode != 0:
+        return result.returncode
+    expected_summary = (
+        f"frontend smoke completed frames={TITLE_MENU_LIVE_FRAMES} renderer=gpu_render"
+    )
+    if expected_summary not in result.stdout:
+        print("title menu live-present gate missed its completion summary", file=sys.stderr)
+        return 1
+    width, height, pixels = read_png_rgba(live_dump)
+    failure = menu_vertical_coverage_failure("live GPU", width, height, pixels)
+    if failure is not None:
+        print(failure, file=sys.stderr)
+        return 1
+    print(
+        f"title menu live-present ok replay_start={TITLE_MENU_LIVE_REPLAY_START} "
+        f"frames={TITLE_MENU_LIVE_FRAMES} dump_frame={TITLE_MENU_LIVE_DUMP_FRAME}"
+    )
+    return 0
+
+
+def run_inventory_menu_live_present_gate(
+    args: argparse.Namespace, *, env: dict[str, str]
+) -> int:
+    out_dir = ROOT / "target" / "standard-replay-render" / "menu"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    input_script = out_dir / "frontend-open-menu-input.txt"
+    input_script.write_text("0..1 0x0008\n")
+    live_dump = out_dir / "live-gpu-inventory.png"
+    live_env = env.copy()
+    live_env.update(
+        {
+            # This is the independent built-in PPU renderer versus the modern
+            # live GPU presenter. It catches shared C/R diagnostic-render bugs.
+            "ZELDA3_LIVE_WINDOW_PIXEL_PARITY": "1",
+            "ZELDA3_LIVE_WINDOW_PIXEL_DUMP_FRAME": str(MENU_LIVE_DUMP_FRAME),
+            "ZELDA3_LIVE_WINDOW_PIXEL_DUMP": str(live_dump),
+        }
+    )
+    command = [
+        str(args.rust_bin),
+        "--frontend-smoke",
+        str(MENU_LIVE_FRAMES),
+        "--no-frame-pacing",
+        "--rom",
+        str(args.rom),
+        "--replay-save",
+        str(args.save),
+        "--replay-start-frame",
+        str(MENU_CHECKPOINT_FRAME),
+        "--input-script",
+        str(input_script),
+    ]
+    result = run_capture(command, cwd=ROOT, env=live_env)
+    if result.returncode != 0:
+        print(result.stdout, file=sys.stderr)
+        return result.returncode
+    width, height, pixels = read_png_rgba(live_dump)
+    failure = inventory_menu_panel_geometry_failure("live GPU", width, height, pixels)
+    if failure is not None:
+        print(failure, file=sys.stderr)
+        return 1
+    print(
+        f"inventory live-present ok replay_start={MENU_CHECKPOINT_FRAME} "
+        f"frames={MENU_LIVE_FRAMES} dump_frame={MENU_LIVE_DUMP_FRAME}"
+    )
+    return 0
+
+
+def run_menu_sfx_lockstep_gate(args: argparse.Namespace, *, env: dict[str, str]) -> int:
+    checkpoint = args.checkpoint_dir / f"rust-frame-{MENU_CHECKPOINT_FRAME}.sav"
+    input_script = ROOT / "target" / "standard-replay-render" / "menu" / "open-menu-input.txt"
+    command = [
+        str(args.rust_bin),
+        "--replay-save",
+        str(args.rom),
+        str(args.save),
+        str(MENU_AUDIO_LOCKSTEP_END_FRAME),
+        "--load-state",
+        str(checkpoint),
+        "--stop-replay-after-load",
+        "--input-script",
+        str(input_script),
+        "--audio-trace-log",
+        "1",
+    ]
+    result = run_capture(command, cwd=ROOT, env=env)
+    if result.returncode != 0:
+        print(result.stdout, file=sys.stderr)
+        return result.returncode
+    trace = ROOT / "target" / "parity" / "menu-sfx-lockstep.jsonl"
+    trace.parent.mkdir(parents=True, exist_ok=True)
+    trace.write_text(result.stdout)
+    check = run_capture(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "check_modern_audio_route.py"),
+            "--require-zero-unknown-sfx",
+            "--require-sfx-lockstep",
+            str(trace),
+        ],
+        cwd=ROOT,
+        env=env,
+    )
+    if check.returncode != 0:
+        print(check.stdout, file=sys.stderr)
+        return check.returncode
+    print(check.stdout.strip())
     return 0
 
 
@@ -616,6 +886,14 @@ def run_menu_display_gate(args: argparse.Namespace, *, env: dict[str, str]) -> i
         return c_result.returncode
     if rust_result.returncode != 0:
         return rust_result.returncode
+
+    menu_state_failures = inventory_menu_state_failures(c_result.stdout, "C")
+    menu_state_failures.extend(inventory_menu_state_failures(rust_result.stdout, "Rust"))
+    if menu_state_failures:
+        print("menu route did not reach the fully-open equipment panel:", file=sys.stderr)
+        for failure in menu_state_failures:
+            print(f"  {failure}", file=sys.stderr)
+        return 1
 
     state_diffs = compare_common_state_fields(
         c_result.stdout,
@@ -785,91 +1063,70 @@ def run_menu_render_hash_gate(args: argparse.Namespace, *, env: dict[str, str]) 
             "SDL_RENDER_DRIVER": "software",
         }
     )
-    c_cmd = [
-        str(args.c_root / "zelda3"),
-        "--config",
-        str(args.c_root / "other" / "headless_replay.ini"),
-        "--replay-save",
-        str(args.save),
-        "--load-state",
-        str(c_checkpoint),
-        "--stop-replay-after-load",
-        "--input-script",
-        str(input_script),
-        "--smv-test-frames",
-        str(MENU_DISPLAY_FRAME),
-        "--render-hash-log",
-        "1",
-    ]
-    rust_cmd = [
-        str(args.rust_bin),
-        "--replay-save",
-        str(args.rom),
-        str(args.save),
-        str(MENU_DISPLAY_FRAME),
-        "--load-state",
-        str(rust_checkpoint),
-        "--stop-replay-after-load",
-        "--input-script",
-        str(input_script),
-        "--render-hash-log",
-        "1",
-    ]
-    print("+ " + " ".join(c_cmd), flush=True)
-    c_proc = subprocess.Popen(
-        c_cmd,
-        cwd=args.c_root,
-        env=c_env,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        bufsize=1,
+    for frame in MENU_RENDER_HASH_FRAMES:
+        c_cmd = [
+            str(args.c_root / "zelda3"),
+            "--config",
+            str(args.c_root / "other" / "headless_replay.ini"),
+            "--replay-save",
+            str(args.save),
+            "--load-state",
+            str(c_checkpoint),
+            "--stop-replay-after-load",
+            "--input-script",
+            str(input_script),
+            "--smv-test-frames",
+            str(frame),
+            "--render-hash-log",
+            str(frame),
+        ]
+        rust_cmd = [
+            str(args.rust_bin),
+            "--replay-save",
+            str(args.rom),
+            str(args.save),
+            str(frame),
+            "--load-state",
+            str(rust_checkpoint),
+            "--stop-replay-after-load",
+            "--input-script",
+            str(input_script),
+            "--render-hash-log",
+            str(frame),
+        ]
+        c_result, rust_result = run_capture_pair(
+            (c_cmd, args.c_root, c_env),
+            (rust_cmd, ROOT, env),
+        )
+        c_hashes = RENDER_HASH_RE.findall(c_result.stdout)
+        rust_hashes = RENDER_HASH_RE.findall(rust_result.stdout)
+        expected_frame = str(frame)
+        if c_result.returncode != 0 or rust_result.returncode != 0:
+            print(
+                f"menu render-hash command failed frame={frame} C={c_result.returncode} Rust={rust_result.returncode}",
+                file=sys.stderr,
+            )
+            return 1
+        if len(c_hashes) != 1 or len(rust_hashes) != 1:
+            print(
+                f"menu render-hash expected one isolated sample frame={frame} C={c_hashes} Rust={rust_hashes}",
+                file=sys.stderr,
+            )
+            return 1
+        c_frame, c_value = c_hashes[0]
+        rust_frame, rust_value = rust_hashes[0]
+        if c_frame != expected_frame or rust_frame != expected_frame or c_value != rust_value:
+            print(
+                f"menu render-hash DIFF frame C={c_frame} Rust={rust_frame} C={c_value} Rust={rust_value}",
+                file=sys.stderr,
+            )
+            return 1
+
+    print(
+        "menu render-hash ok isolated_frames="
+        + ",".join(str(frame) for frame in MENU_RENDER_HASH_FRAMES)
     )
-    print("+ " + " ".join(rust_cmd), flush=True)
-    rust_proc = subprocess.Popen(
-        rust_cmd,
-        cwd=ROOT,
-        env=env,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        bufsize=1,
-    )
-    compared = 0
-    try:
-        while True:
-            c_hash = next_render_hash(c_proc, "C-menu")
-            r_hash = next_render_hash(rust_proc, "Rust-menu")
-            if c_hash is None or r_hash is None:
-                c_rc = c_proc.wait()
-                r_rc = rust_proc.wait()
-                if c_hash != r_hash or c_rc != 0 or r_rc != 0:
-                    print(
-                        f"menu render-hash stream ended unexpectedly compared={compared} c={c_hash} r={r_hash} c_rc={c_rc} r_rc={r_rc}",
-                        file=sys.stderr,
-                    )
-                    return 1
-                expected = MENU_DISPLAY_FRAME - MENU_CHECKPOINT_FRAME
-                if compared != expected:
-                    print(
-                        f"menu render-hash compared {compared} frame(s), expected {expected}",
-                        file=sys.stderr,
-                    )
-                    return 1
-                print(f"menu render-hash ok frames={compared} start={MENU_CHECKPOINT_FRAME + 1} end={MENU_DISPLAY_FRAME}")
-                return 0
-            compared += 1
-            if c_hash != r_hash:
-                c_frame, c_value = c_hash
-                r_frame, r_value = r_hash
-                print(
-                    f"menu render-hash DIFF frame C={c_frame} Rust={r_frame} C={c_value} Rust={r_value}",
-                    file=sys.stderr,
-                )
-                return 1
-    finally:
-        stop_process(c_proc)
-        stop_process(rust_proc)
+    return 0
 
 
 def start_render_hash_processes(
@@ -1275,6 +1532,12 @@ def main() -> int:
     args.rust_bin = rust_bin
     args.checkpoint_dir = args.checkpoint_dir.expanduser().resolve()
     env = os.environ.copy()
+    current_asset_pack = ROOT / "zelda3_assets.dat"
+    if current_asset_pack.is_file():
+        # The C checkout may carry an older pack beside its oracle ROM. Make
+        # the modern side's assets explicit so a stale neighboring file cannot
+        # prevent the parity gates from exercising the current renderer.
+        env.setdefault("ZELDA3_ASSET_PACK", str(current_asset_pack))
     if args.standalone_embedded_only:
         if not rust_bin.exists():
             print(f"missing required replay parity artifact(s):\n  {rust_bin}", file=sys.stderr)
@@ -1325,6 +1588,14 @@ def main() -> int:
     if rc != 0:
         return rc
 
+    rc = run_title_palette_gate(args, env=env)
+    if rc != 0:
+        return rc
+
+    rc = run_title_menu_live_present_gate(args, env=env)
+    if rc != 0:
+        return rc
+
     rc = run_display_frame_gate(args, env=env)
     if rc != 0:
         return rc
@@ -1334,6 +1605,14 @@ def main() -> int:
         return rc
 
     rc = run_menu_display_gate(args, env=env)
+    if rc != 0:
+        return rc
+
+    rc = run_inventory_menu_live_present_gate(args, env=env)
+    if rc != 0:
+        return rc
+
+    rc = run_menu_sfx_lockstep_gate(args, env=env)
     if rc != 0:
         return rc
 

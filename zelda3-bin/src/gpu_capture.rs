@@ -9,7 +9,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use crate::gpu_readback::GpuRgbaReadbackFrame;
-use crate::image_output::decode_rgba_png;
+use crate::image_output::{decode_rgba_png, write_rgba_frame_png};
 use platform::NativeFrontend;
 use renderer::{GpuFrame, RawScanlineFrame};
 use serde::Deserialize;
@@ -246,6 +246,8 @@ struct GpuPlayRenderer {
 struct LiveWindowPixelParity {
     frame: u32,
     progress_interval: u32,
+    dump_frame: Option<u32>,
+    dump_path: Option<PathBuf>,
     cpu_bgra: Vec<u8>,
 }
 
@@ -257,6 +259,10 @@ impl LiveWindowPixelParity {
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(0),
+            dump_frame: std::env::var("ZELDA3_LIVE_WINDOW_PIXEL_DUMP_FRAME")
+                .ok()
+                .and_then(|value| value.parse().ok()),
+            dump_path: std::env::var_os("ZELDA3_LIVE_WINDOW_PIXEL_DUMP").map(PathBuf::from),
             cpu_bgra: vec![0u8; 256 * 224 * 4],
         })
     }
@@ -284,6 +290,26 @@ impl LiveWindowPixelParity {
             );
             process::exit(1);
         };
+        if self.dump_frame == Some(self.frame) {
+            let Some(path) = self.dump_path.as_deref() else {
+                eprintln!(
+                    "ZELDA3_LIVE_WINDOW_PIXEL_DUMP_FRAME requires ZELDA3_LIVE_WINDOW_PIXEL_DUMP"
+                );
+                process::exit(2);
+            };
+            if let Err(error) = write_rgba_frame_png(path, &live_rgba, 256, 224) {
+                eprintln!(
+                    "failed to dump live window GPU frame {}: {error}",
+                    path.display()
+                );
+                process::exit(1);
+            }
+            eprintln!(
+                "live-window-pixel-parity dumped frame={} path={}",
+                self.frame,
+                path.display()
+            );
+        }
         let report =
             renderer::compare_gpu_render_frame_bgra_to_rgba(self.frame, &self.cpu_bgra, &live_rgba);
         if let Some(line) = report.divergence_line() {

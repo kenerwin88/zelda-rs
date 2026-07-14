@@ -29,6 +29,8 @@ struct FrontendSmokeOptions {
     rom_path: Option<String>,
     input_script: InputScript,
     load_sram: Option<String>,
+    replay_save: Option<String>,
+    replay_start_frame: u32,
 }
 
 fn configure_audio_backend_from_env(game: &mut ZeldaState) -> Result<AudioBackendMode, String> {
@@ -56,6 +58,8 @@ fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions,
     let mut rom_path = None;
     let mut input_script = InputScript::default();
     let mut load_sram = None;
+    let mut replay_save = None;
+    let mut replay_start_frame = 0;
     let mut i = 0usize;
     while i < args.len() {
         match args[i].as_str() {
@@ -81,6 +85,22 @@ fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions,
                     "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; --load-sram requires a path".to_string()
                 })?;
                 load_sram = Some(value.clone());
+                i += 1;
+            }
+            "--replay-save" => {
+                let value = args.get(i + 1).ok_or_else(|| {
+                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path] [--replay-save path] [--replay-start-frame n]; --replay-save requires a path".to_string()
+                })?;
+                replay_save = Some(value.clone());
+                i += 1;
+            }
+            "--replay-start-frame" => {
+                let value = args.get(i + 1).ok_or_else(|| {
+                    "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path] [--replay-save path] [--replay-start-frame n]; --replay-start-frame requires a frame".to_string()
+                })?;
+                replay_start_frame = value.parse().map_err(|_| {
+                    format!("--frontend-smoke invalid --replay-start-frame={value:?}")
+                })?;
                 i += 1;
             }
             value if value.starts_with("--") => {
@@ -111,6 +131,8 @@ fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions,
         rom_path,
         input_script,
         load_sram,
+        replay_save,
+        replay_start_frame,
     })
 }
 
@@ -119,6 +141,14 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
         eprintln!("{message}");
         process::exit(2);
     });
+    if options.replay_save.is_some() && options.rom_path.is_none() {
+        eprintln!("--frontend-smoke --replay-save requires --rom");
+        process::exit(2);
+    }
+    if options.replay_start_frame != 0 && options.replay_save.is_none() {
+        eprintln!("--frontend-smoke --replay-start-frame requires --replay-save");
+        process::exit(2);
+    }
     let mut game = options
         .rom_path
         .as_deref()
@@ -131,6 +161,30 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
     if let Some(path) = options.load_sram.as_deref() {
         let sram = read_file_or_exit(Path::new(path), "SRAM");
         apply_sram_to_game_or_exit(&mut game, Path::new(path), &sram);
+    }
+    if let Some(path) = options.replay_save.as_deref() {
+        if let Err(error) = game.replay_save_file(Path::new(path)) {
+            eprintln!("failed to load frontend-smoke replay {path}: {error}");
+            process::exit(1);
+        }
+        let mut completed = 0;
+        while completed < options.replay_start_frame && game.state_recorder.replay_mode {
+            game.zelda_run_frame(0);
+            game.zelda_discard_unused_audio_frames();
+            completed += 1;
+        }
+        if completed != options.replay_start_frame {
+            eprintln!(
+                "frontend-smoke replay ended at frame={completed}, expected={}",
+                options.replay_start_frame
+            );
+            process::exit(1);
+        }
+        if !options.input_script.is_empty() {
+            let mut state_recorder = std::mem::take(&mut game.state_recorder);
+            ZeldaState::state_recorder_stop_replay(&mut state_recorder);
+            game.state_recorder = state_recorder;
+        }
     }
     let width = 256u32;
     let height = 224u32;
@@ -433,6 +487,8 @@ mod host_menu_play_tests {
         assert!(options.rom_path.is_none());
         assert!(options.input_script.is_empty());
         assert!(options.load_sram.is_none());
+        assert!(options.replay_save.is_none());
+        assert_eq!(options.replay_start_frame, 0);
     }
 
     #[test]
@@ -468,6 +524,25 @@ mod host_menu_play_tests {
             options.load_sram.as_deref(),
             Some("scripts/inputs/tas-us-full-completion-smv.sram")
         );
+    }
+
+    #[test]
+    fn frontend_smoke_accepts_replay_fast_forward_for_live_render_regressions() {
+        let args = vec![
+            "250".to_string(),
+            "--rom".to_string(),
+            "saves/zelda3.sfc".to_string(),
+            "--replay-save".to_string(),
+            "saves/zelda3-combined-route.sav".to_string(),
+            "--replay-start-frame".to_string(),
+            "900".to_string(),
+        ];
+        let options = parse_frontend_smoke_options(&args).unwrap();
+        assert_eq!(
+            options.replay_save.as_deref(),
+            Some("saves/zelda3-combined-route.sav")
+        );
+        assert_eq!(options.replay_start_frame, 900);
     }
 
     #[test]

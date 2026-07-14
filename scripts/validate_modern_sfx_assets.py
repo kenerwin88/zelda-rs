@@ -28,6 +28,8 @@ EXACT_DSP_FIELDS = {
     "bank", "id", "variant_hash", "step", "voice", "pitch", "instrument", "volume", "pan",
     "duration_frames", "echo", "command_delay_frames", "scheduler_tick_index", "dsp_pitch",
     "volume_left", "volume_right", "adsr1", "adsr2", "gain", "sample_offset", "duration_samples",
+    "interrupt_voice", "interrupt_delay_frames", "interrupt_scheduler_tick_index",
+    "ownership_duration_samples",
 }
 PITCH_FIELDS = {"bank", "id", "variant_hash", "step", "relative_sample", "pitch_word"}
 

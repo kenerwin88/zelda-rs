@@ -2391,6 +2391,10 @@ pub struct ModernAssetReadbackFrame {
     pub variant_stats: Option<modern_software::VariantAtlasRenderStats>,
 }
 
+fn source_backed_missing_art_is_resolvable(reason: &str, missing_source_count: usize) -> bool {
+    reason == "missing-art" && missing_source_count == 0
+}
+
 pub struct ModernAssetValidationFrame {
     pub via: &'static str,
     pub timings: modern_gpu::ModernIndexCompareValidationTimings,
@@ -2493,6 +2497,21 @@ impl ModernIndexCompareResources {
         if let Some(fallback) =
             modern_gpu::modern_gpu_path_fallback_reason(render.via, render.variant_stats.as_ref())
         {
+            // A source-keyed tile without a pre-baked final-pixel variant is
+            // still canonical modern art: the source atlas plus live palette
+            // metadata resolves it exactly. This is the same source-backed
+            // path accepted by the live presenter below. Only genuinely
+            // unresolvable sources (or another fallback class) are unsupported.
+            if source_backed_missing_art_is_resolvable(
+                fallback.reason,
+                render.missing_sources.len(),
+            ) {
+                return Ok(ModernAssetReadbackFrame {
+                    rgba: render.rgba,
+                    via: render.via,
+                    variant_stats: render.variant_stats,
+                });
+            }
             let missing_report =
                 modern_extract::format_missing_asset_source_report(&render.missing_sources, 4);
             let detail = if missing_report.is_empty() {
@@ -2540,6 +2559,15 @@ impl ModernIndexCompareResources {
         if let Some(fallback) =
             modern_gpu::modern_gpu_path_fallback_reason(render.via, render.variant_stats.as_ref())
         {
+            if source_backed_missing_art_is_resolvable(
+                fallback.reason,
+                render.missing_sources.len(),
+            ) {
+                return Ok(ModernAssetValidationFrame {
+                    via: render.via,
+                    timings: render.timings,
+                });
+            }
             let missing_report =
                 modern_extract::format_missing_asset_source_report(&render.missing_sources, 4);
             let detail = if missing_report.is_empty() {
@@ -2582,6 +2610,15 @@ impl ModernIndexCompareResources {
         if let Some(fallback) =
             modern_gpu::modern_gpu_path_fallback_reason(render.via, render.variant_stats.as_ref())
         {
+            if source_backed_missing_art_is_resolvable(
+                fallback.reason,
+                render.missing_sources.len(),
+            ) {
+                return Ok(ModernAssetValidationFrame {
+                    via: render.via,
+                    timings: render.timings,
+                });
+            }
             let missing_report =
                 modern_extract::format_missing_asset_source_report(&render.missing_sources, 4);
             let detail = if missing_report.is_empty() {
@@ -3583,11 +3620,6 @@ impl FrameRenderer {
         *ENABLED.get_or_init(|| std::env::var_os("ZELDA3_RENDER_TIMINGS").is_some())
     }
 
-    fn modern_live_variant_stats_enabled() -> bool {
-        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        *ENABLED.get_or_init(|| std::env::var_os("ZELDA3_VARIANT_LIVE_STATS").is_some())
-    }
-
     fn modern_live_timing_mark(last: &mut Option<std::time::Instant>) -> u128 {
         let Some(previous) = last else {
             return 0;
@@ -3640,9 +3672,9 @@ impl FrameRenderer {
         frame: &GpuFrame<'_>,
         src_table: &S,
         source_atlas: &modern_source_atlas::ModernSourceAtlas,
-        variant_atlas: &modern_variant_atlas::ModernVariantAtlas,
-        bg_palette_name: &str,
-        sprite_palette_name: &str,
+        _variant_atlas: &modern_variant_atlas::ModernVariantAtlas,
+        _bg_palette_name: &str,
+        _sprite_palette_name: &str,
     ) -> Result<modern_gpu::ModernGpuVariantLiveRender, RenderError> {
         debug_assert_ne!(frame.mode, 7);
         let timings_enabled = Self::modern_live_timings_enabled();
@@ -3683,18 +3715,12 @@ impl FrameRenderer {
                 &target.texture,
             );
         let render_us = Self::modern_live_timing_mark(&mut timing_last);
-        let mut stats = if Self::modern_live_variant_stats_enabled() {
-            modern_variant_draw::compile_variant_draw_stats(
-                &modern_assets.frame,
-                &modern_assets.bg_cells,
-                &modern_assets.sprite_cells,
-                variant_atlas,
-                bg_palette_name,
-                sprite_palette_name,
-            )
-        } else {
-            modern_software::VariantAtlasRenderStats::default()
-        };
+        // The live source-table route above renders the source-index frame
+        // through ModernGpuCompositor. Variant-atlas planning is a separate
+        // renderer and its missing/dynamic counters do not describe these
+        // pixels. Reporting those counters here used to reject fully rendered
+        // title/file-entry frames as fallback content.
+        let mut stats = modern_software::VariantAtlasRenderStats::default();
         let stats_us = Self::modern_live_timing_mark(&mut timing_last);
         if rendered {
             stats.gpu_prefinal_base_frames += 1;
@@ -4205,6 +4231,13 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create temp root");
         root
+    }
+
+    #[test]
+    fn source_backed_tiles_do_not_become_missing_art_without_a_baked_variant() {
+        assert!(source_backed_missing_art_is_resolvable("missing-art", 0));
+        assert!(!source_backed_missing_art_is_resolvable("missing-art", 1));
+        assert!(!source_backed_missing_art_is_resolvable("cpu-fallback", 0));
     }
 
     fn test_variant_atlas_with_mode7_chars(

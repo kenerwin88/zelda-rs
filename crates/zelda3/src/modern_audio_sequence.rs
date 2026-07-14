@@ -70,6 +70,10 @@ pub struct ModernAudioSequenceStats {
     pub unknown_sfx_program_count: u8,
     #[serde(default)]
     pub active_voice_mask: u8,
+    #[serde(default)]
+    pub sfx_voice_mask_start: u8,
+    #[serde(default)]
+    pub sfx_voice_mask: u8,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -82,6 +86,8 @@ pub struct ModernAudioSequencer {
     #[serde(default)]
     music_voice_mask: u8,
     #[serde(default)]
+    sfx_voice_mask: u8,
+    #[serde(default)]
     music_keyoff_frames_remaining: [u16; 8],
     #[serde(default)]
     music_keyoff_sample_offset: [u16; 8],
@@ -91,6 +97,10 @@ pub struct ModernAudioSequencer {
     pending_voice_steps: [Vec<PendingSfxStep>; 8],
     #[serde(default)]
     sfx_keyoff_samples_remaining: [u32; 8],
+    #[serde(default)]
+    sfx_ownership_samples_remaining: [u32; 8],
+    #[serde(default)]
+    sfx_release_pending_mask: u8,
     #[serde(default)]
     pending_sfx_pitch_changes: [Vec<PendingSfxPitchChange>; 8],
     #[serde(default)]
@@ -126,11 +136,14 @@ impl Default for ModernAudioSequencer {
             last_sfx: [0; SFX_SLOTS],
             active_voice_mask: 0,
             music_voice_mask: 0,
+            sfx_voice_mask: 0,
             music_keyoff_frames_remaining: [0; 8],
             music_keyoff_sample_offset: [0; 8],
             voice_frames_remaining: [0; 8],
             pending_voice_steps: std::array::from_fn(|_| Vec::new()),
             sfx_keyoff_samples_remaining: [0; 8],
+            sfx_ownership_samples_remaining: [0; 8],
+            sfx_release_pending_mask: 0,
             pending_sfx_pitch_changes: std::array::from_fn(|_| Vec::new()),
             looping_sfx_voices: [None; 8],
             previous_sfx_clock: None,
@@ -202,9 +215,13 @@ impl ModernAudioSequencer {
         let mut frame = AudioEventFrame::from_route_and_dsp_writes(route, writes);
         frame.sequenced = true;
         let mut stats = ModernAudioSequenceStats::default();
+        stats.sfx_voice_mask_start = self.sfx_voice_mask;
+        self.release_finished_sfx_ownership();
         let mut processed_semantic_keyons = [0u8; 8];
         let mut semantic_pitch_latch_release = [None; 8];
         self.advance_music_keyoffs(&mut frame, &mut stats);
+        self.advance_sfx_keyoffs(&mut frame, &mut stats);
+        self.advance_sfx_ownership(&mut frame, &mut stats);
         self.advance_sfx_pitch_changes(&mut frame);
         self.emit_semantic_sfx_echo_changes(route.spc, &mut frame);
         self.emit_semantic_sfx_keyons(
@@ -246,6 +263,7 @@ impl ModernAudioSequencer {
         self.reconcile_semantic_sfx_keyoffs(route.spc, &mut frame);
 
         stats.active_voice_mask = self.active_voice_mask;
+        stats.sfx_voice_mask = self.sfx_voice_mask;
         self.last_stats = stats;
         self.advance_dsp_timer();
         self.previous_sfx_clock = route.spc.map(|spc| (spc.timer_cycles, spc.sfx_timer_accum));
@@ -439,6 +457,14 @@ impl ModernAudioSequencer {
         note: ModernMusicNote,
         stats: &mut ModernAudioSequenceStats,
     ) {
+        if self.sfx_voice_mask & (1 << note.voice) != 0 {
+            // The original sound driver temporarily owns music voices while an
+            // SFX program is active. Keep advancing the music timeline, but do
+            // not let an overlapping music note steal the DSP voice before the
+            // SFX key-off boundary.
+            stats.note_events += 1;
+            return;
+        }
         if self.engine_receipt_mode {
             self.mark_music_voice_active(note.voice);
             stats.note_events += 1;
@@ -756,6 +782,22 @@ impl ModernAudioSequencer {
                     .saturating_add(u32::from(keyoff_offset))
                     .saturating_sub(u32::from(key_offset));
             }
+            if first_for_voice {
+                if let Some(exact) = exact.filter(|exact| exact.interrupt_voice) {
+                    debug_assert_eq!(exact.interrupt_delay_frames, 0);
+                    let first_boundary = self.dsp_timer_cycles.wrapping_neg() & 0x3f;
+                    let interrupt_offset = i32::from(first_boundary)
+                        + i32::from(exact.interrupt_scheduler_tick_index) * 64;
+                    push_event_at(
+                        frame,
+                        interrupt_offset,
+                        AudioEventKind::NoteOff { voice: step.voice },
+                    );
+                    self.sfx_voice_mask |= voice_bit;
+                    self.active_voice_mask |= voice_bit;
+                    stats.note_events += 1;
+                }
+            }
             let start = exact.map_or(voice_timeline_end[voice], |exact| {
                 u16::from(exact.command_delay_frames)
             });
@@ -963,6 +1005,7 @@ impl ModernAudioSequencer {
 
     fn mark_voice_active(&mut self, voice: u8) {
         if voice < 8 {
+            self.sfx_voice_mask |= 1 << voice;
             self.active_voice_mask |= 1 << voice;
         }
     }
@@ -976,10 +1019,12 @@ impl ModernAudioSequencer {
 
     fn mark_voice_inactive(&mut self, voice: u8) {
         if voice < 8 {
+            self.sfx_voice_mask &= !(1 << voice);
             self.active_voice_mask &= !(1 << voice);
             self.voice_frames_remaining[usize::from(voice)] = 0;
             self.pending_voice_steps[usize::from(voice)].clear();
             self.sfx_keyoff_samples_remaining[usize::from(voice)] = 0;
+            self.sfx_ownership_samples_remaining[usize::from(voice)] = 0;
             self.pending_sfx_pitch_changes[usize::from(voice)].clear();
         }
     }
@@ -992,6 +1037,7 @@ impl ModernAudioSequencer {
             if self.voice_frames_remaining[voice] == 0
                 && self.pending_voice_steps[voice].is_empty()
                 && self.sfx_keyoff_samples_remaining[voice] == 0
+                && self.sfx_ownership_samples_remaining[voice] == 0
             {
                 self.active_voice_mask &= !(1 << voice);
             }
@@ -1016,10 +1062,12 @@ impl ModernAudioSequencer {
 
     fn interrupt_voice(&mut self, voice: u8) {
         if voice < 8 {
+            self.sfx_voice_mask &= !(1 << voice);
             self.active_voice_mask &= !(1 << voice);
             self.voice_frames_remaining[usize::from(voice)] = 0;
             self.pending_voice_steps[usize::from(voice)].clear();
             self.sfx_keyoff_samples_remaining[usize::from(voice)] = 0;
+            self.sfx_ownership_samples_remaining[usize::from(voice)] = 0;
             self.pending_sfx_pitch_changes[usize::from(voice)].clear();
             self.looping_sfx_voices[usize::from(voice)] = None;
             self.semantic_sfx_pending_steps[usize::from(voice)].clear();
@@ -1032,9 +1080,11 @@ impl ModernAudioSequencer {
             return;
         }
         let voice = usize::from(voice);
+        self.sfx_voice_mask &= !(1 << voice);
         self.voice_frames_remaining[voice] = 0;
         self.pending_voice_steps[voice].clear();
         self.sfx_keyoff_samples_remaining[voice] = 0;
+        self.sfx_ownership_samples_remaining[voice] = 0;
         self.pending_sfx_pitch_changes[voice].clear();
         self.looping_sfx_voices[voice] = None;
         self.semantic_sfx_pending_steps[voice].clear();
@@ -1064,7 +1114,14 @@ impl ModernAudioSequencer {
             *remaining -= 1;
             if *remaining == 0 {
                 if self.pending_voice_steps[voice].is_empty() {
-                    self.active_voice_mask &= !(1 << voice);
+                    if self.sfx_keyoff_samples_remaining[voice] == 0
+                        && self.sfx_ownership_samples_remaining[voice] == 0
+                    {
+                        self.sfx_voice_mask &= !(1 << voice);
+                        if self.music_voice_mask & (1 << voice) == 0 {
+                            self.active_voice_mask &= !(1 << voice);
+                        }
+                    }
                 } else {
                     let delay = self.pending_voice_steps[voice][0].delay_after_previous;
                     if delay != 0 {
@@ -1090,14 +1147,60 @@ impl ModernAudioSequencer {
                 continue;
             }
             *remaining = remaining.saturating_sub(534);
-            if *remaining <= 534 {
+            // Offset 534 is the first sample of the following native DSP
+            // frame, not the final sample of the current one.
+            if *remaining < 534 {
                 push_event_at(
                     frame,
                     *remaining as i32,
                     AudioEventKind::NoteOff { voice: voice as u8 },
                 );
                 *remaining = 0;
+                if self.sfx_ownership_samples_remaining[voice] == 0 {
+                    self.sfx_voice_mask &= !(1 << voice);
+                }
+                if self.sfx_voice_mask & (1 << voice) == 0
+                    && self.music_voice_mask & (1 << voice) == 0
+                    && self.voice_frames_remaining[voice] == 0
+                    && self.pending_voice_steps[voice].is_empty()
+                {
+                    self.active_voice_mask &= !(1 << voice);
+                }
                 stats.note_events += 1;
+            }
+        }
+    }
+
+    fn advance_sfx_ownership(
+        &mut self,
+        frame: &mut AudioEventFrame,
+        stats: &mut ModernAudioSequenceStats,
+    ) {
+        for voice in 0..self.sfx_ownership_samples_remaining.len() {
+            let remaining = &mut self.sfx_ownership_samples_remaining[voice];
+            if *remaining == 0 {
+                continue;
+            }
+            *remaining = remaining.saturating_sub(534);
+            if *remaining < 534 {
+                push_event_at(
+                    frame,
+                    *remaining as i32,
+                    AudioEventKind::NoteOff { voice: voice as u8 },
+                );
+                *remaining = 0;
+                self.sfx_release_pending_mask |= 1 << voice;
+                stats.note_events += 1;
+            }
+        }
+    }
+
+    fn release_finished_sfx_ownership(&mut self) {
+        let finished = std::mem::take(&mut self.sfx_release_pending_mask);
+        self.sfx_voice_mask &= !finished;
+        for voice in 0..8 {
+            if finished & (1 << voice) != 0 && self.music_voice_mask & (1 << voice) == 0 {
+                self.active_voice_mask &= !(1 << voice);
             }
         }
     }
@@ -2274,6 +2377,34 @@ impl ModernAudioSequencer {
                 volume: step.volume,
             },
         );
+        if !pending.engine_keyoff_owned {
+            if let Some(duration_samples) = pending
+                .exact
+                .map(|exact| exact.duration_samples)
+                .filter(|duration| *duration != 0)
+            {
+                let keyoff_samples = sample_offset.max(0) as u32 + duration_samples;
+                if keyoff_samples < 534 {
+                    push_event_at(
+                        frame,
+                        keyoff_samples as i32,
+                        AudioEventKind::NoteOff { voice: step.voice },
+                    );
+                    self.sfx_voice_mask &= !(1 << step.voice);
+                    stats.note_events += 1;
+                } else {
+                    self.sfx_keyoff_samples_remaining[usize::from(step.voice)] = keyoff_samples;
+                }
+            }
+        }
+        if let Some(ownership_samples) = pending
+            .exact
+            .map(|exact| exact.ownership_duration_samples)
+            .filter(|duration| *duration != 0)
+        {
+            self.sfx_ownership_samples_remaining[usize::from(step.voice)] =
+                sample_offset.max(0) as u32 + ownership_samples;
+        }
         let dynamic_overflow_pitches = pending.exact.and_then(|exact| {
             (exact.bank == 2 && exact.id == 0x0c && exact.variant_hash == 0xabc15854)
                 .then_some([1404, 1431, 1458, 1485, 1515])
@@ -3545,5 +3676,72 @@ mod tests {
             .any(|event| matches!(event.kind, AudioEventKind::NoteOn { .. })));
         assert_eq!(sequencer.last_stats().known_sfx_commands, 1);
         assert_eq!(sequencer.last_stats().fallback_sfx_commands, 0);
+    }
+
+    #[test]
+    fn title_sword_sfx_uses_exact_sample_duration_for_keyoff() {
+        let program = lookup_sfx_program_for_context(
+            1,
+            0x2c,
+            ModernSfxRuntimeContext {
+                source_slot: 1,
+                active_voice_mask: 0,
+            },
+        )
+        .unwrap();
+        let step_index = program
+            .steps
+            .iter()
+            .position(|step| step.duration_frames == 0)
+            .expect("title sword program must include an exact-duration tail");
+        let step = program.steps[step_index];
+        let exact = exact_sfx_dsp_step(
+            program.bank,
+            program.id,
+            program.variant_hash,
+            step_index,
+            step,
+        )
+        .unwrap();
+        assert!(exact.duration_samples > 534);
+
+        let mut sequencer = ModernAudioSequencer::default();
+        let mut start = AudioEventFrame::from_route_and_dsp_writes(AudioRouteState::default(), &[]);
+        let mut stats = ModernAudioSequenceStats::default();
+        sequencer.emit_sfx_step_at(
+            &mut start,
+            PendingSfxStep {
+                step,
+                exact: Some(exact),
+                engine_dsp_envelope: None,
+                delay_after_previous: 0,
+                preserve_existing_volume: false,
+                refresh_repeat_on_keyon: false,
+                preserve_inactive_pitch_latch: false,
+                engine_keyoff_owned: false,
+            },
+            0,
+            &mut stats,
+        );
+
+        let keyoff_frame = exact.duration_samples / 534;
+        for _ in 1..keyoff_frame {
+            let mut frame =
+                AudioEventFrame::from_route_and_dsp_writes(AudioRouteState::default(), &[]);
+            sequencer.advance_sfx_keyoffs(&mut frame, &mut stats);
+            assert!(!frame
+                .events
+                .iter()
+                .any(|event| matches!(event.kind, AudioEventKind::NoteOff { voice } if voice == step.voice)));
+        }
+
+        let mut keyoff =
+            AudioEventFrame::from_route_and_dsp_writes(AudioRouteState::default(), &[]);
+        sequencer.advance_sfx_keyoffs(&mut keyoff, &mut stats);
+        assert!(keyoff.events.iter().any(|event| {
+            event.sample_offset == (exact.duration_samples % 534) as i32
+                && matches!(event.kind, AudioEventKind::NoteOff { voice } if voice == step.voice)
+        }));
+        assert_eq!(sequencer.active_voice_mask & (1 << step.voice), 0);
     }
 }
