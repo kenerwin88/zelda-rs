@@ -19,6 +19,10 @@ const fn default_master_volume() -> i8 {
     96
 }
 
+const fn default_music_volume() -> u8 {
+    96
+}
+
 const fn default_noise_sample() -> i16 {
     -0x4000
 }
@@ -55,6 +59,8 @@ pub struct ModernAudioEngine {
     #[serde(skip, default)]
     sample_bank_id: u8,
     #[serde(default)]
+    sample_bank_generation: u32,
+    #[serde(default)]
     echo_left: Vec<i16>,
     #[serde(default)]
     echo_right: Vec<i16>,
@@ -68,6 +74,8 @@ pub struct ModernAudioEngine {
     master_volume_left: i8,
     #[serde(default = "default_master_volume")]
     master_volume_right: i8,
+    #[serde(default = "default_music_volume")]
+    music_volume: u8,
     #[serde(default)]
     fir_coefficients: [i8; 8],
     #[serde(default)]
@@ -96,6 +104,10 @@ pub struct ModernAudioEngine {
     noise_sample: i16,
     #[serde(default)]
     noise_counter: u16,
+    #[serde(default)]
+    checkpoint_sample_prefix: Vec<i16>,
+    #[serde(default)]
+    checkpoint_sample_offset: u16,
     last_stats: ModernAudioFrameStats,
     #[serde(skip, default)]
     debug_voice_samples: DebugVoiceSamples,
@@ -129,6 +141,7 @@ impl Default for ModernAudioEngine {
             last_music: MusicControlState::default(),
             last_ports: [0; 4],
             sample_bank_id: 0,
+            sample_bank_generation: 0,
             echo_left: Vec::new(),
             echo_right: Vec::new(),
             echo_mix_left: default_echo_mix(),
@@ -136,6 +149,7 @@ impl Default for ModernAudioEngine {
             echo_feedback: default_echo_feedback(),
             master_volume_left: default_master_volume(),
             master_volume_right: default_master_volume(),
+            music_volume: default_music_volume(),
             fir_coefficients: [0; 8],
             echo_delay_samples: 512,
             dsp_flags: 0x20,
@@ -150,6 +164,8 @@ impl Default for ModernAudioEngine {
             echo_ram_initialized: false,
             noise_sample: default_noise_sample(),
             noise_counter: 0,
+            checkpoint_sample_prefix: Vec::new(),
+            checkpoint_sample_offset: 0,
             last_stats: ModernAudioFrameStats::default(),
             debug_voice_samples: DebugVoiceSamples::default(),
         }
@@ -170,9 +186,18 @@ impl ModernAudioEngine {
         self.sample_bank_id
     }
     pub fn seed_dsp_checkpoint_state(&mut self, sample_ram: &[u8], dsp: &[u8]) {
-        if dsp.len() < 884 {
+        if dsp.len() < 3022 {
             return;
         }
+        self.checkpoint_sample_offset =
+            u16::from_le_bytes([dsp[3020], dsp[3021]]).min(DSP_SAMPLES_PER_FRAME as u16);
+        let prefix_samples = usize::from(self.checkpoint_sample_offset) * 2;
+        self.checkpoint_sample_prefix = (0..prefix_samples)
+            .map(|index| {
+                let offset = 884 + index * 2;
+                i16::from_le_bytes([dsp[offset], dsp[offset + 1]])
+            })
+            .collect();
         self.master_volume_left = dsp[821] as i8;
         self.master_volume_right = dsp[822] as i8;
         self.echo_mix_left = dsp[831] as i8;
@@ -331,6 +356,7 @@ impl ModernAudioEngine {
             ..ModernAudioFrameStats::default()
         };
         let mut deferred_globals = Vec::new();
+        let mut deferred_music_volumes = Vec::new();
         let mut deferred_voice_events = Vec::new();
         let has_modern_intent = frame.events.iter().any(|event| {
             matches!(
@@ -339,6 +365,7 @@ impl ModernAudioEngine {
                     | AudioEventKind::StopMusic
                     | AudioEventKind::PlaySfx { .. }
                     | AudioEventKind::SetTempo { .. }
+                    | AudioEventKind::SetMusicVolume { .. }
                     | AudioEventKind::SetNoteOrigin { .. }
                     | AudioEventKind::SetPitchWord { .. }
                     | AudioEventKind::SetStereoVolume { .. }
@@ -374,6 +401,28 @@ impl ModernAudioEngine {
                         self.handle_music_state(*music, &mut stats);
                     }
                 }
+                AudioEventKind::SampleBankState {
+                    bank_id,
+                    generation,
+                } => {
+                    stats.understood_events += 1;
+                    if *generation != self.sample_bank_generation {
+                        self.sample_bank_generation = *generation;
+                        let echo_ram_initialized = self.echo_ram_initialized;
+                        self.select_sample_bank(*bank_id);
+                        if sample_ram.is_some() {
+                            // The exact bridge owns a live echo ring already
+                            // synchronized with SPC RAM. A bank selection must
+                            // not replace that runtime state with a catalog seed.
+                            self.echo_ram_initialized = echo_ram_initialized;
+                        }
+                        self.echo_mix_left = 0;
+                        self.echo_mix_right = 0;
+                        for voice in &mut self.voices {
+                            voice.begin_release();
+                        }
+                    }
+                }
                 AudioEventKind::ApuPorts {
                     input,
                     write,
@@ -390,6 +439,14 @@ impl ModernAudioEngine {
                 | AudioEventKind::SetTempo { .. } => {
                     stats.understood_events += 1;
                 }
+                AudioEventKind::SetMusicVolume { value } => {
+                    stats.understood_events += 1;
+                    if event.sample_offset > 0 {
+                        deferred_music_volumes.push((event.sample_offset as usize, *value));
+                    } else {
+                        self.music_volume = *value;
+                    }
+                }
                 AudioEventKind::StopMusic => {
                     stats.understood_events += 1;
                     if !frame.sequenced {
@@ -398,8 +455,11 @@ impl ModernAudioEngine {
                         }
                     }
                 }
-                AudioEventKind::SetNoteOrigin { .. } => {
+                AudioEventKind::SetNoteOrigin { voice, origin } => {
                     stats.understood_events += 1;
+                    if let Some(voice) = self.voices.get_mut(*voice as usize) {
+                        voice.note_origin = Some(*origin);
+                    }
                 }
                 AudioEventKind::SetPitchWord { voice, pitch_word } => {
                     stats.understood_events += 1;
@@ -440,6 +500,15 @@ impl ModernAudioEngine {
                         voice.exact_parameters_pending = true;
                     }
                 }
+                AudioEventKind::SetEnvelopeRateCounter {
+                    voice,
+                    rate_counter,
+                } => {
+                    stats.understood_events += 1;
+                    if let Some(voice) = self.voices.get_mut(*voice as usize) {
+                        voice.dsp_rate_counter = *rate_counter;
+                    }
+                }
                 AudioEventKind::NoteOn {
                     voice,
                     pitch,
@@ -452,6 +521,14 @@ impl ModernAudioEngine {
                         voice.start_delay_samples = event.sample_offset.max(0) as usize;
                     }
                     self.load_voice_sample(*voice as usize, *instrument, *pitch, sample_ram);
+                    stats.triggered_voices += 1;
+                }
+                AudioEventKind::RetriggerVoice { voice } => {
+                    stats.understood_events += 1;
+                    self.retrigger_voice(*voice as usize);
+                    if let Some(voice) = self.voices.get_mut(*voice as usize) {
+                        voice.start_delay_samples = event.sample_offset.max(0) as usize;
+                    }
                     stats.triggered_voices += 1;
                 }
                 AudioEventKind::KeyOnVoice {
@@ -531,7 +608,11 @@ impl ModernAudioEngine {
                     stats.understood_events += 1;
                     if let Some(voice) = self.voices.get_mut(*voice as usize) {
                         voice.noise_enabled = *enabled;
-                        voice.timbre = if *enabled { 3 } else { voice.instrument_timbre };
+                        voice.timbre = if *enabled {
+                            3
+                        } else {
+                            voice.instrument_timbre % 3
+                        };
                     }
                 }
                 AudioEventKind::SetPan { voice, pan } => {
@@ -550,7 +631,7 @@ impl ModernAudioEngine {
                     stats.understood_events += 1;
                     for voice in 0..MODERN_AUDIO_VOICES {
                         if mask & (1 << voice) != 0 {
-                            self.trigger_voice(voice, 0x40 + voice as u8 * 3, 1200);
+                            self.key_on_staged_voice(voice, sample_ram);
                             stats.triggered_voices += 1;
                         }
                     }
@@ -571,29 +652,25 @@ impl ModernAudioEngine {
                     stats.understood_events += 1;
                     self.handle_voice_parameter(*voice, *parameter, *value);
                 }
-                AudioEventKind::EchoParameter { parameter, value } => match parameter {
-                    EchoParameterKind::VolumeLeft => {
+                AudioEventKind::EchoParameter { parameter, value } => {
+                    let register = match parameter {
+                        EchoParameterKind::VolumeLeft => 0x2c,
+                        EchoParameterKind::VolumeRight => 0x3c,
+                        EchoParameterKind::Feedback => 0x0d,
+                        EchoParameterKind::EnableMask => 0x4d,
+                        EchoParameterKind::Fir(index) => (index << 4) | 0x0f,
+                        EchoParameterKind::Delay => 0x7d,
+                        EchoParameterKind::StartAddress => 0x6d,
+                    };
+                    if event.sample_offset > 0 {
+                        deferred_globals.push((event.sample_offset as usize, register, *value));
                         stats.understood_events += 1;
-                        self.echo_mix_left = *value as i8;
-                    }
-                    EchoParameterKind::VolumeRight => {
+                    } else if self.handle_global_parameter(register, *value) {
                         stats.understood_events += 1;
-                        self.echo_mix_right = *value as i8;
+                    } else {
+                        stats.ignored_events += 1;
                     }
-                    EchoParameterKind::Feedback => {
-                        stats.understood_events += 1;
-                        self.echo_feedback = value.cast_signed();
-                    }
-                    EchoParameterKind::EnableMask => {
-                        stats.understood_events += 1;
-                        for voice in 0..MODERN_AUDIO_VOICES {
-                            self.voices[voice].echo_send = value & (1 << voice) != 0;
-                        }
-                    }
-                    EchoParameterKind::Fir(_)
-                    | EchoParameterKind::Delay
-                    | EchoParameterKind::StartAddress => stats.ignored_events += 1,
-                },
+                }
                 AudioEventKind::ResetEchoVolume { restore_offset } => {
                     stats.understood_events += 1;
                     let restore_left = self.echo_mix_left as u8;
@@ -621,18 +698,31 @@ impl ModernAudioEngine {
 
         self.advance_envelopes();
         deferred_globals.sort_unstable_by_key(|event| event.0);
+        deferred_music_volumes.sort_unstable_by_key(|event| event.0);
         deferred_voice_events.sort_by_key(|event| event.sample_offset);
         if samples_per_channel != 0 && channels != 0 {
             self.initialize_echo_ring_from_source(sample_ram);
             let mut native_audio = vec![0i16; DSP_SAMPLES_PER_FRAME.saturating_mul(channels)];
+            let sample_start = if channels == 2 {
+                let prefix_len = self.checkpoint_sample_prefix.len().min(native_audio.len());
+                native_audio[..prefix_len]
+                    .copy_from_slice(&self.checkpoint_sample_prefix[..prefix_len]);
+                usize::from(self.checkpoint_sample_offset).min(DSP_SAMPLES_PER_FRAME)
+            } else {
+                0
+            };
             self.mix(
                 &mut native_audio,
+                sample_start,
                 DSP_SAMPLES_PER_FRAME,
                 channels,
                 &deferred_globals,
+                &deferred_music_volumes,
                 &deferred_voice_events,
                 sample_ram,
             );
+            self.checkpoint_sample_prefix.clear();
+            self.checkpoint_sample_offset = 0;
             resample_nearest(
                 &native_audio,
                 audio_buffer,
@@ -819,21 +909,32 @@ impl ModernAudioEngine {
             VoiceParameterKind::PitchLow => {
                 voice.exact_pitch_word = (voice.exact_pitch_word & 0x3f00) | u16::from(value);
                 voice.dsp_pitch_configured = true;
+                voice.pitch_register_only = false;
             }
             VoiceParameterKind::PitchHigh => {
                 voice.exact_pitch_word =
                     (voice.exact_pitch_word & 0x00ff) | (u16::from(value & 0x3f) << 8);
                 voice.dsp_pitch_configured = true;
+                voice.pitch_register_only = false;
             }
             VoiceParameterKind::Source => {
-                voice.instrument_timbre = value & 3;
+                voice.instrument_timbre = value;
                 if !voice.noise_enabled {
-                    voice.timbre = voice.instrument_timbre;
+                    voice.timbre = voice.instrument_timbre % 3;
                 }
             }
-            VoiceParameterKind::Adsr1 => voice.dsp_adsr1 = value,
-            VoiceParameterKind::Adsr2 => voice.dsp_adsr2 = value,
-            VoiceParameterKind::Gain => voice.dsp_gain = value,
+            VoiceParameterKind::Adsr1 => {
+                voice.dsp_adsr1 = value;
+                voice.dsp_envelope_configured = true;
+            }
+            VoiceParameterKind::Adsr2 => {
+                voice.dsp_adsr2 = value;
+                voice.dsp_envelope_configured = true;
+            }
+            VoiceParameterKind::Gain => {
+                voice.dsp_gain = value;
+                voice.dsp_envelope_configured = true;
+            }
         }
     }
 
@@ -939,6 +1040,11 @@ impl ModernAudioEngine {
 
     fn apply_deferred_voice_event(&mut self, kind: &AudioEventKind, sample_ram: Option<&[u8]>) {
         match kind {
+            AudioEventKind::SetNoteOrigin { voice, origin } => {
+                if let Some(voice) = self.voices.get_mut(*voice as usize) {
+                    voice.note_origin = Some(*origin);
+                }
+            }
             AudioEventKind::VoiceParameter {
                 voice,
                 parameter,
@@ -979,6 +1085,14 @@ impl ModernAudioEngine {
                     voice.exact_parameters_pending = true;
                 }
             }
+            AudioEventKind::SetEnvelopeRateCounter {
+                voice,
+                rate_counter,
+            } => {
+                if let Some(voice) = self.voices.get_mut(*voice as usize) {
+                    voice.dsp_rate_counter = *rate_counter;
+                }
+            }
             AudioEventKind::SetEchoSend { voice, enabled } => {
                 if let Some(voice) = self.voices.get_mut(*voice as usize) {
                     voice.echo_send = *enabled;
@@ -987,7 +1101,11 @@ impl ModernAudioEngine {
             AudioEventKind::SetNoise { voice, enabled } => {
                 if let Some(voice) = self.voices.get_mut(*voice as usize) {
                     voice.noise_enabled = *enabled;
-                    voice.timbre = if *enabled { 3 } else { voice.instrument_timbre };
+                    voice.timbre = if *enabled {
+                        3
+                    } else {
+                        voice.instrument_timbre % 3
+                    };
                 }
             }
             AudioEventKind::SetEnvelope {
@@ -1040,6 +1158,23 @@ impl ModernAudioEngine {
             } => {
                 self.trigger_voice_with_params(*voice as usize, *pitch, *instrument, *volume);
                 self.load_voice_sample(*voice as usize, *instrument, *pitch, sample_ram);
+            }
+            AudioEventKind::RetriggerVoice { voice } => {
+                self.retrigger_voice(*voice as usize);
+            }
+            AudioEventKind::VoiceKeyOn { mask } => {
+                for voice in 0..MODERN_AUDIO_VOICES {
+                    if mask & (1 << voice) != 0 {
+                        self.key_on_staged_voice(voice, sample_ram);
+                    }
+                }
+            }
+            AudioEventKind::VoiceKeyOff { mask } => {
+                for voice in 0..MODERN_AUDIO_VOICES {
+                    if mask & (1 << voice) != 0 {
+                        self.voices[voice].begin_release();
+                    }
+                }
             }
             AudioEventKind::KeyOnVoice {
                 voice,
@@ -1137,7 +1272,9 @@ impl ModernAudioEngine {
         state.dsp_adsr1 = adsr1;
         state.dsp_adsr2 = adsr2;
         state.dsp_gain = gain;
-        state.dsp_rate_counter = rate_counter;
+        if rate_counter != u16::MAX {
+            state.dsp_rate_counter = rate_counter;
+        }
         state.dsp_envelope_configured = true;
         state.volume_left = volume_left;
         state.volume_right = volume_right;
@@ -1160,6 +1297,34 @@ impl ModernAudioEngine {
             state.amplitude = state.peak_amplitude;
             state.begin_decay_or_sustain();
         }
+        self.load_voice_sample(voice, source, 0, sample_ram);
+    }
+
+    fn retrigger_voice(&mut self, voice: usize) {
+        let Some(state) = self.voices.get_mut(voice) else {
+            return;
+        };
+        state.active = true;
+        state.remaining_frames = 0;
+        state.pitch_slide_frames = 0;
+        state.sample_position = 0;
+        state.brr_block_start = 0;
+        state.brr_started = false;
+        state.checkpoint_brr_decoder = None;
+        if state.dsp_envelope_configured {
+            // KON resets the envelope and BRR decoder, but the DSP rate and
+            // pitch counters are hardware state and intentionally survive.
+            state.initialize_dsp_envelope();
+            state.amplitude = 0;
+        }
+    }
+
+    fn key_on_staged_voice(&mut self, voice: usize, sample_ram: Option<&[u8]>) {
+        let Some(state) = self.voices.get(voice) else {
+            return;
+        };
+        let source = state.instrument_timbre;
+        self.retrigger_voice(voice);
         self.load_voice_sample(voice, source, 0, sample_ram);
     }
 
@@ -1204,9 +1369,11 @@ impl ModernAudioEngine {
     fn mix(
         &mut self,
         audio_buffer: &mut [i16],
+        sample_start: usize,
         samples_per_channel: usize,
         channels: usize,
         deferred_globals: &[(usize, u8, u8)],
+        deferred_music_volumes: &[(usize, u8)],
         deferred_voice_events: &[crate::game_output::AudioEvent],
         sample_ram: Option<&[u8]>,
     ) {
@@ -1225,8 +1392,9 @@ impl ModernAudioEngine {
         self.resize_echo_ring_from_ram(sample_ram);
 
         let mut deferred_index = 0;
+        let mut deferred_music_volume_index = 0;
         let mut deferred_voice_index = 0;
-        for sample_index in 0..samples_per_channel {
+        for sample_index in sample_start..samples_per_channel {
             while deferred_globals
                 .get(deferred_index)
                 .is_some_and(|event| event.0 <= sample_index)
@@ -1234,6 +1402,13 @@ impl ModernAudioEngine {
                 let (_, register, value) = deferred_globals[deferred_index];
                 self.handle_global_parameter(register, value);
                 deferred_index += 1;
+            }
+            while deferred_music_volumes
+                .get(deferred_music_volume_index)
+                .is_some_and(|event| event.0 <= sample_index)
+            {
+                self.music_volume = deferred_music_volumes[deferred_music_volume_index].1;
+                deferred_music_volume_index += 1;
             }
             self.resize_echo_ring_from_ram(sample_ram);
             while deferred_voice_events
@@ -1280,7 +1455,7 @@ impl ModernAudioEngine {
                 self.debug_voice_samples.0[voice_index].push(sample as i16);
                 voice.sample_step = unmodulated_step;
                 previous_voice_sample = sample;
-                let (voice_left, voice_right) = if voice.stereo_volume_configured {
+                let (mut voice_left, mut voice_right) = if voice.stereo_volume_configured {
                     (
                         sample * i32::from(voice.volume_left) >> 6,
                         sample * i32::from(voice.volume_right) >> 6,
@@ -1291,6 +1466,10 @@ impl ModernAudioEngine {
                     let right_gain = 127 + pan.min(0);
                     (sample * left_gain / 127, sample * right_gain / 127)
                 };
+                if voice.note_origin == Some(crate::game_output::AudioNoteOrigin::Music) {
+                    voice_left = voice_left * i32::from(self.music_volume) / 96;
+                    voice_right = voice_right * i32::from(self.music_volume) / 96;
+                }
                 mixed_left += voice_left;
                 mixed_right += voice_right;
                 mixed_left = mixed_left.clamp(i16::MIN as i32, i16::MAX as i32);
@@ -1433,6 +1612,8 @@ const ENVELOPE_RELEASE: u8 = 3;
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct ModernVoice {
     active: bool,
+    #[serde(default)]
+    note_origin: Option<crate::game_output::AudioNoteOrigin>,
     phase: u32,
     phase_step: u32,
     base_phase_step: u32,
@@ -1891,6 +2072,8 @@ struct CheckpointBrrDecoder {
     old: i16,
     older: i16,
     loop_address: u16,
+    #[serde(default)]
+    source: u8,
 }
 
 impl CheckpointBrrDecoder {
@@ -1899,6 +2082,13 @@ impl CheckpointBrrDecoder {
             if self.previous_flags == 1 {
                 return None;
             }
+            // The SNES DSP refreshes the source directory entry at every BRR
+            // loop boundary. Song-bank uploads can replace that entry while a
+            // voice is running, so a loop address latched only at KON is stale.
+            const DIRECTORY: usize = 0x3c00;
+            let entry = DIRECTORY + usize::from(self.source) * 4;
+            let loop_bytes = ram.get(entry + 2..entry + 4)?;
+            self.loop_address = u16::from_le_bytes([loop_bytes[0], loop_bytes[1]]);
             self.address = self.loop_address;
         }
         let address = usize::from(self.address);
@@ -1975,6 +2165,7 @@ fn decode_brr_checkpoint_continuation(
             old,
             older,
             loop_address: loop_address as u16,
+            source,
         },
     ))
 }
@@ -2169,8 +2360,10 @@ fn sample_step_for_pitch_word(pitch_word: u16, output_rate: usize) -> u64 {
 fn is_deferred_voice_event(kind: &AudioEventKind) -> bool {
     matches!(
         kind,
-        AudioEventKind::SetPitchWord { .. }
+        AudioEventKind::SetNoteOrigin { .. }
+            | AudioEventKind::SetPitchWord { .. }
             | AudioEventKind::SetPitchRegisterWord { .. }
+            | AudioEventKind::SetEnvelopeRateCounter { .. }
             | AudioEventKind::VoiceParameter { .. }
             | AudioEventKind::SetStereoVolume { .. }
             | AudioEventKind::SetDspEnvelope { .. }
@@ -2183,6 +2376,8 @@ fn is_deferred_voice_event(kind: &AudioEventKind) -> bool {
             | AudioEventKind::NoteOn { .. }
             | AudioEventKind::KeyOnVoice { .. }
             | AudioEventKind::NoteOff { .. }
+            | AudioEventKind::VoiceKeyOn { .. }
+            | AudioEventKind::VoiceKeyOff { .. }
     )
 }
 
@@ -2248,6 +2443,85 @@ mod tests {
         assert_eq!(sample.pcm.len(), 16);
         assert_eq!(&sample.pcm[..4], &[0, 3, 0, 3]);
         assert!(!sample.loops);
+    }
+
+    #[test]
+    fn looping_checkpoint_decoder_rereads_the_live_directory_entry() {
+        const DIRECTORY: usize = 0x3c00;
+        let source = 1u8;
+        let old_loop = 0x5000usize;
+        let new_loop = 0x6000usize;
+        let entry = DIRECTORY + usize::from(source) * 4;
+        let mut ram = vec![0u8; 0x10000];
+        ram[entry + 2..entry + 4].copy_from_slice(&(new_loop as u16).to_le_bytes());
+        ram[old_loop] = 0x03;
+        ram[old_loop + 1..old_loop + 9].fill(0x11);
+        ram[new_loop] = 0x01;
+        ram[new_loop + 1..new_loop + 9].fill(0x22);
+        let mut decoder = CheckpointBrrDecoder {
+            previous_flags: 0x03,
+            loop_address: old_loop as u16,
+            source,
+            ..CheckpointBrrDecoder::default()
+        };
+
+        let decoded = decoder.decode_next(&ram).expect("new loop target block");
+
+        assert_eq!(decoder.address, (new_loop + 9) as u16);
+        assert_eq!(decoder.loop_address, new_loop as u16);
+        assert_ne!(decoded, [0; 16]);
+        assert!(decoder.decode_next(&ram).is_none());
+    }
+
+    #[test]
+    fn sample_bank_generation_change_releases_every_active_voice() {
+        let mut engine = ModernAudioEngine::default();
+        for voice in [2usize, 6, 7] {
+            engine.voices[voice].active = true;
+            engine.voices[voice].dsp_envelope_configured = true;
+            engine.voices[voice].dsp_envelope_state = 2;
+            engine.voices[voice].dsp_gain_level = 2000;
+        }
+        let frame = AudioEventFrame::from_route_and_dsp_writes(
+            AudioRouteState {
+                sample_bank_id: 1,
+                sample_bank_generation: 1,
+                ..AudioRouteState::default()
+            },
+            &[],
+        );
+
+        engine.render_frame(&frame, &mut [], 0, 2);
+
+        assert_eq!(engine.sample_bank_id, 1);
+        assert_eq!(engine.sample_bank_generation, 1);
+        assert_eq!(engine.echo_mix_left, 0);
+        assert_eq!(engine.echo_mix_right, 0);
+        for voice in [2usize, 6, 7] {
+            assert_eq!(engine.voices[voice].dsp_envelope_state, 4);
+            assert!(engine.voices[voice].active);
+        }
+    }
+
+    #[test]
+    fn checkpoint_render_preserves_the_already_mixed_native_prefix() {
+        let mut dsp = vec![0u8; 3024];
+        let prefix = [101i16, -202, 303, -404];
+        for (index, sample) in prefix.into_iter().enumerate() {
+            let offset = 884 + index * 2;
+            dsp[offset..offset + 2].copy_from_slice(&sample.to_le_bytes());
+        }
+        dsp[3020..3022].copy_from_slice(&2u16.to_le_bytes());
+        let mut engine = ModernAudioEngine::default();
+        engine.seed_dsp_checkpoint_state(&vec![0; 0x10000], &dsp);
+        let frame = empty_frame_with_writes(&[]);
+        let mut output = vec![0i16; DSP_SAMPLES_PER_FRAME * 2];
+
+        engine.render_frame(&frame, &mut output, DSP_SAMPLES_PER_FRAME as i32, 2);
+
+        assert_eq!(&output[..prefix.len()], &prefix);
+        assert!(engine.checkpoint_sample_prefix.is_empty());
+        assert_eq!(engine.checkpoint_sample_offset, 0);
     }
 
     #[test]
@@ -2435,6 +2709,26 @@ mod tests {
     }
 
     #[test]
+    fn raw_pitch_write_replaces_register_only_pitch_for_inactive_counter() {
+        let mut engine = ModernAudioEngine::default();
+        let voice = &mut engine.voices[0];
+        voice.active = false;
+        voice.dsp_pitch_configured = true;
+        voice.exact_pitch_word = 0x0100;
+        voice.render_pitch_word = 0x0200;
+        voice.pitch_register_only = true;
+        voice.dsp_pitch_counter = 0;
+
+        engine.handle_voice_parameter(0, VoiceParameterKind::PitchLow, 0xaf);
+        engine.handle_voice_parameter(0, VoiceParameterKind::PitchHigh, 0x0d);
+        engine.voices[0].advance_inactive_pitch_counter();
+
+        assert!(!engine.voices[0].pitch_register_only);
+        assert_eq!(engine.voices[0].render_pitch_word, 0x0daf);
+        assert_eq!(engine.voices[0].dsp_pitch_counter, 0x0daf);
+    }
+
+    #[test]
     fn non_looping_brr_end_forces_zero_gain_release_state() {
         let mut voice = ModernVoice {
             active: true,
@@ -2515,6 +2809,29 @@ mod tests {
     }
 
     #[test]
+    fn music_master_fade_does_not_attenuate_sfx_owned_voice() {
+        let mut base = ModernAudioEngine::default();
+        base.trigger_voice(0, 0x12, 1100);
+        base.music_volume = 0x30;
+        let mut music = base.clone();
+        music.voices[0].note_origin = Some(crate::game_output::AudioNoteOrigin::Music);
+        let mut sfx = base;
+        sfx.voices[0].note_origin = Some(crate::game_output::AudioNoteOrigin::Sfx);
+        let frame = empty_frame_with_writes(&[]);
+        let mut music_audio = [0i16; 32];
+        let mut sfx_audio = [0i16; 32];
+
+        music.render_frame(&frame, &mut music_audio, 16, 2);
+        sfx.render_frame(&frame, &mut sfx_audio, 16, 2);
+
+        let music_peak = music_audio.iter().map(|sample| sample.abs()).max().unwrap();
+        let sfx_peak = sfx_audio.iter().map(|sample| sample.abs()).max().unwrap();
+        assert!(music_peak > 0);
+        assert!(sfx_peak > music_peak);
+        assert!(sfx_peak >= music_peak.saturating_mul(2).saturating_sub(2));
+    }
+
+    #[test]
     fn key_on_and_key_off_events_control_modern_voices() {
         let mut engine = ModernAudioEngine::default();
         let mut audio = [0i16; 16];
@@ -2522,8 +2839,8 @@ mod tests {
 
         let on_stats = engine.render_frame(&key_on, &mut audio, 8, 2);
 
-        assert!(audio.iter().any(|sample| *sample != 0));
         assert_eq!(on_stats.triggered_voices, 2);
+        assert_eq!(on_stats.active_voices, 2);
 
         let key_off = empty_frame_with_writes(&[DspWriteEvent::new(0x5c, 0x03, 0, 0)]);
         let off_stats = engine.render_frame(&key_off, &mut audio, 8, 2);
@@ -2841,5 +3158,62 @@ mod tests {
         assert!(tail.iter().any(|sample| *sample != 0));
         assert!(engine.echo_left.iter().any(|sample| *sample != 0));
         assert!(engine.echo_right.iter().any(|sample| *sample != 0));
+    }
+
+    #[test]
+    fn timed_raw_dsp_writes_stage_parameters_before_key_on() {
+        let writes = [
+            DspWriteEvent::new(0x00, 64, 12, 0),
+            DspWriteEvent::new(0x01, 64, 12, 0),
+            DspWriteEvent::new(0x02, 0x00, 12, 0),
+            DspWriteEvent::new(0x03, 0x10, 12, 0),
+            DspWriteEvent::new(0x04, 0x00, 12, 0),
+            DspWriteEvent::new(0x05, 0x8f, 12, 0),
+            DspWriteEvent::new(0x06, 0xe0, 12, 0),
+            DspWriteEvent::new(0x07, 0x7f, 12, 0),
+            DspWriteEvent::new(0x4c, 0x01, 12, 0),
+        ];
+        let frame = empty_frame_with_writes(&writes);
+        let mut engine = ModernAudioEngine::default();
+        let mut output = [0i16; 1068];
+
+        engine.render_frame(&frame, &mut output, 534, 2);
+
+        let voice = engine.voice_debug_states()[0];
+        assert!(voice.active);
+        assert_eq!(voice.pitch, 0x1000);
+        assert_eq!(voice.adsr1, 0x8f);
+        assert_eq!(voice.adsr2, 0xe0);
+        assert_eq!(voice.gain_config, 0x7f);
+        assert!(engine.debug_voice_samples()[0][..12]
+            .iter()
+            .all(|sample| *sample == 0));
+    }
+
+    #[test]
+    fn timed_raw_echo_writes_reach_the_modern_dsp_state() {
+        let writes = [
+            DspWriteEvent::new(0x2c, 0x20, 20, 0),
+            DspWriteEvent::new(0x3c, 0x30, 20, 0),
+            DspWriteEvent::new(0x0d, 0x40, 20, 0),
+            DspWriteEvent::new(0x4d, 0x03, 20, 0),
+            DspWriteEvent::new(0x0f, 0x7f, 20, 0),
+            DspWriteEvent::new(0x6d, 0x90, 20, 0),
+            DspWriteEvent::new(0x7d, 0x02, 20, 0),
+        ];
+        let frame = empty_frame_with_writes(&writes);
+        let mut engine = ModernAudioEngine::default();
+        let mut output = [0i16; 1068];
+
+        engine.render_frame(&frame, &mut output, 534, 2);
+
+        assert_eq!(engine.echo_mix_left, 0x20);
+        assert_eq!(engine.echo_mix_right, 0x30);
+        assert_eq!(engine.echo_feedback, 0x40);
+        assert!(engine.voices[0].echo_send);
+        assert!(engine.voices[1].echo_send);
+        assert_eq!(engine.fir_coefficients[0], 0x7f);
+        assert_eq!(engine.echo_start_page, 0x90);
+        assert_eq!(engine.echo_delay_samples, 1024);
     }
 }

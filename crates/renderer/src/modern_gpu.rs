@@ -1558,9 +1558,7 @@ fn bg_layers_have_no_opaque_overlap(
 }
 
 fn finalize_snes_5bit_channel(channel: u8, brightness: u8) -> u8 {
-    let c5 = channel >> 3;
-    let expanded = (c5 << 3) | (c5 >> 2);
-    ((u32::from(expanded) * u32::from(brightness)) / 15) as u8
+    crate::modern_frame::apply_master_brightness(channel >> 3, brightness)
 }
 
 fn finalize_modern_frame_colors_for_direct_index(frame: &mut ModernFrame) {
@@ -3257,9 +3255,7 @@ fn final_live_cgram_rgba(color: [u8; 4], brightness: u8) -> [u8; 4] {
 }
 
 fn expand_live_cgram_channel(component: u8, brightness: u8) -> u8 {
-    let c5 = u32::from(component >> 3).min(31);
-    let v8 = (c5 << 3) | (c5 >> 2);
-    ((v8 * u32::from(brightness)) / 15) as u8
+    crate::modern_frame::apply_master_brightness(component >> 3, brightness)
 }
 
 fn u32s_to_le_bytes(words: &[u32]) -> Vec<u8> {

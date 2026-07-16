@@ -10,8 +10,11 @@ import queue
 import subprocess
 import sys
 import threading
+import tempfile
 from pathlib import Path
 from typing import TextIO
+
+from input_script_tools import numeric_input_script
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +22,7 @@ DEFAULT_C_ROOT = Path(os.environ.get("ZELDA3_C_REPO", str(ROOT.parent / "zelda3"
 DEFAULT_ROM = Path(os.environ.get("ZELDA3_ROM", str(DEFAULT_C_ROOT / "zelda3.sfc")))
 DEFAULT_SAVE = ROOT / "saves" / "zelda3-combined-route.sav"
 DEFAULT_RUST_BIN = ROOT / "target" / "release" / "zelda3"
+DEFAULT_ASSET_PACK = ROOT / "zelda3_assets.dat"
 DEFAULT_FINAL_FRAME = 1_073_092
 
 AUDIO_FIELDS = [
@@ -49,11 +53,18 @@ class AudioRouteFailure(RuntimeError):
     pass
 
 
-def start_process(name: str, command: list[str], cwd: Path) -> subprocess.Popen[str]:
+def start_process(
+    name: str,
+    command: list[str],
+    cwd: Path,
+    extra_env: dict[str, str] | None = None,
+) -> subprocess.Popen[str]:
     env = os.environ.copy()
     env.setdefault("SDL_VIDEODRIVER", "dummy")
     env.setdefault("SDL_AUDIODRIVER", "dummy")
     env.setdefault("SDL_RENDER_DRIVER", "software")
+    if extra_env is not None:
+        env.update(extra_env)
     try:
         return subprocess.Popen(
             command,
@@ -128,6 +139,8 @@ def run_compare(args: argparse.Namespace) -> int:
     trace_dir.mkdir(parents=True, exist_ok=True)
     c_trace = None if args.no_trace_files else (trace_dir / "c-audio-route.jsonl").open("w")
     rust_trace = None if args.no_trace_files else (trace_dir / "rust-audio-route.jsonl").open("w")
+    input_directory = tempfile.TemporaryDirectory(prefix="zelda3-audio-input-")
+    input_dir = input_directory.name
     try:
         c_command = [
             str(args.c_bin),
@@ -149,11 +162,26 @@ def run_compare(args: argparse.Namespace) -> int:
             "--audio-trace-log",
             str(args.stride),
         ]
+        if args.input_script is not None:
+            normalized_script = Path(input_dir) / "input.txt"
+            normalized_script.write_text(
+                numeric_input_script(args.input_script), encoding="utf-8"
+            )
+            c_command.extend(["--input-script", str(normalized_script)])
+            rust_command.extend(["--input-script", str(normalized_script)])
+        if args.stop_replay_after_load:
+            c_command.append("--stop-replay-after-load")
+            rust_command.append("--stop-replay-after-load")
         print("C command:", " ".join(c_command), flush=True)
         print("Rust command:", " ".join(rust_command), flush=True)
 
         c_process = start_process("c", c_command, args.c_root)
-        rust_process = start_process("rust", rust_command, ROOT)
+        rust_process = start_process(
+            "rust",
+            rust_command,
+            ROOT,
+            {"ZELDA3_ASSET_PACK": str(args.asset_pack)},
+        )
         processes = [c_process, rust_process]
         c_events: queue.Queue[dict | str | None] = queue.Queue()
         rust_events: queue.Queue[dict | str | None] = queue.Queue()
@@ -175,7 +203,9 @@ def run_compare(args: argparse.Namespace) -> int:
             if c_event is None or rust_event is None:
                 if c_event != rust_event:
                     raise AudioRouteFailure(
-                        f"trace ended early: c_done={c_event is None} rust_done={rust_event is None}"
+                        f"trace ended early: c_done={c_event is None} rust_done={rust_event is None}\n"
+                        f"c stderr tail:\n" + "\n".join(stderr_lines["c"]) + "\n"
+                        f"rust stderr tail:\n" + "\n".join(stderr_lines["rust"])
                     )
                 break
             if isinstance(c_event, str) or isinstance(rust_event, str):
@@ -207,6 +237,7 @@ def run_compare(args: argparse.Namespace) -> int:
             c_trace.close()
         if rust_trace is not None:
             rust_trace.close()
+        input_directory.cleanup()
 
 
 def parse_args() -> argparse.Namespace:
@@ -219,9 +250,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--c-root", type=Path, default=DEFAULT_C_ROOT)
     parser.add_argument("--c-bin", type=Path, default=DEFAULT_C_ROOT / "zelda3")
     parser.add_argument("--rust-bin", type=Path, default=DEFAULT_RUST_BIN)
+    parser.add_argument("--asset-pack", type=Path, default=DEFAULT_ASSET_PACK)
     parser.add_argument("--trace-dir", type=Path, default=ROOT / "target" / "parity" / "audio-route")
     parser.add_argument("--no-trace-files", action="store_true")
     parser.add_argument("--state-only", action="store_true", help="compare music/SFX command state but ignore rendered sample stats")
+    parser.add_argument("--input-script", type=Path)
+    parser.add_argument("--stop-replay-after-load", action="store_true")
     args = parser.parse_args()
     if args.stride <= 0:
         parser.error("--stride must be greater than zero")

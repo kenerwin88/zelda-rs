@@ -67,6 +67,14 @@ impl ConfiguredPlayRenderer {
         self.frontend.audio_channels()
     }
 
+    pub(crate) fn audio_underflow_samples(&self) -> u64 {
+        self.frontend.audio_underflow_samples()
+    }
+
+    pub(crate) fn audio_dropped_samples(&self) -> u64 {
+        self.frontend.audio_dropped_samples()
+    }
+
     pub(crate) fn present_frame(&mut self, game: &mut ZeldaState) {
         self.backend
             .present_frame(game, &mut self.frontend, &mut self.frame, self.render_flags);

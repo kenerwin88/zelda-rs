@@ -7,8 +7,10 @@ import argparse
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -19,10 +21,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_C_REPO = Path(os.environ.get("ZELDA3_C_REPO", str(REPO_ROOT.parent / "zelda3")))
 DEFAULT_ROM = Path(os.environ.get("ZELDA3_ROM", str(DEFAULT_C_REPO / "zelda3.sfc")))
 DEFAULT_MESEN_RUNNER = REPO_ROOT / "external" / "mesen2-oracle" / "run_trace.sh"
-DEFAULT_BSNES_LOCAL = REPO_ROOT / "external" / "bsnes-libretro" / "local" / "bsnes_libretro.dylib"
-DEFAULT_BSNES_URL = os.environ.get(
-    "BSNES_LIBRETRO_URL",
-    "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/bsnes_libretro.dylib.zip",
+DEFAULT_SNES9X_LOCAL = (
+    REPO_ROOT / "external" / "snes9x-libretro" / "local" / "snes9x_libretro.dylib"
+)
+DEFAULT_SNES9X_URL = os.environ.get(
+    "SNES9X_LIBRETRO_URL",
+    "https://buildbot.libretro.com/nightly/apple/osx/arm64/latest/snes9x_libretro.dylib.zip",
 )
 
 
@@ -39,9 +43,14 @@ class CommandResult:
 
 
 def run_command(command: list[str]) -> CommandResult:
+    env = os.environ.copy()
+    repo_asset_pack = REPO_ROOT / "zelda3_assets.dat"
+    if repo_asset_pack.exists():
+        env.setdefault("ZELDA3_ASSET_PACK", str(repo_asset_pack))
     result = subprocess.run(
         command,
         cwd=REPO_ROOT,
+        env=env,
         text=True,
         encoding="utf-8",
         errors="replace",
@@ -54,10 +63,14 @@ def command_text(command: list[str]) -> str:
     return " ".join(command)
 
 
-def cargo_zelda(args: list[str], release: bool) -> list[str]:
+def cargo_zelda(
+    args: list[str], release: bool, *, audio_oracle: bool = False
+) -> list[str]:
     command = ["cargo", "run", "-q"]
     if release:
         command.append("--release")
+    if audio_oracle:
+        command.extend(["--features", "audio-oracle"])
     command.extend(["-p", "zelda3-bin", "--"])
     command.extend(args)
     return command
@@ -74,21 +87,21 @@ def require_success(result: CommandResult, gate: str) -> None:
     )
 
 
-def find_bsnes_core(explicit: str | None) -> Path | None:
+def find_snes9x_core(explicit: str | None) -> Path | None:
     if explicit:
         path = Path(explicit).expanduser()
         return path if path.exists() else None
-    env_path = os.environ.get("BSNES_LIBRETRO_CORE")
+    env_path = os.environ.get("SNES9X_LIBRETRO_CORE")
     if env_path:
         path = Path(env_path).expanduser()
         if path.exists():
             return path
     candidates = [
-        DEFAULT_BSNES_LOCAL,
-        REPO_ROOT / "external" / "bsnes-libretro" / "bsnes_libretro.dylib",
-        Path("/private/tmp/bsnes_libretro/bsnes_libretro.dylib"),
-        Path.home() / "Library/Application Support/RetroArch/cores/bsnes_libretro.dylib",
-        Path("/Applications/RetroArch.app/Contents/Resources/cores/bsnes_libretro.dylib"),
+        DEFAULT_SNES9X_LOCAL,
+        REPO_ROOT / "external" / "snes9x-libretro" / "snes9x_libretro.dylib",
+        Path("/private/tmp/snes9x_libretro/snes9x_libretro.dylib"),
+        Path.home() / "Library/Application Support/RetroArch/cores/snes9x_libretro.dylib",
+        Path("/Applications/RetroArch.app/Contents/Resources/cores/snes9x_libretro.dylib"),
     ]
     for path in candidates:
         if path.exists():
@@ -96,34 +109,50 @@ def find_bsnes_core(explicit: str | None) -> Path | None:
     return None
 
 
-def download_bsnes_core(url: str) -> Path:
+def download_snes9x_core(url: str) -> Path:
     if platform.system() != "Darwin" or platform.machine() not in {"arm64", "aarch64"}:
         raise GateFailure(
-            "automatic bsnes download is currently configured for macOS arm64. "
-            "Pass --bsnes-core or set BSNES_LIBRETRO_CORE for this platform."
+            "automatic Snes9x download is currently configured for macOS arm64. "
+            "Pass --snes9x-core or set SNES9X_LIBRETRO_CORE for this platform."
         )
-    DEFAULT_BSNES_LOCAL.parent.mkdir(parents=True, exist_ok=True)
-    zip_path = DEFAULT_BSNES_LOCAL.with_suffix(".dylib.zip")
-    print(f"downloading bsnes libretro core: {url}", flush=True)
-    urllib.request.urlretrieve(url, zip_path)
-    with zipfile.ZipFile(zip_path) as archive:
-        member = next(
-            (name for name in archive.namelist() if name.endswith("bsnes_libretro.dylib")),
-            None,
-        )
-        if member is None:
-            raise GateFailure(f"downloaded archive does not contain bsnes_libretro.dylib: {zip_path}")
-        with archive.open(member) as source, DEFAULT_BSNES_LOCAL.open("wb") as dest:
-            dest.write(source.read())
-    DEFAULT_BSNES_LOCAL.chmod(0o755)
-    return DEFAULT_BSNES_LOCAL
+    DEFAULT_SNES9X_LOCAL.parent.mkdir(parents=True, exist_ok=True)
+    zip_path = DEFAULT_SNES9X_LOCAL.with_suffix(".dylib.zip")
+    core_tmp = DEFAULT_SNES9X_LOCAL.with_suffix(".dylib.tmp")
+    print(f"downloading Snes9x libretro core: {url}", flush=True)
+    try:
+        with urllib.request.urlopen(url, timeout=60) as source, zip_path.open("wb") as dest:
+            shutil.copyfileobj(source, dest)
+        with zipfile.ZipFile(zip_path) as archive:
+            member = next(
+                (
+                    name
+                    for name in archive.namelist()
+                    if name.endswith("snes9x_libretro.dylib")
+                ),
+                None,
+            )
+            if member is None:
+                raise GateFailure(
+                    "downloaded archive does not contain snes9x_libretro.dylib: "
+                    f"{zip_path}"
+                )
+            with archive.open(member) as source, core_tmp.open("wb") as dest:
+                shutil.copyfileobj(source, dest)
+        core_tmp.replace(DEFAULT_SNES9X_LOCAL)
+    except (OSError, urllib.error.URLError, zipfile.BadZipFile) as error:
+        raise GateFailure(f"failed to download Snes9x libretro core from {url}: {error}") from error
+    finally:
+        zip_path.unlink(missing_ok=True)
+        core_tmp.unlink(missing_ok=True)
+    DEFAULT_SNES9X_LOCAL.chmod(0o755)
+    return DEFAULT_SNES9X_LOCAL
 
 
-def resolve_bsnes_core(args: argparse.Namespace) -> Path | None:
-    core = find_bsnes_core(args.bsnes_core)
-    if core is not None or args.no_install_bsnes:
+def resolve_snes9x_core(args: argparse.Namespace) -> Path | None:
+    core = find_snes9x_core(args.snes9x_core)
+    if core is not None or args.no_install_snes9x:
         return core
-    return download_bsnes_core(args.bsnes_url)
+    return download_snes9x_core(args.snes9x_url)
 
 
 def run_lockstep_gate(args: argparse.Namespace) -> None:
@@ -142,28 +171,77 @@ def run_lockstep_gate(args: argparse.Namespace) -> None:
     print(result.stdout.strip(), flush=True)
 
 
-def run_bsnes_gate(args: argparse.Namespace) -> None:
-    core = resolve_bsnes_core(args)
+def run_snes9x_gate(args: argparse.Namespace) -> None:
+    core = resolve_snes9x_core(args)
     if core is None:
         raise GateFailure(
-            "bsnes libretro core not found. Set BSNES_LIBRETRO_CORE or pass "
-            "--bsnes-core /path/to/bsnes_libretro.dylib. Full A/V parity cannot run without it."
+            "Snes9x libretro core not found. Set SNES9X_LIBRETRO_CORE or pass "
+            "--snes9x-core /path/to/snes9x_libretro.dylib. Live A/V parity cannot run without it."
         )
+    session_dir = args.work_dir / "snes9x-session"
     command = cargo_zelda(
         [
-            "--compare-bsnes-oracle",
+            "--compare-snes9x-oracle",
             str(core),
             str(args.rom),
             str(args.frames),
-            "--skip-bsnes-frames",
-            str(args.bsnes_skip),
+            "--skip-oracle-frames",
+            str(args.snes9x_skip),
+            "--audio-comparison",
+            args.snes9x_audio_comparison,
+            "--audio-timing-tolerance-ms",
+            str(args.audio_timing_tolerance_ms),
+            "--session-dir",
+            str(session_dir),
+            "--scan-all",
         ],
         args.release,
     )
     if args.input_script:
         command.extend(["--input-script", args.input_script])
+    if args.load_sram:
+        command.extend(["--load-sram", args.load_sram])
     result = run_command(command)
-    require_success(result, "bsnes exact audio/video")
+    require_success(result, "Snes9x live audio/video")
+    print(result.stdout.strip(), flush=True)
+
+
+def run_snes9x_exact_apu_gate(args: argparse.Namespace) -> None:
+    core = resolve_snes9x_core(args)
+    if core is None:
+        raise GateFailure(
+            "Snes9x libretro core not found for exact APU comparison. Set "
+            "SNES9X_LIBRETRO_CORE or pass --snes9x-core."
+        )
+    session_dir = args.work_dir / "snes9x-exact-apu-session"
+    command = cargo_zelda(
+        [
+            "--compare-snes9x-oracle",
+            str(core),
+            str(args.rom),
+            str(args.frames),
+            "--skip-oracle-frames",
+            str(args.snes9x_skip),
+            "--ignore-video",
+            "--audio-comparison",
+            "exact",
+            "--rust-audio-backend",
+            "dsp-parity",
+            "--rust-audio-sequencer",
+            "exact-spc-driver",
+            "--session-dir",
+            str(session_dir),
+            "--scan-all",
+        ],
+        args.release,
+        audio_oracle=True,
+    )
+    if args.input_script:
+        command.extend(["--input-script", args.input_script])
+    if args.load_sram:
+        command.extend(["--load-sram", args.load_sram])
+    result = run_command(command)
+    require_success(result, "Snes9x exact local-APU waveform")
     print(result.stdout.strip(), flush=True)
 
 
@@ -291,18 +369,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input-script")
     parser.add_argument("--load-sram")
     parser.add_argument("--load-state")
-    parser.add_argument("--bsnes-core")
-    parser.add_argument("--bsnes-url", default=DEFAULT_BSNES_URL)
-    parser.add_argument("--bsnes-skip", type=int, default=83)
+    parser.add_argument("--snes9x-core")
+    parser.add_argument("--snes9x-url", default=DEFAULT_SNES9X_URL)
+    parser.add_argument("--snes9x-skip", type=int, default=0)
+    parser.add_argument(
+        "--snes9x-audio-comparison",
+        choices=("timing", "exact"),
+        default="timing",
+    )
+    parser.add_argument("--audio-timing-tolerance-ms", type=float, default=2.0)
     parser.add_argument("--mesen-startup-offset", type=int, default=82)
     parser.add_argument("--mesen-runner", type=Path, default=DEFAULT_MESEN_RUNNER)
     parser.add_argument("--work-dir", type=Path, default=REPO_ROOT / "target" / "parity")
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--no-lockstep", action="store_true")
     parser.add_argument("--no-c-audio", action="store_true")
-    parser.add_argument("--no-bsnes", action="store_true")
-    parser.add_argument("--with-bsnes", action="store_true")
-    parser.add_argument("--no-install-bsnes", action="store_true")
+    parser.add_argument("--no-snes9x", action="store_true")
+    parser.add_argument("--with-snes9x", action="store_true")
+    parser.add_argument("--no-install-snes9x", action="store_true")
+    parser.add_argument("--no-snes9x-exact-apu", action="store_true")
     parser.add_argument("--no-mesen", action="store_true")
     parser.add_argument("--with-mesen", action="store_true")
     return parser.parse_args()
@@ -326,8 +411,14 @@ def main() -> int:
         gates.append(("C oracle audio", run_c_audio_gate))
     if args.with_mesen and not args.no_mesen:
         gates.append(("Mesen2 APUI/DSP timing", run_mesen_gate))
-    if args.with_bsnes and not args.no_bsnes:
-        gates.append(("bsnes exact audio/video", run_bsnes_gate))
+    if args.with_snes9x and not args.no_snes9x:
+        gates.append(("Snes9x live audio/video", run_snes9x_gate))
+        if not args.no_snes9x_exact_apu:
+            gates.append(("Snes9x exact local-APU waveform", run_snes9x_exact_apu_gate))
+
+    if not gates:
+        print("no parity gates are enabled", file=sys.stderr)
+        return 2
 
     failures: list[str] = []
     for name, gate in gates:

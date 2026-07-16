@@ -1577,20 +1577,10 @@ fn composite_index_tiles_c5(
     }
 }
 
-/// Expand a 5-bit channel to 8-bit and scale by master brightness, byte-exact with
-/// the classic post-process shader (`post_process.wgsl::apply_brightness`):
-/// `v8 = (c5 << 3) | (c5 >> 2)`, then `out8 = v8 * brightness / 15`.
-///
-/// NOTE: the task's prose formula paraphrased this as a plain `(c5 << 3) * b / 15`,
-/// dropping the SNES low-bit fill `| (c5 >> 2)`. Because the comparison reference is
-/// the classic shader (which applies the fill), this mirrors the shader exactly —
-/// e.g. c5=31, b=15 → 255, not 248. (Empirically the fill is the dominant lever:
-/// it alone drops the dungeon mismatch at frame 14000 from 38772 → 24906.)
+/// Expand a 5-bit channel and apply the SNES INIDISP master-brightness curve.
 #[inline]
 fn expand_brightness(c5: i32, brightness: u8) -> u8 {
-    let c = c5.clamp(0, 31) as u32;
-    let v8 = (c << 3) | (c >> 2); // SNES low-bit fill, matching the classic shader
-    ((v8 * u32::from(brightness)) / 15) as u8
+    crate::modern_frame::apply_master_brightness(c5.clamp(0, 31) as u8, brightness)
 }
 
 /// Decode a CGWSEL clip/math-mode bit, byte-exact with `post_process.wgsl::cw_bit`.
@@ -2593,11 +2583,11 @@ mod tests {
         frame.brightness = 8;
 
         let out = render_modern_frame_full(&frame, &cells, &[]);
-        // v8 = (31<<3)|(31>>2) = 255; out8 = 255*8/15 = 136. (Classic-correct;
-        // the task's no-fill paraphrase would give 248*8/15 = 132.)
+        // Brightness is quantized in the 5-bit DAC domain before RGB expansion:
+        // floor(31*9/16) = 17, and 17 expands to 140.
         assert_eq!(
             &out[0..4],
-            &[136, 136, 136, 0xff],
+            &[140, 140, 140, 0xff],
             "brightness-only pixel (0,0)"
         );
     }

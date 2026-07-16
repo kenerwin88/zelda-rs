@@ -14,7 +14,10 @@
 use std::collections::VecDeque;
 use std::env;
 use std::ffi::OsString;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc, Mutex,
+};
 use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -138,6 +141,7 @@ impl NativeFrontend {
             input_state: 0,
             host_menu_inputs: VecDeque::new(),
             menu_open: false,
+            audio_resume_requested: false,
             quit: false,
         };
 
@@ -148,8 +152,8 @@ impl NativeFrontend {
             audio: None,
             audio_samples_per_frame: 735,
             audio_channels: 2,
-            audio_queue_target_bytes: (735 * 2 * std::mem::size_of::<i16>() * 4) as u32,
-            audio_queue_limit_bytes: (735 * 2 * std::mem::size_of::<i16>() * 10) as u32,
+            audio_queue_target_bytes: (735 * 2 * std::mem::size_of::<i16>()) as u32,
+            audio_queue_limit_bytes: (735 * 2 * std::mem::size_of::<i16>() * 3) as u32,
             next_frame_tick: Instant::now(),
             presented_frames: 0,
             renderer_mode: RendererMode::Classic,
@@ -183,8 +187,10 @@ impl NativeFrontend {
                 let block_bytes = (samples * channels * std::mem::size_of::<i16>()) as u32;
                 frontend.audio_samples_per_frame = samples;
                 frontend.audio_channels = channels;
-                frontend.audio_queue_target_bytes = block_bytes.saturating_mul(4);
-                frontend.audio_queue_limit_bytes = block_bytes.saturating_mul(10);
+                (
+                    frontend.audio_queue_target_bytes,
+                    frontend.audio_queue_limit_bytes,
+                ) = audio_queue_watermarks(block_bytes);
                 frontend.audio = Some(audio);
             }
         }
@@ -213,6 +219,20 @@ impl NativeFrontend {
 
     pub fn audio_target_bytes(&self) -> u32 {
         self.audio_queue_target_bytes
+    }
+
+    pub fn audio_underflow_samples(&self) -> u64 {
+        self.audio
+            .as_ref()
+            .map(AudioOutput::underflow_samples)
+            .unwrap_or(0)
+    }
+
+    pub fn audio_dropped_samples(&self) -> u64 {
+        self.audio
+            .as_ref()
+            .map(AudioOutput::dropped_samples)
+            .unwrap_or(0)
     }
 
     /// Select the live render path. `Classic` (default) is the wgpu GPU PPU; the
@@ -505,6 +525,12 @@ impl Frontend for NativeFrontend {
             PumpStatus::Exit(_) => self.handler.quit = true,
             PumpStatus::Continue => {}
         }
+        if self.handler.audio_resume_requested {
+            self.handler.audio_resume_requested = false;
+            if let Some(audio) = &mut self.audio {
+                audio.resume();
+            }
+        }
         let gamepad_state = self.gamepad.as_mut().map(GamepadInput::poll).unwrap_or(0);
         self.handler.input_state | gamepad_state
     }
@@ -528,10 +554,11 @@ impl Frontend for NativeFrontend {
 
     fn push_audio(&mut self, samples: &[i16]) {
         if let Some(audio) = &mut self.audio {
-            while audio.queued_bytes() >= self.audio_queue_limit_bytes {
-                std::thread::sleep(Duration::from_millis(1));
-            }
-            audio.push(samples, self.audio_queue_target_bytes);
+            audio.push(
+                samples,
+                self.audio_queue_target_bytes,
+                self.audio_queue_limit_bytes,
+            );
         }
     }
 }
@@ -554,12 +581,17 @@ struct NativeHandler {
     input_state: u16,
     host_menu_inputs: VecDeque<HostMenuInput>,
     menu_open: bool,
+    audio_resume_requested: bool,
     quit: bool,
 }
 
 impl ApplicationHandler for NativeHandler {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_some() {
+        self.audio_resume_requested = true;
+        if let Some(window) = &self.window {
+            if let Some(renderer) = &mut self.renderer {
+                renderer.resize(window.inner_size());
+            }
             return;
         }
         let window = match event_loop.create_window(self.window_attrs.clone()) {
@@ -591,7 +623,16 @@ impl ApplicationHandler for NativeHandler {
                 event_loop.exit();
             }
             WindowEvent::Focused(focused) => {
-                handle_focus_input_state(&mut self.input_state, focused)
+                handle_focus_input_state(
+                    &mut self.input_state,
+                    &mut self.audio_resume_requested,
+                    focused,
+                );
+                if focused {
+                    if let (Some(renderer), Some(window)) = (&mut self.renderer, &self.window) {
+                        renderer.resize(window.inner_size());
+                    }
+                }
             }
             WindowEvent::Resized(size) => {
                 if let Some(renderer) = &mut self.renderer {
@@ -621,10 +662,15 @@ impl ApplicationHandler for NativeHandler {
     }
 }
 
-fn handle_focus_input_state(input_state: &mut u16, focused: bool) {
+fn handle_focus_input_state(
+    input_state: &mut u16,
+    audio_resume_requested: &mut bool,
+    focused: bool,
+) {
     if !focused {
         *input_state = 0;
     }
+    *audio_resume_requested = true;
 }
 
 fn handle_key_input_state(input_state: &mut u16, key: KeyCode, state: ElementState) {
@@ -1000,6 +1046,12 @@ fn env_flag_option(value: Option<OsString>) -> Option<bool> {
 struct AudioOutput {
     queue: Arc<Mutex<VecDeque<i16>>>,
     volume_scale: Arc<Mutex<f32>>,
+    faulted: Arc<AtomicBool>,
+    underflow_samples: Arc<AtomicU64>,
+    dropped_samples: Arc<AtomicU64>,
+    device: cpal::Device,
+    config: cpal::StreamConfig,
+    sample_format: cpal::SampleFormat,
     stream: cpal::Stream,
     sample_rate: u32,
     channels: u16,
@@ -1016,54 +1068,98 @@ impl AudioOutput {
         let supported = device.default_output_config().map_err(|e| e.to_string())?;
         let sample_rate = supported.sample_rate().0;
         let channels = supported.channels();
+        let buffer_frames = preferred_audio_buffer_frames(supported.buffer_size());
         let config = cpal::StreamConfig {
             channels,
             sample_rate: cpal::SampleRate(sample_rate),
-            buffer_size: cpal::BufferSize::Default,
+            buffer_size: buffer_frames
+                .map(cpal::BufferSize::Fixed)
+                .unwrap_or(cpal::BufferSize::Default),
         };
         let queue = Arc::new(Mutex::new(VecDeque::new()));
         let volume_scale = Arc::new(Mutex::new(1.0));
-        let stream = match supported.sample_format() {
-            cpal::SampleFormat::I16 => build_output_stream::<i16>(
-                &device,
-                &config,
-                Arc::clone(&queue),
-                Arc::clone(&volume_scale),
-            )?,
-            cpal::SampleFormat::U16 => build_output_stream::<u16>(
-                &device,
-                &config,
-                Arc::clone(&queue),
-                Arc::clone(&volume_scale),
-            )?,
-            cpal::SampleFormat::F32 => build_output_stream::<f32>(
-                &device,
-                &config,
-                Arc::clone(&queue),
-                Arc::clone(&volume_scale),
-            )?,
-            other => return Err(format!("unsupported audio sample format {other:?}")),
-        };
+        let faulted = Arc::new(AtomicBool::new(false));
+        let underflow_samples = Arc::new(AtomicU64::new(0));
+        let dropped_samples = Arc::new(AtomicU64::new(0));
+        let sample_format = supported.sample_format();
+        let stream = build_output_stream_for_format(
+            &device,
+            &config,
+            sample_format,
+            Arc::clone(&queue),
+            Arc::clone(&volume_scale),
+            Arc::clone(&faulted),
+            Arc::clone(&underflow_samples),
+        )?;
         Ok(Self {
             queue,
             volume_scale,
+            faulted,
+            underflow_samples,
+            dropped_samples,
+            device,
+            config,
+            sample_format,
             stream,
             sample_rate,
             channels,
-            buffer_frames: 2048,
+            buffer_frames: buffer_frames.unwrap_or(2048),
             started: false,
         })
     }
 
-    fn push(&mut self, samples: &[i16], start_threshold_bytes: u32) {
+    fn push(&mut self, samples: &[i16], start_threshold_bytes: u32, queue_limit_bytes: u32) {
         let mut should_start = false;
         if let Ok(mut queue) = self.queue.lock() {
-            queue.extend(samples.iter().copied());
+            let dropped = enqueue_audio_bounded(&mut queue, samples, queue_limit_bytes);
+            self.dropped_samples
+                .fetch_add(dropped as u64, Ordering::Relaxed);
             should_start = queue.len().saturating_mul(std::mem::size_of::<i16>())
                 >= start_threshold_bytes as usize;
         }
-        if !self.started && should_start && self.stream.play().is_ok() {
+        if self.faulted.swap(false, Ordering::AcqRel) {
+            self.rebuild_stream();
+        }
+        if !self.started && should_start {
+            self.resume();
+        }
+    }
+
+    fn resume(&mut self) {
+        if !self.started && self.queued_bytes() == 0 {
+            return;
+        }
+        if self.started && self.stream.play().is_ok() {
+            return;
+        }
+        if self.stream.play().is_ok() {
             self.started = true;
+            return;
+        }
+        self.rebuild_stream();
+        if self.stream.play().is_ok() {
+            self.started = true;
+        }
+    }
+
+    fn rebuild_stream(&mut self) {
+        match build_output_stream_for_format(
+            &self.device,
+            &self.config,
+            self.sample_format,
+            Arc::clone(&self.queue),
+            Arc::clone(&self.volume_scale),
+            Arc::clone(&self.faulted),
+            Arc::clone(&self.underflow_samples),
+        ) {
+            Ok(stream) => {
+                self.stream = stream;
+                self.started = false;
+            }
+            Err(error) => {
+                self.faulted.store(true, Ordering::Release);
+                eprintln!("audio stream recovery failed: {error}");
+            }
         }
     }
 
@@ -1079,6 +1175,89 @@ impl AudioOutput {
             .map(|q| q.len().saturating_mul(std::mem::size_of::<i16>()) as u32)
             .unwrap_or(0)
     }
+
+    fn underflow_samples(&self) -> u64 {
+        self.underflow_samples.load(Ordering::Acquire)
+    }
+
+    fn dropped_samples(&self) -> u64 {
+        self.dropped_samples.load(Ordering::Acquire)
+    }
+}
+
+fn audio_queue_watermarks(block_bytes: u32) -> (u32, u32) {
+    (block_bytes, block_bytes.saturating_mul(3))
+}
+
+fn preferred_audio_buffer_frames(size: &cpal::SupportedBufferSize) -> Option<u32> {
+    const C_HOST_BUFFER_FRAMES: u32 = 512;
+    match *size {
+        cpal::SupportedBufferSize::Range { min, max } => Some(C_HOST_BUFFER_FRAMES.clamp(min, max)),
+        cpal::SupportedBufferSize::Unknown => None,
+    }
+}
+
+fn enqueue_audio_bounded(
+    queue: &mut VecDeque<i16>,
+    samples: &[i16],
+    queue_limit_bytes: u32,
+) -> usize {
+    let max_samples = (queue_limit_bytes as usize / std::mem::size_of::<i16>()).max(samples.len());
+    let overflow = queue
+        .len()
+        .saturating_add(samples.len())
+        .saturating_sub(max_samples);
+    queue.drain(..overflow.min(queue.len()));
+    queue.extend(samples.iter().copied());
+    overflow
+}
+
+fn next_audio_timeline_sample(queue: &mut VecDeque<i16>, underflow_samples: &AtomicU64) -> i16 {
+    match queue.pop_front() {
+        Some(value) => value,
+        None => {
+            underflow_samples.fetch_add(1, Ordering::Relaxed);
+            0
+        }
+    }
+}
+
+fn build_output_stream_for_format(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+    sample_format: cpal::SampleFormat,
+    queue: Arc<Mutex<VecDeque<i16>>>,
+    volume_scale: Arc<Mutex<f32>>,
+    faulted: Arc<AtomicBool>,
+    underflow_samples: Arc<AtomicU64>,
+) -> Result<cpal::Stream, String> {
+    match sample_format {
+        cpal::SampleFormat::I16 => build_output_stream::<i16>(
+            device,
+            config,
+            queue,
+            volume_scale,
+            faulted,
+            underflow_samples,
+        ),
+        cpal::SampleFormat::U16 => build_output_stream::<u16>(
+            device,
+            config,
+            queue,
+            volume_scale,
+            faulted,
+            underflow_samples,
+        ),
+        cpal::SampleFormat::F32 => build_output_stream::<f32>(
+            device,
+            config,
+            queue,
+            volume_scale,
+            faulted,
+            underflow_samples,
+        ),
+        other => Err(format!("unsupported audio sample format {other:?}")),
+    }
 }
 
 fn build_output_stream<T>(
@@ -1086,6 +1265,8 @@ fn build_output_stream<T>(
     config: &cpal::StreamConfig,
     queue: Arc<Mutex<VecDeque<i16>>>,
     volume_scale: Arc<Mutex<f32>>,
+    faulted: Arc<AtomicBool>,
+    underflow_samples: Arc<AtomicU64>,
 ) -> Result<cpal::Stream, String>
 where
     T: cpal::Sample + cpal::SizedSample + FromI16,
@@ -1097,7 +1278,8 @@ where
                 if let Ok(mut queue) = queue.lock() {
                     let scale = volume_scale.lock().map(|value| *value).unwrap_or(1.0);
                     for sample in data {
-                        let value = scale_i16_sample(queue.pop_front().unwrap_or(0), scale);
+                        let value = next_audio_timeline_sample(&mut queue, &underflow_samples);
+                        let value = scale_i16_sample(value, scale);
                         *sample = T::from_i16(value);
                     }
                 } else {
@@ -1106,7 +1288,10 @@ where
                     }
                 }
             },
-            move |err| eprintln!("audio stream error: {err}"),
+            move |err| {
+                faulted.store(true, Ordering::Release);
+                eprintln!("audio stream error: {err}");
+            },
             None,
         )
         .map_err(|e| e.to_string())
@@ -1173,11 +1358,86 @@ mod tests {
     #[test]
     fn focus_loss_clears_live_input_latch() {
         let mut input_state = 0;
+        let mut audio_resume_requested = false;
         handle_key_input_state(&mut input_state, KeyCode::ArrowDown, ElementState::Pressed);
         handle_key_input_state(&mut input_state, KeyCode::ArrowRight, ElementState::Pressed);
         assert_ne!(input_state, 0);
-        handle_focus_input_state(&mut input_state, false);
+        handle_focus_input_state(&mut input_state, &mut audio_resume_requested, false);
         assert_eq!(input_state, 0);
+        assert!(audio_resume_requested);
+    }
+
+    #[test]
+    fn focus_regain_requests_audio_stream_recovery() {
+        let mut input_state = 0;
+        let mut audio_resume_requested = false;
+
+        handle_focus_input_state(&mut input_state, &mut audio_resume_requested, true);
+
+        assert!(audio_resume_requested);
+    }
+
+    #[test]
+    fn live_audio_starts_after_one_frame_and_caps_at_three() {
+        let block_bytes = (735 * 2 * std::mem::size_of::<i16>()) as u32;
+
+        assert_eq!(
+            audio_queue_watermarks(block_bytes),
+            (block_bytes, block_bytes * 3)
+        );
+    }
+
+    #[test]
+    fn paused_audio_device_cannot_block_the_game_loop() {
+        let mut queue = VecDeque::from(vec![1; 12]);
+
+        let dropped =
+            enqueue_audio_bounded(&mut queue, &[2; 6], 12 * std::mem::size_of::<i16>() as u32);
+
+        assert_eq!(dropped, 6);
+        assert_eq!(queue.len(), 12);
+        assert_eq!(queue.iter().filter(|&&sample| sample == 1).count(), 6);
+        assert_eq!(queue.iter().filter(|&&sample| sample == 2).count(), 6);
+    }
+
+    #[test]
+    fn live_callback_preserves_the_continuous_waveform_and_counts_underflow() {
+        let waveform = [-300, 100, 700, -900, 12, 34];
+        let mut queue = VecDeque::from(waveform);
+        let underflow_samples = AtomicU64::new(0);
+        let emitted = (0..waveform.len())
+            .map(|_| next_audio_timeline_sample(&mut queue, &underflow_samples))
+            .collect::<Vec<_>>();
+
+        assert_eq!(emitted, waveform);
+        assert_eq!(underflow_samples.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            next_audio_timeline_sample(&mut queue, &underflow_samples),
+            0
+        );
+        assert_eq!(underflow_samples.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn live_audio_requests_the_c_host_buffer_size_when_supported() {
+        assert_eq!(
+            preferred_audio_buffer_frames(&cpal::SupportedBufferSize::Range {
+                min: 128,
+                max: 2048,
+            }),
+            Some(512)
+        );
+        assert_eq!(
+            preferred_audio_buffer_frames(&cpal::SupportedBufferSize::Range {
+                min: 1024,
+                max: 4096,
+            }),
+            Some(1024)
+        );
+        assert_eq!(
+            preferred_audio_buffer_frames(&cpal::SupportedBufferSize::Unknown),
+            None
+        );
     }
 
     #[test]

@@ -312,8 +312,8 @@ mod tests {
     fn canonical_asset_catalog_is_complete() {
         assert_eq!(MODERN_SFX_ASSET_FORMAT, "zelda3_modern_sfx_assets_v1");
         assert_eq!(catalog_program_count(), 342);
-        assert_eq!(exact_dsp_steps().len(), 570);
-        assert_eq!(exact_pitch_events().len(), 80);
+        assert_eq!(exact_dsp_steps().len(), 573);
+        assert_eq!(exact_pitch_events().len(), 170);
         for (bank, id, name) in [
             (0, 0x01, "menu_cursor"),
             (0, 0x22, "sword"),

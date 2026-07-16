@@ -594,6 +594,43 @@ impl LockstepOracle {
         Ok(())
     }
 
+    pub fn measure_poly_frame_cycles(&mut self, game: &ZeldaState) -> Result<u64, OracleError> {
+        self.game = game.clone();
+        self.emu_synchronize_whole_state();
+        self.snes.cpu.sp = 0x1f3e;
+        self.snes.cpu.pc = 0xf81d;
+        self.snes.cpu.db = 9;
+        self.snes.cpu.k = 9;
+        self.snes.cpu.dp = 0x1f00;
+        self.snes.cpu.a = 0;
+        self.snes.cpu.x = 0;
+        self.snes.cpu.y = 0;
+        self.snes.cpu.e = false;
+        self.snes.cpu.irq_wanted = false;
+        self.snes.cpu.nmi_wanted = false;
+        self.snes.cpu.waiting = false;
+        self.snes.cpu.stopped = false;
+        self.snes.cpu.unpack_flags(0x30);
+
+        let mut cycles = 0u64;
+        for loops in 0..MAX_ORIG_LOOP_OPCODES {
+            cycles = cycles.saturating_add(u64::from(cpu_run_opcode(&mut self.snes)));
+            while self.snes.dma.dma_busy {
+                self.snes.dma_do();
+            }
+            let pc = ((self.snes.cpu.k as u32) << 16) | self.snes.cpu.pc as u32;
+            if pc == 0x09f81d && loops >= 10 {
+                return Ok(cycles);
+            }
+        }
+
+        let pc = ((self.snes.cpu.k as u32) << 16) | self.snes.cpu.pc as u32;
+        Err(OracleError::StepLimitExceeded {
+            pc,
+            limit: MAX_ORIG_LOOP_OPCODES,
+        })
+    }
+
     pub fn emu_synchronize_whole_state(&mut self) {
         self.snes.ppu = self.game.ppu.clone();
         self.snes.dma = self.game.dma.clone();

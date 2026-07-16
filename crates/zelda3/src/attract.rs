@@ -49,6 +49,14 @@ impl ZeldaState {
 
     pub(super) fn attract_init_graphics(&mut self) {
         self.clear_attract_low_work_area();
+        if self.rom_startup_timing() {
+            self.attract_init_graphics_phase = 4;
+            return;
+        }
+        self.complete_attract_init_graphics();
+    }
+
+    pub(super) fn complete_attract_init_graphics(&mut self) {
         self.erase_tile_maps_normal();
         self.Attract_LoadBG3GFX();
         self.set_overworld_palette_mode(4);
@@ -314,6 +322,9 @@ impl ZeldaState {
             }
         } else {
             self.attract_scene_mut().increment_state();
+            if self.rom_startup_timing() {
+                self.attract_first_story_render_delay = 6;
+            }
         }
     }
 

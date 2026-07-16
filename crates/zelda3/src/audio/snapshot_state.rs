@@ -241,6 +241,14 @@ struct AudioSnapshotV6 {
     sample_bank_id: u8,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct AudioSnapshotV7 {
+    modern: CompactModernAudioStateSnapshotV6,
+    oracle_sidecar: Option<Vec<u8>>,
+    sequencer_backend: AudioSequencerBackend,
+    sample_bank_id: u8,
+}
+
 fn capture_oracle_sidecar(state: &AudioState) -> Result<Option<Vec<u8>>, String> {
     #[cfg(feature = "audio-oracle")]
     {
@@ -375,6 +383,47 @@ pub(super) fn decode_v6(payload: &[u8]) -> Result<(AudioState, bool), String> {
     )
 }
 
+pub(super) fn encode_v7(state: &AudioState) -> Result<(Vec<u8>, bool), String> {
+    let oracle_sidecar = capture_oracle_sidecar(state)?;
+    let has_oracle_sidecar = oracle_sidecar.is_some();
+    let payload = bincode::serialize(&AudioSnapshotV7 {
+        modern: CompactModernAudioStateSnapshotV6::capture(state),
+        oracle_sidecar,
+        sample_bank_id: state.modern.renderer.sample_bank_id(),
+        sequencer_backend: state.sequencer_backend,
+    })
+    .map_err(|error| format!("audio snapshot v7 encode: {error}"))?;
+    Ok((payload, has_oracle_sidecar))
+}
+
+pub(super) fn decode_v7(payload: &[u8]) -> Result<(AudioState, bool), String> {
+    let snapshot: AudioSnapshotV7 = bincode::deserialize(payload)
+        .map_err(|error| format!("audio snapshot v7 decode: {error}"))?;
+    if !crate::modern_sample_bank::is_valid_bank(snapshot.sample_bank_id) {
+        return Err(format!(
+            "audio snapshot v7 has unknown sample bank {}",
+            snapshot.sample_bank_id
+        ));
+    }
+    #[cfg(not(feature = "audio-oracle"))]
+    if snapshot.sequencer_backend == AudioSequencerBackend::ExactSpcDriver {
+        return Err(
+            "audio snapshot requires the audio-oracle feature for its exact sequencer".to_string(),
+        );
+    }
+    let mut state = snapshot.modern.into_audio_state();
+    state.sequencer_backend = snapshot.sequencer_backend;
+    state
+        .modern
+        .renderer
+        .select_sample_bank(snapshot.sample_bank_id);
+    restore_oracle_sidecar(
+        state,
+        snapshot.oracle_sidecar,
+        OracleShadowRestore::FromSidecar,
+    )
+}
+
 pub(super) fn decode_v4(payload: &[u8]) -> Result<(AudioState, bool), String> {
     let snapshot: AudioSnapshotV4 = bincode::deserialize(payload)
         .map_err(|error| format!("audio snapshot v4 decode: {error}"))?;
@@ -394,10 +443,11 @@ pub(super) fn decode_v4(payload: &[u8]) -> Result<(AudioState, bool), String> {
 
 impl serde::Serialize for AudioState {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        AudioSnapshotV6 {
+        AudioSnapshotV7 {
             modern: CompactModernAudioStateSnapshotV6::capture(self),
             oracle_sidecar: capture_oracle_sidecar(self).map_err(serde::ser::Error::custom)?,
             sample_bank_id: self.modern.renderer.sample_bank_id(),
+            sequencer_backend: self.sequencer_backend,
         }
         .serialize(serializer)
     }
@@ -405,15 +455,17 @@ impl serde::Serialize for AudioState {
 
 impl<'de> serde::Deserialize<'de> for AudioState {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let snapshot = AudioSnapshotV6::deserialize(deserializer)?;
+        let snapshot = AudioSnapshotV7::deserialize(deserializer)?;
         let sample_bank_id = snapshot.sample_bank_id;
         if !crate::modern_sample_bank::is_valid_bank(sample_bank_id) {
             return Err(serde::de::Error::custom(format!(
                 "audio state has unknown sample bank {sample_bank_id}"
             )));
         }
+        let mut state = snapshot.modern.into_audio_state();
+        state.sequencer_backend = snapshot.sequencer_backend;
         restore_oracle_sidecar(
-            snapshot.modern.into_audio_state(),
+            state,
             snapshot.oracle_sidecar,
             OracleShadowRestore::FromSidecar,
         )

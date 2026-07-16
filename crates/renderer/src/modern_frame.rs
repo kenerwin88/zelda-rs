@@ -1,6 +1,16 @@
 pub const MODERN_FRAME_WIDTH: u16 = 256;
 pub const MODERN_FRAME_HEIGHT: u16 = 224;
 
+/// Apply the SNES INIDISP master-brightness DAC curve to one 5-bit channel.
+/// Brightness levels are 1/16 through 16/16; forced blank is the separate
+/// true-black state.
+#[inline]
+pub(crate) fn apply_master_brightness(c5: u8, brightness: u8) -> u8 {
+    let c5 = u32::from(c5.min(31));
+    let scaled = (c5 * (u32::from(brightness.min(15)) + 1)) >> 4;
+    ((scaled << 3) | (scaled >> 2)) as u8
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModernFrame {
     pub width: u16,

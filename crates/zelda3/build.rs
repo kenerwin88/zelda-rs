@@ -96,6 +96,10 @@ struct ExactDspStep {
     interrupt_scheduler_tick_index: u8,
     #[serde(default)]
     ownership_duration_samples: u32,
+    #[serde(default)]
+    ownership_release_overflows: u8,
+    #[serde(default)]
+    volume_via_parameters: bool,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -377,6 +381,46 @@ fn write_if_changed(path: &Path, bytes: &[u8]) {
     }
 }
 
+const MUSIC_FRAME_SAMPLES: u32 = 534;
+
+fn load_music_phase_alignment(path: &Path) -> BTreeMap<u8, u32> {
+    println!("cargo:rerun-if-changed={}", path.display());
+    fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .enumerate()
+        .filter_map(|(line_index, raw)| {
+            let line = raw.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            let fields: Vec<_> = line.split('\t').collect();
+            assert_eq!(
+                fields.len(),
+                2,
+                "{}:{}: expected 2 fields",
+                path.display(),
+                line_index + 1
+            );
+            Some((
+                u8::from_str_radix(fields[0], 16).unwrap(),
+                fields[1].parse().unwrap(),
+            ))
+        })
+        .collect()
+}
+
+fn shift_music_frame_sample(frame: u16, sample: u16, phase_samples: u32) -> (u16, u16) {
+    let absolute = u32::from(frame)
+        .saturating_mul(MUSIC_FRAME_SAMPLES)
+        .saturating_add(u32::from(sample))
+        .saturating_add(phase_samples);
+    (
+        (absolute / MUSIC_FRAME_SAMPLES).try_into().unwrap(),
+        (absolute % MUSIC_FRAME_SAMPLES).try_into().unwrap(),
+    )
+}
+
 fn main() {
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let source = manifest_dir.join("../../assets/audio/modern_music.tsv");
@@ -385,6 +429,41 @@ fn main() {
     compile_sfx_assets(&manifest_dir, &out_dir);
     compile_sample_bank(&manifest_dir, &out_dir);
     println!("cargo:rerun-if-changed={}", source.display());
+    let music_phase_alignment = load_music_phase_alignment(
+        &manifest_dir.join("../../assets/audio/modern_music_alignment.tsv"),
+    );
+    let music_loops_source = manifest_dir.join("../../assets/audio/modern_music_loops.tsv");
+    println!("cargo:rerun-if-changed={}", music_loops_source.display());
+    let mut music_loops = BTreeMap::<u8, (u32, u32)>::new();
+    for (line_index, raw) in fs::read_to_string(&music_loops_source)
+        .unwrap()
+        .lines()
+        .enumerate()
+    {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields = line.split('\t').collect::<Vec<_>>();
+        assert_eq!(
+            fields.len(),
+            5,
+            "{}:{}: expected 5 fields",
+            music_loops_source.display(),
+            line_index + 1
+        );
+        let track = u8::from_str_radix(fields[0], 16).unwrap();
+        let start_frame: u32 = fields[1].parse().unwrap();
+        let start_sample: u32 = fields[2].parse().unwrap();
+        let end_frame: u32 = fields[3].parse().unwrap();
+        let end_sample: u32 = fields[4].parse().unwrap();
+        assert!(start_sample < MUSIC_FRAME_SAMPLES);
+        assert!(end_sample < MUSIC_FRAME_SAMPLES);
+        let start = start_frame * MUSIC_FRAME_SAMPLES + start_sample;
+        let end = end_frame * MUSIC_FRAME_SAMPLES + end_sample;
+        assert!(end > start, "music loop must have positive duration");
+        assert!(music_loops.insert(track, (start, end)).is_none());
+    }
 
     let text = fs::read_to_string(&source).unwrap();
     let mut tracks: BTreeMap<u8, (u16, Vec<[u8; 21]>)> = BTreeMap::new();
@@ -402,23 +481,39 @@ fn main() {
             line_index + 1
         );
         let track = u8::from_str_radix(fields[0], 16).unwrap();
-        let lead: u16 = fields[1].parse().unwrap();
+        let mut lead: u16 = fields[1].parse().unwrap();
         let voice: u8 = fields[2].parse().unwrap();
         let pitch: u8 = fields[3].parse().unwrap();
         let instrument: u8 = fields[4].parse().unwrap();
         let volume: u8 = fields[5].parse().unwrap();
         let pan: i8 = fields[6].parse().unwrap();
-        let start: u16 = fields[7].parse().unwrap();
-        let duration: u16 = fields[8].parse().unwrap();
+        let mut start: u16 = fields[7].parse().unwrap();
+        let mut duration: u16 = fields[8].parse().unwrap();
         let dsp_pitch: u16 = fields[9].parse().unwrap();
-        let sample_offset: u16 = fields[10].parse().unwrap();
+        let mut sample_offset: u16 = fields[10].parse().unwrap();
         let volume_left: i8 = fields[11].parse().unwrap();
         let volume_right: i8 = fields[12].parse().unwrap();
         let adsr1: u8 = fields[13].parse().unwrap();
         let adsr2: u8 = fields[14].parse().unwrap();
         let gain: u8 = fields[15].parse().unwrap();
         let echo_send: u8 = fields[16].parse().unwrap();
-        let keyoff_sample_offset: u16 = fields[17].parse().unwrap();
+        let mut keyoff_sample_offset: u16 = fields[17].parse().unwrap();
+        if let Some(&phase_samples) = music_phase_alignment.get(&track) {
+            let whole_frames: u16 = (phase_samples / MUSIC_FRAME_SAMPLES).try_into().unwrap();
+            let subframe_samples = phase_samples % MUSIC_FRAME_SAMPLES;
+            lead = lead.saturating_add(whole_frames);
+            let (shifted_start, shifted_sample) =
+                shift_music_frame_sample(start, sample_offset, subframe_samples);
+            let (shifted_end, shifted_keyoff) = shift_music_frame_sample(
+                start.saturating_add(duration),
+                keyoff_sample_offset,
+                subframe_samples,
+            );
+            start = shifted_start;
+            duration = shifted_end.saturating_sub(shifted_start);
+            sample_offset = shifted_sample;
+            keyoff_sample_offset = shifted_keyoff;
+        }
         assert!(
             voice < 8,
             "{}:{}: invalid voice",
@@ -478,8 +573,10 @@ fn main() {
         let filename = format!("modern_music_{track:02x}.bin");
         let packed: Vec<u8> = notes.into_iter().flatten().collect();
         write_if_changed(&out_dir.join(&filename), &packed);
+        let (loop_start_sample, loop_end_sample) =
+            music_loops.get(&track).copied().unwrap_or_default();
         generated.push_str(&format!(
-            "    PackedModernMusicTrack {{ track: 0x{track:02x}, lead_in_frames: {lead}, notes: include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{filename}\")) }},\n"
+            "    PackedModernMusicTrack {{ track: 0x{track:02x}, lead_in_frames: {lead}, loop_start_sample: {loop_start_sample}, loop_end_sample: {loop_end_sample}, notes: include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{filename}\")) }},\n"
         ));
     }
     generated.push_str("];\n");
@@ -510,8 +607,12 @@ fn main() {
             line_index + 1
         );
         let track = u8::from_str_radix(fields[0], 16).unwrap();
-        let start_frame: u16 = fields[1].parse().unwrap();
-        let sample_offset: u16 = fields[2].parse().unwrap();
+        let mut start_frame: u16 = fields[1].parse().unwrap();
+        let mut sample_offset: u16 = fields[2].parse().unwrap();
+        if let Some(&phase_samples) = music_phase_alignment.get(&track) {
+            (start_frame, sample_offset) =
+                shift_music_frame_sample(start_frame, sample_offset, phase_samples);
+        }
         let register = u8::from_str_radix(fields[3], 16).unwrap();
         let value: u8 = fields[4].parse().unwrap();
         globals_generated.push_str(&format!(

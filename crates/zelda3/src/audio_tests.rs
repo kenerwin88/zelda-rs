@@ -370,6 +370,100 @@ fn default_audio_backend_is_modern() {
 }
 
 #[test]
+fn default_modern_sequencer_is_native() {
+    assert_eq!(
+        crate::game_output::AudioSequencerBackend::default(),
+        crate::game_output::AudioSequencerBackend::Native
+    );
+}
+
+#[test]
+#[cfg(not(feature = "audio-oracle"))]
+fn modern_only_build_rejects_exact_spc_driver_sequencer() {
+    let mut state = ZeldaState::new();
+    assert_eq!(
+        state.zelda_set_audio_sequencer_backend(
+            crate::game_output::AudioSequencerBackend::ExactSpcDriver
+        ),
+        Err("the exact SPC-driver sequencer requires the audio-oracle feature")
+    );
+}
+
+#[test]
+#[cfg(feature = "audio-oracle")]
+fn exact_spc_driver_sequencer_emits_the_oracle_timed_write_stream() {
+    use crate::game_output::{AudioPan, AudioSequencerBackend, AudioSfxBank, EngineAudioCommand};
+
+    let mut bridge = ZeldaState::new();
+    bridge
+        .zelda_set_audio_sequencer_backend(AudioSequencerBackend::ExactSpcDriver)
+        .unwrap();
+    bridge.zelda_emit_audio_command(EngineAudioCommand::PlaySfx {
+        bank: AudioSfxBank::Effect1,
+        effect: 0x2d,
+        pan: AudioPan::Center,
+    });
+    bridge.zelda_push_apu_state();
+    let mut oracle = bridge.clone();
+    oracle
+        .zelda_set_audio_sequencer_backend(AudioSequencerBackend::Native)
+        .unwrap();
+
+    let mut modern_samples = [0i16; 1068];
+    let bridge_frame = bridge.zelda_render_audio_with_backend(
+        crate::game_output::AudioBackendMode::Modern,
+        &mut modern_samples,
+        534,
+        2,
+    );
+    let mut oracle_samples = [0i16; 1068];
+    let oracle_writes = oracle.zelda_render_audio_trace_dsp_events(&mut oracle_samples, 534, 2);
+    let bridge_writes: Vec<_> = bridge_frame
+        .events
+        .iter()
+        .filter_map(|event| event.parity_dsp)
+        .collect();
+
+    assert!(bridge_frame.sequenced);
+    assert!(!bridge_writes.is_empty());
+    assert_eq!(bridge_writes, oracle_writes);
+}
+
+#[test]
+#[cfg(feature = "audio-oracle")]
+fn exact_spc_driver_snapshot_resumes_identically() {
+    use crate::game_output::{AudioPan, AudioSequencerBackend, AudioSfxBank, EngineAudioCommand};
+
+    let mut uninterrupted = ZeldaState::new();
+    uninterrupted
+        .zelda_set_audio_sequencer_backend(AudioSequencerBackend::ExactSpcDriver)
+        .unwrap();
+    uninterrupted.zelda_emit_audio_command(EngineAudioCommand::PlaySfx {
+        bank: AudioSfxBank::Effect1,
+        effect: 0x29,
+        pan: AudioPan::Left,
+    });
+    uninterrupted.zelda_push_apu_state();
+    let mut scratch = [0i16; 1068];
+    uninterrupted.zelda_render_audio(&mut scratch, 534, 2);
+    let snapshot = uninterrupted.zelda_audio_snapshot_bytes();
+    let mut resumed = ZeldaState::new();
+    resumed.zelda_audio_restore_from_bytes(&snapshot).unwrap();
+
+    let mut expected_audio = [0i16; 1068];
+    let mut actual_audio = [0i16; 1068];
+    let expected = uninterrupted.zelda_render_audio(&mut expected_audio, 534, 2);
+    let actual = resumed.zelda_render_audio(&mut actual_audio, 534, 2);
+
+    assert_eq!(
+        resumed.zelda_audio_sequencer_backend(),
+        AudioSequencerBackend::ExactSpcDriver
+    );
+    assert_eq!(actual, expected);
+    assert_eq!(actual_audio, expected_audio);
+}
+
+#[test]
 #[cfg(not(feature = "audio-oracle"))]
 fn modern_only_build_rejects_oracle_backends() {
     let mut state = ZeldaState::new();
@@ -467,6 +561,26 @@ fn gameplay_sound_latch_becomes_a_typed_nmi_command() {
             crate::game_output::AudioEventKind::PlaySfx { bank: 1, id: 0x4a }
         )
     }));
+}
+
+#[test]
+fn rom_startup_audio_stays_silent_until_the_boot_chime_keyon() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    let mut audio = vec![0i16; 534 * 2];
+    let mut first_nonzero = None;
+
+    for frame in 0..=90 {
+        state.zelda_run_frame(0);
+        state.zelda_render_audio(&mut audio, 534, 2);
+        if first_nonzero.is_none() {
+            first_nonzero = audio
+                .chunks_exact(2)
+                .position(|sample| sample != [0, 0])
+                .map(|offset| (frame, offset));
+        }
+    }
+    assert_eq!(first_nonzero, Some((84, 368)));
 }
 
 #[test]

@@ -3355,29 +3355,42 @@ impl ZeldaState {
             .wrapping_add(delta);
         self.set_spotlight_window_radius(next);
         if next == SPOTLIGHT_GOAL[idx] {
-            if self.game_state.display.spotlight_hdma.window_state() == 0 {
-                self.set_screen_brightness(0x80);
+            if self.rom_startup_timing()
+                && rom_dungeon_landing_wipe_is_active(
+                    self.game_state.frame.main_module,
+                    self.game_state.frame.submodule,
+                )
+            {
+                self.iris_spotlight_goal_transition_pending = true;
             } else {
-                self.iris_spotlight_reset_table();
+                self.complete_iris_spotlight_goal_transition();
             }
-            self.set_subsubmodule(0);
-            self.set_submodule(0);
-            let main_module = self.game_state.frame.main_module;
-            if main_module == 7 || main_module == 16 {
-                if self.game_state.world.location.is_outdoors() {
-                    let ambient = self.overworld_config_table().current_music() >> 4;
-                    self.set_ambient_sound_effect(ambient);
-                }
-                if self.game_state.system_signals.queued_music_control() != 0xff {
-                    let music = self.game_state.system_signals.queued_music_control();
-                    self.set_music_control(music);
-                }
+        }
+    }
+
+    pub(super) fn complete_iris_spotlight_goal_transition(&mut self) {
+        if self.game_state.display.spotlight_hdma.window_state() == 0 {
+            self.set_screen_brightness(0x80);
+        } else {
+            self.iris_spotlight_reset_table();
+        }
+        self.set_subsubmodule(0);
+        self.set_submodule(0);
+        let main_module = self.game_state.frame.main_module;
+        if main_module == 7 || main_module == 16 {
+            if self.game_state.world.location.is_outdoors() {
+                let ambient = self.overworld_config_table().current_music() >> 4;
+                self.set_ambient_sound_effect(ambient);
             }
-            let saved_module = self.game_state.frame.saved_module_for_menu;
-            self.set_main_module(saved_module);
-            if self.game_state.frame.main_module == 6 {
-                self.sprite_reset_all();
+            if self.game_state.system_signals.queued_music_control() != 0xff {
+                let music = self.game_state.system_signals.queued_music_control();
+                self.set_music_control(music);
             }
+        }
+        let saved_module = self.game_state.frame.saved_module_for_menu;
+        self.set_main_module(saved_module);
+        if self.game_state.frame.main_module == 6 {
+            self.sprite_reset_all();
         }
     }
 

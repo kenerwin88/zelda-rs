@@ -2,8 +2,9 @@ use std::env;
 
 use zelda3::{
     game_output::{
-        checksum_dsp_write_values, checksum_dsp_writes, checksum_samples, AudioSampleStats,
-        AudioTraceFrameSummary, DspWriteEvent,
+        checksum_dsp_write_values, checksum_dsp_writes, checksum_samples, AudioEvent,
+        AudioEventFrame, AudioEventKind, AudioSampleStats, AudioSequencerBackend,
+        AudioTraceFrameSummary, DspWriteEvent, SpcSequencerState,
     },
     modern_audio::ModernAudioEngine,
     modern_audio_sequence::ModernAudioSequencer,
@@ -85,6 +86,7 @@ pub(crate) fn print_replay_audio_trace(
     frame: u32,
     game: &ZeldaState,
     audio: &[i16],
+    dsp_only_audio: &[i16],
     samples: usize,
     channels: usize,
     dsp_pre_hash: u32,
@@ -139,15 +141,39 @@ pub(crate) fn print_replay_audio_trace(
     // candidate sequencer would replace modern scheduling decisions with
     // oracle KON/KOF timing and make lifecycle regressions invisible.
     modern_route.spc = None;
+    let (clock_epoch, timer_cycles, sfx_timer_accum) =
+        game.zelda_modern_audio_sfx_clock_checkpoint();
+    modern_sequence.synchronize_sfx_clock_checkpoint(clock_epoch, timer_cycles, sfx_timer_accum);
     let modern_event_frame =
         modern_sequence.sequence_engine_commands(modern_route, game.zelda_engine_audio_commands());
+    let mut exact_event_frame = event_frame.clone();
+    if let Some(spc) = game.zelda_audio_route_state().spc {
+        replace_kon_with_checkpoint_receipts(&mut exact_event_frame, spc);
+    }
+    exact_event_frame.sequenced = true;
+    let render_event_frame = match env::var("ZELDA3_AUDIO_SEQUENCER") {
+        Ok(value) => match AudioSequencerBackend::parse(&value) {
+            Some(AudioSequencerBackend::Native) => &modern_event_frame,
+            Some(AudioSequencerBackend::ExactSpcDriver) => &exact_event_frame,
+            None => panic!(
+                "invalid ZELDA3_AUDIO_SEQUENCER={value:?}; expected native or exact-spc-driver"
+            ),
+        },
+        Err(env::VarError::NotPresent) => &modern_event_frame,
+        Err(env::VarError::NotUnicode(_)) => {
+            panic!("ZELDA3_AUDIO_SEQUENCER must be valid UTF-8")
+        }
+    };
     let modern_sequence_stats = modern_sequence.last_stats();
     let classic_spc = game.zelda_audio_route_state().spc;
     let (classic_sfx_events_json, classic_sfx_voice_mask) = classic_sfx_events_json(classic_spc);
     let modern_sfx_events_json = modern_sfx_events_json(&modern_event_frame, modern_sequence_stats);
+    let modern_sfx_clock = modern_sequence.sfx_clock_phase();
     let sfx_lockstep_json = format!(
-        ",\"classic_sfx_events\":{classic_sfx_events_json},\"modern_sfx_events\":{modern_sfx_events_json},\"classic_sfx_voice_mask\":{classic_sfx_voice_mask},\"modern_sfx_voice_mask\":{}",
+        ",\"classic_sfx_events\":{classic_sfx_events_json},\"modern_sfx_events\":{modern_sfx_events_json},\"classic_sfx_voice_mask\":{classic_sfx_voice_mask},\"modern_sfx_voice_mask\":{},\"modern_sfx_clock\":[{},{}]",
         modern_sequence_stats.sfx_voice_mask,
+        modern_sfx_clock.0,
+        modern_sfx_clock.1,
     );
     let mut modern_audio = vec![0i16; samples.saturating_mul(channels)];
     let static_compat_ram = std::env::var_os("ZELDA3_MODERN_AUDIO_STATIC_SAMPLE_RAM")
@@ -163,13 +189,16 @@ pub(crate) fn print_replay_audio_trace(
             modern_engine.global_debug_state()
         );
     }
-    let modern_audio_stats = modern_engine.render_frame_with_sample_ram(
-        &modern_event_frame,
+    let mut modern_audio_stats = modern_engine.render_frame_with_sample_ram(
+        render_event_frame,
         &mut modern_audio,
         samples as i32,
         channels as i32,
         Some(modern_sample_ram),
     );
+    apply_shared_audio_postmix(&mut modern_audio, audio, dsp_only_audio);
+    modern_audio_stats.peak = AudioSampleStats::from_interleaved(&modern_audio, channels).peak;
+    modern_audio_stats.checksum = checksum_samples(&modern_audio);
     let modern_pitch_events_json = format!(
         "[{}]",
         modern_event_frame
@@ -285,6 +314,11 @@ pub(crate) fn print_replay_audio_trace(
     {
         let classic_voices = game.zelda_audio_dsp_debug_voice_samples();
         eprintln!(
+            "audio native voice lengths classic={:?} modern={:?}",
+            classic_voices.each_ref().map(Vec::len),
+            modern_engine.debug_voice_samples().each_ref().map(Vec::len),
+        );
+        eprintln!(
             "audio voice 2 prefix classic={:?} modern={:?}",
             &classic_voices[2][..classic_voices[2].len().min(16)],
             &modern_engine.debug_voice_samples()[2]
@@ -376,7 +410,7 @@ pub(crate) fn print_replay_audio_trace(
         print!("null");
     }
     println!(
-        ",\"mean_abs\":{mean_abs:.6},\"hash\":\"0x{:08x}\",\"apui\":[{},{},{},{}],\"music\":[{},{},{}],\"main\":{},\"sub\":{},\"subsub\":{},\"inidisp\":{},\"dsp_pre\":\"0x{:08x}\",\"dsp_post\":\"0x{:08x}\",\"dsp_globals\":{},\"dsp_voices\":{},\"dsp_writes\":{},\"dsp_write_hash\":\"0x{:08x}\",\"dsp_write_values_hash\":\"0x{:08x}\",\"command_events\":{},\"command_hash\":\"0x{:08x}\",\"unresolved_dsp_writes\":{},\"modern_sfx_known\":{},\"modern_sfx_unknown\":{},\"modern_sfx_exact_steps\":{},\"modern_sfx_known_programs\":{},\"modern_sfx_unknown_programs\":{},\"modern_voice_mask\":{},\"modern_program_hash\":\"0x{:08x}\",\"modern_command_events\":{},\"modern_command_hash\":\"0x{:08x}\",\"modern_note_events\":{},\"modern_pitch_events\":{},\"modern_voices\":{},\"modern_echo_index\":{},\"modern_fir_index\":{},\"modern_echo_remaining\":{},\"classic_echo_value\":[{},{}],\"modern_echo_value\":[{},{}],\"modern_audio\":{{\"peak\":{},\"hash\":\"0x{:08x}\",\"active_voices\":{},\"understood_events\":{},\"ignored_events\":{},\"left_abs\":{},\"right_abs\":{},\"oracle_mean_abs_diff\":{:.6},\"oracle_max_abs_diff\":{},\"oracle_exact_samples\":{}}}{} {},{}{}",
+        ",\"mean_abs\":{mean_abs:.6},\"hash\":\"0x{:08x}\",\"apui\":[{},{},{},{}],\"music\":[{},{},{}],\"main\":{},\"sub\":{},\"subsub\":{},\"inidisp\":{},\"dsp_pre\":\"0x{:08x}\",\"dsp_post\":\"0x{:08x}\",\"dsp_globals\":{},\"dsp_voices\":{},\"dsp_writes\":{},\"dsp_write_hash\":\"0x{:08x}\",\"dsp_write_values_hash\":\"0x{:08x}\",\"command_events\":{},\"command_hash\":\"0x{:08x}\",\"unresolved_dsp_writes\":{},\"modern_sfx_known\":{},\"modern_sfx_unknown\":{},\"modern_sfx_exact_steps\":{},\"modern_sfx_known_programs\":{},\"modern_sfx_unknown_programs\":{},\"modern_voice_mask\":{},\"modern_program_hash\":\"0x{:08x}\",\"modern_command_events\":{},\"modern_command_hash\":\"0x{:08x}\",\"modern_note_events\":{},\"modern_pitch_events\":{},\"modern_voices\":{},\"modern_echo_index\":{},\"modern_fir_index\":{},\"modern_echo_remaining\":{},\"classic_echo_value\":[{},{}],\"modern_echo_value\":[{},{}],\"modern_audio\":{{\"peak\":{},\"hash\":\"0x{:08x}\",\"active_voices\":{},\"understood_events\":{},\"ignored_events\":{},\"left_abs\":{},\"right_abs\":{},\"oracle_mean_abs_diff\":{:.6},\"oracle_max_abs_diff\":{},\"oracle_exact_samples\":{},\"oracle_first_mismatch_sample\":{}}}{} {},{}{}",
         summary.sample_stats.checksum,
         event_frame.music.apui00,
         event_frame.music.music_control,
@@ -434,11 +468,64 @@ pub(crate) fn print_replay_audio_trace(
         modern_oracle_diff.mean_abs,
         modern_oracle_diff.max_abs,
         modern_oracle_diff.exact_samples,
+        modern_oracle_diff
+            .first_mismatch_sample
+            .map_or_else(|| "null".to_string(), |sample| sample.to_string()),
         sfx_lockstep_json,
         replay_dsp_write_events_json(frame, dsp_writes),
         game.zelda_audio_route_debug_json(),
         "}",
     );
+}
+
+fn replace_kon_with_checkpoint_receipts(frame: &mut AudioEventFrame, spc: SpcSequencerState) {
+    for receipt in 0..usize::from(spc.sfx_kon_count.min(8)) {
+        let mask = spc.sfx_kon_masks[receipt];
+        let sample_offset = i32::from(spc.sfx_kon_offsets[receipt]);
+        let insert_at = frame
+            .events
+            .iter()
+            .position(|event| {
+                event.sample_offset == sample_offset
+                    && matches!(event.kind, AudioEventKind::VoiceKeyOn { mask: event_mask } if event_mask == mask)
+            })
+            .unwrap_or(frame.events.len());
+        if insert_at < frame.events.len() {
+            frame.events.remove(insert_at);
+        }
+        let mut checkpoint_events = Vec::new();
+        for voice in 0..8usize {
+            if mask & (1 << voice) == 0 {
+                continue;
+            }
+            checkpoint_events.push(AudioEvent {
+                sample_offset,
+                timer_cycles: spc.timer_cycles,
+                kind: AudioEventKind::KeyOnVoice {
+                    voice: voice as u8,
+                    source: spc.sfx_kon_sources[receipt][voice],
+                    adsr1: spc.sfx_kon_adsr1[receipt][voice],
+                    adsr2: spc.sfx_kon_adsr2[receipt][voice],
+                    gain: spc.sfx_kon_gain[receipt][voice],
+                    volume_left: spc.sfx_kon_volume_left[receipt][voice],
+                    volume_right: spc.sfx_kon_volume_right[receipt][voice],
+                    rate_counter: spc.sfx_kon_rate_counters[receipt][voice],
+                },
+                parity_dsp: None,
+            });
+        }
+        frame.events.splice(insert_at..insert_at, checkpoint_events);
+    }
+}
+
+fn apply_shared_audio_postmix(modern: &mut [i16], final_classic: &[i16], dsp_classic: &[i16]) {
+    for ((modern_sample, &final_sample), &dsp_sample) in
+        modern.iter_mut().zip(final_classic).zip(dsp_classic)
+    {
+        let shared_delta = i32::from(final_sample) - i32::from(dsp_sample);
+        *modern_sample = (i32::from(*modern_sample) + shared_delta)
+            .clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+    }
 }
 
 #[derive(Debug)]
@@ -451,6 +538,12 @@ struct NormalizedSfxEvent {
 
 fn normalized_sfx_events_json(mut events: Vec<NormalizedSfxEvent>) -> String {
     events.sort_by_key(|event| (event.offset, event.order, event.voice));
+    events.dedup_by(|left, right| {
+        left.offset == right.offset
+            && left.order == right.order
+            && left.voice == right.voice
+            && left.json == right.json
+    });
     format!(
         "[{}]",
         events
@@ -541,7 +634,7 @@ fn modern_sfx_events_json(
     frame: &zelda3::game_output::AudioEventFrame,
     stats: zelda3::modern_audio_sequence::ModernAudioSequenceStats,
 ) -> String {
-    use zelda3::game_output::{AudioEventKind, AudioNoteOrigin};
+    use zelda3::game_output::{AudioEventKind, AudioNoteOrigin, VoiceParameterKind};
 
     let mut relevant_mask = stats.sfx_voice_mask_start | stats.sfx_voice_mask;
     for event in &frame.events {
@@ -555,19 +648,27 @@ fn modern_sfx_events_json(
     }
     let mut envelope = [[0u8; 3]; 8];
     let mut volume = [[0i8; 2]; 8];
+    let mut origin = [None; 8];
     let mut events = Vec::new();
     for event in &frame.events {
         match event.kind {
+            AudioEventKind::SetNoteOrigin {
+                voice,
+                origin: note_origin,
+            } => origin[usize::from(voice)] = Some(note_origin),
             AudioEventKind::SetDspEnvelope {
                 voice,
                 adsr1,
                 adsr2,
                 gain,
-            } if relevant_mask & (1 << voice) != 0 => {
+            } if relevant_mask & (1 << voice) != 0
+                && origin[usize::from(voice)] != Some(AudioNoteOrigin::Music) =>
+            {
                 envelope[usize::from(voice)] = [adsr1, adsr2, gain];
             }
             AudioEventKind::SetStereoVolume { voice, left, right }
-                if relevant_mask & (1 << voice) != 0 =>
+                if relevant_mask & (1 << voice) != 0
+                    && origin[usize::from(voice)] != Some(AudioNoteOrigin::Music) =>
             {
                 volume[usize::from(voice)] = [left, right];
                 let offset = event.sample_offset;
@@ -578,9 +679,28 @@ fn modern_sfx_events_json(
                     json: format!("[\"volume\",{offset},{voice},{left},{right}]"),
                 });
             }
+            AudioEventKind::VoiceParameter {
+                voice,
+                parameter: VoiceParameterKind::VolumeLeft,
+                value,
+            } if relevant_mask & (1 << voice) != 0
+                && origin[usize::from(voice)] != Some(AudioNoteOrigin::Music) =>
+            {
+                volume[usize::from(voice)][0] = value as i8;
+            }
+            AudioEventKind::VoiceParameter {
+                voice,
+                parameter: VoiceParameterKind::VolumeRight,
+                value,
+            } if relevant_mask & (1 << voice) != 0
+                && origin[usize::from(voice)] != Some(AudioNoteOrigin::Music) =>
+            {
+                volume[usize::from(voice)][1] = value as i8;
+            }
             AudioEventKind::SetPitchWord { voice, pitch_word }
             | AudioEventKind::SetPitchRegisterWord { voice, pitch_word }
-                if relevant_mask & (1 << voice) != 0 =>
+                if relevant_mask & (1 << voice) != 0
+                    && origin[usize::from(voice)] != Some(AudioNoteOrigin::Music) =>
             {
                 let offset = event.sample_offset;
                 events.push(NormalizedSfxEvent {
@@ -592,7 +712,9 @@ fn modern_sfx_events_json(
             }
             AudioEventKind::NoteOn {
                 voice, instrument, ..
-            } if relevant_mask & (1 << voice) != 0 => {
+            } if relevant_mask & (1 << voice) != 0
+                && origin[usize::from(voice)] != Some(AudioNoteOrigin::Music) =>
+            {
                 let offset = event.sample_offset;
                 let [adsr1, adsr2, gain] = envelope[usize::from(voice)];
                 let [left, right] = volume[usize::from(voice)];
@@ -614,7 +736,9 @@ fn modern_sfx_events_json(
                 volume_left,
                 volume_right,
                 ..
-            } if relevant_mask & (1 << voice) != 0 => {
+            } if relevant_mask & (1 << voice) != 0
+                && origin[usize::from(voice)] != Some(AudioNoteOrigin::Music) =>
+            {
                 let offset = event.sample_offset;
                 events.push(NormalizedSfxEvent {
                     offset,
@@ -625,7 +749,10 @@ fn modern_sfx_events_json(
                     ),
                 });
             }
-            AudioEventKind::NoteOff { voice } if relevant_mask & (1 << voice) != 0 => {
+            AudioEventKind::NoteOff { voice }
+                if relevant_mask & (1 << voice) != 0
+                    && origin[usize::from(voice)] != Some(AudioNoteOrigin::Music) =>
+            {
                 let offset = event.sample_offset;
                 events.push(NormalizedSfxEvent {
                     offset,
@@ -671,6 +798,7 @@ struct SampleDiff {
     mean_abs: f64,
     max_abs: u16,
     exact_samples: usize,
+    first_mismatch_sample: Option<usize>,
 }
 
 fn sample_diff(reference: &[i16], candidate: &[i16]) -> SampleDiff {
@@ -681,16 +809,23 @@ fn sample_diff(reference: &[i16], candidate: &[i16]) -> SampleDiff {
     let mut total = 0u64;
     let mut max_abs = 0u16;
     let mut exact_samples = 0usize;
-    for (&reference, &candidate) in reference.iter().zip(candidate).take(count) {
+    let mut first_mismatch_sample = None;
+    for (sample_index, (&reference, &candidate)) in
+        reference.iter().zip(candidate).take(count).enumerate()
+    {
         let difference = (i32::from(reference) - i32::from(candidate)).unsigned_abs();
         total += u64::from(difference);
         max_abs = max_abs.max(difference.min(u32::from(u16::MAX)) as u16);
         exact_samples += usize::from(difference == 0);
+        if difference != 0 && first_mismatch_sample.is_none() {
+            first_mismatch_sample = Some(sample_index);
+        }
     }
     SampleDiff {
         mean_abs: total as f64 / count as f64,
         max_abs,
         exact_samples,
+        first_mismatch_sample,
     }
 }
 
@@ -888,6 +1023,60 @@ mod tests {
 
         assert_eq!(diff.max_abs, u16::MAX);
         assert_eq!(diff.exact_samples, 1);
+        assert_eq!(diff.first_mismatch_sample, Some(1));
         assert!((diff.mean_abs - 21848.333333).abs() < 0.000001);
+    }
+
+    #[test]
+    fn shared_postmix_is_applied_without_hiding_dsp_differences() {
+        let mut modern = [100, -100, i16::MAX];
+        let classic_dsp = [90, -90, 10];
+        let final_classic = [110, -120, i16::MAX];
+
+        apply_shared_audio_postmix(&mut modern, &final_classic, &classic_dsp);
+
+        assert_eq!(modern, [120, -130, i16::MAX]);
+        assert_ne!(modern[0], final_classic[0]);
+    }
+
+    #[test]
+    fn exact_kon_receipt_replaces_raw_key_on_with_complete_voice_state() {
+        let mut frame = AudioEventFrame::from_route_and_dsp_writes(
+            Default::default(),
+            &[DspWriteEvent::new(0x4c, 1 << 6, 356, 64)],
+        );
+        let mut spc = SpcSequencerState::default();
+        spc.sfx_kon_count = 1;
+        spc.sfx_kon_masks[0] = 1 << 6;
+        spc.sfx_kon_offsets[0] = 356;
+        spc.sfx_kon_sources[0][6] = 7;
+        spc.sfx_kon_adsr1[0][6] = 0xfe;
+        spc.sfx_kon_adsr2[0][6] = 0x6a;
+        spc.sfx_kon_gain[0][6] = 0x70;
+        spc.sfx_kon_volume_left[0][6] = 79;
+        spc.sfx_kon_volume_right[0][6] = 79;
+        spc.sfx_kon_rate_counters[0][6] = 17;
+
+        replace_kon_with_checkpoint_receipts(&mut frame, spc);
+
+        assert!(!frame.events.iter().any(
+            |event| matches!(event.kind, AudioEventKind::VoiceKeyOn { mask } if mask == 1 << 6)
+        ));
+        assert!(frame.events.iter().any(|event| {
+            event.sample_offset == 356
+                && matches!(
+                    event.kind,
+                    AudioEventKind::KeyOnVoice {
+                        voice: 6,
+                        source: 7,
+                        adsr1: 0xfe,
+                        adsr2: 0x6a,
+                        gain: 0x70,
+                        volume_left: 79,
+                        volume_right: 79,
+                        rate_counter: 17
+                    }
+                )
+        }));
     }
 }

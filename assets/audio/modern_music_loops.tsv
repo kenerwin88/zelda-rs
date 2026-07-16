@@ -1,0 +1,5 @@
+# track	loop_start_frame	loop_start_sample	loop_end_frame	loop_end_sample
+# Track 03's top-level SPC sequence has a one-phrase introduction followed by
+# an infinite three-phrase loop. These are mature, consecutive loop boundaries
+# observed in the native DSP event timeline; frames include the track lead-in.
+03	2849	132	4068	2

@@ -115,6 +115,7 @@ const POLY_RIGHT_EDGE_MASKS: [u16; 8] = [
 
 impl ZeldaState {
     pub(super) fn poly_run_frame(&mut self) {
+        self.last_poly_work = PolyWorkMetrics::default();
         self.polyhedral_empty_bit_map_buffer();
         self.polyhedral_set_shape_pointer();
         self.polyhedral_set_rotation_matrix();
@@ -221,11 +222,13 @@ impl ZeldaState {
     }
 
     pub(super) fn poly_divide(&mut self, a: u16, b: u16) -> u16 {
+        self.last_poly_work.divide_calls += 1;
         let mut tmp1 = if (a as i16) < 0 { a.wrapping_neg() } else { a };
         let mut tmp0 = b;
         self.poly_runtime_mut().set_tmp1_word(tmp1);
         self.poly_runtime_mut().set_tmp0_word(tmp0);
         while tmp0 >= 256 {
+            self.last_poly_work.divide_shifts += 1;
             tmp0 >>= 1;
             tmp1 >>= 1;
         }
@@ -243,6 +246,7 @@ impl ZeldaState {
         let poly = self.poly_config().poly;
         let mut src = 0usize;
         loop {
+            self.last_poly_work.faces += 1;
             let n = poly[src];
             src += 1;
             self.poly_runtime_mut().set_num_vertex_in_poly(n);
@@ -268,6 +272,7 @@ impl ZeldaState {
             self.poly_runtime_mut().set_raster_color_config(poly[src]);
             src += 1;
             if self.polyhedral_calculate_cross_product() > 0 {
+                self.last_poly_work.visible_faces += 1;
                 self.polyhedral_set_foreground_color();
                 self.polyhedral_draw_face();
             }
@@ -383,6 +388,7 @@ impl ZeldaState {
     }
 
     pub(super) fn polyhedral_fill_line(&mut self) {
+        self.last_poly_work.scanlines += 1;
         let left =
             POLY_LEFT_EDGE_MASKS[((self.game_state.poly.runtime.x0_fraction() >> 8) & 7) as usize];
         let right =
@@ -393,6 +399,7 @@ impl ZeldaState {
         let mut ptr = self.game_state.poly.runtime.raster_dst_ptr() as usize + d0 as usize * 4;
         d0 -= self.game_state.poly.runtime.tmp2() as i32;
         if d0 == 0 {
+            self.last_poly_work.span_words += 2;
             let mask = left & right;
             self.poly_runtime_mut().set_tmp1_word(mask);
             self.blend_poly_word(ptr, self.game_state.poly.runtime.raster_color0(), mask);
@@ -404,6 +411,7 @@ impl ZeldaState {
         }
 
         let mut n = d0 >> 3;
+        self.last_poly_work.span_words += 2;
         self.blend_poly_word(ptr, self.game_state.poly.runtime.raster_color0(), right);
         self.blend_poly_word(
             ptr + 16,
@@ -416,6 +424,7 @@ impl ZeldaState {
             if n == 0 {
                 break;
             }
+            self.last_poly_work.span_words += 2;
             let color0 = self.game_state.poly.runtime.raster_color0();
             let color1 = self.game_state.poly.runtime.raster_color1();
             self.poly_runtime_mut().set_bitmap_word(ptr, color0);
@@ -424,6 +433,7 @@ impl ZeldaState {
         }
         self.blend_poly_word(ptr, self.game_state.poly.runtime.raster_color0(), left);
         self.blend_poly_word(ptr + 16, self.game_state.poly.runtime.raster_color1(), left);
+        self.last_poly_work.span_words += 2;
         self.poly_runtime_mut().set_tmp1_word(left);
         self.poly_runtime_mut().clear_raster_full_word_count();
     }
@@ -445,6 +455,7 @@ impl ZeldaState {
                 return true;
             }
             if y != y0_cur {
+                self.last_poly_work.edge_segments += 1;
                 self.poly_raster_edge_mut().set_left_target(x, y);
                 self.poly_raster_edge_mut().set_cur_vertex_idx0(i as u8);
                 let edge = &self.game_state.poly.raster_edge;
@@ -481,6 +492,7 @@ impl ZeldaState {
                 return true;
             }
             if y != y1_cur {
+                self.last_poly_work.edge_segments += 1;
                 self.poly_raster_edge_mut().set_right_target(x, y);
                 self.poly_raster_edge_mut().set_cur_vertex_idx1(i as u8);
                 let edge = &self.game_state.poly.raster_edge;

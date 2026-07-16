@@ -30,6 +30,10 @@ pub struct ExactSfxDspStep {
     pub interrupt_scheduler_tick_index: u8,
     #[serde(default)]
     pub ownership_duration_samples: u32,
+    #[serde(default)]
+    pub ownership_release_overflows: u8,
+    #[serde(default)]
+    pub volume_via_parameters: bool,
 }
 
 pub fn exact_sfx_dsp_step(
@@ -84,5 +88,7 @@ impl ExactSfxDspStep {
             && self.interrupt_delay_frames == other.interrupt_delay_frames
             && self.interrupt_scheduler_tick_index == other.interrupt_scheduler_tick_index
             && self.ownership_duration_samples == other.ownership_duration_samples
+            && self.ownership_release_overflows == other.ownership_release_overflows
+            && self.volume_via_parameters == other.volume_via_parameters
     }
 }

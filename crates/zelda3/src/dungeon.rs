@@ -11328,6 +11328,10 @@ impl ZeldaState {
     pub(super) fn Module07_0F_01_OperateSpotlight(&mut self) {
         self.sprite_main();
         self.IrisSpotlight_ConfigureTable();
+        self.complete_module07_0f_operate_spotlight_suffix();
+    }
+
+    pub(super) fn complete_module07_0f_operate_spotlight_suffix(&mut self) {
         if self.game_state.frame.submodule == 0 {
             self.clear_window_layer_masks();
             self.clear_window_main_sub_masks();
@@ -11347,6 +11351,14 @@ impl ZeldaState {
         }
         self.link_handle_moving_animation_full_long_entry();
         self.link_oam_main();
+        if self.rom_startup_timing()
+            && rom_dungeon_landing_wipe_is_active(
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+            )
+        {
+            self.dungeon_landing_wipe_carry_pending = true;
+        }
     }
 
     pub(super) fn Module07_10_SouthIntraRoomStairs(&mut self) {
@@ -12221,7 +12233,13 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module07-after-layer-effect");
         self.run_dungeon_submodule();
         self.replay_trace_ram_watch("module07-after-submodule");
+        if self.rom_startup_timing() && self.dungeon_landing_wipe_carry_pending {
+            return;
+        }
+        self.complete_module07_dungeon_after_submodule();
+    }
 
+    pub(super) fn complete_module07_dungeon_after_submodule(&mut self) {
         let shared_message_timer = self.game_state.messaging.shared_message_timer.value();
         if self.state_recorder.replay_mode
             && std::env::var_os("ZELDA3_SMV_DUNGEON_TIMING_HACKS").is_some()

@@ -51,12 +51,12 @@ fn cw_bit(in_window: bool, mode: u32) -> bool {
     return ((w & masks[mode]) ^ masks[mode + 4u]) != 0u;
 }
 
-// Expand a 5-bit component and scale by brightness/15.
+// Expand a 5-bit component and apply the SNES INIDISP DAC curve. Brightness
+// levels are 1/16 through 16/16; forced blank is handled separately.
 fn apply_brightness(v5: u32, brightness: u32) -> f32 {
-    // Same expansion as the CPU: (v5 << 3) | (v5 >> 2)
-    let v8 = (v5 << 3u) | (v5 >> 2u);
-    let scaled = (v8 * brightness) / 15u;
-    return f32(scaled) / 255.0;
+    let scaled5 = (v5 * (min(brightness, 15u) + 1u)) >> 4u;
+    let expanded = (scaled5 << 3u) | (scaled5 >> 2u);
+    return f32(expanded) / 255.0;
 }
 
 struct VertOut {

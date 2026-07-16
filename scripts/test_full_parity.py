@@ -1,0 +1,116 @@
+import argparse
+import importlib.util
+import os
+import pathlib
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "full_parity.py"
+
+
+def load_module():
+    spec = importlib.util.spec_from_file_location("full_parity", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class Snes9xParityGateTests(unittest.TestCase):
+    def test_finds_explicit_and_environment_snes9x_core(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as temp:
+            core = pathlib.Path(temp) / "snes9x_libretro.dylib"
+            core.write_bytes(b"core")
+            self.assertEqual(module.find_snes9x_core(str(core)), core)
+            with mock.patch.dict(os.environ, {"SNES9X_LIBRETRO_CORE": str(core)}):
+                self.assertEqual(module.find_snes9x_core(None), core)
+
+    def test_snes9x_gate_uses_fixed_alignment_and_writes_a_session(self):
+        module = load_module()
+        args = argparse.Namespace(
+            rom=pathlib.Path("/tmp/zelda3.sfc"),
+            frames=321,
+            release=False,
+            input_script="route.txt",
+            load_sram="save.srm",
+            snes9x_skip=0,
+            snes9x_core="/tmp/snes9x_libretro.dylib",
+            no_install_snes9x=True,
+            snes9x_url="unused",
+            work_dir=pathlib.Path("/tmp/parity"),
+            snes9x_audio_comparison="timing",
+            audio_timing_tolerance_ms=2.0,
+        )
+        result = module.CommandResult([], 0, "passed", "")
+        with (
+            mock.patch.object(
+                module,
+                "resolve_snes9x_core",
+                return_value=pathlib.Path(args.snes9x_core),
+            ),
+            mock.patch.object(module, "run_command", return_value=result) as run,
+        ):
+            module.run_snes9x_gate(args)
+
+        command = run.call_args.args[0]
+        self.assertIn("--compare-snes9x-oracle", command)
+        self.assertIn("--session-dir", command)
+        self.assertIn("--audio-comparison", command)
+        self.assertNotIn("--auto-align-video", command)
+        self.assertNotIn("bsnes", " ".join(command).lower())
+
+    def test_exact_apu_gate_builds_oracle_feature_and_ignores_video(self):
+        module = load_module()
+        args = argparse.Namespace(
+            rom=pathlib.Path("/tmp/zelda3.sfc"),
+            frames=100,
+            release=False,
+            input_script=None,
+            load_sram=None,
+            snes9x_skip=0,
+            snes9x_core="/tmp/snes9x_libretro.dylib",
+            no_install_snes9x=True,
+            snes9x_url="unused",
+            work_dir=pathlib.Path("/tmp/parity"),
+        )
+        result = module.CommandResult([], 0, "passed", "")
+        with (
+            mock.patch.object(
+                module,
+                "resolve_snes9x_core",
+                return_value=pathlib.Path(args.snes9x_core),
+            ),
+            mock.patch.object(module, "run_command", return_value=result) as run,
+        ):
+            module.run_snes9x_exact_apu_gate(args)
+
+        command = run.call_args.args[0]
+        self.assertIn("audio-oracle", command)
+        self.assertIn("--ignore-video", command)
+        self.assertIn("dsp-parity", command)
+        self.assertIn("exact-spc-driver", command)
+        self.assertIn("exact", command)
+
+    def test_main_rejects_an_empty_gate_set(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as temp:
+            rom = pathlib.Path(temp) / "zelda3.sfc"
+            rom.write_bytes(b"rom")
+            argv = [
+                str(SCRIPT),
+                "--rom",
+                str(rom),
+                "--no-lockstep",
+                "--no-c-audio",
+            ]
+            with mock.patch.object(sys, "argv", argv):
+                self.assertEqual(module.main(), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

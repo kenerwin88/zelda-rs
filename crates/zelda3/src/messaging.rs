@@ -39,6 +39,13 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module0e-before-run-interface");
         self.RunInterface();
         self.replay_trace_ram_watch("module0e-after-run-interface");
+        if self.rom_startup_timing() && self.normal_dialogue_initialization_phase != 0 {
+            return;
+        }
+        self.complete_module0e_interface_after_run();
+    }
+
+    pub(super) fn complete_module0e_interface_after_run(&mut self) {
         let bg1_x_offset = self.game_state.world.scroll.bg1_x_offset();
         let bg1_y_offset = self.game_state.world.scroll.bg1_y_offset();
         let bg2x = self
@@ -2840,14 +2847,34 @@ impl ZeldaState {
     }
 
     pub(super) fn Text_Initialize(&mut self) {
+        if self.rom_startup_timing()
+            && rom_normal_dialogue_initialization_is_active(
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+                self.game_state.messaging.runtime.module(),
+            )
+        {
+            self.normal_dialogue_initialization_phase = 5;
+            return;
+        }
+        self.complete_text_initialization_prefix();
+        self.complete_text_initialization_suffix();
+    }
+
+    pub(super) fn complete_text_initialization_prefix(&mut self) {
         if self.game_state.frame.main_module == 20 {
             self.ResetHUDPalettes4and5();
         }
         self.Attract_DecompressStoryGFX();
-        self.Text_Initialize_initModuleStateLoop();
+        self.text_initialize_module_state_prefix();
     }
 
     pub(super) fn Text_Initialize_initModuleStateLoop(&mut self) {
+        self.text_initialize_module_state_prefix();
+        self.complete_text_initialization_suffix();
+    }
+
+    fn text_initialize_module_state_prefix(&mut self) {
         // C copies all 32 bytes of TEXT_INITIALIZATION_DATA into the message-state struct at
         // TEXT_MSGBOX_TOPLEFT_COPY (0x1cd0..0x1cf0). init_msgbox_state_from only models a
         // subset, leaving unmodeled bytes (notably DIALOGUE_MSG_SRC_OFFS 0x1cdd-0x1cde, a dead
@@ -2863,10 +2890,39 @@ impl ZeldaState {
         self.Text_InitVwfState();
         self.RenderText_SetDefaultWindowPosition();
         self.messaging_state_mut().set_text_tilemap_cur(0x3980);
+    }
+
+    pub(super) fn complete_text_initialization_suffix(&mut self) {
         self.Text_LoadCharacterBuffer();
+        self.finish_text_initialization_after_character_buffer();
+    }
+
+    pub(super) fn prepare_text_character_buffer_for_carry(&mut self) {
+        let encoded_len = self.current_encoded_dialogue_len();
+        self.Text_LoadCharacterBuffer();
+        self.messaging_state_mut()
+            .set_dialogue_msg_read_pos(encoded_len);
+    }
+
+    pub(super) fn complete_text_initialization_carry_suffix(&mut self) {
+        self.messaging_state_mut().clear_dialogue_msg_read_pos();
+        self.finish_text_initialization_after_character_buffer();
+    }
+
+    fn finish_text_initialization_after_character_buffer(&mut self) {
         self.clear_messaging_render_buffer_range(0x7e0);
         self.set_pending_nmi_subroutine(2);
         self.set_core_update_disable_flag(2);
+    }
+
+    fn current_encoded_dialogue_len(&self) -> u16 {
+        let Some(dialogue_blk) = self.asset_memblk(94, self.dialogue_blk_index) else {
+            return 0;
+        };
+        let dialogue = find_index_in_memblk(dialogue_blk, 1);
+        let text_index = self.game_state.messaging.dialogue_message_index.value() as usize;
+        (find_index_in_memblk(dialogue, text_index).ptr.len() as u16)
+            .min(ROM_TEXT_DECODE_FIRST_SLICE_CURSOR)
     }
 
     pub(super) fn Text_InitVwfState(&mut self) {

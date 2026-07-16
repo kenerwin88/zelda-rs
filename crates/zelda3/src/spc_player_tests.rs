@@ -40,3 +40,20 @@ fn copy_variables_to_and_from_spc_ram_uses_c_addresses() {
 
     spc_player_destroy(p);
 }
+
+#[test]
+fn dsp_write_history_does_not_truncate_dense_frames() {
+    let p = spc_player_create();
+    let mut history = DspRegWriteHistory::default();
+    unsafe { (*p).reg_write_history = &mut history };
+
+    for index in 0..300u16 {
+        dsp_write(p, (index & 0x7f) as u8, index as u8);
+    }
+
+    unsafe { (*p).reg_write_history = std::ptr::null_mut() };
+    assert_eq!(history.writes.len(), 300);
+    assert_eq!(history.writes[256].0, 0);
+    assert_eq!(history.writes[299].1, 43);
+    spc_player_destroy(p);
+}

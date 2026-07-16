@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 
 SCRIPT = Path(__file__).resolve().parent / "check_modern_audio_route.py"
@@ -15,6 +16,93 @@ SPEC.loader.exec_module(checker)
 
 
 class CheckModernAudioRouteTests(unittest.TestCase):
+    def test_mismatch_ranges_keep_late_route_failures_visible(self) -> None:
+        ranges: list[list[int]] = []
+        for frame in [272, 273, 3002, 3003, 3010]:
+            checker.append_frame_range(ranges, frame)
+
+        self.assertEqual(ranges, [[272, 273], [3002, 3003], [3010, 3010]])
+        self.assertEqual(
+            checker.format_frame_ranges(ranges),
+            "272..273, 3002..3003, 3010",
+        )
+
+    def test_route_command_carries_file_select_inputs_and_sram(self) -> None:
+        args = SimpleNamespace(
+            rust_bin=Path("zelda3"),
+            rom=Path("zelda3.sfc"),
+            save=Path("route.sav"),
+            frames=2260,
+            input_script=Path("scripts/inputs/file-select-enter-game.txt"),
+            load_sram=Path("saves/sram.dat"),
+            load_state=None,
+            stop_replay_after_load=True,
+        )
+
+        command = checker.build_replay_command(args)
+
+        self.assertIn("--input-script", command)
+        self.assertIn("scripts/inputs/file-select-enter-game.txt", command)
+        self.assertIn("--load-sram", command)
+        self.assertIn("saves/sram.dat", command)
+        self.assertIn("--stop-replay-after-load", command)
+
+    def test_continuous_waveform_timeline_reports_absolute_sample_position(self) -> None:
+        timeline = checker.WaveformTimeline()
+        exact = {
+            "frame": 1,
+            "samples": 735,
+            "channels": 2,
+            "modern_audio": {
+                "oracle_exact_samples": 1470,
+                "oracle_first_mismatch_sample": None,
+            },
+        }
+        self.assertIsNone(timeline.compare(exact))
+
+        mismatch = {
+            "frame": 2,
+            "samples": 735,
+            "channels": 2,
+            "modern_audio": {
+                "oracle_exact_samples": 1469,
+                "oracle_first_mismatch_sample": 5,
+            },
+        }
+        failure = timeline.compare(mismatch)
+
+        self.assertIn("absolute_interleaved=1475", failure)
+        self.assertIn("absolute_sample_frame=737", failure)
+        self.assertIn("channel=1", failure)
+
+    def test_stream_gate_rejects_one_wrong_sample_on_the_continuous_clock(self) -> None:
+        def event(number: int, exact: int, mismatch: int | None) -> dict:
+            return {
+                "frame": number,
+                "samples": 2,
+                "channels": 2,
+                "modern_note_events": [],
+                "modern_audio": {
+                    "peak": 0,
+                    "hash": "0x00000001",
+                    "active_voices": 0,
+                    "ignored_events": 0,
+                    "left_abs": 0,
+                    "right_abs": 0,
+                    "oracle_exact_samples": exact,
+                    "oracle_first_mismatch_sample": mismatch,
+                },
+            }
+
+        failures, _, count = checker.check_frame_stream(
+            [event(40, 4, None), event(41, 3, 2)]
+        )
+
+        self.assertEqual(count, 2)
+        self.assertTrue(
+            any("absolute_interleaved=6" in failure for failure in failures), failures
+        )
+
     def test_sfx_lockstep_requires_sample_events_and_voice_ownership(self) -> None:
         frame = {
             "frame": 356450,

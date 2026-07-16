@@ -61,8 +61,8 @@ fn in_cm_window(sx: u32, packed_win: u32, windowsel_cm: u32) -> bool {
 
 fn expand_brightness(c5: i32, brightness: u32) -> u32 {
     let clamped = u32(clamp(c5, 0, 31));
-    let v8 = (clamped << 3u) | (clamped >> 2u);
-    return (v8 * brightness) / 15u;
+    let scaled5 = (clamped * (min(brightness, 15u) + 1u)) >> 4u;
+    return (scaled5 << 3u) | (scaled5 >> 2u);
 }
 
 @compute @workgroup_size(64)

@@ -930,7 +930,6 @@ impl DspState {
         }
         self.sample_offset = 0;
     }
-
 }
 
 #[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]

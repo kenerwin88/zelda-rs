@@ -635,8 +635,8 @@ impl PpuState {
         let brightness = self.brightness;
         self.last_brightness_mult = brightness;
         for i in 0..32 {
-            let expanded = (i << 3) | (i >> 2);
-            let value = (expanded * brightness as usize / 15) as u8;
+            let scaled = i * (brightness as usize + 1) / 16;
+            let value = ((scaled << 3) | (scaled >> 2)) as u8;
             self.brightness_mult[i] = value;
             self.brightness_mult_half[i * 2] = value;
             self.brightness_mult_half[i * 2 + 1] = value;
@@ -2393,6 +2393,18 @@ mod tests {
         ppu.write(0x00, 0x8f); // forced blank, brightness 15
         assert!(ppu.forced_blank);
         assert_eq!(ppu.brightness, 0xf);
+    }
+
+    #[test]
+    fn master_brightness_uses_sixteenth_steps() {
+        let mut ppu = PpuState::new();
+        ppu.write(0x00, 0x0e);
+        ppu.refresh_brightness_cache();
+        assert_eq!(ppu.brightness_mult[31], 239);
+
+        ppu.write(0x00, 0x0b);
+        ppu.refresh_brightness_cache();
+        assert_eq!(ppu.brightness_mult[31], 189);
     }
 
     #[test]

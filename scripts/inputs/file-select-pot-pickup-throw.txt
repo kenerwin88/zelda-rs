@@ -1,0 +1,10 @@
+# Deterministic extension of the saved-slot route that dismisses the opening
+# message, approaches the lower-right pot in Link's house, lifts it, and throws
+# it. This is the focused audio-parity route for SFX bank 1 id $1d (lift) and
+# bank 2 id $13 (throw).
+include file-select-enter-game-button-taps.txt
+
+107700..107799 RIGHT
+107805..107822 UP
+107830 A
+107925 A

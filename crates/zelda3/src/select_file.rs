@@ -108,6 +108,14 @@ impl ZeldaState {
         self.clear_pending_polyhedral_update();
         self.set_music_control(11);
         self.increment_submodule();
+        if self.rom_startup_timing() {
+            self.file_select_initial_graphics_phase = 57;
+            return;
+        }
+        self.complete_module_select_file_0();
+    }
+
+    pub(super) fn complete_module_select_file_0(&mut self) {
         self.select_overworld_aux_palette_offset();
         self.set_palette_main_indoors(6);
         self.set_core_update_disable_flag(6);
@@ -214,6 +222,15 @@ impl ZeldaState {
             t = t.wrapping_add(0x20);
         }
         self.write_vram_upload_absolute_byte(dst, 0xff);
+        if self.rom_startup_timing() {
+            self.file_select_checkerboard_suffix_pending = true;
+        } else {
+            self.complete_file_select_checkerboard_upload();
+        }
+    }
+
+    pub(super) fn complete_file_select_checkerboard_upload(&mut self) {
+        self.file_select_checkerboard_suffix_pending = false;
         self.increment_submodule();
         self.set_bg_vram_load_mode(1);
     }

@@ -104,14 +104,106 @@ use crate::game_state::{
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
 
-const BSNES_ROM_RESET_FRAME_DELAY: u8 = 174;
-const BSNES_INTRO_MEMORY_DARKEN_FRAME_DELAY: u8 = 17;
+const ROM_RESET_FRAME_DELAY: u8 = 82;
+const ROM_INTRO_SOUND_BANK_BOOTSTRAP_FRAMES: u8 = 74;
+const ROM_INTRO_MEMORY_INITIALIZATION_FRAMES: u8 = 40;
+const ROM_SELECTED_GAME_LOAD_FRAMES: u8 = 77;
+const ROM_TEXT_DECODE_FIRST_SLICE_CURSOR: u16 = 94;
+const POLY_WORKER_TWO_FRAME_CYCLE_THRESHOLD: u32 = 28_250;
 const BSNES_POLY_SCHEDULER_FRAME_THRESHOLD: u8 = 0x1d;
 const BSNES_INTRO_POLY_BOOTSTRAP_STEPS: u8 = 0;
-const BSNES_INTRO_THREAD_START_DELAY: u8 = 7;
+const BSNES_INTRO_THREAD_START_DELAY: u8 = 0;
 const BSNES_INTRO_SPRITE_ANIMATION_START_DELAY: u8 = 5;
 const BSNES_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER: u8 = 0x42;
 const BSNES_NMI_POLY_UPLOAD_DEFER_FRAMES: u8 = 3;
+
+const fn rom_intro_poly_thread_is_active(main_module: u8, submodule: u8) -> bool {
+    main_module == 0 && matches!(submodule, 3 | 4 | 5 | 7 | 9 | 11)
+}
+
+const fn rom_intro_wait_player_tears_down_poly_thread(
+    main_module: u8,
+    submodule: u8,
+    nmi_thread_active: bool,
+) -> bool {
+    main_module == 0 && submodule == 8 && nmi_thread_active
+}
+
+const fn rom_intro_title_fade_runs_main(poly_phase: u8) -> bool {
+    poly_phase < 2
+}
+
+const fn rom_intro_title_fade_should_yield_suffix(poly_phase: u8) -> bool {
+    poly_phase == 1
+}
+
+const fn rom_intro_bg_fade_main_decision(carry_frames: u8, poly_phase: u8) -> (bool, bool, u8, u8) {
+    if carry_frames < 2 {
+        (true, false, carry_frames + 1, poly_phase)
+    } else {
+        (
+            poly_phase < 4,
+            poly_phase == 3,
+            carry_frames,
+            (poly_phase + 1) % 5,
+        )
+    }
+}
+
+const fn rom_intro_bg_fade_should_yield_suffix(
+    scheduled_yield: bool,
+    sword_animation_step: u8,
+    sword_sparkle_step: u8,
+) -> bool {
+    scheduled_yield && sword_animation_step == 2 && sword_sparkle_step >= 4
+}
+
+const fn rom_intro_poly_init_decision(phase: u8) -> (bool, bool, u8) {
+    match phase {
+        3 => (true, false, 2),
+        2 => (false, false, 1),
+        1 => (false, true, 0),
+        _ => (false, false, 0),
+    }
+}
+
+const fn rom_attract_init_graphics_decision(phase: u8) -> (bool, u8) {
+    match phase {
+        4 => (false, 3),
+        3 => (false, 2),
+        2 => (true, 1),
+        1 => (false, 0),
+        _ => (false, 0),
+    }
+}
+
+const fn rom_file_select_initial_graphics_decision(phase: u8) -> (bool, bool, u8) {
+    if phase > 1 {
+        (true, phase == 2, phase - 1)
+    } else {
+        (false, false, 0)
+    }
+}
+
+const fn rom_selected_game_load_decision(remaining_frames: u8) -> (bool, u8) {
+    match remaining_frames {
+        0 => (false, 0),
+        1 => (true, 0),
+        _ => (false, remaining_frames - 1),
+    }
+}
+
+const fn rom_dungeon_landing_wipe_is_active(main_module: u8, submodule: u8) -> bool {
+    main_module == 7 && submodule == 15
+}
+
+const fn rom_normal_dialogue_initialization_is_active(
+    main_module: u8,
+    submodule: u8,
+    messaging_module: u8,
+) -> bool {
+    main_module == 14 && submodule == 2 && messaging_module == 0
+}
 
 const ASSET_SIGNATURE_PREFIX: &[u8; 16] = b"Zelda3_v0     \n\0";
 const DIALOGUE_SOURCE_SIDECAR_ASSET_NAME: &str = "kDialogueSourceSemantic";
@@ -188,17 +280,17 @@ const GIVE_ITEM_VALUES: [u8; 76] = [
 ];
 
 fn configured_rom_reset_frame_delay() -> u8 {
-    env::var("ZELDA3_BSNES_ROM_RESET_FRAME_DELAY")
+    env::var("ZELDA3_ROM_RESET_FRAME_DELAY")
         .ok()
         .and_then(|value| value.parse().ok())
-        .unwrap_or(BSNES_ROM_RESET_FRAME_DELAY)
+        .unwrap_or(ROM_RESET_FRAME_DELAY)
 }
 
-pub(super) fn configured_intro_memory_darken_frame_delay() -> u8 {
-    env::var("ZELDA3_BSNES_INTRO_MEMORY_DARKEN_FRAME_DELAY")
+pub(super) fn configured_intro_memory_initialization_frames() -> u8 {
+    env::var("ZELDA3_ROM_INTRO_MEMORY_INITIALIZATION_FRAMES")
         .ok()
         .and_then(|value| value.parse().ok())
-        .unwrap_or(BSNES_INTRO_MEMORY_DARKEN_FRAME_DELAY)
+        .unwrap_or(ROM_INTRO_MEMORY_INITIALIZATION_FRAMES)
 }
 
 fn configured_poly_scheduler_frame_threshold() -> u8 {
@@ -1540,6 +1632,28 @@ pub struct ZeldaState {
     #[serde(skip)]
     intro_memory_darken_frame_delay: u8,
     #[serde(skip)]
+    intro_poly_thread_initialization_phase: u8,
+    #[serde(skip)]
+    attract_init_graphics_phase: u8,
+    #[serde(skip)]
+    attract_first_story_render_delay: u8,
+    #[serde(skip)]
+    joypad_sampled_before_main: bool,
+    #[serde(skip)]
+    audio_nmi_processed_before_main: bool,
+    #[serde(skip)]
+    file_select_initial_graphics_phase: u8,
+    #[serde(skip)]
+    file_select_checkerboard_suffix_pending: bool,
+    #[serde(skip)]
+    selected_game_load_remaining_frames: u8,
+    #[serde(skip)]
+    dungeon_landing_wipe_carry_pending: bool,
+    #[serde(skip)]
+    iris_spotlight_goal_transition_pending: bool,
+    #[serde(skip)]
+    normal_dialogue_initialization_phase: u8,
+    #[serde(skip)]
     intro_poly_upload_delay: u8,
     #[serde(skip)]
     intro_sprite_animation_start_delay: u8,
@@ -1566,9 +1680,31 @@ pub struct ZeldaState {
     #[serde(skip)]
     bsnes_intro_step_hold_alternate: bool,
     #[serde(skip)]
-    replay_reload_file_select_stall: u8,
+    last_poly_work: PolyWorkMetrics,
     #[serde(skip)]
-    replay_loadfile_stall: u8,
+    poly_job_in_flight: bool,
+    #[serde(skip)]
+    poly_job_hold_frames: u8,
+    #[serde(skip)]
+    intro_title_fade_poly_phase: u8,
+    #[serde(skip)]
+    intro_title_fade_defer_suffix_this_frame: bool,
+    #[serde(skip)]
+    intro_title_fade_suffix_pending: bool,
+    #[serde(skip)]
+    intro_bg_fade_carry_frames: u8,
+    #[serde(skip)]
+    intro_bg_fade_poly_phase: u8,
+    #[serde(skip)]
+    intro_bg_fade_defer_suffix_this_frame: bool,
+    #[serde(skip)]
+    intro_bg_fade_suffix_pending: bool,
+    #[serde(skip)]
+    intro_zelda_fade_transition_pending: bool,
+    #[serde(skip)]
+    intro_poly_thread_teardown_pending: bool,
+    #[serde(skip)]
+    replay_reload_file_select_stall: u8,
     #[serde(skip)]
     replay_reopened_lamp_prompt: bool,
     ending_coords: sprite::PrepOamCoordsRet,
@@ -1583,6 +1719,65 @@ pub struct ZeldaState {
     emu_runframe: Option<ZeldaRunFrameFunc>,
     #[serde(skip)]
     emu_syncall: Option<ZeldaSyncAllFunc>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct PolyWorkMetrics {
+    pub divide_calls: u32,
+    pub divide_shifts: u32,
+    pub faces: u32,
+    pub visible_faces: u32,
+    pub edge_segments: u32,
+    pub scanlines: u32,
+    pub span_words: u32,
+}
+
+impl PolyWorkMetrics {
+    pub fn estimated_65816_cycles(self) -> u32 {
+        // The rasterizer's inner-loop cost changes with the number of visible
+        // faces: sparse faces spend proportionally more time walking scanlines,
+        // while dense faces spend more time in span writes.  Model those real
+        // control-flow shapes separately instead of using a route/frame table.
+        match self.visible_faces {
+            1 => {
+                20_106
+                    + 16 * self.divide_shifts
+                    + 124 * self.edge_segments
+                    + 117 * self.scanlines
+                    + 40 * self.span_words
+            }
+            2 => {
+                20_223
+                    + 32 * self.divide_shifts
+                    + 50 * self.edge_segments
+                    + 199 * self.scanlines
+                    + 26 * self.span_words
+            }
+            3 => {
+                20_975
+                    + 15 * self.divide_shifts
+                    + 96 * self.edge_segments
+                    + 170 * self.scanlines
+                    + 30 * self.span_words
+            }
+            _ => {
+                19_317
+                    + 21 * self.divide_shifts
+                    + 472 * self.visible_faces
+                    + 108 * self.edge_segments
+                    + 135 * self.scanlines
+                    + 44 * self.span_words
+            }
+        }
+    }
+
+    fn worker_frames(self) -> u8 {
+        if self.estimated_65816_cycles() >= POLY_WORKER_TWO_FRAME_CYCLE_THRESHOLD {
+            2
+        } else {
+            1
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -2065,6 +2260,10 @@ impl ZeldaState {
 
     pub fn debug_bsnes_intro_step_carry_phase_active(&self) -> bool {
         self.bsnes_intro_step_carry_phase_active
+    }
+
+    pub fn debug_last_poly_work(&self) -> PolyWorkMetrics {
+        self.last_poly_work
     }
 
     pub fn debug_bsnes_intro_step_hold_alternate(&self) -> bool {
@@ -6293,6 +6492,17 @@ impl ZeldaState {
             intro_startup_delay: 0,
             rom_reset_frame_delay: 0,
             intro_memory_darken_frame_delay: 0,
+            intro_poly_thread_initialization_phase: 0,
+            attract_init_graphics_phase: 0,
+            attract_first_story_render_delay: 0,
+            joypad_sampled_before_main: false,
+            audio_nmi_processed_before_main: false,
+            file_select_initial_graphics_phase: 0,
+            file_select_checkerboard_suffix_pending: false,
+            selected_game_load_remaining_frames: 0,
+            dungeon_landing_wipe_carry_pending: false,
+            iris_spotlight_goal_transition_pending: false,
+            normal_dialogue_initialization_phase: 0,
             intro_poly_upload_delay: 0,
             intro_sprite_animation_start_delay: 0,
             display_snapshot: None,
@@ -6306,8 +6516,19 @@ impl ZeldaState {
             bsnes_hold_intro_step_this_frame: false,
             bsnes_intro_step_carry_phase_active: false,
             bsnes_intro_step_hold_alternate: false,
+            last_poly_work: PolyWorkMetrics::default(),
+            poly_job_in_flight: false,
+            poly_job_hold_frames: 0,
+            intro_title_fade_poly_phase: 0,
+            intro_title_fade_defer_suffix_this_frame: false,
+            intro_title_fade_suffix_pending: false,
+            intro_bg_fade_carry_frames: 0,
+            intro_bg_fade_poly_phase: 0,
+            intro_bg_fade_defer_suffix_this_frame: false,
+            intro_bg_fade_suffix_pending: false,
+            intro_zelda_fade_transition_pending: false,
+            intro_poly_thread_teardown_pending: false,
             replay_reload_file_select_stall: 0,
-            replay_loadfile_stall: 0,
             replay_reopened_lamp_prompt: false,
             ending_coords: sprite::PrepOamCoordsRet::default(),
             intro_poly_vram_history: Vec::new(),
@@ -6361,6 +6582,17 @@ impl ZeldaState {
             0
         };
         self.intro_memory_darken_frame_delay = 0;
+        self.intro_poly_thread_initialization_phase = 0;
+        self.attract_init_graphics_phase = 0;
+        self.attract_first_story_render_delay = 0;
+        self.joypad_sampled_before_main = false;
+        self.audio_nmi_processed_before_main = false;
+        self.file_select_initial_graphics_phase = 0;
+        self.file_select_checkerboard_suffix_pending = false;
+        self.selected_game_load_remaining_frames = 0;
+        self.dungeon_landing_wipe_carry_pending = false;
+        self.iris_spotlight_goal_transition_pending = false;
+        self.normal_dialogue_initialization_phase = 0;
         self.intro_sprite_animation_start_delay = 0;
         self.nmi_poly_upload_deferred = 0;
         self.nmi_poly_upload_started = false;
@@ -6371,6 +6603,17 @@ impl ZeldaState {
         self.bsnes_hold_intro_step_this_frame = false;
         self.bsnes_intro_step_carry_phase_active = false;
         self.bsnes_intro_step_hold_alternate = false;
+        self.poly_job_in_flight = false;
+        self.poly_job_hold_frames = 0;
+        self.intro_title_fade_poly_phase = 0;
+        self.intro_title_fade_defer_suffix_this_frame = false;
+        self.intro_title_fade_suffix_pending = false;
+        self.intro_bg_fade_carry_frames = 0;
+        self.intro_bg_fade_poly_phase = 0;
+        self.intro_bg_fade_defer_suffix_this_frame = false;
+        self.intro_bg_fade_suffix_pending = false;
+        self.intro_zelda_fade_transition_pending = false;
+        self.intro_poly_thread_teardown_pending = false;
         self.intro_poly_vram_history.clear();
         self.intro_poly_presented_vram = None;
         self.sync_overworld_map16_state_from_ram();
@@ -6386,6 +6629,17 @@ impl ZeldaState {
             self.intro_startup_delay = 0;
             self.rom_reset_frame_delay = 0;
             self.intro_memory_darken_frame_delay = 0;
+            self.intro_poly_thread_initialization_phase = 0;
+            self.attract_init_graphics_phase = 0;
+            self.attract_first_story_render_delay = 0;
+            self.joypad_sampled_before_main = false;
+            self.audio_nmi_processed_before_main = false;
+            self.file_select_initial_graphics_phase = 0;
+            self.file_select_checkerboard_suffix_pending = false;
+            self.selected_game_load_remaining_frames = 0;
+            self.dungeon_landing_wipe_carry_pending = false;
+            self.iris_spotlight_goal_transition_pending = false;
+            self.normal_dialogue_initialization_phase = 0;
             self.intro_sprite_animation_start_delay = 0;
             self.nmi_poly_upload_deferred = 0;
             self.nmi_poly_upload_started = false;
@@ -6396,6 +6650,17 @@ impl ZeldaState {
             self.bsnes_hold_intro_step_this_frame = false;
             self.bsnes_intro_step_carry_phase_active = false;
             self.bsnes_intro_step_hold_alternate = false;
+            self.poly_job_in_flight = false;
+            self.poly_job_hold_frames = 0;
+            self.intro_title_fade_poly_phase = 0;
+            self.intro_title_fade_defer_suffix_this_frame = false;
+            self.intro_title_fade_suffix_pending = false;
+            self.intro_bg_fade_carry_frames = 0;
+            self.intro_bg_fade_poly_phase = 0;
+            self.intro_bg_fade_defer_suffix_this_frame = false;
+            self.intro_bg_fade_suffix_pending = false;
+            self.intro_zelda_fade_transition_pending = false;
+            self.intro_poly_thread_teardown_pending = false;
             self.intro_poly_vram_history.clear();
             self.intro_poly_presented_vram = None;
             self.display_snapshot = None;
@@ -6405,8 +6670,24 @@ impl ZeldaState {
         }
     }
 
+    /// Restores the live-ROM frame scheduling mode after deserializing a
+    /// checkpoint without resetting the already-restored audio sequencer.
+    ///
+    /// `rom_startup_timing` is host runtime policy rather than game state, so
+    /// it is intentionally omitted from `ZeldaState`'s serialized payload.
+    /// Calling `set_rom_startup_timing(true)` here would also reapply the SPC
+    /// bootstrap phase and corrupt the checkpoint's exact audio position.
+    pub fn restore_live_rom_timing_after_checkpoint(&mut self) {
+        self.rom_startup_timing = true;
+    }
+
     pub(super) fn rom_startup_timing(&self) -> bool {
         self.rom_startup_timing
+    }
+
+    pub(super) fn begin_selected_game_load(&mut self) {
+        self.enable_force_blank();
+        self.selected_game_load_remaining_frames = ROM_SELECTED_GAME_LOAD_FRAMES;
     }
 
     pub(super) fn capture_display_snapshot(&mut self) {
@@ -6423,7 +6704,7 @@ impl ZeldaState {
             bsnes_poly_scheduler_counter: self.bsnes_poly_scheduler_counter,
         });
         let frame = &self.game_state.frame;
-        if frame.main_module == 0 && matches!(frame.submodule, 3 | 4) {
+        if rom_intro_poly_thread_is_active(frame.main_module, frame.submodule) {
             self.intro_poly_vram_history.push((
                 frame.frame_counter,
                 self.ppu.vram[0x5800..0x5c00].to_vec(),
@@ -6737,11 +7018,102 @@ impl ZeldaState {
             self.capture_display_snapshot();
             return;
         }
-        if !self.game_state.display.has_animated_tile_data_source() {
+        let initialized_audio_bank_this_frame =
+            !self.game_state.display.has_animated_tile_data_source();
+        if initialized_audio_bank_this_frame {
             self.zelda_initialization_code();
+        }
+        if self.rom_startup_timing() && !initialized_audio_bank_this_frame {
+            self.interrupt_nmi_audio_parts_locked();
+            self.audio_nmi_processed_before_main = true;
+        }
+        if self.file_select_checkerboard_suffix_pending {
+            self.complete_file_select_checkerboard_upload();
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input);
+            return;
+        }
+        if self.rom_startup_timing() && self.file_select_initial_graphics_phase > 1 {
+            let (_, complete_graphics, next_phase) =
+                rom_file_select_initial_graphics_decision(self.file_select_initial_graphics_phase);
+            self.file_select_initial_graphics_phase = next_phase;
+            if complete_graphics {
+                self.complete_module_select_file_0();
+            }
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input);
+            return;
+        }
+        if self.file_select_initial_graphics_phase == 1 {
+            self.file_select_initial_graphics_phase = 0;
+        }
+        if self.rom_startup_timing() && self.selected_game_load_remaining_frames != 0 {
+            let (complete_load, next_remaining_frames) =
+                rom_selected_game_load_decision(self.selected_game_load_remaining_frames);
+            self.selected_game_load_remaining_frames = next_remaining_frames;
+            if complete_load {
+                self.complete_module05_load_file();
+                self.nmi_prepare_sprites();
+                self.clear_nmi_update_latch();
+            }
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input);
+            return;
+        }
+        if self.rom_startup_timing() && self.dungeon_landing_wipe_carry_pending {
+            self.dungeon_landing_wipe_carry_pending = false;
+            if self.iris_spotlight_goal_transition_pending {
+                self.iris_spotlight_goal_transition_pending = false;
+                self.complete_iris_spotlight_goal_transition();
+                self.complete_module07_0f_operate_spotlight_suffix();
+            }
+            self.complete_module07_dungeon_after_submodule();
+            self.nmi_prepare_sprites();
+            self.clear_nmi_update_latch();
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input);
+            return;
+        }
+        if self.rom_startup_timing() && self.normal_dialogue_initialization_phase != 0 {
+            match self.normal_dialogue_initialization_phase {
+                3..=5 => {
+                    self.normal_dialogue_initialization_phase -= 1;
+                }
+                2 => {
+                    self.complete_text_initialization_prefix();
+                    self.prepare_text_character_buffer_for_carry();
+                    self.normal_dialogue_initialization_phase = 1;
+                }
+                1 => {
+                    self.complete_text_initialization_carry_suffix();
+                    self.normal_dialogue_initialization_phase = 0;
+                    self.complete_module0e_interface_after_run();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                }
+                _ => unreachable!(),
+            }
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input);
+            return;
         }
         if run_what & crate::RUN_POLY != 0 {
             self.zelda_run_poly_loop();
+        }
+        if self.intro_zelda_fade_transition_pending {
+            self.complete_intro_zelda_fade_transition();
+        }
+        if self.intro_title_fade_suffix_pending {
+            self.complete_intro_zelda_fade_suffix(true);
+        }
+        if self.intro_bg_fade_suffix_pending {
+            self.complete_intro_bg_fade_suffix();
+        }
+        if self.rom_startup_timing() && self.intro_startup_delay != 0 {
+            self.intro_startup_delay = self.intro_startup_delay.saturating_sub(1);
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input);
+            return;
         }
         if self.rom_startup_timing() && self.intro_memory_darken_frame_delay != 0 {
             let frame = &self.game_state.frame;
@@ -6757,10 +7129,67 @@ impl ZeldaState {
             self.interrupt_nmi(input);
             return;
         }
+        if self.rom_startup_timing()
+            && self.game_state.frame.main_module == 0
+            && self.game_state.frame.submodule == 2
+            && self.intro_poly_thread_initialization_phase != 0
+            && run_what & crate::RUN_MAIN != 0
+        {
+            let (begin_main_loop, complete_module, next_phase) =
+                rom_intro_poly_init_decision(self.intro_poly_thread_initialization_phase);
+            self.intro_poly_thread_initialization_phase = next_phase;
+            if begin_main_loop {
+                self.increment_frame_counter();
+                self.clear_oam_buffer();
+            }
+            if complete_module {
+                self.intro_initialize_triforce_poly_thread();
+                self.nmi_prepare_sprites();
+                self.clear_nmi_update_latch();
+            }
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input);
+            return;
+        }
+        if self.rom_startup_timing()
+            && self.game_state.frame.main_module == 20
+            && self.attract_init_graphics_phase != 0
+        {
+            let (complete_graphics, next_phase) =
+                rom_attract_init_graphics_decision(self.attract_init_graphics_phase);
+            self.attract_init_graphics_phase = next_phase;
+            if complete_graphics {
+                self.complete_attract_init_graphics();
+            }
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input);
+            return;
+        }
+        if self.rom_startup_timing()
+            && self.game_state.frame.main_module == 20
+            && self.attract_first_story_render_delay != 0
+        {
+            if self.attract_first_story_render_delay == 6 {
+                self.increment_frame_counter();
+                self.clear_oam_buffer();
+            } else if self.attract_first_story_render_delay == 1 {
+                self.attract_enact_story();
+                self.nmi_prepare_sprites();
+                self.clear_nmi_update_latch();
+            }
+            self.attract_first_story_render_delay =
+                self.attract_first_story_render_delay.saturating_sub(1);
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input);
+            return;
+        }
+        if self.rom_startup_timing() && run_what & crate::RUN_MAIN != 0 {
+            self.nmi_read_joypads(input);
+            self.joypad_sampled_before_main = true;
+        }
         let frame = self.game_state.frame;
         if self.rom_startup_timing
-            && frame.main_module == 0
-            && matches!(frame.submodule, 3 | 4)
+            && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule)
             && frame.frame_counter >= 0x85
             && self.game_state.display.has_pending_polyhedral_update()
         {
@@ -6773,13 +7202,6 @@ impl ZeldaState {
             self.zelda_run_game_loop();
             self.replay_trace_col("after-game-loop");
             self.replay_trace_ram_watch("after-game-loop");
-        }
-        if self.rom_startup_timing
-            && frame.main_module == 0
-            && matches!(frame.submodule, 3 | 4)
-            && frame.frame_counter >= 0x86
-        {
-            self.zelda_run_poly_loop();
         }
         self.capture_display_snapshot();
         self.replay_trace_col("before-nmi");
@@ -7943,13 +8365,54 @@ impl ZeldaState {
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();
         let frame = &self.game_state.frame;
-        let use_bsnes_poly_scheduler = self.rom_startup_timing
+        let use_timed_poly_worker = self.rom_startup_timing
+            && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule);
+        let title_fade_poly_thread =
+            self.rom_startup_timing && frame.main_module == 0 && frame.submodule == 5;
+        let bg_fade_poly_thread = self.rom_startup_timing
             && frame.main_module == 0
-            && matches!(frame.submodule, 3 | 4)
-            && frame.frame_counter >= configured_poly_scheduler_frame_threshold();
+            && frame.submodule == 7
+            && self.game_state.intro_sword.anim_step_raw() == 2;
+        let wait_player_poly_teardown = self.rom_startup_timing
+            && rom_intro_wait_player_tears_down_poly_thread(
+                frame.main_module,
+                frame.submodule,
+                self.game_state.display.nmi_thread_active,
+            );
         self.bsnes_hold_intro_step_this_frame = false;
-        let run_what = if self.game_state.system_signals.bugs_fixed() < BUGFIX_POLY_RENDERER
-            && !use_bsnes_poly_scheduler
+        let poly_thread_teardown_frame = self.intro_poly_thread_teardown_pending;
+        self.intro_poly_thread_teardown_pending = false;
+        let run_what = if poly_thread_teardown_frame {
+            0
+        } else if wait_player_poly_teardown {
+            3
+        } else if title_fade_poly_thread {
+            let poly_phase = self.intro_title_fade_poly_phase;
+            let run_main = rom_intro_title_fade_runs_main(poly_phase);
+            self.intro_title_fade_defer_suffix_this_frame =
+                rom_intro_title_fade_should_yield_suffix(poly_phase);
+            self.intro_title_fade_poly_phase = (self.intro_title_fade_poly_phase + 1) % 3;
+            if run_main {
+                3
+            } else {
+                2
+            }
+        } else if bg_fade_poly_thread {
+            let (run_main, yield_before_suffix, carry_frames, poly_phase) =
+                rom_intro_bg_fade_main_decision(
+                    self.intro_bg_fade_carry_frames,
+                    self.intro_bg_fade_poly_phase,
+                );
+            self.intro_bg_fade_defer_suffix_this_frame = yield_before_suffix;
+            self.intro_bg_fade_carry_frames = carry_frames;
+            self.intro_bg_fade_poly_phase = poly_phase;
+            if run_main {
+                3
+            } else {
+                2
+            }
+        } else if self.game_state.system_signals.bugs_fixed() < BUGFIX_POLY_RENDERER
+            && !use_timed_poly_worker
         {
             if self.game_state.display.nmi_thread_uses_poly_stack() {
                 2
@@ -7959,26 +8422,7 @@ impl ZeldaState {
         } else {
             let virq = self.game_state.display.vertical_irq_trigger;
             let carry = if self.game_state.display.nmi_thread_active {
-                if use_bsnes_poly_scheduler {
-                    let previous_counter = self.bsnes_poly_scheduler_counter;
-                    let step_waiting = self.game_state.ending.attract_scene.intro_step_index() == 1
-                        && self.game_state.ending.attract_scene.intro_did_run_step() != 0;
-                    let first_frame_boundary_hold = step_waiting
-                        && !self.bsnes_intro_step_carry_phase_active
-                        && previous_counter == 0;
-                    self.bsnes_hold_intro_step_this_frame = first_frame_boundary_hold
-                        || (step_waiting
-                            && self.bsnes_intro_step_carry_phase_active
-                            && self.bsnes_intro_step_hold_alternate);
-                    if first_frame_boundary_hold {
-                        self.bsnes_intro_step_carry_phase_active = true;
-                        self.bsnes_intro_step_hold_alternate = false;
-                    } else if step_waiting && self.bsnes_intro_step_carry_phase_active {
-                        self.bsnes_intro_step_hold_alternate =
-                            !self.bsnes_intro_step_hold_alternate;
-                    }
-                    self.bsnes_poly_scheduler_counter =
-                        self.bsnes_poly_scheduler_counter.wrapping_add(virq);
+                if use_timed_poly_worker {
                     self.game_state.ending.attract_scene.intro_did_run_step() != 0
                 } else {
                     let carry = self.advance_crystal_rotation_counter(virq);
@@ -7994,6 +8438,15 @@ impl ZeldaState {
                 1
             }
         };
+        if !title_fade_poly_thread {
+            self.intro_title_fade_poly_phase = 0;
+            self.intro_title_fade_defer_suffix_this_frame = false;
+        }
+        if !bg_fade_poly_thread {
+            self.intro_bg_fade_carry_frames = 0;
+            self.intro_bg_fade_poly_phase = 0;
+            self.intro_bg_fade_defer_suffix_this_frame = false;
+        }
         if self.emu_runframe.is_none()
             || self.game_state.enhanced_features.bits() != 0
             || self.dialogue_flags != 0
@@ -8326,7 +8779,23 @@ impl ZeldaState {
         let can_run_poly = self.game_state.ending.attract_scene.intro_did_run_step() != 0
             && !self.game_state.display.has_pending_polyhedral_update();
         if can_run_poly {
-            self.poly_run_frame();
+            let frame = self.game_state.frame;
+            let use_timed_worker = self.rom_startup_timing
+                && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule);
+            if use_timed_worker {
+                if !self.poly_job_in_flight {
+                    self.poly_run_frame();
+                    self.poly_job_hold_frames = self.last_poly_work.worker_frames() - 1;
+                    self.poly_job_in_flight = true;
+                }
+                if self.poly_job_hold_frames != 0 {
+                    self.poly_job_hold_frames -= 1;
+                    return;
+                }
+                self.poly_job_in_flight = false;
+            } else {
+                self.poly_run_frame();
+            }
             self.attract_scene_mut().clear_intro_did_run_step();
             self.request_polyhedral_nmi_update();
         }
@@ -8339,6 +8808,12 @@ impl ZeldaState {
         self.replay_trace_ram_watch("game-loop-after-clear-oam");
         self.module_main_routing();
         self.replay_trace_ram_watch("game-loop-after-module");
+        if self.rom_startup_timing()
+            && (self.dungeon_landing_wipe_carry_pending
+                || self.normal_dialogue_initialization_phase != 0)
+        {
+            return;
+        }
         self.nmi_prepare_sprites();
         self.replay_trace_ram_watch("game-loop-after-prepare-sprites");
         self.clear_nmi_update_latch();
@@ -8909,6 +9384,11 @@ impl ZeldaState {
 
     fn clear_attract_low_work_area(&mut self) {
         SystemWorkArea::clear_attract_low_work_area(&mut self.ram);
+        // The cleared range is shared by the attract controller, Link state,
+        // and several scratch models. Refresh every native owner before the
+        // initializer writes through a bridge, otherwise stale values can
+        // immediately re-project the bytes the ROM just cleared.
+        self.sync_native_game_state_from_ram();
     }
 
     fn clear_poly_thread_work_area(&mut self) {

@@ -541,24 +541,15 @@ impl ZeldaState {
     }
 
     pub(super) fn module05_load_file(&mut self) {
-        if self.state_recorder.replay_mode
-            && std::env::var_os("ZELDA3_SMV_LOADFILE_TIMING_HACKS").is_some()
-            && self.game_state.frame.main_module == 5
-            && self.game_state.frame.submodule == 0
-            && self.game_state.frame.saved_module_for_menu == 0
-            && self.game_state.messaging.dialogue_message_index.value() == 0x000a
-        {
-            if self.replay_loadfile_stall == 0 {
-                self.replay_loadfile_stall = 75;
-            }
-            self.replay_loadfile_stall = self.replay_loadfile_stall.wrapping_sub(1);
-            if self.replay_loadfile_stall != 0 {
-                return;
-            }
-        } else {
-            self.replay_loadfile_stall = 0;
+        if self.rom_startup_timing() {
+            self.begin_selected_game_load();
+            return;
         }
 
+        self.complete_module05_load_file();
+    }
+
+    pub(super) fn complete_module05_load_file(&mut self) {
         self.enable_force_blank();
         self.set_overworld_map_state(0);
         self.follower_link_state_mut()

@@ -495,6 +495,8 @@ pub struct AudioRouteState {
     pub music: MusicControlState,
     pub queue: AudioQueueState,
     pub spc: Option<SpcSequencerState>,
+    pub sample_bank_id: u8,
+    pub sample_bank_generation: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -518,6 +520,15 @@ impl AudioEventFrame {
             sample_offset: 0,
             timer_cycles: route.spc.map(|spc| spc.timer_cycles).unwrap_or_default(),
             kind: AudioEventKind::MusicState(route.music),
+            parity_dsp: None,
+        });
+        events.push(AudioEvent {
+            sample_offset: 0,
+            timer_cycles: route.spc.map(|spc| spc.timer_cycles).unwrap_or_default(),
+            kind: AudioEventKind::SampleBankState {
+                bank_id: route.sample_bank_id,
+                generation: route.sample_bank_generation,
+            },
             parity_dsp: None,
         });
         events.push(AudioEvent {
@@ -585,6 +596,10 @@ pub enum AudioNoteOrigin {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AudioEventKind {
     MusicState(MusicControlState),
+    SampleBankState {
+        bank_id: u8,
+        generation: u32,
+    },
     ApuPorts {
         write: [u8; 4],
         pending: [u8; 4],
@@ -601,6 +616,11 @@ pub enum AudioEventKind {
         id: u8,
     },
     SetTempo {
+        value: u8,
+    },
+    /// SPC music-master volume. Unlike DSP MVOL, this must not attenuate SFX
+    /// voices which temporarily occupy music channels.
+    SetMusicVolume {
         value: u8,
     },
     SetNoteOrigin {
@@ -626,11 +646,20 @@ pub enum AudioEventKind {
         adsr2: u8,
         gain: u8,
     },
+    SetEnvelopeRateCounter {
+        voice: u8,
+        rate_counter: u16,
+    },
     NoteOn {
         voice: u8,
         pitch: u8,
         instrument: u8,
         volume: u8,
+    },
+    /// DSP KON using the voice's already-programmed SRCN, ADSR, pitch, and
+    /// volume registers.
+    RetriggerVoice {
+        voice: u8,
     },
     KeyOnVoice {
         voice: u8,
@@ -753,6 +782,29 @@ pub enum AudioBackendMode {
     DspParity,
     TraceOnly,
     Modern,
+}
+
+/// Selects the command sequencer used in front of the modern renderer.
+///
+/// `ExactSpcDriver` clocks the Rust port of the original game-specific SPC
+/// driver to obtain timed DSP writes, but the modern renderer still produces
+/// the samples. It is a parity/migration bridge; `Native` is the clean end
+/// state that can replace it incrementally.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum AudioSequencerBackend {
+    #[default]
+    Native,
+    ExactSpcDriver,
+}
+
+impl AudioSequencerBackend {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "native" => Some(Self::Native),
+            "exact-spc-driver" | "exact" => Some(Self::ExactSpcDriver),
+            _ => None,
+        }
+    }
 }
 
 impl Default for AudioBackendMode {
@@ -930,6 +982,14 @@ fn hash_audio_event(mut hash: u32, event: &AudioEvent) -> u32 {
             hash = fnv1a32_byte(hash, 1);
             hash_music_state(hash, *music)
         }
+        AudioEventKind::SampleBankState {
+            bank_id,
+            generation,
+        } => {
+            hash = fnv1a32_byte(hash, 21);
+            hash = fnv1a32_byte(hash, *bank_id);
+            fnv1a32_bytes(hash, &generation.to_le_bytes())
+        }
         AudioEventKind::ApuPorts {
             write,
             pending,
@@ -999,6 +1059,10 @@ fn hash_audio_event(mut hash: u32, event: &AudioEvent) -> u32 {
             hash = fnv1a32_byte(hash, 12);
             fnv1a32_byte(hash, *value)
         }
+        AudioEventKind::SetMusicVolume { value } => {
+            hash = fnv1a32_byte(hash, 29);
+            fnv1a32_byte(hash, *value)
+        }
         AudioEventKind::SetNoteOrigin { voice, origin } => {
             hash = fnv1a32_byte(hash, 21);
             hash = fnv1a32_byte(hash, *voice);
@@ -1040,6 +1104,15 @@ fn hash_audio_event(mut hash: u32, event: &AudioEvent) -> u32 {
             hash = fnv1a32_byte(hash, *adsr2);
             fnv1a32_byte(hash, *gain)
         }
+        AudioEventKind::SetEnvelopeRateCounter {
+            voice,
+            rate_counter,
+        } => {
+            hash = fnv1a32_byte(hash, 28);
+            hash = fnv1a32_byte(hash, *voice);
+            let [lo, hi] = rate_counter.to_le_bytes();
+            fnv1a32_byte(fnv1a32_byte(hash, lo), hi)
+        }
         AudioEventKind::NoteOn {
             voice,
             pitch,
@@ -1051,6 +1124,10 @@ fn hash_audio_event(mut hash: u32, event: &AudioEvent) -> u32 {
             hash = fnv1a32_byte(hash, *pitch);
             hash = fnv1a32_byte(hash, *instrument);
             fnv1a32_byte(hash, *volume)
+        }
+        AudioEventKind::RetriggerVoice { voice } => {
+            hash = fnv1a32_byte(hash, 27);
+            fnv1a32_byte(hash, *voice)
         }
         AudioEventKind::KeyOnVoice {
             voice,
@@ -1242,6 +1319,7 @@ mod tests {
                 ..AudioQueueState::default()
             },
             spc: None,
+            ..AudioRouteState::default()
         };
         let writes = [
             DspWriteEvent::new(0x4c, 0x80, 10, 11),
@@ -1251,14 +1329,14 @@ mod tests {
 
         let frame = AudioEventFrame::from_route_and_dsp_writes(route, &writes);
 
-        assert_eq!(frame.events.len(), 5);
+        assert_eq!(frame.events.len(), 6);
         assert_eq!(frame.unresolved_dsp_writes, 1);
         assert!(matches!(
-            frame.events[2].kind,
+            frame.events[3].kind,
             AudioEventKind::VoiceKeyOn { mask: 0x80 }
         ));
         assert!(matches!(
-            frame.events[3].kind,
+            frame.events[4].kind,
             AudioEventKind::VoiceParameter {
                 voice: 0,
                 parameter: VoiceParameterKind::PitchLow,
@@ -1266,7 +1344,7 @@ mod tests {
             }
         ));
         assert!(matches!(
-            frame.events[4].kind,
+            frame.events[5].kind,
             AudioEventKind::UnresolvedDspWrite {
                 register: 0x7c,
                 value: 0xff

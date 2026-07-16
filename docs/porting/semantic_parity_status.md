@@ -44,6 +44,17 @@ This file records the current implementation status for
   `DspParity` remains explicitly selectable as the exact oracle, and `TraceOnly`
   remains available for silent event diagnostics. The playable host accepts
   `ZELDA3_AUDIO_BACKEND=modern|dsp-parity|trace-only` as an operator override.
+  Within the modern backend, sequencing is independently selectable with
+  `ZELDA3_AUDIO_SEQUENCER=native|exact-spc-driver` in audio-oracle builds. The
+  exact bridge clocks the Rust port of the game-specific SPC driver, converts
+  its sample-offset DSP writes into `AudioEventFrame`, and still renders those
+  events through `ModernAudioEngine`; it never switches sample production back
+  to the legacy DSP. Snapshot v7 preserves this selection and the driver
+  sidecar while retaining a v6 compatibility decoder. `native` remains the
+  clean production end state and can replace the bridge command-by-command.
+  `scripts/check_modern_audio_route.py` is the streaming full-route PCM gate:
+  it selects the exact bridge and requires every modern stereo sample and
+  frame checksum to match the legacy SPC/DSP path with zero ignored events.
 - `ModernAudioEngine` consumes `AudioEventFrame` directly and produces
   deterministic samples from APUI/music-port events and typed voice,
   envelope, echo, and global-parameter events. It reports per-frame coverage
@@ -287,7 +298,12 @@ This file records the current implementation status for
   digest `5f51f387...1cc0889`. Checkpointed BRR voices retain their live 19-sample
   Gaussian window and filter history, then decode subsequent blocks on demand
   from SPC RAM with bounded storage rather than relying on a static predecode
-  cycle or a later checkpoint refresh.
+  cycle or a later checkpoint refresh. `scripts/check_modern_audio_route.py`
+  now enforces that proof as a streaming gate: it rejects the first sample/hash
+  mismatch or ignored event without materializing the full trace. Its DSP-write
+  receipt is dynamically sized (dense frames can exceed 256 writes), and exact
+  KON receipts replace raw masks with the complete already-staged voice state so
+  hidden rate counters and source-directory selections cannot drift silently.
 - `ModernAudioSequencer` now sits before that engine in the modern backend. It
   consumes a typed, engine-authored command bus and expands `PlayMusic` and
   panned `PlaySfx` commands into `SetTempo`, `SetEnvelope`, `NoteOn`, and

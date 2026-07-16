@@ -123,11 +123,36 @@ translated C engine audio oracle under `../zelda3`.
 Override the C checkout with `ZELDA3_C_REPO=/path/to/zelda3`, `--c-repo`, or
 `--c-bin`.
 
-For optional external-emulator checks, pass `--with-bsnes` or `--with-mesen`.
-On macOS arm64, `--with-bsnes` will download the bsnes libretro core into
-`external/bsnes-libretro/local/` if no core is found. You can override with
-`BSNES_LIBRETRO_CORE=/path/to/bsnes_libretro.dylib`, `--bsnes-core`, or
-`--no-install-bsnes`. The Mesen2 runner expects the local app under
+For the live external-emulator check, pass `--with-snes9x`. On macOS arm64,
+this downloads the Snes9x Libretro core into `external/snes9x-libretro/local/`
+if no core is found. Override it with
+`SNES9X_LIBRETRO_CORE=/path/to/snes9x_libretro.dylib`, `--snes9x-core`, or
+`--no-install-snes9x`. The gate feeds the same controller word to Snes9x and
+the Rust engine once per game frame, scans the full requested route, and writes
+a replayable receipt under `target/parity/snes9x-session/`. It also runs an
+exact local-APU waveform companion gate; use `--no-snes9x-exact-apu` only when
+you intentionally want the production timing comparison alone.
+
+To turn a manual failure into a deterministic route, record a normal play
+session and replay it through both engines:
+
+```bash
+ZELDA3_RECORD_INPUT_SESSION="$PWD/target/manual-pot-route" \
+  cargo run -p zelda3-bin -- /path/to/zelda3.sfc
+
+python3 scripts/replay_snes9x_session.py \
+  target/manual-pot-route \
+  --rom /path/to/zelda3.sfc
+```
+
+The capture flushes `live_inputs.jsonl` while the game is running and writes
+the compact `input.txt`, initial SRAM, and initial Rust state when play ends.
+The Snes9x replay records core/ROM hashes, core version, every audio callback
+boundary, cumulative waveform hashes, video mismatch ranges, initial/final
+Snes9x states, and a `replay.sh`. The replay refuses a ROM or core whose SHA-256
+no longer matches the capture. It never performs moving or per-frame alignment.
+
+The optional Mesen2 runner expects the local app under
 `external/mesen2-oracle/local/` unless `--mesen-runner` is supplied.
 
 The C audio oracle can also run directly:

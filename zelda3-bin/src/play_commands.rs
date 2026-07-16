@@ -4,13 +4,17 @@ use std::path::Path;
 use std::process;
 
 use platform::{HostMenuAction, HostMenuInput, HostMenuMode, HostMenuState, NativeFrontendOptions};
-use zelda3::{game_output::AudioBackendMode, ZeldaState};
+use zelda3::{
+    game_output::{AudioBackendMode, AudioSequencerBackend},
+    ZeldaState,
+};
 
 use crate::audio_trace::replay_checksum_samples;
 use crate::developer_room_commands::{
     current_developer_location_from_ram, load_developer_destination,
 };
 use crate::input_script::InputScript;
+use crate::live_input_recording::LiveInputRecording;
 use crate::{
     apply_sram_to_game_or_exit, captured_panic_from, developer_destinations,
     install_crash_panic_hook, load_embedded_play_state, load_play_state, play_renderer,
@@ -48,6 +52,20 @@ fn configure_audio_backend_from_env(game: &mut ZeldaState) -> Result<AudioBacken
     game.zelda_set_audio_backend(backend)
         .map_err(str::to_string)?;
     Ok(backend)
+}
+
+fn configure_audio_sequencer_from_env(game: &mut ZeldaState) -> Result<(), String> {
+    let Some(value) = env::var_os("ZELDA3_AUDIO_SEQUENCER") else {
+        return Ok(());
+    };
+    let value = value
+        .into_string()
+        .map_err(|_| "ZELDA3_AUDIO_SEQUENCER must be valid UTF-8".to_string())?;
+    let sequencer = AudioSequencerBackend::parse(&value).ok_or_else(|| {
+        format!("invalid ZELDA3_AUDIO_SEQUENCER={value:?}; expected native or exact-spc-driver")
+    })?;
+    game.zelda_set_audio_sequencer_backend(sequencer)
+        .map_err(str::to_string)
 }
 
 fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions, String> {
@@ -158,6 +176,10 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
         eprintln!("{message}");
         process::exit(2);
     });
+    configure_audio_sequencer_from_env(&mut game).unwrap_or_else(|message| {
+        eprintln!("{message}");
+        process::exit(2);
+    });
     if let Some(path) = options.load_sram.as_deref() {
         let sram = read_file_or_exit(Path::new(path), "SRAM");
         apply_sram_to_game_or_exit(&mut game, Path::new(path), &sram);
@@ -186,6 +208,10 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
             game.state_recorder = state_recorder;
         }
     }
+    let mut input_recording = LiveInputRecording::start_from_env(&game).unwrap_or_else(|error| {
+        eprintln!("failed to start frontend-smoke input recording: {error}");
+        process::exit(1);
+    });
     let width = 256u32;
     let height = 224u32;
     let mut renderer = match play_renderer::configured_from_env(
@@ -217,8 +243,17 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
         } else {
             options.input_script.input_for_frame(completed)
         };
+        if let Some(recording) = input_recording.as_mut() {
+            recording
+                .record(completed, live_input)
+                .unwrap_or_else(|error| {
+                    eprintln!(
+                        "failed to record frontend-smoke input at frame {completed}: {error}"
+                    );
+                    process::exit(1);
+                });
+        }
         game.zelda_run_frame(live_input as i32);
-        renderer.present_frame(&mut game);
         game.zelda_render_audio(&mut audio, audio_samples as i32, audio_channels as i32);
         let stats = game.zelda_modern_audio_last_stats();
         triggered_voices += u64::from(stats.triggered_voices);
@@ -236,10 +271,17 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
         audio_hash = audio_hash.rotate_left(5) ^ replay_checksum_samples(&audio);
         renderer.push_audio(&audio);
         game.zelda_discard_unused_audio_frames();
+        renderer.present_frame(&mut game);
         completed += 1;
     }
     if !options.frame_pacing {
         renderer.wait_idle();
+    }
+    if let Some(recording) = input_recording.take() {
+        recording.finish().unwrap_or_else(|error| {
+            eprintln!("failed to finish frontend-smoke input recording: {error}");
+            process::exit(1);
+        });
     }
 
     println!(
@@ -264,8 +306,18 @@ fn run_play_with_state(mut game: ZeldaState) {
         eprintln!("{message}");
         process::exit(2);
     });
+    configure_audio_sequencer_from_env(&mut game).unwrap_or_else(|message| {
+        eprintln!("{message}");
+        process::exit(2);
+    });
     if env::var_os("ZELDA3_AUDIO_BACKEND").is_some() {
         eprintln!("audio backend override: {audio_backend:?}");
+    }
+    if env::var_os("ZELDA3_AUDIO_SEQUENCER").is_some() {
+        eprintln!(
+            "audio sequencer override: {:?}",
+            game.zelda_audio_sequencer_backend()
+        );
     }
     let last_panic = install_crash_panic_hook();
     let width = 256u32;
@@ -285,6 +337,13 @@ fn run_play_with_state(mut game: ZeldaState) {
     let audio_channels = renderer.audio_channels();
     let mut audio = vec![0i16; audio_samples * audio_channels];
     let mut host_frame = 0u32;
+    let mut input_recording = LiveInputRecording::start_from_env(&game).unwrap_or_else(|error| {
+        eprintln!("failed to start live input recording: {error}");
+        process::exit(1);
+    });
+    if input_recording.is_some() {
+        eprintln!("recording each game-frame controller poll for Snes9x replay");
+    }
     let mut game_started = env::var_os("ZELDA3_SKIP_HOST_MENU").is_some();
     let mut host_menu = HostMenuState::new(
         HostMenuMode::PreGame,
@@ -335,6 +394,12 @@ fn run_play_with_state(mut game: ZeldaState) {
                             eprintln!("host menu controls panel selected: {panel:?}");
                         }
                         HostMenuAction::WarpToVerifiedDestination(id) => {
+                            if input_recording.is_some() {
+                                eprintln!(
+                                    "cannot use developer warp `{id}` while recording a Snes9x-replayable input route; record the route from normal boot"
+                                );
+                                process::exit(2);
+                            }
                             match load_developer_destination(id) {
                                 Ok((next_game, next_frame)) => {
                                     game = next_game;
@@ -387,16 +452,24 @@ fn run_play_with_state(mut game: ZeldaState) {
             game_started = true;
         }
         let run_what = select_run_what(&game.ram);
+        if let Some(recording) = input_recording.as_mut() {
+            recording
+                .record(host_frame, live_input)
+                .unwrap_or_else(|error| {
+                    eprintln!("failed to record live input at frame {host_frame}: {error}");
+                    process::exit(1);
+                });
+        }
         let pre_frame_game = game.clone();
         let mut crash_stage = "run_frame";
         let frame_result = panic::catch_unwind(AssertUnwindSafe(|| {
             game.zelda_run_frame(live_input as i32);
-            crash_stage = renderer.name();
-            renderer.present_frame(&mut game);
             crash_stage = "audio";
             game.zelda_render_audio(&mut audio, audio_samples as i32, audio_channels as i32);
             renderer.push_audio(&audio);
             game.zelda_discard_unused_audio_frames();
+            crash_stage = renderer.name();
+            renderer.present_frame(&mut game);
         }));
         if let Err(payload) = frame_result {
             let panic_info = captured_panic_from(last_panic.clone(), payload);
@@ -446,6 +519,25 @@ fn run_play_with_state(mut game: ZeldaState) {
             last_traced_live_input = trace_state;
         }
         host_frame = host_frame.wrapping_add(1);
+    }
+    let audio_underflow_samples = renderer.audio_underflow_samples();
+    if audio_underflow_samples != 0 {
+        eprintln!(
+            "live audio timeline underflowed by {audio_underflow_samples} interleaved samples"
+        );
+    }
+    let audio_dropped_samples = renderer.audio_dropped_samples();
+    if audio_dropped_samples != 0 {
+        eprintln!("live audio timeline dropped {audio_dropped_samples} interleaved samples");
+    }
+    if let Some(recording) = input_recording.take() {
+        match recording.finish() {
+            Ok(dir) => eprintln!("captured deterministic input session: {}", dir.display()),
+            Err(error) => {
+                eprintln!("failed to finish live input recording: {error}");
+                process::exit(1);
+            }
+        }
     }
     game.zelda_write_sram();
 }

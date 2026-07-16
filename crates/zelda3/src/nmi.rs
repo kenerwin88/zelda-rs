@@ -5,12 +5,18 @@ use crate::game_output::{AudioSfxBank, EngineAudioCommand};
 
 impl ZeldaState {
     pub(super) fn interrupt_nmi(&mut self, input: u16) {
-        self.interrupt_nmi_audio_parts_locked();
+        let joypad_already_sampled = std::mem::take(&mut self.joypad_sampled_before_main);
+        let audio_already_processed = std::mem::take(&mut self.audio_nmi_processed_before_main);
+        if !audio_already_processed {
+            self.interrupt_nmi_audio_parts_locked();
+        }
 
         if !self.game_state.display.nmi_update_is_latched() {
             self.latch_nmi_update();
             self.nmi_do_updates();
-            self.nmi_read_joypads(input);
+            if !joypad_already_sampled {
+                self.nmi_read_joypads(input);
+            }
         }
 
         if self.game_state.display.nmi_thread_active {

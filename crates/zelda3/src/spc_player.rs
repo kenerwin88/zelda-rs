@@ -41,26 +41,10 @@ const MUSIC_NOTE_VOLUME_LEVELS: [uint8; 16] = [
 ];
 const MUSIC_NOTE_GATE_OFF_PERCENTAGES: [uint8; 8] = [50, 101, 127, 152, 178, 203, 229, 252];
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 #[repr(C)]
 pub struct DspRegWriteHistory {
-    pub count: usize,
-    pub addr: [uint8; 256],
-    pub val: [uint8; 256],
-    pub sample_offset: [i32; 256],
-    pub timer_cycles: [uint8; 256],
-}
-
-impl Default for DspRegWriteHistory {
-    fn default() -> Self {
-        Self {
-            count: 0,
-            addr: [0; 256],
-            val: [0; 256],
-            sample_offset: [0; 256],
-            timer_cycles: [0; 256],
-        }
-    }
+    pub writes: Vec<(uint8, uint8, i32, uint8)>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -1198,17 +1182,16 @@ fn dsp_write(p: *mut SpcPlayer, reg: uint8_t, value: uint8) {
         }
     }
     if let Some(hist) = unsafe { p.reg_write_history.as_mut() } {
-        if hist.count < 256 {
-            hist.addr[hist.count] = reg;
-            hist.val[hist.count] = value;
-            hist.sample_offset[hist.count] = if p.dsp.is_null() {
+        hist.writes.push((
+            reg,
+            value,
+            if p.dsp.is_null() {
                 0
             } else {
                 unsafe { (*p.dsp).sampleOffset }
-            };
-            hist.timer_cycles[hist.count] = p.timer_cycles;
-            hist.count += 1;
-        }
+            },
+            p.timer_cycles,
+        ));
     }
     if !p.dsp.is_null() {
         dsp_write_impl(p.dsp, reg, value);
@@ -2955,14 +2938,17 @@ pub fn compare_spc_impls(p: *mut SpcPlayer, p_org: *mut SpcPlayer, apu: *mut Apu
     }
 
     let mut hist = unsafe { p_ref.reg_write_history.as_mut() };
-    let hist_count = hist.as_ref().map(|hist| hist.count).unwrap_or(0);
-    let n = hist_count.max(apu_ref.hist.count);
+    let hist_count = hist.as_ref().map(|hist| hist.writes.len()).unwrap_or(0);
+    let n = hist_count.max(apu_ref.hist.writes.len());
     for i in 0..n {
         let mine = hist
             .as_ref()
-            .and_then(|hist| (i < hist.count).then_some((hist.addr[i], hist.val[i])));
-        let theirs =
-            (i < apu_ref.hist.count).then_some((apu_ref.hist.addr[i], apu_ref.hist.val[i]));
+            .and_then(|hist| hist.writes.get(i).map(|&(addr, value, _, _)| (addr, value)));
+        let theirs = apu_ref
+            .hist
+            .writes
+            .get(i)
+            .map(|&(addr, value, _, _)| (addr, value));
         if mine != theirs {
             if errors == 0 {
                 eprintln!("SPC DSP write divergence:");
@@ -2986,9 +2972,9 @@ pub fn compare_spc_impls(p: *mut SpcPlayer, p_org: *mut SpcPlayer, apu: *mut Apu
     }
 
     if let Some(hist) = hist.as_mut() {
-        hist.count = 0;
+        hist.writes.clear();
     }
-    apu_ref.hist.count = 0;
+    apu_ref.hist.writes.clear();
     true
 }
 

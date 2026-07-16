@@ -6,9 +6,10 @@ impl ZeldaState {
     pub fn zelda_oracle_aligned_modern_audio_trace_state(
         &self,
     ) -> (ModernAudioSequencer, ModernAudioEngine) {
+        let sequencer = self.audio.modern.sequencer.clone();
         let mut engine = self.audio.modern.renderer.clone();
         self.zelda_sync_modern_audio_trace_engine(&mut engine, 0);
-        (self.audio.modern.sequencer.clone(), engine)
+        (sequencer, engine)
     }
 
     pub fn zelda_sync_modern_audio_trace_engine(
@@ -19,6 +20,7 @@ impl ZeldaState {
         let dsp = crate::spc_player::spc_player_save_dsp_c_saveload(self.audio.spc_player);
         let ram = crate::spc_player::spc_player_save_ram(self.audio.spc_player);
         let word = |offset| i16::from_le_bytes([dsp[offset], dsp[offset + 1]]);
+        engine.seed_dsp_checkpoint_state(&ram, &dsp);
         engine.seed_echo_checkpoint_state(
             &ram,
             dsp[0x6d],
@@ -103,7 +105,24 @@ impl ZeldaState {
         samples: i32,
         channels: i32,
     ) -> Vec<(u8, u8, i32, u8)> {
+        self.zelda_render_audio_trace_dsp_inner(audio_buffer, None, samples, channels, true)
+    }
+
+    pub fn zelda_prepare_audio_trace_dsp(&mut self) {
         self.zelda_pop_apu_state();
+    }
+
+    fn zelda_render_audio_trace_dsp_inner(
+        &mut self,
+        audio_buffer: &mut [i16],
+        mut dsp_only_audio_buffer: Option<&mut [i16]>,
+        samples: i32,
+        channels: i32,
+        pop_state: bool,
+    ) -> Vec<(u8, u8, i32, u8)> {
+        if pop_state {
+            self.zelda_pop_apu_state();
+        }
         let count = (samples.max(0) as usize).saturating_mul(channels.max(0) as usize);
         let mut writes = Vec::new();
         if samples > 0 && channels > 0 {
@@ -113,15 +132,7 @@ impl ZeldaState {
                 player.reg_write_history = &mut hist;
                 crate::spc_player::spc_player_generate_samples(player);
                 player.reg_write_history = std::ptr::null_mut();
-                writes.reserve(hist.count);
-                for i in 0..hist.count {
-                    writes.push((
-                        hist.addr[i],
-                        hist.val[i],
-                        hist.sample_offset[i],
-                        hist.timer_cycles[i],
-                    ));
-                }
+                writes.extend_from_slice(&hist.writes);
                 crate::spc_player::dsp_get_samples(
                     player.dsp,
                     audio_buffer,
@@ -135,7 +146,14 @@ impl ZeldaState {
             }
         }
         if self.audio.msu_player.has_file && channels == 2 {
+            if let Some(dsp_only) = dsp_only_audio_buffer.as_deref_mut() {
+                let copy_len = count.min(audio_buffer.len()).min(dsp_only.len());
+                dsp_only[..copy_len].copy_from_slice(&audio_buffer[..copy_len]);
+            }
             self.msu_player_mix(audio_buffer, samples);
+        } else if let Some(dsp_only) = dsp_only_audio_buffer.as_deref_mut() {
+            let copy_len = count.min(audio_buffer.len()).min(dsp_only.len());
+            dsp_only[..copy_len].copy_from_slice(&audio_buffer[..copy_len]);
         }
         writes
     }
@@ -152,5 +170,26 @@ impl ZeldaState {
                 DspWriteEvent::new(addr, value, sample_offset, timer_cycles)
             })
             .collect()
+    }
+
+    pub fn zelda_render_prepared_audio_trace_dsp_events(
+        &mut self,
+        audio_buffer: &mut [i16],
+        dsp_only_audio_buffer: &mut [i16],
+        samples: i32,
+        channels: i32,
+    ) -> Vec<DspWriteEvent> {
+        self.zelda_render_audio_trace_dsp_inner(
+            audio_buffer,
+            Some(dsp_only_audio_buffer),
+            samples,
+            channels,
+            false,
+        )
+        .into_iter()
+        .map(|(addr, value, sample_offset, timer_cycles)| {
+            DspWriteEvent::new(addr, value, sample_offset, timer_cycles)
+        })
+        .collect()
     }
 }

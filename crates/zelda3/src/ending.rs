@@ -2298,18 +2298,43 @@ impl ZeldaState {
 
     pub(super) fn intro_zelda_fadein(&mut self) {
         self.intro_handle_all_triforce_animations();
+        if self.intro_title_fade_defer_suffix_this_frame
+            && self.game_state.frame.frame_counter & 1 != 0
+        {
+            self.intro_title_fade_defer_suffix_this_frame = false;
+            self.intro_title_fade_suffix_pending = true;
+            return;
+        }
+        self.intro_title_fade_defer_suffix_this_frame = false;
+        self.complete_intro_zelda_fade_suffix(false);
+    }
+
+    pub(super) fn complete_intro_zelda_fade_suffix(&mut self, resumed: bool) {
+        self.intro_title_fade_suffix_pending = false;
         if self.game_state.frame.frame_counter & 1 == 0 {
             return;
         }
         self.palette_fade_intro_one_step();
         if self.game_state.display.palette_filter.countdown() == 0 {
-            self.set_subsubmodule(42);
-            self.increment_submodule();
-            self.intro_setup_sword_and_intro_flash();
+            if self.rom_startup_timing() && !resumed {
+                // The ROM is interrupted after the final palette pass and
+                // resumes the remainder of this routine in the next host
+                // frame, without starting another game-loop iteration.
+                self.intro_zelda_fade_transition_pending = true;
+            } else {
+                self.complete_intro_zelda_fade_transition();
+            }
         } else if self.game_state.display.palette_filter.countdown() == 13 {
             self.set_main_screen_layers(0x15);
             self.set_sub_screen_layers(0);
         }
+    }
+
+    pub(super) fn complete_intro_zelda_fade_transition(&mut self) {
+        self.intro_zelda_fade_transition_pending = false;
+        self.set_subsubmodule(42);
+        self.increment_submodule();
+        self.intro_setup_sword_and_intro_flash();
     }
 
     pub(super) fn intro_setup_sword_and_intro_flash(&mut self) {
@@ -2318,8 +2343,16 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_sword_coming_down(&mut self) {
+        let poly_thread_was_active = self.game_state.display.nmi_thread_active;
         self.intro_handle_all_triforce_animations();
         self.attract_scene_mut().clear_intro_did_run_step();
+        if self.rom_startup_timing() && poly_thread_was_active {
+            // The 65816 resumes the interrupted main thread one host frame
+            // after shutting down the title poly thread.  Preserve that
+            // continuation boundary so the sword countdown and SFX do not
+            // start one frame early.
+            self.intro_poly_thread_teardown_pending = true;
+        }
         self.deactivate_nmi_thread();
         self.intro_periodic_sword_and_intro_flash();
         self.decrement_subsubmodule();
@@ -2335,6 +2368,21 @@ impl ZeldaState {
     pub(super) fn intro_fade_in_bg(&mut self) {
         self.intro_periodic_sword_and_intro_flash();
         self.intro_handle_all_triforce_animations();
+        if rom_intro_bg_fade_should_yield_suffix(
+            self.intro_bg_fade_defer_suffix_this_frame,
+            self.game_state.intro_sword.anim_step_raw(),
+            self.game_state.intro_sword.sparkle_step(),
+        ) {
+            self.intro_bg_fade_defer_suffix_this_frame = false;
+            self.intro_bg_fade_suffix_pending = true;
+            return;
+        }
+        self.intro_bg_fade_defer_suffix_this_frame = false;
+        self.complete_intro_bg_fade_suffix();
+    }
+
+    pub(super) fn complete_intro_bg_fade_suffix(&mut self) {
+        self.intro_bg_fade_suffix_pending = false;
         if self.game_state.display.palette_filter.countdown() != 0 {
             if self.game_state.frame.frame_counter & 1 != 0 {
                 self.palette_fade_intro2();
@@ -2516,6 +2564,9 @@ impl ZeldaState {
         self.increment_submodule();
         self.set_sound_effect_2(10);
         self.intro_init_continue();
+        if self.rom_startup_timing() {
+            self.intro_startup_delay = ROM_INTRO_SOUND_BANK_BOOTSTRAP_FRAMES;
+        }
     }
 
     pub(super) fn intro_setup_screen(&mut self) {
@@ -2565,7 +2616,7 @@ impl ZeldaState {
                 if self.game_state.display.screen_brightness == 0 {
                     if self.rom_startup_timing() {
                         self.enable_force_blank();
-                        let delay = configured_intro_memory_darken_frame_delay();
+                        let delay = configured_intro_memory_initialization_frames();
                         if delay != 0 {
                             self.intro_memory_darken_frame_delay = delay;
                             return;
@@ -2609,6 +2660,9 @@ impl ZeldaState {
         self.set_countdown_word(31);
         self.clear_mosaic_target_level();
         self.increment_submodule();
+        if self.rom_startup_timing() {
+            self.intro_poly_thread_initialization_phase = 3;
+        }
     }
 
     pub(super) fn intro_initialize_triforce_poly_thread(&mut self) {
@@ -2688,13 +2742,6 @@ impl ZeldaState {
                 self.attract_scene_mut().mark_intro_did_run_step();
                 return;
             }
-            if self.bsnes_hold_intro_step_this_frame {
-                self.attract_scene_mut().mark_intro_did_run_step();
-                return;
-            }
-            self.intro_run_step();
-            self.attract_scene_mut().mark_intro_did_run_step();
-            return;
         }
         if self.game_state.ending.attract_scene.intro_did_run_step() == 0 {
             self.intro_run_step();

@@ -21,6 +21,8 @@ mod image_output;
 mod index_dump_commands;
 mod index_source_keys;
 mod input_script;
+mod libretro_timeline;
+mod live_input_recording;
 mod overworld_dump_commands;
 mod play_commands;
 mod play_renderer;
@@ -64,6 +66,9 @@ use hd_authoring_commands::{run_dump_hd_capture, run_slice_hd_cells};
 use image_output::{write_argb_frame_png, write_rgba_frame_png};
 use index_dump_commands::{run_dump_dungeon_index_tiles, run_dump_sprite_index_tiles};
 use input_script::InputScript;
+use libretro_timeline::{
+    format_input_history, AudioComparisonMode, AudioTimingOptions, StreamingAudioComparator,
+};
 use overworld_dump_commands::{run_dump_unique_overworld_cells, run_dump_unique_overworld_tiles};
 use platform::NativeFrontendOptions;
 use play_commands::{run_frontend_smoke, run_play, run_standalone_play};
@@ -89,8 +94,9 @@ use serde::{Deserialize, Serialize};
 use sheet_dump_commands::{run_dump_dungeon_sheet_png, run_dump_sprite_sheet_png};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, Snes};
 use zelda3::{
-    config::parse_config_file_context, game_output::DspWriteEvent, LockstepOracle, OracleError,
-    ZeldaState, RUN_MAIN, RUN_POLY,
+    config::parse_config_file_context,
+    game_output::{AudioBackendMode, AudioSequencerBackend, DspWriteEvent},
+    LockstepOracle, OracleError, ZeldaState, RUN_MAIN, RUN_POLY,
 };
 
 const LOCKSTEP_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSLS01";
@@ -168,8 +174,12 @@ fn main() {
         run_compare_bsnes_oracle(&args[2..]);
         return;
     }
+    if args.get(1).map(String::as_str) == Some("--compare-snes9x-oracle") {
+        run_compare_snes9x_oracle(&args[2..]);
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("--compare-libretro-oracle") {
-        run_compare_libretro_oracle(&args[2..], None);
+        run_compare_libretro_oracle(&args[2..], None, None);
         return;
     }
     if args.get(1).map(String::as_str) == Some("--dump-bsnes-frame") {
@@ -418,8 +428,9 @@ fn dispatch_rom_first_oracle_flags(args: &[String]) -> bool {
     let has_play_lockstep = tail.iter().any(|arg| arg == "--play-lockstep");
     let has_lockstep_render = tail.iter().any(|arg| arg == "--compare-lockstep-render");
     let has_bsnes = tail.iter().any(|arg| arg == "--compare-bsnes-oracle");
+    let has_snes9x = tail.iter().any(|arg| arg == "--compare-snes9x-oracle");
     let has_libretro = tail.iter().any(|arg| arg == "--compare-libretro-oracle");
-    if !(has_play_lockstep || has_lockstep_render || has_bsnes || has_libretro) {
+    if !(has_play_lockstep || has_lockstep_render || has_bsnes || has_snes9x || has_libretro) {
         return false;
     }
 
@@ -452,18 +463,22 @@ fn dispatch_rom_first_oracle_flags(args: &[String]) -> bool {
         return true;
     }
 
-    if has_bsnes || has_libretro {
+    if has_bsnes || has_snes9x || has_libretro {
         let mut forwarded = Vec::new();
         let mut passthrough = Vec::new();
         let mut i = 0usize;
         let oracle_flag = if has_libretro {
             "--compare-libretro-oracle"
+        } else if has_snes9x {
+            "--compare-snes9x-oracle"
         } else {
             "--compare-bsnes-oracle"
         };
         while i < tail.len() {
             match tail[i].as_str() {
-                "--compare-bsnes-oracle" | "--compare-libretro-oracle" => {
+                "--compare-bsnes-oracle"
+                | "--compare-snes9x-oracle"
+                | "--compare-libretro-oracle" => {
                     let Some(core_path) = tail.get(i + 1) else {
                         eprintln!("{oracle_flag} requires a path to a SNES libretro core");
                         process::exit(2);
@@ -484,7 +499,9 @@ fn dispatch_rom_first_oracle_flags(args: &[String]) -> bool {
         forwarded.push(rom_path.clone());
         forwarded.extend(passthrough);
         if has_libretro {
-            run_compare_libretro_oracle(&forwarded, None);
+            run_compare_libretro_oracle(&forwarded, None, None);
+        } else if has_snes9x {
+            run_compare_snes9x_oracle(&forwarded);
         } else {
             run_compare_bsnes_oracle(&forwarded);
         }
@@ -1421,10 +1438,14 @@ fn run_replay_save(args: &[String]) {
     } else {
         None
     };
+    let mut audio_trace_dsp_buffer = audio_trace_buffer
+        .as_ref()
+        .map(|audio| vec![0i16; audio.len()]);
     // The diagnostic renderer must evolve independently. C DSP output is the
     // comparison target, never a source of modern voice/envelope state.
     let (mut modern_audio_trace_sequence, mut modern_audio_trace_engine) =
-        game.zelda_modern_audio_state();
+        game.zelda_oracle_aligned_modern_audio_trace_state();
+    let mut modern_audio_trace_previous_dsp_post = None;
     let mut modern_audio_trace_sample_assets = [None; 256];
     let render_hash_cpu_debug = std::env::var_os("ZELDA3_RENDER_HASH_CPU_DEBUG").is_some();
     let mut render_hash_frame = if gpu_render_compare.enabled()
@@ -1525,7 +1546,13 @@ fn run_replay_save(args: &[String]) {
         let should_fingerprint_frame =
             fingerprint_log.is_some() && should_write_fingerprint(fingerprint_frame, frames);
         if let Some(audio) = audio_trace_buffer.as_mut() {
+            game.zelda_prepare_audio_trace_dsp();
             let dsp_pre = game.zelda_audio_dsp_hash();
+            let dsp_discontinuity =
+                modern_audio_trace_previous_dsp_post.is_some_and(|previous| previous != dsp_pre);
+            if dsp_discontinuity {
+                game.zelda_sync_modern_audio_trace_engine(&mut modern_audio_trace_engine, 0);
+            }
             let dsp_pre_snapshot = game.zelda_audio_dsp_snapshot();
             let spc_ram_pre = game.zelda_audio_live_spc_ram();
             let mut sample_ram_changed = false;
@@ -1542,7 +1569,12 @@ fn run_replay_save(args: &[String]) {
             if sample_ram_changed {
                 modern_audio_trace_engine.sample_ram_changed();
             }
-            let writes = game.zelda_render_audio_trace_dsp_events(audio, 735, 2);
+            let dsp_only_audio = audio_trace_dsp_buffer
+                .as_mut()
+                .expect("DSP-only trace buffer must accompany the final audio trace buffer");
+            let writes =
+                game.zelda_render_prepared_audio_trace_dsp_events(audio, dsp_only_audio, 735, 2);
+            modern_audio_trace_previous_dsp_post = Some(game.zelda_audio_dsp_hash());
             game.zelda_discard_unused_audio_frames();
             if should_fingerprint_frame {
                 let dsp_post = game.zelda_audio_dsp_hash();
@@ -1569,6 +1601,7 @@ fn run_replay_save(args: &[String]) {
                     frames,
                     &game,
                     audio,
+                    dsp_only_audio,
                     735,
                     2,
                     dsp_pre,
@@ -4060,8 +4093,7 @@ pub(crate) fn load_play_or_checkpoint(
     if let Some(path) = load_state {
         if let Ok(checkpoint) = load_play_crash_checkpoint(path) {
             let mut game = checkpoint.game;
-            game.set_rom_startup_timing(true);
-            apply_startup_audio_phase_override(&mut game);
+            game.restore_live_rom_timing_after_checkpoint();
             return (game, checkpoint.host_frame);
         }
         match load_lockstep_checkpoint(path) {
@@ -4074,7 +4106,7 @@ pub(crate) fn load_play_or_checkpoint(
                 let mut game = load_play_state(rom_path);
                 match load_replay_save_checkpoint(&mut game, path) {
                     Ok(()) => {
-                        game.set_rom_startup_timing(true);
+                        game.restore_live_rom_timing_after_checkpoint();
                         let frame = game.state_recorder.replay_frame_counter;
                         return (game, frame);
                     }
@@ -4585,15 +4617,28 @@ fn run_compare_bsnes_startup_audio(args: &[String]) {
 }
 
 fn run_compare_bsnes_oracle(args: &[String]) {
-    run_compare_libretro_oracle(args, Some("bsnes"));
+    run_compare_libretro_oracle(args, Some("bsnes"), Some("bsnes"));
 }
 
-fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str>) {
+fn run_compare_snes9x_oracle(args: &[String]) {
+    run_compare_libretro_oracle(args, Some("snes9x"), Some("Snes9x"));
+}
+
+fn run_compare_libretro_oracle(
+    args: &[String],
+    default_oracle_name: Option<&str>,
+    required_library_name: Option<&str>,
+) {
+    let operation = if required_library_name == Some("Snes9x") {
+        "--compare-snes9x-oracle"
+    } else {
+        "--compare-libretro-oracle"
+    };
     let core_path = match args.first() {
         Some(p) => p,
         None => {
             eprintln!(
-                "usage: zelda3 --compare-libretro-oracle <path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--oracle-name <name>] [--input-script <path>] [--load-sram <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--auto-align-video] [--lead-rust-audio-blocks <n>] [--trace-dsp-writes]"
+                "usage: zelda3 {operation} <path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--resume-rust-state <path> --resume-oracle-state <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all]"
             );
             process::exit(2);
         }
@@ -4602,7 +4647,7 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
         Some(p) => p,
         None => {
             eprintln!(
-                "usage: zelda3 --compare-libretro-oracle <path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--oracle-name <name>] [--input-script <path>] [--load-sram <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--auto-align-video] [--lead-rust-audio-blocks <n>] [--trace-dsp-writes]"
+                "usage: zelda3 {operation} <path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--input-script <path>] [--load-sram <path>] [--resume-rust-state <path> --resume-oracle-state <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all]"
             );
             process::exit(2);
         }
@@ -4610,6 +4655,8 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
     let mut frames = 300u32;
     let mut input_script = InputScript::default();
     let mut load_sram = None::<PathBuf>;
+    let mut resume_rust_state = None::<PathBuf>;
+    let mut resume_oracle_state = None::<PathBuf>;
     let mut compare_video = true;
     let mut compare_audio = true;
     let mut compare_from_frame = 0u32;
@@ -4620,6 +4667,21 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
     let mut trace_dsp_writes = false;
     let mut color_tolerance = 0u8;
     let mut max_mismatched_pixels = 0usize;
+    let mut audio_comparison = if required_library_name == Some("Snes9x") {
+        AudioComparisonMode::Timing
+    } else {
+        AudioComparisonMode::Exact
+    };
+    let mut audio_window_ms = 1.0f64;
+    let mut audio_silence_threshold = 64i16;
+    let mut audio_timing_tolerance_ms = 2.0f64;
+    let mut audio_envelope_tolerance = 0.05f64;
+    let mut session_dir = None::<PathBuf>;
+    let mut scan_all = false;
+    let mut rust_audio_backend = AudioBackendMode::Modern;
+    let mut rust_audio_sequencer = AudioSequencerBackend::Native;
+    let mut expected_core_sha256 = None::<String>;
+    let mut expected_rom_sha256 = None::<String>;
     let mut oracle_name = default_oracle_name
         .map(str::to_string)
         .unwrap_or_else(|| oracle_name_from_core_path(core_path));
@@ -4658,6 +4720,22 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
                     process::exit(2);
                 };
                 load_sram = Some(PathBuf::from(path));
+                i += 2;
+            }
+            "--resume-rust-state" => {
+                let Some(path) = args.get(i + 1) else {
+                    eprintln!("--resume-rust-state requires a path");
+                    process::exit(2);
+                };
+                resume_rust_state = Some(PathBuf::from(path));
+                i += 2;
+            }
+            "--resume-oracle-state" => {
+                let Some(path) = args.get(i + 1) else {
+                    eprintln!("--resume-oracle-state requires a path");
+                    process::exit(2);
+                };
+                resume_oracle_state = Some(PathBuf::from(path));
                 i += 2;
             }
             "--ignore-video" => {
@@ -4776,8 +4854,119 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
                 trace_dsp_writes = true;
                 i += 1;
             }
+            "--audio-comparison" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--audio-comparison requires exact or timing");
+                    process::exit(2);
+                };
+                audio_comparison = AudioComparisonMode::parse(value).unwrap_or_else(|| {
+                    eprintln!("invalid --audio-comparison `{value}`; expected exact or timing");
+                    process::exit(2);
+                });
+                i += 2;
+            }
+            "--audio-window-ms" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--audio-window-ms requires a positive number");
+                    process::exit(2);
+                };
+                audio_window_ms = value.parse().unwrap_or_else(|e| {
+                    eprintln!("invalid --audio-window-ms `{value}`: {e}");
+                    process::exit(2);
+                });
+                i += 2;
+            }
+            "--audio-silence-threshold" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--audio-silence-threshold requires an i16 value");
+                    process::exit(2);
+                };
+                audio_silence_threshold = value.parse().unwrap_or_else(|e| {
+                    eprintln!("invalid --audio-silence-threshold `{value}`: {e}");
+                    process::exit(2);
+                });
+                i += 2;
+            }
+            "--audio-timing-tolerance-ms" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--audio-timing-tolerance-ms requires a non-negative number");
+                    process::exit(2);
+                };
+                audio_timing_tolerance_ms = value.parse().unwrap_or_else(|e| {
+                    eprintln!("invalid --audio-timing-tolerance-ms `{value}`: {e}");
+                    process::exit(2);
+                });
+                i += 2;
+            }
+            "--audio-envelope-tolerance" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--audio-envelope-tolerance requires a number from 0 through 1");
+                    process::exit(2);
+                };
+                audio_envelope_tolerance = value.parse().unwrap_or_else(|e| {
+                    eprintln!("invalid --audio-envelope-tolerance `{value}`: {e}");
+                    process::exit(2);
+                });
+                i += 2;
+            }
+            "--session-dir" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--session-dir requires a path");
+                    process::exit(2);
+                };
+                session_dir = Some(PathBuf::from(value));
+                i += 2;
+            }
+            "--expected-core-sha256" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--expected-core-sha256 requires a hash");
+                    process::exit(2);
+                };
+                expected_core_sha256 = Some(value.clone());
+                i += 2;
+            }
+            "--expected-rom-sha256" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--expected-rom-sha256 requires a hash");
+                    process::exit(2);
+                };
+                expected_rom_sha256 = Some(value.clone());
+                i += 2;
+            }
+            "--scan-all" => {
+                scan_all = true;
+                i += 1;
+            }
+            "--rust-audio-backend" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--rust-audio-backend requires modern or dsp-parity");
+                    process::exit(2);
+                };
+                rust_audio_backend = AudioBackendMode::parse(value).unwrap_or_else(|| {
+                    eprintln!(
+                        "invalid --rust-audio-backend `{value}`; expected modern or dsp-parity"
+                    );
+                    process::exit(2);
+                });
+                if rust_audio_backend == AudioBackendMode::TraceOnly {
+                    eprintln!("--rust-audio-backend trace-only cannot compare audible PCM");
+                    process::exit(2);
+                }
+                i += 2;
+            }
+            "--rust-audio-sequencer" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--rust-audio-sequencer requires native or exact-spc-driver");
+                    process::exit(2);
+                };
+                rust_audio_sequencer = AudioSequencerBackend::parse(value).unwrap_or_else(|| {
+                    eprintln!("invalid --rust-audio-sequencer `{value}`; expected native or exact-spc-driver");
+                    process::exit(2);
+                });
+                i += 2;
+            }
             flag => {
-                eprintln!("unknown --compare-libretro-oracle option: {flag}");
+                eprintln!("unknown {operation} option: {flag}");
                 process::exit(2);
             }
         }
@@ -4785,12 +4974,80 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
     if trace_dsp_writes {
         require_audio_oracle("--trace-dsp-writes");
     }
+    if resume_rust_state.is_some() != resume_oracle_state.is_some() {
+        eprintln!(
+            "--resume-rust-state and --resume-oracle-state must be provided together so both engines resume at one boundary"
+        );
+        process::exit(2);
+    }
+    if resume_rust_state.is_some() && (load_sram.is_some() || skip_oracle_frames != 0) {
+        eprintln!(
+            "paired resume states cannot be combined with --load-sram or --skip-oracle-frames"
+        );
+        process::exit(2);
+    }
     if auto_align_video && compare_audio {
         eprintln!("--auto-align-video is video-only; pass --ignore-audio for this mode");
         process::exit(2);
     }
+    if required_library_name == Some("Snes9x") && auto_align_video {
+        eprintln!(
+            "Snes9x parity never auto-aligns; use one fixed --skip-oracle-frames value instead"
+        );
+        process::exit(2);
+    }
+    if !audio_window_ms.is_finite()
+        || audio_window_ms <= 0.0
+        || !audio_timing_tolerance_ms.is_finite()
+        || audio_timing_tolerance_ms < 0.0
+        || !audio_envelope_tolerance.is_finite()
+        || !(0.0..=1.0).contains(&audio_envelope_tolerance)
+        || audio_silence_threshold < 0
+    {
+        eprintln!("invalid audio comparison thresholds");
+        process::exit(2);
+    }
+    if let Err(error) =
+        validate_libretro_comparison_scope(frames, compare_from_frame, compare_video, compare_audio)
+    {
+        eprintln!("{error}");
+        process::exit(2);
+    }
+    if session_dir.is_some() {
+        scan_all = true;
+    }
+    verify_expected_sha256(core_path, "libretro core", expected_core_sha256.as_deref());
+    verify_expected_sha256(rom_path, "ROM", expected_rom_sha256.as_deref());
 
-    let mut game = load_play_state(rom_path);
+    let (mut game, start_frame) = if let Some(path) = resume_rust_state.as_deref() {
+        let checkpoint = load_play_crash_checkpoint(path).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to load Rust resume state {}: {error}",
+                path.display()
+            );
+            process::exit(2);
+        });
+        let mut game = checkpoint.game;
+        game.restore_live_rom_timing_after_checkpoint();
+        (game, checkpoint.host_frame)
+    } else {
+        (load_play_state(rom_path), 0)
+    };
+    if start_frame >= frames {
+        eprintln!("resume frame {start_frame} must be earlier than final frame count {frames}");
+        process::exit(2);
+    }
+    let effective_compare_from_frame = compare_from_frame.max(start_frame);
+    game.zelda_set_audio_backend(rust_audio_backend)
+        .unwrap_or_else(|error| {
+            eprintln!("cannot select --rust-audio-backend: {error}");
+            process::exit(2);
+        });
+    game.zelda_set_audio_sequencer_backend(rust_audio_sequencer)
+        .unwrap_or_else(|error| {
+            eprintln!("cannot select --rust-audio-sequencer: {error}");
+            process::exit(2);
+        });
     if let Some(path) = load_sram.as_deref() {
         let sram = read_file_or_exit(path, "SRAM");
         apply_sram_to_game_or_exit(&mut game, path, &sram);
@@ -4801,19 +5058,45 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
     let mut discard_audio = Vec::new();
     let mut dsp_writes = Vec::new();
     let mut last_sample_frames = 800usize;
-    let load_sram_bytes = load_sram
-        .as_deref()
-        .map(|path| read_file_or_exit(path, "SRAM"));
-    let mut oracle =
-        match LibretroCore::load_with_sram(core_path, rom_path, load_sram_bytes.as_deref()) {
-            Ok(core) => core,
-            Err(e) => {
-                eprintln!("failed to initialize libretro core: {e}");
-                process::exit(1);
-            }
-        };
+    let initial_sram = game.sram.clone();
+    let mut oracle = match LibretroCore::load_with_sram(core_path, rom_path, Some(&initial_sram)) {
+        Ok(core) => core,
+        Err(e) => {
+            eprintln!("failed to initialize libretro core: {e}");
+            process::exit(1);
+        }
+    };
+    if let Some(path) = resume_oracle_state.as_deref() {
+        let state = read_file_or_exit(path, "libretro resume state");
+        oracle.unserialize_state(&state).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to load oracle resume state {}: {error}",
+                path.display()
+            );
+            process::exit(2);
+        });
+        println!(
+            "resumed Rust and {oracle_name} from paired pre-frame states at frame {start_frame}"
+        );
+    }
+    if let Some(required) = required_library_name {
+        if !oracle
+            .library_name
+            .to_ascii_lowercase()
+            .contains(&required.to_ascii_lowercase())
+        {
+            eprintln!(
+                "wrong libretro core: expected {required}, loaded {} {}",
+                oracle.library_name, oracle.library_version
+            );
+            process::exit(2);
+        }
+    }
     println!(
-        "{oracle_name} oracle geometry={}x{} fps={:.9} sample_rate={:.3}",
+        "{oracle_name} oracle core={} version={} api={} geometry={}x{} fps={:.9} sample_rate={:.3}",
+        oracle.library_name,
+        oracle.library_version,
+        oracle.api_version,
         oracle.geometry.base_width,
         oracle.geometry.base_height,
         oracle.av_info.timing.fps,
@@ -4828,13 +5111,77 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
     if lead_rust_audio_blocks != 0 {
         println!("leading rust audio by {lead_rust_audio_blocks} block(s) per compared frame");
     }
+    let initial_oracle_state = oracle.serialize_state().unwrap_or_else(|e| {
+        eprintln!("Snes9x/libretro serialization is required for replayable parity failures: {e}");
+        process::exit(1);
+    });
+    oracle
+        .unserialize_state(&initial_oracle_state)
+        .unwrap_or_else(|e| {
+            eprintln!("Snes9x/libretro state round-trip failed before comparison: {e}");
+            process::exit(1);
+        });
+    let timing_options = AudioTimingOptions::from_sample_rate(
+        oracle.av_info.timing.sample_rate,
+        audio_window_ms,
+        audio_silence_threshold,
+        audio_timing_tolerance_ms,
+        audio_envelope_tolerance,
+    );
+    let mut continuous_audio = StreamingAudioComparator::new(audio_comparison, timing_options);
+    let resumed_frame_count = frames.saturating_sub(start_frame) as usize;
+    let mut input_history = Vec::<(u32, u16)>::with_capacity(resumed_frame_count);
+    let mut audio_frame_ends = Vec::<u64>::with_capacity(resumed_frame_count);
+    let mut compared_audio_sample_frames = 0u64;
+    let mut oracle_before_state = initial_oracle_state.clone();
+    let mut video_mismatch_ranges = Vec::<(u32, u32)>::new();
+    let mut first_video_mismatch = None::<String>;
+    let mut frame_receipts = initialize_libretro_session(
+        session_dir.as_deref(),
+        core_path,
+        rom_path,
+        &oracle,
+        &game,
+        &initial_sram,
+        &initial_oracle_state,
+        frames,
+        start_frame,
+        effective_compare_from_frame,
+        skip_oracle_frames,
+        compare_video,
+        compare_audio,
+        audio_comparison,
+        timing_options,
+        rust_audio_backend,
+        rust_audio_sequencer,
+    );
     let trace_poly_sched = std::env::var_os("TRACE_POLY_SCHED").is_some();
+    let mut poly_cycle_oracle = trace_poly_sched.then(|| {
+        let rom = read_file_or_exit(Path::new(rom_path), "ROM for poly cycle trace");
+        LockstepOracle::emu_initialize_owned(&rom).unwrap_or_else(|error| {
+            eprintln!("failed to initialize built-in poly cycle oracle: {error}");
+            process::exit(1);
+        })
+    });
     let gpu_video_readback = (compare_video || trace_video_pixel.is_some())
         .then(|| load_modern_asset_gpu_readback_or_exit("libretro oracle video comparison"));
-    for frame_index in 0..frames {
+    for frame_index in start_frame..frames {
         let input = input_script.input_for_frame(frame_index);
-        let compare_this_frame = frame_index >= compare_from_frame;
+        input_history.push((frame_index, input));
+        let compare_this_frame = frame_index >= effective_compare_from_frame;
         let pre_game = game.clone();
+        let rust_poly_cycles = if pre_game.ram[0x1f00] != 0 {
+            poly_cycle_oracle.as_mut().map(|oracle| {
+                oracle
+                    .measure_poly_frame_cycles(&pre_game)
+                    .unwrap_or_else(|error| {
+                        eprintln!("failed to measure poly work at frame {frame_index}: {error}");
+                        process::exit(1);
+                    })
+            })
+        } else {
+            None
+        };
         game.zelda_run_frame(input as i32);
         let rust_video_frame =
             (trace_video_pixel.is_some() || (compare_this_frame && compare_video)).then(|| {
@@ -4888,9 +5235,15 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
                 game.ram[0x1e62],
             );
         }
-
+        oracle
+            .serialize_state_into(&mut oracle_before_state)
+            .unwrap_or_else(|e| {
+                eprintln!("failed to serialize {oracle_name} before frame {frame_index}: {e}");
+                process::exit(1);
+            });
         let mut capture = oracle.run_frame_with_input(input);
         let sample_frames = capture.audio.len() / 2;
+        let rust_event_frame;
         if sample_frames != 0 {
             last_sample_frames = sample_frames;
             rust_audio.resize(capture.audio.len(), 0);
@@ -4904,8 +5257,14 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
                     sample_frames as i32,
                     2,
                 );
+                rust_event_frame = game.zelda_audio_event_frame_from_dsp_writes(&dsp_writes);
             } else {
-                game.zelda_render_audio(&mut rust_audio, sample_frames as i32, 2);
+                rust_event_frame = game.zelda_render_audio_with_backend(
+                    game.zelda_audio_backend(),
+                    &mut rust_audio,
+                    sample_frames as i32,
+                    2,
+                );
             }
         } else {
             rust_audio.clear();
@@ -4917,13 +5276,39 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
                     last_sample_frames as i32,
                     2,
                 );
+                rust_event_frame = game.zelda_audio_event_frame_from_dsp_writes(&dsp_writes);
             } else {
-                game.zelda_render_audio(&mut discard_audio, last_sample_frames as i32, 2);
+                rust_event_frame = game.zelda_render_audio_with_backend(
+                    game.zelda_audio_backend(),
+                    &mut discard_audio,
+                    last_sample_frames as i32,
+                    2,
+                );
             }
         }
         game.zelda_discard_unused_audio_frames();
         let rust_stats = AudioFrameStats::from_interleaved_stereo(&rust_audio);
         let oracle_stats = AudioFrameStats::from_interleaved_stereo(&capture.audio);
+        if compare_this_frame && compare_audio {
+            continuous_audio.push_stereo_frame(&rust_audio, &capture.audio);
+            compared_audio_sample_frames =
+                compared_audio_sample_frames.saturating_add(sample_frames as u64);
+            audio_frame_ends.push(compared_audio_sample_frames);
+        }
+        write_libretro_frame_receipt(
+            frame_receipts.as_mut(),
+            frame_index,
+            input,
+            rust_audio.len() / 2,
+            capture.audio.len() / 2,
+            capture.video_width,
+            capture.video_height,
+            &game.ram,
+            game.debug_last_poly_work(),
+            rust_poly_cycles,
+            &rust_event_frame,
+            oracle.memory_bytes(RETRO_MEMORY_SYSTEM_RAM),
+        );
         if let Some((x, y)) = trace_video_pixel {
             let pixel_index = y.saturating_mul(width as usize).saturating_add(x);
             let rust_offset = pixel_index.saturating_mul(4);
@@ -4992,73 +5377,82 @@ fn run_compare_libretro_oracle(args: &[String], default_oracle_name: Option<&str
                 }
             }
             if let Some(video_diff) = video_diff {
-                let artifact_dir = write_bsnes_parity_failure_artifacts(
-                    &pre_game,
-                    &game,
-                    rust_video_frame,
-                    &rust_audio,
-                    &capture,
-                    frame_index,
-                    input,
-                    oracle.av_info.timing.sample_rate.round() as u32,
-                    format!("{oracle_name} video divergence: {video_diff}"),
-                )
-                .ok();
-                eprintln!(
-                    "{oracle_name} video divergence at frame {frame_index}: {video_diff}; input={input:04x}; ports={ports:02x?}; main={:02x} sub={:02x} subsub={:02x}",
-                    game.ram[0x10], game.ram[0x11], game.ram[0xb0],
-                );
-                eprintln!("rust audio:  {:?}", rust_stats);
-                eprintln!("{oracle_name} audio: {:?}", oracle_stats);
-                eprintln!("rust audio debug: {}", game.zelda_audio_debug_summary());
-                if let Some(dir) = artifact_dir {
-                    eprintln!("parity failure artifacts: {}", dir.display());
-                }
-                process::exit(1);
-            }
-        }
-        if compare_this_frame && compare_audio {
-            if let Some(audio_diff) = compare_bsnes_audio_frame(&rust_audio, &capture.audio) {
-                let audio_artifact_frame;
-                let rust_artifact_frame = match rust_video_frame.as_deref() {
-                    Some(frame) => frame,
-                    None => {
-                        let renderer = load_modern_asset_gpu_readback_or_exit(
-                            "libretro oracle audio artifact frame",
-                        );
-                        audio_artifact_frame = render_modern_asset_gpu_frame_rgba_or_exit(
-                            &renderer,
-                            &mut game,
-                            "libretro oracle audio artifact frame",
-                        );
-                        &audio_artifact_frame
+                append_u32_range(&mut video_mismatch_ranges, frame_index);
+                if first_video_mismatch.is_none() {
+                    first_video_mismatch = Some(video_diff.clone());
+                    let artifact_dir = write_libretro_parity_failure_artifacts(
+                        &pre_game,
+                        &game,
+                        rust_video_frame,
+                        &rust_audio,
+                        &capture,
+                        &oracle_before_state,
+                        &input_history,
+                        frame_index,
+                        input,
+                        oracle.av_info.timing.sample_rate.round() as u32,
+                        oracle_name.as_str(),
+                        format!("{oracle_name} video divergence: {video_diff}"),
+                    )
+                    .ok();
+                    eprintln!(
+                        "{oracle_name} video divergence at frame {frame_index}: {video_diff}; input={input:04x}; ports={ports:02x?}; main={:02x} sub={:02x} subsub={:02x}",
+                        game.ram[0x10], game.ram[0x11], game.ram[0xb0],
+                    );
+                    eprintln!("rust audio:  {:?}", rust_stats);
+                    eprintln!("{oracle_name} audio: {:?}", oracle_stats);
+                    eprintln!("rust audio debug: {}", game.zelda_audio_debug_summary());
+                    if let Some(dir) = artifact_dir {
+                        eprintln!("parity failure artifacts: {}", dir.display());
                     }
-                };
-                let artifact_dir = write_bsnes_parity_failure_artifacts(
-                    &pre_game,
-                    &game,
-                    rust_artifact_frame,
-                    &rust_audio,
-                    &capture,
-                    frame_index,
-                    input,
-                    oracle.av_info.timing.sample_rate.round() as u32,
-                    format!("{oracle_name} audio divergence: {audio_diff}"),
-                )
-                .ok();
-                eprintln!(
-                    "{oracle_name} audio divergence at frame {frame_index}: {audio_diff}; input={input:04x}; ports={ports:02x?}; main={:02x} sub={:02x} subsub={:02x}",
-                    game.ram[0x10], game.ram[0x11], game.ram[0xb0],
-                );
-                eprintln!("rust audio:  {:?}", rust_stats);
-                eprintln!("{oracle_name} audio: {:?}", oracle_stats);
-                eprintln!("rust audio debug: {}", game.zelda_audio_debug_summary());
-                if let Some(dir) = artifact_dir {
-                    eprintln!("parity failure artifacts: {}", dir.display());
                 }
-                process::exit(1);
+                if !scan_all {
+                    process::exit(1);
+                }
             }
         }
+    }
+
+    let audio_report = compare_audio.then(|| continuous_audio.finish());
+    finalize_libretro_session(
+        session_dir.as_deref(),
+        frame_receipts.as_mut(),
+        &input_history,
+        audio_report.as_ref(),
+        &audio_frame_ends,
+        &oracle_before_state,
+        &oracle,
+        frames,
+        &video_mismatch_ranges,
+        first_video_mismatch.as_deref(),
+    );
+    if let Some(report) = audio_report.as_ref().filter(|report| !report.matched) {
+        let failing_frame = report
+            .first_mismatch_sample_frame
+            .map(|sample_frame| audio_frame_ends.partition_point(|&end| end <= sample_frame as u64))
+            .map(|index| effective_compare_from_frame.saturating_add(index as u32));
+        eprintln!(
+            "{oracle_name} audio divergence{}: {}",
+            failing_frame
+                .map(|frame| format!(" at or before frame {frame}"))
+                .unwrap_or_default(),
+            report.message,
+        );
+        if let Some(dir) = session_dir.as_deref() {
+            eprintln!("replayable Snes9x session: {}", dir.display());
+        }
+    }
+    if !video_mismatch_ranges.is_empty() {
+        eprintln!(
+            "{oracle_name} video diverged on {} frame range(s): {}",
+            video_mismatch_ranges.len(),
+            format_u32_ranges(&video_mismatch_ranges),
+        );
+    }
+    if !video_mismatch_ranges.is_empty()
+        || audio_report.as_ref().is_some_and(|report| !report.matched)
+    {
+        process::exit(1);
     }
 
     println!(
@@ -5072,6 +5466,487 @@ fn oracle_name_from_core_path(core_path: &str) -> String {
         .and_then(|stem| stem.to_str())
         .unwrap_or("libretro");
     stem.strip_suffix("_libretro").unwrap_or(stem).to_string()
+}
+
+fn validate_libretro_comparison_scope(
+    frames: u32,
+    compare_from_frame: u32,
+    compare_video: bool,
+    compare_audio: bool,
+) -> Result<(), String> {
+    if frames == 0 {
+        return Err("libretro parity requires at least one frame".to_string());
+    }
+    if compare_from_frame >= frames {
+        return Err(format!(
+            "--compare-from-frame {compare_from_frame} leaves no compared frames in a {frames}-frame route"
+        ));
+    }
+    if !compare_video && !compare_audio {
+        return Err("libretro parity requires video, audio, or both comparison lanes".to_string());
+    }
+    Ok(())
+}
+
+fn verify_expected_sha256(path: &str, label: &str, expected: Option<&str>) {
+    if let Err(error) = expected_sha256_matches(Path::new(path), label, expected) {
+        eprintln!("{error}");
+        process::exit(1);
+    }
+}
+
+fn expected_sha256_matches(path: &Path, label: &str, expected: Option<&str>) -> Result<(), String> {
+    let Some(expected) = expected else {
+        return Ok(());
+    };
+    let actual = parity::runner::sha256_file(path)
+        .map_err(|error| format!("failed to hash {label} {}: {error}", path.display()))?;
+    if actual.eq_ignore_ascii_case(expected) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{label} hash mismatch for replay: expected {expected}, found {actual} at {}",
+            path.display()
+        ))
+    }
+}
+
+fn append_u32_range(ranges: &mut Vec<(u32, u32)>, value: u32) {
+    if let Some((_, end)) = ranges.last_mut() {
+        if value == end.saturating_add(1) {
+            *end = value;
+            return;
+        }
+    }
+    ranges.push((value, value));
+}
+
+fn format_u32_ranges(ranges: &[(u32, u32)]) -> String {
+    ranges
+        .iter()
+        .map(|&(start, end)| {
+            if start == end {
+                start.to_string()
+            } else {
+                format!("{start}..{end}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn initialize_libretro_session(
+    session_dir: Option<&Path>,
+    core_path: &str,
+    rom_path: &str,
+    oracle: &LibretroCore,
+    game: &ZeldaState,
+    initial_sram: &[u8],
+    initial_oracle_state: &[u8],
+    frames: u32,
+    start_frame: u32,
+    compare_from_frame: u32,
+    skip_oracle_frames: u32,
+    compare_video: bool,
+    compare_audio: bool,
+    audio_comparison: AudioComparisonMode,
+    timing: AudioTimingOptions,
+    rust_audio_backend: AudioBackendMode,
+    rust_audio_sequencer: AudioSequencerBackend,
+) -> Option<BufWriter<fs::File>> {
+    let dir = session_dir?;
+    fs::create_dir_all(dir).unwrap_or_else(|e| {
+        eprintln!("failed to create libretro session {}: {e}", dir.display());
+        process::exit(1);
+    });
+    for stale in [
+        "input.txt",
+        "audio_frame_ends.json",
+        "audio_report.json",
+        "oracle_last_before.state",
+        "oracle_final.state",
+        "result.json",
+    ] {
+        match fs::remove_file(dir.join(stale)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                eprintln!("failed to remove stale libretro session {stale}: {error}");
+                process::exit(1);
+            }
+        }
+    }
+    fs::write(dir.join("initial.srm"), initial_sram).unwrap_or_else(|e| {
+        eprintln!("failed to write libretro session initial.srm: {e}");
+        process::exit(1);
+    });
+    fs::write(dir.join("oracle_initial.state"), initial_oracle_state).unwrap_or_else(|e| {
+        eprintln!("failed to write libretro session oracle_initial.state: {e}");
+        process::exit(1);
+    });
+    let rust_initial = PlayCrashCheckpoint {
+        magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
+        host_frame: start_frame,
+        input: 0,
+        run_what: RUN_MAIN,
+        game: game.clone(),
+    };
+    fs::write(
+        dir.join("rust_initial.z3state"),
+        bincode::serialize(&rust_initial).expect("serialize initial Rust parity state"),
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("failed to write libretro session rust_initial.z3state: {e}");
+        process::exit(1);
+    });
+    let core_sha256 = parity::runner::sha256_file(Path::new(core_path)).unwrap_or_else(|e| {
+        eprintln!("failed to hash libretro core {core_path}: {e}");
+        process::exit(1);
+    });
+    let rom_sha256 = parity::runner::sha256_file(Path::new(rom_path)).unwrap_or_else(|e| {
+        eprintln!("failed to hash ROM {rom_path}: {e}");
+        process::exit(1);
+    });
+    let manifest = serde_json::json!({
+        "schema": 1,
+        "status": "running",
+        "core": {
+            "path": core_path,
+            "sha256": core_sha256,
+            "library_name": oracle.library_name,
+            "library_version": oracle.library_version,
+            "libretro_api_version": oracle.api_version,
+        },
+        "rom": { "path": rom_path, "sha256": rom_sha256 },
+        "timing": {
+            "fps": oracle.av_info.timing.fps,
+            "sample_rate": oracle.av_info.timing.sample_rate,
+            "frames_requested": frames,
+            "start_frame": start_frame,
+            "compare_from_frame": compare_from_frame,
+            "fixed_oracle_startup_skip_frames": skip_oracle_frames,
+            "dynamic_alignment": false,
+        },
+        "comparison_lanes": {
+            "video": compare_video,
+            "audio": compare_audio,
+        },
+        "audio": {
+            "comparison": audio_comparison.as_str(),
+            "rust_backend": format!("{rust_audio_backend:?}"),
+            "rust_sequencer": format!("{rust_audio_sequencer:?}"),
+            "window_sample_frames": timing.window_frames,
+            "silence_threshold": timing.silence_threshold,
+            "max_timing_error_sample_frames": timing.max_timing_error_frames,
+            "max_envelope_error": timing.max_envelope_error,
+        },
+        "artifacts": [
+            "initial.srm",
+            "rust_initial.z3state",
+            "oracle_initial.state",
+            "oracle_last_before.state",
+            "input.txt",
+            "frame_receipts.jsonl",
+            "audio_frame_ends.json",
+            "audio_report.json",
+            "oracle_final.state",
+            "result.json",
+            "replay.sh"
+        ]
+    });
+    fs::write(
+        dir.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("failed to write libretro session manifest: {e}");
+        process::exit(1);
+    });
+    let absolute_dir = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    let repo_root = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let asset_pack = repo_root.join("zelda3_assets.dat");
+    let feature = if rust_audio_backend == AudioBackendMode::Modern
+        && rust_audio_sequencer == AudioSequencerBackend::Native
+    {
+        ""
+    } else {
+        " --features audio-oracle"
+    };
+    let lane_flags = match (compare_video, compare_audio) {
+        (true, true) => "",
+        (false, true) => " --ignore-video",
+        (true, false) => " --ignore-audio",
+        (false, false) => " --ignore-video --ignore-audio",
+    };
+    let initial_state_flags = if start_frame == 0 {
+        format!(
+            "--load-sram {} --skip-oracle-frames {}",
+            shell_single_quote(&absolute_dir.join("initial.srm").to_string_lossy()),
+            skip_oracle_frames,
+        )
+    } else {
+        format!(
+            "--resume-rust-state {} --resume-oracle-state {}",
+            shell_single_quote(&absolute_dir.join("rust_initial.z3state").to_string_lossy()),
+            shell_single_quote(&absolute_dir.join("oracle_initial.state").to_string_lossy()),
+        )
+    };
+    let replay = format!(
+        "#!/bin/sh\nset -eu\ncd {}\nZELDA3_ASSET_PACK={} cargo run -q -p zelda3-bin{} -- --compare-snes9x-oracle {} {} {} --expected-core-sha256 {} --expected-rom-sha256 {} --input-script {} {} --compare-from-frame {}{} --audio-comparison {} --audio-window-ms {} --audio-silence-threshold {} --audio-timing-tolerance-ms {} --audio-envelope-tolerance {} --rust-audio-backend {} --rust-audio-sequencer {} --session-dir {} --scan-all\n",
+        shell_single_quote(&repo_root.to_string_lossy()),
+        shell_single_quote(&asset_pack.to_string_lossy()),
+        feature,
+        shell_single_quote(core_path),
+        shell_single_quote(rom_path),
+        frames,
+        core_sha256,
+        rom_sha256,
+        shell_single_quote(&absolute_dir.join("input.txt").to_string_lossy()),
+        initial_state_flags,
+        compare_from_frame,
+        lane_flags,
+        audio_comparison.as_str(),
+        (timing.window_frames as f64 / oracle.av_info.timing.sample_rate) * 1000.0,
+        timing.silence_threshold,
+        (timing.max_timing_error_frames as f64 / oracle.av_info.timing.sample_rate) * 1000.0,
+        timing.max_envelope_error,
+        match rust_audio_backend {
+            AudioBackendMode::Modern => "modern",
+            AudioBackendMode::DspParity => "dsp-parity",
+            AudioBackendMode::TraceOnly => "trace-only",
+        },
+        match rust_audio_sequencer {
+            AudioSequencerBackend::Native => "native",
+            AudioSequencerBackend::ExactSpcDriver => "exact-spc-driver",
+        },
+        shell_single_quote(&absolute_dir.join("replay").to_string_lossy()),
+    );
+    fs::write(dir.join("replay.sh"), replay).unwrap_or_else(|e| {
+        eprintln!("failed to write libretro session replay script: {e}");
+        process::exit(1);
+    });
+    let file = fs::File::create(dir.join("frame_receipts.jsonl")).unwrap_or_else(|e| {
+        eprintln!("failed to create libretro frame receipt: {e}");
+        process::exit(1);
+    });
+    Some(BufWriter::new(file))
+}
+
+fn write_libretro_frame_receipt(
+    writer: Option<&mut BufWriter<fs::File>>,
+    frame: u32,
+    input: u16,
+    rust_audio_frames: usize,
+    oracle_audio_frames: usize,
+    video_width: u32,
+    video_height: u32,
+    rust_system_ram: &[u8],
+    rust_poly_work: zelda3::zelda_rtl::PolyWorkMetrics,
+    rust_poly_cycles: Option<u64>,
+    rust_audio_events: &zelda3::game_output::AudioEventFrame,
+    oracle_system_ram: Option<&[u8]>,
+) {
+    let Some(writer) = writer else {
+        return;
+    };
+    let receipt = serde_json::json!({
+        "frame": frame,
+        "input": format!("0x{input:04x}"),
+        "rust_audio_sample_frames": rust_audio_frames,
+        "oracle_audio_sample_frames": oracle_audio_frames,
+        "oracle_video_width": video_width,
+        "oracle_video_height": video_height,
+        "rust_engine": libretro_engine_state_receipt(rust_system_ram),
+        "rust_poly_work": rust_poly_work,
+        "rust_poly_cycles": rust_poly_cycles,
+        "rust_audio_command_ports": rust_audio_events.queue.input,
+        "rust_audio_event_count": rust_audio_events.events.len(),
+        "rust_audio_event_hash": rust_audio_events.command_hash(),
+        "oracle_engine": oracle_system_ram.map(libretro_engine_state_receipt),
+    });
+    serde_json::to_writer(&mut *writer, &receipt).unwrap_or_else(|e| {
+        eprintln!("failed to write libretro frame receipt: {e}");
+        process::exit(1);
+    });
+    writer.write_all(b"\n").unwrap_or_else(|e| {
+        eprintln!("failed to terminate libretro frame receipt: {e}");
+        process::exit(1);
+    });
+}
+
+fn libretro_engine_state_receipt(ram: &[u8]) -> serde_json::Value {
+    let byte = |address: usize| ram.get(address).copied().unwrap_or_default();
+    let word =
+        |address: usize| u16::from_le_bytes([byte(address), byte(address.saturating_add(1))]);
+    let poly_buffer_nonzero_bytes = ram
+        .get(0xe800..0xf000)
+        .unwrap_or_default()
+        .iter()
+        .filter(|&&value| value != 0)
+        .count();
+    let mut receipt = serde_json::json!({
+        "main_module": byte(0x0010),
+        "submodule": byte(0x0011),
+        "subsubmodule": byte(0x00b0),
+        "frame_counter": byte(0x001a),
+        "screen_brightness": byte(0x0013),
+        "attract_state": byte(0x0022),
+        "attract_sequence": byte(0x0023),
+        "palette_filter_countdown": byte(0xc007),
+        "vertical_irq_trigger": byte(0x00ff),
+        "nmi_thread_active": byte(0x012a),
+        "music_control": byte(0x012c),
+        "last_music_control": byte(0x0133),
+        "dialogue_message_index": word(0x1cf0),
+        "messaging_module": byte(0x1cd8),
+        "text_render_state": byte(0x1cd4),
+        "dialogue_msg_read_pos": word(0x1cd9),
+        "text_wait_countdown": word(0x1ce0),
+        "text_wait_countdown2": byte(0x1ce9),
+        "shared_message_timer": word(0x02cd),
+        "crystal_rotation_counter": byte(0x0649),
+        "intro_step_index": byte(0x1e00),
+        "intro_step_timer": byte(0x1e01),
+        "intro_palette_flash_count": byte(0x0ff9),
+        "intro_sword_sparkle_timer": byte(0x00ca),
+        "intro_sword_sparkle_step": byte(0x00cb),
+        "intro_sword_animation_step": byte(0x00cc),
+        "intro_did_run_step": byte(0x1f00),
+        "pending_polyhedral_update": byte(0x1f0c),
+        "poly_config1": byte(0x1f02),
+        "poly_angle_a": byte(0x1f04),
+        "poly_angle_b": byte(0x1f05),
+        "nmi_thread_stack": word(0x1f0a),
+        "poly_buffer_nonzero_bytes": poly_buffer_nonzero_bytes,
+    });
+    let object = receipt
+        .as_object_mut()
+        .expect("engine receipt is an object");
+    for (name, value) in [
+        ("ambient_sound_effect", u64::from(byte(0x012d))),
+        ("sound_effect_1", u64::from(byte(0x012e))),
+        ("sound_effect_2", u64::from(byte(0x012f))),
+        ("queued_music_control", u64::from(byte(0x0132))),
+        ("joypad_high", u64::from(byte(0x00f0))),
+        ("joypad_low", u64::from(byte(0x00f2))),
+        ("joypad_high_filtered", u64::from(byte(0x00f4))),
+        ("joypad_low_filtered", u64::from(byte(0x00f6))),
+        ("link_x", u64::from(word(0x0022))),
+        ("link_y", u64::from(word(0x0020))),
+        ("link_direction", u64::from(byte(0x0067))),
+        ("link_facing_direction", u64::from(byte(0x002f))),
+        ("link_item_in_hand", u64::from(byte(0x0301))),
+        ("link_state_bits", u64::from(byte(0x0308))),
+        ("link_picking_throw_state", u64::from(byte(0x0309))),
+        ("link_tile_action", u64::from(byte(0x036c))),
+        ("link_lift_x_low", u64::from(byte(0x0368))),
+        ("link_lift_x_high", u64::from(byte(0x036a))),
+        ("sprite_pickup_slot", u64::from(byte(0x0fb2))),
+    ] {
+        object.insert(name.to_string(), serde_json::Value::from(value));
+    }
+    receipt
+}
+
+fn finalize_libretro_session(
+    session_dir: Option<&Path>,
+    writer: Option<&mut BufWriter<fs::File>>,
+    input_history: &[(u32, u16)],
+    audio_report: Option<&libretro_timeline::AudioComparisonReport>,
+    audio_frame_ends: &[u64],
+    oracle_last_before: &[u8],
+    oracle: &LibretroCore,
+    frames: u32,
+    video_mismatch_ranges: &[(u32, u32)],
+    first_video_mismatch: Option<&str>,
+) {
+    let Some(dir) = session_dir else {
+        return;
+    };
+    if let Some(writer) = writer {
+        writer.flush().unwrap_or_else(|e| {
+            eprintln!("failed to flush libretro frame receipts: {e}");
+            process::exit(1);
+        });
+    }
+    fs::write(dir.join("input.txt"), format_input_history(input_history)).unwrap_or_else(|e| {
+        eprintln!("failed to write captured controller stream: {e}");
+        process::exit(1);
+    });
+    fs::write(
+        dir.join("audio_frame_ends.json"),
+        serde_json::to_vec(audio_frame_ends).unwrap(),
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("failed to write audio frame boundaries: {e}");
+        process::exit(1);
+    });
+    if let Some(report) = audio_report {
+        fs::write(
+            dir.join("audio_report.json"),
+            serde_json::to_vec_pretty(report).unwrap(),
+        )
+        .unwrap_or_else(|e| {
+            eprintln!("failed to write continuous audio report: {e}");
+            process::exit(1);
+        });
+    }
+    fs::write(dir.join("oracle_last_before.state"), oracle_last_before).unwrap_or_else(|e| {
+        eprintln!("failed to write last pre-frame oracle state: {e}");
+        process::exit(1);
+    });
+    let oracle_final = oracle.serialize_state().unwrap_or_else(|e| {
+        eprintln!("failed to serialize final libretro state: {e}");
+        process::exit(1);
+    });
+    fs::write(dir.join("oracle_final.state"), oracle_final).unwrap_or_else(|e| {
+        eprintln!("failed to write final libretro state: {e}");
+        process::exit(1);
+    });
+    let matched = audio_report.map(|report| report.matched).unwrap_or(true)
+        && video_mismatch_ranges.is_empty();
+    let result = serde_json::json!({
+        "status": if matched { "passed" } else { "failed" },
+        "frames_completed": frames,
+        "audio": audio_report,
+        "video": {
+            "matched": video_mismatch_ranges.is_empty(),
+            "mismatch_ranges": video_mismatch_ranges,
+            "first_mismatch": first_video_mismatch,
+        },
+        "dynamic_alignment": false,
+    });
+    fs::write(
+        dir.join("result.json"),
+        serde_json::to_vec_pretty(&result).unwrap(),
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("failed to write libretro session result: {e}");
+        process::exit(1);
+    });
+    let manifest_path = dir.join("manifest.json");
+    let bytes = fs::read(&manifest_path).unwrap_or_else(|error| {
+        eprintln!("failed to read libretro session manifest: {error}");
+        process::exit(1);
+    });
+    let mut manifest =
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap_or_else(|error| {
+            eprintln!("failed to parse libretro session manifest: {error}");
+            process::exit(1);
+        });
+    manifest["status"] =
+        serde_json::Value::String(if matched { "passed" } else { "failed" }.to_string());
+    manifest["frames_completed"] = serde_json::Value::from(frames);
+    fs::write(manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap_or_else(
+        |error| {
+            eprintln!("failed to finalize libretro session manifest: {error}");
+            process::exit(1);
+        },
+    );
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn run_dump_bsnes_frame(args: &[String]) {
@@ -5439,7 +6314,7 @@ fn align_bsnes_video_capture(
 
 fn rgba_pixel_at(frame: &[u8], offset: usize) -> Option<[u8; 4]> {
     let bytes = frame.get(offset..offset + 4)?;
-    Some([bytes[2], bytes[1], bytes[0], bytes[3]])
+    Some([bytes[0], bytes[1], bytes[2], bytes[3]])
 }
 
 fn bsnes_pixel_stride(pixel_format: u32) -> Option<usize> {
@@ -5806,6 +6681,101 @@ fn write_lockstep_parity_failure_artifacts(
     Ok(dir)
 }
 
+fn write_libretro_parity_failure_artifacts(
+    pre_game: &ZeldaState,
+    post_game: &ZeldaState,
+    rust_frame_rgba: &[u8],
+    rust_audio: &[i16],
+    capture: &LibretroFrame,
+    oracle_before_state: &[u8],
+    input_history: &[(u32, u16)],
+    frame: u32,
+    input: u16,
+    sample_rate: u32,
+    oracle_name: &str,
+    message: String,
+) -> Result<PathBuf, Box<dyn Error>> {
+    let dir = create_parity_failure_dir()?;
+    fs::write(dir.join("input.txt"), format_input_history(input_history))?;
+    let rust_checkpoint = PlayCrashCheckpoint {
+        magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
+        host_frame: frame,
+        input,
+        run_what: RUN_MAIN,
+        game: pre_game.clone(),
+    };
+    fs::write(
+        dir.join("rust_before.z3state"),
+        bincode::serialize(&rust_checkpoint)?,
+    )?;
+    fs::write(dir.join("oracle_before.state"), oracle_before_state)?;
+
+    write_rgba_frame_png(&dir.join("rust_frame.png"), rust_frame_rgba, 256, 224)?;
+    let Some(stride) = bsnes_pixel_stride(capture.pixel_format) else {
+        return Err(format!("unsupported libretro pixel format {}", capture.pixel_format).into());
+    };
+    let mut oracle_argb =
+        vec![0u8; capture.video_width as usize * capture.video_height as usize * 4];
+    for y in 0..capture.video_height as usize {
+        for x in 0..capture.video_width as usize {
+            let src = y * capture.video_pitch + x * stride;
+            let Some([r, g, b, _]) = bsnes_rgba_pixel_at(capture, src) else {
+                return Err(format!("failed to decode libretro pixel at {x},{y}").into());
+            };
+            let dst = (y * capture.video_width as usize + x) * 4;
+            oracle_argb[dst] = b;
+            oracle_argb[dst + 1] = g;
+            oracle_argb[dst + 2] = r;
+            oracle_argb[dst + 3] = 0xff;
+        }
+    }
+    write_argb_frame_png(
+        &dir.join("oracle_frame.png"),
+        &oracle_argb,
+        capture.video_width,
+        capture.video_height,
+    )?;
+    write_wav_i16_stereo(&dir.join("rust_audio.wav"), rust_audio, sample_rate, 2)?;
+    write_wav_i16_stereo(
+        &dir.join("oracle_audio.wav"),
+        &capture.audio,
+        sample_rate,
+        2,
+    )?;
+
+    let report = ParityFailureReport {
+        kind: format!("libretro-{oracle_name}"),
+        frame,
+        input: format!("0x{input:04x}"),
+        run_what: None,
+        message,
+        trace_mine: Some(TraceState::from_ram(&post_game.ram, input, RUN_MAIN).to_string()),
+        trace_theirs: None,
+        ppu_mine: Some(format_render_ppu_summary(post_game)),
+        ppu_theirs: None,
+        audio_mine: Some(summarize_audio_samples(rust_audio)),
+        audio_theirs: Some(summarize_audio_samples(&capture.audio)),
+        artifacts: vec![
+            "input.txt".to_string(),
+            "rust_before.z3state".to_string(),
+            "oracle_before.state".to_string(),
+            "rust_frame.png".to_string(),
+            "oracle_frame.png".to_string(),
+            "rust_audio.wav".to_string(),
+            "oracle_audio.wav".to_string(),
+            "diff.json".to_string(),
+        ],
+        notes: vec![
+            "oracle_before.state is the exact libretro state immediately before the failing frame"
+                .to_string(),
+            "input.txt contains the complete controller stream from the synchronized start"
+                .to_string(),
+        ],
+    };
+    let _ = write_parity_diff(&dir, &report)?;
+    Ok(dir)
+}
+
 fn write_bsnes_parity_failure_artifacts(
     pre_game: &ZeldaState,
     post_game: &ZeldaState,
@@ -5929,6 +6899,28 @@ struct RetroSystemAvInfo {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
+struct RetroSystemInfo {
+    library_name: *const c_char,
+    library_version: *const c_char,
+    valid_extensions: *const c_char,
+    need_fullpath: bool,
+    block_extract: bool,
+}
+
+impl Default for RetroSystemInfo {
+    fn default() -> Self {
+        Self {
+            library_name: std::ptr::null(),
+            library_version: std::ptr::null(),
+            valid_extensions: std::ptr::null(),
+            need_fullpath: false,
+            block_extract: false,
+        }
+    }
+}
+
+#[repr(C)]
 struct RetroGameInfo {
     path: *const c_char,
     data: *const c_void,
@@ -5973,6 +6965,12 @@ struct LibretroCore {
     retro_unload_game: unsafe extern "C" fn(),
     retro_get_memory_data: unsafe extern "C" fn(c_uint) -> *mut c_void,
     retro_get_memory_size: unsafe extern "C" fn(c_uint) -> usize,
+    retro_serialize_size: unsafe extern "C" fn() -> usize,
+    retro_serialize: unsafe extern "C" fn(*mut c_void, usize) -> bool,
+    retro_unserialize: unsafe extern "C" fn(*const c_void, usize) -> bool,
+    api_version: c_uint,
+    library_name: String,
+    library_version: String,
     av_info: RetroSystemAvInfo,
     geometry: RetroGameGeometry,
     _rom: Vec<u8>,
@@ -6040,6 +7038,28 @@ impl LibretroCore {
                 load_symbol(handle, "retro_get_memory_data")?;
             let retro_get_memory_size: unsafe extern "C" fn(c_uint) -> usize =
                 load_symbol(handle, "retro_get_memory_size")?;
+            let retro_api_version: unsafe extern "C" fn() -> c_uint =
+                load_symbol(handle, "retro_api_version")?;
+            let retro_get_system_info: unsafe extern "C" fn(*mut RetroSystemInfo) =
+                load_symbol(handle, "retro_get_system_info")?;
+            let retro_serialize_size: unsafe extern "C" fn() -> usize =
+                load_symbol(handle, "retro_serialize_size")?;
+            let retro_serialize: unsafe extern "C" fn(*mut c_void, usize) -> bool =
+                load_symbol(handle, "retro_serialize")?;
+            let retro_unserialize: unsafe extern "C" fn(*const c_void, usize) -> bool =
+                load_symbol(handle, "retro_unserialize")?;
+
+            let api_version = retro_api_version();
+            if api_version != 1 {
+                libc::dlclose(handle);
+                return Err(format!(
+                    "unsupported libretro API version {api_version}; expected 1"
+                ));
+            }
+            let mut system_info = RetroSystemInfo::default();
+            retro_get_system_info(&mut system_info);
+            let library_name = optional_c_string(system_info.library_name, "unknown");
+            let library_version = optional_c_string(system_info.library_version, "unknown");
 
             retro_set_environment(libretro_environment);
             retro_set_video_refresh(libretro_video_refresh);
@@ -6062,6 +7082,16 @@ impl LibretroCore {
                 libc::dlclose(handle);
                 return Err("retro_load_game returned false".to_string());
             }
+            if let Some(sram) = initial_sram {
+                let size = retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);
+                let data = retro_get_memory_data(RETRO_MEMORY_SAVE_RAM);
+                if size != 0 && !data.is_null() {
+                    let destination = std::slice::from_raw_parts_mut(data.cast::<u8>(), size);
+                    destination.fill(0);
+                    let count = destination.len().min(sram.len());
+                    destination[..count].copy_from_slice(&sram[..count]);
+                }
+            }
 
             let mut av_info = RetroSystemAvInfo::default();
             retro_get_system_av_info(&mut av_info);
@@ -6072,6 +7102,12 @@ impl LibretroCore {
                 retro_unload_game,
                 retro_get_memory_data,
                 retro_get_memory_size,
+                retro_serialize_size,
+                retro_serialize,
+                retro_unserialize,
+                api_version,
+                library_name,
+                library_version,
                 av_info,
                 geometry: av_info.geometry,
                 _rom: rom,
@@ -6093,7 +7129,6 @@ impl LibretroCore {
         if let Some(capture) = LIBRETRO_CAPTURE.get() {
             if let Ok(mut capture) = capture.lock() {
                 capture.audio.clear();
-                capture.video.clear();
             }
         }
         unsafe { (self.retro_run)() };
@@ -6135,6 +7170,42 @@ impl LibretroCore {
             Some(unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), size) })
         }
     }
+
+    fn serialize_state(&self) -> Result<Vec<u8>, String> {
+        let mut state = Vec::new();
+        self.serialize_state_into(&mut state)?;
+        Ok(state)
+    }
+
+    fn serialize_state_into(&self, state: &mut Vec<u8>) -> Result<(), String> {
+        let size = unsafe { (self.retro_serialize_size)() };
+        if size == 0 {
+            return Err(format!(
+                "{} {} does not support libretro serialization",
+                self.library_name, self.library_version
+            ));
+        }
+        state.resize(size, 0);
+        if !unsafe { (self.retro_serialize)(state.as_mut_ptr().cast(), state.len()) } {
+            return Err(format!(
+                "{} {} retro_serialize returned false",
+                self.library_name, self.library_version
+            ));
+        }
+        Ok(())
+    }
+
+    fn unserialize_state(&mut self, state: &[u8]) -> Result<(), String> {
+        if !unsafe { (self.retro_unserialize)(state.as_ptr().cast(), state.len()) } {
+            return Err(format!(
+                "{} {} retro_unserialize returned false for {} bytes",
+                self.library_name,
+                self.library_version,
+                state.len()
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl Drop for LibretroCore {
@@ -6168,6 +7239,16 @@ fn dlerror_string() -> String {
     }
 }
 
+fn optional_c_string(value: *const c_char, fallback: &str) -> String {
+    if value.is_null() {
+        fallback.to_string()
+    } else {
+        unsafe { CStr::from_ptr(value) }
+            .to_string_lossy()
+            .into_owned()
+    }
+}
+
 fn initialize_libretro_dirs() -> Result<PathBuf, String> {
     if let Some(save_dir) = LIBRETRO_SAVE_DIR.get() {
         return Ok(PathBuf::from(save_dir.to_string_lossy().into_owned()));
@@ -6176,7 +7257,7 @@ fn initialize_libretro_dirs() -> Result<PathBuf, String> {
     let save_dir = env::current_dir()
         .map_err(|e| e.to_string())?
         .join("target")
-        .join("bsnes-oracle-save")
+        .join("libretro-oracle-save")
         .join(process::id().to_string());
     fs::create_dir_all(&save_dir).map_err(|e| e.to_string())?;
     let save_dir_c =
@@ -6279,8 +7360,8 @@ extern "C" fn libretro_video_refresh(
             capture.video_width = width;
             capture.video_height = height;
             capture.video_pitch = pitch;
-            capture.video.clear();
             if !data.is_null() {
+                capture.video.clear();
                 let byte_len = pitch.saturating_mul(height as usize);
                 let bytes = unsafe { std::slice::from_raw_parts(data.cast::<u8>(), byte_len) };
                 capture.video.extend_from_slice(bytes);
@@ -7608,6 +8689,135 @@ mod tests {
             find_asset_pack_with_override("oracle/zelda3.sfc", Some(explicit.clone())),
             Some(explicit)
         );
+    }
+
+    #[test]
+    fn replay_hash_precondition_rejects_a_replaced_oracle() {
+        let path = std::env::temp_dir().join(format!(
+            "zelda3-oracle-hash-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        fs::write(&path, b"oracle-v1").unwrap();
+        let expected = parity::runner::sha256_file(&path).unwrap();
+        assert!(expected_sha256_matches(&path, "core", Some(&expected)).is_ok());
+
+        fs::write(&path, b"oracle-v2").unwrap();
+        let error = expected_sha256_matches(&path, "core", Some(&expected)).unwrap_err();
+        assert!(error.contains("hash mismatch for replay"));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn libretro_comparison_scope_cannot_pass_without_work() {
+        assert!(validate_libretro_comparison_scope(0, 0, true, true).is_err());
+        assert!(validate_libretro_comparison_scope(10, 10, true, true).is_err());
+        assert!(validate_libretro_comparison_scope(10, 0, false, false).is_err());
+        assert!(validate_libretro_comparison_scope(10, 9, true, false).is_ok());
+    }
+
+    #[test]
+    fn libretro_null_video_callback_repeats_the_previous_frame() {
+        let capture = LIBRETRO_CAPTURE.get_or_init(|| Mutex::new(LibretroCapture::default()));
+        *capture.lock().unwrap() = LibretroCapture::default();
+        let pixels = [0x12u8, 0x34, 0x56, 0x78];
+        libretro_video_refresh(pixels.as_ptr().cast(), 2, 1, pixels.len());
+        libretro_video_refresh(std::ptr::null(), 2, 1, pixels.len());
+
+        assert_eq!(capture.lock().unwrap().video, pixels);
+    }
+
+    #[test]
+    fn gpu_readback_pixels_remain_rgba_during_oracle_comparison() {
+        assert_eq!(
+            rgba_pixel_at(&[0x12, 0x34, 0x56, 0x78], 0),
+            Some([0x12, 0x34, 0x56, 0x78])
+        );
+    }
+
+    #[test]
+    fn libretro_engine_receipt_exposes_intro_and_audio_timing_state() {
+        let mut ram = vec![0; 0x20000];
+        ram[0x10] = 0x01;
+        ram[0x13] = 0x0f;
+        ram[0x22] = 0x04;
+        ram[0x23] = 0x02;
+        ram[0x12c] = 0x02;
+        ram[0x12d] = 0x03;
+        ram[0x12e] = 0x04;
+        ram[0x12f] = 0x05;
+        ram[0x132] = 0x06;
+        ram[0x22..0x24].copy_from_slice(&0x0204u16.to_le_bytes());
+        ram[0x20..0x22].copy_from_slice(&0x5678u16.to_le_bytes());
+        ram[0x301] = 0x07;
+        ram[0x308] = 0x08;
+        ram[0x309] = 0x09;
+        ram[0x0fb2] = 0x0a;
+        ram[0xf0] = 0x10;
+        ram[0xf2] = 0x11;
+        ram[0xf4] = 0x12;
+        ram[0xf6] = 0x13;
+        ram[0x67] = 0x0b;
+        ram[0x2f] = 0x0c;
+        ram[0x36c] = 0x0d;
+        ram[0x368] = 0x0e;
+        ram[0x36a] = 0x0f;
+        ram[0x1e00] = 0x03;
+        ram[0x0ff9] = 0x20;
+        ram[0x00ca] = 0x06;
+        ram[0x00cb] = 0x05;
+        ram[0x00cc] = 0x04;
+        ram[0xc007] = 0x1f;
+        ram[0x1f02] = 0x71;
+        ram[0x1f0a..0x1f0c].copy_from_slice(&0x1f31u16.to_le_bytes());
+        ram[0x1f0c] = 0xff;
+        ram[0x1cd4] = 4;
+        ram[0x1cd8] = 1;
+        ram[0x1cd9..0x1cdb].copy_from_slice(&0x0052u16.to_le_bytes());
+        ram[0x1cf0..0x1cf2].copy_from_slice(&0x007bu16.to_le_bytes());
+        ram[0xe800] = 1;
+        ram[0xefff] = 2;
+
+        let receipt = libretro_engine_state_receipt(&ram);
+
+        assert_eq!(receipt["main_module"], 1);
+        assert_eq!(receipt["screen_brightness"], 0x0f);
+        assert_eq!(receipt["attract_state"], 0x04);
+        assert_eq!(receipt["attract_sequence"], 0x02);
+        assert_eq!(receipt["music_control"], 2);
+        assert_eq!(receipt["ambient_sound_effect"], 3);
+        assert_eq!(receipt["sound_effect_1"], 4);
+        assert_eq!(receipt["sound_effect_2"], 5);
+        assert_eq!(receipt["queued_music_control"], 6);
+        assert_eq!(receipt["link_x"], 0x0204);
+        assert_eq!(receipt["link_y"], 0x5678);
+        assert_eq!(receipt["link_item_in_hand"], 7);
+        assert_eq!(receipt["link_state_bits"], 8);
+        assert_eq!(receipt["link_picking_throw_state"], 9);
+        assert_eq!(receipt["sprite_pickup_slot"], 10);
+        assert_eq!(receipt["joypad_high"], 16);
+        assert_eq!(receipt["joypad_low"], 17);
+        assert_eq!(receipt["joypad_high_filtered"], 18);
+        assert_eq!(receipt["joypad_low_filtered"], 19);
+        assert_eq!(receipt["link_direction"], 11);
+        assert_eq!(receipt["link_facing_direction"], 12);
+        assert_eq!(receipt["link_tile_action"], 13);
+        assert_eq!(receipt["link_lift_x_low"], 14);
+        assert_eq!(receipt["link_lift_x_high"], 15);
+        assert_eq!(receipt["intro_step_index"], 3);
+        assert_eq!(receipt["intro_palette_flash_count"], 0x20);
+        assert_eq!(receipt["intro_sword_sparkle_timer"], 0x06);
+        assert_eq!(receipt["intro_sword_sparkle_step"], 0x05);
+        assert_eq!(receipt["intro_sword_animation_step"], 0x04);
+        assert_eq!(receipt["palette_filter_countdown"], 0x1f);
+        assert_eq!(receipt["poly_config1"], 0x71);
+        assert_eq!(receipt["nmi_thread_stack"], 0x1f31);
+        assert_eq!(receipt["pending_polyhedral_update"], 0xff);
+        assert_eq!(receipt["poly_buffer_nonzero_bytes"], 2);
+        assert_eq!(receipt["dialogue_message_index"], 0x007b);
+        assert_eq!(receipt["messaging_module"], 1);
+        assert_eq!(receipt["text_render_state"], 4);
+        assert_eq!(receipt["dialogue_msg_read_pos"], 0x0052);
     }
 
     #[test]

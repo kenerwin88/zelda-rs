@@ -47,4 +47,18 @@ impl ZeldaState {
     ) -> Vec<DspWriteEvent> {
         oracle_unavailable()
     }
+
+    pub fn zelda_prepare_audio_trace_dsp(&mut self) {
+        oracle_unavailable()
+    }
+
+    pub fn zelda_render_prepared_audio_trace_dsp_events(
+        &mut self,
+        _audio_buffer: &mut [i16],
+        _dsp_only_audio_buffer: &mut [i16],
+        _samples: i32,
+        _channels: i32,
+    ) -> Vec<DspWriteEvent> {
+        oracle_unavailable()
+    }
 }
