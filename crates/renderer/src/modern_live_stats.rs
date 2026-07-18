@@ -75,11 +75,19 @@ pub struct ModernAssetLiveStats {
 
 pub struct ModernAssetLiveFrameReport {
     failure_line: Option<String>,
+    presented: bool,
 }
 
 impl ModernAssetLiveFrameReport {
     pub fn failure_line(&self) -> Option<&str> {
         self.failure_line.as_deref()
+    }
+
+    /// Whether the frame reached the screen. A report can carry a failure line
+    /// for a frame that WAS presented correctly via fallback draws; only
+    /// `presented == false` means nothing was drawn.
+    pub fn presented(&self) -> bool {
+        self.presented
     }
 }
 
@@ -216,7 +224,8 @@ impl ModernAssetLiveStats {
         resources: &crate::ModernAssetFrameResources,
     ) -> ModernAssetLiveFrameReport {
         let mut report = self.record_present_result(&output.result);
-        if report.failure_line.is_none() && !output.result.is_presented() {
+        report.presented = output.result.is_presented();
+        if report.failure_line.is_none() && !report.presented {
             report.failure_line = resources
                 .unhandled_gpu_asset_frame_line()
                 .map(ToString::to_string);
@@ -246,7 +255,10 @@ impl ModernAssetLiveStats {
                 .or_else(|| Some(format!("gpu_path_unsupported_live reason={via} count=1"))),
             _ => None,
         };
-        ModernAssetLiveFrameReport { failure_line }
+        ModernAssetLiveFrameReport {
+            failure_line,
+            presented: false,
+        }
     }
 
     fn full_gpu_violation(&self, stats: &VariantAtlasRenderStats) -> Option<ModernGpuPathFallback> {

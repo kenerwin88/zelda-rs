@@ -290,6 +290,12 @@ struct GpuPlayRenderer {
     live_mode: renderer::EffectiveRendererMode<'static>,
     modern_assets: renderer::ModernAssetFrameResources,
     variant_live_stats: renderer::ModernAssetLiveStats,
+    /// `ZELDA3_LIVE_STRICT_GPU=1` restores exit-on-any-fallback (the
+    /// validation posture). Default live play only exits when a frame could
+    /// not be presented at all; presented-via-fallback frames log once per
+    /// distinct reason and keep playing.
+    strict_gpu: bool,
+    logged_fallback_reasons: std::collections::HashSet<String>,
 }
 
 
@@ -308,6 +314,8 @@ impl GpuPlayRenderer {
             live_mode,
             modern_assets,
             variant_live_stats: renderer::ModernAssetLiveStats::from_env(),
+            strict_gpu: std::env::var_os("ZELDA3_LIVE_STRICT_GPU").is_some(),
+            logged_fallback_reasons: std::collections::HashSet::new(),
         }
     }
 }
@@ -855,8 +863,21 @@ impl crate::play_renderer::PlayRendererBackend for GpuPlayRenderer {
             capture.modern_asset_present_input(&self.modern_assets, &mut self.variant_live_stats),
         );
         if let Some(line) = report.failure_line() {
-            eprintln!("{line}");
-            process::exit(2);
+            if self.strict_gpu {
+                eprintln!("{line}");
+                process::exit(2);
+            }
+            // Non-strict live play: warn once per distinct reason (drop the
+            // varying count suffix) and keep playing. If the asset paths could
+            // not present the frame at all, degrade to the modern CPU VRAM
+            // compositor so the player still sees correct pixels.
+            let reason = line.split(" count=").next().unwrap_or(line).to_string();
+            if self.logged_fallback_reasons.insert(reason) {
+                eprintln!("{line} (non-strict live play: continuing; set ZELDA3_LIVE_STRICT_GPU=1 to make this fatal)");
+            }
+            if !report.presented() {
+                frontend.present_gpu_frame(&capture.gpu_frame());
+            }
         }
     }
 }
