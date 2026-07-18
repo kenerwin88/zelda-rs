@@ -919,6 +919,11 @@ fn render_modern_asset_capture_rgba(
     capture: &LiveGpuFrameCapture,
     resources: &renderer::ModernIndexCompareResources,
 ) -> Result<ModernAssetGpuReadbackFrame, String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static RENDER_NS: AtomicU64 = AtomicU64::new(0);
+    static CALLS: AtomicU64 = AtomicU64::new(0);
+    let timing = std::env::var_os("ZELDA3_SNES9X_TIMING").is_some();
+    let start = timing.then(std::time::Instant::now);
     let gpu_frame = capture.gpu_frame();
     let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
     let render = resources.render_production_gpu_asset_rgba_from_entries(
@@ -926,6 +931,16 @@ fn render_modern_asset_capture_rgba(
         capture.source_entries(),
         scene,
     )?;
+    if let Some(start) = start {
+        let ns = RENDER_NS.fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        let calls = CALLS.fetch_add(1, Ordering::Relaxed) + 1;
+        if calls % 2000 == 0 {
+            eprintln!(
+                "gpu_render_timing calls={calls} production_render_ms={}",
+                (ns + start.elapsed().as_nanos() as u64) / 1_000_000
+            );
+        }
+    }
     Ok(ModernAssetGpuReadbackFrame {
         frame: GpuRgbaReadbackFrame::from_rgba(render.rgba),
         #[cfg(test)]

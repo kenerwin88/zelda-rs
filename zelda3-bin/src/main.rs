@@ -4893,14 +4893,37 @@ fn run_compare_libretro_oracle(
     });
     let gpu_video_readback = (compare_video || trace_video_pixel.is_some())
         .then(|| load_modern_asset_gpu_readback_or_exit("libretro oracle video comparison"));
+    use std::time::Instant;
+    let stage_timing = std::env::var_os("ZELDA3_SNES9X_TIMING").is_some();
+    // [pre_state, poly, run_frame, video, oracle, audio+compare, receipts]
+    let mut stage_ns = [0u128; 7];
+    let mut stage_mark = Instant::now();
+    let stage = |slot: usize, stage_ns: &mut [u128; 7], mark: &mut Instant| {
+        if stage_timing {
+            let now = Instant::now();
+            stage_ns[slot] += now.duration_since(*mark).as_nanos();
+            *mark = now;
+        }
+    };
     for frame_index in start_frame..frames {
         let requested_input = input_script.input_for_frame(frame_index);
         let compare_this_frame = frame_index >= effective_compare_from_frame;
-        let pre_game = game.clone();
-        let rust_poly_cycles = if pre_game.ram[0x1f00] != 0 {
+        if stage_timing {
+            stage_mark = Instant::now();
+        }
+        // A full per-frame ZeldaState clone (ROM + asset pack + audio state)
+        // dominated the comparison loop; the receipt only needs the pre-frame
+        // WRAM and one debug value, and the poly cycle oracle only needs the
+        // full state while the poly thread is pending.
+        let poly_pending = game.ram[0x1f00] != 0;
+        let pre_game = poly_pending.then(|| game.clone());
+        let pre_ram = game.ram.to_vec();
+        let pre_load_remaining_frames = game.zelda_debug_selected_game_load_remaining_frames();
+        stage(0, &mut stage_ns, &mut stage_mark);
+        let rust_poly_cycles = if poly_pending {
             poly_cycle_oracle.as_mut().map(|oracle| {
                 oracle
-                    .measure_poly_frame_cycles(&pre_game)
+                    .measure_poly_frame_cycles(pre_game.as_ref().expect("cloned when poly pending"))
                     .unwrap_or_else(|error| {
                         eprintln!("failed to measure poly work at frame {frame_index}: {error}");
                         process::exit(1);
@@ -4909,6 +4932,7 @@ fn run_compare_libretro_oracle(
         } else {
             None
         };
+        stage(1, &mut stage_ns, &mut stage_mark);
         if replay_save.is_some() {
             game.zelda_run_frame_with_replay_input_override(requested_input as i32, None);
         } else {
@@ -4920,6 +4944,7 @@ fn run_compare_libretro_oracle(
             requested_input
         };
         input_history.push((frame_index, input));
+        stage(2, &mut stage_ns, &mut stage_mark);
         let rust_video_frame =
             (compare_this_frame && (trace_video_pixel.is_some() || compare_video)).then(|| {
                 render_modern_asset_gpu_frame_rgba_or_exit(
@@ -4930,6 +4955,7 @@ fn run_compare_libretro_oracle(
                     "libretro oracle video comparison",
                 )
             });
+        stage(3, &mut stage_ns, &mut stage_mark);
         let ports = game.zelda_debug_apu_write_ports();
         if trace_poly_sched {
             eprintln!(
@@ -4979,6 +5005,7 @@ fn run_compare_libretro_oracle(
                 process::exit(1);
             });
         let mut capture = oracle.run_frame_with_input(input);
+        stage(4, &mut stage_ns, &mut stage_mark);
         if debug_wram_frame == Some(frame_index) {
             let Some(dir) = session_dir.as_deref() else {
                 eprintln!("ZELDA3_DEBUG_WRAM_FRAME requires --session-dir");
@@ -5338,6 +5365,7 @@ fn run_compare_libretro_oracle(
                 compared_audio_sample_frames.saturating_add(sample_frames as u64);
             audio_frame_ends.push(compared_audio_sample_frames);
         }
+        stage(5, &mut stage_ns, &mut stage_mark);
         write_libretro_frame_receipt(
             frame_receipts.as_mut(),
             frame_index,
@@ -5346,9 +5374,9 @@ fn run_compare_libretro_oracle(
             capture.audio.len() / 2,
             capture.video_width,
             capture.video_height,
-            &pre_game.ram,
+            &pre_ram,
             &game.ram,
-            pre_game.zelda_debug_selected_game_load_remaining_frames(),
+            pre_load_remaining_frames,
             game.zelda_debug_selected_game_load_remaining_frames(),
             game.debug_last_poly_work(),
             rust_poly_cycles,
@@ -5357,6 +5385,22 @@ fn run_compare_libretro_oracle(
             &rust_event_frame,
             oracle.memory_bytes(RETRO_MEMORY_SYSTEM_RAM),
         );
+        stage(6, &mut stage_ns, &mut stage_mark);
+        if stage_timing && frame_index % 2000 == 1999 {
+            let total: u128 = stage_ns.iter().sum();
+            eprintln!(
+                "snes9x_timing frames={} total_ms={} pre_state_ms={} poly_ms={} run_frame_ms={} video_ms={} oracle_ms={} audio_ms={} receipts_ms={}",
+                frame_index + 1,
+                total / 1_000_000,
+                stage_ns[0] / 1_000_000,
+                stage_ns[1] / 1_000_000,
+                stage_ns[2] / 1_000_000,
+                stage_ns[3] / 1_000_000,
+                stage_ns[4] / 1_000_000,
+                stage_ns[5] / 1_000_000,
+                stage_ns[6] / 1_000_000,
+            );
+        }
         if let Some((x, y)) = trace_video_pixel.filter(|_| compare_this_frame) {
             let pixel_index = y.saturating_mul(width as usize).saturating_add(x);
             let rust_offset = pixel_index.saturating_mul(4);
@@ -5451,7 +5495,7 @@ fn run_compare_libretro_oracle(
                             process::exit(1);
                         });
                     let artifact_dir = write_libretro_parity_failure_artifacts(
-                        &pre_game,
+                        pre_game.as_ref(),
                         &game,
                         rust_video_frame,
                         &rust_audio,
@@ -6818,7 +6862,7 @@ fn write_lockstep_parity_failure_artifacts(
 }
 
 fn write_libretro_parity_failure_artifacts(
-    pre_game: &ZeldaState,
+    pre_game: Option<&ZeldaState>,
     post_game: &ZeldaState,
     rust_frame_rgba: &[u8],
     rust_audio: &[i16],
@@ -6835,17 +6879,22 @@ fn write_libretro_parity_failure_artifacts(
 ) -> Result<PathBuf, Box<dyn Error>> {
     let dir = create_parity_failure_dir()?;
     fs::write(dir.join("input.txt"), format_input_history(input_history))?;
-    let rust_checkpoint = PlayCrashCheckpoint {
-        magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
-        host_frame: frame,
-        input,
-        run_what: RUN_MAIN,
-        game: pre_game.clone(),
-    };
-    fs::write(
-        dir.join("rust_before.z3state"),
-        bincode::serialize(&rust_checkpoint)?,
-    )?;
+    // The comparison loop no longer clones the full pre-frame state every
+    // frame; the pre-state artifact exists only when the loop had one on hand
+    // (poly frames). input.txt + the initial states reproduce it otherwise.
+    if let Some(pre_game) = pre_game {
+        let rust_checkpoint = PlayCrashCheckpoint {
+            magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
+            host_frame: frame,
+            input,
+            run_what: RUN_MAIN,
+            game: pre_game.clone(),
+        };
+        fs::write(
+            dir.join("rust_before.z3state"),
+            bincode::serialize(&rust_checkpoint)?,
+        )?;
+    }
     fs::write(dir.join("oracle_before.state"), oracle_before_state)?;
     fs::write(dir.join("oracle_after.state"), oracle_after_state)?;
     let rust_after_checkpoint = PlayCrashCheckpoint {
