@@ -73,8 +73,12 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
             MODULE.pair_boundary(project, 1, rust_state)
 
             pairings = json.loads((project / "pairings.json").read_text())
-            self.assertEqual(pairings["kind"], "zelda3_snes9x_rust_boundary_pairings_v1")
-            self.assertEqual(pairings["boundaries"]["1"]["rust_state"], str(rust_state.resolve()))
+            self.assertEqual(
+                pairings["kind"], "zelda3_snes9x_rust_boundary_pairings_v1"
+            )
+            self.assertEqual(
+                pairings["boundaries"]["1"]["rust_state"], str(rust_state.resolve())
+            )
             self.assertFalse(pairings["boundaries"]["1"]["converted_to_snes9x"])
             self.assertEqual(rust_state.read_bytes(), b"rust-state")
 
@@ -128,16 +132,23 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
                         "frames": 0,
                         "input_path": "takes/0000/input.txt",
                     },
+                    {
+                        "id": 3,
+                        "start_boundary": 0,
+                        "frames": 2,
+                        "input_path": "takes/0000/input.txt",
+                        "status": "recovered_after_interruption",
+                    },
                 ]
             )
             (project / "manifest.json").write_text(json.dumps(manifest))
 
-            self.assertEqual(MODULE.comparable_take_ids(project), [1])
+            self.assertEqual(MODULE.comparable_take_ids(project), [1, 3])
 
             rust_state = root / "rust.z3state"
             rust_state.write_bytes(b"rust-state")
             MODULE.pair_boundary(project, 1, rust_state)
-            self.assertEqual(MODULE.comparable_take_ids(project), [0, 1])
+            self.assertEqual(MODULE.comparable_take_ids(project), [0, 1, 3])
 
     def test_unpaired_nonempty_takes_are_reported_as_excluded(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -275,9 +286,7 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
                 "# take zero\n0..2 0x0008\n4 0x0010\n"
             )
             (project / "takes/0001").mkdir()
-            (project / "takes/0001/input.txt").write_text(
-                "# take one\n0..1 0x0040\n"
-            )
+            (project / "takes/0001/input.txt").write_text("# take one\n0..1 0x0040\n")
             manifest = MODULE.load_manifest(project)
             manifest["takes"] = [
                 {
@@ -310,6 +319,99 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
                 "4 0x0010\n"
                 "5..6 0x0040\n",
             )
+
+    def test_merge_across_boundary_combines_adjacent_takes_and_preserves_sources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(Path(tmp))
+            (project / "takes/0000/input.txt").write_text("0..1 0x0008\n")
+            (project / "takes/0000/frame_receipts.jsonl").write_text(
+                '{"frame":0,"input":"0x0008","telemetry":{"health":24}}\n'
+                '{"frame":1,"input":"0x0008","telemetry":{"health":23}}\n'
+            )
+            (project / "takes/0001").mkdir()
+            (project / "takes/0001/input.txt").write_text("0 0x0010\n2 0x0020\n")
+            (project / "takes/0001/frame_receipts.jsonl").write_text(
+                '{"frame":0,"input":"0x0010","telemetry":{"health":23}}\n'
+                '{"frame":2,"input":"0x0020","telemetry":{"health":22}}\n'
+            )
+            manifest = MODULE.load_manifest(project)
+            manifest["boundaries"].append(
+                {
+                    "id": 2,
+                    "reset_start": False,
+                    "state_path": "boundaries/0002/oracle.state",
+                    "sram_path": "boundaries/0002/sram.bin",
+                }
+            )
+            manifest["takes"] = [
+                {
+                    "id": 0,
+                    "start_boundary": 0,
+                    "end_boundary": 1,
+                    "frames": 4,
+                    "input_path": "takes/0000/input.txt",
+                    "receipts_path": "takes/0000/frame_receipts.jsonl",
+                    "status": "complete",
+                },
+                {
+                    "id": 1,
+                    "start_boundary": 1,
+                    "end_boundary": 2,
+                    "frames": 3,
+                    "input_path": "takes/0001/input.txt",
+                    "receipts_path": "takes/0001/frame_receipts.jsonl",
+                    "status": "complete",
+                },
+            ]
+            (project / "manifest.json").write_text(json.dumps(manifest))
+
+            merged = MODULE.merge_takes_across_boundary(project, 1)
+
+            self.assertEqual(merged["id"], 2)
+            self.assertEqual(merged["start_boundary"], 0)
+            self.assertEqual(merged["end_boundary"], 2)
+            self.assertEqual(merged["frames"], 7)
+            self.assertEqual(merged["merged_from_takes"], [0, 1])
+            self.assertEqual(merged["merged_across_boundary"], 1)
+            self.assertEqual(
+                (project / merged["input_path"]).read_text(),
+                "# Continuous Snes9x route assembled from takes 0, 1.\n"
+                "0..1 0x0008\n"
+                "4 0x0010\n"
+                "6 0x0020\n",
+            )
+            self.assertEqual(merged["receipts_path"], "takes/0002/frame_receipts.jsonl")
+            merged_receipts = [
+                json.loads(line)
+                for line in (project / merged["receipts_path"]).read_text().splitlines()
+            ]
+            self.assertEqual(
+                [receipt["frame"] for receipt in merged_receipts], [0, 1, 4, 6]
+            )
+            self.assertEqual(
+                [receipt["telemetry"]["health"] for receipt in merged_receipts],
+                [24, 23, 23, 22],
+            )
+            updated = MODULE.load_manifest(project)
+            self.assertEqual(
+                [take["status"] for take in updated["takes"][:2]], ["merged", "merged"]
+            )
+            self.assertEqual(MODULE.load_labels(project)["archived_boundaries"], [1])
+            self.assertEqual(MODULE.continuous_take_ids(project), [2])
+            self.assertEqual(MODULE.comparable_take_ids(project), [2])
+            with self.assertRaisesRegex(SystemExit, "cannot be restored independently"):
+                MODULE.set_take_discarded(project, 0, False)
+            self.assertTrue((project / "takes/0000/input.txt").is_file())
+            self.assertTrue((project / "takes/0001/input.txt").is_file())
+
+    def test_merge_across_boundary_rejects_route_endpoints(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(Path(tmp))
+
+            with self.assertRaisesRegex(
+                SystemExit, "exactly one active incoming and outgoing"
+            ):
+                MODULE.merge_takes_across_boundary(project, 0)
 
 
 if __name__ == "__main__":

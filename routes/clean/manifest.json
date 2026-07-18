@@ -196,6 +196,53 @@
         "y": 3463,
         "z": 65535
       }
+    },
+    {
+      "id": 4,
+      "reset_start": false,
+      "state_path": "boundaries/0004/oracle.state",
+      "state_sha256": "cbe04c05203df3a99eb4b508903bc00348bc65728f3a4bb33a17d59c0fb91d2f",
+      "wram_path": "boundaries/0004/wram.bin",
+      "wram_sha256": "1c02bbe9802062cc1cd18f41df7a13a04714e3a71efac7c959e8b2e82679161d",
+      "vram_path": "boundaries/0004/vram.bin",
+      "vram_sha256": "3ef52135d636052786c266f88150a3e0999aa777c19dbd4ae07ce00a475ea54f",
+      "sram_path": "boundaries/0004/sram.bin",
+      "sram_sha256": "609c67a7898a36494715bc8010732cda67cb05e1cd4462b0ab6783a3e6968eac",
+      "screenshot_path": "boundaries/0004/frame.png",
+      "screenshot_sha256": "492a0579831aafa1c7f988b35e0e54d20fe34487271dc69dfb7e4eb7e77a5d29",
+      "created_by": "Snes9x libretro retro_serialize",
+      "converted_from_rust": false,
+      "telemetry": {
+        "direction": 0,
+        "ending": false,
+        "equipped_item": 11,
+        "facing": 2,
+        "final_credits": false,
+        "follower": 0,
+        "frame_counter": 133,
+        "health": 32,
+        "indoors": 0,
+        "item_in_hand": 0,
+        "magic": 52,
+        "main": 9,
+        "max_health": 32,
+        "music": 0,
+        "overworld": 19,
+        "player_state": 0,
+        "progression_flags": 16384,
+        "queued_music": 2,
+        "room": 18,
+        "saved_module": 9,
+        "sfx_1": 0,
+        "sfx_2": 0,
+        "sfx_ambient": 0,
+        "small_keys": 255,
+        "sub": 0,
+        "subsub": 0,
+        "x": 1880,
+        "y": 1083,
+        "z": 65535
+      }
     }
   ],
   "takes": [
@@ -206,7 +253,7 @@
       "frames": 6277,
       "input_path": "takes/0000/input.txt",
       "receipts_path": "takes/0000/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "merged"
     },
     {
       "id": 1,
@@ -215,7 +262,7 @@
       "frames": 161,
       "input_path": "takes/0001/input.txt",
       "receipts_path": "takes/0001/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "merged"
     },
     {
       "id": 2,
@@ -224,6 +271,33 @@
       "frames": 5297,
       "input_path": "takes/0002/input.txt",
       "receipts_path": "takes/0002/frame_receipts.jsonl",
+      "status": "merged"
+    },
+    {
+      "id": 3,
+      "start_boundary": 0,
+      "end_boundary": 2,
+      "frames": 6438,
+      "input_path": "takes/0003/input.txt",
+      "receipts_path": "",
+      "status": "merged"
+    },
+    {
+      "id": 4,
+      "start_boundary": 0,
+      "end_boundary": 3,
+      "frames": 11735,
+      "input_path": "takes/0004/input.txt",
+      "receipts_path": "",
+      "status": "complete"
+    },
+    {
+      "id": 5,
+      "start_boundary": 3,
+      "end_boundary": 4,
+      "frames": 26108,
+      "input_path": "takes/0005/input.txt",
+      "receipts_path": "takes/0005/frame_receipts.jsonl",
       "status": "complete"
     }
   ]

@@ -15,6 +15,11 @@ import snes9x_route_recorder as recorder
 
 
 RECORDING_KIND = "zelda3_snes9x_route_recording_v1"
+COLOR_BODY = 1
+COLOR_HEADING = 2
+COLOR_FOCUSED = 3
+COLOR_SELECTED = 4
+COLOR_MESSAGE = 5
 
 
 @dataclass
@@ -78,7 +83,7 @@ class BrowserState:
             ]
         if self.show_hidden:
             return project.takes
-        return [take for take in project.takes if take.get("status") != "discarded"]
+        return [take for take in project.takes if recorder.take_is_active(take)]
 
     @property
     def item(self) -> dict | None:
@@ -97,7 +102,9 @@ class TuiConfig:
     core: Path
     rom: Path
     no_build: bool = False
-    recorder_script: Path = field(default_factory=lambda: Path(recorder.__file__).resolve())
+    recorder_script: Path = field(
+        default_factory=lambda: Path(recorder.__file__).resolve()
+    )
 
 
 def discover_projects(
@@ -180,9 +187,7 @@ def build_resume_command(config: TuiConfig, project: Path, boundary: int) -> lis
     return command
 
 
-def build_new_project_command(
-    config: TuiConfig, project: Path, sram: str
-) -> list[str]:
+def build_new_project_command(config: TuiConfig, project: Path, sram: str) -> list[str]:
     command = [
         sys.executable,
         str(config.recorder_script),
@@ -275,6 +280,26 @@ def viewport_start(total: int, selected: int, rows: int) -> int:
     return max(0, min(selected - rows + 1, total - rows))
 
 
+def _configure_theme(stdscr) -> None:
+    if not curses.has_colors():
+        return
+    try:
+        curses.start_color()
+        curses.init_pair(COLOR_BODY, curses.COLOR_WHITE, curses.COLOR_BLACK)
+        curses.init_pair(COLOR_HEADING, curses.COLOR_CYAN, curses.COLOR_BLACK)
+        curses.init_pair(COLOR_FOCUSED, curses.COLOR_BLACK, curses.COLOR_CYAN)
+        curses.init_pair(COLOR_SELECTED, curses.COLOR_BLACK, curses.COLOR_WHITE)
+        curses.init_pair(COLOR_MESSAGE, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+        stdscr.bkgd(" ", curses.color_pair(COLOR_BODY))
+    except curses.error:
+        # Some minimal terminals advertise colors but reject palette changes.
+        pass
+
+
+def _theme_attr(pair: int, fallback: int = 0) -> int:
+    return curses.color_pair(pair) if curses.has_colors() else fallback
+
+
 def _addstr(window, y: int, x: int, value: str, attr: int = 0) -> None:
     height, width = window.getmaxyx()
     if y < 0 or y >= height or x >= width:
@@ -343,7 +368,13 @@ def _refresh(state: BrowserState, config: TuiConfig) -> None:
 def _draw(stdscr, state: BrowserState, config: TuiConfig) -> None:
     stdscr.erase()
     height, width = stdscr.getmaxyx()
-    _addstr(stdscr, 0, 0, "Snes9x Route Recorder", curses.A_BOLD)
+    _addstr(
+        stdscr,
+        0,
+        0,
+        "Snes9x Route Recorder",
+        _theme_attr(COLOR_HEADING, curses.A_BOLD) | curses.A_BOLD,
+    )
     _addstr(stdscr, 1, 0, f"Storage root: {config.project_root.resolve()}")
     if height < 12 or width < 80:
         _addstr(stdscr, 3, 0, "Resize terminal to at least 80x12.", curses.A_BOLD)
@@ -351,8 +382,16 @@ def _draw(stdscr, state: BrowserState, config: TuiConfig) -> None:
         return
 
     left_width = min(34, max(24, width // 3))
-    project_attr = curses.A_REVERSE if state.focus == "projects" else curses.A_BOLD
-    item_attr = curses.A_REVERSE if state.focus == "items" else curses.A_BOLD
+    project_attr = (
+        _theme_attr(COLOR_FOCUSED, curses.A_REVERSE)
+        if state.focus == "projects"
+        else _theme_attr(COLOR_HEADING)
+    ) | curses.A_BOLD
+    item_attr = (
+        _theme_attr(COLOR_FOCUSED, curses.A_REVERSE)
+        if state.focus == "items"
+        else _theme_attr(COLOR_HEADING)
+    ) | curses.A_BOLD
     _addstr(stdscr, 3, 0, " Projects ", project_attr)
     hidden = " + hidden" if state.show_hidden else ""
     _addstr(
@@ -369,7 +408,11 @@ def _draw(stdscr, state: BrowserState, config: TuiConfig) -> None:
     ):
         row = visible_index + 4
         project_index = project_start + visible_index
-        attr = curses.A_REVERSE if project_index == state.project_index else 0
+        attr = (
+            _theme_attr(COLOR_SELECTED, curses.A_REVERSE)
+            if project_index == state.project_index
+            else 0
+        )
         _addstr(
             stdscr,
             row,
@@ -385,11 +428,21 @@ def _draw(stdscr, state: BrowserState, config: TuiConfig) -> None:
         _addstr(stdscr, 5, left_width + 2, "No recorder projects found.")
     else:
         item_start = viewport_start(len(state.items), state.item_index, rows)
-        for visible_index, item in enumerate(state.items[item_start : item_start + rows]):
+        for visible_index, item in enumerate(
+            state.items[item_start : item_start + rows]
+        ):
             row = visible_index + 4
             item_index = item_start + visible_index
-            attr = curses.A_REVERSE if item_index == state.item_index else 0
-            text = boundary_line(project, item) if state.item_mode == "boundaries" else take_line(item)
+            attr = (
+                _theme_attr(COLOR_SELECTED, curses.A_REVERSE)
+                if item_index == state.item_index
+                else 0
+            )
+            text = (
+                boundary_line(project, item)
+                if state.item_mode == "boundaries"
+                else take_line(item)
+            )
             _addstr(stdscr, row, left_width + 2, text, attr)
         detail_y = height - 5
         _addstr(stdscr, detail_y, 0, f"Project: {project.path.resolve()}")
@@ -397,7 +450,12 @@ def _draw(stdscr, state: BrowserState, config: TuiConfig) -> None:
         item = state.item
         if item and state.item_mode == "boundaries":
             boundary_dir = project.path / Path(item["state_path"]).parent
-            _addstr(stdscr, detail_y + 2, 0, f"Selected save files: {boundary_dir.resolve()}")
+            _addstr(
+                stdscr,
+                detail_y + 2,
+                0,
+                f"Selected save files: {boundary_dir.resolve()}",
+            )
         elif item:
             take_id = int(item["id"])
             _addstr(
@@ -409,10 +467,17 @@ def _draw(stdscr, state: BrowserState, config: TuiConfig) -> None:
 
     help_text = (
         "Tab switch  ↑↓ move  Enter resume  n rename selected  o screenshot  "
-        "t saves/takes  x archive/restore selected  v show hidden  a new route  r refresh  q quit"
+        "t saves/takes  m merge across save  x archive/restore  v show hidden  "
+        "a new route  r refresh  q quit"
     )
-    _addstr(stdscr, height - 2, 0, help_text, curses.A_BOLD)
-    _addstr(stdscr, height - 1, 0, state.message)
+    _addstr(
+        stdscr,
+        height - 2,
+        0,
+        help_text,
+        _theme_attr(COLOR_HEADING, curses.A_BOLD) | curses.A_BOLD,
+    )
+    _addstr(stdscr, height - 1, 0, state.message, _theme_attr(COLOR_MESSAGE))
     stdscr.refresh()
 
 
@@ -448,10 +513,32 @@ def toggle_selected_archive(state: BrowserState) -> str:
         noun = "Save"
     else:
         archived = item.get("status") != "discarded"
-        recorder.set_take_discarded(project.path, item_id, archived)
+        try:
+            recorder.set_take_discarded(project.path, item_id, archived)
+        except SystemExit as error:
+            return str(error)
         noun = "Take"
     return (
         f"{noun} #{item_id} {'archived' if archived else 'restored'}; files preserved."
+    )
+
+
+def merge_selected_boundary(state: BrowserState) -> str:
+    project = state.project
+    item = state.item
+    if (
+        project is None
+        or state.focus != "items"
+        or state.item_mode != "boundaries"
+        or item is None
+    ):
+        return "Select an intermediate save to merge its adjacent takes."
+    boundary_id = int(item["id"])
+    merged = recorder.merge_takes_across_boundary(project.path, boundary_id)
+    source_ids = merged["merged_from_takes"]
+    return (
+        f"Merged takes #{source_ids[0]} and #{source_ids[1]} into take #{merged['id']} "
+        f"across save #{boundary_id}; originals preserved as hidden provenance."
     )
 
 
@@ -474,7 +561,9 @@ def _handle_action(stdscr, state: BrowserState, config: TuiConfig, key: int) -> 
         state.show_hidden = not state.show_hidden
         _refresh(state, config)
         state.select_latest_item()
-        state.message = "Showing hidden items." if state.show_hidden else "Hidden items concealed."
+        state.message = (
+            "Showing hidden items." if state.show_hidden else "Hidden items concealed."
+        )
     elif key == ord("r"):
         _refresh(state, config)
         state.message = "Refreshed recorder projects."
@@ -541,6 +630,25 @@ def _handle_action(stdscr, state: BrowserState, config: TuiConfig, key: int) -> 
         _refresh(state, config)
         state.select_latest_item()
         state.message = message
+    elif (
+        key == ord("m")
+        and state.focus == "items"
+        and project
+        and item
+        and state.item_mode == "boundaries"
+    ):
+        confirmation = _prompt(
+            stdscr,
+            f"Type merge to combine takes across save #{item['id']}",
+        )
+        if confirmation and confirmation.strip().lower() == "merge":
+            try:
+                state.message = merge_selected_boundary(state)
+                _refresh(state, config)
+            except SystemExit as error:
+                state.message = str(error)
+        elif confirmation is not None:
+            state.message = "Merge cancelled."
     elif key == ord("a"):
         name = _prompt(stdscr, "New route folder name")
         if name:
@@ -573,9 +681,12 @@ def _handle_action(stdscr, state: BrowserState, config: TuiConfig, key: int) -> 
 
 
 def _main(stdscr, config: TuiConfig) -> None:
+    _configure_theme(stdscr)
     curses.curs_set(0)
     stdscr.keypad(True)
-    state = BrowserState(discover_projects(config.project_root, config.included_project))
+    state = BrowserState(
+        discover_projects(config.project_root, config.included_project)
+    )
     while True:
         _draw(stdscr, state, config)
         if not _handle_action(stdscr, state, config, stdscr.getch()):

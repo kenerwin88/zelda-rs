@@ -44,11 +44,18 @@ artifact directory. Controls:
 - `n`: rename the selected boundary.
 - `o`: open its screenshot.
 - `t`: switch between boundaries and takes.
+- `m`: on an intermediate boundary, combine its incoming and outgoing takes
+  into one active take. The boundary and source takes become hidden, while all
+  original files remain available as provenance under `v`.
 - `x`: archive/restore the selected boundary or discard/restore the selected
   take. Hidden items retain all state, SRAM, input, and receipts.
 - `v`: show or conceal archived/discarded items so they can be restored.
 - `a`: create and immediately record a new blank- or file-SRAM route.
 - `r`: refresh; `q` or Escape: quit.
+
+The browser establishes its own high-contrast dark palette instead of
+inheriting a potentially low-contrast light terminal theme. Terminals without
+color support retain the monochrome reverse-video fallback.
 
 ```sh
 python3 scripts/snes9x_route_recorder.py record \

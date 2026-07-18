@@ -96,7 +96,9 @@ def name_boundary(project: Path, boundary: int, label: str) -> None:
         None,
     )
     if duplicate is not None:
-        raise SystemExit(f"boundary name {label!r} is already used by boundary {duplicate}")
+        raise SystemExit(
+            f"boundary name {label!r} is already used by boundary {duplicate}"
+        )
     labels["boundaries"][str(boundary)] = label
     (project / "labels.json").write_text(json.dumps(labels, indent=2) + "\n")
 
@@ -127,7 +129,9 @@ def resolve_start_boundary(project: Path, value: str) -> str:
     if value == "latest" or value.isdecimal():
         return value
     labels = load_labels(project)["boundaries"]
-    matches = [key for key, label in labels.items() if label.casefold() == value.casefold()]
+    matches = [
+        key for key, label in labels.items() if label.casefold() == value.casefold()
+    ]
     if not matches:
         raise SystemExit(
             f"unknown boundary name {value!r}; use the list command to see saved boundaries"
@@ -142,7 +146,9 @@ def prepare_recording_sram(
     if manifest_path.exists():
         manifest = load_manifest(project)
         boundaries = manifest.get("boundaries", [])
-        boundary_id = len(boundaries) - 1 if resolved_start == "latest" else int(resolved_start)
+        boundary_id = (
+            len(boundaries) - 1 if resolved_start == "latest" else int(resolved_start)
+        )
         if boundary_id < 0 or boundary_id >= len(boundaries):
             raise SystemExit(
                 f"unknown boundary {boundary_id}; project has {len(boundaries)}"
@@ -183,8 +189,17 @@ def set_take_discarded(project: Path, take_id: int, discarded: bool) -> None:
     )
     if take is None:
         raise SystemExit(f"unknown take {take_id}")
+    if not discarded and take.get("status") == "merged":
+        raise SystemExit(
+            f"take {take_id} is merged provenance and cannot be restored independently"
+        )
     take["status"] = "discarded" if discarded else "complete"
     (project / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    _write_take_status(project, take)
+
+
+def _write_take_status(project: Path, take: dict) -> None:
+    take_id = int(take["id"])
     status_path = project / f"takes/{take_id:04}/status.json"
     if status_path.parent.exists():
         status_path.write_text(
@@ -200,6 +215,81 @@ def set_take_discarded(project: Path, take_id: int, discarded: bool) -> None:
             )
             + "\n"
         )
+
+
+def take_is_active(take: dict) -> bool:
+    return take.get("status", "complete") in {
+        "complete",
+        "recovered_after_interruption",
+    }
+
+
+def merge_takes_across_boundary(project: Path, boundary_id: int) -> dict:
+    """Replace two adjacent active takes with one non-destructive merged take."""
+    manifest = load_manifest(project)
+    boundary = next(
+        (
+            boundary
+            for boundary in manifest.get("boundaries", [])
+            if int(boundary["id"]) == boundary_id
+        ),
+        None,
+    )
+    if boundary is None:
+        raise SystemExit(f"unknown boundary {boundary_id}")
+    takes = manifest.get("takes", [])
+    incoming = [
+        take
+        for take in takes
+        if take_is_active(take)
+        and take.get("end_boundary") is not None
+        and int(take["end_boundary"]) == boundary_id
+    ]
+    outgoing = [
+        take
+        for take in takes
+        if take_is_active(take) and int(take["start_boundary"]) == boundary_id
+    ]
+    if len(incoming) != 1 or len(outgoing) != 1 or incoming[0] is outgoing[0]:
+        raise SystemExit(
+            f"save #{boundary_id} must have exactly one active incoming and outgoing "
+            f"take; found incoming={len(incoming)} outgoing={len(outgoing)}"
+        )
+
+    before, after = incoming[0], outgoing[0]
+    source_ids = [int(before["id"]), int(after["id"])]
+    new_id = max((int(take["id"]) for take in takes), default=-1) + 1
+    input_path = Path(f"takes/{new_id:04}/input.txt")
+    receipts_path = Path(f"takes/{new_id:04}/frame_receipts.jsonl")
+    takes_by_id = {int(take["id"]): take for take in takes}
+    frames = write_continuous_input(
+        project, source_ids, project / input_path, takes_by_id=takes_by_id
+    )
+    merged = {
+        "id": new_id,
+        "start_boundary": int(before["start_boundary"]),
+        "end_boundary": (
+            None if after.get("end_boundary") is None else int(after["end_boundary"])
+        ),
+        "frames": frames,
+        "input_path": str(input_path),
+        "status": "complete",
+        "merged_from_takes": source_ids,
+        "merged_across_boundary": boundary_id,
+    }
+    if write_continuous_receipts(
+        project, source_ids, project / receipts_path, takes_by_id=takes_by_id
+    ):
+        merged["receipts_path"] = str(receipts_path)
+    before["status"] = "merged"
+    after["status"] = "merged"
+    takes.append(merged)
+    (project / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    for take in (before, after, merged):
+        _write_take_status(project, take)
+
+    set_boundary_archived(project, boundary_id, True)
+    return merged
 
 
 def pair_boundary(project: Path, boundary: int, rust_state: Path) -> None:
@@ -318,7 +408,7 @@ def comparable_take_ids(project: Path) -> list[int]:
     boundaries = manifest.get("boundaries", [])
     result = []
     for take in manifest.get("takes", []):
-        if take.get("status") == "discarded":
+        if not take_is_active(take):
             continue
         boundary = boundaries[int(take["start_boundary"])]
         if int(take.get("frames", 0)) <= 0:
@@ -334,7 +424,7 @@ def excluded_nonempty_takes(project: Path) -> list[dict]:
     boundaries = manifest.get("boundaries", [])
     result = []
     for take in manifest.get("takes", []):
-        if take.get("status") == "discarded":
+        if not take_is_active(take):
             continue
         if int(take.get("frames", 0)) <= 0:
             continue
@@ -367,7 +457,7 @@ def continuous_take_ids(project: Path) -> list[int]:
     active = [
         take
         for take in manifest.get("takes", [])
-        if int(take.get("frames", 0)) > 0 and take.get("status") != "discarded"
+        if int(take.get("frames", 0)) > 0 and take_is_active(take)
     ]
     chain: list[int] = []
     current_boundary = reset_boundaries[0]
@@ -408,32 +498,105 @@ def _offset_input_selector(selector: str, offset: int) -> str:
     return str(int(selector) + offset)
 
 
-def write_continuous_input(project: Path, take_ids: list[int], output: Path) -> int:
-    manifest = load_manifest(project)
-    takes = {int(take["id"]): take for take in manifest.get("takes", [])}
-    lines = [
-        "# Continuous Snes9x route assembled from takes "
-        + ", ".join(str(take_id) for take_id in take_ids)
-        + "."
-    ]
-    offset = 0
-    for take_id in take_ids:
-        take = takes[take_id]
-        path = project / take["input_path"]
-        for line_no, raw in enumerate(path.read_text().splitlines(), start=1):
-            stripped = raw.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            parts = stripped.split()
-            if len(parts) != 2:
-                raise SystemExit(
-                    f"unsupported recorder input at {path}:{line_no}: {stripped}"
-                )
-            lines.append(f"{_offset_input_selector(parts[0], offset)} {parts[1]}")
-        offset += int(take["frames"])
+def write_continuous_input(
+    project: Path,
+    take_ids: list[int],
+    output: Path,
+    *,
+    takes_by_id: dict[int, dict] | None = None,
+) -> int:
+    if takes_by_id is None:
+        manifest = load_manifest(project)
+        takes_by_id = {int(take["id"]): take for take in manifest.get("takes", [])}
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("\n".join(lines) + "\n")
+    offset = 0
+    with output.open("w") as destination:
+        source_list = ", ".join(str(take_id) for take_id in take_ids)
+        destination.write(
+            f"# Continuous Snes9x route assembled from takes {source_list}.\n"
+        )
+        for take_id in take_ids:
+            take = takes_by_id[take_id]
+            path = project / take["input_path"]
+            with path.open() as source:
+                for line_no, raw in enumerate(source, start=1):
+                    stripped = raw.strip()
+                    if not stripped or stripped.startswith("#"):
+                        continue
+                    parts = stripped.split()
+                    if len(parts) != 2:
+                        raise SystemExit(
+                            f"unsupported recorder input at {path}:{line_no}: {stripped}"
+                        )
+                    selector = _offset_input_selector(parts[0], offset)
+                    destination.write(f"{selector} {parts[1]}\n")
+            offset += int(take["frames"])
     return offset
+
+
+def write_continuous_receipts(
+    project: Path,
+    take_ids: list[int],
+    output: Path,
+    *,
+    takes_by_id: dict[int, dict],
+) -> bool:
+    sources = []
+    for take_id in take_ids:
+        sources.extend(_receipt_source_takes(takes_by_id[take_id], takes_by_id))
+
+    receipt_files = []
+    for take in sources:
+        relative_path = take.get("receipts_path")
+        if not relative_path:
+            return False
+        path = project / relative_path
+        if not path.is_file():
+            return False
+        receipt_files.append((take, path))
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    offset = 0
+    with output.open("w") as destination:
+        for take, path in receipt_files:
+            with path.open() as source:
+                for line_no, raw in enumerate(source, start=1):
+                    if not raw.strip():
+                        continue
+                    try:
+                        receipt = json.loads(raw)
+                        receipt["frame"] = int(receipt["frame"]) + offset
+                    except (
+                        json.JSONDecodeError,
+                        KeyError,
+                        TypeError,
+                        ValueError,
+                    ) as error:
+                        raise SystemExit(
+                            f"unsupported recorder receipt at {path}:{line_no}: {error}"
+                        ) from error
+                    destination.write(json.dumps(receipt, separators=(",", ":")) + "\n")
+            offset += int(take["frames"])
+    return True
+
+
+def _receipt_source_takes(
+    take: dict, takes_by_id: dict[int, dict], ancestors: frozenset[int] = frozenset()
+) -> list[dict]:
+    take_id = int(take["id"])
+    if take_id in ancestors:
+        raise SystemExit(f"merged take provenance contains a cycle at take {take_id}")
+    source_ids = take.get("merged_from_takes")
+    if not source_ids:
+        return [take]
+    next_ancestors = ancestors | {take_id}
+    return [
+        source
+        for source_id in source_ids
+        for source in _receipt_source_takes(
+            takes_by_id[int(source_id)], takes_by_id, next_ancestors
+        )
+    ]
 
 
 def compare_all(
@@ -445,7 +608,7 @@ def compare_all(
     nonempty_take_ids = [
         int(take["id"])
         for take in manifest.get("takes", [])
-        if int(take.get("frames", 0)) > 0 and take.get("status") != "discarded"
+        if int(take.get("frames", 0)) > 0 and take_is_active(take)
     ]
     summaries = []
     requested_frames = 0

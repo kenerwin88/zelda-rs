@@ -92,8 +92,13 @@ struct TakeEntry {
     end_boundary: Option<usize>,
     frames: usize,
     input_path: String,
+    #[serde(default)]
     receipts_path: String,
     status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    merged_from_takes: Option<Vec<usize>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    merged_across_boundary: Option<usize>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -344,6 +349,8 @@ impl RecorderProject {
             input_path: format!("takes/{:04}/input.txt", active.id),
             receipts_path: format!("takes/{:04}/frame_receipts.jsonl", active.id),
             status: "complete".to_string(),
+            merged_from_takes: None,
+            merged_across_boundary: None,
         };
         self.manifest.takes.push(entry);
         fs::write(
@@ -478,6 +485,8 @@ impl RecorderProject {
                 input_path: format!("takes/{id:04}/input.txt"),
                 receipts_path: format!("takes/{id:04}/frame_receipts.jsonl"),
                 status: "recovered_after_interruption".to_string(),
+                merged_from_takes: None,
+                merged_across_boundary: None,
             });
             fs::write(
                 status_path,
@@ -640,6 +649,28 @@ mod tests {
         assert_eq!(manifest["boundaries"][0]["reset_start"], true);
         assert_eq!(manifest["boundaries"][1]["reset_start"], false);
         assert_eq!(manifest["takes"].as_array().unwrap().len(), 2);
+        drop(project);
+        let mut legacy_manifest = manifest;
+        legacy_manifest["takes"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("receipts_path");
+        legacy_manifest["takes"][0]["merged_from_takes"] = serde_json::json!([7, 8]);
+        legacy_manifest["takes"][0]["merged_across_boundary"] = serde_json::json!(3);
+        std::fs::write(
+            dir.join("manifest.json"),
+            serde_json::to_vec_pretty(&legacy_manifest).unwrap(),
+        )
+        .unwrap();
+        drop(RecorderProject::open(&dir, identity()).unwrap());
+        let rewritten: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(rewritten["takes"][0]["receipts_path"], "");
+        assert_eq!(
+            rewritten["takes"][0]["merged_from_takes"],
+            serde_json::json!([7, 8])
+        );
+        assert_eq!(rewritten["takes"][0]["merged_across_boundary"], 3);
         let _ = std::fs::remove_dir_all(dir);
     }
 
