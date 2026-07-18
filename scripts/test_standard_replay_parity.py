@@ -721,48 +721,6 @@ def run_inventory_menu_live_present_gate(
     return 0
 
 
-def run_menu_sfx_lockstep_gate(args: argparse.Namespace, *, env: dict[str, str]) -> int:
-    checkpoint = args.checkpoint_dir / f"rust-frame-{MENU_CHECKPOINT_FRAME}.sav"
-    input_script = ROOT / "target" / "standard-replay-render" / "menu" / "open-menu-input.txt"
-    command = [
-        str(args.rust_bin),
-        "--replay-save",
-        str(args.rom),
-        str(args.save),
-        str(MENU_AUDIO_LOCKSTEP_END_FRAME),
-        "--load-state",
-        str(checkpoint),
-        "--stop-replay-after-load",
-        "--input-script",
-        str(input_script),
-        "--audio-trace-log",
-        "1",
-    ]
-    result = run_capture(command, cwd=ROOT, env=env)
-    if result.returncode != 0:
-        print(result.stdout, file=sys.stderr)
-        return result.returncode
-    trace = ROOT / "target" / "parity" / "menu-sfx-lockstep.jsonl"
-    trace.parent.mkdir(parents=True, exist_ok=True)
-    trace.write_text(result.stdout)
-    check = run_capture(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "check_modern_audio_route.py"),
-            "--require-zero-unknown-sfx",
-            "--require-sfx-lockstep",
-            str(trace),
-        ],
-        cwd=ROOT,
-        env=env,
-    )
-    if check.returncode != 0:
-        print(check.stdout, file=sys.stderr)
-        return check.returncode
-    print(check.stdout.strip())
-    return 0
-
-
 def run_display_frame_gate(args: argparse.Namespace, *, env: dict[str, str]) -> int:
     c_checkpoint = args.checkpoint_dir / f"c-frame-{DISPLAY_CHECKPOINT_FRAME}.sav"
     rust_checkpoint = args.checkpoint_dir / f"rust-frame-{DISPLAY_CHECKPOINT_FRAME}.sav"
@@ -1609,10 +1567,6 @@ def main() -> int:
         return rc
 
     rc = run_inventory_menu_live_present_gate(args, env=env)
-    if rc != 0:
-        return rc
-
-    rc = run_menu_sfx_lockstep_gate(args, env=env)
     if rc != 0:
         return rc
 

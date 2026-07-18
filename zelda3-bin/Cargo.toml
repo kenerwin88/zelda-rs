@@ -6,10 +6,6 @@ rust-version.workspace = true
 license.workspace = true
 build = "build.rs"
 
-[features]
-default = []
-audio-oracle = ["zelda3/audio-oracle"]
-
 [[bin]]
 name = "zelda3"
 path = "src/main.rs"

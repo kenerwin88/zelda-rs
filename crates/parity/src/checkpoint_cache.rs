@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::runner::{self, Paths};
 
 pub const SCHEMA: u32 = 1;
-pub const CHECKPOINT_FORMAT_VERSION: u32 = 5;
+pub const CHECKPOINT_FORMAT_VERSION: u32 = 6;
 pub const SEED_COMMAND_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

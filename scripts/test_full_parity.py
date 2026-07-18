@@ -63,38 +63,6 @@ class Snes9xParityGateTests(unittest.TestCase):
         self.assertNotIn("--audio-timing-tolerance-ms", command)
         self.assertNotIn("--auto-align-video", command)
 
-    def test_exact_apu_gate_builds_oracle_feature_and_ignores_video(self):
-        module = load_module()
-        args = argparse.Namespace(
-            rom=pathlib.Path("/tmp/zelda3.sfc"),
-            frames=100,
-            release=False,
-            input_script=None,
-            load_sram=None,
-            snes9x_skip=0,
-            snes9x_core="/tmp/snes9x_libretro.dylib",
-            no_install_snes9x=True,
-            snes9x_url="unused",
-            work_dir=pathlib.Path("/tmp/parity"),
-        )
-        result = module.CommandResult([], 0, "passed", "")
-        with (
-            mock.patch.object(
-                module,
-                "resolve_snes9x_core",
-                return_value=pathlib.Path(args.snes9x_core),
-            ),
-            mock.patch.object(module, "run_command", return_value=result) as run,
-        ):
-            module.run_snes9x_exact_apu_gate(args)
-
-        command = run.call_args.args[0]
-        self.assertIn("audio-oracle", command)
-        self.assertIn("--ignore-video", command)
-        self.assertIn("dsp-parity", command)
-        self.assertIn("exact-spc-driver", command)
-        self.assertIn("exact", command)
-
     def test_modern_audio_gate_uses_exact_snes9x_waveform_over_replay_save(self):
         module = load_module()
         args = argparse.Namespace(

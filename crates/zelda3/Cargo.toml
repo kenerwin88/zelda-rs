@@ -6,10 +6,6 @@ rust-version.workspace = true
 license.workspace = true
 autobins = false
 
-[features]
-default = []
-audio-oracle = []
-
 [dependencies]
 bincode = "1"
 opus = "0.3.1"

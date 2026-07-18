@@ -550,7 +550,6 @@ ALLOWED_DEFAULT_AUDIO_DSP_FUNCTIONS = {
     "run_trace_bootstrap_apu_direct_frame",
     "raw_rom_apu_bootstrap_ready",
     "print_rom_apu_trace_line",
-    "run_compare_startup_apu_impls",
 }
 
 FORBIDDEN_MAIN_IMAGE_OUTPUT_OWNERSHIP = (

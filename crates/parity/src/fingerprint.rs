@@ -140,6 +140,22 @@ impl FrameFingerprint {
         }
     }
 
+    /// Rollup with the audio leaf forced to 0.
+    ///
+    /// The legacy SPC/DSP audio oracle was removed from the Rust port, so the
+    /// Rust side always emits a zero audio leaf. C oracle streams still carry a
+    /// live audio hash in the slot; normalizing both sides here keeps the
+    /// rollup comparison meaningful for the remaining layers.
+    pub fn normalized_rollup(&self) -> u32 {
+        let mut leaves = Vec::with_capacity(WRAM_PAGES + VRAM_PAGES + 3);
+        leaves.extend_from_slice(&self.wram);
+        leaves.extend_from_slice(&self.vram);
+        leaves.push(self.sram);
+        leaves.push(self.render);
+        leaves.push(0);
+        fnv1a_u32s(&leaves)
+    }
+
     pub fn to_bytes(&self) -> [u8; RECORD_LEN] {
         let mut b = [0u8; RECORD_LEN];
         let mut o = 0usize;

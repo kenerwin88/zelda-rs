@@ -1,6 +1,6 @@
 use super::*;
 use crate::game_output::{
-    AudioBackendMode, AudioEventFrame, AudioEventKind, AudioSfxBank, EngineAudioCommand,
+    AudioEventFrame, AudioEventKind, AudioSfxBank, EngineAudioCommand,
     AUDIO_INTERNAL_SAMPLES_PER_FRAME,
 };
 
@@ -125,8 +125,7 @@ fn run_scenario(scenario: SemanticAudioScenario) -> ScenarioResult {
 
 fn render_modern_frame(state: &mut ZeldaState) -> (AudioEventFrame, Vec<i16>) {
     let mut pcm = vec![0; AUDIO_INTERNAL_SAMPLES_PER_FRAME * CHANNELS];
-    let frame = state.zelda_render_audio_with_backend(
-        AudioBackendMode::Modern,
+    let frame = state.zelda_render_audio(
         &mut pcm,
         AUDIO_INTERNAL_SAMPLES_PER_FRAME as i32,
         CHANNELS as i32,

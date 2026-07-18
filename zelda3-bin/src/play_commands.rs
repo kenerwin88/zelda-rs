@@ -4,10 +4,7 @@ use std::path::Path;
 use std::process;
 
 use platform::{HostMenuAction, HostMenuInput, HostMenuMode, HostMenuState, NativeFrontendOptions};
-use zelda3::{
-    game_output::{AudioBackendMode, AudioSequencerBackend},
-    ZeldaState,
-};
+use zelda3::ZeldaState;
 
 use crate::audio_trace::replay_checksum_samples;
 use crate::developer_room_commands::{
@@ -35,37 +32,6 @@ struct FrontendSmokeOptions {
     load_sram: Option<String>,
     replay_save: Option<String>,
     replay_start_frame: u32,
-}
-
-fn configure_audio_backend_from_env(game: &mut ZeldaState) -> Result<AudioBackendMode, String> {
-    let Some(value) = env::var_os("ZELDA3_AUDIO_BACKEND") else {
-        return Ok(game.zelda_audio_backend());
-    };
-    let value = value
-        .into_string()
-        .map_err(|_| "ZELDA3_AUDIO_BACKEND must be valid UTF-8".to_string())?;
-    let backend = AudioBackendMode::parse(&value).ok_or_else(|| {
-        format!(
-            "invalid ZELDA3_AUDIO_BACKEND={value:?}; expected modern, dsp-parity, or trace-only"
-        )
-    })?;
-    game.zelda_set_audio_backend(backend)
-        .map_err(str::to_string)?;
-    Ok(backend)
-}
-
-fn configure_audio_sequencer_from_env(game: &mut ZeldaState) -> Result<(), String> {
-    let Some(value) = env::var_os("ZELDA3_AUDIO_SEQUENCER") else {
-        return Ok(());
-    };
-    let value = value
-        .into_string()
-        .map_err(|_| "ZELDA3_AUDIO_SEQUENCER must be valid UTF-8".to_string())?;
-    let sequencer = AudioSequencerBackend::parse(&value).ok_or_else(|| {
-        format!("invalid ZELDA3_AUDIO_SEQUENCER={value:?}; expected native or exact-spc-driver")
-    })?;
-    game.zelda_set_audio_sequencer_backend(sequencer)
-        .map_err(str::to_string)
 }
 
 fn parse_frontend_smoke_options(args: &[String]) -> Result<FrontendSmokeOptions, String> {
@@ -172,14 +138,6 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
         .as_deref()
         .map(load_play_state)
         .unwrap_or_else(load_embedded_play_state);
-    let audio_backend = configure_audio_backend_from_env(&mut game).unwrap_or_else(|message| {
-        eprintln!("{message}");
-        process::exit(2);
-    });
-    configure_audio_sequencer_from_env(&mut game).unwrap_or_else(|message| {
-        eprintln!("{message}");
-        process::exit(2);
-    });
     if let Some(path) = options.load_sram.as_deref() {
         let sram = read_file_or_exit(Path::new(path), "SRAM");
         apply_sram_to_game_or_exit(&mut game, Path::new(path), &sram);
@@ -285,7 +243,7 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
     }
 
     println!(
-        "frontend smoke completed frames={completed} renderer={renderer_name} audio_backend={audio_backend:?} audio_peak={audio_peak} audio_hash=0x{audio_hash:08x} triggered_voices={triggered_voices} understood_events={understood_events} note_events={note_events} sfx_commands={sfx_commands}"
+        "frontend smoke completed frames={completed} renderer={renderer_name} audio_peak={audio_peak} audio_hash=0x{audio_hash:08x} triggered_voices={triggered_voices} understood_events={understood_events} note_events={note_events} sfx_commands={sfx_commands}"
     );
     if options.require_audio && audio_peak == 0 {
         eprintln!("frontend smoke failed: requested audio verification but output was silent");
@@ -302,23 +260,6 @@ pub(crate) fn run_standalone_play() {
 }
 
 fn run_play_with_state(mut game: ZeldaState) {
-    let audio_backend = configure_audio_backend_from_env(&mut game).unwrap_or_else(|message| {
-        eprintln!("{message}");
-        process::exit(2);
-    });
-    configure_audio_sequencer_from_env(&mut game).unwrap_or_else(|message| {
-        eprintln!("{message}");
-        process::exit(2);
-    });
-    if env::var_os("ZELDA3_AUDIO_BACKEND").is_some() {
-        eprintln!("audio backend override: {audio_backend:?}");
-    }
-    if env::var_os("ZELDA3_AUDIO_SEQUENCER").is_some() {
-        eprintln!(
-            "audio sequencer override: {:?}",
-            game.zelda_audio_sequencer_backend()
-        );
-    }
     let last_panic = install_crash_panic_hook();
     let width = 256u32;
     let height = 224u32;
@@ -403,8 +344,6 @@ fn run_play_with_state(mut game: ZeldaState) {
                             match load_developer_destination(id) {
                                 Ok((next_game, next_frame)) => {
                                     game = next_game;
-                                    game.zelda_set_audio_backend(audio_backend)
-                                        .expect("fresh developer state accepts backend selection");
                                     host_frame = next_frame;
                                     game_started = true;
                                     host_menu.close();

@@ -111,8 +111,9 @@ pub fn run(args: &[String]) {
     let got = FrameFingerprint::from_bytes(&got_data[shard_idx * RECORD_LEN..]);
     // got.frame == idx + 1 (emulated frame number), same as want.frame.
 
-    // Compare rollups first; if they match we are done.
-    if got.rollup == want.rollup {
+    // Compare rollups first (audio leaf normalized to 0 on both sides); if
+    // they match we are done.
+    if got.rollup == want.normalized_rollup() {
         // Display as the emulated frame number to match user expectations.
         println!("frame {idx}: MATCH (rollup 0x{:08x})", got.rollup);
         return;
@@ -152,12 +153,8 @@ pub fn run(args: &[String]) {
             want.render, got.render
         );
     }
-    if got.audio != want.audio {
-        println!(
-            "  AUDIO  golden=0x{:08x} rust=0x{:08x}",
-            want.audio, got.audio
-        );
-    }
+    // The audio leaf is retired (DSP oracle removed); golden detail blocks may
+    // still carry a live C-side hash there, so it is not compared.
     exit(1);
 }
 

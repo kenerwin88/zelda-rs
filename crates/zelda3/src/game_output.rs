@@ -57,40 +57,6 @@ pub struct DspWriteEvent {
     pub timer_cycles: u8,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ClassicDspGlobalState {
-    pub master_volume_left: i8,
-    pub master_volume_right: i8,
-    pub echo_volume_left: i8,
-    pub echo_volume_right: i8,
-    pub echo_feedback: i8,
-    pub flags: u8,
-    pub echo_enable_mask: u8,
-    pub pitch_modulation_mask: u8,
-    pub noise_enable_mask: u8,
-    pub echo_start_page: u8,
-    pub echo_delay: u8,
-    pub fir: [i8; 8],
-    pub echo_buffer_index: u16,
-    pub echo_remaining: u16,
-    pub fir_history_index: u8,
-    pub fir_history_left: [i16; 8],
-    pub fir_history_right: [i16; 8],
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ClassicDspVoiceState {
-    pub pitch: u16,
-    pub pitch_counter: u16,
-    pub source: u8,
-    pub envelope_state: u8,
-    pub envelope_rate_counter: u16,
-    pub gain: u16,
-    pub sample_out: i16,
-    pub volume_left: i8,
-    pub volume_right: i8,
-}
-
 impl DspWriteEvent {
     pub fn new(addr: u8, value: u8, sample_offset: i32, timer_cycles: u8) -> Self {
         Self {
@@ -791,88 +757,6 @@ pub struct GameFrameOutput {
     pub audio: AudioEventFrame,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum AudioBackendMode {
-    DspParity,
-    TraceOnly,
-    Modern,
-}
-
-/// Selects the command sequencer used in front of the modern renderer.
-///
-/// `ExactSpcDriver` clocks the Rust port of the original game-specific SPC
-/// driver to obtain timed DSP writes, but the modern renderer still produces
-/// the samples. It is a parity/migration bridge; `Native` is the clean end
-/// state that can replace it incrementally.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum AudioSequencerBackend {
-    #[default]
-    Native,
-    ExactSpcDriver,
-}
-
-impl AudioSequencerBackend {
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "native" => Some(Self::Native),
-            "exact-spc-driver" | "exact" => Some(Self::ExactSpcDriver),
-            _ => None,
-        }
-    }
-}
-
-impl Default for AudioBackendMode {
-    fn default() -> Self {
-        Self::Modern
-    }
-}
-
-impl AudioBackendMode {
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "modern" => Some(Self::Modern),
-            "dsp-parity" => Some(Self::DspParity),
-            "trace-only" => Some(Self::TraceOnly),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct AudioTraceFrameSummary {
-    pub sample_stats: AudioSampleStats,
-    pub dsp_pre_hash: u32,
-    pub dsp_post_hash: u32,
-    pub dsp_write_count: u32,
-    pub dsp_write_hash: u32,
-    pub dsp_write_values_hash: u32,
-    pub command_event_count: u32,
-    pub command_event_hash: u32,
-    pub unresolved_dsp_writes: u32,
-}
-
-impl AudioTraceFrameSummary {
-    pub fn from_parts(
-        samples: &[i16],
-        channels: usize,
-        dsp_pre_hash: u32,
-        dsp_post_hash: u32,
-        writes: &[DspWriteEvent],
-        event_frame: &AudioEventFrame,
-    ) -> Self {
-        Self {
-            sample_stats: AudioSampleStats::from_interleaved(samples, channels),
-            dsp_pre_hash,
-            dsp_post_hash,
-            dsp_write_count: writes.len() as u32,
-            dsp_write_hash: checksum_dsp_writes(writes),
-            dsp_write_values_hash: checksum_dsp_write_values(writes),
-            command_event_count: event_frame.events.len() as u32,
-            command_event_hash: event_frame.command_hash(),
-            unresolved_dsp_writes: event_frame.unresolved_dsp_writes as u32,
-        }
-    }
-}
 
 pub fn checksum_samples(samples: &[i16]) -> u32 {
     AudioSampleStats::from_interleaved(samples, 2).checksum
@@ -1240,23 +1124,6 @@ fn hash_audio_event(mut hash: u32, event: &AudioEvent) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn audio_backend_names_parse_for_host_overrides() {
-        assert_eq!(
-            AudioBackendMode::parse("modern"),
-            Some(AudioBackendMode::Modern)
-        );
-        assert_eq!(
-            AudioBackendMode::parse("dsp-parity"),
-            Some(AudioBackendMode::DspParity)
-        );
-        assert_eq!(
-            AudioBackendMode::parse("trace-only"),
-            Some(AudioBackendMode::TraceOnly)
-        );
-        assert_eq!(AudioBackendMode::parse("legacy"), None);
-    }
 
     #[test]
     fn engine_audio_commands_round_trip_legacy_ports_without_losing_semantics() {

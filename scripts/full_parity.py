@@ -65,13 +65,11 @@ def command_text(command: list[str]) -> str:
 
 
 def cargo_zelda(
-    args: list[str], release: bool, *, audio_oracle: bool = False
+    args: list[str], release: bool
 ) -> list[str]:
     command = ["cargo", "run", "-q"]
     if release:
         command.append("--release")
-    if audio_oracle:
-        command.extend(["--features", "audio-oracle"])
     command.extend(["-p", "zelda3-bin", "--"])
     command.extend(args)
     return command
@@ -209,45 +207,6 @@ def run_snes9x_gate(args: argparse.Namespace) -> None:
         command.extend(["--load-sram", args.load_sram])
     result = run_command(command)
     require_success(result, "Snes9x live audio/video")
-    print(result.stdout.strip(), flush=True)
-
-
-def run_snes9x_exact_apu_gate(args: argparse.Namespace) -> None:
-    core = resolve_snes9x_core(args)
-    if core is None:
-        raise GateFailure(
-            "Snes9x libretro core not found for exact APU comparison. Set "
-            "SNES9X_LIBRETRO_CORE or pass --snes9x-core."
-        )
-    session_dir = args.work_dir / "snes9x-exact-apu-session"
-    command = cargo_zelda(
-        [
-            "--compare-snes9x-oracle",
-            str(core),
-            str(args.rom),
-            str(args.frames),
-            "--skip-oracle-frames",
-            str(args.snes9x_skip),
-            "--ignore-video",
-            "--audio-comparison",
-            "exact",
-            "--rust-audio-backend",
-            "dsp-parity",
-            "--rust-audio-sequencer",
-            "exact-spc-driver",
-            "--session-dir",
-            str(session_dir),
-            "--scan-all",
-        ],
-        args.release,
-        audio_oracle=True,
-    )
-    if args.input_script:
-        command.extend(["--input-script", args.input_script])
-    if args.load_sram:
-        command.extend(["--load-sram", args.load_sram])
-    result = run_command(command)
-    require_success(result, "Snes9x exact local-APU waveform")
     print(result.stdout.strip(), flush=True)
 
 
@@ -432,7 +391,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no-snes9x", action="store_true")
     parser.add_argument("--with-snes9x", action="store_true")
     parser.add_argument("--no-install-snes9x", action="store_true")
-    parser.add_argument("--no-snes9x-exact-apu", action="store_true")
     parser.add_argument("--no-snes9x-modern-audio", action="store_true")
     parser.add_argument("--no-mesen", action="store_true")
     parser.add_argument("--with-mesen", action="store_true")
@@ -464,8 +422,6 @@ def main() -> int:
             gates.append(
                 ("Snes9x modern full-route waveform", run_snes9x_modern_audio_gate)
             )
-        if not args.no_snes9x_exact_apu:
-            gates.append(("Snes9x exact local-APU waveform", run_snes9x_exact_apu_gate))
 
     if not gates:
         print("no parity gates are enabled", file=sys.stderr)

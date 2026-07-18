@@ -70,9 +70,11 @@ bridge `sync()` calls re-run a state's `write_to_ram` mid-frame on every setter.
 ## Reference builds & ROM
 
 **One reference, byte-exact: the C oracle `../zelda3`** (ground truth; override `ZELDA3_C_REPO`).
-The C source build is byte-identical to the Rust port on WRAM, VRAM, SRAM, render-hash, and the
-audio DSP trace (the old "cycle-accuracy" caveat was SNES9X-only; the C *source* build matches
-exactly). Gate every layer with `scripts/validate_all_parity.py`; find per-frame divergences with
+The C source build is byte-identical to the Rust port on WRAM, VRAM, SRAM, and render-hash. (The
+legacy SPC/DSP audio oracle was removed from the Rust port; the fingerprint's audio leaf is
+normalized to 0 on both sides, and modern-audio correctness is covered by the in-crate
+conformance tests plus the Snes9x/C waveform gates in `scripts/full_parity.py`.) Gate every
+layer with `scripts/validate_all_parity.py`; find per-frame divergences with
 `zparity` (tool #10). Editing the C repo to add parity-oracle hooks IS permitted (audio-trace
 default freq + `ZELDA3_REPLAY_WRAM_DUMP`/`ZELDA3_VRAM_DUMP`/`--fingerprint-log` dumps are committed
 there). Build: `make -C ../zelda3 zelda3`. Invoke headless: `SDL_VIDEODRIVER=dummy
@@ -82,8 +84,8 @@ SDL_AUDIODRIVER=dummy SDL_RENDER_DRIVER=software ../zelda3/zelda3 --config
 - ROM: `saves/zelda3.sfc` in THIS repo (gitignored via `*.sfc`); scripts default to it and
   accept `ZELDA3_ROM`. The C oracle uses its own `../zelda3/zelda3.sfc` via its config.
 - **The all-layer gate:** `scripts/validate_all_parity.py [--frames N | --full]` compares
-  WRAM (byte + hashes) / VRAM (byte) / SRAM / RENDER (per-frame) / AUDIO (DSP trace) vs the C
-  oracle. Wired into `.githooks/pre-commit` (smoke budget; `--full` = exhaustive 170k).
+  WRAM (byte + hashes) / VRAM (byte) / SRAM / RENDER (per-frame) vs the C oracle (the audio
+  leaf is retired). Wired into `.githooks/pre-commit` (smoke budget; `--full` = exhaustive 170k).
 - This repo: `cargo build --profile parity -p zelda3-bin` (deterministic like release,
   faster). Binary: `target/parity/zelda3 --replay-save saves/zelda3.sfc <save> <frames>`.
 - Replay save: `saves/zelda3-combined-route.sav`. All replay runs need the timing hacks:
@@ -202,8 +204,8 @@ See memory [[checkpoint-resume-debugging]].
 ## The debugging loop that works
 
 1. `zparity check [--full]` → the EARLIEST per-frame diverging frame vs C.
-2. `zparity drill <frame>` → the diverging WRAM page/address (or VRAM/sram/render/audio leaf).
-   (Needs Tier B: `zparity capture --full --detail` once.)
+2. `zparity drill <frame>` → the diverging WRAM page/address (or VRAM/sram/render leaf; the
+   audio leaf is retired). (Needs Tier B: `zparity capture --full --detail` once.)
 3. `whoowns.py <addr>` → this-repo const, read/write sites, native owner struct.
 4. Classify into one of the four **Common bug classes** above: overlap/clobber
    (`find_dual_ownership.py`), oversized table (array span vs the next const), mode-reuse

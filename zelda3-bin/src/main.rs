@@ -51,9 +51,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use asset_palette_commands::run_dump_reference_palette;
 use asset_source_dump_commands::run_dump_assets_by_source;
 use audio_trace::{
-    fingerprint_audio_hash, first_peak_frame, max_peak_frame, print_audio_window,
-    print_replay_audio_trace, replay_checksum_dsp_write_values, replay_checksum_dsp_writes,
-    replay_checksum_samples, should_write_fingerprint, AudioFrameStats,
+    first_peak_frame, max_peak_frame, print_audio_window, replay_checksum_samples,
+    should_write_fingerprint, AudioFrameStats,
 };
 use developer_room_commands::{run_dump_developer_destination, run_dump_developer_tileset};
 use frame_dump_commands::{
@@ -104,7 +103,7 @@ use snes9x_segment_matrix::{
 };
 use zelda3::{
     config::parse_config_file_context,
-    game_output::{AudioBackendMode, AudioSequencerBackend, DspWriteEvent},
+    game_output::DspWriteEvent,
     LockstepOracle, OracleError, ZeldaState, RUN_MAIN, RUN_POLY,
 };
 
@@ -210,13 +209,7 @@ fn main() {
         run_trace_snes9x_memory(&args[2..]);
         return;
     }
-    if args.get(1).map(String::as_str) == Some("--compare-startup-apu-impls") {
-        require_audio_oracle("--compare-startup-apu-impls");
-        run_compare_startup_apu_impls(&args[2..]);
-        return;
-    }
     if args.get(1).map(String::as_str) == Some("--trace-song-bank") {
-        require_audio_oracle("--trace-song-bank");
         run_trace_song_bank(&args[2..]);
         return;
     }
@@ -241,7 +234,6 @@ fn main() {
         return;
     }
     if args.get(1).map(String::as_str) == Some("--compare-bootstrap-apu-startup") {
-        require_audio_oracle("--compare-bootstrap-apu-startup");
         run_compare_bootstrap_apu_startup(&args[2..]);
         return;
     }
@@ -354,15 +346,6 @@ fn main() {
     } else {
         run_standalone_play();
     }
-}
-
-#[cfg(feature = "audio-oracle")]
-fn require_audio_oracle(_operation: &str) {}
-
-#[cfg(not(feature = "audio-oracle"))]
-fn require_audio_oracle(operation: &str) {
-    eprintln!("{operation} requires an audio-oracle build; rebuild with --features audio-oracle");
-    process::exit(2);
 }
 
 /// Write the embedded, source-authoritative asset pack to disk. This is the
@@ -1637,34 +1620,6 @@ fn write_asset_gpu_checkpoint_or_exit(game: &ZeldaState, frames: u32, dir: &Path
     });
 }
 
-fn modern_audio_sample_asset_hash(sample_ram: &[u8], source: u8) -> u32 {
-    const DIRECTORY: usize = 0x3c00;
-    let mut hash = 2166136261u32;
-    let entry = DIRECTORY + usize::from(source) * 4;
-    let Some(directory) = sample_ram.get(entry..entry + 4) else {
-        return hash;
-    };
-    for &byte in directory {
-        hash = (hash ^ u32::from(byte)).wrapping_mul(16777619);
-    }
-    let mut address = usize::from(directory[0]) | (usize::from(directory[1]) << 8);
-    if address == 0 {
-        return hash;
-    }
-    for _ in 0..4096 {
-        let Some(block) = sample_ram.get(address..address + 9) else {
-            break;
-        };
-        for &byte in block {
-            hash = (hash ^ u32::from(byte)).wrapping_mul(16777619);
-        }
-        if block[0] & 1 != 0 {
-            break;
-        }
-        address += 9;
-    }
-    hash
-}
 
 fn run_replay_save(args: &[String]) {
     let ReplaySaveConfig {
@@ -1694,17 +1649,6 @@ fn run_replay_save(args: &[String]) {
         input_script_overlay,
         stop_replay_after_load,
     } = parse_replay_save_args_or_exit(args);
-    #[cfg(not(feature = "audio-oracle"))]
-    if audio_trace_log != 0 || fingerprint_log.is_some() {
-        eprintln!(
-            "audio trace and fingerprint diagnostics require an audio-oracle build; rebuild with --features audio-oracle"
-        );
-        process::exit(2);
-    }
-    #[cfg(not(feature = "audio-oracle"))]
-    if std::env::var_os("ZELDA3_DBG_AUDIO_FP").is_some() {
-        require_audio_oracle("ZELDA3_DBG_AUDIO_FP");
-    }
     let mut ppu_mode_counts = [0u64; 8];
     let mut first_mode7_frame = None::<u32>;
     let mut last_mode7_frame = None::<u32>;
@@ -1718,12 +1662,6 @@ fn run_replay_save(args: &[String]) {
                 path.display()
             );
             process::exit(1);
-        }
-        if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
-            eprintln!(
-                "[AUDIO_FP] post-load dsp_hash=0x{:08x}",
-                game.zelda_audio_dsp_hash()
-            );
         }
     } else {
         if let Err(e) = game.replay_save_file(Path::new(&replay_path)) {
@@ -1752,15 +1690,6 @@ fn run_replay_save(args: &[String]) {
     } else {
         None
     };
-    let mut audio_trace_dsp_buffer = audio_trace_buffer
-        .as_ref()
-        .map(|audio| vec![0i16; audio.len()]);
-    // The diagnostic renderer must evolve independently. C DSP output is the
-    // comparison target, never a source of modern voice/envelope state.
-    let (mut modern_audio_trace_sequence, mut modern_audio_trace_engine) =
-        game.zelda_oracle_aligned_modern_audio_trace_state();
-    let mut modern_audio_trace_previous_dsp_post = None;
-    let mut modern_audio_trace_sample_assets = [None; 256];
     let render_hash_cpu_debug = std::env::var_os("ZELDA3_RENDER_HASH_CPU_DEBUG").is_some();
     let mut render_hash_frame = if gpu_render_compare.enabled()
         || render_hash_cpu_debug
@@ -1856,73 +1785,20 @@ fn run_replay_save(args: &[String]) {
             }
         }
         last_frame_had_fingerprint_render = false;
-        let mut fp_audio_leaf: u32 = 0;
+        // The DSP-oracle audio leaf was retired with the legacy SPC/DSP renderer;
+        // the fingerprint layout keeps the slot at 0 on both capture and check.
+        let fp_audio_leaf: u32 = 0;
         let should_fingerprint_frame =
             fingerprint_log.is_some() && should_write_fingerprint(fingerprint_frame, frames);
         if let Some(audio) = audio_trace_buffer.as_mut() {
-            game.zelda_prepare_audio_trace_dsp();
-            let dsp_pre = game.zelda_audio_dsp_hash();
-            let dsp_discontinuity =
-                modern_audio_trace_previous_dsp_post.is_some_and(|previous| previous != dsp_pre);
-            if dsp_discontinuity {
-                game.zelda_sync_modern_audio_trace_engine(&mut modern_audio_trace_engine, 0);
-            }
-            let dsp_pre_snapshot = game.zelda_audio_dsp_snapshot();
-            let spc_ram_pre = game.zelda_audio_live_spc_ram();
-            let mut sample_ram_changed = false;
-            for voice in 0..8 {
-                let state_base = 0x80 + voice * 86;
-                let Some(&source) = dsp_pre_snapshot.get(state_base + 44) else {
-                    continue;
-                };
-                let hash = modern_audio_sample_asset_hash(&spc_ram_pre, source);
-                let previous = &mut modern_audio_trace_sample_assets[usize::from(source)];
-                sample_ram_changed |= previous.is_some_and(|value| value != hash);
-                *previous = Some(hash);
-            }
-            if sample_ram_changed {
-                modern_audio_trace_engine.sample_ram_changed();
-            }
-            let dsp_only_audio = audio_trace_dsp_buffer
-                .as_mut()
-                .expect("DSP-only trace buffer must accompany the final audio trace buffer");
-            let writes =
-                game.zelda_render_prepared_audio_trace_dsp_events(audio, dsp_only_audio, 735, 2);
-            modern_audio_trace_previous_dsp_post = Some(game.zelda_audio_dsp_hash());
+            game.zelda_render_audio(audio, 735, 2);
             game.zelda_discard_unused_audio_frames();
-            if should_fingerprint_frame {
-                let dsp_post = game.zelda_audio_dsp_hash();
-                let s_samples = replay_checksum_samples(audio);
-                let s_writes = replay_checksum_dsp_writes(&writes);
-                let s_wvals = replay_checksum_dsp_write_values(&writes);
-                if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
-                    eprintln!(
-                        "[AUDIO_FP] f={frames} samp=0x{s_samples:08x} pre=0x{dsp_pre:08x} post=0x{dsp_post:08x} wc={} wh=0x{s_writes:08x} wvh=0x{s_wvals:08x}",
-                        writes.len()
-                    );
-                }
-                fp_audio_leaf = fingerprint_audio_hash(
-                    s_samples,
-                    dsp_pre,
-                    dsp_post,
-                    writes.len() as u32,
-                    s_writes,
-                    s_wvals,
-                );
-            }
             if audio_trace_log != 0 && frames % audio_trace_log == 0 {
-                print_replay_audio_trace(
-                    frames,
-                    &game,
-                    audio,
-                    dsp_only_audio,
-                    735,
-                    2,
-                    dsp_pre,
-                    &writes,
-                    &spc_ram_pre,
-                    &mut modern_audio_trace_sequence,
-                    &mut modern_audio_trace_engine,
+                let stats = game.zelda_modern_audio_last_stats();
+                let s_samples = replay_checksum_samples(audio);
+                println!(
+                    "audio frame={frames} samples=0x{s_samples:08x} peak={} active_voices={} understood={} ignored={}",
+                    stats.peak, stats.active_voices, stats.understood_events, stats.ignored_events,
                 );
             }
         }
@@ -3609,12 +3485,6 @@ fn run_replay_save(args: &[String]) {
         if !last_frame_had_fingerprint_render {
             let mut scratch = vec![0u8; 256 * 224 * 4];
             replay_projection_bgra(&mut game, &mut scratch);
-        }
-        if std::env::var("ZELDA3_DBG_AUDIO_FP").is_ok() {
-            eprintln!(
-                "[AUDIO_FP] pre-save dsp_hash=0x{:08x} (frame={frames})",
-                game.zelda_audio_dsp_hash()
-            );
         }
         write_checkpoint(&mut game, frames, path);
     }
@@ -6144,7 +6014,6 @@ fn run_compare_libretro_oracle(
     let mut auto_align_video = false;
     let mut lead_rust_audio_blocks = 0u32;
     let mut trace_video_pixel: Option<(usize, usize)> = None;
-    let mut trace_dsp_writes = false;
     let mut color_tolerance = 0u8;
     let mut max_mismatched_pixels = 0usize;
     let mut audio_comparison = AudioComparisonMode::Exact;
@@ -6154,8 +6023,6 @@ fn run_compare_libretro_oracle(
     let mut audio_envelope_tolerance = 0.05f64;
     let mut session_dir = None::<PathBuf>;
     let mut scan_all = false;
-    let mut rust_audio_backend = AudioBackendMode::Modern;
-    let mut rust_audio_sequencer = AudioSequencerBackend::Native;
     let mut expected_core_sha256 = None::<String>;
     let mut expected_rom_sha256 = None::<String>;
     let mut oracle_name = default_oracle_name
@@ -6350,10 +6217,6 @@ fn run_compare_libretro_oracle(
                 trace_video_pixel = Some((x, y));
                 i += 3;
             }
-            "--trace-dsp-writes" => {
-                trace_dsp_writes = true;
-                i += 1;
-            }
             "--audio-comparison" => {
                 let Some(value) = args.get(i + 1) else {
                     eprintln!("--audio-comparison requires exact or timing");
@@ -6437,42 +6300,11 @@ fn run_compare_libretro_oracle(
                 scan_all = true;
                 i += 1;
             }
-            "--rust-audio-backend" => {
-                let Some(value) = args.get(i + 1) else {
-                    eprintln!("--rust-audio-backend requires modern or dsp-parity");
-                    process::exit(2);
-                };
-                rust_audio_backend = AudioBackendMode::parse(value).unwrap_or_else(|| {
-                    eprintln!(
-                        "invalid --rust-audio-backend `{value}`; expected modern or dsp-parity"
-                    );
-                    process::exit(2);
-                });
-                if rust_audio_backend == AudioBackendMode::TraceOnly {
-                    eprintln!("--rust-audio-backend trace-only cannot compare audible PCM");
-                    process::exit(2);
-                }
-                i += 2;
-            }
-            "--rust-audio-sequencer" => {
-                let Some(value) = args.get(i + 1) else {
-                    eprintln!("--rust-audio-sequencer requires native or exact-spc-driver");
-                    process::exit(2);
-                };
-                rust_audio_sequencer = AudioSequencerBackend::parse(value).unwrap_or_else(|| {
-                    eprintln!("invalid --rust-audio-sequencer `{value}`; expected native or exact-spc-driver");
-                    process::exit(2);
-                });
-                i += 2;
-            }
             flag => {
                 eprintln!("unknown {operation} option: {flag}");
                 process::exit(2);
             }
         }
-    }
-    if trace_dsp_writes {
-        require_audio_oracle("--trace-dsp-writes");
     }
     if resume_rust_state.is_some() != resume_oracle_state.is_some() {
         eprintln!(
@@ -6496,10 +6328,8 @@ fn run_compare_libretro_oracle(
         );
         process::exit(2);
     }
-    if native_apu_bootstrap.is_some() && (trace_dsp_writes || lead_rust_audio_blocks != 0) {
-        eprintln!(
-            "--native-apu-bootstrap cannot be combined with --trace-dsp-writes or --lead-rust-audio-blocks"
-        );
+    if native_apu_bootstrap.is_some() && lead_rust_audio_blocks != 0 {
+        eprintln!("--native-apu-bootstrap cannot be combined with --lead-rust-audio-blocks");
         process::exit(2);
     }
     if native_apu_bootstrap.is_some() && skip_oracle_frames != 0 {
@@ -6572,16 +6402,6 @@ fn run_compare_libretro_oracle(
         process::exit(2);
     }
     let effective_compare_from_frame = compare_from_frame.max(start_frame);
-    game.zelda_set_audio_backend(rust_audio_backend)
-        .unwrap_or_else(|error| {
-            eprintln!("cannot select --rust-audio-backend: {error}");
-            process::exit(2);
-        });
-    game.zelda_set_audio_sequencer_backend(rust_audio_sequencer)
-        .unwrap_or_else(|error| {
-            eprintln!("cannot select --rust-audio-sequencer: {error}");
-            process::exit(2);
-        });
     if let Some(path) = load_sram.as_deref() {
         let sram = read_file_or_exit(path, "SRAM");
         apply_sram_to_game_or_exit(&mut game, path, &sram);
@@ -6590,7 +6410,7 @@ fn run_compare_libretro_oracle(
     let height = 224u32;
     let mut rust_audio = Vec::new();
     let mut discard_audio = Vec::new();
-    let mut dsp_writes = Vec::new();
+    let mut dsp_writes: Vec<DspWriteEvent> = Vec::new();
     let mut last_sample_frames = 800usize;
     let native_apu_trace_path =
         env::var_os("ZELDA3_DEBUG_NATIVE_APU_DSP_WRITES").map(PathBuf::from);
@@ -6729,8 +6549,6 @@ fn run_compare_libretro_oracle(
         compare_audio,
         audio_comparison,
         timing_options,
-        rust_audio_backend,
-        rust_audio_sequencer,
         replay_save.as_deref(),
     );
     let mut debug_dsp_globals = if env::var_os("ZELDA3_DEBUG_DSP_GLOBALS").is_some() {
@@ -7077,51 +6895,21 @@ fn run_compare_libretro_oracle(
                     writer.flush().unwrap();
                 }
                 discard_audio.resize(capture.audio.len(), 0);
-                rust_event_frame = game.zelda_render_audio_with_backend(
-                    game.zelda_audio_backend(),
-                    &mut discard_audio,
-                    sample_frames as i32,
-                    2,
-                );
+                rust_event_frame =
+                    game.zelda_render_audio(&mut discard_audio, sample_frames as i32, 2);
             } else {
                 for _ in 0..lead_rust_audio_blocks {
                     game.zelda_render_audio(&mut rust_audio, sample_frames as i32, 2);
                 }
-                if trace_dsp_writes {
-                    dsp_writes = game.zelda_render_audio_trace_dsp_events(
-                        &mut rust_audio,
-                        sample_frames as i32,
-                        2,
-                    );
-                    rust_event_frame = game.zelda_audio_event_frame_from_dsp_writes(&dsp_writes);
-                } else {
-                    rust_event_frame = game.zelda_render_audio_with_backend(
-                        game.zelda_audio_backend(),
-                        &mut rust_audio,
-                        sample_frames as i32,
-                        2,
-                    );
-                }
+                rust_event_frame =
+                    game.zelda_render_audio(&mut rust_audio, sample_frames as i32, 2);
             }
         } else {
             rust_audio.clear();
             dsp_writes.clear();
             discard_audio.resize(last_sample_frames.saturating_mul(2), 0);
-            if trace_dsp_writes {
-                dsp_writes = game.zelda_render_audio_trace_dsp_events(
-                    &mut discard_audio,
-                    last_sample_frames as i32,
-                    2,
-                );
-                rust_event_frame = game.zelda_audio_event_frame_from_dsp_writes(&dsp_writes);
-            } else {
-                rust_event_frame = game.zelda_render_audio_with_backend(
-                    game.zelda_audio_backend(),
-                    &mut discard_audio,
-                    last_sample_frames as i32,
-                    2,
-                );
-            }
+            rust_event_frame =
+                game.zelda_render_audio(&mut discard_audio, last_sample_frames as i32, 2);
         }
         game.zelda_discard_unused_audio_frames();
         let rust_stats = AudioFrameStats::from_interleaved_stereo(&rust_audio);
@@ -7303,13 +7091,6 @@ fn run_compare_libretro_oracle(
                     println!("modern_pixel_trace frame={frame_index} xy=({x},{y}) error={error}");
                 }
             }
-        }
-        if trace_dsp_writes && !dsp_writes.is_empty() {
-            println!(
-                "dsp frame={frame_index} writes=[{}] stats={:?}",
-                format_dsp_writes(&dsp_writes),
-                rust_stats,
-            );
         }
         if compare_this_frame && compare_video {
             let rust_video_frame = rust_video_frame
@@ -7566,8 +7347,6 @@ fn initialize_libretro_session(
     compare_audio: bool,
     audio_comparison: AudioComparisonMode,
     timing: AudioTimingOptions,
-    rust_audio_backend: AudioBackendMode,
-    rust_audio_sequencer: AudioSequencerBackend,
     replay_save: Option<&Path>,
 ) -> Option<BufWriter<fs::File>> {
     let dir = session_dir?;
@@ -7661,8 +7440,6 @@ fn initialize_libretro_session(
         },
         "audio": {
             "comparison": audio_comparison.as_str(),
-            "rust_backend": format!("{rust_audio_backend:?}"),
-            "rust_sequencer": format!("{rust_audio_sequencer:?}"),
             "window_sample_frames": timing.window_frames,
             "silence_threshold": timing.silence_threshold,
             "max_timing_error_sample_frames": timing.max_timing_error_frames,
@@ -7697,13 +7474,7 @@ fn initialize_libretro_session(
     let absolute_dir = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
     let repo_root = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let asset_pack = repo_root.join("zelda3_assets.dat");
-    let feature = if rust_audio_backend == AudioBackendMode::Modern
-        && rust_audio_sequencer == AudioSequencerBackend::Native
-    {
-        ""
-    } else {
-        " --features audio-oracle"
-    };
+    let feature = "";
     let lane_flags = match (compare_video, compare_audio) {
         (true, true) => "",
         (false, true) => " --ignore-video",
@@ -7724,7 +7495,7 @@ fn initialize_libretro_session(
         )
     };
     let replay = format!(
-        "#!/bin/sh\nset -eu\ncd {}\nZELDA3_ASSET_PACK={} cargo run -q -p zelda3-bin{} -- --compare-snes9x-oracle {} {} {} --expected-core-sha256 {} --expected-rom-sha256 {} --input-script {} {} --compare-from-frame {}{} --audio-comparison {} --audio-window-ms {} --audio-silence-threshold {} --audio-timing-tolerance-ms {} --audio-envelope-tolerance {} --rust-audio-backend {} --rust-audio-sequencer {} --session-dir {} --scan-all\n",
+        "#!/bin/sh\nset -eu\ncd {}\nZELDA3_ASSET_PACK={} cargo run -q -p zelda3-bin{} -- --compare-snes9x-oracle {} {} {} --expected-core-sha256 {} --expected-rom-sha256 {} --input-script {} {} --compare-from-frame {}{} --audio-comparison {} --audio-window-ms {} --audio-silence-threshold {} --audio-timing-tolerance-ms {} --audio-envelope-tolerance {} --session-dir {} --scan-all\n",
         shell_single_quote(&repo_root.to_string_lossy()),
         shell_single_quote(&asset_pack.to_string_lossy()),
         feature,
@@ -7742,15 +7513,6 @@ fn initialize_libretro_session(
         timing.silence_threshold,
         (timing.max_timing_error_frames as f64 / oracle.av_info.timing.sample_rate) * 1000.0,
         timing.max_envelope_error,
-        match rust_audio_backend {
-            AudioBackendMode::Modern => "modern",
-            AudioBackendMode::DspParity => "dsp-parity",
-            AudioBackendMode::TraceOnly => "trace-only",
-        },
-        match rust_audio_sequencer {
-            AudioSequencerBackend::Native => "native",
-            AudioSequencerBackend::ExactSpcDriver => "exact-spc-driver",
-        },
         shell_single_quote(&absolute_dir.join("replay").to_string_lossy()),
     );
     fs::write(dir.join("replay.sh"), replay).unwrap_or_else(|e| {
@@ -8325,18 +8087,6 @@ fn compare_snes9x_audio_frame(rust_audio: &[i16], snes9x_audio: &[i16]) -> Optio
     None
 }
 
-fn format_dsp_writes(writes: &[DspWriteEvent]) -> String {
-    writes
-        .iter()
-        .map(|write| {
-            format!(
-                "{:02x}:{:02x}@{}/{}",
-                write.addr, write.value, write.sample_offset, write.timer_cycles
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(",")
-}
 
 fn compare_snes9x_video_frame(
     rust_frame: &[u8],
@@ -8497,74 +8247,6 @@ fn expand_5_to_8(value: u16) -> u8 {
     ((value << 3) | (value >> 2)) as u8
 }
 
-fn run_compare_startup_apu_impls(args: &[String]) {
-    let rom_path = match args.first() {
-        Some(p) => p,
-        None => {
-            eprintln!("usage: zelda3 --compare-startup-apu-impls <path-to-rom.sfc> [frames]");
-            process::exit(2);
-        }
-    };
-    let frames: u32 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(120);
-    let mut game = load_play_state(rom_path);
-    let mut full_apu = None;
-    let mut high_audio = vec![0i16; 735 * 2];
-    let mut full_audio = vec![0i16; 735 * 2];
-    let mut high_stats = Vec::with_capacity(frames as usize);
-    let mut full_stats = Vec::with_capacity(frames as usize);
-    let mut debug = Vec::with_capacity(frames as usize);
-
-    for _ in 0..frames {
-        game.zelda_run_frame(0);
-        let full_apu = full_apu.get_or_insert_with(|| game.zelda_debug_full_apu_from_spc());
-        let ports = game.zelda_debug_apu_write_ports();
-        for (port, &value) in ports.iter().enumerate() {
-            full_apu.write_snes_port(port as u8, value);
-        }
-        game.zelda_render_audio(&mut high_audio, 735, 2);
-        game.zelda_discard_unused_audio_frames();
-        render_full_apu_audio(full_apu, &mut full_audio, 735, 2);
-        high_stats.push(AudioFrameStats::from_interleaved_stereo(&high_audio));
-        full_stats.push(AudioFrameStats::from_interleaved_stereo(&full_audio));
-        debug.push(format!(
-            "ports={ports:02x?} main={:02x} sub={:02x} subsub={:02x} full_pc={:04x} full_in={:02x?} full_out={:02x?} full_dsp_writes={} full_last_dsp={:02x?} {}",
-            game.ram[0x10],
-            game.ram[0x11],
-            game.ram[0xb0],
-            full_apu.spc.pc,
-            &full_apu.in_ports[..4],
-            full_apu.out_ports,
-            full_apu.dsp_write_history.len(),
-            full_apu.dsp_write_history.last().copied(),
-            game.zelda_audio_debug_summary(),
-        ));
-    }
-
-    let threshold = 512i16;
-    let high_onset = first_peak_frame(&high_stats, threshold);
-    let full_onset = first_peak_frame(&full_stats, threshold);
-    let high_max = max_peak_frame(&high_stats);
-    let full_max = max_peak_frame(&full_stats);
-    println!(
-        "startup APU impls threshold={threshold}: high_onset={high_onset:?} full_onset={full_onset:?} high_max={high_max:?} full_max={full_max:?}",
-    );
-    if let (Some(high_onset), Some(full_onset)) = (high_onset, full_onset) {
-        let delta = full_onset as i32 - high_onset as i32;
-        println!("startup APU onset_delta_full_minus_high={delta} frames");
-    }
-    print_audio_window(
-        "high",
-        &high_stats,
-        &debug,
-        high_onset.or(high_max.map(|(i, _)| i)),
-    );
-    print_audio_window(
-        "full-apu",
-        &full_stats,
-        &[],
-        full_onset.or(full_max.map(|(i, _)| i)),
-    );
-}
 
 fn render_full_apu_audio(
     apu: &mut snes::apu::ApuState,

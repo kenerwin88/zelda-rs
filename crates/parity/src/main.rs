@@ -64,8 +64,10 @@ fn cmd_capture(args: &[String]) {
     let n = data.len() / RECORD_LEN;
     eprintln!("captured {n} frames");
     // Rollup column + merkle.
+    // Normalize the C stream's audio leaf to 0 (the Rust DSP audio oracle was
+    // removed; the slot is dead on the Rust side).
     let rollups: Vec<u32> = (0..n)
-        .map(|i| FrameFingerprint::from_bytes(&data[i * RECORD_LEN..]).rollup)
+        .map(|i| FrameFingerprint::from_bytes(&data[i * RECORD_LEN..]).normalized_rollup())
         .collect();
     std::fs::create_dir_all(&p.golden_dir).unwrap();
     golden::write_rollup(&p.golden_dir.join("rollup.bin"), &rollups).unwrap();
