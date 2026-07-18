@@ -1,25 +1,26 @@
 # zelda3-rs — working notes for Claude
 
 This repo is migrating `game_state` from raw-byte WRAM access to a semantic/native
-layer (domain-named Rust structs) while preserving **exact C parity** with the
-reference emulator. Hard constraint: SNES WRAM reuses the same bytes for different
-systems by game mode, so a semantic write must touch only the byte/word it owns —
-never bulk-project a range it shares with another system.
+layer (domain-named Rust structs) while preserving the game's exact behavior.
+Hard constraint: SNES WRAM reuses the same bytes for different systems by game
+mode, so a semantic write must touch only the byte/word it owns — never
+bulk-project a range it shares with another system.
 
-## Parity is driven by `zparity` vs the C oracle (the old Rust clone is gone)
+## Parity target: fully-modern runtime vs Snes9x (the C oracle is RETIRED)
 
-Parity is now found and gated against the **C oracle `../zelda3`** only. The old Rust clone
-(`zelda3-rs-old`) and its NEW-vs-OLD comparison scripts have been removed — `zparity`
-(`crates/parity`, tool #10 below) supersedes them: it captures a per-frame all-layer golden
-from C once, then finds the earliest per-frame divergence C-free and in parallel.
-
-When fixing a logic divergence, compare the Rust fn against the **C source** (`../zelda3/src`,
-same function names/structure as the disassembly). Note a real consequence of dropping the old
-clone: divergences `zparity` now surfaces are ones where the Rust port and C differ per-frame —
-the old clone usually *shared* the Rust behavior, so a NEW-vs-OLD diff would have shown nothing.
-These need the C source as the reference, not a sibling-Rust diff. `whoowns.py` (tool #3) reads
-THIS repo's own const map for address semantics; `validate_all_parity.py` remains the end-state
-all-layer gate vs C.
+The C-oracle parity apparatus (zparity capture/check/drill, parity-golden/,
+`--fingerprint-log`, validate_all_parity.py, the classic CPU/wgpu renderers, and
+the legacy SPC/DSP audio oracle) has been **fully removed**. The only external
+parity reference is the **Snes9x libretro core** via the
+`--compare-snes9x-oracle` harness and `scripts/full_parity.py --with-snes9x`
+gates (modern waveform + video). Internal regression tools that remain:
+the lockstep oracle (`--lockstep`, snes-crate emulator, WRAM/behavior only),
+`ZELDA3_ASSERT_NATIVE_COHERENT`, `find_dual_ownership.py`, `whoowns.py`,
+RAM write-watchpoints, and Rust-vs-Rust WRAM dumps
+(`ZELDA3_REPLAY_WRAM_DUMP` across two builds of this repo).
+When fixing ported game logic, the C *source* (`../zelda3/src`) is still the
+readable reference — only the runtime comparison against the C build is gone.
+`zparity` now exists solely for the `coverage` subcommand (route coverage).
 
 ## Common bug classes (almost every root is one of these) + fix recipes
 
@@ -69,37 +70,29 @@ bridge `sync()` calls re-run a state's `write_to_ram` mid-frame on every setter.
 
 ## Reference builds & ROM
 
-**One reference, byte-exact: the C oracle `../zelda3`** (ground truth; override `ZELDA3_C_REPO`).
-The C source build is byte-identical to the Rust port on WRAM, VRAM, SRAM, and render-hash. (The
-legacy SPC/DSP audio oracle was removed from the Rust port; the fingerprint's audio leaf is
-normalized to 0 on both sides, and modern-audio correctness is covered by the in-crate
-conformance tests plus the Snes9x/C waveform gates in `scripts/full_parity.py`.) Gate every
-layer with `scripts/validate_all_parity.py`; find per-frame divergences with
-`zparity` (tool #10). Editing the C repo to add parity-oracle hooks IS permitted (audio-trace
-default freq + `ZELDA3_REPLAY_WRAM_DUMP`/`ZELDA3_VRAM_DUMP`/`--fingerprint-log` dumps are committed
-there). Build: `make -C ../zelda3 zelda3`. Invoke headless: `SDL_VIDEODRIVER=dummy
-SDL_AUDIODRIVER=dummy SDL_RENDER_DRIVER=software ../zelda3/zelda3 --config
-../zelda3/other/headless_replay.ini --replay-save <save> --smv-test-frames <N>`.
+**The C oracle is retired.** The C source `../zelda3/src` remains the readable reference
+when porting/fixing game logic (same function names/structure as the disassembly), but no
+runtime comparison against a C build exists anymore. The external parity reference is the
+**Snes9x libretro core** (`--compare-snes9x-oracle`, `scripts/full_parity.py --with-snes9x`).
 
 - ROM: `saves/zelda3.sfc` in THIS repo (gitignored via `*.sfc`); scripts default to it and
-  accept `ZELDA3_ROM`. The C oracle uses its own `../zelda3/zelda3.sfc` via its config.
-- **The all-layer gate:** `scripts/validate_all_parity.py [--frames N | --full]` compares
-  WRAM (byte + hashes) / VRAM (byte) / SRAM / RENDER (per-frame) vs the C oracle (the audio
-  leaf is retired). Wired into `.githooks/pre-commit` (smoke budget; `--full` = exhaustive 170k).
+  accept `ZELDA3_ROM`.
 - This repo: `cargo build --profile parity -p zelda3-bin` (deterministic like release,
   faster). Binary: `target/parity/zelda3 --replay-save saves/zelda3.sfc <save> <frames>`.
-- Replay save: `saves/zelda3-combined-route.sav`. All replay runs need the timing hacks:
+- Replay save: `saves/zelda3-combined-route.sav` (route is ~1,073,092 frames). All replay
+  runs need the timing hacks:
   `ZELDA3_SMV_{SELECT_FILE,LOADFILE,DUNGEON,OVERWORLD,MESSAGING,DEATH_INTRO,DEATH_RELOAD}_TIMING_HACKS=1`.
 - Address semantics come from THIS repo's own const map: use `whoowns.py` (backed by
   `ram_ref.py`, which scans this repo's `const NAME: usize = 0xADDR;` definitions).
+- Regression baseline for refactors: run the route on the pre-change and post-change
+  binaries with `ZELDA3_REPLAY_WRAM_DUMP` and byte-compare the dumps (Rust-vs-Rust).
 
 ## Checkpoint resume — the ~250× per-probe speedup (USE THIS for any deep frame)
 
 Every per-frame probe below re-replays from frame 0. For a divergence at frame ~460k that is
 ~90s per probe; with a checkpoint it is ~0.3s. The binary supports `--save-state`/`--load-state`
 (and repeatable `--save-state-at <frame>:<path>`), and the snapshot includes the replay position
-(`replay_pos`, `replay_next_cmd_at`), so you resume mid-replay exactly. (`zparity check` already
-uses this internally to shard the route across cores.)
+(`replay_pos`, `replay_next_cmd_at`), so you resume mid-replay exactly.
 
 ```bash
 HACKS=(ZELDA3_SMV_SELECT_FILE_TIMING_HACKS=1 ... all 7 ...)   # see below
@@ -114,10 +107,7 @@ step-dump match on `replay_frame_counter` too) — but `ZELDA3_WW_FRAME` still k
 `frame_ctr_dbg` (RELATIVE on resume: target − checkpoint, e.g. 460431−460000 = 431). New
 frame-gated `eprintln`s should use `self.trace_frame_matches(N)`, not `== frame_ctr_dbg`.
 (b) snapshot restore has a tiny artifact (byte 0x654, HDMA scratch) — filter it, and confirm
-a candidate fix with ONE from-scratch run before committing. (c) do not manually delete
-checkpoint seeds as cleanup; `zparity check` owns `.cache/parity-golden/ck/manifest.json` and
-regenerates needed checkpoints when the cache identity changes. If you change checkpoint
-serialization, bump `CHECKPOINT_FORMAT_VERSION` in `crates/parity/src/checkpoint_cache.rs`.
+a candidate fix with ONE from-scratch run before committing.
 See memory [[checkpoint-resume-debugging]].
 
 ## Parity-debugging tools (`scripts/`) — prefer these, in this order
@@ -159,8 +149,7 @@ See memory [[checkpoint-resume-debugging]].
 2. **`whoowns.py <addr>`** — address → this-repo const (+offset, span, mode-reuse
    aliases) + this repo's read/write sites + native owner struct (file:line). Collapses
    the root-cause grep chain; the fastest way to learn what an address *is* and who
-   touches it. Pair it with `zparity drill <frame>` (tool #4): drill names the diverging
-   WRAM page/address, whoowns names the variable. Shared address map in `ram_ref.py`
+   touches it. Shared address map in `ram_ref.py`
    (scans this repo's `const NAME: usize = 0xADDR;` definitions); `find_dual_ownership.py`'s
    undersized-table lint uses the same map.
 
@@ -175,26 +164,13 @@ See memory [[checkpoint-resume-debugging]].
    one atomic load + compare per write (negligible). Used to prove the 0x10000 gfx cluster
    is a graphics-load *timing* divergence, not a byte-ownership bug.
 
-4. **`zparity` (`crates/parity`) — the per-frame C-oracle divergence finder (PRIMARY worklist tool).**
-   Three subcommands: `capture --full` (needs C oracle) builds `parity-golden/` once and commits
-   Tier A (`rollup.bin`/`merkle.bin`/`manifest.json`, ~4.3 MB); `check [--frames N | --full]` is
-   **C-free**, shards the full route across cores via checkpoints, and finds the **earliest per-frame
-   divergence vs C** — STRICTER than `validate_all_parity.py` (which is end-state only); `drill <frame>`
-   localizes per page/layer (needs `capture --full --detail` for Tier B). Currently **RED by design**
-   (first divergence: frame 3739, WRAM page 3, `RAW_SFX_PAN_VALUE`); use as a worklist:
-   `check` → `drill <frame>` → `whoowns <addr>` → fix Rust side vs the C source → repeat. **Not wired
-   as a blocking pre-commit gate.** Checkpoint seeds are cache-managed: `check` writes
-   `.cache/parity-golden/ck/manifest.json` and reuses matching checkpoints; it reseeds only missing
-   or manifest-incompatible boundaries. Measured: ~30k frames / ~69s across 4 shards. Full docs in
-   `crates/parity/README.md`; spec/plan in `docs/superpowers/{specs,plans}/2026-06-20-zparity-*`.
+4. **`zparity coverage` (`crates/parity`)** — route-coverage reports/worklists for replay
+   probes. (The former capture/check/drill C-golden subcommands were retired with C parity.)
 
 ### Tracing env vars
 
-- `ZELDA3_REPLAY_WRAM_DUMP=<path>` — dump full 128KB WRAM at the final frame (this repo
-  and the C oracle both support it).
-- `ZELDA3_FINGERPRINT_LOG=<path>` (or `--fingerprint-log`) — append a fixed 788-byte
-  per-frame all-layer fingerprint (this repo + C oracle, byte-identical); the stream
-  `zparity` captures/checks.
+- `ZELDA3_REPLAY_WRAM_DUMP=<path>` — dump full 128KB WRAM at the final frame (the
+  Rust-vs-Rust regression baseline for refactors).
 - `ZELDA3_REPLAY_RAM_WATCH_FRAME=<f> ZELDA3_REPLAY_RAM_WATCH_ADDR=<addr>` — print the
   watched byte + module state at every labeled step within a frame (find WHICH step
   writes a value).
@@ -203,45 +179,28 @@ See memory [[checkpoint-resume-debugging]].
 
 ## The debugging loop that works
 
-1. `zparity check [--full]` → the EARLIEST per-frame diverging frame vs C.
-2. `zparity drill <frame>` → the diverging WRAM page/address (or VRAM/sram/render leaf; the
-   audio leaf is retired). (Needs Tier B: `zparity capture --full --detail` once.)
-3. `whoowns.py <addr>` → this-repo const, read/write sites, native owner struct.
-4. Classify into one of the four **Common bug classes** above: overlap/clobber
+1. Reproduce the regression as a Rust-vs-Rust divergence: run the route on a known-good
+   build and the current build with `ZELDA3_REPLAY_WRAM_DUMP` (bisect the frame with
+   checkpoints) → the diverging WRAM address.
+2. `whoowns.py <addr>` → this-repo const, read/write sites, native owner struct.
+3. Classify into one of the four **Common bug classes** above: overlap/clobber
    (`find_dual_ownership.py`), oversized table (array span vs the next const), mode-reuse
    (same address, two states), bounded-read-vs-raw, or missing write/branch — by comparing
-   the fn **against the C source** (`../zelda3/src`). Note: `zparity` finds divergences where
-   the Rust port differs from C per-frame, so the C source is the reference (a sibling-Rust
-   diff would show nothing).
-5. Apply the matching **fix recipe** above (mode-gate / write-through / sole-owner / size to
+   the fn **against the C source** (`../zelda3/src`, still the readable reference).
+4. Apply the matching **fix recipe** above (mode-gate / write-through / sole-owner / size to
    real slot count / read raw RAM). Make ONE struct the sole owner and redirect all
    readers/setters — do NOT just delete a duplicate field (the owners leapfrog across
    frames; verify).
-6. Verify: `zparity check` (the diverging frame moved later / is gone), the specific bytes
-   now match, `cargo test --profile parity -p zelda3 game_state` (280 pass), and
-   `scripts/validate_all_parity.py` for the end-state all-layer gate vs C.
+5. Verify: the WRAM dumps match again, `cargo test --profile parity -p zelda3 game_state`,
+   and for audio/video behavior the Snes9x gates (`scripts/full_parity.py --with-snes9x`).
 
 ## Gotchas
 
 - Never `git checkout <file>` — it nukes unstaged WIP. Surgically revert your own edits.
-- Do not delete or recapture parity seeds as routine cleanup. `parity-golden/` is the committed
-  C-oracle golden; re-capture it only when the replay route, C oracle hooks, fingerprint
-  format/mask, ROM/save, or timing-hack contract changes. `.cache/parity-golden/detail/` is
-  local drill detail and should stay unless the golden was recaptured. `.cache/parity-golden/ck/`
-  is Rust checkpoint cache; `zparity check` invalidates it by manifest and regenerates the needed
-  boundaries. If checkpoint serialization/layout changes, bump `CHECKPOINT_FORMAT_VERSION` in
-  `crates/parity/src/checkpoint_cache.rs` instead of telling agents to delete the cache by hand.
-  If cache corruption is suspected, run `scripts/verify_seeded_boundaries.sh` or remove only the
-  affected checkpoint files with a concrete reason.
-- Raw RAM hashes flag BENIGN scratch divergence (matches behavior, fails the gate).
-  The gate (`test_standard_replay_parity.py`) compares raw `ramhash`/`ram0..7`/`sramhash`
-  vs the C oracle, so even benign shadow divergence must eventually be eliminated.
 - `check_ram_readability.py` no longer false-positives on length constants
   (`_LEN/_LENGTH/_CAPACITY/_SIZE`) or C-style names in `//` comments, so the pre-commit
-  hook passes clean — `--no-verify` is no longer required for that reason. (The full hook
-  now also runs `validate_all_parity.py`, which builds + replays, so it is slow; use
-  `--no-verify` only to skip the heavy gate during rapid iteration.) macOS has no
-  `timeout`/`gtimeout` — use a background pid + watchdog kill.
+  hook passes clean. macOS has no `timeout`/`gtimeout` — use a background pid +
+  watchdog kill.
 
 See `~/.claude/projects/.../memory/` for the running log of fixes and the current
 front (the persistent memory index is loaded each session).

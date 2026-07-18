@@ -55,7 +55,7 @@ class OracleWindow:
                 "-p",
                 "zelda3-bin",
                 "--",
-                "--compare-lockstep-render" if render else "--lockstep",
+                "--lockstep",
                 str(rom),
                 str(frames),
             ]

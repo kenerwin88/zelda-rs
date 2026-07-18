@@ -65,6 +65,3 @@ pub(crate) fn replay_checksum_samples(samples: &[i16]) -> u32 {
     checksum_samples(samples)
 }
 
-pub(crate) fn should_write_fingerprint(fingerprint_frame: Option<u32>, frame: u32) -> bool {
-    fingerprint_frame.is_none_or(|target| frame == target)
-}

@@ -1,10 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process;
 
-use crate::gpu_compare::{
-    gpu_render_compare_run, modern_index_compare_run_from_env, GpuRenderCompareRun,
-    ModernIndexCompareRun,
-};
 use crate::input_script::InputScript;
 
 pub(crate) struct ReplaySaveConfig {
@@ -12,20 +8,14 @@ pub(crate) struct ReplaySaveConfig {
     pub(crate) replay_path: String,
     pub(crate) max_frames: u32,
     pub(crate) dump_frame_path: Option<PathBuf>,
-    pub(crate) render_hash_log: u32,
     pub(crate) audio_trace_log: u32,
-    pub(crate) fingerprint_log: Option<PathBuf>,
-    pub(crate) fingerprint_frame: Option<u32>,
     pub(crate) coverage_log: Option<PathBuf>,
-    pub(crate) gpu_render_compare: GpuRenderCompareRun,
-    pub(crate) modern_index_compare: ModernIndexCompareRun,
     pub(crate) asset_gpu_smoke: bool,
     pub(crate) asset_gpu_progress_interval: u32,
     pub(crate) asset_gpu_missing_assets_out: Option<PathBuf>,
     pub(crate) asset_gpu_checkpoint_dir: Option<PathBuf>,
     pub(crate) asset_gpu_checkpoint_interval: u32,
     pub(crate) ppu_mode_summary: bool,
-    pub(crate) render_hash_dump_frame: Option<(u32, PathBuf)>,
     pub(crate) save_state_path: Option<PathBuf>,
     pub(crate) save_state_at: Vec<(u32, PathBuf)>,
     pub(crate) load_state_path: Option<PathBuf>,
@@ -40,27 +30,21 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
         (Some(rom), Some(replay)) => (rom.clone(), replay.clone()),
         _ => {
             eprintln!(
-                "usage: zelda3 --replay-save <path-to-rom.sfc> <replay.sav> [frames] [--dump-frame <out.png>] [--render-hash-log <stride>] [--audio-trace-log <stride>] [--gpu-render-compare <stride>] [--gpu-render-compare-quiet] [--modern-index-compare <stride>] [--require-full-gpu-path] [--require-modern-index-parity] [--asset-gpu-smoke] [--asset-gpu-progress <stride>] [--missing-assets-out <path>] [--stop-after-first-missing] [--asset-gpu-checkpoint-dir <dir>] [--asset-gpu-checkpoint-interval <frames>] [--render-hash-dump-frame <frame> <out.png>] [--input-script <path>] [--input-script-overlay <path>] [--stop-replay-after-load] [--save-state <checkpoint.sav>] [--load-state <checkpoint.sav>] [--load-sram <path>] [--fingerprint-log <path>] [--fingerprint-frame <frame>] [--coverage-log <path>]"
+                "usage: zelda3 --replay-save <path-to-rom.sfc> <replay.sav> [frames] [--dump-frame <out.png>] [--audio-trace-log <stride>] [--asset-gpu-smoke] [--asset-gpu-progress <stride>] [--missing-assets-out <path>] [--stop-after-first-missing] [--asset-gpu-checkpoint-dir <dir>] [--asset-gpu-checkpoint-interval <frames>] [--input-script <path>] [--input-script-overlay <path>] [--stop-replay-after-load] [--save-state <checkpoint.sav>] [--load-state <checkpoint.sav>] [--load-sram <path>] [--coverage-log <path>]"
             );
             process::exit(2);
         }
     };
     let mut max_frames = u32::MAX;
     let mut dump_frame_path = None::<PathBuf>;
-    let mut render_hash_log = 0u32;
     let mut audio_trace_log = 0u32;
-    let mut fingerprint_log: Option<PathBuf> = None;
-    let mut fingerprint_frame = None::<u32>;
     let mut coverage_log: Option<PathBuf> = None;
-    let mut gpu_render_compare = gpu_render_compare_run(0, false);
-    let mut modern_index_compare = modern_index_compare_run_from_env();
     let mut asset_gpu_smoke = false;
     let mut asset_gpu_progress_interval = 10_000u32;
     let mut asset_gpu_missing_assets_out = None::<PathBuf>;
     let mut asset_gpu_checkpoint_dir = None::<PathBuf>;
     let mut asset_gpu_checkpoint_interval = 10_000u32;
     let ppu_mode_summary = std::env::var("ZELDA3_PPU_MODE_SUMMARY").is_ok();
-    let mut render_hash_dump_frame = None::<(u32, PathBuf)>;
     let mut save_state_path = None::<PathBuf>;
     let mut save_state_at: Vec<(u32, PathBuf)> = Vec::new();
     let mut load_state_path = None::<PathBuf>;
@@ -88,17 +72,6 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
                 dump_frame_path = Some(PathBuf::from(path));
                 i += 2;
             }
-            "--render-hash-log" => {
-                let stride = args.get(i + 1).unwrap_or_else(|| {
-                    eprintln!("--render-hash-log requires a stride");
-                    process::exit(2);
-                });
-                render_hash_log = stride.parse::<u32>().unwrap_or_else(|_| {
-                    eprintln!("invalid --render-hash-log stride: {stride}");
-                    process::exit(2);
-                });
-                i += 2;
-            }
             "--audio-trace-log" => {
                 let stride = args.get(i + 1).unwrap_or_else(|| {
                     eprintln!("--audio-trace-log requires a stride");
@@ -113,48 +86,6 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
                     process::exit(2);
                 }
                 i += 2;
-            }
-            "--gpu-render-compare" => {
-                let stride = args.get(i + 1).unwrap_or_else(|| {
-                    eprintln!("--gpu-render-compare requires a stride");
-                    process::exit(2);
-                });
-                let stride = stride.parse::<u32>().unwrap_or_else(|_| {
-                    eprintln!("invalid --gpu-render-compare stride: {stride}");
-                    process::exit(2);
-                });
-                if !gpu_render_compare.set_stride(stride) {
-                    eprintln!("--gpu-render-compare stride must be greater than zero");
-                    process::exit(2);
-                }
-                i += 2;
-            }
-            "--gpu-render-compare-quiet" => {
-                gpu_render_compare.set_quiet();
-                i += 1;
-            }
-            "--modern-index-compare" => {
-                let stride = args.get(i + 1).unwrap_or_else(|| {
-                    eprintln!("--modern-index-compare requires a stride");
-                    process::exit(2);
-                });
-                let stride = stride.parse::<u32>().unwrap_or_else(|_| {
-                    eprintln!("invalid --modern-index-compare stride: {stride}");
-                    process::exit(2);
-                });
-                if !modern_index_compare.set_stride(stride) {
-                    eprintln!("--modern-index-compare stride must be greater than zero");
-                    process::exit(2);
-                }
-                i += 2;
-            }
-            "--require-full-gpu-path" => {
-                modern_index_compare.set_require_full_gpu_path();
-                i += 1;
-            }
-            "--require-modern-index-parity" => {
-                modern_index_compare.set_require_modern_index_parity();
-                i += 1;
             }
             "--asset-gpu-smoke" => {
                 asset_gpu_smoke = true;
@@ -202,22 +133,6 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
                     process::exit(2);
                 });
                 i += 2;
-            }
-            "--render-hash-dump-frame" => {
-                let frame = args.get(i + 1).unwrap_or_else(|| {
-                    eprintln!("--render-hash-dump-frame requires a frame");
-                    process::exit(2);
-                });
-                let path = args.get(i + 2).unwrap_or_else(|| {
-                    eprintln!("--render-hash-dump-frame requires a path");
-                    process::exit(2);
-                });
-                let frame = frame.parse::<u32>().unwrap_or_else(|_| {
-                    eprintln!("invalid --render-hash-dump-frame frame: {frame}");
-                    process::exit(2);
-                });
-                render_hash_dump_frame = Some((frame, PathBuf::from(path)));
-                i += 3;
             }
             "--save-state" => {
                 let path = args.get(i + 1).unwrap_or_else(|| {
@@ -291,25 +206,6 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
                 stop_replay_after_load = true;
                 i += 1;
             }
-            "--fingerprint-log" => {
-                let Some(path) = args.get(i + 1) else {
-                    eprintln!("--fingerprint-log requires a path");
-                    process::exit(2);
-                };
-                fingerprint_log = Some(PathBuf::from(path));
-                i += 2;
-            }
-            "--fingerprint-frame" => {
-                let Some(frame) = args.get(i + 1) else {
-                    eprintln!("--fingerprint-frame requires a frame");
-                    process::exit(2);
-                };
-                fingerprint_frame = Some(frame.parse::<u32>().unwrap_or_else(|_| {
-                    eprintln!("invalid --fingerprint-frame frame: {frame}");
-                    process::exit(2);
-                }));
-                i += 2;
-            }
             "--coverage-log" => {
                 let Some(path) = args.get(i + 1) else {
                     eprintln!("--coverage-log requires a path");
@@ -325,11 +221,6 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
         }
     }
 
-    if let Err(e) = modern_index_compare.validate() {
-        eprintln!("{e}");
-        process::exit(2);
-    }
-
     if load_state_path.is_some() && load_sram_path.is_some() {
         eprintln!(
             "--load-sram cannot be combined with --load-state; checkpoints already include SRAM"
@@ -342,20 +233,14 @@ pub(crate) fn parse_replay_save_args_or_exit(args: &[String]) -> ReplaySaveConfi
         replay_path,
         max_frames,
         dump_frame_path,
-        render_hash_log,
         audio_trace_log,
-        fingerprint_log,
-        fingerprint_frame,
         coverage_log,
-        gpu_render_compare,
-        modern_index_compare,
         asset_gpu_smoke,
         asset_gpu_progress_interval,
         asset_gpu_missing_assets_out,
         asset_gpu_checkpoint_dir,
         asset_gpu_checkpoint_interval,
         ppu_mode_summary,
-        render_hash_dump_frame,
         save_state_path,
         save_state_at,
         load_state_path,

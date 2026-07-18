@@ -23,8 +23,6 @@ mod spc_driver_clock;
 pub mod types;
 pub mod util;
 pub mod zelda_cpu_infra;
-#[path = "main.rs"]
-pub mod zelda_main;
 pub mod zelda_rtl;
 
 pub use chr_source::{

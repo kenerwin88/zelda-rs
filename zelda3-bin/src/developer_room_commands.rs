@@ -4,8 +4,7 @@ use std::process;
 
 use crate::developer_destinations;
 use crate::gpu_capture::render_live_game_gpu_frame_rgba;
-use crate::image_output::{write_argb_frame_png, write_rgba_frame_png};
-use crate::render_diagnostics::run_diagnostic_play_frame_bgra;
+use crate::image_output::write_rgba_frame_png;
 use crate::{
     load_embedded_asset_replay_state, load_replay_save_checkpoint, load_translated_replay_state,
     read_le_u16, write_le_u16,
@@ -14,7 +13,6 @@ use platform::{DeveloperCurrentLocation, DeveloperThumbnail};
 use renderer::modern_extract::decode_snes_4bpp_tile_indices;
 use renderer::modern_palette::snes_cgram_to_rgba;
 use serde::{Deserialize, Serialize};
-use snes::ppu::PpuRenderFlags;
 use zelda3::ZeldaState;
 
 const PLAYER_IS_INDOORS: usize = 0x001b;
@@ -389,7 +387,7 @@ pub(crate) fn run_dump_developer_destination(args: &[String]) {
         Some(id) => id,
         None => {
             eprintln!(
-                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <gpu-out.png> [--cpu <cpu-out.png>]"
+                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <gpu-out.png>"
             );
             process::exit(2);
         }
@@ -398,7 +396,7 @@ pub(crate) fn run_dump_developer_destination(args: &[String]) {
         Some(frames) => frames,
         None => {
             eprintln!(
-                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <gpu-out.png> [--cpu <cpu-out.png>]"
+                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <gpu-out.png>"
             );
             process::exit(2);
         }
@@ -407,28 +405,14 @@ pub(crate) fn run_dump_developer_destination(args: &[String]) {
         Some(path) => PathBuf::from(path),
         None => {
             eprintln!(
-                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <gpu-out.png> [--cpu <cpu-out.png>]"
+                "usage: zelda3 --dump-developer-destination <destination-id> <frames> <gpu-out.png>"
             );
             process::exit(2);
         }
     };
-    let mut cpu_out_path = None::<PathBuf>;
-    let mut i = 3usize;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--cpu" => {
-                let path = args.get(i + 1).unwrap_or_else(|| {
-                    eprintln!("--cpu requires a path");
-                    process::exit(2);
-                });
-                cpu_out_path = Some(PathBuf::from(path));
-                i += 2;
-            }
-            flag => {
-                eprintln!("unknown dump-developer-destination option: {flag}");
-                process::exit(2);
-            }
-        }
+    if let Some(flag) = args.get(3) {
+        eprintln!("unknown dump-developer-destination option: {flag}");
+        process::exit(2);
     }
 
     let (mut game, start_frame) = match load_developer_destination(id) {
@@ -440,7 +424,6 @@ pub(crate) fn run_dump_developer_destination(args: &[String]) {
     };
     let width = 256u32;
     let height = 224u32;
-    let mut cpu_game = cpu_out_path.as_ref().map(|_| game.clone());
     for _ in 0..frames {
         game.zelda_run_frame(0);
     }
@@ -456,24 +439,9 @@ pub(crate) fn run_dump_developer_destination(args: &[String]) {
         process::exit(1);
     }
 
-    if let (Some(path), Some(cpu_game)) = (cpu_out_path.as_deref(), cpu_game.as_mut()) {
-        let mut frame = vec![0u8; width as usize * height as usize * 4];
-        for _ in 0..frames {
-            run_diagnostic_play_frame_bgra(cpu_game, 0, &mut frame, PpuRenderFlags::empty());
-        }
-        if let Err(e) = write_argb_frame_png(path, &frame, width, height) {
-            eprintln!("failed to write {}: {e}", path.display());
-            process::exit(1);
-        }
-    }
-
     println!(
-        "dumped developer destination {id} frames={frames} start_frame={start_frame} to {}; cpu={}; main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; bg1_tm={:04x}; bg1_chr={:04x}; cgram_nonzero={}; oam_nonzero={}",
+        "dumped developer destination {id} frames={frames} start_frame={start_frame} to {}; main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; bg1_tm={:04x}; bg1_chr={:04x}; cgram_nonzero={}; oam_nonzero={}",
         out_path.display(),
-        cpu_out_path
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "none".to_string()),
         game.ram[0x10],
         game.ram[0x11],
         game.ppu.mode,

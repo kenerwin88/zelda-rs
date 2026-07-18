@@ -1474,7 +1474,6 @@ fn rust_coverage_command_requests_coverage_log_and_audio_advancement() {
         rom: PathBuf::from("/repo/saves/zelda3.sfc"),
         save: PathBuf::from("/repo/saves/route.sav"),
         rust_bin: PathBuf::from("/repo/target/parity/zelda3"),
-        golden_dir: PathBuf::from("/repo/parity-golden"),
         cache_dir: PathBuf::from("/repo/.cache/parity-golden"),
     };
 

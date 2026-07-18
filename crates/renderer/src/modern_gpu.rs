@@ -32,7 +32,6 @@ use crate::modern_variant_render_plan::{
     ModernVariantRenderPath, PreparedModernVariantOutput, PreparedModernVariantRender,
     PreparedModernVariantStats,
 };
-use std::cell::RefCell;
 use std::time::Instant;
 
 pub use crate::modern_bg_renderer::ModernGpuRenderer;
@@ -4270,9 +4269,7 @@ pub struct ModernGpuHeadless {
     device: wgpu::Device,
     queue: wgpu::Queue,
     compositor: ModernGpuCompositor,
-    gpu_frame_renderer: RefCell<crate::gpu_renderer::GpuFrameRenderer>,
     target: wgpu::Texture,
-    target_view: wgpu::TextureView,
 }
 
 impl ModernGpuHeadless {
@@ -4282,9 +4279,6 @@ impl ModernGpuHeadless {
             pollster::block_on(crate::create_device_queue(&instance, None));
         let format = wgpu::TextureFormat::Rgba8Unorm;
         let compositor = ModernGpuCompositor::new(&device, &queue, format);
-        let gpu_frame_renderer = RefCell::new(crate::gpu_renderer::GpuFrameRenderer::new(
-            &device, &queue, None,
-        ));
         let target = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("modern_gpu_headless_target"),
             size: wgpu::Extent3d {
@@ -4301,14 +4295,11 @@ impl ModernGpuHeadless {
                 | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
         Self {
             device,
             queue,
             compositor,
-            gpu_frame_renderer,
             target,
-            target_view,
         }
     }
 
@@ -4347,19 +4338,7 @@ impl ModernGpuHeadless {
 
     pub fn render_mode7_rgba(&self, frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<u8> {
         debug_assert_eq!(frame.mode, 7);
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("modern_gpu_mode7"),
-            });
-        self.gpu_frame_renderer.borrow_mut().render_frame(
-            &mut encoder,
-            &self.queue,
-            frame,
-            &self.target_view,
-        );
-        self.queue.submit([encoder.finish()]);
-        self.read_target_rgba()
+        crate::modern_mode7_cpu_rgba(frame, None)
     }
 
     pub fn render_mode7_source_rgba(
@@ -4368,22 +4347,7 @@ impl ModernGpuHeadless {
         mode7_source_chars: &[u8],
     ) -> Vec<u8> {
         debug_assert_eq!(frame.mode, 7);
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("modern_gpu_mode7_source"),
-            });
-        self.gpu_frame_renderer
-            .borrow_mut()
-            .render_frame_with_mode7_source_chars(
-                &mut encoder,
-                &self.queue,
-                frame,
-                &self.target_view,
-                mode7_source_chars,
-            );
-        self.queue.submit([encoder.finish()]);
-        self.read_target_rgba()
+        crate::modern_mode7_cpu_rgba(frame, Some(mode7_source_chars))
     }
 
     fn read_target_rgba(&self) -> Vec<u8> {

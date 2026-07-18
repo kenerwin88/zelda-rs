@@ -11,8 +11,6 @@ if [ -f generated/zelda3_assets/manifest.json ] && [ -d generated/zelda3_assets/
     generated/zelda3_assets/atlas
 fi
 
-PRECOMMIT_MODE="${ZELDA3_PRECOMMIT_MODE:-fast}"
-
 snapshot_dir="$(mktemp -d "${TMPDIR:-/tmp}/zelda3-pre-commit-sram.XXXXXX")"
 sram_dat_exists=0
 sram_bak_exists=0
@@ -47,16 +45,5 @@ target/parity/zelda3 --standalone-smoke "${ZELDA3_STANDALONE_SMOKE_FRAMES:-500}"
 restore_sram
 trap - EXIT HUP INT TERM
 
-# All-layer regression gate vs the committed C-derived golden fingerprints:
-# WRAM, VRAM, SRAM, render, and audio rollups. This path intentionally never
-# runs the live C oracle; zparity checks Rust output against parity-golden.
-PARITY_FRAMES="${ZELDA3_PRECOMMIT_PARITY_FRAMES:-500}"
-if [ "$PRECOMMIT_MODE" = "full" ]; then
-  echo "pre-commit: full zparity golden sweep + GPU checkpoint sweep"
-  python3 scripts/validate_all_parity.py --full
-else
-  echo "pre-commit: zparity golden smoke (${PARITY_FRAMES} frames)"
-  python3 scripts/validate_all_parity.py --frames "$PARITY_FRAMES"
-fi
-
-echo "pre-commit: for the exhaustive sweep run: scripts/validate_all_parity.py --full"
+# The C-oracle parity gate was retired; the remaining parity target is the
+# Snes9x comparison harness (scripts/full_parity.py --with-snes9x).

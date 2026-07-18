@@ -8,13 +8,35 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use std::time::Instant;
 
-use crate::gpu_readback::GpuRgbaReadbackFrame;
-use crate::image_output::{decode_rgba_png, write_rgba_frame_png};
+use crate::image_output::decode_rgba_png;
 use platform::NativeFrontend;
 use renderer::{GpuFrame, RawScanlineFrame};
 use serde::Deserialize;
 use snes::ppu::PpuRenderFlags;
 use zelda3::ZeldaState;
+
+/// RGBA readback container for modern asset GPU captures.
+pub(crate) struct GpuRgbaReadbackFrame {
+    rgba: Vec<u8>,
+}
+
+impl GpuRgbaReadbackFrame {
+    pub(crate) fn from_rgba(rgba: Vec<u8>) -> Self {
+        Self { rgba }
+    }
+
+    pub(crate) fn as_slice(&self) -> &[u8] {
+        &self.rgba
+    }
+}
+
+impl std::ops::Deref for GpuRgbaReadbackFrame {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.rgba
+    }
+}
 
 const PLAYER_IS_INDOORS: usize = 0x001b;
 const MAIN_MODULE_INDEX: usize = 0x10;
@@ -31,7 +53,9 @@ pub struct LiveGpuFrameCapture {
     dialogue_ir: Vec<zelda3::dialogue_ir::DialogueIrOp>,
     dialogue_layout: Vec<zelda3::dialogue_ir::DialogueGlyphPlacement>,
     dialogue_layout_origin_tile_number: Option<u16>,
+    #[allow(dead_code)]
     mode7_source_chars: Option<Vec<u8>>,
+    #[allow(dead_code)]
     main_module: u8,
     player_indoors: u8,
     cgram_provenance: zelda3_palette::CgramProvenanceSnapshot,
@@ -208,9 +232,7 @@ impl LiveGpuFrameCapture {
         &self.cgram
     }
 
-    pub fn raw_scanlines(&self) -> &RawScanlineFrame {
-        self.raw_scanlines.as_ref()
-    }
+
 
     pub fn source_entries(&self) -> &[zelda3::LogicalChrSrc] {
         &self.source_entries
@@ -240,13 +262,7 @@ impl LiveGpuFrameCapture {
         self.dialogue_layout_origin_tile_number
     }
 
-    pub fn mode7_source_chars(&self) -> Option<&[u8]> {
-        self.mode7_source_chars.as_deref()
-    }
 
-    pub fn main_module(&self) -> u8 {
-        self.main_module
-    }
 
     pub fn player_indoors(&self) -> u8 {
         self.player_indoors
@@ -274,407 +290,9 @@ struct GpuPlayRenderer {
     live_mode: renderer::EffectiveRendererMode<'static>,
     modern_assets: renderer::ModernAssetFrameResources,
     variant_live_stats: renderer::ModernAssetLiveStats,
-    live_pixel_parity: Option<LiveWindowPixelParity>,
 }
 
-struct LiveWindowPixelParity {
-    frame: u32,
-    progress_interval: u32,
-    dump_frame: Option<u32>,
-    dump_path: Option<PathBuf>,
-    cpu_bgra: Vec<u8>,
-}
 
-impl LiveWindowPixelParity {
-    fn from_env() -> Option<Self> {
-        std::env::var_os("ZELDA3_LIVE_WINDOW_PIXEL_PARITY").map(|_| Self {
-            frame: 0,
-            progress_interval: std::env::var("ZELDA3_LIVE_WINDOW_PIXEL_PARITY_PROGRESS")
-                .ok()
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(0),
-            dump_frame: std::env::var("ZELDA3_LIVE_WINDOW_PIXEL_DUMP_FRAME")
-                .ok()
-                .and_then(|value| value.parse().ok()),
-            dump_path: std::env::var_os("ZELDA3_LIVE_WINDOW_PIXEL_DUMP").map(PathBuf::from),
-            cpu_bgra: vec![0u8; 256 * 224 * 4],
-        })
-    }
-
-    fn compare_presented_frame(
-        &mut self,
-        game: &mut ZeldaState,
-        capture: &LiveGpuFrameCapture,
-        resources: &renderer::ModernAssetFrameResources,
-        frontend: &NativeFrontend,
-        render_flags: PpuRenderFlags,
-    ) {
-        self.frame = self.frame.wrapping_add(1);
-        let mut cpu_game = game.clone();
-        crate::classic_frame_renderer::render_play_frame_bgra(
-            &mut cpu_game,
-            &mut self.cpu_bgra,
-            256 * 4,
-            render_flags,
-        );
-        let Some(live_rgba) = frontend.read_modern_gpu_target_rgba() else {
-            eprintln!(
-                "live-window-pixel-parity frame={} missing live modern GPU target",
-                self.frame
-            );
-            process::exit(1);
-        };
-        if self.dump_frame == Some(self.frame) {
-            let Some(path) = self.dump_path.as_deref() else {
-                eprintln!(
-                    "ZELDA3_LIVE_WINDOW_PIXEL_DUMP_FRAME requires ZELDA3_LIVE_WINDOW_PIXEL_DUMP"
-                );
-                process::exit(2);
-            };
-            if let Err(error) = write_rgba_frame_png(path, &live_rgba, 256, 224) {
-                eprintln!(
-                    "failed to dump live window GPU frame {}: {error}",
-                    path.display()
-                );
-                process::exit(1);
-            }
-            eprintln!(
-                "live-window-pixel-parity dumped frame={} path={}",
-                self.frame,
-                path.display()
-            );
-        }
-        let report =
-            renderer::compare_gpu_render_frame_bgra_to_rgba(self.frame, &self.cpu_bgra, &live_rgba);
-        if let Some(line) = report.divergence_line() {
-            eprintln!("live-window-pixel-parity {line}");
-            if let Some(diff) = report.diff() {
-                let ppu = capture.ppu();
-                let scanlines = capture.raw_scanlines();
-                let hdma_cgram = capture.cgram();
-                eprintln!(
-                    "live-window-pixel-parity-state frame={} forced_blank={} brightness={} screen={:02x}/{:02x} windowed={:02x}/{:02x} windowsel={:08x} math={:02x} add_sub={} subtract={} half={} fixed=({},{},{}) clip={} prevent={} extra=({},{},{}) win0=({},{},{},{}) win{}=({},{},{},{}) scanline_tm0={:02x} scanline_tm{}={:02x} mode={} cgram0={:04x} dialogue_message_id={:?} bg3_source_tiles={} bg3_vwf_runs={} dialogue_ir={} dialogue_layout={}",
-                    self.frame,
-                    ppu.forced_blank,
-                    ppu.brightness,
-                    ppu.screen_enabled[0],
-                    ppu.screen_enabled[1],
-                    ppu.screen_windowed[0],
-                    ppu.screen_windowed[1],
-                    ppu.windowsel,
-                    ppu.math_enabled,
-                    ppu.add_subscreen,
-                    ppu.subtract_color,
-                    ppu.half_color,
-                    ppu.fixed_color_r,
-                    ppu.fixed_color_g,
-                    ppu.fixed_color_b,
-                    ppu.clip_mode,
-                    ppu.prevent_math_mode,
-                    ppu.extra_left_cur,
-                    ppu.extra_right_cur,
-                    ppu.extra_bottom_cur,
-                    scanlines[0].0,
-                    scanlines[0].1,
-                    scanlines[0].2,
-                    scanlines[0].3,
-                    diff.first_y,
-                    scanlines[diff.first_y].0,
-                    scanlines[diff.first_y].1,
-                    scanlines[diff.first_y].2,
-                    scanlines[diff.first_y].3,
-                    scanlines[0].4,
-                    diff.first_y,
-                    scanlines[diff.first_y].4,
-                    ppu.mode,
-                    hdma_cgram[0],
-                    capture.dialogue_message_id(),
-                    capture.bg3_source_tiles().len(),
-                    capture.bg3_vwf_glyph_runs.len(),
-                    capture.dialogue_ir().len(),
-                    capture.dialogue_layout().len(),
-                );
-                eprintln!(
-                    "live-window-pixel-parity-captured-compose frame={} x{} {}",
-                    self.frame,
-                    diff.first_x,
-                    game.ppu.debug_pixel_compose_summary(diff.first_x)
-                );
-                eprintln!(
-                    "live-window-pixel-parity-cgram-match frame={} cpu={} gpu={}",
-                    self.frame,
-                    cgram_match_indices(hdma_cgram, diff.cpu_rgb),
-                    cgram_match_indices(hdma_cgram, diff.gpu_rgb)
-                );
-                eprintln!(
-                    "live-window-pixel-parity-asset-trace frame={} {}",
-                    self.frame,
-                    trace_live_asset_bg_pixel(capture, resources, diff.first_x, diff.first_y)
-                );
-                let mut cpu_probe_ppu = ppu.clone();
-                let probe_sl = &scanlines[diff.first_y];
-                cpu_probe_ppu.window1_left = probe_sl.0;
-                cpu_probe_ppu.window1_right = probe_sl.1;
-                cpu_probe_ppu.window2_left = probe_sl.2;
-                cpu_probe_ppu.window2_right = probe_sl.3;
-                cpu_probe_ppu.screen_enabled[0] = probe_sl.4;
-                for layer in 0..4 {
-                    cpu_probe_ppu.bg_layer[layer].h_scroll = probe_sl.5[layer];
-                    cpu_probe_ppu.bg_layer[layer].v_scroll = probe_sl.6[layer];
-                }
-                eprintln!(
-                    "live-window-pixel-parity-old-probe frame={} {}",
-                    self.frame,
-                    cpu_probe_ppu.debug_pixel_old_summary(
-                        diff.first_x as i32,
-                        diff.first_y as i32 + 1,
-                        false,
-                    )
-                );
-            }
-            process::exit(1);
-        }
-        if self.progress_interval != 0 && self.frame % self.progress_interval == 0 {
-            eprintln!(
-                "live-window-pixel-parity progress frame={} mismatched_pixels=0",
-                self.frame
-            );
-        }
-    }
-}
-
-fn cgram_match_indices(cgram: &[u16], rgb: (u8, u8, u8)) -> String {
-    let matches = cgram
-        .iter()
-        .enumerate()
-        .filter_map(|(index, &color)| {
-            let r5 = (color & 0x1f) as u8;
-            let g5 = ((color >> 5) & 0x1f) as u8;
-            let b5 = ((color >> 10) & 0x1f) as u8;
-            let decoded = (
-                (r5 << 3) | (r5 >> 2),
-                (g5 << 3) | (g5 >> 2),
-                (b5 << 3) | (b5 >> 2),
-            );
-            (decoded == rgb).then_some(format!("{index:02x}:{color:04x}"))
-        })
-        .take(8)
-        .collect::<Vec<_>>();
-    if matches.is_empty() {
-        "none".to_string()
-    } else {
-        matches.join(",")
-    }
-}
-
-fn trace_live_asset_bg_pixel(
-    capture: &LiveGpuFrameCapture,
-    resources: &renderer::ModernAssetFrameResources,
-    x: usize,
-    y: usize,
-) -> String {
-    let Some(source_atlas) = resources.source_atlas() else {
-        return "no-source-atlas".to_string();
-    };
-    let source_table = renderer::source_table_from_entries(capture.source_entries());
-    let gpu_frame = capture.gpu_frame();
-    let assets = renderer::modern_extract::extract_asset_resolved_modern_frame_from_sources(
-        &gpu_frame,
-        &source_table,
-        source_atlas,
-    );
-    let software_rgba = renderer::modern_software::render_modern_frame_full(
-        &assets.frame,
-        &assets.bg_cells,
-        &assets.sprite_cells,
-    );
-    let (vram_frame, vram_bg_cells) =
-        renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
-    let (vram_sprite_cells, vram_sprites) =
-        renderer::modern_extract::extract_modern_sprites_from_vram(&gpu_frame);
-    let mut vram_frame_for_render = vram_frame.clone();
-    vram_frame_for_render.index_sprites = vram_sprites;
-    let vram_rgba = renderer::modern_software::render_modern_frame_full(
-        &vram_frame_for_render,
-        &vram_bg_cells,
-        &vram_sprite_cells,
-    );
-    let pixel_offset = (y as usize * 256 + x as usize) * 4;
-    let software_pixel = software_rgba
-        .get(pixel_offset..pixel_offset + 4)
-        .map(|px| {
-            format!(
-                "source_software_rgba=({},{},{},{})",
-                px[0], px[1], px[2], px[3]
-            )
-        })
-        .unwrap_or_else(|| "software_rgba=oob".to_string());
-    let vram_pixel = vram_rgba
-        .get(pixel_offset..pixel_offset + 4)
-        .map(|px| {
-            format!(
-                "vram_software_rgba=({},{},{},{})",
-                px[0], px[1], px[2], px[3]
-            )
-        })
-        .unwrap_or_else(|| "vram_software_rgba=oob".to_string());
-    let Some(x) = i16::try_from(x).ok() else {
-        return "x-out-of-range".to_string();
-    };
-    let Some(y) = i16::try_from(y).ok() else {
-        return "y-out-of-range".to_string();
-    };
-    let mut traces = Vec::new();
-    for trace_y in [y - 1, y, y + 1] {
-        for layer in assets.frame.bg_layers.iter().take(3) {
-            for inst in &layer.index_tiles {
-                if x < inst.screen_x
-                    || trace_y < inst.screen_y
-                    || x >= inst.screen_x + 8
-                    || trace_y >= inst.screen_y + 8
-                {
-                    continue;
-                }
-                let Some(cell) = assets.bg_cells.get(inst.cell_id as usize) else {
-                    continue;
-                };
-                let local_x = (x - inst.screen_x) as usize;
-                let local_y = (trace_y - inst.screen_y) as usize;
-                let index = cell.indices[local_y * 8 + local_x];
-                if index == 0 && layer.index != 2 {
-                    continue;
-                }
-                let cgram_index = usize::from(inst.palette) * 16 + usize::from(index);
-                let cgram_rgba = assets
-                    .frame
-                    .cgram_rgba
-                    .get(cgram_index)
-                    .copied()
-                    .unwrap_or([0, 0, 0, 0]);
-                traces.push(format!(
-                    "sample_y={} bg{} xy=({}, {}) local=({}, {}) cell={} inst_key=0x{:016x} cell_key=0x{:016x} pal={} index={} cgram_index=0x{:02x} cgram_rgba=({},{},{},{}) priority={}",
-                    trace_y,
-                    layer.index,
-                    inst.screen_x,
-                    inst.screen_y,
-                    local_x,
-                    local_y,
-                    inst.cell_id,
-                    inst.source_key,
-                    cell.source_key,
-                    inst.palette,
-                    index,
-                    cgram_index,
-                    cgram_rgba[0],
-                    cgram_rgba[1],
-                    cgram_rgba[2],
-                    cgram_rgba[3],
-                    inst.priority,
-                ));
-            }
-        }
-    }
-    if let Some(layer) = assets.frame.bg_layers.get(2) {
-        let mut nearest = layer
-            .index_tiles
-            .iter()
-            .map(|inst| {
-                let dx = if x < inst.screen_x {
-                    inst.screen_x - x
-                } else if x >= inst.screen_x + 8 {
-                    x - (inst.screen_x + 7)
-                } else {
-                    0
-                };
-                let dy = if y < inst.screen_y {
-                    inst.screen_y - y
-                } else if y >= inst.screen_y + 8 {
-                    y - (inst.screen_y + 7)
-                } else {
-                    0
-                };
-                (i32::from(dx.abs()) + i32::from(dy.abs()), inst)
-            })
-            .collect::<Vec<_>>();
-        nearest.sort_by_key(|(distance, inst)| (*distance, inst.screen_y, inst.screen_x));
-        for (_, inst) in nearest.into_iter().take(6) {
-            traces.push(format!(
-                "nearest_bg2 xy=({}, {}) cell={} pal={} key=0x{:016x} priority={}",
-                inst.screen_x,
-                inst.screen_y,
-                inst.cell_id,
-                inst.palette,
-                inst.source_key,
-                inst.priority
-            ));
-        }
-    }
-    let mut vram_traces = Vec::new();
-    for trace_y in [y - 1, y, y + 1] {
-        for layer in vram_frame.bg_layers.iter().take(3) {
-            for inst in &layer.index_tiles {
-                if x < inst.screen_x
-                    || trace_y < inst.screen_y
-                    || x >= inst.screen_x + 8
-                    || trace_y >= inst.screen_y + 8
-                {
-                    continue;
-                }
-                let Some(cell) = vram_bg_cells.get(inst.cell_id as usize) else {
-                    continue;
-                };
-                let local_x = (x - inst.screen_x) as usize;
-                let local_y = (trace_y - inst.screen_y) as usize;
-                let index = cell.indices[local_y * 8 + local_x];
-                if index == 0 {
-                    continue;
-                }
-                let cgram_index = usize::from(inst.palette) * 16 + usize::from(index);
-                let cgram_rgba = vram_frame
-                    .cgram_rgba
-                    .get(cgram_index)
-                    .copied()
-                    .unwrap_or([0, 0, 0, 0]);
-                vram_traces.push(format!(
-                    "vram sample_y={} bg{} xy=({}, {}) local=({}, {}) cell={} pal={} index={} cgram_index=0x{:02x} cgram_rgba=({},{},{},{}) priority={}",
-                    trace_y,
-                    layer.index,
-                    inst.screen_x,
-                    inst.screen_y,
-                    local_x,
-                    local_y,
-                    inst.cell_id,
-                    inst.palette,
-                    index,
-                    cgram_index,
-                    cgram_rgba[0],
-                    cgram_rgba[1],
-                    cgram_rgba[2],
-                    cgram_rgba[3],
-                    inst.priority,
-                ));
-            }
-        }
-    }
-    let counts = format!(
-        "source_counts={}/{}/{}",
-        assets.frame.bg_layers[0].index_tiles.len(),
-        assets.frame.bg_layers[1].index_tiles.len(),
-        assets.frame.bg_layers[2].index_tiles.len()
-    );
-    if traces.is_empty() {
-        format!(
-            "{software_pixel} {vram_pixel} {counts} no-bg-candidates vram={}",
-            vram_traces.join(" | "),
-        )
-    } else {
-        format!(
-            "{software_pixel} {vram_pixel} {counts} {} vram={}",
-            traces.join(" | "),
-            vram_traces.join(" | ")
-        )
-    }
-}
 
 impl GpuPlayRenderer {
     fn new() -> Self {
@@ -690,7 +308,6 @@ impl GpuPlayRenderer {
             live_mode,
             modern_assets,
             variant_live_stats: renderer::ModernAssetLiveStats::from_env(),
-            live_pixel_parity: LiveWindowPixelParity::from_env(),
         }
     }
 }
@@ -1240,15 +857,6 @@ impl crate::play_renderer::PlayRendererBackend for GpuPlayRenderer {
         if let Some(line) = report.failure_line() {
             eprintln!("{line}");
             process::exit(2);
-        }
-        if let Some(parity) = &mut self.live_pixel_parity {
-            parity.compare_presented_frame(
-                game,
-                &capture,
-                &self.modern_assets,
-                frontend,
-                _render_flags,
-            );
         }
     }
 }
@@ -1819,7 +1427,7 @@ mod tests {
         let capture = LiveGpuFrameCapture {
             ppu,
             cgram: vec![0u16; 256],
-            raw_scanlines: Box::new([(0, 0, 0, 0, 0x04, [0; 4], [0; 4], [0; 8]); 224]),
+            raw_scanlines: Box::new([(0, 0, 0, 0, 0x04, [0; 4], [0; 4], [0; 8], false); 224]),
             source_entries: Vec::new(),
             bg3_source_tiles: Vec::new(),
             bg3_vwf_glyph_runs: Vec::new(),
@@ -1922,7 +1530,7 @@ mod tests {
         LiveGpuFrameCapture {
             ppu,
             cgram: vec![0u16; 256],
-            raw_scanlines: Box::new([(0, 0, 0, 0, 0x04, [0; 4], [0; 4], [0; 8]); 224]),
+            raw_scanlines: Box::new([(0, 0, 0, 0, 0x04, [0; 4], [0; 4], [0; 8], false); 224]),
             source_entries: Vec::new(),
             bg3_source_tiles: Vec::new(),
             bg3_vwf_glyph_runs: Vec::new(),
@@ -1970,88 +1578,9 @@ mod tests {
         assert_no_dynamic_bg3_text_chunks(&capture);
     }
 
-    #[test]
-    fn embedded_startup_asset_gpu_matches_cpu_first_frames() {
-        let mut game = crate::load_embedded_play_state();
-        let readback = ModernAssetGpuReadbackRenderer::load_from_env()
-            .expect("modern asset GPU readback renderer should load");
-        let mut cpu_bgra = vec![0u8; 256 * 224 * 4];
+    
 
-        for frame in 0..1800 {
-            game.zelda_run_frame(0);
-            if frame % 30 != 0 {
-                continue;
-            }
-            let mut cpu_game = game.clone();
-            let gpu_render = readback
-                .render_game_rgba(&mut game)
-                .expect("embedded startup GPU readback should render");
-            crate::classic_frame_renderer::render_play_frame_bgra(
-                &mut cpu_game,
-                &mut cpu_bgra,
-                256 * 4,
-                PpuRenderFlags::empty(),
-            );
-            let report = renderer::compare_gpu_render_frame_bgra_to_rgba(
-                frame,
-                &cpu_bgra,
-                gpu_render.as_slice(),
-            );
-            assert!(
-                report.diff().is_none(),
-                "embedded startup asset GPU diverged: {}",
-                report
-                    .divergence_line()
-                    .unwrap_or("missing divergence line")
-            );
-        }
-    }
-
-    #[test]
-    fn embedded_startup_source_png_gpu_compositor_matches_cpu_sampled() {
-        let mut game = crate::load_embedded_play_state();
-        let repo_root = repo_root();
-        let resources =
-            renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)
-                .expect("modern asset resources should load");
-        let source_atlas = resources.source_atlas().expect("source atlas should load");
-        let gpu_headless = resources
-            .gpu_headless()
-            .expect("source GPU renderer should load");
-        let mut cpu_bgra = vec![0u8; 256 * 224 * 4];
-
-        for frame in 0..1800 {
-            game.zelda_run_frame(0);
-            if frame % 30 != 0 {
-                continue;
-            }
-            let mut cpu_game = game.clone();
-            crate::classic_frame_renderer::render_play_frame_bgra(
-                &mut cpu_game,
-                &mut cpu_bgra,
-                256 * 4,
-                PpuRenderFlags::empty(),
-            );
-
-            let capture = capture_gpu_frame_from_game(&mut game);
-            if capture.ppu().mode == 7 {
-                continue;
-            }
-            let gpu_frame = capture.gpu_frame();
-            let src_table = renderer::source_table_from_entries(capture.source_entries());
-            let gpu_rgba =
-                gpu_headless.render_rgba_from_sources(&gpu_frame, &src_table, source_atlas);
-            let report =
-                renderer::compare_gpu_render_frame_bgra_to_rgba(frame, &cpu_bgra, &gpu_rgba);
-            assert!(
-                report.diff().is_none(),
-                "source PNG GPU compositor diverged: {}",
-                report
-                    .divergence_line()
-                    .unwrap_or("missing divergence line")
-            );
-        }
-    }
+    
 
     #[test]
     fn live_game_dialogue_vwf_runs_render_from_png_glyph_atlas() {
@@ -2140,7 +1669,7 @@ mod tests {
         let capture = LiveGpuFrameCapture {
             ppu,
             cgram,
-            raw_scanlines: Box::new([(0, 0, 0, 0, 0, [0; 4], [0; 4], [0; 8]); 224]),
+            raw_scanlines: Box::new([(0, 0, 0, 0, 0, [0; 4], [0; 4], [0; 8], false); 224]),
             source_entries: Vec::new(),
             bg3_source_tiles: Vec::new(),
             bg3_vwf_glyph_runs: Vec::new(),

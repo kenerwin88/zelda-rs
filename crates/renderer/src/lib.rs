@@ -13,17 +13,10 @@
 //! Phase 1b — BG layer rendering:
 //! - [`BgLayerRenderer`]: single-layer BG pipeline (tilemap → atlas → CGRAM).
 
-pub mod bg_layer;
 mod frame_compare;
 pub mod gpu_frame;
-mod gpu_frame_render_plan;
-mod gpu_frame_renderer_backend;
-mod gpu_frame_renderer_resources;
-mod gpu_frame_work_command;
-pub mod gpu_renderer;
 mod gpu_work_item;
 pub mod hd_authoring;
-pub mod mode7_renderer;
 pub mod modern_assets;
 mod modern_bg_renderer;
 pub mod modern_dungeon_atlas;
@@ -47,12 +40,8 @@ mod modern_sprite_renderer;
 pub mod modern_variant_atlas;
 pub mod modern_variant_draw;
 mod modern_variant_render_plan;
-pub mod post_process;
 pub mod renderer_mode;
-pub mod sprite_renderer;
-pub mod tile_atlas;
 
-pub use bg_layer::BgLayerRenderer;
 pub use frame_compare::{
     compare_gpu_render_frame_bgra_to_rgba, gpu_render_hash_frame_rgba,
     render_fingerprint_leaf_bgra, render_hash_frame_bgra, render_hash_frame_rgba,
@@ -64,8 +53,6 @@ pub use gpu_frame::{
     GpuFrameRegisterSnapshot, GpuFrameSource, Mode7Regs, ObjRegs, RawScanlineFrame,
     RawScanlineRegs, ScanlineRegs,
 };
-pub use gpu_renderer::GpuFrameRenderer;
-pub use mode7_renderer::Mode7Renderer;
 pub use modern_gpu::{
     ModernGpuCompositor, ModernGpuHeadless, ModernGpuVariantHeadless, ModernGpuVariantRenderer,
 };
@@ -88,18 +75,11 @@ where
 {
     modern_extract::MappedSourceTableView::from_entries(entries)
 }
-pub use tile_atlas::{
-    CgramPalette, RgbaTileOverrideData, TileAtlas, ATLAS_HEIGHT, ATLAS_TILE_COUNT, ATLAS_WIDTH,
-    RGBA_TILE_OVERRIDE_LOOKUP_COUNT,
-};
-
 use std::{
     collections::hash_map::DefaultHasher,
     env,
-    fs::File,
     hash::{Hash, Hasher},
-    io::BufReader,
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
 };
 
@@ -1003,351 +983,6 @@ impl PresentationContext {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ArtSidecarConfig {
-    manifest_path: Option<PathBuf>,
-}
-
-impl ArtSidecarConfig {
-    fn from_env() -> Self {
-        Self::from_value(env::var_os("ZELDA3_ART_SIDECARS").as_deref())
-    }
-
-    fn from_value(value: Option<&std::ffi::OsStr>) -> Self {
-        Self {
-            manifest_path: value.map(PathBuf::from),
-        }
-    }
-
-    #[cfg(test)]
-    fn enabled(&self) -> bool {
-        self.manifest_path.is_some()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-struct ArtSidecarManifest {
-    tiles: Vec<ArtSidecarTile>,
-    /// Path (relative to the manifest) to the 256×1 RGBA PNG holding the CGRAM the HD
-    /// override art was authored against. The shader recolors overrides as
-    /// `live_cgram[idx] * (override / reference_cgram[idx])`, so the reference lets HD
-    /// art track the runtime palette. Absent → detail-modulate falls back to a 1×1
-    /// placeholder (only matters once real overrides ship).
-    #[serde(default)]
-    reference_palette: Option<String>,
-}
-
-impl ArtSidecarManifest {
-    fn from_json(json: &str) -> Result<Self, serde_json::Error> {
-        serde_json::from_str(json)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-struct ArtSidecarTile {
-    tile: u16,
-    normal: Option<String>,
-    depth: Option<String>,
-    rgba: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ArtSidecarImage {
-    width: u32,
-    height: u32,
-    rgba: Vec<u8>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ArtSidecarTileAssets {
-    tile: u16,
-    normal: Option<ArtSidecarImage>,
-    depth: Option<ArtSidecarImage>,
-    rgba: Option<ArtSidecarImage>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ArtSidecarAtlasEntry {
-    tile: u16,
-    x: u32,
-    y: u32,
-    width: u32,
-    height: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ArtSidecarRgbaAtlas {
-    width: u32,
-    height: u32,
-    rgba: Vec<u8>,
-    lookup: Vec<ArtSidecarAtlasEntry>,
-    /// Reference CGRAM (256 × RGBA8 = 1024 bytes) the overrides were authored against,
-    /// carried through to `RgbaTileOverrideData` for detail-modulated recolor. Empty
-    /// when the manifest omits a reference palette.
-    reference_cgram: Vec<u8>,
-}
-
-impl ArtSidecarRgbaAtlas {
-    #[cfg(test)]
-    fn texture_extent(&self) -> wgpu::Extent3d {
-        wgpu::Extent3d {
-            width: self.width,
-            height: self.height,
-            depth_or_array_layers: 1,
-        }
-    }
-
-    #[cfg(test)]
-    fn bytes_per_row(&self) -> u32 {
-        self.width * 4
-    }
-
-    #[cfg(test)]
-    fn upload_byte_len(&self) -> usize {
-        (self.width * self.height * 4) as usize
-    }
-
-    fn lookup_texture_pixels(&self) -> Vec<[u32; 4]> {
-        let mut lookup = vec![[0u32; 4]; RGBA_TILE_OVERRIDE_LOOKUP_COUNT];
-        for entry in &self.lookup {
-            let tile = usize::from(entry.tile);
-            if tile < lookup.len() {
-                lookup[tile] = [entry.x, entry.y, entry.width, entry.height];
-            }
-        }
-        lookup
-    }
-
-    fn as_tile_override_data<'a>(&'a self, lookup: &'a [[u32; 4]]) -> RgbaTileOverrideData<'a> {
-        RgbaTileOverrideData {
-            width: self.width,
-            height: self.height,
-            rgba: &self.rgba,
-            lookup,
-            // Sourced from the sidecar manifest's `reference_palette` (a 256×1 RGBA
-            // PNG). Empty when the manifest omits it → 1×1 placeholder (the shader's
-            // detail-modulate path only fires where an override tile exists, and
-            // today's parity runs load no sidecar at all).
-            reference_cgram: &self.reference_cgram,
-        }
-    }
-
-    #[cfg(test)]
-    fn lookup_for_tile(&self, tile: u16) -> Option<ArtSidecarAtlasEntry> {
-        self.lookup.iter().copied().find(|entry| entry.tile == tile)
-    }
-}
-
-#[derive(Debug, Default)]
-struct ArtSidecarAssets {
-    _manifest: Option<ArtSidecarManifest>,
-    tiles: Vec<ArtSidecarTileAssets>,
-    /// The reference CGRAM (256 entries × RGBA8 = 1024 bytes) the HD overrides were
-    /// authored against, decoded from `manifest.reference_palette`. Empty when the
-    /// manifest omits it (or it fails to load) → the override recolor uses a 1×1
-    /// placeholder reference.
-    reference_cgram: Vec<u8>,
-}
-
-impl ArtSidecarAssets {
-    fn load(config: &ArtSidecarConfig) -> Self {
-        let Some(path) = &config.manifest_path else {
-            return Self::default();
-        };
-        match std::fs::read_to_string(path) {
-            Ok(json) => match ArtSidecarManifest::from_json(&json) {
-                Ok(manifest) => {
-                    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
-                    let tiles = manifest
-                        .tiles
-                        .iter()
-                        .map(|tile| ArtSidecarTileAssets {
-                            tile: tile.tile,
-                            normal: load_optional_sidecar_image(base_dir, tile.normal.as_deref()),
-                            depth: load_optional_sidecar_image(base_dir, tile.depth.as_deref()),
-                            rgba: load_optional_sidecar_image(base_dir, tile.rgba.as_deref()),
-                        })
-                        .collect();
-                    let reference_cgram =
-                        load_reference_cgram(base_dir, manifest.reference_palette.as_deref());
-                    Self {
-                        _manifest: Some(manifest),
-                        tiles,
-                        reference_cgram,
-                    }
-                }
-                Err(err) => {
-                    eprintln!(
-                        "failed to parse ZELDA3_ART_SIDECARS manifest {}: {err}",
-                        path.display()
-                    );
-                    Self::default()
-                }
-            },
-            Err(err) => {
-                eprintln!(
-                    "failed to read ZELDA3_ART_SIDECARS manifest {}: {err}",
-                    path.display()
-                );
-                Self::default()
-            }
-        }
-    }
-
-    #[cfg(test)]
-    fn enabled(&self) -> bool {
-        self._manifest.is_some()
-    }
-
-    fn tile_count(&self) -> usize {
-        self.tiles.len()
-    }
-
-    fn build_rgba_override_atlas(&self) -> Option<ArtSidecarRgbaAtlas> {
-        let overrides: Vec<_> = self
-            .tiles
-            .iter()
-            .filter_map(|tile| tile.rgba.as_ref().map(|image| (tile.tile, image)))
-            .collect();
-        if overrides.is_empty() {
-            return None;
-        }
-
-        let width = overrides.iter().map(|(_, image)| image.width).sum();
-        let height = overrides
-            .iter()
-            .map(|(_, image)| image.height)
-            .max()
-            .unwrap_or(0);
-        let mut rgba = vec![0u8; (width * height * 4) as usize];
-        let mut lookup = Vec::with_capacity(overrides.len());
-        let mut x = 0u32;
-        for (tile, image) in overrides {
-            for row in 0..image.height {
-                let dst = (((row * width) + x) * 4) as usize;
-                let src = (row * image.width * 4) as usize;
-                let len = (image.width * 4) as usize;
-                rgba[dst..dst + len].copy_from_slice(&image.rgba[src..src + len]);
-            }
-            lookup.push(ArtSidecarAtlasEntry {
-                tile,
-                x,
-                y: 0,
-                width: image.width,
-                height: image.height,
-            });
-            x += image.width;
-        }
-        Some(ArtSidecarRgbaAtlas {
-            width,
-            height,
-            rgba,
-            lookup,
-            reference_cgram: self.reference_cgram.clone(),
-        })
-    }
-}
-
-/// Decode the reference-palette PNG (expected 256×1 RGBA, the authoring CGRAM) into a
-/// flat 1024-byte RGBA8 buffer. Returns empty on any problem (absent path, load error,
-/// or wrong pixel count) so the detail-modulate path degrades to its 1×1 placeholder
-/// rather than mis-recoloring.
-fn load_reference_cgram(base_dir: &Path, path: Option<&str>) -> Vec<u8> {
-    let Some(path) = path else {
-        return Vec::new();
-    };
-    let resolved = base_dir.join(path);
-    match load_art_sidecar_image(&resolved) {
-        Ok(image) if (image.width * image.height) as usize == 256 && image.rgba.len() == 1024 => {
-            image.rgba
-        }
-        Ok(image) => {
-            eprintln!(
-                "ZELDA3_ART_SIDECARS reference_palette {} must be 256 RGBA pixels \
-                 (got {}×{}); ignoring",
-                resolved.display(),
-                image.width,
-                image.height
-            );
-            Vec::new()
-        }
-        Err(err) => {
-            eprintln!(
-                "failed to load ZELDA3_ART_SIDECARS reference_palette {}: {err}",
-                resolved.display()
-            );
-            Vec::new()
-        }
-    }
-}
-
-fn load_optional_sidecar_image(base_dir: &Path, path: Option<&str>) -> Option<ArtSidecarImage> {
-    let path = path?;
-    let resolved = base_dir.join(path);
-    match load_art_sidecar_image(&resolved) {
-        Ok(image) => Some(image),
-        Err(err) => {
-            eprintln!(
-                "failed to load ZELDA3_ART_SIDECARS image {}: {err}",
-                resolved.display()
-            );
-            None
-        }
-    }
-}
-
-fn load_art_sidecar_image(path: &Path) -> Result<ArtSidecarImage, String> {
-    let file = File::open(path).map_err(|err| err.to_string())?;
-    let decoder = png::Decoder::new(BufReader::new(file));
-    let mut reader = decoder.read_info().map_err(|err| err.to_string())?;
-    let mut buffer = vec![0; reader.output_buffer_size()];
-    let info = reader
-        .next_frame(&mut buffer)
-        .map_err(|err| err.to_string())?;
-    if info.width == 0 || info.height == 0 {
-        return Err("image dimensions must be nonzero".to_string());
-    }
-    let bytes = &buffer[..info.buffer_size()];
-    let rgba = match (info.color_type, info.bit_depth) {
-        (png::ColorType::Rgba, png::BitDepth::Eight) => bytes.to_vec(),
-        (png::ColorType::Rgb, png::BitDepth::Eight) => {
-            let mut rgba = Vec::with_capacity((info.width * info.height * 4) as usize);
-            for rgb in bytes.chunks_exact(3) {
-                rgba.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 0xff]);
-            }
-            rgba
-        }
-        (png::ColorType::Grayscale, png::BitDepth::Eight) => {
-            let mut rgba = Vec::with_capacity((info.width * info.height * 4) as usize);
-            for &luma in bytes {
-                rgba.extend_from_slice(&[luma, luma, luma, 0xff]);
-            }
-            rgba
-        }
-        (png::ColorType::GrayscaleAlpha, png::BitDepth::Eight) => {
-            let mut rgba = Vec::with_capacity((info.width * info.height * 4) as usize);
-            for ga in bytes.chunks_exact(2) {
-                rgba.extend_from_slice(&[ga[0], ga[0], ga[0], ga[1]]);
-            }
-            rgba
-        }
-        (color, depth) => {
-            return Err(format!("unsupported PNG format {color:?}/{depth:?}"));
-        }
-    };
-    let expected_len = (info.width * info.height * 4) as usize;
-    if rgba.len() != expected_len {
-        return Err(format!(
-            "decoded RGBA length {} did not match expected {expected_len}",
-            rgba.len()
-        ));
-    }
-    Ok(ArtSidecarImage {
-        width: info.width,
-        height: info.height,
-        rgba,
-    })
-}
 
 const MAX_PRESENTATION_LIGHTS: usize = 8;
 const PRESENTATION_LIGHT_MASK_GRID_W: usize = 16;
@@ -1355,26 +990,11 @@ const PRESENTATION_LIGHT_MASK_GRID_H: usize = 14;
 const PRESENTATION_LIGHT_MASK_CELLS: usize =
     PRESENTATION_LIGHT_MASK_GRID_W * PRESENTATION_LIGHT_MASK_GRID_H;
 const PRESENTATION_LIGHT_MASK_VECS: usize = PRESENTATION_LIGHT_MASK_CELLS / 4;
-const PRESENTATION_OCCLUDER_GRID_W: usize = 16;
-const PRESENTATION_OCCLUDER_GRID_H: usize = 14;
-const PRESENTATION_OCCLUDER_BITS: usize =
-    PRESENTATION_OCCLUDER_GRID_W * PRESENTATION_OCCLUDER_GRID_H;
 const PRESENTATION_OCCLUDER_WORDS: usize = 8;
 const PRESENTATION_UNIFORM_BYTES: usize = 32
     + MAX_PRESENTATION_LIGHTS * 16
     + PRESENTATION_OCCLUDER_WORDS * 4
     + PRESENTATION_LIGHT_MASK_VECS * 16;
-const PRESENTATION_SPRITE_SIZES: [[u8; 2]; 8] = [
-    [8, 16],
-    [8, 32],
-    [8, 64],
-    [16, 32],
-    [16, 64],
-    [32, 64],
-    [16, 32],
-    [16, 32],
-];
-
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 struct PresentationLight {
     x: f32,
@@ -1383,96 +1003,7 @@ struct PresentationLight {
     intensity: f32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct PresentationLightProfile {
-    radius: f32,
-    intensity: f32,
-}
 
-fn sprite_tile_light_profile(tile: u8, palette_sub: u8) -> Option<PresentationLightProfile> {
-    let profile = match tile {
-        // Small flame/spark/fireball tiles.
-        0x58..=0x5f => PresentationLightProfile {
-            radius: 0.16,
-            intensity: 0.40,
-        },
-        // Larger sword-beam, magic, lamp/torch-flame-like effect tiles.
-        0x78..=0x7f => PresentationLightProfile {
-            radius: 0.24,
-            intensity: 0.55,
-        },
-        _ if palette_sub >= 4 => PresentationLightProfile {
-            radius: 0.18,
-            intensity: 0.38,
-        },
-        _ => return None,
-    };
-    Some(profile)
-}
-
-fn extract_presentation_lights(
-    oam: &[u16],
-    obj: &ObjRegs,
-    lighting: LightingMode,
-) -> Vec<PresentationLight> {
-    if lighting != LightingMode::Dynamic {
-        return Vec::new();
-    }
-
-    let sizes = PRESENTATION_SPRITE_SIZES[obj.obj_size as usize & 7];
-    let mut lights = Vec::new();
-    for sprite_num in 0..128usize {
-        if lights.len() == MAX_PRESENTATION_LIGHTS {
-            break;
-        }
-
-        let idx = sprite_num * 2;
-        let oam0 = oam.get(idx).copied().unwrap_or(0);
-        let oam1 = oam.get(idx + 1).copied().unwrap_or(0);
-        let y = (((oam0 >> 8) as i32) + 1) & 0xff;
-        if y == 0xf0 {
-            continue;
-        }
-
-        let palette_sub = ((oam1 & 0x0e00) >> 9) as u8;
-        let tile = (oam1 & 0xff) as u8;
-        let Some(profile) = sprite_tile_light_profile(tile, palette_sub) else {
-            continue;
-        };
-
-        let hi_word = oam.get(0x100 + idx / 16).copied().unwrap_or(0);
-        let hi_bits = (hi_word >> (idx % 16)) as i32;
-        let sprite_size = sizes[((hi_bits >> 1) & 1) as usize] as i32;
-        let object_x = (oam0 & 0xff) as i32 + (hi_bits & 1) * 256;
-        if object_x > 256 && object_x + sprite_size - 1 < 512 {
-            continue;
-        }
-
-        let mut x = object_x;
-        if x >= 256 {
-            x -= 512;
-        }
-        if x <= -sprite_size || x >= 256 {
-            continue;
-        }
-
-        let top = y - 1;
-        if top <= -sprite_size || top >= 224 {
-            continue;
-        }
-
-        let center_x = (x + sprite_size / 2).clamp(0, 255) as f32 / 256.0;
-        let center_y = (top + sprite_size / 2).clamp(0, 223) as f32 / 224.0;
-        let size_scale = (sprite_size as f32 / 16.0).clamp(0.75, 2.0);
-        lights.push(PresentationLight {
-            x: center_x,
-            y: center_y,
-            radius: profile.radius * size_scale,
-            intensity: profile.intensity * size_scale.min(1.5),
-        });
-    }
-    lights
-}
 
 fn build_low_res_light_mask(lights: &[PresentationLight]) -> [f32; PRESENTATION_LIGHT_MASK_CELLS] {
     let mut mask = [0.0f32; PRESENTATION_LIGHT_MASK_CELLS];
@@ -1555,61 +1086,6 @@ fn build_presentation_uniform_bytes_with_notice(
     bytes
 }
 
-fn extract_shadow_occluder_words(
-    vram: &[u16],
-    bg: &BgLayerRegs,
-    shadows: ShadowMode,
-) -> [u32; PRESENTATION_OCCLUDER_WORDS] {
-    if shadows == ShadowMode::Off {
-        return [0; PRESENTATION_OCCLUDER_WORDS];
-    }
-
-    let mut words = [0u32; PRESENTATION_OCCLUDER_WORDS];
-    for cell_y in 0..PRESENTATION_OCCLUDER_GRID_H {
-        for cell_x in 0..PRESENTATION_OCCLUDER_GRID_W {
-            let mut occluded = false;
-            for sub_y in 0..2 {
-                for sub_x in 0..2 {
-                    let screen_x = (cell_x * 16 + sub_x * 8 + 4) as u32;
-                    let screen_y = (cell_y * 16 + sub_y * 8 + 4) as u32;
-                    let map_px_w = if bg.tilemap_wider { 512 } else { 256 };
-                    let map_px_h = if bg.tilemap_higher { 512 } else { 256 };
-                    let world_x = (screen_x + u32::from(bg.h_scroll)) % map_px_w;
-                    let world_y = (screen_y + u32::from(bg.v_scroll)) % map_px_h;
-                    let tile_x = world_x / 8;
-                    let tile_y = world_y / 8;
-                    let page_offset = if tile_x >= 32 && bg.tilemap_wider {
-                        0x400
-                    } else {
-                        0
-                    } + if tile_y >= 32 && bg.tilemap_higher {
-                        if bg.tilemap_wider {
-                            0x800
-                        } else {
-                            0x400
-                        }
-                    } else {
-                        0
-                    };
-                    let local_x = tile_x % 32;
-                    let local_y = tile_y % 32;
-                    let vram_idx = bg.tilemap_adr as usize
-                        + page_offset as usize
-                        + (local_y * 32 + local_x) as usize;
-                    let entry = vram.get(vram_idx & 0x7fff).copied().unwrap_or(0);
-                    occluded |= entry & 0x2000 != 0;
-                }
-            }
-            if !occluded {
-                continue;
-            }
-            let bit = cell_y * PRESENTATION_OCCLUDER_GRID_W + cell_x;
-            debug_assert!(bit < PRESENTATION_OCCLUDER_BITS);
-            words[bit / 32] |= 1u32 << (bit % 32);
-        }
-    }
-    words
-}
 
 /// Compute the centered game rect that fits in `surface`.
 fn compute_viewport(
@@ -2173,13 +1649,6 @@ pub struct FrameRenderer {
     game_texture: GameTexture,
     bind_group_layout: wgpu::BindGroupLayout,
     presentation_buf: wgpu::Buffer,
-    gpu_renderer: GpuFrameRenderer,
-    _gpu_texture: wgpu::Texture,
-    gpu_view: wgpu::TextureView,
-    gpu_bind_group: wgpu::BindGroup,
-    gpu_presentation_buf: wgpu::Buffer,
-    _art_sidecars: ArtSidecarAssets,
-    _art_sidecar_rgba_atlas: Option<ArtSidecarRgbaAtlas>,
     upload_buf: Vec<u8>,
     game_width: u32,
     game_height: u32,
@@ -2949,26 +2418,6 @@ impl FrameRenderer {
         surface.configure(&device, &config);
 
         let presentation_params = PresentationParams::from_env();
-        let art_sidecars = ArtSidecarAssets::load(&ArtSidecarConfig::from_env());
-        let art_sidecar_rgba_atlas = art_sidecars.build_rgba_override_atlas();
-        let art_sidecar_rgba_lookup = art_sidecar_rgba_atlas
-            .as_ref()
-            .map(ArtSidecarRgbaAtlas::lookup_texture_pixels);
-        let art_sidecar_rgba_override = art_sidecar_rgba_atlas
-            .as_ref()
-            .zip(art_sidecar_rgba_lookup.as_deref())
-            .map(|(atlas, lookup)| atlas.as_tile_override_data(lookup));
-        if env::var_os("ZELDA3_ART_SIDECAR_LOG").is_some() {
-            eprintln!("renderer art sidecars: tiles={}", art_sidecars.tile_count());
-            if let Some(atlas) = &art_sidecar_rgba_atlas {
-                eprintln!(
-                    "renderer art sidecar rgba atlas: overrides={} size={}x{}",
-                    atlas.lookup.len(),
-                    atlas.width,
-                    atlas.height
-                );
-            }
-        }
         let (texture, bind_group_layout, bind_group, presentation_buf) =
             create_game_texture_resources(&device, game_width, game_height, presentation_params);
         let game_texture = GameTexture {
@@ -2978,35 +2427,6 @@ impl FrameRenderer {
             height: game_height,
         };
         let pipeline = create_blit_pipeline(&device, &bind_group_layout, surface_format);
-        let gpu_renderer =
-            GpuFrameRenderer::new(&device, &queue, art_sidecar_rgba_override.as_ref().copied());
-        let gpu_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("gpu_game_frame"),
-            size: wgpu::Extent3d {
-                width: game_width,
-                height: game_height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let gpu_view = gpu_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let gpu_sampler =
-            create_presentation_sampler(&device, presentation_params.presentation, "gpu_blit");
-        let gpu_presentation_buf =
-            create_presentation_buffer(&device, presentation_params, "gpu_presentation_params");
-        let gpu_bind_group = create_blit_bind_group(
-            &device,
-            &bind_group_layout,
-            &gpu_view,
-            &gpu_sampler,
-            &gpu_presentation_buf,
-            "gpu_blit",
-        );
         let scale_mode = ViewportScaleMode::from_env();
         let viewport = compute_viewport(
             config.width,
@@ -3027,13 +2447,6 @@ impl FrameRenderer {
             game_texture,
             bind_group_layout,
             presentation_buf,
-            gpu_renderer,
-            _gpu_texture: gpu_texture,
-            gpu_view,
-            gpu_bind_group,
-            gpu_presentation_buf,
-            _art_sidecars: art_sidecars,
-            _art_sidecar_rgba_atlas: art_sidecar_rgba_atlas,
             upload_buf,
             game_width,
             game_height,
@@ -3149,20 +2562,6 @@ impl FrameRenderer {
             &sampler,
             &self.presentation_buf,
             "blit",
-        );
-
-        let gpu_sampler = create_presentation_sampler(
-            &self.device,
-            self.presentation_params.presentation,
-            "gpu_blit",
-        );
-        self.gpu_bind_group = create_blit_bind_group(
-            &self.device,
-            &self.bind_group_layout,
-            &self.gpu_view,
-            &gpu_sampler,
-            &self.gpu_presentation_buf,
-            "gpu_blit",
         );
 
         if let Some(target) = &mut self.modern_gpu_target {
@@ -3869,33 +3268,14 @@ impl FrameRenderer {
         &mut self,
         frame: &GpuFrame<'_>,
         mode7_source_chars: Option<&[u8]>,
-        encoder_label: &'static str,
+        _encoder_label: &'static str,
     ) -> Result<(), RenderError> {
         debug_assert_eq!(frame.mode, 7);
-        let format = wgpu::TextureFormat::Rgba8Unorm;
-        self.ensure_modern_gpu_target(format);
-
-        let target = self.modern_gpu_target.as_ref().expect("target built above");
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some(encoder_label),
-            });
-        match mode7_source_chars {
-            Some(chars) => self.gpu_renderer.render_frame_with_mode7_source_chars(
-                &mut encoder,
-                &self.queue,
-                frame,
-                &target.view,
-                chars,
-            ),
-            None => self
-                .gpu_renderer
-                .render_frame(&mut encoder, &self.queue, frame, &target.view),
-        }
-        self.queue.submit([encoder.finish()]);
-
-        self.present_modern_gpu_target_to_surface()
+        // Mode 7 renders through the dedicated modern CPU compositor (the
+        // long-standing software oracle for the retired classic wgpu path).
+        let rgba = modern_mode7_cpu_rgba(frame, mode7_source_chars);
+        self.upload_rgba8(&rgba, 256, 224);
+        self.render()
     }
 
     pub fn render(&mut self) -> Result<(), RenderError> {
@@ -3966,362 +3346,17 @@ impl FrameRenderer {
         Ok(())
     }
 
-    pub fn render_gpu_frame(&mut self, frame: &GpuFrame<'_>) -> Result<(), RenderError> {
-        self.render_gpu_frame_with_context(frame, PresentationContext::default())
-    }
 
-    pub fn render_gpu_frame_with_context(
-        &mut self,
-        frame: &GpuFrame<'_>,
-        context: PresentationContext,
-    ) -> Result<(), RenderError> {
-        self.maybe_log_viewport();
-        let surface_texture = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(t) => t,
-            wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
-            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                return Err(RenderError::SurfaceReconfigureNeeded);
-            }
-            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-                return Ok(());
-            }
-            wgpu::CurrentSurfaceTexture::Validation => {
-                return Err(RenderError::Fatal(
-                    "wgpu validation error in get_current_texture".to_string(),
-                ));
-            }
-        };
-
-        let view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let lights =
-            extract_presentation_lights(frame.oam, &frame.obj, self.presentation_params.lighting);
-        let mut occluders = extract_shadow_occluder_words(
-            frame.vram,
-            &frame.bg[0],
-            self.presentation_params.shadows,
-        );
-        let bg2_occluders = extract_shadow_occluder_words(
-            frame.vram,
-            &frame.bg[1],
-            self.presentation_params.shadows,
-        );
-        for (dst, src) in occluders.iter_mut().zip(bg2_occluders) {
-            *dst |= src;
-        }
-        let notice = self.presentation_notice;
-        let presentation_bytes = build_presentation_uniform_bytes_with_notice(
-            self.presentation_params,
-            context,
-            &lights,
-            &occluders,
-            notice,
-        );
-        self.queue
-            .write_buffer(&self.gpu_presentation_buf, 0, &presentation_bytes);
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("gpu_frame_surface"),
-            });
-        self.gpu_renderer
-            .render_frame(&mut encoder, &self.queue, frame, &self.gpu_view);
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("gpu_frame_blit"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.gpu_bind_group, &[]);
-            pass.set_viewport(
-                self.viewport.x,
-                self.viewport.y,
-                self.viewport.w,
-                self.viewport.h,
-                0.0,
-                1.0,
-            );
-            pass.draw(0..3, 0..1);
-        }
-        self.queue.submit([encoder.finish()]);
-        surface_texture.present();
-        self.tick_presentation_notice();
-        Ok(())
-    }
 }
 
-// ── OffscreenRenderer ─────────────────────────────────────────────────────────
 
-/// Headless renderer for pixel readback.
-///
-/// Renders the same blit pipeline as [`FrameRenderer`] but targets an offscreen
-/// `Rgba8Unorm` texture instead of a window surface, then copies pixels back to
-/// CPU memory. Used by the binary's `--render-hash-log` and `--dump-frame` paths
-/// so those can eventually run through the GPU tile renderer without needing a
-/// display.
-pub struct OffscreenRenderer {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    pipeline: wgpu::RenderPipeline,
-    game_texture: wgpu::Texture,
-    bind_group: wgpu::BindGroup,
-    _presentation_buf: wgpu::Buffer,
-    /// GPU tile renderer — used by [`Self::render_gpu_frame`].
-    gpu_renderer: GpuFrameRenderer,
-    /// Output target: RENDER_ATTACHMENT | COPY_SRC, exact game resolution.
-    render_texture: wgpu::Texture,
-    /// Cached view of `render_texture` — shared by both render paths.
-    render_view: wgpu::TextureView,
-    /// MAP_READ buffer that receives the copy of `render_texture` each frame.
-    readback_buf: wgpu::Buffer,
-    /// Aligned row pitch (multiple of COPY_BYTES_PER_ROW_ALIGNMENT = 256).
-    readback_bytes_per_row: u32,
-    upload_buf: Vec<u8>,
-    game_width: u32,
-    game_height: u32,
-}
-
-impl OffscreenRenderer {
-    pub async fn new(game_width: u32, game_height: u32) -> Self {
-        let instance = create_wgpu_instance();
-        // No surface compatibility needed — any adapter works for offscreen rendering.
-        let (_adapter, device, queue) = create_device_queue(&instance, None).await;
-
-        let presentation_params =
-            PresentationParams::new(PresentationMode::Off, LightingMode::Off, ShadowMode::Off);
-        let (game_texture, bind_group_layout, bind_group, presentation_buf) =
-            create_game_texture_resources(&device, game_width, game_height, presentation_params);
-
-        // Output format matches game_texture (Rgba8Unorm) — no conversion in the shader.
-        let pipeline =
-            create_blit_pipeline(&device, &bind_group_layout, wgpu::TextureFormat::Rgba8Unorm);
-
-        let render_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("offscreen"),
-            size: wgpu::Extent3d {
-                width: game_width,
-                height: game_height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let render_view = render_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let gpu_renderer = GpuFrameRenderer::new(&device, &queue, None);
-
-        // copy_texture_to_buffer requires bytes_per_row to be a multiple of
-        // COPY_BYTES_PER_ROW_ALIGNMENT (256). For game_width=256: 256*4=1024, already aligned.
-        let readback_bytes_per_row =
-            (game_width * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
-
-        let readback_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("readback"),
-            size: (readback_bytes_per_row * game_height) as u64,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let upload_buf = vec![0u8; (game_width * game_height * 4) as usize];
-
-        Self {
-            device,
-            queue,
-            pipeline,
-            game_texture,
-            bind_group,
-            _presentation_buf: presentation_buf,
-            gpu_renderer,
-            render_texture,
-            render_view,
-            readback_buf,
-            readback_bytes_per_row,
-            upload_buf,
-            game_width,
-            game_height,
-        }
-    }
-
-    /// Upload one frame of pixels. Same format as [`FrameRenderer::upload_frame`].
-    pub fn upload_frame(&mut self, pixels: &[u32]) {
-        upload_ppu_pixels(
-            &self.queue,
-            &self.game_texture,
-            pixels,
-            &mut self.upload_buf,
-            self.game_width,
-            self.game_height,
-        );
-    }
-
-    /// Upload one frame from a BGRA byte slice (the native output of `zelda_draw_display_frame`).
-    ///
-    /// BGRA layout: `[B, G, R, A]` per pixel. Swaps to RGBA for the `Rgba8Unorm` texture.
-    /// No allocation — uses the pre-allocated staging buffer.
-    pub fn upload_bgra_frame(&mut self, bgra: &[u8]) {
-        debug_assert_eq!(
-            bgra.len(),
-            (self.game_width * self.game_height * 4) as usize,
-        );
-        for (dst, src) in self
-            .upload_buf
-            .chunks_exact_mut(4)
-            .zip(bgra.chunks_exact(4))
-        {
-            dst[0] = src[2]; // BGRA[2] = R → RGBA[0]
-            dst[1] = src[1]; // G unchanged
-            dst[2] = src[0]; // BGRA[0] = B → RGBA[2]
-            dst[3] = src[3]; // A unchanged
-        }
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.game_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &self.upload_buf,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(self.game_width * 4),
-                rows_per_image: None,
-            },
-            wgpu::Extent3d {
-                width: self.game_width,
-                height: self.game_height,
-                depth_or_array_layers: 1,
-            },
-        );
-    }
-
-    /// Blit the current CPU PPU frame offscreen and read back RGBA bytes.
-    ///
-    /// Returns exactly `game_width * game_height * 4` bytes, row-major
-    /// top-to-bottom. Blocks until the GPU completes the readback.
-    pub fn render_to_rgba(&mut self) -> Vec<u8> {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("offscreen"),
-            });
-
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("offscreen"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.render_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
-            // No letterboxing — headless output is exact game resolution.
-            pass.set_viewport(
-                0.0,
-                0.0,
-                self.game_width as f32,
-                self.game_height as f32,
-                0.0,
-                1.0,
-            );
-            pass.draw(0..3, 0..1);
-        }
-
-        self.finish_and_readback(encoder)
-    }
-
-    /// Render one frame using the GPU tile pipeline and read back RGBA bytes.
-    ///
-    /// Returns exactly `game_width * game_height * 4` bytes, row-major
-    /// top-to-bottom. Blocks until the GPU completes the readback.
-    pub fn render_gpu_frame(&mut self, frame: &GpuFrame<'_>) -> Vec<u8> {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("gpu_frame"),
-            });
-        self.gpu_renderer
-            .render_frame(&mut encoder, &self.queue, frame, &self.render_view);
-        self.finish_and_readback(encoder)
-    }
-
-    /// Append a texture→buffer copy to `encoder`, submit, and block on readback.
-    fn finish_and_readback(&mut self, mut encoder: wgpu::CommandEncoder) -> Vec<u8> {
-        encoder.copy_texture_to_buffer(
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.render_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyBufferInfo {
-                buffer: &self.readback_buf,
-                layout: wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(self.readback_bytes_per_row),
-                    rows_per_image: None,
-                },
-            },
-            wgpu::Extent3d {
-                width: self.game_width,
-                height: self.game_height,
-                depth_or_array_layers: 1,
-            },
-        );
-
-        self.queue.submit([encoder.finish()]);
-
-        // map_async registers intent; poll(Wait) blocks until the GPU is idle and
-        // the callback fires, after which get_mapped_range is valid.
-        let slice = self.readback_buf.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
-        self.device
-            .poll(wgpu::PollType::wait_indefinitely())
-            .expect("GPU poll failed during offscreen readback");
-
-        let row_bytes = (self.game_width * 4) as usize;
-        let stride = self.readback_bytes_per_row as usize;
-        let mapped = slice.get_mapped_range();
-        let mut out = Vec::with_capacity(row_bytes * self.game_height as usize);
-        for row in 0..self.game_height as usize {
-            out.extend_from_slice(&mapped[row * stride..row * stride + row_bytes]);
-        }
-        drop(mapped);
-        self.readback_buf.unmap();
-        out
-    }
-}
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
     use std::{fs, process};
 
     fn temp_modern_asset_root(name: &str) -> PathBuf {
@@ -4843,150 +3878,7 @@ mod tests {
         );
     }
 
-    async fn render_test_bg_with_rgba_override() -> Vec<u8> {
-        let instance = create_wgpu_instance();
-        let (_adapter, device, queue) = create_device_queue(&instance, None).await;
-        let render_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("test_rgba_override_output"),
-            size: wgpu::Extent3d {
-                width: 256,
-                height: 224,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        let render_view = render_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let readback_bytes_per_row =
-            (256u32 * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
-        let readback_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("test_rgba_override_readback"),
-            size: (readback_bytes_per_row * 224) as u64,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
 
-        // Detail-modulated HD recolor: final = live_cgram * (override / reference).
-        // Author-intent: the HD art (`rgba`) is authored against `reference_cgram`;
-        // dividing by the reference recovers a palette-agnostic "detail" ratio that is
-        // then re-lit by the LIVE CGRAM every frame (keeps day/night, flashes, area
-        // swaps). Here: override 0x40 / reference 0x80 = detail 0.5, live 0xf8 → 0x7c.
-        let rgba = [0x40, 0x40, 0x40, 0xff];
-        let mut reference_cgram = vec![0u8; 1024];
-        reference_cgram[4..8].copy_from_slice(&[0x80, 0x80, 0x80, 0xff]); // CGRAM slot 1
-        let mut lookup = vec![[0u32; 4]; RGBA_TILE_OVERRIDE_LOOKUP_COUNT];
-        lookup[1] = [0, 0, 1, 1];
-        let override_data = RgbaTileOverrideData {
-            width: 1,
-            height: 1,
-            rgba: &rgba,
-            lookup: &lookup,
-            reference_cgram: &reference_cgram,
-        };
-        let mut renderer = GpuFrameRenderer::new(&device, &queue, Some(override_data));
-
-        let mut vram = vec![0u16; 0x8000];
-        vram[0] = 1;
-        for row in 0..8 {
-            vram[16 + row] = 0x00ff;
-        }
-        let mut cgram = vec![0u16; 0x100];
-        cgram[0] = 0;
-        cgram[1] = 0x7fff; // live white; each channel expands 31<<3 = 0xf8
-        let oam = vec![0u16; 0x110];
-        let mut scanlines = Box::new([ScanlineRegs::default(); 224]);
-        for scanline in scanlines.iter_mut() {
-            scanline.screen_enabled_main = 1;
-        }
-        let frame = GpuFrame {
-            vram: &vram,
-            cgram: &cgram,
-            oam: &oam,
-            mode: 1,
-            bg: [
-                BgLayerRegs::default(),
-                BgLayerRegs::default(),
-                BgLayerRegs::default(),
-                BgLayerRegs::default(),
-            ],
-            obj: ObjRegs::default(),
-            mosaic_enabled: 0,
-            mosaic_size: 1,
-            extra_left_right: 0,
-            mode7: Mode7Regs::default(),
-            screen_enabled: [1, 0],
-            screen_windowed: [0, 0],
-            brightness: 15,
-            forced_blank: false,
-            math_enabled: 0,
-            subtract_color: false,
-            half_color: false,
-            fixed_color_r: 0,
-            fixed_color_g: 0,
-            fixed_color_b: 0,
-            add_subscreen: false,
-            clip_mode: 0,
-            prevent_math_mode: 0,
-            windowsel_cm: 0,
-            windowsel: 0,
-            scanlines,
-            bg3_source_tiles: &[],
-            bg3_vwf_glyph_runs: &[],
-            dialogue_message_id: None,
-            source_dialogue_ir: &[],
-            dialogue_ir: &[],
-            dialogue_layout: &[],
-            dialogue_layout_origin_tile_number: None,
-            cgram_provenance: None,
-        };
-
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("test_rgba_override_encoder"),
-        });
-        renderer.render_frame(&mut encoder, &queue, &frame, &render_view);
-        encoder.copy_texture_to_buffer(
-            wgpu::TexelCopyTextureInfo {
-                texture: &render_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyBufferInfo {
-                buffer: &readback_buf,
-                layout: wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(readback_bytes_per_row),
-                    rows_per_image: None,
-                },
-            },
-            wgpu::Extent3d {
-                width: 256,
-                height: 224,
-                depth_or_array_layers: 1,
-            },
-        );
-        queue.submit([encoder.finish()]);
-
-        let slice = readback_buf.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
-        device
-            .poll(wgpu::PollType::wait_indefinitely())
-            .expect("GPU poll failed during rgba override test readback");
-        let mapped = slice.get_mapped_range();
-        let mut out = vec![0u8; 256 * 224 * 4];
-        for row in 0..224usize {
-            let src = row * readback_bytes_per_row as usize;
-            let dst = row * 256 * 4;
-            out[dst..dst + 256 * 4].copy_from_slice(&mapped[src..src + 256 * 4]);
-        }
-        drop(mapped);
-        readback_buf.unmap();
-        out
-    }
 
     #[test]
     fn viewport_exact_fit() {
@@ -5416,389 +4308,23 @@ mod tests {
         assert_eq!(u32::from_ne_bytes(bytes[16..20].try_into().unwrap()), 1);
     }
 
-    #[test]
-    fn high_priority_bg_tile_sets_coarse_shadow_occluder() {
-        let mut vram = vec![0u16; 0x8000];
-        vram[0] = 0x2001;
-        let bg = BgLayerRegs::default();
+    
 
-        let words = extract_shadow_occluder_words(&vram, &bg, ShadowMode::Raycast);
+    
 
-        assert_eq!(words[0] & 1, 1);
-    }
 
-    #[test]
-    fn shadow_occluders_are_empty_when_shadows_are_off() {
-        let mut vram = vec![0u16; 0x8000];
-        vram[0] = 0x2001;
-        let bg = BgLayerRegs::default();
 
-        let words = extract_shadow_occluder_words(&vram, &bg, ShadowMode::Off);
+    
 
-        assert_eq!(words, [0; PRESENTATION_OCCLUDER_WORDS]);
-    }
+    
 
-    #[test]
-    fn art_sidecars_are_disabled_without_manifest_path() {
-        let config = ArtSidecarConfig::from_value(None);
+    
 
-        assert!(!config.enabled());
-    }
+    
 
-    #[test]
-    fn art_sidecar_manifest_parses_tile_maps_and_overrides() {
-        let manifest = ArtSidecarManifest::from_json(
-            r#"{
-                "tiles": [
-                    {
-                        "tile": 42,
-                        "normal": "normals/002a.png",
-                        "depth": "depth/002a.png",
-                        "rgba": "rgba/002a.png"
-                    }
-                ]
-            }"#,
-        )
-        .unwrap();
+    
 
-        assert_eq!(manifest.tiles.len(), 1);
-        assert_eq!(manifest.tiles[0].tile, 42);
-        assert_eq!(
-            manifest.tiles[0].normal.as_deref(),
-            Some("normals/002a.png")
-        );
-        assert_eq!(manifest.tiles[0].depth.as_deref(), Some("depth/002a.png"));
-        assert_eq!(manifest.tiles[0].rgba.as_deref(), Some("rgba/002a.png"));
-    }
-
-    #[test]
-    fn art_sidecar_assets_load_manifest_from_config_path() {
-        let path =
-            std::env::temp_dir().join(format!("zelda3-sidecar-test-{}.json", std::process::id()));
-        std::fs::write(&path, r#"{ "tiles": [{ "tile": 7 }] }"#).unwrap();
-        let config = ArtSidecarConfig {
-            manifest_path: Some(path.clone()),
-        };
-
-        let assets = ArtSidecarAssets::load(&config);
-
-        std::fs::remove_file(path).ok();
-        assert!(assets.enabled());
-        assert_eq!(assets.tiles[0].tile, 7);
-    }
-
-    fn write_test_png(path: &std::path::Path, width: u32, height: u32, rgba: &[u8]) {
-        let file = std::fs::File::create(path).unwrap();
-        let mut encoder = png::Encoder::new(file, width, height);
-        encoder.set_color(png::ColorType::Rgba);
-        encoder.set_depth(png::BitDepth::Eight);
-        let mut writer = encoder.write_header().unwrap();
-        writer.write_image_data(rgba).unwrap();
-    }
-
-    #[test]
-    fn art_sidecar_assets_decode_relative_rgba_pngs() {
-        let root =
-            std::env::temp_dir().join(format!("zelda3-sidecar-image-test-{}", std::process::id()));
-        let rgba_dir = root.join("rgba");
-        std::fs::create_dir_all(&rgba_dir).unwrap();
-        let png_path = rgba_dir.join("0007.png");
-        let pixels = [
-            0x10, 0x20, 0x30, 0xff, 0x40, 0x50, 0x60, 0xff, 0x70, 0x80, 0x90, 0xff, 0xa0, 0xb0,
-            0xc0, 0xff,
-        ];
-        write_test_png(&png_path, 2, 2, &pixels);
-
-        let manifest_path = root.join("manifest.json");
-        std::fs::write(
-            &manifest_path,
-            r#"{ "tiles": [{ "tile": 7, "rgba": "rgba/0007.png" }] }"#,
-        )
-        .unwrap();
-        let config = ArtSidecarConfig {
-            manifest_path: Some(manifest_path),
-        };
-
-        let assets = ArtSidecarAssets::load(&config);
-
-        std::fs::remove_dir_all(root).ok();
-        assert_eq!(assets.tiles.len(), 1);
-        assert_eq!(assets.tiles[0].tile, 7);
-        let rgba = assets.tiles[0].rgba.as_ref().unwrap();
-        assert_eq!(rgba.width, 2);
-        assert_eq!(rgba.height, 2);
-        assert_eq!(rgba.rgba, pixels);
-    }
-
-    #[test]
-    fn art_sidecar_assets_pack_rgba_overrides_into_atlas() {
-        let first = ArtSidecarImage {
-            width: 2,
-            height: 1,
-            rgba: vec![1, 2, 3, 4, 5, 6, 7, 8],
-        };
-        let second = ArtSidecarImage {
-            width: 1,
-            height: 2,
-            rgba: vec![9, 10, 11, 12, 13, 14, 15, 16],
-        };
-        let assets = ArtSidecarAssets {
-            _manifest: None,
-            tiles: vec![
-                ArtSidecarTileAssets {
-                    tile: 0x20,
-                    normal: None,
-                    depth: None,
-                    rgba: Some(first),
-                },
-                ArtSidecarTileAssets {
-                    tile: 0x21,
-                    normal: None,
-                    depth: None,
-                    rgba: Some(second),
-                },
-            ],
-            reference_cgram: Vec::new(),
-        };
-
-        let atlas = assets.build_rgba_override_atlas().unwrap();
-
-        assert_eq!(atlas.width, 3);
-        assert_eq!(atlas.height, 2);
-        assert_eq!(atlas.lookup.len(), 2);
-        assert_eq!(
-            atlas.lookup_for_tile(0x20).unwrap(),
-            ArtSidecarAtlasEntry {
-                tile: 0x20,
-                x: 0,
-                y: 0,
-                width: 2,
-                height: 1,
-            }
-        );
-        assert_eq!(
-            atlas.lookup_for_tile(0x21).unwrap(),
-            ArtSidecarAtlasEntry {
-                tile: 0x21,
-                x: 2,
-                y: 0,
-                width: 1,
-                height: 2,
-            }
-        );
-        assert_eq!(&atlas.rgba[0..8], &[1, 2, 3, 4, 5, 6, 7, 8]);
-        assert_eq!(&atlas.rgba[8..12], &[9, 10, 11, 12]);
-        let second_row_offset = (atlas.width * 4) as usize;
-        assert_eq!(
-            &atlas.rgba[second_row_offset + 8..second_row_offset + 12],
-            &[13, 14, 15, 16]
-        );
-    }
-
-    #[test]
-    fn art_sidecar_reference_cgram_flows_through_to_override_data() {
-        let mut reference_cgram = vec![0u8; 1024];
-        reference_cgram[4..8].copy_from_slice(&[0x80, 0x80, 0x80, 0xff]); // slot 1
-        let assets = ArtSidecarAssets {
-            _manifest: None,
-            tiles: vec![ArtSidecarTileAssets {
-                tile: 0x20,
-                normal: None,
-                depth: None,
-                rgba: Some(ArtSidecarImage {
-                    width: 1,
-                    height: 1,
-                    rgba: vec![0x40, 0x40, 0x40, 0xff],
-                }),
-            }],
-            reference_cgram: reference_cgram.clone(),
-        };
-
-        let atlas = assets.build_rgba_override_atlas().unwrap();
-        // The reference palette is carried onto the atlas...
-        assert_eq!(atlas.reference_cgram, reference_cgram);
-        // ...and exposed to the GPU override data for detail-modulated recolor.
-        let lookup = atlas.lookup_texture_pixels();
-        let data = atlas.as_tile_override_data(&lookup);
-        assert_eq!(data.reference_cgram, reference_cgram.as_slice());
-    }
-
-    #[test]
-    fn art_sidecar_rgba_atlas_reports_gpu_upload_layout() {
-        let atlas = ArtSidecarRgbaAtlas {
-            width: 3,
-            height: 2,
-            rgba: vec![0; 3 * 2 * 4],
-            lookup: Vec::new(),
-            reference_cgram: Vec::new(),
-        };
-
-        assert_eq!(atlas.texture_extent().width, 3);
-        assert_eq!(atlas.texture_extent().height, 2);
-        assert_eq!(atlas.bytes_per_row(), 12);
-        assert_eq!(atlas.upload_byte_len(), 24);
-    }
-
-    #[test]
-    fn art_sidecar_rgba_atlas_builds_tile_lookup_table_for_shader() {
-        let atlas = ArtSidecarRgbaAtlas {
-            width: 3,
-            height: 2,
-            rgba: vec![0; 3 * 2 * 4],
-            lookup: vec![
-                ArtSidecarAtlasEntry {
-                    tile: 0x20,
-                    x: 0,
-                    y: 0,
-                    width: 2,
-                    height: 1,
-                },
-                ArtSidecarAtlasEntry {
-                    tile: 0x21,
-                    x: 2,
-                    y: 0,
-                    width: 1,
-                    height: 2,
-                },
-            ],
-            reference_cgram: Vec::new(),
-        };
-
-        let lookup = atlas.lookup_texture_pixels();
-
-        assert_eq!(lookup.len(), 1024);
-        assert_eq!(lookup[0x1f], [0, 0, 0, 0]);
-        assert_eq!(lookup[0x20], [0, 0, 2, 1]);
-        assert_eq!(lookup[0x21], [2, 0, 1, 2]);
-    }
-
-    #[test]
-    fn bg_shader_samples_rgba_sidecar_overrides_before_cgram_color() {
-        let shader = include_str!("bg_layer.wgsl");
-
-        assert!(shader.contains("@binding(3) var tile_override_atlas: texture_2d<f32>"));
-        assert!(shader.contains("@binding(4) var tile_override_lookup: texture_2d<u32>"));
-        assert!(shader.contains("fn sample_tile_override("));
-        assert!(shader.contains("let override_color = sample_tile_override(tile_num, px, py);"));
-        assert!(shader.contains("if override_color.a > 0.0"));
-        // Detail-modulated HD recolor: the override is divided by the reference CGRAM
-        // and re-lit by the live CGRAM, not returned verbatim.
-        assert!(shader.contains("@binding(5) var reference_cgram: texture_2d<f32>"));
-        assert!(shader.contains("let detail = override_color.rgb / max(reference.rgb"));
-    }
-
-    #[test]
-    fn rgba_sidecar_override_changes_bg_tile_output_color() {
-        let pixels = pollster::block_on(render_test_bg_with_rgba_override());
-
-        // Detail-modulated: live 0xf8 * (override 0x40 / reference 0x80) = 0xf8 * 0.5 ≈ 0x7c.
-        // Allow ±1 for GPU float-division rounding (backend-dependent last-bit).
-        for &c in &pixels[0..3] {
-            assert!(
-                (c as i32 - 0x7c).abs() <= 1,
-                "expected ~0x7c (detail-modulated), got {c:#x}"
-            );
-        }
-        assert_eq!(pixels[3], 0xff);
-        // Not the raw live color (override applied) and not raw override passthrough
-        // (it was re-lit through the live palette, not copied verbatim).
-        assert_ne!(&pixels[0..4], &[0xf8, 0xf8, 0xf8, 0xff]);
-        assert_ne!(&pixels[0..4], &[0x40, 0x40, 0x40, 0xff]);
-    }
-
-    #[test]
-    fn art_sidecar_rgba_override_atlas_is_absent_without_rgba_images() {
-        let assets = ArtSidecarAssets {
-            _manifest: None,
-            tiles: vec![ArtSidecarTileAssets {
-                tile: 0x20,
-                normal: Some(ArtSidecarImage {
-                    width: 1,
-                    height: 1,
-                    rgba: vec![1, 2, 3, 4],
-                }),
-                depth: None,
-                rgba: None,
-            }],
-            reference_cgram: Vec::new(),
-        };
-
-        assert!(assets.build_rgba_override_atlas().is_none());
-    }
-
-    #[test]
-    fn dynamic_lighting_extracts_visible_sprite_light() {
-        let mut oam = vec![0u16; 0x110];
-        oam[0] = (48u16 << 8) | 32u16;
-        oam[1] = 4u16 << 9;
-        oam[0x100] = 0b10;
-
-        let lights = extract_presentation_lights(&oam, &ObjRegs::default(), LightingMode::Dynamic);
-
-        assert_eq!(lights.len(), 1);
-        assert_near(lights[0].x, 40.0 / 256.0);
-        assert_near(lights[0].y, 56.0 / 224.0);
-        assert_near(lights[0].radius, 0.18);
-    }
-
-    #[test]
-    fn dynamic_lighting_uses_sprite_tile_light_profiles() {
-        let mut oam = vec![0u16; 0x110];
-        oam[0] = (48u16 << 8) | 32u16;
-        oam[1] = (4u16 << 9) | 0x5c;
-        oam[2] = (80u16 << 8) | 64u16;
-        oam[3] = (4u16 << 9) | 0x7c;
-        oam[0x100] = 0b1000;
-
-        let lights = extract_presentation_lights(&oam, &ObjRegs::default(), LightingMode::Dynamic);
-
-        assert_eq!(lights.len(), 2);
-        assert_near(lights[0].radius, 0.12);
-        assert_near(lights[0].intensity, 0.30);
-        assert_near(lights[1].radius, 0.24);
-        assert_near(lights[1].intensity, 0.55);
-    }
-
-    #[test]
-    fn dynamic_lighting_keeps_bright_palette_fallback_for_unclassified_sprites() {
-        let mut oam = vec![0u16; 0x110];
-        oam[0] = (48u16 << 8) | 32u16;
-        oam[1] = (4u16 << 9) | 0x11;
-        oam[0x100] = 0b10;
-
-        let lights = extract_presentation_lights(&oam, &ObjRegs::default(), LightingMode::Dynamic);
-
-        assert_eq!(lights.len(), 1);
-        assert_near(lights[0].radius, 0.18);
-        assert_near(lights[0].intensity, 0.38);
-    }
-
-    #[test]
-    fn dynamic_lighting_ignores_unclassified_dim_palette_sprites() {
-        let mut oam = vec![0u16; 0x110];
-        oam[0] = (48u16 << 8) | 32u16;
-        oam[1] = (2u16 << 9) | 0x11;
-
-        let lights = extract_presentation_lights(&oam, &ObjRegs::default(), LightingMode::Dynamic);
-
-        assert!(lights.is_empty());
-    }
-
-    #[test]
-    fn presentation_lights_are_disabled_unless_dynamic() {
-        let mut oam = vec![0u16; 0x110];
-        oam[0] = (48u16 << 8) | 32u16;
-        oam[1] = 4u16 << 9;
-        oam[0x100] = 0b10;
-
-        assert!(
-            extract_presentation_lights(&oam, &ObjRegs::default(), LightingMode::Off).is_empty()
-        );
-        assert!(
-            extract_presentation_lights(&oam, &ObjRegs::default(), LightingMode::Ambient)
-                .is_empty()
-        );
-    }
+    
 
     #[test]
     fn upload_frame_swaps_bgr_to_rgb() {
@@ -5912,5 +4438,24 @@ mod tests {
             !recreated_again,
             "unchanged size must not recreate the texture"
         );
+    }
+}
+
+/// Render a Mode-7 `GpuFrame` with the modern CPU compositor. When
+/// `mode7_source_chars` is provided (the source-art route), the chars replace
+/// the CHR bytes (high byte of each of the first 0x4000 VRAM words) exactly as
+/// the retired GPU source-chars texture did; the tilemap low bytes stay live.
+pub fn modern_mode7_cpu_rgba(frame: &GpuFrame<'_>, mode7_source_chars: Option<&[u8]>) -> Vec<u8> {
+    match mode7_source_chars {
+        None => crate::modern_software::render_modern_mode7_frame(frame),
+        Some(chars) => {
+            let mut vram = frame.vram.to_vec();
+            for (word, &ch) in vram.iter_mut().take(0x4000).zip(chars.iter()) {
+                *word = (*word & 0x00ff) | (u16::from(ch) << 8);
+            }
+            let mut patched: GpuFrame<'_> = frame.clone();
+            patched.vram = &vram;
+            crate::modern_software::render_modern_mode7_frame(&patched)
+        }
     }
 }

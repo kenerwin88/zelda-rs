@@ -471,6 +471,20 @@ impl LockstepOracle {
         }
     }
 
+    pub fn load_rom(&mut self, rom: &[u8]) -> Result<(), OracleError> {
+        let patched_rom = patch_rom_owned(rom)?;
+        snes::load_rom(&mut self.snes, &patched_rom)?;
+        self.game.set_rom(rom);
+        self.snes.cpu_seed_reset_vector();
+        Ok(())
+    }
+
+    pub fn load_assets(&mut self, assets: &[u8]) -> Result<(), OracleError> {
+        self.game
+            .set_assets(assets)
+            .map_err(OracleError::LoadAssets)
+    }
+
     pub fn load_sram(&mut self, sram: &[u8]) -> Result<(), OracleError> {
         let expected = self.game.sram.len();
         if sram.len() < expected {

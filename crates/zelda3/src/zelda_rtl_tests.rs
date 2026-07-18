@@ -3961,20 +3961,6 @@ fn simple_hdma_get_ptr_maps_mode7_zoom_tables() {
 }
 
 #[test]
-fn draw_ppu_frame_applies_mode7_perspective_correction() {
-    let mut state = ZeldaState::new();
-    let mut pixels = vec![0u8; 256 * 224 * 4];
-    state.ppu.mode = 7;
-    state.set_hdma_enable_mask(1 << 6);
-    state.hdma_setup(0x0abdcf, 0, 0, 0, 0, 0x0a);
-
-    state.zelda_draw_ppu_frame(&mut pixels, 256 * 4, PpuRenderFlags::MODE7_4X4);
-
-    assert_eq!(state.ppu.mode7_perspective_low, 1.0 / 375.0);
-    assert_eq!(state.ppu.mode7_perspective_high, 1.0 / 264.0);
-}
-
-#[test]
 fn configure_ppu_side_space_matches_module_cases() {
     let mut state = ZeldaState::new();
     state.set_main_module(20);
@@ -3995,72 +3981,6 @@ fn configure_ppu_side_space_matches_module_cases() {
     assert_eq!(state.ppu.extra_left_cur, 0x10);
     assert_eq!(state.ppu.extra_right_cur, 0x30);
     assert_eq!(state.ppu.extra_bottom_cur, 16);
-}
-
-#[test]
-fn draw_ppu_frame_runs_irq_and_hdma_without_consuming_published_event() {
-    let mut state = ZeldaState::new();
-    let mut pixels = vec![0u8; 256 * 224 * 4];
-    state.set_irq_control_flag(0x80);
-    state.set_select_file_name_scroll_x(0x01f0);
-    state.set_hdma_enable_mask(1 << 6);
-    state.hdma_setup(0x0cfa87, 0, 0, 0, 0, 0);
-
-    state.zelda_draw_ppu_frame(&mut pixels, 256 * 4, PpuRenderFlags::empty());
-
-    assert_eq!(state.game_state.display.irq_control_flag, 0x80);
-    assert!(state.ppu.forced_blank);
-    assert_eq!(state.ppu.brightness, 0x0f);
-    assert_eq!(state.ppu.render_pitch, (PPU_X_PIXELS * 4) as u32);
-    assert_eq!(
-        state.ppu.render_buffer.as_ref().unwrap().len(),
-        PPU_X_PIXELS * (224 + 1) * 4
-    );
-    assert_eq!(pixels.len(), 256 * 224 * 4);
-}
-
-#[test]
-fn display_snapshot_draw_uses_c_style_current_vram_not_obj_latch() {
-    let mut state = ZeldaState::new();
-    let mut pixels = vec![0u8; 256 * 224 * 4];
-
-    state.ppu.obj_vram_latch = Some(vec![0x1111; VRAM_WORDS]);
-    state.capture_display_snapshot();
-    state.zelda_draw_display_frame(&mut pixels, 256 * 4, PpuRenderFlags::empty());
-    assert!(state.ppu.obj_vram_latch.is_none());
-
-    state.ppu.obj_vram_latch = Some(vec![0x1111; VRAM_WORDS]);
-    state.obj_vram_latch_generation = 1;
-    state.capture_display_snapshot();
-    state.obj_vram_latch_generation = 2;
-    state.ppu.obj_vram_latch = Some(vec![0x2222; VRAM_WORDS]);
-    state.zelda_draw_display_frame(&mut pixels, 256 * 4, PpuRenderFlags::empty());
-    assert!(state.ppu.obj_vram_latch.is_none());
-}
-
-#[test]
-fn display_snapshot_draw_uses_the_pre_nmi_ppu_registers() {
-    let mut state = ZeldaState::new();
-    let mut pixels = vec![0u8; 256 * 224 * 4];
-    state.ppu.brightness = 3;
-    state.capture_display_snapshot();
-    state.ppu.brightness = 12;
-
-    state.zelda_draw_display_frame(&mut pixels, 256 * 4, PpuRenderFlags::empty());
-
-    assert_eq!(
-        state.ppu.brightness, 12,
-        "drawing must not rewind live PPU state"
-    );
-    assert_eq!(
-        state
-            .display_snapshot
-            .as_ref()
-            .expect("drawn display snapshot")
-            .ppu
-            .last_brightness_mult,
-        3,
-    );
 }
 
 #[test]

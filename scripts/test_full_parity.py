@@ -93,8 +93,7 @@ class Snes9xParityGateTests(unittest.TestCase):
         self.assertIn(str(args.replay_save), command)
         self.assertIn("--ignore-video", command)
         self.assertEqual(command[command.index("--audio-comparison") + 1], "exact")
-        self.assertEqual(command[command.index("--rust-audio-backend") + 1], "modern")
-        self.assertEqual(command[command.index("--rust-audio-sequencer") + 1], "native")
+        self.assertNotIn("--rust-audio-backend", command)
 
     def test_main_rejects_an_empty_gate_set(self):
         module = load_module()
@@ -105,8 +104,6 @@ class Snes9xParityGateTests(unittest.TestCase):
                 str(SCRIPT),
                 "--rom",
                 str(rom),
-                "--no-lockstep",
-                "--no-c-audio",
             ]
             with mock.patch.object(sys, "argv", argv):
                 self.assertEqual(module.main(), 2)

@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use gilrs::{Axis, Button, Event, EventType, Gilrs};
-use renderer::{FrameRenderer, GpuFrame, PresentationContext, RenderError, RendererMode};
+use renderer::{FrameRenderer, GpuFrame, RenderError, RendererMode};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, WindowEvent};
@@ -166,7 +166,7 @@ impl NativeFrontend {
             audio_queue_limit_bytes: (735 * 2 * std::mem::size_of::<i16>() * 3) as u32,
             next_frame_tick: Instant::now(),
             presented_frames: 0,
-            renderer_mode: RendererMode::Classic,
+            renderer_mode: RendererMode::Modern,
             frame_pacing: options.frame_pacing,
         };
 
@@ -258,33 +258,15 @@ impl NativeFrontend {
             .unwrap_or(0)
     }
 
-    /// Select the live render path. `Classic` (default) is the wgpu GPU PPU; the
-    /// `Modern`/`ModernCompare` modes route the live present through the modern
-    /// (software) live-VRAM render path.
+    /// Select the live render path (modern software vs modern asset GPU
+    /// diagnostics). The classic wgpu PPU path was removed.
     pub fn set_renderer_mode(&mut self, mode: RendererMode) {
         self.renderer_mode = mode;
     }
 
     pub fn present_gpu_frame(&mut self, frame: &GpuFrame<'_>) {
-        self.present_gpu_frame_with_context(frame, PresentationContext::default());
-    }
-
-    pub fn present_gpu_frame_with_context(
-        &mut self,
-        frame: &GpuFrame<'_>,
-        context: PresentationContext,
-    ) {
-        let modern = matches!(
-            self.renderer_mode,
-            RendererMode::Modern | RendererMode::ModernCompare
-        );
         if let Some(renderer) = &mut self.handler.renderer {
-            let result = if modern {
-                renderer.render_modern_frame(frame)
-            } else {
-                renderer.render_gpu_frame_with_context(frame, context)
-            };
-            match result {
+            match renderer.render_modern_frame(frame) {
                 Ok(()) => {}
                 Err(RenderError::SurfaceReconfigureNeeded) => {
                     if let Some(window) = &self.handler.window {

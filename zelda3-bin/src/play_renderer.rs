@@ -4,12 +4,9 @@ use std::process;
 use platform::{
     Frontend, HostMenuInput, HostMenuState, NativeFrontend, NativeFrontendOptions, RecorderControl,
 };
-use renderer::RendererMode;
 use snes::ppu::PpuRenderFlags;
 use zelda3::ZeldaState;
 
-const PLAY_WIDTH: u32 = 256;
-const PLAY_HEIGHT: u32 = 224;
 
 pub(crate) trait PlayRendererBackend {
     fn name(&self) -> &'static str;
@@ -115,68 +112,24 @@ impl ConfiguredPlayRenderer {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PlayRendererBackendChoice {
-    Cpu,
     Gpu,
 }
 
 impl PlayRendererBackendChoice {
     fn from_env_value(value: Option<&str>) -> Result<Self, String> {
         match value {
-            Some(value) if value.eq_ignore_ascii_case("cpu") => Ok(Self::Cpu),
             Some(value) if value.eq_ignore_ascii_case("gpu") => Ok(Self::Gpu),
             Some(value) => Err(format!(
-                "unknown ZELDA3_RENDER_BACKEND={value:?}; expected cpu or gpu"
+                "unknown ZELDA3_RENDER_BACKEND={value:?}; expected gpu (the classic cpu backend was removed)"
             )),
             None => Ok(Self::Gpu),
         }
     }
 }
 
-struct CpuPlayRenderer {
-    pixels: Vec<u32>,
-}
-
-impl CpuPlayRenderer {
-    fn new() -> Self {
-        Self {
-            pixels: vec![0u32; (PLAY_WIDTH * PLAY_HEIGHT) as usize],
-        }
-    }
-}
-
-impl PlayRendererBackend for CpuPlayRenderer {
-    fn name(&self) -> &'static str {
-        "cpu_render"
-    }
-
-    fn configure_frontend(&self, frontend: &mut NativeFrontend) {
-        frontend.set_renderer_mode(RendererMode::Classic);
-    }
-
-    fn present_frame(
-        &mut self,
-        game: &mut ZeldaState,
-        frontend: &mut NativeFrontend,
-        frame: &mut [u8],
-        render_flags: PpuRenderFlags,
-    ) {
-        crate::classic_frame_renderer::render_play_frame_bgra(
-            game,
-            frame,
-            PLAY_WIDTH as usize * 4,
-            render_flags,
-        );
-        for (dst, src) in self.pixels.iter_mut().zip(frame.chunks_exact(4)) {
-            *dst = u32::from_le_bytes([src[0], src[1], src[2], src[3]]);
-        }
-        frontend.present_frame(&self.pixels, PLAY_WIDTH, PLAY_HEIGHT);
-    }
-}
-
 fn from_env() -> Box<dyn PlayRendererBackend> {
     let value = env::var("ZELDA3_RENDER_BACKEND").ok();
     match PlayRendererBackendChoice::from_env_value(value.as_deref()) {
-        Ok(PlayRendererBackendChoice::Cpu) => Box::new(CpuPlayRenderer::new()),
         Ok(PlayRendererBackendChoice::Gpu) => crate::gpu_capture::new_gpu_play_renderer(),
         Err(message) => {
             eprintln!("{message}");
@@ -204,9 +157,7 @@ pub(crate) fn configured_from_env(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        PlayRendererBackendChoice, PlayRendererBackendChoice::Cpu, PlayRendererBackendChoice::Gpu,
-    };
+    use super::{PlayRendererBackendChoice, PlayRendererBackendChoice::Gpu};
 
     #[test]
     fn unset_backend_defaults_to_gpu() {
@@ -222,20 +173,12 @@ mod tests {
     }
 
     #[test]
-    fn explicit_backend_accepts_cpu_case_insensitively() {
-        assert_eq!(
-            PlayRendererBackendChoice::from_env_value(Some("CPU")),
-            Ok(Cpu)
-        );
-    }
-
-    #[test]
     fn invalid_backend_reports_expected_values() {
         let error = PlayRendererBackendChoice::from_env_value(Some("software")).unwrap_err();
 
         assert_eq!(
             error,
-            "unknown ZELDA3_RENDER_BACKEND=\"software\"; expected cpu or gpu"
+            "unknown ZELDA3_RENDER_BACKEND=\"software\"; expected gpu (the classic cpu backend was removed)"
         );
     }
 }

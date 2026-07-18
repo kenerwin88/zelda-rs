@@ -161,22 +161,6 @@ def resolve_snes9x_core(args: argparse.Namespace) -> Path | None:
     return download_snes9x_core(args.snes9x_url)
 
 
-def run_lockstep_gate(args: argparse.Namespace) -> None:
-    command = cargo_zelda(
-        ["--compare-lockstep-render", str(args.rom), str(args.lockstep_frames)],
-        args.release,
-    )
-    if args.input_script:
-        command.extend(["--input-script", args.input_script])
-    if args.load_sram:
-        command.extend(["--load-sram", args.load_sram])
-    if args.load_state:
-        command.extend(["--load-state", args.load_state])
-    result = run_command(command)
-    require_success(result, "lockstep behavior/render/audio")
-    print(result.stdout.strip(), flush=True)
-
-
 def run_snes9x_gate(args: argparse.Namespace) -> None:
     core = resolve_snes9x_core(args)
     if core is None:
@@ -231,10 +215,6 @@ def run_snes9x_modern_audio_gate(args: argparse.Namespace) -> None:
             "--ignore-video",
             "--audio-comparison",
             "exact",
-            "--rust-audio-backend",
-            "modern",
-            "--rust-audio-sequencer",
-            "native",
             "--session-dir",
             str(session_dir),
             "--scan-all",
@@ -243,28 +223,6 @@ def run_snes9x_modern_audio_gate(args: argparse.Namespace) -> None:
     )
     result = run_command(command)
     require_success(result, "Snes9x modern full-route waveform")
-    print(result.stdout.strip(), flush=True)
-
-
-def run_c_audio_gate(args: argparse.Namespace) -> None:
-    command = [
-        sys.executable,
-        str(REPO_ROOT / "scripts" / "compare_c_audio.py"),
-        "--rom",
-        str(args.rom),
-        "--frames",
-        str(args.frames),
-        "--c-repo",
-        str(args.c_repo),
-        "--c-bin",
-        str(args.c_bin),
-        "--work-dir",
-        str(args.work_dir / "audio-c-oracle"),
-    ]
-    if args.release:
-        command.append("--release")
-    result = run_command(command)
-    require_success(result, "C oracle audio")
     print(result.stdout.strip(), flush=True)
 
 
@@ -371,9 +329,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--route-frames", type=int, default=1_073_092)
     parser.add_argument("--replay-save", type=Path, default=DEFAULT_REPLAY_SAVE)
-    parser.add_argument("--lockstep-frames", type=int, default=300)
-    parser.add_argument("--c-repo", type=Path, default=DEFAULT_C_REPO)
-    parser.add_argument("--c-bin", type=Path, default=DEFAULT_C_REPO / "zelda3")
     parser.add_argument("--input-script")
     parser.add_argument("--load-sram")
     parser.add_argument("--load-state")
@@ -386,8 +341,6 @@ def parse_args() -> argparse.Namespace:
         "--work-dir", type=Path, default=REPO_ROOT / "target" / "parity"
     )
     parser.add_argument("--release", action="store_true")
-    parser.add_argument("--no-lockstep", action="store_true")
-    parser.add_argument("--no-c-audio", action="store_true")
     parser.add_argument("--no-snes9x", action="store_true")
     parser.add_argument("--with-snes9x", action="store_true")
     parser.add_argument("--no-install-snes9x", action="store_true")
@@ -400,8 +353,6 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     args.rom = args.rom.expanduser()
-    args.c_repo = args.c_repo.expanduser()
-    args.c_bin = args.c_bin.expanduser()
     args.mesen_runner = args.mesen_runner.expanduser()
     args.work_dir = args.work_dir.expanduser()
     args.replay_save = args.replay_save.expanduser()
@@ -410,10 +361,6 @@ def main() -> int:
         return 2
 
     gates: list[tuple[str, object]] = []
-    if not args.no_lockstep:
-        gates.append(("lockstep behavior/render/audio", run_lockstep_gate))
-    if not args.no_c_audio:
-        gates.append(("C oracle audio", run_c_audio_gate))
     if args.with_mesen and not args.no_mesen:
         gates.append(("Mesen2 APUI/DSP timing", run_mesen_gate))
     if args.with_snes9x and not args.no_snes9x:

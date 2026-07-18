@@ -19,16 +19,9 @@ pub(crate) fn replay_checksum_bytes(bytes: &[u8]) -> u32 {
 }
 
 pub(crate) fn replay_checksum_ram_range(ram: &[u8], start: usize, size: usize) -> u32 {
-    let mut hash = 2166136261u32;
-    for index in start..start + size {
-        let byte = if parity::fingerprint_mask_contains(index) {
-            0
-        } else {
-            ram[index]
-        };
-        hash = (hash ^ u32::from(byte)).wrapping_mul(16777619);
-    }
-    hash
+    // The C-oracle fingerprint mask is retired; these hashes only compare runs
+    // of the same binary now, so raw bytes are hashed directly.
+    replay_checksum_bytes(&ram[start..start + size])
 }
 
 pub(crate) fn replay_save_ancilla_dump(game: &ZeldaState) -> String {
@@ -455,18 +448,16 @@ mod tests {
     }
 
     #[test]
-    fn ram_checksum_masks_volatile_fingerprint_bytes() {
+    fn ram_checksum_hashes_raw_bytes() {
         let mut ram = vec![0u8; 0x800];
         ram[0x653] = 0x11;
         ram[0x654] = 0xaa;
-        ram[0x655] = 0x22;
-        let masked_hash = replay_checksum_ram_range(&ram, 0x600, 0x100);
+        let hash = replay_checksum_ram_range(&ram, 0x600, 0x100);
+
+        assert_eq!(hash, replay_checksum_bytes(&ram[0x600..0x700]));
 
         ram[0x654] = 0x55;
-        assert_eq!(replay_checksum_ram_range(&ram, 0x600, 0x100), masked_hash);
-
-        ram[0x655] = 0x33;
-        assert_ne!(replay_checksum_ram_range(&ram, 0x600, 0x100), masked_hash);
+        assert_ne!(replay_checksum_ram_range(&ram, 0x600, 0x100), hash);
     }
 
     #[test]

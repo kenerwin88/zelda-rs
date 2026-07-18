@@ -31,6 +31,7 @@ pub type RawScanlineFrame = [RawScanlineRegs; 224];
 /// Data bundle for one GPU-rendered frame, borrowing directly from `PpuState`.
 ///
 /// Constructed by the caller each frame; zero copy of VRAM/OAM/CGRAM.
+#[derive(Clone)]
 pub struct GpuFrame<'a> {
     /// VRAM: 0x8000 u16 words (64 KB). Tile CHR data and tilemap entries.
     pub vram: &'a [u16],

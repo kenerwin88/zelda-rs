@@ -2,7 +2,6 @@ use std::env;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RendererMode {
-    Classic,
     ModernCompare,
     Modern,
 }
@@ -11,8 +10,7 @@ impl RendererMode {
     pub fn parse(value: Option<&str>) -> Self {
         match value {
             Some("modern-compare") => Self::ModernCompare,
-            Some("modern") => Self::Modern,
-            _ => Self::Classic,
+            _ => Self::Modern,
         }
     }
 
@@ -38,8 +36,8 @@ pub const DEFAULT_RENDERER_ENV: &str = "assets-variant-gpu";
 /// Effective renderer for paths that honor `ZELDA3_RENDERER`. Unset defaults to
 /// `assets-variant-gpu` so stable base-art draws use the RGBA variant atlas and
 /// dynamic effects route through shader/material metadata. Explicit
-/// `assets-anim-gpu` keeps the older full indexed GPU path, `assets-anim` keeps
-/// the CPU atlas compositor, and `classic` opts back into the wgpu PPU path.
+/// `assets-anim-gpu` keeps the older full indexed GPU path and `assets-anim`
+/// keeps the CPU atlas compositor. (The classic wgpu PPU path was removed.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EffectiveRendererMode<'a> {
     name: &'a str,
@@ -126,11 +124,9 @@ fn renderer_env_or_default_static(
         Some("assets-variant-gpu") => "assets-variant-gpu",
         Some("assets-anim-gpu") => "assets-anim-gpu",
         Some("assets-anim") => "assets-anim",
-        Some("classic") => "classic",
         Some("modern") => "modern",
         Some("modern-compare") => "modern-compare",
-        Some(_) => "classic",
-        None => default_renderer_env_for_variant_setting(variant_atlas_setting),
+        Some(_) | None => default_renderer_env_for_variant_setting(variant_atlas_setting),
     }
 }
 
@@ -146,14 +142,14 @@ pub fn variant_atlas_renderer_mode(mode: &str) -> bool {
 mod tests {
     use super::*;
     #[test]
-    fn renderer_mode_parse_defaults_to_classic() {
-        assert_eq!(RendererMode::parse(None), RendererMode::Classic);
+    fn renderer_mode_parse_defaults_to_modern() {
+        assert_eq!(RendererMode::parse(None), RendererMode::Modern);
         assert_eq!(
             RendererMode::parse(Some("modern-compare")),
             RendererMode::ModernCompare
         );
         assert_eq!(RendererMode::parse(Some("modern")), RendererMode::Modern);
-        assert_eq!(RendererMode::parse(Some("garbage")), RendererMode::Classic);
+        assert_eq!(RendererMode::parse(Some("garbage")), RendererMode::Modern);
     }
 
     #[test]
@@ -176,10 +172,7 @@ mod tests {
             RendererMode::from_effective_mode(EffectiveRendererMode::from_name("modern-compare")),
             RendererMode::ModernCompare
         );
-        assert_eq!(
-            RendererMode::from_effective_mode(EffectiveRendererMode::from_name("classic")),
-            RendererMode::Classic
-        );
+
     }
 
     #[test]
@@ -229,14 +222,14 @@ mod tests {
             "explicit CPU atlas mode remains an opt-out"
         );
         assert_eq!(
-            renderer_env_or_default(Some("classic"), Some("off")),
-            "classic",
-            "explicit classic mode remains an opt-out"
+            renderer_env_or_default_static(Some("classic"), Some("off")),
+            "assets-variant-gpu",
+            "the removed classic mode falls back to the default variant path"
         );
         assert_eq!(
             renderer_env_or_default_static(Some("unknown-mode"), Some("off")),
-            "classic",
-            "unknown explicit renderer modes preserve classic/non-asset behavior"
+            "assets-variant-gpu",
+            "unknown explicit renderer modes fall back to the default variant path"
         );
     }
 
@@ -258,7 +251,6 @@ mod tests {
         for value in [
             "assets-anim-gpu",
             "assets-anim",
-            "classic",
             "modern",
             "modern-compare",
             "unknown-mode",

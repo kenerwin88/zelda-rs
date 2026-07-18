@@ -21,7 +21,7 @@ use crate::load_translated_replay_state;
 /// timing-hack env vars, like every replay run). Emits
 /// `developer_tilesets/reference_palette.png`.
 pub(crate) fn run_dump_reference_palette(args: &[String]) {
-    use renderer::tile_atlas::expand_cgram_to_rgba8;
+    use renderer::modern_palette::expand_cgram_to_rgba8;
 
     let target_frame = match args.first().map(|s| s.parse::<u32>()) {
         Some(Ok(f)) => f,

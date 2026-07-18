@@ -51,6 +51,7 @@ where
     }
 }
 
+#[allow(dead_code)]
 impl<T> GpuRenderPlan<T> {
     pub(crate) fn new(work_items: Vec<T>) -> Self {
         Self { work_items }

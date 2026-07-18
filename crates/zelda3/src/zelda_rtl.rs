@@ -11,8 +11,6 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
-use snes::consts::PPU_X_PIXELS;
-use snes::ppu::PpuRenderFlags;
 use snes::{DmaChannel, DmaState, PpuState, WRAM_SIZE};
 
 use crate::config::config_value_bytes;
@@ -8273,132 +8271,9 @@ impl ZeldaState {
         self.ppu.extra_bottom_cur = extra_bottom.min(16) as u8;
     }
 
-    pub fn zelda_draw_ppu_frame(
-        &mut self,
-        pixel_buffer: &mut [u8],
-        pitch: usize,
-        render_flags: PpuRenderFlags,
-    ) {
-        self.ppu.obj_vram_latch = None;
-        let render_width =
-            if self.ppu.extra_left_right != 0 && self.ppu.current_render_scale(render_flags) == 1 {
-                PPU_X_PIXELS
-            } else {
-                pitch / 4
-            };
-        let render_pitch = render_width * 4;
-        let output_height = if render_flags.contains(PpuRenderFlags::HEIGHT_240) {
-            240
-        } else {
-            224
-        };
-        let use_wide_render = render_width > pitch / 4;
-        let active_pitch = if use_wide_render { render_pitch } else { pitch };
-        let mut wide_buffer = if use_wide_render {
-            vec![0; render_pitch * (output_height + 1)]
-        } else {
-            Vec::new()
-        };
 
-        if use_wide_render {
-            self.ppu
-                .begin_drawing(&mut wide_buffer, active_pitch, render_flags);
-        } else {
-            self.ppu
-                .begin_drawing(pixel_buffer, active_pitch, render_flags);
-        }
 
-        for i in 0..8 {
-            self.dma.channel[i].hdma_active = self.game_state.display.is_hdma_channel_enabled(i);
-        }
-        let mut hdma_chans = [SimpleHdma::default(), SimpleHdma::default()];
-        self.simple_hdma_init(&mut hdma_chans[0], &self.dma.channel[6]);
-        self.simple_hdma_init(&mut hdma_chans[1], &self.dma.channel[7]);
 
-        if render_flags.contains(PpuRenderFlags::MODE7_4X4) && self.ppu.mode == 7 {
-            if hdma_chans[0].table.as_deref() == Some(&MAP_MODE_HDMA_SETUP_NEAR) {
-                self.set_mode7_perspective_correction(
-                    MAP_MODE_PERSPECTIVE_ZOOMS_NEAR[0],
-                    MAP_MODE_PERSPECTIVE_ZOOMS_NEAR[223],
-                );
-            } else if hdma_chans[0].table.as_deref() == Some(&MAP_MODE_HDMA_SETUP_FAR) {
-                self.set_mode7_perspective_correction(
-                    MAP_MODE_PERSPECTIVE_ZOOMS_FAR[0],
-                    MAP_MODE_PERSPECTIVE_ZOOMS_FAR[223],
-                );
-            } else if hdma_chans[0].table.as_deref() == Some(&ATTRACT_INDIRECT_HDMA_SETUP) {
-                let low = self
-                    .game_state
-                    .display
-                    .spotlight_hdma
-                    .hdma_table_dynamic_entry(0);
-                let high = self
-                    .game_state
-                    .display
-                    .spotlight_hdma
-                    .hdma_table_dynamic_entry(223);
-                self.set_mode7_perspective_correction(low, high);
-            } else {
-                self.set_mode7_perspective_correction(0, 0);
-            }
-        }
-
-        if self.ppu.extra_left_right != 0 || render_flags.contains(PpuRenderFlags::HEIGHT_240) {
-            self.configure_ppu_side_space();
-        }
-
-        for line in 0..=output_height {
-            if line == 128 && self.game_state.display.has_irq_control_flag() {
-                let name_scroll_x = self.game_state.messaging.select_file_menu.name_scroll_x();
-                self.zelda_ppu_write(0x2111, name_scroll_x as u8);
-                self.zelda_ppu_write(0x2111, (name_scroll_x >> 8) as u8);
-                self.zelda_ppu_write(0x2112, 0);
-                self.zelda_ppu_write(0x2112, 0);
-            }
-            self.ppu.run_line(line as i32);
-            self.simple_hdma_do_line(&mut hdma_chans[0]);
-            self.simple_hdma_do_line(&mut hdma_chans[1]);
-        }
-
-        if let Some(rendered) = self.ppu.render_buffer.as_ref() {
-            if use_wide_render {
-                let crop_x = self.ppu.extra_left_right as usize;
-                let row_bytes = (pitch / 4).min(256) * 4;
-                for y in 0..output_height {
-                    let src = y * active_pitch + crop_x * 4;
-                    let dst = y * pitch;
-                    if src + row_bytes <= rendered.len() && dst + row_bytes <= pixel_buffer.len() {
-                        pixel_buffer[dst..dst + row_bytes]
-                            .copy_from_slice(&rendered[src..src + row_bytes]);
-                    }
-                }
-            } else {
-                let n = pixel_buffer.len().min(rendered.len());
-                pixel_buffer[..n].copy_from_slice(&rendered[..n]);
-            }
-        }
-        self.ppu.finish_drawing();
-    }
-
-    pub fn zelda_draw_display_frame(
-        &mut self,
-        pixel_buffer: &mut [u8],
-        pitch: usize,
-        render_flags: PpuRenderFlags,
-    ) {
-        // Both classic scanline rendering and modern capture must consume the
-        // same publication boundary. In particular, NMI uploads VRAM/OAM/CGRAM
-        // for the active display after the coherent control-register snapshot
-        // was taken; `with_display_snapshot` performs that composition without
-        // rewinding the live simulation.
-        self.with_display_snapshot(|game| {
-            game.zelda_draw_ppu_frame(pixel_buffer, pitch, render_flags);
-        });
-        // Drawing must never publish an OBJ fetch latch back into live game
-        // state. Subsequent draws and the modern capture both consume current
-        // VRAM through the shared display snapshot composition.
-        self.ppu.obj_vram_latch = None;
-    }
 
     fn selected_intro_poly_display_buffer(&self) -> Vec<u16> {
         if env::var_os("ZELDA3_INTRO_POLY_PRESENT_OBJ_LATCH").is_some() {
