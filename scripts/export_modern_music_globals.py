@@ -14,16 +14,25 @@ def main() -> int:
     parser.add_argument("traces", nargs="+", type=Path)
     parser.add_argument("--tsv-out", required=True, type=Path)
     parser.add_argument(
+        "--track",
+        action="append",
+        type=lambda value: int(value, 0),
+        help="export only this track (repeatable); useful for focused trace provenance",
+    )
+    parser.add_argument(
         "--update-existing",
         action="store_true",
         help="replace captured tracks while retaining all other tracks in the output TSV",
     )
     args = parser.parse_args()
+    selected_tracks = set(args.track or [])
 
     candidates: dict[int, list[list[dict]]] = {}
     for trace in args.traces:
         catalog = extract_music(load_frames([trace]))
         for track in catalog["tracks"]:
+            if selected_tracks and int(track["track"]) not in selected_tracks:
+                continue
             events = track.get("global_events", [])
             if events:
                 candidates.setdefault(int(track["track"]), []).append(events)
@@ -34,10 +43,10 @@ def main() -> int:
         # richest capture when an older/current duplicate is supplied.
         events = max(sequences, key=len)
         by_track[track] = [
-                f"{track:02x}\t{event['start_frame']}\t{event['sample_offset']}\t"
-                f"{event['register']:02x}\t{event['value']}"
-                for event in events
-            ]
+            f"{track:02x}\t{event['dsp_cycle']}\t"
+            f"{event['register']:02x}\t{event['value']}"
+            for event in events
+        ]
 
     if args.update_existing and args.tsv_out.exists():
         for raw in args.tsv_out.read_text(encoding="utf-8").splitlines():
@@ -48,7 +57,7 @@ def main() -> int:
                 by_track.setdefault(track, []).append(raw)
 
     lines = [
-        "# track\tstart_frame\tsample_offset\tregister\tvalue",
+        "# track\tdsp_cycle\tregister\tvalue",
         *(line for track in sorted(by_track) for line in by_track[track]),
     ]
 

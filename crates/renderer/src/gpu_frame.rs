@@ -21,9 +21,11 @@ pub struct ScanlineRegs {
     pub bg_v_scroll: [u16; 4],
     /// Mode 7 matrix captured after HDMA for this scanline.
     pub mode7_matrix: [i16; 8],
+    /// INIDISP was still forced blank when this visible scanline began.
+    pub forced_blank: bool,
 }
 
-pub type RawScanlineRegs = (u8, u8, u8, u8, u8, [u16; 4], [u16; 4], [i16; 8]);
+pub type RawScanlineRegs = (u8, u8, u8, u8, u8, [u16; 4], [u16; 4], [i16; 8], bool);
 pub type RawScanlineFrame = [RawScanlineRegs; 224];
 
 /// Data bundle for one GPU-rendered frame, borrowing directly from `PpuState`.
@@ -179,8 +181,10 @@ pub struct GpuBg3VwfGlyphRun {
 impl<'a> GpuFrame<'a> {
     pub fn scanlines_from_raw(raw: &RawScanlineFrame) -> Box<[ScanlineRegs; 224]> {
         let mut result = Box::new([ScanlineRegs::default(); 224]);
-        for (dst, &(w1l, w1r, w2l, w2r, tm, bg_h_scroll, bg_v_scroll, mode7_matrix)) in
-            result.iter_mut().zip(raw.iter())
+        for (
+            dst,
+            &(w1l, w1r, w2l, w2r, tm, bg_h_scroll, bg_v_scroll, mode7_matrix, forced_blank),
+        ) in result.iter_mut().zip(raw.iter())
         {
             dst.window1_left = w1l;
             dst.window1_right = w1r;
@@ -190,6 +194,7 @@ impl<'a> GpuFrame<'a> {
             dst.bg_h_scroll = bg_h_scroll;
             dst.bg_v_scroll = bg_v_scroll;
             dst.mode7_matrix = mode7_matrix;
+            dst.forced_blank = forced_blank;
         }
         result
     }
@@ -633,7 +638,7 @@ mod tests {
             vram: &vram,
             oam: &oam,
         };
-        let mut raw = [(0, 0, 0, 0, 0, [0; 4], [0; 4], [0; 8]); 224];
+        let mut raw = [(0, 0, 0, 0, 0, [0; 4], [0; 4], [0; 8], false); 224];
         raw[7] = (
             1,
             2,
@@ -643,6 +648,7 @@ mod tests {
             [10, 11, 12, 13],
             [20, 21, 22, 23],
             [30, 31, 32, 33, 34, 35, 36, 37],
+            true,
         );
 
         let frame = GpuFrame::from_source_and_raw_scanlines(&source, &cgram, &raw);
@@ -653,6 +659,7 @@ mod tests {
         assert_eq!(frame.scanlines[7].window2_right, 4);
         assert_eq!(frame.scanlines[7].screen_enabled_main, 0x1f);
         assert_eq!(frame.scanlines[7].bg_h_scroll, [10, 11, 12, 13]);
+        assert!(frame.scanlines[7].forced_blank);
         assert_eq!(frame.scanlines[7].bg_v_scroll, [20, 21, 22, 23]);
         assert_eq!(
             frame.scanlines[7].mode7_matrix,
@@ -668,7 +675,7 @@ mod tests {
         let vram = [0x1111, 0x2222];
         let cgram = [0x3333, 0x4444];
         let oam = [0x5555, 0x6666];
-        let mut raw = [(0, 0, 0, 0, 0, [0; 4], [0; 4], [0; 8]); 224];
+        let mut raw = [(0, 0, 0, 0, 0, [0; 4], [0; 4], [0; 8], false); 224];
         raw[3] = (
             9,
             10,
@@ -678,6 +685,7 @@ mod tests {
             [100, 101, 102, 103],
             [200, 201, 202, 203],
             [-1, -2, -3, -4, -5, -6, -7, -8],
+            true,
         );
         let registers = GpuFrameRegisterSnapshot {
             vram: &vram,

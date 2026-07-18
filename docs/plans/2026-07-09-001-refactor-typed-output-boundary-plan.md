@@ -79,7 +79,7 @@ Deferred to follow-up work:
 Outside this product's identity:
 
 - Weakening byte/sample parity claims by accepting approximate audio as equivalent to DSP parity.
-- Using bsnes/TAS as the primary oracle for this work; the local C checkout remains the authority.
+- Using snes9x/TAS as the primary oracle for this work; the local C checkout remains the authority.
 
 ---
 

@@ -1067,6 +1067,11 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
     }
     modern.brightness = frame.brightness;
     modern.forced_blank = frame.forced_blank;
+    modern.forced_blank_scanlines = frame
+        .scanlines
+        .iter()
+        .take_while(|scanline| scanline.forced_blank)
+        .count() as u8;
     // Raw screen-enable bits + color-math registers for the full software path.
     modern.screen_enabled_main = frame.screen_enabled[0];
     modern.screen_enabled_sub = frame.screen_enabled[1];
@@ -1928,9 +1933,7 @@ fn semantic_dialogue_layout_vwf_glyph_runs(
             }
         })
         .collect::<Vec<_>>();
-    if !frame.bg3_vwf_glyph_runs.is_empty()
-        && !semantic_vwf_layout_matches_live_runs(&runs, frame, bg3_tile_screen_xy)
-    {
+    if !semantic_vwf_layout_matches_live_runs(&runs, frame, bg3_tile_screen_xy) {
         return Vec::new();
     }
     runs
@@ -2128,11 +2131,20 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                         });
                         id
                     })
-                } else if kind == CHR_KIND_LINK {
+                } else {
+                    // Source provenance is an enhancement, not a visibility
+                    // gate. Reset-time tiles and partially uploaded animation
+                    // slots can legitimately have no atlas identity yet; keep
+                    // those pixels visible by decoding the captured SNES tile.
+                    // The sentinel source key makes the draw explicit and lets
+                    // validation/stats report it as an unkeyed fallback.
+                    let indices = decode_snes_4bpp_tile_indices(frame.vram, slot * 16, 0);
+                    if indices.iter().all(|index| *index == 0) {
+                        continue;
+                    }
                     *cell_ids
                         .entry(0x8000_0000 | slot as u32)
                         .or_insert_with(|| {
-                            let indices = decode_snes_4bpp_tile_indices(frame.vram, slot * 16, 0);
                             let id = cells.len() as u32;
                             cells.push(ModernIndexTile {
                                 id,
@@ -2143,15 +2155,6 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                             });
                             id
                         })
-                } else {
-                    {
-                        if std::env::var("ZELDA3_SPR_DEBUG").is_ok() {
-                            eprintln!(
-                                "[SPR_GAP] slot=0x{slot:03x} kind={kind} pack=0x{pack:04x} off=0x{tile_off:04x} x={screen_x} y={screen_y}"
-                            );
-                        }
-                        continue;
-                    }
                 };
 
                 out.push(ModernIndexSpriteInstance {
@@ -3654,6 +3657,9 @@ mod tests {
 
         let cgram = vec![0u16; 0x100];
         let mut oam = vec![0u16; 0x110];
+        for sprite in 0..128usize {
+            oam[sprite * 2] = 0xf000;
+        }
         oam[0] = (50u16 << 8) | 40u16;
         oam[1] = (4u16 << 9) | TILE;
         let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
@@ -3693,6 +3699,9 @@ mod tests {
 
         let cgram = vec![0u16; 0x100];
         let mut oam = vec![0u16; 0x110];
+        for sprite in 0..128usize {
+            oam[sprite * 2] = 0xf000;
+        }
         oam[0] = (50u16 << 8) | 40u16;
         oam[1] = TILE;
         let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
@@ -3726,6 +3735,33 @@ mod tests {
             strict.missing_sources[0].cell_source_key,
             Some(crate::modern_hd_overrides::NO_SOURCE_KEY)
         );
+    }
+
+    #[test]
+    fn extract_modern_sprites_from_sources_keeps_unprovenanced_reset_tile_visible() {
+        use crate::modern_source_atlas::ModernSourceAtlas;
+
+        let mut vram = vec![0u16; 0x8000];
+        vram[0] = 0x8000;
+        vram[8] = 0x0001;
+        let cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        oam[0] = 0x5555;
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.obj.obj_size = 0;
+        frame.obj.tile_adr1 = 0;
+
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![], &[]);
+        let no_sources = |_slot: usize| (0, 0, 0);
+        let (cells, sprites) = extract_modern_sprites_from_sources(&frame, &no_sources, &atlas);
+
+        assert!(!sprites.is_empty());
+        assert_eq!(cells.len(), 1, "all reset sprites share live tile zero");
+        assert_eq!(
+            cells[0].source_key,
+            crate::modern_hd_overrides::NO_SOURCE_KEY
+        );
+        assert_eq!(cells[0].indices, decode_snes_4bpp_tile_indices(&vram, 0, 0));
     }
 
     #[test]
@@ -3913,6 +3949,38 @@ mod tests {
         frame.bg[2].tile_adr = 0;
         frame.bg3_vwf_glyph_runs = &runs;
         frame.dialogue_ir = &dialogue_ir;
+        frame.dialogue_layout = &dialogue_layout;
+        frame.dialogue_layout_origin_tile_number = Some(0x180);
+
+        let table = |_slot: usize| (0, 0, 0);
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![], &[]);
+        let (modern, _) = extract_modern_frame_from_sources(&frame, &table, &atlas);
+
+        assert!(modern.dialogue_layout_vwf_glyph_runs.is_empty());
+        assert!(modern.vwf_glyph_runs_for_draw().is_empty());
+    }
+
+    #[test]
+    fn semantic_vwf_layout_waits_for_live_glyph_publication() {
+        use crate::modern_source_atlas::ModernSourceAtlas;
+
+        let mut vram = vec![0u16; 0x8000];
+        vram[0] = 0x3980;
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        let dialogue_layout = vec![zelda3_dialogue::DialogueGlyphPlacement {
+            op_offset: 0,
+            glyph_code: 0x41,
+            line: 0,
+            x: 0,
+            y: 0,
+            width: 8,
+            color: None,
+        }];
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.screen_enabled[0] = 1 << 2;
+        frame.bg[2].tilemap_adr = 0;
+        frame.bg[2].tile_adr = 0;
         frame.dialogue_layout = &dialogue_layout;
         frame.dialogue_layout_origin_tile_number = Some(0x180);
 

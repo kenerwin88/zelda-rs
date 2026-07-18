@@ -284,16 +284,28 @@ fn assert_music_was_actively_interrupted(frames: &[AudioEventFrame]) {
         .unwrap();
     let note = frames
         .iter()
-        .position(|frame| has_event(frame, &|kind| matches!(kind, AudioEventKind::NoteOn { .. })))
+        .position(|frame| {
+            has_event(frame, &|kind| {
+                matches!(
+                    kind,
+                    AudioEventKind::NoteOn { .. } | AudioEventKind::DspKeyOn { .. }
+                )
+            })
+        })
         .expect("music interruption never reached an active note");
     let stop = frames
         .iter()
         .position(|frame| has_event(frame, &|kind| matches!(kind, AudioEventKind::StopMusic)))
         .unwrap();
     assert!(play <= note && note < stop);
-    assert!(!frames[stop + 1..]
-        .iter()
-        .any(|frame| has_event(frame, &|kind| matches!(kind, AudioEventKind::NoteOn { .. }))));
+    assert!(!frames[stop + 1..].iter().any(|frame| {
+        has_event(frame, &|kind| {
+            matches!(
+                kind,
+                AudioEventKind::NoteOn { .. } | AudioEventKind::DspKeyOn { .. }
+            )
+        })
+    }));
 }
 
 #[test]

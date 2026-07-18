@@ -6,7 +6,9 @@ use crate::game_output::{
 use crate::modern_music_catalog::{
     decode_note, notes_starting_in, packed_track, ModernMusicNote, PACKED_NOTE_BYTES,
 };
-use crate::modern_music_globals::events_at as music_global_events_at;
+use crate::modern_music_globals::{
+    events_in_cycle_range as music_global_events_in_cycle_range, output_sample_for_write,
+};
 use crate::modern_sfx_catalog::{
     lookup_sfx_program_for_context, sfx_program_hash, ModernSfxProgram, ModernSfxRuntimeContext,
     ModernSfxWaveform,
@@ -16,6 +18,9 @@ use crate::modern_sfx_pitch_catalog::pitch_events as exact_sfx_pitch_events;
 
 const SFX_SLOTS: usize = 7;
 const MUSIC_NATIVE_FRAME_SAMPLES: u64 = 534;
+const fn default_music_window_samples() -> u32 {
+    MUSIC_NATIVE_FRAME_SAMPLES as u32
+}
 // The translated engine publishes its audio command batch at the end of the
 // game frame. On hardware, the CPU-to-APU port write reaches the DSP half a
 // scheduler tick before that boundary.
@@ -317,6 +322,13 @@ pub struct ModernAudioSequencer {
     music_frame_position: u16,
     #[serde(default)]
     music_sample_position: u64,
+    // Supplied by the host callback and deliberately excluded from snapshots:
+    // the serialized cursor remains authoritative, while each callback
+    // supplies the exact current and previous window lengths.
+    #[serde(skip, default = "default_music_window_samples")]
+    music_window_samples: u32,
+    #[serde(skip, default = "default_music_window_samples")]
+    previous_music_window_samples: u32,
     last_sfx: [u8; SFX_SLOTS],
     active_voice_mask: u8,
     #[serde(default)]
@@ -333,6 +345,8 @@ pub struct ModernAudioSequencer {
     music_keyoff_frames_remaining: [u16; 8],
     #[serde(default)]
     music_keyoff_sample_offset: [u16; 8],
+    #[serde(default)]
+    music_keyoff_phase: [u8; 8],
     #[serde(default)]
     voice_frames_remaining: [u16; 8],
     #[serde(default)]
@@ -496,6 +510,8 @@ impl Default for ModernAudioSequencer {
             last_music_track: 0,
             music_frame_position: 0,
             music_sample_position: 0,
+            music_window_samples: default_music_window_samples(),
+            previous_music_window_samples: default_music_window_samples(),
             last_sfx: [0; SFX_SLOTS],
             active_voice_mask: 0,
             music_voice_mask: 0,
@@ -505,6 +521,7 @@ impl Default for ModernAudioSequencer {
             persistent_sfx_pitch_words: [0; 8],
             music_keyoff_frames_remaining: [0; 8],
             music_keyoff_sample_offset: [0; 8],
+            music_keyoff_phase: [0; 8],
             voice_frames_remaining: [0; 8],
             pending_voice_steps: std::array::from_fn(|_| Vec::new()),
             sfx_keyoff_samples_remaining: [0; 8],
@@ -627,7 +644,13 @@ impl ModernAudioSequencer {
     /// expose APUI state. The playable runtime uses `sequence_engine_commands`.
     pub fn sequence_route(&mut self, route: AudioRouteState) -> AudioEventFrame {
         let commands = EngineAudioCommandBatch::from_legacy_ports(route.queue.input);
-        self.sequence_commands_with_writes(route, commands, &[], true)
+        self.sequence_commands_with_writes(
+            route,
+            commands,
+            &[],
+            true,
+            default_music_window_samples(),
+        )
     }
 
     /// Expand gameplay-authored commands without decoding the APUI projection.
@@ -636,7 +659,17 @@ impl ModernAudioSequencer {
         route: AudioRouteState,
         commands: EngineAudioCommandBatch,
     ) -> AudioEventFrame {
-        self.sequence_commands_with_writes(route, commands, &[], false)
+        self.sequence_engine_commands_for_samples(route, commands, default_music_window_samples())
+    }
+
+    /// Expand gameplay-authored commands for the exact host audio window.
+    pub fn sequence_engine_commands_for_samples(
+        &mut self,
+        route: AudioRouteState,
+        commands: EngineAudioCommandBatch,
+        samples_per_channel: u32,
+    ) -> AudioEventFrame {
+        self.sequence_commands_with_writes(route, commands, &[], false, samples_per_channel)
     }
 
     pub fn sequence_parity_writes(
@@ -645,7 +678,13 @@ impl ModernAudioSequencer {
         writes: &[DspWriteEvent],
     ) -> AudioEventFrame {
         let commands = EngineAudioCommandBatch::from_legacy_ports(route.queue.input);
-        self.sequence_commands_with_writes(route, commands, writes, true)
+        self.sequence_commands_with_writes(
+            route,
+            commands,
+            writes,
+            true,
+            default_music_window_samples(),
+        )
     }
 
     fn sequence_commands_with_writes(
@@ -654,7 +693,10 @@ impl ModernAudioSequencer {
         commands: EngineAudioCommandBatch,
         writes: &[DspWriteEvent],
         include_legacy_music_sfx: bool,
+        samples_per_channel: u32,
     ) -> AudioEventFrame {
+        self.previous_music_window_samples = self.music_window_samples;
+        self.music_window_samples = samples_per_channel.max(1);
         let port2_id30_command = commands
             .sfx(AudioSfxBank::Effect1)
             .is_some_and(|command| command.legacy_value() == 0x1e);
@@ -873,6 +915,11 @@ impl ModernAudioSequencer {
                             voice,
                             instrument: 21,
                             ..
+                        }
+                        | AudioEventKind::DspKeyOn {
+                            voice,
+                            instrument: 21,
+                            ..
                         } => Some(voice),
                         _ => None,
                     };
@@ -947,6 +994,9 @@ impl ModernAudioSequencer {
         for event in &frame.events {
             let source = match event.kind {
                 AudioEventKind::NoteOn {
+                    voice, instrument, ..
+                }
+                | AudioEventKind::DspKeyOn {
                     voice, instrument, ..
                 } => Some((voice, instrument)),
                 AudioEventKind::KeyOnVoice { voice, source, .. } => Some((voice, source)),
@@ -1178,6 +1228,8 @@ impl ModernAudioSequencer {
                     gain: 0,
                     echo_send: false,
                     keyoff_sample_offset: 0,
+                    kon_phase: 0,
+                    keyoff_phase: 0,
                 },
                 stats,
             );
@@ -1242,13 +1294,9 @@ impl ModernAudioSequencer {
         } else {
             self.music_sample_position = self
                 .music_sample_position
-                .saturating_add(MUSIC_NATIVE_FRAME_SAMPLES);
+                .saturating_add(u64::from(self.previous_music_window_samples));
         }
-        self.music_frame_position = self
-            .music_source_sample_at(self.music_sample_position)
-            .checked_div(MUSIC_NATIVE_FRAME_SAMPLES)
-            .unwrap_or_default()
-            .min(u64::from(u16::MAX)) as u16;
+        self.music_frame_position = self.music_frame_position.saturating_add(1);
         self.emit_music_window(track, frame, stats);
     }
 
@@ -1269,8 +1317,19 @@ impl ModernAudioSequencer {
     }
 
     fn music_window_segments(&self) -> Vec<(u64, u64, i32)> {
-        let mut source = self.music_source_sample_at(self.music_sample_position);
-        let mut remaining = MUSIC_NATIVE_FRAME_SAMPLES;
+        self.music_window_segments_from(
+            self.music_sample_position,
+            u64::from(self.music_window_samples),
+        )
+    }
+
+    fn music_window_segments_from(
+        &self,
+        elapsed_start: u64,
+        window_samples: u64,
+    ) -> Vec<(u64, u64, i32)> {
+        let mut source = self.music_source_sample_at(elapsed_start);
+        let mut remaining = window_samples;
         let mut output_offset = 0i32;
         let mut segments = Vec::with_capacity(2);
         let loop_range = packed_track(self.last_music_track).and_then(|track| track.loop_range());
@@ -1302,18 +1361,15 @@ impl ModernAudioSequencer {
         let mut result = Vec::new();
         for (source_start, length, output_start) in self.music_window_segments() {
             let source_end = source_start + length;
-            let first_frame = source_start / MUSIC_NATIVE_FRAME_SAMPLES;
-            let last_frame = (source_end.saturating_sub(1)) / MUSIC_NATIVE_FRAME_SAMPLES;
-            for source_frame in first_frame..=last_frame {
-                let Ok(source_frame) = u16::try_from(source_frame) else {
-                    continue;
-                };
-                for event in music_global_events_at(self.last_music_track, source_frame) {
-                    let absolute = u64::from(source_frame) * MUSIC_NATIVE_FRAME_SAMPLES
-                        + u64::from(event.sample_offset);
-                    if absolute >= source_start && absolute < source_end {
-                        result.push((output_start + (absolute - source_start) as i32, event));
-                    }
+            let first_cycle = source_start.saturating_mul(32);
+            let end_cycle = source_end.saturating_add(1).saturating_mul(32);
+            for event in
+                music_global_events_in_cycle_range(self.last_music_track, first_cycle, end_cycle)
+            {
+                let visible_sample =
+                    u64::from(output_sample_for_write(event.dsp_cycle, event.register));
+                if visible_sample >= source_start && visible_sample < source_end {
+                    result.push((output_start + (visible_sample - source_start) as i32, event));
                 }
             }
         }
@@ -1328,8 +1384,12 @@ impl ModernAudioSequencer {
         let mut result = Vec::new();
         for (source_start, length, output_start) in self.music_window_segments() {
             let source_end = source_start + length;
-            let first_source_frame = source_start / MUSIC_NATIVE_FRAME_SAMPLES;
-            let last_source_frame = source_end.saturating_sub(1) / MUSIC_NATIVE_FRAME_SAMPLES;
+            let first_source_frame = source_start.saturating_sub(MUSIC_NOTE_MAX_LATE_SAMPLES)
+                / MUSIC_NATIVE_FRAME_SAMPLES;
+            let last_source_frame = source_end
+                .saturating_sub(1)
+                .saturating_add(MUSIC_NOTE_MAX_EARLY_SAMPLES)
+                / MUSIC_NATIVE_FRAME_SAMPLES;
             let lead = u64::from(track_data.lead_in_frames);
             if last_source_frame < lead {
                 continue;
@@ -1341,11 +1401,14 @@ impl ModernAudioSequencer {
             for note in
                 notes_starting_in(track_data, first_note_frame as u16, last_note_frame as u16)
             {
-                let absolute = u64::from(note.start_frame + track_data.lead_in_frames)
-                    * MUSIC_NATIVE_FRAME_SAMPLES
-                    + u64::from(note.sample_offset);
-                if absolute >= source_start && absolute < source_start + length {
-                    result.push((output_start + (absolute - source_start) as i32, note));
+                let source_frame = u64::from(note.start_frame + track_data.lead_in_frames)
+                    * MUSIC_NATIVE_FRAME_SAMPLES;
+                let adjusted_absolute = i64::try_from(source_frame).unwrap_or(i64::MAX)
+                    + i64::from(dsp_write_render_offset(note.sample_offset));
+                if adjusted_absolute >= source_start as i64 && adjusted_absolute < source_end as i64
+                {
+                    let adjusted_relative = adjusted_absolute - source_start as i64;
+                    result.push((output_start + adjusted_relative as i32, note));
                 }
             }
         }
@@ -1376,7 +1439,13 @@ impl ModernAudioSequencer {
                 if matches!(event.register, 0x4c | 0x5c) {
                     continue;
                 }
-                self.emit_music_global_event(frame, sample_offset, event.register, event.value);
+                self.emit_music_global_event(
+                    frame,
+                    sample_offset,
+                    (event.dsp_cycle & 31) as u8,
+                    event.register,
+                    event.value,
+                );
             }
         }
         for (sample_offset, mut note) in self.music_notes_in_current_window(track) {
@@ -1385,13 +1454,16 @@ impl ModernAudioSequencer {
             .saturating_sub(u64::from(note.sample_offset));
             note.sample_offset = sample_offset as u16;
             if note.duration_frames != 0 {
+                // Catalog KOFF offsets are raw DSP register-write times, just
+                // like KON offsets. Keep them in that clock domain and let
+                // the renderer model when release becomes visible.
                 let adjusted_keyoff = u64::from(note.sample_offset) + keyoff_delta;
                 note.duration_frames = (adjusted_keyoff / MUSIC_NATIVE_FRAME_SAMPLES) as u16;
                 note.keyoff_sample_offset = (adjusted_keyoff % MUSIC_NATIVE_FRAME_SAMPLES) as u16;
             } else if note.keyoff_sample_offset > 0 {
                 note.keyoff_sample_offset = (u64::from(note.sample_offset) + keyoff_delta) as u16;
             }
-            self.emit_music_note(frame, track, note, stats);
+            self.emit_music_note_at(frame, track, note, sample_offset, stats);
         }
     }
 
@@ -1399,6 +1471,7 @@ impl ModernAudioSequencer {
         &mut self,
         frame: &mut AudioEventFrame,
         sample_offset: i32,
+        dsp_phase: u8,
         register: u8,
         value: u8,
     ) {
@@ -1416,9 +1489,10 @@ impl ModernAudioSequencer {
             0x07 => Some(VoiceParameterKind::Gain),
             _ => None,
         };
-        push_event_at(
+        push_event_at_with_timer(
             frame,
             sample_offset,
+            dsp_phase,
             if let Some(parameter) = kind {
                 AudioEventKind::VoiceParameter {
                     voice: register >> 4,
@@ -1444,41 +1518,38 @@ impl ModernAudioSequencer {
             // engine made no register write at all.
             return;
         }
-        let mut events = music_global_events_at(track, music_frame_position).collect::<Vec<_>>();
-        // The catalog was authored from coalesced EON snapshots. That preserves
-        // every mask written at a sample, but not the write order. The driver
-        // removes echo-enabled voices one at a time, so reconstruct the chain
-        // from the widest transient mask to the narrowest final mask. The last
-        // write is observable DSP state and must match exactly.
-        let mut index = 0;
-        while index < events.len() {
-            if events[index].register != 0x4d {
-                index += 1;
-                continue;
-            }
-            let sample_offset = events[index].sample_offset;
-            let mut end = index + 1;
-            while end < events.len()
-                && events[end].register == 0x4d
-                && events[end].sample_offset == sample_offset
-            {
-                end += 1;
-            }
-            events[index..end].sort_by_key(|event| {
-                (
-                    std::cmp::Reverse(event.value.count_ones()),
-                    std::cmp::Reverse(event.value),
-                )
-            });
-            index = end;
-        }
-        for event in events {
+        let source_start = u64::from(music_frame_position) * MUSIC_NATIVE_FRAME_SAMPLES;
+        let source_end = source_start + MUSIC_NATIVE_FRAME_SAMPLES;
+        let mut events = music_global_events_in_cycle_range(
+            track,
+            source_start.saturating_mul(32),
+            source_end.saturating_add(1).saturating_mul(32),
+        )
+        .filter_map(|event| {
+            let visible = u64::from(output_sample_for_write(event.dsp_cycle, event.register));
+            (visible >= source_start && visible < source_end)
+                .then_some(((visible - source_start) as i32, event))
+        })
+        .collect::<Vec<_>>();
+        events.sort_by_key(|(sample_offset, event)| {
+            (
+                *sample_offset,
+                event.register,
+                if event.register == 0x4d {
+                    std::cmp::Reverse((event.value.count_ones(), event.value))
+                } else {
+                    std::cmp::Reverse((0, 0))
+                },
+            )
+        });
+        for (sample_offset, event) in events {
             if matches!(event.register, 0x4c | 0x5c) {
                 continue;
             }
             self.emit_music_global_event(
                 frame,
-                i32::from(event.sample_offset),
+                sample_offset,
+                (event.dsp_cycle & 31) as u8,
                 event.register,
                 event.value,
             );
@@ -1493,39 +1564,31 @@ impl ModernAudioSequencer {
         if self.engine_receipt_mode || self.last_music_track == 0 {
             return;
         }
-        for (sample_offset, event) in self.music_global_events_in_current_window() {
-            if event.register != 0x4c {
-                continue;
-            }
-            for voice in 0..8u8 {
-                if event.value & (1 << voice) == 0
-                    || frame.events.iter().any(|existing| {
-                        existing.sample_offset == sample_offset
-                            && matches!(
-                                existing.kind,
-                                AudioEventKind::NoteOn {
-                                    voice: event_voice,
-                                    ..
-                                } | AudioEventKind::KeyOnVoice {
-                                    voice: event_voice,
-                                    ..
-                                } if event_voice == voice
-                            )
-                    })
-                {
-                    continue;
-                }
-                let residual_note =
-                    self.music_note_at_current_position(voice, sample_offset as u16);
-                if let Some(note) = residual_note {
-                    self.emit_music_note_unchecked(frame, self.last_music_track, note, stats);
-                } else {
-                    push_event_at(
-                        frame,
-                        sample_offset,
-                        AudioEventKind::RetriggerVoice { voice },
-                    );
-                }
+        for (sample_offset, note) in self.music_notes_in_current_window(self.last_music_track) {
+            let already_present = frame.events.iter().any(|existing| {
+                existing.sample_offset == sample_offset
+                    && matches!(
+                        existing.kind,
+                        AudioEventKind::NoteOn {
+                            voice: event_voice,
+                            ..
+                        } | AudioEventKind::DspKeyOn {
+                            voice: event_voice,
+                            ..
+                        } | AudioEventKind::KeyOnVoice {
+                            voice: event_voice,
+                            ..
+                        } if event_voice == note.voice
+                    )
+            });
+            if !already_present {
+                self.emit_music_note_unchecked_at(
+                    frame,
+                    self.last_music_track,
+                    note,
+                    sample_offset,
+                    stats,
+                );
             }
         }
     }
@@ -1553,9 +1616,9 @@ impl ModernAudioSequencer {
             .events
             .iter()
             .filter_map(|event| match event.kind {
-                AudioEventKind::NoteOn { voice, .. } | AudioEventKind::KeyOnVoice { voice, .. } => {
-                    Some((voice, event.sample_offset))
-                }
+                AudioEventKind::NoteOn { voice, .. }
+                | AudioEventKind::DspKeyOn { voice, .. }
+                | AudioEventKind::KeyOnVoice { voice, .. } => Some((voice, event.sample_offset)),
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -1610,6 +1673,18 @@ impl ModernAudioSequencer {
         note: ModernMusicNote,
         stats: &mut ModernAudioSequenceStats,
     ) {
+        let sample_offset = dsp_write_render_offset(note.sample_offset);
+        self.emit_music_note_at(frame, track, note, sample_offset, stats);
+    }
+
+    fn emit_music_note_at(
+        &mut self,
+        frame: &mut AudioEventFrame,
+        track: u8,
+        note: ModernMusicNote,
+        sample_offset: i32,
+        stats: &mut ModernAudioSequenceStats,
+    ) {
         if self.sfx_voice_mask & (1 << note.voice) != 0 {
             // The original sound driver temporarily owns music voices while an
             // SFX program is active. Keep advancing the music timeline, but do
@@ -1623,7 +1698,7 @@ impl ModernAudioSequencer {
             stats.note_events += 1;
             return;
         }
-        self.emit_music_note_unchecked(frame, track, note, stats);
+        self.emit_music_note_unchecked_at(frame, track, note, sample_offset, stats);
     }
 
     fn emit_music_note_unchecked(
@@ -1633,6 +1708,21 @@ impl ModernAudioSequencer {
         note: ModernMusicNote,
         stats: &mut ModernAudioSequenceStats,
     ) {
+        let sample_offset = dsp_write_render_offset(note.sample_offset);
+        self.emit_music_note_unchecked_at(frame, track, note, sample_offset, stats);
+    }
+
+    fn emit_music_note_unchecked_at(
+        &mut self,
+        frame: &mut AudioEventFrame,
+        track: u8,
+        note: ModernMusicNote,
+        sample_offset: i32,
+        stats: &mut ModernAudioSequenceStats,
+    ) {
+        // Catalog offsets are raw DSP KON write times. The renderer owns KON
+        // polling, the five-sample start pipeline, and BRR decoder phase.
+        let dsp_adsr1 = music_dsp_adsr1(track, note.start_frame, note.adsr1);
         push_event(
             frame,
             AudioEventKind::SetNoteOrigin {
@@ -1651,7 +1741,6 @@ impl ModernAudioSequencer {
             },
         );
         if note.dsp_pitch != 0 {
-            let sample_offset = i32::from(note.sample_offset);
             push_event_at(
                 frame,
                 sample_offset,
@@ -1674,7 +1763,7 @@ impl ModernAudioSequencer {
                 sample_offset,
                 AudioEventKind::SetDspEnvelope {
                     voice: note.voice,
-                    adsr1: note.adsr1,
+                    adsr1: dsp_adsr1,
                     adsr2: note.adsr2,
                     gain: note.gain,
                 },
@@ -1688,10 +1777,11 @@ impl ModernAudioSequencer {
                 },
             );
         }
-        push_event_at(
+        push_event_at_with_timer(
             frame,
-            i32::from(note.sample_offset),
-            AudioEventKind::NoteOn {
+            sample_offset,
+            note.kon_phase,
+            AudioEventKind::DspKeyOn {
                 voice: note.voice,
                 pitch: note.pitch,
                 instrument: note.instrument,
@@ -1719,10 +1809,11 @@ impl ModernAudioSequencer {
             && note.duration_frames == 0
             && note.keyoff_sample_offset > note.sample_offset
         {
-            push_event_at(
+            push_event_at_with_timer(
                 frame,
                 i32::from(note.keyoff_sample_offset),
-                AudioEventKind::NoteOff { voice: note.voice },
+                note.keyoff_phase,
+                AudioEventKind::DspKeyOff { voice: note.voice },
             );
             self.mark_music_voice_inactive(note.voice);
             stats.note_events += 1;
@@ -1730,6 +1821,7 @@ impl ModernAudioSequencer {
             let voice = usize::from(note.voice);
             self.music_keyoff_frames_remaining[voice] = note.duration_frames;
             self.music_keyoff_sample_offset[voice] = note.keyoff_sample_offset;
+            self.music_keyoff_phase[voice] = note.keyoff_phase;
         }
         stats.note_events += 1;
         stats.envelope_events += 1;
@@ -2215,6 +2307,7 @@ impl ModernAudioSequencer {
                                     && matches!(
                                         event.kind,
                                         AudioEventKind::NoteOn { voice, .. }
+                                            | AudioEventKind::DspKeyOn { voice, .. }
                                             | AudioEventKind::RetriggerVoice { voice }
                                             | AudioEventKind::KeyOnVoice { voice, .. }
                                             if voice == step.voice
@@ -4470,21 +4563,35 @@ impl ModernAudioSequencer {
         stats: &mut ModernAudioSequenceStats,
     ) {
         for voice in 0..self.music_keyoff_frames_remaining.len() {
-            let remaining = &mut self.music_keyoff_frames_remaining[voice];
-            if *remaining == 0 {
+            let frames = self.music_keyoff_frames_remaining[voice];
+            let sample_offset = self.music_keyoff_sample_offset[voice];
+            if frames == 0 && sample_offset == 0 {
                 continue;
             }
-            *remaining -= 1;
-            if *remaining == 0 {
-                push_event_at(
+            let total_samples = u32::from(frames)
+                .saturating_mul(MUSIC_NATIVE_FRAME_SAMPLES as u32)
+                .saturating_add(u32::from(sample_offset));
+            let remaining_samples =
+                total_samples.saturating_sub(self.previous_music_window_samples);
+            if remaining_samples < self.music_window_samples {
+                self.music_keyoff_frames_remaining[voice] = 0;
+                self.music_keyoff_sample_offset[voice] = 0;
+                push_event_at_with_timer(
                     frame,
-                    i32::from(self.music_keyoff_sample_offset[voice]),
-                    AudioEventKind::NoteOff { voice: voice as u8 },
+                    remaining_samples as i32,
+                    self.music_keyoff_phase[voice],
+                    AudioEventKind::DspKeyOff { voice: voice as u8 },
                 );
+                self.music_keyoff_phase[voice] = 0;
                 // Keep ownership latched for the track. A KOF and the next
                 // music KON can share a DSP sample; clearing this mask after
                 // sequencing would lose the following note's later KOF.
                 stats.note_events += 1;
+            } else {
+                self.music_keyoff_frames_remaining[voice] =
+                    (remaining_samples / MUSIC_NATIVE_FRAME_SAMPLES as u32) as u16;
+                self.music_keyoff_sample_offset[voice] =
+                    (remaining_samples % MUSIC_NATIVE_FRAME_SAMPLES as u32) as u16;
             }
         }
     }
@@ -6582,9 +6689,12 @@ impl ModernAudioSequencer {
                 return;
             };
             let positions = sfx_overflow_positions_after(clock, -1, 20);
-            frame
-                .events
-                .retain(|event| audio_event_voice(&event.kind) != Some(VOICE));
+            let first_interrupt = positions[1] as i32;
+            frame.events.retain(|event| {
+                audio_event_voice(&event.kind) != Some(VOICE)
+                    || (event.sample_offset < first_interrupt
+                        && matches!(event.kind, AudioEventKind::VoiceParameter { .. }))
+            });
             self.cancel_sfx_schedules(VOICE);
             self.pending_bank1_id1_actions.clear();
             self.bank1_id1_active = false;
@@ -8365,12 +8475,35 @@ fn push_event(frame: &mut AudioEventFrame, kind: AudioEventKind) {
 }
 
 fn push_event_at(frame: &mut AudioEventFrame, sample_offset: i32, kind: AudioEventKind) {
+    push_event_at_with_timer(frame, sample_offset, 0, kind);
+}
+
+fn push_event_at_with_timer(
+    frame: &mut AudioEventFrame,
+    sample_offset: i32,
+    timer_cycles: u8,
+    kind: AudioEventKind,
+) {
     frame.events.push(AudioEvent {
         sample_offset,
-        timer_cycles: 0,
+        timer_cycles,
         kind,
         parity_dsp: None,
     });
+}
+
+const fn music_dsp_adsr1(_track: u8, _start_frame: u16, captured_adsr1: u8) -> u8 {
+    captured_adsr1
+}
+
+const MUSIC_NOTE_MAX_EARLY_SAMPLES: u64 = 0;
+const MUSIC_NOTE_MAX_LATE_SAMPLES: u64 = 1;
+
+fn dsp_write_render_offset(sample_offset: u16) -> i32 {
+    // Preserve the output interval containing the SPC write. The renderer's
+    // KON latch and voice pipeline decide when that write becomes visible;
+    // adding a blanket sample here loses the S-DSP's within-loop ordering.
+    i32::from(sample_offset)
 }
 
 fn mark_frame_note_offs_for_voice_before_as_music(
@@ -8468,6 +8601,7 @@ fn latest_music_note_offset_before(frame: &AudioEventFrame, cutoff: i32) -> Opti
                 origins[usize::from(voice)] = Some(origin);
             }
             AudioEventKind::NoteOn { voice, .. }
+            | AudioEventKind::DspKeyOn { voice, .. }
             | AudioEventKind::RetriggerVoice { voice }
             | AudioEventKind::KeyOnVoice { voice, .. }
                 if origins[usize::from(voice)] == Some(AudioNoteOrigin::Music)
@@ -8492,6 +8626,8 @@ fn audio_event_voice(kind: &AudioEventKind) -> Option<u8> {
         | AudioEventKind::SetDspEnvelope { voice, .. }
         | AudioEventKind::SetEnvelopeRateCounter { voice, .. }
         | AudioEventKind::NoteOn { voice, .. }
+        | AudioEventKind::DspKeyOn { voice, .. }
+        | AudioEventKind::DspKeyOff { voice }
         | AudioEventKind::RetriggerVoice { voice }
         | AudioEventKind::KeyOnVoice { voice, .. }
         | AudioEventKind::NoteOff { voice }
@@ -8556,6 +8692,65 @@ mod tests {
     use super::*;
 
     #[test]
+    fn music_note_offsets_leave_dsp_pipeline_latency_to_the_renderer() {
+        assert_eq!(music_dsp_adsr1(1, 81, 0xff), 0xff);
+        assert_eq!(dsp_write_render_offset(0), 0);
+        assert_eq!(dsp_write_render_offset(533), 533);
+    }
+
+    #[test]
+    fn bank1_id1_preserves_music_register_writes_before_first_interrupt() {
+        let mut sequencer = ModernAudioSequencer::default();
+        let clock = (7, 0x40);
+        sequencer.previous_sfx_clock = Some(clock);
+        let first_interrupt = sfx_overflow_positions_after(clock, -1, 2)[1] as i32;
+        let mut frame = AudioEventFrame::from_route_and_dsp_writes(AudioRouteState::default(), &[]);
+        push_event_at(
+            &mut frame,
+            first_interrupt - 1,
+            AudioEventKind::VoiceParameter {
+                voice: 7,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 0x86,
+            },
+        );
+        push_event_at(
+            &mut frame,
+            first_interrupt + 1,
+            AudioEventKind::VoiceParameter {
+                voice: 7,
+                parameter: VoiceParameterKind::PitchHigh,
+                value: 0x16,
+            },
+        );
+
+        sequencer.reconcile_bank1_id1_command(
+            true,
+            &mut frame,
+            &mut ModernAudioSequenceStats::default(),
+        );
+
+        assert!(frame.events.iter().any(|event| {
+            event.sample_offset == first_interrupt - 1
+                && matches!(
+                    event.kind,
+                    AudioEventKind::VoiceParameter {
+                        voice: 7,
+                        parameter: VoiceParameterKind::PitchLow,
+                        value: 0x86,
+                    }
+                )
+        }));
+        assert!(!frame.events.iter().any(|event| {
+            event.sample_offset == first_interrupt + 1 && audio_event_voice(&event.kind) == Some(7)
+        }));
+        assert!(frame.events.iter().any(|event| {
+            event.sample_offset == first_interrupt
+                && matches!(event.kind, AudioEventKind::NoteOff { voice: 7 })
+        }));
+    }
+
+    #[test]
     fn catalog_echo_send_never_invents_a_global_echo_enable_bit() {
         assert!(!catalog_echo_send(true, 7, 0x1f));
         assert!(catalog_echo_send(true, 7, 0x9f));
@@ -8598,7 +8793,7 @@ mod tests {
     }
 
     #[test]
-    fn same_sample_echo_writes_preserve_driver_order() {
+    fn sfx_owned_echo_writes_are_absent_from_music_globals() {
         let mut sequencer = ModernAudioSequencer::default();
         let mut frame = AudioEventFrame::from_route_and_dsp_writes(AudioRouteState::default(), &[]);
 
@@ -8611,20 +8806,20 @@ mod tests {
                 AudioEventKind::GlobalParameter {
                     register: 0x4d,
                     value,
-                } if event.sample_offset == 28 => Some(value),
+                } => Some(value),
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert_eq!(values, vec![63, 31]);
-        assert_eq!(sequencer.music_echo_mask, 31);
+        assert!(values.is_empty());
+        assert_eq!(sequencer.music_echo_mask, 0);
     }
 
     #[test]
-    fn same_sample_echo_chain_ends_on_the_narrowest_driver_mask() {
+    fn absolute_echo_chain_preserves_driver_order_and_timing() {
         let mut sequencer = ModernAudioSequencer::default();
         let mut frame = AudioEventFrame::from_route_and_dsp_writes(AudioRouteState::default(), &[]);
 
-        sequencer.emit_music_globals_at_position(0x03, 2701, &mut frame);
+        sequencer.emit_music_globals_at_position(0x03, 2651, &mut frame);
 
         let values = frame
             .events
@@ -8633,11 +8828,14 @@ mod tests {
                 AudioEventKind::GlobalParameter {
                     register: 0x4d,
                     value,
-                } if event.sample_offset == 444 => Some(value),
+                } => Some((event.sample_offset, value)),
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert_eq!(values, vec![63, 31, 15, 7, 3]);
+        assert_eq!(
+            values,
+            vec![(86, 63), (103, 31), (121, 15), (141, 7), (161, 3)]
+        );
         assert_eq!(sequencer.music_echo_mask, 3);
     }
 
@@ -8706,6 +8904,7 @@ mod tests {
         let mut sequencer = ModernAudioSequencer {
             last_music_track: 0x03,
             music_frame_position: 3255,
+            music_sample_position: 3255 * MUSIC_NATIVE_FRAME_SAMPLES,
             ..ModernAudioSequencer::default()
         };
         let mut frame = AudioEventFrame::from_route_and_dsp_writes(AudioRouteState::default(), &[]);
@@ -8713,17 +8912,21 @@ mod tests {
 
         sequencer.emit_music_latch_side_effects(&mut frame, &mut stats);
 
-        assert!(frame.events.iter().any(|event| {
-            event.sample_offset == 288
-                && matches!(
-                    event.kind,
-                    AudioEventKind::NoteOn {
-                        voice: 5,
-                        instrument: 10,
-                        ..
-                    }
-                )
-        }));
+        assert!(
+            frame.events.iter().any(|event| {
+                event.sample_offset == 288
+                    && matches!(
+                        event.kind,
+                        AudioEventKind::DspKeyOn {
+                            voice: 5,
+                            instrument: 10,
+                            ..
+                        }
+                    )
+            }),
+            "events={:#?}",
+            frame.events
+        );
     }
     use crate::game_output::{AudioQueueState, MusicControlState, SpcSequencerState};
 
@@ -8959,8 +9162,8 @@ mod tests {
         let lead_in = sequencer.sequence_route(route);
         let first = sequencer.sequence_route(route);
         let inter_step_gap = sequencer.sequence_route(route);
-        let inter_step_gap_2 = sequencer.sequence_route(route);
         let second = sequencer.sequence_route(route);
+        let after_second = sequencer.sequence_route(route);
 
         assert!(!command
             .events
@@ -8979,10 +9182,10 @@ mod tests {
                 .count(),
             1
         );
-        assert!([inter_step_gap, inter_step_gap_2].iter().all(|frame| !frame
+        assert!(!inter_step_gap
             .events
             .iter()
-            .any(|event| matches!(event.kind, AudioEventKind::NoteOn { voice: 7, .. }))));
+            .any(|event| matches!(event.kind, AudioEventKind::NoteOn { voice: 7, .. })));
         assert_eq!(
             second
                 .events
@@ -8991,6 +9194,10 @@ mod tests {
                 .count(),
             1
         );
+        assert!(!after_second
+            .events
+            .iter()
+            .any(|event| matches!(event.kind, AudioEventKind::NoteOn { voice: 7, .. })));
     }
 
     #[test]
@@ -9039,7 +9246,7 @@ mod tests {
         assert!(!frame
             .events
             .iter()
-            .any(|event| matches!(event.kind, AudioEventKind::NoteOn { .. })));
+            .any(|event| matches!(event.kind, AudioEventKind::DspKeyOn { .. })));
         assert_eq!(sequencer.last_stats().music_commands, 1);
         assert_eq!(sequencer.last_stats().note_events, 0);
 
@@ -9048,7 +9255,7 @@ mod tests {
             assert!(!lead_in
                 .events
                 .iter()
-                .any(|event| matches!(event.kind, AudioEventKind::NoteOn { .. })));
+                .any(|event| matches!(event.kind, AudioEventKind::DspKeyOn { .. })));
         }
 
         let first_notes = sequencer.sequence_route(route);
@@ -9056,11 +9263,47 @@ mod tests {
             first_notes
                 .events
                 .iter()
-                .filter(|event| matches!(event.kind, AudioEventKind::NoteOn { instrument: 10, .. }))
+                .filter(|event| matches!(
+                    event.kind,
+                    AudioEventKind::DspKeyOn { instrument: 10, .. }
+                ))
                 .count(),
             2
         );
         assert_eq!(sequencer.last_stats().note_events, 2);
+    }
+
+    #[test]
+    fn engine_music_cursor_follows_exact_host_audio_windows() {
+        let mut sequencer = ModernAudioSequencer::default();
+        let route = AudioRouteState {
+            music: MusicControlState {
+                last_music_control: 0x01,
+                ..MusicControlState::default()
+            },
+            ..AudioRouteState::default()
+        };
+
+        sequencer.sequence_engine_commands_for_samples(
+            route,
+            EngineAudioCommandBatch::from_legacy_ports([0x01, 0, 0, 0]),
+            533,
+        );
+        assert_eq!(sequencer.music_sample_position, 0);
+
+        sequencer.sequence_engine_commands_for_samples(
+            route,
+            EngineAudioCommandBatch::default(),
+            534,
+        );
+        assert_eq!(sequencer.music_sample_position, 533);
+
+        sequencer.sequence_engine_commands_for_samples(
+            route,
+            EngineAudioCommandBatch::default(),
+            533,
+        );
+        assert_eq!(sequencer.music_sample_position, 1_067);
     }
 
     #[test]
@@ -9163,7 +9406,7 @@ mod tests {
                 notes_after_capture += frame
                     .events
                     .iter()
-                    .filter(|event| matches!(event.kind, AudioEventKind::NoteOn { .. }))
+                    .filter(|event| matches!(event.kind, AudioEventKind::DspKeyOn { .. }))
                     .count();
             }
         }
@@ -9266,10 +9509,10 @@ mod tests {
 
         assert!(frame.events.iter().any(|event| matches!(
             event.kind,
-            AudioEventKind::NoteOn { instrument: 0, .. }
-                | AudioEventKind::NoteOn { instrument: 9, .. }
-                | AudioEventKind::NoteOn { instrument: 10, .. }
-                | AudioEventKind::NoteOn { instrument: 22, .. }
+            AudioEventKind::DspKeyOn { instrument: 0, .. }
+                | AudioEventKind::DspKeyOn { instrument: 9, .. }
+                | AudioEventKind::DspKeyOn { instrument: 10, .. }
+                | AudioEventKind::DspKeyOn { instrument: 22, .. }
         )));
         assert_eq!(sequencer.music_frame_position, 0);
     }
@@ -9293,19 +9536,19 @@ mod tests {
         assert!(!start
             .events
             .iter()
-            .any(|event| matches!(event.kind, AudioEventKind::NoteOn { voice: 0, .. })));
+            .any(|event| matches!(event.kind, AudioEventKind::DspKeyOn { voice: 0, .. })));
 
-        for _ in 0..5 {
+        for _ in 0..6 {
             let frame = sequencer.sequence_route(route);
             assert!(!frame
                 .events
                 .iter()
-                .any(|event| matches!(event.kind, AudioEventKind::NoteOn { voice: 0, .. })));
+                .any(|event| matches!(event.kind, AudioEventKind::DspKeyOn { voice: 0, .. })));
         }
         let first_note = sequencer.sequence_route(route);
         assert!(first_note.events.iter().any(|event| matches!(
             event.kind,
-            AudioEventKind::NoteOn {
+            AudioEventKind::DspKeyOn {
                 voice: 1,
                 pitch: 60,
                 ..
@@ -9318,7 +9561,7 @@ mod tests {
         let second_note = sequencer.sequence_route(route);
         assert!(second_note.events.iter().any(|event| matches!(
             event.kind,
-            AudioEventKind::NoteOn {
+            AudioEventKind::DspKeyOn {
                 voice: 0,
                 pitch: 53,
                 ..
@@ -9347,7 +9590,7 @@ mod tests {
             assert!(!frame
                 .events
                 .iter()
-                .any(|event| matches!(event.kind, AudioEventKind::NoteOn { .. })));
+                .any(|event| matches!(event.kind, AudioEventKind::DspKeyOn { .. })));
         }
 
         let chord = sequencer.sequence_route(route);
@@ -9355,13 +9598,13 @@ mod tests {
             chord
                 .events
                 .iter()
-                .filter(|event| matches!(event.kind, AudioEventKind::NoteOn { .. }))
+                .filter(|event| matches!(event.kind, AudioEventKind::DspKeyOn { .. }))
                 .count(),
             2
         );
         assert!(chord.events.iter().any(|event| matches!(
             event.kind,
-            AudioEventKind::NoteOn {
+            AudioEventKind::DspKeyOn {
                 voice: 0,
                 pitch: 90,
                 ..
@@ -9559,7 +9802,7 @@ mod tests {
         }
 
         assert!(keyoffs.contains(&(2, 106)));
-        assert!(keyoffs.contains(&(26, 410)));
+        assert!(keyoffs.contains(&(26, 378)), "keyoffs={keyoffs:?}");
         assert_eq!(ownership[0], 0);
         assert!(ownership[1..26].iter().all(|mask| *mask == 0x80));
         assert_eq!(ownership[26], 0);
@@ -9766,7 +10009,7 @@ mod tests {
         let mut sequencer = ModernAudioSequencer::default();
         let mut fallback =
             AudioEventFrame::from_route_and_dsp_writes(AudioRouteState::default(), &[]);
-        sequencer.emit_music_globals_at_position(1, 6, &mut fallback);
+        sequencer.emit_music_globals_at_position(1, 7, &mut fallback);
         assert!(fallback
             .events
             .iter()
@@ -9774,7 +10017,7 @@ mod tests {
 
         sequencer.engine_receipt_mode = true;
         let mut live = AudioEventFrame::from_route_and_dsp_writes(AudioRouteState::default(), &[]);
-        sequencer.emit_music_globals_at_position(1, 6, &mut live);
+        sequencer.emit_music_globals_at_position(1, 7, &mut live);
         assert!(!live.events.iter().any(|event| {
             matches!(
                 event.kind,
@@ -9830,6 +10073,7 @@ mod tests {
         let mut sequencer = ModernAudioSequencer::default();
         sequencer.last_music_track = 3;
         sequencer.music_frame_position = 600;
+        sequencer.music_sample_position = 600 * MUSIC_NATIVE_FRAME_SAMPLES;
         let mut frame = AudioEventFrame::from_route_and_dsp_writes(AudioRouteState::default(), &[]);
         push_event_at(
             &mut frame,
@@ -9845,10 +10089,14 @@ mod tests {
         let mut stats = ModernAudioSequenceStats::default();
         sequencer.emit_music_latch_side_effects(&mut frame, &mut stats);
 
-        assert!(frame.events.iter().any(|event| {
-            event.sample_offset == 10
-                && matches!(event.kind, AudioEventKind::NoteOn { voice: 5, .. })
-        }));
+        assert!(
+            frame.events.iter().any(|event| {
+                event.sample_offset == 10
+                    && matches!(event.kind, AudioEventKind::DspKeyOn { voice: 5, .. })
+            }),
+            "events={:#?}",
+            frame.events
+        );
         assert!(!frame.events.iter().any(|event| {
             event.sample_offset == 10
                 && matches!(event.kind, AudioEventKind::RetriggerVoice { voice: 4 })

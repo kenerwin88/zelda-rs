@@ -221,7 +221,7 @@ impl ModernGpuFinalizer {
             u32::from(frame.clip_mode),
             u32::from(frame.prevent_math_mode),
             u32::from(frame.windowsel_cm),
-            0,
+            u32::from(frame.forced_blank_scanlines),
             0,
         ];
 

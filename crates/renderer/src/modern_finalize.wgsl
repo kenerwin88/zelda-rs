@@ -61,7 +61,7 @@ fn in_cm_window(sx: u32, packed_win: u32, windowsel_cm: u32) -> bool {
 
 fn expand_brightness(c5: i32, brightness: u32) -> u32 {
     let clamped = u32(clamp(c5, 0, 31));
-    let scaled5 = (clamped * (min(brightness, 15u) + 1u)) >> 4u;
+    let scaled5 = (clamped * min(brightness, 15u) + 7u) / 15u;
     return (scaled5 << 3u) | (scaled5 >> 2u);
 }
 
@@ -82,6 +82,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let clip_mode = params.p1.w;
     let prevent_math_mode = params.p2.x;
     let windowsel_cm = params.p2.y;
+    let forced_blank_scanlines = params.p2.z;
 
     if ((flags & 0x10u) != 0u) {
         out_rgba[i] = 0xff000000u;
@@ -98,6 +99,11 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let out_y = i / width;
     let nrow = out_y / scale;
     let ncol = out_x / scale;
+
+    if (nrow < forced_blank_scanlines) {
+        out_rgba[i] = 0xff000000u;
+        return;
+    }
 
     let layer_math_on = ((math_enabled >> unpack_bit(main)) & 1u) != 0u;
     let cm_window = in_cm_window(ncol, windows[nrow], windowsel_cm);

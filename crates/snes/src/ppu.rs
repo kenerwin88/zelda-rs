@@ -80,6 +80,10 @@ pub struct PpuState {
     pub fixed_color_b: u8,
 
     pub forced_blank: bool,
+    /// Visible scanline prefix rendered while INIDISP remains forced blank
+    /// because the preceding VBlank workload overran into active display.
+    #[serde(default)]
+    pub forced_blank_scanlines: u8,
     pub brightness: u8,
     pub mode: u8,
 
@@ -218,6 +222,7 @@ impl Default for PpuState {
             fixed_color_g: 0,
             fixed_color_b: 0,
             forced_blank: false,
+            forced_blank_scanlines: 0,
             brightness: 0,
             mode: 0,
             vram_pointer: 0,
@@ -635,7 +640,11 @@ impl PpuState {
         let brightness = self.brightness;
         self.last_brightness_mult = brightness;
         for i in 0..32 {
-            let scaled = i * (brightness as usize + 1) / 16;
+            // INIDISP is a linear 0..15 master level: zero is black and 15 is
+            // the unattenuated five-bit component. Round to the nearest DAC
+            // step so the lower half of the fade does not remain one level too
+            // bright (for example, white at level 7 is component 14, not 15).
+            let scaled = (i * brightness as usize + 7) / 15;
             let value = ((scaled << 3) | (scaled >> 2)) as u8;
             self.brightness_mult[i] = value;
             self.brightness_mult_half[i * 2] = value;
@@ -646,7 +655,7 @@ impl PpuState {
         }
     }
 
-    fn bsnes_gamma_component(component: usize) -> u8 {
+    fn snes9x_gamma_component(component: usize) -> u8 {
         let expanded = ((component << 3) | (component >> 2)) as u16;
         let wide = (expanded << 8) | expanded;
         if wide > 0x7fff {
@@ -2300,6 +2309,15 @@ impl PpuState {
             return;
         }
 
+        if line_index < usize::from(self.forced_blank_scanlines) {
+            self.clear_backdrop();
+            self.line_has_sprites = false;
+            self.obj_fetch_buffer.data.fill(0x0500);
+            self.obj_fetch_has_sprites = false;
+            self.fill_render_line(line_index, 0);
+            return;
+        }
+
         if self.render_flags.contains(PpuRenderFlags::NEW_RENDERER) && self.forced_blank {
             self.clear_backdrop();
             self.line_has_sprites = false;
@@ -2396,7 +2414,7 @@ mod tests {
     }
 
     #[test]
-    fn master_brightness_uses_sixteenth_steps() {
+    fn master_brightness_scales_across_fifteen_intervals() {
         let mut ppu = PpuState::new();
         ppu.write(0x00, 0x0e);
         ppu.refresh_brightness_cache();
@@ -2405,6 +2423,15 @@ mod tests {
         ppu.write(0x00, 0x0b);
         ppu.refresh_brightness_cache();
         assert_eq!(ppu.brightness_mult[31], 189);
+    }
+
+    #[test]
+    fn master_brightness_rounds_low_levels_on_the_full_fifteen_step_scale() {
+        let mut ppu = PpuState::new();
+        ppu.write(0x00, 0x07);
+        ppu.refresh_brightness_cache();
+
+        assert_eq!(ppu.brightness_mult[31], 115);
     }
 
     #[test]
@@ -2424,6 +2451,29 @@ mod tests {
     }
 
     #[test]
+    fn run_line_blanks_only_the_published_active_display_prefix() {
+        let mut ppu = PpuState::new();
+        let width = 256 + ppu.extra_left_right as usize * 2;
+        ppu.render_pitch = (width * 4) as u32;
+        ppu.render_buffer = Some(vec![0xff; width * 2 * 4]);
+        ppu.write(0x00, 0x0f);
+        ppu.cgram[0] = 0x001f;
+        ppu.forced_blank_scanlines = 1;
+
+        ppu.run_line(1);
+        ppu.run_line(2);
+
+        let buffer = ppu.render_buffer.as_ref().unwrap();
+        assert!(buffer[..width * 4].iter().all(|&byte| byte == 0));
+        let second_line_pixel = width * 4 + ppu.extra_left_right as usize * 4;
+        assert_eq!(
+            &buffer[second_line_pixel..second_line_pixel + 4],
+            &[0x00, 0x00, 0xff, 0x00]
+        );
+        assert_eq!(ppu.forced_blank_scanlines, 1);
+    }
+
+    #[test]
     fn run_line_draws_backdrop_when_visible() {
         let mut ppu = PpuState::new();
         let width = 256 + ppu.extra_left_right as usize * 2;
@@ -2436,6 +2486,37 @@ mod tests {
         assert_eq!(
             &ppu.render_buffer.as_ref().unwrap()[pixel..pixel + 4],
             &[0x00, 0x00, 0xff, 0x00]
+        );
+    }
+
+    #[test]
+    fn run_line_draws_reset_obj_from_tile_zero() {
+        let mut ppu = PpuState::new();
+        let width = 256 + ppu.extra_left_right as usize * 2;
+        ppu.render_pitch = (width * 4) as u32;
+        ppu.render_buffer = Some(vec![0; width * 224 * 4]);
+        ppu.write(0x00, 0x0f);
+        ppu.render_flags = PpuRenderFlags::NEW_RENDERER;
+        ppu.mode = 1;
+        ppu.screen_enabled[0] = 0x10;
+        ppu.obj_tile_adr1 = 0;
+        ppu.obj_tile_adr2 = 0x1000;
+        ppu.oam[0] = 0x5555;
+        ppu.vram[0] = 0x8000;
+        ppu.cgram[0x82] = 0x5555;
+
+        ppu.run_line(86);
+        ppu.run_line(1);
+
+        let pixel = 85 * width * 4 + (85 + ppu.extra_left_right as usize) * 4;
+        assert_eq!(
+            &ppu.render_buffer.as_ref().unwrap()[pixel..pixel + 4],
+            &[0xad, 0x52, 0xad, 0xff]
+        );
+        let origin = ppu.extra_left_right as usize * 4;
+        assert_eq!(
+            &ppu.render_buffer.as_ref().unwrap()[origin..origin + 4],
+            &[0xad, 0x52, 0xad, 0xff]
         );
     }
 

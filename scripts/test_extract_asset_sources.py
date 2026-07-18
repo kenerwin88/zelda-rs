@@ -42,6 +42,33 @@ def compressed_literal(payload: bytes) -> bytes:
 
 
 class ExtractAssetSourcesTests(unittest.TestCase):
+    def test_extracts_spc_driver_program_from_intro_upload(self) -> None:
+        rom = bytearray(0xC9000)
+        cursor = extract_assets.lorom_offset(0x998000)
+
+        def emit_block(target: int, payload: bytes) -> None:
+            nonlocal cursor
+            rom[cursor : cursor + 2] = len(payload).to_bytes(2, "little")
+            rom[cursor + 2 : cursor + 4] = target.to_bytes(2, "little")
+            rom[cursor + 4 : cursor + 4 + len(payload)] = payload
+            cursor += 4 + len(payload)
+
+        emit_block(0x2000, b"ignored")
+        emit_block(0x0800, b"\x20\xcd\xcf\xbd")
+        rom[cursor : cursor + 4] = b"\0\0\0\x08"
+
+        driver = extract_assets.extract_spc_driver_program(bytes(rom))
+
+        self.assertEqual(driver, b"\x20\xcd\xcf\xbd")
+
+    def test_spc_driver_extraction_requires_entry_point_0800(self) -> None:
+        rom = bytearray(0xC9000)
+        cursor = extract_assets.lorom_offset(0x998000)
+        rom[cursor : cursor + 4] = b"\0\0\0\x09"
+
+        with self.assertRaisesRegex(RuntimeError, "entry point.*0800"):
+            extract_assets.extract_spc_driver_program(bytes(rom))
+
     def test_parse_args_defaults_diagnostic_variant_atlas_off(self) -> None:
         original_argv = sys.argv
         try:

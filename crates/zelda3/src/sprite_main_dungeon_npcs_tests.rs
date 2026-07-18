@@ -1,7 +1,33 @@
 use super::*;
+use crate::game_state::constants::DMA_SOURCE_ADDR_7;
 
 fn fresh_state() -> ZeldaState {
     ZeldaState::new()
+}
+
+#[test]
+fn uncle_departure_releases_sprite_and_retains_equipment_dma() {
+    let mut s = fresh_state();
+    let k = 0;
+    s.sprite_slot_view_mut(k).set_state(9);
+    s.sprite_slot_view_mut(k).set_ai_state(4);
+    s.follower_link_state_mut().set_shield_dma_graphics_index(0);
+    s.follower_link_state_mut().immobilize();
+
+    s.uncle_at_house(k);
+
+    assert_eq!(s.sprite_slot_view(k).state(), 0);
+    assert_eq!(
+        s.game_state
+            .player
+            .follower_link
+            .shield_dma_graphics_index(),
+        UNCLE_DEPARTURE_RETAINED_SHIELD_DMA_INDEX
+    );
+    assert!(!s.game_state.player.follower_link.is_immobilized());
+
+    s.nmi_prepare_sprites();
+    assert_eq!(read_le_u16(&s.ram, DMA_SOURCE_ADDR_7), 0x9480);
 }
 
 #[test]

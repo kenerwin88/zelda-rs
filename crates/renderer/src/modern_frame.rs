@@ -2,12 +2,12 @@ pub const MODERN_FRAME_WIDTH: u16 = 256;
 pub const MODERN_FRAME_HEIGHT: u16 = 224;
 
 /// Apply the SNES INIDISP master-brightness DAC curve to one 5-bit channel.
-/// Brightness levels are 1/16 through 16/16; forced blank is the separate
-/// true-black state.
+/// Brightness zero is black and level 15 preserves the source component;
+/// forced blank remains a separate display state.
 #[inline]
 pub(crate) fn apply_master_brightness(c5: u8, brightness: u8) -> u8 {
     let c5 = u32::from(c5.min(31));
-    let scaled = (c5 * (u32::from(brightness.min(15)) + 1)) >> 4;
+    let scaled = (c5 * u32::from(brightness.min(15)) + 7) / 15;
     ((scaled << 3) | (scaled >> 2)) as u8
 }
 
@@ -27,6 +27,9 @@ pub struct ModernFrame {
     pub backdrop_color_rgba: [u8; 4],
     pub brightness: u8,
     pub forced_blank: bool,
+    /// Number of leading visible scanlines that began while INIDISP was still
+    /// forced blank after an overlong VBlank workload.
+    pub forced_blank_scanlines: u8,
     pub cgram_rgba: [[u8; 4]; 256],
     /// Provenance-clean CGRAM mirror committed at the last CGRAM upload —
     /// the zero-CGRAM color source that replaces `cgram_rgba` once complete.
@@ -114,6 +117,7 @@ impl ModernFrame {
             backdrop_color_rgba: [0, 0, 0, 0xff],
             brightness: 15,
             forced_blank: false,
+            forced_blank_scanlines: 0,
             cgram_rgba: [[0, 0, 0, 0xff]; 256],
             cgram_provenance: None,
             screen_enabled_main: 0,
@@ -289,6 +293,13 @@ pub enum ModernBlendMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn master_brightness_uses_the_full_fifteen_step_scale() {
+        assert_eq!(apply_master_brightness(31, 15), 255);
+        assert_eq!(apply_master_brightness(31, 7), 115);
+        assert_eq!(apply_master_brightness(31, 0), 0);
+    }
 
     #[test]
     fn indexed_tile_cgram_defaults_and_index_tiles_empty() {

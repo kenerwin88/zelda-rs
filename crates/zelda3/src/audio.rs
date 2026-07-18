@@ -235,6 +235,10 @@ impl ModernAudioCommandQueue {
         self.acknowledged_commands = self.input_commands;
     }
 
+    fn acknowledge_legacy_ports(&mut self, ports: [u8; 4]) {
+        self.acknowledged_commands = EngineAudioCommandBatch::from_legacy_ports(ports);
+    }
+
     fn reset(&mut self) {
         self.write_position = 0;
         self.total_writes = 0;
@@ -272,11 +276,13 @@ impl ModernAudioCommandQueue {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 struct ModernAudioRuntime {
     queue: ModernAudioCommandQueue,
     renderer: ModernAudioEngine,
     sequencer: ModernAudioSequencer,
+    #[serde(default)]
+    driver_clock: Option<crate::spc_driver_clock::AbsoluteDspEventClock>,
     #[serde(default)]
     sample_bank_id: u8,
     #[serde(default)]
@@ -736,6 +742,12 @@ impl ZeldaState {
         )
     }
 
+    pub fn zelda_modern_audio_voice_debug_states(
+        &self,
+    ) -> [crate::modern_audio::ModernVoiceDebugState; 8] {
+        self.audio.modern.renderer.voice_debug_states()
+    }
+
     pub fn zelda_modern_audio_sfx_clock_checkpoint(&self) -> (u32, u8, u8) {
         self.audio.modern.sequencer.sfx_clock_checkpoint()
     }
@@ -999,14 +1011,37 @@ impl ZeldaState {
                     );
                 }
                 self.zelda_pop_apu_state();
-                self.audio.modern.queue.acknowledge_input();
+                let native_driver_clock = self.audio.sequencer_backend
+                    == AudioSequencerBackend::Native
+                    && self.audio.modern.driver_clock.is_some();
+                if !native_driver_clock {
+                    self.audio.modern.queue.acknowledge_input();
+                }
                 let frame = match self.audio.sequencer_backend {
                     AudioSequencerBackend::Native => {
                         let route = self.zelda_modern_audio_route_state();
-                        self.audio
-                            .modern
-                            .sequencer
-                            .sequence_engine_commands(route, self.audio.modern.queue.input_commands)
+                        if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
+                            let window = clock
+                                .advance(self.audio.modern.queue.input_commands, samples as u32);
+                            let acknowledgements = clock.host_acknowledgements();
+                            self.audio
+                                .modern
+                                .queue
+                                .acknowledge_legacy_ports(acknowledgements);
+                            let mut frame =
+                                AudioEventFrame::from_route_and_dsp_writes(route, &window.writes);
+                            frame.sequenced = true;
+                            frame
+                        } else {
+                            self.audio
+                                .modern
+                                .sequencer
+                                .sequence_engine_commands_for_samples(
+                                    route,
+                                    self.audio.modern.queue.input_commands,
+                                    samples as u32,
+                                )
+                        }
                     }
                     #[cfg(feature = "audio-oracle")]
                     AudioSequencerBackend::ExactSpcDriver => self.zelda_sequence_exact_spc_driver(),
@@ -1224,6 +1259,11 @@ impl ZeldaState {
     }
 
     pub fn load_song_bank(&mut self, p: &[u8]) {
+        if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
+            clock
+                .upload_song_bank(p)
+                .expect("compiled song bank must contain a valid SPC upload stream");
+        }
         let bank_id = (0..3).find(|&bank_id| self.asset_raw(bank_id) == Some(p));
         if let Some(bank_id) = bank_id {
             self.audio.modern.sample_bank_id = bank_id as u8;
@@ -1243,6 +1283,51 @@ impl ZeldaState {
 
     pub(crate) fn select_modern_sample_bank(&mut self, bank_id: u8) {
         self.audio.modern.renderer.select_sample_bank(bank_id);
+    }
+
+    pub(crate) fn initialize_spc_driver_clock(
+        &mut self,
+        driver: &[u8],
+        intro_bank: &[u8],
+    ) -> Result<(), String> {
+        self.audio.modern.driver_clock = Some(crate::spc_driver_clock::AbsoluteDspEventClock::new(
+            driver, intro_bank,
+        )?);
+        Ok(())
+    }
+
+    pub(crate) fn clear_spc_driver_clock(&mut self) {
+        self.audio.modern.driver_clock = None;
+    }
+
+    pub(crate) fn configure_spc_driver_clock_for_rom_bootstrap(&mut self) {
+        if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
+            clock.configure_rom_bootstrap();
+        }
+    }
+
+    pub fn zelda_spc_driver_clock_debug_summary(&self) -> Option<String> {
+        self.audio
+            .modern
+            .driver_clock
+            .as_ref()
+            .map(|clock| clock.debug_state_summary())
+    }
+
+    pub fn zelda_begin_spc_driver_instruction_trace(&mut self) {
+        if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
+            clock.begin_debug_instruction_trace();
+        }
+    }
+
+    pub fn zelda_take_spc_driver_instruction_trace(
+        &mut self,
+    ) -> Option<(u64, Vec<snes::apu::SpcInstructionTrace>)> {
+        self.audio
+            .modern
+            .driver_clock
+            .as_mut()
+            .map(|clock| clock.take_debug_instruction_trace())
     }
 
     pub fn zelda_audio_debug_summary(&self) -> String {

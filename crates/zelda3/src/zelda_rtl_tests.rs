@@ -10,7 +10,7 @@ use crate::game_state::constants::{
     DMA_SOURCE_ADDR_14, DMA_SOURCE_ADDR_15, DMA_SOURCE_ADDR_16, DMA_SOURCE_ADDR_17,
     DMA_SOURCE_ADDR_18, DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_2, DMA_SOURCE_ADDR_20,
     DMA_SOURCE_ADDR_21, DMA_SOURCE_ADDR_3, DMA_SOURCE_ADDR_4, DMA_SOURCE_ADDR_5, DMA_SOURCE_ADDR_6,
-    DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9, TM_COPY, TS_COPY,
+    DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9, NMI_BOOLEAN, TM_COPY, TS_COPY,
 };
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
 
@@ -333,6 +333,21 @@ fn asset_pack_parse_rejects_malformed_named_dialogue_semantic_sidecar() {
     .unwrap();
 
     assert!(err.contains("invalid semantic sidecar magic"));
+}
+
+#[test]
+fn asset_pack_resolves_spc_driver_timing_program_by_name() {
+    let pack = AssetPack::parse(&test_asset_pack_bytes(&[
+        ("kUnused", vec![0]),
+        ("kSpcDriverTimingProgram", vec![0x20, 0xcd, 0xcf, 0xbd]),
+    ]))
+    .unwrap();
+
+    assert_eq!(
+        pack.asset_by_name("kSpcDriverTimingProgram"),
+        Some(&[0x20, 0xcd, 0xcf, 0xbd][..])
+    );
+    assert_eq!(pack.asset_by_name("missing"), None);
 }
 
 #[test]
@@ -3034,7 +3049,7 @@ fn rom_startup_preroll_matches_live_console_timing() {
 
     state.set_rom_startup_timing(true);
 
-    assert_eq!(state.rom_reset_frame_delay, 82);
+    assert_eq!(state.rom_reset_frame_delay, 81);
 }
 
 #[test]
@@ -3055,7 +3070,7 @@ fn checkpoint_resume_restores_live_timing_without_rephasing_audio() {
 }
 
 #[test]
-fn rom_startup_holds_game_loop_while_intro_sound_bank_bootstraps() {
+fn rom_startup_holds_only_the_interrupted_intro_initialization_frame() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
     state.rom_reset_frame_delay = 0;
@@ -3063,18 +3078,29 @@ fn rom_startup_holds_game_loop_while_intro_sound_bank_bootstraps() {
     state.run_frame_internal(0, crate::RUN_MAIN);
     assert_eq!(state.game_state.frame.subsubmodule, 1);
 
-    for _ in 0..74 {
-        state.run_frame_internal(0, crate::RUN_MAIN);
-        assert_eq!(state.game_state.frame.subsubmodule, 1);
-    }
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert_eq!(state.game_state.frame.subsubmodule, 1);
 
     state.run_frame_internal(0, crate::RUN_MAIN);
     assert_eq!(state.game_state.frame.subsubmodule, 2);
 }
 
 #[test]
+fn first_rom_frame_publishes_intro_audio_on_the_following_nmi() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.rom_reset_frame_delay = 0;
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert_eq!(state.zelda_debug_apu_write_ports(), [0, 0, 0, 0]);
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert_eq!(state.zelda_debug_apu_write_ports(), [0, 0, 0, 10]);
+}
+
+#[test]
 fn rom_intro_memory_initialization_wait_matches_live_console_timing() {
-    assert_eq!(configured_intro_memory_initialization_frames(), 40);
+    assert_eq!(configured_intro_memory_initialization_frames(), 41);
 }
 
 #[test]
@@ -3103,6 +3129,158 @@ fn attract_graphics_initializer_resumes_at_semantic_work_boundaries() {
 }
 
 #[test]
+fn throne_room_rom_work_resumes_only_after_every_intervening_nmi_slice() {
+    let mut work = PendingRomWork::schedule(
+        RomWorkContinuation::FinishAttractThroneRoom,
+        ATTRACT_THRONE_ROOM_NMI_SLICES,
+    );
+
+    for _ in 0..ATTRACT_THRONE_ROOM_NMI_SLICES - 1 {
+        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+    }
+    assert_eq!(
+        work.advance_one_nmi_slice(),
+        RomWorkSlice::Complete(RomWorkContinuation::FinishAttractThroneRoom)
+    );
+    assert!(!work.is_pending());
+}
+
+#[test]
+fn throne_room_work_budget_follows_the_retained_sprite_tileset() {
+    assert_eq!(attract_throne_room_nmi_slices(19), 42);
+    assert_eq!(attract_throne_room_nmi_slices(66), 44);
+}
+
+#[test]
+fn prison_room_rom_work_resumes_after_its_room_build_nmis() {
+    let mut work = PendingRomWork::schedule(
+        RomWorkContinuation::FinishAttractZeldaPrison,
+        ATTRACT_ZELDA_PRISON_NMI_SLICES,
+    );
+
+    for _ in 0..ATTRACT_ZELDA_PRISON_NMI_SLICES - 1 {
+        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+    }
+    assert_eq!(
+        work.advance_one_nmi_slice(),
+        RomWorkSlice::Complete(RomWorkContinuation::FinishAttractZeldaPrison)
+    );
+}
+
+#[test]
+fn maiden_warp_room_rom_work_resumes_after_its_room_build_nmis() {
+    let mut work = PendingRomWork::schedule(
+        RomWorkContinuation::FinishAttractMaidenWarp,
+        ATTRACT_MAIDEN_WARP_NMI_SLICES,
+    );
+
+    for _ in 0..ATTRACT_MAIDEN_WARP_NMI_SLICES - 1 {
+        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+    }
+    assert_eq!(
+        work.advance_one_nmi_slice(),
+        RomWorkSlice::Complete(RomWorkContinuation::FinishAttractMaidenWarp)
+    );
+}
+
+#[test]
+fn end_of_story_rom_work_resumes_after_memory_and_palette_nmis() {
+    let mut work = PendingRomWork::schedule(
+        RomWorkContinuation::FinishAttractEndOfStory,
+        ATTRACT_END_OF_STORY_NMI_SLICES,
+    );
+
+    for _ in 0..ATTRACT_END_OF_STORY_NMI_SLICES - 1 {
+        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+    }
+    assert_eq!(
+        work.advance_one_nmi_slice(),
+        RomWorkSlice::Complete(RomWorkContinuation::FinishAttractEndOfStory)
+    );
+}
+
+#[test]
+fn intro_poly_initialization_resumes_for_cold_start_and_attract_restart() {
+    assert!(rom_intro_poly_initialization_is_active(0, 2));
+    assert!(rom_intro_poly_initialization_is_active(0, 10));
+    assert!(!rom_intro_poly_initialization_is_active(0, 11));
+    assert!(!rom_intro_poly_initialization_is_active(20, 10));
+}
+
+#[test]
+fn dialogue_scroll_rom_work_spends_fractional_cpu_budget_across_nmis() {
+    let mut work = PendingRomWork::schedule_dialogue_scroll();
+
+    let pixels = (0..7)
+        .map(|_| match work.advance_one_nmi_slice() {
+            RomWorkSlice::DialogueScroll {
+                pixels,
+                resume_caller: _,
+                advance_main_heartbeat: _,
+            } => pixels,
+            other => panic!("unexpected dialogue scroll slice: {other:?}"),
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(pixels, vec![2, 2, 1, 2, 2, 1, 2]);
+}
+
+#[test]
+fn dialogue_scroll_rom_work_alternates_caller_and_main_heartbeat_yields() {
+    let mut work = PendingRomWork::schedule_dialogue_scroll();
+    let yields = (0..5)
+        .map(|_| match work.advance_one_nmi_slice() {
+            RomWorkSlice::DialogueScroll {
+                resume_caller,
+                advance_main_heartbeat,
+                ..
+            } => (resume_caller, advance_main_heartbeat),
+            other => panic!("unexpected dialogue scroll slice: {other:?}"),
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        yields,
+        vec![
+            (false, false),
+            (false, false),
+            (true, false),
+            (false, true),
+            (false, false)
+        ]
+    );
+}
+
+#[test]
+fn short_dialogue_scrolls_finish_before_the_next_nmi() {
+    assert!(!rom_dialogue_scroll_requires_resumption(0));
+    assert!(!rom_dialogue_scroll_requires_resumption(1));
+    assert!(rom_dialogue_scroll_requires_resumption(2));
+    assert!(rom_dialogue_scroll_requires_resumption(4));
+}
+
+#[test]
+fn dialogue_glyph_work_tracks_width_until_the_next_tile_boundary() {
+    assert_eq!(rom_dialogue_glyph_work_units(6, 0), 8);
+    assert_eq!(rom_dialogue_glyph_work_units(6, 6), 4);
+    assert_eq!(rom_dialogue_glyph_work_units(4, 10), 6);
+    assert_eq!(rom_dialogue_glyph_work_units(3, 15), 3);
+}
+
+#[test]
+fn heavy_prison_animation_makes_dialogue_initialization_resumable() {
+    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 0, 3), 5);
+    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 0, 2), 0);
+    assert_eq!(rom_dialogue_initialization_nmi_slices(14, 2, 0, 0), 5);
+}
+
+#[test]
+fn heavy_attract_scenes_share_the_dialogue_initialization_phase() {
+    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 0, 3), 5);
+    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 0, 4), 5);
+}
+
+#[test]
 fn attract_first_story_render_wait_is_armed_by_fade_completion() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -3113,6 +3291,20 @@ fn attract_first_story_render_wait_is_armed_by_fade_completion() {
 
     assert_eq!(state.game_state.ending.attract_scene.state(), 5);
     assert_eq!(state.attract_first_story_render_delay, 6);
+}
+
+#[test]
+fn throne_room_story_resumes_one_nmi_slice_sooner_than_the_first_story() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.attract_scene_mut().set_sequence(2);
+    state.attract_scene_mut().set_state(4);
+    state.set_screen_brightness(15);
+
+    state.attract_fade_in_sequence();
+
+    assert_eq!(state.game_state.ending.attract_scene.state(), 5);
+    assert_eq!(state.attract_first_story_render_delay, 5);
 }
 
 #[test]
@@ -3169,11 +3361,168 @@ fn file_select_initial_graphics_work_resumes_before_the_next_module() {
 }
 
 #[test]
+fn file_select_main_publishes_display_memory_at_the_following_nmi() {
+    assert!(rom_display_memory_publication_is_deferred(1, 5));
+    assert!(!rom_display_memory_publication_is_deferred(1, 4));
+    assert!(!rom_display_memory_publication_is_deferred(2, 5));
+
+    let mut state = ZeldaState::new();
+    state.set_main_module(1);
+    state.set_submodule(5);
+    state.ppu.vram[0] = 0x1111;
+    state.ppu.oam[0] = 0x2222;
+    state.ppu.cgram[0] = 0x3333;
+    state.capture_display_snapshot();
+    state.ppu.vram[0] = 0xaaaa;
+    state.ppu.oam[0] = 0xbbbb;
+    state.ppu.cgram[0] = 0xcccc;
+
+    let captured = state.with_display_snapshot(|display| {
+        (
+            display.ppu.vram[0],
+            display.ppu.oam[0],
+            display.ppu.cgram[0],
+        )
+    });
+
+    assert_eq!(captured, (0x1111, 0x2222, 0x3333));
+    assert_eq!(state.ppu.vram[0], 0xaaaa);
+    assert_eq!(state.ppu.oam[0], 0xbbbb);
+    assert_eq!(state.ppu.cgram[0], 0xcccc);
+}
+
+#[test]
+fn dungeon_landing_wipe_publishes_display_memory_at_the_following_nmi() {
+    assert!(rom_display_memory_publication_is_deferred(7, 15));
+    assert!(!rom_display_memory_publication_is_deferred(7, 14));
+    assert!(rom_display_snapshot_is_one_frame_deferred(7, 15));
+
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(15);
+    state.ppu.vram[0] = 0x1111;
+    state.capture_display_snapshot();
+    state.ppu.vram[0] = 0x2222;
+    assert_eq!(
+        state.with_display_snapshot(|display| display.ppu.vram[0]),
+        0x1111
+    );
+
+    state.capture_display_snapshot();
+    state.ppu.vram[0] = 0x3333;
+    assert_eq!(
+        state.with_display_snapshot(|display| display.ppu.vram[0]),
+        0x1111
+    );
+
+    state.capture_display_snapshot();
+    state.ppu.vram[0] = 0x4444;
+    assert_eq!(
+        state.with_display_snapshot(|display| display.ppu.vram[0]),
+        0x2222
+    );
+}
+
+#[test]
+fn dialogue_character_tiles_publish_at_the_following_nmi() {
+    assert!(rom_display_memory_publication_is_deferred(14, 2));
+    assert!(!rom_display_memory_publication_is_deferred(14, 1));
+}
+
+#[test]
+fn normal_gameplay_oam_publishes_at_the_following_nmi() {
+    assert!(rom_display_oam_publication_is_deferred(7, 0));
+    assert!(!rom_display_memory_publication_is_deferred(7, 0));
+
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0);
+    state.ppu.vram[0] = 0x1111;
+    state.ppu.vram[0x4000] = 0x4444;
+    state.ppu.oam[0] = 0x2222;
+    state.ppu.cgram[0] = 0x3333;
+    state.capture_display_snapshot();
+    state.ppu.vram[0] = 0xaaaa;
+    state.ppu.vram[0x4000] = 0xdddd;
+    state.ppu.oam[0] = 0xbbbb;
+    state.ppu.cgram[0] = 0xcccc;
+
+    let captured = state.with_display_snapshot(|display| {
+        (
+            display.ppu.vram[0],
+            display.ppu.vram[0x4000],
+            display.ppu.oam[0],
+            display.ppu.cgram[0],
+        )
+    });
+
+    assert_eq!(captured, (0xaaaa, 0x4444, 0x2222, 0xcccc));
+}
+
+#[test]
+fn dialogue_exit_bg_packet_waits_for_the_following_nmi() {
+    let mut state = ZeldaState::new();
+    state.set_bg_mode(9);
+    state.write_vram_upload_buffer_word(0, 0xffff);
+    state.set_bg_vram_load_mode(1);
+
+    state.interrupt_nmi(0, None, true);
+    assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 1);
+
+    state.clear_nmi_update_latch();
+    state.interrupt_nmi(0, None, false);
+    assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 0);
+}
+
+#[test]
+fn completed_dialogue_scroll_releases_its_bg3_upload() {
+    let mut state = ZeldaState::new();
+    state.latch_nmi_update();
+    assert_eq!(state.ram[NMI_BOOLEAN], 1);
+
+    state.complete_rom_dialogue_scroll_work();
+
+    assert_eq!(state.ram[NMI_BOOLEAN], 0);
+}
+
+#[test]
+fn intermediate_dialogue_scroll_batch_releases_its_bg3_upload() {
+    let mut state = ZeldaState::new();
+    state.latch_nmi_update();
+    assert_eq!(state.ram[NMI_BOOLEAN], 1);
+
+    state.publish_rom_dialogue_scroll_batch();
+
+    assert_eq!(state.ram[NMI_BOOLEAN], 0);
+}
+
+#[test]
+fn dungeon_landing_hdma_reset_preserves_the_already_consumed_prefix() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    for index in 0..DUNGEON_LANDING_HDMA_RESET_PREFIX_SCANLINES {
+        state.set_spotlight_hdma_table_dynamic_entry(index, 0xff00);
+    }
+    state.spotlight_hdma_reset_prefix = Some([0x10ef, 0x11ee, 0x12ed, 0x13ec]);
+
+    state.capture_display_snapshot();
+
+    let captured: [u16; DUNGEON_LANDING_HDMA_RESET_PREFIX_SCANLINES] =
+        state.with_display_snapshot(|display| {
+            std::array::from_fn(|index| display.spotlight_hdma_table_dynamic_entry(index))
+        });
+    assert_eq!(captured, [0x10ef, 0x11ee, 0x12ed, 0x13ec]);
+    assert_eq!(state.spotlight_hdma_table_dynamic_entry(0), 0xff00);
+}
+
+#[test]
 fn selected_game_load_resumes_until_the_cpu_heavy_setup_finishes() {
-    assert_eq!(rom_selected_game_load_decision(77), (false, 76));
-    assert_eq!(rom_selected_game_load_decision(2), (false, 1));
-    assert_eq!(rom_selected_game_load_decision(1), (true, 0));
-    assert_eq!(rom_selected_game_load_decision(0), (false, 0));
+    assert_eq!(rom_selected_game_load_decision(77), (false, false, 76));
+    assert_eq!(rom_selected_game_load_decision(58), (true, false, 57));
+    assert_eq!(rom_selected_game_load_decision(2), (false, false, 1));
+    assert_eq!(rom_selected_game_load_decision(1), (false, true, 0));
+    assert_eq!(rom_selected_game_load_decision(0), (false, false, 0));
 }
 
 #[test]
@@ -3185,14 +3534,15 @@ fn dungeon_landing_wipe_carries_work_into_the_following_display_frame() {
 
 #[test]
 fn normal_dialogue_initialization_is_a_resumable_engine_operation() {
-    assert!(rom_normal_dialogue_initialization_is_active(14, 2, 0));
-    assert!(!rom_normal_dialogue_initialization_is_active(14, 2, 1));
-    assert!(!rom_normal_dialogue_initialization_is_active(20, 2, 0));
+    assert_eq!(rom_dialogue_initialization_nmi_slices(14, 2, 0, 0), 5);
+    assert_eq!(rom_dialogue_initialization_nmi_slices(14, 2, 1, 0), 0);
+    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 2, 0, 2), 0);
 }
 
 #[test]
 fn rom_intro_poly_thread_begins_on_the_measured_frame() {
     assert_eq!(configured_intro_thread_start_delay(), 0);
+    assert_eq!(configured_intro_sprite_animation_start_delay(), 1);
 }
 
 #[test]
@@ -3219,6 +3569,34 @@ fn rom_intro_poly_thread_remains_concurrent_during_title_fade() {
             .collect::<Vec<_>>(),
         vec![false, true, false, false, true, false]
     );
+}
+
+#[test]
+fn legacy_poly_stack_marker_cannot_own_a_frame_after_worker_shutdown() {
+    assert!(legacy_poly_scheduler_is_active(0, false, true));
+    assert!(!legacy_poly_scheduler_is_active(0, false, false));
+    assert!(!legacy_poly_scheduler_is_active(
+        BUGFIX_POLY_RENDERER,
+        false,
+        true,
+    ));
+    assert!(!legacy_poly_scheduler_is_active(0, true, true));
+}
+
+#[test]
+fn file_select_teardown_shares_the_handoff_frame_with_outgoing_poly_worker() {
+    assert!(rom_file_select_teardown_runs_with_outgoing_poly_worker(
+        1, 0, true, true
+    ));
+    assert!(!rom_file_select_teardown_runs_with_outgoing_poly_worker(
+        1, 1, true, true
+    ));
+    assert!(!rom_file_select_teardown_runs_with_outgoing_poly_worker(
+        1, 0, false, true
+    ));
+    assert!(!rom_file_select_teardown_runs_with_outgoing_poly_worker(
+        0, 7, true, true
+    ));
 }
 
 #[test]
@@ -3289,7 +3667,6 @@ fn rom_intro_waits_for_poly_thread_completion_before_advancing_again() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
     state.rom_reset_frame_delay = 0;
-    state.intro_startup_delay = 0;
     state.intro_memory_darken_frame_delay = 0;
     state.intro_poly_upload_delay = 0;
     state.attract_scene_mut().set_intro_step_index(1);
@@ -3311,7 +3688,6 @@ fn main_loop_does_not_complete_poly_work_that_was_not_scheduled() {
     state.initialized = true;
     state.set_rom_startup_timing(true);
     state.rom_reset_frame_delay = 0;
-    state.intro_startup_delay = 0;
     state.intro_memory_darken_frame_delay = 0;
     state.set_animated_tile_data_source_address(1);
     state.set_main_module(0);
@@ -3501,21 +3877,65 @@ fn repeated_display_captures_preserve_dma_and_ppu_latches() {
 }
 
 #[test]
-fn scanline_capture_consumes_one_shot_vcounter_irq() {
+fn published_one_shot_vcounter_irq_is_repeatable_and_advances_live_state() {
     let mut state = ZeldaState::new();
     state.set_irq_control_flag(0x80);
     state.set_select_file_name_scroll_x(0x01f0);
     state.ppu.bg_layer[2].v_scroll = 0x0318;
+    state.capture_display_snapshot();
 
-    let first = state.ppu_scanline_windows();
-
-    assert_eq!(first[126].6[2], 0x0318);
-    assert_eq!(first[127].6[2], 0);
     assert_eq!(state.game_state.display.irq_control_flag, 0);
     assert_eq!(state.ram[0x0128], 0);
 
-    let second = state.ppu_scanline_windows();
-    assert_eq!(second[127].6[2], 0x0318);
+    let first = state.with_display_snapshot(ZeldaState::ppu_scanline_windows);
+
+    assert_eq!(first[126].6[2], 0x0318);
+    assert_eq!(first[127].6[2], 0);
+
+    let second = state.with_display_snapshot(ZeldaState::ppu_scanline_windows);
+    assert_eq!(second.as_ref(), first.as_ref());
+    assert_eq!(state.game_state.display.irq_control_flag, 0);
+    assert_eq!(state.ram[0x0128], 0);
+}
+
+#[test]
+fn nmi_active_display_overrun_is_classified_by_workload() {
+    assert_eq!(
+        nmi_active_display_blank_scanlines_for_pending_work(false, true, 1),
+        1
+    );
+    assert_eq!(
+        nmi_active_display_blank_scanlines_for_pending_work(true, true, 1),
+        0
+    );
+    assert_eq!(
+        nmi_active_display_blank_scanlines_for_pending_work(false, false, 1),
+        0
+    );
+    assert_eq!(
+        nmi_active_display_blank_scanlines_for_pending_work(false, true, 2),
+        0
+    );
+}
+
+#[test]
+fn published_nmi_active_display_overrun_is_repeatable_and_advances_live_state() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(14);
+    state.nmi_forced_blank_scanlines_pending = 1;
+    state.capture_display_snapshot();
+
+    assert_eq!(state.nmi_forced_blank_scanlines_pending, 0);
+    assert_eq!(state.ppu.forced_blank_scanlines, 0);
+
+    let first = state.with_display_snapshot(ZeldaState::ppu_scanline_windows);
+    assert!(first[0].8);
+    assert!(!first[1].8);
+
+    let second = state.with_display_snapshot(ZeldaState::ppu_scanline_windows);
+    assert_eq!(second.as_ref(), first.as_ref());
+    assert_eq!(state.nmi_forced_blank_scanlines_pending, 0);
+    assert_eq!(state.ppu.forced_blank_scanlines, 0);
 }
 
 #[test]
@@ -3578,7 +3998,7 @@ fn configure_ppu_side_space_matches_module_cases() {
 }
 
 #[test]
-fn draw_ppu_frame_runs_irq_and_hdma_side_effects() {
+fn draw_ppu_frame_runs_irq_and_hdma_without_consuming_published_event() {
     let mut state = ZeldaState::new();
     let mut pixels = vec![0u8; 256 * 224 * 4];
     state.set_irq_control_flag(0x80);
@@ -3588,7 +4008,7 @@ fn draw_ppu_frame_runs_irq_and_hdma_side_effects() {
 
     state.zelda_draw_ppu_frame(&mut pixels, 256 * 4, PpuRenderFlags::empty());
 
-    assert_eq!(state.game_state.display.irq_control_flag, 0);
+    assert_eq!(state.game_state.display.irq_control_flag, 0x80);
     assert!(state.ppu.forced_blank);
     assert_eq!(state.ppu.brightness, 0x0f);
     assert_eq!(state.ppu.render_pitch, (PPU_X_PIXELS * 4) as u32);
@@ -3616,6 +4036,70 @@ fn display_snapshot_draw_uses_c_style_current_vram_not_obj_latch() {
     state.ppu.obj_vram_latch = Some(vec![0x2222; VRAM_WORDS]);
     state.zelda_draw_display_frame(&mut pixels, 256 * 4, PpuRenderFlags::empty());
     assert!(state.ppu.obj_vram_latch.is_none());
+}
+
+#[test]
+fn display_snapshot_draw_uses_the_pre_nmi_ppu_registers() {
+    let mut state = ZeldaState::new();
+    let mut pixels = vec![0u8; 256 * 224 * 4];
+    state.ppu.brightness = 3;
+    state.capture_display_snapshot();
+    state.ppu.brightness = 12;
+
+    state.zelda_draw_display_frame(&mut pixels, 256 * 4, PpuRenderFlags::empty());
+
+    assert_eq!(
+        state.ppu.brightness, 12,
+        "drawing must not rewind live PPU state"
+    );
+    assert_eq!(
+        state
+            .display_snapshot
+            .as_ref()
+            .expect("drawn display snapshot")
+            .ppu
+            .last_brightness_mult,
+        3,
+    );
+}
+
+#[test]
+fn renderer_capture_observes_pre_nmi_state_without_rewinding_live_state() {
+    let mut state = ZeldaState::new();
+    state.ppu.brightness = 3;
+    state.ppu.vram[0] = 0x1111;
+    state.ppu.vram[0x5800] = 0x3333;
+    state.capture_display_snapshot();
+    state.ppu.brightness = 12;
+    state.ppu.vram[0] = 0x2222;
+    state.ppu.vram[0x5800] = 0x4444;
+
+    let captured = state.with_display_snapshot(|display| {
+        (
+            display.ppu.brightness,
+            display.ppu.vram[0],
+            display.ppu.vram[0x5800],
+        )
+    });
+
+    assert_eq!(captured, (3, 0x2222, 0x3333));
+    assert_eq!(state.ppu.brightness, 12);
+    assert_eq!(state.ppu.vram[0], 0x2222);
+    assert_eq!(state.ppu.vram[0x5800], 0x4444);
+    assert!(state.display_snapshot.is_some());
+}
+
+#[test]
+fn nmi_force_blank_gates_the_pre_nmi_display_snapshot() {
+    let mut state = ZeldaState::new();
+    state.ppu.forced_blank = false;
+    state.capture_display_snapshot();
+    state.ppu.forced_blank = true;
+
+    let captured_forced_blank = state.with_display_snapshot(|display| display.ppu.forced_blank);
+
+    assert!(captured_forced_blank);
+    assert!(state.ppu.forced_blank);
 }
 
 #[test]
@@ -3800,4 +4284,29 @@ fn name_file_x_scroll_both_horizontal_bits_match_c_rom_table() {
     assert_eq!(select_file.name_column(), 53);
     assert_eq!(select_file.name_scroll_x_step(), 1);
     assert_eq!(select_file.name_scroll_x_direction(), 2);
+}
+
+#[test]
+fn frame_input_opposites_prefer_the_new_direction_and_preserve_buttons() {
+    assert_eq!(
+        ZeldaState::sanitize_frame_inputs(0x0130, 0x0010, 0x08),
+        0x0120
+    );
+    assert_eq!(
+        ZeldaState::sanitize_frame_inputs(0x00e0, 0x0060, 0x06),
+        0x00a0
+    );
+}
+
+#[test]
+fn frame_input_simultaneous_opposites_from_neutral_are_neutral() {
+    assert_eq!(ZeldaState::sanitize_frame_inputs(0x00f0, 0, 0), 0);
+}
+
+#[test]
+fn frame_input_holds_the_chosen_direction_while_both_remain_pressed() {
+    assert_eq!(
+        ZeldaState::sanitize_frame_inputs(0x0030, 0x0030, 0x04),
+        0x0020
+    );
 }

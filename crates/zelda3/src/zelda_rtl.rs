@@ -104,21 +104,113 @@ use crate::game_state::{
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
 
-const ROM_RESET_FRAME_DELAY: u8 = 82;
-const ROM_INTRO_SOUND_BANK_BOOTSTRAP_FRAMES: u8 = 74;
-const ROM_INTRO_MEMORY_INITIALIZATION_FRAMES: u8 = 40;
+// Snes9x reaches the ROM's first initialized WRAM state after 81 complete
+// libretro frames.  The pixels written by that work are published separately
+// at the pre-NMI display boundary below; delaying the CPU for an extra frame
+// only happened to hide that boundary error during the earliest fade.
+const ROM_RESET_FRAME_DELAY: u8 = 81;
+const ROM_INTRO_CLEAR_1KB_CONTINUATION_FRAMES: u8 = 1;
+const ROM_INTRO_MESSAGE_POINTER_CONTINUATION_FRAMES: u8 = 48;
+const ROM_INTRO_ITEM_GFX_CONTINUATION_FRAMES: u8 = 15;
+const ROM_INTRO_FOLLOWER_GFX_CONTINUATION_FRAMES: u8 = 3;
+const ROM_INTRO_MEMORY_INITIALIZATION_FRAMES: u8 = 41;
+// Tile zero remains partially initialized while the first interruptible intro
+// slice is active. With the contemporaneous OAM word it produces the eight
+// startup pixels visible before Nintendo Presents is published.
+const ROM_INTRO_INITIAL_VISIBLE_TILE_ZERO: [u16; 16] = [
+    0x8000, 0, 0, 0, 0, 0, 0, 0, 0, 0x8001, 0x0100, 0, 0, 0, 0, 0,
+];
 const ROM_SELECTED_GAME_LOAD_FRAMES: u8 = 77;
+// The original CPU reaches Module_PreDungeon's audio prefix after 19 NMI
+// slices, then continues the room build while NMI publishes that command.
+const ROM_SELECTED_GAME_LOAD_PRE_DUNGEON_AUDIO_REMAINING: u8 = 58;
+const DUNGEON_LANDING_HDMA_RESET_PREFIX_SCANLINES: usize = 4;
+const ROM_DIALOGUE_GLYPH_INITIAL_WORK_UNITS: u8 = 29;
+const ROM_DIALOGUE_GLYPH_RESUME_WORK_UNITS: u8 = 42;
+// The ROM enters AttractScene_ThroneRoom on frame 5939 and does not return
+// from its dungeon-room construction work until frame 5981. NMI continues to
+// run while that main-CPU call is in flight, so model the interruption slices
+// themselves instead of delaying the later dialogue state.
+const ATTRACT_THRONE_ROOM_NMI_SLICES: u8 = 42;
+// Room 0x73 uses the same resumable dungeon construction path as the throne
+// room, minus the extra common-sprite upload. The ROM returns after 40 NMIs.
+const ATTRACT_ZELDA_PRISON_NMI_SLICES: u8 = 40;
+// Room 0x75 includes the room build plus its distinct palette setup and
+// completes one NMI later than the prison-room preparation.
+const ATTRACT_MAIDEN_WARP_NMI_SLICES: u8 = 41;
+// The conclusion transition darkens memory and reloads the overworld palettes
+// before returning to the intro module. The ROM's main CPU resumes after 45
+// intervening NMIs; keep that work attached to the transition itself.
+const ATTRACT_END_OF_STORY_NMI_SLICES: u8 = 45;
 const ROM_TEXT_DECODE_FIRST_SLICE_CURSOR: u16 = 94;
 const POLY_WORKER_TWO_FRAME_CYCLE_THRESHOLD: u32 = 28_250;
-const BSNES_POLY_SCHEDULER_FRAME_THRESHOLD: u8 = 0x1d;
-const BSNES_INTRO_POLY_BOOTSTRAP_STEPS: u8 = 0;
-const BSNES_INTRO_THREAD_START_DELAY: u8 = 0;
-const BSNES_INTRO_SPRITE_ANIMATION_START_DELAY: u8 = 5;
-const BSNES_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER: u8 = 0x42;
-const BSNES_NMI_POLY_UPLOAD_DEFER_FRAMES: u8 = 3;
+const SNES9X_INTRO_POLY_BOOTSTRAP_STEPS: u8 = 0;
+const SNES9X_INTRO_THREAD_START_DELAY: u8 = 0;
+const SNES9X_INTRO_SPRITE_ANIMATION_START_DELAY: u8 = 1;
+const SNES9X_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER: u8 = 0x42;
+const SNES9X_NMI_POLY_UPLOAD_DEFER_FRAMES: u8 = 3;
+
+const fn nmi_active_display_blank_scanlines_for_pending_work(
+    core_updates_disabled: bool,
+    update_hud: bool,
+    pending_subroutine: u8,
+) -> u8 {
+    // A normal CHR/OAM update plus the HUD DMA and the 0x800-byte tilemap
+    // upload runs past VBlank far enough that INIDISP is still forced blank
+    // when visible scanline zero is rendered. Model the native workload, not a
+    // particular route position; lighter NMI combinations finish in VBlank.
+    if !core_updates_disabled && update_hud && pending_subroutine == 1 {
+        1
+    } else {
+        0
+    }
+}
+
+const fn attract_throne_room_nmi_slices(retained_sprite_subset_2: u8) -> u8 {
+    // Sprite tileset 0x7e deliberately leaves subset 2 unchanged. On a cold
+    // attract pass that retained pack is 19; after the story restart it is 66.
+    // The latter compressed stream makes InitializeTilesets execute 20,282
+    // additional ROM instructions and span two more NMIs. Budget from the
+    // actual retained asset identity, not from which attract loop is running.
+    ATTRACT_THRONE_ROOM_NMI_SLICES + if retained_sprite_subset_2 == 66 { 2 } else { 0 }
+}
 
 const fn rom_intro_poly_thread_is_active(main_module: u8, submodule: u8) -> bool {
     main_module == 0 && matches!(submodule, 3 | 4 | 5 | 7 | 9 | 11)
+}
+
+const fn rom_intro_poly_initialization_is_active(main_module: u8, submodule: u8) -> bool {
+    // Submodule 2 is the cold-start path; submodule 10 restarts the same
+    // Triforce worker after the attract story. Both execute the same expensive
+    // sprite/graphics initialization and can cross NMI boundaries.
+    main_module == 0 && matches!(submodule, 2 | 10)
+}
+
+const fn rom_display_memory_publication_is_deferred(main_module: u8, submodule: u8) -> bool {
+    // FileSelect_Main authors a fresh stripe packet and OAM shadow after the
+    // active frame's NMI boundary. Those writes are consumed by the following
+    // NMI, so publishing the live post-NMI memory here would expose them one
+    // video frame early. The initialization substates are force-blanked; the
+    // distinction becomes visible once the steady file-select loop begins.
+    // The dungeon landing wipe has the same split CPU/NMI cadence: each iris
+    // and sprite step is authored after its active-frame upload boundary.
+    // Dialogue character tiles are likewise composed by the main thread and
+    // uploaded through the following BG3 NMI packet.
+    (main_module == 1 && submodule == 5)
+        || rom_dungeon_landing_wipe_is_active(main_module, submodule)
+        || (main_module == 14 && submodule == 2)
+}
+
+const fn rom_display_oam_publication_is_deferred(main_module: u8, submodule: u8) -> bool {
+    // Normal gameplay authors the OAM shadow during the main loop. NMI uploads
+    // that shadow after the active frame's capture boundary, so the frame being
+    // presented must retain the OAM image uploaded by the preceding NMI.
+    rom_display_memory_publication_is_deferred(main_module, submodule)
+        || (main_module == 7 && submodule == 0)
+}
+
+const fn rom_display_snapshot_is_one_frame_deferred(main_module: u8, submodule: u8) -> bool {
+    rom_dungeon_landing_wipe_is_active(main_module, submodule)
 }
 
 const fn rom_intro_wait_player_tears_down_poly_thread(
@@ -127,6 +219,23 @@ const fn rom_intro_wait_player_tears_down_poly_thread(
     nmi_thread_active: bool,
 ) -> bool {
     main_module == 0 && submodule == 8 && nmi_thread_active
+}
+
+const fn legacy_poly_scheduler_is_active(
+    bugs_fixed: u8,
+    timed_poly_worker_active: bool,
+    nmi_thread_active: bool,
+) -> bool {
+    bugs_fixed < BUGFIX_POLY_RENDERER && !timed_poly_worker_active && nmi_thread_active
+}
+
+const fn rom_file_select_teardown_runs_with_outgoing_poly_worker(
+    main_module: u8,
+    submodule: u8,
+    nmi_thread_active: bool,
+    nmi_thread_uses_poly_stack: bool,
+) -> bool {
+    main_module == 1 && submodule == 0 && nmi_thread_active && nmi_thread_uses_poly_stack
 }
 
 const fn rom_intro_title_fade_runs_main(poly_phase: u8) -> bool {
@@ -177,6 +286,17 @@ const fn rom_attract_init_graphics_decision(phase: u8) -> (bool, u8) {
     }
 }
 
+const fn rom_attract_story_render_nmi_slices(sequence: u8) -> u8 {
+    // The throne-room loader returns on the NMI boundary that also consumes
+    // the first story continuation slice. The opening polka-dot sequence does
+    // not, so preserve its independently verified six-slice startup.
+    if sequence == 2 {
+        5
+    } else {
+        6
+    }
+}
+
 const fn rom_file_select_initial_graphics_decision(phase: u8) -> (bool, bool, u8) {
     if phase > 1 {
         (true, phase == 2, phase - 1)
@@ -185,11 +305,137 @@ const fn rom_file_select_initial_graphics_decision(phase: u8) -> (bool, bool, u8
     }
 }
 
-const fn rom_selected_game_load_decision(remaining_frames: u8) -> (bool, u8) {
+const fn rom_selected_game_load_decision(remaining_frames: u8) -> (bool, bool, u8) {
     match remaining_frames {
-        0 => (false, 0),
-        1 => (true, 0),
-        _ => (false, remaining_frames - 1),
+        0 => (false, false, 0),
+        1 => (false, true, 0),
+        ROM_SELECTED_GAME_LOAD_PRE_DUNGEON_AUDIO_REMAINING => (true, false, remaining_frames - 1),
+        _ => (false, false, remaining_frames - 1),
+    }
+}
+
+const fn rom_dialogue_scroll_requires_resumption(scroll_speed: u8) -> bool {
+    // Speeds zero and one request at most two pixel passes and return before
+    // the next NMI. Larger scroll batches can be interrupted mid-command.
+    scroll_speed >= 2
+}
+
+const fn rom_dialogue_glyph_work_units(width: u8, pixel_position: u8) -> u8 {
+    let pixels_to_tile_boundary = 8 - (pixel_position & 7);
+    2 + if width < pixels_to_tile_boundary {
+        width
+    } else {
+        pixels_to_tile_boundary
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RomWorkContinuation {
+    FinishAttractThroneRoom,
+    FinishAttractZeldaPrison,
+    FinishAttractMaidenWarp,
+    FinishAttractEndOfStory,
+    ContinueDialogueScroll,
+    ContinueDialogueCharacters,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RomWorkSlice {
+    Waiting,
+    Complete(RomWorkContinuation),
+    DialogueScroll {
+        pixels: u8,
+        resume_caller: bool,
+        advance_main_heartbeat: bool,
+    },
+    DialogueCharacters {
+        work_units: u8,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct PendingRomWork {
+    continuation: Option<RomWorkContinuation>,
+    nmi_slices_remaining: u8,
+    dialogue_scroll_third_pixel_credit: u8,
+    dialogue_scroll_initial_slice: bool,
+}
+
+impl PendingRomWork {
+    fn schedule(continuation: RomWorkContinuation, nmi_slices: u8) -> Self {
+        debug_assert!(nmi_slices != 0);
+        Self {
+            continuation: Some(continuation),
+            nmi_slices_remaining: nmi_slices,
+            dialogue_scroll_third_pixel_credit: 0,
+            dialogue_scroll_initial_slice: false,
+        }
+    }
+
+    fn schedule_dialogue_scroll() -> Self {
+        Self {
+            continuation: Some(RomWorkContinuation::ContinueDialogueScroll),
+            nmi_slices_remaining: 0,
+            // Seed the three-slice cadence so the first five-pixel batch is
+            // split 2, 2, 1 across its interrupt boundaries.
+            dialogue_scroll_third_pixel_credit: 2,
+            dialogue_scroll_initial_slice: true,
+        }
+    }
+
+    fn schedule_dialogue_characters() -> Self {
+        Self {
+            continuation: Some(RomWorkContinuation::ContinueDialogueCharacters),
+            ..Self::default()
+        }
+    }
+
+    fn is_pending(self) -> bool {
+        self.continuation.is_some()
+    }
+
+    fn is_dialogue_scroll(self) -> bool {
+        self.continuation == Some(RomWorkContinuation::ContinueDialogueScroll)
+    }
+
+    fn advance_one_nmi_slice(&mut self) -> RomWorkSlice {
+        match self.continuation {
+            None => RomWorkSlice::Waiting,
+            Some(RomWorkContinuation::ContinueDialogueScroll) => {
+                // One five-pixel scroll batch moves roughly 10 KiB of tile data.
+                // The ROM's 65816 crosses two NMIs before returning to its caller,
+                // so each batch is observed as 2, 2, then 1 pixel.
+                self.dialogue_scroll_third_pixel_credit += 5;
+                let pixels = self.dialogue_scroll_third_pixel_credit / 3;
+                self.dialogue_scroll_third_pixel_credit %= 3;
+                let initial_slice = self.dialogue_scroll_initial_slice;
+                self.dialogue_scroll_initial_slice = false;
+                RomWorkSlice::DialogueScroll {
+                    pixels,
+                    resume_caller: !initial_slice && pixels == 1,
+                    advance_main_heartbeat: !initial_slice
+                        && self.dialogue_scroll_third_pixel_credit == 1,
+                }
+            }
+            Some(RomWorkContinuation::ContinueDialogueCharacters) => {
+                RomWorkSlice::DialogueCharacters {
+                    work_units: ROM_DIALOGUE_GLYPH_RESUME_WORK_UNITS,
+                }
+            }
+            Some(continuation) => {
+                self.nmi_slices_remaining = self.nmi_slices_remaining.saturating_sub(1);
+                if self.nmi_slices_remaining == 0 {
+                    self.continuation.take();
+                    RomWorkSlice::Complete(continuation)
+                } else {
+                    RomWorkSlice::Waiting
+                }
+            }
+        }
+    }
+
+    fn finish(&mut self) {
+        *self = Self::default();
     }
 }
 
@@ -197,16 +443,26 @@ const fn rom_dungeon_landing_wipe_is_active(main_module: u8, submodule: u8) -> b
     main_module == 7 && submodule == 15
 }
 
-const fn rom_normal_dialogue_initialization_is_active(
+const fn rom_dialogue_initialization_nmi_slices(
     main_module: u8,
     submodule: u8,
     messaging_module: u8,
-) -> bool {
-    main_module == 14 && submodule == 2 && messaging_module == 0
+    attract_sequence: u8,
+) -> u8 {
+    if messaging_module != 0 {
+        0
+    } else if (main_module == 14 && submodule == 2)
+        || (main_module == 20 && matches!(attract_sequence, 3 | 4))
+    {
+        5
+    } else {
+        0
+    }
 }
 
 const ASSET_SIGNATURE_PREFIX: &[u8; 16] = b"Zelda3_v0     \n\0";
 const DIALOGUE_SOURCE_SIDECAR_ASSET_NAME: &str = "kDialogueSourceSemantic";
+const SPC_DRIVER_TIMING_ASSET_NAME: &str = "kSpcDriverTimingProgram";
 const DIALOGUE_SOURCE_SIDECAR_MAGIC: &[u8; 16] = b"Z3DLGSRCv1\0\0\0\0\0\0";
 const REFERENCE_SAVE_NAMES: [&str; 13] = [
     "Chapter 1 - Zelda's Rescue.sav",
@@ -293,54 +549,43 @@ pub(super) fn configured_intro_memory_initialization_frames() -> u8 {
         .unwrap_or(ROM_INTRO_MEMORY_INITIALIZATION_FRAMES)
 }
 
-fn configured_poly_scheduler_frame_threshold() -> u8 {
-    env::var("ZELDA3_BSNES_POLY_SCHEDULER_FRAME_THRESHOLD")
-        .ok()
-        .and_then(|value| {
-            u8::from_str_radix(value.trim_start_matches("0x"), 16)
-                .or_else(|_| value.parse())
-                .ok()
-        })
-        .unwrap_or(BSNES_POLY_SCHEDULER_FRAME_THRESHOLD)
-}
-
 pub(super) fn configured_intro_poly_bootstrap_steps() -> u8 {
-    env::var("ZELDA3_BSNES_INTRO_POLY_BOOTSTRAP_STEPS")
+    env::var("ZELDA3_SNES9X_INTRO_POLY_BOOTSTRAP_STEPS")
         .ok()
         .and_then(|value| value.parse().ok())
-        .unwrap_or(BSNES_INTRO_POLY_BOOTSTRAP_STEPS)
+        .unwrap_or(SNES9X_INTRO_POLY_BOOTSTRAP_STEPS)
 }
 
 pub(super) fn configured_intro_thread_start_delay() -> u8 {
-    env::var("ZELDA3_BSNES_INTRO_THREAD_START_DELAY")
+    env::var("ZELDA3_SNES9X_INTRO_THREAD_START_DELAY")
         .ok()
         .and_then(|value| value.parse().ok())
-        .unwrap_or(BSNES_INTRO_THREAD_START_DELAY)
+        .unwrap_or(SNES9X_INTRO_THREAD_START_DELAY)
 }
 
 pub(super) fn configured_intro_sprite_animation_start_delay() -> u8 {
-    env::var("ZELDA3_BSNES_INTRO_SPRITE_ANIMATION_START_DELAY")
+    env::var("ZELDA3_SNES9X_INTRO_SPRITE_ANIMATION_START_DELAY")
         .ok()
         .and_then(|value| value.parse().ok())
-        .unwrap_or(BSNES_INTRO_SPRITE_ANIMATION_START_DELAY)
+        .unwrap_or(SNES9X_INTRO_SPRITE_ANIMATION_START_DELAY)
 }
 
 fn configured_nmi_poly_upload_defer_frames() -> u8 {
-    env::var("ZELDA3_BSNES_NMI_POLY_UPLOAD_DEFER_FRAMES")
+    env::var("ZELDA3_SNES9X_NMI_POLY_UPLOAD_DEFER_FRAMES")
         .ok()
         .and_then(|value| value.parse().ok())
-        .unwrap_or(BSNES_NMI_POLY_UPLOAD_DEFER_FRAMES)
+        .unwrap_or(SNES9X_NMI_POLY_UPLOAD_DEFER_FRAMES)
 }
 
 fn configured_poly_upload_defer_until_frame_counter() -> u8 {
-    env::var("ZELDA3_BSNES_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER")
+    env::var("ZELDA3_SNES9X_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER")
         .ok()
         .and_then(|value| {
             u8::from_str_radix(value.trim_start_matches("0x"), 16)
                 .or_else(|_| value.parse())
                 .ok()
         })
-        .unwrap_or(BSNES_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER)
+        .unwrap_or(SNES9X_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER)
 }
 
 fn non_empty_path(value: Option<OsString>) -> Option<PathBuf> {
@@ -1507,6 +1752,11 @@ impl AssetPack {
         Some(&self.data[start..end])
     }
 
+    fn asset_by_name(&self, name: &str) -> Option<&[u8]> {
+        let index = self.names.iter().position(|candidate| candidate == name)?;
+        self.asset(index)
+    }
+
     fn dialogue_source_sidecar_in<'a>(
         data: &'a [u8],
         ranges: &[(usize, usize)],
@@ -1612,6 +1862,8 @@ pub struct ZeldaState {
     bg3_vwf_glyph_run_dialogue_offsets: Vec<u16>,
     pub dma: DmaState,
     pub frame_ctr_dbg: u32,
+    #[serde(default)]
+    previous_host_controller_input: u16,
     rom: Vec<u8>,
     assets: Option<AssetPack>,
     #[serde(default = "default_gloves_color")]
@@ -1623,10 +1875,14 @@ pub struct ZeldaState {
     dialogue_blk_index: usize,
     dialogue_font_blk_index: usize,
     dialogue_flags: u8,
+    #[serde(default)]
+    intro_initialization_reset_obj_published: bool,
     #[serde(skip)]
     rom_startup_timing: bool,
     #[serde(skip)]
-    intro_startup_delay: u8,
+    intro_initialization_work_frames_pending: u8,
+    #[serde(skip)]
+    intro_initialization_reset_obj_control_pending: bool,
     #[serde(skip)]
     rom_reset_frame_delay: u8,
     #[serde(skip)]
@@ -1637,6 +1893,8 @@ pub struct ZeldaState {
     attract_init_graphics_phase: u8,
     #[serde(skip)]
     attract_first_story_render_delay: u8,
+    #[serde(skip)]
+    pending_rom_work: PendingRomWork,
     #[serde(skip)]
     joypad_sampled_before_main: bool,
     #[serde(skip)]
@@ -1662,6 +1920,11 @@ pub struct ZeldaState {
     #[serde(skip)]
     visible_display_snapshot: Option<Box<DisplaySnapshot>>,
     #[serde(skip)]
+    deferred_display_snapshot: Option<Box<DisplaySnapshot>>,
+    #[serde(default)]
+    nmi_forced_blank_scanlines_pending: u8,
+    spotlight_hdma_reset_prefix: Option<[u16; DUNGEON_LANDING_HDMA_RESET_PREFIX_SCANLINES]>,
+    #[serde(skip)]
     nmi_poly_upload_deferred: u8,
     #[serde(skip)]
     nmi_poly_upload_started: bool,
@@ -1672,13 +1935,13 @@ pub struct ZeldaState {
     #[serde(skip)]
     obj_vram_latch_generation: u64,
     #[serde(skip)]
-    bsnes_poly_scheduler_counter: u8,
+    snes9x_poly_scheduler_counter: u8,
     #[serde(skip)]
-    bsnes_hold_intro_step_this_frame: bool,
+    snes9x_hold_intro_step_this_frame: bool,
     #[serde(skip)]
-    bsnes_intro_step_carry_phase_active: bool,
+    snes9x_intro_step_carry_phase_active: bool,
     #[serde(skip)]
-    bsnes_intro_step_hold_alternate: bool,
+    snes9x_intro_step_hold_alternate: bool,
     #[serde(skip)]
     last_poly_work: PolyWorkMetrics,
     #[serde(skip)]
@@ -1791,7 +2054,7 @@ struct DisplaySnapshot {
     intro_memory_darken_frame_delay: u8,
     nmi_poly_upload_deferred: u8,
     obj_vram_latch_generation: u64,
-    bsnes_poly_scheduler_counter: u8,
+    snes9x_poly_scheduler_counter: u8,
 }
 
 pub type ZeldaRunFrameFunc = fn(&mut ZeldaState, u16, i32);
@@ -2250,24 +2513,24 @@ impl ZeldaState {
         self.nmi_poly_upload_started
     }
 
-    pub fn debug_bsnes_poly_scheduler_counter(&self) -> u8 {
-        self.bsnes_poly_scheduler_counter
+    pub fn debug_snes9x_poly_scheduler_counter(&self) -> u8 {
+        self.snes9x_poly_scheduler_counter
     }
 
-    pub fn debug_bsnes_hold_intro_step_this_frame(&self) -> bool {
-        self.bsnes_hold_intro_step_this_frame
+    pub fn debug_snes9x_hold_intro_step_this_frame(&self) -> bool {
+        self.snes9x_hold_intro_step_this_frame
     }
 
-    pub fn debug_bsnes_intro_step_carry_phase_active(&self) -> bool {
-        self.bsnes_intro_step_carry_phase_active
+    pub fn debug_snes9x_intro_step_carry_phase_active(&self) -> bool {
+        self.snes9x_intro_step_carry_phase_active
     }
 
     pub fn debug_last_poly_work(&self) -> PolyWorkMetrics {
         self.last_poly_work
     }
 
-    pub fn debug_bsnes_intro_step_hold_alternate(&self) -> bool {
-        self.bsnes_intro_step_hold_alternate
+    pub fn debug_snes9x_intro_step_hold_alternate(&self) -> bool {
+        self.snes9x_intro_step_hold_alternate
     }
 
     pub(crate) fn player_state(&self) -> RamPlayerStateView<'_> {
@@ -6478,6 +6741,7 @@ impl ZeldaState {
             bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
             dma: DmaState::new(),
             frame_ctr_dbg: 0,
+            previous_host_controller_input: 0,
             rom: Vec::new(),
             assets: None,
             gloves_color: default_gloves_color(),
@@ -6488,13 +6752,16 @@ impl ZeldaState {
             dialogue_blk_index: 0,
             dialogue_font_blk_index: 0,
             dialogue_flags: 0,
+            intro_initialization_reset_obj_published: false,
             rom_startup_timing: false,
-            intro_startup_delay: 0,
+            intro_initialization_work_frames_pending: 0,
+            intro_initialization_reset_obj_control_pending: false,
             rom_reset_frame_delay: 0,
             intro_memory_darken_frame_delay: 0,
             intro_poly_thread_initialization_phase: 0,
             attract_init_graphics_phase: 0,
             attract_first_story_render_delay: 0,
+            pending_rom_work: PendingRomWork::default(),
             joypad_sampled_before_main: false,
             audio_nmi_processed_before_main: false,
             file_select_initial_graphics_phase: 0,
@@ -6507,15 +6774,18 @@ impl ZeldaState {
             intro_sprite_animation_start_delay: 0,
             display_snapshot: None,
             visible_display_snapshot: None,
+            deferred_display_snapshot: None,
+            nmi_forced_blank_scanlines_pending: 0,
+            spotlight_hdma_reset_prefix: None,
             nmi_poly_upload_deferred: 0,
             nmi_poly_upload_started: false,
             nmi_poly_deferred_upload_bypasses_latch: false,
             nmi_poly_upload_from_deferred: false,
             obj_vram_latch_generation: 0,
-            bsnes_poly_scheduler_counter: 0,
-            bsnes_hold_intro_step_this_frame: false,
-            bsnes_intro_step_carry_phase_active: false,
-            bsnes_intro_step_hold_alternate: false,
+            snes9x_poly_scheduler_counter: 0,
+            snes9x_hold_intro_step_this_frame: false,
+            snes9x_intro_step_carry_phase_active: false,
+            snes9x_intro_step_hold_alternate: false,
             last_poly_work: PolyWorkMetrics::default(),
             poly_job_in_flight: false,
             poly_job_hold_frames: 0,
@@ -6564,6 +6834,7 @@ impl ZeldaState {
 
     pub fn zelda_reset(&mut self, preserve_sram: bool) {
         self.frame_ctr_dbg = 0;
+        self.previous_host_controller_input = 0;
         self.dma.reset();
         self.ppu.reset();
         self.bg3_vwf_glyph_runs.clear();
@@ -6575,7 +6846,9 @@ impl ZeldaState {
         self.zelda_restore_music_after_load_locked(true);
         self.initialized = true;
         self.apply_links_movement_to_camera_called = false;
-        self.intro_startup_delay = 0;
+        self.intro_initialization_reset_obj_published = false;
+        self.intro_initialization_work_frames_pending = 0;
+        self.intro_initialization_reset_obj_control_pending = false;
         self.rom_reset_frame_delay = if self.rom_startup_timing {
             configured_rom_reset_frame_delay()
         } else {
@@ -6585,6 +6858,7 @@ impl ZeldaState {
         self.intro_poly_thread_initialization_phase = 0;
         self.attract_init_graphics_phase = 0;
         self.attract_first_story_render_delay = 0;
+        self.pending_rom_work = PendingRomWork::default();
         self.joypad_sampled_before_main = false;
         self.audio_nmi_processed_before_main = false;
         self.file_select_initial_graphics_phase = 0;
@@ -6599,10 +6873,10 @@ impl ZeldaState {
         self.nmi_poly_deferred_upload_bypasses_latch = false;
         self.nmi_poly_upload_from_deferred = false;
         self.obj_vram_latch_generation = 0;
-        self.bsnes_poly_scheduler_counter = 0;
-        self.bsnes_hold_intro_step_this_frame = false;
-        self.bsnes_intro_step_carry_phase_active = false;
-        self.bsnes_intro_step_hold_alternate = false;
+        self.snes9x_poly_scheduler_counter = 0;
+        self.snes9x_hold_intro_step_this_frame = false;
+        self.snes9x_intro_step_carry_phase_active = false;
+        self.snes9x_intro_step_hold_alternate = false;
         self.poly_job_in_flight = false;
         self.poly_job_hold_frames = 0;
         self.intro_title_fade_poly_phase = 0;
@@ -6619,6 +6893,8 @@ impl ZeldaState {
         self.sync_overworld_map16_state_from_ram();
         self.display_snapshot = None;
         self.visible_display_snapshot = None;
+        self.deferred_display_snapshot = None;
+        self.spotlight_hdma_reset_prefix = None;
         self.emu_synchronize_whole_state();
     }
 
@@ -6626,12 +6902,14 @@ impl ZeldaState {
         self.rom_startup_timing = enabled;
         self.zelda_set_rom_startup_audio_phase(enabled);
         if !enabled {
-            self.intro_startup_delay = 0;
             self.rom_reset_frame_delay = 0;
+            self.intro_initialization_work_frames_pending = 0;
+            self.intro_initialization_reset_obj_control_pending = false;
             self.intro_memory_darken_frame_delay = 0;
             self.intro_poly_thread_initialization_phase = 0;
             self.attract_init_graphics_phase = 0;
             self.attract_first_story_render_delay = 0;
+            self.pending_rom_work = PendingRomWork::default();
             self.joypad_sampled_before_main = false;
             self.audio_nmi_processed_before_main = false;
             self.file_select_initial_graphics_phase = 0;
@@ -6646,10 +6924,10 @@ impl ZeldaState {
             self.nmi_poly_deferred_upload_bypasses_latch = false;
             self.nmi_poly_upload_from_deferred = false;
             self.obj_vram_latch_generation = 0;
-            self.bsnes_poly_scheduler_counter = 0;
-            self.bsnes_hold_intro_step_this_frame = false;
-            self.bsnes_intro_step_carry_phase_active = false;
-            self.bsnes_intro_step_hold_alternate = false;
+            self.snes9x_poly_scheduler_counter = 0;
+            self.snes9x_hold_intro_step_this_frame = false;
+            self.snes9x_intro_step_carry_phase_active = false;
+            self.snes9x_intro_step_hold_alternate = false;
             self.poly_job_in_flight = false;
             self.poly_job_hold_frames = 0;
             self.intro_title_fade_poly_phase = 0;
@@ -6665,6 +6943,8 @@ impl ZeldaState {
             self.intro_poly_presented_vram = None;
             self.display_snapshot = None;
             self.visible_display_snapshot = None;
+            self.deferred_display_snapshot = None;
+            self.spotlight_hdma_reset_prefix = None;
         } else if !self.game_state.display.has_animated_tile_data_source() {
             self.rom_reset_frame_delay = configured_rom_reset_frame_delay();
         }
@@ -6690,8 +6970,69 @@ impl ZeldaState {
         self.selected_game_load_remaining_frames = ROM_SELECTED_GAME_LOAD_FRAMES;
     }
 
+    #[doc(hidden)]
+    pub fn zelda_debug_selected_game_load_remaining_frames(&self) -> u8 {
+        self.selected_game_load_remaining_frames
+    }
+
+    pub(super) fn begin_attract_throne_room_work(&mut self) {
+        debug_assert!(!self.pending_rom_work.is_pending());
+        let retained_sprite_subset_2 = self.game_state.sprites.workspace.graphics_subset(2);
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishAttractThroneRoom,
+            attract_throne_room_nmi_slices(retained_sprite_subset_2),
+        );
+    }
+
+    pub(super) fn begin_attract_zelda_prison_work(&mut self) {
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishAttractZeldaPrison,
+            ATTRACT_ZELDA_PRISON_NMI_SLICES,
+        );
+    }
+
+    pub(super) fn begin_attract_maiden_warp_work(&mut self) {
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishAttractMaidenWarp,
+            ATTRACT_MAIDEN_WARP_NMI_SLICES,
+        );
+    }
+
+    pub(super) fn begin_attract_end_of_story_work(&mut self) {
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishAttractEndOfStory,
+            ATTRACT_END_OF_STORY_NMI_SLICES,
+        );
+    }
+
+    pub(super) fn begin_rom_dialogue_scroll_work(&mut self) -> u8 {
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule_dialogue_scroll();
+        match self.pending_rom_work.advance_one_nmi_slice() {
+            RomWorkSlice::DialogueScroll { pixels, .. } => pixels,
+            _ => unreachable!("new dialogue scroll work always yields pixel work"),
+        }
+    }
+
+    pub(super) fn begin_rom_dialogue_character_work(&mut self) {
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule_dialogue_characters();
+    }
+
+    pub(super) fn finish_pending_rom_work(&mut self) {
+        self.pending_rom_work.finish();
+    }
+
+    pub(super) fn rom_dialogue_scroll_is_pending(&self) -> bool {
+        self.pending_rom_work.is_dialogue_scroll()
+    }
+
     pub(super) fn capture_display_snapshot(&mut self) {
-        let snapshot = Box::new(DisplaySnapshot {
+        let frame = self.game_state.frame;
+        let mut snapshot = Box::new(DisplaySnapshot {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
             dma: self.dma.clone(),
@@ -6701,9 +7042,39 @@ impl ZeldaState {
             intro_memory_darken_frame_delay: self.intro_memory_darken_frame_delay,
             nmi_poly_upload_deferred: self.nmi_poly_upload_deferred,
             obj_vram_latch_generation: self.obj_vram_latch_generation,
-            bsnes_poly_scheduler_counter: self.bsnes_poly_scheduler_counter,
+            snes9x_poly_scheduler_counter: self.snes9x_poly_scheduler_counter,
         });
-        let frame = &self.game_state.frame;
+        let nmi_forced_blank_scanlines =
+            std::mem::take(&mut self.nmi_forced_blank_scanlines_pending);
+        snapshot.ppu.forced_blank_scanlines = nmi_forced_blank_scanlines;
+        if frame.main_module == 0
+            && frame.submodule == 1
+            && self.intro_initialization_reset_obj_control_pending
+        {
+            // OBSEL is still at its reset value for the interrupted initial
+            // display slice. Keep this in the immutable control snapshot; the
+            // live native PPU remains configured for the normal Zelda OBJ CHR
+            // base used once initialization resumes.
+            snapshot.ppu.obj_tile_adr1 = 0;
+            snapshot.ppu.obj_tile_adr2 = 0x1000;
+        }
+        // A high-bit V-counter request is a one-frame raster event. Publish it
+        // in this immutable display snapshot, then advance live simulation to
+        // the consumed state. Rendering must not decide whether game state
+        // advances, and replaying the same snapshot must reproduce the same
+        // scanlines.
+        if self.game_state.display.irq_control_has_vcounter_marker() {
+            self.clear_irq_control_flag();
+        }
+        if let Some(prefix) = self.spotlight_hdma_reset_prefix.take() {
+            // The reset is reached after HDMA has already consumed the first
+            // few scanlines of the landing-wipe table. Preserve that consumed
+            // prefix in the published snapshot while live state remains fully
+            // reset for the next frame.
+            for (index, value) in prefix.into_iter().enumerate() {
+                write_le_u16(&mut snapshot.ram, HDMA_TABLE_DYNAMIC + index * 2, value);
+            }
+        }
         if rom_intro_poly_thread_is_active(frame.main_module, frame.submodule) {
             self.intro_poly_vram_history.push((
                 frame.frame_counter,
@@ -6717,7 +7088,81 @@ impl ZeldaState {
             self.intro_poly_vram_history.clear();
         }
         self.visible_display_snapshot = None;
-        self.display_snapshot = Some(snapshot);
+        if rom_display_snapshot_is_one_frame_deferred(frame.main_module, frame.submodule) {
+            let previous = self.deferred_display_snapshot.replace(snapshot);
+            self.display_snapshot = previous.or_else(|| self.deferred_display_snapshot.clone());
+        } else {
+            self.deferred_display_snapshot = None;
+            self.display_snapshot = Some(snapshot);
+        }
+    }
+
+    /// Runs a renderer capture against the coherent pre-NMI display state while
+    /// leaving the live post-NMI simulation untouched.
+    ///
+    /// This is the shared publication boundary for both the scanline renderer
+    /// and the modern asset/GPU renderer. The returned value must own anything
+    /// it borrows from `game`, because live state is restored before returning.
+    pub fn with_display_snapshot<R>(&mut self, capture: impl FnOnce(&mut ZeldaState) -> R) -> R {
+        let Some(mut display) = self
+            .display_snapshot
+            .take()
+            .or_else(|| self.visible_display_snapshot.take())
+        else {
+            return capture(self);
+        };
+
+        let snapshot_frame = crate::game_state::FrameState::load_from_ram(&display.ram);
+        let retain_previous_nmi_display_memory = rom_display_memory_publication_is_deferred(
+            snapshot_frame.main_module,
+            snapshot_frame.submodule,
+        );
+        let retain_previous_nmi_oam = rom_display_oam_publication_is_deferred(
+            snapshot_frame.main_module,
+            snapshot_frame.submodule,
+        );
+        let live_forced_blank = self.ppu.forced_blank;
+        std::mem::swap(&mut self.ram, &mut display.ram);
+        std::mem::swap(&mut self.ppu, &mut display.ppu);
+        std::mem::swap(&mut self.dma, &mut display.dma);
+        // NMI publishes display memory for the upcoming active frame. Keep the
+        // captured control registers, but compose them with the newly uploaded
+        // VRAM/OAM/CGRAM rather than showing the previous frame's memory.
+        // The polygon worker publishes through its NMI handshake at the start
+        // of the frame. Preserve that completed pre-NMI buffer rather than a
+        // job that may have finished later in the current CPU slice.
+        let presented_poly = self.selected_intro_poly_display_buffer();
+        let retain_previous_link_obj_vram =
+            snapshot_frame.main_module == 7 && snapshot_frame.submodule == 0;
+        let previous_link_obj_vram =
+            retain_previous_link_obj_vram.then(|| self.ppu.vram[0x4000..0x4400].to_vec());
+        if !retain_previous_nmi_display_memory {
+            self.ppu.vram.clone_from(&display.ppu.vram);
+            if let Some(previous_link_obj_vram) = previous_link_obj_vram {
+                self.ppu.vram[0x4000..0x4400].copy_from_slice(&previous_link_obj_vram);
+            }
+            self.ppu.vram[0x5800..0x5c00].copy_from_slice(&presented_poly);
+            if !retain_previous_nmi_oam {
+                self.ppu.oam.clone_from(&display.ppu.oam);
+            }
+            self.ppu.cgram.clone_from(&display.ppu.cgram);
+        }
+        self.ppu.obj_vram_latch = None;
+        self.ppu.obj_previous_frame_vram = display.ppu.obj_previous_frame_vram.clone();
+        // A force-blank write published by NMI takes effect before the next
+        // active scanline even though the rest of the frame remains sourced
+        // from the coherent pre-NMI display snapshot.
+        self.ppu.forced_blank |= live_forced_blank;
+        self.sync_native_game_state_from_ram();
+
+        let captured = capture(self);
+
+        std::mem::swap(&mut self.ram, &mut display.ram);
+        std::mem::swap(&mut self.ppu, &mut display.ppu);
+        std::mem::swap(&mut self.dma, &mut display.dma);
+        self.sync_native_game_state_from_ram();
+        self.display_snapshot = Some(display);
+        captured
     }
 
     pub fn vram(&self) -> &[u16] {
@@ -6761,6 +7206,14 @@ impl ZeldaState {
 
     pub fn current_dialogue_message_id(&self) -> u16 {
         self.game_state.messaging.dialogue_message_index.value()
+    }
+
+    /// Whether BG3 is currently owned by the dialogue renderer.
+    ///
+    /// The selected message id and decoded glyph state intentionally survive
+    /// after a box closes, so neither is a valid presentation signal by itself.
+    pub fn is_dialogue_display_active(&self) -> bool {
+        self.game_state.messaging.runtime.module() != 0
     }
 
     pub fn set_current_dialogue_message_id(&mut self, message_id: u16) {
@@ -6825,7 +7278,7 @@ impl ZeldaState {
     pub fn current_displayed_source_render_dialogue_ir(
         &self,
     ) -> Vec<crate::dialogue_ir::DialogueIrOp> {
-        if self.game_state.messaging.runtime.module() == 0 {
+        if !self.is_dialogue_display_active() {
             return Vec::new();
         }
         self.current_visible_source_render_dialogue_ir()
@@ -6939,7 +7392,23 @@ impl ZeldaState {
     }
 
     pub fn set_assets(&mut self, assets: &[u8]) -> Result<(), String> {
-        self.assets = Some(AssetPack::parse(assets)?);
+        let parsed = AssetPack::parse(assets)?;
+        let driver_clock_assets = match (
+            parsed.asset_by_name(SPC_DRIVER_TIMING_ASSET_NAME),
+            parsed.asset(0),
+        ) {
+            (Some(driver), Some(intro_bank)) => Some((driver, intro_bank)),
+            _ => None,
+        };
+        if let Some((driver, intro_bank)) = driver_clock_assets {
+            self.initialize_spc_driver_clock(driver, intro_bank)?;
+            if self.rom_startup_timing {
+                self.configure_spc_driver_clock_for_rom_bootstrap();
+            }
+        } else {
+            self.clear_spc_driver_clock();
+        }
+        self.assets = Some(parsed);
         self.gloves_color = default_gloves_color();
         Ok(())
     }
@@ -7013,6 +7482,23 @@ impl ZeldaState {
         if !self.initialized {
             self.zelda_initialize();
         }
+        // Retain the OAM shadow at the host-frame boundary. The interrupted
+        // title main thread has one late-authored OBJ region whose NMI source is
+        // selected from this coherent snapshot; ordinary OAM remains current.
+        let oam_dma_source = self
+            .rom_startup_timing()
+            .then(|| self.sprite_oam_shadow_buffer().to_vec());
+        let frame = self.game_state.frame;
+        if self.rom_startup_timing
+            && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule)
+            && self.game_state.display.has_pending_polyhedral_update()
+        {
+            // The NMI at the frame boundary consumes the buffer completed in a
+            // prior CPU slice. A buffer completed below remains pending until
+            // the next boundary instead of being uploaded in the same frame.
+            self.nmi_poly_upload_from_deferred = true;
+            self.nmi_update_irqgfx();
+        }
         if self.rom_startup_timing() && self.rom_reset_frame_delay != 0 {
             self.rom_reset_frame_delay = self.rom_reset_frame_delay.saturating_sub(1);
             self.capture_display_snapshot();
@@ -7020,17 +7506,26 @@ impl ZeldaState {
         }
         let initialized_audio_bank_this_frame =
             !self.game_state.display.has_animated_tile_data_source();
-        if initialized_audio_bank_this_frame {
-            self.zelda_initialization_code();
-        }
-        if self.rom_startup_timing() && !initialized_audio_bank_this_frame {
+        if self.rom_startup_timing() {
+            // Live NMI samples/publishes the previous audio commands before the
+            // main CPU performs this frame's game work. This is also true on the
+            // first initialized frame: the intro chime written by `intro_init`
+            // must wait for the following NMI rather than leaking out early.
             self.interrupt_nmi_audio_parts_locked();
             self.audio_nmi_processed_before_main = true;
         }
+        if initialized_audio_bank_this_frame {
+            self.zelda_initialization_code();
+        }
         if self.file_select_checkerboard_suffix_pending {
             self.complete_file_select_checkerboard_upload();
+            // This continuation resumes after the prior CPU slice crossed an
+            // NMI boundary. Allow the checkerboard stripe packet completed
+            // above to be consumed now instead of carrying the stale latch
+            // into the next fixed file-select upload.
+            self.clear_nmi_update_latch();
             self.capture_display_snapshot();
-            self.interrupt_nmi(input);
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
         if self.rom_startup_timing() && self.file_select_initial_graphics_phase > 1 {
@@ -7041,29 +7536,35 @@ impl ZeldaState {
                 self.complete_module_select_file_0();
             }
             self.capture_display_snapshot();
-            self.interrupt_nmi(input);
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
         if self.file_select_initial_graphics_phase == 1 {
             self.file_select_initial_graphics_phase = 0;
         }
         if self.rom_startup_timing() && self.selected_game_load_remaining_frames != 0 {
-            let (complete_load, next_remaining_frames) =
+            let (begin_pre_dungeon_audio, complete_load, next_remaining_frames) =
                 rom_selected_game_load_decision(self.selected_game_load_remaining_frames);
             self.selected_game_load_remaining_frames = next_remaining_frames;
+            if begin_pre_dungeon_audio {
+                self.begin_selected_game_load_pre_dungeon_audio();
+            }
             if complete_load {
-                self.complete_module05_load_file();
+                self.complete_module05_load_file_after_resumption();
                 self.nmi_prepare_sprites();
                 self.clear_nmi_update_latch();
             }
             self.capture_display_snapshot();
-            self.interrupt_nmi(input);
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
         if self.rom_startup_timing() && self.dungeon_landing_wipe_carry_pending {
             self.dungeon_landing_wipe_carry_pending = false;
             if self.iris_spotlight_goal_transition_pending {
                 self.iris_spotlight_goal_transition_pending = false;
+                self.spotlight_hdma_reset_prefix = Some(std::array::from_fn(|index| {
+                    self.spotlight_hdma_table_dynamic_entry(index)
+                }));
                 self.complete_iris_spotlight_goal_transition();
                 self.complete_module07_0f_operate_spotlight_suffix();
             }
@@ -7071,7 +7572,7 @@ impl ZeldaState {
             self.nmi_prepare_sprites();
             self.clear_nmi_update_latch();
             self.capture_display_snapshot();
-            self.interrupt_nmi(input);
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
         if self.rom_startup_timing() && self.normal_dialogue_initialization_phase != 0 {
@@ -7094,7 +7595,7 @@ impl ZeldaState {
                 _ => unreachable!(),
             }
             self.capture_display_snapshot();
-            self.interrupt_nmi(input);
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
         if run_what & crate::RUN_POLY != 0 {
@@ -7109,10 +7610,11 @@ impl ZeldaState {
         if self.intro_bg_fade_suffix_pending {
             self.complete_intro_bg_fade_suffix();
         }
-        if self.rom_startup_timing() && self.intro_startup_delay != 0 {
-            self.intro_startup_delay = self.intro_startup_delay.saturating_sub(1);
+        if self.rom_startup_timing() && self.intro_initialization_work_frames_pending != 0 {
             self.capture_display_snapshot();
-            self.interrupt_nmi(input);
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            self.intro_initialization_work_frames_pending -= 1;
+            self.intro_initialization_reset_obj_control_pending = false;
             return;
         }
         if self.rom_startup_timing() && self.intro_memory_darken_frame_delay != 0 {
@@ -7126,12 +7628,14 @@ impl ZeldaState {
                 self.intro_initialize_memory_darken_finish();
             }
             self.capture_display_snapshot();
-            self.interrupt_nmi(input);
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
         if self.rom_startup_timing()
-            && self.game_state.frame.main_module == 0
-            && self.game_state.frame.submodule == 2
+            && rom_intro_poly_initialization_is_active(
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+            )
             && self.intro_poly_thread_initialization_phase != 0
             && run_what & crate::RUN_MAIN != 0
         {
@@ -7148,7 +7652,7 @@ impl ZeldaState {
                 self.clear_nmi_update_latch();
             }
             self.capture_display_snapshot();
-            self.interrupt_nmi(input);
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
         if self.rom_startup_timing()
@@ -7162,7 +7666,7 @@ impl ZeldaState {
                 self.complete_attract_init_graphics();
             }
             self.capture_display_snapshot();
-            self.interrupt_nmi(input);
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
         if self.rom_startup_timing()
@@ -7180,21 +7684,62 @@ impl ZeldaState {
             self.attract_first_story_render_delay =
                 self.attract_first_story_render_delay.saturating_sub(1);
             self.capture_display_snapshot();
-            self.interrupt_nmi(input);
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            return;
+        }
+        if self.rom_startup_timing() && self.pending_rom_work.is_pending() {
+            match self.pending_rom_work.advance_one_nmi_slice() {
+                RomWorkSlice::Waiting => {}
+                RomWorkSlice::Complete(RomWorkContinuation::FinishAttractThroneRoom) => {
+                    self.complete_attract_scene_throne_room();
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishAttractZeldaPrison) => {
+                    self.complete_attract_prep_zelda_prison();
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishAttractMaidenWarp) => {
+                    self.complete_attract_prep_maiden_warp();
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishAttractEndOfStory) => {
+                    self.complete_attract_scene_end_of_story();
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::ContinueDialogueScroll) => {
+                    unreachable!("dialogue scroll completes from its pixel work")
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::ContinueDialogueCharacters) => {
+                    unreachable!("dialogue character work completes from its work budget")
+                }
+                RomWorkSlice::DialogueScroll {
+                    pixels,
+                    resume_caller,
+                    advance_main_heartbeat,
+                } => {
+                    let complete = self.render_text_scroll_pixels(u16::from(pixels));
+                    if advance_main_heartbeat {
+                        self.increment_frame_counter();
+                    }
+                    if complete {
+                        self.pending_rom_work.finish();
+                        self.complete_rom_dialogue_scroll_work();
+                    } else if resume_caller {
+                        self.publish_rom_dialogue_scroll_batch();
+                    }
+                    if resume_caller || complete {
+                        self.resume_rom_dialogue_scroll_caller();
+                    }
+                }
+                RomWorkSlice::DialogueCharacters { work_units } => {
+                    if self.continue_rom_dialogue_character_work(work_units) {
+                        self.pending_rom_work.finish();
+                    }
+                }
+            }
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
         if self.rom_startup_timing() && run_what & crate::RUN_MAIN != 0 {
             self.nmi_read_joypads(input);
             self.joypad_sampled_before_main = true;
-        }
-        let frame = self.game_state.frame;
-        if self.rom_startup_timing
-            && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule)
-            && frame.frame_counter >= 0x85
-            && self.game_state.display.has_pending_polyhedral_update()
-        {
-            self.nmi_poly_upload_from_deferred = true;
-            self.nmi_update_irqgfx();
         }
         if run_what & crate::RUN_MAIN != 0 {
             self.replay_trace_col("before-game-loop");
@@ -7206,7 +7751,15 @@ impl ZeldaState {
         self.capture_display_snapshot();
         self.replay_trace_col("before-nmi");
         self.replay_trace_ram_watch("before-nmi");
-        self.interrupt_nmi(input);
+        let defer_dialogue_exit_bg_upload = frame.main_module == 14
+            && frame.submodule == 2
+            && self.game_state.frame.main_module != 14
+            && self.game_state.display.has_bg_vram_load();
+        self.interrupt_nmi(
+            input,
+            oam_dma_source.as_deref(),
+            defer_dialogue_exit_bg_upload,
+        );
         self.replay_trace_col("after-nmi");
         self.replay_trace_ram_watch("after-nmi");
         self.assert_native_frame_state_matches_ram();
@@ -7461,7 +8014,7 @@ impl ZeldaState {
     /// IRQ is consumed just as it is by `zelda_draw_ppu_frame` and real hardware.
     pub fn ppu_scanline_windows(
         &mut self,
-    ) -> Box<[(u8, u8, u8, u8, u8, [u16; 4], [u16; 4], [i16; 8]); 224]> {
+    ) -> Box<[(u8, u8, u8, u8, u8, [u16; 4], [u16; 4], [i16; 8], bool); 224]> {
         let saved_channels: [_; 8] = std::array::from_fn(|i| self.dma.channel[i]);
         for i in 0..8 {
             self.dma.channel[i].hdma_active = self.game_state.display.is_hdma_channel_enabled(i);
@@ -7489,8 +8042,11 @@ impl ZeldaState {
         self.simple_hdma_init(&mut hdma_chans[0], &self.dma.channel[6]);
         self.simple_hdma_init(&mut hdma_chans[1], &self.dma.channel[7]);
 
-        let mut result =
-            Box::new([(0u8, 0u8, 0u8, 0u8, 0u8, [0u16; 4], [0u16; 4], [0i16; 8]); 224]);
+        let mut result = Box::new(
+            [(
+                0u8, 0u8, 0u8, 0u8, 0u8, [0u16; 4], [0u16; 4], [0i16; 8], false,
+            ); 224],
+        );
         for line in 0..=224usize {
             if line == 128 && self.game_state.display.has_irq_control_flag() {
                 let name_scroll_x = self.game_state.messaging.select_file_menu.name_scroll_x();
@@ -7498,9 +8054,6 @@ impl ZeldaState {
                 self.zelda_ppu_write(0x2111, (name_scroll_x >> 8) as u8);
                 self.zelda_ppu_write(0x2112, 0);
                 self.zelda_ppu_write(0x2112, 0);
-                if self.game_state.display.irq_control_has_vcounter_marker() {
-                    self.clear_irq_control_flag();
-                }
             }
 
             if (1..=224).contains(&line) {
@@ -7513,6 +8066,7 @@ impl ZeldaState {
                     std::array::from_fn(|i| self.ppu.bg_layer[i].h_scroll),
                     std::array::from_fn(|i| self.ppu.bg_layer[i].v_scroll),
                     self.ppu.m7_matrix,
+                    line - 1 < usize::from(self.ppu.forced_blank_scanlines),
                 );
             }
 
@@ -7800,9 +8354,6 @@ impl ZeldaState {
                 self.zelda_ppu_write(0x2111, (name_scroll_x >> 8) as u8);
                 self.zelda_ppu_write(0x2112, 0);
                 self.zelda_ppu_write(0x2112, 0);
-                if self.game_state.display.irq_control_has_vcounter_marker() {
-                    self.clear_irq_control_flag();
-                }
             }
             self.ppu.run_line(line as i32);
             self.simple_hdma_do_line(&mut hdma_chans[0]);
@@ -7835,7 +8386,43 @@ impl ZeldaState {
         pitch: usize,
         render_flags: PpuRenderFlags,
     ) {
-        self.zelda_draw_ppu_frame(pixel_buffer, pitch, render_flags);
+        // Both classic scanline rendering and modern capture must consume the
+        // same publication boundary. In particular, NMI uploads VRAM/OAM/CGRAM
+        // for the active display after the coherent control-register snapshot
+        // was taken; `with_display_snapshot` performs that composition without
+        // rewinding the live simulation.
+        self.with_display_snapshot(|game| {
+            game.zelda_draw_ppu_frame(pixel_buffer, pitch, render_flags);
+        });
+        // Drawing must never publish an OBJ fetch latch back into live game
+        // state. Subsequent draws and the modern capture both consume current
+        // VRAM through the shared display snapshot composition.
+        self.ppu.obj_vram_latch = None;
+    }
+
+    fn selected_intro_poly_display_buffer(&self) -> Vec<u16> {
+        if env::var_os("ZELDA3_INTRO_POLY_PRESENT_OBJ_LATCH").is_some() {
+            if let Some(latched_vram) = self.ppu.obj_vram_latch.as_deref() {
+                if latched_vram.len() >= 0x5c00 {
+                    return latched_vram[0x5800..0x5c00].to_vec();
+                }
+            }
+        }
+        let diagnostic_lag = env::var("ZELDA3_INTRO_POLY_PRESENT_HISTORY_LAG")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(0);
+        if diagnostic_lag != 0 {
+            if let Some((_, vram, _)) = self
+                .intro_poly_vram_history
+                .len()
+                .checked_sub(1 + diagnostic_lag)
+                .and_then(|index| self.intro_poly_vram_history.get(index))
+            {
+                return vram.clone();
+            }
+        }
+        self.ppu.vram[0x5800..0x5c00].to_vec()
     }
 
     fn set_mode7_perspective_correction(&mut self, low: u16, high: u16) {
@@ -8273,14 +8860,27 @@ impl ZeldaState {
         0
     }
 
-    fn sanitize_frame_inputs(mut inputs: i32) -> u16 {
-        if inputs & 0x30 == 0x30 {
-            inputs ^= 0x30;
+    /// Resolve impossible opposing directions at the host-controller boundary.
+    ///
+    /// Keyboard transitions can briefly report both directions on one axis. If
+    /// exactly one direction is newly pressed, it wins; a genuinely simultaneous
+    /// pair is neutral. The remainder of the SNES controller word is unchanged.
+    fn sanitize_frame_inputs(inputs: i32, previous_input: u16, previous_high: u8) -> u16 {
+        let inputs = inputs as u16;
+        let mut directions = (inputs as u8).reverse_bits();
+        let previous_directions = (previous_input as u8).reverse_bits();
+        for pair in [0x0c, 0x03] {
+            if directions & pair == pair {
+                let newly_pressed = directions & !previous_directions & pair;
+                directions &= !pair;
+                if newly_pressed.count_ones() == 1 {
+                    directions |= newly_pressed;
+                } else if (previous_high & pair).count_ones() == 1 {
+                    directions |= previous_high & pair;
+                }
+            }
         }
-        if inputs & 0xc0 == 0xc0 {
-            inputs ^= 0xc0;
-        }
-        inputs as u16
+        (inputs & !0x00f0) | u16::from(directions.reverse_bits() & 0xf0)
     }
 
     pub fn state_recorder_read_next_replay_state_with_input_override(
@@ -8301,9 +8901,13 @@ impl ZeldaState {
         inputs: i32,
         replay_input_override: Option<u16>,
     ) -> bool {
-        let inputs = Self::sanitize_frame_inputs(inputs);
-        let replay_input_override =
-            replay_input_override.map(|input| Self::sanitize_frame_inputs(input as i32));
+        let raw_inputs = inputs as u16;
+        let raw_replay_input_override = replay_input_override;
+        let previous_input = self.previous_host_controller_input;
+        let previous_high = self.game_state.player.follower_link.joypad1h_last();
+        let inputs = Self::sanitize_frame_inputs(inputs, previous_input, previous_high);
+        let replay_input_override = replay_input_override
+            .map(|input| Self::sanitize_frame_inputs(input as i32, previous_input, previous_high));
         self.frame_ctr_dbg = self.frame_ctr_dbg.wrapping_add(1);
         self.replay_trace_ram_watch("frame-entry");
         let mut state_recorder = std::mem::take(&mut self.state_recorder);
@@ -8358,6 +8962,11 @@ impl ZeldaState {
             }
             inputs
         };
+        self.previous_host_controller_input = if is_replay {
+            raw_replay_input_override.unwrap_or(input_state)
+        } else {
+            raw_inputs
+        };
         self.state_recorder = state_recorder;
 
         self.sync_native_game_state_from_ram();
@@ -8375,11 +8984,11 @@ impl ZeldaState {
             && self.game_state.intro_sword.anim_step_raw() == 2;
         let wait_player_poly_teardown = self.rom_startup_timing
             && rom_intro_wait_player_tears_down_poly_thread(
-                frame.main_module,
-                frame.submodule,
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
                 self.game_state.display.nmi_thread_active,
             );
-        self.bsnes_hold_intro_step_this_frame = false;
+        self.snes9x_hold_intro_step_this_frame = false;
         let poly_thread_teardown_frame = self.intro_poly_thread_teardown_pending;
         self.intro_poly_thread_teardown_pending = false;
         let run_what = if poly_thread_teardown_frame {
@@ -8411,9 +9020,18 @@ impl ZeldaState {
             } else {
                 2
             }
-        } else if self.game_state.system_signals.bugs_fixed() < BUGFIX_POLY_RENDERER
-            && !use_timed_poly_worker
-        {
+        } else if rom_file_select_teardown_runs_with_outgoing_poly_worker(
+            frame.main_module,
+            frame.submodule,
+            self.game_state.display.nmi_thread_active,
+            self.game_state.display.nmi_thread_uses_poly_stack(),
+        ) {
+            3
+        } else if legacy_poly_scheduler_is_active(
+            self.game_state.system_signals.bugs_fixed(),
+            use_timed_poly_worker,
+            self.game_state.display.nmi_thread_active,
+        ) {
             if self.game_state.display.nmi_thread_uses_poly_stack() {
                 2
             } else {
@@ -8809,7 +9427,8 @@ impl ZeldaState {
         self.module_main_routing();
         self.replay_trace_ram_watch("game-loop-after-module");
         if self.rom_startup_timing()
-            && (self.dungeon_landing_wipe_carry_pending
+            && (self.pending_rom_work.is_pending()
+                || self.dungeon_landing_wipe_carry_pending
                 || self.normal_dialogue_initialization_phase != 0)
         {
             return;

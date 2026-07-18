@@ -12,6 +12,9 @@ const FORMAT_STARTING_POINTS: &str = "zelda3_starting_points_v1";
 const FORMAT_OVERWORLD_EXITS: &str = "zelda3_overworld_exits_v1";
 const FORMAT_SPECIAL_EXITS: &str = "zelda3_special_exits_v1";
 const DIALOGUE_SOURCE_SIDECAR_ASSET_NAME: &str = "kDialogueSourceSemantic";
+const SPC_DRIVER_TIMING_ASSET_NAME: &str = "kSpcDriverTimingProgram";
+const SPC_DRIVER_TIMING_FILE: &str = "spc_driver.bin";
+const SPC_DRIVER_TIMING_LENGTH: usize = 0x0f9e;
 const DIALOGUE_SOURCE_SIDECAR_MAGIC: &[u8; 16] = b"Z3DLGSRCv1\0\0\0\0\0\0";
 
 struct NavigationField {
@@ -434,6 +437,10 @@ fn main() {
     );
     println!(
         "cargo:rerun-if-changed={}",
+        generated_dir.join(SPC_DRIVER_TIMING_FILE).display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
         repo_root.join("scripts").join("tilemap_json.py").display()
     );
     println!(
@@ -451,7 +458,7 @@ fn main() {
             .display()
     );
 
-    if !asset_dir.is_dir() {
+    if !asset_dir.is_dir() || !generated_dir.join(SPC_DRIVER_TIMING_FILE).is_file() {
         let Some(rom) = find_rom(repo_root) else {
             panic!(
                 "missing generated assets at {}\n\
@@ -549,6 +556,11 @@ fn pack_assets(generated_dir: &Path) -> PathBuf {
         names.push(DIALOGUE_SOURCE_SIDECAR_ASSET_NAME.to_string());
         assets.push(sidecar);
     }
+    let spc_driver = read_spc_driver_timing_program(generated_dir);
+    key_signature.extend_from_slice(SPC_DRIVER_TIMING_ASSET_NAME.as_bytes());
+    key_signature.push(0);
+    names.push(SPC_DRIVER_TIMING_ASSET_NAME.to_string());
+    assets.push(spc_driver);
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let asset_pack = out_dir.join("zelda3_assets.dat");
@@ -570,6 +582,25 @@ fn pack_assets(generated_dir: &Path) -> PathBuf {
     fs::write(&asset_pack, file_data)
         .unwrap_or_else(|err| panic!("failed to write {}: {err}", asset_pack.display()));
     asset_pack
+}
+
+fn read_spc_driver_timing_program(generated_dir: &Path) -> Vec<u8> {
+    let path = generated_dir.join(SPC_DRIVER_TIMING_FILE);
+    let driver =
+        fs::read(&path).unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+    assert_eq!(
+        driver.len(),
+        SPC_DRIVER_TIMING_LENGTH,
+        "{} must contain the $0800-$179d SPC driver program",
+        path.display()
+    );
+    assert_eq!(
+        driver.get(..4),
+        Some(&[0x20, 0xcd, 0xcf, 0xbd][..]),
+        "{} does not start with the Zelda 3 SPC driver entry point",
+        path.display()
+    );
+    driver
 }
 
 /// Repo root (parent of this crate's manifest dir). The authored dialogue source

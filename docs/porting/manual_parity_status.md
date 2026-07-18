@@ -33,8 +33,8 @@ covered here when the ledger has direct C/Rust comparison evidence.
 | SNES input | `crates/snes/src/input.rs` | covered | Latch/shift and auto joypad call sites covered. |
 | SNES cart/loader | `crates/snes/src/cart.rs`, `crates/snes/src/loader.rs` | covered | Header scoring, cart RAM, LoROM/HiROM behavior covered. |
 | SNES tracing | `crates/snes/src/tracing.rs` | covered | CPU/SPC trace formatting and disassembly covered. |
-| SNES PPU renderer | `crates/snes/src/ppu.rs` | source-covered/runtime-open | Reset/saveload/register surface, scanline shell, windows, BG pixel loops, sprites, mode 7, upsampled mode 7, final color composition, mosaic, legacy removal, C brightness formula, and focused bsnes name-entry visual parity have direct source comparison evidence. Runtime-open until broader external pixel-oracle routes cover more gameplay scenes. |
-| SNES/APU/DSP/SPC | `crates/snes/src/apu.rs` | source-covered/runtime-open | APU reset/cycle/register shell, C saveload prefix, DSP register writes, DSP cycle/mix/echo/BRR/gain/noise path, DSP sample extraction, fixed C envelope arithmetic and pitch-modulation wrapping, SPC core helpers, and SPC dispatch families have direct C/Rust comparison evidence. Runtime-open because exact startup/external audio parity still needs bsnes/Mesen-style sample proof. |
+| SNES PPU renderer | `crates/snes/src/ppu.rs` | source-covered/runtime-open | Reset/saveload/register surface, scanline shell, windows, BG pixel loops, sprites, mode 7, upsampled mode 7, final color composition, mosaic, legacy removal, C brightness formula, and focused snes9x name-entry visual parity have direct source comparison evidence. Runtime-open until broader external pixel-oracle routes cover more gameplay scenes. |
+| SNES/APU/DSP/SPC | `crates/snes/src/apu.rs` | source-covered/runtime-open | APU reset/cycle/register shell, C saveload prefix, DSP register writes, DSP cycle/mix/echo/BRR/gain/noise path, DSP sample extraction, fixed C envelope arithmetic and pitch-modulation wrapping, SPC core helpers, and SPC dispatch families have direct C/Rust comparison evidence. Runtime-open because exact startup/external audio parity still needs snes9x/Mesen-style sample proof. |
 | Config | `crates/zelda3/src/config.rs` | covered | Full-file pass recorded. |
 | Utility/types | `crates/zelda3/src/util.rs`, `crates/zelda3/src/types.rs` | covered | Full-file/header compatibility passes recorded. |
 | NMI | `crates/zelda3/src/nmi.rs` | covered | Full-file pass recorded. |
@@ -49,19 +49,19 @@ covered here when the ledger has direct C/Rust comparison evidence.
 | Attract | `crates/zelda3/src/attract.rs` | source-covered/runtime-open | Full-file source pass recorded; focused runtime tests absent. |
 | Tagalong | `crates/zelda3/src/tagalong.rs` | source-covered/runtime-open | Full-file source pass recorded; follower movement/drop/draw/spawn helpers and tables covered. Needs focused gameplay/oracle routes for follower states. |
 | Ending intro/credits slices | `crates/zelda3/src/ending.rs` | source-covered/runtime-open | Every `ending.c` function now has direct manual comparison evidence: intro module/memory setup, Triforce intro animation, sword/flash helpers, credits scene loaders, `Module18_GanonEmerges`, `Module19_TriforceRoom`, Triforce poly helpers, Triforce/credits triangle helpers, credits dispatch, ending sprite prep, scroll/fade draw cases, credits sprite draw helpers, camera scroll helper, draw table fallbacks, late credits tail side effects, final fade/hang helpers, and credits text/attribution table indexing. Runtime-open until late-ending/credits routes exercise this against an external visual oracle. |
-| Select file/name entry | `crates/zelda3/src/select_file.rs`, renderer support | source-covered/runtime-open | Every `select_file.c` function now has direct C/Rust comparison coverage: loader/SRAM validation, shared background stripe builders, saved-slot display helpers, main file-select state, copy/kill-file state machines, name-entry setup/cursor/finalize helpers, checksum, defensive index, immediate SRAM persistence, copy-player stripe upload offset, and scanline-128 BG3 split-scroll behavior. Runtime-open for broader bsnes visual route coverage. |
-| Runtime host | `zelda3-bin/src/main.rs`, `crates/platform/src/lib.rs` | partial/open | Native host, lockstep/render/audio diagnostics covered; C lockstep now avoids false sample/command-port audio diffs from its silent SPC/DSP harness. Playable lockstep can now run a bsnes pixel/audio oracle in parallel, isolate bsnes SRAM, force neutral bsnes video output, auto-align video-only route phase, and write first-diff artifacts; exact startup audio parity remains open in the bsnes oracle path. |
+| Select file/name entry | `crates/zelda3/src/select_file.rs`, renderer support | source-covered/runtime-open | Every `select_file.c` function now has direct C/Rust comparison coverage: loader/SRAM validation, shared background stripe builders, saved-slot display helpers, main file-select state, copy/kill-file state machines, name-entry setup/cursor/finalize helpers, checksum, defensive index, immediate SRAM persistence, copy-player stripe upload offset, and scanline-128 BG3 split-scroll behavior. Runtime-open for broader snes9x visual route coverage. |
+| Runtime host | `zelda3-bin/src/main.rs`, `crates/platform/src/lib.rs` | partial/open | Native host, lockstep/render/audio diagnostics covered; C lockstep now avoids false sample/command-port audio diffs from its silent SPC/DSP harness. Playable lockstep can now run a snes9x pixel/audio oracle in parallel, isolate snes9x SRAM, force neutral snes9x video output, auto-align video-only route phase, and write first-diff artifacts; exact startup audio parity remains open in the snes9x oracle path. |
 | Oracle compatibility wrapper | `crates/zelda3/src/oracle.rs` | classified | Rust-only re-export of `zelda_cpu_infra`; not a C game-logic port surface. |
 
 ## Known Open Items
 
 | Area | What remains |
 |---|---|
-| External startup parity | Focused bsnes startup/name-entry/saved-select video now matches after SRAM isolation, neutral video options, and video-only route phase alignment; bsnes/Mesen-style startup audio still has known divergence around reset/bootstrap timing and the first `$0a` SFX. |
+| External startup parity | Focused snes9x startup/name-entry/saved-select video now matches after SRAM isolation, neutral video options, and video-only route phase alignment; snes9x/Mesen-style startup audio still has known divergence around reset/bootstrap timing and the first `$0a` SFX. |
 | Raw ROM timing | Rust raw-ROM tracer does not yet advance full h/v/vblank/NMI/autojoy timing, so it cannot produce exact frame-level APUI command timing. |
-| Full APU exactness | High-level SPC player matches the C model for many paths, but exact bsnes-like audio likely needs the real bootstrapped SPC program/timing path or an instrumented external oracle. |
-| Lockstep audio samples | C lockstep validates game RAM/PPU/SRAM/render state, not APUI command ports or final samples. Sample-exact checks live in the bsnes/Mesen-style external oracle path. |
-| Lockstep render blind spot | `--compare-lockstep-render` compares two states through the Rust renderer, so it cannot detect renderer bugs shared by both sides. Use the bsnes oracle path for true pixel parity. |
+| Full APU exactness | High-level SPC player matches the C model for many paths, but exact snes9x-like audio likely needs the real bootstrapped SPC program/timing path or an instrumented external oracle. |
+| Lockstep audio samples | C lockstep validates game RAM/PPU/SRAM/render state, not APUI command ports or final samples. Sample-exact checks live in the snes9x/Mesen-style external oracle path. |
+| Lockstep render blind spot | `--compare-lockstep-render` compares two states through the Rust renderer, so it cannot detect renderer bugs shared by both sides. Use the snes9x oracle path for true pixel parity. |
 | PPU runtime proof | Renderer source is now source-covered, but final confidence requires more visual route/oracle coverage beyond the covered startup/name-entry/lockstep slices. |
 | Dungeon full-file audit | Several critical clusters are covered, but remaining room/object/door/helper surfaces still need direct file-by-file audit. |
 | Sprite module family | Many dispatch/draw/helper clusters are covered, but the split sprite files are not all full-file certified. |
@@ -71,8 +71,8 @@ covered here when the ledger has direct C/Rust comparison evidence.
 
 1. `crates/zelda3/src/dungeon.rs`: continue uncovered room/object/door helper surfaces.
 2. `crates/zelda3/src/sprite*.rs`: work split sprite files one family at a time.
-3. Pixel oracle routes: add/extend bsnes/Mesen visual routes for overworld, house entry/exit, pot pickup, menus, and dungeons.
-4. External audio timing: replace the high-level startup shortcut with bootstrapped SPC timing or a stronger bsnes/Mesen sample oracle.
+3. Pixel oracle routes: add/extend snes9x/Mesen visual routes for overworld, house entry/exit, pot pickup, menus, and dungeons.
+4. External audio timing: replace the high-level startup shortcut with bootstrapped SPC timing or a stronger snes9x/Mesen sample oracle.
 
 ## Useful Commands
 

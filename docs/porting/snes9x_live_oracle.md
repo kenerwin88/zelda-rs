@@ -1,5 +1,8 @@
 # Snes9x live parity oracle
 
+For human-played, restartable oracle acquisition, see
+[`snes9x_route_recorder.md`](snes9x_route_recorder.md).
+
 The Snes9x harness is a black-box product-boundary oracle. It runs the original
 ROM and the Rust engine from the same SRAM, feeds both the same 16-bit SNES
 controller word once per game frame, and observes completed video frames plus
@@ -94,3 +97,8 @@ same controller stream instead of searching forward for a matching picture.
 
 Host focus and alt-tab behavior is outside the ROM oracle boundary. Those
 paths must be tested through the platform audio queue and resume lifecycle.
+
+For broad checkpoint-derived coverage, see
+[`snes9x_segment_matrix.md`](snes9x_segment_matrix.md). That gate requires
+Snes9x-created boundary states, keeps the Rust and oracle starts separate, and
+labels the result segmented coverage rather than a continuous playthrough.

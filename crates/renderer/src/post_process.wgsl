@@ -26,7 +26,7 @@ struct Params {
     prevent_math_mode: u32,
     windowsel_cm: u32,
     rendered_subscreen: u32,
-    _pad0: u32,
+    forced_blank_scanlines: u32,
     _pad1: u32,
     _pad2: u32,
     // 56 vec4<u32>; each component holds one scanline as
@@ -52,9 +52,9 @@ fn cw_bit(in_window: bool, mode: u32) -> bool {
 }
 
 // Expand a 5-bit component and apply the SNES INIDISP DAC curve. Brightness
-// levels are 1/16 through 16/16; forced blank is handled separately.
+// levels span black through full scale; forced blank is handled separately.
 fn apply_brightness(v5: u32, brightness: u32) -> f32 {
-    let scaled5 = (v5 * (min(brightness, 15u) + 1u)) >> 4u;
+    let scaled5 = (v5 * min(brightness, 15u) + 7u) / 15u;
     let expanded = (scaled5 << 3u) | (scaled5 >> 2u);
     return f32(expanded) / 255.0;
 }
@@ -80,7 +80,7 @@ fn fs_main(in: VertOut) -> @location(0) vec4<f32> {
     let sx = u32(in.pos.x);
     let sy = u32(in.pos.y);
 
-    if p.forced_blank != 0u {
+    if p.forced_blank != 0u || sy < p.forced_blank_scanlines {
         return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
 

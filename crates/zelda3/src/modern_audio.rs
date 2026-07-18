@@ -38,6 +38,55 @@ impl PartialEq for DebugVoiceSamples {
 
 impl Eq for DebugVoiceSamples {}
 
+#[derive(Clone, Debug, Default)]
+struct DebugMixSamples(Vec<[i32; 4]>);
+
+impl PartialEq for DebugMixSamples {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for DebugMixSamples {}
+
+#[derive(Clone, Debug, Default)]
+struct DebugVoicePositions([Vec<u64>; MODERN_AUDIO_VOICES]);
+
+impl PartialEq for DebugVoicePositions {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for DebugVoicePositions {}
+
+#[derive(Clone, Debug, Default)]
+struct DebugVoicePitchWords([Vec<u16>; MODERN_AUDIO_VOICES]);
+
+impl PartialEq for DebugVoicePitchWords {
+    fn eq(&self, _other: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for DebugVoicePitchWords {}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct EchoRamRegion {
+    start: usize,
+    left: Vec<i16>,
+    right: Vec<i16>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct PendingDspKeyOn {
+    pitch: u8,
+    instrument: u8,
+    volume: u8,
+    #[serde(default)]
+    write_phase: u8,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ModernAudioFrameStats {
     pub samples_per_channel: usize,
@@ -80,6 +129,9 @@ pub struct ModernAudioEngine {
     fir_coefficients: [i8; 8],
     #[serde(default)]
     echo_delay_samples: u16,
+    /// EDL register value waiting for phase 29 at echo offset zero.
+    #[serde(default)]
+    echo_delay_register_samples: u16,
     #[serde(default)]
     dsp_flags: u8,
     #[serde(default)]
@@ -100,10 +152,45 @@ pub struct ModernAudioEngine {
     echo_start_page: u8,
     #[serde(default)]
     echo_ram_initialized: bool,
+    #[serde(default)]
+    echo_preserved_regions: Vec<EchoRamRegion>,
     #[serde(default = "default_noise_sample")]
     noise_sample: i16,
     #[serde(default)]
     noise_counter: u16,
+    #[serde(default)]
+    dsp_global_counter: u16,
+    #[serde(default)]
+    dsp_rendered_samples: u64,
+    /// Final S-DSP mix waiting in the one-sample DAC/output staging register.
+    #[serde(default)]
+    dsp_output_left: i16,
+    #[serde(default)]
+    dsp_output_right: i16,
+    /// Inputs retained for a final-output register write that lands after the
+    /// internal mix but before this staged sample reaches the DAC.
+    #[serde(default)]
+    dsp_output_raw_main_left: i16,
+    #[serde(default)]
+    dsp_output_raw_main_right: i16,
+    #[serde(default)]
+    dsp_output_filtered_left: i16,
+    #[serde(default)]
+    dsp_output_filtered_right: i16,
+    /// Voice mix accumulated for the in-flight DSP cycle's echo write.
+    #[serde(default)]
+    dsp_output_echo_input_left: i16,
+    #[serde(default)]
+    dsp_output_echo_input_right: i16,
+    /// S-DSP polls KON after every other output sample.
+    #[serde(default)]
+    dsp_even_cycle: bool,
+    /// KOFF writes remain pending until the same every-other-sample register
+    /// poll used by the hardware voice pipeline.
+    #[serde(default)]
+    pending_dsp_key_off_mask: u8,
+    #[serde(default)]
+    pending_dsp_key_off_delays: [u8; MODERN_AUDIO_VOICES],
     #[serde(default)]
     checkpoint_sample_prefix: Vec<i16>,
     #[serde(default)]
@@ -111,9 +198,17 @@ pub struct ModernAudioEngine {
     last_stats: ModernAudioFrameStats,
     #[serde(skip, default)]
     debug_voice_samples: DebugVoiceSamples,
+    #[serde(skip, default)]
+    debug_voice_gains: DebugVoiceSamples,
+    #[serde(skip, default)]
+    debug_mix_samples: DebugMixSamples,
+    #[serde(skip, default)]
+    debug_voice_positions: DebugVoicePositions,
+    #[serde(skip, default)]
+    debug_voice_pitch_words: DebugVoicePitchWords,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 pub struct ModernVoiceDebugState {
     pub active: bool,
     pub volume_left: i8,
@@ -121,6 +216,7 @@ pub struct ModernVoiceDebugState {
     pub echo_send: bool,
     pub pitch: u16,
     pub pitch_counter: u16,
+    pub dsp_sample_position: u64,
     pub gain: u16,
     pub envelope_state: u8,
     pub envelope_rate_counter: u16,
@@ -131,6 +227,7 @@ pub struct ModernVoiceDebugState {
     pub sample_backed: bool,
     pub sample_length: usize,
     pub sample_loops: bool,
+    pub sample_loop_start: usize,
     pub brr_block_start: usize,
 }
 
@@ -151,7 +248,10 @@ impl Default for ModernAudioEngine {
             master_volume_right: default_master_volume(),
             music_volume: default_music_volume(),
             fir_coefficients: [0; 8],
-            echo_delay_samples: 512,
+            // Hardware EDL starts at zero. Represent its zero-byte ring as a
+            // one-sample sentinel so the cursor remains pinned at zero.
+            echo_delay_samples: 1,
+            echo_delay_register_samples: 1,
             dsp_flags: 0x20,
             pitch_modulation_mask: 0,
             noise_enable_mask: 0,
@@ -159,15 +259,33 @@ impl Default for ModernAudioEngine {
             fir_history_right: [0; 8],
             fir_history_index: 0,
             echo_ring_index: 0,
-            echo_remaining_samples: 512,
+            echo_remaining_samples: 1,
             echo_start_page: 0xc8,
             echo_ram_initialized: false,
+            echo_preserved_regions: Vec::new(),
             noise_sample: default_noise_sample(),
             noise_counter: 0,
+            dsp_global_counter: 0,
+            dsp_rendered_samples: 0,
+            dsp_output_left: 0,
+            dsp_output_right: 0,
+            dsp_output_raw_main_left: 0,
+            dsp_output_raw_main_right: 0,
+            dsp_output_filtered_left: 0,
+            dsp_output_filtered_right: 0,
+            dsp_output_echo_input_left: 0,
+            dsp_output_echo_input_right: 0,
+            dsp_even_cycle: false,
+            pending_dsp_key_off_mask: 0,
+            pending_dsp_key_off_delays: [0; MODERN_AUDIO_VOICES],
             checkpoint_sample_prefix: Vec::new(),
             checkpoint_sample_offset: 0,
             last_stats: ModernAudioFrameStats::default(),
             debug_voice_samples: DebugVoiceSamples::default(),
+            debug_voice_gains: DebugVoiceSamples::default(),
+            debug_mix_samples: DebugMixSamples::default(),
+            debug_voice_positions: DebugVoicePositions::default(),
+            debug_voice_pitch_words: DebugVoicePitchWords::default(),
         }
     }
 }
@@ -199,6 +317,7 @@ impl ModernAudioEngine {
             })
             .collect();
         self.master_volume_left = dsp[821] as i8;
+        self.dsp_even_cycle = dsp[818] != 0;
         self.master_volume_right = dsp[822] as i8;
         self.echo_mix_left = dsp[831] as i8;
         self.echo_mix_right = dsp[832] as i8;
@@ -299,6 +418,8 @@ impl ModernAudioEngine {
                 voice.sample_data = sample.pcm;
                 voice.sample_loop_start = sample.loop_start;
                 voice.sample_loops = sample.loops;
+                voice.dsp_terminal_block_start = sample.terminal_block_start;
+                voice.dsp_end_pipeline = 0;
                 voice.sample_backed = true;
                 voice.brr_block_start = block_start;
                 voice.brr_started = true;
@@ -371,6 +492,8 @@ impl ModernAudioEngine {
                     | AudioEventKind::SetStereoVolume { .. }
                     | AudioEventKind::SetDspEnvelope { .. }
                     | AudioEventKind::NoteOn { .. }
+                    | AudioEventKind::DspKeyOn { .. }
+                    | AudioEventKind::DspKeyOff { .. }
                     | AudioEventKind::KeyOnVoice { .. }
                     | AudioEventKind::NoteOff { .. }
                     | AudioEventKind::SetDuration { .. }
@@ -384,11 +507,38 @@ impl ModernAudioEngine {
 
         for event in &frame.events {
             if event.sample_offset > 0 && is_deferred_voice_event(&event.kind) {
-                deferred_voice_events.push(event.clone());
+                let mut deferred = event.clone();
+                let retrigger_shift = deferred_event_voice(&event.kind)
+                    .and_then(|voice| {
+                        let state = self.voices.get(voice)?;
+                        Some(deferred_retrigger_shift(
+                            frame,
+                            event,
+                            state.key_on_count,
+                            state.active,
+                            state.note_origin,
+                        ))
+                    })
+                    .unwrap_or(0);
+                let retriggered_note_off = matches!(event.kind, AudioEventKind::NoteOff { .. })
+                    && deferred_event_voice(&event.kind).is_some_and(|voice| {
+                        self.voices
+                            .get(voice)
+                            .is_some_and(|voice| voice.key_on_count > 1)
+                    });
+                deferred.sample_offset = deferred_voice_sample_offset(
+                    event,
+                    retrigger_shift,
+                    retriggered_note_off,
+                    self.dsp_global_counter,
+                );
+                deferred_voice_events.push(deferred);
                 stats.understood_events += 1;
                 if matches!(
                     event.kind,
-                    AudioEventKind::NoteOn { .. } | AudioEventKind::KeyOnVoice { .. }
+                    AudioEventKind::NoteOn { .. }
+                        | AudioEventKind::DspKeyOn { .. }
+                        | AudioEventKind::KeyOnVoice { .. }
                 ) {
                     stats.triggered_voices += 1;
                 }
@@ -523,6 +673,26 @@ impl ModernAudioEngine {
                     self.load_voice_sample(*voice as usize, *instrument, *pitch, sample_ram);
                     stats.triggered_voices += 1;
                 }
+                AudioEventKind::DspKeyOn {
+                    voice,
+                    pitch,
+                    instrument,
+                    volume,
+                } => {
+                    stats.understood_events += 1;
+                    self.schedule_dsp_key_on(
+                        *voice as usize,
+                        *pitch,
+                        *instrument,
+                        *volume,
+                        event.timer_cycles,
+                    );
+                    stats.triggered_voices += 1;
+                }
+                AudioEventKind::DspKeyOff { voice } => {
+                    stats.understood_events += 1;
+                    self.schedule_dsp_key_off(*voice as usize, event.timer_cycles);
+                }
                 AudioEventKind::RetriggerVoice { voice } => {
                     stats.understood_events += 1;
                     self.retrigger_voice(*voice as usize);
@@ -631,7 +801,7 @@ impl ModernAudioEngine {
                     stats.understood_events += 1;
                     for voice in 0..MODERN_AUDIO_VOICES {
                         if mask & (1 << voice) != 0 {
-                            self.key_on_staged_voice(voice, sample_ram);
+                            self.schedule_staged_dsp_key_on(voice, event.timer_cycles);
                             stats.triggered_voices += 1;
                         }
                     }
@@ -640,7 +810,7 @@ impl ModernAudioEngine {
                     stats.understood_events += 1;
                     for voice in 0..MODERN_AUDIO_VOICES {
                         if mask & (1 << voice) != 0 {
-                            self.voices[voice].begin_release();
+                            self.schedule_dsp_key_off(voice, event.timer_cycles);
                         }
                     }
                 }
@@ -650,7 +820,17 @@ impl ModernAudioEngine {
                     value,
                 } => {
                     stats.understood_events += 1;
-                    self.handle_voice_parameter(*voice, *parameter, *value);
+                    let application_offset =
+                        deferred_voice_sample_offset(event, 0, false, self.dsp_global_counter);
+                    if application_offset < 0 {
+                        self.handle_backdated_voice_parameter(*voice, *parameter, *value);
+                    } else if application_offset > 0 {
+                        let mut deferred = event.clone();
+                        deferred.sample_offset = application_offset;
+                        deferred_voice_events.push(deferred);
+                    } else {
+                        self.handle_voice_parameter(*voice, *parameter, *value);
+                    }
                 }
                 AudioEventKind::EchoParameter { parameter, value } => {
                     let register = match parameter {
@@ -662,8 +842,15 @@ impl ModernAudioEngine {
                         EchoParameterKind::Delay => 0x7d,
                         EchoParameterKind::StartAddress => 0x6d,
                     };
-                    if event.sample_offset > 0 {
-                        deferred_globals.push((event.sample_offset as usize, register, *value));
+                    let application_offset = dsp_global_application_sample_offset(event, register);
+                    if application_offset < 0 {
+                        if self.handle_backdated_output_parameter(register, *value) {
+                            stats.understood_events += 1;
+                        } else {
+                            stats.ignored_events += 1;
+                        }
+                    } else if application_offset > 0 {
+                        deferred_globals.push((application_offset as usize, register, *value));
                         stats.understood_events += 1;
                     } else if self.handle_global_parameter(register, *value) {
                         stats.understood_events += 1;
@@ -681,8 +868,15 @@ impl ModernAudioEngine {
                     deferred_globals.push((usize::from(*restore_offset), 0x3c, restore_right));
                 }
                 AudioEventKind::GlobalParameter { register, value } => {
-                    if event.sample_offset > 0 {
-                        deferred_globals.push((event.sample_offset as usize, *register, *value));
+                    let application_offset = dsp_global_application_sample_offset(event, *register);
+                    if application_offset < 0 {
+                        if self.handle_backdated_output_parameter(*register, *value) {
+                            stats.understood_events += 1;
+                        } else {
+                            stats.ignored_events += 1;
+                        }
+                    } else if application_offset > 0 {
+                        deferred_globals.push((application_offset as usize, *register, *value));
                         stats.understood_events += 1;
                     } else if self.handle_global_parameter(*register, *value) {
                         stats.understood_events += 1;
@@ -701,20 +895,27 @@ impl ModernAudioEngine {
         deferred_music_volumes.sort_unstable_by_key(|event| event.0);
         deferred_voice_events.sort_by_key(|event| event.sample_offset);
         if samples_per_channel != 0 && channels != 0 {
-            self.initialize_echo_ring_from_source(sample_ram);
-            let mut native_audio = vec![0i16; DSP_SAMPLES_PER_FRAME.saturating_mul(channels)];
+            // Uploads change echo RAM contents, not the DSP's live cursor or
+            // FIR phase. Rebuild the cached ring without resetting that state.
+            self.resize_echo_ring_from_ram(sample_ram);
+            let native_samples = if (400..=DSP_SAMPLES_PER_FRAME).contains(&samples_per_channel) {
+                samples_per_channel
+            } else {
+                DSP_SAMPLES_PER_FRAME
+            };
+            let mut native_audio = vec![0i16; native_samples.saturating_mul(channels)];
             let sample_start = if channels == 2 {
                 let prefix_len = self.checkpoint_sample_prefix.len().min(native_audio.len());
                 native_audio[..prefix_len]
                     .copy_from_slice(&self.checkpoint_sample_prefix[..prefix_len]);
-                usize::from(self.checkpoint_sample_offset).min(DSP_SAMPLES_PER_FRAME)
+                usize::from(self.checkpoint_sample_offset).min(native_samples)
             } else {
                 0
             };
             self.mix(
                 &mut native_audio,
                 sample_start,
-                DSP_SAMPLES_PER_FRAME,
+                native_samples,
                 channels,
                 &deferred_globals,
                 &deferred_music_volumes,
@@ -723,13 +924,17 @@ impl ModernAudioEngine {
             );
             self.checkpoint_sample_prefix.clear();
             self.checkpoint_sample_offset = 0;
-            resample_nearest(
-                &native_audio,
-                audio_buffer,
-                DSP_SAMPLES_PER_FRAME,
-                samples_per_channel,
-                channels,
-            );
+            if native_samples == samples_per_channel {
+                audio_buffer[..count].copy_from_slice(&native_audio[..count]);
+            } else {
+                resample_nearest(
+                    &native_audio,
+                    audio_buffer,
+                    native_samples,
+                    samples_per_channel,
+                    channels,
+                );
+            }
         }
         self.advance_pitch_slides();
         self.advance_voice_durations();
@@ -756,6 +961,7 @@ impl ModernAudioEngine {
                 echo_send: voice.echo_send,
                 pitch: voice.exact_pitch_word,
                 pitch_counter: voice.dsp_pitch_counter,
+                dsp_sample_position: voice.dsp_sample_position,
                 gain: voice.dsp_gain_level,
                 envelope_state: voice.dsp_envelope_state,
                 envelope_rate_counter: voice.dsp_rate_counter,
@@ -766,6 +972,7 @@ impl ModernAudioEngine {
                 sample_backed: voice.sample_backed,
                 sample_length: voice.sample_data.len(),
                 sample_loops: voice.sample_loops,
+                sample_loop_start: voice.sample_loop_start,
                 brr_block_start: voice.brr_block_start,
             }
         })
@@ -776,6 +983,14 @@ impl ModernAudioEngine {
             self.echo_ring_index,
             self.fir_history_index,
             self.echo_remaining_samples,
+        )
+    }
+
+    pub fn echo_debug_config(&self) -> (u8, u16, bool) {
+        (
+            self.echo_start_page,
+            self.echo_delay_samples,
+            self.echo_ram_initialized,
         )
     }
 
@@ -818,6 +1033,51 @@ impl ModernAudioEngine {
         &self.debug_voice_samples.0
     }
 
+    pub fn debug_voice_gains(&self) -> &[Vec<i16>; MODERN_AUDIO_VOICES] {
+        &self.debug_voice_gains.0
+    }
+
+    pub fn debug_mix_samples(&self) -> &[[i32; 4]] {
+        &self.debug_mix_samples.0
+    }
+
+    pub fn debug_staged_output_components(&self) -> [i16; 6] {
+        [
+            self.dsp_output_left,
+            self.dsp_output_right,
+            self.dsp_output_raw_main_left,
+            self.dsp_output_raw_main_right,
+            self.dsp_output_filtered_left,
+            self.dsp_output_filtered_right,
+        ]
+    }
+
+    pub fn debug_voice_positions(&self) -> &[Vec<u64>; MODERN_AUDIO_VOICES] {
+        &self.debug_voice_positions.0
+    }
+
+    pub fn debug_voice_pitch_words(&self) -> &[Vec<u16>; MODERN_AUDIO_VOICES] {
+        &self.debug_voice_pitch_words.0
+    }
+
+    pub fn debug_dsp_global_counter(&self) -> u16 {
+        self.dsp_global_counter
+    }
+
+    pub fn debug_dsp_rendered_samples(&self) -> u64 {
+        self.dsp_rendered_samples
+    }
+
+    pub fn debug_checkpoint_sample_offset(&self) -> u16 {
+        self.checkpoint_sample_offset
+    }
+
+    pub fn debug_voice_sample_data(&self, voice: usize) -> Option<&[i16]> {
+        self.voices
+            .get(voice)
+            .map(|voice| voice.sample_data.as_slice())
+    }
+
     pub fn seed_echo_checkpoint_state(
         &mut self,
         sample_ram: &[u8],
@@ -832,6 +1092,7 @@ impl ModernAudioEngine {
     ) {
         self.echo_start_page = start_page;
         self.echo_delay_samples = u16::from(delay_register & 0x0f).saturating_mul(512).max(1);
+        self.echo_delay_register_samples = self.echo_delay_samples;
         self.echo_ram_initialized = false;
         self.initialize_echo_ring_from_source(Some(sample_ram));
         let echo_len = self.echo_left.len().max(1);
@@ -938,6 +1199,111 @@ impl ModernAudioEngine {
         }
     }
 
+    /// Apply a register write consumed by a voice phase in the partial DSP
+    /// cycle before this host frame's first output sample.
+    ///
+    /// Audio from the preceding host frame has already been presented, but a
+    /// pitch write in that partial cycle has also advanced the hardware BRR
+    /// cursor. Reconcile that persistent cursor by the pitch delta while
+    /// keeping final-output staging at the renderer boundary.
+    fn handle_backdated_voice_parameter(
+        &mut self,
+        voice_index: u8,
+        parameter: VoiceParameterKind,
+        value: u8,
+    ) {
+        let voice_slot = usize::from(voice_index);
+        let old_pitch = self
+            .voices
+            .get(voice_slot)
+            .map(|voice| voice.exact_pitch_word)
+            .unwrap_or_default();
+        let old_volume_mix = self.voices.get(voice_slot).and_then(|voice| {
+            let volume = match parameter {
+                VoiceParameterKind::VolumeLeft => voice.volume_left,
+                VoiceParameterKind::VolumeRight => voice.volume_right,
+                _ => return None,
+            };
+            Some((
+                staged_voice_channel_mix(voice, volume, self.music_volume),
+                voice.echo_send,
+            ))
+        });
+        self.handle_voice_parameter(voice_index, parameter, value);
+        if let Some((old_mix, echo_send)) = old_volume_mix {
+            let voice = &self.voices[voice_slot];
+            let volume = match parameter {
+                VoiceParameterKind::VolumeLeft => voice.volume_left,
+                VoiceParameterKind::VolumeRight => voice.volume_right,
+                _ => unreachable!(),
+            };
+            let new_mix = staged_voice_channel_mix(voice, volume, self.music_volume);
+            self.reconcile_backdated_volume_mix(parameter, new_mix - old_mix, echo_send);
+            return;
+        }
+        if !matches!(
+            parameter,
+            VoiceParameterKind::PitchLow | VoiceParameterKind::PitchHigh
+        ) {
+            return;
+        }
+        let Some(voice) = self.voices.get_mut(usize::from(voice_index)) else {
+            return;
+        };
+        if !voice.active || !voice.dsp_key_on_timed || voice.checkpoint_brr_decoder.is_some() {
+            return;
+        }
+        let new_pitch = voice.exact_pitch_word;
+        if new_pitch >= old_pitch {
+            voice.dsp_sample_position = voice
+                .dsp_sample_position
+                .saturating_add(u64::from(new_pitch - old_pitch));
+        } else {
+            voice.dsp_sample_position = voice
+                .dsp_sample_position
+                .saturating_sub(u64::from(old_pitch - new_pitch));
+        }
+        voice.dsp_pitch_counter = voice.dsp_sample_position as u16;
+        voice.brr_block_start = (voice.dsp_sample_position >> 12) as usize & !15;
+    }
+
+    fn reconcile_backdated_volume_mix(
+        &mut self,
+        parameter: VoiceParameterKind,
+        delta: i32,
+        echo_send: bool,
+    ) {
+        let (raw_main, echo_input, filtered, echo_ring) = match parameter {
+            VoiceParameterKind::VolumeLeft => (
+                &mut self.dsp_output_raw_main_left,
+                &mut self.dsp_output_echo_input_left,
+                self.dsp_output_filtered_left,
+                &mut self.echo_left,
+            ),
+            VoiceParameterKind::VolumeRight => (
+                &mut self.dsp_output_raw_main_right,
+                &mut self.dsp_output_echo_input_right,
+                self.dsp_output_filtered_right,
+                &mut self.echo_right,
+            ),
+            _ => return,
+        };
+        *raw_main = (i32::from(*raw_main) + delta).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+        if echo_send {
+            *echo_input =
+                (i32::from(*echo_input) + delta).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+            if self.dsp_flags & 0x20 == 0 && !echo_ring.is_empty() {
+                let previous = (self.echo_ring_index + echo_ring.len() - 1) % echo_ring.len();
+                echo_ring[previous] = (i32::from(*echo_input)
+                    + (i32::from(filtered) * i32::from(self.echo_feedback) >> 7))
+                    .clamp(i16::MIN as i32, i16::MAX as i32)
+                    as i16
+                    & !1;
+            }
+        }
+        self.rebuild_staged_output();
+    }
+
     fn handle_global_parameter(&mut self, register: u8, value: u8) -> bool {
         match register & 0x7f {
             0x0c => self.master_volume_left = value as i8,
@@ -960,15 +1326,14 @@ impl ModernAudioEngine {
             0x6c => self.dsp_flags = value,
             0x7d => {
                 let delay = u16::from(value & 0x0f).saturating_mul(512).max(1);
-                if delay != self.echo_delay_samples {
-                    self.echo_delay_samples = delay;
-                }
+                self.echo_delay_register_samples = delay;
             }
             register if register & 0x0f == 0x0f => {
                 self.fir_coefficients[usize::from(register >> 4)] = value as i8;
             }
             0x6d => {
                 if value != self.echo_start_page {
+                    self.preserve_current_echo_region();
                     self.echo_start_page = value;
                     self.echo_ram_initialized = false;
                 }
@@ -976,6 +1341,27 @@ impl ModernAudioEngine {
             _ => return false,
         }
         true
+    }
+
+    fn handle_backdated_output_parameter(&mut self, register: u8, value: u8) -> bool {
+        if !self.handle_global_parameter(register, value) {
+            return false;
+        }
+        if matches!(register & 0x7f, 0x0c | 0x1c | 0x2c | 0x3c) {
+            self.rebuild_staged_output();
+        }
+        true
+    }
+
+    fn rebuild_staged_output(&mut self) {
+        let left = (i32::from(self.dsp_output_raw_main_left) * i32::from(self.master_volume_left)
+            >> 7)
+            + (i32::from(self.dsp_output_filtered_left) * i32::from(self.echo_mix_left) >> 7);
+        let right =
+            (i32::from(self.dsp_output_raw_main_right) * i32::from(self.master_volume_right) >> 7)
+                + (i32::from(self.dsp_output_filtered_right) * i32::from(self.echo_mix_right) >> 7);
+        self.dsp_output_left = left.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+        self.dsp_output_right = right.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
     }
 
     fn initialize_echo_ring_from_source(&mut self, sample_ram: Option<&[u8]>) {
@@ -988,7 +1374,12 @@ impl ModernAudioEngine {
         let start = usize::from(self.echo_start_page) << 8;
         for index in 0..delay {
             let address = start + index * 4;
-            if let Some(bytes) = sample_source_bytes(self.sample_bank_id, sample_ram, address) {
+            if let Some((left, right)) = self.preserved_echo_value(address) {
+                self.echo_left[index] = left;
+                self.echo_right[index] = right;
+            } else if let Some(bytes) =
+                sample_source_bytes(self.sample_bank_id, sample_ram, address)
+            {
                 self.echo_left[index] = i16::from_le_bytes([bytes[0], bytes[1]]);
                 self.echo_right[index] = i16::from_le_bytes([bytes[2], bytes[3]]);
             } else {
@@ -1002,6 +1393,30 @@ impl ModernAudioEngine {
         self.fir_history_right = [0; 8];
         self.fir_history_index = 0;
         self.echo_ram_initialized = true;
+    }
+
+    fn preserve_current_echo_region(&mut self) {
+        if !self.echo_ram_initialized || self.echo_left.is_empty() {
+            return;
+        }
+        let start = usize::from(self.echo_start_page) << 8;
+        self.echo_preserved_regions
+            .retain(|region| region.start != start);
+        self.echo_preserved_regions.push(EchoRamRegion {
+            start,
+            left: self.echo_left.clone(),
+            right: self.echo_right.clone(),
+        });
+        if self.echo_preserved_regions.len() > 8 {
+            self.echo_preserved_regions.remove(0);
+        }
+    }
+
+    fn preserved_echo_value(&self, address: usize) -> Option<(i16, i16)> {
+        self.echo_preserved_regions.iter().rev().find_map(|region| {
+            let index = address.checked_sub(region.start)? / 4;
+            Some((*region.left.get(index)?, *region.right.get(index)?))
+        })
     }
 
     fn resize_echo_ring_from_ram(&mut self, sample_ram: Option<&[u8]>) {
@@ -1029,7 +1444,12 @@ impl ModernAudioEngine {
             let start = usize::from(self.echo_start_page) << 8;
             for index in previous_len..echo_delay {
                 let address = start + index * 4;
-                if let Some(bytes) = sample_source_bytes(self.sample_bank_id, sample_ram, address) {
+                if let Some((left, right)) = self.preserved_echo_value(address) {
+                    self.echo_left[index] = left;
+                    self.echo_right[index] = right;
+                } else if let Some(bytes) =
+                    sample_source_bytes(self.sample_bank_id, sample_ram, address)
+                {
                     self.echo_left[index] = i16::from_le_bytes([bytes[0], bytes[1]]);
                     self.echo_right[index] = i16::from_le_bytes([bytes[2], bytes[3]]);
                 }
@@ -1038,8 +1458,12 @@ impl ModernAudioEngine {
         self.echo_ring_index %= echo_delay;
     }
 
-    fn apply_deferred_voice_event(&mut self, kind: &AudioEventKind, sample_ram: Option<&[u8]>) {
-        match kind {
+    fn apply_deferred_voice_event(
+        &mut self,
+        event: &crate::game_output::AudioEvent,
+        sample_ram: Option<&[u8]>,
+    ) {
+        match &event.kind {
             AudioEventKind::SetNoteOrigin { voice, origin } => {
                 if let Some(voice) = self.voices.get_mut(*voice as usize) {
                     voice.note_origin = Some(*origin);
@@ -1159,20 +1583,35 @@ impl ModernAudioEngine {
                 self.trigger_voice_with_params(*voice as usize, *pitch, *instrument, *volume);
                 self.load_voice_sample(*voice as usize, *instrument, *pitch, sample_ram);
             }
+            AudioEventKind::DspKeyOn {
+                voice,
+                pitch,
+                instrument,
+                volume,
+            } => self.schedule_dsp_key_on(
+                *voice as usize,
+                *pitch,
+                *instrument,
+                *volume,
+                event.timer_cycles,
+            ),
+            AudioEventKind::DspKeyOff { voice } => {
+                self.schedule_dsp_key_off(*voice as usize, event.timer_cycles);
+            }
             AudioEventKind::RetriggerVoice { voice } => {
                 self.retrigger_voice(*voice as usize);
             }
             AudioEventKind::VoiceKeyOn { mask } => {
                 for voice in 0..MODERN_AUDIO_VOICES {
                     if mask & (1 << voice) != 0 {
-                        self.key_on_staged_voice(voice, sample_ram);
+                        self.schedule_staged_dsp_key_on(voice, event.timer_cycles);
                     }
                 }
             }
             AudioEventKind::VoiceKeyOff { mask } => {
                 for voice in 0..MODERN_AUDIO_VOICES {
                     if mask & (1 << voice) != 0 {
-                        self.voices[voice].begin_release();
+                        self.schedule_dsp_key_off(voice, event.timer_cycles);
                     }
                 }
             }
@@ -1215,6 +1654,7 @@ impl ModernAudioEngine {
         let Some(voice) = self.voices.get_mut(voice) else {
             return;
         };
+        voice.dsp_key_on_timed = false;
         let exact_parameters = voice.exact_parameters_pending;
         voice.exact_parameters_pending = false;
         if !exact_parameters {
@@ -1239,18 +1679,24 @@ impl ModernAudioEngine {
             voice.begin_decay_or_sustain();
         }
         voice.decay = 3 + (instrument & 3);
-        voice.instrument_timbre = instrument % 3;
+        // Keep the raw SRCN register value. A later KON can legally reuse it
+        // without another SRCN write; reducing it to the three synthetic
+        // timbres here made those retriggers decode an unrelated BRR sample.
+        voice.instrument_timbre = instrument;
         voice.timbre = if voice.noise_enabled {
             3
         } else {
-            voice.instrument_timbre
+            voice.instrument_timbre % 3
         };
         voice.pitch_slide_frames = 0;
         voice.sample_position = 0;
+        voice.dsp_sample_position = 0;
         voice.sample_backed = false;
         voice.brr_block_start = 0;
         voice.brr_started = false;
         voice.checkpoint_brr_decoder = None;
+        voice.dsp_terminal_block_start = None;
+        voice.dsp_end_pipeline = 0;
     }
 
     fn key_on_voice(
@@ -1280,16 +1726,19 @@ impl ModernAudioEngine {
         state.volume_right = volume_right;
         state.stereo_volume_configured = true;
         state.active = true;
-        state.instrument_timbre = source % 3;
+        state.instrument_timbre = source;
         if !state.noise_enabled {
-            state.timbre = state.instrument_timbre;
+            state.timbre = state.instrument_timbre % 3;
         }
         state.pitch_slide_frames = 0;
         state.sample_position = 0;
+        state.dsp_sample_position = 0;
         state.sample_backed = false;
         state.brr_block_start = 0;
         state.brr_started = false;
         state.checkpoint_brr_decoder = None;
+        state.dsp_terminal_block_start = None;
+        state.dsp_end_pipeline = 0;
         if state.dsp_envelope_configured {
             state.initialize_dsp_envelope();
             state.amplitude = 0;
@@ -1308,9 +1757,12 @@ impl ModernAudioEngine {
         state.remaining_frames = 0;
         state.pitch_slide_frames = 0;
         state.sample_position = 0;
+        state.dsp_sample_position = 0;
         state.brr_block_start = 0;
         state.brr_started = false;
         state.checkpoint_brr_decoder = None;
+        state.dsp_terminal_block_start = None;
+        state.dsp_end_pipeline = 0;
         if state.dsp_envelope_configured {
             // KON resets the envelope and BRR decoder, but the DSP rate and
             // pitch counters are hardware state and intentionally survive.
@@ -1328,6 +1780,118 @@ impl ModernAudioEngine {
         self.load_voice_sample(voice, source, 0, sample_ram);
     }
 
+    fn schedule_dsp_key_on(
+        &mut self,
+        voice: usize,
+        pitch: u8,
+        instrument: u8,
+        volume: u8,
+        write_phase: u8,
+    ) {
+        if let Some(voice) = self.voices.get_mut(voice) {
+            voice.pending_dsp_key_on = Some(PendingDspKeyOn {
+                pitch,
+                instrument,
+                volume,
+                write_phase,
+            });
+        }
+    }
+
+    fn schedule_staged_dsp_key_on(&mut self, voice: usize, write_phase: u8) {
+        let Some(state) = self.voices.get_mut(voice) else {
+            return;
+        };
+        let instrument = state.instrument_timbre;
+        let volume = state
+            .volume_left
+            .unsigned_abs()
+            .max(state.volume_right.unsigned_abs());
+        // Raw DSP parameter writes have already staged the exact pitch,
+        // envelope, and stereo gains on the voice. Preserve them when the
+        // hardware KON polling pipeline eventually starts the voice.
+        state.exact_parameters_pending = true;
+        self.schedule_dsp_key_on(voice, 0, instrument, volume, write_phase);
+    }
+
+    fn schedule_dsp_key_off(&mut self, voice: usize, write_phase: u8) {
+        if voice < MODERN_AUDIO_VOICES {
+            self.pending_dsp_key_off_mask |= 1 << voice;
+            let missed_current_poll = self.dsp_even_cycle && write_phase > 30;
+            self.pending_dsp_key_off_delays[voice] = if self.dsp_even_cycle {
+                u8::from(missed_current_poll) * 2
+            } else {
+                1
+            };
+        }
+    }
+
+    fn latch_dsp_key_off_register(&mut self) {
+        let mask = self.pending_dsp_key_off_mask;
+        for voice in 0..MODERN_AUDIO_VOICES {
+            if mask & (1 << voice) != 0 {
+                if self.pending_dsp_key_off_delays[voice] == 0 {
+                    self.voices[voice].begin_release();
+                    self.pending_dsp_key_off_mask &= !(1 << voice);
+                } else {
+                    self.pending_dsp_key_off_delays[voice] -= 1;
+                }
+            }
+        }
+    }
+
+    fn advance_dsp_key_on_pipelines(&mut self, sample_ram: Option<&[u8]>) {
+        for voice_index in 0..MODERN_AUDIO_VOICES {
+            let starting = {
+                let voice = &mut self.voices[voice_index];
+                (voice.dsp_key_on_pipeline == 5)
+                    .then(|| voice.latched_dsp_key_on.take())
+                    .flatten()
+            };
+            if let Some(key_on) = starting {
+                self.trigger_voice_with_params(
+                    voice_index,
+                    key_on.pitch,
+                    key_on.instrument,
+                    key_on.volume,
+                );
+                self.voices[voice_index].dsp_key_on_timed = true;
+                self.voices[voice_index].dsp_key_on_pipeline = 5;
+                self.load_voice_sample(voice_index, key_on.instrument, key_on.pitch, sample_ram);
+            }
+        }
+    }
+
+    fn poll_dsp_key_on_register(&mut self) {
+        if self.dsp_even_cycle {
+            for voice in &mut self.voices {
+                if voice
+                    .pending_dsp_key_on
+                    .is_some_and(|key_on| key_on.write_phase > 30)
+                {
+                    // A phase-31 write occurs after misc_30 sampled KON. Keep
+                    // it pending for the next every-other-sample poll.
+                    if let Some(key_on) = &mut voice.pending_dsp_key_on {
+                        key_on.write_phase = 0;
+                    }
+                } else if let Some(key_on) = voice.pending_dsp_key_on.take() {
+                    voice.latched_dsp_key_on = Some(key_on);
+                    voice.dsp_key_on_pipeline = 5;
+                }
+            }
+        } else {
+            // No KON poll occurs in this output sample. Any pending write has
+            // crossed the sample boundary before the next active phase-30 poll,
+            // so its original within-sample phase can no longer miss that poll.
+            for voice in &mut self.voices {
+                if let Some(key_on) = &mut voice.pending_dsp_key_on {
+                    key_on.write_phase = 0;
+                }
+            }
+        }
+        self.dsp_even_cycle = !self.dsp_even_cycle;
+    }
+
     fn load_voice_sample(
         &mut self,
         voice: usize,
@@ -1335,6 +1899,7 @@ impl ModernAudioEngine {
         pitch: u8,
         sample_ram: Option<&[u8]>,
     ) {
+        let voice_index = voice;
         let Some(voice) = self.voices.get_mut(voice) else {
             return;
         };
@@ -1357,6 +1922,8 @@ impl ModernAudioEngine {
         voice.sample_data = sample.pcm;
         voice.sample_loop_start = sample.loop_start;
         voice.sample_loops = sample.loops;
+        voice.dsp_terminal_block_start = sample.terminal_block_start;
+        voice.dsp_end_pipeline = 0;
         voice.sample_position = 0;
         voice.sample_step = if voice.dsp_pitch_configured {
             sample_step_for_pitch_word(voice.exact_pitch_word, 32_000)
@@ -1364,6 +1931,57 @@ impl ModernAudioEngine {
             sample_step_for_pitch(pitch, 32_000)
         };
         voice.sample_backed = true;
+        let reused_music_voice = voice.key_on_count != 0
+            && voice.note_origin == Some(crate::game_output::AudioNoteOrigin::Music);
+        voice.mix_uses_previous_sample = if voice.dsp_key_on_timed {
+            // S-DSP voice output reaches the host callback through the final
+            // one-sample DAC staging register.
+            true
+        } else {
+            matches!(voice_index, 0 | 2) || reused_music_voice
+        };
+        voice.key_on_count = voice.key_on_count.saturating_add(1);
+        if voice.dsp_pitch_configured {
+            if voice.dsp_key_on_timed {
+                // The DSP forces interpolation phase through its five KON
+                // stages. Decoded sample data is ready for the first pitched
+                // sample after that pipeline completes.
+                voice.brr_block_start = 0;
+                voice.brr_started = true;
+                voice.dsp_sample_position = 0;
+                voice.dsp_pitch_counter = 0;
+                voice.start_delay_samples = 0;
+                voice.dsp_gain_level = 0;
+                voice.dsp_hidden_gain_level = 0;
+                return;
+            }
+
+            // Legacy semantic NoteOn compatibility. Raw DSP-timed music uses
+            // the hardware pipeline above and does not enter this path.
+            voice.dsp_sample_position =
+                u64::from(voice.exact_pitch_word.saturating_add(0x1000)) * 3;
+            voice.dsp_pitch_counter = voice.dsp_sample_position as u16;
+            voice.brr_started = true;
+            let pipelined_music_voice_zero = voice_index == 0
+                && voice.note_origin == Some(crate::game_output::AudioNoteOrigin::Music);
+            voice.start_delay_samples =
+                usize::from(!reused_music_voice && !pipelined_music_voice_zero);
+            let attack_rate_index = usize::from((voice.dsp_adsr1 & 0x0f) * 2 + 1);
+            let attack_rate = DSP_ENVELOPE_RATE_VALUES[attack_rate_index];
+            let completed_fast_attack_preroll = voice.note_origin
+                == Some(crate::game_output::AudioNoteOrigin::Music)
+                && voice.dsp_adsr1 & 0x8f == 0x8f
+                && voice.dsp_adsr2 >> 5 == 7;
+            if completed_fast_attack_preroll {
+                voice.dsp_gain_level = 0x7ff;
+                voice.dsp_hidden_gain_level = 0x7f7;
+                voice.dsp_envelope_state = 2;
+            } else {
+                voice.dsp_gain_level = 32;
+                voice.dsp_hidden_gain_level = 32;
+            }
+            voice.dsp_rate_counter = attack_rate.saturating_sub(2);
+        }
     }
 
     fn mix(
@@ -1380,6 +1998,16 @@ impl ModernAudioEngine {
         for samples in &mut self.debug_voice_samples.0 {
             samples.clear();
         }
+        for gains in &mut self.debug_voice_gains.0 {
+            gains.clear();
+        }
+        for positions in &mut self.debug_voice_positions.0 {
+            positions.clear();
+        }
+        for pitches in &mut self.debug_voice_pitch_words.0 {
+            pitches.clear();
+        }
+        self.debug_mix_samples.0.clear();
         let frame_rate = samples_per_channel
             .saturating_mul(DEFAULT_FRAME_RATE)
             .max(1);
@@ -1410,61 +2038,97 @@ impl ModernAudioEngine {
                 self.music_volume = deferred_music_volumes[deferred_music_volume_index].1;
                 deferred_music_volume_index += 1;
             }
+            if self.echo_delay_register_samples == 0 {
+                self.echo_delay_register_samples = self.echo_delay_samples.max(1);
+            }
+            if self.echo_ring_index == 0
+                && self.echo_delay_samples != self.echo_delay_register_samples
+            {
+                self.echo_delay_samples = self.echo_delay_register_samples;
+                self.echo_remaining_samples = self.echo_delay_samples.max(1);
+            }
             self.resize_echo_ring_from_ram(sample_ram);
             while deferred_voice_events
                 .get(deferred_voice_index)
                 .is_some_and(|event| event.sample_offset.max(0) as usize <= sample_index)
             {
                 self.apply_deferred_voice_event(
-                    &deferred_voice_events[deferred_voice_index].kind,
+                    &deferred_voice_events[deferred_voice_index],
                     sample_ram,
                 );
                 deferred_voice_index += 1;
             }
+            self.latch_dsp_key_off_register();
+            self.advance_dsp_key_on_pipelines(sample_ram);
             let mut mixed_left = 0i32;
             let mut mixed_right = 0i32;
             let mut echo_input_left = 0i32;
             let mut echo_input_right = 0i32;
             let mut previous_voice_sample = 0i32;
+            let dsp_global_counter = self.dsp_global_counter;
             for voice_index in 0..self.voices.len() {
                 let voice = &mut self.voices[voice_index];
-                if !voice.active {
-                    voice.advance_inactive_pitch_counter();
-                    self.debug_voice_samples.0[voice_index].push(0);
-                    previous_voice_sample = 0;
-                    continue;
-                }
-                let unmodulated_step = voice.sample_step;
-                voice.render_pitch_word = voice.exact_pitch_word;
-                if voice_index != 0
-                    && self.pitch_modulation_mask & (1 << voice_index) != 0
-                    && voice.exact_pitch_word != 0
-                {
-                    let factor = (previous_voice_sample >> 4) + 0x400;
-                    let modulated =
-                        (i32::from(voice.exact_pitch_word) * factor >> 10).clamp(0, 0x3fff) as u16;
-                    voice.sample_step = sample_step_for_pitch_word(modulated, 32_000);
-                    voice.render_pitch_word = modulated;
-                }
-                let sample = if voice.noise_enabled {
-                    voice.next_noise_sample(self.noise_sample)
+                let was_active = voice.active;
+                let mut debug_position = voice.dsp_sample_position;
+                let mut debug_pitch = voice.render_pitch_word;
+                let sample = if was_active {
+                    let unmodulated_step = voice.sample_step;
+                    voice.render_pitch_word = voice.exact_pitch_word;
+                    if voice_index != 0
+                        && self.pitch_modulation_mask & (1 << voice_index) != 0
+                        && voice.exact_pitch_word != 0
+                    {
+                        let factor = (previous_voice_sample >> 4) + 0x400;
+                        let modulated = (i32::from(voice.exact_pitch_word) * factor >> 10)
+                            .clamp(0, 0x3fff) as u16;
+                        voice.sample_step = sample_step_for_pitch_word(modulated, 32_000);
+                        voice.render_pitch_word = modulated;
+                    }
+                    debug_position = voice.dsp_sample_position;
+                    debug_pitch = voice.render_pitch_word;
+                    let envelope_counter = if voice.dsp_key_on_timed {
+                        dsp_counter_for_current_sample(dsp_global_counter)
+                    } else {
+                        envelope_counter_for_voice(
+                            dsp_global_counter,
+                            voice.mix_uses_previous_sample,
+                        )
+                    };
+                    let sample = if voice.noise_enabled {
+                        voice
+                            .next_noise_sample_at_counter(self.noise_sample, Some(envelope_counter))
+                    } else {
+                        voice.next_sample_with_ram_at_counter(sample_ram, Some(envelope_counter))
+                    };
+                    voice.sample_step = unmodulated_step;
+                    sample
                 } else {
-                    voice.next_sample_with_ram(sample_ram)
+                    voice.advance_inactive_pitch_counter();
+                    0
                 };
+                // Voices, echo input, and echo feedback share one internal DSP
+                // sample clock. Presentation latency belongs at the final DAC
+                // boundary, not on each voice independently.
+                let mix_sample = sample;
                 voice.last_output_sample = sample as i16;
                 self.debug_voice_samples.0[voice_index].push(sample as i16);
-                voice.sample_step = unmodulated_step;
+                self.debug_voice_gains.0[voice_index].push(voice.dsp_gain_level as i16);
+                self.debug_voice_positions.0[voice_index].push(debug_position);
+                self.debug_voice_pitch_words.0[voice_index].push(debug_pitch);
                 previous_voice_sample = sample;
+                if !was_active && mix_sample == 0 {
+                    continue;
+                }
                 let (mut voice_left, mut voice_right) = if voice.stereo_volume_configured {
                     (
-                        sample * i32::from(voice.volume_left) >> 6,
-                        sample * i32::from(voice.volume_right) >> 6,
+                        mix_sample * i32::from(voice.volume_left) >> 7,
+                        mix_sample * i32::from(voice.volume_right) >> 7,
                     )
                 } else {
                     let pan = i32::from(voice.pan);
                     let left_gain = 127 - pan.max(0);
                     let right_gain = 127 + pan.min(0);
-                    (sample * left_gain / 127, sample * right_gain / 127)
+                    (mix_sample * left_gain / 127, mix_sample * right_gain / 127)
                 };
                 if voice.note_origin == Some(crate::game_output::AudioNoteOrigin::Music) {
                     voice_left = voice_left * i32::from(self.music_volume) / 96;
@@ -1481,6 +2145,13 @@ impl ModernAudioEngine {
                     echo_input_right = echo_input_right.clamp(i16::MIN as i32, i16::MAX as i32);
                 }
             }
+            self.dsp_global_counter = if self.dsp_global_counter == 0 {
+                30_719
+            } else {
+                self.dsp_global_counter - 1
+            };
+            let raw_main_left = mixed_left;
+            let raw_main_right = mixed_right;
             mixed_left = (mixed_left * i32::from(self.master_volume_left) >> 7)
                 .clamp(i16::MIN as i32, i16::MAX as i32);
             mixed_right = (mixed_right * i32::from(self.master_volume_right) >> 7)
@@ -1503,8 +2174,9 @@ impl ModernAudioEngine {
                     filtered_right = i32::from(filtered_right as i16);
                 }
             }
-            filtered_left = filtered_left.clamp(i16::MIN as i32, i16::MAX as i32);
-            filtered_right = filtered_right.clamp(i16::MIN as i32, i16::MAX as i32);
+            filtered_left = filtered_left.clamp(i16::MIN as i32, i16::MAX as i32) & !1;
+            filtered_right = filtered_right.clamp(i16::MIN as i32, i16::MAX as i32) & !1;
+            let dry_left = mixed_left;
             mixed_left += filtered_left * i32::from(self.echo_mix_left) >> 7;
             mixed_right += filtered_right * i32::from(self.echo_mix_right) >> 7;
             let echo_write_left = (echo_input_left
@@ -1515,6 +2187,9 @@ impl ModernAudioEngine {
                 + (filtered_right * i32::from(self.echo_feedback) >> 7))
                 .clamp(i16::MIN as i32, i16::MAX as i32)
                 & !1;
+            self.debug_mix_samples
+                .0
+                .push([filtered_left, mixed_left, dry_left, raw_main_left]);
             if self.dsp_flags & 0x20 == 0 {
                 self.echo_left[self.echo_ring_index] = echo_write_left as i16;
                 self.echo_right[self.echo_ring_index] = echo_write_right as i16;
@@ -1533,8 +2208,19 @@ impl ModernAudioEngine {
                 mixed_right = 0;
             }
             self.advance_noise();
-            let mixed_left = mixed_left.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-            let mixed_right = mixed_right.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+            self.dsp_rendered_samples = self.dsp_rendered_samples.saturating_add(1);
+            let current_left = mixed_left.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+            let current_right = mixed_right.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+            let mixed_left = self.dsp_output_left;
+            let mixed_right = self.dsp_output_right;
+            self.dsp_output_left = current_left;
+            self.dsp_output_right = current_right;
+            self.dsp_output_raw_main_left = raw_main_left as i16;
+            self.dsp_output_raw_main_right = raw_main_right as i16;
+            self.dsp_output_filtered_left = filtered_left as i16;
+            self.dsp_output_filtered_right = filtered_right as i16;
+            self.dsp_output_echo_input_left = echo_input_left as i16;
+            self.dsp_output_echo_input_right = echo_input_right as i16;
             for channel in 0..channels {
                 let index = sample_index * channels + channel;
                 if let Some(slot) = audio_buffer.get_mut(index) {
@@ -1547,6 +2233,24 @@ impl ModernAudioEngine {
                     };
                 }
             }
+            self.poll_dsp_key_on_register();
+        }
+
+        // A hardware consumer can fall in the partial DSP cycle immediately
+        // after this host buffer's final output sample. The audio for this
+        // frame is complete, but those register latches are persistent state
+        // for sample zero of the next callback and must not be discarded.
+        while let Some(&(_, register, value)) = deferred_globals.get(deferred_index) {
+            self.handle_global_parameter(register, value);
+            deferred_index += 1;
+        }
+        while let Some(&(_, value)) = deferred_music_volumes.get(deferred_music_volume_index) {
+            self.music_volume = value;
+            deferred_music_volume_index += 1;
+        }
+        while let Some(event) = deferred_voice_events.get(deferred_voice_index) {
+            self.apply_deferred_voice_event(event, sample_ram);
+            deferred_voice_index += 1;
         }
     }
 
@@ -1664,6 +2368,8 @@ struct ModernVoice {
     #[serde(default)]
     dsp_pitch_counter: u16,
     #[serde(default)]
+    dsp_sample_position: u64,
+    #[serde(default)]
     render_pitch_word: u16,
     #[serde(default)]
     brr_block_start: usize,
@@ -1671,6 +2377,12 @@ struct ModernVoice {
     brr_started: bool,
     #[serde(default)]
     checkpoint_brr_decoder: Option<CheckpointBrrDecoder>,
+    /// Decoded-sample index corresponding to the non-looping BRR END block.
+    #[serde(default)]
+    dsp_terminal_block_start: Option<usize>,
+    /// Samples remaining before a terminal header silences the voice pipeline.
+    #[serde(default)]
+    dsp_end_pipeline: u8,
     #[serde(default)]
     exact_pitch_word: u16,
     #[serde(default)]
@@ -1679,6 +2391,8 @@ struct ModernVoice {
     pitch_register_only: bool,
     #[serde(default)]
     start_delay_samples: usize,
+    #[serde(default)]
+    key_on_count: u32,
     #[serde(default)]
     stereo_volume_configured: bool,
     #[serde(default)]
@@ -1698,11 +2412,28 @@ struct ModernVoice {
     #[serde(default)]
     dsp_gain_level: u16,
     #[serde(default)]
+    dsp_hidden_gain_level: i32,
+    #[serde(default)]
     dsp_envelope_state: u8,
     #[serde(default)]
     dsp_rate_counter: u16,
     #[serde(default)]
     last_output_sample: i16,
+    #[serde(default)]
+    mix_uses_previous_sample: bool,
+    /// This voice was started by a raw KON event and therefore uses the
+    /// free-running DSP pitch-counter/BRR pipeline.
+    #[serde(default)]
+    dsp_key_on_timed: bool,
+    /// A raw KON write waiting for the S-DSP's every-other-sample poll.
+    #[serde(default)]
+    pending_dsp_key_on: Option<PendingDspKeyOn>,
+    /// Parameters captured when the KON register is polled.
+    #[serde(default)]
+    latched_dsp_key_on: Option<PendingDspKeyOn>,
+    /// Remaining samples in the internal voice-start pipeline after KON poll.
+    #[serde(default)]
+    dsp_key_on_pipeline: u8,
     #[serde(default)]
     dsp_rate_phase: u32,
 }
@@ -1799,55 +2530,114 @@ impl ModernVoice {
     }
 
     fn next_sample_with_ram(&mut self, sample_ram: Option<&[u8]>) -> i32 {
+        self.next_sample_with_ram_at_counter(sample_ram, None)
+    }
+
+    fn advance_dsp_envelope_at_optional_counter(&mut self, counter: Option<u16>) {
+        if let Some(counter) = counter {
+            self.advance_dsp_envelope_at_counter(counter);
+        } else {
+            self.advance_dsp_envelope_for_output_sample();
+        }
+    }
+
+    fn render_dsp_key_on_pipeline_sample(&mut self, envelope_counter: Option<u16>) -> bool {
+        if !self.dsp_key_on_timed || self.dsp_key_on_pipeline == 0 {
+            return false;
+        }
+
+        self.dsp_key_on_pipeline -= 1;
+        self.dsp_sample_position = if self.dsp_key_on_pipeline & 3 != 0 {
+            0x4000
+        } else {
+            0
+        };
+        self.dsp_pitch_counter = self.dsp_sample_position as u16;
+        self.dsp_gain_level = 0;
+        self.dsp_hidden_gain_level = 0;
+        if self.dsp_key_on_pipeline == 0 {
+            // S-DSP advances the envelope after emitting the final silent KON
+            // sample, making that gain visible to the following sample.
+            self.advance_dsp_envelope_at_optional_counter(envelope_counter);
+        }
+        true
+    }
+
+    fn next_sample_with_ram_at_counter(
+        &mut self,
+        sample_ram: Option<&[u8]>,
+        envelope_counter: Option<u16>,
+    ) -> i32 {
         if self.start_delay_samples != 0 {
             self.start_delay_samples -= 1;
             return 0;
         }
-        self.advance_dsp_envelope_for_output_sample();
+        if self.render_dsp_key_on_pipeline_sample(envelope_counter) {
+            return 0;
+        }
+        if !self.dsp_key_on_timed {
+            self.advance_dsp_envelope_at_optional_counter(envelope_counter);
+        }
         if self.sample_backed && !self.sample_data.is_empty() {
             let (mut index, fraction) = if self.dsp_pitch_configured {
                 let pitch = self.render_pitch_word;
-                let sum = u32::from(self.dsp_pitch_counter) + u32::from(pitch);
-                let overflow = sum > 0xffff;
-                self.dsp_pitch_counter = sum as u16;
-                if overflow {
-                    if let (Some(decoder), Some(sample_ram)) =
-                        (&mut self.checkpoint_brr_decoder, sample_ram)
-                    {
-                        if let Some(block) = decoder.decode_next(sample_ram) {
-                            let history_start = self.brr_block_start.saturating_add(13);
-                            let history = [
-                                self.sample_data.get(history_start).copied().unwrap_or(0),
-                                self.sample_data
-                                    .get(history_start + 1)
-                                    .copied()
-                                    .unwrap_or(0),
-                                self.sample_data
-                                    .get(history_start + 2)
-                                    .copied()
-                                    .unwrap_or(0),
-                            ];
-                            self.sample_data.clear();
-                            self.sample_data.extend_from_slice(&history);
-                            self.sample_data.extend_from_slice(&block);
-                            self.brr_block_start = 3;
-                        } else {
-                            self.brr_block_start = self.sample_data.len();
-                        }
-                    } else if self.brr_started {
-                        self.brr_block_start = self.brr_block_start.saturating_add(16);
-                    } else {
-                        self.brr_started = true;
-                        self.brr_block_start = 0;
+                if self.checkpoint_brr_decoder.is_none() {
+                    // Raw KON voices follow the S-DSP order exactly: render
+                    // from the current BRR cursor, then add pitch. Semantic
+                    // voices retain their historical pre-increment contract.
+                    if !self.dsp_key_on_timed {
+                        self.dsp_sample_position =
+                            self.dsp_sample_position.saturating_add(u64::from(pitch));
                     }
+                    self.dsp_pitch_counter = self.dsp_sample_position as u16;
+                    let index = (self.dsp_sample_position >> 12) as usize;
+                    self.brr_block_start = index & !15;
+                    (index, ((self.dsp_sample_position >> 4) & 0xff) as u8)
+                } else {
+                    let sum = u32::from(self.dsp_pitch_counter) + u32::from(pitch);
+                    let overflow = sum > 0xffff;
+                    self.dsp_pitch_counter = sum as u16;
+                    if overflow {
+                        if let (Some(decoder), Some(sample_ram)) =
+                            (&mut self.checkpoint_brr_decoder, sample_ram)
+                        {
+                            if let Some(block) = decoder.decode_next(sample_ram) {
+                                let history_start = self.brr_block_start.saturating_add(13);
+                                let history = [
+                                    self.sample_data.get(history_start).copied().unwrap_or(0),
+                                    self.sample_data
+                                        .get(history_start + 1)
+                                        .copied()
+                                        .unwrap_or(0),
+                                    self.sample_data
+                                        .get(history_start + 2)
+                                        .copied()
+                                        .unwrap_or(0),
+                                ];
+                                self.sample_data.clear();
+                                self.sample_data.extend_from_slice(&history);
+                                self.sample_data.extend_from_slice(&block);
+                                self.brr_block_start = 3;
+                            } else {
+                                self.brr_block_start = self.sample_data.len();
+                            }
+                        } else if self.brr_started {
+                            self.brr_block_start = self.brr_block_start.saturating_add(16);
+                        } else {
+                            self.brr_started = true;
+                            self.brr_block_start = 0;
+                        }
+                    }
+                    if !self.brr_started {
+                        return 0;
+                    }
+                    self.dsp_sample_position =
+                        ((self.brr_block_start as u64) << 12) | u64::from(self.dsp_pitch_counter);
+                    (
+                        self.brr_block_start + usize::from(self.dsp_pitch_counter >> 12),
+                        ((self.dsp_pitch_counter >> 4) & 0xff) as u8,
+                    )
                 }
-                if !self.brr_started {
-                    return 0;
-                }
-                (
-                    self.brr_block_start + usize::from(self.dsp_pitch_counter >> 12),
-                    ((self.dsp_pitch_counter >> 4) & 0xff) as u8,
-                )
             } else {
                 self.sample_position = self.sample_position.wrapping_add(self.sample_step);
                 (
@@ -1861,6 +2651,11 @@ impl ModernVoice {
                     index = self.sample_loop_start + (index - self.sample_loop_start) % loop_len;
                     if self.dsp_pitch_configured {
                         self.brr_block_start = index & !15;
+                        if self.checkpoint_brr_decoder.is_none() {
+                            self.dsp_sample_position =
+                                ((index as u64) << 12) | (self.dsp_sample_position & 0x0fff);
+                            self.dsp_pitch_counter = self.dsp_sample_position as u16;
+                        }
                     } else {
                         self.sample_position = (index as u64) << 32;
                     }
@@ -1877,19 +2672,51 @@ impl ModernVoice {
                     return 0;
                 }
             }
-            let sample = snes::apu::dsp_gaussian_interpolate(
-                self.sample_at(index as isize - 3),
-                self.sample_at(index as isize - 2),
-                self.sample_at(index as isize - 1),
-                self.sample_at(index as isize),
-                fraction,
-            );
+            let flat_dsp_pipeline = self.dsp_key_on_timed && self.checkpoint_brr_decoder.is_none();
+            let sample = if flat_dsp_pipeline {
+                snes::apu::dsp_gaussian_interpolate(
+                    self.sample_at(index as isize),
+                    self.sample_at(index as isize + 1),
+                    self.sample_at(index as isize + 2),
+                    self.sample_at(index as isize + 3),
+                    fraction,
+                )
+            } else if self.dsp_key_on_timed {
+                snes::apu::dsp_gaussian_interpolate(
+                    self.sample_at(index as isize - 2),
+                    self.sample_at(index as isize - 1),
+                    self.sample_at(index as isize),
+                    self.sample_at(index as isize + 1),
+                    fraction,
+                )
+            } else {
+                snes::apu::dsp_gaussian_interpolate(
+                    self.sample_at(index as isize - 3),
+                    self.sample_at(index as isize - 2),
+                    self.sample_at(index as isize - 1),
+                    self.sample_at(index as isize),
+                    fraction,
+                )
+            };
             let gain = if self.dsp_envelope_configured {
                 i32::from(self.dsp_gain_level)
             } else {
                 self.amplitude
             };
-            let sample = i32::from(sample) * gain >> 11;
+            let sample = (i32::from(sample) * gain >> 11) & !1;
+            if flat_dsp_pipeline {
+                self.dsp_sample_position = self
+                    .dsp_sample_position
+                    .saturating_add(u64::from(self.render_pitch_word));
+                self.dsp_pitch_counter = self.dsp_sample_position as u16;
+                self.brr_block_start = (self.dsp_sample_position >> 12) as usize & !15;
+                self.advance_flat_brr_end_pipeline();
+            }
+            if self.dsp_key_on_timed {
+                // The S-DSP applies the current envelope to this sample, then
+                // runs the envelope generator for the following sample.
+                self.advance_dsp_envelope_at_optional_counter(envelope_counter);
+            }
             return sample;
         }
         self.advance_pitch_counter_without_decode();
@@ -1899,7 +2726,7 @@ impl ModernVoice {
         } else {
             self.amplitude
         };
-        match self.timbre {
+        let sample = match self.timbre {
             0 => {
                 if self.phase & 0x8000_0000 == 0 {
                     amplitude
@@ -1927,22 +2754,43 @@ impl ModernVoice {
                     -amplitude / 2
                 }
             }
+        };
+        if self.dsp_key_on_timed {
+            self.advance_dsp_envelope_at_optional_counter(envelope_counter);
         }
+        sample
     }
 
     fn next_noise_sample(&mut self, noise_sample: i16) -> i32 {
+        self.next_noise_sample_at_counter(noise_sample, None)
+    }
+
+    fn next_noise_sample_at_counter(
+        &mut self,
+        noise_sample: i16,
+        envelope_counter: Option<u16>,
+    ) -> i32 {
         if self.start_delay_samples != 0 {
             self.start_delay_samples -= 1;
             return 0;
         }
+        if self.render_dsp_key_on_pipeline_sample(envelope_counter) {
+            return 0;
+        }
         self.advance_pitch_counter_without_decode();
-        self.advance_dsp_envelope_for_output_sample();
+        if !self.dsp_key_on_timed {
+            self.advance_dsp_envelope_at_optional_counter(envelope_counter);
+        }
         let gain = if self.dsp_envelope_configured {
             i32::from(self.dsp_gain_level)
         } else {
             self.amplitude
         };
-        i32::from(noise_sample) * gain >> 11
+        let sample = i32::from(noise_sample) * gain >> 11;
+        if self.dsp_key_on_timed {
+            self.advance_dsp_envelope_at_optional_counter(envelope_counter);
+        }
+        sample
     }
 
     fn advance_inactive_pitch_counter(&mut self) {
@@ -1952,9 +2800,40 @@ impl ModernVoice {
         self.advance_pitch_counter_without_decode();
     }
 
+    fn advance_flat_brr_end_pipeline(&mut self) {
+        if self.dsp_end_pipeline != 0 {
+            self.dsp_end_pipeline -= 1;
+            if self.dsp_end_pipeline == 0 {
+                self.dsp_envelope_state = 4;
+                self.dsp_gain_level = 0;
+                self.dsp_hidden_gain_level = 0;
+                self.active = false;
+            }
+            return;
+        }
+        let Some(terminal_block_start) = self.dsp_terminal_block_start else {
+            return;
+        };
+        // The S-DSP decoder works twelve decoded samples ahead of the Gaussian
+        // cursor. Crossing this boundary advances to the terminal BRR block;
+        // its header reaches the envelope stage two output samples later.
+        let decoder_boundary = terminal_block_start.saturating_sub(12);
+        if (self.dsp_sample_position >> 12) as usize >= decoder_boundary {
+            self.dsp_end_pipeline = 2;
+        }
+    }
+
     fn advance_pitch_counter_without_decode(&mut self) {
         if self.dsp_pitch_configured {
-            self.dsp_pitch_counter = self.dsp_pitch_counter.wrapping_add(self.render_pitch_word);
+            if self.checkpoint_brr_decoder.is_none() {
+                self.dsp_sample_position = self
+                    .dsp_sample_position
+                    .saturating_add(u64::from(self.render_pitch_word));
+                self.dsp_pitch_counter = self.dsp_sample_position as u16;
+            } else {
+                self.dsp_pitch_counter =
+                    self.dsp_pitch_counter.wrapping_add(self.render_pitch_word);
+            }
         }
     }
 
@@ -1976,6 +2855,7 @@ impl ModernVoice {
 
     fn initialize_dsp_envelope(&mut self) {
         self.dsp_gain_level = 0;
+        self.dsp_hidden_gain_level = 0;
         self.dsp_envelope_state = if self.dsp_adsr1 & 0x80 == 0 { 3 } else { 0 };
     }
 
@@ -1984,6 +2864,75 @@ impl ModernVoice {
             return;
         }
         self.advance_dsp_envelope_tick();
+    }
+
+    fn advance_dsp_envelope_at_counter(&mut self, counter: u16) {
+        if !self.dsp_envelope_configured {
+            return;
+        }
+        if self.dsp_envelope_state == 4 {
+            self.dsp_gain_level = self.dsp_gain_level.saturating_sub(8);
+            self.dsp_hidden_gain_level = i32::from(self.dsp_gain_level);
+            if self.dsp_gain_level == 0 {
+                self.active = false;
+            }
+            return;
+        }
+
+        let use_gain = self.dsp_adsr1 & 0x80 == 0;
+        let mut envelope = i32::from(self.dsp_gain_level);
+        let rate_index;
+        if !use_gain {
+            if self.dsp_envelope_state >= 1 {
+                envelope -= 1;
+                envelope -= envelope >> 8;
+                rate_index = if self.dsp_envelope_state == 1 {
+                    usize::from(((self.dsp_adsr1 >> 3) & 0x0e) + 0x10)
+                } else {
+                    usize::from(self.dsp_adsr2 & 0x1f)
+                };
+            } else {
+                rate_index = usize::from((self.dsp_adsr1 & 0x0f) * 2 + 1);
+                envelope += if rate_index < 31 { 0x20 } else { 0x400 };
+            }
+        } else {
+            let mode = self.dsp_gain >> 5;
+            if mode < 4 {
+                envelope = i32::from(self.dsp_gain) * 0x10;
+                rate_index = 31;
+            } else {
+                rate_index = usize::from(self.dsp_gain & 0x1f);
+                match mode {
+                    4 => envelope -= 0x20,
+                    5 => {
+                        envelope -= 1;
+                        envelope -= envelope >> 8;
+                    }
+                    _ => {
+                        envelope += 0x20;
+                        if mode > 6 && self.dsp_hidden_gain_level >= 0x600 {
+                            envelope += 0x8 - 0x20;
+                        }
+                    }
+                }
+            }
+        }
+
+        if self.dsp_envelope_state == 1 && (envelope >> 8) == i32::from(self.dsp_adsr2 >> 5) {
+            self.dsp_envelope_state = 2;
+        }
+        self.dsp_hidden_gain_level = envelope;
+        if !(0..=0x7ff).contains(&envelope) {
+            envelope = if envelope < 0 { 0 } else { 0x7ff };
+            if self.dsp_envelope_state == 0 {
+                self.dsp_envelope_state = 1;
+            }
+        }
+        let rate = DSP_ENVELOPE_RATE_VALUES[rate_index];
+        let offset = DSP_ENVELOPE_COUNTER_OFFSETS[rate_index];
+        if rate != 0 && (u32::from(counter) + u32::from(offset)) % u32::from(rate) == 0 {
+            self.dsp_gain_level = envelope as u16;
+        }
     }
 
     fn advance_dsp_envelope_tick(&mut self) {
@@ -2053,6 +3002,11 @@ const DSP_ENVELOPE_RATE_VALUES: [u16; 32] = [
     24, 20, 16, 12, 10, 8, 6, 5, 4, 3, 2, 1,
 ];
 
+const DSP_ENVELOPE_COUNTER_OFFSETS: [u16; 32] = [
+    1, 0, 1040, 536, 0, 1040, 536, 0, 1040, 536, 0, 1040, 536, 0, 1040, 536, 0, 1040, 536, 0, 1040,
+    536, 0, 1040, 536, 0, 1040, 536, 0, 1040, 0, 0,
+];
+
 fn dsp_exp_decrease(gain: u16) -> u16 {
     let step = (((i32::from(gain) - 1) >> 8) + 1) as u16;
     gain.saturating_sub(step)
@@ -2063,6 +3017,7 @@ struct DecodedBrrSample {
     block_addresses: Vec<usize>,
     loop_start: usize,
     loops: bool,
+    terminal_block_start: Option<usize>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -2112,18 +3067,24 @@ impl CheckpointBrrDecoder {
             value = if shift <= 12 {
                 (value << shift) >> 1
             } else {
-                (value >> 3) << 12
+                value & !0x7ff
             };
             let old = i32::from(self.old);
             let older = i32::from(self.older);
             match filter {
-                1 => value += old + (-old >> 4),
-                2 => value += 2 * old + ((-3 * old) >> 5) - older + (older >> 4),
-                3 => value += 2 * old + ((-13 * old) >> 6) - older + ((3 * older) >> 4),
+                1 => value += (old >> 1) + ((-old) >> 5),
+                2 => {
+                    let older = older >> 1;
+                    value += old - older + (older >> 4) + ((old * -3) >> 6);
+                }
+                3 => {
+                    let older = older >> 1;
+                    value += old - older + ((old * -13) >> 7) + ((older * 3) >> 4);
+                }
                 _ => {}
             }
             value = value.clamp(i16::MIN as i32, i16::MAX as i32);
-            *decoded = (((value & 0x7fff) << 1) as i16) >> 1;
+            *decoded = value.wrapping_mul(2) as i16;
             self.older = self.old;
             self.old = *decoded;
         }
@@ -2158,6 +3119,7 @@ fn decode_brr_checkpoint_continuation(
             block_addresses: vec![address.wrapping_sub(9) & 0xffff],
             loop_start: 0,
             loops: false,
+            terminal_block_start: None,
         },
         CheckpointBrrDecoder {
             address: address as u16,
@@ -2210,6 +3172,7 @@ fn decode_brr_asset(brr: &[u8], loop_offset: usize) -> Option<DecodedBrrSample> 
                     block_addresses,
                     loop_start: *loop_start,
                     loops: true,
+                    terminal_block_start: None,
                 });
             }
             loop_states.push(((old, older), pcm.len()));
@@ -2233,11 +3196,13 @@ fn decode_brr_asset(brr: &[u8], loop_offset: usize) -> Option<DecodedBrrSample> 
             if pcm.iter().all(|sample| *sample == 0) {
                 return None;
             }
+            let terminal_block_start = (!loops).then(|| pcm.len().saturating_sub(16));
             return Some(DecodedBrrSample {
                 pcm,
                 block_addresses,
                 loop_start: 0,
                 loops,
+                terminal_block_start,
             });
         }
     }
@@ -2260,16 +3225,22 @@ fn decode_brr_block(data: &[u8], header: u8, old: &mut i32, older: &mut i32, pcm
         sample = if shift <= 12 {
             (sample << shift) >> 1
         } else {
-            (sample >> 3) << 12
+            sample & !0x7ff
         };
         match filter {
-            1 => sample += *old + (-*old >> 4),
-            2 => sample += 2 * *old + ((-3 * *old) >> 5) - *older + (*older >> 4),
-            3 => sample += 2 * *old + ((-13 * *old) >> 6) - *older + ((3 * *older) >> 4),
+            1 => sample += (*old >> 1) + ((-*old) >> 5),
+            2 => {
+                let older_half = *older >> 1;
+                sample += *old - older_half + (older_half >> 4) + ((*old * -3) >> 6);
+            }
+            3 => {
+                let older_half = *older >> 1;
+                sample += *old - older_half + ((*old * -13) >> 7) + ((older_half * 3) >> 4);
+            }
             _ => {}
         }
         sample = sample.clamp(i16::MIN as i32, i16::MAX as i32);
-        let decoded = (((sample & 0x7fff) << 1) as i16 >> 1) as i16;
+        let decoded = sample.wrapping_mul(2) as i16;
         *older = *old;
         *old = i32::from(decoded);
         pcm.push(decoded);
@@ -2312,6 +3283,7 @@ fn decode_brr_sample(ram: &[u8], source: u8) -> Option<DecodedBrrSample> {
                     block_addresses,
                     loop_start: *loop_start,
                     loops: true,
+                    terminal_block_start: None,
                 });
             }
             loop_states.push(((old, older), pcm.len()));
@@ -2335,11 +3307,13 @@ fn decode_brr_sample(ram: &[u8], source: u8) -> Option<DecodedBrrSample> {
             if pcm.iter().all(|sample| *sample == 0) {
                 return None;
             }
+            let terminal_block_start = (!loops).then(|| pcm.len().saturating_sub(16));
             return Some(DecodedBrrSample {
                 pcm,
                 block_addresses,
                 loop_start: 0,
                 loops,
+                terminal_block_start,
             });
         }
     }
@@ -2355,6 +3329,14 @@ fn sample_step_for_pitch(pitch: u8, output_rate: usize) -> u64 {
 fn sample_step_for_pitch_word(pitch_word: u16, output_rate: usize) -> u64 {
     let numerator = u128::from(pitch_word) * 32_000 * (1u128 << 32);
     (numerator / (4096 * output_rate.max(1) as u128)) as u64
+}
+
+fn staged_voice_channel_mix(voice: &ModernVoice, volume: i8, music_volume: u8) -> i32 {
+    let mut mixed = i32::from(voice.last_output_sample) * i32::from(volume) >> 7;
+    if voice.note_origin == Some(crate::game_output::AudioNoteOrigin::Music) {
+        mixed = mixed * i32::from(music_volume) / 96;
+    }
+    mixed
 }
 
 fn is_deferred_voice_event(kind: &AudioEventKind) -> bool {
@@ -2374,11 +3356,214 @@ fn is_deferred_voice_event(kind: &AudioEventKind) -> bool {
             | AudioEventKind::SetPan { .. }
             | AudioEventKind::SetDuration { .. }
             | AudioEventKind::NoteOn { .. }
+            | AudioEventKind::DspKeyOn { .. }
+            | AudioEventKind::DspKeyOff { .. }
             | AudioEventKind::KeyOnVoice { .. }
             | AudioEventKind::NoteOff { .. }
             | AudioEventKind::VoiceKeyOn { .. }
             | AudioEventKind::VoiceKeyOff { .. }
     )
+}
+
+/// Output sample at which a raw DSP register write can first affect the
+/// corresponding hardware consumer.
+///
+/// ESA and EDL are sampled by the echo unit at phase 29, after the current
+/// sample's echo read/output. A write through $F3 therefore cannot affect the
+/// current output sample; a write after phase 29 also misses that latch.
+fn dsp_global_application_sample_offset(
+    event: &crate::game_output::AudioEvent,
+    register: u8,
+) -> i32 {
+    let output_stage_offset = |read_phase: u8| {
+        event.sample_offset.saturating_sub(1) + i32::from(event.timer_cycles > read_phase)
+    };
+    match register & 0x7f {
+        // Left and right final-output multipliers run at phases 26 and 27.
+        0x0c | 0x2c => output_stage_offset(26),
+        0x1c | 0x3c => output_stage_offset(27),
+        // Echo feedback is consumed alongside the left output at phase 26.
+        0x0d => output_stage_offset(26),
+        // These routing registers feed the internal voice/echo pipeline rather
+        // than the staged DAC output.
+        0x2d => event.sample_offset + i32::from(event.timer_cycles > 27),
+        0x3d | 0x4d | 0x5d => event.sample_offset + i32::from(event.timer_cycles > 28),
+        // FIR coefficients are consumed in four groups over phases 22..25.
+        register if register & 0x0f == 0x0f => {
+            let read_phase = match register >> 4 {
+                0 => 22,
+                1 | 2 => 23,
+                3..=5 => 24,
+                _ => 25,
+            };
+            output_stage_offset(read_phase)
+        }
+        // Echo address and length are latched at phase 29. The renderer's
+        // internal DSP sample precedes the staged DAC sample by one slot.
+        0x6d | 0x7d => output_stage_offset(29),
+        _ => event.sample_offset,
+    }
+}
+
+fn deferred_voice_sample_offset(
+    event: &crate::game_output::AudioEvent,
+    retrigger_shift: i32,
+    retriggered_note_off: bool,
+    frame_start_counter: u16,
+) -> i32 {
+    if let AudioEventKind::VoiceParameter {
+        voice, parameter, ..
+    } = event.kind
+    {
+        if voice == 0 && parameter == VoiceParameterKind::VolumeRight && event.timer_cycles == 0 {
+            // V5 for voice zero is the first operation after the DSP output
+            // boundary. A write on that exact phase is visible in the output
+            // slot already being assembled by the wrapped pipeline.
+            return event.sample_offset.saturating_sub(1);
+        }
+        let read_phase = match parameter {
+            // V4/V5 multiply the voice output by its left/right registers.
+            VoiceParameterKind::VolumeLeft => Some(voice.wrapping_mul(3).wrapping_add(31) & 31),
+            VoiceParameterKind::VolumeRight if voice == 0 => {
+                // Voice zero's V5 phase wraps past the legacy output boundary.
+                // A write after phase zero still reaches that wrapped multiply
+                // before the current numbered output sample is committed.
+                Some(31)
+            }
+            VoiceParameterKind::VolumeRight => Some(voice.wrapping_mul(3) & 31),
+            // V2/V3a read each voice's low/high pitch bytes in a three-phase
+            // pipeline that wraps voice 0 to phases 21/22.
+            VoiceParameterKind::PitchLow => Some(voice.wrapping_mul(3).wrapping_add(21) % 24),
+            VoiceParameterKind::PitchHigh => {
+                Some((voice.wrapping_mul(3).wrapping_add(21) % 24) + 1)
+            }
+            _ => None,
+        };
+        if let Some(read_phase) = read_phase {
+            let pipeline_sample = if voice == 0 {
+                event.sample_offset
+            } else {
+                event.sample_offset.saturating_sub(1)
+            };
+            return pipeline_sample + i32::from(event.timer_cycles > read_phase);
+        }
+        event.sample_offset
+    } else if let AudioEventKind::NoteOff { voice } = event.kind {
+        let voice_zero = i32::from(voice == 0);
+        let first_key_phase_lead = i32::from(matches!(voice, 0 | 1));
+        let sample_offset = event.sample_offset.saturating_sub(if retriggered_note_off {
+            6 + voice_zero * 2
+        } else {
+            8 + first_key_phase_lead
+        });
+        let koff_latch_parity = i32::from(frame_start_counter & 1);
+        if retriggered_note_off && voice == 0 && sample_offset & 1 != koff_latch_parity {
+            sample_offset.saturating_sub(1)
+        } else {
+            sample_offset
+        }
+    } else if retrigger_shift != 0 {
+        event.sample_offset.saturating_sub(retrigger_shift)
+    } else {
+        event.sample_offset
+    }
+}
+
+fn envelope_counter_for_voice(global_counter: u16, use_previous_mix_sample: bool) -> u16 {
+    if use_previous_mix_sample {
+        global_counter
+    } else if global_counter == 30_719 {
+        0
+    } else {
+        global_counter + 1
+    }
+}
+
+fn dsp_counter_for_current_sample(counter: u16) -> u16 {
+    if counter == 0 {
+        30_719
+    } else {
+        counter - 1
+    }
+}
+
+fn deferred_retrigger_shift(
+    frame: &AudioEventFrame,
+    event: &crate::game_output::AudioEvent,
+    key_on_count: u32,
+    active: bool,
+    current_origin: Option<crate::game_output::AudioNoteOrigin>,
+) -> i32 {
+    let Some(voice) = deferred_event_voice(&event.kind) else {
+        return 0;
+    };
+    let has_raw_dsp_key_on = frame.events.iter().any(|candidate| {
+        candidate.sample_offset == event.sample_offset
+            && matches!(
+                candidate.kind,
+                AudioEventKind::DspKeyOn { voice: candidate, .. }
+                    if usize::from(candidate) == voice
+            )
+    });
+    if has_raw_dsp_key_on {
+        return 0;
+    }
+    let has_key_on = frame.events.iter().any(|candidate| {
+        candidate.sample_offset == event.sample_offset
+            && matches!(
+                candidate.kind,
+                AudioEventKind::NoteOn { voice: candidate, .. }
+                    | AudioEventKind::KeyOnVoice { voice: candidate, .. }
+                    if usize::from(candidate) == voice
+            )
+    });
+    if !has_key_on {
+        return 0;
+    }
+    let has_music_origin = frame.events.iter().any(|candidate| {
+        candidate.sample_offset == event.sample_offset
+            && matches!(
+                candidate.kind,
+                AudioEventKind::SetNoteOrigin {
+                    voice: candidate,
+                    origin: crate::game_output::AudioNoteOrigin::Music,
+                } if usize::from(candidate) == voice
+            )
+    });
+    if key_on_count == 0 {
+        0
+    } else if current_origin == Some(crate::game_output::AudioNoteOrigin::Music) || has_music_origin
+    {
+        -1
+    } else if active {
+        10
+    } else {
+        7
+    }
+}
+
+fn deferred_event_voice(kind: &AudioEventKind) -> Option<usize> {
+    match kind {
+        AudioEventKind::SetNoteOrigin { voice, .. }
+        | AudioEventKind::SetPitchWord { voice, .. }
+        | AudioEventKind::SetPitchRegisterWord { voice, .. }
+        | AudioEventKind::SetEnvelopeRateCounter { voice, .. }
+        | AudioEventKind::VoiceParameter { voice, .. }
+        | AudioEventKind::SetStereoVolume { voice, .. }
+        | AudioEventKind::SetDspEnvelope { voice, .. }
+        | AudioEventKind::SetEchoSend { voice, .. }
+        | AudioEventKind::SetNoise { voice, .. }
+        | AudioEventKind::SetEnvelope { voice, .. }
+        | AudioEventKind::PitchSlide { voice, .. }
+        | AudioEventKind::SetPan { voice, .. }
+        | AudioEventKind::SetDuration { voice, .. }
+        | AudioEventKind::NoteOn { voice, .. }
+        | AudioEventKind::DspKeyOn { voice, .. }
+        | AudioEventKind::DspKeyOff { voice }
+        | AudioEventKind::KeyOnVoice { voice, .. }
+        | AudioEventKind::NoteOff { voice } => Some(usize::from(*voice)),
+        _ => None,
+    }
 }
 
 fn resample_nearest(
@@ -2424,6 +3609,219 @@ mod tests {
         AudioEventFrame::from_route_and_dsp_writes(AudioRouteState::default(), writes)
     }
 
+    fn timed_event(sample_offset: i32, timer_cycles: u8, kind: AudioEventKind) -> AudioEvent {
+        AudioEvent {
+            sample_offset,
+            timer_cycles,
+            kind,
+            parity_dsp: None,
+        }
+    }
+
+    #[test]
+    fn echo_enable_written_after_phase_28_applies_on_the_next_sample() {
+        let event = timed_event(
+            100,
+            30,
+            AudioEventKind::GlobalParameter {
+                register: 0x4d,
+                value: 0xff,
+            },
+        );
+
+        assert_eq!(dsp_global_application_sample_offset(&event, 0x4d), 101);
+    }
+
+    #[test]
+    fn voice_four_pitch_write_before_its_latch_updates_the_prior_pipeline_sample() {
+        let event = timed_event(
+            100,
+            0,
+            AudioEventKind::VoiceParameter {
+                voice: 4,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 0x34,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 99);
+    }
+
+    #[test]
+    fn voice_zero_pitch_write_uses_the_wrapped_pipeline_sample() {
+        let event = timed_event(
+            100,
+            8,
+            AudioEventKind::VoiceParameter {
+                voice: 0,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 0x34,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 100);
+    }
+
+    #[test]
+    fn voice_zero_pitch_write_after_v2_but_before_wrap_waits_one_sample() {
+        let event = timed_event(
+            401,
+            25,
+            AudioEventKind::VoiceParameter {
+                voice: 0,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 122,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 402);
+    }
+
+    #[test]
+    fn sample_zero_pitch_write_after_v2_is_deferred_by_the_frame_dispatcher() {
+        let mut engine = ModernAudioEngine::default();
+        let voice = &mut engine.voices[0];
+        voice.active = true;
+        voice.sample_backed = true;
+        voice.sample_data = (0..32).map(|sample| sample * 100).collect();
+        voice.brr_started = true;
+        voice.dsp_key_on_timed = true;
+        voice.dsp_pitch_configured = true;
+        voice.exact_pitch_word = 2017;
+        voice.render_pitch_word = 2017;
+        voice.amplitude = 2048;
+        let mut frame = empty_frame_with_writes(&[]);
+        frame.events.push(timed_event(
+            0,
+            23,
+            AudioEventKind::VoiceParameter {
+                voice: 0,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 223,
+            },
+        ));
+        let mut output = [0i16; 4];
+
+        engine.render_frame(&frame, &mut output, 2, 2);
+
+        assert_eq!(&engine.debug_voice_pitch_words()[0][..2], [2017, 2015]);
+    }
+
+    #[test]
+    fn register_latch_after_the_final_host_sample_is_preserved() {
+        let mut engine = ModernAudioEngine::default();
+        engine.voices[0].exact_pitch_word = 0x0601;
+        let mut frame = empty_frame_with_writes(&[]);
+        frame.events.push(timed_event(
+            1,
+            31,
+            AudioEventKind::VoiceParameter {
+                voice: 0,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 3,
+            },
+        ));
+        let mut output = [0i16; 4];
+
+        engine.render_frame(&frame, &mut output, 2, 2);
+
+        assert_eq!(engine.voices[0].exact_pitch_word, 0x0603);
+    }
+
+    #[test]
+    fn voice_seven_left_volume_write_before_phase_20_updates_the_prior_pipeline_sample() {
+        let event = timed_event(
+            163,
+            1,
+            AudioEventKind::VoiceParameter {
+                voice: 7,
+                parameter: VoiceParameterKind::VolumeLeft,
+                value: 75,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 162);
+    }
+
+    #[test]
+    fn voice_zero_right_volume_write_uses_the_wrapped_pipeline_sample() {
+        let event = timed_event(
+            493,
+            9,
+            AudioEventKind::VoiceParameter {
+                voice: 0,
+                parameter: VoiceParameterKind::VolumeRight,
+                value: 17,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 493);
+    }
+
+    #[test]
+    fn voice_zero_right_volume_write_on_phase_zero_updates_the_prior_output_slot() {
+        let event = timed_event(
+            269,
+            0,
+            AudioEventKind::VoiceParameter {
+                voice: 0,
+                parameter: VoiceParameterKind::VolumeRight,
+                value: 4,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 268);
+    }
+
+    #[test]
+    fn backdated_pitch_write_reconciles_the_cross_frame_brr_cursor() {
+        let mut engine = ModernAudioEngine::default();
+        let voice = &mut engine.voices[7];
+        voice.active = true;
+        voice.dsp_key_on_timed = true;
+        voice.dsp_pitch_configured = true;
+        voice.exact_pitch_word = 6819;
+        voice.render_pitch_word = 6819;
+        voice.dsp_sample_position = 10_000;
+        voice.dsp_pitch_counter = 10_000;
+
+        engine.handle_backdated_voice_parameter(7, VoiceParameterKind::PitchLow, 160);
+
+        assert_eq!(engine.voices[7].exact_pitch_word, 6816);
+        assert_eq!(engine.voices[7].dsp_sample_position, 9_997);
+        assert_eq!(engine.voices[7].dsp_pitch_counter, 9_997);
+    }
+
+    #[test]
+    fn backdated_volume_write_reconciles_staged_output_and_echo_input() {
+        let mut engine = ModernAudioEngine::default();
+        let voice = &mut engine.voices[4];
+        voice.last_output_sample = -1_888;
+        voice.volume_right = 17;
+        voice.stereo_volume_configured = true;
+        voice.note_origin = Some(crate::game_output::AudioNoteOrigin::Music);
+        voice.echo_send = true;
+        engine.music_volume = 96;
+        engine.master_volume_right = 96;
+        engine.echo_mix_right = 40;
+        engine.dsp_output_raw_main_right = 2_348;
+        engine.dsp_output_filtered_right = 2_210;
+        engine.dsp_output_right = 2_451;
+        engine.dsp_output_echo_input_right = 100;
+        engine.echo_feedback = 0;
+        engine.dsp_flags = 0;
+        engine.echo_right = vec![200, 0];
+        engine.echo_ring_index = 1;
+
+        engine.handle_backdated_voice_parameter(4, VoiceParameterKind::VolumeRight, 16);
+
+        assert_eq!(engine.voices[4].volume_right, 16);
+        assert_eq!(engine.dsp_output_raw_main_right, 2_363);
+        assert_eq!(engine.dsp_output_right, 2_462);
+        assert_eq!(engine.dsp_output_echo_input_right, 115);
+        assert_eq!(engine.echo_right[0], 114);
+    }
+
     fn single_block_sample_ram(source: u8, header: u8, data: [u8; 8]) -> Vec<u8> {
         let mut ram = vec![0u8; 0x10000];
         let address = 0x5000usize;
@@ -2441,8 +3839,415 @@ mod tests {
         let sample = decode_brr_sample(&ram, 3).expect("valid BRR sample");
 
         assert_eq!(sample.pcm.len(), 16);
-        assert_eq!(&sample.pcm[..4], &[0, 3, 0, 3]);
+        assert_eq!(&sample.pcm[..4], &[0, 6, 0, 6]);
         assert!(!sample.loops);
+    }
+
+    #[test]
+    fn source_three_key_on_matches_snes9x_1_63_dsp_samples() {
+        let mut engine = ModernAudioEngine::default();
+        let voice = &mut engine.voices[7];
+        voice.active = true;
+        voice.exact_pitch_word = 15_626;
+        voice.render_pitch_word = 15_626;
+        voice.dsp_pitch_configured = true;
+        voice.dsp_envelope_configured = true;
+        voice.dsp_adsr1 = 0xfe;
+        voice.dsp_adsr2 = 0xf8;
+        voice.dsp_gain = 0xb8;
+        engine.load_voice_sample(7, 3, 0, None);
+
+        let mut counter = 16_374u16;
+        let actual = (0..193)
+            .map(|_| {
+                let sample = engine.voices[7].next_sample_with_ram_at_counter(None, Some(counter));
+                counter = if counter == 0 { 30_719 } else { counter - 1 };
+                sample
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            &actual[..11],
+            &[0, -60, -128, -32, 0, 22, 58, 296, 674, 778, 0]
+        );
+        assert_eq!(
+            &actual[173..193],
+            &[
+                434, 2168, 7058, 10664, 4874, 0, 0, -992, -3712, -3252, -8216, -11818, -14628,
+                -4032, -4034, 0, 0, -324, 3530, 8402,
+            ]
+        );
+    }
+
+    #[test]
+    fn instrument_fifteen_brr_prefix_matches_snes9x_decoder() {
+        let sample = decode_brr_bank_sample(0, 15).expect("instrument 15 in title bank");
+
+        assert_eq!(
+            &sample.pcm[..24],
+            &[
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -128, -500, -1090, -1610,
+                -1922, -2412,
+            ]
+        );
+        assert_eq!(
+            snes::apu::dsp_gaussian_interpolate(0, 0, -128, -500, 203),
+            -128
+        );
+    }
+
+    #[test]
+    fn native_dsp_block_tracks_requested_533_sample_libretro_frame() {
+        let mut engine = ModernAudioEngine::default();
+        let mut audio = vec![0i16; 533 * 2];
+
+        engine.render_frame(&empty_frame_with_writes(&[]), &mut audio, 533, 2);
+
+        assert_eq!(engine.debug_voice_samples()[0].len(), 533);
+
+        let mut startup_engine = ModernAudioEngine::default();
+        let mut startup_audio = vec![0i16; 457 * 2];
+        startup_engine.render_frame(&empty_frame_with_writes(&[]), &mut startup_audio, 457, 2);
+        assert_eq!(startup_engine.debug_voice_samples()[0].len(), 457);
+    }
+
+    #[test]
+    fn raw_dsp_key_on_waits_for_poll_and_runs_hardware_phase_sequence() {
+        let mut engine = ModernAudioEngine::default();
+        let voice = &mut engine.voices[0];
+        voice.note_origin = Some(crate::game_output::AudioNoteOrigin::Music);
+        voice.exact_pitch_word = 3822;
+        voice.render_pitch_word = 3822;
+        voice.dsp_pitch_counter = 0x4567;
+        voice.dsp_pitch_configured = true;
+        voice.dsp_envelope_configured = true;
+        voice.dsp_adsr1 = 0xff;
+        voice.dsp_adsr2 = 0xef;
+        voice.dsp_gain = 0xb8;
+        voice.exact_parameters_pending = true;
+
+        engine.schedule_dsp_key_on(0, 30, 15, 23, 0);
+        engine.advance_dsp_key_on_pipelines(None);
+        engine.poll_dsp_key_on_register();
+        assert!(engine.voices[0].pending_dsp_key_on.is_some());
+        assert_eq!(engine.voices[0].dsp_key_on_pipeline, 0);
+
+        engine.advance_dsp_key_on_pipelines(None);
+        engine.poll_dsp_key_on_register();
+        assert!(engine.voices[0].pending_dsp_key_on.is_none());
+        assert_eq!(engine.voices[0].dsp_key_on_pipeline, 5);
+
+        let mut phases = Vec::new();
+        for _ in 0..5 {
+            engine.advance_dsp_key_on_pipelines(None);
+            assert!(engine.voices[0].active);
+            assert!(engine.voices[0].render_dsp_key_on_pipeline_sample(Some(0)));
+            phases.push(engine.voices[0].dsp_sample_position);
+        }
+        assert!(engine.voices[0].dsp_key_on_timed);
+        assert_eq!(phases, [0, 0x4000, 0x4000, 0x4000, 0]);
+        assert_eq!(engine.voices[0].dsp_pitch_counter, 0);
+        assert!(engine.voices[0].brr_started);
+        assert_eq!(engine.voices[0].dsp_gain_level, 1024);
+
+        let mut outputs = Vec::new();
+        for _ in 0..18 {
+            outputs.push(engine.voices[0].next_sample_with_ram_at_counter(None, Some(0)));
+        }
+        let voice = &engine.voices[0];
+        let index = (voice.dsp_sample_position >> 12) as isize;
+        assert_eq!(voice.dsp_sample_position, 18 * 3822);
+        assert_eq!(((voice.dsp_sample_position >> 4) & 0xff) as u8, 203);
+        assert_eq!(
+            [
+                voice.sample_at(index),
+                voice.sample_at(index + 1),
+                voice.sample_at(index + 2),
+                voice.sample_at(index + 3),
+            ],
+            [0, 0, -128, -500]
+        );
+        assert_eq!(outputs[17], -16);
+    }
+
+    #[test]
+    fn raw_dsp_key_off_waits_for_the_every_other_sample_latch() {
+        let mut engine = ModernAudioEngine::default();
+        let voice = &mut engine.voices[0];
+        voice.active = true;
+        voice.dsp_key_on_timed = true;
+        voice.dsp_envelope_configured = true;
+        voice.dsp_envelope_state = 2;
+        voice.dsp_adsr1 = 0xff;
+        voice.dsp_adsr2 = 0;
+        voice.dsp_gain_level = 100;
+        voice.dsp_hidden_gain_level = 100;
+
+        engine.schedule_dsp_key_off(0, 0);
+        engine.latch_dsp_key_off_register();
+        engine.voices[0].next_sample_with_ram_at_counter(None, Some(0));
+        assert_eq!(engine.voices[0].dsp_gain_level, 100);
+
+        engine.poll_dsp_key_on_register();
+        engine.latch_dsp_key_off_register();
+        engine.voices[0].next_sample_with_ram_at_counter(None, Some(0));
+        assert_eq!(engine.voices[0].dsp_gain_level, 92);
+
+        engine.poll_dsp_key_on_register();
+        engine.latch_dsp_key_off_register();
+        engine.voices[0].next_sample_with_ram_at_counter(None, Some(0));
+        assert_eq!(engine.voices[0].dsp_gain_level, 84);
+    }
+
+    #[test]
+    fn phase_31_koff_waits_for_the_next_every_other_register_poll() {
+        let mut engine = ModernAudioEngine::default();
+        engine.dsp_even_cycle = true;
+        let voice = &mut engine.voices[0];
+        voice.active = true;
+        voice.dsp_envelope_configured = true;
+        voice.dsp_envelope_state = 2;
+        voice.dsp_gain_level = 100;
+
+        engine.schedule_dsp_key_off(0, 31);
+        engine.latch_dsp_key_off_register();
+        assert_eq!(engine.voices[0].dsp_envelope_state, 2);
+        engine.latch_dsp_key_off_register();
+        assert_eq!(engine.voices[0].dsp_envelope_state, 2);
+        engine.latch_dsp_key_off_register();
+        assert_eq!(engine.voices[0].dsp_envelope_state, 4);
+    }
+
+    #[test]
+    fn phase_31_kon_waits_for_the_next_every_other_register_poll() {
+        let mut engine = ModernAudioEngine::default();
+        engine.dsp_even_cycle = true;
+        engine.schedule_dsp_key_on(0, 30, 15, 23, 31);
+
+        engine.poll_dsp_key_on_register();
+        assert!(engine.voices[0].pending_dsp_key_on.is_some());
+        assert!(engine.voices[0].latched_dsp_key_on.is_none());
+        engine.poll_dsp_key_on_register();
+        assert!(engine.voices[0].pending_dsp_key_on.is_some());
+        engine.poll_dsp_key_on_register();
+        assert!(engine.voices[0].pending_dsp_key_on.is_none());
+        assert!(engine.voices[0].latched_dsp_key_on.is_some());
+        assert_eq!(engine.voices[0].dsp_key_on_pipeline, 5);
+    }
+
+    #[test]
+    fn phase_31_kon_on_non_poll_sample_is_visible_at_next_poll() {
+        let mut engine = ModernAudioEngine::default();
+        engine.dsp_even_cycle = false;
+        engine.schedule_dsp_key_on(0, 30, 15, 23, 31);
+
+        engine.poll_dsp_key_on_register();
+        assert!(engine.voices[0].pending_dsp_key_on.is_some());
+        engine.poll_dsp_key_on_register();
+
+        assert!(engine.voices[0].pending_dsp_key_on.is_none());
+        assert!(engine.voices[0].latched_dsp_key_on.is_some());
+        assert_eq!(engine.voices[0].dsp_key_on_pipeline, 5);
+    }
+
+    #[test]
+    fn semantic_note_off_applies_at_the_snes_dsp_koff_boundary() {
+        let event = crate::game_output::AudioEvent {
+            sample_offset: 361,
+            timer_cycles: 0,
+            kind: AudioEventKind::NoteOff { voice: 7 },
+            parity_dsp: None,
+        };
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 1), 353);
+        let voice_zero_off = crate::game_output::AudioEvent {
+            kind: AudioEventKind::NoteOff { voice: 0 },
+            ..event.clone()
+        };
+        assert_eq!(
+            deferred_voice_sample_offset(&voice_zero_off, 0, false, 0),
+            352
+        );
+        let voice_one_off = crate::game_output::AudioEvent {
+            kind: AudioEventKind::NoteOff { voice: 1 },
+            ..event.clone()
+        };
+        assert_eq!(
+            deferred_voice_sample_offset(&voice_one_off, 0, false, 0),
+            352
+        );
+        let repeated_off = crate::game_output::AudioEvent {
+            sample_offset: 445,
+            ..event.clone()
+        };
+        assert_eq!(deferred_voice_sample_offset(&repeated_off, 0, true, 1), 439);
+        let repeated_voice_zero_off = crate::game_output::AudioEvent {
+            kind: AudioEventKind::NoteOff { voice: 0 },
+            ..repeated_off.clone()
+        };
+        assert_eq!(
+            deferred_voice_sample_offset(&repeated_voice_zero_off, 0, true, 1),
+            437
+        );
+        let even_phase_repeated_voice_zero_off = crate::game_output::AudioEvent {
+            sample_offset: 512,
+            ..repeated_voice_zero_off.clone()
+        };
+        assert_eq!(
+            deferred_voice_sample_offset(&even_phase_repeated_voice_zero_off, 0, true, 1),
+            503
+        );
+        let even_frame_start_repeated_voice_zero_off = crate::game_output::AudioEvent {
+            sample_offset: 449,
+            ..repeated_voice_zero_off.clone()
+        };
+        assert_eq!(
+            deferred_voice_sample_offset(&even_frame_start_repeated_voice_zero_off, 0, true, 0,),
+            440
+        );
+
+        let retrigger = crate::game_output::AudioEvent {
+            sample_offset: 444,
+            timer_cycles: 0,
+            kind: AudioEventKind::NoteOn {
+                voice: 7,
+                pitch: 127,
+                instrument: 3,
+                volume: 50,
+            },
+            parity_dsp: None,
+        };
+        assert_eq!(deferred_voice_sample_offset(&retrigger, 10, false, 0), 434);
+        let inactive_repeat = crate::game_output::AudioEvent {
+            sample_offset: 58,
+            ..retrigger.clone()
+        };
+        assert_eq!(
+            deferred_voice_sample_offset(&inactive_repeat, 7, false, 0),
+            51
+        );
+
+        let mut music_frame =
+            AudioEventFrame::from_route_and_dsp_writes(AudioRouteState::default(), &[]);
+        music_frame.events = vec![
+            crate::game_output::AudioEvent {
+                sample_offset: retrigger.sample_offset,
+                timer_cycles: 0,
+                kind: AudioEventKind::SetNoteOrigin {
+                    voice: 7,
+                    origin: crate::game_output::AudioNoteOrigin::Music,
+                },
+                parity_dsp: None,
+            },
+            retrigger.clone(),
+        ];
+        assert_eq!(
+            deferred_retrigger_shift(&music_frame, &retrigger, 2, false, None),
+            -1
+        );
+        assert_eq!(
+            deferred_retrigger_shift(&music_frame, &music_frame.events[0], 2, false, None),
+            -1
+        );
+
+        let mut sfx_frame = music_frame;
+        sfx_frame.events.remove(0);
+        assert_eq!(
+            deferred_retrigger_shift(
+                &sfx_frame,
+                &retrigger,
+                2,
+                false,
+                Some(crate::game_output::AudioNoteOrigin::Music),
+            ),
+            -1
+        );
+        assert_eq!(
+            deferred_retrigger_shift(&sfx_frame, &retrigger, 2, false, None),
+            7
+        );
+        assert_eq!(
+            deferred_retrigger_shift(&sfx_frame, &retrigger, 2, true, None),
+            10
+        );
+    }
+
+    #[test]
+    fn music_voice_zero_skips_the_semantic_decoder_delay() {
+        let mut engine = ModernAudioEngine::default();
+        engine.voices[0].note_origin = Some(crate::game_output::AudioNoteOrigin::Music);
+        engine.voices[0].dsp_pitch_configured = true;
+        engine.voices[0].exact_pitch_word = 5724;
+        engine.voices[0].dsp_envelope_configured = true;
+
+        engine.load_voice_sample(0, 15, 45, None);
+
+        assert_eq!(engine.voices[0].start_delay_samples, 0);
+
+        engine.voices[0].key_on_count = 1;
+        engine.load_voice_sample(0, 15, 45, None);
+        assert_eq!(engine.voices[0].start_delay_samples, 0);
+    }
+
+    #[test]
+    fn fast_attack_music_voice_starts_after_the_kon_envelope_preroll() {
+        let mut engine = ModernAudioEngine::default();
+        let voice = &mut engine.voices[2];
+        voice.note_origin = Some(crate::game_output::AudioNoteOrigin::Music);
+        voice.dsp_pitch_configured = true;
+        voice.exact_pitch_word = 4290;
+        voice.dsp_envelope_configured = true;
+        voice.dsp_adsr1 = 0xff;
+        voice.dsp_adsr2 = 0xef;
+
+        engine.load_voice_sample(2, 15, 34, None);
+
+        assert_eq!(engine.voices[2].dsp_gain_level, 0x7ff);
+        assert_eq!(engine.voices[2].dsp_hidden_gain_level, 0x7f7);
+        assert_eq!(engine.voices[2].dsp_envelope_state, 2);
+    }
+
+    #[test]
+    fn dac_staged_voices_use_the_previous_pipeline_sample() {
+        let mut engine = ModernAudioEngine::default();
+        let voice = &mut engine.voices[1];
+        voice.note_origin = Some(crate::game_output::AudioNoteOrigin::Music);
+        voice.dsp_pitch_configured = true;
+        voice.exact_pitch_word = 6810;
+        voice.dsp_envelope_configured = true;
+        voice.dsp_adsr1 = 0xff;
+        voice.dsp_adsr2 = 0xef;
+        engine.load_voice_sample(1, 15, 53, None);
+        assert!(!engine.voices[1].mix_uses_previous_sample);
+        engine.load_voice_sample(1, 15, 53, None);
+        assert!(engine.voices[1].mix_uses_previous_sample);
+    }
+
+    #[test]
+    fn inactive_voice_flushes_the_final_dac_stage_once() {
+        let mut engine = ModernAudioEngine::default();
+        engine.dsp_output_left = 1024;
+        engine.dsp_output_right = -1024;
+        let frame = empty_frame_with_writes(&[]);
+        let mut tail = [0i16; 2];
+
+        engine.render_frame(&frame, &mut tail, 1, 2);
+
+        assert_eq!(tail, [1024, -1024]);
+        assert_eq!(engine.voices[0].last_output_sample, 0);
+
+        let mut after_tail = [0i16; 2];
+        engine.render_frame(&frame, &mut after_tail, 1, 2);
+        assert_eq!(after_tail, [0, 0]);
+    }
+
+    #[test]
+    fn dac_staged_voices_observe_the_visible_dsp_counter_phase() {
+        assert_eq!(envelope_counter_for_voice(26_769, true), 26_769);
+        assert_eq!(envelope_counter_for_voice(26_769, false), 26_770);
+        assert_eq!(envelope_counter_for_voice(0, true), 0);
+        assert_eq!(envelope_counter_for_voice(30_719, false), 0);
+        assert_eq!(dsp_counter_for_current_sample(2_933), 2_932);
+        assert_eq!(dsp_counter_for_current_sample(0), 30_719);
     }
 
     #[test]
@@ -2575,7 +4380,7 @@ mod tests {
 
         assert_eq!(&sample.pcm[..19], &window);
         let block = decoder.decode_next(&ram).expect("next filtered block");
-        assert_eq!(block[0], 937);
+        assert_eq!(block[0], 936);
         assert_eq!(sample.pcm.len(), 19);
         assert!(!sample.loops);
 
@@ -2729,13 +4534,11 @@ mod tests {
     }
 
     #[test]
-    fn non_looping_brr_end_forces_zero_gain_release_state() {
+    fn non_looping_brr_terminal_header_reaches_the_envelope_after_two_samples() {
         let mut voice = ModernVoice {
             active: true,
             sample_backed: true,
             sample_data: vec![1; 16],
-            brr_started: true,
-            brr_block_start: 16,
             dsp_pitch_configured: true,
             render_pitch_word: 0,
             dsp_envelope_configured: true,
@@ -2743,9 +4546,15 @@ mod tests {
             dsp_adsr2: 0xff,
             dsp_envelope_state: 2,
             dsp_gain_level: 1024,
+            dsp_key_on_timed: true,
+            dsp_terminal_block_start: Some(12),
             ..ModernVoice::default()
         };
 
+        assert_eq!(voice.next_sample(), 0);
+        assert!(voice.active);
+        assert_eq!(voice.next_sample(), 0);
+        assert!(voice.active);
         assert_eq!(voice.next_sample(), 0);
         assert!(!voice.active);
         assert_eq!(voice.dsp_gain_level, 0);
@@ -2753,6 +4562,36 @@ mod tests {
 
         voice.dsp_envelope_state = 2;
         voice.begin_release();
+        assert_eq!(voice.dsp_envelope_state, 4);
+    }
+
+    #[test]
+    fn flat_brr_pipeline_silences_after_terminal_header_reaches_envelope_stage() {
+        let mut voice = ModernVoice {
+            active: true,
+            sample_backed: true,
+            sample_data: vec![100; 32],
+            sample_loops: false,
+            dsp_pitch_configured: true,
+            exact_pitch_word: 0x1000,
+            render_pitch_word: 0x1000,
+            dsp_sample_position: 3 << 12,
+            dsp_key_on_timed: true,
+            dsp_envelope_configured: true,
+            dsp_envelope_state: 2,
+            dsp_gain_level: 2047,
+            dsp_terminal_block_start: Some(16),
+            ..ModernVoice::default()
+        };
+
+        let _crosses_decoder_boundary = voice.next_sample();
+        assert!(voice.active);
+        let _decoder_advances_to_end_block = voice.next_sample();
+        assert!(voice.active);
+        let _terminal_header_reaches_envelope_stage = voice.next_sample();
+
+        assert!(!voice.active);
+        assert_eq!(voice.dsp_gain_level, 0);
         assert_eq!(voice.dsp_envelope_state, 4);
     }
 
@@ -3041,7 +4880,7 @@ mod tests {
 
         engine.render_frame(&frame, &mut audio, 8, 2);
 
-        assert_eq!(engine.voices[0].instrument_timbre, 0);
+        assert_eq!(engine.voices[0].instrument_timbre, 15);
         assert_eq!(engine.voices[0].timbre, 0);
     }
 
@@ -3188,6 +5027,132 @@ mod tests {
         assert!(engine.debug_voice_samples()[0][..12]
             .iter()
             .all(|sample| *sample == 0));
+    }
+
+    #[test]
+    fn raw_dsp_source_register_survives_key_on_without_a_rewrite() {
+        let first_key_on = empty_frame_with_writes(&[
+            DspWriteEvent::new(0x04, 15, 12, 0),
+            DspWriteEvent::new(0x4c, 0x01, 12, 0),
+        ]);
+        let repeated_key_on = empty_frame_with_writes(&[DspWriteEvent::new(0x4c, 0x01, 12, 0)]);
+        let mut engine = ModernAudioEngine::default();
+        let mut output = [0i16; 1068];
+
+        engine.render_frame(&first_key_on, &mut output, 534, 2);
+        assert_eq!(engine.voices[0].instrument_timbre, 15);
+
+        engine.render_frame(&repeated_key_on, &mut output, 534, 2);
+        assert_eq!(engine.voices[0].instrument_timbre, 15);
+    }
+
+    #[test]
+    fn fir_result_clears_low_bit_before_echo_volume() {
+        let mut engine = ModernAudioEngine::default();
+        engine.echo_left = vec![4];
+        engine.echo_right = vec![4];
+        engine.echo_delay_samples = 1;
+        engine.echo_remaining_samples = 1;
+        engine.echo_ram_initialized = true;
+        engine.echo_mix_left = 127;
+        engine.echo_mix_right = 127;
+        engine.fir_coefficients[7] = 127;
+        engine.dsp_flags = 0x20;
+        let mut output = [0i16; 4];
+
+        engine.render_frame(&empty_frame_with_writes(&[]), &mut output, 2, 2);
+
+        assert_eq!(output, [0, 0, 1, 1]);
+    }
+
+    #[test]
+    fn frame_start_echo_volume_write_updates_the_staged_output_sample() {
+        let mut engine = ModernAudioEngine::default();
+        engine.echo_left = vec![-2_972];
+        engine.echo_right = vec![0];
+        engine.echo_delay_samples = 1;
+        engine.echo_delay_register_samples = 1;
+        engine.echo_remaining_samples = 1;
+        engine.echo_ram_initialized = true;
+        engine.echo_mix_left = 30;
+        engine.echo_mix_right = 0;
+        engine.fir_coefficients[7] = 64;
+        engine.dsp_flags = 0x20;
+
+        let mut preroll = vec![0; 533 * 2];
+        engine.render_frame(&empty_frame_with_writes(&[]), &mut preroll, 533, 2);
+
+        let frame = empty_frame_with_writes(&[DspWriteEvent::new(0x2c, 31, 0, 2)]);
+        let mut audio = vec![0; 533 * 2];
+        engine.render_frame(&frame, &mut audio, 533, 2);
+
+        assert_eq!(audio[0], -360);
+        assert_eq!(audio[1], 0);
+    }
+
+    #[test]
+    fn zero_edl_holds_echo_pointer_at_zero() {
+        let mut engine = ModernAudioEngine::default();
+        let mut output = [0i16; 16];
+
+        engine.render_frame(&empty_frame_with_writes(&[]), &mut output, 8, 2);
+
+        assert_eq!(engine.echo_debug_state().0, 0);
+    }
+
+    #[test]
+    fn timed_edl_write_enables_the_initial_echo_ring() {
+        let mut engine = ModernAudioEngine::default();
+        let mut output = [0i16; 2];
+        let frame = empty_frame_with_writes(&[DspWriteEvent::new(0x7d, 1, 0, 19)]);
+
+        engine.render_frame(&frame, &mut output, 1, 2);
+
+        assert_eq!(engine.echo_debug_config(), (0xc8, 512, true));
+        assert_eq!(engine.echo_debug_state(), (22, 6, 490));
+    }
+
+    #[test]
+    fn echo_start_change_preserves_overlapping_live_ram() {
+        let mut engine = ModernAudioEngine::default();
+        engine.echo_start_page = 0xc8;
+        engine.echo_delay_samples = 512;
+        engine.echo_delay_register_samples = 512;
+        engine.echo_left = vec![0; 512];
+        engine.echo_right = vec![0; 512];
+        engine.echo_left[337] = -124;
+        engine.echo_right[337] = 246;
+        engine.echo_ram_initialized = true;
+
+        engine.handle_global_parameter(0x6d, 0xc0);
+        engine.handle_global_parameter(0x7d, 2);
+        let mut output = [0i16; 2];
+        engine.render_frame(&empty_frame_with_writes(&[]), &mut output, 1, 2);
+
+        assert_eq!(engine.echo_left[849], -124);
+        assert_eq!(engine.echo_right[849], 246);
+    }
+
+    #[test]
+    fn dirty_echo_ram_rebuild_preserves_dsp_cursor_and_fir_phase() {
+        let mut engine = ModernAudioEngine::default();
+        engine.echo_start_page = 0xc8;
+        engine.echo_delay_samples = 512;
+        engine.echo_delay_register_samples = 512;
+        engine.echo_left = vec![0; 512];
+        engine.echo_right = vec![0; 512];
+        engine.echo_ring_index = 499;
+        engine.echo_remaining_samples = 13;
+        engine.fir_history_index = 3;
+        engine.echo_ram_initialized = true;
+        engine.sample_ram_changed();
+        let mut output = [0i16; 800];
+
+        engine.render_frame(&empty_frame_with_writes(&[]), &mut output, 400, 2);
+
+        assert_eq!(engine.echo_ring_index, 387);
+        assert_eq!(engine.echo_remaining_samples, 125);
+        assert_eq!(engine.fir_history_index, 3);
     }
 
     #[test]

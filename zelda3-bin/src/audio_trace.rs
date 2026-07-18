@@ -144,8 +144,11 @@ pub(crate) fn print_replay_audio_trace(
     let (clock_epoch, timer_cycles, sfx_timer_accum) =
         game.zelda_modern_audio_sfx_clock_checkpoint();
     modern_sequence.synchronize_sfx_clock_checkpoint(clock_epoch, timer_cycles, sfx_timer_accum);
-    let modern_event_frame =
-        modern_sequence.sequence_engine_commands(modern_route, game.zelda_engine_audio_commands());
+    let modern_event_frame = modern_sequence.sequence_engine_commands_for_samples(
+        modern_route,
+        game.zelda_engine_audio_commands(),
+        samples as u32,
+    );
     let mut exact_event_frame = event_frame.clone();
     if let Some(spc) = game.zelda_audio_route_state().spc {
         replace_kon_with_checkpoint_receipts(&mut exact_event_frame, spc);

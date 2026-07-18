@@ -58,7 +58,7 @@ embedded SRAM is a uniform 0x20000-byte `0x60` buffer, and the oracle remains in
 `Module04_NameFile` through that window, so this is name/file-screen stress
 coverage rather than broad gameplay coverage.
 
-The US BizHawk/bsnes RTA TAS route in `scripts/inputs/tas-us-rta-ace.txt`
+The US BizHawk/snes9x RTA TAS route in `scripts/inputs/tas-us-rta-ace.txt`
 matches through 32,613 frames (`WRAM fnv1a64 = f01523b0bba49471`). This is the
 current broad gameplay route: it starts from reset, skips through title/file
 setup, advances Uncle's opening sequence, leaves Link's house, crosses the
@@ -112,7 +112,7 @@ currently finds the first normalized C/R checkpoint divergence at frame
 Treat the replay save and its proof manifest as the canonical full-playthrough
 replay-save input, not as proof that Rust already matches the C reference. It
 is separate from reset-start oracle windows and from true video reference
-checks; direct visual reference still needs the C renderer or the bsnes/libretro
+checks; direct visual reference still needs the C renderer or the snes9x/libretro
 path.
 
 The recorded opening movement path in

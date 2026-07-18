@@ -36,5 +36,5 @@ These paths are ignored and should not be committed:
 - `.codegraph/`
 - `*.sfc`, `*.smc`, `*.zip`, `*.srm`, `*.dat`
 - `external/mesen2-oracle/local/`
-- `external/bsnes-libretro/local/`
+- `external/snes9x-libretro/local/`
 - `external/tas/`

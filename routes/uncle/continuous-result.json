@@ -1,0 +1,20 @@
+{
+  "kind": "zelda3_snes9x_continuous_route_result_v1",
+  "coverage_label": "continuous human-recorded coverage",
+  "continuous_playthrough": true,
+  "oracle": "Snes9x 1.63 libretro only",
+  "production_renderer": "modern Rust",
+  "production_audio_backend": "modern",
+  "production_audio_sequencer": "native",
+  "takes": [
+    0,
+    1,
+    2
+  ],
+  "frames_requested": 11735,
+  "frames_completed": 11735,
+  "video_matched": true,
+  "audio_matched": true,
+  "passed": true,
+  "result": "comparisons/continuous/result.json"
+}

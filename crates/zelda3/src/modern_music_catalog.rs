@@ -1,4 +1,4 @@
-pub const PACKED_NOTE_BYTES: usize = 21;
+pub const PACKED_NOTE_BYTES: usize = 23;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ModernMusicNote {
@@ -18,6 +18,8 @@ pub struct ModernMusicNote {
     pub gain: u8,
     pub echo_send: bool,
     pub keyoff_sample_offset: u16,
+    pub kon_phase: u8,
+    pub keyoff_phase: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,6 +70,8 @@ pub fn decode_note(bytes: &[u8]) -> Option<ModernMusicNote> {
         gain: bytes[17],
         echo_send: bytes[18] != 0,
         keyoff_sample_offset: u16::from_le_bytes([bytes[19], bytes[20]]),
+        kon_phase: bytes[21],
+        keyoff_phase: bytes[22],
     })
 }
 
@@ -130,15 +134,16 @@ mod tests {
     }
 
     #[test]
-    fn title_track_uses_live_rom_command_phase() {
+    fn title_track_uses_snes9x_command_phase() {
         let track = packed_track(1).unwrap();
         let first = decode_note(&track.notes[..PACKED_NOTE_BYTES]).unwrap();
 
         assert_eq!(track.lead_in_frames, 7);
         assert_eq!(first.start_frame, 0);
-        assert_eq!(first.sample_offset, 292);
+        assert_eq!(first.sample_offset, 287);
         assert_eq!(first.duration_frames, 29);
-        assert_eq!(first.keyoff_sample_offset, 294);
+        assert_eq!(first.keyoff_sample_offset, 16);
+        assert!(!first.echo_send);
     }
 
     #[test]

@@ -5,6 +5,13 @@ fn calculate_sfx_pan(x: u16) -> u8 {
     ZeldaState::calculate_sfx_pan_with_scroll(x, 0)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SelectedGameLoadDestination {
+    Dungeon,
+    DarkWorldOverworld,
+    Message,
+}
+
 // Static lookup tables ported from misc.c.
 const RECEIVE_ITEM_OAM_EXT_SIZES: [u8; 76] = [
     0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 0, 2, 0, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2,
@@ -112,7 +119,10 @@ const LINK_HAND_DMA_BASE_SOURCES: [u16; 27] = [
 const LINK_SWORD_DMA_BASE_SOURCES: [u16; 8] = [
     0x9000, 0x9020, 0x9060, 0x91e0, 0x90a0, 0x90c0, 0x9100, 0x9140,
 ];
-const LINK_SHIELD_DMA_BASE_SOURCES: [u16; 3] = [0x9300, 0x9340, 0x9380];
+// Bank 3 is the retained equipment selection after the opening Uncle leaves.
+// Name the valid source explicitly; the ROM reaches the same adjacent address
+// through a stale/out-of-range table index.
+const LINK_SHIELD_DMA_BASE_SOURCES: [u16; 4] = [0x9300, 0x9340, 0x9380, 0x9480];
 const LINK_AUX_DMA_BASE_SOURCES: [u16; 128] = [
     0x9480, 0x94c0, 0x94e0, 0x95c0, 0x9500, 0x9520, 0x9540, 0x9480, 0x9640, 0x9680, 0x96a0, 0x9780,
     0x96c0, 0x96e0, 0x9700, 0x9480, 0x9800, 0x9840, 0x98a0, 0x9480, 0x9480, 0x9480, 0x9480, 0x9480,
@@ -550,6 +560,45 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module05_load_file(&mut self) {
+        self.complete_module05_load_file_inner(false);
+    }
+
+    pub(super) fn complete_module05_load_file_after_resumption(&mut self) {
+        self.complete_module05_load_file_inner(true);
+    }
+
+    pub(super) fn begin_selected_game_load_pre_dungeon_audio(&mut self) {
+        if self.selected_game_load_destination() == SelectedGameLoadDestination::Dungeon {
+            self.module_pre_dungeon_audio_prefix();
+        }
+    }
+
+    fn selected_game_load_destination(&self) -> SelectedGameLoadDestination {
+        if self.game_state.inventory.save_progress.dark_world_state() != 0 {
+            if self.game_state.world.location.is_indoors() {
+                SelectedGameLoadDestination::Dungeon
+            } else {
+                SelectedGameLoadDestination::DarkWorldOverworld
+            }
+        } else if self.game_state.display.mosaic_level != 0
+            || (self.game_state.system_signals.game_over_check_flag() != 0
+                && self.game_state.system_signals.restart_check_flag() == 0)
+            || self.game_state.inventory.save_progress.progress_indicator() < 2
+            || self
+                .game_state
+                .inventory
+                .save_progress
+                .which_starting_point()
+                == 5
+        {
+            SelectedGameLoadDestination::Dungeon
+        } else {
+            SelectedGameLoadDestination::Message
+        }
+    }
+
+    fn complete_module05_load_file_inner(&mut self, pre_dungeon_audio_already_started: bool) {
+        let destination = self.selected_game_load_destination();
         self.enable_force_blank();
         self.set_overworld_map_state(0);
         self.follower_link_state_mut()
@@ -576,55 +625,53 @@ impl ZeldaState {
         self.start_shared_message_timer(0x0200);
         self.set_vertical_irq_trigger(48);
 
-        if self.game_state.inventory.save_progress.dark_world_state() != 0 {
-            if self.game_state.world.location.is_indoors() {
-                self.load_dungeon_room_rebuild_hud();
-                return;
+        match destination {
+            SelectedGameLoadDestination::Dungeon => {
+                self.load_dungeon_room_rebuild_hud_inner(pre_dungeon_audio_already_started);
             }
-            self.hud_search_for_equipped_item();
-            self.hud_rebuild();
-            self.hud_update_equipped_item();
-            self.clear_game_over_check_flag();
-            self.set_dungeon_room(32);
-            self.set_main_module(8);
-            self.set_submodule(0);
-            self.set_subsubmodule(0);
-            self.clear_restart_check_flag();
-        } else if self.game_state.display.mosaic_level != 0
-            || (self.game_state.system_signals.game_over_check_flag() != 0
-                && self.game_state.system_signals.restart_check_flag() == 0)
-            || self.game_state.inventory.save_progress.progress_indicator() < 2
-            || self
-                .game_state
-                .inventory
-                .save_progress
-                .which_starting_point()
-                == 5
-        {
-            self.load_dungeon_room_rebuild_hud();
-        } else {
-            let message = if self.game_state.inventory.items.mirror() == 2 {
-                0x0185
-            } else {
-                0x0184
-            };
-            self.dialogue_message_index_mut().set_value(message);
-            self.main_show_text_message();
-            self.dungeon_load_palettes();
-            self.set_screen_brightness(15);
-            self.set_main_screen_layers(4);
-            self.set_sub_screen_layers(0);
-            self.set_main_module(27);
+            SelectedGameLoadDestination::DarkWorldOverworld => {
+                self.hud_search_for_equipped_item();
+                self.hud_rebuild();
+                self.hud_update_equipped_item();
+                self.clear_game_over_check_flag();
+                self.set_dungeon_room(32);
+                self.set_main_module(8);
+                self.set_submodule(0);
+                self.set_subsubmodule(0);
+                self.clear_restart_check_flag();
+            }
+            SelectedGameLoadDestination::Message => {
+                let message = if self.game_state.inventory.items.mirror() == 2 {
+                    0x0185
+                } else {
+                    0x0184
+                };
+                self.dialogue_message_index_mut().set_value(message);
+                self.main_show_text_message();
+                self.dungeon_load_palettes();
+                self.set_screen_brightness(15);
+                self.set_main_screen_layers(4);
+                self.set_sub_screen_layers(0);
+                self.set_main_module(27);
+            }
         }
     }
 
     pub(super) fn load_dungeon_room_rebuild_hud(&mut self) {
+        self.load_dungeon_room_rebuild_hud_inner(false);
+    }
+
+    fn load_dungeon_room_rebuild_hud_inner(&mut self, pre_dungeon_audio_already_started: bool) {
         self.clear_mosaic_level();
         self.set_mosaic_copy(7);
         self.hud_search_for_equipped_item();
         self.hud_rebuild();
         self.hud_update_equipped_item();
-        self.module_pre_dungeon();
+        if pre_dungeon_audio_already_started {
+            self.module_pre_dungeon_after_audio_prefix();
+        } else {
+            self.module_pre_dungeon();
+        }
     }
 
     pub(super) fn patch_new_game_entrance_state(&mut self) {

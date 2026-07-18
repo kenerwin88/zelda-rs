@@ -494,6 +494,7 @@ const UNCLE_LEAVE_HOUSE_DELAYS: [u8; 2] = [64, 224];
 const UNCLE_LEAVE_HOUSE_DIRECTIONS: [u8; 2] = [2, 1];
 const UNCLE_LEAVE_HOUSE_X_VELOCITIES: [i8; 4] = [0, 0, -12, 12];
 const UNCLE_LEAVE_HOUSE_Y_VELOCITIES: [i8; 4] = [-12, 12, 0, 0];
+const UNCLE_DEPARTURE_RETAINED_SHIELD_DMA_INDEX: u8 = 6;
 
 // CrystalMaiden_RunCutscene message table (sprite_main.c:23297).
 const CRYSTAL_MAIDEN_MSGS: [u16; 9] = [
@@ -911,6 +912,12 @@ impl ZeldaState {
                 self.follower_state_mut().set_indicator(5);
                 self.start_shared_message_timer(0x0df3);
                 self.save_progress_mut().or_progress_flags(0x10);
+                // The original machine leaves this equipment bank selected when the
+                // departing Uncle slot is retired. Keep that observable lifetime
+                // explicitly instead of reproducing the inactive slot's corrupt
+                // direction byte and out-of-range ROM table lookup.
+                self.follower_link_state_mut()
+                    .set_shield_dma_graphics_index(UNCLE_DEPARTURE_RETAINED_SHIELD_DMA_INDEX);
                 self.sprite_slot_view_mut(k).set_state(0);
                 self.follower_link_state_mut().clear_immobilized();
             }

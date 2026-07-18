@@ -12,6 +12,7 @@ pub mod cart;
 pub mod consts;
 pub mod cpu;
 pub mod cpu_step;
+mod cycle_spc700;
 pub mod dma;
 pub mod input;
 pub mod loader;

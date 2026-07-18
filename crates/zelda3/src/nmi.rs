@@ -4,7 +4,12 @@ use super::*;
 use crate::game_output::{AudioSfxBank, EngineAudioCommand};
 
 impl ZeldaState {
-    pub(super) fn interrupt_nmi(&mut self, input: u16) {
+    pub(super) fn interrupt_nmi(
+        &mut self,
+        input: u16,
+        oam_dma_source: Option<&[u8]>,
+        defer_bg_vram_upload: bool,
+    ) {
         let joypad_already_sampled = std::mem::take(&mut self.joypad_sampled_before_main);
         let audio_already_processed = std::mem::take(&mut self.audio_nmi_processed_before_main);
         if !audio_already_processed {
@@ -12,15 +17,27 @@ impl ZeldaState {
         }
 
         if !self.game_state.display.nmi_update_is_latched() {
+            let blank_scanlines = nmi_active_display_blank_scanlines_for_pending_work(
+                self.game_state.display.core_updates_are_disabled(),
+                self.game_state.system_signals.should_update_hud(),
+                self.game_state.display.pending_nmi_subroutine,
+            );
+            self.nmi_forced_blank_scanlines_pending =
+                self.nmi_forced_blank_scanlines_pending.max(blank_scanlines);
             self.latch_nmi_update();
-            self.nmi_do_updates();
+            self.nmi_do_updates_from(oam_dma_source, defer_bg_vram_upload);
             if !joypad_already_sampled {
                 self.nmi_read_joypads(input);
             }
         }
 
         if self.game_state.display.nmi_thread_active {
-            self.nmi_update_irqgfx();
+            let frame = self.game_state.frame;
+            let timed_intro_poly_worker = self.rom_startup_timing()
+                && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule);
+            if !timed_intro_poly_worker {
+                self.nmi_update_irqgfx();
+            }
             let stack = self.game_state.display.nmi_thread_stack_pointer;
             self.set_nmi_thread_stack_pointer(if stack != 0x1f31 { 0x1f31 } else { 0x01f2 });
             if self.nmi_poly_upload_deferred != 0 {
@@ -80,6 +97,10 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_do_updates(&mut self) {
+        self.nmi_do_updates_from(None, false);
+    }
+
+    fn nmi_do_updates_from(&mut self, oam_dma_source: Option<&[u8]>, defer_bg_vram_upload: bool) {
         if !self.game_state.display.core_updates_are_disabled() {
             self.nmi_core_link_graphics_update();
 
@@ -136,7 +157,17 @@ impl ZeldaState {
             }
         }
 
-        if self.game_state.system_signals.should_update_cgram() {
+        let frame = self.game_state.frame;
+        let defer_intro_initialization_publication = self.rom_startup_timing()
+            && frame.main_module == 0
+            && frame.submodule == 1
+            && !self.intro_initialization_reset_obj_published;
+        let defer_intro_cgram = defer_intro_initialization_publication
+            || (self.rom_startup_timing()
+                && frame.main_module == 0
+                && frame.submodule == 7
+                && !matches!(self.intro_bg_fade_poly_phase, 1 | 3));
+        if self.game_state.system_signals.should_update_cgram() && !defer_intro_cgram {
             // C: memcpy(g_zenv.ppu->cgram, main_palette_buffer, 0x200)
             // Read directly from WRAM so that set_aux_color() calls that overflow the
             // aux buffer into main_palette_buffer (when overworld_palette_aux_or_main=0x200)
@@ -162,13 +193,66 @@ impl ZeldaState {
         }
 
         self.clear_hud_update_flag();
-        self.clear_cgram_update_flag();
-        let oam_buf = self.sprite_oam_shadow_buffer().to_vec();
-        for i in 0..self.ppu.oam.len() {
-            self.ppu.oam[i] = read_word_from_slice(&oam_buf, i * 2);
+        if !defer_intro_cgram {
+            self.clear_cgram_update_flag();
+        }
+        let mut oam_buf = self.sprite_oam_shadow_buffer().to_vec();
+        let frame = self.game_state.frame;
+        let defer_intro_initialization_oam_dma = defer_intro_initialization_publication;
+        if self.rom_startup_timing() && frame.main_module == 0 && matches!(frame.submodule, 6 | 7) {
+            if let Some(boundary_oam) = oam_dma_source {
+                // The title sword/sparkle writer runs after the OAM-DMA boundary in
+                // the interrupted intro main thread. Other title OBJ entries have
+                // already settled for this boundary, so retain only this subsystem's
+                // prior shadow region (entries $50..$5b and their packed size bits).
+                oam_buf[0x140..0x170].copy_from_slice(&boundary_oam[0x140..0x170]);
+                oam_buf[0x214..0x217].copy_from_slice(&boundary_oam[0x214..0x217]);
+            }
+        }
+        if !defer_intro_initialization_oam_dma {
+            if frame.main_module == 0
+                && self.ppu.vram[..ROM_INTRO_INITIAL_VISIBLE_TILE_ZERO.len()]
+                    == ROM_INTRO_INITIAL_VISIBLE_TILE_ZERO
+            {
+                self.ppu.vram[..ROM_INTRO_INITIAL_VISIBLE_TILE_ZERO.len()].fill(0);
+                if self.ppu.cgram[1..].iter().all(|color| *color == 0x5555) {
+                    self.ppu.cgram[1..].fill(0);
+                    self.game_state
+                        .display
+                        .palette_provenance
+                        .0
+                        .reconstitute_cgram(&self.ppu.cgram);
+                }
+            }
+            // The first intro initialization slice returns before the normal
+            // OAM-DMA point. Preserve the reset sparkle already in PPU OAM;
+            // the newly authored Nintendo Presents shadow is published once
+            // initialization reaches the regular NMI path.
+            for i in 0..self.ppu.oam.len() {
+                self.ppu.oam[i] = read_word_from_slice(&oam_buf, i * 2);
+            }
+        } else {
+            // The ROM's first interruptible WRAM initialization slice has
+            // cleared the OAM-DMA source after its first word. Preserve the
+            // deterministic power-on fill in that word until the initialization
+            // slice returns and the regular OAM authoring path takes over.
+            self.ppu.oam.fill(0);
+            self.ppu.oam[0] = 0x5555;
+            self.ppu.vram[..ROM_INTRO_INITIAL_VISIBLE_TILE_ZERO.len()]
+                .copy_from_slice(&ROM_INTRO_INITIAL_VISIBLE_TILE_ZERO);
+            self.ppu.cgram[1..].fill(0x5555);
+            // This transient is authoritative PPU state, not a main-palette
+            // shadow upload. Publish it to the modern renderer's CGRAM mirror
+            // just as a full-state restore publishes its PPU CGRAM image.
+            self.game_state
+                .display
+                .palette_provenance
+                .0
+                .reconstitute_cgram(&self.ppu.cgram);
+            self.intro_initialization_reset_obj_published = true;
         }
 
-        if self.game_state.display.has_bg_vram_load() {
+        if self.game_state.display.has_bg_vram_load() && !defer_bg_vram_upload {
             match self.game_state.display.bg_vram_load_mode {
                 1 => {
                     let stripes = self.vram_upload_buffer_remaining().to_vec();

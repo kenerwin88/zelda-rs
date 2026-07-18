@@ -12026,8 +12026,16 @@ fn replay_room_write_trace_enabled() -> bool {
 
 impl ZeldaState {
     pub(super) fn module_pre_dungeon(&mut self) {
+        self.module_pre_dungeon_audio_prefix();
+        self.module_pre_dungeon_after_audio_prefix();
+    }
+
+    pub(super) fn module_pre_dungeon_audio_prefix(&mut self) {
         self.set_ambient_sound_effect(5);
         self.set_sound_effect_1(0);
+    }
+
+    pub(super) fn module_pre_dungeon_after_audio_prefix(&mut self) {
         self.set_dungeon_room(0);
         self.dungeon_room_tracking_mut()
             .set_previous_room_index_word(0);

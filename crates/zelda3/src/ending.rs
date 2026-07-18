@@ -2559,14 +2559,11 @@ impl ZeldaState {
         self.intro_setup_screen();
         self.set_screen_brightness(15);
         self.set_subsubmodule(0);
-        self.intro_startup_delay = 0;
         self.increment_cgram_update_flag();
         self.increment_submodule();
         self.set_sound_effect_2(10);
         self.intro_init_continue();
-        if self.rom_startup_timing() {
-            self.intro_startup_delay = ROM_INTRO_SOUND_BANK_BOOTSTRAP_FRAMES;
-        }
+        self.intro_initialization_reset_obj_control_pending = self.rom_startup_timing();
     }
 
     pub(super) fn intro_setup_screen(&mut self) {
@@ -2627,6 +2624,15 @@ impl ZeldaState {
                     self.intro_initialize_memory_darken();
                 }
             }
+        }
+        if self.rom_startup_timing() {
+            self.intro_initialization_work_frames_pending = match t {
+                0..=7 => ROM_INTRO_CLEAR_1KB_CONTINUATION_FRAMES,
+                8 => ROM_INTRO_MESSAGE_POINTER_CONTINUATION_FRAMES,
+                9 => ROM_INTRO_ITEM_GFX_CONTINUATION_FRAMES,
+                10 => ROM_INTRO_FOLLOWER_GFX_CONTINUATION_FRAMES,
+                _ => 0,
+            };
         }
     }
 

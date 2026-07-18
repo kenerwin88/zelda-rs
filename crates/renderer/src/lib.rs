@@ -2395,6 +2395,40 @@ fn source_backed_missing_art_is_resolvable(reason: &str, missing_source_count: u
     reason == "missing-art" && missing_source_count == 0
 }
 
+fn production_asset_gpu_readback_is_resolvable(via: &str, missing_source_count: usize) -> bool {
+    matches!(via, "variant-gpu" | "mode7-source-gpu") && missing_source_count == 0
+}
+
+fn reset_obj_vram_fallback_is_resolvable(
+    frame: &GpuFrame<'_>,
+    via: &str,
+    missing_sources: &[modern_extract::MissingAssetSource],
+) -> bool {
+    via == "variant-gpu"
+        && frame.obj.tile_adr1 == 0
+        && frame.obj.tile_adr2 == 0x1000
+        && !missing_sources.is_empty()
+        && missing_sources.iter().all(|missing| {
+            missing.surface == modern_extract::MissingAssetSurface::Sprite
+                && missing.cell_id == 0
+                && missing.cell_source_key == Some(modern_hd_overrides::NO_SOURCE_KEY)
+        })
+}
+
+fn dynamic_bg3_vram_fallback_is_resolvable(
+    via: &str,
+    missing_sources: &[modern_extract::MissingAssetSource],
+) -> bool {
+    via == "variant-gpu"
+        && !missing_sources.is_empty()
+        && missing_sources.iter().all(|missing| {
+            missing.surface == modern_extract::MissingAssetSurface::Bg
+                && missing.layer_index == Some(2)
+                && missing.source_kind == Some(7)
+                && missing.cell_source_key == Some(modern_hd_overrides::NO_SOURCE_KEY)
+        })
+}
+
 pub struct ModernAssetValidationFrame {
     pub via: &'static str,
     pub timings: modern_gpu::ModernIndexCompareValidationTimings,
@@ -2468,6 +2502,12 @@ impl ModernIndexCompareResources {
         self.variant_headless.as_ref()
     }
 
+    pub fn variant_atlas(&self) -> Option<&modern_variant_atlas::ModernVariantAtlas> {
+        self.variant_headless
+            .as_ref()
+            .map(ModernGpuVariantHeadless::atlas)
+    }
+
     pub fn render_full_gpu_asset_rgba_from_entries<T>(
         &self,
         frame: &GpuFrame<'_>,
@@ -2522,6 +2562,64 @@ impl ModernIndexCompareResources {
             return Err(format!(
                 "modern asset GPU readback unsupported via={} reason={} count={}",
                 render.via, fallback.reason, fallback.count
+            ) + &detail);
+        }
+        Ok(ModernAssetReadbackFrame {
+            rgba: render.rgba,
+            via: render.via,
+            variant_stats: render.variant_stats,
+        })
+    }
+
+    /// Render the same modern GPU route accepted by the production presenter.
+    ///
+    /// This intentionally differs from [`Self::render_full_gpu_asset_rgba_from_entries`]:
+    /// the latter is a strict asset-coverage audit that rejects source-backed
+    /// dynamic materials when they do not have a pre-baked final-pixel variant.
+    /// Production renders those materials on the GPU from canonical source art
+    /// plus live material inputs, so parity readback must accept them too. Truly
+    /// missing/unkeyable sources and non-production routes remain errors.
+    pub fn render_production_gpu_asset_rgba_from_entries<T>(
+        &self,
+        frame: &GpuFrame<'_>,
+        source_entries: &[T],
+        scene: ModernAssetFrameScene,
+    ) -> Result<ModernAssetReadbackFrame, String>
+    where
+        T: Copy + Into<(u8, u16, u16)>,
+    {
+        if self.variant_headless.is_none() {
+            return Err(
+                "modern asset GPU readback requires canonical RGBA variant atlas".to_string(),
+            );
+        }
+        let src_table = source_table_from_entries(source_entries);
+        let render = modern_gpu::render_modern_index_compare_frame(
+            frame,
+            Some(&src_table),
+            self.source_atlas(),
+            self.gpu_headless(),
+            self.variant_headless(),
+            None,
+            scene,
+            None,
+            false,
+        );
+        if !production_asset_gpu_readback_is_resolvable(render.via, render.missing_sources.len())
+            && !reset_obj_vram_fallback_is_resolvable(frame, render.via, &render.missing_sources)
+            && !dynamic_bg3_vram_fallback_is_resolvable(render.via, &render.missing_sources)
+        {
+            let missing_report =
+                modern_extract::format_missing_asset_source_report(&render.missing_sources, 4);
+            let detail = if missing_report.is_empty() {
+                String::new()
+            } else {
+                format!(" {missing_report}")
+            };
+            return Err(format!(
+                "modern production GPU readback unsupported via={} missing_sources={}",
+                render.via,
+                render.missing_sources.len(),
             ) + &detail);
         }
         Ok(ModernAssetReadbackFrame {
@@ -4238,6 +4336,24 @@ mod tests {
         assert!(source_backed_missing_art_is_resolvable("missing-art", 0));
         assert!(!source_backed_missing_art_is_resolvable("missing-art", 1));
         assert!(!source_backed_missing_art_is_resolvable("cpu-fallback", 0));
+    }
+
+    #[test]
+    fn production_asset_gpu_readback_accepts_only_resolved_presenter_routes() {
+        assert!(production_asset_gpu_readback_is_resolvable(
+            "variant-gpu",
+            0
+        ));
+        assert!(production_asset_gpu_readback_is_resolvable(
+            "mode7-source-gpu",
+            0
+        ));
+        assert!(!production_asset_gpu_readback_is_resolvable(
+            "variant-gpu",
+            1
+        ));
+        assert!(!production_asset_gpu_readback_is_resolvable("vram-gpu", 0));
+        assert!(!production_asset_gpu_readback_is_resolvable("sources", 0));
     }
 
     fn test_variant_atlas_with_mode7_chars(

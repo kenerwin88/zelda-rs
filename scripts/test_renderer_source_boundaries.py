@@ -890,14 +890,14 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             fn run_compare_libretro_oracle() {
                 run_diagnostic_play_frame_bgra(&mut game, input, &mut rust_frame, render_flags);
                 compare_libretro_video_frame(&rust_frame, width, height, &capture, 0, 0);
-                align_bsnes_video_capture(&mut oracle, capture, &rust_frame, width, height, input, 120, 0, 0);
-                write_bsnes_parity_failure_artifacts(&pre_game, &game, &rust_frame, &rust_audio, &capture);
+                align_snes9x_video_capture(&mut oracle, capture, &rust_frame, width, height, input, 120, 0, 0);
+                write_snes9x_parity_failure_artifacts(&pre_game, &game, &rust_frame, &rust_audio, &capture);
             }
 
             fn run_play_lockstep() {
                 render_diagnostic_lockstep_oracle_frames_in_place(&mut oracle, &mut game_frame, &mut snes_frame, pitch);
-                compare_bsnes_video_frame(&game_frame, width, height, capture);
-                write_bsnes_parity_failure_artifacts(&pre_game, &game, &game_frame, &audio, capture);
+                compare_snes9x_video_frame(&game_frame, width, height, capture);
+                write_snes9x_parity_failure_artifacts(&pre_game, &game, &game_frame, &audio, capture);
             }
 
             fn compare_libretro_video_frame() {
@@ -1661,10 +1661,10 @@ class RendererSourceBoundaryTests(unittest.TestCase):
             fn run_trace_startup_audio() {
                 run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
             }
-            fn run_trace_bsnes_audio() {
+            fn run_trace_snes9x_audio() {
                 run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
             }
-            fn run_compare_bsnes_startup_audio() {
+            fn run_compare_snes9x_startup_audio() {
                 run_diagnostic_play_frame_bgra(&mut game, 0, &mut frame, render_flags);
             }
             fn run_compare_startup_apu_impls() {

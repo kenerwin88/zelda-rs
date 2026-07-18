@@ -1,6 +1,8 @@
 //! APU/SPC/DSP register surface. Port of `zelda3/snes/apu.c`,
 //! `zelda3/snes/spc.c`, and the Rust-side `zelda3/snes/dsp.c` audio core.
 
+use crate::cycle_spc700::{Smp, SmpBus, SmpState};
+
 const BOOT_ROM: [u8; 0x40] = [
     0xcd, 0xef, 0xbd, 0xe8, 0x00, 0xc6, 0x1d, 0xd0, 0xfc, 0x8f, 0xaa, 0xf4, 0x8f, 0xbb, 0xf5, 0x78,
     0xcc, 0xf4, 0xd0, 0xfb, 0x2f, 0x19, 0xeb, 0xf4, 0xd0, 0xfc, 0x7e, 0xf4, 0xd0, 0x0b, 0xe4, 0xf5,
@@ -85,6 +87,20 @@ const DSP_ESA: u8 = 0x6d;
 const DSP_ENDX: u8 = 0x7c;
 const DSP_EDL: u8 = 0x7d;
 const DSP_SAMPLE_BUFFER_LEN: usize = 534 * 2;
+// S-DSP power-on register image used by Snes9x 1.63's SPC_DSP core. The
+// Zelda driver intentionally reads the previous EDL value during echo setup,
+// so these externally visible reset bytes are part of program state rather
+// than renderer-specific implementation detail.
+const DSP_POWER_ON_REGISTERS: [u8; 0x80] = [
+    0x45, 0x8b, 0x5a, 0x9a, 0xe4, 0x82, 0x1b, 0x78, 0x00, 0x00, 0xaa, 0x96, 0x89, 0x0e, 0xe0, 0x80,
+    0x2a, 0x49, 0x3d, 0xba, 0x14, 0xa0, 0xac, 0xc5, 0x00, 0x00, 0x51, 0xbb, 0x9c, 0x4e, 0x7b, 0xff,
+    0xf4, 0xfd, 0x57, 0x32, 0x37, 0xd9, 0x42, 0x22, 0x00, 0x00, 0x5b, 0x3c, 0x9f, 0x1b, 0x87, 0x9a,
+    0x6f, 0x27, 0xaf, 0x7b, 0xe5, 0x68, 0x0a, 0xd9, 0x00, 0x00, 0x9a, 0xc5, 0x9c, 0x4e, 0x7b, 0xff,
+    0xea, 0x21, 0x78, 0x4f, 0xdd, 0xed, 0x24, 0x14, 0x00, 0x00, 0x77, 0xb1, 0xd1, 0x36, 0xc1, 0x67,
+    0x52, 0x57, 0x46, 0x3d, 0x59, 0xf4, 0x87, 0xa4, 0x00, 0x00, 0x7e, 0x44, 0x00, 0x4e, 0x7b, 0xff,
+    0x75, 0xf5, 0x06, 0x97, 0x10, 0xc3, 0x24, 0xbb, 0x00, 0x00, 0x7b, 0x7a, 0xe0, 0x60, 0x12, 0x0f,
+    0xf7, 0x74, 0x1c, 0xe5, 0x39, 0x3d, 0x73, 0xc1, 0x00, 0x00, 0x7a, 0xb3, 0xff, 0x4e, 0x7b, 0xff,
+];
 pub const DSP_SAVELOAD_SIZE: usize = 3024;
 pub const SPC_SAVELOAD_SIZE: usize = 15;
 pub const APU_SAVELOAD_PREFIX_SIZE: usize = 65_576;
@@ -105,12 +121,12 @@ fn clip_15(value: i32) -> i16 {
 /// decoded BRR samples. `offset` is the eight-bit fractional sample position.
 pub fn dsp_gaussian_interpolate(oldest: i16, older: i16, old: i16, new: i16, offset: u8) -> i16 {
     let offset = usize::from(offset);
-    let mut out = (DSP_GAUSS_VALUES[0xff - offset] * i32::from(oldest)) >> 10;
-    out += (DSP_GAUSS_VALUES[0x1ff - offset] * i32::from(older)) >> 10;
-    out += (DSP_GAUSS_VALUES[0x100 + offset] * i32::from(old)) >> 10;
+    let mut out = (DSP_GAUSS_VALUES[0xff - offset] * i32::from(oldest)) >> 11;
+    out += (DSP_GAUSS_VALUES[0x1ff - offset] * i32::from(older)) >> 11;
+    out += (DSP_GAUSS_VALUES[0x100 + offset] * i32::from(old)) >> 11;
     out = clip_i16_cast(out);
-    out += (DSP_GAUSS_VALUES[offset] * i32::from(new)) >> 10;
-    (clip_i16(out) >> 1) as i16
+    out += (DSP_GAUSS_VALUES[offset] * i32::from(new)) >> 11;
+    (clip_i16(out) & !1) as i16
 }
 
 fn dsp_exp_decrease_gain(gain: u16) -> u16 {
@@ -304,6 +320,8 @@ pub struct DspState {
     pub sample_buffer: Vec<i16>,
     pub sample_offset: u16,
     #[serde(skip, default)]
+    key_on_pipeline: [u8; 8],
+    #[serde(skip, default)]
     pub debug_voice_samples: [Vec<i16>; 8],
 }
 
@@ -335,6 +353,7 @@ impl Default for DspState {
             fir_buffer_r: [0; 8],
             sample_buffer: vec![0; DSP_SAMPLE_BUFFER_LEN],
             sample_offset: 0,
+            key_on_pipeline: [0; 8],
             debug_voice_samples: std::array::from_fn(|_| Vec::new()),
         };
         dsp.reset();
@@ -344,8 +363,7 @@ impl Default for DspState {
 
 impl DspState {
     pub fn reset(&mut self) {
-        self.ram.fill(0);
-        self.ram[DSP_ENDX as usize] = 0xff;
+        self.ram.copy_from_slice(&DSP_POWER_ON_REGISTERS);
         self.channel = [DspChannel::default(); 8];
         self.dir_page = 0;
         self.even_cycle = false;
@@ -370,6 +388,7 @@ impl DspState {
         self.fir_buffer_r = [0; 8];
         self.sample_buffer.fill(0);
         self.sample_offset = 0;
+        self.key_on_pipeline = [0; 8];
     }
 
     pub fn save_c_saveload(&self) -> Vec<u8> {
@@ -474,7 +493,7 @@ impl DspState {
         self.ram[adr as usize]
     }
 
-    pub fn write(&mut self, adr: u8, val: u8, apu_ram: &[u8]) {
+    pub fn write(&mut self, adr: u8, val: u8, _apu_ram: &[u8]) {
         let ch = (adr >> 4) as usize;
         match adr {
             0x00 | 0x10 | 0x20 | 0x30 | 0x40 | 0x50 | 0x60 | 0x70 => {
@@ -520,15 +539,8 @@ impl DspState {
                 for i in 0..8 {
                     self.channel[i].key_on = val & (1 << i) != 0;
                     if self.channel[i].key_on {
-                        self.channel[i].key_on = false;
-                        self.channel[i].previous_flags = 0;
-                        let sample_pointer =
-                            self.dir_page.wrapping_add(4 * self.channel[i].srcn as u16);
-                        self.channel[i].decode_offset = apu_ram[sample_pointer as usize] as u16
-                            | ((apu_ram[sample_pointer.wrapping_add(1) as usize] as u16) << 8);
-                        self.channel[i].decode_buffer = [0; 19];
-                        self.channel[i].gain = 0;
-                        self.channel[i].adsr_state = if self.channel[i].use_gain { 3 } else { 0 };
+                        // The S-DSP polls KON every other sample. The poll below
+                        // starts the internal five-sample voice-start pipeline.
                     }
                 }
             }
@@ -591,6 +603,7 @@ impl DspState {
         let mut total_l = 0;
         let mut total_r = 0;
         for i in 0..8 {
+            self.advance_key_on_pipeline(apu_ram, i);
             self.cycle_channel(apu_ram, i);
             self.debug_voice_samples[i].push(self.channel[i].sample_out);
             total_l += (self.channel[i].sample_out as i32 * self.channel[i].volume_l as i32) >> 6;
@@ -614,7 +627,34 @@ impl DspState {
             self.sample_buffer[offset + 1] = total_r as i16;
             self.sample_offset += 1;
         }
+        if self.even_cycle {
+            for ch in 0..8 {
+                if self.channel[ch].key_on {
+                    self.channel[ch].key_on = false;
+                    self.key_on_pipeline[ch] = 5;
+                }
+            }
+        }
         self.even_cycle = !self.even_cycle;
+    }
+
+    fn advance_key_on_pipeline(&mut self, apu_ram: &[u8], ch: usize) {
+        let delay = &mut self.key_on_pipeline[ch];
+        if *delay == 0 {
+            return;
+        }
+        *delay -= 1;
+        if *delay != 0 {
+            return;
+        }
+
+        self.channel[ch].previous_flags = 0;
+        let sample_pointer = self.dir_page.wrapping_add(4 * self.channel[ch].srcn as u16);
+        self.channel[ch].decode_offset = apu_ram[sample_pointer as usize] as u16
+            | ((apu_ram[sample_pointer.wrapping_add(1) as usize] as u16) << 8);
+        self.channel[ch].decode_buffer = [0; 19];
+        self.channel[ch].gain = 0;
+        self.channel[ch].adsr_state = if self.channel[ch].use_gain { 3 } else { 0 };
     }
 
     fn handle_echo(&mut self, apu_ram: &mut [u8], output_l: &mut i32, output_r: &mut i32) {
@@ -930,6 +970,58 @@ impl DspState {
         }
         self.sample_offset = 0;
     }
+
+    /// Drain already-generated 32 kHz DSP samples without resampling them.
+    ///
+    /// Libretro frame callbacks alternate between 533 and 534 samples.  The
+    /// older `get_samples` API always treats the internal buffer as a complete
+    /// 534-sample block, so asking it for 533 samples drops one sample and
+    /// breaks continuous waveform alignment.  This path preserves the DSP
+    /// stream across arbitrary callback boundaries.
+    pub fn drain_samples_exact(
+        &mut self,
+        sample_data: &mut [i16],
+        samples: usize,
+        num_channels: usize,
+    ) -> Result<(), String> {
+        let available = self.sample_offset as usize;
+        if samples > available {
+            return Err(format!(
+                "requested {samples} exact DSP samples with only {available} available"
+            ));
+        }
+        if num_channels != 1 && num_channels != 2 {
+            return Err(format!(
+                "exact DSP drain supports mono or stereo, got {num_channels} channels"
+            ));
+        }
+        let required = samples.saturating_mul(num_channels);
+        if sample_data.len() < required {
+            return Err(format!(
+                "exact DSP drain needs {required} output values, got {}",
+                sample_data.len()
+            ));
+        }
+
+        if num_channels == 1 {
+            for (sample, src) in sample_data
+                .iter_mut()
+                .take(samples)
+                .zip(self.sample_buffer.chunks_exact(2))
+            {
+                *sample = ((i32::from(src[0]) + i32::from(src[1])) >> 1) as i16;
+            }
+        } else {
+            sample_data[..samples * 2].copy_from_slice(&self.sample_buffer[..samples * 2]);
+        }
+
+        let remaining = available - samples;
+        self.sample_buffer
+            .copy_within(samples * 2..available * 2, 0);
+        self.sample_buffer[remaining * 2..available * 2].fill(0);
+        self.sample_offset = remaining as u16;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
@@ -1008,6 +1100,20 @@ impl SpcState {
     }
 }
 
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+pub struct SpcInstructionTrace {
+    pub cycle: u32,
+    pub pc: u16,
+    pub opcode: u8,
+    pub a: u8,
+    pub x: u8,
+    pub y: u8,
+    pub sp: u8,
+    pub timer0_cycles: u8,
+    pub timer0_divider: u8,
+    pub timer0_counter: u8,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ApuState {
     pub ram: Vec<u8>,
@@ -1022,6 +1128,12 @@ pub struct ApuState {
     pub spc: SpcState,
     pub cpu_cycles_left: u8,
     pub dsp_write_history: Vec<(u8, u8)>,
+    #[serde(skip)]
+    pub debug_dsp_write_trace: Option<Vec<(u32, u8, u8)>>,
+    #[serde(skip)]
+    pub debug_spc_instruction_trace: Option<Vec<SpcInstructionTrace>>,
+    #[serde(skip)]
+    scheduled_input_port_writes: Vec<(u32, u8, u8)>,
 }
 
 impl Default for ApuState {
@@ -1039,6 +1151,9 @@ impl Default for ApuState {
             spc: SpcState::default(),
             cpu_cycles_left: 7,
             dsp_write_history: Vec::new(),
+            debug_dsp_write_trace: None,
+            debug_spc_instruction_trace: None,
+            scheduled_input_port_writes: Vec::new(),
         }
     }
 }
@@ -1061,6 +1176,100 @@ impl ApuState {
         self.timer = [ApuTimer::default(); 3];
         self.cpu_cycles_left = 7;
         self.dsp_write_history.clear();
+        if let Some(trace) = self.debug_dsp_write_trace.as_mut() {
+            trace.clear();
+        }
+        if let Some(trace) = self.debug_spc_instruction_trace.as_mut() {
+            trace.clear();
+        }
+        self.scheduled_input_port_writes.clear();
+    }
+
+    /// Import the instruction-boundary SMP portion of a Snes9x 1.63 `SND`
+    /// snapshot block. This is an offline parity diagnostic: it lets the Rust
+    /// SPC700/timer core and Snes9x continue from identical state without
+    /// importing Snes9x's DSP renderer.
+    pub fn load_snes9x_1_63_smp_state(&mut self, snd: &[u8]) -> Result<(), String> {
+        const RAM_BYTES: usize = 0x10000;
+        const SMP_INT_COUNT: usize = 41;
+        const SMP_BYTES: usize = RAM_BYTES + SMP_INT_COUNT * 4;
+        if snd.len() < SMP_BYTES {
+            return Err(format!(
+                "Snes9x SND block has {} bytes, expected at least {SMP_BYTES}",
+                snd.len()
+            ));
+        }
+
+        self.ram[..RAM_BYTES].copy_from_slice(&snd[..RAM_BYTES]);
+        let mut cursor = RAM_BYTES;
+        let next = |cursor: &mut usize| {
+            let value = u32::from_le_bytes(snd[*cursor..*cursor + 4].try_into().unwrap());
+            *cursor += 4;
+            value
+        };
+
+        let _clock = next(&mut cursor);
+        let _opcode_number = next(&mut cursor);
+        let opcode_cycle = next(&mut cursor);
+        if opcode_cycle != 0 {
+            return Err(format!(
+                "Snes9x SMP snapshot is mid-instruction at opcode cycle {opcode_cycle}"
+            ));
+        }
+        self.spc.pc = next(&mut cursor) as u16;
+        self.spc.sp = next(&mut cursor) as u8;
+        self.spc.a = next(&mut cursor) as u8;
+        self.spc.x = next(&mut cursor) as u8;
+        self.spc.y = next(&mut cursor) as u8;
+        self.spc.n = next(&mut cursor) != 0;
+        self.spc.v = next(&mut cursor) != 0;
+        self.spc.p = next(&mut cursor) != 0;
+        self.spc.b = next(&mut cursor) != 0;
+        self.spc.h = next(&mut cursor) != 0;
+        self.spc.i = next(&mut cursor) != 0;
+        self.spc.z = next(&mut cursor) != 0;
+        self.spc.c = next(&mut cursor) != 0;
+        self.spc.stopped = false;
+        self.spc.cycles_used = 0;
+        self.rom_readable = next(&mut cursor) != 0;
+        self.dsp_adr = next(&mut cursor) as u8;
+        self.in_ports[4] = next(&mut cursor) as u8;
+        self.in_ports[5] = next(&mut cursor) as u8;
+
+        for (timer_index, frequency) in [128u8, 128, 16].into_iter().enumerate() {
+            let enabled = next(&mut cursor) != 0;
+            let target = next(&mut cursor) as u8;
+            let stage1_ticks = next(&mut cursor) as u8;
+            let stage2_ticks = next(&mut cursor) as u8;
+            let stage3_ticks = next(&mut cursor) as u8;
+            self.timer[timer_index] = ApuTimer {
+                cycles: frequency.wrapping_sub(stage1_ticks),
+                divider: stage2_ticks,
+                target,
+                counter: stage3_ticks,
+                enabled,
+            };
+        }
+
+        // Skip Snes9x's six opcode scratch registers. At an instruction
+        // boundary they do not feed the next opcode.
+        for _ in 0..6 {
+            let _ = next(&mut cursor);
+        }
+        debug_assert_eq!(cursor, SMP_BYTES);
+
+        self.out_ports.copy_from_slice(&self.ram[0xf4..0xf8]);
+        self.in_ports[..4].fill(0);
+        self.cycles = 0;
+        self.cpu_cycles_left = 0;
+        self.dsp_write_history.clear();
+        self.debug_dsp_write_trace = Some(Vec::new());
+        self.scheduled_input_port_writes.clear();
+        if snd.len() >= SMP_BYTES + 0x80 {
+            self.dsp_regs
+                .copy_from_slice(&snd[SMP_BYTES..SMP_BYTES + 0x80]);
+        }
+        Ok(())
     }
 
     /// Byte layout used by C `apu_saveload` before nested DSP/SPC blocks.
@@ -1119,27 +1328,135 @@ impl ApuState {
     }
 
     pub fn cycle(&mut self) {
+        self.cycle_inner(true);
+    }
+
+    /// Advance the SPC700 CPU and hardware timers without synthesizing a DSP
+    /// sample. This is used by translated runtimes that need the original
+    /// driver's instruction/poll cadence while a modern renderer owns audio
+    /// production.
+    pub fn cycle_without_dsp(&mut self) {
+        self.cycle_inner(false);
+    }
+
+    /// Run one complete SPC700 instruction while advancing timers at each
+    /// individual bus or internal cycle. Unlike `cycle_without_dsp`, opcode
+    /// effects occur at their hardware-visible cycle within the instruction.
+    pub fn run_cycle_sequenced_instruction_without_dsp(&mut self) -> u8 {
+        if let Some(trace) = self.debug_spc_instruction_trace.as_mut() {
+            trace.push(SpcInstructionTrace {
+                cycle: self.cycles,
+                pc: self.spc.pc,
+                opcode: self.ram[self.spc.pc as usize],
+                a: self.spc.a,
+                x: self.spc.x,
+                y: self.spc.y,
+                sp: self.spc.sp,
+                timer0_cycles: self.timer[0].cycles,
+                timer0_divider: self.timer[0].divider,
+                timer0_counter: self.timer[0].counter,
+            });
+        }
+        let state = SmpState {
+            pc: self.spc.pc,
+            a: self.spc.a,
+            x: self.spc.x,
+            y: self.spc.y,
+            sp: self.spc.sp,
+            c: self.spc.c,
+            z: self.spc.z,
+            h: self.spc.h,
+            p: self.spc.p,
+            v: self.spc.v,
+            n: self.spc.n,
+            i: self.spc.i,
+            b: self.spc.b,
+            stopped: self.spc.stopped,
+        };
+        let (state, cycles) = {
+            let mut smp = Smp::new(self, state);
+            let cycles = smp.run_instruction();
+            (smp.state(), cycles)
+        };
+        self.spc.pc = state.pc;
+        self.spc.a = state.a;
+        self.spc.x = state.x;
+        self.spc.y = state.y;
+        self.spc.sp = state.sp;
+        self.spc.c = state.c;
+        self.spc.z = state.z;
+        self.spc.h = state.h;
+        self.spc.p = state.p;
+        self.spc.v = state.v;
+        self.spc.n = state.n;
+        self.spc.i = state.i;
+        self.spc.b = state.b;
+        self.spc.stopped = state.stopped;
+        self.spc.cycles_used = cycles as u8;
+        self.cpu_cycles_left = 0;
+        cycles as u8
+    }
+
+    /// Latch the host's four input ports immediately before the given local
+    /// SMP cycle, including when it falls inside a multi-cycle instruction.
+    pub fn schedule_input_port_write(&mut self, local_cycle: u32, ports: [u8; 4]) {
+        self.schedule_input_port_writes(std::array::from_fn(|port| {
+            (local_cycle, port as u8, ports[port])
+        }));
+    }
+
+    /// Schedule one host-port write on the SPC hardware clock.
+    pub fn schedule_input_port_event(&mut self, local_cycle: u32, port: u8, value: u8) {
+        self.scheduled_input_port_writes
+            .push((local_cycle, port & 3, value));
+        self.scheduled_input_port_writes
+            .sort_unstable_by_key(|event| event.0);
+    }
+
+    /// Schedule independent host-port writes on the SPC hardware clock.
+    /// Events are applied inside instructions before a bus access on the same
+    /// cycle, matching the CPU/APU coroutine boundary used by the console.
+    pub fn schedule_input_port_writes(&mut self, writes: [(u32, u8, u8); 4]) {
+        for (cycle, port, value) in writes {
+            self.schedule_input_port_event(cycle, port, value);
+        }
+    }
+
+    fn cycle_inner(&mut self, render_dsp: bool) {
         if self.cpu_cycles_left == 0 {
             self.cpu_cycles_left = self.spc_run_opcode();
         }
         self.cpu_cycles_left = self.cpu_cycles_left.wrapping_sub(1);
 
-        if self.cycles & 0x1f == 0 {
+        self.advance_hardware_cycle(render_dsp);
+    }
+
+    fn advance_hardware_cycle(&mut self, render_dsp: bool) {
+        while self
+            .scheduled_input_port_writes
+            .first()
+            .is_some_and(|event| event.0 <= self.cycles)
+        {
+            let (_, port, value) = self.scheduled_input_port_writes.remove(0);
+            self.in_ports[usize::from(port & 3)] = value;
+        }
+
+        if render_dsp && self.cycles & 0x1f == 0 {
             self.dsp.cycle(&mut self.ram);
         }
 
         for i in 0..3 {
             if self.timer[i].cycles == 0 {
                 self.timer[i].cycles = if i == 2 { 16 } else { 128 };
-                if self.timer[i].enabled {
-                    self.timer[i].divider = self.timer[i].divider.wrapping_add(1);
-                    if self.timer[i].divider == self.timer[i].target {
-                        self.timer[i].divider = 0;
-                        self.timer[i].counter = self.timer[i].counter.wrapping_add(1) & 0x0f;
-                    }
-                }
             }
             self.timer[i].cycles = self.timer[i].cycles.wrapping_sub(1);
+            if self.timer[i].cycles == 0 && self.timer[i].enabled {
+                self.timer[i].divider = self.timer[i].divider.wrapping_add(1);
+                if self.timer[i].divider == self.timer[i].target {
+                    self.timer[i].divider = 0;
+                    self.timer[i].counter = self.timer[i].counter.wrapping_add(1) & 0x0f;
+                }
+            }
         }
 
         self.cycles = self.cycles.wrapping_add(1);
@@ -2482,6 +2799,9 @@ impl ApuState {
                 if self.dsp_write_history.len() < 256 {
                     self.dsp_write_history.push((self.dsp_adr, val));
                 }
+                if let Some(trace) = self.debug_dsp_write_trace.as_mut() {
+                    trace.push((self.cycles, self.dsp_adr, val));
+                }
                 if self.dsp_adr < 0x80 {
                     self.dsp.write(self.dsp_adr, val, &self.ram);
                     self.dsp_regs[self.dsp_adr as usize] = self.dsp.read(self.dsp_adr);
@@ -2496,9 +2816,62 @@ impl ApuState {
     }
 }
 
+impl SmpBus for ApuState {
+    fn cycles(&mut self, cycles: i32) {
+        for _ in 0..cycles {
+            self.advance_hardware_cycle(false);
+        }
+    }
+
+    fn read(&mut self, address: u16) -> u8 {
+        self.cpu_read(address)
+    }
+
+    fn write(&mut self, address: u16, value: u8) {
+        self.cpu_write(address, value);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scheduled_input_ports_latch_independently_inside_the_cycle_stream() {
+        let mut apu = ApuState::new();
+        apu.schedule_input_port_writes([(1, 0, 10), (3, 1, 20), (3, 2, 30), (5, 3, 40)]);
+
+        apu.advance_hardware_cycle(false);
+        assert_eq!(&apu.in_ports[..4], &[0, 0, 0, 0]);
+        apu.advance_hardware_cycle(false);
+        assert_eq!(&apu.in_ports[..4], &[10, 0, 0, 0]);
+        apu.advance_hardware_cycle(false);
+        apu.advance_hardware_cycle(false);
+        assert_eq!(&apu.in_ports[..4], &[10, 20, 30, 0]);
+        apu.advance_hardware_cycle(false);
+        apu.advance_hardware_cycle(false);
+        assert_eq!(&apu.in_ports[..4], &[10, 20, 30, 40]);
+    }
+
+    #[test]
+    fn gaussian_interpolation_matches_snes9x_1_63_rounding() {
+        assert_eq!(dsp_gaussian_interpolate(6482, 7612, 8672, 9666, 219), 8516);
+        assert_eq!(dsp_gaussian_interpolate(6784, 2266, -1018, -3044, 184), -6);
+    }
+
+    #[test]
+    fn exact_dsp_drain_preserves_callback_remainder() {
+        let mut dsp = DspState::default();
+        dsp.sample_buffer[..8].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        dsp.sample_offset = 4;
+        let mut output = [0i16; 6];
+
+        dsp.drain_samples_exact(&mut output, 3, 2).unwrap();
+
+        assert_eq!(output, [1, 2, 3, 4, 5, 6]);
+        assert_eq!(dsp.sample_offset, 1);
+        assert_eq!(&dsp.sample_buffer[..2], &[7, 8]);
+    }
 
     #[test]
     fn boot_rom_is_visible_until_control_clears_it() {
@@ -2513,18 +2886,150 @@ mod tests {
         let mut apu = ApuState::new();
         apu.cpu_write(0xfa, 1);
         apu.cpu_write(0xf1, 1);
-        apu.cycle();
+        for _ in 0..128 {
+            apu.cycle();
+        }
         assert_eq!(apu.cpu_read(0xfd), 1);
         assert_eq!(apu.cpu_read(0xfd), 0);
     }
 
     #[test]
+    fn timer_tick_is_visible_to_mmio_read_on_the_same_hardware_cycle() {
+        let mut apu = ApuState::new();
+        apu.rom_readable = false;
+        apu.spc.pc = 0x0200;
+        apu.ram[0x0200..0x0203].copy_from_slice(&[0xec, 0xfd, 0x00]);
+        apu.timer[0] = ApuTimer {
+            cycles: 4,
+            divider: 0,
+            target: 1,
+            counter: 0,
+            enabled: true,
+        };
+
+        apu.run_cycle_sequenced_instruction_without_dsp();
+
+        assert_eq!(apu.spc.y, 1);
+        assert_eq!(apu.timer[0].counter, 0);
+    }
+
+    #[test]
+    fn timing_only_cycle_matches_spc_and_timers_without_rendering_dsp() {
+        let mut full = ApuState::new();
+        full.reset();
+        let mut timing_only = full.clone();
+
+        for _ in 0..1_000 {
+            full.cycle();
+            timing_only.cycle_without_dsp();
+        }
+
+        assert_eq!(timing_only.cycles, full.cycles);
+        assert_eq!(timing_only.cpu_cycles_left, full.cpu_cycles_left);
+        assert_eq!(
+            timing_only.spc.save_c_saveload(),
+            full.spc.save_c_saveload()
+        );
+        assert_eq!(timing_only.ram, full.ram);
+        assert_eq!(timing_only.in_ports, full.in_ports);
+        assert_eq!(timing_only.out_ports, full.out_ports);
+        for (timing, rendered) in timing_only.timer.iter().zip(&full.timer) {
+            assert_eq!(timing.cycles, rendered.cycles);
+            assert_eq!(timing.divider, rendered.divider);
+            assert_eq!(timing.target, rendered.target);
+            assert_eq!(timing.counter, rendered.counter);
+            assert_eq!(timing.enabled, rendered.enabled);
+        }
+        assert_eq!(timing_only.dsp.sample_offset, 0);
+        assert!(full.dsp.sample_offset > 0);
+    }
+
+    #[test]
+    fn imports_instruction_boundary_snes9x_smp_state() {
+        const RAM_BYTES: usize = 0x10000;
+        let mut snd = vec![0; RAM_BYTES + 41 * 4 + 0x80];
+        snd[0x0800] = 0x20;
+        snd[0xf4..0xf8].copy_from_slice(&[1, 2, 3, 4]);
+        let mut cursor = RAM_BYTES;
+        let mut push = |value: u32| {
+            snd[cursor..cursor + 4].copy_from_slice(&value.to_le_bytes());
+            cursor += 4;
+        };
+        push(0); // clock
+        push(0xeb); // previous opcode number
+        push(0); // instruction boundary
+        push(0x0f9b); // pc
+        push(0xcb); // sp
+        push(0x20); // a
+        push(4); // x
+        push(10); // y
+        for flag in [0, 0, 0, 0, 0, 0, 1, 0] {
+            push(flag);
+        }
+        push(0); // IPL hidden
+        push(0x11); // DSP address
+        push(0xaa); // $f8
+        push(0xbb); // $f9
+        for value in [1, 16, 113, 8, 3, 0, 0, 113, 0, 0, 0, 0, 1, 0, 0] {
+            push(value);
+        }
+        for _ in 0..6 {
+            push(0);
+        }
+        drop(push);
+        snd[RAM_BYTES + 41 * 4 + 0x4c] = 0x80;
+
+        let mut apu = ApuState::new();
+        apu.load_snes9x_1_63_smp_state(&snd).unwrap();
+
+        assert_eq!(apu.spc.pc, 0x0f9b);
+        assert_eq!(
+            (apu.spc.a, apu.spc.x, apu.spc.y, apu.spc.sp),
+            (0x20, 4, 10, 0xcb)
+        );
+        assert!(apu.spc.z);
+        assert!(!apu.rom_readable);
+        assert_eq!(apu.dsp_adr, 0x11);
+        assert_eq!(apu.in_ports, [0, 0, 0, 0, 0xaa, 0xbb]);
+        assert_eq!(apu.out_ports, [1, 2, 3, 4]);
+        assert_eq!(apu.timer[0].cycles, 15);
+        assert_eq!(apu.timer[0].divider, 8);
+        assert_eq!(apu.timer[0].counter, 3);
+        assert_eq!(apu.timer[2].cycles, 15);
+        assert_eq!(apu.dsp_regs[0x4c], 0x80);
+        assert_eq!(apu.cpu_cycles_left, 0);
+    }
+
+    #[test]
     fn dsp_write_records_register_value() {
         let mut apu = ApuState::new();
+        apu.debug_dsp_write_trace = Some(Vec::new());
         apu.cpu_write(0xf2, 0x6c);
         apu.cpu_write(0xf3, 0x80);
         assert_eq!(apu.cpu_read(0xf3), 0x80);
         assert_eq!(apu.dsp_write_history, vec![(0x6c, 0x80)]);
+        assert_eq!(apu.debug_dsp_write_trace, Some(vec![(0, 0x6c, 0x80)]));
+    }
+
+    #[test]
+    fn dsp_key_on_waits_for_internal_pipeline() {
+        let mut dsp = DspState::default();
+        let mut apu_ram = vec![0u8; 0x10000];
+        apu_ram[0] = 0x34;
+        apu_ram[1] = 0x12;
+        dsp.reset_flag = false;
+        dsp.channel[0].decode_offset = 0xabcd;
+
+        dsp.write(DSP_KON, 1, &apu_ram);
+        assert!(dsp.channel[0].key_on);
+        for _ in 0..6 {
+            dsp.cycle(&mut apu_ram);
+            assert_eq!(dsp.channel[0].decode_offset, 0xabcd);
+        }
+
+        dsp.cycle(&mut apu_ram);
+        assert!(!dsp.channel[0].key_on);
+        assert_eq!(dsp.channel[0].decode_offset, 0x1234);
     }
 
     #[test]

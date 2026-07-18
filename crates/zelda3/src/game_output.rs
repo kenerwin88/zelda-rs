@@ -656,6 +656,20 @@ pub enum AudioEventKind {
         instrument: u8,
         volume: u8,
     },
+    /// A raw DSP KON write for a fully staged music voice. Unlike `NoteOn`,
+    /// this event is timestamped at the register write; the renderer owns the
+    /// KON polling and voice-start pipeline that follows it.
+    DspKeyOn {
+        voice: u8,
+        pitch: u8,
+        instrument: u8,
+        volume: u8,
+    },
+    /// A raw DSP KOFF write. Unlike `NoteOff`, this event is timestamped at
+    /// the register write; the renderer owns the envelope-release boundary.
+    DspKeyOff {
+        voice: u8,
+    },
     /// DSP KON using the voice's already-programmed SRCN, ADSR, pitch, and
     /// volume registers.
     RetriggerVoice {
@@ -1124,6 +1138,22 @@ fn hash_audio_event(mut hash: u32, event: &AudioEvent) -> u32 {
             hash = fnv1a32_byte(hash, *pitch);
             hash = fnv1a32_byte(hash, *instrument);
             fnv1a32_byte(hash, *volume)
+        }
+        AudioEventKind::DspKeyOn {
+            voice,
+            pitch,
+            instrument,
+            volume,
+        } => {
+            hash = fnv1a32_byte(hash, 30);
+            hash = fnv1a32_byte(hash, *voice);
+            hash = fnv1a32_byte(hash, *pitch);
+            hash = fnv1a32_byte(hash, *instrument);
+            fnv1a32_byte(hash, *volume)
+        }
+        AudioEventKind::DspKeyOff { voice } => {
+            hash = fnv1a32_byte(hash, 31);
+            fnv1a32_byte(hash, *voice)
         }
         AudioEventKind::RetriggerVoice { voice } => {
             hash = fnv1a32_byte(hash, 27);

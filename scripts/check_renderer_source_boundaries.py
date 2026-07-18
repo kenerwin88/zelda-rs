@@ -518,8 +518,8 @@ AUDIO_TRACE_ADVANCE_FUNCTIONS = {
     "run_compare_bootstrap_apu_startup",
     "run_trace_bootstrap_apu_direct_frame",
     "run_trace_startup_audio",
-    "run_trace_bsnes_audio",
-    "run_compare_bsnes_startup_audio",
+    "run_trace_snes9x_audio",
+    "run_compare_snes9x_startup_audio",
     "run_compare_startup_apu_impls",
 }
 

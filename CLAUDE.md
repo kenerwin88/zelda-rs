@@ -71,7 +71,7 @@ bridge `sync()` calls re-run a state's `write_to_ram` mid-frame on every setter.
 
 **One reference, byte-exact: the C oracle `../zelda3`** (ground truth; override `ZELDA3_C_REPO`).
 The C source build is byte-identical to the Rust port on WRAM, VRAM, SRAM, render-hash, and the
-audio DSP trace (the old "cycle-accuracy" caveat was BSNES-only; the C *source* build matches
+audio DSP trace (the old "cycle-accuracy" caveat was SNES9X-only; the C *source* build matches
 exactly). Gate every layer with `scripts/validate_all_parity.py`; find per-frame divergences with
 `zparity` (tool #10). Editing the C repo to add parity-oracle hooks IS permitted (audio-trace
 default freq + `ZELDA3_REPLAY_WRAM_DUMP`/`ZELDA3_VRAM_DUMP`/`--fingerprint-log` dumps are committed

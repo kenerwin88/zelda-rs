@@ -1850,6 +1850,9 @@ fn finalize_pixel(
     let out_y = i / width;
     let nrow = out_y / scale;
     let ncol = out_x / scale;
+    if nrow < usize::from(frame.forced_blank_scanlines) {
+        return [0, 0, 0, 0xff];
+    }
     let mut c = [
         i32::from(main.c5[i][0]),
         i32::from(main.c5[i][1]),

@@ -7,7 +7,7 @@
 # GameName Legend of Zelda, The - A Link to the Past (USA)
 # SHA1 6D4F10A8B10E10DBE624CB23CF03B88BB8252973
 # BoardName LOROM-RAM#A
-# Core BSNESv115+
+# Core SNES9Xv115+
 # rerecordCount 573
 # 
 #

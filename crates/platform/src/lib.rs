@@ -29,7 +29,7 @@ use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
-use winit::window::{Fullscreen, Window, WindowAttributes, WindowId};
+use winit::window::{Fullscreen, UserAttentionType, Window, WindowAttributes, WindowId};
 
 pub mod host_menu;
 pub use host_menu::{
@@ -38,6 +38,15 @@ pub use host_menu::{
     HostMenuInput, HostMenuMode, HostMenuState, HostMenuTab, LightingChoice, PresentationChoice,
     RuntimeSettings, ShadowChoice, ViewportChoice,
 };
+
+/// Host-only controls used by the Snes9x route recorder. These never enter
+/// the emulated controller stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecorderControl {
+    SaveBoundary,
+    LoadPreviousBoundary,
+    LoadNextBoundary,
+}
 
 // ── Frontend trait ────────────────────────────────────────────────────────────
 
@@ -140,6 +149,7 @@ impl NativeFrontend {
             renderer: None,
             input_state: 0,
             host_menu_inputs: VecDeque::new(),
+            recorder_controls: VecDeque::new(),
             menu_open: false,
             audio_resume_requested: false,
             quit: false,
@@ -200,6 +210,19 @@ impl NativeFrontend {
 
     pub fn quit_requested(&self) -> bool {
         self.handler.quit
+    }
+
+    pub fn set_window_title(&self, title: &str) {
+        if let Some(window) = &self.handler.window {
+            window.set_title(title);
+        }
+    }
+
+    pub fn request_window_attention(&self) {
+        if let Some(window) = &self.handler.window {
+            window.focus_window();
+            window.request_user_attention(Some(UserAttentionType::Informational));
+        }
     }
 
     pub fn audio_samples_per_frame(&self) -> usize {
@@ -405,6 +428,10 @@ impl NativeFrontend {
         self.handler.host_menu_inputs.drain(..).collect()
     }
 
+    pub fn drain_recorder_controls(&mut self) -> Vec<RecorderControl> {
+        self.handler.recorder_controls.drain(..).collect()
+    }
+
     pub fn poll_input_with_menu(&mut self, menu_open: bool) -> u16 {
         self.set_menu_open(menu_open);
         if menu_open {
@@ -580,6 +607,7 @@ struct NativeHandler {
     // Updated by input events:
     input_state: u16,
     host_menu_inputs: VecDeque<HostMenuInput>,
+    recorder_controls: VecDeque<RecorderControl>,
     menu_open: bool,
     audio_resume_requested: bool,
     quit: bool,
@@ -646,6 +674,11 @@ impl ApplicationHandler for NativeHandler {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(key) = event.physical_key {
+                    if !event.repeat {
+                        if let Some(control) = key_to_recorder_control(key, event.state) {
+                            self.recorder_controls.push_back(control);
+                        }
+                    }
                     if let Some(input) = key_to_host_menu_input(key, event.state) {
                         self.host_menu_inputs.push_back(input);
                     }
@@ -700,6 +733,18 @@ fn key_to_host_menu_input(key: KeyCode, state: ElementState) -> Option<HostMenuI
             Some(HostMenuInput::NextTab)
         }
         KeyCode::KeyQ | KeyCode::KeyC => Some(HostMenuInput::PreviousTab),
+        _ => None,
+    }
+}
+
+fn key_to_recorder_control(key: KeyCode, state: ElementState) -> Option<RecorderControl> {
+    if state != ElementState::Pressed {
+        return None;
+    }
+    match key {
+        KeyCode::F5 => Some(RecorderControl::SaveBoundary),
+        KeyCode::F9 => Some(RecorderControl::LoadPreviousBoundary),
+        KeyCode::F10 => Some(RecorderControl::LoadNextBoundary),
         _ => None,
     }
 }
@@ -1500,6 +1545,29 @@ mod tests {
             key_to_host_menu_input(KeyCode::F5, ElementState::Pressed),
             None
         );
+    }
+
+    #[test]
+    fn recorder_function_keys_are_host_only_and_edge_triggered() {
+        assert_eq!(
+            key_to_recorder_control(KeyCode::F5, ElementState::Pressed),
+            Some(RecorderControl::SaveBoundary)
+        );
+        assert_eq!(
+            key_to_recorder_control(KeyCode::F9, ElementState::Pressed),
+            Some(RecorderControl::LoadPreviousBoundary)
+        );
+        assert_eq!(
+            key_to_recorder_control(KeyCode::F10, ElementState::Pressed),
+            Some(RecorderControl::LoadNextBoundary)
+        );
+        assert_eq!(
+            key_to_recorder_control(KeyCode::F5, ElementState::Released),
+            None
+        );
+        assert_eq!(key_to_input_bit(KeyCode::F5), None);
+        assert_eq!(key_to_input_bit(KeyCode::F9), None);
+        assert_eq!(key_to_input_bit(KeyCode::F10), None);
     }
 
     #[test]

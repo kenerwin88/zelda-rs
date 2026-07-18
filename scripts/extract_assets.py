@@ -29,6 +29,10 @@ ASSET_COUNT = 165
 DEFAULT_C_SOURCE = REPO_ROOT.parent / "zelda3"
 DEFAULT_OUT_DIR = Path("generated/zelda3_assets")
 ASSET_SIGNATURE_PREFIX = b"Zelda3_v0     \n\0"
+SPC_DRIVER_UPLOAD_ADDRESS = 0x998000
+SPC_DRIVER_LOAD_ADDRESS = 0x0800
+SPC_DRIVER_EXPECTED_LENGTH = 0x0F9E
+SPC_DRIVER_FILE = "spc_driver.bin"
 READABLE_ASSET_SOURCES = {
     "kLightOverworldTilemap": {
         "format": tilemap_json.FORMAT_BYTE_TILEMAP,
@@ -224,6 +228,91 @@ def read_u32(data: bytes, offset: int) -> int:
     return int.from_bytes(data[offset : offset + 4], "little")
 
 
+def lorom_offset(address: int) -> int:
+    """Translate a headerless LoROM CPU address to a file offset."""
+    bank = (address >> 16) & 0x7F
+    offset = address & 0xFFFF
+    if offset < 0x8000:
+        raise ValueError(f"LoROM address ${address:06x} is outside the ROM window")
+    return bank * 0x8000 + (offset - 0x8000)
+
+
+def next_lorom_address(address: int) -> int:
+    address += 1
+    if address & 0xFFFF < 0x8000:
+        address += 0x8000
+    return address
+
+
+def rom_byte(rom: bytes, address: int) -> int:
+    offset = lorom_offset(address)
+    if offset >= len(rom):
+        raise RuntimeError(f"ROM address ${address:06x} extends past the input ROM")
+    return rom[offset]
+
+
+def read_rom_word(rom: bytes, address: int) -> tuple[int, int]:
+    low = rom_byte(rom, address)
+    address = next_lorom_address(address)
+    high = rom_byte(rom, address)
+    return low | high << 8, next_lorom_address(address)
+
+
+def extract_spc_driver_program(
+    rom_data: bytes,
+    upload_address: int = SPC_DRIVER_UPLOAD_ADDRESS,
+) -> bytes:
+    """Extract the executable SPC program from the ROM's intro upload stream.
+
+    The authored sound-bank asset intentionally omits this block because the
+    translated driver owns sequencing.  The absolute event clock needs the
+    original instructions only to reproduce driver poll timing; it never uses
+    them to synthesize samples.
+    """
+    rom = rom_data[512:] if len(rom_data) % 0x8000 == 512 else rom_data
+    address = upload_address
+    driver = None
+    for _ in range(256):
+        length, address = read_rom_word(rom, address)
+        target, address = read_rom_word(rom, address)
+        if length == 0:
+            if target != SPC_DRIVER_LOAD_ADDRESS:
+                raise RuntimeError(
+                    "intro SPC upload entry point is "
+                    f"${target:04x}, expected $0800"
+                )
+            if driver is None:
+                raise RuntimeError("intro SPC upload has no $0800 driver block")
+            return driver
+
+        payload = bytearray()
+        for _ in range(length):
+            payload.append(rom_byte(rom, address))
+            address = next_lorom_address(address)
+        if target == SPC_DRIVER_LOAD_ADDRESS:
+            if driver is not None:
+                raise RuntimeError("intro SPC upload has multiple $0800 driver blocks")
+            driver = bytes(payload)
+
+    raise RuntimeError("intro SPC upload did not terminate")
+
+
+def write_spc_driver_program(out_dir: Path, rom: Path) -> dict[str, object]:
+    driver = extract_spc_driver_program(rom.read_bytes())
+    if len(driver) != SPC_DRIVER_EXPECTED_LENGTH:
+        raise RuntimeError(
+            f"SPC driver is {len(driver)} bytes, expected {SPC_DRIVER_EXPECTED_LENGTH}"
+        )
+    path = out_dir / SPC_DRIVER_FILE
+    path.write_bytes(driver)
+    return {
+        "file": path.name,
+        "load_address": f"0x{SPC_DRIVER_LOAD_ADDRESS:04x}",
+        "rom_upload_address": f"0x{SPC_DRIVER_UPLOAD_ADDRESS:06x}",
+        "size": len(driver),
+    }
+
+
 def split_asset_pack(asset_pack: Path) -> tuple[bytes, bytes, list[tuple[str, bytes]]]:
     data = asset_pack.read_bytes()
     if len(data) < 88 or data[:16] != ASSET_SIGNATURE_PREFIX:
@@ -275,6 +364,9 @@ def clean_generated_output(out_dir: Path) -> Path:
     old_pack = out_dir / "zelda3_assets.dat"
     if old_pack.exists():
         old_pack.unlink()
+    old_spc_driver = out_dir / SPC_DRIVER_FILE
+    if old_spc_driver.exists():
+        old_spc_driver.unlink()
     return assets_dir
 
 
@@ -743,6 +835,7 @@ def main() -> int:
     key_signature_path.write_bytes(key_signature)
 
     manifest_assets = write_asset_outputs(out_dir, assets)
+    spc_driver_program = write_spc_driver_program(out_dir, rom)
     chr_source_sheets = write_chr_source_sheets(out_dir)
     tile_effect_table = write_tile_effect_table(out_dir)
     base_effect_atlas = (
@@ -769,6 +862,7 @@ def main() -> int:
                 "restool_pack_sha1": sha1(source_pack),
                 "rom_sha1": sha1(rom),
                 "source_tool": str(restool),
+                "spc_driver_program": spc_driver_program,
                 "tile_effect_table": tile_effect_table,
             },
             indent=2,

@@ -130,6 +130,14 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_scene_throne_room(&mut self) {
+        if self.rom_startup_timing() {
+            self.begin_attract_throne_room_work();
+            return;
+        }
+        self.complete_attract_scene_throne_room();
+    }
+
+    pub(super) fn complete_attract_scene_throne_room(&mut self) {
         self.clear_hdma_enable_mask();
         self.set_color_window_selection(2);
         self.set_color_math_control(0x20);
@@ -161,6 +169,14 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_prep_zelda_prison(&mut self) {
+        if self.rom_startup_timing() {
+            self.begin_attract_zelda_prison_work();
+            return;
+        }
+        self.complete_attract_prep_zelda_prison();
+    }
+
+    pub(super) fn complete_attract_prep_zelda_prison(&mut self) {
         self.set_color_window_selection(0);
         self.set_color_math_control(0);
 
@@ -194,6 +210,14 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_prep_maiden_warp(&mut self) {
+        if self.rom_startup_timing() {
+            self.begin_attract_maiden_warp_work();
+            return;
+        }
+        self.complete_attract_prep_maiden_warp();
+    }
+
+    pub(super) fn complete_attract_prep_maiden_warp(&mut self) {
         let attract_bg2_vofs_backup = self.game_state.ending.attract_scene.bg2_vofs_backup();
         let attract_state = self.game_state.ending.attract_scene.state_word();
         self.dungeon_load_and_draw_entrance_room(0x75);
@@ -244,6 +268,14 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_scene_end_of_story(&mut self) {
+        if self.rom_startup_timing() {
+            self.begin_attract_end_of_story_work();
+            return;
+        }
+        self.complete_attract_scene_end_of_story();
+    }
+
+    pub(super) fn complete_attract_scene_end_of_story(&mut self) {
         self.attract_setup_conclusion_hdma();
         self.death_func31();
     }
@@ -323,7 +355,9 @@ impl ZeldaState {
         } else {
             self.attract_scene_mut().increment_state();
             if self.rom_startup_timing() {
-                self.attract_first_story_render_delay = 6;
+                self.attract_first_story_render_delay = rom_attract_story_render_nmi_slices(
+                    self.game_state.ending.attract_scene.sequence(),
+                );
             }
         }
     }
@@ -438,10 +472,27 @@ impl ZeldaState {
         self.follower_link_state_mut().set_filtered_joypad_l(0);
         self.follower_link_state_mut().set_filtered_joypad_h(0);
         self.RenderText();
+        if self.rom_dialogue_scroll_is_pending() {
+            return;
+        }
+        self.tick_attract_timed_text_priority();
+    }
+
+    fn tick_attract_timed_text_priority(&mut self) {
         let priority = self.game_state.oam.priority_word();
         if priority != 0 {
             self.oam_state_mut()
                 .set_priority_word(priority.wrapping_sub(1));
+        }
+    }
+
+    pub(super) fn resume_rom_dialogue_scroll_caller(&mut self) {
+        let attract = self.game_state.ending.attract_scene;
+        if self.game_state.frame.main_module == 20
+            && matches!(attract.state(), 5 | 8)
+            && matches!(attract.sequence(), 2..=4)
+        {
+            self.tick_attract_timed_text_priority();
         }
     }
 

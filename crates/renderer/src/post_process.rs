@@ -210,8 +210,13 @@ fn build_uniform_bytes(frame: &GpuFrame<'_>) -> Vec<u8> {
         && frame.math_enabled != 0
         && frame.screen_enabled[1] != 0;
     pu32!(rendered_subscreen);
-    // 3 padding u32s → 64 bytes total for the scalar section
-    buf.extend_from_slice(&[0u8; 12]);
+    pu32!(frame
+        .scanlines
+        .iter()
+        .take_while(|scanline| scanline.forced_blank)
+        .count());
+    // 2 padding u32s → 64 bytes total for the scalar section
+    buf.extend_from_slice(&[0u8; 8]);
 
     debug_assert_eq!(buf.len(), PARAMS_SIZE as usize);
 

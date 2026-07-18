@@ -396,6 +396,7 @@ impl ModernGpuVariantRenderer {
         let mut out = ModernFrame::empty();
         out.backdrop_color_rgba = frame.backdrop_color_rgba;
         out.forced_blank = frame.forced_blank;
+        out.forced_blank_scanlines = frame.forced_blank_scanlines;
         if frame.forced_blank {
             return out;
         }
@@ -3969,18 +3970,36 @@ pub fn modern_gpu_path_fallback_reason(
             stats.dynamic_material_fallback_draws,
         ),
         ("unkeyed-bg12-fallback", stats.unkeyed_bg12_fallback_draws),
-        ("unkeyed-bg3-fallback", stats.unkeyed_bg3_fallback_draws),
         (
             "unkeyed-sprite-fallback",
             stats.unkeyed_sprite_fallback_draws,
         ),
-        ("unkeyed-bg-fallback", stats.unkeyed_bg_fallback_draws),
-        ("unkeyed-fallback", stats.unkeyed_fallback_draws),
+        (
+            "unkeyed-bg-fallback",
+            stats
+                .unkeyed_bg_fallback_draws
+                .saturating_sub(stats.unkeyed_bg3_fallback_draws),
+        ),
+        (
+            "unkeyed-fallback",
+            stats
+                .unkeyed_fallback_draws
+                .saturating_sub(stats.unkeyed_bg3_fallback_draws),
+        ),
         ("live-index-bg12", stats.live_index_bg12_draws),
-        ("live-index-bg3", stats.live_index_bg3_draws),
         ("live-index-sprite", stats.live_index_sprite_draws),
-        ("live-index-bg", stats.live_index_bg_draws),
-        ("live-index", stats.live_index_draws),
+        (
+            "live-index-bg",
+            stats
+                .live_index_bg_draws
+                .saturating_sub(stats.live_index_bg3_draws),
+        ),
+        (
+            "live-index",
+            stats
+                .live_index_draws
+                .saturating_sub(stats.live_index_bg3_draws),
+        ),
         ("missing-variant", stats.missing_variant_draws),
         ("dynamic-palette", stats.dynamic_palette_draws),
         ("fallback-draw", stats.fallback_draws),
@@ -4430,6 +4449,12 @@ pub struct ModernGpuVariantHeadless {
     readback_buf: wgpu::Buffer,
 }
 
+impl ModernGpuVariantHeadless {
+    pub fn atlas(&self) -> &crate::modern_variant_atlas::ModernVariantAtlas {
+        &self.renderer.atlas
+    }
+}
+
 pub struct ModernGpuVariantValidation {
     pub stats: crate::modern_software::VariantAtlasRenderStats,
     pub missing_sources: Vec<crate::modern_extract::MissingAssetSource>,
@@ -4614,14 +4639,11 @@ impl ModernGpuVariantHeadless {
         let modern_assets = crate::modern_extract::extract_asset_resolved_modern_frame_from_sources(
             frame, src_table, atlas,
         );
-        if modern_assets.has_unresolved_sources() {
-            return (
-                vec![0; 256 * 224 * 4],
-                modern_assets.unresolved_stats,
-                modern_assets.missing_sources,
-                Vec::new(),
-            );
-        }
+        // Keep unresolved-source reporting strict, but still execute the
+        // live-index base. Returning a transparent frame here hid valid SNES
+        // pixels and made the diagnostics incapable of distinguishing a
+        // missing asset identity from a broken renderer.
+        let missing_sources = modern_assets.missing_sources.clone();
 
         let (mut live_index_modern, live_index_bg_cells) =
             crate::modern_extract::extract_modern_frame_from_vram(frame);
@@ -4640,7 +4662,7 @@ impl ModernGpuVariantHeadless {
             sprite_palette_name,
             trace_pixel,
         );
-        (rgba, stats, Vec::new(), traces)
+        (rgba, stats, missing_sources, traces)
     }
 
     pub fn validate_from_sources<S: crate::modern_extract::SourceTableView + ?Sized>(
@@ -12209,6 +12231,21 @@ mod tests {
         assert_eq!(
             modern_gpu_path_fallback_reason("variant-gpu", Some(&stats)),
             None
+        );
+
+        let dynamic_bg3_stats = VariantAtlasRenderStats {
+            live_index_draws: 2,
+            live_index_bg_draws: 2,
+            live_index_bg3_draws: 2,
+            unkeyed_fallback_draws: 2,
+            unkeyed_bg_fallback_draws: 2,
+            unkeyed_bg3_fallback_draws: 2,
+            ..Default::default()
+        };
+        assert_eq!(
+            modern_gpu_path_fallback_reason("variant-gpu", Some(&dynamic_bg3_stats)),
+            None,
+            "procedural BG3 cells remain an intentional GPU live-index material"
         );
     }
 

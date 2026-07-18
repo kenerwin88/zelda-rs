@@ -59,6 +59,10 @@ pub(crate) struct ModernAssetGpuReadbackRenderer {
 
 impl LiveGpuFrameCapture {
     pub fn from_game(game: &mut ZeldaState) -> Self {
+        game.with_display_snapshot(Self::from_current_game)
+    }
+
+    fn from_current_game(game: &mut ZeldaState) -> Self {
         let cgram = game.cgram_after_first_hdma_line();
         // Capture-point audit (see also the commit-point audit in `commit_palette_provenance_cgram`):
         // the modern renderer substitutes the mirror's committed CGRAM image for the live PPU CGRAM,
@@ -92,37 +96,67 @@ impl LiveGpuFrameCapture {
         }
         let raw_scanlines = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
+        if std::env::var_os("ZELDA3_DEBUG_BG3_PUBLICATION").is_some()
+            && game.ram[MAIN_MODULE_INDEX] == 14
+            && game.ram[0x11] == 1
+        {
+            let authored = u16::from_le_bytes([game.ram[0x00ea], game.ram[0x00eb]]) & 0x03ff;
+            eprintln!(
+                "bg3_publication authored={authored:04x} visible={:04x} main={:02x} sub={:02x}",
+                ppu.bg_layer[2].v_scroll, game.ram[MAIN_MODULE_INDEX], game.ram[0x11],
+            );
+        }
         let source_entries = game.vram_chr_source().as_slice().to_vec();
-        let bg3_source_tiles = dialogue_glyph_source_tiles_from_ppu(&ppu);
-        let bg3_vwf_glyph_run_offsets = game.bg3_vwf_glyph_run_dialogue_offsets();
-        let bg3_vwf_glyph_run_ir_kinds: Vec<_> = (0..game.bg3_vwf_glyph_runs().len())
-            .map(|index| game.bg3_vwf_glyph_run_dialogue_ir(index).map(|op| op.kind))
-            .collect();
-        let dialogue_message_id = Some(game.current_dialogue_message_id());
-        let source_dialogue_ir = game.current_source_dialogue_ir();
+        let dialogue_active = game.is_dialogue_display_active();
+        let bg3_source_tiles = if dialogue_active {
+            dialogue_glyph_source_tiles_from_ppu(&ppu)
+        } else {
+            Vec::new()
+        };
+        let bg3_vwf_glyph_run_offsets = if dialogue_active {
+            game.bg3_vwf_glyph_run_dialogue_offsets()
+        } else {
+            &[]
+        };
+        let bg3_vwf_glyph_run_ir_kinds: Vec<_> = if dialogue_active {
+            (0..game.bg3_vwf_glyph_runs().len())
+                .map(|index| game.bg3_vwf_glyph_run_dialogue_ir(index).map(|op| op.kind))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let dialogue_message_id = dialogue_active.then(|| game.current_dialogue_message_id());
+        let source_dialogue_ir = if dialogue_active {
+            game.current_source_dialogue_ir()
+        } else {
+            Vec::new()
+        };
         let dialogue_ir = game.current_displayed_source_render_dialogue_ir();
         let dialogue_vwf_widths = game.dialogue_vwf_widths().unwrap_or_default();
         let dialogue_layout =
             zelda3::dialogue_ir::layout_dialogue_ir(&dialogue_ir, &dialogue_vwf_widths);
         let dialogue_layout_origin_tile_number =
             (!dialogue_layout.is_empty()).then(|| game.dialogue_vwf_origin_tile_number());
-        let bg3_vwf_glyph_runs = game
-            .bg3_vwf_glyph_runs()
-            .iter()
-            .enumerate()
-            .map(|(index, run)| renderer::GpuBg3VwfGlyphRun {
-                glyph_code: run.glyph_code,
-                origin_tile_number: run.origin_tile_number,
-                x: run.x,
-                y: run.y,
-                width: run.width,
-                dialogue_offset: bg3_vwf_glyph_run_offsets
-                    .get(index)
-                    .copied()
-                    .filter(|offset| *offset != zelda3_compat::UNKNOWN_DIALOGUE_OFFSET),
-                dialogue_ir_kind: bg3_vwf_glyph_run_ir_kinds.get(index).cloned().flatten(),
-            })
-            .collect();
+        let bg3_vwf_glyph_runs = if dialogue_active {
+            game.bg3_vwf_glyph_runs()
+                .iter()
+                .enumerate()
+                .map(|(index, run)| renderer::GpuBg3VwfGlyphRun {
+                    glyph_code: run.glyph_code,
+                    origin_tile_number: run.origin_tile_number,
+                    x: run.x,
+                    y: run.y,
+                    width: run.width,
+                    dialogue_offset: bg3_vwf_glyph_run_offsets
+                        .get(index)
+                        .copied()
+                        .filter(|offset| *offset != zelda3_compat::UNKNOWN_DIALOGUE_OFFSET),
+                    dialogue_ir_kind: bg3_vwf_glyph_run_ir_kinds.get(index).cloned().flatten(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         let mode7_source_chars = game.mode7_character_source().map(<[u8]>::to_vec);
         let main_module = game.ram[MAIN_MODULE_INDEX];
         let player_indoors = game.ram[PLAYER_IS_INDOORS];
@@ -687,6 +721,74 @@ impl ModernAssetGpuReadbackRenderer {
         render_modern_asset_capture_rgba(&capture, &self.resources).map(|render| render.frame)
     }
 
+    pub(crate) fn trace_game_pixel(
+        &self,
+        game: &mut ZeldaState,
+        x: i16,
+        y: i16,
+    ) -> Result<Vec<String>, String> {
+        let capture = capture_gpu_frame_from_game(game);
+        let gpu_frame = capture.gpu_frame();
+        let source_atlas = self
+            .resources
+            .source_atlas()
+            .ok_or_else(|| "modern pixel trace requires the source atlas".to_string())?;
+        let variant_headless = self
+            .resources
+            .variant_headless()
+            .ok_or_else(|| "modern pixel trace requires the canonical variant GPU".to_string())?;
+        let variant_atlas = variant_headless.atlas();
+        let source_table = renderer::source_table_from_entries(capture.source_entries());
+        let scene =
+            renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
+        let (production_rgba, stats, missing_sources, production_traces) = variant_headless
+            .render_rgba_with_live_index_base_from_sources_traced(
+                &gpu_frame,
+                &source_table,
+                source_atlas,
+                scene.bg_palette_name(),
+                scene.sprite_palette_name(),
+                Some((x, y)),
+            );
+        let pixel_offset = (usize::try_from(y).unwrap_or(usize::MAX) * 256
+            + usize::try_from(x).unwrap_or(usize::MAX))
+        .saturating_mul(4);
+        let production_pixel = production_rgba
+            .get(pixel_offset..pixel_offset.saturating_add(4))
+            .unwrap_or(&[]);
+        let mut lines = vec![format!(
+            "production pixel={production_pixel:02x?} stats={stats:?} missing_sources={}",
+            missing_sources.len()
+        )];
+        lines.extend(
+            production_traces
+                .into_iter()
+                .map(|trace| format!("source {}", trace.describe())),
+        );
+        let (vram_frame, vram_bg_cells) =
+            renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
+        let vram_plan = renderer::modern_variant_draw::compile_variant_draws(
+            &vram_frame,
+            &vram_bg_cells,
+            &[],
+            variant_atlas,
+            scene.bg_palette_name(),
+            scene.sprite_palette_name(),
+        );
+        lines.extend(
+            renderer::modern_variant_draw::trace_variant_plan_pixel(
+                &vram_frame,
+                variant_atlas,
+                &vram_plan,
+                x,
+                y,
+            )
+            .into_iter()
+            .map(|trace| format!("vram {}", trace.describe())),
+        );
+        Ok(lines)
+    }
+
     pub(crate) fn validate_game_full_gpu_path(
         &mut self,
         game: &mut ZeldaState,
@@ -1190,7 +1292,7 @@ fn render_modern_asset_capture_rgba(
 ) -> Result<ModernAssetGpuReadbackFrame, String> {
     let gpu_frame = capture.gpu_frame();
     let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
-    let render = resources.render_full_gpu_asset_rgba_from_entries(
+    let render = resources.render_production_gpu_asset_rgba_from_entries(
         &gpu_frame,
         capture.source_entries(),
         scene,
@@ -1588,7 +1690,7 @@ mod tests {
         );
 
         let mut raw_scanlines: Box<RawScanlineFrame> =
-            Box::new([(0, 0, 0, 0, 0x04, [0; 4], [0; 4], [0; 8]); 224]);
+            Box::new([(0, 0, 0, 0, 0x04, [0; 4], [0; 4], [0; 8], false); 224]);
         for scanline in raw_scanlines.iter_mut() {
             scanline.5[2] = 0;
             scanline.6[2] = 0;
@@ -1658,7 +1760,7 @@ mod tests {
         );
 
         let mut raw_scanlines: Box<RawScanlineFrame> =
-            Box::new([(0, 0, 0, 0, 0x04, [0; 4], [0; 4], [0; 8]); 224]);
+            Box::new([(0, 0, 0, 0, 0x04, [0; 4], [0; 4], [0; 8], false); 224]);
         for scanline in raw_scanlines.iter_mut() {
             scanline.5[2] = 0;
             scanline.6[2] = 0;
@@ -1834,6 +1936,22 @@ mod tests {
             player_indoors: 1,
             cgram_provenance: Default::default(),
         }
+    }
+
+    #[test]
+    fn closed_dialogue_does_not_claim_bg3_semantic_rendering() {
+        let mut game = crate::load_embedded_play_state();
+        game.set_current_dialogue_message_id(0);
+        assert!(!game.is_dialogue_display_active());
+
+        let capture = capture_gpu_frame_from_game(&mut game);
+
+        assert_eq!(capture.dialogue_message_id(), None);
+        assert!(capture.source_dialogue_ir().is_empty());
+        assert!(capture.dialogue_ir().is_empty());
+        assert!(capture.dialogue_layout().is_empty());
+        assert!(capture.bg3_source_tiles().is_empty());
+        assert!(capture.bg3_vwf_glyph_runs.is_empty());
     }
 
     #[test]

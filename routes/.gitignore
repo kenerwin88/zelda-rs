@@ -1,0 +1,9 @@
+# Per-frame diagnostics scale linearly to hundreds of MB on a full route.
+**/takes/*/frame_receipts.jsonl
+
+# Comparisons are reproducible from native boundaries and input scripts.
+**/comparisons/
+**/matrix-result.json
+
+# Interrupted atomic writes are never route artifacts.
+**/*.tmp

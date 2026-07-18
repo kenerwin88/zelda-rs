@@ -20,6 +20,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_C_REPO = Path(os.environ.get("ZELDA3_C_REPO", str(REPO_ROOT.parent / "zelda3")))
 DEFAULT_ROM = Path(os.environ.get("ZELDA3_ROM", str(DEFAULT_C_REPO / "zelda3.sfc")))
+DEFAULT_REPLAY_SAVE = REPO_ROOT / "saves" / "zelda3-combined-route.sav"
 DEFAULT_MESEN_RUNNER = REPO_ROOT / "external" / "mesen2-oracle" / "run_trace.sh"
 DEFAULT_SNES9X_LOCAL = (
     REPO_ROOT / "external" / "snes9x-libretro" / "local" / "snes9x_libretro.dylib"
@@ -245,6 +246,42 @@ def run_snes9x_exact_apu_gate(args: argparse.Namespace) -> None:
     print(result.stdout.strip(), flush=True)
 
 
+def run_snes9x_modern_audio_gate(args: argparse.Namespace) -> None:
+    core = resolve_snes9x_core(args)
+    if core is None:
+        raise GateFailure(
+            "Snes9x libretro core not found for modern waveform comparison. Set "
+            "SNES9X_LIBRETRO_CORE or pass --snes9x-core."
+        )
+    session_dir = args.work_dir / "snes9x-modern-audio-route-session"
+    command = cargo_zelda(
+        [
+            "--compare-snes9x-oracle",
+            str(core),
+            str(args.rom),
+            str(args.route_frames),
+            "--replay-save",
+            str(args.replay_save),
+            "--skip-oracle-frames",
+            str(args.snes9x_skip),
+            "--ignore-video",
+            "--audio-comparison",
+            "exact",
+            "--rust-audio-backend",
+            "modern",
+            "--rust-audio-sequencer",
+            "native",
+            "--session-dir",
+            str(session_dir),
+            "--scan-all",
+        ],
+        args.release,
+    )
+    result = run_command(command)
+    require_success(result, "Snes9x modern full-route waveform")
+    print(result.stdout.strip(), flush=True)
+
+
 def run_c_audio_gate(args: argparse.Namespace) -> None:
     command = [
         sys.executable,
@@ -363,6 +400,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rom", type=Path, default=DEFAULT_ROM)
     parser.add_argument("--frames", type=int, default=180, help="startup frames for audio/video oracle traces")
+    parser.add_argument("--route-frames", type=int, default=1_073_092)
+    parser.add_argument("--replay-save", type=Path, default=DEFAULT_REPLAY_SAVE)
     parser.add_argument("--lockstep-frames", type=int, default=300)
     parser.add_argument("--c-repo", type=Path, default=DEFAULT_C_REPO)
     parser.add_argument("--c-bin", type=Path, default=DEFAULT_C_REPO / "zelda3")
@@ -388,6 +427,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--with-snes9x", action="store_true")
     parser.add_argument("--no-install-snes9x", action="store_true")
     parser.add_argument("--no-snes9x-exact-apu", action="store_true")
+    parser.add_argument("--no-snes9x-modern-audio", action="store_true")
     parser.add_argument("--no-mesen", action="store_true")
     parser.add_argument("--with-mesen", action="store_true")
     return parser.parse_args()
@@ -400,6 +440,7 @@ def main() -> int:
     args.c_bin = args.c_bin.expanduser()
     args.mesen_runner = args.mesen_runner.expanduser()
     args.work_dir = args.work_dir.expanduser()
+    args.replay_save = args.replay_save.expanduser()
     if not args.rom.exists():
         print(f"ROM does not exist: {args.rom}", file=sys.stderr)
         return 2
@@ -413,6 +454,10 @@ def main() -> int:
         gates.append(("Mesen2 APUI/DSP timing", run_mesen_gate))
     if args.with_snes9x and not args.no_snes9x:
         gates.append(("Snes9x live audio/video", run_snes9x_gate))
+        if not args.no_snes9x_modern_audio:
+            gates.append(
+                ("Snes9x modern full-route waveform", run_snes9x_modern_audio_gate)
+            )
         if not args.no_snes9x_exact_apu:
             gates.append(("Snes9x exact local-APU waveform", run_snes9x_exact_apu_gate))
 

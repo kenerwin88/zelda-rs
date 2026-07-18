@@ -57,6 +57,27 @@ def split_built_asset_pack(asset_pack: Path) -> list[tuple[str, bytes]]:
 
 
 class AssetSourceBuildTests(unittest.TestCase):
+    def test_build_packs_spc_driver_as_timing_only_sidecar(self) -> None:
+        if not GENERATED_ASSETS.is_dir():
+            self.skipTest(f"missing generated assets: {GENERATED_ASSETS}")
+
+        result = subprocess.run(
+            ["cargo", "build", "-p", "zelda3-bin"],
+            cwd=REPO,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+        assets = split_built_asset_pack(built_asset_pack())
+        sidecars = [
+            payload for name, payload in assets if name == "kSpcDriverTimingProgram"
+        ]
+        self.assertEqual(len(sidecars), 1)
+        self.assertEqual(len(sidecars[0]), 0x0F9E)
+        self.assertEqual(sidecars[0][:4], b"\x20\xcd\xcf\xbd")
+
     def test_build_packs_light_overworld_tilemap_from_json_without_bin(self) -> None:
         if not GENERATED_ASSETS.is_dir():
             self.skipTest(f"missing generated assets: {GENERATED_ASSETS}")
