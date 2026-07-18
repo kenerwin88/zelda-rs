@@ -50,7 +50,6 @@ pub fn sha256_file(path: &Path) -> std::io::Result<String> {
 #[derive(Clone)]
 pub struct Paths {
     pub repo: PathBuf,
-    pub c_root: PathBuf,
     pub rom: PathBuf,
     pub save: PathBuf,
     pub rust_bin: PathBuf,
@@ -62,9 +61,6 @@ impl Paths {
         let repo = std::env::var_os("ZELDA3_REPO")
             .map(PathBuf::from)
             .unwrap_or_else(|| std::env::current_dir().unwrap());
-        let c_root = std::env::var_os("ZELDA3_C_REPO")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| repo.parent().unwrap().join("zelda3"));
         Paths {
             rom: std::env::var_os("ZELDA3_ROM")
                 .map(PathBuf::from)
@@ -78,7 +74,6 @@ impl Paths {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| repo.join("target/parity/zelda3")),
             cache_dir: repo.join(".cache/parity-golden"),
-            c_root,
             repo,
         }
     }

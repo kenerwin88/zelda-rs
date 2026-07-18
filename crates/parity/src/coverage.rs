@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -20,14 +19,6 @@ const EMPTY_OR_UNUSED_ANCILLA_TYPES: &[u8] = &[
     // Dispatch aliases for `Ancilla33_BlastWallExplosion` that have no
     // source-backed spawn site. The live blast-wall path uses ancilla 0x33.
     0x0e, 0x0f, 0x10, 0x12, 0x14, 0x25,
-];
-const FRAME_SAMPLED_SPECIAL_OVERWORLD_SCREENS: &[u16] = &[
-    // C `LoadOverworldFromDungeon` can persist special-overworld exit rooms
-    // 0x180, 0x182, and 0x189 as frame-state screens 0x80, 0x81, and 0x88.
-    // Other 0x80+ overworld assets are map/overlay payloads or special-exit
-    // geometry selected by `dungeon_room_index`, not stable `overworld_screen`
-    // frame values.
-    0x0080, 0x0081, 0x0088,
 ];
 const MAX_FRAME_SAMPLED_INDOOR_ROOM: u16 = 0x0127;
 
@@ -95,24 +86,7 @@ impl RouteCoverage {
         }
     }
 
-    pub fn source_seeded_from_c_assets(c_root: &Path) -> Self {
-        let mut coverage = Self::default();
-        if let Some(indoor_rooms) = asset_id_paths(c_root, "assets/dungeon", "dungeon") {
-            for (room, path) in indoor_rooms {
-                if room <= MAX_FRAME_SAMPLED_INDOOR_ROOM {
-                    coverage.record_source_seeded_indoor_room(room, path);
-                }
-            }
-        }
-        if let Some(overworld_screens) = asset_id_paths(c_root, "assets/overworld", "overworld") {
-            for (screen, path) in overworld_screens {
-                if screen < 0x0080 || FRAME_SAMPLED_SPECIAL_OVERWORLD_SCREENS.contains(&screen) {
-                    coverage.record_source_seeded_overworld_screen(screen, path);
-                }
-            }
-        }
-        coverage
-    }
+
 
     pub fn merge(&mut self, other: &Self) {
         self.frames = self.frames.saturating_add(other.frames);
@@ -277,14 +251,13 @@ impl RouteCoverage {
     pub fn route_worklist_with_universe(
         &self,
         universe: &CoverageUniverse,
-        c_root: &Path,
     ) -> RouteCoverageWorklist {
         let route_report = self.route_evidence_report_with_universe(universe);
-        let dungeon_sources = dungeon_stair_or_hole_sources(c_root);
+        let dungeon_sources: BTreeMap<u16, Vec<RouteWorklistStrategy>> = BTreeMap::new();
         let indoor_rooms = missed_u16_values(&route_report, "indoor_rooms")
             .into_iter()
             .map(|room| {
-                let mut strategies = dungeon_direct_entrance_strategies(c_root, room);
+                let mut strategies: Vec<RouteWorklistStrategy> = Vec::new();
                 if let Some(sources) = dungeon_sources.get(&room) {
                     strategies.extend(sources.iter().cloned().map(|mut strategy| {
                         if let Some(source_id) = strategy.source_id_u16 {
@@ -310,22 +283,7 @@ impl RouteCoverage {
         let overworld_screens = missed_u16_values(&route_report, "overworld_screens")
             .into_iter()
             .map(|screen| {
-                let mut strategies = overworld_entrance_strategies(c_root, screen);
-                strategies.extend(
-                    overworld_travel_source_strategies(c_root, screen)
-                        .into_iter()
-                        .map(|mut strategy| {
-                            if let Some(source_id) = strategy.source_id_u16 {
-                                strategy.source_id = Some(format!("0x{source_id:04x}"));
-                                strategy.route_source_covered = Some(self.has_first_seen(
-                                    "overworld_screens",
-                                    &format!("0x{source_id:04x}"),
-                                ));
-                            }
-                            strategy.source_id_u16 = None;
-                            strategy
-                        }),
-                );
+                let mut strategies: Vec<RouteWorklistStrategy> = Vec::new();
                 if strategies.is_empty() {
                     strategies.push(RouteWorklistStrategy::unclassified());
                 }
@@ -342,23 +300,9 @@ impl RouteCoverage {
         }
     }
 
-    fn record_source_seeded_indoor_room(&mut self, room: u16, path: String) {
-        self.indoor_rooms.insert(room);
-        self.record_provenance(
-            "indoor_rooms",
-            format!("0x{room:04x}"),
-            format!("source-seeded:{path}"),
-        );
-    }
 
-    fn record_source_seeded_overworld_screen(&mut self, screen: u16, path: String) {
-        self.overworld_screens.insert(screen);
-        self.record_provenance(
-            "overworld_screens",
-            format!("0x{screen:04x}"),
-            format!("source-seeded:{path}"),
-        );
-    }
+
+
 
     fn record_first_seen(&mut self, category: &str, value: String, frame: u32) {
         let entry = self
@@ -370,13 +314,7 @@ impl RouteCoverage {
         *entry = (*entry).min(frame);
     }
 
-    fn record_provenance(&mut self, category: &str, value: String, source: String) {
-        self.provenance
-            .entry(category.to_string())
-            .or_default()
-            .entry(value)
-            .or_insert(source);
-    }
+
 
     fn route_evidence_u8(&self, category: &str, hits: &BTreeSet<u8>) -> BTreeSet<u8> {
         hits.iter()
@@ -498,24 +436,7 @@ impl CoverageUniverse {
         }
     }
 
-    pub fn from_c_assets_or_standard(c_root: &Path) -> Self {
-        let mut universe = Self::standard();
-        if let Some(indoor_rooms) = asset_ids(&c_root.join("assets/dungeon"), "dungeon") {
-            universe.indoor_rooms = indoor_rooms
-                .into_iter()
-                .filter(|room| *room <= MAX_FRAME_SAMPLED_INDOOR_ROOM)
-                .collect();
-        }
-        if let Some(overworld_screens) = asset_ids(&c_root.join("assets/overworld"), "overworld") {
-            universe.overworld_screens = overworld_screens
-                .into_iter()
-                .filter(|screen| {
-                    *screen < 0x0080 || FRAME_SAMPLED_SPECIAL_OVERWORLD_SCREENS.contains(screen)
-                })
-                .collect();
-        }
-        universe
-    }
+
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -695,167 +616,13 @@ fn missed_u16_values(report: &CoverageReport, category: &str) -> Vec<u16> {
         .unwrap_or_default()
 }
 
-fn dungeon_direct_entrance_strategies(c_root: &Path, room: u16) -> Vec<RouteWorklistStrategy> {
-    let relative = format!("assets/dungeon/dungeon-{room}.yaml");
-    let Ok(text) = std::fs::read_to_string(c_root.join(&relative)) else {
-        return Vec::new();
-    };
-    let mut strategies: Vec<RouteWorklistStrategy> = text
-        .lines()
-        .filter_map(|line| {
-            let entrance_index = line
-                .trim()
-                .strip_prefix("- entrance_index:")
-                .and_then(parse_trimmed_u16)?;
-            Some(RouteWorklistStrategy {
-                kind: "direct_entrance".to_string(),
-                source_id: None,
-                source_id_u16: None,
-                source: Some(relative.clone()),
-                via: None,
-                entrance_index: Some(entrance_index),
-                entrance_id: None,
-                route_source_covered: None,
-            })
-        })
-        .collect();
-    strategies.sort_by_key(|strategy| strategy.entrance_index.unwrap_or(u16::MAX));
-    strategies
-}
 
-fn dungeon_stair_or_hole_sources(c_root: &Path) -> BTreeMap<u16, Vec<RouteWorklistStrategy>> {
-    let mut sources: BTreeMap<u16, Vec<RouteWorklistStrategy>> = BTreeMap::new();
-    let Some(assets) = asset_id_paths(c_root, "assets/dungeon", "dungeon") else {
-        return sources;
-    };
-    for (source_room, relative) in assets {
-        let Ok(text) = std::fs::read_to_string(c_root.join(&relative)) else {
-            continue;
-        };
-        for line in text.lines() {
-            let trimmed = line.trim();
-            let Some((name, rest)) = trimmed.split_once(':') else {
-                continue;
-            };
-            if !is_dungeon_route_link(name) {
-                continue;
-            }
-            let Some(target_room) = parse_bracket_first_u16(rest) else {
-                continue;
-            };
-            sources
-                .entry(target_room)
-                .or_default()
-                .push(RouteWorklistStrategy {
-                    kind: "stair_or_hole_source".to_string(),
-                    source_id: None,
-                    source_id_u16: Some(source_room),
-                    source: Some(relative.clone()),
-                    via: Some(name.to_string()),
-                    entrance_index: None,
-                    entrance_id: None,
-                    route_source_covered: None,
-                });
-        }
-    }
-    for strategies in sources.values_mut() {
-        strategies.sort_by(|left, right| {
-            left.source_id_u16
-                .cmp(&right.source_id_u16)
-                .then_with(|| left.via.cmp(&right.via))
-        });
-    }
-    sources
-}
 
-fn overworld_entrance_strategies(c_root: &Path, screen: u16) -> Vec<RouteWorklistStrategy> {
-    let relative = format!("assets/overworld/overworld-{screen}.yaml");
-    let Ok(text) = std::fs::read_to_string(c_root.join(&relative)) else {
-        return Vec::new();
-    };
-    let mut strategies: Vec<RouteWorklistStrategy> = text
-        .lines()
-        .filter_map(|line| {
-            let trimmed = line.trim();
-            if !trimmed.starts_with("- {") || !trimmed.contains("entrance_id:") {
-                return None;
-            }
-            Some(RouteWorklistStrategy {
-                kind: "overworld_entrance".to_string(),
-                source_id: None,
-                source_id_u16: None,
-                source: Some(relative.clone()),
-                via: None,
-                entrance_index: inline_u16(trimmed, "index"),
-                entrance_id: inline_u16(trimmed, "entrance_id"),
-                route_source_covered: None,
-            })
-        })
-        .collect();
-    strategies.sort_by_key(|strategy| strategy.entrance_index.unwrap_or(u16::MAX));
-    strategies
-}
 
-fn overworld_travel_source_strategies(c_root: &Path, screen: u16) -> Vec<RouteWorklistStrategy> {
-    let relative = format!("assets/overworld/overworld-{screen}.yaml");
-    let Ok(text) = std::fs::read_to_string(c_root.join(&relative)) else {
-        return Vec::new();
-    };
-    let mut strategies: Vec<RouteWorklistStrategy> = text
-        .lines()
-        .filter_map(|line| {
-            let source_screen = line
-                .trim()
-                .strip_prefix("- whirlpool_src_area:")
-                .and_then(parse_trimmed_u16)?;
-            Some(RouteWorklistStrategy {
-                kind: "travel_source".to_string(),
-                source_id: None,
-                source_id_u16: Some(source_screen),
-                source: Some(relative.clone()),
-                via: Some("whirlpool_src_area".to_string()),
-                entrance_index: None,
-                entrance_id: None,
-                route_source_covered: None,
-            })
-        })
-        .collect();
-    strategies.sort_by_key(|strategy| strategy.source_id_u16.unwrap_or(u16::MAX));
-    strategies
-}
 
-fn is_dungeon_route_link(name: &str) -> bool {
-    (name.starts_with("hole") || name.starts_with("stair")) && name.ends_with("_dest")
-}
 
-fn parse_bracket_first_u16(text: &str) -> Option<u16> {
-    text.split_once('[')?
-        .1
-        .split_once(',')?
-        .0
-        .trim()
-        .parse()
-        .ok()
-}
 
-fn inline_u16(text: &str, key: &str) -> Option<u16> {
-    text.split(',').find_map(|part| {
-        let (left, right) = part.split_once(':')?;
-        let left = left
-            .trim()
-            .trim_start_matches('-')
-            .trim()
-            .trim_start_matches('{')
-            .trim();
-        (left == key)
-            .then(|| right.trim().trim_end_matches('}').parse().ok())
-            .flatten()
-    })
-}
 
-fn parse_trimmed_u16(text: &str) -> Option<u16> {
-    text.trim().parse().ok()
-}
 
 fn parse_hex_u16(text: &str) -> Option<u16> {
     u16::from_str_radix(text.strip_prefix("0x")?, 16).ok()
@@ -1009,51 +776,5 @@ fn percent(hit: usize, expected: usize) -> f64 {
     }
 }
 
-fn asset_ids(dir: &Path, prefix: &str) -> Option<Vec<u16>> {
-    let mut ids = Vec::new();
-    for entry in std::fs::read_dir(dir).ok()? {
-        let Ok(entry) = entry else {
-            continue;
-        };
-        let file_name = entry.file_name();
-        let Some(file_name) = file_name.to_str() else {
-            continue;
-        };
-        let Some(id) = asset_file_id(file_name, prefix) else {
-            continue;
-        };
-        ids.push(id);
-    }
-    ids.sort_unstable();
-    ids.dedup();
-    (!ids.is_empty()).then_some(ids)
-}
 
-fn asset_id_paths(c_root: &Path, relative_dir: &str, prefix: &str) -> Option<Vec<(u16, String)>> {
-    let dir = c_root.join(relative_dir);
-    let mut entries = Vec::new();
-    for entry in std::fs::read_dir(dir).ok()? {
-        let Ok(entry) = entry else {
-            continue;
-        };
-        let file_name = entry.file_name();
-        let Some(file_name) = file_name.to_str() else {
-            continue;
-        };
-        let Some(id) = asset_file_id(file_name, prefix) else {
-            continue;
-        };
-        entries.push((id, format!("{relative_dir}/{file_name}")));
-    }
-    entries.sort_unstable_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
-    entries.dedup_by_key(|entry| entry.0);
-    (!entries.is_empty()).then_some(entries)
-}
 
-fn asset_file_id(file_name: &str, prefix: &str) -> Option<u16> {
-    file_name
-        .strip_prefix(prefix)
-        .and_then(|name| name.strip_prefix('-'))
-        .and_then(|name| name.strip_suffix(".yaml"))
-        .and_then(|name| name.parse::<u16>().ok())
-}

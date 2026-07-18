@@ -19,7 +19,6 @@ pub fn run(args: &[String]) {
     let stop_replay_after_load = args.iter().any(|arg| arg == "--stop-replay-after-load");
     let diff_from_json = path_arg(args, "--diff-from-json");
     let delta_report_path = path_arg(args, "--delta-report-json");
-    let seed_from_c_assets = args.iter().any(|arg| arg == "--seed-from-c-assets");
     let route_probes_from_worklist = path_arg(args, "--route-probes-from-worklist");
     if delta_report_path.is_some() && diff_from_json.is_none() {
         eprintln!("--delta-report-json requires --diff-from-json");
@@ -36,7 +35,7 @@ pub fn run(args: &[String]) {
         exit(2);
     }
 
-    let mut coverage = if let Some(worklist_path) = route_probes_from_worklist.as_ref() {
+    let coverage = if let Some(worklist_path) = route_probes_from_worklist.as_ref() {
         let probe_targets = route_probe_targets_from_worklist(worklist_path);
         if let Some(parent) = coverage_path.parent() {
             std::fs::create_dir_all(parent).unwrap_or_else(|e| {
@@ -80,7 +79,7 @@ pub fn run(args: &[String]) {
             }
         }
         load_coverage(&coverage_path)
-    } else if from_json_paths.is_empty() && !seed_from_c_assets {
+    } else if from_json_paths.is_empty() {
         let frames = super::parse_frames(args);
         if let Some(parent) = coverage_path.parent() {
             std::fs::create_dir_all(parent).unwrap_or_else(|e| {
@@ -110,16 +109,9 @@ pub fn run(args: &[String]) {
     } else {
         load_merged_coverage(&from_json_paths)
     };
-    if seed_from_c_assets {
-        eprintln!("zparity coverage: seeding room/screen coverage from C assets");
-        coverage.merge(&RouteCoverage::source_seeded_from_c_assets(&p.c_root));
-    }
-
-    let universe = CoverageUniverse::from_c_assets_or_standard(&p.c_root);
+    let universe = CoverageUniverse::standard();
     let report = coverage.report_with_universe(&universe);
-    if seed_from_c_assets && from_json_paths.is_empty() {
-        write_json_report(&coverage_path, &coverage, "source-seeded coverage log");
-    } else if !from_json_paths.is_empty() {
+    if !from_json_paths.is_empty() {
         if let Some(coverage_path) = coverage_path_arg.as_ref() {
             write_json_report(coverage_path, &coverage, "merged coverage log");
         }
@@ -141,7 +133,7 @@ pub fn run(args: &[String]) {
         write_json_report(&route_report_path, route_report, "route coverage report");
     }
     if let Some(route_worklist_path) = path_arg(args, "--route-worklist-json") {
-        let route_worklist = coverage.route_worklist_with_universe(&universe, &p.c_root);
+        let route_worklist = coverage.route_worklist_with_universe(&universe);
         write_json_report(
             &route_worklist_path,
             &route_worklist,

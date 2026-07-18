@@ -23,13 +23,16 @@ plus per-take compact input streams. Drive it with
 compare-route); `compare-route` replays the continuous human route through the
 `--compare-snes9x-oracle` harness with exact video+audio comparison.
 `scripts/full_parity.py --with-snes9x` still provides the 180-frame cold-boot
-live A/V gate. Internal regression tools that remain: the lockstep oracle
+live A/V gate. **GPU comparisons must run serially** — concurrent offscreen GPU
+runs produce nondeterministic render flakes and stomp the shared comparison
+session directory (the recorder takes an exclusive lock; do not run cargo GPU
+tests alongside a comparison either). Internal regression tools that remain: the lockstep oracle
 (`--lockstep`, snes-crate emulator, WRAM/behavior only),
 `ZELDA3_ASSERT_NATIVE_COHERENT`, `find_dual_ownership.py`, `whoowns.py`,
 RAM write-watchpoints, and Rust-vs-Rust WRAM dumps
 (`ZELDA3_REPLAY_WRAM_DUMP` across two builds of this repo).
-When fixing ported game logic, the C *source* (`../zelda3/src`) is still the
-readable reference — only the runtime comparison against the C build is gone.
+Do NOT consult or reference the old C sources; this repo's own code plus the
+Snes9x oracle are the only references.
 `zparity` now exists solely for the `coverage` subcommand (route coverage).
 
 ## Common bug classes (almost every root is one of these) + fix recipes
@@ -63,9 +66,10 @@ bridge `sync()` calls re-run a state's `write_to_ram` mid-frame on every setter.
    indexes past its slots (mode-reuse beyond the model's range). Fix: read raw
    `ram[ADDR + i]` like C, not the bounded accessor. (Y-item multiselect scanned
    `inventory_item()` f255360; wishing-pond bottle clear f255446.)
-4. **Missing/divergent write or branch** — the port omitted a write C performs, or
-   a native-state-driven branch diverged. Fix: diff the fn against the C source; add the
-   missing write. (Special-switch set both 0x410 AND 0x416, f241475.)
+4. **Missing/divergent write or branch** — the port omitted a write the original game
+   performs, or a native-state-driven branch diverged. Fix: trace the divergent WRAM
+   write with the RAM watchpoints and add the missing write. (Special-switch set both
+   0x410 AND 0x416, f241475.)
 
 **Symptom → class cheat-sheet:**
 - A byte is set CORRECTLY then reverts to its frame-start value later in the same frame →
@@ -80,10 +84,10 @@ bridge `sync()` calls re-run a state's `write_to_ram` mid-frame on every setter.
 
 ## Reference builds & ROM
 
-**The C oracle is retired.** The C source `../zelda3/src` remains the readable reference
-when porting/fixing game logic (same function names/structure as the disassembly), but no
-runtime comparison against a C build exists anymore. The external parity reference is the
-**Snes9x libretro core** (`--compare-snes9x-oracle`, `scripts/full_parity.py --with-snes9x`).
+**The C oracle is retired** — do not reference the old C sources at all. The external
+parity reference is the **Snes9x libretro core** (`--compare-snes9x-oracle`,
+`scripts/full_parity.py --with-snes9x`), and this repo's own code is the behavioral
+source of truth.
 
 - ROM: `saves/zelda3.sfc` in THIS repo (gitignored via `*.sfc`); scripts default to it and
   accept `ZELDA3_ROM`.
@@ -196,8 +200,7 @@ See memory [[checkpoint-resume-debugging]].
 2. `whoowns.py <addr>` → this-repo const, read/write sites, native owner struct.
 3. Classify into one of the four **Common bug classes** above: overlap/clobber
    (`find_dual_ownership.py`), oversized table (array span vs the next const), mode-reuse
-   (same address, two states), bounded-read-vs-raw, or missing write/branch — by comparing
-   the fn **against the C source** (`../zelda3/src`, still the readable reference).
+   (same address, two states), bounded-read-vs-raw, or missing write/branch.
 4. Apply the matching **fix recipe** above (mode-gate / write-through / sole-owner / size to
    real slot count / read raw RAM). Make ONE struct the sole owner and redirect all
    readers/setters — do NOT just delete a duplicate field (the owners leapfrog across
