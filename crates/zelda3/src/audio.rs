@@ -666,9 +666,26 @@ impl ZeldaState {
         if self.audio.modern.driver_clock.is_none() {
             self.audio.modern.queue.acknowledge_input();
         }
+        // The sequencer and SPC driver clock advance on the native 32 kHz DSP
+        // timeline (534 samples per 60 Hz frame). Hosts request one frame of
+        // audio at THEIR output rate (e.g. 735 @ 44.1 kHz, 801 @ 48 kHz);
+        // advancing the drivers by that raw count would speed music and
+        // acknowledgment timing up by rate/32000. Normalize exactly like the
+        // engine's mixer does: near-native windows advance verbatim, anything
+        // else advances one native frame, and the engine resamples its native
+        // mix to the requested output size.
+        let native_samples: u32 = {
+            let requested = samples.max(0) as usize;
+            const NATIVE: usize = crate::game_output::AUDIO_INTERNAL_SAMPLES_PER_FRAME;
+            if (400..=NATIVE).contains(&requested) {
+                requested as u32
+            } else {
+                NATIVE as u32
+            }
+        };
         let route = self.zelda_modern_audio_route_state();
         let frame = if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
-            let window = clock.advance(self.audio.modern.queue.input_commands, samples as u32);
+            let window = clock.advance(self.audio.modern.queue.input_commands, native_samples);
             let acknowledgements = clock.host_acknowledgements();
             self.audio
                 .modern
@@ -684,7 +701,7 @@ impl ZeldaState {
                 .sequence_engine_commands_for_samples(
                     route,
                     self.audio.modern.queue.input_commands,
-                    samples as u32,
+                    native_samples,
                 )
         };
         self.audio
