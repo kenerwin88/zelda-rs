@@ -2,12 +2,7 @@ use std::process::exit;
 
 mod parity_coverage;
 
-const FULL_ROUTE_FRAMES: u32 = 1_073_092;
-
 fn parse_frames(args: &[String]) -> u32 {
-    if args.iter().any(|a| a == "--full") {
-        return FULL_ROUTE_FRAMES;
-    }
     if let Some(i) = args.iter().position(|a| a == "--frames") {
         let Some(v) = args.get(i + 1) else {
             eprintln!("--frames requires a value");

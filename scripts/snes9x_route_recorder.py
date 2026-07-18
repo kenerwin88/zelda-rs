@@ -495,10 +495,6 @@ def compare_input_command(
         [
             "--audio-comparison",
             "exact",
-            "--rust-audio-backend",
-            "modern",
-            "--rust-audio-sequencer",
-            "native",
             "--session-dir",
             str(session_dir),
             "--scan-all",

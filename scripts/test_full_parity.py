@@ -63,38 +63,6 @@ class Snes9xParityGateTests(unittest.TestCase):
         self.assertNotIn("--audio-timing-tolerance-ms", command)
         self.assertNotIn("--auto-align-video", command)
 
-    def test_modern_audio_gate_uses_exact_snes9x_waveform_over_replay_save(self):
-        module = load_module()
-        args = argparse.Namespace(
-            rom=pathlib.Path("/tmp/zelda3.sfc"),
-            replay_save=pathlib.Path("/tmp/full-route.sav"),
-            route_frames=1_073_092,
-            release=True,
-            snes9x_skip=0,
-            snes9x_core="/tmp/snes9x_libretro.dylib",
-            no_install_snes9x=True,
-            snes9x_url="unused",
-            work_dir=pathlib.Path("/tmp/parity"),
-        )
-        result = module.CommandResult([], 0, "passed", "")
-        with (
-            mock.patch.object(
-                module,
-                "resolve_snes9x_core",
-                return_value=pathlib.Path(args.snes9x_core),
-            ),
-            mock.patch.object(module, "run_command", return_value=result) as run,
-        ):
-            module.run_snes9x_modern_audio_gate(args)
-
-        command = run.call_args.args[0]
-        self.assertIn("--compare-snes9x-oracle", command)
-        self.assertIn("--replay-save", command)
-        self.assertIn(str(args.replay_save), command)
-        self.assertIn("--ignore-video", command)
-        self.assertEqual(command[command.index("--audio-comparison") + 1], "exact")
-        self.assertNotIn("--rust-audio-backend", command)
-
     def test_main_rejects_an_empty_gate_set(self):
         module = load_module()
         with tempfile.TemporaryDirectory() as temp:

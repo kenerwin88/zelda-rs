@@ -9,12 +9,22 @@ bulk-project a range it shares with another system.
 ## Parity target: fully-modern runtime vs Snes9x (the C oracle is RETIRED)
 
 The C-oracle parity apparatus (zparity capture/check/drill, parity-golden/,
-`--fingerprint-log`, validate_all_parity.py, the classic CPU/wgpu renderers, and
-the legacy SPC/DSP audio oracle) has been **fully removed**. The only external
-parity reference is the **Snes9x libretro core** via the
-`--compare-snes9x-oracle` harness and `scripts/full_parity.py --with-snes9x`
-gates (modern waveform + video). Internal regression tools that remain:
-the lockstep oracle (`--lockstep`, snes-crate emulator, WRAM/behavior only),
+`--fingerprint-log`, validate_all_parity.py, the classic CPU/wgpu renderers, the
+legacy SPC/DSP audio oracle, AND the old 1,073,092-frame
+`<replay.sav>` replay route) has been **fully removed**. The
+route was recorded against the port/C timing hacks and does not progress in
+Snes9x — do not resurrect it for parity.
+
+**Parity lives in `routes/` now**: human routes recorded directly in the pinned
+Snes9x 1.63 libretro core (`routes/clean` is the good lineage). Each project
+holds Snes9x-native boundary states (savestate + WRAM/VRAM/SRAM + screenshot)
+plus per-take compact input streams. Drive it with
+`scripts/snes9x_route_recorder.py` (record / pair / compare / compare-all /
+compare-route); `compare-route` replays the continuous human route through the
+`--compare-snes9x-oracle` harness with exact video+audio comparison.
+`scripts/full_parity.py --with-snes9x` still provides the 180-frame cold-boot
+live A/V gate. Internal regression tools that remain: the lockstep oracle
+(`--lockstep`, snes-crate emulator, WRAM/behavior only),
 `ZELDA3_ASSERT_NATIVE_COHERENT`, `find_dual_ownership.py`, `whoowns.py`,
 RAM write-watchpoints, and Rust-vs-Rust WRAM dumps
 (`ZELDA3_REPLAY_WRAM_DUMP` across two builds of this repo).
@@ -79,9 +89,10 @@ runtime comparison against a C build exists anymore. The external parity referen
   accept `ZELDA3_ROM`.
 - This repo: `cargo build --profile parity -p zelda3-bin` (deterministic like release,
   faster). Binary: `target/parity/zelda3 --replay-save saves/zelda3.sfc <save> <frames>`.
-- Replay save: `saves/zelda3-combined-route.sav` (route is ~1,073,092 frames). All replay
-  runs need the timing hacks:
-  `ZELDA3_SMV_{SELECT_FILE,LOADFILE,DUNGEON,OVERWORLD,MESSAGING,DEATH_INTRO,DEATH_RELOAD}_TIMING_HACKS=1`.
+- The old combined-route replay save was removed with C parity. `--replay-save` still
+  works for ad-hoc `.sav` replays (legacy `ZELDA3_SMV_*_TIMING_HACKS=1` env applies to
+  such saves), but recorded parity routes live in `routes/` as Snes9x-native
+  boundary states + input takes.
 - Address semantics come from THIS repo's own const map: use `whoowns.py` (backed by
   `ram_ref.py`, which scans this repo's `const NAME: usize = 0xADDR;` definitions).
 - Regression baseline for refactors: run the route on the pre-change and post-change
@@ -97,7 +108,7 @@ Every per-frame probe below re-replays from frame 0. For a divergence at frame ~
 ```bash
 HACKS=(ZELDA3_SMV_SELECT_FILE_TIMING_HACKS=1 ... all 7 ...)   # see below
 # Save once, a few thousand frames BEFORE the suspect frame:
-env "${HACKS[@]}" target/parity/zelda3 --replay-save saves/zelda3.sfc saves/zelda3-combined-route.sav 460000 --save-state /tmp/ck_new_460000.sav
+env "${HACKS[@]}" target/parity/zelda3 --replay-save saves/zelda3.sfc <replay.sav> 460000 --save-state /tmp/ck_new_460000.sav
 # Resume + dump/trace: pass the ABSOLUTE target frame and --load-state:
 env "${HACKS[@]}" ZELDA3_REPLAY_WRAM_DUMP=/tmp/n.bin target/parity/zelda3 --replay-save ... 460431 --load-state /tmp/ck_new_460000.sav
 ```
