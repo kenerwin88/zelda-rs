@@ -2064,11 +2064,14 @@ impl ModernAudioEngine {
             let mut mixed_right = 0i32;
             let mut echo_input_left = 0i32;
             let mut echo_input_right = 0i32;
+            let mut semantic_dac_delta_left = 0i32;
+            let mut semantic_dac_delta_right = 0i32;
             let mut previous_voice_sample = 0i32;
             let dsp_global_counter = self.dsp_global_counter;
             for voice_index in 0..self.voices.len() {
                 let voice = &mut self.voices[voice_index];
                 let was_active = voice.active;
+                let previous_output_sample = i32::from(voice.last_output_sample);
                 let mut debug_position = voice.dsp_sample_position;
                 let mut debug_pitch = voice.render_pitch_word;
                 let sample = if was_active {
@@ -2133,6 +2136,29 @@ impl ModernAudioEngine {
                 if voice.note_origin == Some(crate::game_output::AudioNoteOrigin::Music) {
                     voice_left = voice_left * i32::from(self.music_volume) / 96;
                     voice_right = voice_right * i32::from(self.music_volume) / 96;
+                }
+                if !voice.dsp_key_on_timed {
+                    let (mut previous_left, mut previous_right) =
+                        if voice.stereo_volume_configured {
+                            (
+                                previous_output_sample * i32::from(voice.volume_left) >> 7,
+                                previous_output_sample * i32::from(voice.volume_right) >> 7,
+                            )
+                        } else {
+                            let pan = i32::from(voice.pan);
+                            let left_gain = 127 - pan.max(0);
+                            let right_gain = 127 + pan.min(0);
+                            (
+                                previous_output_sample * left_gain / 127,
+                                previous_output_sample * right_gain / 127,
+                            )
+                        };
+                    if voice.note_origin == Some(crate::game_output::AudioNoteOrigin::Music) {
+                        previous_left = previous_left * i32::from(self.music_volume) / 96;
+                        previous_right = previous_right * i32::from(self.music_volume) / 96;
+                    }
+                    semantic_dac_delta_left += voice_left - previous_left;
+                    semantic_dac_delta_right += voice_right - previous_right;
                 }
                 mixed_left += voice_left;
                 mixed_right += voice_right;
@@ -2211,8 +2237,12 @@ impl ModernAudioEngine {
             self.dsp_rendered_samples = self.dsp_rendered_samples.saturating_add(1);
             let current_left = mixed_left.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
             let current_right = mixed_right.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
-            let mixed_left = self.dsp_output_left;
-            let mixed_right = self.dsp_output_right;
+            let mixed_left = (i32::from(self.dsp_output_left)
+                + (semantic_dac_delta_left * i32::from(self.master_volume_left) >> 7))
+                .clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+            let mixed_right = (i32::from(self.dsp_output_right)
+                + (semantic_dac_delta_right * i32::from(self.master_volume_right) >> 7))
+                .clamp(i16::MIN as i32, i16::MAX as i32) as i16;
             self.dsp_output_left = current_left;
             self.dsp_output_right = current_right;
             self.dsp_output_raw_main_left = raw_main_left as i16;
@@ -3876,6 +3906,108 @@ mod tests {
                 -4032, -4034, 0, 0, -324, 3530, 8402,
             ]
         );
+    }
+
+    #[test]
+    fn semantic_source_three_reaches_dac_on_the_snes9x_sample() {
+        let mut engine = ModernAudioEngine::default();
+        let mut frame = empty_frame_with_writes(&[]);
+        let offset = 360;
+        frame.events.extend([
+            AudioEvent {
+                sample_offset: offset,
+                timer_cycles: 0,
+                kind: AudioEventKind::SetNoteOrigin {
+                    voice: 7,
+                    origin: crate::game_output::AudioNoteOrigin::Sfx,
+                },
+                parity_dsp: None,
+            },
+            AudioEvent {
+                sample_offset: offset,
+                timer_cycles: 0,
+                kind: AudioEventKind::SetNoise {
+                    voice: 7,
+                    enabled: false,
+                },
+                parity_dsp: None,
+            },
+            AudioEvent {
+                sample_offset: offset,
+                timer_cycles: 0,
+                kind: AudioEventKind::SetPan { voice: 7, pan: 0 },
+                parity_dsp: None,
+            },
+            AudioEvent {
+                sample_offset: offset,
+                timer_cycles: 0,
+                kind: AudioEventKind::SetEchoSend {
+                    voice: 7,
+                    enabled: false,
+                },
+                parity_dsp: None,
+            },
+            AudioEvent {
+                sample_offset: offset,
+                timer_cycles: 0,
+                kind: AudioEventKind::SetEnvelope {
+                    attack: 14,
+                    voice: 7,
+                    decay: 7,
+                    sustain: 7,
+                    release: 24,
+                },
+                parity_dsp: None,
+            },
+            AudioEvent {
+                sample_offset: offset,
+                timer_cycles: 0,
+                kind: AudioEventKind::SetPitchWord {
+                    voice: 7,
+                    pitch_word: 15_626,
+                },
+                parity_dsp: None,
+            },
+            AudioEvent {
+                sample_offset: offset,
+                timer_cycles: 0,
+                kind: AudioEventKind::SetStereoVolume {
+                    voice: 7,
+                    left: 50,
+                    right: 50,
+                },
+                parity_dsp: None,
+            },
+            AudioEvent {
+                sample_offset: offset,
+                timer_cycles: 0,
+                kind: AudioEventKind::SetDspEnvelope {
+                    voice: 7,
+                    adsr1: 0xfe,
+                    adsr2: 0xf8,
+                    gain: 0xb8,
+                },
+                parity_dsp: None,
+            },
+            AudioEvent {
+                sample_offset: offset,
+                timer_cycles: 0,
+                kind: AudioEventKind::NoteOn {
+                    voice: 7,
+                    pitch: 127,
+                    instrument: 3,
+                    volume: 50,
+                },
+                parity_dsp: None,
+            },
+        ]);
+        frame.sequenced = true;
+        let mut audio = vec![0i16; 533 * 2];
+
+        engine.render_frame(&frame, &mut audio, 533, 2);
+
+        assert_eq!(&audio[718..722], &[0, 0, 0, 0]);
+        assert_eq!(&audio[722..724], &[-18, -18]);
     }
 
     #[test]

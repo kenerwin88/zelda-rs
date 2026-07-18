@@ -83,8 +83,7 @@ def require_success(result: CommandResult, gate: str) -> None:
     tail = (result.stderr or result.stdout).strip().splitlines()[-40:]
     raise GateFailure(
         f"{gate} failed with exit code {result.returncode}\n"
-        f"command: {command_text(result.command)}\n"
-        + "\n".join(tail)
+        f"command: {command_text(result.command)}\n" + "\n".join(tail)
     )
 
 
@@ -101,8 +100,11 @@ def find_snes9x_core(explicit: str | None) -> Path | None:
         DEFAULT_SNES9X_LOCAL,
         REPO_ROOT / "external" / "snes9x-libretro" / "snes9x_libretro.dylib",
         Path("/private/tmp/snes9x_libretro/snes9x_libretro.dylib"),
-        Path.home() / "Library/Application Support/RetroArch/cores/snes9x_libretro.dylib",
-        Path("/Applications/RetroArch.app/Contents/Resources/cores/snes9x_libretro.dylib"),
+        Path.home()
+        / "Library/Application Support/RetroArch/cores/snes9x_libretro.dylib",
+        Path(
+            "/Applications/RetroArch.app/Contents/Resources/cores/snes9x_libretro.dylib"
+        ),
     ]
     for path in candidates:
         if path.exists():
@@ -121,7 +123,10 @@ def download_snes9x_core(url: str) -> Path:
     core_tmp = DEFAULT_SNES9X_LOCAL.with_suffix(".dylib.tmp")
     print(f"downloading Snes9x libretro core: {url}", flush=True)
     try:
-        with urllib.request.urlopen(url, timeout=60) as source, zip_path.open("wb") as dest:
+        with (
+            urllib.request.urlopen(url, timeout=60) as source,
+            zip_path.open("wb") as dest,
+        ):
             shutil.copyfileobj(source, dest)
         with zipfile.ZipFile(zip_path) as archive:
             member = next(
@@ -141,7 +146,9 @@ def download_snes9x_core(url: str) -> Path:
                 shutil.copyfileobj(source, dest)
         core_tmp.replace(DEFAULT_SNES9X_LOCAL)
     except (OSError, urllib.error.URLError, zipfile.BadZipFile) as error:
-        raise GateFailure(f"failed to download Snes9x libretro core from {url}: {error}") from error
+        raise GateFailure(
+            f"failed to download Snes9x libretro core from {url}: {error}"
+        ) from error
     finally:
         zip_path.unlink(missing_ok=True)
         core_tmp.unlink(missing_ok=True)
@@ -189,9 +196,7 @@ def run_snes9x_gate(args: argparse.Namespace) -> None:
             "--skip-oracle-frames",
             str(args.snes9x_skip),
             "--audio-comparison",
-            args.snes9x_audio_comparison,
-            "--audio-timing-tolerance-ms",
-            str(args.audio_timing_tolerance_ms),
+            "exact",
             "--session-dir",
             str(session_dir),
             "--scan-all",
@@ -399,7 +404,12 @@ def run_mesen_gate(args: argparse.Namespace) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rom", type=Path, default=DEFAULT_ROM)
-    parser.add_argument("--frames", type=int, default=180, help="startup frames for audio/video oracle traces")
+    parser.add_argument(
+        "--frames",
+        type=int,
+        default=180,
+        help="startup frames for audio/video oracle traces",
+    )
     parser.add_argument("--route-frames", type=int, default=1_073_092)
     parser.add_argument("--replay-save", type=Path, default=DEFAULT_REPLAY_SAVE)
     parser.add_argument("--lockstep-frames", type=int, default=300)
@@ -411,15 +421,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--snes9x-core")
     parser.add_argument("--snes9x-url", default=DEFAULT_SNES9X_URL)
     parser.add_argument("--snes9x-skip", type=int, default=0)
-    parser.add_argument(
-        "--snes9x-audio-comparison",
-        choices=("timing", "exact"),
-        default="timing",
-    )
-    parser.add_argument("--audio-timing-tolerance-ms", type=float, default=2.0)
     parser.add_argument("--mesen-startup-offset", type=int, default=82)
     parser.add_argument("--mesen-runner", type=Path, default=DEFAULT_MESEN_RUNNER)
-    parser.add_argument("--work-dir", type=Path, default=REPO_ROOT / "target" / "parity")
+    parser.add_argument(
+        "--work-dir", type=Path, default=REPO_ROOT / "target" / "parity"
+    )
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--no-lockstep", action="store_true")
     parser.add_argument("--no-c-audio", action="store_true")

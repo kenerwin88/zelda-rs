@@ -43,8 +43,6 @@ class Snes9xParityGateTests(unittest.TestCase):
             no_install_snes9x=True,
             snes9x_url="unused",
             work_dir=pathlib.Path("/tmp/parity"),
-            snes9x_audio_comparison="timing",
-            audio_timing_tolerance_ms=2.0,
         )
         result = module.CommandResult([], 0, "passed", "")
         with (
@@ -61,6 +59,8 @@ class Snes9xParityGateTests(unittest.TestCase):
         self.assertIn("--compare-snes9x-oracle", command)
         self.assertIn("--session-dir", command)
         self.assertIn("--audio-comparison", command)
+        self.assertEqual(command[command.index("--audio-comparison") + 1], "exact")
+        self.assertNotIn("--audio-timing-tolerance-ms", command)
         self.assertNotIn("--auto-align-video", command)
 
     def test_exact_apu_gate_builds_oracle_feature_and_ignores_video(self):

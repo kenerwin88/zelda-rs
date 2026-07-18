@@ -82,6 +82,89 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
             self.assertFalse(pairings["boundaries"]["1"]["converted_to_snes9x"])
             self.assertEqual(rust_state.read_bytes(), b"rust-state")
 
+    def test_exact_pass_promotes_rust_checkpoint_and_receipt_to_end_boundary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = self.project(root)
+            manifest = MODULE.load_manifest(project)
+            manifest["takes"][0].update(
+                {"start_boundary": 0, "end_boundary": 1, "frames": 12}
+            )
+            (project / "manifest.json").write_text(json.dumps(manifest))
+            session = project / "comparisons/take-0000"
+            session.mkdir(parents=True)
+            (session / "rust_final.z3state").write_bytes(b"final-rust-state")
+            (session / "result.json").write_text(
+                json.dumps(
+                    {
+                        "status": "passed",
+                        "parity_eligible": True,
+                        "frames_completed": 12,
+                        "video": {"matched": True},
+                        "audio": {"matched": True, "mode": "exact"},
+                    }
+                )
+            )
+            (session / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "core": {"sha256": "11" * 32},
+                        "rom": {"sha256": "22" * 32},
+                    }
+                )
+            )
+
+            receipt = MODULE.promote_passed_take(project, 0, session)
+
+            promoted = project / "boundaries/0001/rust.z3state"
+            self.assertEqual(promoted.read_bytes(), b"final-rust-state")
+            self.assertEqual(receipt["status"], "exact_av_verified")
+            self.assertEqual(receipt["take"], 0)
+            self.assertEqual(receipt["end_boundary"], 1)
+            self.assertEqual(receipt["audio_comparison"], "exact")
+            self.assertEqual(receipt["frames_verified"], 12)
+            self.assertEqual(receipt["rust_state_sha256"], MODULE.sha256(promoted))
+            self.assertEqual(
+                receipt["oracle_state_sha256"],
+                MODULE.sha256(project / "boundaries/0001/oracle.state"),
+            )
+            saved = json.loads(
+                (project / "boundaries/0001/parity.json").read_text()
+            )
+            self.assertEqual(saved, receipt)
+            pairing = MODULE.load_pairings(project)["boundaries"]["1"]
+            self.assertEqual(pairing["rust_state"], "boundaries/0001/rust.z3state")
+            self.assertEqual(pairing["verified_by"], "boundaries/0001/parity.json")
+            self.assertFalse(pairing["converted_from_snes9x"])
+
+    def test_non_exact_or_incomplete_result_cannot_promote_boundary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(Path(tmp))
+            manifest = MODULE.load_manifest(project)
+            manifest["takes"][0].update(
+                {"start_boundary": 0, "end_boundary": 1, "frames": 12}
+            )
+            (project / "manifest.json").write_text(json.dumps(manifest))
+            session = project / "comparisons/take-0000"
+            session.mkdir(parents=True)
+            (session / "rust_final.z3state").write_bytes(b"must-not-promote")
+            (session / "manifest.json").write_text("{}")
+            diagnostic = {
+                "status": "diagnostic_passed",
+                "parity_eligible": False,
+                "frames_completed": 12,
+                "video": {"matched": True},
+                "audio": {"matched": True, "mode": "timing"},
+            }
+            (session / "result.json").write_text(json.dumps(diagnostic))
+
+            with self.assertRaisesRegex(SystemExit, "not an exact A/V parity pass"):
+                MODULE.promote_passed_take(project, 0, session)
+
+            self.assertFalse((project / "boundaries/0001/rust.z3state").exists())
+            self.assertFalse((project / "boundaries/0001/parity.json").exists())
+            self.assertNotIn("1", MODULE.load_pairings(project)["boundaries"])
+
     def test_compare_command_uses_take_start_boundary_and_exact_modern_lanes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

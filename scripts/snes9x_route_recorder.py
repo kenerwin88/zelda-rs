@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -312,6 +313,110 @@ def pair_boundary(project: Path, boundary: int, rust_state: Path) -> None:
     (project / "pairings.json").write_text(json.dumps(pairings, indent=2) + "\n")
 
 
+def resolve_project_path(project: Path, value: str) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else project / path
+
+
+def promote_passed_take(project: Path, take_id: int, session_dir: Path) -> dict:
+    """Persist an independently verified Rust endpoint beside its Snes9x boundary."""
+    manifest = load_manifest(project)
+    takes = manifest.get("takes", [])
+    if take_id < 0 or take_id >= len(takes):
+        raise SystemExit(f"unknown take {take_id}; project has {len(takes)}")
+    take = takes[take_id]
+    end_boundary = take.get("end_boundary")
+    if end_boundary is None:
+        raise SystemExit(f"take {take_id} has no end boundary to promote")
+    end_boundary = int(end_boundary)
+    boundaries = manifest.get("boundaries", [])
+    if end_boundary < 0 or end_boundary >= len(boundaries):
+        raise SystemExit(f"take {take_id} ends at unknown boundary {end_boundary}")
+
+    result_path = session_dir / "result.json"
+    session_manifest_path = session_dir / "manifest.json"
+    rust_final_path = session_dir / "rust_final.z3state"
+    try:
+        result = json.loads(result_path.read_text())
+        session_manifest = json.loads(session_manifest_path.read_text())
+    except FileNotFoundError as error:
+        raise SystemExit(f"comparison artifact is missing: {error.filename}") from error
+    exact_pass = (
+        result.get("status") == "passed"
+        and result.get("parity_eligible") is True
+        and result.get("video", {}).get("matched") is True
+        and result.get("audio", {}).get("matched") is True
+        and result.get("audio", {}).get("mode") == "exact"
+        and int(result.get("frames_completed", -1)) == int(take["frames"])
+    )
+    if not exact_pass:
+        raise SystemExit(
+            f"take {take_id} result is not an exact A/V parity pass; boundary was not promoted"
+        )
+    if not rust_final_path.is_file():
+        raise SystemExit(f"comparison did not produce Rust endpoint: {rust_final_path}")
+
+    identity = manifest["identity"]
+    core_sha256 = session_manifest.get("core", {}).get("sha256")
+    rom_sha256 = session_manifest.get("rom", {}).get("sha256")
+    if core_sha256 != identity["core_sha256"] or rom_sha256 != identity["rom_sha256"]:
+        raise SystemExit("comparison core/ROM identity does not match the recorded route")
+
+    boundary = boundaries[end_boundary]
+    oracle_state = project / boundary["state_path"]
+    oracle_sram = project / boundary["sram_path"]
+    if not oracle_state.is_file() or not oracle_sram.is_file():
+        raise SystemExit(f"Snes9x-native boundary {end_boundary} is incomplete")
+
+    boundary_dir = project / f"boundaries/{end_boundary:04}"
+    promoted_state = boundary_dir / "rust.z3state"
+    shutil.copyfile(rust_final_path, promoted_state)
+    promoted_relative = promoted_state.relative_to(project).as_posix()
+    receipt_path = boundary_dir / "parity.json"
+    receipt_relative = receipt_path.relative_to(project).as_posix()
+    receipt = {
+        "kind": "zelda3_snes9x_boundary_exact_parity_v1",
+        "status": "exact_av_verified",
+        "oracle": "Snes9x 1.63 libretro only",
+        "production_renderer": "modern Rust",
+        "production_audio_backend": "modern",
+        "production_audio_sequencer": "native",
+        "audio_comparison": "exact",
+        "take": take_id,
+        "start_boundary": int(take["start_boundary"]),
+        "end_boundary": end_boundary,
+        "frames_verified": int(take["frames"]),
+        "input_sha256": sha256(project / take["input_path"]),
+        "core_sha256": core_sha256,
+        "rom_sha256": rom_sha256,
+        "rust_state": promoted_relative,
+        "rust_state_sha256": sha256(promoted_state),
+        "oracle_state": boundary["state_path"],
+        "oracle_state_sha256": sha256(oracle_state),
+        "oracle_sram": boundary["sram_path"],
+        "oracle_sram_sha256": sha256(oracle_sram),
+        "comparison_result_sha256": sha256(result_path),
+        "oracle_independence": {
+            "state_conversion_used": False,
+            "snes9x_state_created_by": "Snes9x retro_serialize",
+            "rust_state_created_by": "zelda3-rs replay",
+        },
+    }
+    receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
+    pairings = load_pairings(project)
+    pairings["boundaries"][str(end_boundary)] = {
+        "rust_state": promoted_relative,
+        "rust_state_sha256": receipt["rust_state_sha256"],
+        "oracle_state": boundary["state_path"],
+        "oracle_state_sha256": receipt["oracle_state_sha256"],
+        "verified_by": receipt_relative,
+        "converted_to_snes9x": False,
+        "converted_from_snes9x": False,
+    }
+    (project / "pairings.json").write_text(json.dumps(pairings, indent=2) + "\n")
+    return receipt
+
+
 def compare_command(
     *,
     binary: Path,
@@ -373,7 +478,7 @@ def compare_input_command(
             raise SystemExit(
                 f"boundary {boundary_id} has no Rust pairing; run the pair command first"
             )
-        rust_state = Path(pairing["rust_state"])
+        rust_state = resolve_project_path(project, pairing["rust_state"])
         if sha256(rust_state) != pairing["rust_state_sha256"]:
             raise SystemExit(f"Rust state hash changed: {rust_state}")
         command.extend(
@@ -635,11 +740,15 @@ def compare_all(
         passed = (
             completed.returncode == 0
             and result.get("status") == "passed"
+            and result.get("parity_eligible") is True
             and result.get("video", {}).get("matched") is True
             and result.get("audio", {}).get("matched") is True
+            and result.get("audio", {}).get("mode") == "exact"
+            and int(result.get("frames_completed", 0)) == int(take["frames"])
         )
         if passed:
-            passed_frames += int(result.get("frames_completed", 0))
+            receipt = promote_passed_take(project, take_id, session_dir)
+            passed_frames += receipt["frames_verified"]
         else:
             exit_code = 1
         summaries.append(
@@ -894,7 +1003,14 @@ def main() -> None:
             take_id=args.take,
             session_dir=session_dir,
         )
-        raise SystemExit(subprocess.run(command, cwd=ROOT).returncode)
+        completed = subprocess.run(command, cwd=ROOT)
+        if completed.returncode == 0:
+            receipt = promote_passed_take(args.project, args.take, session_dir)
+            print(
+                f"saved exact A/V parity through boundary {receipt['end_boundary']}: "
+                f"{receipt['frames_verified']} frames"
+            )
+        raise SystemExit(completed.returncode)
     if args.action == "compare-all":
         matrix, exit_code = compare_all(
             binary=args.binary,

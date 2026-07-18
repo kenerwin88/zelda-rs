@@ -6147,11 +6147,7 @@ fn run_compare_libretro_oracle(
     let mut trace_dsp_writes = false;
     let mut color_tolerance = 0u8;
     let mut max_mismatched_pixels = 0usize;
-    let mut audio_comparison = if required_library_name == Some("Snes9x") {
-        AudioComparisonMode::Timing
-    } else {
-        AudioComparisonMode::Exact
-    };
+    let mut audio_comparison = AudioComparisonMode::Exact;
     let mut audio_window_ms = 1.0f64;
     let mut audio_silence_threshold = 64i16;
     let mut audio_timing_tolerance_ms = 2.0f64;
@@ -6703,6 +6699,11 @@ fn run_compare_libretro_oracle(
         audio_timing_tolerance_ms,
         audio_envelope_tolerance,
     );
+    if audio_comparison == AudioComparisonMode::Timing {
+        eprintln!(
+            "audio comparison mode `timing` is diagnostic only and cannot produce a full parity pass"
+        );
+    }
     let mut continuous_audio = StreamingAudioComparator::new(audio_comparison, timing_options);
     let resumed_frame_count = frames.saturating_sub(start_frame) as usize;
     let mut input_history = Vec::<(u32, u16)>::with_capacity(resumed_frame_count);
@@ -7411,6 +7412,7 @@ fn run_compare_libretro_oracle(
         &audio_frame_ends,
         &oracle_before_state,
         &oracle,
+        &game,
         frames,
         &video_mismatch_ranges,
         first_video_mismatch.as_deref(),
@@ -7582,6 +7584,7 @@ fn initialize_libretro_session(
         "first_audio_mismatch_oracle.wav",
         "oracle_last_before.state",
         "oracle_final.state",
+        "rust_final.z3state",
         "result.json",
     ] {
         match fs::remove_file(dir.join(stale)) {
@@ -7678,6 +7681,7 @@ fn initialize_libretro_session(
             "first_audio_mismatch_rust.wav",
             "first_audio_mismatch_oracle.wav",
             "oracle_final.state",
+            "rust_final.z3state",
             "result.json",
             "replay.sh"
         ]
@@ -7950,6 +7954,7 @@ fn finalize_libretro_session(
     audio_frame_ends: &[u64],
     oracle_last_before: &[u8],
     oracle: &LibretroCore,
+    game: &ZeldaState,
     frames: u32,
     video_mismatch_ranges: &[(u32, u32)],
     first_video_mismatch: Option<&str>,
@@ -7997,10 +8002,43 @@ fn finalize_libretro_session(
         eprintln!("failed to write final libretro state: {e}");
         process::exit(1);
     });
+    // Recorded chapter inputs are segment-local. This independently replayed
+    // endpoint becomes frame zero when it is paired with the next boundary.
+    let rust_final = PlayCrashCheckpoint {
+        magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
+        host_frame: 0,
+        input: input_history.last().map(|(_, input)| *input).unwrap_or(0),
+        run_what: select_run_what(&game.ram),
+        game: game.clone(),
+    };
+    fs::write(
+        dir.join("rust_final.z3state"),
+        bincode::serialize(&rust_final).expect("serialize final Rust parity state"),
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("failed to write final Rust parity state: {e}");
+        process::exit(1);
+    });
     let matched = audio_report.map(|report| report.matched).unwrap_or(true)
         && video_mismatch_ranges.is_empty();
+    let parity_eligible = audio_report
+        .map(|report| report.mode == AudioComparisonMode::Exact.as_str())
+        .unwrap_or(true);
+    let status = if !matched {
+        "failed"
+    } else if parity_eligible {
+        "passed"
+    } else {
+        "diagnostic_passed"
+    };
     let result = serde_json::json!({
-        "status": if matched { "passed" } else { "failed" },
+        "status": status,
+        "parity_eligible": parity_eligible,
+        "coverage_label": if parity_eligible {
+            "exact parity for requested lanes"
+        } else {
+            "timing diagnostic only; not full parity"
+        },
         "frames_completed": frames,
         "audio": audio_report,
         "video": {
@@ -8009,6 +8047,7 @@ fn finalize_libretro_session(
             "first_mismatch": first_video_mismatch,
         },
         "dynamic_alignment": false,
+        "rust_endpoint": "rust_final.z3state",
     });
     fs::write(
         dir.join("result.json"),
@@ -8028,8 +8067,8 @@ fn finalize_libretro_session(
             eprintln!("failed to parse libretro session manifest: {error}");
             process::exit(1);
         });
-    manifest["status"] =
-        serde_json::Value::String(if matched { "passed" } else { "failed" }.to_string());
+    manifest["status"] = serde_json::Value::String(status.to_string());
+    manifest["parity_eligible"] = serde_json::Value::Bool(parity_eligible);
     manifest["frames_completed"] = serde_json::Value::from(frames);
     fs::write(manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap_or_else(
         |error| {
