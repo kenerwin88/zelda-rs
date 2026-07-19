@@ -1959,6 +1959,22 @@ impl ModernIndexCompareResources {
         })
     }
 
+    /// CPU-only comparison resources: the source atlas without any GPU
+    /// device. The compare-frame router renders via the software source
+    /// compositor (and the CPU Mode-7 path); useful for GPU-free, parallel
+    /// comparison runs.
+    pub fn load_cpu_compare(root: &Path) -> Result<Self, String> {
+        let source_atlas = Some(
+            modern_source_atlas::load_modern_source_atlas(root)
+                .map_err(|e| format!("assets-by-source atlas load failed: {e}"))?,
+        );
+        Ok(Self {
+            source_atlas,
+            gpu_headless: None,
+            variant_headless: None,
+        })
+    }
+
     pub fn source_atlas(&self) -> Option<&modern_source_atlas::ModernSourceAtlas> {
         self.source_atlas.as_ref()
     }

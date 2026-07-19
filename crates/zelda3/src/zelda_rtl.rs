@@ -7102,6 +7102,7 @@ impl ZeldaState {
     /// and the modern asset/GPU renderer. The returned value must own anything
     /// it borrows from `game`, because live state is restored before returning.
     pub fn with_display_snapshot<R>(&mut self, capture: impl FnOnce(&mut ZeldaState) -> R) -> R {
+        let from_display_slot = self.display_snapshot.is_some();
         let Some(mut display) = self
             .display_snapshot
             .take()
@@ -7109,6 +7110,18 @@ impl ZeldaState {
         else {
             return capture(self);
         };
+        // Capture must be side-effect-free on live game state. The native
+        // game_state is re-derived from the snapshot RAM below so capture
+        // closures see coherent native views; restore the ORIGINAL native
+        // state afterwards instead of re-deriving it from live RAM — a
+        // RAM-derived rebuild rewinds every native field whose RAM projection
+        // is stale mid-frame (write-through fields, animation countdowns),
+        // which made per-frame video capture perturb game behavior.
+        let saved_game_state = self.game_state.clone();
+        // Compose mutates the snapshot side (VRAM/OAM/CGRAM composition,
+        // latch clears). Store back the PRISTINE snapshot so repeated captures
+        // and later consumers see exactly what NMI published.
+        let pristine_snapshot = display.clone();
 
         let snapshot_frame = crate::game_state::FrameState::load_from_ram(&display.ram);
         let retain_previous_nmi_display_memory = rom_display_memory_publication_is_deferred(
@@ -7158,8 +7171,13 @@ impl ZeldaState {
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
-        self.sync_native_game_state_from_ram();
-        self.display_snapshot = Some(display);
+        self.game_state = saved_game_state;
+        drop(display);
+        if from_display_slot {
+            self.display_snapshot = Some(pristine_snapshot);
+        } else {
+            self.visible_display_snapshot = Some(pristine_snapshot);
+        }
         captured
     }
 

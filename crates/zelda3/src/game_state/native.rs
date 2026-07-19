@@ -89,15 +89,14 @@ pub(crate) use oam::{NativeOamStateBridgeMut, OamState};
 pub(crate) use player::{
     Bg1MovementAccumulatorState, FollowerLinkState, NativeBg1MovementAccumulatorBridgeMut,
     NativeFollowerLinkBridgeMut, NativePushedBlockBridgeMut, NativeSpecialExitPositionBridgeMut,
-    NativeSwimAccelerationBridgeMut, NativeTileDetectionBridgeMut, PlayerSnapshotState,
-    PlayerState,
+    NativeSwimAccelerationBridgeMut, NativeTileDetectionBridgeMut, PlayerState,
 };
 pub(crate) use poly::{
     NativePolyFaceCoordsBridgeMut, NativePolyProjectedVerticesBridgeMut,
     NativePolyRasterEdgeBridgeMut, NativePolyRuntimeBridgeMut, PolyState,
 };
 pub(crate) use sprites::{
-    AncillaSlotSnapshot, BossHomePositionRead, CachedSpriteRead, NativeAncillaSlotBridgeMut,
+    BossHomePositionRead, CachedSpriteRead, NativeAncillaSlotBridgeMut,
     NativeAncillaSlotView, NativeArmosKnightHomePositionBridgeMut,
     NativeArrghusPuffHomePositionBridgeMut, NativeCachedSpriteBridgeMut,
     NativeChainChompHistoryBridgeMut, NativeDualLayerTileCacheBridgeMut,
@@ -109,7 +108,7 @@ pub(crate) use sprites::{
     NativePrizeDropCycleBridgeMut, NativeSpriteDrawWorkPositionBridgeMut,
     NativeSpriteHitboxWorkOffsetBridgeMut, NativeSpriteSlotBridgeMut, NativeSpriteSlotView,
     NativeSpriteSystemBridgeMut, NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut,
-    SpriteSlotSnapshot, SpriteState, TagalongSlotRead, OVERWORLD_SPRITE_FLAG_COUNT,
+    SpriteState, TagalongSlotRead, OVERWORLD_SPRITE_FLAG_COUNT,
 };
 pub(crate) use system::{
     MsuResumeInfoState, MsuResumeSlot, NativeSystemSignalsBridgeMut, SystemSignalsState,

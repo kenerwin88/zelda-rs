@@ -47,11 +47,8 @@ BOUNDARY_SOURCE_FILES = (
     INDEX_DUMP_COMMANDS_RS,
     OVERWORLD_DUMP_COMMANDS_RS,
     ROUTE_COVERAGE_COMMANDS_RS,
-    CLASSIC_FRAME_RENDERER_RS,
-    GPU_COMPARE_RS,
     REPO / "zelda3-bin" / "src" / "gpu_capture.rs",
     HD_AUTHORING_COMMANDS_RS,
-    GPU_READBACK_RS,
     IMAGE_OUTPUT_RS,
     INPUT_SCRIPT_RS,
     REPO / "zelda3-bin" / "src" / "play_renderer.rs",
@@ -1493,7 +1490,6 @@ def main() -> int:
     errors.extend(check_developer_room_commands_text(DEVELOPER_ROOM_COMMANDS_RS.read_text()))
     errors.extend(check_gpu_capture_text(GPU_CAPTURE_RS.read_text()))
     errors.extend(check_play_renderer_text(PLAY_RENDERER_RS.read_text()))
-    errors.extend(check_classic_frame_renderer_text(CLASSIC_FRAME_RENDERER_RS.read_text()))
     errors.extend(check_renderer_mode_text(RENDERER_MODE_RS.read_text()))
     for path, path_label in DEFAULT_AUDIO_OUTPUT_BOUNDARY_FILES:
         errors.extend(check_default_audio_output_boundary_text(path.read_text(), path_label))

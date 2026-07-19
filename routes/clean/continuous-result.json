@@ -7,14 +7,13 @@
   "production_audio_backend": "modern",
   "production_audio_sequencer": "native",
   "takes": [
-    0,
-    1,
-    2
+    4,
+    5
   ],
-  "frames_requested": 11735,
-  "frames_completed": 11735,
-  "video_matched": true,
-  "audio_matched": true,
-  "passed": true,
+  "frames_requested": 37843,
+  "frames_completed": 0,
+  "video_matched": false,
+  "audio_matched": false,
+  "passed": false,
   "result": "comparisons/continuous/result.json"
 }

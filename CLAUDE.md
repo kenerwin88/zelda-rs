@@ -25,9 +25,13 @@ compare-route); `compare-route` replays the continuous human route through the
 `scripts/full_parity.py --with-snes9x` still provides the 180-frame cold-boot
 live A/V gate. **GPU comparisons must run serially** — concurrent offscreen GPU
 runs produce nondeterministic render flakes and stomp the shared comparison
-session directory (the recorder takes an exclusive lock; do not run cargo GPU
-tests alongside a comparison either). Internal regression tools that remain: the lockstep oracle
-(`--lockstep`, snes-crate emulator, WRAM/behavior only),
+session directory. The zelda3 binary itself enforces this: every
+`--compare-snes9x-oracle` / `--record-snes9x-route` run takes an exclusive
+flock on `/tmp/zelda3-snes9x-compare.lock` and refuses to start a second
+session (do not run cargo GPU tests alongside a comparison either).
+`target/parity-failures/` is auto-pruned to the newest 20 run dirs.
+The lockstep oracle was removed 2026-07-18 (snes9x is the only oracle).
+Internal regression tools that remain:
 `ZELDA3_ASSERT_NATIVE_COHERENT`, `find_dual_ownership.py`, `whoowns.py`,
 RAM write-watchpoints, and Rust-vs-Rust WRAM dumps
 (`ZELDA3_REPLAY_WRAM_DUMP` across two builds of this repo).

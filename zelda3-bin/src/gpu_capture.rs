@@ -71,6 +71,15 @@ struct ModernAssetGpuReadbackFrame {
 
 pub(crate) struct ModernAssetGpuReadbackRenderer {
     resources: renderer::ModernIndexCompareResources,
+    /// `ZELDA3_COMPARE_VIDEO_CPU=1`: render comparison video with the software
+    /// source compositor (no GPU device at all). GPU-free comparisons are
+    /// deterministic under parallelism; the GPU render remains the default and
+    /// the final single-process gate.
+    cpu_video: bool,
+    /// Memoized (input fingerprint -> rendered RGBA) for the previous frame.
+    /// The production render is a pure function of the capture, so identical
+    /// inputs (static menus, text pauses) reuse the exact previous pixels.
+    render_cache: std::sync::Mutex<Option<(u64, Vec<u8>)>>,
     validation_cache: HashMap<u64, Result<(), String>>,
     validation_cache_hits: u64,
     validation_cache_misses: u64,
@@ -323,10 +332,16 @@ impl GpuPlayRenderer {
 impl ModernAssetGpuReadbackRenderer {
     pub(crate) fn load_from_env() -> Result<Self, String> {
         let repo_root = repo_root();
-        let resources =
-            renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)?;
+        let cpu_video = std::env::var_os("ZELDA3_COMPARE_VIDEO_CPU").is_some();
+        let resources = if cpu_video {
+            renderer::ModernIndexCompareResources::load_cpu_compare(&repo_root)?
+        } else {
+            renderer::ModernIndexCompareResources::load_live_gpu_from_env(true, &repo_root)?
+        };
         Ok(Self {
             resources,
+            cpu_video,
+            render_cache: std::sync::Mutex::new(None),
             validation_cache: HashMap::new(),
             validation_cache_hits: 0,
             validation_cache_misses: 0,
@@ -343,7 +358,36 @@ impl ModernAssetGpuReadbackRenderer {
         game: &mut ZeldaState,
     ) -> Result<GpuRgbaReadbackFrame, String> {
         let capture = capture_gpu_frame_from_game(game);
-        render_modern_asset_capture_rgba(&capture, &self.resources).map(|render| render.frame)
+        let key = validation_cache_key(&capture);
+        if let Some((cached_key, rgba)) = self.render_cache.lock().unwrap().as_ref() {
+            if *cached_key == key {
+                return Ok(GpuRgbaReadbackFrame::from_rgba(rgba.clone()));
+            }
+        }
+        let frame = if self.cpu_video {
+            let gpu_frame = capture.gpu_frame();
+            let src_table = renderer::source_table_from_entries(capture.source_entries());
+            let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(
+                capture.player_indoors(),
+            );
+            let render = renderer::modern_gpu::render_modern_index_compare_frame(
+                &gpu_frame,
+                Some(&src_table),
+                self.resources.source_atlas(),
+                None,
+                None,
+                None,
+                scene,
+                None,
+                true,
+            );
+            GpuRgbaReadbackFrame::from_rgba(render.rgba)
+        } else {
+            render_modern_asset_capture_rgba(&capture, &self.resources)
+                .map(|render| render.frame)?
+        };
+        *self.render_cache.lock().unwrap() = Some((key, frame.as_slice().to_vec()));
+        Ok(frame)
     }
 
     pub(crate) fn trace_game_pixel(
@@ -1202,6 +1246,8 @@ fn validation_cache_key(capture: &LiveGpuFrameCapture) -> u64 {
         .dialogue_layout_origin_tile_number()
         .hash(&mut hasher);
     capture.player_indoors().hash(&mut hasher);
+    capture.cgram_provenance.words.hash(&mut hasher);
+    capture.cgram_provenance.known.hash(&mut hasher);
 
     hasher.finish()
 }

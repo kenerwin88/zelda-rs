@@ -18,11 +18,9 @@ mod modern_sample_bank;
 pub mod modern_sfx_catalog;
 pub mod modern_sfx_dsp_catalog;
 pub mod modern_sfx_pitch_catalog;
-pub mod oracle;
 mod spc_driver_clock;
 pub mod types;
 pub mod util;
-pub mod zelda_cpu_infra;
 pub mod zelda_rtl;
 
 pub use chr_source::{
@@ -32,9 +30,9 @@ pub use chr_source::{
 };
 pub use game_state::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
 pub use zelda3_dialogue as dialogue_ir;
-pub use zelda_cpu_infra::{
-    ComparisonReport, Difference, LockstepOracle, OracleError, Region, SemanticAncillaSlot,
-    SemanticComparisonReport, SemanticDifference, SemanticFrame, SemanticPlayer, SemanticPpu,
-    SemanticSnapshot, SemanticSpriteSlot, SemanticWorld, RUN_MAIN, RUN_POLY,
-};
 pub use zelda_rtl::{Bg3VwfGlyphRun, ZeldaState, SRAM_SIZE, VRAM_WORDS};
+
+/// Which engine thread(s) a frame step should run (`run_frame_internal`'s
+/// `run_what` bitmask): the main game thread and/or the polyhedral thread.
+pub const RUN_MAIN: u8 = 1;
+pub const RUN_POLY: u8 = 2;

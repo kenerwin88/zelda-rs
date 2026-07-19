@@ -22,30 +22,10 @@ DEFAULT_PROJECT = DEFAULT_PROJECT_ROOT / "default"
 DEFAULT_SRAM = ROOT / "saves/sram.dat"
 
 
-class ComparisonLock:
-    """Exclusive lock around oracle comparisons.
-
-    Two concurrent GPU comparison runs corrupt each other twice over: they
-    write the same comparison session directory, and concurrent offscreen GPU
-    work is a documented source of nondeterministic render flakes. Refuse to
-    start a second comparison instead of producing garbage results.
-    """
-
-    LOCK_PATH = Path("/tmp/zelda3-snes9x-compare.lock")
-
-    def __init__(self) -> None:
-        import fcntl
-
-        self.handle = self.LOCK_PATH.open("w")
-        try:
-            fcntl.flock(self.handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            raise SystemExit(
-                "another Snes9x comparison is already running "
-                f"(lock: {self.LOCK_PATH}); GPU comparisons must run serially"
-            )
-        self.handle.write(f"pid={os.getpid()}\n")
-        self.handle.flush()
+# Serial-GPU enforcement lives in the zelda3 binary itself now: every
+# --compare-snes9x-oracle / --record-snes9x-route invocation takes an exclusive
+# flock on /tmp/zelda3-snes9x-compare.lock and refuses to start if another
+# oracle session is running, so raw binary invocations are covered too.
 
 
 def sha256(path: Path) -> str:
@@ -1015,7 +995,6 @@ def main() -> None:
             command.extend(["--max-frames", str(args.max_frames)])
         raise SystemExit(subprocess.run(command, cwd=ROOT).returncode)
     if args.action == "compare":
-        _lock = ComparisonLock()
         session_dir = args.session_dir or (
             args.project / "comparisons" / f"take-{args.take:04}"
         )
@@ -1036,7 +1015,6 @@ def main() -> None:
             )
         raise SystemExit(completed.returncode)
     if args.action == "compare-all":
-        _lock = ComparisonLock()
         matrix, exit_code = compare_all(
             binary=args.binary,
             core=args.core,
@@ -1052,7 +1030,6 @@ def main() -> None:
         )
         raise SystemExit(exit_code)
     if args.action == "compare-route":
-        _lock = ComparisonLock()
         summary, exit_code = compare_continuous(
             binary=args.binary,
             core=args.core,

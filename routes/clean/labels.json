@@ -4,11 +4,17 @@
     "2": "uncle",
     "0": "uncle_intro",
     "3": "enter_castle",
-    "4": "sanctuary"
+    "4": "sanctuary",
+    "5": "kakariko",
+    "6": "saharwhatever",
+    "9": "1st_pendant",
+    "10": "2nd_pendant"
   },
   "archived_boundaries": [
     1,
-    2
+    2,
+    7,
+    8
   ],
   "archived_project": false
 }

@@ -1,0 +1,2 @@
+# Snes9x controller stream captured once per oracle frame.
+87..94 0x0400

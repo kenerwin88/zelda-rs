@@ -1224,6 +1224,7 @@ fn mixed_variant_overlay_bg_packets_with_policy<'a>(
         .filter(|(_, packet)| packet.draw.material_effect().is_some())
         .count() as u32;
     out.candidates = candidates;
+    let pixel_index = PlanPixelIndex::new(plan);
 
     for (packet_index, packet) in plan.material_packets().filter_map(|packet| packet.as_bg()) {
         let Some((entry, effect)) = packet.draw.material_effect() else {
@@ -1236,8 +1237,8 @@ fn mixed_variant_overlay_bg_packets_with_policy<'a>(
             continue;
         }
         let overlap_reject = if allow_color_math {
-            bg_packet_prefinal_overlap_reject_reason(frame, packet_index, packet, plan)
-        } else if bg_packet_overlaps_other_packets(frame, packet_index, packet, plan) {
+            bg_packet_prefinal_overlap_reject_reason(frame, packet_index, packet, plan, &pixel_index)
+        } else if bg_packet_overlaps_other_packets(frame, packet_index, packet, plan, &pixel_index) {
             Some(MixedOverlayOverlapRejectReason::Bg)
         } else {
             None
@@ -1931,11 +1932,119 @@ fn packed_variant_prefinal_math_bit(pixel: u32) -> u8 {
     ((pixel >> 15) & 0x07) as u8
 }
 
+/// Per-plan acceleration for the mixed-overlay overlap classifiers.
+///
+/// The overlap rejects ask, per candidate pixel, "does any other packet cover
+/// this pixel?". Without an index every query re-walks the whole plan (and
+/// re-classifies each walked packet's prefinal material), which is quadratic
+/// in on-screen packets and dominated whole-route oracle comparisons. Buckets
+/// hold packet indices per 8x8 screen cell in plan order, so a bucket walk
+/// sees the same packets in the same relative order as a full plan walk and
+/// first-match semantics are preserved exactly.
+struct PlanPixelIndex {
+    bg_buckets: Vec<Vec<u32>>,
+    sprite_buckets: Vec<Vec<u32>>,
+    /// A sprite packet with no mode-1 rank makes `front_sprite_packet_blocks_
+    /// bg_packet` return "blocked" the moment the walk reaches it, regardless
+    /// of pixel overlap — so its presence anywhere in the plan means every
+    /// query answers true.
+    any_sprite_rank_none: bool,
+    bg_material:
+        std::cell::RefCell<Vec<Option<Result<PrefinalBgMaterial, PrefinalBgMaterialRejectReason>>>>,
+}
+
+const PLAN_PIXEL_INDEX_GRID_W: usize = 32;
+const PLAN_PIXEL_INDEX_GRID_H: usize = 28;
+
+impl PlanPixelIndex {
+    fn new(plan: &crate::modern_variant_draw::VariantDrawPlan<'_>) -> Self {
+        let mut bg_buckets =
+            vec![Vec::new(); PLAN_PIXEL_INDEX_GRID_W * PLAN_PIXEL_INDEX_GRID_H];
+        let mut sprite_buckets =
+            vec![Vec::new(); PLAN_PIXEL_INDEX_GRID_W * PLAN_PIXEL_INDEX_GRID_H];
+        for (index, packet) in plan.bg.iter().enumerate() {
+            Self::insert(
+                &mut bg_buckets,
+                index,
+                packet.inst.screen_x,
+                packet.inst.screen_y,
+            );
+        }
+        let mut any_sprite_rank_none = false;
+        for (index, packet) in plan.sprites.iter().enumerate() {
+            any_sprite_rank_none |= packet.mode1_rank().is_none();
+            Self::insert(
+                &mut sprite_buckets,
+                index,
+                packet.inst.screen_x,
+                packet.inst.screen_y,
+            );
+        }
+        Self {
+            bg_buckets,
+            sprite_buckets,
+            any_sprite_rank_none,
+            bg_material: std::cell::RefCell::new(vec![None; plan.bg.len()]),
+        }
+    }
+
+    fn insert(buckets: &mut [Vec<u32>], index: usize, screen_x: i16, screen_y: i16) {
+        let (min_x, max_x) = (screen_x, screen_x + 7);
+        let (min_y, max_y) = (screen_y, screen_y + 7);
+        if max_x < 0 || min_x > 255 || max_y < 0 || min_y > 223 {
+            return;
+        }
+        let cx0 = (min_x.max(0) as usize) >> 3;
+        let cx1 = (max_x.min(255) as usize) >> 3;
+        let cy0 = (min_y.max(0) as usize) >> 3;
+        let cy1 = (max_y.min(223) as usize) >> 3;
+        for cy in cy0..=cy1 {
+            for cx in cx0..=cx1 {
+                buckets[cy * PLAN_PIXEL_INDEX_GRID_W + cx].push(index as u32);
+            }
+        }
+    }
+
+    fn bucket(buckets: &[Vec<u32>], screen_x: i16, screen_y: i16) -> &[u32] {
+        if !(0..256).contains(&screen_x) || !(0..224).contains(&screen_y) {
+            return &[];
+        }
+        &buckets[(screen_y as usize >> 3) * PLAN_PIXEL_INDEX_GRID_W + (screen_x as usize >> 3)]
+    }
+
+    fn bg_bucket(&self, screen_x: i16, screen_y: i16) -> &[u32] {
+        Self::bucket(&self.bg_buckets, screen_x, screen_y)
+    }
+
+    fn sprite_bucket(&self, screen_x: i16, screen_y: i16) -> &[u32] {
+        Self::bucket(&self.sprite_buckets, screen_x, screen_y)
+    }
+
+    /// `bg_packet_prefinal_material` is pure in (frame, packet); memoize it per
+    /// plan packet so per-pixel overlap walks stop re-classifying the same
+    /// packets.
+    fn bg_material_for(
+        &self,
+        frame: &ModernFrame,
+        plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+        packet_index: usize,
+    ) -> Result<PrefinalBgMaterial, PrefinalBgMaterialRejectReason> {
+        let mut memo = self.bg_material.borrow_mut();
+        if let Some(cached) = memo[packet_index] {
+            return cached;
+        }
+        let material = bg_packet_prefinal_material(frame, &plan.bg[packet_index]);
+        memo[packet_index] = Some(material);
+        material
+    }
+}
+
 fn bg_packet_overlaps_other_packets(
     frame: &ModernFrame,
     packet_index: usize,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+    index: &PlanPixelIndex,
 ) -> bool {
     let Some(entry) = packet.draw.entry() else {
         return false;
@@ -1950,8 +2059,10 @@ fn bg_packet_overlaps_other_packets(
             if screen_x < 0 || screen_y < 0 || screen_x >= 256 || screen_y >= 224 {
                 continue;
             }
-            if other_packet_has_opaque_bg_pixel(packet_index, plan, screen_x, screen_y)
-                || front_sprite_packet_blocks_bg_packet(frame, packet, plan, screen_x, screen_y)
+            if other_packet_has_opaque_bg_pixel(packet_index, plan, index, screen_x, screen_y)
+                || front_sprite_packet_blocks_bg_packet(
+                    frame, packet, plan, index, screen_x, screen_y,
+                )
             {
                 return true;
             }
@@ -1965,6 +2076,7 @@ fn bg_packet_prefinal_overlap_reject_reason(
     packet_index: usize,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+    index: &PlanPixelIndex,
 ) -> Option<MixedOverlayOverlapRejectReason> {
     let Some(entry) = packet.draw.entry() else {
         return None;
@@ -1984,6 +2096,7 @@ fn bg_packet_prefinal_overlap_reject_reason(
                 packet_index,
                 packet,
                 plan,
+                index,
                 screen_x,
                 screen_y,
             ) {
@@ -2017,19 +2130,22 @@ fn front_or_same_bg_packet_has_opaque_pixel(
     packet_index: usize,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+    index: &PlanPixelIndex,
     screen_x: i16,
     screen_y: i16,
 ) -> bool {
     let Some(packet_rank) = packet.mode1_rank() else {
         return true;
     };
-    for other_packet in plan.material_packets() {
-        let Some((other_index, _other)) = other_packet.as_bg() else {
-            continue;
-        };
+    for &other_index in index.bg_bucket(screen_x, screen_y) {
+        let other_index = other_index as usize;
         if other_index == packet_index {
             continue;
         }
+        let other_packet = crate::modern_variant_draw::VariantDrawPacket::Bg {
+            packet_index: other_index,
+            packet: &plan.bg[other_index],
+        };
         let Some(other_rank) = other_packet.mode1_rank() else {
             continue;
         };
@@ -2051,39 +2167,50 @@ fn front_or_same_bg_packet_blocks_prefinal_group(
     packet_index: usize,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+    index: &PlanPixelIndex,
     screen_x: i16,
     screen_y: i16,
 ) -> Option<MixedOverlayOverlapRejectReason> {
     let Some(packet_rank) = packet.mode1_rank() else {
         return Some(MixedOverlayOverlapRejectReason::BgUnrepresentableFront);
     };
-    let packet_material = bg_packet_prefinal_material(frame, packet).ok();
-    for other_packet in plan.material_packets() {
-        let Some((other_index, other)) = other_packet.as_bg() else {
-            continue;
-        };
+    let packet_material = index.bg_material_for(frame, plan, packet_index).ok();
+    for &other_index in index.bg_bucket(screen_x, screen_y) {
+        let other_index = other_index as usize;
         if other_index == packet_index {
             continue;
         }
+        let other = &plan.bg[other_index];
+        let other_packet = crate::modern_variant_draw::VariantDrawPacket::Bg {
+            packet_index: other_index,
+            packet: other,
+        };
         let Some(other_rank) = other_packet.mode1_rank() else {
             continue;
         };
         if other_rank < packet_rank || (other_rank == packet_rank && other_index < packet_index) {
             continue;
         }
-        let Some(index) = other_packet.overlap_index_at_screen(screen_x, screen_y) else {
+        let Some(overlap_index) = other_packet.overlap_index_at_screen(screen_x, screen_y) else {
             continue;
         };
-        if index == 0 {
+        if overlap_index == 0 {
             continue;
         }
         if !bg_packet_visible_on_main_at_pixel(frame, other, screen_x as u32, screen_y as usize) {
             continue;
         }
-        if front_or_same_bg_packet_has_opaque_pixel(other_index, other, plan, screen_x, screen_y) {
+        if front_or_same_bg_packet_has_opaque_pixel(
+            other_index,
+            other,
+            plan,
+            index,
+            screen_x,
+            screen_y,
+        ) {
             return Some(MixedOverlayOverlapRejectReason::BgDeeperChain);
         }
-        let other_material = match bg_packet_prefinal_material(frame, other) {
+        let other_material = match index.bg_material_for(frame, plan, other_index) {
             Ok(material) => material,
             Err(reason) => {
                 return Some(match reason {
@@ -2322,20 +2449,23 @@ fn bg_packet_prefinal_material(
 fn other_packet_has_opaque_bg_pixel(
     packet_index: usize,
     plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+    index: &PlanPixelIndex,
     screen_x: i16,
     screen_y: i16,
 ) -> bool {
-    for other_packet in plan.material_packets() {
-        let Some((other_index, _other)) = other_packet.as_bg() else {
-            continue;
-        };
+    for &other_index in index.bg_bucket(screen_x, screen_y) {
+        let other_index = other_index as usize;
         if other_index == packet_index {
             continue;
         }
-        let Some(index) = other_packet.overlap_index_at_screen(screen_x, screen_y) else {
+        let other_packet = crate::modern_variant_draw::VariantDrawPacket::Bg {
+            packet_index: other_index,
+            packet: &plan.bg[other_index],
+        };
+        let Some(overlap_index) = other_packet.overlap_index_at_screen(screen_x, screen_y) else {
             continue;
         };
-        if index != 0 {
+        if overlap_index != 0 {
             return true;
         }
     }
@@ -2346,6 +2476,7 @@ fn front_sprite_packet_blocks_bg_packet(
     frame: &ModernFrame,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
+    index: &PlanPixelIndex,
     screen_x: i16,
     screen_y: i16,
 ) -> bool {
@@ -2355,9 +2486,16 @@ fn front_sprite_packet_blocks_bg_packet(
     if frame.screen_enabled_main != 0 && frame.screen_enabled_main & 0x10 == 0 {
         return false;
     }
-    for other_packet in plan.material_packets() {
-        let Some((_, _other)) = other_packet.as_sprite() else {
-            continue;
+    if index.any_sprite_rank_none {
+        // The full plan walk returns "blocked" as soon as it reaches a rankless
+        // sprite packet, whatever pixel is being queried.
+        return true;
+    }
+    for &other_index in index.sprite_bucket(screen_x, screen_y) {
+        let other_index = other_index as usize;
+        let other_packet = crate::modern_variant_draw::VariantDrawPacket::Sprite {
+            packet_index: other_index,
+            packet: &plan.sprites[other_index],
         };
         let Some(sprite_rank) = other_packet.mode1_rank() else {
             return true;
@@ -2367,7 +2505,7 @@ fn front_sprite_packet_blocks_bg_packet(
         }
         if other_packet
             .overlap_index_at_screen(screen_x, screen_y)
-            .is_none_or(|index| index == 0)
+            .is_none_or(|overlap_index| overlap_index == 0)
         {
             continue;
         }
