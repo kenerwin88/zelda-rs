@@ -5,9 +5,14 @@ struct Params {
     p0: vec4<u32>,
     p1: vec4<u32>,
     p2: vec4<u32>,
+    p3: vec4<u32>,
 };
 @group(0) @binding(3) var<uniform> params: Params;
 @group(0) @binding(4) var<storage, read_write> out_rgba: array<u32>;
+struct StartupOverlay {
+    pixels: array<vec4<u32>, 32>,
+};
+@group(0) @binding(5) var<uniform> startup_overlay: StartupOverlay;
 
 fn unpack_r(p: u32) -> i32 {
     return i32(p & 31u);
@@ -94,9 +99,35 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let prevent_math_mode = params.p2.x;
     let windowsel_cm = params.p2.y;
     let forced_blank_scanlines = params.p2.z;
+    let startup_origin0 = params.p2.w;
+    let startup_origin1 = params.p3.x;
+    let startup_direct_pixel_count = params.p3.y;
 
+    let out_x = i % width;
+    let out_y = i / width;
+    let nrow = out_y / scale;
+    let ncol = out_x / scale;
+
+    // Startup material is a deterministic hardware surface, not a PPU layer.
+    // It is visible while the game still has INIDISP forced blank, so apply it
+    // over black before returning from that state.
     if ((flags & 0x10u) != 0u) {
-        out_rgba[i] = 0xff000000u;
+        var startup_rgba = 0xff000000u;
+        for (var cell = 0u; cell < 2u; cell = cell + 1u) {
+            let startup_origin = select(startup_origin0, startup_origin1, cell == 1u);
+            if ((startup_origin & 0x80000000u) != 0u) {
+                let startup_x = startup_origin & 0xffu;
+                let startup_y = (startup_origin >> 8u) & 0xffu;
+                if (ncol >= startup_x && ncol < startup_x + 8u && nrow >= startup_y && nrow < startup_y + 8u) {
+                    let pixel_index = cell * 64u + (nrow - startup_y) * 8u + (ncol - startup_x);
+                    let pixel = startup_overlay.pixels[pixel_index / 4u][pixel_index % 4u];
+                    if ((pixel >> 24u) != 0u) {
+                        startup_rgba = pixel;
+                    }
+                }
+            }
+        }
+        out_rgba[i] = startup_rgba;
         return;
     }
 
@@ -106,12 +137,10 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var g = unpack_g(main);
     var b = unpack_b(main);
 
-    let out_x = i % width;
-    let out_y = i / width;
-    let nrow = out_y / scale;
-    let ncol = out_x / scale;
-
-    if (nrow < forced_blank_scanlines) {
+    if (nrow < forced_blank_scanlines
+        && startup_direct_pixel_count == 0u
+        && (startup_origin0 & 0x80000000u) == 0u
+        && (startup_origin1 & 0x80000000u) == 0u) {
         out_rgba[i] = 0xff000000u;
         return;
     }
@@ -176,4 +205,18 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let gg = expand_5bit(g);
     let bb = expand_5bit(b);
     out_rgba[i] = rr | (gg << 8u) | (bb << 16u) | 0xff000000u;
+    for (var cell = 0u; cell < 2u; cell = cell + 1u) {
+        let startup_origin = select(startup_origin0, startup_origin1, cell == 1u);
+        if ((startup_origin & 0x80000000u) != 0u) {
+            let startup_x = startup_origin & 0xffu;
+            let startup_y = (startup_origin >> 8u) & 0xffu;
+            if (ncol >= startup_x && ncol < startup_x + 8u && nrow >= startup_y && nrow < startup_y + 8u) {
+                let pixel_index = cell * 64u + (nrow - startup_y) * 8u + (ncol - startup_x);
+                let pixel = startup_overlay.pixels[pixel_index / 4u][pixel_index % 4u];
+                if ((pixel >> 24u) != 0u) {
+                    out_rgba[i] = pixel;
+                }
+            }
+        }
+    }
 }

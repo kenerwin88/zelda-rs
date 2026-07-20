@@ -165,6 +165,7 @@ mod tests {
         forced_blank: bool,
     ) -> GpuFrame<'a> {
         GpuFrame {
+            hardware_startup_transient: None,
             vram,
             cgram,
             oam,

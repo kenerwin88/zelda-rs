@@ -117,8 +117,6 @@ const ROM_SELECTED_GAME_LOAD_FRAMES: u8 = 77;
 // slices, then continues the room build while NMI publishes that command.
 const ROM_SELECTED_GAME_LOAD_PRE_DUNGEON_AUDIO_REMAINING: u8 = 58;
 const DUNGEON_LANDING_HDMA_RESET_PREFIX_SCANLINES: usize = 4;
-const ROM_DIALOGUE_GLYPH_INITIAL_WORK_UNITS: u8 = 29;
-const ROM_DIALOGUE_GLYPH_RESUME_WORK_UNITS: u8 = 42;
 // The ROM enters AttractScene_ThroneRoom on frame 5939 and does not return
 // from its dungeon-room construction work until frame 5981. NMI continues to
 // run while that main-CPU call is in flight, so model the interruption slices
@@ -307,21 +305,6 @@ const fn rom_selected_game_load_decision(remaining_frames: u8) -> (bool, bool, u
     }
 }
 
-const fn rom_dialogue_scroll_requires_resumption(scroll_speed: u8) -> bool {
-    // Speeds zero and one request at most two pixel passes and return before
-    // the next NMI. Larger scroll batches can be interrupted mid-command.
-    scroll_speed >= 2
-}
-
-const fn rom_dialogue_glyph_work_units(width: u8, pixel_position: u8) -> u8 {
-    let pixels_to_tile_boundary = 8 - (pixel_position & 7);
-    2 + if width < pixels_to_tile_boundary {
-        width
-    } else {
-        pixels_to_tile_boundary
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RomWorkContinuation {
     FinishAttractWorldMap,
@@ -329,30 +312,18 @@ enum RomWorkContinuation {
     FinishAttractZeldaPrison,
     FinishAttractMaidenWarp,
     FinishAttractEndOfStory,
-    ContinueDialogueScroll,
-    ContinueDialogueCharacters,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RomWorkSlice {
     Waiting,
     Complete(RomWorkContinuation),
-    DialogueScroll {
-        pixels: u8,
-        resume_caller: bool,
-        advance_main_heartbeat: bool,
-    },
-    DialogueCharacters {
-        work_units: u8,
-    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct PendingRomWork {
     continuation: Option<RomWorkContinuation>,
     nmi_slices_remaining: u8,
-    dialogue_scroll_third_pixel_credit: u8,
-    dialogue_scroll_initial_slice: bool,
 }
 
 impl PendingRomWork {
@@ -361,26 +332,6 @@ impl PendingRomWork {
         Self {
             continuation: Some(continuation),
             nmi_slices_remaining: nmi_slices,
-            dialogue_scroll_third_pixel_credit: 0,
-            dialogue_scroll_initial_slice: false,
-        }
-    }
-
-    fn schedule_dialogue_scroll() -> Self {
-        Self {
-            continuation: Some(RomWorkContinuation::ContinueDialogueScroll),
-            nmi_slices_remaining: 0,
-            // Seed the three-slice cadence so the first five-pixel batch is
-            // split 2, 2, 1 across its interrupt boundaries.
-            dialogue_scroll_third_pixel_credit: 2,
-            dialogue_scroll_initial_slice: true,
-        }
-    }
-
-    fn schedule_dialogue_characters() -> Self {
-        Self {
-            continuation: Some(RomWorkContinuation::ContinueDialogueCharacters),
-            ..Self::default()
         }
     }
 
@@ -388,34 +339,9 @@ impl PendingRomWork {
         self.continuation.is_some()
     }
 
-    fn is_dialogue_scroll(self) -> bool {
-        self.continuation == Some(RomWorkContinuation::ContinueDialogueScroll)
-    }
-
     fn advance_one_nmi_slice(&mut self) -> RomWorkSlice {
         match self.continuation {
             None => RomWorkSlice::Waiting,
-            Some(RomWorkContinuation::ContinueDialogueScroll) => {
-                // One five-pixel scroll batch moves roughly 10 KiB of tile data.
-                // The ROM's 65816 crosses two NMIs before returning to its caller,
-                // so each batch is observed as 2, 2, then 1 pixel.
-                self.dialogue_scroll_third_pixel_credit += 5;
-                let pixels = self.dialogue_scroll_third_pixel_credit / 3;
-                self.dialogue_scroll_third_pixel_credit %= 3;
-                let initial_slice = self.dialogue_scroll_initial_slice;
-                self.dialogue_scroll_initial_slice = false;
-                RomWorkSlice::DialogueScroll {
-                    pixels,
-                    resume_caller: !initial_slice && pixels == 1,
-                    advance_main_heartbeat: !initial_slice
-                        && self.dialogue_scroll_third_pixel_credit == 1,
-                }
-            }
-            Some(RomWorkContinuation::ContinueDialogueCharacters) => {
-                RomWorkSlice::DialogueCharacters {
-                    work_units: ROM_DIALOGUE_GLYPH_RESUME_WORK_UNITS,
-                }
-            }
             Some(continuation) => {
                 self.nmi_slices_remaining = self.nmi_slices_remaining.saturating_sub(1);
                 if self.nmi_slices_remaining == 0 {
@@ -7014,28 +6940,6 @@ impl ZeldaState {
         );
     }
 
-    pub(super) fn begin_rom_dialogue_scroll_work(&mut self) -> u8 {
-        debug_assert!(!self.pending_rom_work.is_pending());
-        self.pending_rom_work = PendingRomWork::schedule_dialogue_scroll();
-        match self.pending_rom_work.advance_one_nmi_slice() {
-            RomWorkSlice::DialogueScroll { pixels, .. } => pixels,
-            _ => unreachable!("new dialogue scroll work always yields pixel work"),
-        }
-    }
-
-    pub(super) fn begin_rom_dialogue_character_work(&mut self) {
-        debug_assert!(!self.pending_rom_work.is_pending());
-        self.pending_rom_work = PendingRomWork::schedule_dialogue_characters();
-    }
-
-    pub(super) fn finish_pending_rom_work(&mut self) {
-        self.pending_rom_work.finish();
-    }
-
-    pub(super) fn rom_dialogue_scroll_is_pending(&self) -> bool {
-        self.pending_rom_work.is_dialogue_scroll()
-    }
-
     pub(super) fn capture_display_snapshot(&mut self) {
         // The upcoming NMI may latch a fresh pre-upload CGRAM image; the one
         // from the previous frame has been consumed by that frame's renders.
@@ -7868,36 +7772,6 @@ impl ZeldaState {
                 }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishAttractEndOfStory) => {
                     self.complete_attract_scene_end_of_story();
-                }
-                RomWorkSlice::Complete(RomWorkContinuation::ContinueDialogueScroll) => {
-                    unreachable!("dialogue scroll completes from its pixel work")
-                }
-                RomWorkSlice::Complete(RomWorkContinuation::ContinueDialogueCharacters) => {
-                    unreachable!("dialogue character work completes from its work budget")
-                }
-                RomWorkSlice::DialogueScroll {
-                    pixels,
-                    resume_caller,
-                    advance_main_heartbeat,
-                } => {
-                    let complete = self.render_text_scroll_pixels(u16::from(pixels));
-                    if advance_main_heartbeat {
-                        self.increment_frame_counter();
-                    }
-                    if complete {
-                        self.pending_rom_work.finish();
-                        self.complete_rom_dialogue_scroll_work();
-                    } else if resume_caller {
-                        self.publish_rom_dialogue_scroll_batch();
-                    }
-                    if resume_caller || complete {
-                        self.resume_rom_dialogue_scroll_caller();
-                    }
-                }
-                RomWorkSlice::DialogueCharacters { work_units } => {
-                    if self.continue_rom_dialogue_character_work(work_units) {
-                        self.pending_rom_work.finish();
-                    }
                 }
             }
             if !resume_main_after_world_map_load {

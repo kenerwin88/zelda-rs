@@ -3208,66 +3208,6 @@ fn intro_poly_initialization_resumes_for_cold_start_and_attract_restart() {
 }
 
 #[test]
-fn dialogue_scroll_rom_work_spends_fractional_cpu_budget_across_nmis() {
-    let mut work = PendingRomWork::schedule_dialogue_scroll();
-
-    let pixels = (0..7)
-        .map(|_| match work.advance_one_nmi_slice() {
-            RomWorkSlice::DialogueScroll {
-                pixels,
-                resume_caller: _,
-                advance_main_heartbeat: _,
-            } => pixels,
-            other => panic!("unexpected dialogue scroll slice: {other:?}"),
-        })
-        .collect::<Vec<_>>();
-
-    assert_eq!(pixels, vec![2, 2, 1, 2, 2, 1, 2]);
-}
-
-#[test]
-fn dialogue_scroll_rom_work_alternates_caller_and_main_heartbeat_yields() {
-    let mut work = PendingRomWork::schedule_dialogue_scroll();
-    let yields = (0..5)
-        .map(|_| match work.advance_one_nmi_slice() {
-            RomWorkSlice::DialogueScroll {
-                resume_caller,
-                advance_main_heartbeat,
-                ..
-            } => (resume_caller, advance_main_heartbeat),
-            other => panic!("unexpected dialogue scroll slice: {other:?}"),
-        })
-        .collect::<Vec<_>>();
-
-    assert_eq!(
-        yields,
-        vec![
-            (false, false),
-            (false, false),
-            (true, false),
-            (false, true),
-            (false, false)
-        ]
-    );
-}
-
-#[test]
-fn short_dialogue_scrolls_finish_before_the_next_nmi() {
-    assert!(!rom_dialogue_scroll_requires_resumption(0));
-    assert!(!rom_dialogue_scroll_requires_resumption(1));
-    assert!(rom_dialogue_scroll_requires_resumption(2));
-    assert!(rom_dialogue_scroll_requires_resumption(4));
-}
-
-#[test]
-fn dialogue_glyph_work_tracks_width_until_the_next_tile_boundary() {
-    assert_eq!(rom_dialogue_glyph_work_units(6, 0), 8);
-    assert_eq!(rom_dialogue_glyph_work_units(6, 6), 4);
-    assert_eq!(rom_dialogue_glyph_work_units(4, 10), 6);
-    assert_eq!(rom_dialogue_glyph_work_units(3, 15), 3);
-}
-
-#[test]
 fn heavy_prison_animation_makes_dialogue_initialization_resumable() {
     assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 0, 3), 5);
     assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 0, 2), 0);
@@ -3472,28 +3412,6 @@ fn dialogue_exit_bg_packet_waits_for_the_following_nmi() {
     state.clear_nmi_update_latch();
     state.interrupt_nmi(0, None, false);
     assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 0);
-}
-
-#[test]
-fn completed_dialogue_scroll_releases_its_bg3_upload() {
-    let mut state = ZeldaState::new();
-    state.latch_nmi_update();
-    assert_eq!(state.ram[NMI_BOOLEAN], 1);
-
-    state.complete_rom_dialogue_scroll_work();
-
-    assert_eq!(state.ram[NMI_BOOLEAN], 0);
-}
-
-#[test]
-fn intermediate_dialogue_scroll_batch_releases_its_bg3_upload() {
-    let mut state = ZeldaState::new();
-    state.latch_nmi_update();
-    assert_eq!(state.ram[NMI_BOOLEAN], 1);
-
-    state.publish_rom_dialogue_scroll_batch();
-
-    assert_eq!(state.ram[NMI_BOOLEAN], 0);
 }
 
 #[test]

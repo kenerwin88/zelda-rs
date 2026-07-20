@@ -13,6 +13,7 @@ use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::audio_trace::AudioFrameStats;
+use crate::gpu_capture::NativeWindowOracleRenderer;
 use crate::image_output::{write_argb_frame_png, write_rgba_frame_png};
 use crate::input_script::InputScript;
 use crate::libretro_timeline::{
@@ -696,7 +697,8 @@ pub(crate) fn run_compare_libretro_oracle(
         game.restore_live_rom_timing_after_checkpoint();
         (game, checkpoint.host_frame)
     } else {
-        (load_play_state(rom_path), 0)
+        // Compare the same extracted-asset-only state that plain `cargo run` uses.
+        (load_default_play_state(), 0)
     };
     if let Some(path) = replay_save.as_deref() {
         game.replay_save_file(path).unwrap_or_else(|error| {
@@ -907,8 +909,15 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut previous_rust_vram = None::<Vec<u8>>;
     let mut previous_shield_dma_trace = None::<(u8, u8, u16, u16, u8, u8, u16, u16)>;
     let mut previous_uncle_trace = None::<(u8, u8, u8, u8, u8, u8, u8, u8)>;
-    let gpu_video_readback = (compare_video || trace_video_pixel.is_some())
-        .then(|| load_modern_asset_gpu_readback_or_exit("libretro oracle video comparison"));
+    // Video parity is intentionally measured through the same native window
+    // renderer used by `cargo run`.  Do not replace this with an offscreen or
+    // CPU/headless compositor: a successful oracle receipt must prove what
+    // the user actually sees in the window.
+    let mut native_window_video = (compare_video || trace_video_pixel.is_some())
+        .then(|| NativeWindowOracleRenderer::load_from_env().unwrap_or_else(|error| {
+            eprintln!("failed to initialize native-window oracle video renderer: {error}");
+            process::exit(1);
+        }));
     use std::time::Instant;
     let stage_timing = std::env::var_os("ZELDA3_SNES9X_TIMING").is_some();
     // [pre_state, poly, run_frame, video, oracle, audio+compare, receipts]
@@ -965,13 +974,14 @@ pub(crate) fn run_compare_libretro_oracle(
                 } else {
                     None
                 };
-                let frame = render_modern_asset_gpu_frame_rgba_or_exit(
-                    gpu_video_readback
-                        .as_ref()
-                        .expect("GPU readback allocated for libretro video comparison"),
-                    &mut game,
-                    "libretro oracle video comparison",
-                );
+                let frame = native_window_video
+                    .as_mut()
+                    .expect("native window renderer allocated for libretro video comparison")
+                    .render_game_rgba(&mut game)
+                    .unwrap_or_else(|error| {
+                        eprintln!("native-window oracle video render failed: {error}");
+                        process::exit(1);
+                    });
                 if let Some(cur) = restored {
                     game.ppu.vram[0x3c00..0x3e00].copy_from_slice(&cur);
                 }
@@ -1706,23 +1716,9 @@ pub(crate) fn run_compare_libretro_oracle(
                 game.ram[0x10], game.ram[0x11], game.ram[0xb0], game.ram[0x13], obj_pal,
             );
             println!("pixel displayed_ppu frame={frame_index} {displayed_ppu}");
-            match gpu_video_readback
-                .as_ref()
-                .expect("GPU readback allocated for pixel trace")
-                .trace_game_pixel(&mut game, x as i16, y as i16)
-            {
-                Ok(traces) if traces.is_empty() => {
-                    println!("modern_pixel_trace frame={frame_index} xy=({x},{y}) hits=0");
-                }
-                Ok(traces) => {
-                    for trace in traces {
-                        println!("modern_pixel_trace frame={frame_index} xy=({x},{y}) {trace}");
-                    }
-                }
-                Err(error) => {
-                    println!("modern_pixel_trace frame={frame_index} xy=({x},{y}) error={error}");
-                }
-            }
+            println!(
+                "modern_pixel_trace frame={frame_index} xy=({x},{y}) via=native-window-source-gpu"
+            );
         }
         if compare_this_frame && compare_video {
             let rust_video_frame = rust_video_frame

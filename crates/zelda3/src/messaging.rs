@@ -11,12 +11,6 @@ fn text_decode_cmd(a: u8, src: *const u8) -> u32 {
     ((decoded.param as u32) << 16) | ((decoded.command as u32) << 8)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DialogueCharacterSliceResult {
-    Returned,
-    YieldedToNmi,
-}
-
 impl ZeldaState {
     pub(super) fn Module0E_Interface(&mut self) {
         let mut skip_run = false;
@@ -3176,31 +3170,14 @@ impl ZeldaState {
     }
 
     pub(super) fn RenderText_Draw_MessageCharacters(&mut self) {
-        let work_units = (self.rom_startup_timing()
-            && self.game_state.messaging.runtime.vwf_line_speed_cur() == 0)
-            .then_some(ROM_DIALOGUE_GLYPH_INITIAL_WORK_UNITS);
-        match self.render_text_draw_message_characters_slice(work_units) {
-            DialogueCharacterSliceResult::Returned => {
-                self.finish_dialogue_character_render_call();
-            }
-            DialogueCharacterSliceResult::YieldedToNmi => {
-                self.begin_rom_dialogue_character_work();
-            }
-        }
-    }
-
-    pub(super) fn continue_rom_dialogue_character_work(&mut self, work_units: u8) -> bool {
-        if self.render_text_draw_message_characters_slice(Some(work_units))
-            == DialogueCharacterSliceResult::Returned
-        {
-            self.finish_dialogue_character_render_call();
-            self.complete_module0e_interface_after_run();
-            self.nmi_prepare_sprites();
-            self.clear_nmi_update_latch();
-            true
-        } else {
-            false
-        }
+        // The ROM's RenderText_Draw_MessageCharacters runs the complete
+        // command/glyph step in the caller, then unconditionally publishes
+        // the VWF update through NMI.  In particular, its opening attract
+        // text path does not split a glyph across synthetic host work slices.
+        // Keeping that artificial budget delayed the first story glyph by one
+        // display boundary, leaving the Triforce caption partially absent.
+        self.render_text_draw_message_characters();
+        self.finish_dialogue_character_render_call();
     }
 
     fn finish_dialogue_character_render_call(&mut self) {
@@ -3208,30 +3185,7 @@ impl ZeldaState {
         self.set_core_update_disable_flag(2);
     }
 
-    fn current_dialogue_glyph_work_units(&self, character: u8) -> u8 {
-        let width = self
-            .asset_memblk(95, self.dialogue_font_blk_index)
-            .and_then(|font| {
-                find_index_in_memblk(font, 1)
-                    .ptr
-                    .get(character as usize)
-                    .copied()
-            })
-            .unwrap_or(0);
-        let glyph_cursor = if self.game_state.messaging.vwf_render.next_line_requested() != 0 {
-            let line = (self.game_state.messaging.vwf_render.current_line() >> 1) as usize;
-            usize::from(VWF_RENDER_CHARACTER_LINE_POSITIONS[line])
-        } else {
-            self.game_state.messaging.vwf_render.glyph_cursor_usize()
-        };
-        let pixel_position = self.vwf_glyph_advance_prefix_sum(glyph_cursor);
-        rom_dialogue_glyph_work_units(width, pixel_position)
-    }
-
-    fn render_text_draw_message_characters_slice(
-        &mut self,
-        mut work_units: Option<u8>,
-    ) -> DialogueCharacterSliceResult {
+    fn render_text_draw_message_characters(&mut self) {
         loop {
             let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos() as usize;
             let c = self.game_state.messaging.decoded_text.byte(read_pos);
@@ -3246,15 +3200,6 @@ impl ZeldaState {
                     if self.game_state.messaging.runtime.vwf_line_speed_cur() >= 2 {
                         self.messaging_state_mut().decrement_vwf_line_speed_cur();
                     } else {
-                        if self.game_state.messaging.runtime.vwf_line_speed_cur() == 0 {
-                            if let Some(remaining) = work_units.as_mut() {
-                                let glyph_work = self.current_dialogue_glyph_work_units(param);
-                                if glyph_work > *remaining {
-                                    return DialogueCharacterSliceResult::YieldedToNmi;
-                                }
-                                *remaining -= glyph_work;
-                            }
-                        }
                         self.VWF_RenderSingle(param as i32, read_pos as u16);
                         command_done = true;
                         restart_if_zero_speed =
@@ -3344,7 +3289,6 @@ impl ZeldaState {
                 break;
             }
         }
-        DialogueCharacterSliceResult::Returned
     }
 
     pub(super) fn RenderText_Draw_Finish(&mut self) {
@@ -3627,15 +3571,8 @@ impl ZeldaState {
 
     pub(super) fn RenderText_Draw_Scroll(&mut self) -> bool {
         let scroll_speed = self.game_state.messaging.runtime.dialogue_scroll_speed();
-        if self.rom_startup_timing() && rom_dialogue_scroll_requires_resumption(scroll_speed) {
-            let pixels = self.begin_rom_dialogue_scroll_work();
-            let complete = self.render_text_scroll_pixels(u16::from(pixels));
-            if complete {
-                self.finish_pending_rom_work();
-            }
-            return complete;
-        }
-
+        // Matches the ROM's single caller: RenderText_Draw_Scroll completes
+        // all `scroll_speed + 1` pixel passes before returning.
         let pixels = u16::from(scroll_speed) + 1;
         self.render_text_scroll_pixels(pixels)
     }
@@ -3672,22 +3609,6 @@ impl ZeldaState {
             }
         }
         false
-    }
-
-    pub(super) fn complete_rom_dialogue_scroll_work(&mut self) {
-        let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos();
-        self.messaging_state_mut()
-            .set_dialogue_msg_read_pos(read_pos.wrapping_add(1));
-        self.publish_rom_dialogue_scroll_batch();
-    }
-
-    pub(super) fn publish_rom_dialogue_scroll_batch(&mut self) {
-        self.set_pending_nmi_subroutine(2);
-        self.set_core_update_disable_flag(2);
-        // A five-pixel batch resumes outside the normal game-loop epilogue.
-        // Its BG3 packet is ready for this boundary, so release the latch here
-        // instead of delaying publication until all 16 scroll pixels finish.
-        self.clear_nmi_update_latch();
     }
 
     pub(super) fn RenderText_SetDefaultWindowPosition(&mut self) {

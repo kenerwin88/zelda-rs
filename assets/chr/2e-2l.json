@@ -2191,7 +2191,7 @@
   ],
   "sheet": "2e-2l",
   "source": {
-    "asset_dir": "../generated/zelda3_assets",
+    "asset_dir": "generated/zelda3_assets",
     "kind": "rom_extracted_assets"
   }
 }

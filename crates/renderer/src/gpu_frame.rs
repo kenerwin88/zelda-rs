@@ -33,6 +33,11 @@ pub type RawScanlineFrame = [RawScanlineRegs; 224];
 /// Constructed by the caller each frame; zero copy of VRAM/OAM/CGRAM.
 #[derive(Clone)]
 pub struct GpuFrame<'a> {
+    /// Deterministic, ROM-observed hardware startup pixels that become visible
+    /// before the game has published any authored asset state.  This is a
+    /// semantic input to the modern renderer; it is never written into PPU
+    /// VRAM, OAM, or CGRAM.
+    pub hardware_startup_transient: Option<HardwareStartupTransient>,
     /// VRAM: 0x8000 u16 words (64 KB). Tile CHR data and tilemap entries.
     pub vram: &'a [u16],
     /// CGRAM: 0x100 u16 words (256 palette entries), 15-bit BGR each.
@@ -116,6 +121,27 @@ pub struct GpuFrame<'a> {
     pub cgram_provenance: Option<&'a zelda3_palette::CgramProvenanceSnapshot>,
 }
 
+/// A generated 8×8 direct-color cell emitted by the startup hardware model.
+/// Alpha zero is transparent. This deliberately bypasses CGRAM: Snes9x's
+/// visible reset residue is a hardware power-on color, not game palette data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HardwareStartupDirectPixel {
+    pub screen_x: i16,
+    pub screen_y: i16,
+    pub rgba: [u8; 4],
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HardwareStartupTransient {
+    pub rgba: [[u8; 4]; 64],
+    /// Native screen origins for each occurrence of this generated cell.
+    pub origins: [(i16, i16); 2],
+    /// PNG/asset-derived direct pixels for semantic boot images such as the
+    /// Nintendo Presents card. These bypass the PPU but use the same modern
+    /// software/GPU final material path as the startup residue above.
+    pub direct_pixels: Vec<HardwareStartupDirectPixel>,
+}
+
 /// Raw register/slice snapshot used to construct a [`GpuFrame`] without tying
 /// the renderer crate to an emulator-state type.
 #[derive(Clone, Copy)]
@@ -146,6 +172,7 @@ pub struct GpuFrameRegisterSnapshot<'a> {
 }
 
 pub struct GpuFrameCaptureInput<'a> {
+    pub hardware_startup_transient: Option<HardwareStartupTransient>,
     pub registers: GpuFrameRegisterSnapshot<'a>,
     pub cgram: &'a [u16],
     pub raw_scanlines: &'a RawScanlineFrame,
@@ -214,6 +241,7 @@ impl<'a> GpuFrame<'a> {
     pub fn from_capture_input(input: GpuFrameCaptureInput<'a>) -> Self {
         let registers = input.registers;
         Self {
+            hardware_startup_transient: input.hardware_startup_transient,
             vram: registers.vram,
             cgram: input.cgram,
             oam: registers.oam,
@@ -283,6 +311,7 @@ impl<'a> GpuFrame<'a> {
         S: GpuFrameSource<'a> + ?Sized,
     {
         Self {
+            hardware_startup_transient: None,
             vram: source.vram(),
             cgram,
             oam: source.oam(),
@@ -738,6 +767,7 @@ mod tests {
         };
 
         let frame = GpuFrame::from_capture_input(GpuFrameCaptureInput {
+            hardware_startup_transient: None,
             registers,
             cgram: &cgram,
             raw_scanlines: &raw,

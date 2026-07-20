@@ -607,6 +607,57 @@ pub fn render_modern_frame_software(
     out
 }
 
+/// Composite direct-color power-on residue after normal composition. This is
+/// intentionally not a palette, sprite, or PPU path: it is the semantic
+/// representation of Snes9x's visible startup hardware state.
+fn apply_hardware_startup_transient(
+    out: &mut [u8],
+    frame: &ModernFrame,
+    out_width: usize,
+    scale: usize,
+) {
+    let Some(transient) = frame.hardware_startup_transient.as_ref() else {
+        return;
+    };
+    for (origin_x, origin_y) in transient.origins {
+        for (cell_index, rgba) in transient.rgba.iter().enumerate() {
+            if rgba[3] == 0 {
+                continue;
+            }
+            let x = isize::from(origin_x) + (cell_index % 8) as isize;
+            let y = isize::from(origin_y) + (cell_index / 8) as isize;
+            if x < 0 || y < 0 || x >= frame.width as isize || y >= frame.height as isize {
+                continue;
+            }
+            for dy in 0..scale {
+                for dx in 0..scale {
+                    let offset = ((y as usize * scale + dy) * out_width + x as usize * scale + dx) * 4;
+                    out[offset..offset + 4].copy_from_slice(rgba);
+                }
+            }
+        }
+    }
+    for pixel in &transient.direct_pixels {
+        if pixel.rgba[3] == 0
+            || pixel.screen_x < 0
+            || pixel.screen_y < 0
+            || pixel.screen_x >= frame.width as i16
+            || pixel.screen_y >= frame.height as i16
+        {
+            continue;
+        }
+        for dy in 0..scale {
+            for dx in 0..scale {
+                let offset = ((pixel.screen_y as usize * scale + dy) * out_width
+                    + pixel.screen_x as usize * scale
+                    + dx)
+                    * 4;
+                out[offset..offset + 4].copy_from_slice(&pixel.rgba);
+            }
+        }
+    }
+}
+
 /// Render a `ModernFrame` using the palette-index atlas + live CGRAM.
 ///
 /// For each enabled BG layer, each `index_tiles` instance is drawn: for each
@@ -1590,6 +1641,11 @@ fn expand_5bit(c5: i32) -> u8 {
     (c << 3) | (c >> 2)
 }
 
+#[cfg(test)]
+fn expand_brightness(c5: i32, brightness: u8) -> u8 {
+    expand_5bit(scale_brightness5(c5, brightness))
+}
+
 /// Decode a CGWSEL clip/math-mode bit, byte-exact with `post_process.wgsl::cw_bit`.
 ///
 /// `mode` 0=always 1 (never clip / always math), 1=follows window, 2=inverted,
@@ -2005,6 +2061,7 @@ fn finalize_frame(
         });
     }
 
+    apply_hardware_startup_transient(&mut out, frame, out_width, scale);
     out
 }
 

@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
+use sha1::{Digest, Sha1};
+
 const FORMAT_BYTE_TILEMAP: &str = "zelda3_byte_tilemap_v1";
 const FORMAT_BYTE_STREAM_TILEMAP: &str = "zelda3_byte_stream_tilemap_v1";
 const FORMAT_SNES_PALETTE: &str = "zelda3_snes_palette_v1";
@@ -458,8 +460,9 @@ fn main() {
             .display()
     );
 
+    let source_rom = find_rom(repo_root);
     if !asset_dir.is_dir() || !generated_dir.join(SPC_DRIVER_TIMING_FILE).is_file() {
-        let Some(rom) = find_rom(repo_root) else {
+        let Some(rom) = source_rom.as_deref() else {
             panic!(
                 "missing generated assets at {}\n\
                  Provide a USA Zelda 3 ROM and run:\n\
@@ -774,7 +777,9 @@ fn read_asset(
         return read_dialogue_asset(generated_dir);
     }
     if name == "kSprGfx" || name == "kBgGfx" {
-        return read_chr_gfx_asset(generated_dir, name);
+        let asset = read_chr_gfx_asset(generated_dir, name);
+        verify_source_asset_matches_manifest(&asset, manifest_asset, name);
+        return asset;
     }
     if let (Some(source_format), Some(source_file)) = (
         manifest_asset
@@ -784,11 +789,15 @@ fn read_asset(
             .get("source_file")
             .and_then(serde_json::Value::as_str),
     ) {
-        return read_source_asset(generated_dir, source_format, source_file, name);
+        let asset = read_source_asset(generated_dir, source_format, source_file, name);
+        verify_source_asset_matches_manifest(&asset, manifest_asset, name);
+        return asset;
     }
     if let Some((source_format, source_file)) = known_source(name) {
         if resolve_source_path(generated_dir, source_file).is_file() {
-            return read_source_asset(generated_dir, source_format, source_file, name);
+            let asset = read_source_asset(generated_dir, source_format, source_file, name);
+            verify_source_asset_matches_manifest(&asset, manifest_asset, name);
+            return asset;
         }
     }
 
@@ -809,6 +818,34 @@ fn read_asset(
             }
         }
     }
+}
+
+/// Readable sources are the no-ROM runtime authority, but their bytes must
+/// remain exactly equal to the ROM-derived extraction manifest for a parity
+/// build. This makes a stale or manually edited palette fail at build time.
+fn verify_source_asset_matches_manifest(
+    asset: &[u8],
+    manifest_asset: &serde_json::Value,
+    name: &str,
+) {
+    let expected_size = manifest_asset
+        .get("size")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or_else(|| panic!("manifest asset {name} missing size")) as usize;
+    assert_eq!(
+        asset.len(),
+        expected_size,
+        "readable source for {name} has changed size from its ROM-derived extraction"
+    );
+    let expected_sha1 = manifest_asset
+        .get("sha1")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_else(|| panic!("manifest asset {name} missing sha1"));
+    let actual_sha1 = format!("{:x}", Sha1::digest(asset));
+    assert_eq!(
+        actual_sha1, expected_sha1,
+        "readable source for {name} differs from its ROM-derived extraction"
+    );
 }
 
 fn known_source(name: &str) -> Option<(&'static str, &'static str)> {

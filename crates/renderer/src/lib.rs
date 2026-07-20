@@ -2823,8 +2823,26 @@ impl FrameRenderer {
         frame: &GpuFrame<'_>,
         src_table: Option<&S>,
         resources: &ModernAssetFrameResources,
-        scene: ModernAssetFrameScene,
+        _scene: ModernAssetFrameScene,
     ) -> Result<ModernAssetFramePresentResult, RenderError> {
+        // Reset/startup material is an explicit modern-frame input, not Mode-7
+        // game art.  The dedicated Mode-7 route uploads its own CPU result and
+        // therefore cannot carry this material through its finalizer.  Route
+        // it through the normal source compositor instead, which is the same
+        // GPU finalizer used by every other source-backed frame.
+        if frame.hardware_startup_transient.is_some() {
+            self.present_modern_source_gpu_from_sources(
+                frame,
+                src_table.expect("startup material requires source table"),
+                resources
+                    .source_atlas()
+                    .expect("startup material requires source atlas"),
+            )?;
+            return Ok(ModernAssetFramePresentResult::Presented {
+                via: "source-gpu-startup-material",
+                variant_stats: None,
+            });
+        }
         let mode7_source_chars = resources.mode7_source_chars();
         match modern_asset_frame_present_route(
             frame.mode,
@@ -2847,27 +2865,20 @@ impl FrameRenderer {
                 })
             }
             ModernAssetFramePresentRoute::SourceVariantGpu => {
-                let render = self.present_modern_variant_gpu_from_sources(
+                self.present_modern_source_gpu_from_sources(
                     frame,
                     src_table.expect("route requires source table"),
                     resources
                         .source_atlas()
                         .expect("route requires source atlas"),
-                    resources
-                        .variant_atlas()
-                        .expect("route requires variant atlas"),
-                    scene.bg_palette_name(),
-                    scene.sprite_palette_name(),
                 )?;
-                if !render.rendered {
-                    return Ok(ModernAssetFramePresentResult::Unsupported {
-                        via: "variant-gpu",
-                        variant_stats: Some(render.stats),
-                    });
-                }
                 Ok(ModernAssetFramePresentResult::Presented {
-                    via: "variant-gpu",
-                    variant_stats: Some(render.stats),
+                    // Native window and oracle readback deliberately share
+                    // this source-resolved compositor. Variant planning remains
+                    // authoring/diagnostic-only until it can prove identical
+                    // output for every live frame.
+                    via: "source-gpu",
+                    variant_stats: None,
                 })
             }
             ModernAssetFramePresentRoute::Unhandled => Ok(ModernAssetFramePresentResult::Unhandled),
@@ -2889,6 +2900,24 @@ impl FrameRenderer {
             result,
             in_dungeon: scene.in_dungeon(),
         })
+    }
+
+    /// Present the semantic source atlas through the production GPU compositor.
+    /// This is the single live route used both by the native window and by
+    /// oracle readback; it does not decode a classic PPU frame or use a
+    /// variant/fallback renderer.
+    fn present_modern_source_gpu_from_sources<S: modern_extract::SourceTableView + ?Sized>(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        src_table: &S,
+        atlas: &modern_source_atlas::ModernSourceAtlas,
+    ) -> Result<(), RenderError> {
+        let (mut modern, bg_cells) =
+            modern_extract::extract_modern_frame_from_sources(frame, src_table, atlas);
+        let (sprite_cells, sprites) =
+            modern_extract::extract_modern_sprites_from_sources(frame, src_table, atlas);
+        modern.index_sprites = sprites;
+        self.present_modern_gpu(&modern, &bg_cells, &sprite_cells)
     }
 
     /// Diagnostic GPU present of the indexed source-atlas path
@@ -3511,6 +3540,7 @@ mod tests {
         let cgram = vec![0u16; 0x100];
         let oam = vec![0u16; 0x110];
         let frame = GpuFrame {
+            hardware_startup_transient: None,
             vram: &vram,
             cgram: &cgram,
             oam: &oam,
@@ -3574,6 +3604,7 @@ mod tests {
         let cgram = vec![0u16; 0x100];
         let oam = vec![0u16; 0x110];
         let frame = GpuFrame {
+            hardware_startup_transient: None,
             vram: &vram,
             cgram: &cgram,
             oam: &oam,

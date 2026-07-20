@@ -480,9 +480,6 @@ impl ZeldaState {
         self.follower_link_state_mut().set_filtered_joypad_l(0);
         self.follower_link_state_mut().set_filtered_joypad_h(0);
         self.RenderText();
-        if self.rom_dialogue_scroll_is_pending() {
-            return;
-        }
         self.tick_attract_timed_text_priority();
     }
 
@@ -491,16 +488,6 @@ impl ZeldaState {
         if priority != 0 {
             self.oam_state_mut()
                 .set_priority_word(priority.wrapping_sub(1));
-        }
-    }
-
-    pub(super) fn resume_rom_dialogue_scroll_caller(&mut self) {
-        let attract = self.game_state.ending.attract_scene;
-        if self.game_state.frame.main_module == 20
-            && matches!(attract.state(), 5 | 8)
-            && matches!(attract.sequence(), 2..=4)
-        {
-            self.tick_attract_timed_text_priority();
         }
     }
 

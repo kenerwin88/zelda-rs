@@ -1496,6 +1496,20 @@ pub(crate) fn load_play_state(rom_path: &str) -> ZeldaState {
     load_game_state(rom_path, true)
 }
 
+/// Load the one playable default from the embedded extracted asset pack.
+pub(crate) fn load_default_play_state() -> ZeldaState {
+    let mut game = ZeldaState::new();
+    game.set_rom_startup_timing(true);
+    apply_startup_audio_phase_override(&mut game);
+    if let Err(e) = game.set_assets(EMBEDDED_ASSETS) {
+        eprintln!("fatal: failed to load embedded extracted asset pack: {e}");
+        process::exit(1);
+    }
+    configure_game_runtime_defaults(&mut game);
+    game.zelda_read_sram();
+    game
+}
+
 pub(crate) fn load_embedded_play_state() -> ZeldaState {
     let mut game = ZeldaState::new();
     game.set_rom_startup_timing(true);

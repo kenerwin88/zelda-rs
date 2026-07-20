@@ -14,7 +14,7 @@ use crate::input_script::InputScript;
 use crate::live_input_recording::LiveInputRecording;
 use crate::{
     apply_sram_to_game_or_exit, captured_panic_from, developer_destinations,
-    install_crash_panic_hook, load_embedded_play_state, load_play_state, play_renderer,
+    install_crash_panic_hook, load_default_play_state, load_play_state, play_renderer,
     read_file_or_exit, select_run_what, write_play_crash_report, TRACE_FILTERED_JOYPAD_H,
     TRACE_FILTERED_JOYPAD_L, TRACE_JOYPAD1H_LAST, TRACE_JOYPAD1L_LAST, TRACE_MAIN_MODULE_INDEX,
     TRACE_SELECTFILE_ARR2_1, TRACE_SELECTFILE_VAR10, TRACE_SELECTFILE_VAR11, TRACE_SELECTFILE_VAR3,
@@ -137,7 +137,7 @@ pub(crate) fn run_frontend_smoke(args: &[String]) {
         .rom_path
         .as_deref()
         .map(load_play_state)
-        .unwrap_or_else(load_embedded_play_state);
+        .unwrap_or_else(load_default_play_state);
     if let Some(path) = options.load_sram.as_deref() {
         let sram = read_file_or_exit(Path::new(path), "SRAM");
         apply_sram_to_game_or_exit(&mut game, Path::new(path), &sram);
@@ -256,7 +256,7 @@ pub(crate) fn run_play(rom_path: &str) {
 }
 
 pub(crate) fn run_standalone_play() {
-    run_play_with_state(load_embedded_play_state());
+    run_play_with_state(load_default_play_state());
 }
 
 fn run_play_with_state(mut game: ZeldaState) {

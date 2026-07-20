@@ -1059,6 +1059,7 @@ pub(crate) fn fill_modern_cgram_colors(
 /// BG layer tile extraction will be added in a subsequent task.
 pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
     let mut modern = ModernFrame::empty();
+    modern.hardware_startup_transient = frame.hardware_startup_transient.clone();
     modern.cgram_provenance = frame.cgram_provenance.cloned();
     if forbid_live_cgram_compare_enabled() {
         if let Some(snapshot) = frame.cgram_provenance {
@@ -4327,6 +4328,7 @@ mod tests {
         forced_blank: bool,
     ) -> GpuFrame<'a> {
         GpuFrame {
+            hardware_startup_transient: None,
             vram,
             cgram,
             oam,

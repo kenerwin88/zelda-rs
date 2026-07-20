@@ -4,503 +4,6 @@
 format = "zelda3_chr_sha1_lock_v1"
 
 [[block]]
-sheet = "2m-2q"
-block = "2m-2q.DAT1"
-source_kind = "sprite"
-source_pack = 0
-indices_sha1 = "93ae96cf2ae147346ac0e7542d926f5629a4462b"
-
-[[block]]
-sheet = "2r-2w"
-block = "2r-2w.DAT1"
-source_kind = "sprite"
-source_pack = 1
-indices_sha1 = "34b5d1b9bf69e3a253b7589abc364a3f0280cfbc"
-
-[[block]]
-sheet = "2r-2w"
-block = "2r-2w.DAT2"
-source_kind = "sprite"
-source_pack = 2
-indices_sha1 = "53564dec358be1b6bf3914951df7433a6fd1700e"
-
-[[block]]
-sheet = "2r-2w"
-block = "2r-2w.DAT3"
-source_kind = "sprite"
-source_pack = 3
-indices_sha1 = "2daf290acda1701c8e7d3704a0d91116851de85a"
-
-[[block]]
-sheet = "2r-2w"
-block = "2r-2w.DAT4"
-source_kind = "sprite"
-source_pack = 4
-indices_sha1 = "83ee36d4139df11309a671e1075d302c6e03d4cc"
-
-[[block]]
-sheet = "2r-2w"
-block = "2r-2w.DAT5"
-source_kind = "sprite"
-source_pack = 5
-indices_sha1 = "808a9ae4889bd237ed27645a33c6037a8d0e352b"
-
-[[block]]
-sheet = "2r-2w"
-block = "2r-2w.DAT6"
-source_kind = "sprite"
-source_pack = 6
-indices_sha1 = "c23dca979acefe5be6c1324900d2bc2232fab1c5"
-
-[[block]]
-sheet = "2r-2w"
-block = "2r-2w.DAT7"
-source_kind = "sprite"
-source_pack = 7
-indices_sha1 = "78ece1ea13bc44927e707461955a77bf088f2654"
-
-[[block]]
-sheet = "2r-2w"
-block = "2r-2w.DAT8"
-source_kind = "sprite"
-source_pack = 8
-indices_sha1 = "5b20c6b511b75ecfa4af1338fb2c4b2239988de1"
-
-[[block]]
-sheet = "2r-2w"
-block = "2r-2w.DAT9"
-source_kind = "sprite"
-source_pack = 9
-indices_sha1 = "63f291a4b80678075b6e9bbb3071a69bc9e10b96"
-
-[[block]]
-sheet = "2r-2w"
-block = "2r-2w.DAT10"
-source_kind = "sprite"
-source_pack = 10
-indices_sha1 = "9a6f45abc57532f9c4cf78bdb2a700763c78559c"
-
-[[block]]
-sheet = "2r-2w"
-block = "2r-2w.DAT11"
-source_kind = "sprite"
-source_pack = 11
-indices_sha1 = "e9e8a9b9b17b3c0a9d8a10721508a5ec7215d657"
-
-[[block]]
-sheet = "2r-2w"
-block = "2r-2w.DAT12"
-source_kind = "sprite"
-source_pack = 12
-indices_sha1 = "683af7193660b6b42b3c650019fb39b03a5a818d"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT1N"
-source_kind = "sprite"
-source_pack = 13
-indices_sha1 = "695503e1a1cbf7fdc69738f7445012ea51439230"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT2N"
-source_kind = "sprite"
-source_pack = 14
-indices_sha1 = "10a6858864d58c3b40ed66088e14c1ccfa83a27b"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT3N"
-source_kind = "sprite"
-source_pack = 15
-indices_sha1 = "2e6a3613c957c8b146dbf230d66d0b09cc194fd2"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT4N"
-source_kind = "sprite"
-source_pack = 16
-indices_sha1 = "df3d1d47c326b803dbd021f908ac76615ac7caf0"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT5N"
-source_kind = "sprite"
-source_pack = 17
-indices_sha1 = "abf30a8d6bcdb4a883ccc1c86b3c0b1246e621db"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT6N"
-source_kind = "sprite"
-source_pack = 18
-indices_sha1 = "6a0c99e751f278ab703f97fdf086d6603c4cdf98"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT7N"
-source_kind = "sprite"
-source_pack = 19
-indices_sha1 = "68307398f51d7e3635402cc02bf36fd69ded8e81"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT8N"
-source_kind = "sprite"
-source_pack = 20
-indices_sha1 = "a53af93da0550b9a6f4fff77f64b86ea0611a154"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT9N"
-source_kind = "sprite"
-source_pack = 21
-indices_sha1 = "7d8f4954cd5069f9aaf1a7b2f15d8e2b2a95ca9d"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT10N"
-source_kind = "sprite"
-source_pack = 22
-indices_sha1 = "3a0258b1df34e2d1bb60b999c719e373cff1acba"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT11N"
-source_kind = "sprite"
-source_pack = 23
-indices_sha1 = "f8112007c5c26801650c1e8f1d0f81b32c345773"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT12N"
-source_kind = "sprite"
-source_pack = 24
-indices_sha1 = "dbcc323754b49d5f083646e35fcc14558221f673"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT13N"
-source_kind = "sprite"
-source_pack = 25
-indices_sha1 = "fa0d6665cbb05526e5833fadff4f6f8504e1b6d2"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT14N"
-source_kind = "sprite"
-source_pack = 26
-indices_sha1 = "ef6deb8830fbaf73aeb8391ff6e66fe1816f6972"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT15N"
-source_kind = "sprite"
-source_pack = 27
-indices_sha1 = "7090a8b56530a5a239a8a5ffd5eb9c5b95102b37"
-
-[[block]]
-sheet = "a-h"
-block = "a-h.DAT16N"
-source_kind = "sprite"
-source_pack = 28
-indices_sha1 = "a504245ab9f6579aa2729234ffbaf04309882751"
-
-[[block]]
-sheet = "i-p"
-block = "i-p.DAT1N"
-source_kind = "sprite"
-source_pack = 29
-indices_sha1 = "d622ba26dea84aeea772810d3bb2f53598613b28"
-
-[[block]]
-sheet = "i-p"
-block = "i-p.DAT2N"
-source_kind = "sprite"
-source_pack = 30
-indices_sha1 = "73ba876457ce127f388142fa05190e6e9e0f5730"
-
-[[block]]
-sheet = "i-p"
-block = "i-p.DAT3N"
-source_kind = "sprite"
-source_pack = 31
-indices_sha1 = "4e93a4cf675e33124e3524ae56b6ed9b311b5aca"
-
-[[block]]
-sheet = "i-p"
-block = "i-p.DAT5N"
-source_kind = "sprite"
-source_pack = 32
-indices_sha1 = "98a92f75e6103af55ce3cacbbfbceecbbb95fafc"
-
-[[block]]
-sheet = "i-p"
-block = "i-p.DAT6N"
-source_kind = "sprite"
-source_pack = 33
-indices_sha1 = "45f9af3630f08af6b5ec9bfaa2c75464814c537f"
-
-[[block]]
-sheet = "i-p"
-block = "i-p.DAT7N"
-source_kind = "sprite"
-source_pack = 34
-indices_sha1 = "2bee365e523f59e3784936335bed8090e6256012"
-
-[[block]]
-sheet = "i-p"
-block = "i-p.DAT9N"
-source_kind = "sprite"
-source_pack = 35
-indices_sha1 = "302a1c038e5b250952dfb40cbd7183614978b68a"
-
-[[block]]
-sheet = "i-p"
-block = "i-p.DAT10N"
-source_kind = "sprite"
-source_pack = 36
-indices_sha1 = "4f628d648dcbe3e4933984221448b67f4e1fe6c1"
-
-[[block]]
-sheet = "i-p"
-block = "i-p.DAT11N"
-source_kind = "sprite"
-source_pack = 37
-indices_sha1 = "b64c68e7bfbc006d64100a8e9399fea660fd28d4"
-
-[[block]]
-sheet = "i-p"
-block = "i-p.DAT12N"
-source_kind = "sprite"
-source_pack = 38
-indices_sha1 = "cc953116af9f4118d05902689e66e76091cfd1b3"
-
-[[block]]
-sheet = "i-p"
-block = "i-p.DAT13N"
-source_kind = "sprite"
-source_pack = 39
-indices_sha1 = "b0fca14311a445a9c3eeb2233af3db4059452c3e"
-
-[[block]]
-sheet = "i-p"
-block = "i-p.DAT14N"
-source_kind = "sprite"
-source_pack = 40
-indices_sha1 = "ecadbc40d8c67206a1b7e41b631befdc9862146d"
-
-[[block]]
-sheet = "i-p"
-block = "i-p.DAT15N"
-source_kind = "sprite"
-source_pack = 41
-indices_sha1 = "13ea77879d33e35d809af9f02dfd3a163ee0230d"
-
-[[block]]
-sheet = "q-x"
-block = "q-x.DAT3N"
-source_kind = "sprite"
-source_pack = 42
-indices_sha1 = "62bdc6caef1a3f0b1636e939d36d1268a53a09f8"
-
-[[block]]
-sheet = "q-x"
-block = "q-x.DAT4N"
-source_kind = "sprite"
-source_pack = 43
-indices_sha1 = "1ceaf73df40e531df3bfb26b4fb7cd95fb7bff1d"
-
-[[block]]
-sheet = "q-x"
-block = "q-x.DAT5N"
-source_kind = "sprite"
-source_pack = 44
-indices_sha1 = "defd9ee70dd85eed3ee1aa40139b5c049c318c3d"
-
-[[block]]
-sheet = "q-x"
-block = "q-x.DAT6N"
-source_kind = "sprite"
-source_pack = 45
-indices_sha1 = "e11efd5a539064570ca9d0eab94d3d7cc0eb5b3b"
-
-[[block]]
-sheet = "q-x"
-block = "q-x.DAT7N"
-source_kind = "sprite"
-source_pack = 46
-indices_sha1 = "ffb2b765f965303f2eda7d45632da97af37c4c10"
-
-[[block]]
-sheet = "q-x"
-block = "q-x.DAT8N"
-source_kind = "sprite"
-source_pack = 47
-indices_sha1 = "38a91d198249f28de81563fb3a43db02e50f6cd2"
-
-[[block]]
-sheet = "q-x"
-block = "q-x.DAT9N"
-source_kind = "sprite"
-source_pack = 48
-indices_sha1 = "2717e96ef8166c5f52c096f397e9f4c92d401e91"
-
-[[block]]
-sheet = "q-x"
-block = "q-x.DAT10N"
-source_kind = "sprite"
-source_pack = 49
-indices_sha1 = "7a1f7ce7434cffb2a3c20c33c723e2b50d156cac"
-
-[[block]]
-sheet = "q-x"
-block = "q-x.DAT11N"
-source_kind = "sprite"
-source_pack = 50
-indices_sha1 = "3332ba59b439fdbbac8e0baa362011294a8bf7b3"
-
-[[block]]
-sheet = "q-x"
-block = "q-x.DAT12N"
-source_kind = "sprite"
-source_pack = 51
-indices_sha1 = "46ac992755ce5e32793ba5a8cd67a85420cb5c5a"
-
-[[block]]
-sheet = "q-x"
-block = "q-x.DAT13N"
-source_kind = "sprite"
-source_pack = 52
-indices_sha1 = "aabe1b3c5ca26fb1cbdc6fd54fc36cf91d686ffe"
-
-[[block]]
-sheet = "q-x"
-block = "q-x.DAT14N"
-source_kind = "sprite"
-source_pack = 53
-indices_sha1 = "19807d6dab43781a717b5286bec9fc3bd75b9b7b"
-
-[[block]]
-sheet = "q-x"
-block = "q-x.DAT15N"
-source_kind = "sprite"
-source_pack = 54
-indices_sha1 = "3448b543634677aacd6dc42f8936bde31f7b713e"
-
-[[block]]
-sheet = "q-x"
-block = "q-x.DAT16N"
-source_kind = "sprite"
-source_pack = 55
-indices_sha1 = "ca67a1e684b022f35ffd78c85b6308e2a6ba8402"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT1N"
-source_kind = "sprite"
-source_pack = 56
-indices_sha1 = "6546b9ea52af7d517c637e546eed0a4ec454fa2b"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT2N"
-source_kind = "sprite"
-source_pack = 57
-indices_sha1 = "5c67f69c8b2ee8c77a0163aaa15855eedef0a94a"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT3N"
-source_kind = "sprite"
-source_pack = 58
-indices_sha1 = "032ce2854e91768dfd9d3c6c8aa9368f09ddd15e"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT4N"
-source_kind = "sprite"
-source_pack = 59
-indices_sha1 = "659ba413615fc1a33bfe871e33c2eeb4c1fc938d"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT5N"
-source_kind = "sprite"
-source_pack = 60
-indices_sha1 = "534a254a1eb7f3b4912f999f0b92d8e5be9cb358"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT6N"
-source_kind = "sprite"
-source_pack = 61
-indices_sha1 = "8c56d9ee14debb80609b6e6621fead2a27f24f15"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT7N"
-source_kind = "sprite"
-source_pack = 62
-indices_sha1 = "c67c9827f5209954704a898ee21304176ac6efab"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT8N"
-source_kind = "sprite"
-source_pack = 63
-indices_sha1 = "98c24bcd7dacc3e23f073aa5a5ffca0c1e2e5882"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT9N"
-source_kind = "sprite"
-source_pack = 64
-indices_sha1 = "ab8e9ed9ae10720a7996aa2cdcdce17b354b1009"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT10N"
-source_kind = "sprite"
-source_pack = 65
-indices_sha1 = "53cde7b91cd27484d573e22261ba8b992b891575"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT11N"
-source_kind = "sprite"
-source_pack = 66
-indices_sha1 = "b649a6f067c7752c80a09a0f7d115715cf834c61"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT12N"
-source_kind = "sprite"
-source_pack = 67
-indices_sha1 = "eb92cc738df8d58f59ae1b771bf7d485e005e5c7"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT13N"
-source_kind = "sprite"
-source_pack = 68
-indices_sha1 = "da7f22115fc2d8bc22c1ceb50a1ef2cf50f11c82"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT14N"
-source_kind = "sprite"
-source_pack = 69
-indices_sha1 = "4d49fc89175b0027f13aff4d3beed5affc3e1413"
-
-[[block]]
-sheet = "y-1f"
-block = "y-1f.DAT16N"
-source_kind = "sprite"
-source_pack = 70
-indices_sha1 = "c4140ba02b6d1495bf104b6e271fde228eff9fcb"
-
-[[block]]
 sheet = "1g-1n"
 block = "1g-1n.DAT1N"
 source_kind = "sprite"
@@ -884,6 +387,97 @@ block = "2e-2l.DAT16N"
 source_kind = "bg"
 source_pack = 17
 indices_sha1 = "3e085eeb57ace2a7b0e6c0f1c3e0b1cd7030066b"
+
+[[block]]
+sheet = "2m-2q"
+block = "2m-2q.DAT1"
+source_kind = "sprite"
+source_pack = 0
+indices_sha1 = "93ae96cf2ae147346ac0e7542d926f5629a4462b"
+
+[[block]]
+sheet = "2r-2w"
+block = "2r-2w.DAT1"
+source_kind = "sprite"
+source_pack = 1
+indices_sha1 = "34b5d1b9bf69e3a253b7589abc364a3f0280cfbc"
+
+[[block]]
+sheet = "2r-2w"
+block = "2r-2w.DAT2"
+source_kind = "sprite"
+source_pack = 2
+indices_sha1 = "53564dec358be1b6bf3914951df7433a6fd1700e"
+
+[[block]]
+sheet = "2r-2w"
+block = "2r-2w.DAT3"
+source_kind = "sprite"
+source_pack = 3
+indices_sha1 = "2daf290acda1701c8e7d3704a0d91116851de85a"
+
+[[block]]
+sheet = "2r-2w"
+block = "2r-2w.DAT4"
+source_kind = "sprite"
+source_pack = 4
+indices_sha1 = "83ee36d4139df11309a671e1075d302c6e03d4cc"
+
+[[block]]
+sheet = "2r-2w"
+block = "2r-2w.DAT5"
+source_kind = "sprite"
+source_pack = 5
+indices_sha1 = "808a9ae4889bd237ed27645a33c6037a8d0e352b"
+
+[[block]]
+sheet = "2r-2w"
+block = "2r-2w.DAT6"
+source_kind = "sprite"
+source_pack = 6
+indices_sha1 = "c23dca979acefe5be6c1324900d2bc2232fab1c5"
+
+[[block]]
+sheet = "2r-2w"
+block = "2r-2w.DAT7"
+source_kind = "sprite"
+source_pack = 7
+indices_sha1 = "78ece1ea13bc44927e707461955a77bf088f2654"
+
+[[block]]
+sheet = "2r-2w"
+block = "2r-2w.DAT8"
+source_kind = "sprite"
+source_pack = 8
+indices_sha1 = "5b20c6b511b75ecfa4af1338fb2c4b2239988de1"
+
+[[block]]
+sheet = "2r-2w"
+block = "2r-2w.DAT9"
+source_kind = "sprite"
+source_pack = 9
+indices_sha1 = "63f291a4b80678075b6e9bbb3071a69bc9e10b96"
+
+[[block]]
+sheet = "2r-2w"
+block = "2r-2w.DAT10"
+source_kind = "sprite"
+source_pack = 10
+indices_sha1 = "9a6f45abc57532f9c4cf78bdb2a700763c78559c"
+
+[[block]]
+sheet = "2r-2w"
+block = "2r-2w.DAT11"
+source_kind = "sprite"
+source_pack = 11
+indices_sha1 = "e9e8a9b9b17b3c0a9d8a10721508a5ec7215d657"
+
+[[block]]
+sheet = "2r-2w"
+block = "2r-2w.DAT12"
+source_kind = "sprite"
+source_pack = 12
+indices_sha1 = "683af7193660b6b42b3c650019fb39b03a5a818d"
 
 [[block]]
 sheet = "2x-3b"
@@ -1556,3 +1150,409 @@ block = "4t-4x.DAT5N"
 source_kind = "bg"
 source_pack = 113
 indices_sha1 = "d3b1e7a8f9543acc21caec7e9a038b7a05b01303"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT1N"
+source_kind = "sprite"
+source_pack = 13
+indices_sha1 = "695503e1a1cbf7fdc69738f7445012ea51439230"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT2N"
+source_kind = "sprite"
+source_pack = 14
+indices_sha1 = "10a6858864d58c3b40ed66088e14c1ccfa83a27b"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT3N"
+source_kind = "sprite"
+source_pack = 15
+indices_sha1 = "2e6a3613c957c8b146dbf230d66d0b09cc194fd2"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT4N"
+source_kind = "sprite"
+source_pack = 16
+indices_sha1 = "df3d1d47c326b803dbd021f908ac76615ac7caf0"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT5N"
+source_kind = "sprite"
+source_pack = 17
+indices_sha1 = "abf30a8d6bcdb4a883ccc1c86b3c0b1246e621db"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT6N"
+source_kind = "sprite"
+source_pack = 18
+indices_sha1 = "6a0c99e751f278ab703f97fdf086d6603c4cdf98"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT7N"
+source_kind = "sprite"
+source_pack = 19
+indices_sha1 = "68307398f51d7e3635402cc02bf36fd69ded8e81"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT8N"
+source_kind = "sprite"
+source_pack = 20
+indices_sha1 = "a53af93da0550b9a6f4fff77f64b86ea0611a154"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT9N"
+source_kind = "sprite"
+source_pack = 21
+indices_sha1 = "7d8f4954cd5069f9aaf1a7b2f15d8e2b2a95ca9d"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT10N"
+source_kind = "sprite"
+source_pack = 22
+indices_sha1 = "3a0258b1df34e2d1bb60b999c719e373cff1acba"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT11N"
+source_kind = "sprite"
+source_pack = 23
+indices_sha1 = "f8112007c5c26801650c1e8f1d0f81b32c345773"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT12N"
+source_kind = "sprite"
+source_pack = 24
+indices_sha1 = "dbcc323754b49d5f083646e35fcc14558221f673"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT13N"
+source_kind = "sprite"
+source_pack = 25
+indices_sha1 = "fa0d6665cbb05526e5833fadff4f6f8504e1b6d2"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT14N"
+source_kind = "sprite"
+source_pack = 26
+indices_sha1 = "ef6deb8830fbaf73aeb8391ff6e66fe1816f6972"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT15N"
+source_kind = "sprite"
+source_pack = 27
+indices_sha1 = "7090a8b56530a5a239a8a5ffd5eb9c5b95102b37"
+
+[[block]]
+sheet = "a-h"
+block = "a-h.DAT16N"
+source_kind = "sprite"
+source_pack = 28
+indices_sha1 = "a504245ab9f6579aa2729234ffbaf04309882751"
+
+[[block]]
+sheet = "i-p"
+block = "i-p.DAT1N"
+source_kind = "sprite"
+source_pack = 29
+indices_sha1 = "d622ba26dea84aeea772810d3bb2f53598613b28"
+
+[[block]]
+sheet = "i-p"
+block = "i-p.DAT2N"
+source_kind = "sprite"
+source_pack = 30
+indices_sha1 = "73ba876457ce127f388142fa05190e6e9e0f5730"
+
+[[block]]
+sheet = "i-p"
+block = "i-p.DAT3N"
+source_kind = "sprite"
+source_pack = 31
+indices_sha1 = "4e93a4cf675e33124e3524ae56b6ed9b311b5aca"
+
+[[block]]
+sheet = "i-p"
+block = "i-p.DAT5N"
+source_kind = "sprite"
+source_pack = 32
+indices_sha1 = "98a92f75e6103af55ce3cacbbfbceecbbb95fafc"
+
+[[block]]
+sheet = "i-p"
+block = "i-p.DAT6N"
+source_kind = "sprite"
+source_pack = 33
+indices_sha1 = "45f9af3630f08af6b5ec9bfaa2c75464814c537f"
+
+[[block]]
+sheet = "i-p"
+block = "i-p.DAT7N"
+source_kind = "sprite"
+source_pack = 34
+indices_sha1 = "2bee365e523f59e3784936335bed8090e6256012"
+
+[[block]]
+sheet = "i-p"
+block = "i-p.DAT9N"
+source_kind = "sprite"
+source_pack = 35
+indices_sha1 = "302a1c038e5b250952dfb40cbd7183614978b68a"
+
+[[block]]
+sheet = "i-p"
+block = "i-p.DAT10N"
+source_kind = "sprite"
+source_pack = 36
+indices_sha1 = "4f628d648dcbe3e4933984221448b67f4e1fe6c1"
+
+[[block]]
+sheet = "i-p"
+block = "i-p.DAT11N"
+source_kind = "sprite"
+source_pack = 37
+indices_sha1 = "b64c68e7bfbc006d64100a8e9399fea660fd28d4"
+
+[[block]]
+sheet = "i-p"
+block = "i-p.DAT12N"
+source_kind = "sprite"
+source_pack = 38
+indices_sha1 = "cc953116af9f4118d05902689e66e76091cfd1b3"
+
+[[block]]
+sheet = "i-p"
+block = "i-p.DAT13N"
+source_kind = "sprite"
+source_pack = 39
+indices_sha1 = "b0fca14311a445a9c3eeb2233af3db4059452c3e"
+
+[[block]]
+sheet = "i-p"
+block = "i-p.DAT14N"
+source_kind = "sprite"
+source_pack = 40
+indices_sha1 = "ecadbc40d8c67206a1b7e41b631befdc9862146d"
+
+[[block]]
+sheet = "i-p"
+block = "i-p.DAT15N"
+source_kind = "sprite"
+source_pack = 41
+indices_sha1 = "13ea77879d33e35d809af9f02dfd3a163ee0230d"
+
+[[block]]
+sheet = "q-x"
+block = "q-x.DAT3N"
+source_kind = "sprite"
+source_pack = 42
+indices_sha1 = "62bdc6caef1a3f0b1636e939d36d1268a53a09f8"
+
+[[block]]
+sheet = "q-x"
+block = "q-x.DAT4N"
+source_kind = "sprite"
+source_pack = 43
+indices_sha1 = "1ceaf73df40e531df3bfb26b4fb7cd95fb7bff1d"
+
+[[block]]
+sheet = "q-x"
+block = "q-x.DAT5N"
+source_kind = "sprite"
+source_pack = 44
+indices_sha1 = "defd9ee70dd85eed3ee1aa40139b5c049c318c3d"
+
+[[block]]
+sheet = "q-x"
+block = "q-x.DAT6N"
+source_kind = "sprite"
+source_pack = 45
+indices_sha1 = "e11efd5a539064570ca9d0eab94d3d7cc0eb5b3b"
+
+[[block]]
+sheet = "q-x"
+block = "q-x.DAT7N"
+source_kind = "sprite"
+source_pack = 46
+indices_sha1 = "ffb2b765f965303f2eda7d45632da97af37c4c10"
+
+[[block]]
+sheet = "q-x"
+block = "q-x.DAT8N"
+source_kind = "sprite"
+source_pack = 47
+indices_sha1 = "38a91d198249f28de81563fb3a43db02e50f6cd2"
+
+[[block]]
+sheet = "q-x"
+block = "q-x.DAT9N"
+source_kind = "sprite"
+source_pack = 48
+indices_sha1 = "2717e96ef8166c5f52c096f397e9f4c92d401e91"
+
+[[block]]
+sheet = "q-x"
+block = "q-x.DAT10N"
+source_kind = "sprite"
+source_pack = 49
+indices_sha1 = "7a1f7ce7434cffb2a3c20c33c723e2b50d156cac"
+
+[[block]]
+sheet = "q-x"
+block = "q-x.DAT11N"
+source_kind = "sprite"
+source_pack = 50
+indices_sha1 = "3332ba59b439fdbbac8e0baa362011294a8bf7b3"
+
+[[block]]
+sheet = "q-x"
+block = "q-x.DAT12N"
+source_kind = "sprite"
+source_pack = 51
+indices_sha1 = "46ac992755ce5e32793ba5a8cd67a85420cb5c5a"
+
+[[block]]
+sheet = "q-x"
+block = "q-x.DAT13N"
+source_kind = "sprite"
+source_pack = 52
+indices_sha1 = "aabe1b3c5ca26fb1cbdc6fd54fc36cf91d686ffe"
+
+[[block]]
+sheet = "q-x"
+block = "q-x.DAT14N"
+source_kind = "sprite"
+source_pack = 53
+indices_sha1 = "19807d6dab43781a717b5286bec9fc3bd75b9b7b"
+
+[[block]]
+sheet = "q-x"
+block = "q-x.DAT15N"
+source_kind = "sprite"
+source_pack = 54
+indices_sha1 = "3448b543634677aacd6dc42f8936bde31f7b713e"
+
+[[block]]
+sheet = "q-x"
+block = "q-x.DAT16N"
+source_kind = "sprite"
+source_pack = 55
+indices_sha1 = "ca67a1e684b022f35ffd78c85b6308e2a6ba8402"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT1N"
+source_kind = "sprite"
+source_pack = 56
+indices_sha1 = "6546b9ea52af7d517c637e546eed0a4ec454fa2b"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT2N"
+source_kind = "sprite"
+source_pack = 57
+indices_sha1 = "5c67f69c8b2ee8c77a0163aaa15855eedef0a94a"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT3N"
+source_kind = "sprite"
+source_pack = 58
+indices_sha1 = "032ce2854e91768dfd9d3c6c8aa9368f09ddd15e"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT4N"
+source_kind = "sprite"
+source_pack = 59
+indices_sha1 = "659ba413615fc1a33bfe871e33c2eeb4c1fc938d"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT5N"
+source_kind = "sprite"
+source_pack = 60
+indices_sha1 = "534a254a1eb7f3b4912f999f0b92d8e5be9cb358"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT6N"
+source_kind = "sprite"
+source_pack = 61
+indices_sha1 = "8c56d9ee14debb80609b6e6621fead2a27f24f15"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT7N"
+source_kind = "sprite"
+source_pack = 62
+indices_sha1 = "c67c9827f5209954704a898ee21304176ac6efab"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT8N"
+source_kind = "sprite"
+source_pack = 63
+indices_sha1 = "98c24bcd7dacc3e23f073aa5a5ffca0c1e2e5882"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT9N"
+source_kind = "sprite"
+source_pack = 64
+indices_sha1 = "ab8e9ed9ae10720a7996aa2cdcdce17b354b1009"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT10N"
+source_kind = "sprite"
+source_pack = 65
+indices_sha1 = "53cde7b91cd27484d573e22261ba8b992b891575"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT11N"
+source_kind = "sprite"
+source_pack = 66
+indices_sha1 = "b649a6f067c7752c80a09a0f7d115715cf834c61"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT12N"
+source_kind = "sprite"
+source_pack = 67
+indices_sha1 = "eb92cc738df8d58f59ae1b771bf7d485e005e5c7"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT13N"
+source_kind = "sprite"
+source_pack = 68
+indices_sha1 = "da7f22115fc2d8bc22c1ceb50a1ef2cf50f11c82"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT14N"
+source_kind = "sprite"
+source_pack = 69
+indices_sha1 = "4d49fc89175b0027f13aff4d3beed5affc3e1413"
+
+[[block]]
+sheet = "y-1f"
+block = "y-1f.DAT16N"
+source_kind = "sprite"
+source_pack = 70
+indices_sha1 = "c4140ba02b6d1495bf104b6e271fde228eff9fcb"

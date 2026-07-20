@@ -232,6 +232,21 @@ impl ModernGpuVariantRenderer {
         output_view: &wgpu::TextureView,
         execution: &mut PreparedModernVariantExecution<'_, '_>,
     ) {
+        // Semantic boot materials are composited by the shared screen builder
+        // and finalizer. Variant-only presentation passes do not own that
+        // final material, so route these frames through the same live-index
+        // production compositor used by the oracle readback.
+        if execution.frame().hardware_startup_transient.is_some() {
+            let _ = self.compositor.render(
+                device,
+                queue,
+                execution.frame(),
+                execution.bg_cells(),
+                execution.sprite_cells(),
+                output_texture,
+            );
+            return;
+        }
         match execution.render_path() {
             ModernVariantRenderPath::EffectMaterialMode1Order => {
                 self.render_effect_material_mode1_order(device, queue, execution, output_view);
@@ -409,6 +424,7 @@ impl ModernGpuVariantRenderer {
         plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
     ) -> ModernFrame {
         let mut out = ModernFrame::empty();
+        out.hardware_startup_transient = frame.hardware_startup_transient.clone();
         out.backdrop_color_rgba = frame.backdrop_color_rgba;
         out.forced_blank = frame.forced_blank;
         out.forced_blank_scanlines = frame.forced_blank_scanlines;
@@ -12533,6 +12549,7 @@ mod tests {
         forced_blank: bool,
     ) -> crate::gpu_frame::GpuFrame<'a> {
         crate::gpu_frame::GpuFrame {
+            hardware_startup_transient: None,
             vram,
             cgram,
             oam,

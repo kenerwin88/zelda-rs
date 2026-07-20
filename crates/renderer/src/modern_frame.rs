@@ -18,6 +18,10 @@ pub struct ModernFrame {
     pub bg_layers: Vec<ModernBgLayer>,
     pub sprites: Vec<ModernSpriteInstance>,
     pub index_sprites: Vec<ModernIndexSpriteInstance>,
+    /// A short-lived direct-color cell emitted by the semantic hardware-startup
+    /// model. It is composited after the normal modern frame, because its color
+    /// is Snes9x power-on residue rather than a game CGRAM entry.
+    pub hardware_startup_transient: Option<crate::gpu_frame::HardwareStartupTransient>,
     pub bg3_vwf_glyph_runs: Vec<ModernVwfGlyphRun>,
     pub dialogue_message_id: Option<u16>,
     pub source_dialogue_ir: Vec<zelda3_dialogue::DialogueIrOp>,
@@ -108,6 +112,7 @@ impl ModernFrame {
             ],
             sprites: Vec::new(),
             index_sprites: Vec::new(),
+            hardware_startup_transient: None,
             bg3_vwf_glyph_runs: Vec::new(),
             dialogue_message_id: None,
             source_dialogue_ir: Vec::new(),

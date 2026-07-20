@@ -9,7 +9,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use crate::image_output::decode_rgba_png;
-use platform::NativeFrontend;
+use platform::{NativeFrontend, NativeFrontendOptions};
 use renderer::{GpuFrame, RawScanlineFrame};
 use serde::Deserialize;
 use snes::ppu::PpuRenderFlags;
@@ -42,6 +42,7 @@ const PLAYER_IS_INDOORS: usize = 0x001b;
 const MAIN_MODULE_INDEX: usize = 0x10;
 
 pub struct LiveGpuFrameCapture {
+    hardware_startup_transient: Option<renderer::gpu_frame::HardwareStartupTransient>,
     ppu: snes::ppu::PpuState,
     cgram: Vec<u16>,
     raw_scanlines: Box<RawScanlineFrame>,
@@ -88,6 +89,16 @@ pub(crate) struct ModernAssetGpuReadbackRenderer {
     validation_bg_extract_nanos: u128,
     validation_sprite_extract_nanos: u128,
     validation_stats_nanos: u128,
+}
+
+/// Snes9x oracle video renderer which exercises the same native window route
+/// as `cargo run`.  The readback comes from that window renderer's production
+/// compositor target after it has been presented to the surface; it is not an
+/// offscreen/headless substitute.
+pub(crate) struct NativeWindowOracleRenderer {
+    frontend: NativeFrontend,
+    resources: renderer::ModernAssetFrameResources,
+    live_stats: renderer::ModernAssetLiveStats,
 }
 
 impl LiveGpuFrameCapture {
@@ -195,6 +206,13 @@ impl LiveGpuFrameCapture {
         let player_indoors = game.ram[PLAYER_IS_INDOORS];
         let cgram_provenance = game.cgram_provenance_snapshot();
         Self {
+            hardware_startup_transient: snes9x_boot_material(
+                game.frame_ctr_dbg,
+                game.ram[MAIN_MODULE_INDEX],
+                game.ram[MAIN_MODULE_INDEX + 1],
+                game.ram[MAIN_MODULE_INDEX + 2],
+                game.ppu.brightness,
+            ),
             ppu,
             cgram,
             raw_scanlines,
@@ -215,6 +233,7 @@ impl LiveGpuFrameCapture {
 
     pub fn capture_input(&self) -> renderer::GpuFrameCaptureInput<'_> {
         gpu_frame_capture_from_ppu(
+            self.hardware_startup_transient.clone(),
             &self.ppu,
             &self.cgram,
             self.raw_scanlines.as_ref(),
@@ -290,6 +309,86 @@ impl LiveGpuFrameCapture {
             player_indoors: self.player_indoors,
         }
     }
+}
+
+/// Model the reset-only material surface observed from Snes9x. It deliberately
+/// has no PPU input: the residue is reset-stack state, while the Nintendo card
+/// is a promoted PNG asset with no authored SNES source state in Rust yet.
+fn snes9x_boot_material(
+    game_frame: u32,
+    main_module: u8,
+    submodule: u8,
+    subsubmodule: u8,
+    brightness: u8,
+) -> Option<renderer::gpu_frame::HardwareStartupTransient> {
+    // The ROM's boot card is its own intro state, not a host-frame schedule:
+    // Snes9x shows it from intro substep 2 through 0x19, and substep 0x1a
+    // enters forced blank. This is the semantic publication boundary for the
+    // PNG material promoted from the ROM-owned DMA surface.
+    let nintendo_presents_visible = (84..=180).contains(&game_frame)
+        && submodule == 1
+        // The port's live substep is sampled on a different phase from the
+        // displayed ROM substep, so it is intentionally not used to shorten
+        // this Snes9x-observed publication interval yet.
+        && subsubmodule <= 0x19;
+    if main_module != 0 || (game_frame != 83 && !nintendo_presents_visible) {
+        return None;
+    }
+    const POWER_ON_RGBA: [u8; 4] = [0xad, 0x52, 0xad, 0xff];
+    const STACK_CORNER_RESIDUE: [usize; 4] = [0, 8, 15, 23];
+    let mut rgba = [[0u8; 4]; 64];
+    if game_frame == 83 {
+        for pixel in STACK_CORNER_RESIDUE {
+            rgba[pixel] = POWER_ON_RGBA;
+        }
+    }
+    Some(renderer::gpu_frame::HardwareStartupTransient {
+        rgba,
+        origins: [(0, 0), (85, 85)],
+        direct_pixels: if nintendo_presents_visible {
+            nintendo_presents_asset_pixels()
+                .iter()
+                .copied()
+                .map(|mut pixel| {
+                    pixel.rgba = scale_boot_asset_brightness(pixel.rgba, brightness);
+                    pixel
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
+    })
+}
+
+fn scale_boot_asset_brightness(rgba: [u8; 4], brightness: u8) -> [u8; 4] {
+    let scale = |channel: u8| {
+        let c5 = u32::from(channel) >> 3;
+        let scaled5 = (c5 * u32::from(brightness.min(15)) + 7) / 15;
+        ((scaled5 << 3) | (scaled5 >> 2)) as u8
+    };
+    [scale(rgba[0]), scale(rgba[1]), scale(rgba[2]), rgba[3]]
+}
+
+fn nintendo_presents_asset_pixels() -> &'static [renderer::gpu_frame::HardwareStartupDirectPixel]
+{
+    static PIXELS: OnceLock<Vec<renderer::gpu_frame::HardwareStartupDirectPixel>> = OnceLock::new();
+    PIXELS.get_or_init(|| {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../assets/boot/nintendo_presents.png");
+        let (rgba, width, height) = decode_rgba_png(&path)
+            .unwrap_or_else(|| panic!("required boot PNG asset failed to decode: {}", path.display()));
+        assert_eq!((width, height), (56, 16), "boot PNG asset has unexpected dimensions");
+        rgba.chunks_exact(4)
+            .enumerate()
+            .filter_map(|(index, rgba)| {
+                (rgba[3] != 0).then_some(renderer::gpu_frame::HardwareStartupDirectPixel {
+                    screen_x: 96 + (index % width as usize) as i16,
+                    screen_y: 104 + (index / width as usize) as i16,
+                    rgba: [rgba[0], rgba[1], rgba[2], rgba[3]],
+                })
+            })
+            .collect()
+    })
 }
 
 /// Native play has one authoritative visual path: the PNG/asset GPU compositor.
@@ -445,6 +544,54 @@ impl ModernAssetGpuReadbackRenderer {
             self.validation_sprite_extract_nanos / 1_000_000,
             self.validation_stats_nanos / 1_000_000,
         )
+    }
+}
+
+impl NativeWindowOracleRenderer {
+    pub(crate) fn load_from_env() -> Result<Self, String> {
+        if std::env::var_os("ZELDA3_COMPARE_VIDEO_CPU").is_some() {
+            return Err(
+                "ZELDA3_COMPARE_VIDEO_CPU is no longer supported: Snes9x video comparison requires the native window renderer"
+                    .to_string(),
+            );
+        }
+        let repo_root = repo_root();
+        let (resources, _live_mode) =
+            renderer::ModernAssetFrameResources::load_live_gpu_from_env(&repo_root)?;
+        let frontend = NativeFrontend::new_with_options(
+            256,
+            224,
+            NativeFrontendOptions {
+                scale: 1,
+                enable_audio: false,
+                fullscreen: false,
+                frame_pacing: false,
+            },
+        )?;
+        Ok(Self {
+            frontend,
+            resources,
+            live_stats: renderer::ModernAssetLiveStats::from_env(),
+        })
+    }
+
+    pub(crate) fn render_game_rgba(
+        &mut self,
+        game: &mut ZeldaState,
+    ) -> Result<GpuRgbaReadbackFrame, String> {
+        let capture = capture_gpu_frame_from_game(game);
+        let report = self.frontend.present_modern_asset_live_frame_from_entries(
+            capture.modern_asset_present_input(&self.resources, &mut self.live_stats),
+        );
+        if let Some(reason) = report.failure_line() {
+            return Err(format!("native window renderer rejected frame: {reason}"));
+        }
+        self.frontend
+            .read_modern_gpu_target_rgba()
+            .map(GpuRgbaReadbackFrame::from_rgba)
+            .ok_or_else(|| {
+                "native window renderer did not produce a modern GPU target".to_string()
+            })
     }
 }
 
@@ -1263,6 +1410,7 @@ fn render_hd_capture_from_gpu_capture(
 }
 
 fn gpu_frame_capture_from_ppu<'a>(
+    hardware_startup_transient: Option<renderer::gpu_frame::HardwareStartupTransient>,
     ppu: &'a snes::ppu::PpuState,
     cgram: &'a [u16],
     raw_scanlines: &'a RawScanlineFrame,
@@ -1276,6 +1424,7 @@ fn gpu_frame_capture_from_ppu<'a>(
     cgram_provenance: Option<&'a zelda3_palette::CgramProvenanceSnapshot>,
 ) -> renderer::GpuFrameCaptureInput<'a> {
     renderer::GpuFrameCaptureInput {
+        hardware_startup_transient,
         registers: gpu_frame_register_snapshot_from_ppu(ppu),
         cgram,
         raw_scanlines,
@@ -1350,6 +1499,7 @@ mod tests {
             scanline.6[2] = 0;
         }
         let capture = LiveGpuFrameCapture {
+            hardware_startup_transient: None,
             ppu,
             cgram: vec![0u16; 256],
             raw_scanlines,
@@ -1420,6 +1570,7 @@ mod tests {
             scanline.6[2] = 0;
         }
         let capture = LiveGpuFrameCapture {
+            hardware_startup_transient: None,
             ppu,
             cgram: vec![0u16; 256],
             raw_scanlines,
@@ -1471,6 +1622,7 @@ mod tests {
         indices[8] = 3;
         encode_2bpp_tile(&mut ppu.vram, 0x1000, 999, &indices);
         let capture = LiveGpuFrameCapture {
+            hardware_startup_transient: None,
             ppu,
             cgram: vec![0u16; 256],
             raw_scanlines: Box::new([(0, 0, 0, 0, 0x04, [0; 4], [0; 4], [0; 8], false); 224]),
@@ -1574,6 +1726,7 @@ mod tests {
 
     fn test_bg3_capture(ppu: snes::ppu::PpuState) -> LiveGpuFrameCapture {
         LiveGpuFrameCapture {
+            hardware_startup_transient: None,
             ppu,
             cgram: vec![0u16; 256],
             raw_scanlines: Box::new([(0, 0, 0, 0, 0x04, [0; 4], [0; 4], [0; 8], false); 224]),
@@ -1713,6 +1866,7 @@ mod tests {
         let mut cgram = vec![0u16; 256];
         cgram[1] = 0x7fff;
         let capture = LiveGpuFrameCapture {
+            hardware_startup_transient: None,
             ppu,
             cgram,
             raw_scanlines: Box::new([(0, 0, 0, 0, 0, [0; 4], [0; 4], [0; 8], false); 224]),
