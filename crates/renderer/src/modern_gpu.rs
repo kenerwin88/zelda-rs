@@ -25,6 +25,7 @@ use crate::modern_mode1_effect_plan::{
     PreparedMode1EffectRenderStepKind,
 };
 use crate::modern_screen_builder::ModernGpuScreenBuilder;
+#[cfg(test)]
 use crate::modern_sprite_renderer::ModernGpuSpriteRenderer;
 #[cfg(test)]
 use crate::modern_variant_render_plan::{headless_variant_render_path, live_variant_render_path};
@@ -41,6 +42,7 @@ pub struct ModernGpuVariantRenderer {
     source_entry_index: crate::modern_variant_atlas::SourceEntryIndex,
     renderer: ModernGpuRenderer,
     effect_renderer: ModernGpuVariantEffectRenderer,
+    compositor: ModernGpuCompositor,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -174,6 +176,7 @@ impl ModernGpuVariantRenderer {
             source_entry_index: atlas.build_source_entry_index(),
             renderer: ModernGpuRenderer::new(device, queue, &atlas_asset, format),
             effect_renderer: ModernGpuVariantEffectRenderer::new(device, queue, atlas, format),
+            compositor: ModernGpuCompositor::new(device, queue, format),
         }
     }
 
@@ -186,7 +189,7 @@ impl ModernGpuVariantRenderer {
         sprite_cells: &[ModernIndexTile],
         bg_palette_name: &str,
         sprite_palette_name: &str,
-        output_view: &wgpu::TextureView,
+        output_texture: &wgpu::Texture,
     ) -> ModernGpuVariantLiveRender {
         let prepared = self.prepare_variant_render(
             frame,
@@ -195,7 +198,7 @@ impl ModernGpuVariantRenderer {
             bg_palette_name,
             sprite_palette_name,
         );
-        self.render_prepared_variant(device, queue, &prepared, output_view)
+        self.render_prepared_variant(device, queue, &prepared, output_texture)
     }
 
     fn render_prepared_variant(
@@ -203,17 +206,18 @@ impl ModernGpuVariantRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         prepared: &PreparedModernVariantRender<'_>,
-        output_view: &wgpu::TextureView,
+        output_texture: &wgpu::Texture,
     ) -> ModernGpuVariantLiveRender {
+        let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut execution =
             PreparedModernVariantExecution::new(prepared, PreparedModernVariantOutput::Live);
-        if execution.render_path() == ModernVariantRenderPath::LiveIndexBaseWithOverlay {
-            return ModernGpuVariantLiveRender {
-                stats: execution.finish(),
-                rendered: false,
-            };
-        }
-        self.render_live_execution(device, queue, output_view, &mut execution);
+        self.render_live_execution(
+            device,
+            queue,
+            output_texture,
+            &output_view,
+            &mut execution,
+        );
         ModernGpuVariantLiveRender {
             stats: execution.finish(),
             rendered: true,
@@ -224,6 +228,7 @@ impl ModernGpuVariantRenderer {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        output_texture: &wgpu::Texture,
         output_view: &wgpu::TextureView,
         execution: &mut PreparedModernVariantExecution<'_, '_>,
     ) {
@@ -232,7 +237,12 @@ impl ModernGpuVariantRenderer {
                 self.render_effect_material_mode1_order(device, queue, execution, output_view);
             }
             ModernVariantRenderPath::LiveIndexBaseWithOverlay => {
-                self.render_live_index_base_with_overlay(device, queue, output_view, execution);
+                self.render_live_index_base_with_overlay(
+                    device,
+                    queue,
+                    output_texture,
+                    execution,
+                );
             }
             ModernVariantRenderPath::EffectMaterialWithStableOverlay => {
                 self.render_effect_material_with_stable_overlay(
@@ -292,15 +302,21 @@ impl ModernGpuVariantRenderer {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        output_view: &wgpu::TextureView,
+        output_texture: &wgpu::Texture,
         execution: &mut PreparedModernVariantExecution<'_, '_>,
     ) {
         let frame = execution.frame();
-        let bg_cells = execution.bg_cells();
-        let bg = ModernGpuIndexRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
-        let spr = ModernGpuSpriteRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm);
-        bg.render(device, queue, bg_cells, frame, output_view);
-        spr.render(device, queue, execution.sprite_cells(), frame, output_view);
+        // A source-index packet without canonical PNG art still goes through the
+        // GPU scene builder and finalizer. Rendering its indices straight to the
+        // target would skip color math, windows, and master brightness.
+        let _ = self.compositor.render(
+            device,
+            queue,
+            frame,
+            execution.bg_cells(),
+            execution.sprite_cells(),
+            output_texture,
+        );
         let overlay = mixed_variant_overlay_bg_packets(frame, execution.plan());
         record_live_mixed_overlay_bg_effect_selection_stats(
             execution.stats_mut().as_mut(),
@@ -1481,6 +1497,10 @@ fn frame_uses_direct_final_index_math(frame: &ModernFrame) -> bool {
 
 fn can_render_final_index_base_gpu(frame: &ModernFrame, bg_cells: &[ModernIndexTile]) -> bool {
     if frame.forced_blank
+        // The direct-index pass bakes palette colors before it rasterizes.
+        // Master brightness must instead be resolved after final color math,
+        // so fades always use the common GPU screen-builder/finalizer path.
+        || frame.brightness != 15
         || !frame_uses_direct_final_index_math(frame)
         || frame.windowsel != 0
         || frame.screen_windowed_main != 0
@@ -4459,6 +4479,29 @@ impl ModernGpuHeadless {
         self.read_target_rgba()
     }
 
+    /// Render an already source-resolved frame through the same
+    /// `ModernGpuCompositor` used by native presentation. Unlike the generic
+    /// helper above, this reports a declined GPU frame instead of silently
+    /// returning a readback from an unchanged target.
+    pub fn render_asset_resolved_gpu_rgba(
+        &self,
+        frame: &ModernFrame,
+        bg_cells: &[ModernIndexTile],
+        sprite_cells: &[ModernIndexTile],
+    ) -> Result<Vec<u8>, String> {
+        if !self.compositor.render(
+            &self.device,
+            &self.queue,
+            frame,
+            bg_cells,
+            sprite_cells,
+            &self.target,
+        ) {
+            return Err("modern source GPU compositor declined the frame".to_string());
+        }
+        Ok(self.read_target_rgba())
+    }
+
     pub fn render_rgba_from_sources<S: crate::modern_extract::SourceTableView + ?Sized>(
         &self,
         frame: &crate::gpu_frame::GpuFrame<'_>,
@@ -4721,6 +4764,44 @@ impl ModernGpuVariantHeadless {
         (rgba, stats)
     }
 
+    /// Render the exact Mode-1 GPU path used by the native window into this
+    /// headless target. Unlike `render_rgba_with_live_index_base_from_sources`,
+    /// this never constructs a VRAM-decoded base frame.
+    pub fn render_live_gpu_rgba_from_sources<
+        S: crate::modern_extract::SourceTableView + ?Sized,
+    >(
+        &self,
+        frame: &crate::gpu_frame::GpuFrame<'_>,
+        src_table: &S,
+        atlas: &crate::modern_source_atlas::ModernSourceAtlas,
+        bg_palette_name: &str,
+        sprite_palette_name: &str,
+    ) -> Result<(Vec<u8>, crate::modern_software::VariantAtlasRenderStats), String> {
+        let modern_assets = crate::modern_extract::extract_asset_resolved_modern_frame_from_sources(
+            frame, src_table, atlas,
+        );
+        if modern_assets.has_unresolved_sources() {
+            return Err(format!(
+                "modern live GPU renderer has {} unresolved asset source(s)",
+                modern_assets.missing_sources.len()
+            ));
+        }
+        let render = self.renderer.render(
+            &self.device,
+            &self.queue,
+            &modern_assets.frame,
+            &modern_assets.bg_cells,
+            &modern_assets.sprite_cells,
+            bg_palette_name,
+            sprite_palette_name,
+            &self.target,
+        );
+        if !render.rendered {
+            return Err("modern live GPU renderer declined the frame".to_string());
+        }
+        Ok((self.read_target_rgba(), render.stats))
+    }
+
     pub fn render_rgba_with_live_index_base_from_sources_traced<
         S: crate::modern_extract::SourceTableView + ?Sized,
     >(
@@ -4737,7 +4818,6 @@ impl ModernGpuVariantHeadless {
         Vec<crate::modern_extract::MissingAssetSource>,
         Vec<crate::modern_variant_draw::VariantPixelTrace>,
     ) {
-        debug_assert_ne!(frame.mode, 7);
         let modern_assets = crate::modern_extract::extract_asset_resolved_modern_frame_from_sources(
             frame, src_table, atlas,
         );
@@ -4747,19 +4827,13 @@ impl ModernGpuVariantHeadless {
         // missing asset identity from a broken renderer.
         let missing_sources = modern_assets.missing_sources.clone();
 
-        let (mut live_index_modern, live_index_bg_cells) =
-            crate::modern_extract::extract_modern_frame_from_vram(frame);
-        let (live_index_sprite_cells, live_index_sprites) =
-            crate::modern_extract::extract_modern_sprites_from_vram(frame);
-        live_index_modern.index_sprites = live_index_sprites;
-
         let (rgba, stats, traces) = self.render_rgba_with_live_index_base_and_trace(
             &modern_assets.frame,
             &modern_assets.bg_cells,
             &modern_assets.sprite_cells,
-            &live_index_modern,
-            &live_index_bg_cells,
-            &live_index_sprite_cells,
+            &modern_assets.frame,
+            &modern_assets.bg_cells,
+            &modern_assets.sprite_cells,
             bg_palette_name,
             sprite_palette_name,
             trace_pixel,
@@ -12744,10 +12818,11 @@ mod tests {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::COPY_SRC
+                    | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
-            let view = target.create_view(&wgpu::TextureViewDescriptor::default());
 
             let live_render = renderer.render(
                 &device,
@@ -12757,7 +12832,7 @@ mod tests {
                 &sprite_cells,
                 "palette_dung_bg_main",
                 "palette_main_spr",
-                &view,
+                &target,
             );
             assert!(live_render.rendered);
 
@@ -12837,7 +12912,7 @@ mod tests {
     }
 
     #[test]
-    fn modern_gpu_variant_live_refuses_live_index_base() {
+    fn modern_gpu_variant_live_renders_live_index_base_through_finalizer() {
         use crate::modern_frame::{ModernBgLayer, ModernIndexTileInstance};
         use crate::modern_hd_overrides::NO_SOURCE_KEY;
         use crate::modern_index_atlas::ModernIndexTile;
@@ -12899,10 +12974,9 @@ mod tests {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
-            let view = target.create_view(&wgpu::TextureViewDescriptor::default());
 
             let live_render = renderer.render(
                 &device,
@@ -12912,10 +12986,10 @@ mod tests {
                 &[],
                 "palette_dung_bg_main",
                 "palette_main_spr",
-                &view,
+                &target,
             );
 
-            assert!(!live_render.rendered);
+            assert!(live_render.rendered);
             assert_eq!(live_render.stats.live_index_draws, 1);
             assert_eq!(live_render.stats.unkeyed_fallback_draws, 1);
             assert_eq!(live_render.stats.gpu_prefinal_base_frames, 0);

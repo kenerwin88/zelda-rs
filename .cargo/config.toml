@@ -1,0 +1,6 @@
+# Never launch a potentially stale `target/debug/zelda3` directly for local
+# parity work. These aliases go through Cargo, which refreshes the binary from
+# the current source before it is executed.
+[alias]
+zelda3-current = "run -p zelda3-bin --bin zelda3"
+zelda3-current-release = "run --release -p zelda3-bin --bin zelda3"

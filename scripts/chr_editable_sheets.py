@@ -516,7 +516,11 @@ def _read_packed_chr_asset(
     items = extract_assets.unpack_packed_arrays(path.read_bytes())
     packs = []
     for index, item in enumerate(items):
-        data = item if index < uncompressed_prefix_count else extract_assets.decomp_asset(item)
+        # Raw planar sheets are a whole number of 3bpp tiles (24 bytes each);
+        # the junk sheets 0..11 ship as their original compressed streams
+        # (never a multiple of 24) and are decompressed for preview decoding.
+        raw = index < uncompressed_prefix_count and len(item) % 24 == 0
+        data = item if raw else extract_assets.decomp_asset(item)
         bpp = _decoded_pack_bpp(data)
         packs.append(
             DecodedPack(

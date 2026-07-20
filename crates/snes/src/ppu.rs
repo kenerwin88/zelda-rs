@@ -456,7 +456,10 @@ impl PpuState {
             0x05 => {
                 // BGMODE
                 self.mode = val & 0x7;
-                debug_assert!(val == 7 || val == 9, "BGMODE expected 7 or 9");
+                // The title route begins in the reset-time mode 0 before it
+                // switches to the game modes. All 3-bit hardware modes are
+                // valid register values; rendering chooses the supported
+                // composition path later.
             }
             0x06 => {
                 // MOSAIC

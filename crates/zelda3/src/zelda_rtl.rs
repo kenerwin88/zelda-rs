@@ -112,12 +112,6 @@ const ROM_INTRO_MESSAGE_POINTER_CONTINUATION_FRAMES: u8 = 48;
 const ROM_INTRO_ITEM_GFX_CONTINUATION_FRAMES: u8 = 15;
 const ROM_INTRO_FOLLOWER_GFX_CONTINUATION_FRAMES: u8 = 3;
 const ROM_INTRO_MEMORY_INITIALIZATION_FRAMES: u8 = 41;
-// Tile zero remains partially initialized while the first interruptible intro
-// slice is active. With the contemporaneous OAM word it produces the eight
-// startup pixels visible before Nintendo Presents is published.
-const ROM_INTRO_INITIAL_VISIBLE_TILE_ZERO: [u16; 16] = [
-    0x8000, 0, 0, 0, 0, 0, 0, 0, 0, 0x8001, 0x0100, 0, 0, 0, 0, 0,
-];
 const ROM_SELECTED_GAME_LOAD_FRAMES: u8 = 77;
 // The original CPU reaches Module_PreDungeon's audio prefix after 19 NMI
 // slices, then continues the room build while NMI publishes that command.
@@ -286,12 +280,13 @@ const fn rom_attract_init_graphics_decision(phase: u8) -> (bool, u8) {
 
 const fn rom_attract_story_render_nmi_slices(sequence: u8) -> u8 {
     // The throne-room loader returns on the NMI boundary that also consumes
-    // the first story continuation slice. The opening polka-dot sequence does
-    // not, so preserve its independently verified six-slice startup.
-    if sequence == 2 {
-        5
-    } else {
-        6
+    // the first story continuation slice. The opening polka-dot sequence has
+    // an additional NMI boundary between text initialization and its first
+    // character render.
+    match sequence {
+        0 => 7,
+        2 => 5,
+        _ => 6,
     }
 }
 
@@ -329,6 +324,7 @@ const fn rom_dialogue_glyph_work_units(width: u8, pixel_position: u8) -> u8 {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RomWorkContinuation {
+    FinishAttractWorldMap,
     FinishAttractThroneRoom,
     FinishAttractZeldaPrison,
     FinishAttractMaidenWarp,
@@ -1874,7 +1870,6 @@ pub struct ZeldaState {
     dialogue_font_blk_index: usize,
     dialogue_flags: u8,
     #[serde(default)]
-    intro_initialization_reset_obj_published: bool,
     #[serde(skip)]
     rom_startup_timing: bool,
     #[serde(skip)]
@@ -1932,6 +1927,12 @@ pub struct ZeldaState {
     nmi_poly_upload_from_deferred: bool,
     #[serde(skip)]
     obj_vram_latch_generation: u64,
+    /// Pre-upload CGRAM image latched when this frame's NMI performed the
+    /// main-palette-buffer upload: hardware scanout only shows that upload on
+    /// the NEXT frame, so the display compose prefers this image (see
+    /// `with_display_snapshot`). Cleared at each display-snapshot capture.
+    #[serde(skip)]
+    cgram_upload_latch: Option<Vec<u16>>,
     #[serde(skip)]
     snes9x_poly_scheduler_counter: u8,
     #[serde(skip)]
@@ -6750,7 +6751,6 @@ impl ZeldaState {
             dialogue_blk_index: 0,
             dialogue_font_blk_index: 0,
             dialogue_flags: 0,
-            intro_initialization_reset_obj_published: false,
             rom_startup_timing: false,
             intro_initialization_work_frames_pending: 0,
             intro_initialization_reset_obj_control_pending: false,
@@ -6780,6 +6780,7 @@ impl ZeldaState {
             nmi_poly_deferred_upload_bypasses_latch: false,
             nmi_poly_upload_from_deferred: false,
             obj_vram_latch_generation: 0,
+            cgram_upload_latch: None,
             snes9x_poly_scheduler_counter: 0,
             snes9x_hold_intro_step_this_frame: false,
             snes9x_intro_step_carry_phase_active: false,
@@ -6844,7 +6845,6 @@ impl ZeldaState {
         self.zelda_restore_music_after_load_locked(true);
         self.initialized = true;
         self.apply_links_movement_to_camera_called = false;
-        self.intro_initialization_reset_obj_published = false;
         self.intro_initialization_work_frames_pending = 0;
         self.intro_initialization_reset_obj_control_pending = false;
         self.rom_reset_frame_delay = if self.rom_startup_timing {
@@ -6982,6 +6982,14 @@ impl ZeldaState {
         );
     }
 
+    pub(super) fn begin_attract_world_map_work(&mut self) {
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishAttractWorldMap,
+            7,
+        );
+    }
+
     pub(super) fn begin_attract_zelda_prison_work(&mut self) {
         debug_assert!(!self.pending_rom_work.is_pending());
         self.pending_rom_work = PendingRomWork::schedule(
@@ -7029,7 +7037,22 @@ impl ZeldaState {
     }
 
     pub(super) fn capture_display_snapshot(&mut self) {
+        // The upcoming NMI may latch a fresh pre-upload CGRAM image; the one
+        // from the previous frame has been consumed by that frame's renders.
+        self.cgram_upload_latch = None;
         let frame = self.game_state.frame;
+        if std::env::var_os("ZELDA3_DEBUG_FRAME_BOUNDARY").is_some() {
+            eprintln!(
+                "frame_boundary_before host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x}",
+                self.frame_ctr_dbg,
+                frame.main_module,
+                frame.submodule,
+                self.game_state.display.nmi_update_is_latched(),
+                self.game_state.display.pending_nmi_subroutine,
+                self.game_state.display.nmi_load_target_address,
+                self.game_state.display.core_update_disable_flag,
+            );
+        }
         let mut snapshot = Box::new(DisplaySnapshot {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
@@ -7127,11 +7150,43 @@ impl ZeldaState {
         let retain_previous_nmi_display_memory = rom_display_memory_publication_is_deferred(
             snapshot_frame.main_module,
             snapshot_frame.submodule,
-        );
+        ) || (snapshot_frame.main_module == 20
+            && snapshot_frame.submodule == 0
+            // Snes9x retains the pre-NMI attract image through the sequence-1
+            // load/fade-out. Mode 7 begins publishing immediately once that
+            // sequence has entered its fade-in state.
+            && !(self.game_state.ending.attract_scene.sequence() == 1
+                && self.game_state.ending.attract_scene.state() >= 4));
         let retain_previous_nmi_oam = rom_display_oam_publication_is_deferred(
             snapshot_frame.main_module,
             snapshot_frame.submodule,
         );
+        let world_map_fade_display = snapshot_frame.main_module == 20
+            && snapshot_frame.submodule == 0
+            && self.game_state.ending.attract_scene.sequence() == 1
+            && self.game_state.ending.attract_scene.state() >= 4;
+        if std::env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
+            && (snapshot_frame.main_module == 20 || self.game_state.frame.main_module == 20)
+        {
+            eprintln!(
+                "display_oam snapshot={:02x}/{:02x} live={:02x}/{:02x} retain={} snapshot_math={:02x}/{:02x}/{}/{} live_math={:02x}/{:02x}/{}/{} snapshot_oam={:02x?} live_oam={:02x?}",
+                snapshot_frame.main_module,
+                snapshot_frame.submodule,
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+                retain_previous_nmi_oam,
+                display.ppu.math_enabled,
+                display.ppu.prevent_math_mode,
+                display.ppu.subtract_color,
+                display.ppu.half_color,
+                self.ppu.math_enabled,
+                self.ppu.prevent_math_mode,
+                self.ppu.subtract_color,
+                self.ppu.half_color,
+                &display.ppu.oam[..4],
+                &self.ppu.oam[..4],
+            );
+        }
         let live_forced_blank = self.ppu.forced_blank;
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
@@ -7153,10 +7208,48 @@ impl ZeldaState {
                 self.ppu.vram[0x4000..0x4400].copy_from_slice(&previous_link_obj_vram);
             }
             self.ppu.vram[0x5800..0x5c00].copy_from_slice(&presented_poly);
-            if !retain_previous_nmi_oam {
-                self.ppu.oam.clone_from(&display.ppu.oam);
+            // CGRAM: the NMI's main-palette-buffer upload is only visible on
+            // the NEXT scanout (hardware uploads it in the vblank after this
+            // frame was scanned), so when that upload ran this frame, display
+            // its latched pre-upload image. Direct CGRAM writes outside that
+            // upload (e.g. the intro poly flash, which the real game performs
+            // mid-frame from the IRQ thread) stay same-frame visible via the
+            // live image. The attract palette filter is byte-exact against
+            // Snes9x only with this split.
+            if world_map_fade_display {
+                // Keep the palette from the scanout preceding the world-map
+                // fade. The new Mode 7 memory and INIDISP step are visible,
+                // but CGRAM is consumed on the following NMI boundary.
+            } else if let Some(latch) = self.cgram_upload_latch.as_ref() {
+                self.ppu.cgram.copy_from_slice(latch);
+            } else {
+                self.ppu.cgram.clone_from(&display.ppu.cgram);
             }
-            self.ppu.cgram.clone_from(&display.ppu.cgram);
+        } else if snapshot_frame.main_module == 20 && snapshot_frame.submodule == 0 {
+            // The opening-attract transition retains its prior VRAM/CGRAM image
+            // for this scanout, but its main-thread scene handoff has already
+            // published the new BG scroll registers. Snes9x displays that
+            // combination (old memory at the new origin); retaining the whole
+            // PPU snapshot leaves the GPU one pixel up/left on the legend's
+            // first active frame.
+            for (shown, live) in self.ppu.bg_layer.iter_mut().zip(&display.ppu.bg_layer) {
+                shown.h_scroll = live.h_scroll;
+                shown.v_scroll = live.v_scroll;
+            }
+        }
+        // OAM publication has an independent cadence from the large VRAM and
+        // CGRAM uploads above.  The opening attract scene deliberately keeps
+        // its story image in the previous display-memory generation, while its
+        // sprite DMA has already completed and is visible on this scanout.
+        if !retain_previous_nmi_oam {
+            self.ppu.oam.clone_from(&display.ppu.oam);
+        }
+        if world_map_fade_display {
+            // The world-map loader returns into the fade-in main slice before
+            // this frame's vblank. Its INIDISP write is therefore visible with
+            // the just-published Mode 7 memory, even though the rest of the
+            // control snapshot remains pre-NMI.
+            self.ppu.brightness = display.ppu.brightness;
         }
         self.ppu.obj_vram_latch = None;
         self.ppu.obj_previous_frame_vram = display.ppu.obj_previous_frame_vram.clone();
@@ -7165,7 +7258,17 @@ impl ZeldaState {
         // from the coherent pre-NMI display snapshot.
         self.ppu.forced_blank |= live_forced_blank;
         self.sync_native_game_state_from_ram();
-
+        // The RAM-derived rebuild reconstitutes the palette mirror from the
+        // snapshot's WRAM shadow, which already holds THIS frame's palette
+        // writes; hardware scanout shows the palette uploaded in the PREVIOUS
+        // vblank. Re-publish the composed pre-NMI CGRAM image so effect
+        // materials and live-CGRAM readers see what the PPU actually displays
+        // (the attract palette filter diverges from Snes9x otherwise).
+        self.game_state
+            .display
+            .palette_provenance
+            .0
+            .reconstitute_cgram(&self.ppu.cgram);
         let captured = capture(self);
 
         std::mem::swap(&mut self.ram, &mut display.ram);
@@ -7515,14 +7618,34 @@ impl ZeldaState {
             self.nmi_poly_upload_from_deferred = true;
             self.nmi_update_irqgfx();
         }
+        // Oracle-guided scheduler experiment: allow a hot-reloaded rule to
+        // place the vblank boundary before this CPU slice, including the
+        // reset-delay slices that otherwise return before the usual NMI site.
+        // This changes only scheduling, never PPU contents.
+        if self.rom_startup_timing()
+            && self.parity_runtime_nmi_rule_matches("pre_nmi")
+        {
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+        }
         if self.rom_startup_timing() && self.rom_reset_frame_delay != 0 {
+            // Isolate the reset-to-main handoff as a first-class timing
+            // boundary. A parity policy can run the boot initialization
+            // without executing the first game-loop slice, which is distinct
+            // from both a reset-delay frame and a normal frame.
+            if self.parity_runtime_nmi_rule_matches("boot_init_only") {
+                self.rom_reset_frame_delay = 0;
+                self.zelda_initialization_code();
+                self.capture_display_snapshot();
+                return;
+            }
             self.rom_reset_frame_delay = self.rom_reset_frame_delay.saturating_sub(1);
             self.capture_display_snapshot();
             return;
         }
         let initialized_audio_bank_this_frame =
             !self.game_state.display.has_animated_tile_data_source();
-        if self.rom_startup_timing() {
+        if self.rom_startup_timing() && !self.audio_nmi_processed_before_main {
             // Live NMI samples/publishes the previous audio commands before the
             // main CPU performs this frame's game work. This is also true on the
             // first initialized frame: the intro chime written by `intro_init`
@@ -7689,12 +7812,31 @@ impl ZeldaState {
             && self.game_state.frame.main_module == 20
             && self.attract_first_story_render_delay != 0
         {
-            if self.attract_first_story_render_delay == 6 {
+            let opening_polka_dots = self.game_state.ending.attract_scene.sequence() == 0;
+            if (opening_polka_dots && self.attract_first_story_render_delay == 7)
+                || (!opening_polka_dots && self.attract_first_story_render_delay == 6)
+            {
                 self.increment_frame_counter();
                 self.clear_oam_buffer();
+                if opening_polka_dots {
+                    self.ResetHUDPalettes4and5();
+                }
+            } else if opening_polka_dots && self.attract_first_story_render_delay == 3 {
+                self.complete_text_initialization_state_prefix();
+            } else if opening_polka_dots && self.attract_first_story_render_delay == 2 {
+                self.Attract_DecompressStoryGFX();
+                self.complete_text_initialization_suffix();
+                self.attract_build_legend_image_tile_map(0);
+                // The ROM resumes the first polka-dot story tick on this
+                // GFX-completion boundary. Its visible text work is deferred
+                // to the next slice, but the scene lifetime counter is not.
+                self.attract_scene_mut().decrement_legend_ctr();
+                self.clear_nmi_update_latch();
             } else if self.attract_first_story_render_delay == 1 {
                 self.attract_enact_story();
-                self.nmi_prepare_sprites();
+                if !opening_polka_dots {
+                    self.nmi_prepare_sprites();
+                }
                 self.clear_nmi_update_latch();
             }
             self.attract_first_story_render_delay =
@@ -7704,8 +7846,17 @@ impl ZeldaState {
             return;
         }
         if self.rom_startup_timing() && self.pending_rom_work.is_pending() {
+            let mut resume_main_after_world_map_load = false;
             match self.pending_rom_work.advance_one_nmi_slice() {
                 RomWorkSlice::Waiting => {}
+                RomWorkSlice::Complete(RomWorkContinuation::FinishAttractWorldMap) => {
+                    self.complete_attract_scene_world_map();
+                    // The loader returns to Attract_FadeIn on the same main
+                    // slice that completes its final NMI-sized chunk. That
+                    // first fade tick raises INIDISP from 0 to 1 before this
+                    // host frame's vblank.
+                    resume_main_after_world_map_load = true;
+                }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishAttractThroneRoom) => {
                     self.complete_attract_scene_throne_room();
                 }
@@ -7749,9 +7900,11 @@ impl ZeldaState {
                     }
                 }
             }
-            self.capture_display_snapshot();
-            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-            return;
+            if !resume_main_after_world_map_load {
+                self.capture_display_snapshot();
+                self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                return;
+            }
         }
         if self.rom_startup_timing() && run_what & crate::RUN_MAIN != 0 {
             self.nmi_read_joypads(input);
@@ -9257,6 +9410,10 @@ impl ZeldaState {
     fn zelda_initialization_code(&mut self) {
         self.sound_load_intro_song_bank();
         self.startup_initialize_memory();
+        self.finish_rom_bootstrap_initialization();
+    }
+
+    fn finish_rom_bootstrap_initialization(&mut self) {
         self.set_animated_tile_data_source_address(0xa680);
         self.set_link_animated_tile_dma_sources(0xb280, 0xb280 + 0x60);
         self.sync_native_game_state_from_ram();

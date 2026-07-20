@@ -1,6 +1,6 @@
 {
   "format": "zelda3_assets_by_source_v2_png",
-  "cell_count": 54174,
+  "cell_count": 54177,
   "cells": [
     {
       "id": 0,
@@ -379219,6 +379219,27 @@
       "kind": 6,
       "pack": 37906,
       "tile_off": 13949
+    },
+    {
+      "id": 54174,
+      "key": 8777294917,
+      "kind": 2,
+      "pack": 2858,
+      "tile_off": 58437
+    },
+    {
+      "id": 54175,
+      "key": 28908066519,
+      "kind": 6,
+      "pack": 47886,
+      "tile_off": 5847
+    },
+    {
+      "id": 54176,
+      "key": 11728197335,
+      "kind": 2,
+      "pack": 47886,
+      "tile_off": 5847
     }
   ]
 }

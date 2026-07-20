@@ -1,0 +1,28 @@
+{
+  "kind": "zelda3_snes9x_boundary_exact_parity_v1",
+  "status": "exact_av_verified",
+  "oracle": "Snes9x 1.63 libretro only",
+  "production_renderer": "modern Rust",
+  "production_audio_backend": "modern",
+  "production_audio_sequencer": "native",
+  "audio_comparison": "exact",
+  "take": 0,
+  "start_boundary": 0,
+  "end_boundary": 1,
+  "frames_verified": 6277,
+  "input_sha256": "bf6baaf10db25889e42c05f2bb26f45fa223f2959bc3c245ab4460694013e40e",
+  "core_sha256": "1143f14ceac6be6e94f78ab16270590bc415532f200db1f7fece66994b4ce3d5",
+  "rom_sha256": "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb",
+  "rust_state": "boundaries/0001/rust.z3state",
+  "rust_state_sha256": "0b355be95d469a51ecdedaf96abe2cc30b809a8d74a366f137543d8fade06845",
+  "oracle_state": "boundaries/0001/oracle.state",
+  "oracle_state_sha256": "df8564207f5332baba55e24aaf5cf039fecc1cf32472635d671f01fecfb2cd7b",
+  "oracle_sram": "boundaries/0001/sram.bin",
+  "oracle_sram_sha256": "609c67a7898a36494715bc8010732cda67cb05e1cd4462b0ab6783a3e6968eac",
+  "comparison_result_sha256": "17e232c02367d145b04e656692552690d0b26c22715af414e21bfc4c7168e0a5",
+  "oracle_independence": {
+    "state_conversion_used": false,
+    "snes9x_state_created_by": "Snes9x retro_serialize",
+    "rust_state_created_by": "zelda3-rs replay"
+  }
+}

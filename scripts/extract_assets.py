@@ -750,7 +750,10 @@ def decomp_asset(data: bytes) -> bytes:
             src = data[offset] | (data[offset + 1] << 8)
             offset += 2
             for _ in range(length):
-                result.append(result[src])
+                # Junk sheets (0..11) contain copy commands past the produced
+                # output; the runtime resolves those against its live WRAM
+                # buffer, tools substitute zero like the port's Vec-based path.
+                result.append(result[src] if src < len(result) else 0)
                 src += 1
         elif (cmd & 0x40) == 0:
             value = data[offset]

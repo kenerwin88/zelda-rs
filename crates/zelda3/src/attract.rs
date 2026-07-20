@@ -112,6 +112,14 @@ impl ZeldaState {
     }
 
     pub(super) fn attract_scene_world_map(&mut self) {
+        if self.rom_startup_timing() {
+            self.begin_attract_world_map_work();
+            return;
+        }
+        self.complete_attract_scene_world_map();
+    }
+
+    pub(super) fn complete_attract_scene_world_map(&mut self) {
         self.zelda_ppu_write(0x2107, 0x13);
         self.zelda_ppu_write(0x2108, 0x03);
         self.set_color_window_selection(0x80);
@@ -1040,6 +1048,10 @@ impl ZeldaState {
 
     pub(super) fn attract_build_next_image_tile_map(&mut self) {
         let image = self.game_state.ending.attract_scene.next_legend_image();
+        self.attract_build_legend_image_tile_map(image);
+    }
+
+    pub(super) fn attract_build_legend_image_tile_map(&mut self, image: u8) {
         let data = match image {
             0 => &ATTRACT_LEGEND_TILEMAP_BYTES_0[..],
             1 => &ATTRACT_LEGEND_TILEMAP_BYTES_1[..],

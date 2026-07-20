@@ -258,26 +258,9 @@ impl NativeFrontend {
             .unwrap_or(0)
     }
 
-    /// Select the live render path (modern software vs modern asset GPU
-    /// diagnostics). The classic wgpu PPU path was removed.
+    /// Select the renderer-owned modern asset route.
     pub fn set_renderer_mode(&mut self, mode: RendererMode) {
         self.renderer_mode = mode;
-    }
-
-    pub fn present_gpu_frame(&mut self, frame: &GpuFrame<'_>) {
-        if let Some(renderer) = &mut self.handler.renderer {
-            match renderer.render_modern_frame(frame) {
-                Ok(()) => {}
-                Err(RenderError::SurfaceReconfigureNeeded) => {
-                    if let Some(window) = &self.handler.window {
-                        renderer.resize(window.inner_size());
-                    }
-                }
-                Err(RenderError::SurfaceSkipped) => {}
-                Err(RenderError::Fatal(e)) => eprintln!("render error: {e}"),
-            }
-        }
-        self.sleep_after_present();
     }
 
     /// Present one live modern-asset frame through the renderer-owned route

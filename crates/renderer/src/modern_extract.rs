@@ -2102,6 +2102,13 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                 let content_key = if kind == CHR_KIND_LINK {
                     let h = content_hash32_slot(frame.vram, slot);
                     Some((CHR_KIND_LINK_CONTENT, (h >> 16) as u16, (h & 0xffff) as u16))
+                } else if kind == 0 {
+                    // Reset-time OBJ has no logical upload record yet. Its
+                    // pattern still has a deterministic PNG asset identity;
+                    // use a content-addressed sprite key so the renderer
+                    // selects canonical art instead of rendering VRAM bytes.
+                    let h = content_hash32_slot(frame.vram, slot);
+                    Some((2, (h >> 16) as u16, (h & 0xffff) as u16))
                 } else {
                     None
                 };
@@ -2132,29 +2139,57 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                         id
                     })
                 } else {
-                    // Source provenance is an enhancement, not a visibility
-                    // gate. Reset-time tiles and partially uploaded animation
-                    // slots can legitimately have no atlas identity yet; keep
-                    // those pixels visible by decoding the captured SNES tile.
-                    // The sentinel source key makes the draw explicit and lets
-                    // validation/stats report it as an unkeyed fallback.
+                    // A logical source tag can be absent during reset and an
+                    // incremental upload. Re-key the captured palette-index
+                    // pattern to the matching canonical PNG cell before
+                    // considering it unresolved. This is asset selection, not
+                    // a VRAM render fallback: the emitted cell and source key
+                    // both come from the source atlas.
                     let indices = decode_snes_4bpp_tile_indices(frame.vram, slot * 16, 0);
                     if indices.iter().all(|index| *index == 0) {
                         continue;
                     }
-                    *cell_ids
-                        .entry(0x8000_0000 | slot as u32)
-                        .or_insert_with(|| {
+                    if let Some((source_key, src)) = source_cell_by_indices(atlas, &indices) {
+                        *cell_ids.entry(src.id).or_insert_with(|| {
                             let id = cells.len() as u32;
                             cells.push(ModernIndexTile {
                                 id,
-                                indices,
-                                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                indices: src.indices,
+                                source_key,
                                 hflip: false,
                                 vflip: false,
                             });
                             id
                         })
+                    } else {
+                        // The pattern is genuinely absent from the canonical
+                        // asset set. Keep it visible for diagnostics, but mark
+                        // it unresolved so the production GPU route fails
+                        // rather than silently using a VRAM compositor.
+                        if std::env::var_os("ZELDA3_DEBUG_ASSET_COVERAGE").is_some() {
+                            eprintln!(
+                                "unresolved_sprite_source slot={slot:04x} source=({kind},{pack:04x},{tile_off:04x}) content_key={:08x} indices={}",
+                                content_hash32_slot(frame.vram, slot),
+                                indices
+                                    .iter()
+                                    .map(|index| format!("{index:x}"))
+                                    .collect::<String>(),
+                            );
+                        }
+                        *cell_ids
+                            .entry(0x8000_0000 | slot as u32)
+                            .or_insert_with(|| {
+                                let id = cells.len() as u32;
+                                cells.push(ModernIndexTile {
+                                    id,
+                                    indices,
+                                    source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                                    hflip: false,
+                                    vflip: false,
+                                });
+                                id
+                            })
+                    }
                 };
 
                 out.push(ModernIndexSpriteInstance {
@@ -3762,6 +3797,44 @@ mod tests {
             crate::modern_hd_overrides::NO_SOURCE_KEY
         );
         assert_eq!(cells[0].indices, decode_snes_4bpp_tile_indices(&vram, 0, 0));
+    }
+
+    #[test]
+    fn extract_modern_sprites_from_sources_rekeys_unknown_slot_to_canonical_asset() {
+        use crate::modern_source_atlas::{modern_source_key, ModernSourceAtlas};
+
+        let mut vram = vec![0u16; 0x8000];
+        vram[0] = 0x8000;
+        vram[8] = 0x0001;
+        let indices = decode_snes_4bpp_tile_indices(&vram, 0, 0);
+        let source_cell = ModernIndexTile {
+            id: 0,
+            indices,
+            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+            hflip: false,
+            vflip: false,
+        };
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
+            vec![source_cell],
+            &[(2, 0x5e, 0x12, 0)],
+        );
+        let cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        oam[0] = 0x5555;
+        let mut frame = test_gpu_frame(&vram, &cgram, &oam, 15, false);
+        frame.obj.obj_size = 0;
+        frame.obj.tile_adr1 = 0;
+
+        let no_sources = |_slot: usize| (0, 0, 0);
+        let (cells, sprites) = extract_modern_sprites_from_sources(&frame, &no_sources, &atlas);
+
+        assert!(!sprites.is_empty());
+        assert_eq!(cells.len(), 1);
+        assert_eq!(
+            cells[0].source_key,
+            modern_source_key(2, 0x5e, 0x12),
+            "unprovenanced sprite pixels resolve to their canonical PNG source"
+        );
     }
 
     #[test]

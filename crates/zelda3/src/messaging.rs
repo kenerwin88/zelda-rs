@@ -2878,6 +2878,13 @@ impl ZeldaState {
         self.text_initialize_module_state_prefix();
     }
 
+    /// The opening attract sequence has already reset its HUD palette and
+    /// stages story-GFX decompression on the following NMI slice. Publish only
+    /// the text state here so its BG3 update remains independently timed.
+    pub(super) fn complete_text_initialization_state_prefix(&mut self) {
+        self.text_initialize_module_state_prefix();
+    }
+
     pub(super) fn Text_Initialize_initModuleStateLoop(&mut self) {
         self.text_initialize_module_state_prefix();
         self.complete_text_initialization_suffix();

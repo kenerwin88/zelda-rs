@@ -1577,10 +1577,17 @@ fn composite_index_tiles_c5(
     }
 }
 
-/// Expand a 5-bit channel and apply the SNES INIDISP master-brightness curve.
+/// Master-brightness scale on a 5-bit component (Snes9x's `mul_brightness`).
 #[inline]
-fn expand_brightness(c5: i32, brightness: u8) -> u8 {
-    crate::modern_frame::apply_master_brightness(c5.clamp(0, 31) as u8, brightness)
+fn scale_brightness5(c5: i32, brightness: u8) -> i32 {
+    (c5.clamp(0, 31) * i32::from(brightness.min(15)) + 7) / 15
+}
+
+/// Expand a brightness-scaled 5-bit component to 8 bits.
+#[inline]
+fn expand_5bit(c5: i32) -> u8 {
+    let c = c5.clamp(0, 31) as u8;
+    (c << 3) | (c >> 2)
 }
 
 /// Decode a CGWSEL clip/math-mode bit, byte-exact with `post_process.wgsl::cw_bit`.
@@ -1873,6 +1880,13 @@ fn finalize_pixel(
     if !not_clipped {
         return [0, 0, 0, 0xff];
     }
+    // Snes9x (the parity oracle) pre-scales palette colors by master
+    // brightness before color math, fixed color included; mirror that order
+    // (identical to math-then-brightness at full brightness). See the same
+    // transform in modern_finalize.wgsl.
+    for ch in 0..3 {
+        c[ch] = scale_brightness5(c[ch], frame.brightness);
+    }
     if do_math {
         let (operand, second_real) = if frame.add_subscreen {
             if sub.real[i] {
@@ -1891,10 +1905,11 @@ fn finalize_pixel(
             (fixed, false)
         };
         for ch in 0..3 {
+            let operand = scale_brightness5(operand[ch], frame.brightness);
             if frame.subtract_color {
-                c[ch] -= operand[ch];
+                c[ch] -= operand;
             } else {
-                c[ch] += operand[ch];
+                c[ch] += operand;
             }
         }
         if frame.half_color && (second_real || !frame.add_subscreen) {
@@ -1904,9 +1919,9 @@ fn finalize_pixel(
         }
     }
     [
-        expand_brightness(c[0], frame.brightness),
-        expand_brightness(c[1], frame.brightness),
-        expand_brightness(c[2], frame.brightness),
+        expand_5bit(c[0]),
+        expand_5bit(c[1]),
+        expand_5bit(c[2]),
         0xff,
     ]
 }
@@ -2129,6 +2144,39 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
 
     let mut modern = crate::modern_extract::extract_modern_frame(frame);
     crate::modern_extract::fill_modern_cgram_colors(&mut modern, frame, true);
+
+    if let Ok(value) = std::env::var("ZELDA3_DEBUG_MODE7_PIXEL") {
+        let mut parts = value.split(',');
+        if let (Some(Ok(sx)), Some(Ok(sy))) = (
+            parts.next().map(str::parse::<usize>),
+            parts.next().map(str::parse::<usize>),
+        ) {
+            if sx < usize::from(MODERN_FRAME_WIDTH) && sy < usize::from(MODERN_FRAME_HEIGHT) {
+                let index = mode7_bg_index(frame, sx, sy).unwrap_or(0) as usize;
+                let window = modern
+                    .window_scanlines
+                    .get(sy)
+                    .copied()
+                    .unwrap_or([0; 4]);
+                let cm_window = in_cm_window(sx as u32, window, modern.windowsel_cm);
+                eprintln!(
+                    "mode7_pixel xy=({sx},{sy}) index={index:02x} cgram={:04x} rgba={:02x?} brightness={} math={:02x} sub={} subtract={} half={} fixed=({:02x},{:02x},{:02x}) window={window:02x?} cm_window={cm_window} prevent_math={} math_ok={}",
+                    frame.cgram.get(index).copied().unwrap_or(0),
+                    modern.cgram_rgba[index],
+                    modern.brightness,
+                    modern.math_enabled,
+                    modern.add_subscreen,
+                    modern.subtract_color,
+                    modern.half_color,
+                    modern.fixed_color_r,
+                    modern.fixed_color_g,
+                    modern.fixed_color_b,
+                    modern.prevent_math_mode,
+                    cw_bit(cm_window, modern.prevent_math_mode),
+                );
+            }
+        }
+    }
 
     if modern.forced_blank {
         let mut out = vec![0u8; len * 4];
@@ -2577,6 +2625,7 @@ mod tests {
             "backdrop pixel with no sub stays backdrop"
         );
     }
+
 
     #[test]
     fn brightness_only_scales_channels() {

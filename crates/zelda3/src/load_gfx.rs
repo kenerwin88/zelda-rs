@@ -1135,6 +1135,27 @@ impl ZeldaState {
         gfx_pack: usize,
         decompression_buffer_offset: usize,
     ) {
+        if gfx_pack < 12 {
+            // Sheets 0..11 are not real art, but the game still loads them
+            // (the cold-boot intro runs InitializeTilesets with subsets 0 and
+            // 8 still in their boot defaults). Their compressed streams
+            // contain copy commands that reference bytes past the produced
+            // output; on hardware those read the persistent WRAM
+            // decompression buffer, so the junk that lands in OBJ VRAM is a
+            // deterministic function of the buffer's stale contents. Exact
+            // video parity against Snes9x requires reproducing that, so
+            // decompress against the live WRAM buffer and expand the full
+            // 0x600 window (decompressed bytes + stale tail) from it.
+            let Some(compressed) = self.asset_bytes(64, gfx_pack).map(Vec::from) else {
+                return;
+            };
+            self.decompress_graphics_into_wram_buffer(&compressed, decompression_buffer_offset);
+            let window: Vec<u8> = (0..0x600)
+                .map(|i| self.ram[(decompression_buffer_offset + i) & 0xffff])
+                .collect();
+            self.do3_to_4_low_to_vram(dst, &window, chr_source::CHR_KIND_SPRITE, gfx_pack as u16);
+            return;
+        }
         let Some(data) = self.decompressed_sprite_graphics_data(gfx_pack) else {
             return;
         };
@@ -1143,6 +1164,97 @@ impl ZeldaState {
             self.do3_to_4_high_to_vram(dst, &data, chr_source::CHR_KIND_SPRITE, gfx_pack as u16);
         } else {
             self.do3_to_4_low_to_vram(dst, &data, chr_source::CHR_KIND_SPRITE, gfx_pack as u16);
+        }
+    }
+
+    /// Decompress an LC-LZ2 graphics stream directly into the WRAM
+    /// decompression buffer, mirroring the original routine's addressing:
+    /// output bytes stream into WRAM as they are produced, and copy commands
+    /// read back from the buffer base — including bytes beyond what this
+    /// stream has produced (stale contents from earlier loads). All buffer
+    /// arithmetic wraps at 16 bits like the original's indexed addressing.
+    fn decompress_graphics_into_wram_buffer(&mut self, src: &[u8], buffer_base: usize) {
+        let mut cursor = 0usize;
+        let mut produced = 0usize;
+        macro_rules! push {
+            ($value:expr) => {{
+                let value: u8 = $value;
+                self.ram[(buffer_base + produced) & 0xffff] = value;
+                produced += 1;
+            }};
+        }
+        loop {
+            let Some(mut cmd) = src.get(cursor).copied() else {
+                return;
+            };
+            cursor += 1;
+            if cmd == 0xff {
+                return;
+            }
+            let len = if cmd & 0xe0 != 0xe0 {
+                let len = (cmd & 0x1f) as usize + 1;
+                cmd &= 0xe0;
+                len
+            } else {
+                let Some(next) = src.get(cursor).copied() else {
+                    return;
+                };
+                cursor += 1;
+                let len = next as usize + (((cmd & 3) as usize) << 8) + 1;
+                cmd = (cmd << 3) & 0xe0;
+                len
+            };
+            if cmd == 0 {
+                for _ in 0..len {
+                    let Some(value) = src.get(cursor).copied() else {
+                        return;
+                    };
+                    cursor += 1;
+                    push!(value);
+                }
+            } else if cmd & 0x80 != 0 {
+                let Some(lo) = src.get(cursor).copied() else {
+                    return;
+                };
+                let Some(hi) = src.get(cursor + 1).copied() else {
+                    return;
+                };
+                cursor += 2;
+                let mut offset = lo as usize | ((hi as usize) << 8);
+                for _ in 0..len {
+                    let value = self.ram[(buffer_base + offset) & 0xffff];
+                    push!(value);
+                    offset += 1;
+                }
+            } else if cmd & 0x40 == 0 {
+                let Some(value) = src.get(cursor).copied() else {
+                    return;
+                };
+                cursor += 1;
+                for _ in 0..len {
+                    push!(value);
+                }
+            } else if cmd & 0x20 == 0 {
+                let Some(lo) = src.get(cursor).copied() else {
+                    return;
+                };
+                let Some(hi) = src.get(cursor + 1).copied() else {
+                    return;
+                };
+                cursor += 2;
+                for i in 0..len {
+                    push!(if i & 1 == 0 { lo } else { hi });
+                }
+            } else {
+                let Some(mut value) = src.get(cursor).copied() else {
+                    return;
+                };
+                cursor += 1;
+                for _ in 0..len {
+                    push!(value);
+                    value = value.wrapping_add(1);
+                }
+            }
         }
     }
 
@@ -1214,10 +1326,11 @@ impl ZeldaState {
         self.copy_decompressed_graphics_to(dst, &data)
     }
 
-    pub(super) fn decompressed_sprite_graphics_data(&self, mut gfx: usize) -> Option<Vec<u8>> {
-        if gfx < 12 {
-            gfx = 12;
-        }
+    pub(super) fn decompressed_sprite_graphics_data(&self, gfx: usize) -> Option<Vec<u8>> {
+        // Sheets 0..11 ship as their original compressed junk streams; the
+        // VRAM load path handles them with WRAM-buffer semantics in
+        // `load_sprite_graphics`. This plain resolver decompresses them with
+        // zero-filled out-of-range copies (tool/preview quality only).
         let data = self.asset_bytes(64, gfx)?;
         if gfx < 103 && data.len() == 0x600 {
             Some(data.to_vec())

@@ -4,18 +4,92 @@ use super::*;
 use crate::game_output::{AudioSfxBank, EngineAudioCommand};
 
 impl ZeldaState {
+    /// Optional hot-reloaded parity experiment for NMI publication timing.
+    ///
+    /// `config/parity-runtime.toml` is read at each NMI (or the path named by
+    /// `ZELDA3_PARITY_RUNTIME_CONFIG`). A rule only holds the NMI at one host
+    /// frame and must also match the live module/submodule/pending work, so it
+    /// cannot mask an unrelated rendering mismatch. This is deliberately a
+    /// scheduler control point; it never edits PPU pixels or state.
+    fn parity_runtime_hold_nmi_this_frame(&self) -> bool {
+        self.parity_runtime_nmi_rule_matches("hold_nmi")
+    }
+
+    /// Match an exact NMI state against a hot-reloaded parity-policy rule.
+    /// Prefixes keep independent experiments from being combined accidentally.
+    pub(crate) fn parity_runtime_nmi_rule_matches(&self, prefix: &str) -> bool {
+        let path = std::env::var_os("ZELDA3_PARITY_RUNTIME_CONFIG")
+            .unwrap_or_else(|| "config/parity-runtime.toml".into());
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return false;
+        };
+        let value = |name: &str| {
+            text.lines().find_map(|line| {
+                let line = line.split('#').next()?.trim();
+                let (key, value) = line.split_once('=')?;
+                (key.trim() == name).then(|| {
+                    let value = value.trim().trim_matches('"');
+                    if let Some(hex) = value.strip_prefix("0x") {
+                        u32::from_str_radix(hex, 16).ok()
+                    } else {
+                        value.parse().ok()
+                    }
+                })?
+            })
+        };
+        matches!(
+            (
+                value(&format!("{prefix}_host_frame")),
+                value(&format!("{prefix}_main")),
+                value(&format!("{prefix}_sub")),
+                value(&format!("{prefix}_pending")),
+                value(&format!("{prefix}_disable")),
+            ),
+            (Some(host), Some(main), Some(sub), Some(pending), Some(disable))
+                if host == self.frame_ctr_dbg
+                    && main == u32::from(self.game_state.frame.main_module)
+                    && sub == u32::from(self.game_state.frame.submodule)
+                    && pending == u32::from(self.game_state.display.pending_nmi_subroutine)
+                    && disable == u32::from(self.game_state.display.core_update_disable_flag)
+        )
+    }
+
+    fn parity_runtime_defer_pending_nmi_this_frame(&self) -> bool {
+        self.parity_runtime_nmi_rule_matches("defer_pending_nmi")
+    }
+
     pub(super) fn interrupt_nmi(
         &mut self,
         input: u16,
         oam_dma_source: Option<&[u8]>,
         defer_bg_vram_upload: bool,
     ) {
+        let trace_nmi = std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some();
+        if trace_nmi {
+            let frame = self.game_state.frame;
+            eprintln!(
+                "nmi_before host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x}",
+                self.frame_ctr_dbg,
+                frame.main_module,
+                frame.submodule,
+                self.game_state.display.nmi_update_is_latched(),
+                self.game_state.display.pending_nmi_subroutine,
+                self.game_state.display.nmi_load_target_address,
+                self.game_state.display.core_update_disable_flag,
+            );
+        }
         let joypad_already_sampled = std::mem::take(&mut self.joypad_sampled_before_main);
         let audio_already_processed = std::mem::take(&mut self.audio_nmi_processed_before_main);
         if !audio_already_processed {
             self.interrupt_nmi_audio_parts_locked();
         }
 
+        if self.parity_runtime_hold_nmi_this_frame() {
+            self.latch_nmi_update();
+            if trace_nmi {
+                eprintln!("nmi_runtime_policy held host={}", self.frame_ctr_dbg);
+            }
+        }
         if !self.game_state.display.nmi_update_is_latched() {
             let blank_scanlines = nmi_active_display_blank_scanlines_for_pending_work(
                 self.game_state.display.core_updates_are_disabled(),
@@ -50,10 +124,37 @@ impl ZeldaState {
                 }
             }
         }
-        self.write_ppu_registers();
+        // The real NMI checks $012A (the interruptible-thread flag) right
+        // before the register-mirror publication and, when the thread is
+        // active, jumps straight to the epilogue: no $2123..$2132, TM/TS,
+        // scroll, mode, or INIDISP writes happen that vblank, so the PPU keeps
+        // last frame's register state. The attract history scene runs its
+        // text-writer thread across many frames and relies on this (its
+        // CGWSEL/COLDATA setup only reaches the PPU on thread-idle vblanks).
+        // The intro (module 0) poly thread is emulated in coarse slices, so
+        // our flag overstates the real at-vblank thread activity there; the
+        // dedicated poly timing machinery covers that module instead.
+        let thread_holds_registers =
+            self.game_state.display.nmi_thread_active && self.game_state.frame.main_module == 0x14;
+        if !thread_holds_registers {
+            self.write_ppu_registers();
+        }
         // After all CHR DMAs have settled this frame, refresh the OBJ CHR logical
         // sources by content hash so the off-VRAM sprite path resolves live cells.
         self.rehash_streamed_obj_sources();
+        if trace_nmi {
+            let frame = self.game_state.frame;
+            eprintln!(
+                "nmi_after host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x}",
+                self.frame_ctr_dbg,
+                frame.main_module,
+                frame.submodule,
+                self.game_state.display.nmi_update_is_latched(),
+                self.game_state.display.pending_nmi_subroutine,
+                self.game_state.display.nmi_load_target_address,
+                self.game_state.display.core_update_disable_flag,
+            );
+        }
     }
 
     pub(super) fn interrupt_nmi_audio_parts_locked(&mut self) {
@@ -111,6 +212,17 @@ impl ZeldaState {
                 .animated_tile_vram_destination_usize();
             if dst + 0x200 <= self.ppu.vram.len() && src_addr + 0x400 <= self.ram.len() {
                 let data = self.animated_tile_dma_source_bytes().to_vec();
+                if std::env::var_os("ZELDA3_DEBUG_BOOT_DMA_SOURCE").is_some()
+                    && self.rom_startup_timing()
+                    && self.game_state.frame.main_module == 0
+                    && self.game_state.frame.submodule == 0
+                {
+                    eprintln!(
+                        "boot_dma_source host={} src={src_addr:04x} dst={dst:04x} bytes={:02x?}",
+                        self.frame_ctr_dbg,
+                        &data[..data.len().min(16)],
+                    );
+                }
                 for i in 0..0x200 {
                     self.ppu.vram[dst + i] = read_word_from_slice(&data, i * 2);
                 }
@@ -160,8 +272,7 @@ impl ZeldaState {
         let frame = self.game_state.frame;
         let defer_intro_initialization_publication = self.rom_startup_timing()
             && frame.main_module == 0
-            && frame.submodule == 1
-            && !self.intro_initialization_reset_obj_published;
+            && frame.submodule == 1;
         let defer_intro_cgram = defer_intro_initialization_publication
             || (self.rom_startup_timing()
                 && frame.main_module == 0
@@ -173,6 +284,16 @@ impl ZeldaState {
             // aux buffer into main_palette_buffer (when overworld_palette_aux_or_main=0x200)
             // are visible here.  The native palette_buffer.main is bounded to 0x100 entries
             // and silently drops out-of-bounds writes, leaving it stale in that case.
+            // Hardware performs this upload in the vblank AFTER the frame the
+            // display snapshot describes; latch the pre-upload image so the
+            // compose can show what this frame's scanout actually used (the
+            // attract palette filter diverges from Snes9x otherwise). The
+            // intro module's palette effects (poly flash, logo fades) are
+            // IRQ-driven mid-frame writes on hardware that this port folds
+            // into the NMI upload — those stay same-frame visible.
+            if frame.main_module != 0 && self.cgram_upload_latch.is_none() {
+                self.cgram_upload_latch = Some(self.ppu.cgram.to_vec());
+            }
             for i in 0..0x100 {
                 self.ppu.cgram[i] = read_le_u16(&self.ram, MAIN_PALETTE_BUFFER + i * 2);
             }
@@ -198,7 +319,12 @@ impl ZeldaState {
         }
         let mut oam_buf = self.sprite_oam_shadow_buffer().to_vec();
         let frame = self.game_state.frame;
-        let defer_intro_initialization_oam_dma = defer_intro_initialization_publication;
+        // Snes9x shows the normal $00:0800 OAM DMA on the first initialized
+        // vblank.  The startup CPU work has not yet authored the regular
+        // sprite list, but its hardware-visible reset word is still a real
+        // DMA source; suppressing this transfer was the reason a renderer-side
+        // OAM/VRAM substitute had accumulated here.
+        let defer_intro_initialization_oam_dma = false;
         if self.rom_startup_timing() && frame.main_module == 0 && matches!(frame.submodule, 6 | 7) {
             if let Some(boundary_oam) = oam_dma_source {
                 // The title sword/sparkle writer runs after the OAM-DMA boundary in
@@ -210,48 +336,24 @@ impl ZeldaState {
             }
         }
         if !defer_intro_initialization_oam_dma {
-            if frame.main_module == 0
-                && self.ppu.vram[..ROM_INTRO_INITIAL_VISIBLE_TILE_ZERO.len()]
-                    == ROM_INTRO_INITIAL_VISIBLE_TILE_ZERO
-            {
-                self.ppu.vram[..ROM_INTRO_INITIAL_VISIBLE_TILE_ZERO.len()].fill(0);
-                if self.ppu.cgram[1..].iter().all(|color| *color == 0x5555) {
-                    self.ppu.cgram[1..].fill(0);
-                    self.game_state
-                        .display
-                        .palette_provenance
-                        .0
-                        .reconstitute_cgram(&self.ppu.cgram);
-                }
-            }
-            // The first intro initialization slice returns before the normal
-            // OAM-DMA point. Preserve the reset sparkle already in PPU OAM;
-            // the newly authored Nintendo Presents shadow is published once
-            // initialization reaches the regular NMI path.
             for i in 0..self.ppu.oam.len() {
                 self.ppu.oam[i] = read_word_from_slice(&oam_buf, i * 2);
             }
-        } else {
-            // The ROM's first interruptible WRAM initialization slice has
-            // cleared the OAM-DMA source after its first word. Preserve the
-            // deterministic power-on fill in that word until the initialization
-            // slice returns and the regular OAM authoring path takes over.
-            self.ppu.oam.fill(0);
-            self.ppu.oam[0] = 0x5555;
-            self.ppu.vram[..ROM_INTRO_INITIAL_VISIBLE_TILE_ZERO.len()]
-                .copy_from_slice(&ROM_INTRO_INITIAL_VISIBLE_TILE_ZERO);
-            self.ppu.cgram[1..].fill(0x5555);
-            // This transient is authoritative PPU state, not a main-palette
-            // shadow upload. Publish it to the modern renderer's CGRAM mirror
-            // just as a full-state restore publishes its PPU CGRAM image.
-            self.game_state
-                .display
-                .palette_provenance
-                .0
-                .reconstitute_cgram(&self.ppu.cgram);
-            self.intro_initialization_reset_obj_published = true;
         }
 
+        if std::env::var_os("ZELDA3_DEBUG_ATTRACT_NMI_UPLOAD").is_some()
+            && frame.main_module == 20
+            && self.game_state.display.has_bg_vram_load()
+        {
+            eprintln!(
+                "attract_nmi_bg_upload mode={} defer={} sequence={} state={} nmi={}",
+                self.game_state.display.bg_vram_load_mode,
+                defer_bg_vram_upload,
+                self.game_state.ending.attract_scene.sequence(),
+                self.game_state.ending.attract_scene.state_word(),
+                self.game_state.display.pending_nmi_subroutine,
+            );
+        }
         if self.game_state.display.has_bg_vram_load() && !defer_bg_vram_upload {
             match self.game_state.display.bg_vram_load_mode {
                 1 => {
@@ -316,7 +418,16 @@ impl ZeldaState {
             self.clear_core_update_disable_flag();
         }
 
-        let nmi_subroutine_index = self.take_pending_nmi_subroutine();
+        // A scheduling experiment may defer the dispatch while retaining the
+        // rest of the NMI's normal OAM/PPU maintenance. This is intentionally
+        // distinct from holding the whole NMI: it leaves the pending byte
+        // intact exactly as hardware does when main-loop publication misses a
+        // vblank boundary.
+        let nmi_subroutine_index = if self.parity_runtime_defer_pending_nmi_this_frame() {
+            0
+        } else {
+            self.take_pending_nmi_subroutine()
+        };
         match nmi_subroutine_index {
             0 => self.nmi_upload_tilemap_do_nothing(),
             1 => self.nmi_upload_tilemap(),

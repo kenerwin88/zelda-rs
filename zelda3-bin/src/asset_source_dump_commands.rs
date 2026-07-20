@@ -8,7 +8,7 @@ use crate::developer_room_commands::load_developer_destination;
 use crate::image_output::write_assets_index_png;
 use crate::input_script::InputScript;
 use crate::{
-    apply_sram_to_game_or_exit, load_play_or_checkpoint, load_play_state,
+    apply_sram_to_game_or_exit, load_embedded_play_state, load_play_or_checkpoint, load_play_state,
     load_translated_replay_state, read_file_or_exit,
 };
 use renderer::modern_extract::{decode_snes_2bpp_tile_indices, decode_snes_4bpp_tile_indices};
@@ -637,7 +637,10 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
             }
         };
 
-    let mut collect_used_slots = |game: &ZeldaState, cur_frame: u32| {
+    let mut collect_used_slots = |game: &mut ZeldaState, cur_frame: u32| {
+        // Use the same display-latched PPU snapshot as the live GPU presenter.
+        // Inspecting `game.ppu` directly can discover a different OBJ set.
+        game.with_display_snapshot(|game| {
         let ppu = &game.ppu;
 
         for layer_index in 0..3usize {
@@ -787,9 +790,20 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                     let tile_word_base =
                         obj_addr.wrapping_add(used_tile.wrapping_mul(16)) as usize & 0x7fff;
                     let slot = tile_word_base / 16;
-                    let src = game.vram_chr_source().get(slot);
+                    let mut src = game.vram_chr_source().get(slot);
                     if src.kind == CHR_KIND_NONE {
-                        continue;
+                        let Some(key) = content_hash_source_key_for_kind(
+                            &ppu.vram,
+                            slot,
+                            CHR_KIND_SPRITE,
+                        ) else {
+                            continue;
+                        };
+                        src = zelda3::LogicalChrSrc {
+                            kind: CHR_KIND_SPRITE,
+                            pack: ((key >> 16) & 0xffff) as u16,
+                            tile_off: (key & 0xffff) as u16,
+                        };
                     }
                     let preview_src = game.vram_chr_preview_source().get(slot);
                     let usage_src =
@@ -816,6 +830,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                 }
             }
         }
+        });
     };
 
     let original_hook = panic::take_hook();
@@ -841,7 +856,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                     break;
                 }
                 frames = frames.wrapping_add(1);
-                collect_used_slots(&game, start_frame.wrapping_add(frames));
+                collect_used_slots(&mut game, start_frame.wrapping_add(frames));
             }
             return (frames, frames);
         }
@@ -875,9 +890,16 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                 }
             }
         }
-        let mut startup_game = load_play_state(rom);
+        // Plain `cargo run` boots the embedded pack.  The startup coverage capture
+        // must use that same state; using the separately generated disk pack can
+        // produce different initial CHR and leave a live-only fatal gap.
+        let mut startup_game = load_embedded_play_state();
         let mut startup_walked = 0u32;
         if !options.skip_startup {
+            // The first presented display is the freshly initialized PPU/OAM state,
+            // before the first emulation step.  Capture it as a normal source-backed
+            // asset as well, rather than leaving live startup to a fallback path.
+            collect_used_slots(&mut startup_game, startup_walked);
             while startup_walked < startup_frames {
                 let step = panic::catch_unwind(AssertUnwindSafe(|| {
                     startup_game.zelda_run_frame(0);
@@ -889,7 +911,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                     break;
                 }
                 startup_walked = startup_walked.wrapping_add(1);
-                collect_used_slots(&startup_game, startup_walked);
+                collect_used_slots(&mut startup_game, startup_walked);
                 if options.progress_interval != 0 && startup_walked % options.progress_interval == 0
                 {
                     eprintln!("[dump] startup progress frames={startup_walked}");
@@ -951,7 +973,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                 }
                 frames = frames.wrapping_add(1);
                 scripted_walked = scripted_walked.wrapping_add(1);
-                collect_used_slots(&game, absolute_frame.wrapping_add(1));
+                collect_used_slots(&mut game, absolute_frame.wrapping_add(1));
                 if options.progress_interval != 0
                     && scripted_walked % options.progress_interval == 0
                 {
@@ -980,7 +1002,7 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
                     break;
                 }
                 frames = frames.wrapping_add(1);
-                collect_used_slots(&game, frames);
+                collect_used_slots(&mut game, frames);
                 if options.progress_interval != 0 && frames % options.progress_interval == 0 {
                     eprintln!("[dump] replay progress frames={frames} max_frames={max_frames}");
                 }

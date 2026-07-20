@@ -273,9 +273,7 @@ impl ModernScreenBuilderScratch {
         let mut bucket_layer_mask = 0u32;
         for layer in frame.bg_layers.iter().take(3) {
             let layer_index = usize::from(layer.index);
-            let bucket_layer = layer_index < BG_BUCKET_LAYERS
-                && !modern_screen_builder_layer_varies_by_scanline(frame, layer_index)
-                && !modern_screen_builder_layer_mosaic_enabled(frame, layer_index);
+            let bucket_layer = modern_screen_builder_layer_is_bucketable(frame, layer_index);
             if bucket_layer {
                 bucket_layer_mask |= 1u32 << layer_index;
             }
@@ -300,6 +298,8 @@ impl ModernScreenBuilderScratch {
                         &mut self.bucket_lists,
                         layer_index,
                         inst,
+                        layer.wrap_w,
+                        layer.wrap_h,
                         instance_index,
                     );
                 }
@@ -513,9 +513,7 @@ fn modern_screen_builder_params(
     let p3 = layer_params(1);
     let p4 = layer_params(2);
     let bucket_layer_mask = (0..3usize).fold(0u32, |mask, layer| {
-        if !modern_screen_builder_layer_varies_by_scanline(frame, layer)
-            && !modern_screen_builder_layer_mosaic_enabled(frame, layer)
-        {
+        if modern_screen_builder_layer_is_bucketable(frame, layer) {
             mask | (1u32 << layer)
         } else {
             mask
@@ -587,6 +585,12 @@ fn modern_screen_builder_layer_mosaic_enabled(frame: &ModernFrame, layer: usize)
     frame.mosaic_size > 1 && (frame.mosaic_enabled & (1u8 << layer)) != 0
 }
 
+fn modern_screen_builder_layer_is_bucketable(frame: &ModernFrame, layer: usize) -> bool {
+    layer < BG_BUCKET_LAYERS
+        && !modern_screen_builder_layer_varies_by_scanline(frame, layer)
+        && !modern_screen_builder_layer_mosaic_enabled(frame, layer)
+}
+
 fn bg_bucket_index(layer: usize, priority: bool, x: usize, y: usize) -> usize {
     (((layer * BG_BUCKET_PRIORITIES + usize::from(priority)) * BG_BUCKET_ROWS + y) * BG_BUCKET_COLS)
         + x
@@ -596,12 +600,38 @@ fn push_bg_instance_buckets(
     buckets: &mut [Vec<u32>],
     layer: usize,
     inst: &ModernIndexTileInstance,
+    wrap_w: u16,
+    wrap_h: u16,
     instance_index: u32,
 ) {
-    let x0 = i32::from(inst.screen_x).max(0);
-    let y0 = i32::from(inst.screen_y).max(0);
-    let x1 = (i32::from(inst.screen_x) + 7).min(i32::from(MODERN_FRAME_WIDTH) - 1);
-    let y1 = (i32::from(inst.screen_y) + 7).min(i32::from(MODERN_FRAME_HEIGHT) - 1);
+    let wrap_w = i32::from(wrap_w.max(256));
+    let wrap_h = i32::from(wrap_h.max(224));
+    for wrap_y in [-wrap_h, 0, wrap_h] {
+        for wrap_x in [-wrap_w, 0, wrap_w] {
+            push_bg_instance_bucket_position(
+                buckets,
+                layer,
+                inst,
+                i32::from(inst.screen_x) + wrap_x,
+                i32::from(inst.screen_y) + wrap_y,
+                instance_index,
+            );
+        }
+    }
+}
+
+fn push_bg_instance_bucket_position(
+    buckets: &mut [Vec<u32>],
+    layer: usize,
+    inst: &ModernIndexTileInstance,
+    screen_x: i32,
+    screen_y: i32,
+    instance_index: u32,
+) {
+    let x0 = screen_x.max(0);
+    let y0 = screen_y.max(0);
+    let x1 = (screen_x + 7).min(i32::from(MODERN_FRAME_WIDTH) - 1);
+    let y1 = (screen_y + 7).min(i32::from(MODERN_FRAME_HEIGHT) - 1);
     if x0 > x1 || y0 > y1 {
         return;
     }
@@ -675,5 +705,21 @@ mod tests {
 
         let bucket = bg_bucket_index(0, false, 0, 0);
         assert_eq!(scratch.bg_bucket_words[bucket * 2 + 1], 0);
+    }
+
+    #[test]
+    fn bg_bucket_pack_covers_wrapped_tiles_at_a_scroll_origin() {
+        let mut frame = ModernFrame::empty();
+        frame.bg_layers[0].scroll_x = 1;
+        frame.bg_layers[0]
+            .index_tiles
+            .push(test_inst(0, -255, 0, false));
+        let mut scratch = ModernScreenBuilderScratch::default();
+
+        scratch.build_bg_instances_and_buckets(&frame, 1);
+
+        let bucket = bg_bucket_index(0, false, 0, 0);
+        assert_eq!(scratch.bg_bucket_words[bucket * 2 + 1], 1);
+        assert!(modern_screen_builder_layer_is_bucketable(&frame, 0));
     }
 }

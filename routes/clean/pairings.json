@@ -1,0 +1,15 @@
+{
+  "kind": "zelda3_snes9x_rust_boundary_pairings_v1",
+  "oracle_independence": "paths and hashes only; no state conversion",
+  "boundaries": {
+    "1": {
+      "rust_state": "boundaries/0001/rust.z3state",
+      "rust_state_sha256": "0b355be95d469a51ecdedaf96abe2cc30b809a8d74a366f137543d8fade06845",
+      "oracle_state": "boundaries/0001/oracle.state",
+      "oracle_state_sha256": "df8564207f5332baba55e24aaf5cf039fecc1cf32472635d671f01fecfb2cd7b",
+      "verified_by": "boundaries/0001/parity.json",
+      "converted_to_snes9x": false,
+      "converted_from_snes9x": false
+    }
+  }
+}

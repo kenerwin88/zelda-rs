@@ -292,22 +292,13 @@ impl LiveGpuFrameCapture {
     }
 }
 
-/// Modern asset resources + HD override store for the live present path, loaded
-/// once. The renderer crate owns which atlases each renderer mode requires and
-/// how they route through GPU/software presentation.
+/// Native play has one authoritative visual path: the PNG/asset GPU compositor.
+/// There is no VRAM-compositor presentation path.
 struct GpuPlayRenderer {
     live_mode: renderer::EffectiveRendererMode<'static>,
     modern_assets: renderer::ModernAssetFrameResources,
     variant_live_stats: renderer::ModernAssetLiveStats,
-    /// `ZELDA3_LIVE_STRICT_GPU=1` restores exit-on-any-fallback (the
-    /// validation posture). Default live play only exits when a frame could
-    /// not be presented at all; presented-via-fallback frames log once per
-    /// distinct reason and keep playing.
-    strict_gpu: bool,
-    logged_fallback_reasons: std::collections::HashSet<String>,
 }
-
-
 
 impl GpuPlayRenderer {
     fn new() -> Self {
@@ -323,8 +314,6 @@ impl GpuPlayRenderer {
             live_mode,
             modern_assets,
             variant_live_stats: renderer::ModernAssetLiveStats::from_env(),
-            strict_gpu: std::env::var_os("ZELDA3_LIVE_STRICT_GPU").is_some(),
-            logged_fallback_reasons: std::collections::HashSet::new(),
         }
     }
 }
@@ -398,64 +387,23 @@ impl ModernAssetGpuReadbackRenderer {
     ) -> Result<Vec<String>, String> {
         let capture = capture_gpu_frame_from_game(game);
         let gpu_frame = capture.gpu_frame();
-        let source_atlas = self
-            .resources
-            .source_atlas()
-            .ok_or_else(|| "modern pixel trace requires the source atlas".to_string())?;
-        let variant_headless = self
-            .resources
-            .variant_headless()
-            .ok_or_else(|| "modern pixel trace requires the canonical variant GPU".to_string())?;
-        let variant_atlas = variant_headless.atlas();
-        let source_table = renderer::source_table_from_entries(capture.source_entries());
         let scene =
             renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
-        let (production_rgba, stats, missing_sources, production_traces) = variant_headless
-            .render_rgba_with_live_index_base_from_sources_traced(
-                &gpu_frame,
-                &source_table,
-                source_atlas,
-                scene.bg_palette_name(),
-                scene.sprite_palette_name(),
-                Some((x, y)),
-            );
+        let production = self.resources.render_production_gpu_asset_rgba_from_entries(
+            &gpu_frame,
+            capture.source_entries(),
+            scene,
+        )?;
         let pixel_offset = (usize::try_from(y).unwrap_or(usize::MAX) * 256
             + usize::try_from(x).unwrap_or(usize::MAX))
         .saturating_mul(4);
-        let production_pixel = production_rgba
+        let production_pixel = production.rgba
             .get(pixel_offset..pixel_offset.saturating_add(4))
             .unwrap_or(&[]);
-        let mut lines = vec![format!(
-            "production pixel={production_pixel:02x?} stats={stats:?} missing_sources={}",
-            missing_sources.len()
-        )];
-        lines.extend(
-            production_traces
-                .into_iter()
-                .map(|trace| format!("source {}", trace.describe())),
-        );
-        let (vram_frame, vram_bg_cells) =
-            renderer::modern_extract::extract_modern_frame_from_vram(&gpu_frame);
-        let vram_plan = renderer::modern_variant_draw::compile_variant_draws(
-            &vram_frame,
-            &vram_bg_cells,
-            &[],
-            variant_atlas,
-            scene.bg_palette_name(),
-            scene.sprite_palette_name(),
-        );
-        lines.extend(
-            renderer::modern_variant_draw::trace_variant_plan_pixel(
-                &vram_frame,
-                variant_atlas,
-                &vram_plan,
-                x,
-                y,
-            )
-            .into_iter()
-            .map(|trace| format!("vram {}", trace.describe())),
-        );
-        Ok(lines)
+        Ok(vec![format!(
+            "production pixel={production_pixel:02x?} via={}",
+            production.via,
+        )])
     }
 
     pub(crate) fn validate_game_full_gpu_path(
@@ -889,9 +837,6 @@ impl crate::play_renderer::PlayRendererBackend for GpuPlayRenderer {
     }
 
     fn configure_frontend(&self, frontend: &mut NativeFrontend) {
-        // Live play is always PNG-backed GPU rendering. `classic`, `modern`,
-        // `modern-compare`, and CPU atlas modes remain available only through
-        // explicit diagnostic commands, not the default playable frontend.
         frontend.set_renderer_mode(renderer::RendererMode::from_effective_mode(self.live_mode));
     }
 
@@ -907,21 +852,40 @@ impl crate::play_renderer::PlayRendererBackend for GpuPlayRenderer {
             capture.modern_asset_present_input(&self.modern_assets, &mut self.variant_live_stats),
         );
         if let Some(line) = report.failure_line() {
-            if self.strict_gpu {
-                eprintln!("{line}");
-                process::exit(2);
+            if std::env::var_os("ZELDA3_DEBUG_ASSET_COVERAGE").is_some() {
+                let gpu_frame = capture.gpu_frame();
+                let source_table = renderer::source_table_from_entries(capture.source_entries());
+                let resolved = renderer::modern_extract::extract_asset_resolved_modern_frame_from_sources(
+                    &gpu_frame,
+                    &source_table,
+                    self.modern_assets.source_atlas().expect("live renderer has source atlas"),
+                );
+                let unkeyed = resolved
+                    .sprite_cells
+                    .iter()
+                    .filter(|cell| cell.source_key == renderer::modern_hd_overrides::NO_SOURCE_KEY)
+                    .map(|cell| {
+                        let pattern = cell
+                            .indices
+                            .iter()
+                            .map(|index| format!("{index:x}"))
+                            .collect::<String>();
+                        format!("cell={} pattern={pattern}", cell.id)
+                    })
+                    .collect::<Vec<_>>();
+                eprintln!(
+                    "asset_coverage_missing main={:02x} sub={:02x} mode={} obj=({:04x},{:04x}) {} patterns=[{}]",
+                    capture.main_module,
+                    game.ram[0x11],
+                    gpu_frame.mode,
+                    gpu_frame.obj.tile_adr1,
+                    gpu_frame.obj.tile_adr2,
+                    resolved.missing_source_report(64),
+                    unkeyed.join(", ")
+                );
             }
-            // Non-strict live play: warn once per distinct reason (drop the
-            // varying count suffix) and keep playing. If the asset paths could
-            // not present the frame at all, degrade to the modern CPU VRAM
-            // compositor so the player still sees correct pixels.
-            let reason = line.split(" count=").next().unwrap_or(line).to_string();
-            if self.logged_fallback_reasons.insert(reason) {
-                eprintln!("{line} (non-strict live play: continuing; set ZELDA3_LIVE_STRICT_GPU=1 to make this fatal)");
-            }
-            if !report.presented() {
-                frontend.present_gpu_frame(&capture.gpu_frame());
-            }
+            eprintln!("{line}");
+            process::exit(2);
         }
     }
 }

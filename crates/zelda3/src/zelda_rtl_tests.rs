@@ -3290,7 +3290,7 @@ fn attract_first_story_render_wait_is_armed_by_fade_completion() {
     state.attract_fade_in_sequence();
 
     assert_eq!(state.game_state.ending.attract_scene.state(), 5);
-    assert_eq!(state.attract_first_story_render_delay, 6);
+    assert_eq!(state.attract_first_story_render_delay, 7);
 }
 
 #[test]

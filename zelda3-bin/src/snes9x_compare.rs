@@ -26,6 +26,58 @@ pub(crate) const ORACLE_MUSIC_CONTROL: usize = 0x012c;
 pub(crate) const ORACLE_QUEUED_MUSIC_CONTROL: usize = 0x0132;
 pub(crate) const ORACLE_LAST_MUSIC_CONTROL: usize = 0x0133;
 
+/// The ROM-visible publication flags that delimit an emulated frame.
+///
+/// These are intentionally a narrow semantic contract: unlike a raw WRAM
+/// dump, they have stable meaning in both the ROM decompilation crosswalk and
+/// the Rust state model.  They are compared before RGBA pixels so a renderer
+/// cannot conceal a scheduler or producer error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct BootBoundaryState {
+    frame: u32,
+    stage: &'static str,
+    main_module: u8,
+    submodule: u8,
+    nmi_latch: u8,
+    inidisp: u8,
+    bg_vram_load: u8,
+    cgram_upload: u8,
+    hud_upload: u8,
+    nmi_subroutine: u8,
+}
+
+impl BootBoundaryState {
+    fn from_ram(frame: u32, stage: &'static str, ram: &[u8]) -> Self {
+        Self {
+            frame,
+            stage,
+            main_module: ram[0x10],
+            submodule: ram[0x11],
+            nmi_latch: ram[0x12],
+            inidisp: ram[0x13],
+            bg_vram_load: ram[0x14],
+            cgram_upload: ram[0x15],
+            hud_upload: ram[0x16],
+            nmi_subroutine: ram[0x17],
+        }
+    }
+
+    fn first_difference(&self, oracle: &Self) -> Option<(&'static str, u8, u8)> {
+        [
+            ("main_module", self.main_module, oracle.main_module),
+            ("submodule", self.submodule, oracle.submodule),
+            ("nmi_latch", self.nmi_latch, oracle.nmi_latch),
+            ("inidisp", self.inidisp, oracle.inidisp),
+            ("bg_vram_load", self.bg_vram_load, oracle.bg_vram_load),
+            ("cgram_upload", self.cgram_upload, oracle.cgram_upload),
+            ("hud_upload", self.hud_upload, oracle.hud_upload),
+            ("nmi_subroutine", self.nmi_subroutine, oracle.nmi_subroutine),
+        ]
+        .into_iter()
+        .find_map(|(name, rust, oracle)| (rust != oracle).then_some((name, rust, oracle)))
+    }
+}
+
 pub(crate) fn run_compare_snes9x_oracle(args: &[String]) {
     run_compare_libretro_oracle(args, Some("snes9x"), Some("Snes9x"));
 }
@@ -833,9 +885,26 @@ pub(crate) fn run_compare_libretro_oracle(
     });
     let trace_poly_sched = std::env::var_os("TRACE_POLY_SCHED").is_some();
     let trace_shield_dma = std::env::var_os("ZELDA3_DEBUG_SHIELD_DMA").is_some();
-    let debug_wram_frame = std::env::var("ZELDA3_DEBUG_WRAM_FRAME")
-        .ok()
-        .and_then(|value| value.parse::<u32>().ok());
+    let debug_vram_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_VRAM_FRAMES", None);
+    let debug_wram_frames = debug_frame_selection_from_env(
+        "ZELDA3_DEBUG_WRAM_FRAMES",
+        Some("ZELDA3_DEBUG_WRAM_FRAME"),
+    );
+    // Oracle-side publication probe. This deliberately compares the raw PPU
+    // VRAM bytes after every emulated frame, independently of RGBA output, so
+    // a simulation/DMA skew can be located before a later rendering mismatch
+    // obscures its cause.
+    let assert_oracle_vram = std::env::var_os("ZELDA3_ASSERT_ORACLE_VRAM").is_some();
+    let assert_oracle_boot_contract =
+        std::env::var_os("ZELDA3_ASSERT_ORACLE_BOOT_CONTRACT").is_some();
+    let mut rust_boot_contract = std::env::var_os("ZELDA3_RUST_BOOT_CONTRACT").map(|path| {
+        BufWriter::new(fs::File::create(path).unwrap_or_else(|error| {
+            eprintln!("failed to create Rust boot-contract trace: {error}");
+            process::exit(1);
+        }))
+    });
+    let mut previous_oracle_vram = None::<Vec<u8>>;
+    let mut previous_rust_vram = None::<Vec<u8>>;
     let mut previous_shield_dma_trace = None::<(u8, u8, u16, u16, u8, u8, u16, u16)>;
     let mut previous_uncle_trace = None::<(u8, u8, u8, u8, u8, u8, u8, u8)>;
     let gpu_video_readback = (compare_video || trace_video_pixel.is_some())
@@ -852,6 +921,10 @@ pub(crate) fn run_compare_libretro_oracle(
             *mark = now;
         }
     };
+    // TEMP DIAGNOSTIC: render with the BG-anim CHR region (VRAM 0x3c00..0x3e00)
+    // as it was before this frame's step, to test a one-step animation skew.
+    let debug_anim_lag = std::env::var_os("ZELDA3_DEBUG_ANIM_LAG").is_some();
+    let mut pre_anim_region: Option<Vec<u16>> = None;
     for frame_index in start_frame..frames {
         let requested_input = input_script.input_for_frame(frame_index);
         let compare_this_frame = frame_index >= effective_compare_from_frame;
@@ -883,14 +956,30 @@ pub(crate) fn run_compare_libretro_oracle(
         stage(2, &mut stage_ns, &mut stage_mark);
         let rust_video_frame =
             (compare_this_frame && (trace_video_pixel.is_some() || compare_video)).then(|| {
-                render_modern_asset_gpu_frame_rgba_or_exit(
+                let restored = if debug_anim_lag {
+                    pre_anim_region.as_ref().map(|prev| {
+                        let cur = game.ppu.vram[0x3c00..0x3e00].to_vec();
+                        game.ppu.vram[0x3c00..0x3e00].copy_from_slice(prev);
+                        cur
+                    })
+                } else {
+                    None
+                };
+                let frame = render_modern_asset_gpu_frame_rgba_or_exit(
                     gpu_video_readback
                         .as_ref()
                         .expect("GPU readback allocated for libretro video comparison"),
                     &mut game,
                     "libretro oracle video comparison",
-                )
+                );
+                if let Some(cur) = restored {
+                    game.ppu.vram[0x3c00..0x3e00].copy_from_slice(&cur);
+                }
+                frame
             });
+        if debug_anim_lag {
+            pre_anim_region = Some(game.ppu.vram[0x3c00..0x3e00].to_vec());
+        }
         stage(3, &mut stage_ns, &mut stage_mark);
         let ports = game.zelda_debug_apu_write_ports();
         if trace_poly_sched {
@@ -941,10 +1030,101 @@ pub(crate) fn run_compare_libretro_oracle(
                 process::exit(1);
             });
         let mut capture = oracle.run_frame_with_input(input);
+        // Libretro frame numbering starts at one; keep this artifact aligned
+        // with `scripts/snes9x_boot_contract.py` rather than the CLI's
+        // zero-based input index.
+        let contract_frame = frame_index.saturating_add(1);
+        let rust_boundary = BootBoundaryState::from_ram(contract_frame, "after", &game.ram);
+        if let Some(trace) = rust_boot_contract.as_mut() {
+            serde_json::to_writer(&mut *trace, &rust_boundary).unwrap_or_else(|error| {
+                eprintln!("failed to write Rust boot-contract frame: {error}");
+                process::exit(1);
+            });
+            writeln!(trace).unwrap_or_else(|error| {
+                eprintln!("failed to terminate Rust boot-contract frame: {error}");
+                process::exit(1);
+            });
+        }
+        if assert_oracle_boot_contract {
+            let oracle_ram = oracle
+                .memory_bytes(RETRO_MEMORY_SYSTEM_RAM)
+                .unwrap_or_else(|| {
+                    eprintln!("{oracle_name} did not expose WRAM for boot-contract comparison");
+                    process::exit(1);
+                });
+            let oracle_boundary =
+                BootBoundaryState::from_ram(contract_frame, "after", oracle_ram);
+            if let Some((field, rust, oracle)) = rust_boundary.first_difference(&oracle_boundary) {
+                eprintln!(
+                    "oracle_boot_contract_divergence frame={contract_frame} stage=after field={field} rust={rust:02x} oracle={oracle:02x}"
+                );
+                process::exit(1);
+            }
+        }
+        if assert_oracle_vram {
+            let oracle_vram = oracle
+                .memory_bytes(RETRO_MEMORY_VIDEO_RAM)
+                .unwrap_or_else(|| {
+                    eprintln!("{oracle_name} did not expose VRAM for parity probe");
+                    process::exit(1);
+                });
+            let rust_vram = game
+                .ppu
+                .vram
+                .iter()
+                .flat_map(|word| word.to_le_bytes())
+                .collect::<Vec<_>>();
+            if debug_vram_frames.contains(&frame_index) {
+                let changes = |previous: Option<&Vec<u8>>, current: &[u8]| {
+                    previous
+                        .into_iter()
+                        .flat_map(|previous| {
+                            previous
+                                .iter()
+                                .zip(current)
+                                .enumerate()
+                                .filter(|(_, (before, after))| before != after)
+                                .map(|(byte, (before, after))| (byte, *before, *after))
+                        })
+                        .collect::<Vec<_>>()
+                };
+                let rust_changes = changes(previous_rust_vram.as_ref(), &rust_vram);
+                let oracle_changes = changes(previous_oracle_vram.as_ref(), oracle_vram);
+                eprintln!(
+                    "oracle_vram_writes frame={frame_index} rust_count={} oracle_count={} rust_first={:?} oracle_first={:?}",
+                    rust_changes.len(),
+                    oracle_changes.len(),
+                    &rust_changes[..rust_changes.len().min(24)],
+                    &oracle_changes[..oracle_changes.len().min(24)],
+                );
+            }
+            if let Some((byte, (&rust, &oracle))) = rust_vram
+                .iter()
+                .zip(oracle_vram.iter())
+                .enumerate()
+                .find(|(_, (rust, oracle))| rust != oracle)
+            {
+                eprintln!(
+                    "oracle_vram_divergence frame={frame_index} byte={byte:04x} word={:04x} rust={rust:02x} oracle={oracle:02x}",
+                    byte / 2,
+                );
+                process::exit(1);
+            }
+            if rust_vram.len() != oracle_vram.len() {
+                eprintln!(
+                    "oracle_vram_length_divergence frame={frame_index} rust={} oracle={}",
+                    rust_vram.len(),
+                    oracle_vram.len(),
+                );
+                process::exit(1);
+            }
+            previous_oracle_vram = Some(oracle_vram.to_vec());
+            previous_rust_vram = Some(rust_vram);
+        }
         stage(4, &mut stage_ns, &mut stage_mark);
-        if debug_wram_frame == Some(frame_index) {
+        if debug_wram_frames.contains(&frame_index) {
             let Some(dir) = session_dir.as_deref() else {
-                eprintln!("ZELDA3_DEBUG_WRAM_FRAME requires --session-dir");
+                eprintln!("ZELDA3_DEBUG_WRAM_FRAMES requires --session-dir");
                 process::exit(2);
             };
             let oracle_ram = oracle
@@ -969,6 +1149,173 @@ pub(crate) fn run_compare_libretro_oracle(
                 eprintln!("failed to write oracle WRAM capture: {error}");
                 process::exit(1);
             });
+            let live_oam = game
+                .ppu
+                .oam
+                .iter()
+                .flat_map(|word| word.to_le_bytes())
+                .collect::<Vec<_>>();
+            fs::write(
+                dir.join(format!("rust_live_oam_frame_{frame_index}.bin")),
+                live_oam,
+            )
+            .unwrap_or_else(|error| {
+                eprintln!("failed to write Rust live OAM capture: {error}");
+                process::exit(1);
+            });
+            let displayed_oam = game.with_display_snapshot(|snapshot| {
+                snapshot
+                    .ppu
+                    .oam
+                    .iter()
+                    .flat_map(|word| word.to_le_bytes())
+                    .collect::<Vec<_>>()
+            });
+            fs::write(
+                dir.join(format!("rust_displayed_oam_frame_{frame_index}.bin")),
+                displayed_oam,
+            )
+            .unwrap_or_else(|error| {
+                eprintln!("failed to write Rust displayed OAM capture: {error}");
+                process::exit(1);
+            });
+            let displayed_vram = game.with_display_snapshot(|snapshot| {
+                snapshot
+                    .ppu
+                    .vram
+                    .iter()
+                    .flat_map(|word| word.to_le_bytes())
+                    .collect::<Vec<_>>()
+            });
+            fs::write(
+                dir.join(format!("rust_displayed_vram_frame_{frame_index}.bin")),
+                displayed_vram,
+            )
+            .unwrap_or_else(|error| {
+                eprintln!("failed to write Rust displayed VRAM capture: {error}");
+                process::exit(1);
+            });
+            let live_vram = game
+                .ppu
+                .vram
+                .iter()
+                .flat_map(|word| word.to_le_bytes())
+                .collect::<Vec<_>>();
+            fs::write(
+                dir.join(format!("rust_live_vram_frame_{frame_index}.bin")),
+                live_vram,
+            )
+            .unwrap_or_else(|error| {
+                eprintln!("failed to write Rust live VRAM capture: {error}");
+                process::exit(1);
+            });
+            let oracle_state = oracle.serialize_state().unwrap_or_else(|error| {
+                eprintln!("failed to serialize oracle debug state: {error}");
+                process::exit(1);
+            });
+            fs::write(
+                dir.join(format!("oracle_state_frame_{frame_index}.state")),
+                oracle_state,
+            )
+            .unwrap_or_else(|error| {
+                eprintln!("failed to write oracle debug state: {error}");
+                process::exit(1);
+            });
+            let rust_checkpoint = PlayCrashCheckpoint {
+                magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
+                host_frame: frame_index.saturating_add(1),
+                input,
+                run_what: RUN_MAIN,
+                game: game.clone(),
+            };
+            fs::write(
+                dir.join(format!("rust_state_frame_{frame_index}.z3state")),
+                bincode::serialize(&rust_checkpoint).unwrap_or_else(|error| {
+                    eprintln!("failed to serialize Rust debug state: {error}");
+                    process::exit(1);
+                }),
+            )
+            .unwrap_or_else(|error| {
+                eprintln!("failed to write Rust debug state: {error}");
+                process::exit(1);
+            });
+        }
+        if debug_vram_frames.contains(&frame_index) {
+            // Palette-phase probe: end-frame WRAM main palette buffer entry 23 on
+            // both sides, plus our displayed (snapshot-composed) CGRAM entry 23.
+            let oracle_ram = oracle.memory_bytes(RETRO_MEMORY_SYSTEM_RAM).unwrap_or(&[]);
+            let ours = u16::from_le_bytes([game.ram[0xc500 + 46], game.ram[0xc500 + 47]]);
+            let theirs = if oracle_ram.len() > 0xc52f {
+                u16::from_le_bytes([oracle_ram[0xc500 + 46], oracle_ram[0xc500 + 47]])
+            } else {
+                0xdead
+            };
+            let displayed =
+                game.with_display_snapshot(|snapshot| snapshot.ppu.cgram[23]);
+            let thread_rust = game.ram[0x12a];
+            let thread_oracle = if oracle_ram.len() > 0x12a {
+                oracle_ram[0x12a]
+            } else {
+                0xff
+            };
+            eprintln!(
+                "palette_probe frame={frame_index} buffer23 rust={ours:04x} oracle={theirs:04x} displayed_cgram23={displayed:04x} live_cgram23={:04x} thread12a rust={thread_rust:02x} oracle={thread_oracle:02x}",
+                game.ppu.cgram[23]
+            );
+        }
+        if debug_vram_frames.contains(&frame_index) {
+            let Some(dir) = session_dir.as_deref() else {
+                eprintln!("ZELDA3_DEBUG_VRAM_FRAMES requires --session-dir");
+                process::exit(2);
+            };
+            let rust_vram = game
+                .ppu
+                .vram
+                .iter()
+                .flat_map(|word| word.to_le_bytes())
+                .collect::<Vec<_>>();
+            fs::write(dir.join(format!("rust_vram_frame_{frame_index}.bin")), &rust_vram)
+                .unwrap_or_else(|error| {
+                    eprintln!("failed to write Rust VRAM capture: {error}");
+                    process::exit(1);
+                });
+            let oracle_vram = oracle
+                .memory_bytes(RETRO_MEMORY_VIDEO_RAM)
+                .unwrap_or_else(|| {
+                    eprintln!("{oracle_name} did not expose VRAM for capture");
+                    process::exit(1);
+                });
+            fs::write(
+                dir.join(format!("oracle_vram_frame_{frame_index}.bin")),
+                oracle_vram,
+            )
+            .unwrap_or_else(|error| {
+                eprintln!("failed to write oracle VRAM capture: {error}");
+                process::exit(1);
+            });
+        }
+        if std::env::var("ZELDA3_DEBUG_SCANLINES_FRAME")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            == Some(frame_index)
+        {
+            let displayed_summary = game.with_display_snapshot(|snapshot| {
+                crate::render_diagnostics::format_render_ppu_summary(snapshot)
+            });
+            eprintln!("ppu_summary_displayed {displayed_summary}");
+            eprintln!(
+                "ppu_summary_live {}",
+                crate::render_diagnostics::format_render_ppu_summary(&game)
+            );
+            let windows = game.ppu_scanline_windows();
+            let fixed = game.ppu_scanline_fixed_color();
+            for line in 0..224usize {
+                let (w1l, w1r, w2l, w2r, tm, _, _, _, blank) = windows[line];
+                let (fr, fg, fb) = fixed[line];
+                eprintln!(
+                    "scanline {line}: w1=({w1l},{w1r}) w2=({w2l},{w2r}) tm={tm:02x} fixed=({fr},{fg},{fb}) blank={blank}"
+                );
+            }
         }
         if trace_shield_dma {
             let oracle_ram = oracle
@@ -1338,6 +1685,9 @@ pub(crate) fn run_compare_libretro_oracle(
             );
         }
         if let Some((x, y)) = trace_video_pixel.filter(|_| compare_this_frame) {
+            let displayed_ppu = game.with_display_snapshot(|snapshot| {
+                crate::render_diagnostics::format_render_ppu_summary(snapshot)
+            });
             let pixel_index = y.saturating_mul(width as usize).saturating_add(x);
             let rust_offset = pixel_index.saturating_mul(4);
             let snes9x_offset = y.saturating_mul(capture.video_pitch)
@@ -1355,6 +1705,7 @@ pub(crate) fn run_compare_libretro_oracle(
                 "pixel frame={frame_index} xy=({x},{y}) rust={rust_pixel:02x?} {oracle_name}={oracle_pixel:02x?} main={:02x} sub={:02x} subsub={:02x} inidisp={:02x} obj_pal90=[{}]",
                 game.ram[0x10], game.ram[0x11], game.ram[0xb0], game.ram[0x13], obj_pal,
             );
+            println!("pixel displayed_ppu frame={frame_index} {displayed_ppu}");
             match gpu_video_readback
                 .as_ref()
                 .expect("GPU readback allocated for pixel trace")
@@ -1590,6 +1941,46 @@ pub(crate) fn expected_sha256_matches(
             path.display()
         ))
     }
+}
+
+/// Parse an explicit frame selection for diagnostic artifact capture.
+///
+/// The comparator intentionally keeps this separate from parity decisions:
+/// it only controls which already-observed state boundaries are written to a
+/// session directory.  Accepting ranges keeps an early-divergence capture
+/// practical without a shell-generated list of thousands of frame numbers.
+pub(crate) fn debug_frame_selection_from_env(primary: &str, legacy: Option<&str>) -> Vec<u32> {
+    let value = env::var(primary)
+        .ok()
+        .or_else(|| legacy.and_then(|name| env::var(name).ok()));
+    value
+        .as_deref()
+        .map(parse_debug_frame_selection)
+        .unwrap_or_default()
+}
+
+pub(crate) fn parse_debug_frame_selection(value: &str) -> Vec<u32> {
+    let mut frames = Vec::new();
+    for part in value.split(',').map(str::trim).filter(|part| !part.is_empty()) {
+        let range = part
+            .split_once("..=")
+            .or_else(|| part.split_once('-'))
+            .and_then(|(start, end)| {
+                Some((start.trim().parse::<u32>().ok()?, end.trim().parse::<u32>().ok()?))
+            });
+        match range {
+            Some((start, end)) if start <= end => frames.extend(start..=end),
+            Some(_) => {}
+            None => {
+                if let Ok(frame) = part.parse() {
+                    frames.push(frame);
+                }
+            }
+        }
+    }
+    frames.sort_unstable();
+    frames.dedup();
+    frames
 }
 
 pub(crate) fn append_u32_range(ranges: &mut Vec<(u32, u32)>, value: u32) {
@@ -1945,6 +2336,7 @@ pub(crate) fn libretro_engine_state_receipt(ram: &[u8]) -> serde_json::Value {
         ("nmi_update_latch", u64::from(byte(0x0012))),
         ("nmi_bg_vram_load_mode", u64::from(byte(0x0014))),
         ("nmi_subroutine_index", u64::from(byte(0x0017))),
+        ("nmi_load_target_address", u64::from(word(0x0116))),
         ("nmi_core_update_disable", u64::from(byte(0x0710))),
         (
             "ppu_oam_dma_shadow_hash",
@@ -2686,4 +3078,34 @@ pub(crate) fn snes9x_state_section<'a>(state: &'a [u8], tag: &[u8; 3]) -> Option
         .ok()?;
     let data_start = length_end + 1;
     state.get(data_start..data_start.checked_add(length)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_debug_frame_selection, BootBoundaryState};
+
+    #[test]
+    fn parse_debug_frame_selection_expands_and_deduplicates_ranges() {
+        assert_eq!(
+            parse_debug_frame_selection("81,79-81,84..=85,invalid,8-3"),
+            vec![79, 80, 81, 84, 85]
+        );
+    }
+
+    #[test]
+    fn boot_boundary_reports_the_first_named_semantic_difference() {
+        let mut rust_ram = vec![0; 0x20];
+        let mut oracle_ram = vec![0; 0x20];
+        rust_ram[0x13] = 0x0f;
+        oracle_ram[0x13] = 0x0e;
+        oracle_ram[0x17] = 3;
+
+        let rust = BootBoundaryState::from_ram(82, "after", &rust_ram);
+        let oracle = BootBoundaryState::from_ram(82, "after", &oracle_ram);
+
+        assert_eq!(
+            rust.first_difference(&oracle),
+            Some(("inidisp", 0x0f, 0x0e))
+        );
+    }
 }

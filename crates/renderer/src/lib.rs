@@ -36,6 +36,7 @@ mod modern_screen_builder;
 pub mod modern_software;
 pub mod modern_source_atlas;
 pub mod modern_sprite_atlas;
+#[cfg(test)]
 mod modern_sprite_renderer;
 pub mod modern_variant_atlas;
 pub mod modern_variant_draw;
@@ -1657,10 +1658,8 @@ pub struct FrameRenderer {
     presentation_notice: PresentationNotice,
     viewport: Viewport,
     log_viewport: bool,
-    /// Integer HD scale for the modern (off-VRAM) live render path
-    /// (`ZELDA3_HD_SCALE`, default 2); read once at construction so every
-    /// `render_modern_frame` and `present_modern_frame_from_sources` call uses
-    /// one consistent size.
+    /// Integer HD scale for source-backed modern asset presentation
+    /// (`ZELDA3_HD_SCALE`, default 2), read once at construction.
     hd_scale: modern_hd_overrides::HdScale,
     /// Lazily built on first diagnostic `present_modern_gpu` call
     /// (`assets-anim-gpu` mode).
@@ -1864,40 +1863,6 @@ fn source_backed_missing_art_is_resolvable(reason: &str, missing_source_count: u
     reason == "missing-art" && missing_source_count == 0
 }
 
-fn production_asset_gpu_readback_is_resolvable(via: &str, missing_source_count: usize) -> bool {
-    matches!(via, "variant-gpu" | "mode7-source-gpu") && missing_source_count == 0
-}
-
-fn reset_obj_vram_fallback_is_resolvable(
-    frame: &GpuFrame<'_>,
-    via: &str,
-    missing_sources: &[modern_extract::MissingAssetSource],
-) -> bool {
-    via == "variant-gpu"
-        && frame.obj.tile_adr1 == 0
-        && frame.obj.tile_adr2 == 0x1000
-        && !missing_sources.is_empty()
-        && missing_sources.iter().all(|missing| {
-            missing.surface == modern_extract::MissingAssetSurface::Sprite
-                && missing.cell_id == 0
-                && missing.cell_source_key == Some(modern_hd_overrides::NO_SOURCE_KEY)
-        })
-}
-
-fn dynamic_bg3_vram_fallback_is_resolvable(
-    via: &str,
-    missing_sources: &[modern_extract::MissingAssetSource],
-) -> bool {
-    via == "variant-gpu"
-        && !missing_sources.is_empty()
-        && missing_sources.iter().all(|missing| {
-            missing.surface == modern_extract::MissingAssetSurface::Bg
-                && missing.layer_index == Some(2)
-                && missing.source_kind == Some(7)
-                && missing.cell_source_key == Some(modern_hd_overrides::NO_SOURCE_KEY)
-        })
-}
-
 pub struct ModernAssetValidationFrame {
     pub via: &'static str,
     pub timings: modern_gpu::ModernIndexCompareValidationTimings,
@@ -2008,6 +1973,24 @@ impl ModernIndexCompareResources {
             );
         }
         let src_table = source_table_from_entries(source_entries);
+        if frame.mode != 7 {
+            let (rgba, variant_stats) = self
+                .variant_headless()
+                .expect("checked above")
+                .render_live_gpu_rgba_from_sources(
+                    frame,
+                    &src_table,
+                    self.source_atlas()
+                        .expect("variant GPU readback requires source atlas"),
+                    scene.bg_palette_name(),
+                    scene.sprite_palette_name(),
+                )?;
+            return Ok(ModernAssetReadbackFrame {
+                rgba,
+                via: "variant-gpu",
+                variant_stats: Some(variant_stats),
+            });
+        }
         let render = modern_gpu::render_modern_index_compare_frame(
             frame,
             Some(&src_table),
@@ -2079,6 +2062,45 @@ impl ModernIndexCompareResources {
             );
         }
         let src_table = source_table_from_entries(source_entries);
+        if frame.mode != 7 {
+            let source_atlas = self
+                .source_atlas()
+                .ok_or_else(|| "modern production GPU readback requires a source atlas".to_string())?;
+            // Native play presents this exact source-keyed GPU compositor. Do
+            // not send oracle readback through the separate variant planner:
+            // its dynamic-material accounting describes pre-baked variant
+            // availability, not the PNG/source GPU path that is actually on
+            // screen.
+            let resolved = modern_extract::extract_asset_resolved_modern_frame_from_sources(
+                frame,
+                &src_table,
+                source_atlas,
+            );
+            if resolved.has_unresolved_sources() {
+                let report = modern_extract::format_missing_asset_source_report(
+                    &resolved.missing_sources,
+                    4,
+                );
+                return Err(format!(
+                    "modern production GPU readback has unresolved asset source(s): {report}"
+                ));
+            }
+            let rgba = self
+                .gpu_headless()
+                .ok_or_else(|| {
+                    "modern production GPU readback requires a source GPU compositor".to_string()
+                })?
+                .render_asset_resolved_gpu_rgba(
+                    &resolved.frame,
+                    &resolved.bg_cells,
+                    &resolved.sprite_cells,
+                )?;
+            return Ok(ModernAssetReadbackFrame {
+                rgba,
+                via: "source-gpu",
+                variant_stats: None,
+            });
+        }
         let render = modern_gpu::render_modern_index_compare_frame(
             frame,
             Some(&src_table),
@@ -2090,9 +2112,8 @@ impl ModernIndexCompareResources {
             None,
             false,
         );
-        if !production_asset_gpu_readback_is_resolvable(render.via, render.missing_sources.len())
-            && !reset_obj_vram_fallback_is_resolvable(frame, render.via, &render.missing_sources)
-            && !dynamic_bg3_vram_fallback_is_resolvable(render.via, &render.missing_sources)
+        if let Some(fallback) =
+            modern_gpu::modern_gpu_path_fallback_reason(render.via, render.variant_stats.as_ref())
         {
             let missing_report =
                 modern_extract::format_missing_asset_source_report(&render.missing_sources, 4);
@@ -2102,9 +2123,8 @@ impl ModernIndexCompareResources {
                 format!(" {missing_report}")
             };
             return Err(format!(
-                "modern production GPU readback unsupported via={} missing_sources={}",
-                render.via,
-                render.missing_sources.len(),
+                "modern production GPU readback unsupported via={} reason={} count={}",
+                render.via, fallback.reason, fallback.count,
             ) + &detail);
         }
         Ok(ModernAssetReadbackFrame {
@@ -2482,8 +2502,7 @@ impl FrameRenderer {
     /// Current live HD scale (`ZELDA3_HD_SCALE`, default 2), cached at
     /// construction. Callers that render the modern sources+overrides path
     /// themselves (see module docs on `hd_scale` field) use this so their
-    /// finished RGBA is sized consistently with `render_modern_frame`'s own
-    /// VRAM-only fallback.
+    /// finished RGBA uses the same configured scale as the live asset route.
     pub fn hd_scale(&self) -> u32 {
         self.hd_scale.get()
     }
@@ -2759,48 +2778,11 @@ impl FrameRenderer {
         );
     }
 
-    /// Modern (software) live-VRAM render path: the diagnostic fallback used
-    /// when the caller can't supply the sources+overrides render. That path
-    /// needs the CHR-source table, which lives on the zelda3 `GameState` this crate
-    /// can't depend on — see [`FrameRenderer::present_modern_frame_from_sources`]
-    /// for the source-table boundary). Decodes BG + sprites from the live
-    /// `GpuFrame` VRAM, composites at [`FrameRenderer::hd_scale`] (N× nearest,
-    /// no HD overrides — those are source-keyed and VRAM-decoded cells never
-    /// carry a source key), then uploads the resulting `scale*256 × scale*224`
-    /// RGBA and blits it with the standard presentation pipeline (`render()`).
-    /// Mode 7 (not a Mode-1 tilemap) routes through the dedicated CPU
-    /// compositor, nearest-upscaled to match. Default live asset rendering uses
-    /// [`FrameRenderer::present_modern_asset_frame`] instead.
-    pub fn render_modern_frame(&mut self, frame: &GpuFrame<'_>) -> Result<(), RenderError> {
-        let scale = self.hd_scale.get();
-        let rgba = if frame.mode == 7 {
-            let native = crate::modern_software::render_modern_mode7_frame(frame);
-            crate::modern_software::upscale_rgba_nearest(&native, 256, 224, scale as usize)
-        } else {
-            let (mut modern, bg_cells) =
-                crate::modern_extract::extract_modern_frame_from_vram(frame);
-            let (sprite_cells, sprites) =
-                crate::modern_extract::extract_modern_sprites_from_vram(frame);
-            modern.index_sprites = sprites;
-            crate::modern_software::render_modern_frame_full_scaled(
-                &modern,
-                &bg_cells,
-                &sprite_cells,
-                &crate::modern_hd_overrides::HdOverrideCtx::disabled(),
-                scale,
-            )
-        };
-        self.upload_rgba8(&rgba, 256 * scale, 224 * scale);
-        self.render()
-    }
-
     /// Present an already-composited modern frame built by the caller (the
     /// sources+overrides path in `zelda3-bin`'s live present loop, which holds
-    /// the CHR-source table `FrameRenderer` can't reach — see
-    /// [`FrameRenderer::render_modern_frame`]'s docs). `width`/`height` should
-    /// be `scale*256 × scale*224` for [`FrameRenderer::hd_scale`] so present
-    /// stays consistent with the VRAM-only fallback; the game texture is
-    /// recreated on size change via [`GameTexture::ensure_size`].
+    /// the CHR-source table `FrameRenderer` can't reach. `width`/`height`
+    /// should be `scale*256 × scale*224` for [`FrameRenderer::hd_scale`]; the
+    /// game texture is recreated on size change via [`GameTexture::ensure_size`].
     pub fn present_modern_rgba(
         &mut self,
         rgba: &[u8],
@@ -2811,11 +2793,10 @@ impl FrameRenderer {
         self.render()
     }
 
-    /// Modern (software) source-atlas present path for callers that hold the
-    /// live CHR source table. This is the source-backed sibling of
-    /// [`FrameRenderer::render_modern_frame`]: the caller supplies the source
-    /// table and HD override context, while the renderer owns composition,
-    /// scale selection, upload, and final presentation.
+    /// Modern source-atlas present path for callers that hold the live CHR
+    /// source table. The caller supplies the source table and HD override
+    /// context, while the renderer owns composition, scale selection, upload,
+    /// and final presentation.
     pub fn present_modern_frame_from_sources<S: modern_extract::SourceTableView + ?Sized>(
         &mut self,
         frame: &GpuFrame<'_>,
@@ -2879,61 +2860,9 @@ impl FrameRenderer {
                     scene.sprite_palette_name(),
                 )?;
                 if !render.rendered {
-                    // The on-GPU stable path can't present this frame: un-keyed
-                    // content-hash BG (CHR_KIND_BG_STREAM) has no canonical-atlas
-                    // entry, so the variant plan degrades to a live-index base. Rather
-                    // than refuse, resolve BG from the SOURCE atlas via the proven
-                    // headless variant renderer — the same path `--modern-index-compare`
-                    // uses at mismatch_px=0. Only genuinely un-keyable tiles
-                    // (NO_SOURCE_KEY -> non-empty missing_sources) still refuse.
-                    let headless = resources
-                        .variant_headless()
-                        .expect("variant-gpu route requires the headless variant renderer");
-                    let (rgba, stats, missing_sources, _traces) = headless
-                        .render_rgba_with_live_index_base_from_sources_traced(
-                            frame,
-                            src_table.expect("route requires source table"),
-                            resources
-                                .source_atlas()
-                                .expect("route requires source atlas"),
-                            scene.bg_palette_name(),
-                            scene.sprite_palette_name(),
-                            None,
-                        );
-                    // The production readback path tolerates two benign
-                    // missing-source classes (reset-value OBJ VRAM at boot,
-                    // dynamic BG3 text chunks); the live present accepts the
-                    // same ones — the live-index base already rendered those
-                    // cells from VRAM.
-                    if !missing_sources.is_empty() {
-                        let benign = reset_obj_vram_fallback_is_resolvable(
-                            frame,
-                            "variant-gpu",
-                            &missing_sources,
-                        ) || dynamic_bg3_vram_fallback_is_resolvable(
-                            "variant-gpu",
-                            &missing_sources,
-                        );
-                        if !benign {
-                            return Ok(ModernAssetFramePresentResult::Unsupported {
-                                via: "variant-gpu",
-                                variant_stats: Some(stats),
-                            });
-                        }
-                        // Benign class: the live-index base rendered the
-                        // unkeyed cells from VRAM. Present without variant
-                        // stats so the strict full-GPU accounting does not
-                        // flag the known-benign fallback draws.
-                        self.present_modern_rgba(&rgba, 256, 224)?;
-                        return Ok(ModernAssetFramePresentResult::Presented {
-                            via: "variant-gpu",
-                            variant_stats: None,
-                        });
-                    }
-                    self.present_modern_rgba(&rgba, 256, 224)?;
-                    return Ok(ModernAssetFramePresentResult::Presented {
+                    return Ok(ModernAssetFramePresentResult::Unsupported {
                         via: "variant-gpu",
-                        variant_stats: Some(stats),
+                        variant_stats: Some(render.stats),
                     });
                 }
                 Ok(ModernAssetFramePresentResult::Presented {
@@ -3062,7 +2991,7 @@ impl FrameRenderer {
             sprite_cells,
             bg_palette_name,
             sprite_palette_name,
-            &target.view,
+            &target.texture,
         );
         if !render.rendered {
             return Ok(render);
@@ -3411,24 +3340,6 @@ mod tests {
         assert!(source_backed_missing_art_is_resolvable("missing-art", 0));
         assert!(!source_backed_missing_art_is_resolvable("missing-art", 1));
         assert!(!source_backed_missing_art_is_resolvable("cpu-fallback", 0));
-    }
-
-    #[test]
-    fn production_asset_gpu_readback_accepts_only_resolved_presenter_routes() {
-        assert!(production_asset_gpu_readback_is_resolvable(
-            "variant-gpu",
-            0
-        ));
-        assert!(production_asset_gpu_readback_is_resolvable(
-            "mode7-source-gpu",
-            0
-        ));
-        assert!(!production_asset_gpu_readback_is_resolvable(
-            "variant-gpu",
-            1
-        ));
-        assert!(!production_asset_gpu_readback_is_resolvable("vram-gpu", 0));
-        assert!(!production_asset_gpu_readback_is_resolvable("sources", 0));
     }
 
     fn test_variant_atlas_with_mode7_chars(

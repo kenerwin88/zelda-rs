@@ -53,6 +53,26 @@ def source_with_required_calls(body: str) -> str:
 
 
 class RendererSourceBoundaryTests(unittest.TestCase):
+    def test_live_play_renderer_never_falls_back_to_the_vram_compositor(self):
+        source = (ROOT / "zelda3-bin" / "src" / "gpu_capture.rs").read_text()
+        impl_start = source.index("impl crate::play_renderer::PlayRendererBackend for GpuPlayRenderer")
+        impl_end = source.index("pub(crate) fn new_gpu_play_renderer", impl_start)
+        live_play_impl = source[impl_start:impl_end]
+
+        self.assertIn(
+            "frontend.present_modern_asset_live_frame_from_entries(", live_play_impl
+        )
+        self.assertNotIn("frontend.present_gpu_frame(", live_play_impl)
+        self.assertNotIn("ZELDA3_LIVE_STRICT_GPU", live_play_impl)
+        self.assertIn("process::exit(2);", live_play_impl)
+
+    def test_vram_compositor_has_no_presentation_api(self):
+        platform = (ROOT / "crates" / "platform" / "src" / "lib.rs").read_text()
+        renderer = (ROOT / "crates" / "renderer" / "src" / "lib.rs").read_text()
+
+        self.assertNotIn("pub fn present_gpu_frame(", platform)
+        self.assertNotIn("pub fn render_modern_frame(", renderer)
+
     def test_allows_renderer_owned_source_render_calls(self):
         module = load_module()
         source = source_with_required_calls(

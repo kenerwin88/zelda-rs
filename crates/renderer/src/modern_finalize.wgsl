@@ -65,6 +65,17 @@ fn expand_brightness(c5: i32, brightness: u32) -> u32 {
     return (scaled5 << 3u) | (scaled5 >> 2u);
 }
 
+// Master-brightness scale on a 5-bit component (Snes9x's mul_brightness).
+fn scale_brightness5(c5: i32, brightness: u32) -> i32 {
+    let clamped = u32(clamp(c5, 0, 31));
+    return i32((clamped * min(brightness, 15u) + 7u) / 15u);
+}
+
+fn expand_5bit(c5: i32) -> u32 {
+    let clamped = u32(clamp(c5, 0, 31));
+    return (clamped << 3u) | (clamped >> 2u);
+}
+
 @compute @workgroup_size(64)
 fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x;
@@ -117,6 +128,15 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
 
+    // Snes9x (the parity oracle) pre-scales every palette color by master
+    // brightness when it builds its render palettes, so color math operates
+    // on the brightness-scaled components — including the fixed color. Match
+    // that order exactly: scale both operands first, then add/subtract/half.
+    // (At brightness 15 this is identical to math-then-brightness.)
+    r = scale_brightness5(r, brightness);
+    g = scale_brightness5(g, brightness);
+    b = scale_brightness5(b, brightness);
+
     if (do_math) {
         let add_subscreen = (flags & 0x4u) != 0u;
         let sub_real = unpack_real(sub);
@@ -130,6 +150,9 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
             ob = unpack_b(sub);
             second_real = true;
         }
+        or = scale_brightness5(or, brightness);
+        og = scale_brightness5(og, brightness);
+        ob = scale_brightness5(ob, brightness);
 
         if ((flags & 0x1u) != 0u) {
             r = r - or;
@@ -149,8 +172,8 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
     }
 
-    let rr = expand_brightness(r, brightness);
-    let gg = expand_brightness(g, brightness);
-    let bb = expand_brightness(b, brightness);
+    let rr = expand_5bit(r);
+    let gg = expand_5bit(g);
+    let bb = expand_5bit(b);
     out_rgba[i] = rr | (gg << 8u) | (bb << 16u) | 0xff000000u;
 }
