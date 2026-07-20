@@ -120,6 +120,8 @@ pub(crate) struct LibretroCore {
     pub(crate) debug_frame_first_output_cycle: Option<unsafe extern "C" fn() -> u64>,
     pub(crate) debug_frame_last_output_cycle: Option<unsafe extern "C" fn() -> u64>,
     pub(crate) debug_frame_output_count: Option<unsafe extern "C" fn() -> c_int>,
+    pub(crate) debug_ppu_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
+    pub(crate) debug_scanline_mode7_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) api_version: c_uint,
     pub(crate) library_name: String,
     pub(crate) library_version: String,
@@ -211,6 +213,9 @@ impl LibretroCore {
                 optional_symbol(handle, "zelda3_snes9x_debug_frame_last_output_cycle");
             let debug_frame_output_count =
                 optional_symbol(handle, "zelda3_snes9x_debug_frame_output_count");
+            let debug_ppu_value = optional_symbol(handle, "zelda3_snes9x_debug_ppu_value");
+            let debug_scanline_mode7_value =
+                optional_symbol(handle, "zelda3_snes9x_debug_scanline_mode7_value");
 
             let api_version = retro_api_version();
             if api_version != 1 {
@@ -276,6 +281,8 @@ impl LibretroCore {
                 debug_frame_first_output_cycle,
                 debug_frame_last_output_cycle,
                 debug_frame_output_count,
+                debug_ppu_value,
+                debug_scanline_mode7_value,
                 api_version,
                 library_name,
                 library_version,
@@ -459,6 +466,14 @@ impl LibretroCore {
             last_output_cycle: unsafe { last() },
             output_count: unsafe { count() }.max(0),
         })
+    }
+
+    pub(crate) fn debug_ppu_value(&self, field: i32, index: i32) -> Option<i32> {
+        self.debug_ppu_value.map(|probe| unsafe { probe(field, index) })
+    }
+
+    pub(crate) fn debug_scanline_mode7_value(&self, line: i32, field: i32) -> Option<i32> {
+        self.debug_scanline_mode7_value.map(|probe| unsafe { probe(line, field) })
     }
 }
 

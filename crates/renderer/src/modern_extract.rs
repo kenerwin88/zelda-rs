@@ -1487,8 +1487,15 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                                 )
                             })
                         });
+                        // BG3 dialogue is composed at runtime.  A global
+                        // pixel-pattern lookup is ambiguous here: a transient
+                        // VWF tile can equal an unrelated authored PNG tile.
+                        // Keep only the exact BG3 slot/content identities
+                        // above, and only if the decoded source pixels still
+                        // equal the tile being drawn. VWF glyphs are supplied
+                        // through their explicit semantic run channel.
                         if source_hit.is_some_and(|(_, src)| src.indices != baked) {
-                            source_hit = source_cell_by_indices(atlas, &baked);
+                            source_hit = None;
                         }
                         match source_hit {
                             Some((source_key, src)) => {
@@ -2218,7 +2225,10 @@ pub fn extract_asset_resolved_modern_frame_from_sources<S: SourceTableView + ?Si
     let (mut modern, bg_cells, mut rich_bg_missing_sources) =
         extract_modern_frame_from_sources_with_missing_sources(frame, src_table, atlas);
     let mut bg_cells = bg_cells;
-    if frame_has_semantic_bg3(frame) {
+    // A semantic BG3 replacement is valid only when the capture has an
+    // explicit source-tile identity. Dialogue/VWF metadata alone must not
+    // re-key its runtime-composed tiles from pixel patterns.
+    if !frame.bg3_source_tiles.is_empty() {
         replace_bg3_with_live_keyed_cells(frame, atlas, &mut modern, &mut bg_cells);
         rich_bg_missing_sources.retain(|missing| missing.layer_index != Some(2));
     }
@@ -2248,14 +2258,78 @@ pub fn extract_asset_resolved_modern_frame_from_sources<S: SourceTableView + ?Si
     }
 }
 
-fn frame_has_semantic_bg3(frame: &GpuFrame<'_>) -> bool {
-    frame.dialogue_message_id.is_some()
-        || frame.dialogue_layout_origin_tile_number.is_some()
-        || !frame.bg3_source_tiles.is_empty()
-        || !frame.bg3_vwf_glyph_runs.is_empty()
-        || !frame.source_dialogue_ir.is_empty()
-        || !frame.dialogue_ir.is_empty()
-        || !frame.dialogue_layout.is_empty()
+/// Adds semantic VWF glyphs as ordinary indexed BG3 cells. The runtime BG3
+/// chunks covered by these glyph runs are deliberately culled above; this is
+/// their source-PNG replacement for the shared screen compositor.
+pub fn append_source_vwf_glyph_cells(
+    modern: &mut ModernFrame,
+    bg_cells: &mut Vec<ModernIndexTile>,
+    glyph_atlas: &crate::modern_variant_atlas::DialogueVwfGlyphAtlas,
+    runs: &[ModernVwfGlyphRun],
+) {
+    let Some(bg3) = modern.bg_layers.get_mut(2) else {
+        return;
+    };
+    for run in runs {
+        let Some(glyph) = glyph_atlas
+            .glyphs
+            .iter()
+            .find(|glyph| glyph.code == run.source_glyph_code() as u8)
+        else {
+            continue;
+        };
+        if glyph.indices.len() != 16 * 16 {
+            continue;
+        }
+        // BG3's 2bpp colors occupy four CGRAM entries per palette. The
+        // semantic main text palette is palette 7; message color commands
+        // select the corresponding palette explicitly.
+        let palette = run.dialogue_color.unwrap_or(7) & 7;
+        for quadrant in 0..4usize {
+            let mut indices = [0u8; 64];
+            let qx = (quadrant & 1) * 8;
+            let qy = (quadrant >> 1) * 8;
+            for y in 0..8 {
+                for x in 0..8 {
+                    let source = glyph.indices[(qy + y) * 16 + qx + x];
+                    indices[y * 8 + x] = if source == 0 { 0 } else { palette * 4 + source };
+                }
+            }
+            let screen_x = run.screen_x + (qx as i16);
+            let screen_y = run.screen_y + (qy as i16);
+            // The semantic glyph replaces a culled BG3 chunk, but its z-order
+            // remains owned by the surrounding source scene. This preserves
+            // the tilemap priority transition that Snes9x exposes during the
+            // typewriter reveal without restoring the runtime pixel chunk.
+            let priority = bg3
+                .index_tiles
+                .iter()
+                .rev()
+                .find(|instance| {
+                    instance.screen_x == screen_x && instance.screen_y == screen_y
+                })
+                .map(|instance| instance.priority)
+                .unwrap_or(true);
+            let cell_id = bg_cells.len() as u32;
+            bg_cells.push(ModernIndexTile {
+                id: cell_id,
+                indices,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                hflip: false,
+                vflip: false,
+            });
+            bg3.index_tiles.push(ModernIndexTileInstance {
+                cell_id,
+                source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
+                screen_x,
+                screen_y,
+                palette: 0,
+                hflip: false,
+                vflip: false,
+                priority,
+            });
+        }
+    }
 }
 
 fn replace_bg3_with_live_keyed_cells(

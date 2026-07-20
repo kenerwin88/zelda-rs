@@ -10,7 +10,7 @@ use crate::game_state::constants::{
     DMA_SOURCE_ADDR_14, DMA_SOURCE_ADDR_15, DMA_SOURCE_ADDR_16, DMA_SOURCE_ADDR_17,
     DMA_SOURCE_ADDR_18, DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_2, DMA_SOURCE_ADDR_20,
     DMA_SOURCE_ADDR_21, DMA_SOURCE_ADDR_3, DMA_SOURCE_ADDR_4, DMA_SOURCE_ADDR_5, DMA_SOURCE_ADDR_6,
-    DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9, NMI_BOOLEAN, TM_COPY, TS_COPY,
+    DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9, TM_COPY, TS_COPY,
 };
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
 
@@ -458,6 +458,13 @@ fn screen_layer_helpers_keep_world_transient_layer_copy_coherent() {
     assert_eq!(state.ram[TM_COPY], 0x16);
     assert_eq!(state.ram[TS_COPY], 0x01);
     state.assert_native_display_state_matches_ram();
+}
+
+#[test]
+fn new_state_exposes_first_nmi_link_dma_source() {
+    let state = ZeldaState::new();
+
+    assert_eq!(&state.ram[0..3], &[0x00, 0x80, 0x00]);
 }
 
 #[test]
@@ -3033,8 +3040,11 @@ fn first_frame_runs_startup_writes() {
         state.game_state.display.animated_tile_data_source_address,
         0xa680
     );
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_9), 0xb280);
-    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_14), 0xb2e0);
+    // Exact Snes9x DMA trace at the first NMI upload: channels 3 and 8 read
+    // from $7E:0000. These pointers remain zero until ROM code assigns them.
+    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_9), 0);
+    assert_eq!(read_le_u16(&state.ram, DMA_SOURCE_ADDR_14), 0);
+    assert_eq!(&state.ram[0..3], &[0x00, 0x80, 0x00]);
     assert_eq!(state.game_state.display.screen_brightness, 15);
     assert_eq!(state.ram[FLAG_UPDATE_CGRAM_IN_NMI], 0);
     assert_eq!(read_le_u16(&state.sram, 0x03e5), 0x55aa);
@@ -3231,6 +3241,45 @@ fn attract_first_story_render_wait_is_armed_by_fade_completion() {
 
     assert_eq!(state.game_state.ending.attract_scene.state(), 5);
     assert_eq!(state.attract_first_story_render_delay, 7);
+}
+
+#[test]
+fn world_map_fade_completion_runs_the_first_mode7_tick_immediately() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.attract_scene_mut().set_sequence(1);
+    state.attract_scene_mut().set_state(4);
+    state.attract_scene_mut().set_mode7_zoom_timer(0xff);
+    state.attract_scene_mut().set_scene_timer(1);
+    state.set_screen_brightness(15);
+
+    state.attract_fade_in_sequence();
+
+    assert_eq!(state.game_state.ending.attract_scene.state(), 5);
+    assert_eq!(state.attract_first_story_render_delay, 0);
+    assert_eq!(state.game_state.ending.attract_scene.mode7_zoom_timer(), 0xfe);
+    assert_eq!(state.spotlight_hdma_table_dynamic_entry(0), 0x0174);
+}
+
+#[test]
+fn world_map_rom_work_completes_after_the_five_snes9x_observed_nmi_slices() {
+    let mut work = PendingRomWork::schedule(RomWorkContinuation::FinishAttractWorldMap, 5);
+
+    for _ in 0..4 {
+        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+    }
+    assert_eq!(
+        work.advance_one_nmi_slice(),
+        RomWorkSlice::Complete(RomWorkContinuation::FinishAttractWorldMap)
+    );
+}
+
+#[test]
+fn world_map_fade_publishes_the_previous_scanout_snapshot() {
+    assert!(!rom_attract_world_map_display_is_one_frame_deferred(20, 0, 1, 3));
+    assert!(rom_attract_world_map_display_is_one_frame_deferred(20, 0, 1, 4));
+    assert!(!rom_attract_world_map_display_is_one_frame_deferred(20, 0, 0, 4));
+    assert!(!rom_attract_world_map_display_is_one_frame_deferred(0, 0, 1, 4));
 }
 
 #[test]

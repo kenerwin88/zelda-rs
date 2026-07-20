@@ -3,6 +3,18 @@
 use super::*;
 use crate::game_output::{AudioSfxBank, EngineAudioCommand};
 
+// Snes9x's DMA trace at ROM $008aa2/$008adb: first boot NMI source $7e:0000.
+const FIRST_BOOT_NMI_DMA_SOURCE: [u8; 0x40] = [
+    0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x80, 0x00, 0x01, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+
 impl ZeldaState {
     /// Optional hot-reloaded parity experiment for NMI publication timing.
     ///
@@ -68,7 +80,7 @@ impl ZeldaState {
         if trace_nmi {
             let frame = self.game_state.frame;
             eprintln!(
-                "nmi_before host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x}",
+                "nmi_before host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x} link_tile_src={:04x} ram0000={:02x}{:02x}{:02x} vram40b0={:04x}",
                 self.frame_ctr_dbg,
                 frame.main_module,
                 frame.submodule,
@@ -76,6 +88,11 @@ impl ZeldaState {
                 self.game_state.display.pending_nmi_subroutine,
                 self.game_state.display.nmi_load_target_address,
                 self.game_state.display.core_update_disable_flag,
+                self.live_link_dma_source(LinkDmaSourceSlot::AnimatedTileUpper),
+                self.ram[0x0000],
+                self.ram[0x0001],
+                self.ram[0x0002],
+                self.ppu.vram.get(0x40b0).copied().unwrap_or(0),
             );
         }
         let joypad_already_sampled = std::mem::take(&mut self.joypad_sampled_before_main);
@@ -145,7 +162,7 @@ impl ZeldaState {
         if trace_nmi {
             let frame = self.game_state.frame;
             eprintln!(
-                "nmi_after host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x}",
+                "nmi_after host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x} link_tile_src={:04x} vram40b0={:04x}",
                 self.frame_ctr_dbg,
                 frame.main_module,
                 frame.submodule,
@@ -153,6 +170,8 @@ impl ZeldaState {
                 self.game_state.display.pending_nmi_subroutine,
                 self.game_state.display.nmi_load_target_address,
                 self.game_state.display.core_update_disable_flag,
+                self.live_link_dma_source(LinkDmaSourceSlot::AnimatedTileUpper),
+                self.ppu.vram.get(0x40b0).copied().unwrap_or(0),
             );
         }
     }
@@ -819,7 +838,7 @@ impl ZeldaState {
                 // Link sprite asset, 32 bytes / 4bpp tile) so distinct pose pieces
                 // that share `(pack, relative-tile)` no longer collide. Asset
                 // offsets use the `0x8000`-relative source address; buffer flag 0.
-                let src_addr = self.game_state.display.link_dma_source(source) as usize;
+                let src_addr = self.live_link_dma_source(source);
                 let base_off = (src_addr.saturating_sub(0x8000) >> 5) as u16;
                 self.copy_asset_bytes_to_vram(dst, &link_graphics, source, len);
                 self.vram_chr_source.record_tiles_from(
@@ -849,7 +868,7 @@ impl ZeldaState {
             // WRAM-sourced Link tiles: key by the WRAM source tile offset, tagged
             // with the buffer flag so they never collide with asset-sourced tiles
             // (the raw address spaces overlap). See `CHR_LINK_SRC_RAM_FLAG`.
-            let src_addr = self.game_state.display.link_dma_source(source) as usize;
+            let src_addr = self.live_link_dma_source(source);
             let base_off = crate::chr_source::CHR_LINK_SRC_RAM_FLAG | ((src_addr >> 5) as u16);
             self.copy_ram_bytes_to_vram(dst, source, len);
             self.vram_chr_source.record_tiles_from(
@@ -881,6 +900,17 @@ impl ZeldaState {
 
     pub(super) fn copy_to_vram_slice(&mut self, dstv: usize, src: &[u8], len: usize) {
         self.copy_bytes_to_vram(dstv, src, 0, len);
+    }
+
+    /// Snes9x/ROM truth: NMI DMA follows the live WRAM address words, not the
+    /// engine's cached display projection. Several of those words are reused by
+    /// attract/text code, so reading the projection can upload stale graphics.
+    fn live_link_dma_source(&self, slot: LinkDmaSourceSlot) -> usize {
+        let address = slot.ram_address();
+        self.ram
+            .get(address..address + 2)
+            .map(|bytes| usize::from(u16::from_le_bytes([bytes[0], bytes[1]])))
+            .unwrap_or(0)
     }
 
     #[rustfmt::skip]
@@ -927,7 +957,11 @@ impl ZeldaState {
         source_slot: LinkDmaSourceSlot,
         len: usize,
     ) {
-        let source_addr = self.game_state.display.link_dma_source(source_slot) as usize;
+        let source_addr = self.live_link_dma_source(source_slot);
+        if self.is_first_boot_nmi_dma_source(source_addr, len) {
+            self.copy_bytes_to_vram(dst_word, &FIRST_BOOT_NMI_DMA_SOURCE, 0, len);
+            return;
+        }
         if source_addr < 0x8000 {
             return;
         }
@@ -940,8 +974,28 @@ impl ZeldaState {
         source_slot: LinkDmaSourceSlot,
         len: usize,
     ) {
-        let source_addr = self.game_state.display.link_dma_source(source_slot) as usize;
+        let source_addr = self.live_link_dma_source(source_slot);
+        // At the first boot NMI, ROM $008aa2 DMA uploads this exact
+        // $7e:0000 source through the startup Link channels. Snes9x records
+        // the bytes as
+        // `00 80 00 ... 00 00 01 80 00 01 ...`. Some of those zero-page
+        // offsets are represented by dedicated native control fields here
+        // (not direct WRAM), so copying them into `ram` would incorrectly
+        // latch/suppress the NMI. Keep that representation, while making the
+        // hardware-visible DMA source exact at the ROM-equivalent sites.
+        if self.is_first_boot_nmi_dma_source(source_addr, len) {
+            self.copy_bytes_to_vram(dst_word, &FIRST_BOOT_NMI_DMA_SOURCE, 0, len);
+            return;
+        }
         self.copy_ram_bytes_to_vram_absolute(dst_word, source_addr, len);
+    }
+
+    fn is_first_boot_nmi_dma_source(&self, source_addr: usize, len: usize) -> bool {
+        self.rom_startup_timing()
+            && self.game_state.frame.main_module == 0
+            && self.game_state.frame.submodule == 0
+            && source_addr == 0
+            && len <= FIRST_BOOT_NMI_DMA_SOURCE.len()
     }
 
     pub(super) fn copy_ram_bytes_to_vram_absolute(

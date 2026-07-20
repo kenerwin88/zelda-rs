@@ -363,9 +363,17 @@ impl ZeldaState {
         } else {
             self.attract_scene_mut().increment_state();
             if self.rom_startup_timing() {
-                self.attract_first_story_render_delay = rom_attract_story_render_nmi_slices(
-                    self.game_state.ending.attract_scene.sequence(),
-                );
+                // Sequence 1 begins the map story on the fade-completion CPU
+                // slice. Its display publication still crosses later NMI
+                // boundaries, which is modeled separately by the renderer
+                // snapshot schedule.
+                if self.game_state.ending.attract_scene.sequence() == 1 {
+                    self.attract_enact_story();
+                } else {
+                    self.attract_first_story_render_delay = rom_attract_story_render_nmi_slices(
+                        self.game_state.ending.attract_scene.sequence(),
+                    );
+                }
             }
         }
     }

@@ -203,6 +203,15 @@ const fn rom_display_snapshot_is_one_frame_deferred(main_module: u8, submodule: 
     rom_dungeon_landing_wipe_is_active(main_module, submodule)
 }
 
+const fn rom_attract_world_map_display_is_one_frame_deferred(
+    main_module: u8,
+    submodule: u8,
+    sequence: u8,
+    attract_state: u8,
+) -> bool {
+    main_module == 20 && submodule == 0 && sequence == 1 && attract_state >= 4
+}
+
 const fn rom_intro_wait_player_tears_down_poly_thread(
     main_module: u8,
     submodule: u8,
@@ -6655,7 +6664,21 @@ impl ZeldaState {
 
     pub fn new() -> Self {
         let mut state = Self {
-            ram: vec![0; WRAM_SIZE],
+            // ROM $008900 establishes this descriptor during reset, before
+            // the first NMI can consume low WRAM as a DMA source. The normal
+            // ported initialization routine is intentionally deferred for
+            // Snes9x shows that the first visible NMI reads `00 80 00` here.
+            // The ROM's earlier reset descriptor ends in `$19`, but that byte
+            // has already been consumed/replaced before this NMI boundary.
+            ram: {
+                let mut ram = vec![0; WRAM_SIZE];
+                ram[0x0001] = 0x80;
+                // Snes9x power-on RAM is `$55`; only these two otherwise
+                // untouched first-NMI DMA windows remain observable before
+                // the ROM initializes them (ROM $008b01/$008b25).
+                ram[0xbd40..0xbdc0].fill(0x55);
+                ram
+            },
             game_state: GameState::default(),
             sram: vec![0; SRAM_SIZE],
             ppu: PpuState::new(),
@@ -6910,9 +6933,14 @@ impl ZeldaState {
 
     pub(super) fn begin_attract_world_map_work(&mut self) {
         debug_assert!(!self.pending_rom_work.is_pending());
+        // Snes9x executing the original ROM reaches attract state 4 on host
+        // frame 5651. The work starts at frame 5646, so exactly five NMI
+        // slices elapse before the world-map continuation runs. Seven slices
+        // delayed the live scene by two frames and made the source-native
+        // renderer faithfully draw the wrong state.
         self.pending_rom_work = PendingRomWork::schedule(
             RomWorkContinuation::FinishAttractWorldMap,
-            7,
+            5,
         );
     }
 
@@ -6945,6 +6973,37 @@ impl ZeldaState {
         // from the previous frame has been consumed by that frame's renders.
         self.cgram_upload_latch = None;
         let frame = self.game_state.frame;
+        if std::env::var_os("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some()
+            && (5640..=5700).contains(&self.frame_ctr_dbg)
+        {
+            let trace = format!(
+                "attract_display_capture host={} state={} seq={} zoom={:02x} timer={} brightness={} c0={:04x} c1={:04x} fixed={:02x},{:02x},{:02x} math={:02x}/{:02x} table0={:04x} ppu_a={:04x}",
+                self.frame_ctr_dbg,
+                self.game_state.ending.attract_scene.state(),
+                self.game_state.ending.attract_scene.sequence(),
+                self.game_state.ending.attract_scene.mode7_zoom_timer(),
+                self.game_state.ending.attract_scene.scene_timer(),
+                self.game_state.display.screen_brightness,
+                self.ppu.cgram[0],
+                self.ppu.cgram[1],
+                self.ppu.fixed_color_r,
+                self.ppu.fixed_color_g,
+                self.ppu.fixed_color_b,
+                self.ppu.math_enabled,
+                self.ppu.prevent_math_mode,
+                self.spotlight_hdma_table_dynamic_entry(0),
+                self.ppu.m7_matrix[0] as u16,
+            );
+            eprintln!("{trace}");
+            use std::io::Write;
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open("/tmp/zelda3-attract-display-timeline.trace")
+            {
+                let _ = writeln!(file, "{trace}");
+            }
+        }
         if std::env::var_os("ZELDA3_DEBUG_FRAME_BOUNDARY").is_some() {
             eprintln!(
                 "frame_boundary_before host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x}",
@@ -7013,7 +7072,14 @@ impl ZeldaState {
             self.intro_poly_vram_history.clear();
         }
         self.visible_display_snapshot = None;
-        if rom_display_snapshot_is_one_frame_deferred(frame.main_module, frame.submodule) {
+        if rom_display_snapshot_is_one_frame_deferred(frame.main_module, frame.submodule)
+            || rom_attract_world_map_display_is_one_frame_deferred(
+                frame.main_module,
+                frame.submodule,
+                self.game_state.ending.attract_scene.sequence(),
+                self.game_state.ending.attract_scene.state(),
+            )
+        {
             let previous = self.deferred_display_snapshot.replace(snapshot);
             self.display_snapshot = previous.or_else(|| self.deferred_display_snapshot.clone());
         } else {
@@ -7148,13 +7214,6 @@ impl ZeldaState {
         if !retain_previous_nmi_oam {
             self.ppu.oam.clone_from(&display.ppu.oam);
         }
-        if world_map_fade_display {
-            // The world-map loader returns into the fade-in main slice before
-            // this frame's vblank. Its INIDISP write is therefore visible with
-            // the just-published Mode 7 memory, even though the rest of the
-            // control snapshot remains pre-NMI.
-            self.ppu.brightness = display.ppu.brightness;
-        }
         self.ppu.obj_vram_latch = None;
         self.ppu.obj_previous_frame_vram = display.ppu.obj_previous_frame_vram.clone();
         // A force-blank write published by NMI takes effect before the next
@@ -7173,6 +7232,35 @@ impl ZeldaState {
             .palette_provenance
             .0
             .reconstitute_cgram(&self.ppu.cgram);
+        if std::env::var_os("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some()
+            && (5640..=5700).contains(&self.frame_ctr_dbg)
+        {
+            let trace = format!(
+                "attract_display_present host={} snapshot={:02x}/{:02x} live={:02x}/{:02x} world_map_fade={} bright={} c0={:04x} c1={:04x} fixed={:02x},{:02x},{:02x} math={:02x}/{:02x}",
+                self.frame_ctr_dbg,
+                snapshot_frame.main_module,
+                snapshot_frame.submodule,
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+                world_map_fade_display,
+                self.ppu.brightness,
+                self.ppu.cgram[0],
+                self.ppu.cgram[1],
+                self.ppu.fixed_color_r,
+                self.ppu.fixed_color_g,
+                self.ppu.fixed_color_b,
+                self.ppu.math_enabled,
+                self.ppu.prevent_math_mode,
+            );
+            use std::io::Write;
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open("/tmp/zelda3-attract-display-timeline.trace")
+            {
+                let _ = writeln!(file, "{trace}");
+            }
+        }
         let captured = capture(self);
 
         std::mem::swap(&mut self.ram, &mut display.ram);
@@ -7750,16 +7838,10 @@ impl ZeldaState {
             return;
         }
         if self.rom_startup_timing() && self.pending_rom_work.is_pending() {
-            let mut resume_main_after_world_map_load = false;
             match self.pending_rom_work.advance_one_nmi_slice() {
                 RomWorkSlice::Waiting => {}
                 RomWorkSlice::Complete(RomWorkContinuation::FinishAttractWorldMap) => {
                     self.complete_attract_scene_world_map();
-                    // The loader returns to Attract_FadeIn on the same main
-                    // slice that completes its final NMI-sized chunk. That
-                    // first fade tick raises INIDISP from 0 to 1 before this
-                    // host frame's vblank.
-                    resume_main_after_world_map_load = true;
                 }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishAttractThroneRoom) => {
                     self.complete_attract_scene_throne_room();
@@ -7774,11 +7856,12 @@ impl ZeldaState {
                     self.complete_attract_scene_end_of_story();
                 }
             }
-            if !resume_main_after_world_map_load {
-                self.capture_display_snapshot();
-                self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-                return;
-            }
+            // The original ROM returns to the NMI boundary after the final
+            // loader slice. Snes9x holds INIDISP at 0 for frame 5652 and
+            // performs the first fade tick on the following main-loop slice.
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            return;
         }
         if self.rom_startup_timing() && run_what & crate::RUN_MAIN != 0 {
             self.nmi_read_joypads(input);
@@ -9289,7 +9372,6 @@ impl ZeldaState {
 
     fn finish_rom_bootstrap_initialization(&mut self) {
         self.set_animated_tile_data_source_address(0xa680);
-        self.set_link_animated_tile_dma_sources(0xb280, 0xb280 + 0x60);
         self.sync_native_game_state_from_ram();
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();
@@ -9297,6 +9379,12 @@ impl ZeldaState {
 
     fn startup_initialize_memory(&mut self) {
         SystemWorkArea::clear_startup_low_memory(&mut self.ram);
+        // The reset code at ROM $008900 initially writes `00 80 19`, but the
+        // Snes9x DMA trace proves that the first visible NMI reads `00 80 00`.
+        // This port reaches this setup after reset execution, so retain only
+        // the bytes that remain live at that NMI boundary.
+        self.ram[0x0000] = 0x00;
+        self.ram[0x0001] = 0x80;
         // WRAM palette buffers are zero at power-on: seed the provenance mirror
         // so words the game never explicitly writes (transparent color-0 slots)
         // read as a known constant 0 rather than Unknown.

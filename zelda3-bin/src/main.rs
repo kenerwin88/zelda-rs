@@ -2072,6 +2072,9 @@ struct TraceState {
     bg3_v_scroll_copy2: u16,
     nmi_subroutine_index: u8,
     nmi_load_target_address: u16,
+    nmi_core_update_disable: u8,
+    animated_link_tile_dma_source: u16,
+    link_tile_animation_countdown: u16,
     vram_upload_tilemap_hash: u64,
     dialogue_read_pos: u16,
     text_wait2: u8,
@@ -2198,6 +2201,11 @@ impl TraceState {
             bg3_v_scroll_copy2: u16::from_le_bytes([ram[0x00ea], ram[0x00eb]]),
             nmi_subroutine_index: ram[0x0017],
             nmi_load_target_address: u16::from_le_bytes([ram[0x0116], ram[0x0117]]),
+            // Exact state consumed by the decomp's NMI_DoUpdates animated
+            // Link-tile upload at VRAM word 0x40b0.
+            nmi_core_update_disable: ram[0x0710],
+            animated_link_tile_dma_source: u16::from_le_bytes([ram[0x0ae0], ram[0x0ae1]]),
+            link_tile_animation_countdown: u16::from_le_bytes([ram[0xc013], ram[0xc014]]),
             vram_upload_tilemap_hash: fnv1a64(&ram[0x1000..0x1800]),
             dialogue_read_pos: u16::from_le_bytes([ram[0x1cd9], ram[0x1cda]]),
             text_wait2: ram[0x1ce9],
@@ -2302,7 +2310,7 @@ impl std::fmt::Display for TraceState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "input=${:04X} run={} main={} sub={} subsub={} joyH=${:02X} joyL=${:02X} filtH=${:02X} filtL=${:02X} inidisp=${:02X} music=ctrl:{:02X}/amb:{:02X}/sfx:{:02X},{:02X}/unk:{:02X}/amb_last:{:02X}/queued:{:02X}/last:{:02X} attract_state={} attract_sequence={} room=${:04X} load_ptr=${:04X} line_ptr=${:04X} layout=${:04X} msg={} text_state={} menu=(state={} bg3v=${:04X} nmi={:02X} target=${:04X} upload={:016X}) read_pos=${:04X} wait2={} text_byte=${:02X} select=(r16={} grid_col={} name_col={} row={} scroll=${:04X} y={} v9={} v10={} v11={}) link=(${:04X},{:04X},z={:04X}/vel={:02X},{:02X}/dir={:02X}/last={:02X}/face={:02X}/sub={:02X}/vz={:02X}/h={}/aux={}/timer={}/state={:02X}) action=(tile={}/abit={:02X}/bframes={}/bmask={:02X}/ability={:02X}/lift={},{} pickup=s{:02X}/c{:02X}/a{:02X}/hand={:02X}/pos={:02X}/throw={:02X}/ptimer={}) coll=(r12={:04X}/r14={:04X}/read={:04X}/chest={:04X}/misc={:04X}/var1={:04X}/diag={:04X}/mad={:02X}/dead={:02X}/mask={:02X},{:02X}/orth={}/tile={:02X}/door={}/safe={:04X},{:04X}) bg2=({:04X},{:04X}) pose={} sort={} sort_oam=${:04X} oam=(${:04X},${:04X}) dma=[{:02X},{:02X},{:02X},{:02X},{:02X},{:02X}] oam0={:02X?} spr_t={:02X?} spr_st={:02X?} spr_oam={:02X?} spr_gfx={:02X?} uncle=(ai={} d={} gfx={} xy={:04X},{:04X}) sprite0=(type={:02X} st={:02X} room={:02X} flags={:02X}/{:02X}/{:02X}/{:02X}/{:02X} defl={:02X} hp={:02X} oam={:02X} ai={:02X} d={:02X} gfx={:02X} xy={:04X},{:04X})",
+            "input=${:04X} run={} main={} sub={} subsub={} joyH=${:02X} joyL=${:02X} filtH=${:02X} filtL=${:02X} inidisp=${:02X} music=ctrl:{:02X}/amb:{:02X}/sfx:{:02X},{:02X}/unk:{:02X}/amb_last:{:02X}/queued:{:02X}/last:{:02X} attract_state={} attract_sequence={} room=${:04X} load_ptr=${:04X} line_ptr=${:04X} layout=${:04X} msg={} text_state={} menu=(state={} bg3v=${:04X} nmi={:02X} target=${:04X} core_disable={:02X} link_tile=(src=${:04X} countdown=${:04X}) upload={:016X}) read_pos=${:04X} wait2={} text_byte=${:02X} select=(r16={} grid_col={} name_col={} row={} scroll=${:04X} y={} v9={} v10={} v11={}) link=(${:04X},{:04X},z={:04X}/vel={:02X},{:02X}/dir={:02X}/last={:02X}/face={:02X}/sub={:02X}/vz={:02X}/h={}/aux={}/timer={}/state={:02X}) action=(tile={}/abit={:02X}/bframes={}/bmask={:02X}/ability={:02X}/lift={},{} pickup=s{:02X}/c{:02X}/a{:02X}/hand={:02X}/pos={:02X}/throw={:02X}/ptimer={}) coll=(r12={:04X}/r14={:04X}/read={:04X}/chest={:04X}/misc={:04X}/var1={:04X}/diag={:04X}/mad={:02X}/dead={:02X}/mask={:02X},{:02X}/orth={}/tile={:02X}/door={}/safe={:04X},{:04X}) bg2=({:04X},{:04X}) pose={} sort={} sort_oam=${:04X} oam=(${:04X},${:04X}) dma=[{:02X},{:02X},{:02X},{:02X},{:02X},{:02X}] oam0={:02X?} spr_t={:02X?} spr_st={:02X?} spr_oam={:02X?} spr_gfx={:02X?} uncle=(ai={} d={} gfx={} xy={:04X},{:04X}) sprite0=(type={:02X} st={:02X} room={:02X} flags={:02X}/{:02X}/{:02X}/{:02X}/{:02X} defl={:02X} hp={:02X} oam={:02X} ai={:02X} d={:02X} gfx={:02X} xy={:04X},{:04X})",
             self.input,
             self.run_what,
             self.main,
@@ -2333,6 +2341,9 @@ impl std::fmt::Display for TraceState {
             self.bg3_v_scroll_copy2,
             self.nmi_subroutine_index,
             self.nmi_load_target_address,
+            self.nmi_core_update_disable,
+            self.animated_link_tile_dma_source,
+            self.link_tile_animation_countdown,
             self.vram_upload_tilemap_hash,
             self.dialogue_read_pos,
             self.text_wait2,

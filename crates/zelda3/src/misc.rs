@@ -1449,26 +1449,25 @@ impl ZeldaState {
             };
             self.reset_bg_tile_animation_countdown(countdown);
 
-            let source_offset = self
-                .follower_link_state_mut()
-                .advance_link_dma_source_offset();
+            // These DMA animation fields live in WRAM and are deliberately
+            // reused by other systems during the attract/text sequence. The
+            // decomp's `Graphics_IncrementalVRAMUpload` reads them directly;
+            // do the same rather than advancing the cached Link projection.
+            let source_offset = self.player_state_mut().advance_link_dma_source_offset();
             self.set_animated_tile_data_source_address(0xa680u16.wrapping_add(source_offset));
         }
-        if self
-            .follower_link_state_mut()
-            .decrement_link_dma_countdown()
-            == 0
-        {
-            let t = self
-                .follower_link_state_mut()
-                .advance_link_dma_tile_offset();
+        if self.player_state_mut().decrement_link_dma_countdown() == 0 {
+            let t = self.player_state_mut().advance_link_dma_tile_offset();
 
             let index = (t >> 1) as usize;
-            self.follower_link_state_mut()
+            self.player_state_mut()
                 .set_link_dma_countdown(LINK_ANIMATED_TILE_DMA_COUNTDOWNS[index]);
             let source9 = LINK_ANIMATED_TILE_DMA_SOURCE_OFFSETS[index].wrapping_add(0xb280);
             self.set_link_animated_tile_dma_sources(source9, source9.wrapping_add(0x60));
         }
+        // Keep the cached gameplay projection from re-stamping these volatile
+        // WRAM bytes at a future state boundary.
+        self.sync_follower_link_state_from_ram();
 
         let source16 = 0xb940u16
             .wrapping_add((self.game_state.display.sprite_dma_head_pointer as u16).wrapping_mul(2));

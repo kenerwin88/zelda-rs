@@ -1,7 +1,6 @@
-# Hot-reloaded oracle timing experiments. Leave the rules commented for normal
-# play. A rule changes NMI publication timing only; it never edits pixels or
-# VRAM contents. The engine rereads this file at every NMI, so it may be edited
-# while a replay or native session is running.
+# Hot-reloaded oracle timing policy. A rule changes NMI publication timing
+# only; it never edits pixels or VRAM contents. The engine rereads this file at
+# every NMI, so it may be edited while a replay or native session is running.
 #
 # Example exact-state rule:
 # hold_nmi_host_frame = 82
@@ -17,16 +16,18 @@
 # boot_init_only_pending = 0
 # boot_init_only_disable = 0
 
-# pre_nmi_host_frame = 82
-# pre_nmi_main = 0
-# pre_nmi_sub = 0
-# pre_nmi_pending = 0
-# pre_nmi_disable = 0
+# Snes9x/ROM boot order: execute the first NMI before the module-0 startup
+# slice sets $0710=$80 (which suppresses core graphics updates).
+pre_nmi_host_frame = 82
+pre_nmi_main = 0
+pre_nmi_sub = 0
+pre_nmi_pending = 0
+pre_nmi_disable = 0
 
 # After the pre-main NMI has run, retain work queued by the intro slice for
 # the next vblank instead of executing a second NMI in the same host frame.
-# hold_nmi_host_frame = 82
-# hold_nmi_main = 0
-# hold_nmi_sub = 1
-# hold_nmi_pending = 11
-# hold_nmi_disable = 0x80
+hold_nmi_host_frame = 82
+hold_nmi_main = 0
+hold_nmi_sub = 1
+hold_nmi_pending = 11
+hold_nmi_disable = 0x80

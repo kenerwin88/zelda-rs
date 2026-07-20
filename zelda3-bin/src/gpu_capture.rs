@@ -910,15 +910,14 @@ fn dialogue_glyph_source_matcher() -> Option<&'static DialogueGlyphSourceMatcher
 }
 
 fn dialogue_glyph_source_tiles_from_ppu(
-    ppu: &snes::ppu::PpuState,
+    _ppu: &snes::ppu::PpuState,
 ) -> Vec<renderer::GpuBg3SourceTile> {
-    if ppu.mode != 1 || (ppu.screen_enabled[0] | ppu.screen_enabled[1]) & 0x04 == 0 {
-        return Vec::new();
-    }
-    let Some(matcher) = dialogue_glyph_source_matcher() else {
-        return Vec::new();
-    };
-    dialogue_glyph_source_tiles_from_ppu_with_matcher(ppu, matcher)
+    // A BG3 VWF tile is a transient composition, not a source-art tile.  The
+    // old pattern-only matcher could mistake one of those compositions for an
+    // unrelated sprite-sheet PNG with the same 2bpp pattern, then replace the
+    // correct live glyph with that PNG.  VWF text has an explicit semantic
+    // glyph-run channel below; do not infer a source identity from pixels.
+    Vec::new()
 }
 
 fn dialogue_glyph_source_tiles_from_ppu_with_matcher(

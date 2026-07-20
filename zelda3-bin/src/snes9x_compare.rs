@@ -27,6 +27,59 @@ pub(crate) const ORACLE_MUSIC_CONTROL: usize = 0x012c;
 pub(crate) const ORACLE_QUEUED_MUSIC_CONTROL: usize = 0x0132;
 pub(crate) const ORACLE_LAST_MUSIC_CONTROL: usize = 0x0133;
 
+/// Display-domain receipt captured from the Snes9x PPU and the immutable Rust
+/// scanout snapshot. This is deliberately upstream of RGBA comparison: it
+/// tells us whether a failure is a ROM/state-publication issue or a renderer
+/// issue before any pixel-level investigation begins.
+#[derive(Debug, Serialize)]
+struct DisplayOracleReceipt {
+    frame: u32,
+    oracle: DisplayPpuProbe,
+    rust: DisplayPpuProbe,
+}
+
+#[derive(Debug, Serialize)]
+struct DisplayPpuProbe {
+    mode: i32,
+    brightness: i32,
+    cgram: Vec<i32>,
+    fixed_color: [i32; 3],
+    mode7: [i32; 8],
+    mode7_scanlines: Vec<[i32; 8]>,
+}
+
+fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
+    oracle.debug_ppu_value(0, 0)?;
+    Some(DisplayPpuProbe {
+        mode: oracle.debug_ppu_value(0, 0)?,
+        brightness: oracle.debug_ppu_value(1, 0)?,
+        cgram: (0..256).map(|i| oracle.debug_ppu_value(2, i).unwrap_or(-1)).collect(),
+        fixed_color: std::array::from_fn(|i| oracle.debug_ppu_value(4, i as i32).unwrap_or(-1)),
+        mode7: std::array::from_fn(|i| oracle.debug_ppu_value(5, i as i32).unwrap_or(-1)),
+        mode7_scanlines: (0..224)
+            .map(|line| std::array::from_fn(|field| oracle.debug_scanline_mode7_value(line, field as i32).unwrap_or(-1)))
+            .collect(),
+    })
+}
+
+fn capture_rust_ppu_probe(game: &mut ZeldaState) -> DisplayPpuProbe {
+    game.with_display_snapshot(|snapshot| {
+        let scanlines = snapshot.ppu_scanline_windows();
+        DisplayPpuProbe {
+        mode: i32::from(snapshot.ppu.mode),
+        brightness: i32::from(snapshot.ppu.brightness),
+        cgram: snapshot.ppu.cgram.iter().map(|&value| i32::from(value)).collect(),
+        fixed_color: [
+            i32::from(snapshot.ppu.fixed_color_r),
+            i32::from(snapshot.ppu.fixed_color_g),
+            i32::from(snapshot.ppu.fixed_color_b),
+        ],
+        mode7: snapshot.ppu.m7_matrix.map(i32::from),
+        mode7_scanlines: scanlines.iter().map(|line| line.7.map(i32::from)).collect(),
+        }
+    })
+}
+
 /// The ROM-visible publication flags that delimit an emulated frame.
 ///
 /// These are intentionally a narrow semantic contract: unlike a raw WRAM
@@ -885,6 +938,16 @@ pub(crate) fn run_compare_libretro_oracle(
             process::exit(1);
         }))
     });
+    let mut display_oracle_receipts = env::var_os("ZELDA3_CAPTURE_DISPLAY_ORACLE").map(|_| {
+        let dir = session_dir.as_deref().unwrap_or_else(|| {
+            eprintln!("ZELDA3_CAPTURE_DISPLAY_ORACLE requires --session-dir");
+            process::exit(2);
+        });
+        BufWriter::new(fs::File::create(dir.join("display_oracle.jsonl")).unwrap_or_else(|error| {
+            eprintln!("failed to create display-oracle receipt: {error}");
+            process::exit(1);
+        }))
+    });
     let trace_poly_sched = std::env::var_os("TRACE_POLY_SCHED").is_some();
     let trace_shield_dma = std::env::var_os("ZELDA3_DEBUG_SHIELD_DMA").is_some();
     let debug_vram_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_VRAM_FRAMES", None);
@@ -897,6 +960,14 @@ pub(crate) fn run_compare_libretro_oracle(
     // a simulation/DMA skew can be located before a later rendering mismatch
     // obscures its cause.
     let assert_oracle_vram = std::env::var_os("ZELDA3_ASSERT_ORACLE_VRAM").is_some();
+    let assert_oracle_vram_range = std::env::var("ZELDA3_ASSERT_ORACLE_VRAM_RANGE")
+        .ok()
+        .map(|value| parse_debug_byte_range(&value).unwrap_or_else(|| {
+            eprintln!(
+                "invalid ZELDA3_ASSERT_ORACLE_VRAM_RANGE={value:?}; expected START..END (decimal or 0x-prefixed hexadecimal)"
+            );
+            process::exit(2);
+        }));
     let assert_oracle_boot_contract =
         std::env::var_os("ZELDA3_ASSERT_ORACLE_BOOT_CONTRACT").is_some();
     let mut rust_boot_contract = std::env::var_os("ZELDA3_RUST_BOOT_CONTRACT").map(|path| {
@@ -1040,6 +1111,25 @@ pub(crate) fn run_compare_libretro_oracle(
                 process::exit(1);
             });
         let mut capture = oracle.run_frame_with_input(input);
+        if let Some(writer) = display_oracle_receipts.as_mut() {
+            let Some(oracle_ppu) = capture_oracle_ppu_probe(&oracle) else {
+                eprintln!("ZELDA3_CAPTURE_DISPLAY_ORACLE requires an instrumented Snes9x core");
+                process::exit(2);
+            };
+            let receipt = DisplayOracleReceipt {
+                frame: frame_index,
+                oracle: oracle_ppu,
+                rust: capture_rust_ppu_probe(&mut game),
+            };
+            serde_json::to_writer(&mut *writer, &receipt).unwrap_or_else(|error| {
+                eprintln!("failed to write display-oracle receipt: {error}");
+                process::exit(1);
+            });
+            writeln!(writer).unwrap_or_else(|error| {
+                eprintln!("failed to terminate display-oracle receipt: {error}");
+                process::exit(1);
+            });
+        }
         // Libretro frame numbering starts at one; keep this artifact aligned
         // with `scripts/snes9x_boot_contract.py` rather than the CLI's
         // zero-based input index.
@@ -1108,10 +1198,20 @@ pub(crate) fn run_compare_libretro_oracle(
                     &oracle_changes[..oracle_changes.len().min(24)],
                 );
             }
+            let range_start = assert_oracle_vram_range
+                .as_ref()
+                .map_or(0, |range| range.start);
+            let range_end = assert_oracle_vram_range
+                .as_ref()
+                .map_or(rust_vram.len().min(oracle_vram.len()), |range| range.end)
+                .min(rust_vram.len())
+                .min(oracle_vram.len());
             if let Some((byte, (&rust, &oracle))) = rust_vram
                 .iter()
                 .zip(oracle_vram.iter())
                 .enumerate()
+                .skip(range_start)
+                .take(range_end.saturating_sub(range_start))
                 .find(|(_, (rust, oracle))| rust != oracle)
             {
                 eprintln!(
@@ -1977,6 +2077,19 @@ pub(crate) fn parse_debug_frame_selection(value: &str) -> Vec<u32> {
     frames.sort_unstable();
     frames.dedup();
     frames
+}
+
+fn parse_debug_byte_range(value: &str) -> Option<std::ops::Range<usize>> {
+    let (start, end) = value.split_once("..")?;
+    let parse = |part: &str| {
+        let part = part.trim();
+        part.strip_prefix("0x")
+            .or_else(|| part.strip_prefix("0X"))
+            .map_or_else(|| part.parse::<usize>().ok(), |hex| usize::from_str_radix(hex, 16).ok())
+    };
+    let start = parse(start)?;
+    let end = parse(end)?;
+    (start <= end).then_some(start..end)
 }
 
 pub(crate) fn append_u32_range(ranges: &mut Vec<(u32, u32)>, value: u32) {

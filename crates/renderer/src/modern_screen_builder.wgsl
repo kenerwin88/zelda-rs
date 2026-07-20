@@ -155,6 +155,9 @@ fn bg_pixel(layer: u32, sx: u32, sy: u32, hi_priority: bool, is_main: bool) -> u
         sample_sy = mosaic_snap(sy);
     }
     var out = 0xffffffffu;
+    // Candidate bucketing is intentionally disabled by the packet mask. Keep
+    // the branch layout stable while every live frame uses the complete source
+    // instance traversal below.
     if (((params.p8.y >> layer) & 1u) != 0u) {
         let bucket_x = min(sample_sx / 8u, 31u);
         let bucket_y = min(sample_sy / 8u, 27u);

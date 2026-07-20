@@ -59,7 +59,8 @@ impl LinkDmaSourceSlot {
         }
     }
 
-    fn address(self) -> usize {
+    /// The authoritative WRAM word used by the original NMI DMA routine.
+    pub(crate) fn ram_address(self) -> usize {
         match self {
             Self::BodyTop => DMA_SOURCE_ADDR_3,
             Self::BodyBottom => DMA_SOURCE_ADDR_0,
@@ -751,7 +752,7 @@ impl LinkDmaSources {
     fn load_from_ram(ram: &[u8]) -> Self {
         let mut sources = [0; LINK_DMA_SOURCE_SLOTS.len()];
         for slot in LINK_DMA_SOURCE_SLOTS {
-            let address = slot.address();
+            let address = slot.ram_address();
             sources[slot.index()] = if address + 1 < ram.len() {
                 read_le_u16(ram, address)
             } else {
@@ -763,7 +764,7 @@ impl LinkDmaSources {
 
     fn write_to_ram(&self, ram: &mut [u8]) {
         for slot in LINK_DMA_SOURCE_SLOTS {
-            write_le_u16(ram, slot.address(), self.source(slot));
+            write_le_u16(ram, slot.ram_address(), self.source(slot));
         }
     }
 
@@ -5215,7 +5216,7 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         for slot in LINK_DMA_SOURCE_SLOTS {
             debug_assert_eq!(
                 self.display.link_dma_sources.source(slot),
-                read_le_u16(self.ram, slot.address())
+                read_le_u16(self.ram, slot.ram_address())
             );
         }
     }
@@ -5748,7 +5749,7 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
 
     fn set_link_dma_source(&mut self, slot: LinkDmaSourceSlot, value: u16) {
         self.display.set_link_dma_source(slot, value);
-        write_le_u16(self.ram, slot.address(), value);
+        write_le_u16(self.ram, slot.ram_address(), value);
         self.debug_assert_link_dma_sources_match_ram();
     }
 

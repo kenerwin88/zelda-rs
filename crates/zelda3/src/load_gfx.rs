@@ -935,6 +935,16 @@ impl ZeldaState {
             return;
         };
         self.do3_to_4_high_to_vram(0x4000, &source, chr_source::CHR_KIND_SPRITE, 0);
+        if std::env::var_os("ZELDA3_DEBUG_DEFAULT_GFX").is_some() {
+            eprintln!(
+                "default_gfx source_len={} vram40b0={:04x} vram40b1={:04x} vram40b2={:04x} vram40b3={:04x}",
+                source.len(),
+                self.ppu.vram[0x40b0],
+                self.ppu.vram[0x40b1],
+                self.ppu.vram[0x40b2],
+                self.ppu.vram[0x40b3],
+            );
+        }
         self.decompress_and_upload_2bpp(0x7000, 0x6a);
         self.decompress_and_upload_2bpp(0x7400, 0x6b);
         self.decompress_and_upload_2bpp(0x7800, 0x69);

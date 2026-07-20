@@ -1,16 +1,12 @@
-use crate::modern_frame::ModernIndexTileInstance;
 use crate::modern_frame::{ModernFrame, MODERN_FRAME_HEIGHT, MODERN_FRAME_WIDTH};
 use crate::modern_index_atlas::ModernIndexTile;
 use std::cell::RefCell;
 
 const BG_INSTANCE_STRIDE_WORDS: usize = 8;
-const BG_BUCKET_COLS: usize = MODERN_FRAME_WIDTH as usize / 8;
-const BG_BUCKET_ROWS: usize = MODERN_FRAME_HEIGHT as usize / 8;
-const BG_BUCKET_LAYERS: usize = 3;
-const BG_BUCKET_PRIORITIES: usize = 2;
-const BG_BUCKET_COUNT: usize =
-    BG_BUCKET_LAYERS * BG_BUCKET_PRIORITIES * BG_BUCKET_COLS * BG_BUCKET_ROWS;
-const BG_BUCKET_HEADER_WORDS: usize = BG_BUCKET_COUNT * 2;
+// The screen shader's storage packet reserves this fixed segment between BG
+// instances and sprite instances. It keeps the remaining packet offsets stable
+// while BG composition uses the single full-instance traversal below.
+const MODERN_SCREEN_RESERVED_WORDS: usize = 10_752;
 
 fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
@@ -164,7 +160,7 @@ impl ModernGpuScreenBuilder {
 struct ModernScreenBuilderScratch {
     cell_words: Vec<u32>,
     bg_instance_words: Vec<u32>,
-    bg_bucket_words: Vec<u32>,
+    reserved_words: Vec<u32>,
     sprite_instance_words: Vec<u32>,
     cgram_words: Vec<u32>,
     scroll_words: Vec<u32>,
@@ -172,7 +168,6 @@ struct ModernScreenBuilderScratch {
     window_words: Vec<u32>,
     data_words: Vec<u32>,
     params_words: Vec<u32>,
-    bucket_lists: Vec<Vec<u32>>,
     data_bytes: Vec<u8>,
     params_bytes: Vec<u8>,
     data_buffer: Option<wgpu::Buffer>,
@@ -189,7 +184,7 @@ impl ModernScreenBuilderScratch {
         sprite_cells: &[ModernIndexTile],
     ) {
         modern_screen_builder_cell_words(bg_cells, sprite_cells, &mut self.cell_words);
-        self.build_bg_instances_and_buckets(frame, bg_cells.len());
+        self.build_bg_instances(frame, bg_cells.len());
         modern_screen_builder_sprite_instance_words(
             frame,
             sprite_cells.len(),
@@ -202,7 +197,7 @@ impl ModernScreenBuilderScratch {
         let offsets = modern_screen_builder_data_words(
             &self.cell_words,
             &self.bg_instance_words,
-            &self.bg_bucket_words,
+            &self.reserved_words,
             &self.sprite_instance_words,
             &self.cgram_words,
             &self.scroll_words,
@@ -260,29 +255,15 @@ impl ModernScreenBuilderScratch {
         (data_buffer, params_buffer)
     }
 
-    fn build_bg_instances_and_buckets(&mut self, frame: &ModernFrame, bg_cell_count: usize) {
+    fn build_bg_instances(&mut self, frame: &ModernFrame, bg_cell_count: usize) {
         self.bg_instance_words.clear();
-        if self.bucket_lists.len() != BG_BUCKET_COUNT {
-            self.bucket_lists = vec![Vec::new(); BG_BUCKET_COUNT];
-        } else {
-            for bucket in &mut self.bucket_lists {
-                bucket.clear();
-            }
-        }
-
-        let mut bucket_layer_mask = 0u32;
+        self.reserved_words.clear();
+        self.reserved_words.resize(MODERN_SCREEN_RESERVED_WORDS, 0);
         for layer in frame.bg_layers.iter().take(3) {
-            let layer_index = usize::from(layer.index);
-            let bucket_layer = modern_screen_builder_layer_is_bucketable(frame, layer_index);
-            if bucket_layer {
-                bucket_layer_mask |= 1u32 << layer_index;
-            }
             for inst in &layer.index_tiles {
                 if inst.cell_id as usize >= bg_cell_count {
                     continue;
                 }
-                let instance_index =
-                    (self.bg_instance_words.len() / BG_INSTANCE_STRIDE_WORDS) as u32;
                 self.bg_instance_words.extend_from_slice(&[
                     inst.cell_id,
                     i32::from(inst.screen_x) as u32,
@@ -293,31 +274,8 @@ impl ModernScreenBuilderScratch {
                     0,
                     0,
                 ]);
-                if bucket_layer {
-                    push_bg_instance_buckets(
-                        &mut self.bucket_lists,
-                        layer_index,
-                        inst,
-                        layer.wrap_w,
-                        layer.wrap_h,
-                        instance_index,
-                    );
-                }
             }
         }
-        self.bg_bucket_words.clear();
-        self.bg_bucket_words.resize(BG_BUCKET_HEADER_WORDS, 0);
-        let mut candidates = Vec::new();
-        for (bucket_index, bucket) in self.bucket_lists.iter().enumerate() {
-            self.bg_bucket_words[bucket_index * 2] = candidates.len() as u32;
-            self.bg_bucket_words[bucket_index * 2 + 1] = bucket.len() as u32;
-            candidates.extend(bucket.iter().copied());
-        }
-        self.bg_bucket_words.extend(candidates);
-        if self.bg_bucket_words.is_empty() {
-            self.bg_bucket_words.push(0);
-        }
-        let _ = bucket_layer_mask;
     }
 }
 
@@ -420,7 +378,7 @@ fn modern_screen_builder_window_words(frame: &ModernFrame, words: &mut Vec<u32>)
 struct ModernScreenBuilderOffsets {
     cells: u32,
     bg_instances: u32,
-    bg_buckets: u32,
+    reserved: u32,
     sprite_instances: u32,
     cgram: u32,
     scroll: u32,
@@ -431,7 +389,7 @@ struct ModernScreenBuilderOffsets {
 fn modern_screen_builder_data_words(
     cell_words: &[u32],
     bg_instance_words: &[u32],
-    bg_bucket_words: &[u32],
+    reserved_words: &[u32],
     sprite_instance_words: &[u32],
     cgram_words: &[u32],
     scroll_words: &[u32],
@@ -448,8 +406,8 @@ fn modern_screen_builder_data_words(
     } else {
         bg_instance_words
     });
-    let bg_buckets = data.len() as u32;
-    data.extend_from_slice(bg_bucket_words);
+    let reserved = data.len() as u32;
+    data.extend_from_slice(reserved_words);
     let sprite_instances = data.len() as u32;
     data.extend_from_slice(if sprite_instance_words.is_empty() {
         &[0]
@@ -467,7 +425,7 @@ fn modern_screen_builder_data_words(
     ModernScreenBuilderOffsets {
         cells,
         bg_instances,
-        bg_buckets,
+        reserved,
         sprite_instances,
         cgram,
         scroll,
@@ -512,13 +470,6 @@ fn modern_screen_builder_params(
     let p2 = layer_params(0);
     let p3 = layer_params(1);
     let p4 = layer_params(2);
-    let bucket_layer_mask = (0..3usize).fold(0u32, |mask, layer| {
-        if modern_screen_builder_layer_is_bucketable(frame, layer) {
-            mask | (1u32 << layer)
-        } else {
-            mask
-        }
-    });
     params.clear();
     params.extend_from_slice(&[
         u32::from(MODERN_FRAME_WIDTH) * u32::from(MODERN_FRAME_HEIGHT),
@@ -553,9 +504,9 @@ fn modern_screen_builder_params(
         u32::from(frame.screen_windowed_sub),
         u32::from(frame.mosaic_enabled),
         u32::from(frame.mosaic_size),
-        offsets.bg_buckets,
-        bucket_layer_mask,
-        BG_BUCKET_HEADER_WORDS as u32,
+        offsets.reserved,
+        0,
+        MODERN_SCREEN_RESERVED_WORDS as u32,
         0,
     ]);
 }
@@ -571,155 +522,28 @@ fn modern_screen_builder_layer_needs_scroll(frame: &ModernFrame, layer: usize) -
     varies || bg.scroll_x != 0 || bg.scroll_y != 0
 }
 
-fn modern_screen_builder_layer_varies_by_scanline(frame: &ModernFrame, layer: usize) -> bool {
-    let Some(bg) = frame.bg_layers.get(layer) else {
-        return false;
-    };
-    frame
-        .bg_scroll_scanlines
-        .iter()
-        .any(|sl| sl[layer][0] != bg.scroll_x || sl[layer][1] != bg.scroll_y)
-}
-
-fn modern_screen_builder_layer_mosaic_enabled(frame: &ModernFrame, layer: usize) -> bool {
-    frame.mosaic_size > 1 && (frame.mosaic_enabled & (1u8 << layer)) != 0
-}
-
-fn modern_screen_builder_layer_is_bucketable(frame: &ModernFrame, layer: usize) -> bool {
-    layer < BG_BUCKET_LAYERS
-        && !modern_screen_builder_layer_varies_by_scanline(frame, layer)
-        && !modern_screen_builder_layer_mosaic_enabled(frame, layer)
-}
-
-fn bg_bucket_index(layer: usize, priority: bool, x: usize, y: usize) -> usize {
-    (((layer * BG_BUCKET_PRIORITIES + usize::from(priority)) * BG_BUCKET_ROWS + y) * BG_BUCKET_COLS)
-        + x
-}
-
-fn push_bg_instance_buckets(
-    buckets: &mut [Vec<u32>],
-    layer: usize,
-    inst: &ModernIndexTileInstance,
-    wrap_w: u16,
-    wrap_h: u16,
-    instance_index: u32,
-) {
-    let wrap_w = i32::from(wrap_w.max(256));
-    let wrap_h = i32::from(wrap_h.max(224));
-    for wrap_y in [-wrap_h, 0, wrap_h] {
-        for wrap_x in [-wrap_w, 0, wrap_w] {
-            push_bg_instance_bucket_position(
-                buckets,
-                layer,
-                inst,
-                i32::from(inst.screen_x) + wrap_x,
-                i32::from(inst.screen_y) + wrap_y,
-                instance_index,
-            );
-        }
-    }
-}
-
-fn push_bg_instance_bucket_position(
-    buckets: &mut [Vec<u32>],
-    layer: usize,
-    inst: &ModernIndexTileInstance,
-    screen_x: i32,
-    screen_y: i32,
-    instance_index: u32,
-) {
-    let x0 = screen_x.max(0);
-    let y0 = screen_y.max(0);
-    let x1 = (screen_x + 7).min(i32::from(MODERN_FRAME_WIDTH) - 1);
-    let y1 = (screen_y + 7).min(i32::from(MODERN_FRAME_HEIGHT) - 1);
-    if x0 > x1 || y0 > y1 {
-        return;
-    }
-    let bx0 = usize::try_from(x0 / 8).unwrap_or(0);
-    let by0 = usize::try_from(y0 / 8).unwrap_or(0);
-    let bx1 = usize::try_from(x1 / 8).unwrap_or(0).min(BG_BUCKET_COLS - 1);
-    let by1 = usize::try_from(y1 / 8).unwrap_or(0).min(BG_BUCKET_ROWS - 1);
-    for by in by0..=by1 {
-        for bx in bx0..=bx1 {
-            let bucket = bg_bucket_index(layer, inst.priority, bx, by);
-            buckets[bucket].push(instance_index);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modern_hd_overrides::NO_SOURCE_KEY;
-
-    fn test_inst(
-        cell_id: u32,
-        screen_x: i16,
-        screen_y: i16,
-        priority: bool,
-    ) -> ModernIndexTileInstance {
-        ModernIndexTileInstance {
-            cell_id,
-            source_key: NO_SOURCE_KEY,
-            screen_x,
-            screen_y,
-            palette: 0,
-            hflip: false,
-            vflip: false,
-            priority,
-        }
-    }
 
     #[test]
-    fn bg_bucket_pack_preserves_candidate_order_for_overlapping_instances() {
-        let mut frame = ModernFrame::empty();
-        frame.bg_layers[0]
-            .index_tiles
-            .push(test_inst(0, 0, 0, false));
-        frame.bg_layers[0]
-            .index_tiles
-            .push(test_inst(1, 4, 4, false));
-        let mut scratch = ModernScreenBuilderScratch::default();
+    fn source_compositor_disables_candidate_selection() {
+        let frame = ModernFrame::empty();
+        let offsets = ModernScreenBuilderOffsets {
+            cells: 0,
+            bg_instances: 0,
+            reserved: 0,
+            sprite_instances: 0,
+            cgram: 0,
+            scroll: 0,
+            main_tm: 0,
+            window: 0,
+        };
+        let mut params = Vec::new();
 
-        scratch.build_bg_instances_and_buckets(&frame, 2);
+        modern_screen_builder_params(&frame, &[], &[], &[], offsets, &mut params);
 
-        let bucket = bg_bucket_index(0, false, 0, 0);
-        let offset = scratch.bg_bucket_words[bucket * 2] as usize;
-        let count = scratch.bg_bucket_words[bucket * 2 + 1] as usize;
-        let candidates = &scratch.bg_bucket_words
-            [BG_BUCKET_HEADER_WORDS + offset..BG_BUCKET_HEADER_WORDS + offset + count];
-        assert_eq!(candidates, &[0, 1]);
-    }
-
-    #[test]
-    fn bg_bucket_pack_skips_layers_with_scanline_scroll_variance() {
-        let mut frame = ModernFrame::empty();
-        frame.bg_layers[0]
-            .index_tiles
-            .push(test_inst(0, 0, 0, false));
-        frame.bg_scroll_scanlines = vec![[[0u16; 2]; 4]; usize::from(MODERN_FRAME_HEIGHT)];
-        frame.bg_scroll_scanlines[12][0][0] = 1;
-        let mut scratch = ModernScreenBuilderScratch::default();
-
-        scratch.build_bg_instances_and_buckets(&frame, 1);
-
-        let bucket = bg_bucket_index(0, false, 0, 0);
-        assert_eq!(scratch.bg_bucket_words[bucket * 2 + 1], 0);
-    }
-
-    #[test]
-    fn bg_bucket_pack_covers_wrapped_tiles_at_a_scroll_origin() {
-        let mut frame = ModernFrame::empty();
-        frame.bg_layers[0].scroll_x = 1;
-        frame.bg_layers[0]
-            .index_tiles
-            .push(test_inst(0, -255, 0, false));
-        let mut scratch = ModernScreenBuilderScratch::default();
-
-        scratch.build_bg_instances_and_buckets(&frame, 1);
-
-        let bucket = bg_bucket_index(0, false, 0, 0);
-        assert_eq!(scratch.bg_bucket_words[bucket * 2 + 1], 1);
-        assert!(modern_screen_builder_layer_is_bucketable(&frame, 0));
+        assert_eq!(params.len(), 36);
+        assert_eq!(params[33], 0, "candidate selection must remain disabled");
     }
 }

@@ -1671,6 +1671,7 @@ pub struct FrameRenderer {
     /// it is sampled directly by the presentation blit.
     modern_gpu_target: Option<ModernGpuTarget>,
     modern_source_extraction_cache: Option<ModernSourceExtractionCache>,
+    visible_vwf_glyph_runs: Vec<modern_frame::ModernVwfGlyphRun>,
 }
 
 #[derive(Debug, Default)]
@@ -2496,6 +2497,7 @@ impl FrameRenderer {
             modern_variant_gpu: None,
             modern_gpu_target: None,
             modern_source_extraction_cache: None,
+            visible_vwf_glyph_runs: Vec::new(),
         }
     }
 
@@ -2837,6 +2839,7 @@ impl FrameRenderer {
                 resources
                     .source_atlas()
                     .expect("startup material requires source atlas"),
+                resources.variant_atlas(),
             )?;
             return Ok(ModernAssetFramePresentResult::Presented {
                 via: "source-gpu-startup-material",
@@ -2871,6 +2874,7 @@ impl FrameRenderer {
                     resources
                         .source_atlas()
                         .expect("route requires source atlas"),
+                    resources.variant_atlas(),
                 )?;
                 Ok(ModernAssetFramePresentResult::Presented {
                     // Native window and oracle readback deliberately share
@@ -2911,9 +2915,20 @@ impl FrameRenderer {
         frame: &GpuFrame<'_>,
         src_table: &S,
         atlas: &modern_source_atlas::ModernSourceAtlas,
+        variant_atlas: Option<&modern_variant_atlas::ModernVariantAtlas>,
     ) -> Result<(), RenderError> {
-        let (mut modern, bg_cells) =
+        let (mut modern, mut bg_cells) =
             modern_extract::extract_modern_frame_from_sources(frame, src_table, atlas);
+        if let Some(glyph_atlas) = variant_atlas.and_then(|atlas| atlas.dialogue_vwf_glyph_atlas.as_ref()) {
+            let next_visible_runs = modern.vwf_glyph_runs_for_draw().to_vec();
+            modern_extract::append_source_vwf_glyph_cells(
+                &mut modern,
+                &mut bg_cells,
+                glyph_atlas,
+                &self.visible_vwf_glyph_runs,
+            );
+            self.visible_vwf_glyph_runs = next_visible_runs;
+        }
         let (sprite_cells, sprites) =
             modern_extract::extract_modern_sprites_from_sources(frame, src_table, atlas);
         modern.index_sprites = sprites;
@@ -3167,18 +3182,28 @@ impl FrameRenderer {
         frame: &GpuFrame<'_>,
         src_table: &S,
         source_atlas: &modern_source_atlas::ModernSourceAtlas,
-        _variant_atlas: &modern_variant_atlas::ModernVariantAtlas,
+        variant_atlas: &modern_variant_atlas::ModernVariantAtlas,
         _bg_palette_name: &str,
         _sprite_palette_name: &str,
     ) -> Result<modern_gpu::ModernGpuVariantLiveRender, RenderError> {
         debug_assert_ne!(frame.mode, 7);
         let timings_enabled = Self::modern_live_timings_enabled();
         let mut timing_last = timings_enabled.then(std::time::Instant::now);
-        let modern_assets = self.extract_asset_resolved_modern_frame_from_sources_cached(
+        let mut modern_assets = self.extract_asset_resolved_modern_frame_from_sources_cached(
             frame,
             src_table,
             source_atlas,
         );
+        if let Some(glyph_atlas) = &variant_atlas.dialogue_vwf_glyph_atlas {
+            let next_visible_runs = modern_assets.frame.vwf_glyph_runs_for_draw().to_vec();
+            modern_extract::append_source_vwf_glyph_cells(
+                &mut modern_assets.frame,
+                &mut modern_assets.bg_cells,
+                glyph_atlas,
+                &self.visible_vwf_glyph_runs,
+            );
+            self.visible_vwf_glyph_runs = next_visible_runs;
+        }
         let extract_us = Self::modern_live_timing_mark(&mut timing_last);
         if modern_assets.has_unresolved_sources() {
             if timings_enabled {
@@ -3269,11 +3294,38 @@ impl FrameRenderer {
         _encoder_label: &'static str,
     ) -> Result<(), RenderError> {
         debug_assert_eq!(frame.mode, 7);
-        // Mode 7 renders through the dedicated modern CPU compositor (the
-        // long-standing software oracle for the retired classic wgpu path).
+        // Mode 7 is finalized before presentation, so publish its exact RGBA
+        // result into the same sampled target used by the source compositor.
+        // Native-window readback must observe this target: reading an older
+        // compositor target here made the oracle compare a stale black frame
+        // while the window sampled the newly uploaded game texture.
         let rgba = modern_mode7_cpu_rgba(frame, mode7_source_chars);
-        self.upload_rgba8(&rgba, 256, 224);
-        self.render()
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        self.ensure_modern_gpu_target(format);
+        let target = self
+            .modern_gpu_target
+            .as_ref()
+            .expect("Mode 7 target allocated above");
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &target.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256 * 4),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: 256,
+                height: 224,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.present_modern_gpu_target_to_surface()
     }
 
     pub fn render(&mut self) -> Result<(), RenderError> {
@@ -4431,6 +4483,37 @@ pub fn modern_mode7_cpu_rgba(frame: &GpuFrame<'_>, mode7_source_chars: Option<&[
     match mode7_source_chars {
         None => crate::modern_software::render_modern_mode7_frame(frame),
         Some(chars) => {
+            if std::env::var_os("ZELDA3_DEBUG_MODE7_SOURCE_AUDIT").is_some() {
+                let mismatches = frame
+                    .vram
+                    .iter()
+                    .take(0x4000)
+                    .zip(chars.iter())
+                    .filter(|(word, source)| ((**word >> 8) as u8) != **source)
+                    .count();
+                if mismatches != 0 {
+                    use std::io::Write;
+                    if let Ok(mut trace) = std::fs::OpenOptions::new()
+                        .append(true)
+                        .create(true)
+                        .open("/tmp/zelda3-mode7-source-audit.trace")
+                    {
+                        let first = frame
+                            .vram
+                            .iter()
+                            .take(0x4000)
+                            .zip(chars.iter())
+                            .position(|(word, source)| ((word >> 8) as u8) != *source)
+                            .unwrap_or(0);
+                        let _ = writeln!(
+                            trace,
+                            "mismatches={mismatches} first={first:04x} live={:02x} source={:02x}",
+                            (frame.vram[first] >> 8) as u8,
+                            chars[first],
+                        );
+                    }
+                }
+            }
             let mut vram = frame.vram.to_vec();
             for (word, &ch) in vram.iter_mut().take(0x4000).zip(chars.iter()) {
                 *word = (*word & 0x00ff) | (u16::from(ch) << 8);

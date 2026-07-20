@@ -1715,7 +1715,7 @@ pub fn render_modern_frame_full_with_overrides(
     ctx: &crate::modern_hd_overrides::HdOverrideCtx,
 ) -> Vec<u8> {
     let (main, sub) = build_modern_screens_with_overrides(frame, bg_cells, sprite_cells, ctx);
-    finalize_frame(&main, &sub, frame, usize::from(MODERN_FRAME_WIDTH), 1)
+    finalize_frame(&main, &sub, frame, usize::from(MODERN_FRAME_WIDTH), 1, false)
 }
 
 fn build_modern_screens_with_overrides(
@@ -1856,7 +1856,7 @@ pub fn render_modern_frame_full_scaled(
             scale,
         );
     });
-    finalize_frame(&main, &sub, frame, out_width, scale)
+    finalize_frame(&main, &sub, frame, out_width, scale, false)
 }
 
 /// Block-replicate an RGBA frame to `scale`× (nearest upscale): each source pixel
@@ -1905,6 +1905,7 @@ fn finalize_pixel(
     scale: usize,
     fixed: [i32; 3],
     no_effect_math: bool,
+    mode7_brightness_capped_add: bool,
 ) -> [u8; 4] {
     // Per-output pixel color math, but the window data is NATIVE-length, so index
     // it by the native row/col (`out_y / scale`, `out_x / scale`). At scale == 1
@@ -1943,6 +1944,15 @@ fn finalize_pixel(
     for ch in 0..3 {
         c[ch] = scale_brightness5(c[ch], frame.brightness);
     }
+    // Snes9x selects `COLOR_ADD_BRIGHTNESS` for low-brightness Mode 7 fixed
+    // color addition (tile.cpp renderer index 7). Its inputs have already been
+    // master-brightness mapped by `S9xFixColourBrightness` / `GFX.FixedColour`;
+    // it then saturates the sum at the brightness-mapped white level.
+    let mode7_brightness_capped_fixed_add = mode7_brightness_capped_add
+        && do_math
+        && !frame.add_subscreen
+        && !frame.subtract_color
+        && !frame.half_color;
     if do_math {
         let (operand, second_real) = if frame.add_subscreen {
             if sub.real[i] {
@@ -1967,6 +1977,9 @@ fn finalize_pixel(
             } else {
                 c[ch] += operand;
             }
+            if mode7_brightness_capped_fixed_add {
+                c[ch] = c[ch].min(scale_brightness5(31, frame.brightness));
+            }
         }
         if frame.half_color && (second_real || !frame.add_subscreen) {
             for ch in 0..3 {
@@ -1988,6 +2001,7 @@ fn finalize_frame(
     frame: &ModernFrame,
     out_width: usize,
     scale: usize,
+    mode7_brightness_capped_add: bool,
 ) -> Vec<u8> {
     let width = out_width;
     let len = main.c5.len();
@@ -2027,7 +2041,17 @@ fn finalize_frame(
     const PARALLEL_MIN_PIXELS: usize = 200_000; // native 256×224 stays serial; scale≥2 parallelizes
     if n_threads <= 1 || len < PARALLEL_MIN_PIXELS {
         for i in 0..len {
-            let px = finalize_pixel(i, main, sub, frame, width, scale, fixed, no_effect_math);
+            let px = finalize_pixel(
+                i,
+                main,
+                sub,
+                frame,
+                width,
+                scale,
+                fixed,
+                no_effect_math,
+                mode7_brightness_capped_add,
+            );
             out[i * 4..i * 4 + 4].copy_from_slice(&px);
         }
     } else {
@@ -2051,6 +2075,7 @@ fn finalize_frame(
                                 scale,
                                 fixed,
                                 no_effect_math,
+                                mode7_brightness_capped_add,
                             );
                             let o = lr * width * 4 + x * 4;
                             chunk[o..o + 4].copy_from_slice(&px);
@@ -2210,14 +2235,33 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
         ) {
             if sx < usize::from(MODERN_FRAME_WIDTH) && sy < usize::from(MODERN_FRAME_HEIGHT) {
                 let index = mode7_bg_index(frame, sx, sy).unwrap_or(0) as usize;
+                let m = frame.scanlines[sy].mode7_matrix;
+                let (m0, m1, m2, m3) = (m[0] as i32, m[1] as i32, m[2] as i32, m[3] as i32);
+                let x_center = expand_m7_13(m[4] as i32);
+                let y_center = expand_m7_13(m[5] as i32);
+                let h_scroll = expand_m7_13(m[6] as i32);
+                let v_scroll = expand_m7_13(m[7] as i32);
+                let clipped_h = clip_m7_offset(h_scroll - x_center);
+                let clipped_v = clip_m7_offset(v_scroll - y_center);
+                let ry = sy as i32 + 1;
+                let start_x = (m0 * clipped_h & -64)
+                    + (m1 * ry & -64)
+                    + (m1 * clipped_v & -64)
+                    + (x_center << 8);
+                let start_y = (m2 * clipped_h & -64)
+                    + (m3 * ry & -64)
+                    + (m3 * clipped_v & -64)
+                    + (y_center << 8);
+                let sample_x = ((start_x + m0 * sx as i32) >> 8) & 0x3ff;
+                let sample_y = ((start_y + m2 * sx as i32) >> 8) & 0x3ff;
                 let window = modern
                     .window_scanlines
                     .get(sy)
                     .copied()
                     .unwrap_or([0; 4]);
                 let cm_window = in_cm_window(sx as u32, window, modern.windowsel_cm);
-                eprintln!(
-                    "mode7_pixel xy=({sx},{sy}) index={index:02x} cgram={:04x} rgba={:02x?} brightness={} math={:02x} sub={} subtract={} half={} fixed=({:02x},{:02x},{:02x}) window={window:02x?} cm_window={cm_window} prevent_math={} math_ok={}",
+                let trace = format!(
+                    "mode7_pixel xy=({sx},{sy}) src=({sample_x},{sample_y}) matrix={m:04x?} scroll=({h_scroll},{v_scroll}) center=({x_center},{y_center}) index={index:02x} cgram={:04x} rgba={:02x?} brightness={} math={:02x} sub={} subtract={} half={} fixed=({:02x},{:02x},{:02x}) window={window:02x?} cm_window={cm_window} prevent_math={} math_ok={}",
                     frame.cgram.get(index).copied().unwrap_or(0),
                     modern.cgram_rgba[index],
                     modern.brightness,
@@ -2231,6 +2275,15 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
                     modern.prevent_math_mode,
                     cw_bit(cm_window, modern.prevent_math_mode),
                 );
+                eprintln!("{trace}");
+                use std::io::Write;
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open("/tmp/zelda3-mode7-pixel.trace")
+                {
+                    let _ = writeln!(file, "{trace}");
+                }
             }
         }
     }
@@ -2309,7 +2362,14 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
         );
     }
 
-    finalize_frame(&main, &sub, &modern, width, 1)
+    finalize_frame(
+        &main,
+        &sub,
+        &modern,
+        width,
+        1,
+        modern.brightness < 15,
+    )
 }
 
 #[cfg(test)]
