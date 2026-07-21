@@ -3569,6 +3569,24 @@ impl ZeldaState {
         }
     }
 
+    /// Rebuild the frozen scroll scanout image from the live VWF WRAM buffer
+    /// (7F:0000) — the exact bytes the ROM's vblank DMAs to VRAM 0x7c00.
+    pub(crate) fn refresh_dialogue_scroll_frozen_text_from_buffer(&mut self) {
+        let buf = &self.ram[0x10000..0x10000 + 0x7e0];
+        self.dialogue_scroll_frozen_text = Some(
+            (0..0x3f0)
+                .map(|i| u16::from(buf[i * 2]) | (u16::from(buf[i * 2 + 1]) << 8))
+                .collect(),
+        );
+        if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
+            let wram_sum: u64 = buf.iter().map(|&b| u64::from(b)).sum();
+            eprintln!(
+                "scroll_freeze host={} frozen_buf_sum={wram_sum}",
+                self.frame_ctr_dbg,
+            );
+        }
+    }
+
     pub(super) fn RenderText_Draw_Scroll(&mut self) -> bool {
         // ROM ground truth (instrumented Snes9x oracle, intro telepathy,
         // scroll speed 4): one scroll call drains `scroll_speed + 1` pixel
@@ -3603,10 +3621,13 @@ impl ZeldaState {
             // normal frame with no lag.
             return self.render_text_scroll_pixels(remaining_in_line);
         }
-        // Freeze the scanout image of the text area for this iteration: the
-        // pump's NMI upload request fires once per iteration, so the screen
-        // keeps showing the pre-pass generation through both lag frames.
-        self.dialogue_scroll_frozen_text = Some(self.ppu.vram[0x7c00..0x7ff0].to_vec());
+        // Freeze the scanout image of the text area for this iteration. The
+        // ROM's vblank at the iteration start DMAs the CURRENT WRAM buffer
+        // (7F:0000) — verified by matching the instrumented core's per-upload
+        // checksums — so the frozen image is the pre-pass buffer content,
+        // not our VRAM copy (which still holds the previous iteration's
+        // upload because no request fired during the lag frames).
+        self.refresh_dialogue_scroll_frozen_text_from_buffer();
         if self.render_text_scroll_pixels(2) {
             return true;
         }

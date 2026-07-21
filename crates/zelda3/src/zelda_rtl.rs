@@ -7270,6 +7270,19 @@ impl ZeldaState {
         if let Some(previous_dialogue_text_vram) = previous_dialogue_text_vram {
             self.ppu.vram[0x7c00..0x7ff0].copy_from_slice(&previous_dialogue_text_vram);
         }
+        if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some()
+            && (self.dialogue_scroll_stale_scanout || self.dialogue_scroll_lag_frames > 0)
+        {
+            let presented_sum: u64 = self.ppu.vram[0x7c00..0x7ff0]
+                .iter()
+                .map(|w| u64::from(w & 0xff) + u64::from(w >> 8))
+                .sum();
+            eprintln!(
+                "scroll_present host={} presented_sum={presented_sum} stale={} lag={}",
+                self.frame_ctr_dbg, self.dialogue_scroll_stale_scanout,
+                self.dialogue_scroll_lag_frames,
+            );
+        }
         // OAM publication has an independent cadence from the large VRAM and
         // CGRAM uploads above.  The opening attract scene deliberately keeps
         // its story image in the previous display-memory generation, while its
