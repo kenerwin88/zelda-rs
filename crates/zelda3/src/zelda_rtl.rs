@@ -1795,6 +1795,14 @@ pub struct ZeldaState {
     /// nonzero, `zelda_run_game_loop` performs only the pending pixel passes.
     #[serde(default)]
     pub(crate) dialogue_scroll_lag_frames: u8,
+    /// Set by `RenderText_Draw_MessageCharacters` when this frame's fast-forward
+    /// render stopped mid-line at the per-frame budget; consumed at the START of
+    /// the next `zelda_run_game_loop` to hold that frame's core update (frame
+    /// counter + sprite/Link update), matching the ROM's core_update_disable.
+    #[serde(skip)]
+    pub(crate) dialogue_fast_forward_hold_pending: bool,
+    #[serde(skip)]
+    pub(crate) dialogue_fast_forward_hold_active: bool,
     /// BG3 text tile area (VRAM 0x7c00..0x7ff0) as of the scroll call frame's
     /// scanout. The ROM's NMI only re-uploads the VWF buffer on main-loop
     /// iteration frames (the upload request comes from the message pump), so
@@ -6713,6 +6721,8 @@ impl ZeldaState {
             bg3_vwf_glyph_runs: Vec::new(),
             bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
             dialogue_scroll_lag_frames: 0,
+            dialogue_fast_forward_hold_pending: false,
+            dialogue_fast_forward_hold_active: false,
             dialogue_scroll_frozen_text: None,
             dialogue_scroll_ran_this_frame: false,
             dialogue_scroll_stale_scanout: false,
@@ -9526,12 +9536,25 @@ impl ZeldaState {
             self.render_text_scroll_pixels(passes);
             return;
         }
-        self.increment_frame_counter();
-        self.replay_trace_ram_watch("game-loop-after-frame-counter");
-        self.clear_oam_buffer();
-        self.replay_trace_ram_watch("game-loop-after-clear-oam");
+        // A held frame is one the ROM spends inside a fast-forward message
+        // render slice: the NMI does the VWF text upload but skips the core
+        // game update, so the frame counter and sprites (incl. Link's
+        // animation) do not advance. `dialogue_fast_forward_hold_active` stays
+        // set through `module_main_routing` so `Module0E_Interface` skips its
+        // sprite/Link update, then rotates below.
+        let hold_core = self.dialogue_fast_forward_hold_active;
+        if !hold_core {
+            self.increment_frame_counter();
+            self.replay_trace_ram_watch("game-loop-after-frame-counter");
+            self.clear_oam_buffer();
+            self.replay_trace_ram_watch("game-loop-after-clear-oam");
+        }
         self.module_main_routing();
         self.replay_trace_ram_watch("game-loop-after-module");
+        // This frame's render decided whether the NEXT frame holds its core
+        // update; publish it and clear the flag we just consumed.
+        self.dialogue_fast_forward_hold_active =
+            std::mem::take(&mut self.dialogue_fast_forward_hold_pending);
         if self.rom_startup_timing()
             && (self.pending_rom_work.is_pending()
                 || self.dungeon_landing_wipe_carry_pending

@@ -3,6 +3,21 @@
 use super::*;
 use crate::types::{sign16, Pair16U, Point16U};
 
+/// Per-display-frame VWF glyph-column budget for max-speed (button-held)
+/// message fast-forward. Beyond this many glyph-width pixels rendered in one
+/// frame, the render loop yields for the NMI upload instead of dumping the
+/// rest of the line. Calibrated against the Snes9x oracle's per-frame
+/// read-position advance; `ZELDA3_VWF_FF_BUDGET` overrides for calibration.
+fn vwf_fast_forward_frame_budget() -> u16 {
+    static BUDGET: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
+    *BUDGET.get_or_init(|| {
+        std::env::var("ZELDA3_VWF_FF_BUDGET")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0x20)
+    })
+}
+
 mod messaging_shared;
 use messaging_shared::*;
 
@@ -13,7 +28,9 @@ fn text_decode_cmd(a: u8, src: *const u8) -> u32 {
 
 impl ZeldaState {
     pub(super) fn Module0E_Interface(&mut self) {
-        let mut skip_run = false;
+        // A fast-forward message render slice: the ROM's NMI skips the core
+        // game update (sprites/Link) while the main thread finishes the render.
+        let mut skip_run = self.dialogue_fast_forward_hold_active;
         if self.game_state.world.location.is_indoors() {
             if self.game_state.frame.submodule == 3 {
                 skip_run = self.overworld_map_state() != 0 && self.overworld_map_state() != 7;
@@ -3176,7 +3193,15 @@ impl ZeldaState {
         // text path does not split a glyph across synthetic host work slices.
         // Keeping that artificial budget delayed the first story glyph by one
         // display boundary, leaving the Triforce caption partially absent.
-        self.render_text_draw_message_characters();
+        let yielded_midline = self.render_text_draw_message_characters();
+        // A mid-line fast-forward yield means the ROM's main thread is still
+        // inside the render (it renders one glyph-chunk per vblank while the
+        // button is held). On those display frames the ROM's NMI does the VWF
+        // upload but skips the core game update — the frame counter (0x1a) and
+        // Link's animation are held. Mark the NEXT frame to skip its core
+        // update so rust's 0x1a tracks the ROM's (Snes9x-verified: 0x1a ticks
+        // ~once per rendered line, not once per vblank).
+        self.dialogue_fast_forward_hold_pending = yielded_midline;
         self.finish_dialogue_character_render_call();
     }
 
@@ -3185,7 +3210,25 @@ impl ZeldaState {
         self.set_core_update_disable_flag(2);
     }
 
-    fn render_text_draw_message_characters(&mut self) {
+    /// Renders this frame's message characters. Returns `true` if it stopped
+    /// because the per-frame fast-forward budget was reached mid-line (more
+    /// letters pending on this line) rather than at a command/line boundary —
+    /// the ROM holds the core update on those frames.
+    fn render_text_draw_message_characters(&mut self) -> bool {
+        // Snes9x-verified: even at max speed (line-speed 0, i.e. the player
+        // holding the advance button to fast-forward), the ROM renders at most
+        // a bounded number of glyph columns per display frame before yielding
+        // for the NMI VWF upload — it does NOT dump the whole line in one
+        // frame. Without this budget rust typed a page in ~3 frames while the
+        // ROM took ~12, running the frame counter (0x1a, which gates Link's
+        // animation) and read-position ahead for the rest of the scene (the
+        // 2826..3115 walk-sprite flicker). Each yielded frame still ticks 0x1a
+        // once, so bounding the per-frame render makes rust consume the ROM's
+        // frame count. Budget is in glyph-width (pixel) units accumulated this
+        // frame; a letter that crosses the budget is the frame's last.
+        let budget = vwf_fast_forward_frame_budget();
+        let mut frame_advance: u16 = 0;
+        let mut midline_yield = false;
         loop {
             let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos() as usize;
             let c = self.game_state.messaging.decoded_text.byte(read_pos);
@@ -3200,10 +3243,17 @@ impl ZeldaState {
                     if self.game_state.messaging.runtime.vwf_line_speed_cur() >= 2 {
                         self.messaging_state_mut().decrement_vwf_line_speed_cur();
                     } else {
+                        frame_advance =
+                            frame_advance.saturating_add(u16::from(self.dialogue_glyph_width(param)));
                         self.VWF_RenderSingle(param as i32, read_pos as u16);
                         command_done = true;
-                        restart_if_zero_speed =
+                        let fast_forward =
                             self.game_state.messaging.runtime.vwf_line_speed_cur() == 0;
+                        restart_if_zero_speed = fast_forward && frame_advance < budget;
+                        // Fast-forwarding but stopped by the per-frame budget:
+                        // there are more letters on this line, so the ROM holds
+                        // the core update next frame.
+                        midline_yield = fast_forward && frame_advance >= budget;
                     }
                 }
                 TEXT_CMD_NEXT_PIC => {
@@ -3289,6 +3339,7 @@ impl ZeldaState {
                 break;
             }
         }
+        midline_yield
     }
 
     pub(super) fn RenderText_Draw_Finish(&mut self) {
@@ -3303,6 +3354,14 @@ impl ZeldaState {
         self.set_submodule(0);
         let saved_module = self.game_state.frame.saved_module_for_menu;
         self.set_main_module(saved_module);
+    }
+
+    /// Width in pixels of dialogue glyph `c` (VWF proportional-font advance),
+    /// from font memblk 95 index 1 — the same table `VWF_RenderSingle` uses.
+    fn dialogue_glyph_width(&self, c: u8) -> u8 {
+        self.asset_memblk(95, self.dialogue_font_blk_index)
+            .map(|font| find_index_in_memblk(font, 1).ptr.get(c as usize).copied().unwrap_or(0))
+            .unwrap_or(0)
     }
 
     pub(super) fn VWF_RenderSingle(&mut self, c: i32, dialogue_offset: u16) {

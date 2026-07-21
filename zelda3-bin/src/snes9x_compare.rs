@@ -1380,12 +1380,20 @@ pub(crate) fn run_compare_libretro_oracle(
             };
             let fc_oracle = if oracle_ram.len() > 0x1a { oracle_ram[0x1a] } else { 0xff };
             let mo = |a: usize| if oracle_ram.len() > a { oracle_ram[a] } else { 0xff };
+            let mow = |a: usize| {
+                if oracle_ram.len() > a + 1 {
+                    u16::from_le_bytes([oracle_ram[a], oracle_ram[a + 1]])
+                } else {
+                    0xffff
+                }
+            };
+            let rp_r = u16::from_le_bytes([game.ram[0x1cd9], game.ram[0x1cda]]);
             eprintln!(
-                "text_probe frame={frame_index} fc_rust={:02x} fc_oracle={fc_oracle:02x}{} mod_rust={:02x}/{:02x}/{:02x} mod_oracle={:02x}/{:02x}/{:02x} coreDis_rust={:02x} coreDis_oracle={:02x}",
+                "text_probe frame={frame_index} fc_r={:02x} fc_o={fc_oracle:02x}{} rst_r={:02x} rst_o={:02x} rp_r={rp_r:04x} rp_o={:04x} coreDis_r={:02x} coreDis_o={:02x}",
                 game.ram[0x1a],
-                if game.ram[0x1a] != fc_oracle { "  FC_DIFF" } else { "" },
-                game.ram[0x10], game.ram[0x11], game.ram[0xb0],
-                mo(0x10), mo(0x11), mo(0xb0),
+                if game.ram[0x1a] != fc_oracle { "  FCd" } else { "" },
+                game.ram[0x1cd4], mo(0x1cd4),
+                mow(0x1cd9),
                 game.ram[0x1ccd], mo(0x1ccd),
             );
         }
