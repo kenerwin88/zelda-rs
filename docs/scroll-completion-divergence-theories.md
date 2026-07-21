@@ -135,3 +135,19 @@ window failed; delayed LIVE buffer is UNTESTED and is the top candidate.)
   VRAM upload + BG3 scroll behavior. Routine names to find: the message
   scroll ("RenderText_Draw_Scroll"-equivalent), Hud/BG3 v-scroll handling
   during messages, and whether it uses $2110 BG3VOFS.
+
+7. **Refresh frozen to current post-pass buffer on the FINAL lag frame.**
+   RESULT: worse — 1387, 1390 break (1084, 983), 1391 unchanged (632). Like all
+   frozen-timing changes, it CASCADES to adjacent frames because the frozen is
+   a single shared state across groups. => Any per-frame frozen tweak regresses
+   neighbors. The frozen model gets 12/13 frames right by the call-frame capture
+   coincidentally matching the oracle's group-boundary uploads; the completion
+   frame needs a state outside that model, and adjusting it breaks the balance.
+
+## CONCLUSION (this session)
+7 theories tested, ALL regress the committed baseline (0ede92c9, 17 ranges).
+The single-frame-per-scroll residual is NOT fixable by incremental frozen-timing
+tweaks — it needs either (a) resolving the 3-way frame-numbering ambiguity via a
+new single-run measurement that stamps the produced video-frame index into the
+instrumented trace, or (b) replacing the shared-frozen presentation with a
+per-group independent model that cannot cascade. Committed baseline kept.
