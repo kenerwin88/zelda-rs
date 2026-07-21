@@ -1378,9 +1378,15 @@ pub(crate) fn run_compare_libretro_oracle(
             } else {
                 Vec::new()
             };
+            let fc_oracle = if oracle_ram.len() > 0x1a { oracle_ram[0x1a] } else { 0xff };
+            let mo = |a: usize| if oracle_ram.len() > a { oracle_ram[a] } else { 0xff };
             eprintln!(
-                "text_probe frame={frame_index} rust={rust_bytes:02x?} oracle={oracle_bytes:02x?} match={} coldata_rust={rust_coldata:02x?} coldata_oracle={oracle_coldata:02x?}",
-                rust_bytes == oracle_bytes,
+                "text_probe frame={frame_index} fc_rust={:02x} fc_oracle={fc_oracle:02x}{} mod_rust={:02x}/{:02x}/{:02x} mod_oracle={:02x}/{:02x}/{:02x} coreDis_rust={:02x} coreDis_oracle={:02x}",
+                game.ram[0x1a],
+                if game.ram[0x1a] != fc_oracle { "  FC_DIFF" } else { "" },
+                game.ram[0x10], game.ram[0x11], game.ram[0xb0],
+                mo(0x10), mo(0x11), mo(0xb0),
+                game.ram[0x1ccd], mo(0x1ccd),
             );
         }
         if debug_vram_frames.contains(&frame_index) {
@@ -1422,6 +1428,25 @@ pub(crate) fn run_compare_libretro_oracle(
                     eprintln!("failed to write Rust VRAM capture: {error}");
                     process::exit(1);
                 });
+            // The DISPLAYED generation: the compose snapshot VRAM, which is
+            // what the renderer scans out (may differ from the live post-frame
+            // VRAM above).
+            let snap_vram = game.with_display_snapshot(|display| {
+                display
+                    .ppu
+                    .vram
+                    .iter()
+                    .flat_map(|word| word.to_le_bytes())
+                    .collect::<Vec<_>>()
+            });
+            fs::write(
+                dir.join(format!("rust_snapvram_frame_{frame_index}.bin")),
+                &snap_vram,
+            )
+            .unwrap_or_else(|error| {
+                eprintln!("failed to write Rust snapshot VRAM capture: {error}");
+                process::exit(1);
+            });
             let oracle_vram = oracle
                 .memory_bytes(RETRO_MEMORY_VIDEO_RAM)
                 .unwrap_or_else(|| {
