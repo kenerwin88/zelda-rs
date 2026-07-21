@@ -3339,6 +3339,19 @@ impl ZeldaState {
                 break;
             }
         }
+        if std::env::var_os("ZELDA3_DEBUG_VWF_BUDGET").is_some() {
+            let cursor = self.game_state.messaging.vwf_render.glyph_cursor_usize();
+            let arrval = self.vwf_glyph_advance_prefix_sum(cursor);
+            eprintln!(
+                "vwf_budget host={} read_pos={:#x} frame_advance={} glyph_cursor={} line_x={} midline_yield={}",
+                self.frame_ctr_dbg,
+                self.game_state.messaging.runtime.dialogue_msg_read_pos(),
+                frame_advance,
+                cursor,
+                arrval,
+                midline_yield,
+            );
+        }
         midline_yield
     }
 

@@ -962,6 +962,7 @@ pub(crate) fn run_compare_libretro_oracle(
     let debug_vram_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_VRAM_FRAMES", None);
     let debug_video_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_VIDEO_FRAMES", None);
     let debug_text_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_TEXT_FRAMES", None);
+    let debug_sprite_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_SPRITE_FRAMES", None);
     let debug_wram_frames = debug_frame_selection_from_env(
         "ZELDA3_DEBUG_WRAM_FRAMES",
         Some("ZELDA3_DEBUG_WRAM_FRAME"),
@@ -1360,6 +1361,20 @@ pub(crate) fn run_compare_libretro_oracle(
                 eprintln!("failed to write Rust debug state: {error}");
                 process::exit(1);
             });
+        }
+        if debug_sprite_frames.contains(&frame_index) {
+            // Follower/tagalong tracking probe: slot-0 sprite state both sides.
+            let oracle_ram = oracle.memory_bytes(RETRO_MEMORY_SYSTEM_RAM).unwrap_or(&[]);
+            let g = |a: usize| game.ram.get(a).copied().unwrap_or(0);
+            let o = |a: usize| oracle_ram.get(a).copied().unwrap_or(0xff);
+            // slot 0: x 0xd10/0xd30(hi), y 0xd00/0xd20(hi), yvel 0xd40, xvel 0xd50,
+            // dir 0xde0, state 0x0e20, ai 0x0e60. Plus tagalong buffer head 0x0ec0.
+            let f = |a: usize| (g(a), o(a), if g(a) != o(a) { "*" } else { "" });
+            eprintln!(
+                "sprite_probe frame={frame_index} xlo={:?} xhi={:?} ylo={:?} yhi={:?} yvel={:?} dir(0xde0)={:?} state(0xe20)={:?} ai(0xe60)={:?} main={:02x}/{:02x} sub={:02x}/{:02x}",
+                f(0xd10), f(0xd30), f(0xd00), f(0xd20), f(0xd40), f(0xde0), f(0xe20), f(0xe60),
+                g(0x10), o(0x10), g(0x11), o(0x11),
+            );
         }
         if debug_text_frames.contains(&frame_index) {
             // Typewriter-cadence probe: end-frame messaging state on both sides.
