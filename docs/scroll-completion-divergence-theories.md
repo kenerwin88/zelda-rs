@@ -151,3 +151,15 @@ tweaks — it needs either (a) resolving the 3-way frame-numbering ambiguity via
 new single-run measurement that stamps the produced video-frame index into the
 instrumented trace, or (b) replacing the shared-frozen presentation with a
 per-group independent model that cannot cascade. Committed baseline kept.
+
+## SOLVED — commit 1145cb59
+The winning approach (theory 8): a DEDICATED completion override, separate from
+the shared frozen state, presented with a ONE-FRAME STAGE DELAY. On the
+group-completion (final lag) frame, capture the current scrolled WRAM VWF
+buffer (7F:0000) into `dialogue_scroll_completion_pending`; stage it one frame
+(`_staged` -> `_text`) so it displays on N+1, matching Snes9x's vblank scan-out.
+Keeping it separate from the frozen avoided the cascades that killed theories
+1,5,6,7. The one-frame delay was the key: the earlier "present live/completion
+on frame N" attempts landed one frame early (rust top jumped at video-N while
+the oracle jumped at N+1). Result: all 13 per-scroll divergences gone; route
+17 -> 4 ranges. Verified frame-by-frame by text top-edge.
