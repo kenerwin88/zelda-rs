@@ -1822,6 +1822,15 @@ pub struct ZeldaState {
     /// (one further than the ordinary dialogue snapshot retention).
     #[serde(default)]
     pub(crate) dialogue_scroll_stale_scanout: bool,
+    /// Dedicated one-frame override presenting the freshly-completed scroll
+    /// buffer on the group-completion frame (see the lag handler). Separate
+    /// from the frozen state to avoid cascading into adjacent scroll groups.
+    #[serde(skip)]
+    pub(crate) dialogue_scroll_completion_text: Option<Vec<u16>>,
+    #[serde(skip)]
+    pub(crate) dialogue_scroll_completion_pending: Option<Vec<u16>>,
+    #[serde(skip)]
+    pub(crate) dialogue_scroll_completion_staged: Option<Vec<u16>>,
     pub dma: DmaState,
     pub frame_ctr_dbg: u32,
     #[serde(default)]
@@ -6724,6 +6733,9 @@ impl ZeldaState {
             dialogue_fast_forward_hold_pending: false,
             dialogue_fast_forward_hold_active: false,
             dialogue_scroll_frozen_text: None,
+            dialogue_scroll_completion_text: None,
+            dialogue_scroll_completion_pending: None,
+            dialogue_scroll_completion_staged: None,
             dialogue_scroll_ran_this_frame: false,
             dialogue_scroll_stale_scanout: false,
             dma: DmaState::new(),
@@ -7017,6 +7029,13 @@ impl ZeldaState {
         if !self.dialogue_scroll_stale_scanout {
             self.dialogue_scroll_frozen_text = None;
         }
+        // The completion override displays ONE frame after the group-completion
+        // (final lag) frame: internally the scroll finishes on frame N, but
+        // Snes9x scans the finished text out on N+1. Stage the pending buffer
+        // for a frame, then present it.
+        self.dialogue_scroll_completion_text = self.dialogue_scroll_completion_staged.take();
+        self.dialogue_scroll_completion_staged =
+            std::mem::take(&mut self.dialogue_scroll_completion_pending);
         let frame = self.game_state.frame;
         if std::env::var_os("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some()
             && (5640..=5700).contains(&self.frame_ctr_dbg)
@@ -7229,9 +7248,16 @@ impl ZeldaState {
         // ordinary dialogue presentation keeps the whole pre-NMI snapshot,
         // which is only one back). Applied after the branch below so it
         // overrides both the retained and the recomposed paths.
-        let previous_dialogue_text_vram = (self.dialogue_scroll_stale_scanout)
-            .then(|| self.dialogue_scroll_frozen_text.clone())
-            .flatten();
+        // The completion override (freshly-scrolled buffer, group-completion
+        // frame) takes precedence over the frozen (group-start) generation.
+        let previous_dialogue_text_vram = self
+            .dialogue_scroll_completion_text
+            .clone()
+            .or_else(|| {
+                self.dialogue_scroll_stale_scanout
+                    .then(|| self.dialogue_scroll_frozen_text.clone())
+                    .flatten()
+            });
         if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
             eprintln!(
                 "scroll_retain host={} lag={} stale_scanout={} two_back={} nmi_retained={}",
@@ -9531,9 +9557,25 @@ impl ZeldaState {
             // no frame-counter tick, no OAM clear, no module routing. The
             // vblank sees the copy 2 passes further (then the final 1).
             let passes = if self.dialogue_scroll_lag_frames == 2 { 2 } else { 1 };
+            let is_final_lag = self.dialogue_scroll_lag_frames == 1;
             self.dialogue_scroll_lag_frames -= 1;
             self.dialogue_scroll_ran_this_frame = true;
             self.render_text_scroll_pixels(passes);
+            if is_final_lag {
+                // The scroll group completes on this frame. Snes9x scans out the
+                // finished (post-pass) text here — one frame before rust's frozen
+                // (group-start) model would jump. Capture the CURRENT scrolled
+                // buffer as a dedicated completion override, separate from the
+                // frozen state machine (mutating the frozen here cascades into
+                // neighbouring groups). Presented in place of the frozen on this
+                // frame only.
+                let buf = &self.ram[0x10000..0x10000 + 0x7e0];
+                self.dialogue_scroll_completion_pending = Some(
+                    (0..0x3f0)
+                        .map(|i| u16::from(buf[i * 2]) | (u16::from(buf[i * 2 + 1]) << 8))
+                        .collect(),
+                );
+            }
             return;
         }
         // A held frame is one the ROM spends inside a fast-forward message
