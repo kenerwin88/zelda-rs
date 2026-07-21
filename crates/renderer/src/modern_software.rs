@@ -1941,8 +1941,15 @@ fn finalize_pixel(
     // brightness before color math, fixed color included; mirror that order
     // (identical to math-then-brightness at full brightness). See the same
     // transform in modern_finalize.wgsl.
+    // The opening world-map scanout advances INIDISP one step ahead of the
+    // deferred display palette. This frame is produced exclusively by the
+    // Mode-7 presenter, so its primary composite uses that sampled level;
+    // its secondary color-math operand remains at the display brightness.
+    let primary_brightness = frame
+        .mode7_scanout_brightness_override
+        .unwrap_or(frame.brightness);
     for ch in 0..3 {
-        c[ch] = scale_brightness5(c[ch], frame.brightness);
+        c[ch] = scale_brightness5(c[ch], primary_brightness);
     }
     // Snes9x selects `COLOR_ADD_BRIGHTNESS` for low-brightness Mode 7 fixed
     // color addition (tile.cpp renderer index 7). Its inputs have already been
@@ -2288,7 +2295,7 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
         }
     }
 
-    if modern.forced_blank {
+    if modern.forced_blank && modern.mode7_scanout_brightness_override.is_none() {
         let mut out = vec![0u8; len * 4];
         for px in out.chunks_exact_mut(4) {
             px.copy_from_slice(&[0, 0, 0, 0xff]);

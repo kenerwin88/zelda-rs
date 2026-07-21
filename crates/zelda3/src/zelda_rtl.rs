@@ -1789,6 +1789,31 @@ pub struct ZeldaState {
     #[serde(skip)]
     bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
     bg3_vwf_glyph_run_dialogue_offsets: Vec<u16>,
+    /// Remaining lag frames of an in-flight message-line scroll call. The
+    /// ROM's `scroll_speed+1`-pixel scroll spans three hardware frames
+    /// (2,2,1 pixel passes; the main loop and frame counter run once); while
+    /// nonzero, `zelda_run_game_loop` performs only the pending pixel passes.
+    #[serde(default)]
+    pub(crate) dialogue_scroll_lag_frames: u8,
+    /// BG3 text tile area (VRAM 0x7c00..0x7ff0) as of the scroll call frame's
+    /// scanout. The ROM's NMI only re-uploads the VWF buffer on main-loop
+    /// iteration frames (the upload request comes from the message pump), so
+    /// the displayed text stays FROZEN at the iteration-start state through
+    /// both lag frames — the visible scroll moves in `scroll_speed+1` pixel
+    /// jumps (instrumented-core trace: UPLOAD lines only on tick frames).
+    #[serde(default)]
+    pub(crate) dialogue_scroll_frozen_text: Option<Vec<u16>>,
+    /// Set while the current frame performed lag-spread scroll pixel passes
+    /// (the full-group call frame and both lag frames — NOT the cheap
+    /// completing call). Latched into `dialogue_scroll_stale_scanout` at the
+    /// display boundary.
+    #[serde(skip)]
+    pub(crate) dialogue_scroll_ran_this_frame: bool,
+    /// The scanout for the presented frame falls while the ROM is mid-scroll:
+    /// Snes9x displays the text generation from TWO boundaries back there
+    /// (one further than the ordinary dialogue snapshot retention).
+    #[serde(default)]
+    pub(crate) dialogue_scroll_stale_scanout: bool,
     pub dma: DmaState,
     pub frame_ctr_dbg: u32,
     #[serde(default)]
@@ -6687,6 +6712,10 @@ impl ZeldaState {
             animated_tile_pack: 0,
             bg3_vwf_glyph_runs: Vec::new(),
             bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
+            dialogue_scroll_lag_frames: 0,
+            dialogue_scroll_frozen_text: None,
+            dialogue_scroll_ran_this_frame: false,
+            dialogue_scroll_stale_scanout: false,
             dma: DmaState::new(),
             frame_ctr_dbg: 0,
             previous_host_controller_input: 0,
@@ -6969,9 +6998,15 @@ impl ZeldaState {
     }
 
     pub(super) fn capture_display_snapshot(&mut self) {
+        self.ppu.refresh_brightness_cache();
         // The upcoming NMI may latch a fresh pre-upload CGRAM image; the one
         // from the previous frame has been consumed by that frame's renders.
         self.cgram_upload_latch = None;
+        self.dialogue_scroll_stale_scanout =
+            std::mem::take(&mut self.dialogue_scroll_ran_this_frame);
+        if !self.dialogue_scroll_stale_scanout {
+            self.dialogue_scroll_frozen_text = None;
+        }
         let frame = self.game_state.frame;
         if std::env::var_os("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some()
             && (5640..=5700).contains(&self.frame_ctr_dbg)
@@ -7158,6 +7193,7 @@ impl ZeldaState {
             );
         }
         let live_forced_blank = self.ppu.forced_blank;
+        let live_brightness = self.ppu.brightness;
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
@@ -7172,6 +7208,30 @@ impl ZeldaState {
             snapshot_frame.main_module == 7 && snapshot_frame.submodule == 0;
         let previous_link_obj_vram =
             retain_previous_link_obj_vram.then(|| self.ppu.vram[0x4000..0x4400].to_vec());
+        // During a message-line scroll the ROM's NMI re-uploads the VWF text
+        // buffer every frame while the copy is still in flight; Snes9x's
+        // scanout shows the generation uploaded at the PREVIOUS vblank.
+        // Present that pre-NMI generation of the text tile area while the
+        // scroll is active (typing frames are unaffected: the region is
+        // static between letter uploads).
+        // During a message-line scroll's spanned frames, Snes9x's scanout
+        // shows the text generation from TWO display boundaries back (the
+        // ordinary dialogue presentation keeps the whole pre-NMI snapshot,
+        // which is only one back). Applied after the branch below so it
+        // overrides both the retained and the recomposed paths.
+        let previous_dialogue_text_vram = (self.dialogue_scroll_stale_scanout)
+            .then(|| self.dialogue_scroll_frozen_text.clone())
+            .flatten();
+        if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
+            eprintln!(
+                "scroll_retain host={} lag={} stale_scanout={} two_back={} nmi_retained={}",
+                self.frame_ctr_dbg,
+                self.dialogue_scroll_lag_frames,
+                self.dialogue_scroll_stale_scanout,
+                self.dialogue_scroll_frozen_text.is_some(),
+                retain_previous_nmi_display_memory,
+            );
+        }
         if !retain_previous_nmi_display_memory {
             self.ppu.vram.clone_from(&display.ppu.vram);
             if let Some(previous_link_obj_vram) = previous_link_obj_vram {
@@ -7207,6 +7267,9 @@ impl ZeldaState {
                 shown.v_scroll = live.v_scroll;
             }
         }
+        if let Some(previous_dialogue_text_vram) = previous_dialogue_text_vram {
+            self.ppu.vram[0x7c00..0x7ff0].copy_from_slice(&previous_dialogue_text_vram);
+        }
         // OAM publication has an independent cadence from the large VRAM and
         // CGRAM uploads above.  The opening attract scene deliberately keeps
         // its story image in the previous display-memory generation, while its
@@ -7220,6 +7283,13 @@ impl ZeldaState {
         // active scanline even though the rest of the frame remains sourced
         // from the coherent pre-NMI display snapshot.
         self.ppu.forced_blank |= live_forced_blank;
+        // During the opening world-map fade Snes9x consumes the newly written
+        // INIDISP level for Mode 7 BG1 while CGRAM remains on the deferred
+        // display generation. Preserve that source-specific scanout timing for
+        // the modern GPU finalizer without changing the composed frame's
+        // global brightness or reintroducing a PPU compositor.
+        self.ppu.mode7_scanout_brightness_override =
+            world_map_fade_display.then_some(live_brightness);
         self.sync_native_game_state_from_ram();
         // The RAM-derived rebuild reconstitutes the palette mirror from the
         // snapshot's WRAM shadow, which already holds THIS frame's palette
@@ -9432,6 +9502,17 @@ impl ZeldaState {
     }
 
     fn zelda_run_game_loop(&mut self) {
+        if self.dialogue_scroll_lag_frames > 0 {
+            // Lag frame of an in-flight message-line scroll: the ROM's main
+            // loop is still inside the scroll copy, so nothing else runs —
+            // no frame-counter tick, no OAM clear, no module routing. The
+            // vblank sees the copy 2 passes further (then the final 1).
+            let passes = if self.dialogue_scroll_lag_frames == 2 { 2 } else { 1 };
+            self.dialogue_scroll_lag_frames -= 1;
+            self.dialogue_scroll_ran_this_frame = true;
+            self.render_text_scroll_pixels(passes);
+            return;
+        }
         self.increment_frame_counter();
         self.replay_trace_ram_watch("game-loop-after-frame-counter");
         self.clear_oam_buffer();

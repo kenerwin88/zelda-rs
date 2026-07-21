@@ -3570,11 +3570,49 @@ impl ZeldaState {
     }
 
     pub(super) fn RenderText_Draw_Scroll(&mut self) -> bool {
-        let scroll_speed = self.game_state.messaging.runtime.dialogue_scroll_speed();
-        // Matches the ROM's single caller: RenderText_Draw_Scroll completes
-        // all `scroll_speed + 1` pixel passes before returning.
-        let pixels = u16::from(scroll_speed) + 1;
-        self.render_text_scroll_pixels(pixels)
+        // ROM ground truth (instrumented Snes9x oracle, intro telepathy,
+        // scroll speed 4): one scroll call drains `scroll_speed + 1` pixel
+        // passes, but the buffer copy is slow enough that the call spans
+        // THREE hardware frames — the vblank interrupts it after 2, then 4,
+        // then 5 passes (WRAM 0x1cdf advances 2,2,1 per frame; frame counter
+        // 0x1a ticks once per call, PC 0x0ed088/0x008053). The trailing
+        // pixel that completes the 16-pixel line is a cheap one-frame call.
+        // Model: do 2 passes now and hand the remaining passes to two LAG
+        // frames (consumed in `zelda_run_game_loop`, which skips the main
+        // loop — including the 0x1a tick — on those frames). Not modeling
+        // the lag left rust's frame counter 6 frames ahead per line scroll,
+        // phase-shifting every `& 3`-gated effect after the message (the
+        // post-dialogue COLDATA fade diverged for 350 frames).
+        let group = u16::from(self.game_state.messaging.runtime.dialogue_scroll_speed()) + 1;
+        let nibble_before = u16::from(
+            self.game_state
+                .messaging
+                .dialogue_source_offset
+                .bank_offset_low_nibble()
+                & 0x0f,
+        );
+        let remaining_in_line = 16u16.saturating_sub(nibble_before);
+        if group != 5 {
+            // Only scroll speed 4 has oracle-verified lag timing; other
+            // speeds keep the single-frame drain until ground truth is
+            // captured for them (ZELDA3_SNES9X_VRAM_TRACE on 0x1cdf).
+            return self.render_text_scroll_pixels(group.min(remaining_in_line));
+        }
+        if remaining_in_line < group {
+            // Cheap completing call: the last pixel(s) of the line fit in a
+            // normal frame with no lag.
+            return self.render_text_scroll_pixels(remaining_in_line);
+        }
+        // Freeze the scanout image of the text area for this iteration: the
+        // pump's NMI upload request fires once per iteration, so the screen
+        // keeps showing the pre-pass generation through both lag frames.
+        self.dialogue_scroll_frozen_text = Some(self.ppu.vram[0x7c00..0x7ff0].to_vec());
+        if self.render_text_scroll_pixels(2) {
+            return true;
+        }
+        self.dialogue_scroll_lag_frames = 2;
+        self.dialogue_scroll_ran_this_frame = true;
+        false
     }
 
     pub(super) fn render_text_scroll_pixels(&mut self, pixels: u16) -> bool {

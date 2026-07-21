@@ -1067,6 +1067,7 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
         }
     }
     modern.brightness = frame.brightness;
+    modern.mode7_scanout_brightness_override = frame.mode7_scanout_brightness_override;
     modern.forced_blank = frame.forced_blank;
     modern.forced_blank_scanlines = frame
         .scanlines
@@ -1851,6 +1852,9 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
     modern.dialogue_layout = frame.dialogue_layout.to_vec();
     modern.dialogue_layout_vwf_glyph_runs =
         semantic_dialogue_layout_vwf_glyph_runs(frame, &bg3_tile_screen_xy);
+    modern.dialogue_box_tilemap_palette = frame
+        .dialogue_layout_origin_tile_number
+        .and_then(|origin| bg3_tilemap_entry_palette(frame, origin));
     cull_bg3_dynamic_tiles_covered_by_vwf_glyph_runs(&mut modern, &mut missing_sources);
     if dbg {
         eprintln!("[SRC_DEBUG] bg_tiles={dbg_total} wrong_cell={dbg_mismatch} gap={dbg_gap} stale_of_kind6={dbg_stale}");
@@ -1941,7 +1945,21 @@ fn semantic_dialogue_layout_vwf_glyph_runs(
             }
         })
         .collect::<Vec<_>>();
-    if !semantic_vwf_layout_matches_live_runs(&runs, frame, bg3_tile_screen_xy) {
+    let matches_live = semantic_vwf_layout_matches_live_runs(&runs, frame, bg3_tile_screen_xy);
+    if std::env::var_os("ZELDA3_DEBUG_VWF_SEMANTIC").is_some() && !runs.is_empty() {
+        eprintln!(
+            "vwf_semantic origin_tile={origin_tile_number:04x} origin_xy=({origin_x},{origin_y}) guard_matches_live={matches_live} semantic={:?} live={:?}",
+            runs.iter()
+                .map(|run| (run.glyph_code, run.screen_x, run.screen_y))
+                .collect::<Vec<_>>(),
+            frame
+                .bg3_vwf_glyph_runs
+                .iter()
+                .map(|run| (run.glyph_code, run.origin_tile_number, run.x, run.y))
+                .collect::<Vec<_>>(),
+        );
+    }
+    if !matches_live {
         return Vec::new();
     }
     runs
@@ -1986,6 +2004,28 @@ fn rects_overlap(ax: i16, ay: i16, aw: i16, ah: i16, bx: i16, by: i16, bw: i16, 
         && bx0 < ax0 + i32::from(aw)
         && ay0 < by0 + i32::from(bh)
         && by0 < ay0 + i32::from(ah)
+}
+
+/// Palette row (bits 10-12) of the first BG3 tilemap entry that maps
+/// `tile_number`. The message box uploads its text-cell mapping once, so the
+/// origin tile's entry carries the palette row the ROM renders the whole box
+/// through (verified against the Snes9x oracle's tilemap: the intro telepathy
+/// box maps tiles 0x180.. with palette 6, ordinary boxes use 7).
+fn bg3_tilemap_entry_palette(frame: &GpuFrame<'_>, tile_number: u16) -> Option<u8> {
+    let layer = frame.bg.get(2)?;
+    let base = usize::from(layer.tilemap_adr);
+    let quadrants = 1
+        + usize::from(layer.tilemap_wider)
+        + usize::from(layer.tilemap_higher) * (1 + usize::from(layer.tilemap_wider));
+    for q in 0..quadrants {
+        for within in 0..0x400usize {
+            let entry = frame.vram.get(base + q * 0x400 + within).copied()?;
+            if entry & 0x03ff == tile_number {
+                return Some(((entry >> 10) & 7) as u8);
+            }
+        }
+    }
+    None
 }
 
 fn bg3_tilemap_offset_screen_xy(frame: &GpuFrame<'_>, tilemap_offset: u16) -> Option<(i16, i16)> {
@@ -2267,6 +2307,7 @@ pub fn append_source_vwf_glyph_cells(
     glyph_atlas: &crate::modern_variant_atlas::DialogueVwfGlyphAtlas,
     runs: &[ModernVwfGlyphRun],
 ) {
+    let box_palette = modern.dialogue_box_tilemap_palette;
     let Some(bg3) = modern.bg_layers.get_mut(2) else {
         return;
     };
@@ -2281,10 +2322,15 @@ pub fn append_source_vwf_glyph_cells(
         if glyph.indices.len() != 16 * 16 {
             continue;
         }
-        // BG3's 2bpp colors occupy four CGRAM entries per palette. The
-        // semantic main text palette is palette 7; message color commands
-        // select the corresponding palette explicitly.
-        let palette = run.dialogue_color.unwrap_or(7) & 7;
+        // BG3's 2bpp colors occupy four CGRAM entries per palette. The row
+        // comes from the box's own tilemap attribute (the intro telepathy box
+        // maps its cells with palette 6, ordinary boxes with 7); an explicit
+        // message color command still overrides it.
+        let palette = run
+            .dialogue_color
+            .or(box_palette)
+            .unwrap_or(7)
+            & 7;
         for quadrant in 0..4usize {
             let mut indices = [0u8; 64];
             let qx = (quadrant & 1) * 8;
@@ -4416,6 +4462,7 @@ mod tests {
             screen_enabled: [0, 0],
             screen_windowed: [0, 0],
             brightness,
+            mode7_scanout_brightness_override: None,
             forced_blank,
             math_enabled: 0,
             subtract_color: false,

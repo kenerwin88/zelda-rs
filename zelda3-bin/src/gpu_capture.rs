@@ -1318,6 +1318,7 @@ fn validation_cache_key(capture: &LiveGpuFrameCapture) -> u64 {
     registers.screen_enabled.hash(&mut hasher);
     registers.screen_windowed.hash(&mut hasher);
     registers.brightness.hash(&mut hasher);
+    registers.mode7_scanout_brightness_override.hash(&mut hasher);
     registers.forced_blank.hash(&mut hasher);
     registers.math_enabled.hash(&mut hasher);
     registers.subtract_color.hash(&mut hasher);
@@ -2050,6 +2051,7 @@ fn gpu_frame_register_snapshot_from_ppu<'a>(
         screen_enabled: ppu.screen_enabled,
         screen_windowed: ppu.screen_windowed,
         brightness: ppu.brightness,
+        mode7_scanout_brightness_override: ppu.mode7_scanout_brightness_override,
         forced_blank: ppu.forced_blank,
         math_enabled: ppu.math_enabled,
         subtract_color: ppu.subtract_color,

@@ -28,8 +28,15 @@ pub struct ModernFrame {
     pub dialogue_ir: Vec<zelda3_dialogue::DialogueIrOp>,
     pub dialogue_layout: Vec<zelda3_dialogue::DialogueGlyphPlacement>,
     pub dialogue_layout_vwf_glyph_runs: Vec<ModernVwfGlyphRun>,
+    /// 2bpp palette row carried by the message box's BG3 tilemap entries
+    /// (bits 10-12 of the entry mapping the VWF origin tile). Semantic glyph
+    /// cells must render through THIS row, not an assumed default: the intro
+    /// telepathy box maps its text with palette 6 while ordinary boxes use 7.
+    pub dialogue_box_tilemap_palette: Option<u8>,
     pub backdrop_color_rgba: [u8; 4],
     pub brightness: u8,
+    /// Mode 7 BG1-only scanout brightness for the deferred world-map fade.
+    pub mode7_scanout_brightness_override: Option<u8>,
     pub forced_blank: bool,
     /// Number of leading visible scanlines that began while INIDISP was still
     /// forced blank after an overlong VBlank workload.
@@ -119,8 +126,10 @@ impl ModernFrame {
             dialogue_ir: Vec::new(),
             dialogue_layout: Vec::new(),
             dialogue_layout_vwf_glyph_runs: Vec::new(),
+            dialogue_box_tilemap_palette: None,
             backdrop_color_rgba: [0, 0, 0, 0xff],
             brightness: 15,
+            mode7_scanout_brightness_override: None,
             forced_blank: false,
             forced_blank_scanlines: 0,
             cgram_rgba: [[0, 0, 0, 0xff]; 256],

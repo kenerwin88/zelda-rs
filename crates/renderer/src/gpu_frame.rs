@@ -63,6 +63,9 @@ pub struct GpuFrame<'a> {
     pub screen_windowed: [u8; 2],
     /// Overall brightness (0 = off, 15 = full).
     pub brightness: u8,
+    /// Mode 7 BG1-only scanout brightness when the ROM advances INIDISP ahead
+    /// of the deferred display palette.
+    pub mode7_scanout_brightness_override: Option<u8>,
     /// If true, output is forced to all black (INIDISP forced-blank).
     pub forced_blank: bool,
     /// Bitmask of which layers participate in color math (bits 0-5 = BG1-4, OBJ, backdrop).
@@ -158,6 +161,7 @@ pub struct GpuFrameRegisterSnapshot<'a> {
     pub screen_enabled: [u8; 2],
     pub screen_windowed: [u8; 2],
     pub brightness: u8,
+    pub mode7_scanout_brightness_override: Option<u8>,
     pub forced_blank: bool,
     pub math_enabled: u8,
     pub subtract_color: bool,
@@ -255,6 +259,7 @@ impl<'a> GpuFrame<'a> {
             screen_enabled: registers.screen_enabled,
             screen_windowed: registers.screen_windowed,
             brightness: registers.brightness,
+            mode7_scanout_brightness_override: registers.mode7_scanout_brightness_override,
             forced_blank: registers.forced_blank,
             math_enabled: registers.math_enabled,
             subtract_color: registers.subtract_color,
@@ -343,6 +348,7 @@ impl<'a> GpuFrame<'a> {
             screen_enabled: source.screen_enabled(),
             screen_windowed: source.screen_windowed(),
             brightness: source.brightness(),
+            mode7_scanout_brightness_override: None,
             forced_blank: source.forced_blank(),
             math_enabled: source.math_enabled(),
             subtract_color: source.subtract_color(),
@@ -753,6 +759,7 @@ mod tests {
             screen_enabled: [0x15, 0x04],
             screen_windowed: [0x01, 0x02],
             brightness: 14,
+            mode7_scanout_brightness_override: Some(1),
             forced_blank: true,
             math_enabled: 0x2f,
             subtract_color: true,
@@ -788,6 +795,7 @@ mod tests {
         assert_eq!(frame.bg[0].tilemap_adr, 0x0400);
         assert_eq!(frame.obj.tile_adr2, 0x3000);
         assert!(frame.mode7.large_field);
+        assert_eq!(frame.mode7_scanout_brightness_override, Some(1));
         assert_eq!(frame.screen_enabled, [0x15, 0x04]);
         assert_eq!(frame.brightness, 14);
         assert_eq!(frame.windowsel_cm, 3);

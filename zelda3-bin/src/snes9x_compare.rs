@@ -42,6 +42,9 @@ struct DisplayOracleReceipt {
 struct DisplayPpuProbe {
     mode: i32,
     brightness: i32,
+    mode7_scanout_brightness_override: Option<u8>,
+    forced_blank: bool,
+    brightness_white: i32,
     cgram: Vec<i32>,
     fixed_color: [i32; 3],
     mode7: [i32; 8],
@@ -53,6 +56,9 @@ fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
     Some(DisplayPpuProbe {
         mode: oracle.debug_ppu_value(0, 0)?,
         brightness: oracle.debug_ppu_value(1, 0)?,
+        mode7_scanout_brightness_override: None,
+        forced_blank: oracle.debug_ppu_value(7, 0)? != 0,
+        brightness_white: oracle.debug_ppu_value(8, 0)?,
         cgram: (0..256).map(|i| oracle.debug_ppu_value(2, i).unwrap_or(-1)).collect(),
         fixed_color: std::array::from_fn(|i| oracle.debug_ppu_value(4, i as i32).unwrap_or(-1)),
         mode7: std::array::from_fn(|i| oracle.debug_ppu_value(5, i as i32).unwrap_or(-1)),
@@ -68,6 +74,9 @@ fn capture_rust_ppu_probe(game: &mut ZeldaState) -> DisplayPpuProbe {
         DisplayPpuProbe {
         mode: i32::from(snapshot.ppu.mode),
         brightness: i32::from(snapshot.ppu.brightness),
+        mode7_scanout_brightness_override: snapshot.ppu.mode7_scanout_brightness_override,
+        forced_blank: snapshot.ppu.forced_blank,
+        brightness_white: i32::from(snapshot.ppu.brightness_mult.get(31).copied().unwrap_or(0) >> 3),
         cgram: snapshot.ppu.cgram.iter().map(|&value| i32::from(value)).collect(),
         fixed_color: [
             i32::from(snapshot.ppu.fixed_color_r),
@@ -951,6 +960,8 @@ pub(crate) fn run_compare_libretro_oracle(
     let trace_poly_sched = std::env::var_os("TRACE_POLY_SCHED").is_some();
     let trace_shield_dma = std::env::var_os("ZELDA3_DEBUG_SHIELD_DMA").is_some();
     let debug_vram_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_VRAM_FRAMES", None);
+    let debug_video_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_VIDEO_FRAMES", None);
+    let debug_text_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_TEXT_FRAMES", None);
     let debug_wram_frames = debug_frame_selection_from_env(
         "ZELDA3_DEBUG_WRAM_FRAMES",
         Some("ZELDA3_DEBUG_WRAM_FRAME"),
@@ -1349,6 +1360,28 @@ pub(crate) fn run_compare_libretro_oracle(
                 eprintln!("failed to write Rust debug state: {error}");
                 process::exit(1);
             });
+        }
+        if debug_text_frames.contains(&frame_index) {
+            // Typewriter-cadence probe: end-frame messaging state on both sides.
+            // 0x1cd8 module / 0x1cd9 read_pos / 0x1cd4 render state /
+            // 0x1cd5 line speed counter / 0x1cd6.
+            let oracle_ram = oracle.memory_bytes(RETRO_MEMORY_SYSTEM_RAM).unwrap_or(&[]);
+            let rust_bytes: Vec<u8> = (0x1cd0..0x1ce0).map(|a| game.ram[a]).collect();
+            let oracle_bytes: Vec<u8> = if oracle_ram.len() >= 0x1ce0 {
+                oracle_ram[0x1cd0..0x1ce0].to_vec()
+            } else {
+                Vec::new()
+            };
+            let rust_coldata: Vec<u8> = (0x9c..0xa0).map(|a| game.ram[a]).collect();
+            let oracle_coldata: Vec<u8> = if oracle_ram.len() >= 0xa0 {
+                oracle_ram[0x9c..0xa0].to_vec()
+            } else {
+                Vec::new()
+            };
+            eprintln!(
+                "text_probe frame={frame_index} rust={rust_bytes:02x?} oracle={oracle_bytes:02x?} match={} coldata_rust={rust_coldata:02x?} coldata_oracle={oracle_coldata:02x?}",
+                rust_bytes == oracle_bytes,
+            );
         }
         if debug_vram_frames.contains(&frame_index) {
             // Palette-phase probe: end-frame WRAM main palette buffer entry 23 on
@@ -1824,6 +1857,42 @@ pub(crate) fn run_compare_libretro_oracle(
             let rust_video_frame = rust_video_frame
                 .as_deref()
                 .expect("GPU video frame rendered for libretro video comparison");
+            if debug_video_frames.contains(&frame_index) {
+                if let Some(dir) = session_dir.as_deref() {
+                    let _ = write_rgba_frame_png(
+                        &dir.join(format!("rust_video_{frame_index}.png")),
+                        rust_video_frame,
+                        width,
+                        height,
+                    );
+                    if let Some(stride) = snes9x_pixel_stride(capture.pixel_format) {
+                        let mut oracle_argb = vec![
+                            0u8;
+                            capture.video_width as usize
+                                * capture.video_height as usize
+                                * 4
+                        ];
+                        for y in 0..capture.video_height as usize {
+                            for x in 0..capture.video_width as usize {
+                                let src = y * capture.video_pitch + x * stride;
+                                if let Some([r, g, b, _]) = snes9x_rgba_pixel_at(&capture, src) {
+                                    let dst = (y * capture.video_width as usize + x) * 4;
+                                    oracle_argb[dst] = b;
+                                    oracle_argb[dst + 1] = g;
+                                    oracle_argb[dst + 2] = r;
+                                    oracle_argb[dst + 3] = 0xff;
+                                }
+                            }
+                        }
+                        let _ = write_argb_frame_png(
+                            &dir.join(format!("oracle_video_{frame_index}.png")),
+                            &oracle_argb,
+                            capture.video_width,
+                            capture.video_height,
+                        );
+                    }
+                }
+            }
             let mut video_diff = compare_libretro_video_frame(
                 rust_video_frame,
                 width,
@@ -2670,6 +2739,10 @@ pub(crate) fn compare_libretro_video_frame(
     }
     let mut mismatched = 0usize;
     let mut first = None;
+    // Keep a bounded set of samples in the receipt.  A pixel count and the
+    // first coordinate alone cannot distinguish a broad timing failure from a
+    // small compositor edge case (for example, a backdrop color-math pixel).
+    let mut samples = Vec::with_capacity(4);
     for y in 0..rust_height as usize {
         for x in 0..rust_width as usize {
             let pixel_index = y * rust_width as usize + x;
@@ -2681,6 +2754,9 @@ pub(crate) fn compare_libretro_video_frame(
             if !rgb_within_tolerance(mine, theirs, color_tolerance) {
                 mismatched += 1;
                 first.get_or_insert((x, y, mine, theirs));
+                if samples.len() < 4 {
+                    samples.push((x, y, mine, theirs));
+                }
             }
         }
     }
@@ -2689,7 +2765,7 @@ pub(crate) fn compare_libretro_video_frame(
     }
     first.map(|(x, y, mine, theirs)| {
         format!(
-            "mismatched_pixels={mismatched}; allowed_mismatched_pixels={max_mismatched_pixels}; color_tolerance={color_tolerance}; first_mismatch=({x}, {y}) rust={mine:02x?} libretro={theirs:02x?}; pixel_format={} pitch={}",
+            "mismatched_pixels={mismatched}; allowed_mismatched_pixels={max_mismatched_pixels}; color_tolerance={color_tolerance}; first_mismatch=({x}, {y}) rust={mine:02x?} libretro={theirs:02x?}; samples={samples:02x?}; pixel_format={} pitch={}",
             libretro.pixel_format, libretro.video_pitch
         )
     })

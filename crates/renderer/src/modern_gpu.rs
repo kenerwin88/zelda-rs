@@ -12563,6 +12563,7 @@ mod tests {
             screen_enabled: [0, 0],
             screen_windowed: [0, 0],
             brightness,
+            mode7_scanout_brightness_override: None,
             forced_blank,
             math_enabled: 0,
             subtract_color: false,

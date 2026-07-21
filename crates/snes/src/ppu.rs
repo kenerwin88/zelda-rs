@@ -85,6 +85,12 @@ pub struct PpuState {
     #[serde(default)]
     pub forced_blank_scanlines: u8,
     pub brightness: u8,
+    /// One-frame scanout brightness for the Mode 7 BG1 source when the ROM
+    /// publishes its INIDISP step ahead of the deferred display palette.
+    /// This is presentation metadata consumed by the modern renderer, never a
+    /// VRAM/CGRAM composition path.
+    #[serde(default)]
+    pub mode7_scanout_brightness_override: Option<u8>,
     pub mode: u8,
 
     pub vram_pointer: u16,
@@ -224,6 +230,7 @@ impl Default for PpuState {
             forced_blank: false,
             forced_blank_scanlines: 0,
             brightness: 0,
+            mode7_scanout_brightness_override: None,
             mode: 0,
             vram_pointer: 0,
             vram_increment: 1,
@@ -636,7 +643,8 @@ impl PpuState {
         }
     }
 
-    fn refresh_brightness_cache(&mut self) {
+    /// Refresh the INIDISP lookup table used by every scanout consumer.
+    pub fn refresh_brightness_cache(&mut self) {
         if self.brightness == self.last_brightness_mult {
             return;
         }
