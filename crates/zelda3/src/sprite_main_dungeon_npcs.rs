@@ -490,10 +490,22 @@ const SMITHY_SPARK_DELAY: [i8; 6] = [4, 1, 3, 2, 1, 1];
 
 // UncleAndSage Y-offset (sprite_main.c:10888).
 const UNCLE_AND_SAGE_Y: [i16; 3] = [0, -9, 0];
-const UNCLE_LEAVE_HOUSE_DELAYS: [u8; 2] = [64, 224];
-const UNCLE_LEAVE_HOUSE_DIRECTIONS: [u8; 2] = [2, 1];
+// The ROM's walk-out tables have TWO entries, but Uncle_AtHouse ($85de3e)
+// runs its step-advance block unconditionally — on the FINAL advance it reads
+// one entry past each table. Those out-of-range ROM bytes are fixed data
+// (Snes9x trace, PC $05decd/$05ded3: delay=0x02, direction=0xBD) and the
+// direction 0xBD then indexes far past the velocity tables (PC $05deda/$05dee0
+// observed xvel=0x90, yvel=0x0D). The third entries below ARE those ROM bytes,
+// kept so WRAM stays byte-identical with the oracle (the stale slot residue is
+// re-read when room 0x0104 reloads at ~frame 14661).
+const UNCLE_LEAVE_HOUSE_DELAYS: [u8; 3] = [64, 224, 2];
+const UNCLE_LEAVE_HOUSE_DIRECTIONS: [u8; 3] = [2, 1, 0xbd];
 const UNCLE_LEAVE_HOUSE_X_VELOCITIES: [i8; 4] = [0, 0, -12, 12];
 const UNCLE_LEAVE_HOUSE_Y_VELOCITIES: [i8; 4] = [-12, 12, 0, 0];
+// ROM bytes at UNCLE_LEAVE_HOUSE_X/Y_VELOCITIES + 0xBD (the corrupt-direction
+// lookup of the final step), observed via the instrumented Snes9x trace.
+const UNCLE_LEAVE_HOUSE_OOB_X_VELOCITY: i8 = 0x90u8 as i8;
+const UNCLE_LEAVE_HOUSE_OOB_Y_VELOCITY: i8 = 0x0d;
 const UNCLE_DEPARTURE_RETAINED_SHIELD_DMA_INDEX: u8 = 6;
 
 // CrystalMaiden_RunCutscene message table (sprite_main.c:23297).
@@ -888,23 +900,41 @@ impl ZeldaState {
                 let graphics = (self.game_state.frame.frame_counter >> 3) & 1;
                 self.sprite_slot_view_mut(k).set_graphics(graphics);
                 if self.sprite_slot_view(k).delay_main() == 0 {
+                    // ROM Uncle_AtHouse ($85dec7..$85deed, Snes9x trace-verified):
+                    // every delay expiry runs the step-write block — including
+                    // the FINAL one, which reads one entry past the two-entry
+                    // tables (delay=0x02, dir=0xBD) and the corrupt direction
+                    // then reads far past the velocity tables (0x90/0x0D). The
+                    // AI state additionally advances on that final expiry, so
+                    // the despawn handler runs on the NEXT frame — after one
+                    // Sprite_MoveXY step with the corrupt velocities has moved
+                    // the slot (x 0x78->0x71). Reproducing the whole sequence
+                    // keeps the retired slot's WRAM residue byte-identical with
+                    // the oracle; room 0x0104 re-reads it at ~frame 14661.
                     let j = usize::from(self.sprite_slot_view(k).a());
+                    self.sprite_slot_view_mut(k).increment_a();
+                    if j == 0 {
+                        let y_low = self.sprite_slot_view(k).y_low().wrapping_sub(2);
+                        self.sprite_slot_view_mut(k).set_y_low(y_low);
+                    }
+                    self.sprite_slot_view_mut(k)
+                        .set_delay_main(UNCLE_LEAVE_HOUSE_DELAYS[j]);
+                    let dir = usize::from(UNCLE_LEAVE_HOUSE_DIRECTIONS[j]);
+                    self.sprite_slot_view_mut(k).set_direction(dir as u8);
+                    let (x_vel, y_vel) = match (
+                        UNCLE_LEAVE_HOUSE_X_VELOCITIES.get(dir),
+                        UNCLE_LEAVE_HOUSE_Y_VELOCITIES.get(dir),
+                    ) {
+                        (Some(&x), Some(&y)) => (x, y),
+                        _ => (
+                            UNCLE_LEAVE_HOUSE_OOB_X_VELOCITY,
+                            UNCLE_LEAVE_HOUSE_OOB_Y_VELOCITY,
+                        ),
+                    };
+                    self.sprite_slot_view_mut(k).set_x_velocity(x_vel as u8);
+                    self.sprite_slot_view_mut(k).set_y_velocity(y_vel as u8);
                     if j == 2 {
                         self.sprite_slot_view_mut(k).increment_ai_state();
-                    } else {
-                        self.sprite_slot_view_mut(k).increment_a();
-                        if j == 0 {
-                            let y_low = self.sprite_slot_view(k).y_low().wrapping_sub(2);
-                            self.sprite_slot_view_mut(k).set_y_low(y_low);
-                        }
-                        self.sprite_slot_view_mut(k)
-                            .set_delay_main(UNCLE_LEAVE_HOUSE_DELAYS[j]);
-                        let dir = usize::from(UNCLE_LEAVE_HOUSE_DIRECTIONS[j]);
-                        self.sprite_slot_view_mut(k).set_direction(dir as u8);
-                        self.sprite_slot_view_mut(k)
-                            .set_x_velocity(UNCLE_LEAVE_HOUSE_X_VELOCITIES[dir] as u8);
-                        self.sprite_slot_view_mut(k)
-                            .set_y_velocity(UNCLE_LEAVE_HOUSE_Y_VELOCITIES[dir] as u8);
                     }
                 }
             }
@@ -953,6 +983,16 @@ impl ZeldaState {
     // void Uncle_Draw(int k) {  // 8dd391
     pub(super) fn uncle_draw(&mut self, k: usize) {
         self.oam_allocate_from_region_b(0x18);
+        // On the departure frame the slot's direction holds the ROM's corrupt
+        // out-of-range byte 0xBD (see UNCLE_LEAVE_HOUSE_DIRECTIONS); the ROM's
+        // draw then reads garbage far past these tables. Its OAM output that
+        // frame is transient (the buffer is cleared next frame, and the screen
+        // is mid room-transition) and the persistent equipment-index effect is
+        // reproduced by UNCLE_DEPARTURE_RETAINED_SHIELD_DMA_INDEX in the
+        // departure handler, so skip the unreproducible garbage draw here.
+        if usize::from(self.sprite_slot_view(k).direction()) > 3 {
+            return;
+        }
         let j = usize::from(self.sprite_slot_view(k).direction()) * 2
             + usize::from(self.sprite_slot_view(k).graphics());
         {

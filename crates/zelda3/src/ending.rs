@@ -2633,6 +2633,17 @@ impl ZeldaState {
                 10 => ROM_INTRO_FOLLOWER_GFX_CONTINUATION_FRAMES,
                 _ => 0,
             };
+            // The message-pointer generation (t=8) is heavy enough that the ROM
+            // runs a PARTIAL NMI on this work frame (Snes9x: the BG-tile
+            // animation countdown 0xc00d is NOT decremented here, unlike the
+            // light clear-1KB steps t=0..7 and the item/follower GFX loads
+            // t=9/t=10, which DO decrement). Flag it so the game loop skips the
+            // core-update animation advance, keeping rust's 0xc00d / link_dma
+            // countdowns phase-aligned with the oracle (fixes one of the extra
+            // intro decrements behind the 14661 dungeon animated-tile cascade).
+            if t == 8 {
+                self.rom_load_partial_nmi_this_frame = true;
+            }
         }
     }
 
@@ -2656,7 +2667,13 @@ impl ZeldaState {
         self.load_default_graphics();
         self.initialize_tilesets();
         self.decompress_animated_dungeon_tiles(0x5d);
-        self.set_bg_tile_animation_countdown(2);
+        // ROM sets $C00D=2 here, but on this intro tileset-init frame the ROM's
+        // NMI is FULL and decrements it the same frame (Snes9x: post-init value
+        // is 1). Rust runs this frame as a held/partial poly-init frame (no
+        // core-update decrement), so seed 1 to net-match the oracle and keep the
+        // BG-tile animation countdown phase-aligned through the intro (part of
+        // the 14661 dungeon animated-tile cascade fix).
+        self.set_bg_tile_animation_countdown(1);
         self.set_overworld_screen(0);
         self.set_palette_main_indoors(0);
         self.set_overworld_palette_aux3_lo(0);

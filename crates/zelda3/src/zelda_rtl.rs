@@ -200,7 +200,13 @@ const fn rom_display_oam_publication_is_deferred(main_module: u8, submodule: u8)
 }
 
 const fn rom_display_snapshot_is_one_frame_deferred(main_module: u8, submodule: u8) -> bool {
-    rom_dungeon_landing_wipe_is_active(main_module, submodule)
+    // Module 0x0F (dungeon-exit spotlight close): the ROM's main thread authors
+    // the shrinking window HDMA table (and the final OAM state) during frame N,
+    // but HDMA/OAM-DMA consume it on frame N+1's scanout — Snes9x displays the
+    // previous frame's state throughout the close (route frames 14661..14699:
+    // the departed bed-sheet ancilla stays visible one extra frame and the
+    // circle lags rust's same-frame table by one step).
+    rom_dungeon_landing_wipe_is_active(main_module, submodule) || main_module == 0x0f
 }
 
 const fn rom_attract_world_map_display_is_one_frame_deferred(
@@ -1849,6 +1855,25 @@ pub struct ZeldaState {
     #[serde(default)]
     #[serde(skip)]
     rom_startup_timing: bool,
+    // Set on a frame whose ROM NMI is PARTIAL because a heavy load runs on the
+    // main thread past the vblank (Snes9x-verified per site): the intro
+    // message-pointer generation step, and the module-5 selected-game
+    // load-initiation frame. On such a frame the ROM skips
+    // Main_PrepSpritesForNmi, so rust must not advance the BG-tile / Link
+    // animation countdowns either (else 0xc00d/0xc013 gain one decrement,
+    // permanently phase-shifting the dungeon animated tile and cascading the
+    // 14661+ tail). Consumed (taken) in zelda_run_game_loop.
+    #[serde(skip)]
+    rom_load_partial_nmi_this_frame: bool,
+    // Set on a frame whose ROM main thread runs PAST the next vblank (a lag
+    // frame, Bank00 Vector_NMI `LDA $12 : BNE .skip`): the NMI then skips
+    // NMI_DoUpdates entirely, so the $7E0800->$2104 OAM DMA does not happen and
+    // the scanout keeps the PREVIOUS frame's OAM. Snes9x-verified for the
+    // module-0x0F dungeon-exit prep frame (route frame 14661: the bed-sheet
+    // ancilla's OAM entries stay displayed one frame after the shadow hid
+    // them). Consumed (taken) in nmi_do_updates_from.
+    #[serde(skip)]
+    rom_lag_frame_skip_oam_dma: bool,
     #[serde(skip)]
     intro_initialization_work_frames_pending: u8,
     #[serde(skip)]
@@ -6752,6 +6777,8 @@ impl ZeldaState {
             dialogue_font_blk_index: 0,
             dialogue_flags: 0,
             rom_startup_timing: false,
+            rom_load_partial_nmi_this_frame: false,
+            rom_lag_frame_skip_oam_dma: false,
             intro_initialization_work_frames_pending: 0,
             intro_initialization_reset_obj_control_pending: false,
             rom_reset_frame_delay: 0,
@@ -6966,6 +6993,12 @@ impl ZeldaState {
     pub(super) fn begin_selected_game_load(&mut self) {
         self.enable_force_blank();
         self.selected_game_load_remaining_frames = ROM_SELECTED_GAME_LOAD_FRAMES;
+        // The ROM starts the heavy save-file load on this frame; its NMI is
+        // PARTIAL (no Main_PrepSpritesForNmi — Snes9x holds 0xc00d here while
+        // rust's game loop otherwise decrements once more on this entry frame,
+        // the single event that left the BG-tile animation phase one step ahead
+        // for the rest of the route, surfacing at frame 14661).
+        self.rom_load_partial_nmi_this_frame = true;
     }
 
     #[doc(hidden)]
@@ -9604,8 +9637,20 @@ impl ZeldaState {
         {
             return;
         }
-        self.nmi_prepare_sprites();
-        self.replay_trace_ram_watch("game-loop-after-prepare-sprites");
+        // The ROM gates the NMI core-update section (Link/sprite DMA prep AND
+        // the BG-tile / Link animation-countdown advance in nmi_prepare_sprites)
+        // on $0710 (NMI_DISABLE_CORE_UPDATES): a held message-render frame skips
+        // it entirely. Rust already skips the frame counter + clear_oam on hold
+        // frames (see `hold_core` above) but was still running
+        // nmi_prepare_sprites, so BG_TILE_ANIMATION_COUNTDOWN (0xc00d) and
+        // link_dma_countdown (0xc013) over-decremented by the number of intro-
+        // telepathy hold frames, phase-shifting the dungeon animated tile (the
+        // frame-14661 bed) and cascading the tail. Gate it the same way.
+        let partial_nmi = std::mem::take(&mut self.rom_load_partial_nmi_this_frame);
+        if !hold_core && !partial_nmi {
+            self.nmi_prepare_sprites();
+            self.replay_trace_ram_watch("game-loop-after-prepare-sprites");
+        }
         self.clear_nmi_update_latch();
         self.replay_trace_ram_watch("game-loop-exit");
     }
