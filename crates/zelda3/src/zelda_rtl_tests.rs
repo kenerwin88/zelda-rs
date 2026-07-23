@@ -3324,6 +3324,45 @@ fn player_world_map_load_completes_after_the_five_post_entry_nmi_slices() {
 }
 
 #[test]
+fn world_map_exit_tilesets_resume_after_the_measured_nmi_slices() {
+    let mut work = PendingRomWork::schedule(
+        RomWorkContinuation::FinishWorldMapExitTilesets,
+        WORLD_MAP_EXIT_TILESET_LOAD_NMI_SLICES,
+    );
+
+    for _ in 0..WORLD_MAP_EXIT_TILESET_LOAD_NMI_SLICES - 1 {
+        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+    }
+    assert_eq!(
+        work.advance_one_nmi_slice(),
+        RomWorkSlice::Complete(RomWorkContinuation::FinishWorldMapExitTilesets)
+    );
+}
+
+#[test]
+fn world_map_exit_overlay_conversions_resume_at_measured_boundaries() {
+    for (continuation, nmi_slices) in [
+        (
+            RomWorkContinuation::FinishWorldMapOverlayReload,
+            WORLD_MAP_OVERLAY_RELOAD_NMI_SLICES,
+        ),
+        (
+            RomWorkContinuation::FinishWorldMapAmbientMap8,
+            WORLD_MAP_AMBIENT_MAP8_NMI_SLICES,
+        ),
+    ] {
+        let mut work = PendingRomWork::schedule(continuation, nmi_slices);
+        for _ in 0..nmi_slices - 1 {
+            assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        }
+        assert_eq!(
+            work.advance_one_nmi_slice(),
+            RomWorkSlice::Complete(continuation)
+        );
+    }
+}
+
+#[test]
 fn item_receipt_gfx_14_holds_the_four_snes9x_observed_nmi_slices() {
     assert_eq!(
         rom_item_receipt_graphics_nmi_slices(0x14),

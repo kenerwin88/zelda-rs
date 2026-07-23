@@ -1488,6 +1488,21 @@ impl ZeldaState {
     pub(super) fn WorldMap_ExitMap(&mut self) {
         self.clear_overworld_aux_or_main_offset();
         self.set_hud_palette(0);
+        if self.rom_startup_timing() {
+            // InitializeTilesets is a long 65816 decompression/conversion
+            // path. The ROM remains in module $0e/$07 under forced blank
+            // while vblank interrupts it; do not expose its caller suffix as
+            // an atomic main-thread operation.
+            self.pending_rom_work = PendingRomWork::schedule(
+                RomWorkContinuation::FinishWorldMapExitTilesets,
+                WORLD_MAP_EXIT_TILESET_LOAD_NMI_SLICES,
+            );
+            return;
+        }
+        self.complete_world_map_exit_after_tileset_load();
+    }
+
+    pub(super) fn complete_world_map_exit_after_tileset_load(&mut self) {
         self.InitializeTilesets();
         self.increment_cgram_update_flag();
         self.dungeon_room_load_mut().set_draw_width_indicator(0);

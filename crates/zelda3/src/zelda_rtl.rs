@@ -575,6 +575,17 @@ const WORLD_MAP_LIGHT_LOAD_NMI_SLICES: u8 = 5;
 const OVERWORLD_AUX_GFX_LOAD_NMI_SLICES: u8 = 12;
 const OVERWORLD_MAP_AND_SPRITE_GFX_LOAD_NMI_SLICES: u8 = 15;
 const OVERWORLD_SPRITE_RELOAD_TAIL_NMI_SLICES: u8 = 4;
+// WorldMap_ExitMap enters InitializeTilesets while forced blank. From the
+// first interrupted tileset-load frame through the boundary where the ROM
+// returns as module $09/$20, clean Snes9x PC probes observe 34 intervening
+// NMI slices (clean-route frames 17751..17784).
+const WORLD_MAP_EXIT_TILESET_LOAD_NMI_SLICES: u8 = 34;
+// Module $09/$20 leaves overworld_screen_index set to the temporary rain
+// overlay ($9f) while LoadOverworldOverlay crosses five more NMI boundaries.
+const WORLD_MAP_OVERLAY_RELOAD_NMI_SLICES: u8 = 5;
+// Module $09/$21 then spends four NMI boundaries converting the restored main
+// Map16 page before it publishes INIDISP=0 and advances to fade submodule $22.
+const WORLD_MAP_AMBIENT_MAP8_NMI_SLICES: u8 = 4;
 const DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START: usize = 221;
 
 const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(radius: u16) -> bool {
@@ -617,6 +628,9 @@ enum RomWorkContinuation {
     },
     FinishPreOverworldOverlays,
     FinishPreOverworldScreenBuild,
+    FinishWorldMapExitTilesets,
+    FinishWorldMapOverlayReload,
+    FinishWorldMapAmbientMap8,
     FinishOverworldAuxGraphics,
     FinishOverworldMapAndSpriteGraphics,
     FinishOverworldSpriteReloadTail,
@@ -8844,6 +8858,27 @@ impl ZeldaState {
                 }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishPreOverworldScreenBuild) => {
                     self.complete_pre_overworld_screen_build();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishWorldMapExitTilesets) => {
+                    // InitializeTilesets has returned through WorldMap_ExitMap
+                    // and Module0E_Interface. Publish the same caller suffix
+                    // that an uninterrupted game-loop iteration would reach.
+                    self.complete_world_map_exit_after_tileset_load();
+                    self.complete_module0e_interface_after_run();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishWorldMapOverlayReload) => {
+                    self.finish_overworld_load_overlays();
+                    self.complete_module09_overworld_after_submodule();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishWorldMapAmbientMap8) => {
+                    self.Overworld_LoadAmbientOverlay(false);
+                    self.complete_module09_overworld_after_submodule();
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                 }

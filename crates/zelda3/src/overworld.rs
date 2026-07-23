@@ -650,7 +650,7 @@ impl ZeldaState {
         }
     }
 
-    fn finish_overworld_load_overlays(&mut self) {
+    pub(super) fn finish_overworld_load_overlays(&mut self) {
         self.LoadOverworldOverlay();
         if self.game_state.world.region.overlay_index() == 0x94 {
             let value = self.game_state.display.ppu_scroll_copy.bg1_v_copy2() | 0x0100;
@@ -667,6 +667,20 @@ impl ZeldaState {
 
     pub(super) fn Overworld_LoadOverlays2(&mut self) {
         self.prepare_overworld_load_overlays();
+        if self.rom_startup_timing()
+            && self.game_state.frame.main_module == 9
+            && self.game_state.frame.submodule == 0x20
+        {
+            // LoadOverworldOverlay remains inside its map32 decode and
+            // Map16ToMap8 conversion across the measured vblank boundaries.
+            // Keep the temporary overlay screen index live until that work
+            // returns instead of restoring the gameplay screen atomically.
+            self.pending_rom_work = PendingRomWork::schedule(
+                RomWorkContinuation::FinishWorldMapOverlayReload,
+                WORLD_MAP_OVERLAY_RELOAD_NMI_SLICES,
+            );
+            return;
+        }
         self.finish_overworld_load_overlays();
     }
 
@@ -717,6 +731,18 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_LoadAmbientOverlayFalse(&mut self) {
+        if self.rom_startup_timing()
+            && self.game_state.frame.main_module == 9
+            && self.game_state.frame.submodule == 0x21
+        {
+            // The main-page Map16ToMap8 conversion is likewise interruptible;
+            // INIDISP=0 and submodule $22 are reached only after it returns.
+            self.pending_rom_work = PendingRomWork::schedule(
+                RomWorkContinuation::FinishWorldMapAmbientMap8,
+                WORLD_MAP_AMBIENT_MAP8_NMI_SLICES,
+            );
+            return;
+        }
         self.Overworld_LoadAmbientOverlay(false);
     }
 
