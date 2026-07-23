@@ -10,6 +10,15 @@
       "verified_by": "boundaries/0001/parity.json",
       "converted_to_snes9x": false,
       "converted_from_snes9x": false
+    },
+    "3": {
+      "rust_state": "boundaries/0003/rust.z3state",
+      "rust_state_sha256": "0ab029ae99e985ebef3b9deabacfc104817551f7099208c1b578a248f5f0a16b",
+      "oracle_state": "boundaries/0003/oracle.state",
+      "oracle_state_sha256": "c2b34bae96713e862109ec60162bca716446c4a5b9b38bfd044e22137ef1158a",
+      "verified_by": "boundaries/0003/parity.json",
+      "converted_to_snes9x": false,
+      "converted_from_snes9x": false
     }
   }
 }
