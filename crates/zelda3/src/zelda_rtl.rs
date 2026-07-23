@@ -7854,12 +7854,14 @@ impl ZeldaState {
         let previous_link_obj_vram =
             retain_previous_link_obj_vram.then(|| self.ppu.vram[0x4000..0x4400].to_vec());
         // The normal overworld animation upload targets VRAM $3c00. Snes9x
-        // returns the active frame that ended at this vblank, so retain the
-        // captured pre-NMI generation regardless of which module currently
-        // overlays the overworld (player control, dialogue, menus, and so on).
-        // Module 10's interrupted main thread selects its newer pre-NMI image
-        // from `deferred_display_snapshot` above instead.
+        // normally returns the active frame that ended at this vblank, so
+        // retain the captured pre-NMI generation across overworld overlays.
+        // The resumed bad-weather tail is the measured exception: its rain
+        // scroll and newly uploaded animated CHR are both visible on the same
+        // scanout. Module 10's interrupted main thread selects its newer
+        // pre-NMI image from `deferred_display_snapshot` above instead.
         let previous_overworld_animated_bg_vram = (current_pre_nmi_animated_bg_vram.is_none()
+            && !publish_live_overworld_bad_weather_scroll
             && read_le_u16(&self.ram, ANIMATED_TILE_VRAM_ADDR) == 0x3c00)
             .then(|| self.ppu.vram[0x3c00..0x3e00].to_vec());
         // During a message-line scroll the ROM's NMI re-uploads the VWF text
