@@ -44,6 +44,9 @@ pub struct ModernFrame {
     /// First scanline in a trailing forced-blank range caused by an INIDISP
     /// write during active display. `None` means there is no blank suffix.
     pub forced_blank_from_scanline: Option<u8>,
+    /// Whether the visible gap between forced-blank ranges was scanned before
+    /// an NMI replaced its display memory and must come from surface history.
+    pub retain_active_display_history: bool,
     pub cgram_rgba: [[u8; 4]; 256],
     /// Provenance-clean CGRAM mirror committed at the last CGRAM upload —
     /// the zero-CGRAM color source that replaces `cgram_rgba` once complete.
@@ -136,6 +139,7 @@ impl ModernFrame {
             forced_blank: false,
             forced_blank_scanlines: 0,
             forced_blank_from_scanline: None,
+            retain_active_display_history: false,
             cgram_rgba: [[0, 0, 0, 0xff]; 256],
             cgram_provenance: None,
             screen_enabled_main: 0,

@@ -2092,6 +2092,7 @@ fn gpu_frame_register_snapshot_from_ppu<'a>(
         brightness: ppu.brightness,
         mode7_scanout_brightness_override: ppu.mode7_scanout_brightness_override,
         forced_blank: ppu.forced_blank,
+        retain_active_display_history: ppu.retain_active_display_history,
         math_enabled: ppu.math_enabled,
         subtract_color: ppu.subtract_color,
         half_color: ppu.half_color,

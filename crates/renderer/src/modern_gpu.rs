@@ -429,6 +429,7 @@ impl ModernGpuVariantRenderer {
         out.forced_blank = frame.forced_blank;
         out.forced_blank_scanlines = frame.forced_blank_scanlines;
         out.forced_blank_from_scanline = frame.forced_blank_from_scanline;
+        out.retain_active_display_history = frame.retain_active_display_history;
         if frame.forced_blank {
             return out;
         }
@@ -12566,6 +12567,7 @@ mod tests {
             brightness,
             mode7_scanout_brightness_override: None,
             forced_blank,
+            retain_active_display_history: false,
             math_enabled: 0,
             subtract_color: false,
             half_color: false,

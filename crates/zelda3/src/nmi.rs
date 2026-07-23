@@ -78,6 +78,7 @@ impl ZeldaState {
     ) {
         let trace_nmi = std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some();
         self.ppu.forced_blank_from_scanline = None;
+        self.ppu.retain_active_display_history = false;
         let forced_blank_at_entry = self.ppu.forced_blank;
         let mut prior_active_display_blanking = NmiActiveDisplayBlanking::default();
         if trace_nmi {
@@ -224,6 +225,7 @@ impl ZeldaState {
         if !forced_blank_at_entry && self.ppu.forced_blank {
             if let Some(start) = prior_active_display_blanking.suffix_start_scanline {
                 self.ppu.forced_blank_from_scanline = Some(start);
+                self.ppu.retain_active_display_history = true;
                 self.nmi_forced_blank_from_scanline_pending = Some(
                     self.nmi_forced_blank_from_scanline_pending
                         .map_or(start, |pending| pending.min(start)),

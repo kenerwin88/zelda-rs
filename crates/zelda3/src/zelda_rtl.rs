@@ -290,6 +290,30 @@ const fn rom_full_tilemap_scanout_uses_pre_nmi_vram(
     pending_full_tilemap_upload && forced_blank_prefix_scanlines == 0
 }
 
+const fn rom_world_map_force_blank_scanline(
+    main_module: u8,
+    submodule: u8,
+    map_state: u8,
+    inidisp_copy: u8,
+    snapshot_forced_blank: bool,
+    live_forced_blank: bool,
+) -> Option<u8> {
+    // WorldMap_FadeOut reaches zero after the hardware NMI and writes $2100=$80
+    // during active display. Instrumented Snes9x records V=49 and CurrentLine=48:
+    // scanlines 0..47 retain brightness 1, while scanline 48 onward is blank.
+    if main_module == 0x0e
+        && submodule == 7
+        && map_state == 1
+        && inidisp_copy == 0x80
+        && !snapshot_forced_blank
+        && live_forced_blank
+    {
+        Some(48)
+    } else {
+        None
+    }
+}
+
 const fn rom_display_memory_publication_is_deferred(
     main_module: u8,
     submodule: u8,
@@ -7496,6 +7520,8 @@ impl ZeldaState {
             .nmi_forced_blank_from_scanline_pending
             .take()
             .filter(|_| snapshot.ppu.forced_blank);
+        snapshot.ppu.retain_active_display_history =
+            snapshot.ppu.forced_blank_from_scanline.is_some();
         if frame.main_module == 0
             && frame.submodule == 1
             && self.intro_initialization_reset_obj_control_pending
@@ -7680,7 +7706,16 @@ impl ZeldaState {
         }
         let live_forced_blank = self.ppu.forced_blank;
         let live_forced_blank_from_scanline = self.ppu.forced_blank_from_scanline;
+        let live_retain_active_display_history = self.ppu.retain_active_display_history;
         let live_brightness = self.ppu.brightness;
+        let world_map_force_blank_from_scanline = rom_world_map_force_blank_scanline(
+            snapshot_frame.main_module,
+            snapshot_frame.submodule,
+            display.ram[crate::game_state::constants::OVERWORLD_MAP_STATE],
+            display.ram[crate::game_state::constants::INIDISP_COPY],
+            display.ppu.forced_blank,
+            live_forced_blank,
+        );
         if publish_live_dungeon_exit_spotlight_tail {
             let byte_start = DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
             let byte_end = 224 * 2;
@@ -7840,7 +7875,12 @@ impl ZeldaState {
         // from the coherent pre-NMI display snapshot.
         self.ppu.forced_blank |= live_forced_blank;
         if live_forced_blank {
-            self.ppu.forced_blank_from_scanline = live_forced_blank_from_scanline;
+            self.ppu.forced_blank_from_scanline =
+                world_map_force_blank_from_scanline.or(live_forced_blank_from_scanline);
+            self.ppu.retain_active_display_history =
+                world_map_force_blank_from_scanline.is_none()
+                    && (self.ppu.retain_active_display_history
+                        || live_retain_active_display_history);
         }
         if std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
             && (1648..=1655).contains(&self.frame_ctr_dbg)

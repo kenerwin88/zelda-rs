@@ -88,6 +88,13 @@ pub struct PpuState {
     /// `None` means the frame has no mid-frame transition into forced blank.
     #[serde(default)]
     pub forced_blank_from_scanline: Option<u8>,
+    /// The visible prefix predates an NMI display-memory publication and must
+    /// be retained from the preceding physical scanout surface. A main-thread
+    /// INIDISP write can also produce `forced_blank_from_scanline`, but does
+    /// not require this retention because its prefix uses the current frame's
+    /// already-published VRAM and registers.
+    #[serde(default)]
+    pub retain_active_display_history: bool,
     pub brightness: u8,
     /// One-frame scanout brightness for the Mode 7 BG1 source when the ROM
     /// publishes its INIDISP step ahead of the deferred display palette.
@@ -234,6 +241,7 @@ impl Default for PpuState {
             forced_blank: false,
             forced_blank_scanlines: 0,
             forced_blank_from_scanline: None,
+            retain_active_display_history: false,
             brightness: 0,
             mode7_scanout_brightness_override: None,
             mode: 0,

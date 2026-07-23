@@ -3595,6 +3595,22 @@ fn full_tilemap_upload_publishes_vram_at_the_following_nmi() {
 }
 
 #[test]
+fn world_map_force_blank_preserves_the_scanned_prefix() {
+    assert_eq!(
+        rom_world_map_force_blank_scanline(0x0e, 7, 1, 0x80, false, true),
+        Some(48)
+    );
+    assert_eq!(
+        rom_world_map_force_blank_scanline(0x0e, 7, 0, 0x01, false, false),
+        None
+    );
+    assert_eq!(
+        rom_world_map_force_blank_scanline(0x0e, 7, 2, 0x00, true, false),
+        None
+    );
+}
+
+#[test]
 fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     assert!(rom_display_oam_publication_is_deferred(7, 0, false, false));
     assert!(rom_display_oam_publication_is_deferred(4, 3, true, false));

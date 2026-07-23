@@ -68,6 +68,9 @@ pub struct GpuFrame<'a> {
     pub mode7_scanout_brightness_override: Option<u8>,
     /// If true, output is forced to all black (INIDISP forced-blank).
     pub forced_blank: bool,
+    /// Preserve the visible prefix from the preceding physical surface because
+    /// an NMI replaced display memory after those scanlines were scanned.
+    pub retain_active_display_history: bool,
     /// Bitmask of which layers participate in color math (bits 0-5 = BG1-4, OBJ, backdrop).
     pub math_enabled: u8,
     /// If true, color math subtracts the fixed color instead of adding.
@@ -163,6 +166,7 @@ pub struct GpuFrameRegisterSnapshot<'a> {
     pub brightness: u8,
     pub mode7_scanout_brightness_override: Option<u8>,
     pub forced_blank: bool,
+    pub retain_active_display_history: bool,
     pub math_enabled: u8,
     pub subtract_color: bool,
     pub half_color: bool,
@@ -261,6 +265,7 @@ impl<'a> GpuFrame<'a> {
             brightness: registers.brightness,
             mode7_scanout_brightness_override: registers.mode7_scanout_brightness_override,
             forced_blank: registers.forced_blank,
+            retain_active_display_history: registers.retain_active_display_history,
             math_enabled: registers.math_enabled,
             subtract_color: registers.subtract_color,
             half_color: registers.half_color,
@@ -350,6 +355,7 @@ impl<'a> GpuFrame<'a> {
             brightness: source.brightness(),
             mode7_scanout_brightness_override: None,
             forced_blank: source.forced_blank(),
+            retain_active_display_history: source.retain_active_display_history(),
             math_enabled: source.math_enabled(),
             subtract_color: source.subtract_color(),
             half_color: source.half_color(),
@@ -400,6 +406,9 @@ pub trait GpuFrameSource<'a> {
     fn screen_windowed(&self) -> [u8; 2];
     fn brightness(&self) -> u8;
     fn forced_blank(&self) -> bool;
+    fn retain_active_display_history(&self) -> bool {
+        false
+    }
     fn math_enabled(&self) -> u8;
     fn subtract_color(&self) -> bool;
     fn half_color(&self) -> bool;
@@ -761,6 +770,7 @@ mod tests {
             brightness: 14,
             mode7_scanout_brightness_override: Some(1),
             forced_blank: true,
+            retain_active_display_history: true,
             math_enabled: 0x2f,
             subtract_color: true,
             half_color: true,

@@ -1079,6 +1079,7 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
         .enumerate()
         .skip(usize::from(modern.forced_blank_scanlines))
         .find_map(|(line, scanline)| scanline.forced_blank.then_some(line as u8));
+    modern.retain_active_display_history = frame.retain_active_display_history;
     modern.forced_blank = modern.forced_blank_scanlines as usize == frame.scanlines.len();
     if std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some() && frame.forced_blank {
         eprintln!(
@@ -4480,6 +4481,7 @@ mod tests {
             brightness,
             mode7_scanout_brightness_override: None,
             forced_blank,
+            retain_active_display_history: false,
             math_enabled: 0,
             subtract_color: false,
             half_color: false,

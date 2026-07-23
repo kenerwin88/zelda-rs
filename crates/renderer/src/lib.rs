@@ -1444,6 +1444,9 @@ fn create_modern_gpu_target(
 /// so they must retain the preceding physical surface instead of being
 /// reconstructed from the post-NMI asset state.
 fn active_display_history_rows(frame: &modern_frame::ModernFrame) -> Option<(u32, u32)> {
+    if !frame.retain_active_display_history {
+        return None;
+    }
     let start = u32::from(frame.forced_blank_scanlines).min(224);
     let end = u32::from(frame.forced_blank_from_scanline?).min(224);
     (start < end).then_some((start, end - start))
@@ -3525,15 +3528,21 @@ mod tests {
         let mut frame = modern_frame::ModernFrame::empty();
         frame.forced_blank_scanlines = 2;
         frame.forced_blank_from_scanline = Some(7);
+        frame.retain_active_display_history = true;
 
         assert_eq!(active_display_history_rows(&frame), Some((2, 5)));
     }
 
     #[test]
-    fn active_display_history_rows_ignore_empty_or_missing_ranges() {
+    fn active_display_history_rows_require_nmi_memory_publication() {
         let mut frame = modern_frame::ModernFrame::empty();
         assert_eq!(active_display_history_rows(&frame), None);
 
+        frame.forced_blank_scanlines = 2;
+        frame.forced_blank_from_scanline = Some(7);
+        assert_eq!(active_display_history_rows(&frame), None);
+
+        frame.retain_active_display_history = true;
         frame.forced_blank_scanlines = 7;
         frame.forced_blank_from_scanline = Some(7);
         assert_eq!(active_display_history_rows(&frame), None);
@@ -3738,6 +3747,7 @@ mod tests {
             brightness: 15,
             mode7_scanout_brightness_override: None,
             forced_blank: false,
+            retain_active_display_history: false,
             math_enabled: 0,
             subtract_color: false,
             half_color: false,
@@ -3803,6 +3813,7 @@ mod tests {
             brightness: 15,
             mode7_scanout_brightness_override: None,
             forced_blank: false,
+            retain_active_display_history: false,
             math_enabled: 0,
             subtract_color: false,
             half_color: false,
