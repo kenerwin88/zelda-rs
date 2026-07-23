@@ -234,9 +234,12 @@ const fn rom_display_oam_publication_is_deferred(
     // presented must retain the OAM image uploaded by the preceding NMI.
     // An NMI that runs into active display necessarily precedes the resumed
     // main-thread sprite authoring as well; its partial scanout therefore uses
-    // the preceding OAM generation regardless of module identity.
+    // the preceding OAM generation regardless of module identity. The steady
+    // name-player loop has the same ordinary main-then-next-NMI cadence for its
+    // cursor and underline sprites, including input-driven row transitions.
     active_display_nmi_overrun
         || rom_display_memory_publication_is_deferred(main_module, submodule)
+        || (main_module == 4 && submodule == 3)
         || (main_module == 7 && submodule == 0)
 }
 

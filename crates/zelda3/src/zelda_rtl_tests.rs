@@ -3480,7 +3480,8 @@ fn dialogue_character_tiles_publish_at_the_following_nmi() {
 fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     assert!(rom_display_oam_publication_is_deferred(7, 0, false));
     assert!(rom_display_oam_publication_is_deferred(4, 3, true));
-    assert!(!rom_display_oam_publication_is_deferred(4, 3, false));
+    assert!(rom_display_oam_publication_is_deferred(4, 3, false));
+    assert!(!rom_display_oam_publication_is_deferred(4, 2, false));
     assert!(!rom_display_memory_publication_is_deferred(7, 0));
 
     let mut state = ZeldaState::new();
