@@ -144,12 +144,35 @@ impl ZeldaState {
                 bg_vram_load_mode,
                 stripe_work,
             );
-            prior_active_display_blanking = std::mem::replace(
-                &mut self.nmi_active_display_blanking_candidate,
-                blanking,
-            );
-            self.nmi_forced_blank_scanlines_pending =
-                self.nmi_forced_blank_scanlines_pending.max(blanking.prefix_scanlines);
+            let hud_tilemap_is_pending = self.game_state.display.pending_nmi_subroutine == 1
+                && !self.game_state.display.core_updates_are_disabled();
+            let publish_hud_tilemap_scanout = match (
+                self.hud_tilemap_nmi_publication_phase,
+                hud_tilemap_is_pending,
+            ) {
+                (1, true) => {
+                    self.hud_tilemap_nmi_publication_phase = 2;
+                    false
+                }
+                (2, true) => {
+                    self.hud_tilemap_nmi_publication_phase = 0;
+                    true
+                }
+                _ => false,
+            };
+            let current_scanout_prefix =
+                hud_tilemap_nmi_forced_blank_prefix(publish_hud_tilemap_scanout);
+            if let Some(display) = self.display_snapshot.as_mut() {
+                display.ppu.forced_blank_scanlines = display
+                    .ppu
+                    .forced_blank_scanlines
+                    .max(current_scanout_prefix);
+            }
+            prior_active_display_blanking =
+                std::mem::replace(&mut self.nmi_active_display_blanking_candidate, blanking);
+            self.nmi_forced_blank_scanlines_pending = self
+                .nmi_forced_blank_scanlines_pending
+                .max(blanking.prefix_scanlines);
             self.latch_nmi_update();
             self.nmi_do_updates_from(oam_dma_source, defer_bg_vram_upload);
             if !joypad_already_sampled {

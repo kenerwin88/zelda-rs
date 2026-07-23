@@ -202,6 +202,19 @@ fn nmi_active_display_blanking_for_pending_work(
     }
 }
 
+const fn hud_tilemap_nmi_forced_blank_prefix(upload_consumed: bool) -> u8 {
+    // NMI subroutine 1 uploads the complete $800-byte tilemap staging buffer.
+    // With ordinary core updates ahead of it, instrumented Snes9x reaches the
+    // DMA at ROM $008cdb on V=249 and does not restore INIDISP until V=1,
+    // H=870. The ROM asserted forced blank at NMI entry, so scanline zero of
+    // the snapshot captured immediately before this NMI is black.
+    if upload_consumed {
+        1
+    } else {
+        0
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct StripeUploadWork {
     packets: usize,
@@ -2140,6 +2153,8 @@ pub struct ZeldaState {
     iris_spotlight_goal_transition_pending: bool,
     #[serde(skip)]
     normal_dialogue_initialization_phase: u8,
+    #[serde(skip)]
+    hud_tilemap_nmi_publication_phase: u8,
     #[serde(skip)]
     intro_poly_upload_delay: u8,
     #[serde(skip)]
@@ -7045,6 +7060,7 @@ impl ZeldaState {
             dungeon_exit_spotlight_resume_module: false,
             iris_spotlight_goal_transition_pending: false,
             normal_dialogue_initialization_phase: 0,
+            hud_tilemap_nmi_publication_phase: 0,
             intro_poly_upload_delay: 0,
             intro_sprite_animation_start_delay: 0,
             display_snapshot: None,
@@ -7147,6 +7163,7 @@ impl ZeldaState {
         self.dungeon_exit_spotlight_resume_module = false;
         self.iris_spotlight_goal_transition_pending = false;
         self.normal_dialogue_initialization_phase = 0;
+        self.hud_tilemap_nmi_publication_phase = 0;
         self.intro_sprite_animation_start_delay = 0;
         self.nmi_poly_upload_deferred = 0;
         self.nmi_poly_upload_started = false;
@@ -7201,6 +7218,7 @@ impl ZeldaState {
             self.dungeon_exit_spotlight_resume_module = false;
             self.iris_spotlight_goal_transition_pending = false;
             self.normal_dialogue_initialization_phase = 0;
+            self.hud_tilemap_nmi_publication_phase = 0;
             self.intro_sprite_animation_start_delay = 0;
             self.nmi_poly_upload_deferred = 0;
             self.nmi_poly_upload_started = false;
