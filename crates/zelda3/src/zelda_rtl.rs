@@ -303,7 +303,11 @@ const fn rom_display_oam_publication_is_deferred(
             pending_main_thread_stripe,
         )
         || (main_module == 4 && submodule == 3)
-        || (main_module == 7 && submodule == 0)
+        || rom_active_player_control_is_running(main_module, submodule)
+}
+
+const fn rom_active_player_control_is_running(main_module: u8, submodule: u8) -> bool {
+    submodule == 0 && (main_module == 7 || matches!(main_module, 9 | 11))
 }
 
 const fn rom_dungeon_exit_entry_oam_publication_is_deferred(
@@ -7673,10 +7677,10 @@ impl ZeldaState {
         // OBJ CHR generation uploaded at the preceding NMI. Keep that pre-NMI
         // generation for the player-control modules instead of composing the
         // post-main-loop upload one frame early.
-        let retain_previous_link_obj_vram = (snapshot_frame.main_module == 7
-            && snapshot_frame.submodule == 0)
-            || (matches!(snapshot_frame.main_module, 9 | 11)
-                && snapshot_frame.submodule == 0);
+        let retain_previous_link_obj_vram = rom_active_player_control_is_running(
+            snapshot_frame.main_module,
+            snapshot_frame.submodule,
+        );
         let previous_link_obj_vram =
             retain_previous_link_obj_vram.then(|| self.ppu.vram[0x4000..0x4400].to_vec());
         // During a message-line scroll the ROM's NMI re-uploads the VWF text
