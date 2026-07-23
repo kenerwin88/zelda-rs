@@ -303,11 +303,19 @@ const fn rom_display_oam_publication_is_deferred(
             pending_main_thread_stripe,
         )
         || (main_module == 4 && submodule == 3)
-        || rom_active_player_control_is_running(main_module, submodule)
+        || rom_player_sprite_scanout_uses_pre_nmi_generation(main_module, submodule)
 }
 
-const fn rom_active_player_control_is_running(main_module: u8, submodule: u8) -> bool {
-    submodule == 0 && (main_module == 7 || matches!(main_module, 9 | 11))
+const fn rom_player_sprite_scanout_uses_pre_nmi_generation(
+    main_module: u8,
+    submodule: u8,
+) -> bool {
+    // Snes9x returns at vblank before the new OAM and Link OBJ CHR uploads.
+    // This applies both to ordinary player control and the overworld doorway
+    // transition, whose Module 9/submodule $0a slice has already authored the
+    // following Link pose when the preceding scanout is presented.
+    (submodule == 0 && (main_module == 7 || matches!(main_module, 9 | 11)))
+        || (main_module == 9 && submodule == 0x0a)
 }
 
 const fn rom_dungeon_exit_entry_oam_publication_is_deferred(
@@ -7675,9 +7683,9 @@ impl ZeldaState {
         // Snes9x ends `retro_run` at vblank entry: active gameplay has already
         // authored the next Link pose, but the returned scanout still uses the
         // OBJ CHR generation uploaded at the preceding NMI. Keep that pre-NMI
-        // generation for the player-control modules instead of composing the
-        // post-main-loop upload one frame early.
-        let retain_previous_link_obj_vram = rom_active_player_control_is_running(
+        // generation for player control and the measured overworld doorway
+        // transition instead of composing the post-main-loop upload one frame early.
+        let retain_previous_link_obj_vram = rom_player_sprite_scanout_uses_pre_nmi_generation(
             snapshot_frame.main_module,
             snapshot_frame.submodule,
         );
