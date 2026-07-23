@@ -8753,6 +8753,14 @@ impl ZeldaState {
                 }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishWorldMapLightLoad) => {
                     self.world_map_load_light_world_map();
+                    // TransferMode7Characters returns to WorldMap_LoadLightWorldMap,
+                    // then through Module0E_Interface and ZeldaRunGameLoop. The
+                    // measured return frame therefore publishes sprite DMA state
+                    // and releases the software NMI latch just like an ordinary
+                    // completed module iteration.
+                    self.complete_module0e_interface_after_run();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
                 }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishAttractThroneRoom) => {
                     self.complete_attract_scene_throne_room();
