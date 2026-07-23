@@ -80,7 +80,7 @@ impl ZeldaState {
                 self.dungeon_push_block_handler();
             }
         } else {
-            skip_run = (self.game_state.frame.submodule == 7
+            skip_run |= (self.game_state.frame.submodule == 7
                 || self.game_state.frame.submodule == 10)
                 && self.overworld_map_state() != 0;
         }

@@ -47,6 +47,7 @@ struct DisplayPpuProbe {
     brightness_white: i32,
     cgram: Vec<i32>,
     fixed_color: [i32; 3],
+    bg_scroll: [i32; 8],
     mode7: [i32; 8],
     mode7_scanlines: Vec<[i32; 8]>,
 }
@@ -61,6 +62,9 @@ fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
         brightness_white: oracle.debug_ppu_value(8, 0)?,
         cgram: (0..256).map(|i| oracle.debug_ppu_value(2, i).unwrap_or(-1)).collect(),
         fixed_color: std::array::from_fn(|i| oracle.debug_ppu_value(4, i as i32).unwrap_or(-1)),
+        bg_scroll: std::array::from_fn(|i| {
+            oracle.debug_ppu_value(14, i as i32).unwrap_or(-1)
+        }),
         mode7: std::array::from_fn(|i| oracle.debug_ppu_value(5, i as i32).unwrap_or(-1)),
         mode7_scanlines: (0..224)
             .map(|line| std::array::from_fn(|field| oracle.debug_scanline_mode7_value(line, field as i32).unwrap_or(-1)))
@@ -83,6 +87,14 @@ fn capture_rust_ppu_probe(game: &mut ZeldaState) -> DisplayPpuProbe {
             i32::from(snapshot.ppu.fixed_color_g),
             i32::from(snapshot.ppu.fixed_color_b),
         ],
+        bg_scroll: std::array::from_fn(|i| {
+            let layer = &snapshot.ppu.bg_layer[i / 2];
+            i32::from(if i % 2 == 0 {
+                layer.h_scroll
+            } else {
+                layer.v_scroll
+            })
+        }),
         mode7: snapshot.ppu.m7_matrix.map(i32::from),
         mode7_scanlines: scanlines.iter().map(|line| line.7.map(i32::from)).collect(),
         }
@@ -1994,6 +2006,27 @@ pub(crate) fn run_compare_libretro_oracle(
                             );
                             process::exit(1);
                         });
+                    let oracle_before_vram = oracle
+                        .unserialize_state(&oracle_before_state)
+                        .and_then(|()| {
+                            oracle
+                                .memory_bytes(RETRO_MEMORY_VIDEO_RAM)
+                                .map(<[u8]>::to_vec)
+                                .ok_or_else(|| {
+                                    format!("{oracle_name} did not expose pre-frame VRAM")
+                                })
+                        })
+                        .and_then(|vram| {
+                            oracle
+                                .unserialize_state(&oracle_after_state)
+                                .map(|()| vram)
+                        })
+                        .unwrap_or_else(|e| {
+                            eprintln!(
+                                "failed to capture {oracle_name} pre-frame VRAM at frame {frame_index}: {e}"
+                            );
+                            process::exit(1);
+                        });
                     let artifact_dir = write_libretro_parity_failure_artifacts(
                         pre_game.as_ref(),
                         &game,
@@ -2008,6 +2041,7 @@ pub(crate) fn run_compare_libretro_oracle(
                         oracle.av_info.timing.sample_rate.round() as u32,
                         oracle_name.as_str(),
                         oracle_system_ram.as_deref(),
+                        Some(&oracle_before_vram),
                         format!("{oracle_name} video divergence: {video_diff}"),
                     )
                     .ok();
@@ -2551,6 +2585,9 @@ pub(crate) fn libretro_engine_state_receipt(ram: &[u8]) -> serde_json::Value {
         map.insert("link_dma_source_offset".into(), word(0xc00f).into());
         map.insert("link_dma_countdown".into(), word(0xc013).into());
         map.insert("link_dma_tile_offset".into(), word(0xc015).into());
+        map.insert("bg1_h_copy2".into(), word(0x00e0).into());
+        map.insert("bg1_v_copy2".into(), word(0x00e6).into());
+        map.insert("move_overlay_counter".into(), byte(0x0494).into());
     }
 
     let object = receipt
@@ -3090,6 +3127,7 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
     sample_rate: u32,
     oracle_name: &str,
     oracle_system_ram: Option<&[u8]>,
+    oracle_before_vram: Option<&[u8]>,
     message: String,
 ) -> Result<PathBuf, Box<dyn Error>> {
     let dir = create_parity_failure_dir()?;
@@ -3112,6 +3150,9 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
     }
     fs::write(dir.join("oracle_before.state"), oracle_before_state)?;
     fs::write(dir.join("oracle_after.state"), oracle_after_state)?;
+    if let Some(oracle_before_vram) = oracle_before_vram {
+        fs::write(dir.join("oracle_before_vram.bin"), oracle_before_vram)?;
+    }
     let rust_after_checkpoint = PlayCrashCheckpoint {
         magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
         host_frame: frame.saturating_add(1),
@@ -3261,6 +3302,7 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
             "rust_after.z3state".to_string(),
             "oracle_before.state".to_string(),
             "oracle_after.state".to_string(),
+            "oracle_before_vram.bin".to_string(),
             "rust_after_vram.bin".to_string(),
             "oracle_after_vram.bin".to_string(),
             "rust_after_ram.bin".to_string(),
@@ -3281,6 +3323,8 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
         ],
         notes: vec![
             "oracle_before.state is the exact libretro state immediately before the failing frame"
+                .to_string(),
+            "oracle_before_vram.bin is the VRAM generation that produced the failing Snes9x scanout"
                 .to_string(),
             "oracle_after.state and rust_after.z3state are the exact post-frame states used for the rendered comparison"
                 .to_string(),

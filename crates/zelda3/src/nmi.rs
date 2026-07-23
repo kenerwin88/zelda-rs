@@ -186,8 +186,15 @@ impl ZeldaState {
         // The intro (module 0) poly thread is emulated in coarse slices, so
         // our flag overstates the real at-vblank thread activity there; the
         // dedicated poly timing machinery covers that module instead.
+        //
+        // Fast-forward dialogue slices are the same interrupted Module $0e
+        // thread even though the coarse native scheduler does not keep $012a
+        // asserted through every host-frame slice. Preserve the already
+        // published scroll and color registers until that thread returns.
+        let main_module = self.game_state.frame.main_module;
         let thread_holds_registers =
-            self.game_state.display.nmi_thread_active && self.game_state.frame.main_module == 0x14;
+            (main_module == 0x14 && self.game_state.display.nmi_thread_active)
+                || (main_module == 0x0e && self.dialogue_fast_forward_hold_active);
         if !thread_holds_registers {
             self.write_ppu_registers();
         }
