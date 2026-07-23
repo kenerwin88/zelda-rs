@@ -398,13 +398,16 @@ const fn rom_dungeon_exit_entry_scroll_publication_is_live(
 }
 
 const fn rom_display_snapshot_is_one_frame_deferred(main_module: u8, submodule: u8) -> bool {
-    // Spotlight circle tables are authored by the interruptible main thread
-    // during frame N, then consumed by HDMA on frame N+1's scanout. Snes9x
-    // shows the previous table throughout both the dungeon-exit close and the
-    // overworld-entry open; their measured return slices publish the completed
-    // table on the following host frame.
+    // The dungeon-exit entry setup authors its first circle before NMI enables
+    // the window controls, so retain the preceding display once for submodule
+    // zero. During the active close, Snes9x PC/V-counter traces show the ROM
+    // rebuilding the table while HDMA consumes it in that same scanout; those
+    // submodule-one frames must publish the live table instead.
+    //
+    // The landing wipe and overworld-entry open retain their independently
+    // measured following-frame publication boundaries.
     rom_dungeon_landing_wipe_is_active(main_module, submodule)
-        || main_module == 0x0f
+        || (main_module == 0x0f && submodule == 0)
         || (main_module == 0x10 && submodule == 1)
 }
 
@@ -530,6 +533,10 @@ const fn rom_item_receipt_graphics_nmi_slices(gfx: u8) -> u8 {
 }
 
 const SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES: u8 = 1;
+// After each active dungeon-exit circle build, the ROM spends one host frame
+// returning through the caller and main-loop suffix before beginning the next
+// interruptible build.
+const DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES: u8 = 1;
 const PRE_OVERWORLD_PROPERTIES_NMI_SLICES: u8 = 40;
 const PRE_OVERWORLD_OVERLAYS_NMI_SLICES: u8 = 6;
 const PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES: u8 = 17;
@@ -543,26 +550,21 @@ const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(radius: u16) -> bool
     radius >= 0x77
 }
 
-const fn rom_dungeon_exit_spotlight_table_reaches_active_scanout(
-    snapshot_main_module: u8,
-    snapshot_submodule: u8,
-    live_main_module: u8,
-    live_submodule: u8,
-    next_radius: u16,
-    iteration_return_pending: bool,
+const fn rom_dungeon_exit_spotlight_resumes_during_return(radius: u16) -> bool {
+    // The radius-$46 build returns at V=228 with radius $3f, then the next
+    // main-loop iteration begins at V=261. That radius-$3f build commits $38
+    // at V=221 of the following active scanout, before Snes9x returns the host
+    // frame. Collapse that single phase-changing return boundary so subsequent
+    // iterations remain aligned to the even host frames measured in WRAM.
+    radius == 0x3f
+}
+
+const fn rom_dungeon_exit_spotlight_scanout_is_mixed(
+    main_module: u8,
+    submodule: u8,
+    radius: u16,
 ) -> bool {
-    // Once the shrinking circle reaches radius $38, the ROM finishes the last
-    // three table words while scanlines 221..223 are still active. Snes9x
-    // scanline probes show those rows consuming the new table while 0..220
-    // retain the previous iteration. The following NMI publishes the complete
-    // table normally. `next_radius` is already decremented by seven here, so
-    // $31 denotes the table authored for radius $38.
-    snapshot_main_module == 0x0f
-        && snapshot_submodule == 1
-        && live_main_module == 0x0f
-        && live_submodule == 1
-        && next_radius <= 0x31
-        && iteration_return_pending
+    main_module == 0x0f && submodule == 1 && radius != 0 && radius <= 0x38
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -7678,16 +7680,6 @@ impl ZeldaState {
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
             );
-        let publish_live_dungeon_exit_spotlight_tail =
-            rom_dungeon_exit_spotlight_table_reaches_active_scanout(
-                snapshot_frame.main_module,
-                snapshot_frame.submodule,
-                self.game_state.frame.main_module,
-                self.game_state.frame.submodule,
-                self.game_state.display.spotlight_hdma.window_radius(),
-                self.pending_rom_work.continuation
-                    == Some(RomWorkContinuation::FinishSpotlightIteration),
-            );
         // Module 10 defers the iris control snapshot by one frame, but animated
         // BG tiles still come from the current frame's pre-NMI VRAM. The live
         // VRAM below is post-NMI and would expose a newly selected animation
@@ -7734,14 +7726,6 @@ impl ZeldaState {
             display.ppu.forced_blank,
             live_forced_blank,
         );
-        if publish_live_dungeon_exit_spotlight_tail {
-            let byte_start = DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
-            let byte_end = 224 * 2;
-            for table_base in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE] {
-                display.ram[table_base + byte_start..table_base + byte_end]
-                    .copy_from_slice(&self.ram[table_base + byte_start..table_base + byte_end]);
-            }
-        }
         if std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
             && (1648..=1655).contains(&self.frame_ctr_dbg)
         {
@@ -8701,11 +8685,51 @@ impl ZeldaState {
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                     if self.game_state.frame.main_module == 15
+                        && rom_dungeon_exit_spotlight_resumes_during_return(
+                            self.game_state.display.spotlight_hdma.window_radius(),
+                        )
+                    {
+                        // The ROM has enough vblank time at this exact phase to
+                        // return through the suffix and enter the next main-loop
+                        // iteration before the host-visible scanout completes.
+                        // Preserve the table generation already consumed by
+                        // scanlines 0..220 before advancing the CPU state.
+                        self.capture_display_snapshot();
+                        self.nmi_read_joypads(input);
+                        self.joypad_sampled_before_main = true;
+                        self.increment_frame_counter();
+                        self.clear_oam_buffer();
+                        self.latch_nmi_update();
+                        self.module_main_routing();
+                        // PC/V-counter probes show the new reserved-table tail
+                        // reaching HDMA before scanlines 221..223. Compose only
+                        // that measured suffix into the pre-calculation image.
+                        let byte_start =
+                            DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
+                        let byte_end = 224 * 2;
+                        let live_tails = [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
+                            .map(|table_base| {
+                                self.ram[table_base + byte_start..table_base + byte_end].to_vec()
+                            });
+                        if let Some(display) = self.display_snapshot.as_mut() {
+                            for (table_base, live_tail) in
+                                [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
+                                    .into_iter()
+                                    .zip(live_tails)
+                            {
+                                display.ram[table_base + byte_start..table_base + byte_end]
+                                    .copy_from_slice(&live_tail);
+                            }
+                        }
+                        self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                        return;
+                    } else if self.game_state.frame.main_module == 15
                         && rom_dungeon_exit_spotlight_table_needs_entry_slice(
                             self.game_state.display.spotlight_hdma.window_radius(),
                         )
                     {
-                        self.dungeon_exit_spotlight_table_delay = 2;
+                        self.dungeon_exit_spotlight_table_delay =
+                            DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES;
                     }
                 }
                 RomWorkSlice::Complete(
@@ -8746,6 +8770,18 @@ impl ZeldaState {
             self.nmi_read_joypads(input);
             self.joypad_sampled_before_main = true;
         }
+        let dungeon_exit_spotlight_scanout_prefix =
+            rom_dungeon_exit_spotlight_scanout_is_mixed(
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+                self.game_state.display.spotlight_hdma.window_radius(),
+            )
+            .then(|| {
+                let byte_end = DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
+                [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE].map(|table_base| {
+                    self.ram[table_base..table_base + byte_end].to_vec()
+                })
+            });
         if run_what & crate::RUN_MAIN != 0 {
             self.replay_trace_col("before-game-loop");
             self.replay_trace_ram_watch("before-game-loop");
@@ -8754,6 +8790,18 @@ impl ZeldaState {
             self.replay_trace_ram_watch("after-game-loop");
         }
         self.capture_display_snapshot();
+        if let (Some(prefixes), Some(display)) = (
+            dungeon_exit_spotlight_scanout_prefix,
+            self.display_snapshot.as_mut(),
+        ) {
+            let byte_end = DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
+            for (table_base, prefix) in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
+                .into_iter()
+                .zip(prefixes)
+            {
+                display.ram[table_base..table_base + byte_end].copy_from_slice(&prefix);
+            }
+        }
         self.replay_trace_col("before-nmi");
         self.replay_trace_ram_watch("before-nmi");
         let defer_dialogue_exit_bg_upload = frame.main_module == 14

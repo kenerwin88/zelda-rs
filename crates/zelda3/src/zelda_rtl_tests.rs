@@ -3349,21 +3349,20 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x7e));
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x77));
     assert!(!rom_dungeon_exit_spotlight_table_needs_entry_slice(0x70));
-    assert!(!rom_dungeon_exit_spotlight_table_reaches_active_scanout(
-        0x0f, 1, 0x0f, 1, 0x38, true,
-    ));
-    assert!(rom_dungeon_exit_spotlight_table_reaches_active_scanout(
-        0x0f, 1, 0x0f, 1, 0x31, true,
-    ));
-    assert!(rom_dungeon_exit_spotlight_table_reaches_active_scanout(
-        0x0f, 1, 0x0f, 1, 0x07, true,
-    ));
-    assert!(!rom_dungeon_exit_spotlight_table_reaches_active_scanout(
-        0x0f, 1, 0x0f, 1, 0x31, false,
-    ));
-    assert!(!rom_dungeon_exit_spotlight_table_reaches_active_scanout(
-        0x0f, 1, 0x08, 0, 0, true,
-    ));
+    assert!(rom_display_snapshot_is_one_frame_deferred(0x0f, 0));
+    assert!(!rom_display_snapshot_is_one_frame_deferred(0x0f, 1));
+    assert!(!rom_dungeon_exit_spotlight_resumes_during_return(0x46));
+    assert!(rom_dungeon_exit_spotlight_resumes_during_return(0x3f));
+    assert!(!rom_dungeon_exit_spotlight_resumes_during_return(0x38));
+    assert!(!rom_dungeon_exit_spotlight_scanout_is_mixed(0x0f, 1, 0x3f));
+    assert!(rom_dungeon_exit_spotlight_scanout_is_mixed(0x0f, 1, 0x38));
+    assert!(rom_dungeon_exit_spotlight_scanout_is_mixed(0x0f, 1, 0x07));
+    assert!(!rom_dungeon_exit_spotlight_scanout_is_mixed(0x0f, 1, 0));
+    assert!(!rom_dungeon_exit_spotlight_scanout_is_mixed(0x10, 1, 0x38));
+    assert_eq!(
+        DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES,
+        1
+    );
 
     let mut work = PendingRomWork::schedule(
         RomWorkContinuation::FinishSpotlightIteration,
