@@ -1040,6 +1040,9 @@ impl ZeldaState {
             self.DecompressSwordGraphics();
             self.Palette_Load_Sword();
         }
+        if self.game_state.player.follower_link.item_receipt_method() == 1 {
+            self.begin_item_receipt_graphics_work(gfx);
+        }
 
         {
             let mut receipt = self.ancilla_slot_view_mut(k);

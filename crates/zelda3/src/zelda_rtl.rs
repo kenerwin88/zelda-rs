@@ -132,6 +132,11 @@ const ATTRACT_MAIDEN_WARP_NMI_SLICES: u8 = 41;
 // before returning to the intro module. The ROM's main CPU resumes after 45
 // intervening NMIs; keep that work attached to the transition itself.
 const ATTRACT_END_OF_STORY_NMI_SLICES: u8 = 45;
+// Item $12 uses receive-item graphics $14. The ROM decompresses packs $5b and
+// $5a, then expands the selected high-plane tiles while the main-loop NMI
+// latch remains set. Snes9x reaches the main-loop epilogue after four
+// intervening vblanks (PCs $00e7d6, $00e7af, $00d642, then $00805f).
+const ITEM_RECEIPT_GFX_14_NMI_SLICES: u8 = 4;
 const ROM_TEXT_DECODE_FIRST_SLICE_CURSOR: u16 = 94;
 const POLY_WORKER_TWO_FRAME_CYCLE_THRESHOLD: u32 = 28_250;
 const SNES9X_INTRO_POLY_BOOTSTRAP_STEPS: u8 = 0;
@@ -422,6 +427,16 @@ const fn rom_selected_game_load_decision(remaining_frames: u8) -> (bool, bool, u
     }
 }
 
+const fn rom_item_receipt_graphics_nmi_slices(gfx: u8) -> u8 {
+    match gfx {
+        // This is the measured $5b/$5a decompression path. Keep unmeasured
+        // graphics on the existing immediate path until their ROM timing has
+        // been traced; shield/sword receipts do additional decompression.
+        0x14 => ITEM_RECEIPT_GFX_14_NMI_SLICES,
+        _ => 0,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RomWorkContinuation {
     FinishAttractWorldMap,
@@ -429,6 +444,7 @@ enum RomWorkContinuation {
     FinishAttractZeldaPrison,
     FinishAttractMaidenWarp,
     FinishAttractEndOfStory,
+    FinishItemReceiptGraphics,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -7146,6 +7162,21 @@ impl ZeldaState {
         self.selected_game_load_remaining_frames
     }
 
+    pub(super) fn begin_item_receipt_graphics_work(&mut self, gfx: u8) {
+        if !self.rom_startup_timing() {
+            return;
+        }
+        let nmi_slices = rom_item_receipt_graphics_nmi_slices(gfx);
+        if nmi_slices == 0 {
+            return;
+        }
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishItemReceiptGraphics,
+            nmi_slices,
+        );
+    }
+
     pub(super) fn begin_attract_throne_room_work(&mut self) {
         debug_assert!(!self.pending_rom_work.is_pending());
         let retained_sprite_subset_2 = self.game_state.sprites.workspace.graphics_subset(2);
@@ -8305,10 +8336,17 @@ impl ZeldaState {
                 RomWorkSlice::Complete(RomWorkContinuation::FinishAttractEndOfStory) => {
                     self.complete_attract_scene_end_of_story();
                 }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishItemReceiptGraphics) => {
+                    // The decompressor has finally returned through
+                    // Module_MainRouting. Only now can the ROM publish sprite
+                    // DMA sources and release the software NMI latch.
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                }
             }
             // The original ROM returns to the NMI boundary after the final
-            // loader slice. Snes9x holds INIDISP at 0 for frame 5652 and
-            // performs the first fade tick on the following main-loop slice.
+            // main-thread work slice. Attract loaders and item graphics both
+            // publish only after their measured continuation completes.
             self.capture_display_snapshot();
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
