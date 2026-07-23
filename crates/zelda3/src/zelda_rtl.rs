@@ -576,13 +576,14 @@ const OVERWORLD_AUX_GFX_LOAD_NMI_SLICES: u8 = 12;
 const OVERWORLD_MAP_AND_SPRITE_GFX_LOAD_NMI_SLICES: u8 = 15;
 const OVERWORLD_SPRITE_RELOAD_TAIL_NMI_SLICES: u8 = 4;
 // WorldMap_ExitMap enters InitializeTilesets while forced blank. From the
-// first interrupted tileset-load frame through the boundary where the ROM
-// returns as module $09/$20, clean Snes9x PC probes observe 34 intervening
-// NMI slices (clean-route frames 17751..17784).
-const WORLD_MAP_EXIT_TILESET_LOAD_NMI_SLICES: u8 = 34;
-// Module $09/$20 leaves overworld_screen_index set to the temporary rain
-// overlay ($9f) while LoadOverworldOverlay crosses five more NMI boundaries.
-const WORLD_MAP_OVERLAY_RELOAD_NMI_SLICES: u8 = 5;
+// From the first interrupted tileset-load frame through the boundary where the
+// ROM writes music control $f3 and returns as module $09/$20, clean Snes9x
+// state probes observe 33 later NMI slices (clean-route frames 17751..17783).
+const WORLD_MAP_EXIT_TILESET_LOAD_NMI_SLICES: u8 = 33;
+// Module $09/$20 begins on the following frame and leaves
+// overworld_screen_index set to the temporary rain overlay ($9f) while
+// LoadOverworldOverlay crosses six NMI boundaries (17785..17790).
+const WORLD_MAP_OVERLAY_RELOAD_NMI_SLICES: u8 = 6;
 // Module $09/$21 then spends four NMI boundaries converting the restored main
 // Map16 page before it publishes INIDISP=0 and advances to fade submodule $22.
 const WORLD_MAP_AMBIENT_MAP8_NMI_SLICES: u8 = 4;

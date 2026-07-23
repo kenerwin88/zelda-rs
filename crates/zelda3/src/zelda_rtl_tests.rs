@@ -3325,6 +3325,7 @@ fn player_world_map_load_completes_after_the_five_post_entry_nmi_slices() {
 
 #[test]
 fn world_map_exit_tilesets_resume_after_the_measured_nmi_slices() {
+    assert_eq!(WORLD_MAP_EXIT_TILESET_LOAD_NMI_SLICES, 33);
     let mut work = PendingRomWork::schedule(
         RomWorkContinuation::FinishWorldMapExitTilesets,
         WORLD_MAP_EXIT_TILESET_LOAD_NMI_SLICES,
@@ -3341,6 +3342,8 @@ fn world_map_exit_tilesets_resume_after_the_measured_nmi_slices() {
 
 #[test]
 fn world_map_exit_overlay_conversions_resume_at_measured_boundaries() {
+    assert_eq!(WORLD_MAP_OVERLAY_RELOAD_NMI_SLICES, 6);
+    assert_eq!(WORLD_MAP_AMBIENT_MAP8_NMI_SLICES, 4);
     for (continuation, nmi_slices) in [
         (
             RomWorkContinuation::FinishWorldMapOverlayReload,
