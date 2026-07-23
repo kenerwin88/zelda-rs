@@ -299,8 +299,8 @@ const fn rom_world_map_force_blank_scanline(
     live_forced_blank: bool,
 ) -> Option<u8> {
     // WorldMap_FadeOut reaches zero after the hardware NMI and writes $2100=$80
-    // during active display. Instrumented Snes9x records V=49 and CurrentLine=48:
-    // scanlines 0..47 retain brightness 1, while scanline 48 onward is blank.
+    // during active display. Instrumented Snes9x records V=43 and CurrentLine=43:
+    // scanlines 0..42 retain brightness 1, while scanline 43 onward is blank.
     if main_module == 0x0e
         && submodule == 7
         && map_state == 1
@@ -308,7 +308,7 @@ const fn rom_world_map_force_blank_scanline(
         && !snapshot_forced_blank
         && live_forced_blank
     {
-        Some(48)
+        Some(43)
     } else {
         None
     }

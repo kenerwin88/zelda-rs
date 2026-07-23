@@ -3613,7 +3613,7 @@ fn full_tilemap_upload_publishes_vram_at_the_following_nmi() {
 fn world_map_force_blank_preserves_the_scanned_prefix() {
     assert_eq!(
         rom_world_map_force_blank_scanline(0x0e, 7, 1, 0x80, false, true),
-        Some(48)
+        Some(43)
     );
     assert_eq!(
         rom_world_map_force_blank_scanline(0x0e, 7, 0, 0x01, false, false),
