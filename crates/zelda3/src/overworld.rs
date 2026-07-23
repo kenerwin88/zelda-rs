@@ -531,6 +531,20 @@ impl ZeldaState {
             .set_dungeon_info_word(267, saved267);
         self.save_progress_mut().set_dungeon_info_word(40, saved40);
 
+        if self.rom_startup_timing() {
+            // Instrumented Snes9x stays inside the four graphics
+            // decompressions and 3bpp-to-4bpp conversion for twelve more NMI
+            // boundaries. The function returns just after the final one.
+            self.pending_rom_work = PendingRomWork::schedule(
+                RomWorkContinuation::FinishOverworldAuxGraphics,
+                OVERWORLD_AUX_GFX_LOAD_NMI_SLICES,
+            );
+            return;
+        }
+        self.complete_module09_load_aux_gfx();
+    }
+
+    pub(super) fn complete_module09_load_aux_gfx(&mut self) {
         self.LoadTransAuxGFX();
         self.PrepTransAuxGfx();
         self.set_core_update_disable_flag(9);
@@ -803,7 +817,13 @@ impl ZeldaState {
             submodule => panic!("Module09_Overworld invalid submodule_index: {submodule}"),
         }
         self.replay_trace_submodule("module09-after-submodule");
+        if self.rom_startup_timing() && self.pending_rom_work.is_pending() {
+            return;
+        }
+        self.complete_module09_overworld_after_submodule();
+    }
 
+    pub(super) fn complete_module09_overworld_after_submodule(&mut self) {
         let bg2x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
         let bg2y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         let bg1x = self.game_state.display.ppu_scroll_copy.bg1_h_copy2();
@@ -3538,6 +3558,19 @@ impl ZeldaState {
 
     pub(super) fn Module09_LoadNewMapAndGFX(&mut self) {
         self.set_overworld_peg_puzzle_progress(0);
+        if self.rom_startup_timing() {
+            // Snes9x remains in this routine from the first quadrant
+            // decompression through fifteen subsequent vblank boundaries.
+            self.pending_rom_work = PendingRomWork::schedule(
+                RomWorkContinuation::FinishOverworldMapAndSpriteGraphics,
+                OVERWORLD_MAP_AND_SPRITE_GFX_LOAD_NMI_SLICES,
+            );
+            return;
+        }
+        self.complete_module09_load_new_map_and_gfx();
+    }
+
+    pub(super) fn complete_module09_load_new_map_and_gfx(&mut self) {
         self.SomeTileMapChange();
         self.increment_core_update_disable_flag();
         self.CreateInitialNewScreenMapToScroll();

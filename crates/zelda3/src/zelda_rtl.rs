@@ -541,6 +541,8 @@ const PRE_OVERWORLD_PROPERTIES_NMI_SLICES: u8 = 40;
 const PRE_OVERWORLD_OVERLAYS_NMI_SLICES: u8 = 6;
 const PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES: u8 = 17;
 const WORLD_MAP_LIGHT_LOAD_NMI_SLICES: u8 = 5;
+const OVERWORLD_AUX_GFX_LOAD_NMI_SLICES: u8 = 12;
+const OVERWORLD_MAP_AND_SPRITE_GFX_LOAD_NMI_SLICES: u8 = 15;
 const DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START: usize = 221;
 
 const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(radius: u16) -> bool {
@@ -583,6 +585,8 @@ enum RomWorkContinuation {
     },
     FinishPreOverworldOverlays,
     FinishPreOverworldScreenBuild,
+    FinishOverworldAuxGraphics,
+    FinishOverworldMapAndSpriteGraphics,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -8754,6 +8758,34 @@ impl ZeldaState {
                     self.complete_pre_overworld_screen_build();
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishOverworldAuxGraphics) => {
+                    // PC/V-counter traces remain in LoadTransAuxGFX and
+                    // PrepTransAuxGfx through this frame's vblank, returning
+                    // to Module09_LoadAuxGFX immediately afterward. Preserve
+                    // that ordering: this scanout uses the pre-load display,
+                    // while the completed graphics and caller suffix become
+                    // CPU-visible before the next frame.
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    self.complete_module09_load_aux_gfx();
+                    self.complete_module09_overworld_after_submodule();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    return;
+                }
+                RomWorkSlice::Complete(
+                    RomWorkContinuation::FinishOverworldMapAndSpriteGraphics,
+                ) => {
+                    // The quadrant decompression, initial screen-map build,
+                    // and sprite conversion return after this vblank.
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    self.complete_module09_load_new_map_and_gfx();
+                    self.complete_module09_overworld_after_submodule();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    return;
                 }
             }
             // The original ROM returns to the NMI boundary after the final
