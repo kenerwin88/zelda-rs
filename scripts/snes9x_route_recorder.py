@@ -325,6 +325,57 @@ def resolve_project_path(project: Path, value: str) -> Path:
     return path if path.is_absolute() else project / path
 
 
+ENDPOINT_TELEMETRY_FIELDS = {
+    "main": "main_module",
+    "sub": "submodule",
+    "subsub": "subsubmodule",
+    "frame_counter": "frame_counter",
+    "x": "link_x",
+    "y": "link_y",
+    "facing": "link_facing_direction",
+    "direction": "link_direction",
+    "music": "music_control",
+    "queued_music": "queued_music_control",
+}
+
+
+def validate_comparison_endpoint(
+    *, take_id: int, end_boundary: int, boundary: dict, session_dir: Path
+) -> None:
+    receipts_path = session_dir / "frame_receipts.jsonl"
+    try:
+        receipts = [line for line in receipts_path.read_text().splitlines() if line]
+    except FileNotFoundError as error:
+        raise SystemExit(
+            f"comparison endpoint receipts are missing: {error.filename}"
+        ) from error
+    if not receipts:
+        raise SystemExit("comparison endpoint receipts are empty")
+    endpoint = json.loads(receipts[-1]).get("oracle_engine", {})
+    recorded = boundary.get("telemetry", {})
+    compared = []
+    mismatches = []
+    for recorded_name, endpoint_name in ENDPOINT_TELEMETRY_FIELDS.items():
+        if recorded_name not in recorded or endpoint_name not in endpoint:
+            continue
+        compared.append(recorded_name)
+        if recorded[recorded_name] != endpoint[endpoint_name]:
+            mismatches.append(
+                f"{recorded_name}: comparison={endpoint[endpoint_name]} "
+                f"recorded={recorded[recorded_name]}"
+            )
+    if not compared:
+        raise SystemExit(
+            "comparison endpoint and recorded boundary expose no common telemetry"
+        )
+    if mismatches:
+        raise SystemExit(
+            f"take {take_id} endpoint does not match boundary {end_boundary}: "
+            + ", ".join(mismatches)
+            + "; boundary was not promoted"
+        )
+
+
 def promote_passed_take(project: Path, take_id: int, session_dir: Path) -> dict:
     """Persist an independently verified Rust endpoint beside its Snes9x boundary."""
     manifest = load_manifest(project)
@@ -370,6 +421,12 @@ def promote_passed_take(project: Path, take_id: int, session_dir: Path) -> dict:
         raise SystemExit("comparison core/ROM identity does not match the recorded route")
 
     boundary = boundaries[end_boundary]
+    validate_comparison_endpoint(
+        take_id=take_id,
+        end_boundary=end_boundary,
+        boundary=boundary,
+        session_dir=session_dir,
+    )
     oracle_state = project / boundary["state_path"]
     oracle_sram = project / boundary["sram_path"]
     if not oracle_state.is_file() or not oracle_sram.is_file():

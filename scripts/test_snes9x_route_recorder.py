@@ -113,6 +113,9 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
                     }
                 )
             )
+            (session / "frame_receipts.jsonl").write_text(
+                json.dumps({"oracle_engine": {"main_module": 7}}) + "\n"
+            )
 
             receipt = MODULE.promote_passed_take(project, 0, session)
 
@@ -136,6 +139,50 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
             self.assertEqual(pairing["rust_state"], "boundaries/0001/rust.z3state")
             self.assertEqual(pairing["verified_by"], "boundaries/0001/parity.json")
             self.assertFalse(pairing["converted_from_snes9x"])
+
+    def test_exact_pass_cannot_promote_a_mislabeled_endpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(Path(tmp))
+            manifest = MODULE.load_manifest(project)
+            manifest["takes"][0].update(
+                {"start_boundary": 0, "end_boundary": 1, "frames": 12}
+            )
+            (project / "manifest.json").write_text(json.dumps(manifest))
+            session = project / "comparisons/take-0000"
+            session.mkdir(parents=True)
+            (session / "rust_final.z3state").write_bytes(b"wrong-endpoint")
+            (session / "result.json").write_text(
+                json.dumps(
+                    {
+                        "status": "passed",
+                        "parity_eligible": True,
+                        "frames_completed": 12,
+                        "video": {"matched": True},
+                        "audio": {"matched": True, "mode": "exact"},
+                    }
+                )
+            )
+            (session / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "core": {"sha256": "11" * 32},
+                        "rom": {"sha256": "22" * 32},
+                    }
+                )
+            )
+            (session / "frame_receipts.jsonl").write_text(
+                json.dumps({"oracle_engine": {"main_module": 14}}) + "\n"
+            )
+
+            with self.assertRaisesRegex(
+                SystemExit,
+                "take 0 endpoint does not match boundary 1: main: comparison=14 recorded=7",
+            ):
+                MODULE.promote_passed_take(project, 0, session)
+
+            self.assertFalse((project / "boundaries/0001/rust.z3state").exists())
+            self.assertFalse((project / "boundaries/0001/parity.json").exists())
+            self.assertNotIn("1", MODULE.load_pairings(project)["boundaries"])
 
     def test_non_exact_or_incomplete_result_cannot_promote_boundary(self):
         with tempfile.TemporaryDirectory() as tmp:
