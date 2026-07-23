@@ -7668,8 +7668,15 @@ impl ZeldaState {
         // of the frame. Preserve that completed pre-NMI buffer rather than a
         // job that may have finished later in the current CPU slice.
         let presented_poly = self.selected_intro_poly_display_buffer();
-        let retain_previous_link_obj_vram =
-            snapshot_frame.main_module == 7 && snapshot_frame.submodule == 0;
+        // Snes9x ends `retro_run` at vblank entry: active gameplay has already
+        // authored the next Link pose, but the returned scanout still uses the
+        // OBJ CHR generation uploaded at the preceding NMI. Keep that pre-NMI
+        // generation for the player-control modules instead of composing the
+        // post-main-loop upload one frame early.
+        let retain_previous_link_obj_vram = (snapshot_frame.main_module == 7
+            && snapshot_frame.submodule == 0)
+            || (matches!(snapshot_frame.main_module, 9 | 11)
+                && snapshot_frame.submodule == 0);
         let previous_link_obj_vram =
             retain_previous_link_obj_vram.then(|| self.ppu.vram[0x4000..0x4400].to_vec());
         // During a message-line scroll the ROM's NMI re-uploads the VWF text
