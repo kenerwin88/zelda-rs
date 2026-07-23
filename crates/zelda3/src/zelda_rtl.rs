@@ -230,6 +230,15 @@ fn stripe_upload_work(mut stripes: &[u8]) -> StripeUploadWork {
     work
 }
 
+fn stripe_upload_clears_dialogue_box(stripes: &[u8]) -> bool {
+    let Some(packet) = stripes.get(..8) else {
+        return false;
+    };
+    let destination = u16::from_be_bytes([packet[0], packet[1]]);
+    matches!(destination, 0x6125 | 0x6244)
+        && packet[2..] == [0x42, 0x2e, 0x7f, 0x38, 0xff, 0xff]
+}
+
 const fn attract_throne_room_nmi_slices(retained_sprite_subset_2: u8) -> u8 {
     // Sprite tileset 0x7e deliberately leaves subset 2 unchanged. On a cold
     // attract pass that retained pack is 19; after the story restart it is 66.
@@ -7356,17 +7365,29 @@ impl ZeldaState {
 
         let snapshot_frame = crate::game_state::FrameState::load_from_ram(&display.ram);
         let pending_main_thread_stripe = display.ram[NMI_LOAD_BG_FROM_VRAM] == 1;
-        let retain_previous_nmi_display_memory = rom_display_memory_publication_is_deferred(
+        let live_pending_main_thread_stripe = self.ram[NMI_LOAD_BG_FROM_VRAM] == 1;
+        // RenderText_Draw_Finish authors the fixed-source stripe that replaces
+        // the dialogue box with tile 0x387f, then returns to the saved module.
+        // When live NMI has consumed that exact packet, Snes9x scans out the
+        // cleared BG3 tilemap immediately. The ordinary menu-stripe cadence
+        // remains deferred even after its live flag is cleared.
+        let consumed_dialogue_box_clear = pending_main_thread_stripe
+            && !live_pending_main_thread_stripe
+            && stripe_upload_clears_dialogue_box(
+                &display.ram[crate::game_state::constants::VRAM_UPLOAD_DATA..],
+            );
+        let retain_previous_nmi_display_memory = (rom_display_memory_publication_is_deferred(
             snapshot_frame.main_module,
             snapshot_frame.submodule,
             pending_main_thread_stripe,
-        ) || (snapshot_frame.main_module == 20
-            && snapshot_frame.submodule == 0
-            // Snes9x retains the pre-NMI attract image through the sequence-1
-            // load/fade-out. Mode 7 begins publishing immediately once that
-            // sequence has entered its fade-in state.
-            && !(self.game_state.ending.attract_scene.sequence() == 1
-                && self.game_state.ending.attract_scene.state() >= 4));
+        ) && !consumed_dialogue_box_clear)
+            || (snapshot_frame.main_module == 20
+                && snapshot_frame.submodule == 0
+                // Snes9x retains the pre-NMI attract image through the sequence-1
+                // load/fade-out. Mode 7 begins publishing immediately once that
+                // sequence has entered its fade-in state.
+                && !(self.game_state.ending.attract_scene.sequence() == 1
+                    && self.game_state.ending.attract_scene.state() >= 4));
         let retain_previous_nmi_oam = rom_display_oam_publication_is_deferred(
             snapshot_frame.main_module,
             snapshot_frame.submodule,

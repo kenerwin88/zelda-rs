@@ -4130,6 +4130,35 @@ fn renderer_capture_observes_pre_nmi_state_without_rewinding_live_state() {
 }
 
 #[test]
+fn renderer_publication_exposes_consumed_dialogue_clear_without_advancing_menu_stripes() {
+    let mut ordinary = ZeldaState::new();
+    ordinary.ppu.vram[0] = 0x1111;
+    ordinary.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
+    ordinary.capture_display_snapshot();
+    ordinary.ppu.vram[0] = 0x2222;
+    ordinary.ram[NMI_LOAD_BG_FROM_VRAM] = 0;
+
+    assert_eq!(
+        ordinary.with_display_snapshot(|display| display.ppu.vram[0]),
+        0x1111
+    );
+
+    let mut dialogue_clear = ZeldaState::new();
+    dialogue_clear.ppu.vram[0] = 0x3333;
+    dialogue_clear.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
+    dialogue_clear.ram[crate::game_state::constants::VRAM_UPLOAD_DATA..][..8]
+        .copy_from_slice(&[0x62, 0x44, 0x42, 0x2e, 0x7f, 0x38, 0xff, 0xff]);
+    dialogue_clear.capture_display_snapshot();
+    dialogue_clear.ppu.vram[0] = 0x4444;
+    dialogue_clear.ram[NMI_LOAD_BG_FROM_VRAM] = 0;
+
+    assert_eq!(
+        dialogue_clear.with_display_snapshot(|display| display.ppu.vram[0]),
+        0x4444
+    );
+}
+
+#[test]
 fn nmi_force_blank_gates_the_pre_nmi_display_snapshot() {
     let mut state = ZeldaState::new();
     state.ppu.forced_blank = false;
