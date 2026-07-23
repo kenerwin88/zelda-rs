@@ -306,6 +306,17 @@ const fn rom_display_oam_publication_is_deferred(
         || (main_module == 7 && submodule == 0)
 }
 
+const fn rom_dungeon_exit_entry_oam_publication_is_deferred(
+    snapshot_main_module: u8,
+    live_main_module: u8,
+    live_submodule: u8,
+) -> bool {
+    // The module switch occurs after the active frame's OAM DMA. The following
+    // main-loop slice runs Dungeon_PrepExitWithSpotlight and advances to
+    // submodule 1, whose next NMI legitimately publishes the new sprite table.
+    snapshot_main_module == 0x0f && live_main_module == 0x0f && live_submodule == 0
+}
+
 const fn rom_display_snapshot_is_one_frame_deferred(main_module: u8, submodule: u8) -> bool {
     // Module 0x0F (dungeon-exit spotlight close): the ROM's main thread authors
     // the shrinking window HDMA table (and the final OAM state) during frame N,
@@ -7424,6 +7435,10 @@ impl ZeldaState {
             snapshot_frame.submodule,
             display.ppu.forced_blank_scanlines != 0,
             pending_main_thread_stripe,
+        ) || rom_dungeon_exit_entry_oam_publication_is_deferred(
+            snapshot_frame.main_module,
+            self.game_state.frame.main_module,
+            self.game_state.frame.submodule,
         );
         let world_map_fade_display = snapshot_frame.main_module == 20
             && snapshot_frame.submodule == 0
