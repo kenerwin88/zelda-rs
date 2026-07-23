@@ -3848,7 +3848,7 @@ impl ZeldaState {
             let link_y = self.game_state.player.follower_link.y().wrapping_add(2);
             self.follower_link_state_mut().set_y(link_y);
         }
-        self.sprite_overworld_reload_all_just_load();
+        let sprite_reload_workload = self.sprite_overworld_reload_all_just_load();
         self.memorized_tile_mut().clear_count();
         if !self.rom_startup_timing()
             && self.game_state.inventory.save_progress.progress_indicator() >= 2
@@ -3864,9 +3864,12 @@ impl ZeldaState {
             // NMI boundaries have passed.
             self.publish_module09_transition_sprites_without_scroll();
             self.stage_overworld_transition_scroll_scanout_hold();
+            let reload_timing = overworld_sprite_reload_timing(sprite_reload_workload);
             self.pending_rom_work = PendingRomWork::schedule(
-                RomWorkContinuation::FinishOverworldSpriteReloadTail,
-                OVERWORLD_SPRITE_RELOAD_TAIL_NMI_SLICES,
+                RomWorkContinuation::FinishOverworldSpriteReloadTail {
+                    post_return_hold_nmi_slices: reload_timing.post_return_hold_nmi_slices,
+                },
+                reload_timing.load_nmi_slices,
             );
             return;
         }

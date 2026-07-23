@@ -3668,6 +3668,30 @@ fn world_map_force_blank_preserves_the_scanned_prefix() {
 }
 
 #[test]
+fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
+    assert_eq!(
+        overworld_sprite_reload_timing(OverworldSpriteReloadWorkload {
+            sprite_records: 2,
+            in_bounds_proximity_checks: 18,
+        }),
+        OverworldSpriteReloadTiming {
+            load_nmi_slices: 3,
+            post_return_hold_nmi_slices: 1,
+        }
+    );
+    assert_eq!(
+        overworld_sprite_reload_timing(OverworldSpriteReloadWorkload {
+            sprite_records: 4,
+            in_bounds_proximity_checks: 90,
+        }),
+        OverworldSpriteReloadTiming {
+            load_nmi_slices: 4,
+            post_return_hold_nmi_slices: 0,
+        }
+    );
+}
+
+#[test]
 fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     assert!(rom_display_oam_publication_is_deferred(7, 0, false, false));
     assert!(rom_display_oam_publication_is_deferred(4, 3, true, false));

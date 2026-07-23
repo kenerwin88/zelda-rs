@@ -1353,13 +1353,19 @@ impl ZeldaState {
         self.sprite_overworld_reload_all_just_load();
     }
 
-    pub(super) fn sprite_overworld_reload_all_just_load(&mut self) {
+    pub(super) fn sprite_overworld_reload_all_just_load(
+        &mut self,
+    ) -> OverworldSpriteReloadWorkload {
         self.sprite_reset_all_no_disable();
-        self.overworld_load_sprites();
-        self.sprite_activate_all_proxima();
+        let sprite_records = self.overworld_load_sprites();
+        let in_bounds_proximity_checks = self.sprite_activate_all_proxima();
+        OverworldSpriteReloadWorkload {
+            sprite_records,
+            in_bounds_proximity_checks,
+        }
     }
 
-    pub(super) fn overworld_load_sprites(&mut self) {
+    pub(super) fn overworld_load_sprites(&mut self) -> usize {
         let area = self.game_state.world.region.overworld_area();
         let area_lo = self.game_state.world.region.overworld_area_low() as usize;
         self.garnish_state_mut().set_sprcoll_x_base((area & 7) << 9);
@@ -1375,20 +1381,22 @@ impl ZeldaState {
             _ => 0,
         };
         let Some(offsets) = self.asset_raw(159).map(Vec::from) else {
-            return;
+            return 0;
         };
         let Some(sprites) = self.asset_raw(160).map(Vec::from) else {
-            return;
+            return 0;
         };
         let offs_idx = (area as usize + base * 144) * 2;
         if offs_idx + 1 >= offsets.len() {
-            return;
+            return 0;
         }
         let mut src = read_word_from_slice(&offsets, offs_idx) as usize;
+        let mut sprite_records = 0usize;
         while src < sprites.len() && sprites[src] != 0xff {
             if src + 2 >= sprites.len() {
                 break;
             }
+            sprite_records += 1;
             if sprites[src + 2] == 0xf4 {
                 self.garnish_state_mut().increment_boulder_trap_count();
                 src += 3;
@@ -1403,9 +1411,10 @@ impl ZeldaState {
             self.set_overworld_sprite_presence_marker(idx, value);
             src += 3;
         }
+        sprite_records
     }
 
-    pub(super) fn sprite_activate_all_proxima(&mut self) {
+    pub(super) fn sprite_activate_all_proxima(&mut self) -> usize {
         let bak0 = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
         let bak1 = self.overworld_horizontal_scroll_delta_low();
         self.set_overworld_horizontal_scroll_delta_low(0xff);
@@ -1420,8 +1429,9 @@ impl ZeldaState {
             0
         };
         self.set_bg2_x(bak0.wrapping_sub(xt));
+        let mut in_bounds_proximity_checks = 0usize;
         for _ in (0..=(21 + (xt >> 3))).rev() {
-            self.sprite_activate_when_proximal();
+            in_bounds_proximity_checks += self.sprite_activate_when_proximal();
             let bg = self
                 .game_state
                 .display
@@ -1432,6 +1442,7 @@ impl ZeldaState {
         }
         self.set_overworld_horizontal_scroll_delta_low(bak1);
         self.set_bg2_x(bak0);
+        in_bounds_proximity_checks
     }
 
     pub(super) fn sprite_proximity_activation(&mut self) {
@@ -1449,9 +1460,9 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn sprite_activate_when_proximal(&mut self) {
+    pub(super) fn sprite_activate_when_proximal(&mut self) -> usize {
         if self.overworld_horizontal_scroll_delta_low() == 0 {
-            return;
+            return 0;
         }
         let xt: u16 = if self
             .game_state
@@ -1478,10 +1489,13 @@ impl ZeldaState {
             .ppu_scroll_copy
             .bg2_v_copy2()
             .wrapping_sub(0x30);
+        let mut in_bounds_proximity_checks = 0usize;
         for _ in (0..=21).rev() {
-            self.sprite_overworld_proximity_motivated_load(x, y);
+            in_bounds_proximity_checks +=
+                usize::from(self.sprite_overworld_proximity_motivated_load(x, y));
             y = y.wrapping_add(16);
         }
+        in_bounds_proximity_checks
     }
 
     pub(super) fn sprite_activate_when_proximal_big(&mut self) {
@@ -1520,7 +1534,11 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn sprite_overworld_proximity_motivated_load(&mut self, x: u16, y: u16) {
+    pub(super) fn sprite_overworld_proximity_motivated_load(
+        &mut self,
+        x: u16,
+        y: u16,
+    ) -> bool {
         let sprcoll_x_base = self.game_state.sprites.garnish_runtime.sprcoll_x_word();
         let sprcoll_y_base = self.game_state.sprites.garnish_runtime.sprcoll_y_word();
         let xt = x.wrapping_sub(sprcoll_x_base);
@@ -1528,12 +1546,13 @@ impl ZeldaState {
         if xt >= self.game_state.sprites.garnish_runtime.sprcoll_x_size()
             || yt >= self.game_state.sprites.garnish_runtime.sprcoll_y_size()
         {
-            return;
+            return false;
         }
 
         let r1 = (((yt >> 8) * 4) | (xt >> 8)) as u8;
         let r0 = ((y & 0x00f0) | ((x >> 4) & 0x000f)) as u8;
         self.overworld_load_proxima_sprite_if_alive((u16::from(r1) << 8) | u16::from(r0));
+        true
     }
 
     pub(super) fn overworld_load_proxima_sprite_if_alive(&mut self, blk: u16) {

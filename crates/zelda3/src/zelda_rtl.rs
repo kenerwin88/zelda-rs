@@ -574,7 +574,49 @@ const PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES: u8 = 17;
 const WORLD_MAP_LIGHT_LOAD_NMI_SLICES: u8 = 5;
 const OVERWORLD_AUX_GFX_LOAD_NMI_SLICES: u8 = 12;
 const OVERWORLD_MAP_AND_SPRITE_GFX_LOAD_NMI_SLICES: u8 = 15;
-const OVERWORLD_SPRITE_RELOAD_TAIL_NMI_SLICES: u8 = 4;
+const OVERWORLD_SPRITE_RECORD_TIMING_UNITS: usize = 3;
+const OVERWORLD_SPRITE_RELOAD_SAME_FRAME_BUDGET_UNITS: usize = 39;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct OverworldSpriteReloadWorkload {
+    sprite_records: usize,
+    in_bounds_proximity_checks: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct OverworldSpriteReloadTiming {
+    load_nmi_slices: u8,
+    post_return_hold_nmi_slices: u8,
+}
+
+const fn overworld_sprite_reload_timing(
+    workload: OverworldSpriteReloadWorkload,
+) -> OverworldSpriteReloadTiming {
+    // The ROM loader is interruptible, so its return frame depends on the
+    // actual area workload. Snes9x PC/V-counter traces show screen $2b
+    // processing two sprite records and 18 in-bounds proximity checks, then
+    // returning from $09:c55e to $02:ac27 at V=213 before that frame's NMI.
+    // Screen $2c processes four records and 90 in-bounds checks, crosses NMI
+    // inside $09:c6f6, and returns at V=9 on the following frame. A sprite-list
+    // record costs about three proximity branches in the measured 65816 loop.
+    let timing_units = workload
+        .in_bounds_proximity_checks
+        .saturating_add(workload.sprite_records * OVERWORLD_SPRITE_RECORD_TIMING_UNITS);
+    if timing_units <= OVERWORLD_SPRITE_RELOAD_SAME_FRAME_BUDGET_UNITS {
+        OverworldSpriteReloadTiming {
+            load_nmi_slices: 3,
+            // The light loader returns before NMI, but its next Module09
+            // iteration does not reach Overworld_StartScrollTransition until
+            // V=255 of the following scanout.
+            post_return_hold_nmi_slices: 1,
+        }
+    } else {
+        OverworldSpriteReloadTiming {
+            load_nmi_slices: 4,
+            post_return_hold_nmi_slices: 0,
+        }
+    }
+}
 // WorldMap_ExitMap enters InitializeTilesets while forced blank. From the
 // From the first interrupted tileset-load frame through the boundary where the
 // ROM writes music control $f3 and returns as module $09/$20, clean Snes9x
@@ -634,7 +676,10 @@ enum RomWorkContinuation {
     FinishWorldMapAmbientMap8,
     FinishOverworldAuxGraphics,
     FinishOverworldMapAndSpriteGraphics,
-    FinishOverworldSpriteReloadTail,
+    FinishOverworldSpriteReloadTail {
+        post_return_hold_nmi_slices: u8,
+    },
+    HoldOverworldSpriteReloadReturn,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -8919,17 +8964,57 @@ impl ZeldaState {
                     self.clear_nmi_update_latch();
                     return;
                 }
-                RomWorkSlice::Complete(RomWorkContinuation::FinishOverworldSpriteReloadTail) => {
+                RomWorkSlice::Complete(
+                    RomWorkContinuation::FinishOverworldSpriteReloadTail {
+                        post_return_hold_nmi_slices,
+                    },
+                ) => {
                     // The long sprite reset/load loop is interrupted in the
-                    // ROM, but its transition-control tail and Module09 caller
-                    // suffix resume only after this vblank.
-                    self.capture_display_snapshot();
-                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    // ROM. On the final slice, the CPU returns through
+                    // Overworld_SetFixedColAndScroll before the vblank that
+                    // ends this scanout. Snes9x therefore exposes the returned
+                    // camera registers on this frame, not the following one.
+                    //
+                    // The measured light screen returns from $09:c55e to
+                    // $02:ac27 at V=213. That leaves enough time for the
+                    // submodule tail and Module09's caller suffix, but not for
+                    // Main_PrepSpritesForNmi and the subsequent $0710 latch
+                    // clear. The suffix's direct scroll writes are therefore
+                    // visible while this NMI still suppresses OAM/animated-tile
+                    // DMA. Finish the game-loop epilogue after the interrupt.
                     self.complete_module09_load_new_sprites_after_reload();
                     self.complete_module09_overworld_after_submodule();
-                    self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
+                    if post_return_hold_nmi_slices == 0 {
+                        // The measured heavy screen crosses the preceding NMI
+                        // inside the loader and reaches this completion
+                        // boundary early in the following scanout. Its full
+                        // game-loop epilogue therefore precedes this NMI.
+                        self.nmi_prepare_sprites();
+                        self.clear_nmi_update_latch();
+                    }
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    if post_return_hold_nmi_slices != 0 {
+                        self.nmi_prepare_sprites();
+                        self.clear_nmi_update_latch();
+                    }
+                    if post_return_hold_nmi_slices != 0 {
+                        self.pending_rom_work = PendingRomWork::schedule(
+                            RomWorkContinuation::HoldOverworldSpriteReloadReturn,
+                            post_return_hold_nmi_slices,
+                        );
+                    }
                     return;
+                }
+                RomWorkSlice::Complete(
+                    RomWorkContinuation::HoldOverworldSpriteReloadReturn,
+                ) => {
+                    // The light sprite loader returns at V=213, so its camera
+                    // and caller suffix are already visible. Snes9x remains in
+                    // submodule 5 for the following scanout, however; the next
+                    // Overworld_StartScrollTransition call lands at V=255,
+                    // after that image has been emitted. Hold only that next
+                    // main-loop iteration while still running the frame NMI.
                 }
             }
             // The original ROM returns to the NMI boundary after the final
