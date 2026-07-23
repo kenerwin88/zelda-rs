@@ -532,9 +532,10 @@ impl ZeldaState {
         self.save_progress_mut().set_dungeon_info_word(40, saved40);
 
         if self.rom_startup_timing() {
-            // Instrumented Snes9x stays inside the four graphics
-            // decompressions and 3bpp-to-4bpp conversion for twelve more NMI
-            // boundaries. The function returns just after the final one.
+            // Instrumented Snes9x enters after the current frame's vblank and
+            // remains inside the four graphics decompressions plus 3bpp-to-4bpp
+            // conversion for eleven subsequent host-frame slices. The return
+            // becomes CPU-visible after the last slice's scanout.
             self.pending_rom_work = PendingRomWork::schedule(
                 RomWorkContinuation::FinishOverworldAuxGraphics,
                 OVERWORLD_AUX_GFX_LOAD_NMI_SLICES,
@@ -3611,8 +3612,10 @@ impl ZeldaState {
     pub(super) fn Module09_LoadNewMapAndGFX(&mut self) {
         self.set_overworld_peg_puzzle_progress(0);
         if self.rom_startup_timing() {
-            // Snes9x remains in this routine from the first quadrant
-            // decompression through fifteen subsequent vblank boundaries.
+            // The first quadrant decompression begins on the caller's entry
+            // slice; Snes9x remains in this routine through sixteen subsequent
+            // host-frame slices before the completed map and sprite graphics
+            // become CPU-visible.
             self.pending_rom_work = PendingRomWork::schedule(
                 RomWorkContinuation::FinishOverworldMapAndSpriteGraphics,
                 OVERWORLD_MAP_AND_SPRITE_GFX_LOAD_NMI_SLICES,

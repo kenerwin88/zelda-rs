@@ -428,33 +428,23 @@ const fn rom_overworld_bad_weather_scroll_is_live(
         && snapshot_bg2_v == live_bg2_v
 }
 
-const fn rom_overworld_initial_screen_bg1_scroll_is_live(
+const fn rom_overworld_transition_half_color_is_live(
     snapshot_main_module: u8,
     snapshot_submodule: u8,
     live_main_module: u8,
     live_submodule: u8,
-    snapshot_bg1_h: u16,
-    snapshot_bg1_v: u16,
-    snapshot_bg2_h: u16,
-    snapshot_bg2_v: u16,
-    live_bg1_h: u16,
-    live_bg1_v: u16,
-    live_bg2_h: u16,
-    live_bg2_v: u16,
+    snapshot_half_color: bool,
+    live_half_color: bool,
 ) -> bool {
-    // Interrupt_NMI always runs WritePpuRegisters even when the $0710 software
-    // latch suppresses NMI_DoUpdates. During the initial screen-map load, the
-    // interrupted Module09 suffix has authored a new BG1 page while BG2 still
-    // holds the transition camera. Snes9x records that isolated BG1HOFS write
-    // at V=258 ($cf00 -> $d000 on the measured west-to-east boundary), and its
-    // returned scanout uses the new BG1 page with the preceding VRAM image.
+    // On the rainy screen-$2b transition, instrumented Snes9x records
+    // WritePpuRegisters changing CGADSUB from $72 to $32 at V=257. The active
+    // scanout therefore uses the post-NMI half-color bit even though its VRAM
+    // and remaining controls retain their existing publication cadence.
     snapshot_main_module == 9
         && snapshot_submodule == 3
         && live_main_module == 9
         && live_submodule == 3
-        && (snapshot_bg1_h != live_bg1_h || snapshot_bg1_v != live_bg1_v)
-        && snapshot_bg2_h == live_bg2_h
-        && snapshot_bg2_v == live_bg2_v
+        && snapshot_half_color != live_half_color
 }
 
 const fn rom_display_snapshot_is_one_frame_deferred(main_module: u8, submodule: u8) -> bool {
@@ -601,8 +591,8 @@ const PRE_OVERWORLD_PROPERTIES_NMI_SLICES: u8 = 40;
 const PRE_OVERWORLD_OVERLAYS_NMI_SLICES: u8 = 6;
 const PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES: u8 = 17;
 const WORLD_MAP_LIGHT_LOAD_NMI_SLICES: u8 = 5;
-const OVERWORLD_AUX_GFX_LOAD_NMI_SLICES: u8 = 12;
-const OVERWORLD_MAP_AND_SPRITE_GFX_LOAD_NMI_SLICES: u8 = 15;
+const OVERWORLD_AUX_GFX_LOAD_NMI_SLICES: u8 = 11;
+const OVERWORLD_MAP_AND_SPRITE_GFX_LOAD_NMI_SLICES: u8 = 16;
 const OVERWORLD_SPRITE_RECORD_TIMING_UNITS: usize = 3;
 const OVERWORLD_SPRITE_RELOAD_SAME_FRAME_BUDGET_UNITS: usize = 39;
 
@@ -7849,20 +7839,14 @@ impl ZeldaState {
                 self.ppu.bg_layer[1].h_scroll,
                 self.ppu.bg_layer[1].v_scroll,
             );
-        let publish_live_overworld_initial_screen_bg1_scroll =
-            rom_overworld_initial_screen_bg1_scroll_is_live(
+        let publish_live_overworld_transition_half_color =
+            rom_overworld_transition_half_color_is_live(
                 snapshot_frame.main_module,
                 snapshot_frame.submodule,
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
-                display.ppu.bg_layer[0].h_scroll,
-                display.ppu.bg_layer[0].v_scroll,
-                display.ppu.bg_layer[1].h_scroll,
-                display.ppu.bg_layer[1].v_scroll,
-                self.ppu.bg_layer[0].h_scroll,
-                self.ppu.bg_layer[0].v_scroll,
-                self.ppu.bg_layer[1].h_scroll,
-                self.ppu.bg_layer[1].v_scroll,
+                display.ppu.half_color,
+                self.ppu.half_color,
             );
         // Module 10 defers the iris control snapshot by one frame, but animated
         // BG tiles still come from the current frame's pre-NMI VRAM. The live
@@ -7938,11 +7922,12 @@ impl ZeldaState {
                 shown.v_scroll = live.v_scroll;
             }
         }
-        if publish_live_overworld_bad_weather_scroll
-            || publish_live_overworld_initial_screen_bg1_scroll
-        {
+        if publish_live_overworld_bad_weather_scroll {
             self.ppu.bg_layer[0].h_scroll = display.ppu.bg_layer[0].h_scroll;
             self.ppu.bg_layer[0].v_scroll = display.ppu.bg_layer[0].v_scroll;
+        }
+        if publish_live_overworld_transition_half_color {
+            self.ppu.half_color = display.ppu.half_color;
         }
         // NMI publishes display memory for the upcoming active frame. Keep the
         // captured control registers, but compose them with the newly uploaded

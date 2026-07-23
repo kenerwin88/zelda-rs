@@ -3692,15 +3692,15 @@ fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
 }
 
 #[test]
-fn initial_overworld_screen_map_publishes_the_isolated_live_bg1_page() {
-    assert!(rom_overworld_initial_screen_bg1_scroll_is_live(
-        9, 3, 9, 3, 0x0300, 0x00db, 0x0300, 0x031e, 0x0000, 0x00db, 0x0300, 0x031e,
+fn overworld_transition_publishes_the_nmi_written_half_color_bit() {
+    assert!(rom_overworld_transition_half_color_is_live(
+        9, 3, 9, 3, true, false,
     ));
-    assert!(!rom_overworld_initial_screen_bg1_scroll_is_live(
-        9, 3, 9, 3, 0x0300, 0x00db, 0x0300, 0x031e, 0x0000, 0x00db, 0x0000, 0x031e,
+    assert!(!rom_overworld_transition_half_color_is_live(
+        9, 3, 9, 3, false, false,
     ));
-    assert!(!rom_overworld_initial_screen_bg1_scroll_is_live(
-        9, 4, 9, 4, 0x0300, 0x00db, 0x0300, 0x031e, 0x0000, 0x00db, 0x0300, 0x031e,
+    assert!(!rom_overworld_transition_half_color_is_live(
+        9, 2, 9, 3, true, false,
     ));
 }
 
