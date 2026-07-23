@@ -148,12 +148,24 @@ impl ZeldaState {
         );
 
         self.set_queued_music_control(xt);
-        self.DecompressAnimatedOverworldTiles(ow_anim_tiles);
+        if self.begin_pre_overworld_properties_work(sc, ow_anim_tiles) {
+            return;
+        }
+        self.complete_pre_overworld_load_properties(sc, ow_anim_tiles);
+    }
+
+    pub(super) fn complete_pre_overworld_load_properties(
+        &mut self,
+        overworld_screen: u8,
+        animated_tiles: u8,
+    ) {
+        self.DecompressAnimatedOverworldTiles(animated_tiles);
         self.InitializeTilesets();
         self.OverworldLoadScreensPaletteSet();
         self.Overworld_LoadPalettes(
-            self.GetOverworldBgPalette(sc),
-            self.overworld_config_table().sprite_palette(sc as usize),
+            self.GetOverworldBgPalette(overworld_screen),
+            self.overworld_config_table()
+                .sprite_palette(overworld_screen as usize),
         );
         self.Palette_SetOwBgColor();
         if self.game_state.frame.main_module == 8 {
@@ -165,12 +177,12 @@ impl ZeldaState {
         self.set_overworld_fixed_color_adjustment(0);
         self.follower_initialize();
 
-        if sc & 0x3f == 0 {
+        if overworld_screen & 0x3f == 0 {
             self.DecodeAnimatedSpriteTile_variable(0x1e);
         }
         self.set_saved_module_for_menu(9);
         self.sprite_reload_all_overworld();
-        if sc & 0x40 == 0 {
+        if overworld_screen & 0x40 == 0 {
             self.sprite_initialize_mirror_portal();
         }
         let ambient_sound_effect =
@@ -648,6 +660,13 @@ impl ZeldaState {
 
     pub(super) fn PreOverworld_LoadOverlays(&mut self) {
         self.set_ambient_sound_effect(5);
+        if self.begin_pre_overworld_overlays_work() {
+            return;
+        }
+        self.complete_pre_overworld_load_overlays();
+    }
+
+    pub(super) fn complete_pre_overworld_load_overlays(&mut self) {
         self.Overworld_LoadOverlays2();
     }
 
@@ -4302,6 +4321,13 @@ impl ZeldaState {
     }
 
     pub(super) fn Module08_02_LoadAndAdvance(&mut self) {
+        if self.begin_pre_overworld_screen_build_work() {
+            return;
+        }
+        self.complete_pre_overworld_screen_build();
+    }
+
+    pub(super) fn complete_pre_overworld_screen_build(&mut self) {
         self.Overworld_LoadAndBuildScreen();
         self.set_main_module(16);
         self.set_submodule(0);

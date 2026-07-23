@@ -467,6 +467,9 @@ const fn rom_item_receipt_graphics_nmi_slices(gfx: u8) -> u8 {
 }
 
 const DUNGEON_EXIT_SPOTLIGHT_SUFFIX_NMI_SLICES: u8 = 1;
+const PRE_OVERWORLD_PROPERTIES_NMI_SLICES: u8 = 40;
+const PRE_OVERWORLD_OVERLAYS_NMI_SLICES: u8 = 6;
+const PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES: u8 = 17;
 const DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START: usize = 221;
 
 const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(radius: u16) -> bool {
@@ -507,6 +510,12 @@ enum RomWorkContinuation {
     FinishAttractEndOfStory,
     FinishItemReceiptGraphics,
     FinishDungeonExitSpotlightIteration,
+    FinishPreOverworldProperties {
+        overworld_screen: u8,
+        animated_tiles: u8,
+    },
+    FinishPreOverworldOverlays,
+    FinishPreOverworldScreenBuild,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -7229,6 +7238,49 @@ impl ZeldaState {
         );
     }
 
+    pub(super) fn begin_pre_overworld_properties_work(
+        &mut self,
+        overworld_screen: u8,
+        animated_tiles: u8,
+    ) -> bool {
+        if !self.rom_startup_timing() || self.game_state.frame.main_module != 8 {
+            return false;
+        }
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishPreOverworldProperties {
+                overworld_screen,
+                animated_tiles,
+            },
+            PRE_OVERWORLD_PROPERTIES_NMI_SLICES,
+        );
+        true
+    }
+
+    pub(super) fn begin_pre_overworld_overlays_work(&mut self) -> bool {
+        if !self.rom_startup_timing() || self.game_state.frame.main_module != 8 {
+            return false;
+        }
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishPreOverworldOverlays,
+            PRE_OVERWORLD_OVERLAYS_NMI_SLICES,
+        );
+        true
+    }
+
+    pub(super) fn begin_pre_overworld_screen_build_work(&mut self) -> bool {
+        if !self.rom_startup_timing() || self.game_state.frame.main_module != 8 {
+            return false;
+        }
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishPreOverworldScreenBuild,
+            PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES,
+        );
+        true
+    }
+
     pub(super) fn begin_selected_game_load(&mut self) {
         self.enable_force_blank();
         self.selected_game_load_remaining_frames = ROM_SELECTED_GAME_LOAD_FRAMES;
@@ -8492,6 +8544,26 @@ impl ZeldaState {
                     {
                         self.dungeon_exit_spotlight_table_delay = 2;
                     }
+                }
+                RomWorkSlice::Complete(
+                    RomWorkContinuation::FinishPreOverworldProperties {
+                        overworld_screen,
+                        animated_tiles,
+                    },
+                ) => {
+                    self.complete_pre_overworld_load_properties(
+                        overworld_screen,
+                        animated_tiles,
+                    );
+                    self.clear_nmi_update_latch();
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishPreOverworldOverlays) => {
+                    self.complete_pre_overworld_load_overlays();
+                    self.clear_nmi_update_latch();
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishPreOverworldScreenBuild) => {
+                    self.complete_pre_overworld_screen_build();
+                    self.clear_nmi_update_latch();
                 }
             }
             // The original ROM returns to the NMI boundary after the final

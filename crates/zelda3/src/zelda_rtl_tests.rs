@@ -3360,6 +3360,36 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
 }
 
 #[test]
+fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
+    let properties = RomWorkContinuation::FinishPreOverworldProperties {
+        overworld_screen: 0x00,
+        animated_tiles: 0x58,
+    };
+    let stages = [
+        (properties, PRE_OVERWORLD_PROPERTIES_NMI_SLICES),
+        (
+            RomWorkContinuation::FinishPreOverworldOverlays,
+            PRE_OVERWORLD_OVERLAYS_NMI_SLICES,
+        ),
+        (
+            RomWorkContinuation::FinishPreOverworldScreenBuild,
+            PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES,
+        ),
+    ];
+
+    for (continuation, nmi_slices) in stages {
+        let mut work = PendingRomWork::schedule(continuation, nmi_slices);
+        for _ in 0..nmi_slices - 1 {
+            assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        }
+        assert_eq!(
+            work.advance_one_nmi_slice(),
+            RomWorkSlice::Complete(continuation)
+        );
+    }
+}
+
+#[test]
 fn world_map_fade_publishes_the_previous_scanout_snapshot() {
     assert!(!rom_attract_world_map_display_is_one_frame_deferred(20, 0, 1, 3));
     assert!(rom_attract_world_map_display_is_one_frame_deferred(20, 0, 1, 4));
