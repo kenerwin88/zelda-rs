@@ -466,6 +466,15 @@ const fn rom_item_receipt_graphics_nmi_slices(gfx: u8) -> u8 {
     }
 }
 
+const DUNGEON_EXIT_SPOTLIGHT_SUFFIX_NMI_SLICES: u8 = 1;
+
+const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(radius: u16) -> bool {
+    // Snes9x PC traces show the $7e and $77 circle builds crossing vblank
+    // inside IrisSpotlight_ConfigureTable. From $70 downward the next table is
+    // far enough along at the first boundary to publish in that same slice.
+    radius >= 0x77
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RomWorkContinuation {
     FinishAttractWorldMap,
@@ -474,6 +483,7 @@ enum RomWorkContinuation {
     FinishAttractMaidenWarp,
     FinishAttractEndOfStory,
     FinishItemReceiptGraphics,
+    FinishDungeonExitSpotlightIteration,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2069,6 +2079,10 @@ pub struct ZeldaState {
     selected_game_load_remaining_frames: u8,
     #[serde(skip)]
     dungeon_landing_wipe_carry_pending: bool,
+    #[serde(skip)]
+    dungeon_exit_spotlight_table_delay: u8,
+    #[serde(skip)]
+    dungeon_exit_spotlight_resume_module: bool,
     #[serde(skip)]
     iris_spotlight_goal_transition_pending: bool,
     #[serde(skip)]
@@ -6974,6 +6988,8 @@ impl ZeldaState {
             name_player_tilemap_suffix_pending: false,
             selected_game_load_remaining_frames: 0,
             dungeon_landing_wipe_carry_pending: false,
+            dungeon_exit_spotlight_table_delay: 0,
+            dungeon_exit_spotlight_resume_module: false,
             iris_spotlight_goal_transition_pending: false,
             normal_dialogue_initialization_phase: 0,
             intro_poly_upload_delay: 0,
@@ -7074,6 +7090,8 @@ impl ZeldaState {
         self.name_player_tilemap_suffix_pending = false;
         self.selected_game_load_remaining_frames = 0;
         self.dungeon_landing_wipe_carry_pending = false;
+        self.dungeon_exit_spotlight_table_delay = 0;
+        self.dungeon_exit_spotlight_resume_module = false;
         self.iris_spotlight_goal_transition_pending = false;
         self.normal_dialogue_initialization_phase = 0;
         self.intro_sprite_animation_start_delay = 0;
@@ -7126,6 +7144,8 @@ impl ZeldaState {
             self.name_player_tilemap_suffix_pending = false;
             self.selected_game_load_remaining_frames = 0;
             self.dungeon_landing_wipe_carry_pending = false;
+            self.dungeon_exit_spotlight_table_delay = 0;
+            self.dungeon_exit_spotlight_resume_module = false;
             self.iris_spotlight_goal_transition_pending = false;
             self.normal_dialogue_initialization_phase = 0;
             self.intro_sprite_animation_start_delay = 0;
@@ -7173,6 +7193,17 @@ impl ZeldaState {
 
     pub(super) fn rom_startup_timing(&self) -> bool {
         self.rom_startup_timing
+    }
+
+    pub(super) fn schedule_dungeon_exit_spotlight_iteration_return(&mut self) {
+        if !self.rom_startup_timing() {
+            return;
+        }
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishDungeonExitSpotlightIteration,
+            DUNGEON_EXIT_SPOTLIGHT_SUFFIX_NMI_SLICES,
+        );
     }
 
     pub(super) fn begin_selected_game_load(&mut self) {
@@ -8364,6 +8395,22 @@ impl ZeldaState {
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
+        if self.rom_startup_timing() && self.dungeon_exit_spotlight_table_delay != 0 {
+            self.dungeon_exit_spotlight_table_delay -= 1;
+            // This is the prefix of a real main-loop iteration. The ROM has
+            // ticked the frame counter and cleared OAM before vblank interrupts
+            // the large-radius circle calculation; module routing resumes on a
+            // later host frame without repeating that prefix.
+            if !self.dungeon_exit_spotlight_resume_module {
+                self.increment_frame_counter();
+                self.clear_oam_buffer();
+                self.latch_nmi_update();
+                self.dungeon_exit_spotlight_resume_module = true;
+            }
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            return;
+        }
         if self.rom_startup_timing() && self.pending_rom_work.is_pending() {
             match self.pending_rom_work.advance_one_nmi_slice() {
                 RomWorkSlice::Waiting => {}
@@ -8389,6 +8436,22 @@ impl ZeldaState {
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                 }
+                RomWorkSlice::Complete(
+                    RomWorkContinuation::FinishDungeonExitSpotlightIteration,
+                ) => {
+                    // Module0F has returned through LinkOam_Main and the normal
+                    // game-loop suffix. Publish its DMA sources and release the
+                    // software NMI latch at the measured boundary.
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    if self.game_state.frame.main_module == 15
+                        && rom_dungeon_exit_spotlight_table_needs_entry_slice(
+                            self.game_state.display.spotlight_hdma.window_radius(),
+                        )
+                    {
+                        self.dungeon_exit_spotlight_table_delay = 2;
+                    }
+                }
             }
             // The original ROM returns to the NMI boundary after the final
             // main-thread work slice. Attract loaders and item graphics both
@@ -8397,7 +8460,10 @@ impl ZeldaState {
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
-        if self.rom_startup_timing() && run_what & crate::RUN_MAIN != 0 {
+        if self.rom_startup_timing()
+            && run_what & crate::RUN_MAIN != 0
+            && !self.dungeon_exit_spotlight_resume_module
+        {
             self.nmi_read_joypads(input);
             self.joypad_sampled_before_main = true;
         }
@@ -10007,7 +10073,9 @@ impl ZeldaState {
         // set through `module_main_routing` so `Module0E_Interface` skips its
         // sprite/Link update, then rotates below.
         let hold_core = self.dialogue_fast_forward_hold_active;
-        if !hold_core {
+        let resume_dungeon_exit_spotlight =
+            std::mem::take(&mut self.dungeon_exit_spotlight_resume_module);
+        if !hold_core && !resume_dungeon_exit_spotlight {
             self.increment_frame_counter();
             self.replay_trace_ram_watch("game-loop-after-frame-counter");
             self.clear_oam_buffer();

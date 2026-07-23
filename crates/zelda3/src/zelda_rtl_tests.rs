@@ -3329,6 +3329,22 @@ fn item_receipt_gfx_14_holds_the_four_snes9x_observed_nmi_slices() {
 }
 
 #[test]
+fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
+    assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x7e));
+    assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x77));
+    assert!(!rom_dungeon_exit_spotlight_table_needs_entry_slice(0x70));
+
+    let mut work = PendingRomWork::schedule(
+        RomWorkContinuation::FinishDungeonExitSpotlightIteration,
+        DUNGEON_EXIT_SPOTLIGHT_SUFFIX_NMI_SLICES,
+    );
+    assert_eq!(
+        work.advance_one_nmi_slice(),
+        RomWorkSlice::Complete(RomWorkContinuation::FinishDungeonExitSpotlightIteration)
+    );
+}
+
+#[test]
 fn world_map_fade_publishes_the_previous_scanout_snapshot() {
     assert!(!rom_attract_world_map_display_is_one_frame_deferred(20, 0, 1, 3));
     assert!(rom_attract_world_map_display_is_one_frame_deferred(20, 0, 1, 4));

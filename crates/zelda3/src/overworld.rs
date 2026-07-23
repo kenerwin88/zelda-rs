@@ -2414,6 +2414,7 @@ impl ZeldaState {
             .set_direction_and_last_direction(dir);
         self.link_handle_moving_animation_full_long_entry();
         self.link_oam_main();
+        self.schedule_dungeon_exit_spotlight_iteration_return();
     }
 
     pub(super) fn Dungeon_PrepExitWithSpotlight(&mut self) {
