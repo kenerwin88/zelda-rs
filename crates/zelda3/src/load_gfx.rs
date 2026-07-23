@@ -3479,7 +3479,7 @@ impl ZeldaState {
         self.set_spotlight_window_radius(next);
         if next == SPOTLIGHT_GOAL[idx] {
             if self.rom_startup_timing()
-                && rom_dungeon_landing_wipe_is_active(
+                && rom_spotlight_goal_transition_waits_for_iteration_return(
                     self.game_state.frame.main_module,
                     self.game_state.frame.submodule,
                 )

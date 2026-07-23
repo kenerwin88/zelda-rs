@@ -336,13 +336,14 @@ const fn rom_dungeon_exit_entry_scroll_publication_is_live(
 }
 
 const fn rom_display_snapshot_is_one_frame_deferred(main_module: u8, submodule: u8) -> bool {
-    // Module 0x0F (dungeon-exit spotlight close): the ROM's main thread authors
-    // the shrinking window HDMA table (and the final OAM state) during frame N,
-    // but HDMA/OAM-DMA consume it on frame N+1's scanout — Snes9x displays the
-    // previous frame's state throughout the close (route frames 14661..14699:
-    // the departed bed-sheet ancilla stays visible one extra frame and the
-    // circle lags rust's same-frame table by one step).
-    rom_dungeon_landing_wipe_is_active(main_module, submodule) || main_module == 0x0f
+    // Spotlight circle tables are authored by the interruptible main thread
+    // during frame N, then consumed by HDMA on frame N+1's scanout. Snes9x
+    // shows the previous table throughout both the dungeon-exit close and the
+    // overworld-entry open; their measured return slices publish the completed
+    // table on the following host frame.
+    rom_dungeon_landing_wipe_is_active(main_module, submodule)
+        || main_module == 0x0f
+        || (main_module == 0x10 && submodule == 1)
 }
 
 const fn rom_attract_world_map_display_is_one_frame_deferred(
@@ -466,7 +467,7 @@ const fn rom_item_receipt_graphics_nmi_slices(gfx: u8) -> u8 {
     }
 }
 
-const DUNGEON_EXIT_SPOTLIGHT_SUFFIX_NMI_SLICES: u8 = 1;
+const SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES: u8 = 1;
 const PRE_OVERWORLD_PROPERTIES_NMI_SLICES: u8 = 40;
 const PRE_OVERWORLD_OVERLAYS_NMI_SLICES: u8 = 6;
 const PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES: u8 = 17;
@@ -509,7 +510,7 @@ enum RomWorkContinuation {
     FinishAttractMaidenWarp,
     FinishAttractEndOfStory,
     FinishItemReceiptGraphics,
-    FinishDungeonExitSpotlightIteration,
+    FinishSpotlightIteration,
     FinishPreOverworldProperties {
         overworld_screen: u8,
         animated_tiles: u8,
@@ -565,6 +566,14 @@ impl PendingRomWork {
 
 const fn rom_dungeon_landing_wipe_is_active(main_module: u8, submodule: u8) -> bool {
     main_module == 7 && submodule == 15
+}
+
+const fn rom_spotlight_goal_transition_waits_for_iteration_return(
+    main_module: u8,
+    submodule: u8,
+) -> bool {
+    rom_dungeon_landing_wipe_is_active(main_module, submodule)
+        || (main_module == 16 && submodule == 1)
 }
 
 const fn rom_dialogue_initialization_nmi_slices(
@@ -7227,14 +7236,14 @@ impl ZeldaState {
         self.rom_startup_timing
     }
 
-    pub(super) fn schedule_dungeon_exit_spotlight_iteration_return(&mut self) {
+    pub(super) fn schedule_spotlight_iteration_return(&mut self) {
         if !self.rom_startup_timing() {
             return;
         }
         debug_assert!(!self.pending_rom_work.is_pending());
         self.pending_rom_work = PendingRomWork::schedule(
-            RomWorkContinuation::FinishDungeonExitSpotlightIteration,
-            DUNGEON_EXIT_SPOTLIGHT_SUFFIX_NMI_SLICES,
+            RomWorkContinuation::FinishSpotlightIteration,
+            SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES,
         );
     }
 
@@ -7583,7 +7592,7 @@ impl ZeldaState {
                 self.game_state.frame.submodule,
                 self.game_state.display.spotlight_hdma.window_radius(),
                 self.pending_rom_work.continuation
-                    == Some(RomWorkContinuation::FinishDungeonExitSpotlightIteration),
+                    == Some(RomWorkContinuation::FinishSpotlightIteration),
             );
         if std::env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
             && (snapshot_frame.main_module == 20 || self.game_state.frame.main_module == 20)
@@ -8529,12 +8538,15 @@ impl ZeldaState {
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                 }
-                RomWorkSlice::Complete(
-                    RomWorkContinuation::FinishDungeonExitSpotlightIteration,
-                ) => {
-                    // Module0F has returned through LinkOam_Main and the normal
-                    // game-loop suffix. Publish its DMA sources and release the
-                    // software NMI latch at the measured boundary.
+                RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration) => {
+                    // The opening or closing iris has returned through
+                    // LinkOam_Main and the normal game-loop suffix. Publish its
+                    // DMA sources and release the software NMI latch at the
+                    // measured boundary.
+                    if self.iris_spotlight_goal_transition_pending {
+                        self.iris_spotlight_goal_transition_pending = false;
+                        self.complete_iris_spotlight_goal_transition();
+                    }
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                     if self.game_state.frame.main_module == 15

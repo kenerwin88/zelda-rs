@@ -3350,13 +3350,19 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     ));
 
     let mut work = PendingRomWork::schedule(
-        RomWorkContinuation::FinishDungeonExitSpotlightIteration,
-        DUNGEON_EXIT_SPOTLIGHT_SUFFIX_NMI_SLICES,
+        RomWorkContinuation::FinishSpotlightIteration,
+        SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES,
     );
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(RomWorkContinuation::FinishDungeonExitSpotlightIteration)
+        RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration)
     );
+    assert!(rom_spotlight_goal_transition_waits_for_iteration_return(
+        16, 1,
+    ));
+    assert!(!rom_spotlight_goal_transition_waits_for_iteration_return(
+        16, 0,
+    ));
 }
 
 #[test]
@@ -3525,6 +3531,8 @@ fn dungeon_landing_wipe_publishes_display_memory_at_the_following_nmi() {
     assert!(rom_display_memory_publication_is_deferred(7, 15, false));
     assert!(!rom_display_memory_publication_is_deferred(7, 14, false));
     assert!(rom_display_snapshot_is_one_frame_deferred(7, 15));
+    assert!(rom_display_snapshot_is_one_frame_deferred(16, 1));
+    assert!(!rom_display_snapshot_is_one_frame_deferred(16, 0));
 
     let mut state = ZeldaState::new();
     state.set_main_module(7);
