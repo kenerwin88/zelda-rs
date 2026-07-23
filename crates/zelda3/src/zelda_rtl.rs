@@ -543,6 +543,7 @@ const PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES: u8 = 17;
 const WORLD_MAP_LIGHT_LOAD_NMI_SLICES: u8 = 5;
 const OVERWORLD_AUX_GFX_LOAD_NMI_SLICES: u8 = 12;
 const OVERWORLD_MAP_AND_SPRITE_GFX_LOAD_NMI_SLICES: u8 = 15;
+const OVERWORLD_SPRITE_RELOAD_TAIL_NMI_SLICES: u8 = 4;
 const DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START: usize = 221;
 
 const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(radius: u16) -> bool {
@@ -587,6 +588,7 @@ enum RomWorkContinuation {
     FinishPreOverworldScreenBuild,
     FinishOverworldAuxGraphics,
     FinishOverworldMapAndSpriteGraphics,
+    FinishOverworldSpriteReloadTail,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2123,6 +2125,15 @@ pub struct ZeldaState {
     pub(crate) dialogue_scroll_completion_pending: Option<Vec<u16>>,
     #[serde(skip)]
     pub(crate) dialogue_scroll_completion_staged: Option<Vec<u16>>,
+    /// One scanout of pre-transition BG scroll provenance. The ROM is still
+    /// inside the long sprite reload while Rust's atomic simulation has
+    /// already authored the next NMI scroll copies.
+    #[serde(skip)]
+    overworld_transition_scroll_hold: Option<[u16; 8]>,
+    #[serde(skip)]
+    overworld_transition_scroll_hold_pending: Option<[u16; 8]>,
+    #[serde(skip)]
+    overworld_transition_scroll_hold_staged: Option<[u16; 8]>,
     pub dma: DmaState,
     pub frame_ctr_dbg: u32,
     #[serde(default)]
@@ -7068,6 +7079,9 @@ impl ZeldaState {
             dialogue_scroll_completion_text: None,
             dialogue_scroll_completion_pending: None,
             dialogue_scroll_completion_staged: None,
+            overworld_transition_scroll_hold: None,
+            overworld_transition_scroll_hold_pending: None,
+            overworld_transition_scroll_hold_staged: None,
             dialogue_scroll_ran_this_frame: false,
             dialogue_scroll_stale_scanout: false,
             dma: DmaState::new(),
@@ -7458,6 +7472,18 @@ impl ZeldaState {
         );
     }
 
+    pub(super) fn stage_overworld_transition_scroll_scanout_hold(&mut self) {
+        self.overworld_transition_scroll_hold_pending =
+            Some(std::array::from_fn(|index| {
+                let layer = &self.ppu.bg_layer[index / 2];
+                if index & 1 == 0 {
+                    layer.h_scroll
+                } else {
+                    layer.v_scroll
+                }
+            }));
+    }
+
     pub(super) fn capture_display_snapshot(&mut self) {
         self.ppu.refresh_brightness_cache();
         // The upcoming NMI may latch a fresh pre-upload CGRAM image; the one
@@ -7475,6 +7501,10 @@ impl ZeldaState {
         self.dialogue_scroll_completion_text = self.dialogue_scroll_completion_staged.take();
         self.dialogue_scroll_completion_staged =
             std::mem::take(&mut self.dialogue_scroll_completion_pending);
+        self.overworld_transition_scroll_hold =
+            self.overworld_transition_scroll_hold_staged.take();
+        self.overworld_transition_scroll_hold_staged =
+            self.overworld_transition_scroll_hold_pending.take();
         let frame = self.game_state.frame;
         if std::env::var_os("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some()
             && (5640..=5700).contains(&self.frame_ctr_dbg)
@@ -7746,6 +7776,12 @@ impl ZeldaState {
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
+        if let Some(scroll) = self.overworld_transition_scroll_hold {
+            for (index, layer) in self.ppu.bg_layer.iter_mut().enumerate() {
+                layer.h_scroll = scroll[index * 2];
+                layer.v_scroll = scroll[index * 2 + 1];
+            }
+        }
         if publish_live_dungeon_exit_scroll {
             for (shown, live) in self.ppu.bg_layer.iter_mut().zip(&display.ppu.bg_layer) {
                 shown.h_scroll = live.h_scroll;
@@ -8782,6 +8818,18 @@ impl ZeldaState {
                     self.capture_display_snapshot();
                     self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
                     self.complete_module09_load_new_map_and_gfx();
+                    self.complete_module09_overworld_after_submodule();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    return;
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishOverworldSpriteReloadTail) => {
+                    // The long sprite reset/load loop is interrupted in the
+                    // ROM, but its transition-control tail and Module09 caller
+                    // suffix resume only after this vblank.
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    self.complete_module09_load_new_sprites_after_reload();
                     self.complete_module09_overworld_after_submodule();
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();

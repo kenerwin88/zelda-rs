@@ -860,6 +860,32 @@ impl ZeldaState {
         self.replay_trace_submodule("module09-exit");
     }
 
+    fn publish_module09_transition_sprites_without_scroll(&mut self) {
+        let bg2x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
+        let bg2y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
+        let bg1x = self.game_state.display.ppu_scroll_copy.bg1_h_copy2();
+        let bg1y = self.game_state.display.ppu_scroll_copy.bg1_v_copy2();
+        let offx = self.game_state.world.scroll.bg1_x_offset();
+        let offy = self.game_state.world.scroll.bg1_y_offset();
+
+        // Sprite coordinates use the offset copies, but the ROM has not
+        // returned to Module09's caller suffix yet, so keep the live PPU
+        // scroll publication at the preceding scanout values.
+        self.set_bg2_x(bg2x.wrapping_add(offx));
+        self.set_bg2_y(bg2y.wrapping_add(offy));
+        self.set_bg1_x(bg1x.wrapping_add(offx));
+        self.set_bg1_y(bg1y.wrapping_add(offy));
+        self.sprite_main();
+        self.set_bg2_x(bg2x);
+        self.set_bg2_y(bg2y);
+        self.set_bg1_x(bg1x);
+        self.set_bg1_y(bg1y);
+
+        self.link_oam_main();
+        self.hud_refill_logic();
+        self.OverworldOverlay_HandleRain();
+    }
+
     pub(super) fn Module09_00_PlayerControl(&mut self) {
         self.replay_trace_submodule("module09-player-entry");
         if (self
@@ -3798,6 +3824,30 @@ impl ZeldaState {
         }
         self.sprite_overworld_reload_all_just_load();
         self.memorized_tile_mut().clear_count();
+        if !self.rom_startup_timing()
+            && self.game_state.inventory.save_progress.progress_indicator() >= 2
+            && self.game_state.frame.submodule != 18
+        {
+            self.Overworld_SetFixedColAndScroll();
+        }
+        if self.rom_startup_timing() {
+            // The sprite reset/load work begins while the ROM is still in
+            // submodule 4 and is interrupted by several vblanks. Its rebuilt
+            // sprite set must replace the stale OAM publication on this frame,
+            // but the transition-control tail does not return until four more
+            // NMI boundaries have passed.
+            self.publish_module09_transition_sprites_without_scroll();
+            self.stage_overworld_transition_scroll_scanout_hold();
+            self.pending_rom_work = PendingRomWork::schedule(
+                RomWorkContinuation::FinishOverworldSpriteReloadTail,
+                OVERWORLD_SPRITE_RELOAD_TAIL_NMI_SLICES,
+            );
+            return;
+        }
+        self.complete_module09_load_new_sprites_after_reload();
+    }
+
+    pub(super) fn complete_module09_load_new_sprites_after_reload(&mut self) {
         if self.game_state.inventory.save_progress.progress_indicator() >= 2
             && self.game_state.frame.submodule != 18
         {
