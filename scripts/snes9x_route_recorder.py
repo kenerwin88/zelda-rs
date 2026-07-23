@@ -535,7 +535,14 @@ def compare_input_command(
         "--input-script",
         str(input_path),
     ]
-    if not boundary.get("reset_start", False):
+    if boundary.get("reset_start", False):
+        command.extend(
+            [
+                "--load-sram",
+                str(project / boundary["sram_path"]),
+            ]
+        )
+    else:
         pairings = load_pairings(project)
         pairing = pairings["boundaries"].get(str(boundary_id))
         if pairing is None:

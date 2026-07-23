@@ -243,6 +243,29 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
             self.assertIn("native", command)
             self.assertIn("--scan-all", command)
 
+    def test_reset_comparison_loads_the_recorded_boundary_sram(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = self.project(root)
+            manifest = MODULE.load_manifest(project)
+            manifest["takes"][0]["start_boundary"] = 0
+            (project / "manifest.json").write_text(json.dumps(manifest))
+
+            command = MODULE.compare_command(
+                binary=Path("zelda3"),
+                core=Path("core.dylib"),
+                rom=Path("rom.sfc"),
+                project=project,
+                take_id=0,
+                session_dir=root / "comparison",
+            )
+
+            load_index = command.index("--load-sram")
+            self.assertEqual(
+                command[load_index + 1],
+                str(project / "boundaries/0000/sram.bin"),
+            )
+
     def test_only_reset_or_paired_nonempty_takes_are_matrix_comparable(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
