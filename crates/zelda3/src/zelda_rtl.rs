@@ -7594,6 +7594,18 @@ impl ZeldaState {
                 self.pending_rom_work.continuation
                     == Some(RomWorkContinuation::FinishSpotlightIteration),
             );
+        // Module 10 defers the iris control snapshot by one frame, but animated
+        // BG tiles still come from the current frame's pre-NMI VRAM. The live
+        // VRAM below is post-NMI and would expose a newly selected animation
+        // phase one scanout early at the exact Main_PrepSpritesForNmi boundary.
+        let current_pre_nmi_animated_bg_vram = (self.game_state.frame.main_module == 0x10
+            && self.game_state.frame.submodule == 1)
+            .then(|| {
+                self.deferred_display_snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.ppu.vram[0x3c00..0x3e00].to_vec())
+            })
+            .flatten();
         if std::env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
             && (snapshot_frame.main_module == 20 || self.game_state.frame.main_module == 20)
         {
@@ -7693,6 +7705,9 @@ impl ZeldaState {
         }
         if !retain_previous_nmi_display_memory {
             self.ppu.vram.clone_from(&display.ppu.vram);
+            if let Some(animated_bg_vram) = current_pre_nmi_animated_bg_vram {
+                self.ppu.vram[0x3c00..0x3e00].copy_from_slice(&animated_bg_vram);
+            }
             if let Some(previous_link_obj_vram) = previous_link_obj_vram {
                 self.ppu.vram[0x4000..0x4400].copy_from_slice(&previous_link_obj_vram);
             }
@@ -8567,14 +8582,17 @@ impl ZeldaState {
                         overworld_screen,
                         animated_tiles,
                     );
+                    self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                 }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishPreOverworldOverlays) => {
                     self.complete_pre_overworld_load_overlays();
+                    self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                 }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishPreOverworldScreenBuild) => {
                     self.complete_pre_overworld_screen_build();
+                    self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                 }
             }
