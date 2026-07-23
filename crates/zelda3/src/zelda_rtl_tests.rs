@@ -3692,6 +3692,19 @@ fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
 }
 
 #[test]
+fn initial_overworld_screen_map_publishes_the_isolated_live_bg1_page() {
+    assert!(rom_overworld_initial_screen_bg1_scroll_is_live(
+        9, 3, 9, 3, 0x0300, 0x00db, 0x0300, 0x031e, 0x0000, 0x00db, 0x0300, 0x031e,
+    ));
+    assert!(!rom_overworld_initial_screen_bg1_scroll_is_live(
+        9, 3, 9, 3, 0x0300, 0x00db, 0x0300, 0x031e, 0x0000, 0x00db, 0x0000, 0x031e,
+    ));
+    assert!(!rom_overworld_initial_screen_bg1_scroll_is_live(
+        9, 4, 9, 4, 0x0300, 0x00db, 0x0300, 0x031e, 0x0000, 0x00db, 0x0300, 0x031e,
+    ));
+}
+
+#[test]
 fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     assert!(rom_display_oam_publication_is_deferred(7, 0, false, false));
     assert!(rom_display_oam_publication_is_deferred(4, 3, true, false));

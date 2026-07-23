@@ -428,6 +428,35 @@ const fn rom_overworld_bad_weather_scroll_is_live(
         && snapshot_bg2_v == live_bg2_v
 }
 
+const fn rom_overworld_initial_screen_bg1_scroll_is_live(
+    snapshot_main_module: u8,
+    snapshot_submodule: u8,
+    live_main_module: u8,
+    live_submodule: u8,
+    snapshot_bg1_h: u16,
+    snapshot_bg1_v: u16,
+    snapshot_bg2_h: u16,
+    snapshot_bg2_v: u16,
+    live_bg1_h: u16,
+    live_bg1_v: u16,
+    live_bg2_h: u16,
+    live_bg2_v: u16,
+) -> bool {
+    // Interrupt_NMI always runs WritePpuRegisters even when the $0710 software
+    // latch suppresses NMI_DoUpdates. During the initial screen-map load, the
+    // interrupted Module09 suffix has authored a new BG1 page while BG2 still
+    // holds the transition camera. Snes9x records that isolated BG1HOFS write
+    // at V=258 ($cf00 -> $d000 on the measured west-to-east boundary), and its
+    // returned scanout uses the new BG1 page with the preceding VRAM image.
+    snapshot_main_module == 9
+        && snapshot_submodule == 3
+        && live_main_module == 9
+        && live_submodule == 3
+        && (snapshot_bg1_h != live_bg1_h || snapshot_bg1_v != live_bg1_v)
+        && snapshot_bg2_h == live_bg2_h
+        && snapshot_bg2_v == live_bg2_v
+}
+
 const fn rom_display_snapshot_is_one_frame_deferred(main_module: u8, submodule: u8) -> bool {
     // The dungeon-exit entry setup authors its first circle before NMI enables
     // the window controls, so retain the preceding display once for submodule
@@ -7820,6 +7849,21 @@ impl ZeldaState {
                 self.ppu.bg_layer[1].h_scroll,
                 self.ppu.bg_layer[1].v_scroll,
             );
+        let publish_live_overworld_initial_screen_bg1_scroll =
+            rom_overworld_initial_screen_bg1_scroll_is_live(
+                snapshot_frame.main_module,
+                snapshot_frame.submodule,
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+                display.ppu.bg_layer[0].h_scroll,
+                display.ppu.bg_layer[0].v_scroll,
+                display.ppu.bg_layer[1].h_scroll,
+                display.ppu.bg_layer[1].v_scroll,
+                self.ppu.bg_layer[0].h_scroll,
+                self.ppu.bg_layer[0].v_scroll,
+                self.ppu.bg_layer[1].h_scroll,
+                self.ppu.bg_layer[1].v_scroll,
+            );
         // Module 10 defers the iris control snapshot by one frame, but animated
         // BG tiles still come from the current frame's pre-NMI VRAM. The live
         // VRAM below is post-NMI and would expose a newly selected animation
@@ -7894,7 +7938,9 @@ impl ZeldaState {
                 shown.v_scroll = live.v_scroll;
             }
         }
-        if publish_live_overworld_bad_weather_scroll {
+        if publish_live_overworld_bad_weather_scroll
+            || publish_live_overworld_initial_screen_bg1_scroll
+        {
             self.ppu.bg_layer[0].h_scroll = display.ppu.bg_layer[0].h_scroll;
             self.ppu.bg_layer[0].v_scroll = display.ppu.bg_layer[0].v_scroll;
         }
