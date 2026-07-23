@@ -189,6 +189,50 @@ fn value_to_give_item_to_misc(item: u8) -> u8 {
 }
 
 impl ZeldaState {
+    /// Execute the cartridge's `$8dba71` random-number arithmetic after the
+    /// caller has supplied the value returned by the PPU `$213c` read.
+    ///
+    /// The ROM does `LDA $213c; ADC $1a; ADC $0fa1` without clearing carry.
+    /// The C port's software LFSR is deterministic, but it is not the code in
+    /// the cartridge. Timing-sensitive call boundaries can use this helper
+    /// once their effective PPU read and incoming carry have been measured.
+    #[track_caller]
+    pub(super) fn get_random_number_from_ppu_read(
+        &mut self,
+        ppu_h_counter_read: u8,
+        carry_in: bool,
+    ) -> (u8, bool) {
+        fn adc8(left: u8, right: u8, carry: bool) -> (u8, bool) {
+            let sum = u16::from(left) + u16::from(right) + u16::from(carry);
+            (sum as u8, sum > 0xff)
+        }
+
+        let before = self.game_state.world.region.rng_seed();
+        let frame_counter = self.game_state.frame.frame_counter;
+        let (with_frame_counter, carry) = adc8(ppu_h_counter_read, frame_counter, carry_in);
+        let (result, carry_out) = adc8(with_frame_counter, before, carry);
+        self.set_rng_seed(result);
+
+        if std::env::var_os("ZELDA3_TRACE_RNG").is_some() {
+            let loc = std::panic::Location::caller();
+            eprintln!(
+                "R rom-rng fc={} before=0x{:02x} ppu=0x{:02x} carry_in={} after=0x{:02x} carry_out={} site={}:{} link=0x{:04x},0x{:04x}",
+                frame_counter,
+                before,
+                ppu_h_counter_read,
+                u8::from(carry_in),
+                result,
+                u8::from(carry_out),
+                loc.file(),
+                loc.line(),
+                self.game_state.player.follower_link.x(),
+                self.game_state.player.follower_link.y(),
+            );
+        }
+
+        (result, carry_out)
+    }
+
     #[track_caller]
     pub(super) fn get_random_number(&mut self) -> u8 {
         let before = self.game_state.world.region.rng_seed();

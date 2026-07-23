@@ -76,6 +76,36 @@ fn sprite_func22_sets_transition_state_and_advances_rng() {
 }
 
 #[test]
+fn cartridge_random_adc_preserves_the_rom_carry_chain() {
+    let mut s = fresh_state();
+
+    s.set_frame_counter(0x20);
+    s.set_rng_seed(0);
+    assert_eq!(s.get_random_number_from_ppu_read(0xbe, false), (0xde, false));
+
+    s.set_frame_counter(0x99);
+    assert_eq!(s.get_random_number_from_ppu_read(0xbe, false), (0x36, true));
+    assert_eq!(s.get_random_number_from_ppu_read(0xe2, true), (0xb3, false));
+}
+
+#[test]
+fn outdoor_powder_secret_uses_the_cartridge_ppu_roll() {
+    let mut s = fresh_state();
+    let parent = 14;
+    s.set_frame_counter(0x99);
+    s.set_rng_seed(0xde);
+    s.dungeon_secret_scratch_mut().set_pending_kind(4);
+
+    s.sprite_spawn_secret(parent);
+
+    assert_eq!(s.game_state.world.region.rng_seed(), 0xb3);
+    assert!(
+        (0..16).all(|slot| s.sprite_slot_view(slot).state() == 0),
+        "the cartridge's b=22 table entry is empty"
+    );
+}
+
+#[test]
 fn throwable_scenery_transmute_if_valid_only_transmutes_throwable_scenery() {
     let k = 5;
 
