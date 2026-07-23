@@ -1287,8 +1287,10 @@ impl GameTexture {
 
 struct ModernGpuTarget {
     texture: wgpu::Texture,
+    scanout_history_texture: wgpu::Texture,
     view: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
+    has_scanout_history: bool,
 }
 
 struct ModernSourceExtractionCache {
@@ -1403,6 +1405,20 @@ fn create_modern_gpu_target(
             | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
+    let scanout_history_texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("modern_gpu_scanout_history"),
+        size: wgpu::Extent3d {
+            width: 256,
+            height: 224,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
     let sampler = create_presentation_sampler(device, presentation, "modern_gpu_blit");
     let bind_group = create_blit_bind_group(
@@ -1415,9 +1431,63 @@ fn create_modern_gpu_target(
     );
     ModernGpuTarget {
         texture,
+        scanout_history_texture,
         view,
         bind_group,
+        has_scanout_history: false,
     }
+}
+
+/// Rows that scanned out before an active-display forced-blank transition.
+///
+/// The NMI may replace VRAM/source state after these rows are already visible,
+/// so they must retain the preceding physical surface instead of being
+/// reconstructed from the post-NMI asset state.
+fn active_display_history_rows(frame: &modern_frame::ModernFrame) -> Option<(u32, u32)> {
+    let start = u32::from(frame.forced_blank_scanlines).min(224);
+    let end = u32::from(frame.forced_blank_from_scanline?).min(224);
+    (start < end).then_some((start, end - start))
+}
+
+fn copy_modern_gpu_target_rows(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    source: &wgpu::Texture,
+    destination: &wgpu::Texture,
+    start_row: u32,
+    row_count: u32,
+    label: &'static str,
+) {
+    let mut encoder =
+        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+    encoder.copy_texture_to_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: source,
+            mip_level: 0,
+            origin: wgpu::Origin3d {
+                x: 0,
+                y: start_row,
+                z: 0,
+            },
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyTextureInfo {
+            texture: destination,
+            mip_level: 0,
+            origin: wgpu::Origin3d {
+                x: 0,
+                y: start_row,
+                z: 0,
+            },
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::Extent3d {
+            width: 256,
+            height: row_count,
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit([encoder.finish()]);
 }
 
 /// Creates the game-frame input texture, its bind group layout, and bind group.
@@ -2948,6 +3018,24 @@ impl FrameRenderer {
         }
         self.ensure_modern_gpu_target(format);
 
+        let history_rows = active_display_history_rows(frame).filter(|_| {
+            self.modern_gpu_target
+                .as_ref()
+                .is_some_and(|target| target.has_scanout_history)
+        });
+        if let Some((start_row, row_count)) = history_rows {
+            let target = self.modern_gpu_target.as_ref().expect("target built above");
+            copy_modern_gpu_target_rows(
+                &self.device,
+                &self.queue,
+                &target.texture,
+                &target.scanout_history_texture,
+                start_row,
+                row_count,
+                "modern_gpu_save_active_scanout",
+            );
+        }
+
         let compositor = self.modern_gpu.as_ref().expect("compositor built above");
         let target = self.modern_gpu_target.as_ref().expect("target built above");
         compositor.render(
@@ -2958,6 +3046,21 @@ impl FrameRenderer {
             sprite_cells,
             &target.texture,
         );
+        if let Some((start_row, row_count)) = history_rows {
+            copy_modern_gpu_target_rows(
+                &self.device,
+                &self.queue,
+                &target.scanout_history_texture,
+                &target.texture,
+                start_row,
+                row_count,
+                "modern_gpu_restore_active_scanout",
+            );
+        }
+        self.modern_gpu_target
+            .as_mut()
+            .expect("target rendered above")
+            .has_scanout_history = true;
 
         self.present_modern_gpu_target_to_surface()
     }
@@ -3038,6 +3141,10 @@ impl FrameRenderer {
             return Ok(render);
         }
 
+        self.modern_gpu_target
+            .as_mut()
+            .expect("target rendered above")
+            .has_scanout_history = true;
         self.present_modern_gpu_target_to_surface()?;
         Ok(render)
     }
@@ -3241,6 +3348,10 @@ impl FrameRenderer {
         if rendered {
             stats.gpu_prefinal_base_frames += 1;
             stats.gpu_screen_builder_frames += 1;
+            self.modern_gpu_target
+                .as_mut()
+                .expect("target rendered above")
+                .has_scanout_history = true;
             self.present_modern_gpu_target_to_surface()?;
         }
         let present_us = Self::modern_live_timing_mark(&mut timing_last);
@@ -3321,6 +3432,10 @@ impl FrameRenderer {
                 depth_or_array_layers: 1,
             },
         );
+        self.modern_gpu_target
+            .as_mut()
+            .expect("target rendered above")
+            .has_scanout_history = true;
         self.present_modern_gpu_target_to_surface()
     }
 
@@ -3404,6 +3519,25 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use std::{fs, process};
+
+    #[test]
+    fn active_display_history_rows_preserve_only_the_visible_gap() {
+        let mut frame = modern_frame::ModernFrame::empty();
+        frame.forced_blank_scanlines = 2;
+        frame.forced_blank_from_scanline = Some(7);
+
+        assert_eq!(active_display_history_rows(&frame), Some((2, 5)));
+    }
+
+    #[test]
+    fn active_display_history_rows_ignore_empty_or_missing_ranges() {
+        let mut frame = modern_frame::ModernFrame::empty();
+        assert_eq!(active_display_history_rows(&frame), None);
+
+        frame.forced_blank_scanlines = 7;
+        frame.forced_blank_from_scanline = Some(7);
+        assert_eq!(active_display_history_rows(&frame), None);
+    }
 
     fn temp_modern_asset_root(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!("z3rs-{name}-{}", process::id()));
