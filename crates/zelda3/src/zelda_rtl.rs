@@ -7683,6 +7683,12 @@ impl ZeldaState {
         );
         let previous_link_obj_vram =
             retain_previous_link_obj_vram.then(|| self.ppu.vram[0x4000..0x4400].to_vec());
+        let previous_active_play_animated_bg_vram =
+            rom_active_player_control_is_running(
+                snapshot_frame.main_module,
+                snapshot_frame.submodule,
+            )
+            .then(|| self.ppu.vram[0x3c00..0x3e00].to_vec());
         // During a message-line scroll the ROM's NMI re-uploads the VWF text
         // buffer every frame while the copy is still in flight; Snes9x's
         // scanout shows the generation uploaded at the PREVIOUS vblank.
@@ -7717,6 +7723,9 @@ impl ZeldaState {
         if !retain_previous_nmi_display_memory {
             self.ppu.vram.clone_from(&display.ppu.vram);
             if let Some(animated_bg_vram) = current_pre_nmi_animated_bg_vram {
+                self.ppu.vram[0x3c00..0x3e00].copy_from_slice(&animated_bg_vram);
+            }
+            if let Some(animated_bg_vram) = previous_active_play_animated_bg_vram {
                 self.ppu.vram[0x3c00..0x3e00].copy_from_slice(&animated_bg_vram);
             }
             if let Some(previous_link_obj_vram) = previous_link_obj_vram {
