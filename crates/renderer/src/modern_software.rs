@@ -1634,6 +1634,18 @@ fn scale_brightness5(c5: i32, brightness: u8) -> i32 {
     (c5.clamp(0, 31) * i32::from(brightness.min(15)) + 7) / 15
 }
 
+/// Snes9x performs half-add in packed RGB565. Its green channel is six bits,
+/// with bit 4 of the SNES five-bit component duplicated into the low bit.
+/// The oracle comparator then collapses that six-bit value back to five bits.
+#[inline]
+fn snes9x_rgb565_half_add_green(primary_g5: i32, second_g5: i32) -> i32 {
+    let expand_green6 = |g5: i32| {
+        let g5 = g5.clamp(0, 31);
+        (g5 << 1) | (g5 >> 4)
+    };
+    (expand_green6(primary_g5) + expand_green6(second_g5)) >> 2
+}
+
 /// Expand a brightness-scaled 5-bit component to 8 bits.
 #[inline]
 fn expand_5bit(c5: i32) -> u8 {
@@ -1965,6 +1977,7 @@ fn finalize_pixel(
         && !frame.subtract_color
         && !frame.half_color;
     if do_math {
+        let primary_green = c[1];
         let (operand, second_real) = if frame.add_subscreen {
             if sub.real[i] {
                 (
@@ -1981,8 +1994,12 @@ fn finalize_pixel(
         } else {
             (fixed, false)
         };
+        let mut second_green = 0;
         for ch in 0..3 {
             let operand = scale_brightness5(operand[ch], frame.brightness);
+            if ch == 1 {
+                second_green = operand;
+            }
             if frame.subtract_color {
                 c[ch] -= operand;
             } else {
@@ -1993,9 +2010,13 @@ fn finalize_pixel(
             }
         }
         if frame.half_color && (second_real || !frame.add_subscreen) {
-            for ch in 0..3 {
-                c[ch] >>= 1;
+            c[0] >>= 1;
+            if frame.subtract_color {
+                c[1] >>= 1;
+            } else {
+                c[1] = snes9x_rgb565_half_add_green(primary_green, second_green);
             }
+            c[2] >>= 1;
         }
     }
     [
@@ -2714,6 +2735,12 @@ mod tests {
         // out8 = 123*15/15 = 123. (The classic shader's low-bit fill makes this 123,
         // not the 120 of the task's no-fill paraphrase.)
         assert_eq!(&out[0..4], &[123, 123, 123, 0xff], "half-add pixel (0,0)");
+    }
+
+    #[test]
+    fn color_math_half_add_matches_snes9x_rgb565_green_rounding() {
+        assert_eq!((20 + 21) >> 1, 20);
+        assert_eq!(snes9x_rgb565_half_add_green(20, 21), 21);
     }
 
     #[test]

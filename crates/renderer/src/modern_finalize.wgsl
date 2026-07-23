@@ -183,6 +183,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         or = scale_brightness5(or, brightness);
         og = scale_brightness5(og, brightness);
         ob = scale_brightness5(ob, brightness);
+        let primary_g = g;
 
         if ((flags & 0x1u) != 0u) {
             r = r - or;
@@ -197,7 +198,16 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let half_color = (flags & 0x2u) != 0u;
         if (half_color && (second_real || !add_subscreen)) {
             r = r >> 1;
-            g = g >> 1;
+            if ((flags & 0x1u) == 0u) {
+                // Snes9x averages packed RGB565 here. Green is expanded to six
+                // bits before the half-add, then its duplicated bit is removed
+                // when the oracle converts the result back to five-bit RGB.
+                let primary_g6 = (primary_g << 1) | (primary_g >> 4);
+                let second_g6 = (og << 1) | (og >> 4);
+                g = (primary_g6 + second_g6) >> 2;
+            } else {
+                g = g >> 1;
+            }
             b = b >> 1;
         }
     }
