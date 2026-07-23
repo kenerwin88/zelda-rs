@@ -3932,37 +3932,110 @@ fn published_one_shot_vcounter_irq_is_repeatable_and_advances_live_state() {
 #[test]
 fn nmi_active_display_overrun_is_classified_by_workload() {
     assert_eq!(
-        nmi_active_display_blank_scanlines_for_pending_work(false, true, 1, false, 0, 0),
-        1
+        nmi_active_display_blanking_for_pending_work(
+            false,
+            false,
+            1,
+            StripeUploadWork {
+                packets: 6,
+                transfer_bytes: 216,
+                fixed_source_packets: 4,
+                vertical_packets: 0,
+            },
+        ),
+        NmiActiveDisplayBlanking {
+            prefix_scanlines: 0,
+            suffix_start_scanline: Some(1),
+        }
     );
     assert_eq!(
-        nmi_active_display_blank_scanlines_for_pending_work(true, true, 1, false, 0, 0),
-        0
+        nmi_active_display_blanking_for_pending_work(
+            true,
+            false,
+            1,
+            StripeUploadWork {
+                packets: 6,
+                transfer_bytes: 216,
+                fixed_source_packets: 4,
+                vertical_packets: 0,
+            },
+        ),
+        NmiActiveDisplayBlanking::default()
     );
     assert_eq!(
-        nmi_active_display_blank_scanlines_for_pending_work(false, false, 1, false, 0, 0),
-        0
+        nmi_active_display_blanking_for_pending_work(
+            false,
+            false,
+            1,
+            StripeUploadWork {
+                packets: 6,
+                transfer_bytes: 228,
+                fixed_source_packets: 0,
+                vertical_packets: 0,
+            },
+        ),
+        NmiActiveDisplayBlanking::default()
     );
     assert_eq!(
-        nmi_active_display_blank_scanlines_for_pending_work(false, true, 2, false, 0, 0),
-        0
+        nmi_active_display_blanking_for_pending_work(
+            false,
+            false,
+            1,
+            StripeUploadWork::default(),
+        ),
+        NmiActiveDisplayBlanking::default()
     );
     assert_eq!(
-        nmi_active_display_blank_scanlines_for_pending_work(false, false, 0, true, 5, 1_936),
-        50
+        nmi_active_display_blanking_for_pending_work(
+            false,
+            true,
+            5,
+            StripeUploadWork {
+                transfer_bytes: 1_936,
+                ..StripeUploadWork::default()
+            },
+        ),
+        NmiActiveDisplayBlanking {
+            prefix_scanlines: 50,
+            suffix_start_scanline: None,
+        }
     );
     assert_eq!(
-        nmi_active_display_blank_scanlines_for_pending_work(false, false, 0, false, 5, 1_936),
-        0
+        nmi_active_display_blanking_for_pending_work(
+            false,
+            false,
+            5,
+            StripeUploadWork {
+                transfer_bytes: 1_936,
+                ..StripeUploadWork::default()
+            },
+        ),
+        NmiActiveDisplayBlanking::default()
     );
     assert_eq!(
-        nmi_active_display_blank_scanlines_for_pending_work(true, false, 0, true, 5, 1_936),
-        0
+        nmi_active_display_blanking_for_pending_work(
+            true,
+            true,
+            5,
+            StripeUploadWork {
+                transfer_bytes: 1_936,
+                ..StripeUploadWork::default()
+            },
+        ),
+        NmiActiveDisplayBlanking::default()
     );
     let mut checkerboard_packet = vec![0x00, 0x10, 0x07, 0xff];
     checkerboard_packet.extend(std::iter::repeat_n(0, 0x800));
     checkerboard_packet.push(0xff);
-    assert_eq!(stripe_upload_transfer_bytes(&checkerboard_packet), 0x800);
+    assert_eq!(
+        stripe_upload_work(&checkerboard_packet),
+        StripeUploadWork {
+            packets: 1,
+            transfer_bytes: 0x800,
+            fixed_source_packets: 0,
+            vertical_packets: 0,
+        }
+    );
 }
 
 #[test]

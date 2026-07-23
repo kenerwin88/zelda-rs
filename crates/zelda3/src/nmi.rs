@@ -77,10 +77,13 @@ impl ZeldaState {
         defer_bg_vram_upload: bool,
     ) {
         let trace_nmi = std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some();
+        self.ppu.forced_blank_from_scanline = None;
+        let forced_blank_at_entry = self.ppu.forced_blank;
+        let mut prior_active_display_blanking = NmiActiveDisplayBlanking::default();
         if trace_nmi {
             let frame = self.game_state.frame;
             eprintln!(
-                "nmi_before host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x} bgload={} forced_blank={} blank_lines_pending={} link_tile_src={:04x} ram0000={:02x}{:02x}{:02x} vram40b0={:04x}",
+                "nmi_before host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x} bgload={} forced_blank={} blank_lines_pending={} blank_from_pending={:?} blank_from_candidate={:?} link_tile_src={:04x} ram0000={:02x}{:02x}{:02x} vram40b0={:04x}",
                 self.frame_ctr_dbg,
                 frame.main_module,
                 frame.submodule,
@@ -91,6 +94,8 @@ impl ZeldaState {
                 self.game_state.display.bg_vram_load_mode,
                 self.ppu.forced_blank,
                 self.nmi_forced_blank_scanlines_pending,
+                self.nmi_forced_blank_from_scanline_pending,
+                self.nmi_active_display_blanking_candidate.suffix_start_scanline,
                 self.live_link_dma_source(LinkDmaSourceSlot::AnimatedTileUpper),
                 self.ram[0x0000],
                 self.ram[0x0001],
@@ -112,26 +117,39 @@ impl ZeldaState {
         }
         if !self.game_state.display.nmi_update_is_latched() {
             let bg_vram_load_mode = self.game_state.display.bg_vram_load_mode;
-            let stripe_transfer_bytes = match bg_vram_load_mode {
-                1 => stripe_upload_transfer_bytes(self.vram_upload_buffer_remaining()),
+            let stripe_work = match bg_vram_load_mode {
+                1 => stripe_upload_work(self.vram_upload_buffer_remaining()),
                 5..=9 => self
                     .assets
                     .as_ref()
                     .and_then(|assets| assets.asset(95 + usize::from(bg_vram_load_mode)))
-                    .map(stripe_upload_transfer_bytes)
-                    .unwrap_or(0),
-                _ => 0,
+                    .map(stripe_upload_work)
+                    .unwrap_or_default(),
+                _ => StripeUploadWork::default(),
             };
-            let blank_scanlines = nmi_active_display_blank_scanlines_for_pending_work(
+            if trace_nmi && bg_vram_load_mode != 0 {
+                eprintln!(
+                    "nmi_workload host={} bgload={} stripe_packets={} stripe_bytes={} stripe_fixed={} stripe_vertical={}",
+                    self.frame_ctr_dbg,
+                    bg_vram_load_mode,
+                    stripe_work.packets,
+                    stripe_work.transfer_bytes,
+                    stripe_work.fixed_source_packets,
+                    stripe_work.vertical_packets,
+                );
+            }
+            let blanking = nmi_active_display_blanking_for_pending_work(
                 self.game_state.display.core_updates_are_disabled(),
-                self.game_state.system_signals.should_update_hud(),
-                self.game_state.display.pending_nmi_subroutine,
                 self.ppu.forced_blank,
                 bg_vram_load_mode,
-                stripe_transfer_bytes,
+                stripe_work,
+            );
+            prior_active_display_blanking = std::mem::replace(
+                &mut self.nmi_active_display_blanking_candidate,
+                blanking,
             );
             self.nmi_forced_blank_scanlines_pending =
-                self.nmi_forced_blank_scanlines_pending.max(blank_scanlines);
+                self.nmi_forced_blank_scanlines_pending.max(blanking.prefix_scanlines);
             self.latch_nmi_update();
             self.nmi_do_updates_from(oam_dma_source, defer_bg_vram_upload);
             if !joypad_already_sampled {
@@ -173,13 +191,22 @@ impl ZeldaState {
         if !thread_holds_registers {
             self.write_ppu_registers();
         }
+        if !forced_blank_at_entry && self.ppu.forced_blank {
+            if let Some(start) = prior_active_display_blanking.suffix_start_scanline {
+                self.ppu.forced_blank_from_scanline = Some(start);
+                self.nmi_forced_blank_from_scanline_pending = Some(
+                    self.nmi_forced_blank_from_scanline_pending
+                        .map_or(start, |pending| pending.min(start)),
+                );
+            }
+        }
         // After all CHR DMAs have settled this frame, refresh the OBJ CHR logical
         // sources by content hash so the off-VRAM sprite path resolves live cells.
         self.rehash_streamed_obj_sources();
         if trace_nmi {
             let frame = self.game_state.frame;
             eprintln!(
-                "nmi_after host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x} bgload={} forced_blank={} blank_lines_pending={} link_tile_src={:04x} vram40b0={:04x}",
+                "nmi_after host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x} bgload={} forced_blank={} blank_lines_pending={} blank_from_live={:?} blank_from_pending={:?} blank_from_candidate={:?} link_tile_src={:04x} vram40b0={:04x}",
                 self.frame_ctr_dbg,
                 frame.main_module,
                 frame.submodule,
@@ -190,6 +217,9 @@ impl ZeldaState {
                 self.game_state.display.bg_vram_load_mode,
                 self.ppu.forced_blank,
                 self.nmi_forced_blank_scanlines_pending,
+                self.ppu.forced_blank_from_scanline,
+                self.nmi_forced_blank_from_scanline_pending,
+                self.nmi_active_display_blanking_candidate.suffix_start_scanline,
                 self.live_link_dma_source(LinkDmaSourceSlot::AnimatedTileUpper),
                 self.ppu.vram.get(0x40b0).copied().unwrap_or(0),
             );

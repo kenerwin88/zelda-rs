@@ -1068,12 +1068,28 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
     }
     modern.brightness = frame.brightness;
     modern.mode7_scanout_brightness_override = frame.mode7_scanout_brightness_override;
-    modern.forced_blank = frame.forced_blank;
     modern.forced_blank_scanlines = frame
         .scanlines
         .iter()
         .take_while(|scanline| scanline.forced_blank)
         .count() as u8;
+    modern.forced_blank_from_scanline = frame
+        .scanlines
+        .iter()
+        .enumerate()
+        .skip(usize::from(modern.forced_blank_scanlines))
+        .find_map(|(line, scanline)| scanline.forced_blank.then_some(line as u8));
+    modern.forced_blank = modern.forced_blank_scanlines as usize == frame.scanlines.len();
+    if std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some() && frame.forced_blank {
+        eprintln!(
+            "modern_blanking physical={} prefix={} from={:?} scan0={} scan1={}",
+            frame.forced_blank,
+            modern.forced_blank_scanlines,
+            modern.forced_blank_from_scanline,
+            frame.scanlines[0].forced_blank,
+            frame.scanlines[1].forced_blank,
+        );
+    }
     // Raw screen-enable bits + color-math registers for the full software path.
     modern.screen_enabled_main = frame.screen_enabled[0];
     modern.screen_enabled_sub = frame.screen_enabled[1];

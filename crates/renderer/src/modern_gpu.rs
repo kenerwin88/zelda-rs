@@ -428,6 +428,7 @@ impl ModernGpuVariantRenderer {
         out.backdrop_color_rgba = frame.backdrop_color_rgba;
         out.forced_blank = frame.forced_blank;
         out.forced_blank_scanlines = frame.forced_blank_scanlines;
+        out.forced_blank_from_scanline = frame.forced_blank_from_scanline;
         if frame.forced_blank {
             return out;
         }

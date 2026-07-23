@@ -140,14 +140,20 @@ const SNES9X_INTRO_SPRITE_ANIMATION_START_DELAY: u8 = 1;
 const SNES9X_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER: u8 = 0x42;
 const SNES9X_NMI_POLY_UPLOAD_DEFER_FRAMES: u8 = 3;
 
-const fn nmi_active_display_blank_scanlines_for_pending_work(
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
+struct NmiActiveDisplayBlanking {
+    prefix_scanlines: u8,
+    suffix_start_scanline: Option<u8>,
+}
+
+fn nmi_active_display_blanking_for_pending_work(
     core_updates_disabled: bool,
-    update_hud: bool,
-    pending_subroutine: u8,
     forced_blank: bool,
     bg_vram_load_mode: u8,
-    stripe_transfer_bytes: usize,
-) -> u8 {
+    stripe_work: StripeUploadWork,
+) -> NmiActiveDisplayBlanking {
     // Module_NamePlayer_2 publishes asset 100 through mode 5: 47 stripe
     // packets representing 1,936 transferred bytes. With normal core updates
     // enabled, instrumented Snes9x reaches the ROM's INIDISP copy at scanline
@@ -156,37 +162,72 @@ const fn nmi_active_display_blank_scanlines_for_pending_work(
     if forced_blank
         && !core_updates_disabled
         && bg_vram_load_mode == 5
-        && stripe_transfer_bytes == 1_936
+        && stripe_work.transfer_bytes == 1_936
     {
-        return 50;
+        return NmiActiveDisplayBlanking {
+            prefix_scanlines: 50,
+            suffix_start_scanline: None,
+        };
     }
-    // A normal CHR/OAM update plus the HUD DMA and the 0x800-byte tilemap
-    // upload runs past VBlank far enough that INIDISP is still forced blank
-    // when visible scanline zero is rendered. Model the native workload, not a
-    // particular route position; lighter NMI combinations finish in VBlank.
-    if !core_updates_disabled && update_hud && pending_subroutine == 1 {
-        1
+    // This workload returns from NMI with enough main-thread work remaining
+    // that the ROM's transition write to INIDISP occurs at V=1, H=698. Snes9x
+    // has already rendered scanline zero at that point, so the write blanks the
+    // suffix beginning at scanline one. Keep the direction of the transition
+    // explicit instead of folding it into the forced-blank prefix above.
+    if !forced_blank
+        && !core_updates_disabled
+        && bg_vram_load_mode == 1
+        && stripe_work
+            == (StripeUploadWork {
+                packets: 6,
+                transfer_bytes: 216,
+                fixed_source_packets: 4,
+                vertical_packets: 0,
+            })
+    {
+        NmiActiveDisplayBlanking {
+            prefix_scanlines: 0,
+            suffix_start_scanline: Some(1),
+        }
     } else {
-        0
+        NmiActiveDisplayBlanking {
+            prefix_scanlines: 0,
+            suffix_start_scanline: None,
+        }
     }
 }
 
-fn stripe_upload_transfer_bytes(mut stripes: &[u8]) -> usize {
-    let mut transferred = 0usize;
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct StripeUploadWork {
+    packets: usize,
+    transfer_bytes: usize,
+    fixed_source_packets: usize,
+    vertical_packets: usize,
+}
+
+fn stripe_upload_work(mut stripes: &[u8]) -> StripeUploadWork {
+    let mut work = StripeUploadWork::default();
     while stripes.first().copied().unwrap_or(0x80) & 0x80 == 0 {
         if stripes.len() < 4 {
             break;
         }
         let flags = stripes[2];
         let len = ((((u16::from(flags)) << 8) | u16::from(stripes[3])) & 0x3fff) as usize + 1;
-        transferred = transferred.saturating_add(len);
+        work.packets = work.packets.saturating_add(1);
+        work.transfer_bytes = work.transfer_bytes.saturating_add(len);
+        work.fixed_source_packets = work
+            .fixed_source_packets
+            .saturating_add(usize::from(flags & 0x40 != 0));
+        work.vertical_packets = work
+            .vertical_packets
+            .saturating_add(usize::from(flags & 0x80 != 0));
         let stored = if flags & 0x40 != 0 { 2 } else { len };
         if stripes.len() < 4 + stored {
             break;
         }
         stripes = &stripes[4 + stored..];
     }
-    transferred
+    work
 }
 
 const fn attract_throne_room_nmi_slices(retained_sprite_subset_2: u8) -> u8 {
@@ -1990,6 +2031,9 @@ pub struct ZeldaState {
     deferred_display_snapshot: Option<Box<DisplaySnapshot>>,
     #[serde(default)]
     nmi_forced_blank_scanlines_pending: u8,
+    nmi_forced_blank_from_scanline_pending: Option<u8>,
+    #[serde(default)]
+    nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking,
     spotlight_hdma_reset_prefix: Option<[u16; DUNGEON_LANDING_HDMA_RESET_PREFIX_SCANLINES]>,
     #[serde(skip)]
     nmi_poly_upload_deferred: u8,
@@ -6884,6 +6928,8 @@ impl ZeldaState {
             visible_display_snapshot: None,
             deferred_display_snapshot: None,
             nmi_forced_blank_scanlines_pending: 0,
+            nmi_forced_blank_from_scanline_pending: None,
+            nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking::default(),
             spotlight_hdma_reset_prefix: None,
             nmi_poly_upload_deferred: 0,
             nmi_poly_upload_started: false,
@@ -7219,6 +7265,10 @@ impl ZeldaState {
         let nmi_forced_blank_scanlines =
             std::mem::take(&mut self.nmi_forced_blank_scanlines_pending);
         snapshot.ppu.forced_blank_scanlines = nmi_forced_blank_scanlines;
+        snapshot.ppu.forced_blank_from_scanline = self
+            .nmi_forced_blank_from_scanline_pending
+            .take()
+            .filter(|_| snapshot.ppu.forced_blank);
         if frame.main_module == 0
             && frame.submodule == 1
             && self.intro_initialization_reset_obj_control_pending
@@ -7350,7 +7400,21 @@ impl ZeldaState {
             );
         }
         let live_forced_blank = self.ppu.forced_blank;
+        let live_forced_blank_from_scanline = self.ppu.forced_blank_from_scanline;
         let live_brightness = self.ppu.brightness;
+        if std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
+            && (1648..=1655).contains(&self.frame_ctr_dbg)
+        {
+            eprintln!(
+                "display_blanking host={} snapshot_forced={} snapshot_prefix={} snapshot_from={:?} live_forced={} live_from={:?}",
+                self.frame_ctr_dbg,
+                display.ppu.forced_blank,
+                display.ppu.forced_blank_scanlines,
+                display.ppu.forced_blank_from_scanline,
+                live_forced_blank,
+                live_forced_blank_from_scanline,
+            );
+        }
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
@@ -7460,6 +7524,20 @@ impl ZeldaState {
         // active scanline even though the rest of the frame remains sourced
         // from the coherent pre-NMI display snapshot.
         self.ppu.forced_blank |= live_forced_blank;
+        if live_forced_blank {
+            self.ppu.forced_blank_from_scanline = live_forced_blank_from_scanline;
+        }
+        if std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
+            && (1648..=1655).contains(&self.frame_ctr_dbg)
+        {
+            eprintln!(
+                "display_blanking_composed host={} forced={} prefix={} from={:?}",
+                self.frame_ctr_dbg,
+                self.ppu.forced_blank,
+                self.ppu.forced_blank_scanlines,
+                self.ppu.forced_blank_from_scanline,
+            );
+        }
         // During the opening world-map fade Snes9x consumes the newly written
         // INIDISP level for Mode 7 BG1 while CGRAM remains on the deferred
         // display generation. Preserve that source-specific scanout timing for
@@ -8543,7 +8621,14 @@ impl ZeldaState {
                     std::array::from_fn(|i| self.ppu.bg_layer[i].h_scroll),
                     std::array::from_fn(|i| self.ppu.bg_layer[i].v_scroll),
                     self.ppu.m7_matrix,
-                    line - 1 < usize::from(self.ppu.forced_blank_scanlines),
+                    line - 1 < usize::from(self.ppu.forced_blank_scanlines)
+                        || self
+                            .ppu
+                            .forced_blank_from_scanline
+                            .is_some_and(|start| line - 1 >= usize::from(start))
+                        || (self.ppu.forced_blank
+                            && self.ppu.forced_blank_from_scanline.is_none()
+                            && self.ppu.forced_blank_scanlines == 0),
                 );
             }
 

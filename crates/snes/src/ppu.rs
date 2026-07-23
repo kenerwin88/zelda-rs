@@ -84,6 +84,10 @@ pub struct PpuState {
     /// because the preceding VBlank workload overran into active display.
     #[serde(default)]
     pub forced_blank_scanlines: u8,
+    /// First visible scanline forced blank by an active-display INIDISP write.
+    /// `None` means the frame has no mid-frame transition into forced blank.
+    #[serde(default)]
+    pub forced_blank_from_scanline: Option<u8>,
     pub brightness: u8,
     /// One-frame scanout brightness for the Mode 7 BG1 source when the ROM
     /// publishes its INIDISP step ahead of the deferred display palette.
@@ -229,6 +233,7 @@ impl Default for PpuState {
             fixed_color_b: 0,
             forced_blank: false,
             forced_blank_scanlines: 0,
+            forced_blank_from_scanline: None,
             brightness: 0,
             mode7_scanout_brightness_override: None,
             mode: 0,

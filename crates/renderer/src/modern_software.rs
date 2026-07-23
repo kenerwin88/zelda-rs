@@ -1914,7 +1914,11 @@ fn finalize_pixel(
     let out_y = i / width;
     let nrow = out_y / scale;
     let ncol = out_x / scale;
-    if nrow < usize::from(frame.forced_blank_scanlines) {
+    if nrow < usize::from(frame.forced_blank_scanlines)
+        || frame
+            .forced_blank_from_scanline
+            .is_some_and(|line| nrow >= usize::from(line))
+    {
         return [0, 0, 0, 0xff];
     }
     let mut c = [

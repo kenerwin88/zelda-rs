@@ -99,9 +99,10 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let prevent_math_mode = params.p2.x;
     let windowsel_cm = params.p2.y;
     let forced_blank_scanlines = params.p2.z;
-    let startup_origin0 = params.p2.w;
-    let startup_origin1 = params.p3.x;
-    let startup_direct_pixel_count = params.p3.y;
+    let forced_blank_from_scanline = params.p2.w;
+    let startup_origin0 = params.p3.x;
+    let startup_origin1 = params.p3.y;
+    let startup_direct_pixel_count = params.p3.z;
 
     let out_x = i % width;
     let out_y = i / width;
@@ -137,7 +138,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var g = unpack_g(main);
     var b = unpack_b(main);
 
-    if (nrow < forced_blank_scanlines
+    if ((nrow < forced_blank_scanlines || nrow >= forced_blank_from_scanline)
         && startup_direct_pixel_count == 0u
         && (startup_origin0 & 0x80000000u) == 0u
         && (startup_origin1 & 0x80000000u) == 0u) {

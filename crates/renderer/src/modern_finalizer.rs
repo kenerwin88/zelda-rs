@@ -359,10 +359,10 @@ impl ModernGpuFinalizer {
             u32::from(frame.prevent_math_mode),
             u32::from(frame.windowsel_cm),
             u32::from(frame.forced_blank_scanlines),
+            u32::from(frame.forced_blank_from_scanline.unwrap_or(u8::MAX)),
             startup_origin0,
             startup_origin1,
             direct_pixel_count,
-            0,
             0,
         ];
 
