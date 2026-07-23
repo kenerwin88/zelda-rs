@@ -277,6 +277,19 @@ const fn rom_intro_poly_initialization_is_active(main_module: u8, submodule: u8)
     main_module == 0 && matches!(submodule, 2 | 10)
 }
 
+const fn rom_full_tilemap_scanout_uses_pre_nmi_vram(
+    pending_full_tilemap_upload: bool,
+    forced_blank_prefix_scanlines: u8,
+) -> bool {
+    // NMI subroutine 1 uploads the complete $800-byte staging buffer. A request
+    // present in the pre-NMI snapshot was authored for the following vblank, so
+    // this scanout retains the tilemap generation already in VRAM. The initial
+    // menu upload is the measured overrun exception: its DMA ends at V=249 and
+    // INIDISP returns at V=1, making the new tilemap visible from scanline one
+    // while only the first line retains forced blank.
+    pending_full_tilemap_upload && forced_blank_prefix_scanlines == 0
+}
+
 const fn rom_display_memory_publication_is_deferred(
     main_module: u8,
     submodule: u8,
@@ -7570,6 +7583,8 @@ impl ZeldaState {
 
         let snapshot_frame = crate::game_state::FrameState::load_from_ram(&display.ram);
         let pending_main_thread_stripe = display.ram[NMI_LOAD_BG_FROM_VRAM] == 1;
+        let pending_full_tilemap_upload =
+            display.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX] == 1;
         let live_pending_main_thread_stripe = self.ram[NMI_LOAD_BG_FROM_VRAM] == 1;
         // RenderText_Draw_Finish authors the fixed-source stripe that replaces
         // the dialogue box with tile 0x387f, then returns to the saved module.
@@ -7581,11 +7596,16 @@ impl ZeldaState {
             && stripe_upload_clears_dialogue_box(
                 &display.ram[crate::game_state::constants::VRAM_UPLOAD_DATA..],
             );
-        let retain_previous_nmi_display_memory = (rom_display_memory_publication_is_deferred(
-            snapshot_frame.main_module,
-            snapshot_frame.submodule,
-            pending_main_thread_stripe,
-        ) && !consumed_dialogue_box_clear)
+        let retain_pre_nmi_full_tilemap = rom_full_tilemap_scanout_uses_pre_nmi_vram(
+            pending_full_tilemap_upload,
+            display.ppu.forced_blank_scanlines,
+        );
+        let retain_previous_nmi_display_memory = retain_pre_nmi_full_tilemap
+            || (rom_display_memory_publication_is_deferred(
+                snapshot_frame.main_module,
+                snapshot_frame.submodule,
+                pending_main_thread_stripe,
+            ) && !consumed_dialogue_box_clear)
             || (snapshot_frame.main_module == 20
                 && snapshot_frame.submodule == 0
                 // Snes9x retains the pre-NMI attract image through the sequence-1

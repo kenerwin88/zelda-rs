@@ -3569,6 +3569,32 @@ fn dialogue_character_tiles_publish_at_the_following_nmi() {
 }
 
 #[test]
+fn full_tilemap_upload_publishes_vram_at_the_following_nmi() {
+    assert!(rom_full_tilemap_scanout_uses_pre_nmi_vram(true, 0));
+    assert!(!rom_full_tilemap_scanout_uses_pre_nmi_vram(true, 1));
+    assert!(!rom_full_tilemap_scanout_uses_pre_nmi_vram(false, 0));
+
+    let mut state = ZeldaState::new();
+    state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX] = 1;
+    state.ppu.vram[0] = 0x1111;
+    state.capture_display_snapshot();
+    state.ppu.vram[0] = 0x2222;
+    assert_eq!(
+        state.with_display_snapshot(|display| display.ppu.vram[0]),
+        0x1111
+    );
+
+    state.nmi_forced_blank_scanlines_pending = 1;
+    state.ppu.vram[0] = 0x3333;
+    state.capture_display_snapshot();
+    state.ppu.vram[0] = 0x4444;
+    assert_eq!(
+        state.with_display_snapshot(|display| display.ppu.vram[0]),
+        0x4444
+    );
+}
+
+#[test]
 fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     assert!(rom_display_oam_publication_is_deferred(7, 0, false, false));
     assert!(rom_display_oam_publication_is_deferred(4, 3, true, false));
