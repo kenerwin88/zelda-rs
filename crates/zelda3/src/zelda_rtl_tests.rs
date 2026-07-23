@@ -3409,9 +3409,9 @@ fn name_player_tilemap_finishes_after_the_intervening_nmi_slice() {
 
 #[test]
 fn file_select_main_publishes_display_memory_at_the_following_nmi() {
-    assert!(rom_display_memory_publication_is_deferred(1, 5));
-    assert!(!rom_display_memory_publication_is_deferred(1, 4));
-    assert!(!rom_display_memory_publication_is_deferred(2, 5));
+    assert!(rom_display_memory_publication_is_deferred(1, 5, true));
+    assert!(!rom_display_memory_publication_is_deferred(1, 4, false));
+    assert!(!rom_display_memory_publication_is_deferred(2, 5, false));
 
     let mut state = ZeldaState::new();
     state.set_main_module(1);
@@ -3440,8 +3440,8 @@ fn file_select_main_publishes_display_memory_at_the_following_nmi() {
 
 #[test]
 fn dungeon_landing_wipe_publishes_display_memory_at_the_following_nmi() {
-    assert!(rom_display_memory_publication_is_deferred(7, 15));
-    assert!(!rom_display_memory_publication_is_deferred(7, 14));
+    assert!(rom_display_memory_publication_is_deferred(7, 15, false));
+    assert!(!rom_display_memory_publication_is_deferred(7, 14, false));
     assert!(rom_display_snapshot_is_one_frame_deferred(7, 15));
 
     let mut state = ZeldaState::new();
@@ -3472,19 +3472,20 @@ fn dungeon_landing_wipe_publishes_display_memory_at_the_following_nmi() {
 
 #[test]
 fn dialogue_character_tiles_publish_at_the_following_nmi() {
-    assert!(rom_display_memory_publication_is_deferred(14, 2));
-    assert!(rom_display_memory_publication_is_deferred(4, 3));
-    assert!(!rom_display_memory_publication_is_deferred(4, 2));
-    assert!(!rom_display_memory_publication_is_deferred(14, 1));
+    assert!(rom_display_memory_publication_is_deferred(14, 2, false));
+    assert!(rom_display_memory_publication_is_deferred(4, 3, true));
+    assert!(!rom_display_memory_publication_is_deferred(4, 3, false));
+    assert!(!rom_display_memory_publication_is_deferred(14, 1, false));
 }
 
 #[test]
 fn normal_gameplay_oam_publishes_at_the_following_nmi() {
-    assert!(rom_display_oam_publication_is_deferred(7, 0, false));
-    assert!(rom_display_oam_publication_is_deferred(4, 3, true));
-    assert!(rom_display_oam_publication_is_deferred(4, 3, false));
-    assert!(!rom_display_oam_publication_is_deferred(4, 2, false));
-    assert!(!rom_display_memory_publication_is_deferred(7, 0));
+    assert!(rom_display_oam_publication_is_deferred(7, 0, false, false));
+    assert!(rom_display_oam_publication_is_deferred(4, 3, true, false));
+    assert!(rom_display_oam_publication_is_deferred(4, 3, false, true));
+    assert!(rom_display_oam_publication_is_deferred(4, 3, false, false));
+    assert!(!rom_display_oam_publication_is_deferred(4, 2, false, false));
+    assert!(!rom_display_memory_publication_is_deferred(7, 0, false));
 
     let mut state = ZeldaState::new();
     state.set_main_module(7);

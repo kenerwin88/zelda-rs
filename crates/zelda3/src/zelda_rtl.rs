@@ -209,18 +209,20 @@ const fn rom_intro_poly_initialization_is_active(main_module: u8, submodule: u8)
     main_module == 0 && matches!(submodule, 2 | 10)
 }
 
-const fn rom_display_memory_publication_is_deferred(main_module: u8, submodule: u8) -> bool {
-    // FileSelect_Main authors a fresh stripe packet and OAM shadow after the
-    // active frame's NMI boundary. Those writes are consumed by the following
-    // NMI, so publishing the live post-NMI memory here would expose them one
-    // video frame early. The initialization substates are force-blanked; the
-    // distinction becomes visible once the steady file-select loop begins.
+const fn rom_display_memory_publication_is_deferred(
+    main_module: u8,
+    submodule: u8,
+    pending_main_thread_stripe: bool,
+) -> bool {
+    // A mode-1 stripe packet pending at the capture boundary was authored by
+    // the main thread after the active frame's hardware NMI. It is consumed by
+    // the following NMI, so publishing live post-NMI memory here would expose
+    // every menu stripe (file select, naming, copy, erase) one frame early.
     // The dungeon landing wipe has the same split CPU/NMI cadence: each iris
     // and sprite step is authored after its active-frame upload boundary.
-    // The name-player loop and dialogue character tiles are likewise composed
-    // by the main thread and uploaded through the following NMI packet.
-    (main_module == 1 && submodule == 5)
-        || (main_module == 4 && submodule == 3)
+    // Dialogue character tiles use their own BG3 NMI packet but share that
+    // next-publication cadence.
+    pending_main_thread_stripe
         || rom_dungeon_landing_wipe_is_active(main_module, submodule)
         || (main_module == 14 && submodule == 2)
 }
@@ -229,6 +231,7 @@ const fn rom_display_oam_publication_is_deferred(
     main_module: u8,
     submodule: u8,
     active_display_nmi_overrun: bool,
+    pending_main_thread_stripe: bool,
 ) -> bool {
     // Normal gameplay authors the OAM shadow during the main loop. NMI uploads
     // that shadow after the active frame's capture boundary, so the frame being
@@ -239,7 +242,12 @@ const fn rom_display_oam_publication_is_deferred(
     // name-player loop has the same ordinary main-then-next-NMI cadence for its
     // cursor and underline sprites, including input-driven row transitions.
     active_display_nmi_overrun
-        || rom_display_memory_publication_is_deferred(main_module, submodule)
+        || rom_display_memory_publication_is_deferred(
+            main_module,
+            submodule,
+            pending_main_thread_stripe,
+        )
+        || (main_module == 4 && submodule == 3)
         || (main_module == 7 && submodule == 0)
 }
 
@@ -7297,9 +7305,11 @@ impl ZeldaState {
         let pristine_snapshot = display.clone();
 
         let snapshot_frame = crate::game_state::FrameState::load_from_ram(&display.ram);
+        let pending_main_thread_stripe = display.ram[NMI_LOAD_BG_FROM_VRAM] == 1;
         let retain_previous_nmi_display_memory = rom_display_memory_publication_is_deferred(
             snapshot_frame.main_module,
             snapshot_frame.submodule,
+            pending_main_thread_stripe,
         ) || (snapshot_frame.main_module == 20
             && snapshot_frame.submodule == 0
             // Snes9x retains the pre-NMI attract image through the sequence-1
@@ -7311,6 +7321,7 @@ impl ZeldaState {
             snapshot_frame.main_module,
             snapshot_frame.submodule,
             display.ppu.forced_blank_scanlines != 0,
+            pending_main_thread_stripe,
         );
         let world_map_fade_display = snapshot_frame.main_module == 20
             && snapshot_frame.submodule == 0
