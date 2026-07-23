@@ -217,9 +217,10 @@ const fn rom_display_memory_publication_is_deferred(main_module: u8, submodule: 
     // distinction becomes visible once the steady file-select loop begins.
     // The dungeon landing wipe has the same split CPU/NMI cadence: each iris
     // and sprite step is authored after its active-frame upload boundary.
-    // Dialogue character tiles are likewise composed by the main thread and
-    // uploaded through the following BG3 NMI packet.
+    // The name-player loop and dialogue character tiles are likewise composed
+    // by the main thread and uploaded through the following NMI packet.
     (main_module == 1 && submodule == 5)
+        || (main_module == 4 && submodule == 3)
         || rom_dungeon_landing_wipe_is_active(main_module, submodule)
         || (main_module == 14 && submodule == 2)
 }
@@ -239,7 +240,6 @@ const fn rom_display_oam_publication_is_deferred(
     // cursor and underline sprites, including input-driven row transitions.
     active_display_nmi_overrun
         || rom_display_memory_publication_is_deferred(main_module, submodule)
-        || (main_module == 4 && submodule == 3)
         || (main_module == 7 && submodule == 0)
 }
 

@@ -3473,6 +3473,8 @@ fn dungeon_landing_wipe_publishes_display_memory_at_the_following_nmi() {
 #[test]
 fn dialogue_character_tiles_publish_at_the_following_nmi() {
     assert!(rom_display_memory_publication_is_deferred(14, 2));
+    assert!(rom_display_memory_publication_is_deferred(4, 3));
+    assert!(!rom_display_memory_publication_is_deferred(4, 2));
     assert!(!rom_display_memory_publication_is_deferred(14, 1));
 }
 
