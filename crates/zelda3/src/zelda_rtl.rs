@@ -20,7 +20,7 @@ use crate::game_state::constants::nmi::{
     BG_CHAR_BUFFER_1 as NMI_BG_CHAR_BUFFER_1, BG_CHAR_HALF_BUFFER as NMI_BG_CHAR_HALF_BUFFER,
 };
 use crate::game_state::constants::{
-    CRYSTAL_ROTATION_COUNTER, HDMA_TABLE_DYNAMIC, MESSAGING_BUF_LOAD_GFX,
+    ANIMATED_TILE_VRAM_ADDR, CRYSTAL_ROTATION_COUNTER, HDMA_TABLE_DYNAMIC, MESSAGING_BUF_LOAD_GFX,
     MOVING_WALL_REPLACEMENT_BUFFER, OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START,
     OVERWORLD_SCROLL_Y_END, RESERVED_HDMA_TABLE, VWF_ARR,
 };
@@ -7683,11 +7683,14 @@ impl ZeldaState {
         );
         let previous_link_obj_vram =
             retain_previous_link_obj_vram.then(|| self.ppu.vram[0x4000..0x4400].to_vec());
-        let previous_active_play_animated_bg_vram =
-            rom_active_player_control_is_running(
-                snapshot_frame.main_module,
-                snapshot_frame.submodule,
-            )
+        // The normal overworld animation upload targets VRAM $3c00. Snes9x
+        // returns the active frame that ended at this vblank, so retain the
+        // captured pre-NMI generation regardless of which module currently
+        // overlays the overworld (player control, dialogue, menus, and so on).
+        // Module 10's interrupted main thread selects its newer pre-NMI image
+        // from `deferred_display_snapshot` above instead.
+        let previous_overworld_animated_bg_vram = (current_pre_nmi_animated_bg_vram.is_none()
+            && read_le_u16(&self.ram, ANIMATED_TILE_VRAM_ADDR) == 0x3c00)
             .then(|| self.ppu.vram[0x3c00..0x3e00].to_vec());
         // During a message-line scroll the ROM's NMI re-uploads the VWF text
         // buffer every frame while the copy is still in flight; Snes9x's
@@ -7725,7 +7728,7 @@ impl ZeldaState {
             if let Some(animated_bg_vram) = current_pre_nmi_animated_bg_vram {
                 self.ppu.vram[0x3c00..0x3e00].copy_from_slice(&animated_bg_vram);
             }
-            if let Some(animated_bg_vram) = previous_active_play_animated_bg_vram {
+            if let Some(animated_bg_vram) = previous_overworld_animated_bg_vram {
                 self.ppu.vram[0x3c00..0x3e00].copy_from_slice(&animated_bg_vram);
             }
             if let Some(previous_link_obj_vram) = previous_link_obj_vram {
