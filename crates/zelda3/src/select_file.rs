@@ -6,6 +6,8 @@ use super::*;
 mod select_file_shared;
 use select_file_shared::*;
 
+pub(super) const SELECT_FILE_CHECKERBOARD_TILE_COUNT: usize = 1024;
+
 fn read_name_player_tab1_byte_word(tab: &[i16; 26], offs: usize) -> u16 {
     let lo = tab[offs / 2].to_le_bytes()[offs & 1] as u16;
     let hi = tab[(offs + 1) / 2].to_le_bytes()[(offs + 1) & 1] as u16;
@@ -241,7 +243,7 @@ impl ZeldaState {
         dst += 2;
         self.write_vram_upload_absolute_word(dst, 0xff07);
         dst += 2;
-        for i in 0..1024 {
+        for i in 0..SELECT_FILE_CHECKERBOARD_TILE_COUNT {
             self.write_vram_upload_absolute_word(
                 dst,
                 SELECT_FILE_FUNC1_BACKGROUND_CHECKERBOARD_TILES[((i & 0x20) >> 4) + (i & 1)],
@@ -1021,7 +1023,23 @@ impl ZeldaState {
     }
 
     pub(super) fn module_name_player_1(&mut self) {
-        let dst = self.select_file_func1();
+        self.select_file_func1();
+        if self.rom_startup_timing() {
+            // The 65816 is still in SelectFile_Func1 when Snes9x reaches the
+            // next vblank (ROM PC 0x0cce3a on the clean route). Leave the NMI
+            // latch set and publish the fixed suffix only after that slice.
+            self.name_player_tilemap_suffix_pending = true;
+            self.rom_load_partial_nmi_this_frame = true;
+            return;
+        }
+        self.complete_module_name_player_1();
+    }
+
+    pub(super) fn complete_module_name_player_1(&mut self) {
+        self.name_player_tilemap_suffix_pending = false;
+        let dst = self.game_state.display.vram_upload_buffer_base()
+            + 4
+            + SELECT_FILE_CHECKERBOARD_TILE_COUNT * 2;
         self.write_vram_upload_absolute_word(dst, 0xffff);
         self.set_bg_vram_load_mode(1);
         self.increment_submodule();

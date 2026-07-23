@@ -3383,6 +3383,31 @@ fn file_select_initial_graphics_work_resumes_before_the_next_module() {
 }
 
 #[test]
+fn name_player_tilemap_finishes_after_the_intervening_nmi_slice() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_main_module(4);
+    state.set_submodule(1);
+
+    state.module_name_player_1();
+
+    assert_eq!(state.game_state.frame.submodule, 1);
+    assert!(state.name_player_tilemap_suffix_pending);
+    assert!(state.rom_load_partial_nmi_this_frame);
+    assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 0);
+
+    state.complete_module_name_player_1();
+
+    assert_eq!(state.game_state.frame.submodule, 2);
+    assert!(!state.name_player_tilemap_suffix_pending);
+    assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 1);
+    let terminator = state.game_state.display.vram_upload_buffer_base()
+        + 4
+        + select_file::SELECT_FILE_CHECKERBOARD_TILE_COUNT * 2;
+    assert_eq!(read_le_u16(&state.ram, terminator), 0xffff);
+}
+
+#[test]
 fn file_select_main_publishes_display_memory_at_the_following_nmi() {
     assert!(rom_display_memory_publication_is_deferred(1, 5));
     assert!(!rom_display_memory_publication_is_deferred(1, 4));
@@ -3453,7 +3478,9 @@ fn dialogue_character_tiles_publish_at_the_following_nmi() {
 
 #[test]
 fn normal_gameplay_oam_publishes_at_the_following_nmi() {
-    assert!(rom_display_oam_publication_is_deferred(7, 0));
+    assert!(rom_display_oam_publication_is_deferred(7, 0, false));
+    assert!(rom_display_oam_publication_is_deferred(4, 3, true));
+    assert!(!rom_display_oam_publication_is_deferred(4, 3, false));
     assert!(!rom_display_memory_publication_is_deferred(7, 0));
 
     let mut state = ZeldaState::new();
@@ -3901,21 +3928,37 @@ fn published_one_shot_vcounter_irq_is_repeatable_and_advances_live_state() {
 #[test]
 fn nmi_active_display_overrun_is_classified_by_workload() {
     assert_eq!(
-        nmi_active_display_blank_scanlines_for_pending_work(false, true, 1),
+        nmi_active_display_blank_scanlines_for_pending_work(false, true, 1, false, 0, 0),
         1
     );
     assert_eq!(
-        nmi_active_display_blank_scanlines_for_pending_work(true, true, 1),
+        nmi_active_display_blank_scanlines_for_pending_work(true, true, 1, false, 0, 0),
         0
     );
     assert_eq!(
-        nmi_active_display_blank_scanlines_for_pending_work(false, false, 1),
+        nmi_active_display_blank_scanlines_for_pending_work(false, false, 1, false, 0, 0),
         0
     );
     assert_eq!(
-        nmi_active_display_blank_scanlines_for_pending_work(false, true, 2),
+        nmi_active_display_blank_scanlines_for_pending_work(false, true, 2, false, 0, 0),
         0
     );
+    assert_eq!(
+        nmi_active_display_blank_scanlines_for_pending_work(false, false, 0, true, 5, 1_936),
+        50
+    );
+    assert_eq!(
+        nmi_active_display_blank_scanlines_for_pending_work(false, false, 0, false, 5, 1_936),
+        0
+    );
+    assert_eq!(
+        nmi_active_display_blank_scanlines_for_pending_work(true, false, 0, true, 5, 1_936),
+        0
+    );
+    let mut checkerboard_packet = vec![0x00, 0x10, 0x07, 0xff];
+    checkerboard_packet.extend(std::iter::repeat_n(0, 0x800));
+    checkerboard_packet.push(0xff);
+    assert_eq!(stripe_upload_transfer_bytes(&checkerboard_packet), 0x800);
 }
 
 #[test]

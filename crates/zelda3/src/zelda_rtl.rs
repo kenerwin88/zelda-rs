@@ -144,7 +144,22 @@ const fn nmi_active_display_blank_scanlines_for_pending_work(
     core_updates_disabled: bool,
     update_hud: bool,
     pending_subroutine: u8,
+    forced_blank: bool,
+    bg_vram_load_mode: u8,
+    stripe_transfer_bytes: usize,
 ) -> u8 {
+    // Module_NamePlayer_2 publishes asset 100 through mode 5: 47 stripe
+    // packets representing 1,936 transferred bytes. With normal core updates
+    // enabled, instrumented Snes9x reaches the ROM's INIDISP copy at scanline
+    // 50, dot 1228 (clean-route frame 1061), so scanlines 0..49 retain forced
+    // blank. Classify the actual NMI workload rather than its route position.
+    if forced_blank
+        && !core_updates_disabled
+        && bg_vram_load_mode == 5
+        && stripe_transfer_bytes == 1_936
+    {
+        return 50;
+    }
     // A normal CHR/OAM update plus the HUD DMA and the 0x800-byte tilemap
     // upload runs past VBlank far enough that INIDISP is still forced blank
     // when visible scanline zero is rendered. Model the native workload, not a
@@ -154,6 +169,24 @@ const fn nmi_active_display_blank_scanlines_for_pending_work(
     } else {
         0
     }
+}
+
+fn stripe_upload_transfer_bytes(mut stripes: &[u8]) -> usize {
+    let mut transferred = 0usize;
+    while stripes.first().copied().unwrap_or(0x80) & 0x80 == 0 {
+        if stripes.len() < 4 {
+            break;
+        }
+        let flags = stripes[2];
+        let len = ((((u16::from(flags)) << 8) | u16::from(stripes[3])) & 0x3fff) as usize + 1;
+        transferred = transferred.saturating_add(len);
+        let stored = if flags & 0x40 != 0 { 2 } else { len };
+        if stripes.len() < 4 + stored {
+            break;
+        }
+        stripes = &stripes[4 + stored..];
+    }
+    transferred
 }
 
 const fn attract_throne_room_nmi_slices(retained_sprite_subset_2: u8) -> u8 {
@@ -191,11 +224,19 @@ const fn rom_display_memory_publication_is_deferred(main_module: u8, submodule: 
         || (main_module == 14 && submodule == 2)
 }
 
-const fn rom_display_oam_publication_is_deferred(main_module: u8, submodule: u8) -> bool {
+const fn rom_display_oam_publication_is_deferred(
+    main_module: u8,
+    submodule: u8,
+    active_display_nmi_overrun: bool,
+) -> bool {
     // Normal gameplay authors the OAM shadow during the main loop. NMI uploads
     // that shadow after the active frame's capture boundary, so the frame being
     // presented must retain the OAM image uploaded by the preceding NMI.
-    rom_display_memory_publication_is_deferred(main_module, submodule)
+    // An NMI that runs into active display necessarily precedes the resumed
+    // main-thread sprite authoring as well; its partial scanout therefore uses
+    // the preceding OAM generation regardless of module identity.
+    active_display_nmi_overrun
+        || rom_display_memory_publication_is_deferred(main_module, submodule)
         || (main_module == 7 && submodule == 0)
 }
 
@@ -1916,6 +1957,8 @@ pub struct ZeldaState {
     file_select_initial_graphics_phase: u8,
     #[serde(skip)]
     file_select_checkerboard_suffix_pending: bool,
+    #[serde(skip)]
+    name_player_tilemap_suffix_pending: bool,
     #[serde(skip)]
     selected_game_load_remaining_frames: u8,
     #[serde(skip)]
@@ -6819,6 +6862,7 @@ impl ZeldaState {
             audio_nmi_processed_before_main: false,
             file_select_initial_graphics_phase: 0,
             file_select_checkerboard_suffix_pending: false,
+            name_player_tilemap_suffix_pending: false,
             selected_game_load_remaining_frames: 0,
             dungeon_landing_wipe_carry_pending: false,
             iris_spotlight_goal_transition_pending: false,
@@ -6916,6 +6960,7 @@ impl ZeldaState {
         self.audio_nmi_processed_before_main = false;
         self.file_select_initial_graphics_phase = 0;
         self.file_select_checkerboard_suffix_pending = false;
+        self.name_player_tilemap_suffix_pending = false;
         self.selected_game_load_remaining_frames = 0;
         self.dungeon_landing_wipe_carry_pending = false;
         self.iris_spotlight_goal_transition_pending = false;
@@ -6967,6 +7012,7 @@ impl ZeldaState {
             self.audio_nmi_processed_before_main = false;
             self.file_select_initial_graphics_phase = 0;
             self.file_select_checkerboard_suffix_pending = false;
+            self.name_player_tilemap_suffix_pending = false;
             self.selected_game_load_remaining_frames = 0;
             self.dungeon_landing_wipe_carry_pending = false;
             self.iris_spotlight_goal_transition_pending = false;
@@ -7261,6 +7307,7 @@ impl ZeldaState {
         let retain_previous_nmi_oam = rom_display_oam_publication_is_deferred(
             snapshot_frame.main_module,
             snapshot_frame.submodule,
+            display.ppu.forced_blank_scanlines != 0,
         );
         let world_map_fade_display = snapshot_frame.main_module == 20
             && snapshot_frame.submodule == 0
@@ -7932,6 +7979,18 @@ impl ZeldaState {
             // NMI boundary. Allow the checkerboard stripe packet completed
             // above to be consumed now instead of carrying the stale latch
             // into the next fixed file-select upload.
+            self.clear_nmi_update_latch();
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            return;
+        }
+        if self.name_player_tilemap_suffix_pending {
+            self.complete_module_name_player_1();
+            // SelectFile_Func1 crosses exactly one vblank in the ROM. By this
+            // boundary its suffix has returned through Module_MainRouting, so
+            // Main_PrepSpritesForNmi has run and the next NMI may consume the
+            // completed tilemap packet.
+            self.nmi_prepare_sprites();
             self.clear_nmi_update_latch();
             self.capture_display_snapshot();
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
