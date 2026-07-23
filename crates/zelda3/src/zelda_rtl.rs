@@ -10377,6 +10377,11 @@ impl ZeldaState {
             self.dialogue_scroll_ran_this_frame = true;
             self.render_text_scroll_pixels(passes);
             if is_final_lag {
+                // The slow $0e:cfe2 text-buffer copy has now returned through
+                // RenderText_Draw_MessageCharacters and RunInterface. Only at
+                // this measured continuation boundary does the ROM execute
+                // Module0E_Interface's $00:f873 scroll-register copy suffix.
+                self.complete_module0e_interface_after_run();
                 // The scroll group completes on this frame. Snes9x scans out the
                 // finished (post-pass) text here — one frame before rust's frozen
                 // (group-start) model would jump. Capture the CURRENT scrolled

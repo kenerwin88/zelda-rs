@@ -100,7 +100,13 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module0e-after-run-interface");
         if self.rom_startup_timing()
             && (self.normal_dialogue_initialization_phase != 0
-                || self.pending_rom_work.is_pending())
+                || self.pending_rom_work.is_pending()
+                // RenderText_Draw_Scroll is an interruptible caller frame, not
+                // an atomic buffer rewrite. Instrumented Snes9x runs remain in
+                // its $0e:cfe2..$0e:d088 copy loop across the next vblanks, so
+                // Module0E_Interface has not reached the scroll-register suffix
+                // at $00:f873 while these continuation slices are pending.
+                || self.dialogue_scroll_lag_frames != 0)
         {
             return;
         }
