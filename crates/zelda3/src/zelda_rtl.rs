@@ -8561,6 +8561,12 @@ impl ZeldaState {
                     if self.iris_spotlight_goal_transition_pending {
                         self.iris_spotlight_goal_transition_pending = false;
                         self.complete_iris_spotlight_goal_transition();
+                        // The ROM returns from IrisSpotlight_ConfigureTable to
+                        // Spotlight_ConfigureTableAndControl, observes the
+                        // freshly cleared submodule, and immediately runs
+                        // OpenSpotlight_Next2. Keep that caller suffix on the
+                        // same deferred return boundary as the goal transition.
+                        self.OpenSpotlight_Next2();
                     }
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
