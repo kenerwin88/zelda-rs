@@ -22,7 +22,7 @@ use crate::game_state::constants::nmi::{
 use crate::game_state::constants::{
     CRYSTAL_ROTATION_COUNTER, HDMA_TABLE_DYNAMIC, MESSAGING_BUF_LOAD_GFX,
     MOVING_WALL_REPLACEMENT_BUFFER, OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START,
-    OVERWORLD_SCROLL_Y_END, VWF_ARR,
+    OVERWORLD_SCROLL_Y_END, RESERVED_HDMA_TABLE, VWF_ARR,
 };
 use crate::game_state::{
     lanmola_flat_trail_entry_from_ram, loaded_room_data_word, Bg1MovementAccumulatorState,
@@ -467,12 +467,35 @@ const fn rom_item_receipt_graphics_nmi_slices(gfx: u8) -> u8 {
 }
 
 const DUNGEON_EXIT_SPOTLIGHT_SUFFIX_NMI_SLICES: u8 = 1;
+const DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START: usize = 221;
 
 const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(radius: u16) -> bool {
     // Snes9x PC traces show the $7e and $77 circle builds crossing vblank
     // inside IrisSpotlight_ConfigureTable. From $70 downward the next table is
     // far enough along at the first boundary to publish in that same slice.
     radius >= 0x77
+}
+
+const fn rom_dungeon_exit_spotlight_table_reaches_active_scanout(
+    snapshot_main_module: u8,
+    snapshot_submodule: u8,
+    live_main_module: u8,
+    live_submodule: u8,
+    next_radius: u16,
+    iteration_return_pending: bool,
+) -> bool {
+    // Once the shrinking circle reaches radius $38, the ROM finishes the last
+    // three table words while scanlines 221..223 are still active. Snes9x
+    // scanline probes show those rows consuming the new table while 0..220
+    // retain the previous iteration. The following NMI publishes the complete
+    // table normally. `next_radius` is already decremented by seven here, so
+    // $31 denotes the table authored for radius $38.
+    snapshot_main_module == 0x0f
+        && snapshot_submodule == 1
+        && live_main_module == 0x0f
+        && live_submodule == 1
+        && next_radius <= 0x31
+        && iteration_return_pending
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -7500,6 +7523,16 @@ impl ZeldaState {
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
             );
+        let publish_live_dungeon_exit_spotlight_tail =
+            rom_dungeon_exit_spotlight_table_reaches_active_scanout(
+                snapshot_frame.main_module,
+                snapshot_frame.submodule,
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+                self.game_state.display.spotlight_hdma.window_radius(),
+                self.pending_rom_work.continuation
+                    == Some(RomWorkContinuation::FinishDungeonExitSpotlightIteration),
+            );
         if std::env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
             && (snapshot_frame.main_module == 20 || self.game_state.frame.main_module == 20)
         {
@@ -7525,6 +7558,14 @@ impl ZeldaState {
         let live_forced_blank = self.ppu.forced_blank;
         let live_forced_blank_from_scanline = self.ppu.forced_blank_from_scanline;
         let live_brightness = self.ppu.brightness;
+        if publish_live_dungeon_exit_spotlight_tail {
+            let byte_start = DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
+            let byte_end = 224 * 2;
+            for table_base in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE] {
+                display.ram[table_base + byte_start..table_base + byte_end]
+                    .copy_from_slice(&self.ram[table_base + byte_start..table_base + byte_end]);
+            }
+        }
         if std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
             && (1648..=1655).contains(&self.frame_ctr_dbg)
         {

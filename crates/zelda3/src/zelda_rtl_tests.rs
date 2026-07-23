@@ -3333,6 +3333,21 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x7e));
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x77));
     assert!(!rom_dungeon_exit_spotlight_table_needs_entry_slice(0x70));
+    assert!(!rom_dungeon_exit_spotlight_table_reaches_active_scanout(
+        0x0f, 1, 0x0f, 1, 0x38, true,
+    ));
+    assert!(rom_dungeon_exit_spotlight_table_reaches_active_scanout(
+        0x0f, 1, 0x0f, 1, 0x31, true,
+    ));
+    assert!(rom_dungeon_exit_spotlight_table_reaches_active_scanout(
+        0x0f, 1, 0x0f, 1, 0x07, true,
+    ));
+    assert!(!rom_dungeon_exit_spotlight_table_reaches_active_scanout(
+        0x0f, 1, 0x0f, 1, 0x31, false,
+    ));
+    assert!(!rom_dungeon_exit_spotlight_table_reaches_active_scanout(
+        0x0f, 1, 0x08, 0, 0, true,
+    ));
 
     let mut work = PendingRomWork::schedule(
         RomWorkContinuation::FinishDungeonExitSpotlightIteration,
