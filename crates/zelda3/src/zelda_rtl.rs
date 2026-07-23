@@ -317,6 +317,24 @@ const fn rom_dungeon_exit_entry_oam_publication_is_deferred(
     snapshot_main_module == 0x0f && live_main_module == 0x0f && live_submodule == 0
 }
 
+const fn rom_dungeon_exit_entry_scroll_publication_is_live(
+    snapshot_main_module: u8,
+    snapshot_submodule: u8,
+    live_main_module: u8,
+    live_submodule: u8,
+) -> bool {
+    // The first module-0x0f main-loop slice arms the deferred iris HDMA table,
+    // but the preceding NMI has already published the doorway camera step.
+    // Snes9x route frame 4782 scans BG1/BG2 at V=0x113 (the PPU's raw 0x112
+    // plus its render-line increment), while the deferred control snapshot is
+    // still at raw V=0x110. Publish only those live scroll registers here; the
+    // iris controls, table, and OAM retain their independently measured lag.
+    snapshot_main_module == 0x0f
+        && snapshot_submodule == 0
+        && live_main_module == 0x0f
+        && live_submodule == 1
+}
+
 const fn rom_display_snapshot_is_one_frame_deferred(main_module: u8, submodule: u8) -> bool {
     // Module 0x0F (dungeon-exit spotlight close): the ROM's main thread authors
     // the shrinking window HDMA table (and the final OAM state) during frame N,
@@ -7444,6 +7462,13 @@ impl ZeldaState {
             && snapshot_frame.submodule == 0
             && self.game_state.ending.attract_scene.sequence() == 1
             && self.game_state.ending.attract_scene.state() >= 4;
+        let publish_live_dungeon_exit_scroll =
+            rom_dungeon_exit_entry_scroll_publication_is_live(
+                snapshot_frame.main_module,
+                snapshot_frame.submodule,
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+            );
         if std::env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
             && (snapshot_frame.main_module == 20 || self.game_state.frame.main_module == 20)
         {
@@ -7485,6 +7510,12 @@ impl ZeldaState {
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
+        if publish_live_dungeon_exit_scroll {
+            for (shown, live) in self.ppu.bg_layer.iter_mut().zip(&display.ppu.bg_layer) {
+                shown.h_scroll = live.h_scroll;
+                shown.v_scroll = live.v_scroll;
+            }
+        }
         // NMI publishes display memory for the upcoming active frame. Keep the
         // captured control registers, but compose them with the newly uploaded
         // VRAM/OAM/CGRAM rather than showing the previous frame's memory.
