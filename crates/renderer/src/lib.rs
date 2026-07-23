@@ -1296,6 +1296,12 @@ struct ModernSourceExtractionCache {
     assets: modern_extract::AssetResolvedModernFrame,
 }
 
+#[derive(Default)]
+struct VisibleVwfGeneration {
+    glyph_runs: Vec<modern_frame::ModernVwfGlyphRun>,
+    dialogue_box_tilemap_palette: Option<u8>,
+}
+
 const MODERN_SOURCE_FINGERPRINT_SLOTS: usize = 4096;
 
 fn modern_source_extraction_fingerprint<S: modern_extract::SourceTableView + ?Sized>(
@@ -1671,7 +1677,9 @@ pub struct FrameRenderer {
     /// it is sampled directly by the presentation blit.
     modern_gpu_target: Option<ModernGpuTarget>,
     modern_source_extraction_cache: Option<ModernSourceExtractionCache>,
-    visible_vwf_glyph_runs: Vec<modern_frame::ModernVwfGlyphRun>,
+    /// The renderer presents the preceding NMI generation while extracting the
+    /// next one, so glyph runs and their tilemap palette advance atomically.
+    visible_vwf_generation: VisibleVwfGeneration,
 }
 
 #[derive(Debug, Default)]
@@ -2497,7 +2505,7 @@ impl FrameRenderer {
             modern_variant_gpu: None,
             modern_gpu_target: None,
             modern_source_extraction_cache: None,
-            visible_vwf_glyph_runs: Vec::new(),
+            visible_vwf_generation: VisibleVwfGeneration::default(),
         }
     }
 
@@ -2906,6 +2914,27 @@ impl FrameRenderer {
         })
     }
 
+    fn append_visible_vwf_generation(
+        &mut self,
+        modern: &mut modern_frame::ModernFrame,
+        bg_cells: &mut Vec<modern_index_atlas::ModernIndexTile>,
+        glyph_atlas: &modern_variant_atlas::DialogueVwfGlyphAtlas,
+    ) {
+        let next_generation = VisibleVwfGeneration {
+            glyph_runs: modern.vwf_glyph_runs_for_draw().to_vec(),
+            dialogue_box_tilemap_palette: modern.dialogue_box_tilemap_palette,
+        };
+        modern.dialogue_box_tilemap_palette =
+            self.visible_vwf_generation.dialogue_box_tilemap_palette;
+        modern_extract::append_source_vwf_glyph_cells(
+            modern,
+            bg_cells,
+            glyph_atlas,
+            &self.visible_vwf_generation.glyph_runs,
+        );
+        self.visible_vwf_generation = next_generation;
+    }
+
     /// Present the semantic source atlas through the production GPU compositor.
     /// This is the single live route used both by the native window and by
     /// oracle readback; it does not decode a classic PPU frame or use a
@@ -2920,14 +2949,7 @@ impl FrameRenderer {
         let (mut modern, mut bg_cells) =
             modern_extract::extract_modern_frame_from_sources(frame, src_table, atlas);
         if let Some(glyph_atlas) = variant_atlas.and_then(|atlas| atlas.dialogue_vwf_glyph_atlas.as_ref()) {
-            let next_visible_runs = modern.vwf_glyph_runs_for_draw().to_vec();
-            modern_extract::append_source_vwf_glyph_cells(
-                &mut modern,
-                &mut bg_cells,
-                glyph_atlas,
-                &self.visible_vwf_glyph_runs,
-            );
-            self.visible_vwf_glyph_runs = next_visible_runs;
+            self.append_visible_vwf_generation(&mut modern, &mut bg_cells, glyph_atlas);
         }
         let (sprite_cells, sprites) =
             modern_extract::extract_modern_sprites_from_sources(frame, src_table, atlas);
@@ -3195,14 +3217,11 @@ impl FrameRenderer {
             source_atlas,
         );
         if let Some(glyph_atlas) = &variant_atlas.dialogue_vwf_glyph_atlas {
-            let next_visible_runs = modern_assets.frame.vwf_glyph_runs_for_draw().to_vec();
-            modern_extract::append_source_vwf_glyph_cells(
+            self.append_visible_vwf_generation(
                 &mut modern_assets.frame,
                 &mut modern_assets.bg_cells,
                 glyph_atlas,
-                &self.visible_vwf_glyph_runs,
             );
-            self.visible_vwf_glyph_runs = next_visible_runs;
         }
         let extract_us = Self::modern_live_timing_mark(&mut timing_last);
         if modern_assets.has_unresolved_sources() {
