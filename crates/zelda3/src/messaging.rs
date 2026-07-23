@@ -1309,6 +1309,9 @@ impl ZeldaState {
     }
 
     pub(super) fn WorldMap_LoadLightWorldMap(&mut self) {
+        if self.begin_world_map_light_load_work() {
+            return;
+        }
         self.world_map_load_light_world_map();
     }
 

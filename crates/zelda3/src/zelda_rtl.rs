@@ -533,6 +533,7 @@ const SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES: u8 = 1;
 const PRE_OVERWORLD_PROPERTIES_NMI_SLICES: u8 = 40;
 const PRE_OVERWORLD_OVERLAYS_NMI_SLICES: u8 = 6;
 const PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES: u8 = 17;
+const WORLD_MAP_LIGHT_LOAD_NMI_SLICES: u8 = 5;
 const DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START: usize = 221;
 
 const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(radius: u16) -> bool {
@@ -567,6 +568,7 @@ const fn rom_dungeon_exit_spotlight_table_reaches_active_scanout(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RomWorkContinuation {
     FinishAttractWorldMap,
+    FinishWorldMapLightLoad,
     FinishAttractThroneRoom,
     FinishAttractZeldaPrison,
     FinishAttractMaidenWarp,
@@ -7410,6 +7412,22 @@ impl ZeldaState {
         );
     }
 
+    pub(super) fn begin_world_map_light_load_work(&mut self) -> bool {
+        if !self.rom_startup_timing() {
+            return false;
+        }
+        debug_assert!(!self.pending_rom_work.is_pending());
+        // The original CPU enters WorldMap_LoadLightWorldMap after host frame
+        // 5934 and does not return until frame 5940. The entry frame performs
+        // the first portion of the ROM work; five later NMI slices elapse
+        // before the state increment and NMI-7 request become observable.
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishWorldMapLightLoad,
+            WORLD_MAP_LIGHT_LOAD_NMI_SLICES,
+        );
+        true
+    }
+
     pub(super) fn begin_attract_zelda_prison_work(&mut self) {
         debug_assert!(!self.pending_rom_work.is_pending());
         self.pending_rom_work = PendingRomWork::schedule(
@@ -8642,6 +8660,9 @@ impl ZeldaState {
                 RomWorkSlice::Waiting => {}
                 RomWorkSlice::Complete(RomWorkContinuation::FinishAttractWorldMap) => {
                     self.complete_attract_scene_world_map();
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishWorldMapLightLoad) => {
+                    self.world_map_load_light_world_map();
                 }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishAttractThroneRoom) => {
                     self.complete_attract_scene_throne_room();
