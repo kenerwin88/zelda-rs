@@ -3631,6 +3631,7 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     assert!(rom_display_oam_publication_is_deferred(4, 3, true, false));
     assert!(rom_display_oam_publication_is_deferred(4, 3, false, true));
     assert!(rom_display_oam_publication_is_deferred(4, 3, false, false));
+    assert!(rom_display_oam_publication_is_deferred(14, 7, false, false));
     assert!(!rom_display_oam_publication_is_deferred(4, 2, false, false));
     assert!(!rom_display_memory_publication_is_deferred(7, 0, false));
     assert!(rom_dungeon_exit_entry_oam_publication_is_deferred(
