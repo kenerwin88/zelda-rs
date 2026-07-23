@@ -538,7 +538,7 @@ impl ZeldaState {
         self.increment_submodule();
     }
 
-    pub(super) fn Overworld_LoadOverlays2(&mut self) {
+    fn prepare_overworld_load_overlays(&mut self) {
         let overworld_screen = self.game_state.world.location.overworld_screen();
         self.set_prev_screen_index_word(overworld_screen);
         self.store_overworld_prev_map16_load_state(
@@ -634,7 +634,9 @@ impl ZeldaState {
                 self.set_color_math_control(0x20);
             }
         }
+    }
 
+    fn finish_overworld_load_overlays(&mut self) {
         self.LoadOverworldOverlay();
         if self.game_state.world.region.overlay_index() == 0x94 {
             let value = self.game_state.display.ppu_scroll_copy.bg1_v_copy2() | 0x0100;
@@ -649,6 +651,11 @@ impl ZeldaState {
         self.restore_previous_screen_transition_direction_bits();
     }
 
+    pub(super) fn Overworld_LoadOverlays2(&mut self) {
+        self.prepare_overworld_load_overlays();
+        self.finish_overworld_load_overlays();
+    }
+
     pub(super) fn Overworld_LoadOverlays(&mut self) {
         self.sprite_initialize_slots();
         self.sprite_reload_all_overworld();
@@ -660,14 +667,19 @@ impl ZeldaState {
 
     pub(super) fn PreOverworld_LoadOverlays(&mut self) {
         self.set_ambient_sound_effect(5);
+        // The ROM reaches the screen-specific ambient selection two scanlines
+        // later, before LoadOverworldOverlay becomes the interruptible part of
+        // this call. Keep that lightweight prefix on the entry boundary so NMI
+        // never observes the temporary value 5.
+        self.prepare_overworld_load_overlays();
         if self.begin_pre_overworld_overlays_work() {
             return;
         }
-        self.complete_pre_overworld_load_overlays();
+        self.finish_overworld_load_overlays();
     }
 
     pub(super) fn complete_pre_overworld_load_overlays(&mut self) {
-        self.Overworld_LoadOverlays2();
+        self.finish_overworld_load_overlays();
     }
 
     pub(super) fn Overworld_LoadAmbientOverlay(&mut self, load_map_data: bool) {
