@@ -1827,12 +1827,6 @@ pub struct ZeldaState {
     published_dialogue_msg_read_pos: u16,
     #[serde(skip)]
     published_dialogue_message_id: u16,
-    /// BG3 palette row carried by the tilemap generation committed alongside
-    /// `published_bg3_vwf_glyph_runs`. This remains valid while that generation
-    /// is still being scanned out, even after the CPU has begun replacing the
-    /// live tilemap for the next dialogue state.
-    #[serde(skip)]
-    published_dialogue_box_tilemap_palette: Option<u8>,
     /// BG3 text tile area (VRAM 0x7c00..0x7ff0) as of the scroll call frame's
     /// scanout. The ROM's NMI only re-uploads the VWF buffer on main-loop
     /// iteration frames (the upload request comes from the message pump), so
@@ -2073,6 +2067,10 @@ struct DisplaySnapshot {
     ram: Vec<u8>,
     ppu: PpuState,
     dma: DmaState,
+    published_bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
+    published_bg3_vwf_glyph_run_dialogue_offsets: Vec<u16>,
+    published_dialogue_msg_read_pos: u16,
+    published_dialogue_message_id: u16,
     intro_poly_upload_delay: u8,
     intro_sprite_animation_start_delay: u8,
     rom_reset_frame_delay: u8,
@@ -6787,7 +6785,6 @@ impl ZeldaState {
             published_bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
             published_dialogue_msg_read_pos: 0,
             published_dialogue_message_id: 0,
-            published_dialogue_box_tilemap_palette: None,
             dialogue_scroll_frozen_text: None,
             dialogue_scroll_completion_text: None,
             dialogue_scroll_completion_pending: None,
@@ -7148,6 +7145,12 @@ impl ZeldaState {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
             dma: self.dma.clone(),
+            published_bg3_vwf_glyph_runs: self.published_bg3_vwf_glyph_runs.clone(),
+            published_bg3_vwf_glyph_run_dialogue_offsets: self
+                .published_bg3_vwf_glyph_run_dialogue_offsets
+                .clone(),
+            published_dialogue_msg_read_pos: self.published_dialogue_msg_read_pos,
+            published_dialogue_message_id: self.published_dialogue_message_id,
             intro_poly_upload_delay: self.intro_poly_upload_delay,
             intro_sprite_animation_start_delay: self.intro_sprite_animation_start_delay,
             rom_reset_frame_delay: self.rom_reset_frame_delay,
@@ -7444,7 +7447,37 @@ impl ZeldaState {
                 let _ = writeln!(file, "{trace}");
             }
         }
+        // Semantic dialogue data is another representation of the same BG3
+        // generation as the snapshot's VRAM. Present the two atomically:
+        // renderer-local frame queues cannot model both message-open and
+        // message-close boundaries without guessing which edge to delay.
+        let saved_published_dialogue = (
+            std::mem::replace(
+                &mut self.published_bg3_vwf_glyph_runs,
+                display.published_bg3_vwf_glyph_runs.clone(),
+            ),
+            std::mem::replace(
+                &mut self.published_bg3_vwf_glyph_run_dialogue_offsets,
+                display
+                    .published_bg3_vwf_glyph_run_dialogue_offsets
+                    .clone(),
+            ),
+            std::mem::replace(
+                &mut self.published_dialogue_msg_read_pos,
+                display.published_dialogue_msg_read_pos,
+            ),
+            std::mem::replace(
+                &mut self.published_dialogue_message_id,
+                display.published_dialogue_message_id,
+            ),
+        );
         let captured = capture(self);
+        (
+            self.published_bg3_vwf_glyph_runs,
+            self.published_bg3_vwf_glyph_run_dialogue_offsets,
+            self.published_dialogue_msg_read_pos,
+            self.published_dialogue_message_id,
+        ) = saved_published_dialogue;
 
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
@@ -7494,10 +7527,6 @@ impl ZeldaState {
 
     pub fn published_dialogue_message_id(&self) -> u16 {
         self.published_dialogue_message_id
-    }
-
-    pub fn published_dialogue_box_tilemap_palette(&self) -> Option<u8> {
-        self.published_dialogue_box_tilemap_palette
     }
 
     pub fn dialogue_ir_for_decoded_bytes(
@@ -7678,24 +7707,6 @@ impl ZeldaState {
     }
 
     pub(crate) fn publish_bg3_vwf_glyph_runs(&mut self) {
-        let origin_tile_number = self
-            .bg3_vwf_glyph_runs
-            .first()
-            .map(|run| run.origin_tile_number);
-        self.published_dialogue_box_tilemap_palette = origin_tile_number.and_then(|origin| {
-            let layer = &self.ppu.bg_layer[2];
-            let base = usize::from(layer.tilemap_adr);
-            let quadrants = 1
-                + usize::from(layer.tilemap_wider)
-                + usize::from(layer.tilemap_higher)
-                    * (1 + usize::from(layer.tilemap_wider));
-            (0..quadrants).find_map(|quadrant| {
-                let start = base + quadrant * 0x400;
-                self.ppu.vram.get(start..start + 0x400)?.iter().find_map(|entry| {
-                    (*entry & 0x03ff == origin).then_some(((*entry >> 10) & 7) as u8)
-                })
-            })
-        });
         self.published_bg3_vwf_glyph_runs
             .clone_from(&self.bg3_vwf_glyph_runs);
         self.published_bg3_vwf_glyph_run_dialogue_offsets

@@ -117,10 +117,6 @@ pub struct GpuFrame<'a> {
     /// Lets the renderer place semantic dialogue layout without depending on
     /// already materialized legacy glyph-run records.
     pub dialogue_layout_origin_tile_number: Option<u16>,
-    /// Palette row published with the currently displayed BG3 dialogue
-    /// generation. Unlike a live tilemap lookup, this survives CPU mutation
-    /// until the next NMI publication boundary.
-    pub dialogue_box_tilemap_palette: Option<u8>,
     /// Provenance-clean CGRAM mirror committed at the last CGRAM upload
     /// (derived from baked palette data + pure transforms, never read from
     /// live CGRAM). The zero-CGRAM modern path resolves colors from this
@@ -191,7 +187,6 @@ pub struct GpuFrameCaptureInput<'a> {
     pub dialogue_ir: &'a [zelda3_dialogue::DialogueIrOp],
     pub dialogue_layout: &'a [zelda3_dialogue::DialogueGlyphPlacement],
     pub dialogue_layout_origin_tile_number: Option<u16>,
-    pub dialogue_box_tilemap_palette: Option<u8>,
     /// Provenance-clean CGRAM mirror snapshot from the game (see
     /// `GpuFrame::cgram_provenance`).
     pub cgram_provenance: Option<&'a zelda3_palette::CgramProvenanceSnapshot>,
@@ -285,7 +280,6 @@ impl<'a> GpuFrame<'a> {
             dialogue_ir: input.dialogue_ir,
             dialogue_layout: input.dialogue_layout,
             dialogue_layout_origin_tile_number: input.dialogue_layout_origin_tile_number,
-            dialogue_box_tilemap_palette: input.dialogue_box_tilemap_palette,
             cgram_provenance: input.cgram_provenance,
         }
     }
@@ -375,7 +369,6 @@ impl<'a> GpuFrame<'a> {
             dialogue_ir: source.dialogue_ir(),
             dialogue_layout: source.dialogue_layout(),
             dialogue_layout_origin_tile_number: source.dialogue_layout_origin_tile_number(),
-            dialogue_box_tilemap_palette: source.dialogue_box_tilemap_palette(),
             cgram_provenance: None,
         }
     }
@@ -436,9 +429,6 @@ pub trait GpuFrameSource<'a> {
         &[]
     }
     fn dialogue_layout_origin_tile_number(&self) -> Option<u16> {
-        None
-    }
-    fn dialogue_box_tilemap_palette(&self) -> Option<u8> {
         None
     }
 }
@@ -795,7 +785,6 @@ mod tests {
             dialogue_ir: &[],
             dialogue_layout: &[],
             dialogue_layout_origin_tile_number: None,
-            dialogue_box_tilemap_palette: None,
             cgram_provenance: None,
         });
 
