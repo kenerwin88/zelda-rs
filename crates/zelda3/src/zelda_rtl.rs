@@ -362,11 +362,11 @@ const fn rom_player_sprite_scanout_uses_pre_nmi_generation(
 ) -> bool {
     // Snes9x returns at vblank before the new OAM and Link OBJ CHR uploads.
     // This applies both to ordinary player control and the overworld doorway
-    // and scroll transitions, whose Module 9/submodules 6 through 8 and $0a slices have
-    // already authored the following Link pose and OBJ CHR when the preceding
-    // scanout is presented.
+    // auxiliary-GFX load, and scroll transitions, whose Module 9/submodules 1,
+    // 6 through 8, and $0a slices have already authored the following Link pose
+    // and OBJ CHR when the preceding scanout is presented.
     (submodule == 0 && (main_module == 7 || matches!(main_module, 9 | 11)))
-        || (main_module == 9 && matches!(submodule, 6..=8 | 0x0a))
+        || (main_module == 9 && matches!(submodule, 1 | 6..=8 | 0x0a))
 }
 
 const fn rom_dungeon_exit_entry_oam_publication_is_deferred(
