@@ -205,6 +205,44 @@ fn bg3_vwf_glyph_runs_track_unaligned_glyphs_and_scroll() {
 }
 
 #[test]
+fn dialogue_snapshot_exposes_only_nmi_published_vwf_metadata() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state.set_vwf_tile_word_at_byte_offset(0, 0x0180);
+    state.ppu.bg_layer[2].tilemap_adr = 0x1000;
+    state.ppu.vram[0x1020] = 0x0180 | (6 << 10);
+    state.record_bg3_vwf_glyph_run(1, 0, 0, 6, 0);
+    state.publish_bg3_vwf_glyph_runs();
+    assert_eq!(state.published_dialogue_box_tilemap_palette(), Some(6));
+    state.ppu.vram[0x1020] = 0;
+    assert_eq!(state.published_dialogue_box_tilemap_palette(), Some(6));
+    state.record_bg3_vwf_glyph_run(2, 6, 0, 6, 1);
+    state.dialogue_fast_forward_hold_active = true;
+
+    state.capture_display_snapshot();
+    let before_dma = state.with_display_snapshot(|display| {
+        display
+            .bg3_vwf_glyph_runs()
+            .iter()
+            .map(|run| run.glyph_code)
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(before_dma, vec![1]);
+
+    state.nmi_upload_bg3_text();
+    state.capture_display_snapshot();
+    let after_dma = state.with_display_snapshot(|display| {
+        display
+            .bg3_vwf_glyph_runs()
+            .iter()
+            .map(|run| run.glyph_code)
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(after_dma, vec![1, 2]);
+}
+
+#[test]
 fn dialogue_ir_for_decoded_bytes_uses_runtime_dialogue_flags() {
     let state = ZeldaState::new();
 

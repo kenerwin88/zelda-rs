@@ -1852,9 +1852,11 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
     modern.dialogue_layout = frame.dialogue_layout.to_vec();
     modern.dialogue_layout_vwf_glyph_runs =
         semantic_dialogue_layout_vwf_glyph_runs(frame, &bg3_tile_screen_xy);
-    modern.dialogue_box_tilemap_palette = frame
-        .dialogue_layout_origin_tile_number
-        .and_then(|origin| bg3_tilemap_entry_palette(frame, origin));
+    modern.dialogue_box_tilemap_palette = frame.dialogue_box_tilemap_palette.or_else(|| {
+        frame
+            .dialogue_layout_origin_tile_number
+            .and_then(|origin| bg3_tilemap_entry_palette(frame, origin))
+    });
     cull_bg3_dynamic_tiles_covered_by_vwf_glyph_runs(&mut modern, &mut missing_sources);
     if dbg {
         eprintln!("[SRC_DEBUG] bg_tiles={dbg_total} wrong_cell={dbg_mismatch} gap={dbg_gap} stale_of_kind6={dbg_stale}");

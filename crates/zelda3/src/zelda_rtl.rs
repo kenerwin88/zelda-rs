@@ -1795,6 +1795,8 @@ pub struct ZeldaState {
     #[serde(skip)]
     bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
     bg3_vwf_glyph_run_dialogue_offsets: Vec<u16>,
+    #[serde(skip)]
+    bg3_vwf_glyph_run_dialogue_message_id: u16,
     /// Remaining lag frames of an in-flight message-line scroll call. The
     /// ROM's `scroll_speed+1`-pixel scroll spans three hardware frames
     /// (2,2,1 pixel passes; the main loop and frame counter run once); while
@@ -1809,6 +1811,28 @@ pub struct ZeldaState {
     pub(crate) dialogue_fast_forward_hold_pending: bool,
     #[serde(skip)]
     pub(crate) dialogue_fast_forward_hold_active: bool,
+    /// Remaining 65816 master-cycle work for a VWF glyph interrupted by the
+    /// preceding display boundary. The glyph becomes architecturally complete
+    /// only when this reaches zero on a resumed main-thread slice.
+    #[serde(skip)]
+    pub(crate) dialogue_vwf_glyph_cycle_debt: u32,
+    /// Semantic VWF metadata follows the same NMI publication boundary as the
+    /// hardware text VRAM. CPU-authored glyphs stay private until subroutine 2
+    /// uploads the completed buffer.
+    #[serde(skip)]
+    published_bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
+    #[serde(skip)]
+    published_bg3_vwf_glyph_run_dialogue_offsets: Vec<u16>,
+    #[serde(skip)]
+    published_dialogue_msg_read_pos: u16,
+    #[serde(skip)]
+    published_dialogue_message_id: u16,
+    /// BG3 palette row carried by the tilemap generation committed alongside
+    /// `published_bg3_vwf_glyph_runs`. This remains valid while that generation
+    /// is still being scanned out, even after the CPU has begun replacing the
+    /// live tilemap for the next dialogue state.
+    #[serde(skip)]
+    published_dialogue_box_tilemap_palette: Option<u8>,
     /// BG3 text tile area (VRAM 0x7c00..0x7ff0) as of the scroll call frame's
     /// scanout. The ROM's NMI only re-uploads the VWF buffer on main-loop
     /// iteration frames (the upload request comes from the message pump), so
@@ -6754,9 +6778,16 @@ impl ZeldaState {
             animated_tile_pack: 0,
             bg3_vwf_glyph_runs: Vec::new(),
             bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
+            bg3_vwf_glyph_run_dialogue_message_id: 0,
             dialogue_scroll_lag_frames: 0,
             dialogue_fast_forward_hold_pending: false,
             dialogue_fast_forward_hold_active: false,
+            dialogue_vwf_glyph_cycle_debt: 0,
+            published_bg3_vwf_glyph_runs: Vec::new(),
+            published_bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
+            published_dialogue_msg_read_pos: 0,
+            published_dialogue_message_id: 0,
+            published_dialogue_box_tilemap_palette: None,
             dialogue_scroll_frozen_text: None,
             dialogue_scroll_completion_text: None,
             dialogue_scroll_completion_pending: None,
@@ -7449,8 +7480,24 @@ impl ZeldaState {
         &self.bg3_vwf_glyph_runs
     }
 
+    pub fn published_bg3_vwf_glyph_runs(&self) -> &[Bg3VwfGlyphRun] {
+        &self.published_bg3_vwf_glyph_runs
+    }
+
     pub fn bg3_vwf_glyph_run_dialogue_offsets(&self) -> &[u16] {
         &self.bg3_vwf_glyph_run_dialogue_offsets
+    }
+
+    pub fn published_bg3_vwf_glyph_run_dialogue_offsets(&self) -> &[u16] {
+        &self.published_bg3_vwf_glyph_run_dialogue_offsets
+    }
+
+    pub fn published_dialogue_message_id(&self) -> u16 {
+        self.published_dialogue_message_id
+    }
+
+    pub fn published_dialogue_box_tilemap_palette(&self) -> Option<u8> {
+        self.published_dialogue_box_tilemap_palette
     }
 
     pub fn dialogue_ir_for_decoded_bytes(
@@ -7547,6 +7594,29 @@ impl ZeldaState {
         self.current_visible_source_render_dialogue_ir()
     }
 
+    /// Source dialogue semantics corresponding to the BG3 generation most
+    /// recently committed by NMI_UploadBG3Text.
+    pub fn published_displayed_source_render_dialogue_ir(
+        &self,
+    ) -> Vec<crate::dialogue_ir::DialogueIrOp> {
+        if !self.is_dialogue_display_active() || self.published_bg3_vwf_glyph_runs.is_empty() {
+            return Vec::new();
+        }
+        let Some(source_ir) =
+            self.source_dialogue_ir_for_message(self.published_dialogue_message_id)
+        else {
+            return Vec::new();
+        };
+        let render_ir = crate::dialogue_ir::expand_runtime_render_dialogue_ir(
+            &source_ir,
+            &self.current_dialogue_runtime_substitutions(),
+        );
+        crate::dialogue_ir::visible_dialogue_ir_prefix(
+            &render_ir,
+            usize::from(self.published_dialogue_msg_read_pos),
+        )
+    }
+
     pub fn source_dialogue_ir_for_message(
         &self,
         message_id: u16,
@@ -7581,6 +7651,21 @@ impl ZeldaState {
         )
     }
 
+    pub fn published_bg3_vwf_glyph_run_dialogue_ir(
+        &self,
+        run_index: usize,
+    ) -> Option<crate::dialogue_ir::DialogueIrOp> {
+        let offset = *self
+            .published_bg3_vwf_glyph_run_dialogue_offsets
+            .get(run_index)?;
+        if offset == zelda3_compat::UNKNOWN_DIALOGUE_OFFSET {
+            return None;
+        }
+        self.published_displayed_source_render_dialogue_ir()
+            .into_iter()
+            .find(|op| op.offset == usize::from(offset))
+    }
+
     pub fn restore_bg3_vwf_glyph_runs(&mut self, runs: Vec<Bg3VwfGlyphRun>) {
         self.bg3_vwf_glyph_runs = runs;
         self.bg3_vwf_glyph_run_dialogue_offsets =
@@ -7590,6 +7675,34 @@ impl ZeldaState {
     pub(crate) fn clear_bg3_vwf_glyph_runs(&mut self) {
         self.bg3_vwf_glyph_runs.clear();
         self.bg3_vwf_glyph_run_dialogue_offsets.clear();
+    }
+
+    pub(crate) fn publish_bg3_vwf_glyph_runs(&mut self) {
+        let origin_tile_number = self
+            .bg3_vwf_glyph_runs
+            .first()
+            .map(|run| run.origin_tile_number);
+        self.published_dialogue_box_tilemap_palette = origin_tile_number.and_then(|origin| {
+            let layer = &self.ppu.bg_layer[2];
+            let base = usize::from(layer.tilemap_adr);
+            let quadrants = 1
+                + usize::from(layer.tilemap_wider)
+                + usize::from(layer.tilemap_higher)
+                    * (1 + usize::from(layer.tilemap_wider));
+            (0..quadrants).find_map(|quadrant| {
+                let start = base + quadrant * 0x400;
+                self.ppu.vram.get(start..start + 0x400)?.iter().find_map(|entry| {
+                    (*entry & 0x03ff == origin).then_some(((*entry >> 10) & 7) as u8)
+                })
+            })
+        });
+        self.published_bg3_vwf_glyph_runs
+            .clone_from(&self.bg3_vwf_glyph_runs);
+        self.published_bg3_vwf_glyph_run_dialogue_offsets
+            .clone_from(&self.bg3_vwf_glyph_run_dialogue_offsets);
+        self.published_dialogue_msg_read_pos =
+            self.game_state.messaging.runtime.dialogue_msg_read_pos();
+        self.published_dialogue_message_id = self.bg3_vwf_glyph_run_dialogue_message_id;
     }
 
     pub(crate) fn record_bg3_vwf_glyph_run(
@@ -7606,6 +7719,8 @@ impl ZeldaState {
         if width == 0 {
             return;
         }
+
+        self.bg3_vwf_glyph_run_dialogue_message_id = self.current_dialogue_message_id();
 
         let tile_row = line_ptr / TEXT_TILE_ROW_BYTES;
         let origin_tile_number = self
@@ -9626,8 +9741,9 @@ impl ZeldaState {
         }
         self.module_main_routing();
         self.replay_trace_ram_watch("game-loop-after-module");
-        // This frame's render decided whether the NEXT frame holds its core
-        // update; publish it and clear the flag we just consumed.
+        // A vblank can interrupt the 65816 inside the VWF loop. Keep the
+        // main-thread continuation separate from the ROM's $0710 NMI gate:
+        // mid-glyph $0710 is still zero, while a completed handler sets it to 2.
         self.dialogue_fast_forward_hold_active =
             std::mem::take(&mut self.dialogue_fast_forward_hold_pending);
         if self.rom_startup_timing()
@@ -9637,21 +9753,19 @@ impl ZeldaState {
         {
             return;
         }
-        // The ROM gates the NMI core-update section (Link/sprite DMA prep AND
-        // the BG-tile / Link animation-countdown advance in nmi_prepare_sprites)
-        // on $0710 (NMI_DISABLE_CORE_UPDATES): a held message-render frame skips
-        // it entirely. Rust already skips the frame counter + clear_oam on hold
-        // frames (see `hold_core` above) but was still running
-        // nmi_prepare_sprites, so BG_TILE_ANIMATION_COUNTDOWN (0xc00d) and
-        // link_dma_countdown (0xc013) over-decremented by the number of intro-
-        // telepathy hold frames, phase-shifting the dungeon animated tile (the
-        // frame-14661 bed) and cascading the tail. Gate it the same way.
+        // In the ROM this call is after Module_MainRouting. When vblank interrupts
+        // the VWF loop, the main thread has not reached NMI_PrepareSprites yet;
+        // the actual interrupt still runs separately below and observes $0710.
         let partial_nmi = std::mem::take(&mut self.rom_load_partial_nmi_this_frame);
-        if !hold_core && !partial_nmi {
+        if !self.dialogue_fast_forward_hold_active && !partial_nmi {
             self.nmi_prepare_sprites();
             self.replay_trace_ram_watch("game-loop-after-prepare-sprites");
+            // The ROM clears nmi_boolean only after Module_MainRouting and
+            // NMI_PrepareSprites return. A vblank-interrupted VWF slice has
+            // reached neither point, so its NMI must observe the still-set
+            // latch and skip NMI_DoUpdates (including OAM DMA and joypads).
+            self.clear_nmi_update_latch();
         }
-        self.clear_nmi_update_latch();
         self.replay_trace_ram_watch("game-loop-exit");
     }
 

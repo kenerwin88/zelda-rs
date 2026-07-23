@@ -1088,6 +1088,11 @@ impl ZeldaState {
         for i in 0..0x3f0 {
             self.ppu.vram[0x7c00 + i] = read_word_from_slice(&buf, i * 2);
         }
+        // Semantic glyph placements are a second representation of the same
+        // VWF pixels. Publish them at the DMA boundary too; exposing the
+        // CPU-authored list earlier lets the modern renderer paint text that
+        // the SNES PPU has not received yet.
+        self.publish_bg3_vwf_glyph_runs();
         self.clear_core_update_disable_flag();
     }
 

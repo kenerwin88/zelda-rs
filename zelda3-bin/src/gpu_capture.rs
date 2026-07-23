@@ -54,6 +54,7 @@ pub struct LiveGpuFrameCapture {
     dialogue_ir: Vec<zelda3::dialogue_ir::DialogueIrOp>,
     dialogue_layout: Vec<zelda3::dialogue_ir::DialogueGlyphPlacement>,
     dialogue_layout_origin_tile_number: Option<u16>,
+    dialogue_box_tilemap_palette: Option<u8>,
     #[allow(dead_code)]
     mode7_source_chars: Option<Vec<u8>>,
     #[allow(dead_code)]
@@ -158,31 +159,43 @@ impl LiveGpuFrameCapture {
             Vec::new()
         };
         let bg3_vwf_glyph_run_offsets = if dialogue_active {
-            game.bg3_vwf_glyph_run_dialogue_offsets()
+            game.published_bg3_vwf_glyph_run_dialogue_offsets()
         } else {
             &[]
         };
         let bg3_vwf_glyph_run_ir_kinds: Vec<_> = if dialogue_active {
-            (0..game.bg3_vwf_glyph_runs().len())
-                .map(|index| game.bg3_vwf_glyph_run_dialogue_ir(index).map(|op| op.kind))
+            (0..game.published_bg3_vwf_glyph_runs().len())
+                .map(|index| {
+                    game.published_bg3_vwf_glyph_run_dialogue_ir(index)
+                        .map(|op| op.kind)
+                })
                 .collect()
         } else {
             Vec::new()
         };
-        let dialogue_message_id = dialogue_active.then(|| game.current_dialogue_message_id());
+        let dialogue_message_id = dialogue_active.then(|| game.published_dialogue_message_id());
         let source_dialogue_ir = if dialogue_active {
-            game.current_source_dialogue_ir()
+            game.source_dialogue_ir_for_message(game.published_dialogue_message_id())
+                .unwrap_or_default()
         } else {
             Vec::new()
         };
-        let dialogue_ir = game.current_displayed_source_render_dialogue_ir();
+        let dialogue_ir = game.published_displayed_source_render_dialogue_ir();
         let dialogue_vwf_widths = game.dialogue_vwf_widths().unwrap_or_default();
         let dialogue_layout =
             zelda3::dialogue_ir::layout_dialogue_ir(&dialogue_ir, &dialogue_vwf_widths);
         let dialogue_layout_origin_tile_number =
-            (!dialogue_layout.is_empty()).then(|| game.dialogue_vwf_origin_tile_number());
+            (!dialogue_layout.is_empty()).then(|| {
+                game.published_bg3_vwf_glyph_runs()
+                    .first()
+                    .map(|run| run.origin_tile_number)
+                    .unwrap_or_else(|| game.dialogue_vwf_origin_tile_number())
+            });
+        let dialogue_box_tilemap_palette = dialogue_active
+            .then(|| game.published_dialogue_box_tilemap_palette())
+            .flatten();
         let bg3_vwf_glyph_runs = if dialogue_active {
-            game.bg3_vwf_glyph_runs()
+            game.published_bg3_vwf_glyph_runs()
                 .iter()
                 .enumerate()
                 .map(|(index, run)| renderer::GpuBg3VwfGlyphRun {
@@ -224,6 +237,7 @@ impl LiveGpuFrameCapture {
             dialogue_ir,
             dialogue_layout,
             dialogue_layout_origin_tile_number,
+            dialogue_box_tilemap_palette,
             mode7_source_chars,
             main_module,
             player_indoors,
@@ -244,6 +258,7 @@ impl LiveGpuFrameCapture {
             &self.dialogue_ir,
             &self.dialogue_layout,
             self.dialogue_layout_origin_tile_number,
+            self.dialogue_box_tilemap_palette,
             Some(&self.cgram_provenance),
         )
     }
@@ -1356,6 +1371,7 @@ fn validation_cache_key(capture: &LiveGpuFrameCapture) -> u64 {
     capture
         .dialogue_layout_origin_tile_number()
         .hash(&mut hasher);
+    capture.dialogue_box_tilemap_palette.hash(&mut hasher);
     capture.player_indoors().hash(&mut hasher);
     capture.cgram_provenance.words.hash(&mut hasher);
     capture.cgram_provenance.known.hash(&mut hasher);
@@ -1421,6 +1437,7 @@ fn gpu_frame_capture_from_ppu<'a>(
     dialogue_ir: &'a [zelda3::dialogue_ir::DialogueIrOp],
     dialogue_layout: &'a [zelda3::dialogue_ir::DialogueGlyphPlacement],
     dialogue_layout_origin_tile_number: Option<u16>,
+    dialogue_box_tilemap_palette: Option<u8>,
     cgram_provenance: Option<&'a zelda3_palette::CgramProvenanceSnapshot>,
 ) -> renderer::GpuFrameCaptureInput<'a> {
     renderer::GpuFrameCaptureInput {
@@ -1435,6 +1452,7 @@ fn gpu_frame_capture_from_ppu<'a>(
         dialogue_ir,
         dialogue_layout,
         dialogue_layout_origin_tile_number,
+        dialogue_box_tilemap_palette,
         cgram_provenance,
     }
 }

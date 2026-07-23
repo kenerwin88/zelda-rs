@@ -3,19 +3,61 @@
 use super::*;
 use crate::types::{sign16, Pair16U, Point16U};
 
-/// Per-display-frame VWF glyph-column budget for max-speed (button-held)
-/// message fast-forward. Beyond this many glyph-width pixels rendered in one
-/// frame, the render loop yields for the NMI upload instead of dumping the
-/// rest of the line. Calibrated against the Snes9x oracle's per-frame
-/// read-position advance; `ZELDA3_VWF_FF_BUDGET` overrides for calibration.
-fn vwf_fast_forward_frame_budget() -> u16 {
-    static BUDGET: std::sync::OnceLock<u16> = std::sync::OnceLock::new();
-    *BUDGET.get_or_init(|| {
-        std::env::var("ZELDA3_VWF_FF_BUDGET")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0x20)
-    })
+const VWF_FIRST_LINE_ENTRY_MASTER_CYCLES: u32 = 238_000;
+const VWF_LATER_LINE_ENTRY_MASTER_CYCLES: u32 = 255_000;
+const VWF_RESUMED_FRAME_MASTER_CYCLES: u32 = 348_000;
+const VWF_GLYPH_ENTRY_MASTER_CYCLES: u32 = 2_240;
+const VWF_GLYPH_TRANSITION_MASTER_CYCLES: u32 = 2_620;
+
+fn vwf_render_loop_cycle_budget(resuming: bool, current_line: u16) -> u32 {
+    if resuming {
+        VWF_RESUMED_FRAME_MASTER_CYCLES
+    } else if current_line == 0 {
+        VWF_FIRST_LINE_ENTRY_MASTER_CYCLES
+    } else {
+        VWF_LATER_LINE_ENTRY_MASTER_CYCLES
+    }
+}
+
+fn vwf_render_glyph_master_cycles(width: u8, x: u8) -> u32 {
+    // ROM $0E:CBF2/$0E:CC90 renders columns only until the current 8-pixel
+    // tile boundary; any remaining font bits are stored as the next tile's
+    // seed word. The exact traced cost therefore follows this inner-loop
+    // iteration count rather than raw glyph width.
+    let columns = u32::from(width.min(8 - (x & 7)));
+    16_000 + columns * 8_000
+}
+
+#[cfg(test)]
+mod fast_forward_cycle_tests {
+    use super::{
+        vwf_render_glyph_master_cycles, vwf_render_loop_cycle_budget,
+        VWF_FIRST_LINE_ENTRY_MASTER_CYCLES, VWF_LATER_LINE_ENTRY_MASTER_CYCLES,
+        VWF_RESUMED_FRAME_MASTER_CYCLES,
+    };
+
+    #[test]
+    fn render_loop_budget_tracks_rom_entry_and_resume_phases() {
+        assert_eq!(
+            vwf_render_loop_cycle_budget(false, 0),
+            VWF_FIRST_LINE_ENTRY_MASTER_CYCLES
+        );
+        assert_eq!(
+            vwf_render_loop_cycle_budget(false, 2),
+            VWF_LATER_LINE_ENTRY_MASTER_CYCLES
+        );
+        assert_eq!(
+            vwf_render_loop_cycle_budget(true, 0),
+            VWF_RESUMED_FRAME_MASTER_CYCLES
+        );
+    }
+
+    #[test]
+    fn glyph_cost_stops_at_the_current_tile_boundary() {
+        assert_eq!(vwf_render_glyph_master_cycles(6, 0), 64_000);
+        assert_eq!(vwf_render_glyph_master_cycles(6, 5), 40_000);
+        assert_eq!(vwf_render_glyph_master_cycles(7, 7), 24_000);
+    }
 }
 
 mod messaging_shared;
@@ -3194,15 +3236,15 @@ impl ZeldaState {
         // Keeping that artificial budget delayed the first story glyph by one
         // display boundary, leaving the Triforce caption partially absent.
         let yielded_midline = self.render_text_draw_message_characters();
-        // A mid-line fast-forward yield means the ROM's main thread is still
-        // inside the render (it renders one glyph-chunk per vblank while the
-        // button is held). On those display frames the ROM's NMI does the VWF
-        // upload but skips the core game update — the frame counter (0x1a) and
-        // Link's animation are held. Mark the NEXT frame to skip its core
-        // update so rust's 0x1a tracks the ROM's (Snes9x-verified: 0x1a ticks
-        // ~once per rendered line, not once per vblank).
+        // A mid-line yield models Snes9x returning at vblank while the 65816 PC
+        // is still inside VWF_RenderCharacter. The ROM has not reached the
+        // handler epilogue yet, so $17/$0710 remain zero: NMI performs normal
+        // core maintenance and does not publish the unfinished text buffer.
+        // The next host slice resumes only this interrupted main-thread work.
         self.dialogue_fast_forward_hold_pending = yielded_midline;
-        self.finish_dialogue_character_render_call();
+        if !yielded_midline {
+            self.finish_dialogue_character_render_call();
+        }
     }
 
     fn finish_dialogue_character_render_call(&mut self) {
@@ -3210,23 +3252,14 @@ impl ZeldaState {
         self.set_core_update_disable_flag(2);
     }
 
-    /// Renders this frame's message characters. Returns `true` if it stopped
-    /// because the per-frame fast-forward budget was reached mid-line (more
-    /// letters pending on this line) rather than at a command/line boundary —
-    /// the ROM holds the core update on those frames.
+    /// Runs the interruptible 65816 message loop up to this display boundary.
+    /// Returns `true` while the ROM PC is still inside a max-speed glyph loop.
     fn render_text_draw_message_characters(&mut self) -> bool {
-        // Snes9x-verified: even at max speed (line-speed 0, i.e. the player
-        // holding the advance button to fast-forward), the ROM renders at most
-        // a bounded number of glyph columns per display frame before yielding
-        // for the NMI VWF upload — it does NOT dump the whole line in one
-        // frame. Without this budget rust typed a page in ~3 frames while the
-        // ROM took ~12, running the frame counter (0x1a, which gates Link's
-        // animation) and read-position ahead for the rest of the scene (the
-        // 2826..3115 walk-sprite flicker). Each yielded frame still ticks 0x1a
-        // once, so bounding the per-frame render makes rust consume the ROM's
-        // frame count. Budget is in glyph-width (pixel) units accumulated this
-        // frame; a letter that crosses the budget is the frame's last.
-        let budget = vwf_fast_forward_frame_budget();
+        let resuming = self.dialogue_fast_forward_hold_active;
+        let current_line = self.game_state.messaging.vwf_render.current_line();
+        let mut cycles_left = vwf_render_loop_cycle_budget(resuming, current_line);
+        let mut first_glyph_in_slice =
+            !resuming && self.dialogue_vwf_glyph_cycle_debt == 0;
         let mut frame_advance: u16 = 0;
         let mut midline_yield = false;
         loop {
@@ -3243,17 +3276,41 @@ impl ZeldaState {
                     if self.game_state.messaging.runtime.vwf_line_speed_cur() >= 2 {
                         self.messaging_state_mut().decrement_vwf_line_speed_cur();
                     } else {
-                        frame_advance =
-                            frame_advance.saturating_add(u16::from(self.dialogue_glyph_width(param)));
-                        self.VWF_RenderSingle(param as i32, read_pos as u16);
-                        command_done = true;
+                        let width = self.dialogue_glyph_width(param);
                         let fast_forward =
                             self.game_state.messaging.runtime.vwf_line_speed_cur() == 0;
-                        restart_if_zero_speed = fast_forward && frame_advance < budget;
-                        // Fast-forwarding but stopped by the per-frame budget:
-                        // there are more letters on this line, so the ROM holds
-                        // the core update next frame.
-                        midline_yield = fast_forward && frame_advance >= budget;
+                        if fast_forward {
+                            let glyph_cursor =
+                                self.game_state.messaging.vwf_render.glyph_cursor_usize();
+                            let x = self.vwf_glyph_advance_prefix_sum(glyph_cursor);
+                            let required = if self.dialogue_vwf_glyph_cycle_debt != 0 {
+                                self.dialogue_vwf_glyph_cycle_debt
+                            } else {
+                                vwf_render_glyph_master_cycles(width, x)
+                                    + if first_glyph_in_slice {
+                                        VWF_GLYPH_ENTRY_MASTER_CYCLES
+                                    } else {
+                                        0
+                                    }
+                            };
+                            first_glyph_in_slice = false;
+                            if required > cycles_left {
+                                self.dialogue_vwf_glyph_cycle_debt = required - cycles_left;
+                                cycles_left = 0;
+                                midline_yield = true;
+                                break;
+                            }
+                            cycles_left -= required;
+                            self.dialogue_vwf_glyph_cycle_debt = 0;
+                        }
+                        frame_advance = frame_advance.saturating_add(u16::from(width));
+                        self.VWF_RenderSingle(param as i32, read_pos as u16);
+                        command_done = true;
+                        if fast_forward {
+                            cycles_left =
+                                cycles_left.saturating_sub(VWF_GLYPH_TRANSITION_MASTER_CYCLES);
+                            restart_if_zero_speed = true;
+                        }
                     }
                 }
                 TEXT_CMD_NEXT_PIC => {
@@ -3339,16 +3396,21 @@ impl ZeldaState {
                 break;
             }
         }
+        if !midline_yield {
+            self.dialogue_vwf_glyph_cycle_debt = 0;
+        }
         if std::env::var_os("ZELDA3_DEBUG_VWF_BUDGET").is_some() {
             let cursor = self.game_state.messaging.vwf_render.glyph_cursor_usize();
             let arrval = self.vwf_glyph_advance_prefix_sum(cursor);
             eprintln!(
-                "vwf_budget host={} read_pos={:#x} frame_advance={} glyph_cursor={} line_x={} midline_yield={}",
+                "vwf_cycles host={} read_pos={:#x} frame_advance={} glyph_cursor={} line_x={} cycles_left={} cycle_debt={} midline_yield={}",
                 self.frame_ctr_dbg,
                 self.game_state.messaging.runtime.dialogue_msg_read_pos(),
                 frame_advance,
                 cursor,
                 arrval,
+                cycles_left,
+                self.dialogue_vwf_glyph_cycle_debt,
                 midline_yield,
             );
         }
